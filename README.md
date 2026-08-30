@@ -62,9 +62,16 @@ Requires Node 20+, and a Supabase project (local via Docker, or hosted).
 
 ```bash
 npm install
-cp apps/web/.env.local.example apps/web/.env.local   # then fill it in
+cp apps/web/.env.local.example apps/web/.env.local
 npm run dev
 ```
+
+Four things are genuinely required before it will run: your Supabase URL and
+its two keys, an `ANTHROPIC_API_KEY`, and an `ENCRYPTION_KEY`
+(`openssl rand -hex 32`). Add `DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD` for
+keyword volume and rank tracking; without them those steps skip rather than
+fail. Everything else in the example file is optional and each one disables
+exactly one feature. The file says which.
 
 Other entry points:
 

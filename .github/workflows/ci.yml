@@ -1,0 +1,41 @@
+# The first public commit did not build. `next build` failed on a
+# `.filter(Boolean)` that does not narrow `(T | null)[]` to `T[]`, and nothing
+# checked before it was pushed. This is that check.
+#
+# No secrets and no services: `next build` type-checks and compiles without
+# reaching Supabase or any API, and the suite is pure unit tests. If a future
+# test needs a live service, keep it out of this workflow rather than adding
+# credentials here.
+#
+# Nothing here interpolates event data (issue titles, branch names, commit
+# messages) into a shell, which is the usual injection route in Actions.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # `npm ci` rather than `npm install`: it fails loudly when the lockfile
+      # and package.json disagree, which is the state that broke `npm ci` for
+      # the first commit (a stale apps/marketing entry in the lockfile).
+      - run: npm ci
+
+      - run: npm run test
+
+      - run: npm run build
