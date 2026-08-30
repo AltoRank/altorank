@@ -81,7 +81,20 @@ npm run test     # vitest
 npm run smoke    # research → prompt → model → fact check, against real APIs
 ```
 
-Database migrations live in `apps/web/supabase/migrations/` and apply in order.
+### Database
+
+`apps/web/supabase/` carries a `config.toml` and 21 migrations that apply in
+order. With the [Supabase CLI](https://supabase.com/docs/guides/cli):
+
+```bash
+cd apps/web
+supabase start      # local Postgres + auth, prints the URL and keys for .env.local
+supabase db push    # applies the migrations
+```
+
+Against a hosted project, `supabase link --project-ref <ref>` first, then
+`supabase db push`. The app will not get far without the migrations: every
+query targets tables they create.
 
 `docker/` has a container setup if you would rather not run Node directly.
 
