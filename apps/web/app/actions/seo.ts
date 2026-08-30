@@ -7,6 +7,7 @@ import { checkRankings } from "@/lib/seo/serp";
 import { getBacklinksData } from "@/lib/seo/backlinks";
 import { scoreArticle } from "@/lib/seo/scoring";
 import type { Workspace, Keyword, Article } from "@/lib/types";
+import { buildRankingRows } from "@/lib/seo/rankings";
 
 // ---------------------------------------------------------------------------
 // runKeywordResearch
@@ -110,18 +111,7 @@ export async function checkSerpPositions(workspaceId: string) {
   const termToId = new Map(keywords.map((k) => [k.term, k.id]));
 
   // Insert ranking records
-  const rankingRows = rankings
-    .map((r) => {
-      const keywordId = termToId.get(r.keyword);
-      if (!keywordId) return null;
-      return {
-        keyword_id: keywordId,
-        position: r.position ?? 0,
-        url: r.url,
-        checked_at: new Date().toISOString(),
-      };
-    })
-    .filter(Boolean);
+  const rankingRows = buildRankingRows(rankings, termToId);
 
   if (rankingRows.length > 0) {
     const { error: insertError } = await supabase

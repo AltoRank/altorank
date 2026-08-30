@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { checkRankings } from "@/lib/seo/serp";
 import type { Workspace, Keyword } from "@/lib/types";
+import { buildRankingRows } from "@/lib/seo/rankings";
 
 export async function GET(request: Request) {
   // Verify cron secret
@@ -80,18 +81,7 @@ export async function GET(request: Request) {
       // Build term -> keyword id map
       const termToId = new Map(keywords.map((k) => [k.term, k.id]));
 
-      const rankingRows = rankings
-        .map((r) => {
-          const keywordId = termToId.get(r.keyword);
-          if (!keywordId) return null;
-          return {
-            keyword_id: keywordId,
-            position: r.position ?? 0,
-            url: r.url,
-            checked_at: new Date().toISOString(),
-          };
-        })
-        .filter(Boolean);
+      const rankingRows = buildRankingRows(rankings, termToId);
 
       if (rankingRows.length > 0) {
         const { error: insertError } = await supabase
