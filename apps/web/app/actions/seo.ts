@@ -1,0 +1,336 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
+import { discoverKeywords } from "@/lib/seo/keywords";
+import { checkRankings } from "@/lib/seo/serp";
+import { getBacklinksData } from "@/lib/seo/backlinks";
+import { scoreArticle } from "@/lib/seo/scoring";
+import type { Workspace, Keyword, Article } from "@/lib/types";
+
+// ---------------------------------------------------------------------------
+// runKeywordResearch
+// ---------------------------------------------------------------------------
+
+export async function runKeywordResearch(workspaceId: string) {
+  const supabase = await createClient();
+
+  // Fetch workspace to get domain
+  const { data: workspace, error: wsError } = await supabase
+    .from("workspaces")
+    .select("*")
+    .eq("id", workspaceId)
+    .single();
+
+  if (wsError || !workspace) {
+    throw new Error("Workspace not found");
+  }
+
+  const ws = workspace as Workspace;
+  if (!ws.domain) {
+    throw new Error("Workspace has no domain configured");
+  }
+
+  // Call DataForSEO with workspace locale
+  const keywords = await discoverKeywords(ws.domain, {
+    languageCode: ws.language ?? "en",
+    locationCode: ws.location_code ?? 2840,
+  });
+
+  // Upsert into keywords table
+  const rows = keywords.map((kw) => ({
+    workspace_id: workspaceId,
+    term: kw.keyword,
+    volume: kw.volume,
+    difficulty: kw.difficulty,
+    intent: kw.intent,
+    status: "new" as const,
+  }));
+
+  if (rows.length > 0) {
+    const { error: upsertError } = await supabase
+      .from("keywords")
+      .upsert(rows, { onConflict: "workspace_id,term", ignoreDuplicates: false });
+
+    if (upsertError) {
+      throw new Error(`Failed to upsert keywords: ${upsertError.message}`);
+    }
+  }
+
+  revalidatePath("/keywords");
+
+  return { discovered: keywords.length };
+}
+
+// ---------------------------------------------------------------------------
+// checkSerpPositions
+// ---------------------------------------------------------------------------
+
+export async function checkSerpPositions(workspaceId: string) {
+  const supabase = await createClient();
+
+  // Fetch workspace domain
+  const { data: workspace, error: wsError } = await supabase
+    .from("workspaces")
+    .select("*")
+    .eq("id", workspaceId)
+    .single();
+
+  if (wsError || !workspace) {
+    throw new Error("Workspace not found");
+  }
+
+  const ws = workspace as Workspace;
+  if (!ws.domain) {
+    throw new Error("Workspace has no domain configured");
+  }
+
+  // Fetch all keywords for workspace
+  const { data: keywordsData, error: kwError } = await supabase
+    .from("keywords")
+    .select("*")
+    .eq("workspace_id", workspaceId);
+
+  if (kwError) {
+    throw new Error(`Failed to fetch keywords: ${kwError.message}`);
+  }
+
+  const keywords = (keywordsData ?? []) as Keyword[];
+  if (keywords.length === 0) return { checked: 0 };
+
+  const terms = keywords.map((k) => k.term);
+
+  // Call DataForSEO SERP check with workspace locale
+  const rankings = await checkRankings(terms, ws.domain, {
+    languageCode: ws.language ?? "en",
+    locationCode: ws.location_code ?? 2840,
+  });
+
+  // Build a map of term -> keyword id
+  const termToId = new Map(keywords.map((k) => [k.term, k.id]));
+
+  // Insert ranking records
+  const rankingRows = rankings
+    .map((r) => {
+      const keywordId = termToId.get(r.keyword);
+      if (!keywordId) return null;
+      return {
+        keyword_id: keywordId,
+        position: r.position ?? 0,
+        url: r.url,
+        checked_at: new Date().toISOString(),
+      };
+    })
+    .filter(Boolean);
+
+  if (rankingRows.length > 0) {
+    const { error: insertError } = await supabase
+      .from("keyword_rankings")
+      .insert(rankingRows);
+
+    if (insertError) {
+      throw new Error(`Failed to insert rankings: ${insertError.message}`);
+    }
+  }
+
+  revalidatePath("/keywords");
+
+  return { checked: rankingRows.length };
+}
+
+// ---------------------------------------------------------------------------
+// fetchBacklinks
+// ---------------------------------------------------------------------------
+
+export async function fetchBacklinks(workspaceId: string) {
+  const supabase = await createClient();
+
+  // Fetch workspace domain
+  const { data: workspace, error: wsError } = await supabase
+    .from("workspaces")
+    .select("*")
+    .eq("id", workspaceId)
+    .single();
+
+  if (wsError || !workspace) {
+    throw new Error("Workspace not found");
+  }
+
+  const ws = workspace as Workspace;
+  if (!ws.domain) {
+    throw new Error("Workspace has no domain configured");
+  }
+
+  // Call DataForSEO
+  const backlinks = await getBacklinksData(ws.domain);
+
+  // Upsert into backlinks table
+  const rows = backlinks.map((bl) => ({
+    workspace_id: workspaceId,
+    source_domain: bl.sourceDomain,
+    source_dr: bl.sourceDr,
+    anchor_text: bl.anchorText,
+    target_url: bl.targetUrl,
+    status: "live" as const,
+    discovered_at: new Date().toISOString(),
+  }));
+
+  if (rows.length > 0) {
+    const { error: upsertError } = await supabase
+      .from("backlinks")
+      .upsert(rows, {
+        onConflict: "workspace_id,source_domain,target_url",
+        ignoreDuplicates: false,
+      });
+
+    if (upsertError) {
+      throw new Error(`Failed to upsert backlinks: ${upsertError.message}`);
+    }
+  }
+
+  revalidatePath("/backlinks");
+
+  return { fetched: backlinks.length };
+}
+
+// ---------------------------------------------------------------------------
+// scoreArticleSeo
+// ---------------------------------------------------------------------------
+
+export async function scoreArticleSeo(articleId: string) {
+  const supabase = await createClient();
+
+  // Fetch the article
+  const { data: articleData, error: artError } = await supabase
+    .from("articles")
+    .select("*")
+    .eq("id", articleId)
+    .single();
+
+  if (artError || !articleData) {
+    throw new Error("Article not found");
+  }
+
+  const article = articleData as Article;
+
+  // Convert Tiptap JSON content to HTML string for scoring.
+  // If content is stored as Tiptap JSON, we serialise it simply;
+  // if it's already a string, use it directly.
+  let htmlContent: string;
+  if (typeof article.content === "string") {
+    htmlContent = article.content;
+  } else if (article.content && typeof article.content === "object") {
+    // Basic Tiptap JSON -> text extraction
+    htmlContent = tiptapToHtml(article.content);
+  } else {
+    htmlContent = "";
+  }
+
+  if (!article.keyword) {
+    throw new Error("Article has no target keyword set");
+  }
+
+  // Run the scoring
+  const result = scoreArticle(htmlContent, article.keyword);
+
+  // Insert the audit record
+  const { error: auditError } = await supabase.from("seo_audits").insert({
+    article_id: articleId,
+    score: result.score,
+    checks: result.checks,
+  });
+
+  if (auditError) {
+    throw new Error(`Failed to insert SEO audit: ${auditError.message}`);
+  }
+
+  // Update the article's seo_score
+  const { error: updateError } = await supabase
+    .from("articles")
+    // Persist the per-check breakdown, not just the aggregate. scoreArticle
+    // already returns checks[] with a name, a pass/fail and a note for each of
+    // the 11 checks; storing only result.score threw that away and left the
+    // reviewer with an unexplained number.
+    .update({
+      seo_score: result.score,
+      seo_checks: result.checks,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", articleId);
+
+  if (updateError) {
+    throw new Error(`Failed to update article score: ${updateError.message}`);
+  }
+
+  revalidatePath("/articles");
+  revalidatePath(`/content/${articleId}`);
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal Tiptap JSON to HTML converter.
+ * Handles the common node types; enough for SEO scoring purposes.
+ */
+function tiptapToHtml(doc: Record<string, unknown>): string {
+  if (!doc || !Array.isArray((doc as { content?: unknown[] }).content)) return "";
+
+  const nodes = (doc as { content: TiptapNode[] }).content;
+  return nodes.map(nodeToHtml).join("");
+}
+
+type TiptapNode = {
+  type: string;
+  content?: TiptapNode[];
+  text?: string;
+  attrs?: Record<string, unknown>;
+  marks?: Array<{ type: string; attrs?: Record<string, unknown> }>;
+};
+
+function nodeToHtml(node: TiptapNode): string {
+  if (node.type === "text") {
+    let text = node.text ?? "";
+    if (node.marks) {
+      for (const mark of node.marks) {
+        if (mark.type === "bold") text = `<strong>${text}</strong>`;
+        if (mark.type === "italic") text = `<em>${text}</em>`;
+        if (mark.type === "link") {
+          const href = (mark.attrs?.href as string) ?? "#";
+          text = `<a href="${href}">${text}</a>`;
+        }
+      }
+    }
+    return text;
+  }
+
+  const children = (node.content ?? []).map(nodeToHtml).join("");
+
+  switch (node.type) {
+    case "heading": {
+      const level = (node.attrs?.level as number) ?? 2;
+      return `<h${level}>${children}</h${level}>`;
+    }
+    case "paragraph":
+      return `<p>${children}</p>`;
+    case "bulletList":
+      return `<ul>${children}</ul>`;
+    case "orderedList":
+      return `<ol>${children}</ol>`;
+    case "listItem":
+      return `<li>${children}</li>`;
+    case "blockquote":
+      return `<blockquote>${children}</blockquote>`;
+    case "codeBlock":
+      return `<pre><code>${children}</code></pre>`;
+    case "horizontalRule":
+      return "<hr />";
+    case "hardBreak":
+      return "<br />";
+    default:
+      return children;
+  }
+}

@@ -1,0 +1,170 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { authErrorMessage } from "@/lib/auth/errors";
+
+export const metadata: Metadata = {
+  title: "Sign Up",
+};
+
+async function signUp(formData: FormData) {
+  "use server";
+  const name = formData.get("name") as string;
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
+  const supabase = await createClient();
+
+  // Create auth user
+  const h = await headers();
+  const origin = h.get("origin") || `https://${h.get("host")}` || "http://localhost:3000";
+
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { name },
+      emailRedirectTo: `${origin}/callback`,
+    },
+  });
+  if (error) {
+    redirect("/signup?error=" + encodeURIComponent(authErrorMessage(error.message)));
+  }
+
+  // Create agency + member record using service role (user session not confirmed yet)
+  if (data.user) {
+    const admin = createServiceClient();
+    const base =
+      name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") ||
+      "agency";
+
+    // `agencies.slug` is UNIQUE and the slug comes straight from the agency
+    // name, so the second person to sign up as "Acme" collided. The insert
+    // error was discarded, leaving that user with an account but no agency and
+    // no membership. Retry with a suffix instead, and fail loudly if we still
+    // cannot place them.
+    let agencyId: string | null = null;
+    let lastError = "";
+
+    for (let attempt = 0; attempt < 5 && !agencyId; attempt++) {
+      const slug = attempt === 0 ? base : `${base}-${Math.random().toString(36).slice(2, 8)}`;
+      const { data: agency, error: agencyError } = await admin
+        .from("agencies")
+        .insert({ name, slug })
+        .select("id")
+        .single();
+
+      if (agency) {
+        agencyId = agency.id;
+        break;
+      }
+      lastError = agencyError?.message ?? "unknown error";
+      // 23505 is unique_violation: the slug is taken, so try another.
+      if (agencyError?.code !== "23505") break;
+    }
+
+    if (!agencyId) {
+      redirect("/signup?error=" + encodeURIComponent(`Could not create your agency: ${lastError}`));
+    }
+
+    const { error: memberError } = await admin.from("agency_members").insert({
+      agency_id: agencyId,
+      user_id: data.user.id,
+      role: "owner",
+    });
+    if (memberError) {
+      redirect(
+        "/signup?error=" +
+          encodeURIComponent(`Could not add you to your agency: ${memberError.message}`),
+      );
+    }
+  }
+
+  // Supabase returns a session here only when email confirmation is turned off.
+  // Telling a user who is already signed in to go and check their email sent
+  // them looking for a mail that was never sent, while the dashboard rendered
+  // behind the message.
+  if (data.session) {
+    redirect("/dashboard");
+  }
+
+  redirect("/signup?success=Check+your+email+to+confirm+your+account");
+}
+
+export default async function SignUpPage(props: { searchParams: Promise<{ error?: string; success?: string }> }) {
+  const searchParams = await props.searchParams;
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <h1 className="text-2xl font-semibold tracking-tight">Create your account</h1>
+        <p className="mt-2 text-sm text-ink-3">
+          Add a domain and AltoRank sets up your workspace
+        </p>
+      </div>
+
+      <form action={signUp} className="space-y-4">
+        {searchParams?.success && (
+          <div className="text-sm text-accent-ink bg-accent-soft px-3 py-2 rounded-lg">
+            {searchParams.success}
+          </div>
+        )}
+        {searchParams?.error && (
+          <div className="text-sm text-err-ink bg-err-soft px-3 py-2 rounded-lg">
+            {searchParams.error}
+          </div>
+        )}
+        <div>
+          <label className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1.5 block">
+            Workspace name
+          </label>
+          <input
+            name="name"
+            type="text"
+            required
+            className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
+            placeholder="Your Agency"
+          />
+        </div>
+        <div>
+          <label className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1.5 block">
+            Email
+          </label>
+          <input
+            name="email"
+            type="email"
+            required
+            className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
+            placeholder="you@agency.co"
+          />
+        </div>
+        <div>
+          <label className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1.5 block">
+            Password
+          </label>
+          <input
+            name="password"
+            type="password"
+            required
+            minLength={8}
+            className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
+          />
+        </div>
+        <button
+          type="submit"
+          className="w-full py-2.5 bg-accent text-white font-medium text-[13px] rounded-[7px] hover:bg-accent-2 transition-colors cursor-pointer"
+        >
+          Create account
+        </button>
+      </form>
+
+      <p className="text-center text-sm text-ink-3">
+        Already have an account?{" "}
+        <Link href="/signin" className="font-medium text-accent-ink hover:underline">
+          Sign in
+        </Link>
+      </p>
+    </div>
+  );
+}

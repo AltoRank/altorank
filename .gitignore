@@ -1,0 +1,62 @@
+# ── Dependencies ──────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.*
+
+# ── Build output ──────────────────────────────────────────────────────────
+.next/
+out/
+build/
+dist/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# ── Secrets ───────────────────────────────────────────────────────────────
+# Deny every .env, then allow only the examples back. Order matters: the
+# negations must come after the wildcard or they do nothing.
+.env
+.env.*
+!.env.example
+!.env.local.example
+!**/.env.example
+!**/.env.local.example
+*.pem
+*.key
+credentials.json
+service-account*.json
+
+# ── Prospect and contact data. NEVER commit these. ────────────────────────
+# This is not a style preference. A previous repository had lead CSVs
+# committed to feature branches; the branches were deleted but GitHub serves
+# closed pull-request refs permanently and the repository owner cannot remove
+# them, which is why that repository can never be made public and why this one
+# exists. Personal data in git is effectively irreversible.
+leadgen/
+hanoi/
+**/leadgen/
+*_leads.csv
+all_leads.csv
+contacts*.csv
+emails*.csv
+brevo*.csv
+team_contacts.csv
+domains*.txt
+outreach*.md
+OUTREACH_PLAYBOOK.md
+
+# Scan results naming third parties who did not ask to be scored.
+tools/**/results/
+*-agent-readiness-*.csv
+
+# ── Local tooling ─────────────────────────────────────────────────────────
+.DS_Store
+*.log
+npm-debug.log*
+.vercel
+.claude/
+.conductor/
+.playwright-mcp/
+coverage/
+.idea/
+.vscode/

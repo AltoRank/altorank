@@ -1,0 +1,53 @@
+# Self-hosted AltoRank dashboard.
+#
+# This runs the app. It does NOT run the database, deliberately.
+#
+# Every data path in apps/web goes through Supabase (13 of 13 query modules call
+# createClient directly; there is no storage abstraction yet). Supabase is itself
+# open source, and its CLI brings up the whole backend in one command, so the
+# honest self-host story today is "bring your own Supabase, we ship the app".
+#
+# Two supported shapes:
+#
+#   Local, fully self-hosted and free:
+#     cd apps/web && supabase start        # postgres, auth, storage, studio
+#     supabase db push                     # apply the 14 migrations
+#     # take the API URL and anon key it prints, put them in docker/.env
+#     docker compose -f docker/compose.yml up --build
+#
+#   Against a hosted Supabase project:
+#     put that project's URL and anon key in docker/.env, then the same up.
+#
+# A single-container SQLite build with no Postgres at all is the eventual goal
+# and is blocked on the ContentStore port (pivot plan, Phase 1). Claiming it
+# before that port exists would be a feature grep disproves.
+
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        # Inlined into the client bundle at build time, so they are build args
+        # rather than runtime env. The anon key is public by design.
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?set it in docker/.env}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?set it in docker/.env}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      # Server-side only. Everything except the Anthropic key is optional and
+      # degrades rather than crashing.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      DATAFORSEO_LOGIN: ${DATAFORSEO_LOGIN:-}
+      DATAFORSEO_PASSWORD: ${DATAFORSEO_PASSWORD:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

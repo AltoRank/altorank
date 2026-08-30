@@ -1,0 +1,122 @@
+import type { CrawlResult } from "./crawler";
+import type { AuditIssue } from "@/lib/types";
+
+/**
+ * Run SEO audit checks against crawled pages.
+ */
+export function runAuditChecks(pages: CrawlResult[]): AuditIssue[] {
+  const issues: AuditIssue[] = [];
+
+  for (const page of pages) {
+    // Broken links (non-2xx status on internal pages)
+    if (page.status >= 400 || page.status === 0) {
+      issues.push({
+        type: "broken_link",
+        severity: "error",
+        url: page.url,
+        message: `Page returned status ${page.status || "timeout/error"}`,
+      });
+    }
+
+    // Missing meta description
+    if (!page.metaDescription && page.status >= 200 && page.status < 400) {
+      issues.push({
+        type: "missing_meta",
+        severity: "warning",
+        url: page.url,
+        message: "Missing meta description",
+      });
+    }
+
+    // Missing alt text on images
+    for (const img of page.images) {
+      if (!img.alt) {
+        issues.push({
+          type: "missing_alt",
+          severity: "warning",
+          url: page.url,
+          message: `Image missing alt text: ${img.src.slice(0, 80)}`,
+          details: img.src,
+        });
+      }
+    }
+
+    // Heading hierarchy
+    if (page.h1.length === 0 && page.status >= 200 && page.status < 400) {
+      issues.push({
+        type: "heading_hierarchy",
+        severity: "warning",
+        url: page.url,
+        message: "Page has no H1 tag",
+      });
+    }
+
+    if (page.h1.length > 1) {
+      issues.push({
+        type: "heading_hierarchy",
+        severity: "info",
+        url: page.url,
+        message: `Page has ${page.h1.length} H1 tags (should have 1)`,
+      });
+    }
+
+    // Slow page
+    if (page.loadTimeMs > 3000) {
+      issues.push({
+        type: "slow_page",
+        severity: page.loadTimeMs > 5000 ? "error" : "warning",
+        url: page.url,
+        message: `Page loaded in ${(page.loadTimeMs / 1000).toFixed(1)}s`,
+      });
+    }
+  }
+
+  // Check for broken outgoing links across all pages
+  const allInternalUrls = new Set(pages.map((p) => p.url));
+  for (const page of pages) {
+    for (const link of page.links) {
+      if (link.isInternal && !allInternalUrls.has(link.href)) {
+        // This internal link might point to a page that returned an error
+        const target = pages.find((p) => p.url === link.href);
+        if (target && (target.status >= 400 || target.status === 0)) {
+          issues.push({
+            type: "broken_link",
+            severity: "error",
+            url: page.url,
+            message: `Broken internal link to ${link.href} (${target.status})`,
+            details: `Anchor text: "${link.text}"`,
+          });
+        }
+      }
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Calculate an overall audit score from 0-100.
+ */
+export function calculateAuditScore(issues: AuditIssue[], pagesCrawled: number): number {
+  if (pagesCrawled === 0) return 0;
+
+  let deductions = 0;
+
+  for (const issue of issues) {
+    switch (issue.severity) {
+      case "error":
+        deductions += 5;
+        break;
+      case "warning":
+        deductions += 2;
+        break;
+      case "info":
+        deductions += 0.5;
+        break;
+    }
+  }
+
+  // Scale deductions relative to pages crawled
+  const normalizedDeductions = (deductions / pagesCrawled) * 10;
+  return Math.max(0, Math.round(100 - normalizedDeductions));
+}

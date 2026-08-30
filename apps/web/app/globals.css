@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+/* ============================================================
+   AltoRank — Design tokens (OKLCH palette)
+   Warm monochrome neutrals + indigo accent
+   ============================================================ */
+
+:root {
+  /* neutrals (warm) */
+  --bg:           oklch(0.995 0.002 80);
+  --bg-2:         oklch(0.985 0.003 80);
+  --panel:        oklch(0.975 0.003 80);
+  --panel-2:      oklch(0.965 0.003 80);
+  --line:         oklch(0.915 0.004 80);
+  --line-soft:    oklch(0.945 0.003 80);
+  --ink:          oklch(0.17 0.008 80);
+  --ink-2:        oklch(0.38 0.006 80);
+  --ink-3:        oklch(0.56 0.005 80);
+  --ink-4:        oklch(0.72 0.004 80);
+
+  /* accent (indigo) */
+  --accent:       oklch(0.52 0.16 265);
+  --accent-2:     oklch(0.58 0.16 265);
+  --accent-soft:  oklch(0.955 0.035 265);
+  --accent-ink:   oklch(0.38 0.14 265);
+
+  /* semantic */
+  --ok:           oklch(0.6 0.11 155);
+  --ok-soft:      oklch(0.955 0.03 155);
+  --ok-ink:       oklch(0.35 0.09 155);
+  --warn:         oklch(0.72 0.14 85);
+  --warn-soft:    oklch(0.96 0.04 85);
+  --warn-ink:     oklch(0.45 0.1 75);
+  --err:          oklch(0.6 0.14 25);
+  --err-soft:     oklch(0.96 0.035 25);
+  --err-ink:      oklch(0.45 0.13 25);
+
+  /* layout */
+  --radius:       8px;
+  --radius-lg:    12px;
+  --radius-xl:    16px;
+  --sidebar-w:    244px;
+  --topbar-h:     56px;
+}
+
+/* === Tailwind theme mapping === */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-ink: var(--ok-ink);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-ink: var(--warn-ink);
+  --color-err: var(--err);
+  --color-err-soft: var(--err-soft);
+  --color-err-ink: var(--err-ink);
+  --radius-DEFAULT: var(--radius);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --font-sans: var(--font-archivo);
+  --font-mono: var(--font-jetbrains-mono);
+}
+
+/* === Base resets === */
+::selection { background: var(--accent-soft); }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* === Avatar palette (8 deterministic gradient backgrounds) === */
+.av-c1 { background: linear-gradient(135deg, oklch(0.55 0.16 265), oklch(0.65 0.14 290)); }
+.av-c2 { background: linear-gradient(135deg, oklch(0.6 0.13 160), oklch(0.68 0.12 190)); }
+.av-c3 { background: linear-gradient(135deg, oklch(0.62 0.15 45), oklch(0.7 0.13 70)); }
+.av-c4 { background: linear-gradient(135deg, oklch(0.55 0.17 340), oklch(0.62 0.15 15)); }
+.av-c5 { background: linear-gradient(135deg, oklch(0.35 0.06 240), oklch(0.5 0.1 260)); }
+.av-c6 { background: linear-gradient(135deg, oklch(0.58 0.14 210), oklch(0.7 0.12 230)); }
+.av-c7 { background: linear-gradient(135deg, oklch(0.6 0.14 120), oklch(0.68 0.12 145)); }
+.av-c8 { background: linear-gradient(135deg, oklch(0.5 0.12 320), oklch(0.62 0.14 300)); }
+
+/* === Pulse animation for running status === */
+@keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.4 } }
+
+/* === Custom scrollbar === */
+.scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 5px; }
+.scroll::-webkit-scrollbar-thumb:hover { background: oklch(0.85 0.004 80); }
+.scroll::-webkit-scrollbar-track { background: transparent; }
