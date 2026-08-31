@@ -1,0 +1,71 @@
+---
+import Marketing from '@/layouts/Marketing.astro';
+import { APP_NAME, SITE_URL , LEGAL_ENTITY, EU_HOSTED} from '@/constants';
+
+// NOTE FOR THE TEAM: this is a GDPR-aware STARTING DRAFT, not legal advice.
+// Replace the [bracketed] specifics and have it reviewed by counsel before relying on it.
+// Kept noindex until finalized.
+const updated = '21 June 2026';
+---
+
+<Marketing
+  title={`Privacy Policy | ${APP_NAME}`}
+  description={`How ${APP_NAME} collects, uses, and protects personal data, and your rights under the GDPR.`}
+  noindex={true}
+>
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h1 class="text-[clamp(30px,4.5vw,42px)] font-semibold leading-[1.08] tracking-[-0.025em] text-ink">Privacy Policy</h1>
+      <p class="mt-3 text-sm text-ink-3">Last updated: {updated}</p>
+      <p class="mt-4 rounded-lg border border-line bg-panel/50 p-4 text-[13px] leading-relaxed text-ink-3">
+        This is a starting template and not legal advice. The operator should finalize the bracketed details and have it reviewed before relying on it.
+      </p>
+
+      <div class="mt-8 flex flex-col gap-5 text-[15px] leading-relaxed text-ink-2">
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">1. Who we are</h2>
+          <p>{APP_NAME} (“we”, “us”) operates {SITE_URL}. The data controller is {LEGAL_ENTITY.name} (VAT {LEGAL_ENTITY.vat}), a company incorporated in {LEGAL_ENTITY.country} and therefore subject to the GDPR as a matter of establishment, not only of market. [Registered address to be added.] Reachable at hello@altorank.co. For data-processing agreements (DPAs), contact us at the same address.</p>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">2. Data we collect</h2>
+          <ul class="flex flex-col gap-1.5 pl-5 list-disc">
+            <li><strong class="text-ink">Account data</strong>: name, email, company, and billing details you provide on signup.</li>
+            <li><strong class="text-ink">Content & client data</strong>: the workspaces, keywords, and content you create, and credentials you connect (e.g. CMS integrations), processed to provide the service.</li>
+            <li><strong class="text-ink">Usage data</strong>: log data, device/browser information, and product analytics to operate and improve the service.</li>
+          </ul>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">3. Legal bases (GDPR Art. 6)</h2>
+          <p>We process personal data to perform our contract with you (providing the service), on the basis of legitimate interests (security, product improvement), to comply with legal obligations, and, where required, with your consent (e.g. non-essential cookies).</p>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">4. Sharing & sub-processors</h2>
+          <p>We share data with vetted sub-processors that help us run the service (e.g. hosting, payments, analytics, email). A current list is available on request at hello@altorank.co. We do not sell personal data.</p>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">5. International transfers</h2>
+          <p>Where data is transferred outside the EEA, we rely on appropriate safeguards such as the EU Standard Contractual Clauses.{' '}
+            {EU_HOSTED
+              ? 'Application servers run in Frankfurt (eu-central-1) and the primary database in Ireland (eu-west-1). Both are inside the EEA, so your data is processed within it by default.'
+              : 'The primary database runs in Ireland (eu-west-1), inside the EEA. Application servers currently run in the United States, so some processing happens outside the EEA under the safeguards above. Pinning servers to an EU region requires a paid hosting plan; we will update this section, and only then, once the header confirms it.'}</p>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">6. Retention</h2>
+          <p>We keep personal data for as long as your account is active and as required to meet legal, accounting, or reporting obligations, then delete or anonymise it.</p>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">7. Your rights</h2>
+          <p>Under the GDPR you have the right to access, rectify, erase, restrict, and port your data, to object to processing, and to lodge a complaint with your supervisory authority. To exercise these, contact hello@altorank.co.</p>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">8. Cookies</h2>
+          <p>We use essential cookies to run the service and, with consent, analytics cookies to understand usage. You can control non-essential cookies via your browser or our cookie settings.</p>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">9. Contact</h2>
+          <p>Questions about this policy or your data: hello@altorank.co.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</Marketing>

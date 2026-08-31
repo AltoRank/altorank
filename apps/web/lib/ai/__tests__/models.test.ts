@@ -36,11 +36,24 @@ describe("model defaults", () => {
     expect(anthropicModel()).toBe(MODEL_DEFAULTS.anthropicContent);
   });
 
-  it("does not silently downgrade structured work to a smaller model", () => {
-    // The tier exists as a cost lever, but opting in must be explicit:
-    // defaulting it lower would change brief and cluster output as a
-    // side effect of a refactor that only meant to remove duplication.
-    expect(anthropicModel("structured")).toBe(anthropicModel("content"));
+  it("runs structured work on the cheaper model, and content on the better one", () => {
+    // Changed 2026-08-30 after running both through the real pipeline rather
+    // than reasoning about it. Haiku held the derived word count and passed the
+    // fact checker on most keywords, but on the same article it named no real
+    // products, produced no links, dated its own title to the wrong year, and
+    // wrapped the response in a markdown fence. Short shaped work is safe on
+    // it; the article is the product and is not.
+    expect(anthropicModel("structured")).not.toBe(anthropicModel("content"));
+    expect(anthropicModel("structured")).toContain("haiku");
+  });
+
+  it("still lets a self-hoster run everything on one model", () => {
+    // The $0 rung is BYOK and may have access to a different model set, so the
+    // split must never be something you have to edit source to undo.
+    // beforeEach/afterEach in this file already save and restore these vars.
+    process.env.ANTHROPIC_MODEL = "some-other-model";
+    expect(anthropicModel("content")).toBe("some-other-model");
+    expect(anthropicModel("structured")).toBe("some-other-model");
   });
 
   it("carries no stale pinned date-suffixed id", () => {

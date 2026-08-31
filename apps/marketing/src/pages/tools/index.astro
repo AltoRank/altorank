@@ -1,0 +1,52 @@
+---
+import Marketing from '@/layouts/Marketing.astro';
+import { getCollection } from 'astro:content';
+
+// Show only published guides; drafts stay hidden until their content is useful.
+const tools = (await getCollection('tools'))
+  .filter((tool) => tool.data.published)
+  .sort((a, b) => a.data.title.localeCompare(b.data.title));
+
+// Keep the hub noindex'd until it lists a real directory of guides, not a thin
+// one- or two-item page. Must match the sitemap threshold in astro.config.ts.
+const TOOLS_HUB_MIN = 3;
+const indexable = tools.length >= TOOLS_HUB_MIN;
+---
+
+<Marketing
+  title="Free SEO Guides and Templates | AltoRank"
+  description="Practical SEO guides and copy-paste templates: keyword clustering, content briefs, SERP analysis, and more."
+  noindex={!indexable}
+>
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[1240px] px-8">
+      <div class="mx-auto mb-14 max-w-[720px] text-center">
+        <h1 class="mb-3 text-[42px] font-semibold leading-[1.08] tracking-[-0.025em]">
+          Free SEO guides and templates
+        </h1>
+        <p class="text-base text-ink-2">
+          Practical methods and copy-paste templates for keyword research, content planning, and SEO analysis, written for agencies running many client brands.
+        </p>
+      </div>
+
+      <div class="grid gap-6 md:grid-cols-2">
+        {tools.map((tool) => (
+          <a
+            href={`/tools/${tool.data.slug}/`}
+            class="group flex flex-col rounded-xl border border-line bg-bg p-6 transition-colors hover:border-accent-soft"
+          >
+            <span class="mb-3 w-fit rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-wider text-accent-ink">
+              {tool.data.category}
+            </span>
+            <h2 class="mb-2 text-xl font-semibold tracking-[-0.015em] group-hover:text-accent-ink transition-colors">
+              {tool.data.title}
+            </h2>
+            <p class="text-sm text-ink-2 leading-relaxed">
+              {tool.data.description}
+            </p>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+</Marketing>

@@ -97,8 +97,26 @@ export function runAuditChecks(pages: CrawlResult[]): AuditIssue[] {
 /**
  * Calculate an overall audit score from 0-100.
  */
-export function calculateAuditScore(issues: AuditIssue[], pagesCrawled: number): number {
-  if (pagesCrawled === 0) return 0;
+/**
+ * Score an on-page audit, 0-100, or null when nothing was crawled.
+ *
+ * The old formula multiplied per-page deductions by 10, which saturated the
+ * scale almost immediately: supalabs.co returned 418 warnings and 5 errors over
+ * 40 pages, giving 861 weighted deductions, (861/40)*10 = 215, and a score of 0.
+ * A site had to get under 10 weighted issues per page just to score 1. Stored
+ * audits were bimodal as a result - four 0s and one 95 - so the number could not
+ * rank two sites or show progress between runs. Without the multiplier the same
+ * site scores 78, which is a number somebody can act on.
+ *
+ * Returns null rather than 0 for an uncrawled site: "we could not read it" and
+ * "we read it and it is terrible" are different findings and must not share a
+ * number.
+ */
+export function calculateAuditScore(
+  issues: AuditIssue[],
+  pagesCrawled: number,
+): number | null {
+  if (pagesCrawled === 0) return null;
 
   let deductions = 0;
 
@@ -116,7 +134,8 @@ export function calculateAuditScore(issues: AuditIssue[], pagesCrawled: number):
     }
   }
 
-  // Scale deductions relative to pages crawled
-  const normalizedDeductions = (deductions / pagesCrawled) * 10;
-  return Math.max(0, Math.round(100 - normalizedDeductions));
+  // Weighted deductions per page. One error (5) on every page costs 5 points,
+  // which is a scale that still discriminates at the bad end.
+  const perPage = deductions / pagesCrawled;
+  return Math.max(0, Math.round(100 - perPage));
 }

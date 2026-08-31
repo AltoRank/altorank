@@ -24,7 +24,7 @@ export async function GET(request: Request) {
   const results: Result[] = [];
 
   // ── Phase 1: per-article overrides (scheduled_at <= now) ──
-  const { data: overrideArticles } = await supabase
+  const { data: overrideArticles, error: overrideError } = await supabase
     .from("articles")
     .select("id, workspace_id")
     .eq("status", "scheduled")
@@ -32,6 +32,13 @@ export async function GET(request: Request) {
     .lte("scheduled_at", now.toISOString())
     .order("scheduled_at", { ascending: true })
     .limit(20);
+
+  // Publishing is the one cron whose "nothing to do" is indistinguishable from
+  // "the queue could not be read", and the cost of getting that wrong is a
+  // scheduled article that silently never ships.
+  if (overrideError) {
+    return NextResponse.json({ error: overrideError.message }, { status: 500 });
+  }
 
   for (const article of overrideArticles ?? []) {
     try {
@@ -70,10 +77,14 @@ export async function GET(request: Request) {
   }
 
   // ── Phase 2: workspace cadence (scheduled_at IS NULL) ──
-  const { data: cadences } = await supabase
+  const { data: cadences, error: cadenceError } = await supabase
     .from("publishing_cadences")
     .select("*")
     .eq("enabled", true);
+
+  if (cadenceError) {
+    return NextResponse.json({ error: cadenceError.message }, { status: 500 });
+  }
 
   for (const cadence of (cadences ?? []) as PublishingCadence[]) {
     // "Already published today" is what keeps this idempotent now that the
@@ -95,7 +106,7 @@ export async function GET(request: Request) {
     if (!isCadenceDue(cadence, now, lastLocalDate)) continue;
 
     // Find oldest scheduled article without a specific scheduled_at
-    const { data: queueArticles } = await supabase
+    const { data: queueArticles, error: queueError } = await supabase
       .from("articles")
       .select("id, workspace_id")
       .eq("workspace_id", cadence.workspace_id)
@@ -103,6 +114,18 @@ export async function GET(request: Request) {
       .is("scheduled_at", null)
       .order("created_at", { ascending: true })
       .limit(1);
+
+    // One workspace's unreadable queue should not abort the other workspaces'
+    // slots, but it must not read as an empty queue either.
+    if (queueError) {
+      results.push({
+        articleId: "",
+        workspaceId: cadence.workspace_id,
+        status: "error",
+        error: `queue lookup: ${queueError.message}`,
+      });
+      continue;
+    }
 
     const article = queueArticles?.[0];
     if (!article) continue;

@@ -104,6 +104,54 @@ export function ReportPDF({ data }: ReportPDFProps) {
           </>
         )}
 
+        {/* AI visibility. Omitted entirely when the workspace has never been
+            probed: an absent section reads as "not measured", whereas a section
+            of zeroes reads as "measured, and you are invisible". */}
+        {data.geoSummary && (
+          <>
+            <Text style={styles.sectionTitle}>AI Visibility</Text>
+            <View style={styles.statsRow}>
+              <View style={styles.statBox}>
+                <Text style={[styles.statValue, { color: accentColor }]}>
+                  {Math.round(data.geoSummary.mentionRate * 100)}%
+                </Text>
+                <Text style={styles.statLabel}>Answers naming you</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={[styles.statValue, { color: accentColor }]}>
+                  {Math.round(data.geoSummary.citationRate * 100)}%
+                </Text>
+                <Text style={styles.statLabel}>Answers linking you</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statValue}>{data.geoSummary.promptsTracked}</Text>
+                <Text style={styles.statLabel}>Questions tracked</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statValue}>{data.geoSummary.engines.length}</Text>
+                <Text style={styles.statLabel}>AI engines</Text>
+              </View>
+            </View>
+
+            {/* Who the engines cite instead. This is the part that makes the
+                number actionable rather than merely alarming. */}
+            {data.geoSummary.topCompetitors.length > 0 && (
+              <View style={styles.table}>
+                <View style={styles.tableHeader}>
+                  <Text style={styles.tableCell}>Cited instead of you</Text>
+                  <Text style={styles.tableCellSmall}>Answers</Text>
+                </View>
+                {data.geoSummary.topCompetitors.map((c, i) => (
+                  <View key={i} style={styles.tableRow}>
+                    <Text style={styles.tableCell}>{c.domain}</Text>
+                    <Text style={styles.tableCellSmall}>{c.citations}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </>
+        )}
+
         {/* Top Articles */}
         {data.topArticles.length > 0 && (
           <>

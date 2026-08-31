@@ -14,13 +14,23 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveProvider } from "@/lib/ai/provider";
+import { stripAiTypography } from "@/lib/ai/utils";
 import { htmlToTiptapJson } from "@/lib/ai/tiptap";
 import { factCheckArticle, type FactCheckReport } from "@/lib/ai/fact-check";
+import { scoreArticle } from "@/lib/seo/scoring";
+import { scoreCitationReadiness } from "@/lib/seo/aeo-scoring";
+import { recordSpend, anthropicCost } from "@/lib/billing/spend";
+import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
+import { recordOverageArticle } from "@/lib/billing/overage";
+import { setSpendReporter } from "@/lib/seo/client";
+import { anthropicModel } from "@/lib/ai/models";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
 import { generateImage } from "@/lib/ai/image-generator";
 import { uploadImageFromUrl } from "@/lib/storage/images";
 import { resolveInternalLinks } from "@/lib/seo/link-resolver";
 import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research";
+import { fetchKeywordFacts } from "@/lib/seo/keywords";
+import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { getLocale } from "@/lib/seo/locales";
 import type { VoiceRules } from "@/lib/ai/types";
 
@@ -42,6 +52,7 @@ export interface GenerateArticleOptions {
     reasons: string[];
     score: number;
     difficulty: number | null;
+    volume: number | null;
   };
   /** Streaming hook. Omitted by the unattended path. */
   onChunk?: (html: string) => void;
@@ -68,11 +79,28 @@ export async function generateArticle(
 
   const { data: workspace, error: wsError } = await supabase
     .from("workspaces")
-    .select("id, ai_provider, ai_model, agency_id, language, brand_style")
+    .select("id, ai_provider, ai_model, agency_id, language, brand_style, location_code")
     .eq("id", workspaceId)
     .single();
 
   if (wsError || !workspace) throw new Error("Workspace not found");
+
+  /**
+   * The quota gate, in the one place both callers pass through.
+   *
+   * The pricing page sells "100 articles / month included, €0.60 per
+   * additional" and until this check nothing counted or charged either half.
+   * Manual generation past the included volume proceeds and bills the
+   * published overage. Autonomous generation stops at the included volume:
+   * a cron must never be the thing that spends a customer's money.
+   */
+  const quota = await getQuota(supabase, workspace.agency_id);
+  if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
+    if (quota.reason === "no-plan" || autonomous) {
+      throw new Error(quotaExceededMessage(quota));
+    }
+    await recordOverageArticle(supabase, workspace.agency_id, quota);
+  }
 
   const { data: voiceProfile } = await supabase
     .from("voice_profiles")
@@ -126,6 +154,20 @@ export async function generateArticle(
   try {
     const locale = getLocale(workspace.language ?? "en");
 
+    // Attribute every DataForSEO call this run makes to this article, then
+    // detach: the reporter is module-level, so leaving it set would bill a
+    // later run's calls to this article.
+    setSpendReporter(({ operation, costUsd }) => {
+      void recordSpend(supabase, {
+        provider: "dataforseo",
+        operation,
+        costUsd,
+        workspaceId,
+        articleId: article.id,
+        runId: job.id,
+      });
+    });
+
     const research = await gatherArticleResearch({
       keyword,
       locale: workspace.language ?? "en",
@@ -134,13 +176,68 @@ export async function generateArticle(
     });
     onResearch?.(research);
 
+    /**
+     * Volume and difficulty for the keyword itself.
+     *
+     * The cron passes these in `selection` because the picker already paid for
+     * them. A keyword typed into the "New article" modal never went through
+     * discovery, so the article stored null for both and the editor's dials
+     * read as dashes on a piece the machine had just spent real money
+     * researching. One overview call fills both, and the keyword row is
+     * upserted so the Keywords page agrees with the article.
+     *
+     * Best-effort on purpose: enrichment must never take the draft down with
+     * it, and null remains the honest value when the lookup fails.
+     */
+    let facts: { volume: number | null; difficulty: number | null } = {
+      volume: selection?.volume ?? null,
+      difficulty: selection?.difficulty ?? null,
+    };
+    if (facts.volume === null && facts.difficulty === null && hasDataForSEOCredentials()) {
+      try {
+        const map = await fetchKeywordFacts([keyword], {
+          languageCode: workspace.language ?? "en",
+          locationCode: workspace.location_code ?? 2840,
+        });
+        facts = map.get(keyword.toLowerCase()) ?? facts;
+        await supabase.from("keywords").upsert(
+          {
+            workspace_id: workspaceId,
+            term: keyword,
+            volume: facts.volume,
+            difficulty: facts.difficulty,
+            intent: research.intent.intent,
+            status: "planned",
+          },
+          { onConflict: "workspace_id,term" },
+        );
+      } catch (err) {
+        console.warn("[generate] keyword facts lookup failed:", err);
+      }
+    }
+
     const provider = resolveProvider(workspace.ai_provider, workspace.ai_model);
+    // The other articles in this workspace, so the draft can link to something
+    // that exists. Excludes itself, and anything still unwritten.
+    const { data: siblings } = await supabase
+      .from("articles")
+      .select("title, keyword")
+      .eq("workspace_id", workspaceId)
+      .neq("id", article.id)
+      .not("content", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
     const generator = provider.streamArticle({
       keyword,
       title,
       voiceRules,
       language: locale.label,
       research,
+      internalLinkTargets: (siblings ?? [])
+        .filter((a): a is { title: string; keyword: string } =>
+          Boolean(a.title && a.keyword))
+        .map((a) => ({ title: a.title, keyword: a.keyword })),
     });
 
     let articleResult;
@@ -154,20 +251,80 @@ export async function generateArticle(
     }
     if (!articleResult) throw new Error("Generator ended without returning a result");
 
-    let processedHtml = articleResult.html;
-    try {
-      processedHtml = await embedYouTubeVideos(processedHtml, keyword);
-    } catch {
-      // Video embedding is optional.
+    // Deterministic first: the prompt bans em dashes and the model uses them
+    // anyway, so the ban is enforced here where it cannot be ignored.
+    let processedHtml = stripAiTypography(articleResult.html);
+
+    /**
+     * Apply an optional enhancement, and keep the original unless the result is
+     * plausibly better.
+     *
+     * Both steps below assigned straight back into `processedHtml`, and their
+     * try/catch only guarded a throw. A step that *returned* empty therefore
+     * wiped the article, and everything downstream faithfully processed
+     * nothing: fact check "clean" because there were no claims, SEO 0, an empty
+     * Tiptap doc, and a stored article titled "Untitled" after 12,529 tokens
+     * had been paid for. Observed on 2026-08-30.
+     *
+     * These steps embed a video and resolve link placeholders. Neither can
+     * legitimately shrink an article to nothing, so a much shorter result is
+     * a bug in the step, not an edit.
+     */
+    async function enhance(
+      label: string,
+      step: (html: string) => Promise<string>,
+    ): Promise<void> {
+      try {
+        const next = await step(processedHtml);
+        if (!next || next.trim().length < processedHtml.trim().length / 2) {
+          console.warn(
+            `[generate] ${label} returned ${next ? "a suspiciously short result" : "nothing"}; keeping the original HTML`,
+          );
+          return;
+        }
+        processedHtml = next;
+      } catch (err) {
+        console.warn(`[generate] ${label} failed:`, err);
+      }
     }
 
-    try {
-      processedHtml = await resolveInternalLinks(supabase, processedHtml, workspaceId, article.id);
-    } catch {
-      // Link resolution is non-blocking.
-    }
+    await enhance("video embed", (html) => embedYouTubeVideos(html, keyword));
+    await enhance("internal links", (html) =>
+      resolveInternalLinks(supabase, html, workspaceId, article.id),
+    );
+
+    setSpendReporter(null);
+
+    const model = anthropicModel("content");
+    await recordSpend(supabase, {
+      provider: "anthropic",
+      operation: model,
+      costUsd: anthropicCost(
+        model,
+        articleResult.inputTokens ?? 0,
+        articleResult.outputTokens ?? articleResult.tokensUsed,
+      ),
+      inputTokens: articleResult.inputTokens ?? null,
+      outputTokens: articleResult.outputTokens ?? articleResult.tokensUsed,
+      workspaceId,
+      articleId: article.id,
+      runId: job.id,
+    });
 
     const factCheck = factCheckArticle(processedHtml, research);
+
+    // `scoreArticle` and its seven on-page checks have existed all along, but
+    // nothing ran them at generation: only the manual `scoreArticleSeo` action
+    // did. So every fresh draft opened with a hard 0 in the ring and "Not
+    // scored / Generate content to score" beside it, on an article that had
+    // just been generated. Scoring is pure and local, so there is no reason to
+    // make a human press a button for it.
+    const seo = scoreArticle(processedHtml, keyword, {
+      metaDescription: articleResult.metaDescription,
+    });
+    // The half that matches what this product actually claims: not "will it
+    // rank" but "will an answer engine quote it".
+    const aeo = scoreCitationReadiness(processedHtml, keyword);
     const tiptapContent = htmlToTiptapJson(processedHtml);
 
     let featuredImageUrl: string | null = null;
@@ -188,7 +345,7 @@ export async function generateArticle(
       // Image generation is optional.
     }
 
-    await supabase
+    const { error: saveError } = await supabase
       .from("articles")
       .update({
         content: tiptapContent,
@@ -199,19 +356,45 @@ export async function generateArticle(
         research,
         fact_checks: factCheck,
         search_intent: research.intent.intent,
+        seo_score: seo.score,
+        seo_checks: seo.checks,
+        aeo_score: aeo.score,
+        aeo_checks: aeo.checks,
         fact_check_verdict: factCheck.verdict,
         // Null for manual generation; the reviewer then sees "you picked this"
         // rather than a fabricated rationale.
         selection_reasons: selection?.reasons ?? null,
         selection_score: selection?.score ?? null,
         // Deliberately not `?? 0`. Unmeasured difficulty is not zero difficulty.
-        keyword_difficulty: selection?.difficulty ?? null,
+        keyword_difficulty: facts.difficulty,
+        // Same reasoning, and the same column the picker already knew: this
+        // defaulted to 0, so every article listed "0 searches/mo" for a term
+        // chosen precisely because it had volume.
+        volume: facts.volume,
         // Always `review`, never `approved` or `scheduled`. The approval gate is
         // the point: a machine may write, a human decides whether it ships.
         status: "review",
         updated_at: new Date().toISOString(),
       })
       .eq("id", article.id);
+
+    // The most expensive write in the product: research, a full model call and
+    // a fact check have already been paid for by the time we get here. This
+    // update used to discard its error, so a single missing column - migration
+    // 022 not yet applied, say - lost the whole article while the cron reported
+    // "generated, 2,340 words, fact check clean" and the job row said completed.
+    // Observed exactly that on 2026-08-30.
+    if (saveError) {
+      await supabase
+        .from("generation_jobs")
+        .update({
+          status: "error",
+          error: `article save failed: ${saveError.message}`,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", job.id);
+      throw new Error(`Could not save the generated article: ${saveError.message}`);
+    }
 
     await supabase
       .from("generation_jobs")

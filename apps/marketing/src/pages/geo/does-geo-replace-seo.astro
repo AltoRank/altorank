@@ -1,0 +1,167 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildArticleSchema, buildFAQSchema } from '@/lib/schema';
+import { APP_NAME, SIGNUP_URL, SITE_URL, AUTHOR_NAME, AUTHOR_URL, PRIMARY_CTA } from '@/constants';
+
+const pageUrl = `${SITE_URL}/geo/does-geo-replace-seo`;
+
+const publishDate = new Date('2026-06-21');
+const dateModified = new Date('2026-06-21');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Does GEO replace SEO?', href: '/geo/does-geo-replace-seo' },
+];
+
+// A row-per-difference table (AI engines extract these verbatim for the snippet).
+const VS_ROWS = [
+  { dimension: 'Goal', seo: 'Rank in the top 10 organic results', geo: 'Get cited inside AI answers (ChatGPT, Perplexity, AI Overviews)' },
+  { dimension: 'Surface', seo: 'Google/Bing results pages', geo: 'AI-generated answers + AI shopping' },
+  { dimension: 'Prerequisite', seo: 'Crawlable, indexed, authoritative pages', geo: 'A page that already ranks + structured, quotable content' },
+  { dimension: 'Wins on', seo: 'Backlinks, relevance, technical health', geo: 'Schema, answer-shaped content, entity clarity, trust' },
+  { dimension: 'Measured by', seo: 'Rankings, organic traffic', geo: 'Citation/mention rate, share-of-voice in AI answers' },
+  { dimension: 'Relationship', seo: 'The foundation', geo: 'The layer on top. It needs SEO to work' },
+];
+
+const FAQS = [
+  { question: 'Does GEO replace SEO?', answer: 'No. GEO (Generative Engine Optimization) builds on SEO. It does not replace it. AI engines cite content that already ranks: roughly 99% of AI Overview citations and ~87% of ChatGPT citations come from indexed top-10 results. Classic SEO earns the index spot; GEO makes that page citable inside AI answers. You need both.' },
+  { question: 'Is SEO dead because of AI search?', answer: 'No. AI search changes how content is surfaced, but it sources its answers from the same index SEO optimises for. If your pages are not indexed and ranking, AI engines have nothing to cite. SEO is more foundational under AI search, not less.' },
+  { question: "What's the difference between GEO and SEO?", answer: 'SEO optimises a page to rank in the top 10 organic results. GEO optimises that same page to be cited inside AI-generated answers: through structured data (FAQ, Product, Article schema), direct answer-up-top content, entity clarity, and trust signals. SEO gets you into the index; GEO gets you quoted from it.' },
+  { question: 'Do I need both SEO and GEO?', answer: 'Yes. GEO without SEO fails the foundational gate (an unindexed page cannot be cited), and SEO without GEO leaves citations on the table as AI answers eat click-through. For agencies, the efficient move is content that is both ranked and quotable, built once, optimised for both.' },
+  { question: 'How do agencies do GEO and SEO together?', answer: `Produce content that ranks (relevance, internal links, technical health) and is citable (schema, a 40–55-word direct answer per section, named-author E-E-A-T). After Google's 2025 scaled-content enforcement, both reward reviewed, trustworthy content, which is why ${APP_NAME} is approval-first: a human gate before publish is the trust signal SEO and GEO both look for.` },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: 'Does GEO Replace SEO? How GEO and SEO Work Together for Agencies (2026)',
+    description: 'No, GEO builds on SEO. AI engines cite content that already ranks. Here is how generative engine optimization and SEO work together for e-commerce agencies.',
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildFAQSchema(FAQS),
+];
+---
+
+<PSEO
+  title="Does GEO Replace SEO? (2026 Guide for Agencies)"
+  description="No, GEO builds on SEO. AI engines cite content that already ranks. How generative engine optimization and SEO work together for e-commerce agencies."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  {/* ── HERO ──────────────────────────────────────────── */}
+  <header class="border-b border-line bg-[radial-gradient(600px_300px_at_88%_-10%,var(--accent-soft),transparent_70%),linear-gradient(180deg,var(--bg),var(--bg-2))] py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h1 class="mb-6 text-[clamp(34px,5vw,48px)] font-semibold leading-[1.05] tracking-[-0.025em] text-ink [text-wrap:balance]">
+        Does GEO replace SEO?
+      </h1>
+      <p class="mb-5 text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
+        No. Generative Engine Optimization (GEO) doesn't replace SEO, it builds on it. AI engines cite content that already ranks: ~99% of AI Overview citations and ~87% of ChatGPT citations come from indexed top-10 results. Classic SEO earns the index spot; GEO makes that page <em>citable</em> inside AI answers.
+      </p>
+      <div class="mt-7 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
+        <span>By <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
+        <span class="text-line">·</span>
+        <span>Published <time datetime={publishDate.toISOString().slice(0, 10)}>{publishDateDisplay}</time></span>
+        <span class="text-line">·</span>
+        <span>6 min read</span>
+      </div>
+    </div>
+  </header>
+
+  {/* ── BODY ──────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+      <h2 class="mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">Why AI engines need SEO first</h2>
+      <p>Every major AI answer engine assembles its response from sources it can find and trusts. In practice, that source set is the search index. Google's AI Overviews overwhelmingly cite pages already ranking in the organic top 10; ChatGPT's citations track Bing's top results closely. If a page isn't indexed and ranking, the engine has nothing to pull from, so it can't cite you, no matter how well the content is written.</p>
+      <p>That's why, for a DR-starved or new site, the foundational work is still classic SEO: be crawlable, be indexed, earn enough authority to rank. GEO is what you layer on a page that's <span class="font-medium text-ink">already in the running</span>.</p>
+
+      <h2 class="mt-8 mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">What GEO adds on top</h2>
+      <p>GEO makes a ranking page easy for an AI engine to quote and attribute. The levers:</p>
+      <ul class="my-1 flex flex-col gap-2 pl-5 list-disc">
+        <li><strong class="font-semibold text-ink">Structured data</strong>, FAQPage, HowTo, Product/Offer/Review, Article schema. Engines lift structured answers disproportionately.</li>
+        <li><strong class="font-semibold text-ink">Answer-shaped content</strong>, a self-contained 40–55-word answer under each heading, so a sentence can be quoted out of context.</li>
+        <li><strong class="font-semibold text-ink">Entity clarity</strong>, a resolvable brand + named author (E-E-A-T), so the engine knows who it's citing.</li>
+        <li><strong class="font-semibold text-ink">Original, quotable specifics</strong>, a stat, a number, a defensible claim per section.</li>
+      </ul>
+
+      <h2 class="mt-8 mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">What this means for an agency</h2>
+      <p>You run both, but you don't write the content twice. The efficient play is a single page that ranks <em>and</em> is quotable: SEO fundamentals plus the GEO layer above. And because Google's 2025 scaled-content-abuse enforcement penalised unreviewed AI volume, both SEO and GEO now reward content that reads as trustworthy and reviewed.</p>
+      <p>That's the case for an <a href="/alternatives/contentbird" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">approval-first</a> workflow: a human editorial gate before publish is the trust signal both classic search and AI engines look for. {APP_NAME} is built that way: content that's ranked, citable, and reviewed before it reaches a client's brand.</p>
+    </div>
+  </section>
+
+  {/* ── VS TABLE ──────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[900px] px-8">
+      <div class="mb-8">
+        <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">GEO vs SEO</h2>
+      </div>
+      <div class="overflow-hidden rounded-lg border border-line bg-bg">
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[640px] text-sm">
+            <caption class="sr-only">GEO versus SEO, compared across goal, surface, prerequisite, ranking factors, measurement, and relationship.</caption>
+            <thead class="bg-panel text-left font-mono text-[11px] uppercase tracking-[0.06em] text-ink-2">
+              <tr>
+                <th scope="col" class="px-5 py-3.5 font-medium">Dimension</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">SEO</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">GEO</th>
+              </tr>
+            </thead>
+            <tbody>
+              {VS_ROWS.map((row, i) => (
+                <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+                  <td class="px-5 py-3.5 text-ink font-medium">{row.dimension}</td>
+                  <td class="px-5 py-3.5 text-ink-2">{row.seo}</td>
+                  <td class="px-5 py-3.5 text-ink-2">{row.geo}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {/* ── FAQ ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <div class="mb-8">
+        <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">Frequently asked questions</h2>
+      </div>
+      <div class="flex flex-col gap-3">
+        {FAQS.map((f) => (
+          <details class="group rounded-lg border border-line bg-bg p-5">
+            <summary class="flex cursor-pointer items-center justify-between gap-4 text-[15px] font-medium text-ink list-none">
+              <span>{f.question}</span>
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-panel text-ink-3 transition-transform group-open:rotate-45">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 5v14M5 12h14" /></svg>
+              </span>
+            </summary>
+            <p class="mt-3 text-sm leading-relaxed text-ink-2">{f.answer}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* ── CTA ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 text-center">
+      <h2 class="mb-3 text-[clamp(22px,3vw,28px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
+        Content that ranks, gets cited, and is reviewed before it ships
+      </h2>
+      <p class="mb-7 mx-auto max-w-[520px] text-[15px] leading-relaxed text-ink-2">
+        {APP_NAME} produces SEO content for e-commerce agencies with the GEO layer (schema, answer-shaped content) and an editorial-approval gate built in, across every client store.
+      </p>
+      <Button href={SIGNUP_URL} size="lg">
+  {PRIMARY_CTA.label}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
+</Button>
+    </div>
+  </section>
+</PSEO>

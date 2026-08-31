@@ -1,0 +1,53 @@
+---
+import Marketing from './Marketing.astro';
+import { buildBreadcrumbSchema } from '@/lib/schema';
+import CTABanner from '@/components/shared/CTABanner.astro';
+
+interface Props {
+  title: string;
+  description: string;
+  ogImage?: string;
+  structuredData?: object | object[];
+  breadcrumbs: { label: string; href: string }[];
+  noindex?: boolean;
+  lang?: string;
+  alternateLanguages?: { hreflang: string; href: string }[];
+}
+
+const { title, description, ogImage, structuredData: extraSchema, breadcrumbs, noindex, lang, alternateLanguages } = Astro.props;
+
+const allSchema = [
+  buildBreadcrumbSchema(breadcrumbs),
+  ...(Array.isArray(extraSchema) ? extraSchema : extraSchema ? [extraSchema] : []),
+];
+---
+
+<Marketing
+  title={`${title} | AltoRank`}
+  description={description}
+  ogImage={ogImage}
+  structuredData={allSchema}
+  noindex={noindex}
+  lang={lang}
+  alternateLanguages={alternateLanguages}
+>
+  <!-- Breadcrumbs -->
+  <nav data-print-hide class="mx-auto max-w-[1240px] px-8 pt-8">
+    <div class="flex items-center gap-2 text-xs text-ink-3">
+      {breadcrumbs.map((crumb, i) => (
+        <>
+          {i > 0 && <span>/</span>}
+          {i < breadcrumbs.length - 1 ? (
+            <a href={crumb.href} class="hover:text-ink transition-colors">{crumb.label}</a>
+          ) : (
+            <span class="text-ink-2">{crumb.label}</span>
+          )}
+        </>
+      ))}
+    </div>
+  </nav>
+
+  <slot />
+
+  <CTABanner />
+</Marketing>

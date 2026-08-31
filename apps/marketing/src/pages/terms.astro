@@ -1,0 +1,63 @@
+---
+import Marketing from '@/layouts/Marketing.astro';
+import { APP_NAME, SITE_URL , LEGAL_ENTITY} from '@/constants';
+
+// NOTE FOR THE TEAM: starting DRAFT, not legal advice. Replace [bracketed] specifics
+// and have it reviewed by counsel before relying on it. Kept noindex until finalized.
+const updated = '21 June 2026';
+---
+
+<Marketing
+  title={`Terms of Service | ${APP_NAME}`}
+  description={`The terms governing your use of ${APP_NAME}.`}
+  noindex={true}
+>
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h1 class="text-[clamp(30px,4.5vw,42px)] font-semibold leading-[1.08] tracking-[-0.025em] text-ink">Terms of Service</h1>
+      <p class="mt-3 text-sm text-ink-3">Last updated: {updated}</p>
+      <p class="mt-4 rounded-lg border border-line bg-panel/50 p-4 text-[13px] leading-relaxed text-ink-3">
+        This is a starting template and not legal advice. The operator should finalize the bracketed details and have it reviewed before relying on it.
+      </p>
+
+      <div class="mt-8 flex flex-col gap-5 text-[15px] leading-relaxed text-ink-2">
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">1. Agreement</h2>
+          <p>These Terms govern your access to and use of {APP_NAME} at {SITE_URL}, provided by {LEGAL_ENTITY.name}, a company incorporated in {LEGAL_ENTITY.country} (VAT {LEGAL_ENTITY.vat}). By creating an account or using the service, you agree to these Terms.</p>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">2. The service</h2>
+          <p>{APP_NAME} is a software service for producing and managing SEO and AI-search content across multiple client workspaces. We may update, improve, or change features over time.</p>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">3. Accounts & acceptable use</h2>
+          <p>You are responsible for your account, the accuracy of your information, and all activity under it. You agree not to misuse the service, infringe others' rights, publish unlawful content, or attempt to disrupt or reverse-engineer the service.</p>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">4. Your content</h2>
+          <p>You retain ownership of the content and data you create. You grant us the limited rights needed to host and process it to provide the service. You are responsible for ensuring you have the rights to any content and client data you upload.</p>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">5. Plans, billing & trials</h2>
+          <p>Paid plans (from €69/mo) are billed in advance on a recurring basis. There is no free trial. Fees are non-refundable except where required by law. [Confirm billing terms, taxes, and cancellation policy.]</p>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">6. Termination</h2>
+          <p>You may cancel at any time. We may suspend or terminate access for breach of these Terms or non-payment. On termination, your right to use the service ends and we may delete your data after a reasonable period.</p>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">7. Disclaimers & liability</h2>
+          <p>The service is provided “as is”. To the extent permitted by law, we disclaim implied warranties and our liability is limited as set out here. [Confirm warranty disclaimer and liability cap with counsel.] AI-generated output should be reviewed before publishing, the editorial-approval workflow exists for this reason.</p>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">8. Governing law</h2>
+          <p>These Terms are governed by the laws of {LEGAL_ENTITY.country}. [Confirm the competent court/venue with counsel before launch.]</p>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">9. Contact</h2>
+          <p>Questions about these Terms: [contact email].</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</Marketing>

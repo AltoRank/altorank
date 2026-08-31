@@ -1,0 +1,168 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildArticleSchema, buildFAQSchema } from '@/lib/schema';
+import { APP_NAME, SIGNUP_URL, SITE_URL, AUTHOR_NAME, AUTHOR_URL, PRIMARY_CTA } from '@/constants';
+
+const pageUrl = `${SITE_URL}/geo/geo-services-pricing`;
+
+const publishDate = new Date('2026-06-21');
+const dateModified = new Date('2026-06-21');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'GEO services pricing', href: '/geo/geo-services-pricing' },
+];
+
+// Pricing components: what an agency actually bills for, and what scales each line.
+const PRICE_ROWS = [
+  { line: 'Baseline audit + prompt-set setup', model: 'One-time', driver: 'Number of clients, prompt count, current entity/schema state' },
+  { line: 'Monthly citation tracking + reporting', model: 'Monthly retainer', driver: 'Number of engines and prompts, white-label portal' },
+  { line: 'Answer-shaped content production', model: 'Per-page or monthly volume', driver: 'Pages per month, schema depth, EU locales' },
+  { line: 'Schema + technical implementation', model: 'Project or monthly', driver: 'Catalog size, CMS, number of templates' },
+  { line: 'Digital PR / mention building', model: 'Monthly or project', driver: 'Target domains from the incumbent-source map' },
+];
+
+const FAQS = [
+  { question: 'How do agencies price GEO services?', answer: 'As a layer on the existing SEO retainer, not a standalone product, and on three components: a one-time baseline (audit + frozen prompt-set), a monthly tracking-and-reporting fee, and content/PR production billed by volume. The guiding rule is to price the work and the reporting, never a guaranteed citation, because GEO is citation readiness and the engine decides the rest.' },
+  { question: 'How much should you charge for GEO?', answer: 'It depends on scope, and there is no fixed market rate yet. The category is new enough that quoting a single number would be guesswork. Price it like a content-plus-reporting retainer: a one-time baseline, then a monthly fee that scales with the number of engines tracked, prompts monitored, and pages produced, layered on top of the existing SEO engagement. Scope the deliverables, price those, and avoid pricing an outcome you can’t control.' },
+  { question: 'Should GEO be a standalone package or an add-on?', answer: 'An add-on. GEO depends on SEO underneath it, an unindexed page cannot be cited in an AI answer, so a standalone "GEO package" detached from content and technical SEO tends to oversell and underdeliver. Positioning GEO as an upgrade tier on the existing retainer is both more honest and an easier sell, because the foundation is already in place.' },
+  { question: 'Can you guarantee a client will be cited in ChatGPT?', answer: 'No, and you should not promise it. GEO is citation readiness, not a guaranteed placement, the engine decides whether to cite a source. Price and promise the work (content, schema, tracking, digital PR) and report citation rate as a trended outcome metric. Guaranteeing a specific citation is undeliverable and a credibility risk the moment a client checks the answer themselves.' },
+  { question: 'What deliverables justify a GEO retainer?', answer: `A baseline audit plus a frozen prompt-set; a monthly citation report (citation rate, share-of-voice, and the incumbent-source map, broken down per engine); answer-shaped content with the right schema; and digital-PR work targeting the domains the engines already trust. ${APP_NAME} covers the production and the white-label reporting side, so the retainer’s margin holds as you add clients.` },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: 'How to Price GEO Services for Clients (Agency Guide, 2026)',
+    description: 'A pricing model for selling GEO as a service: sell it as a layer on the SEO retainer, bill a one-time baseline plus monthly tracking and content production, and price the work, never a guaranteed citation.',
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildFAQSchema(FAQS),
+];
+---
+
+<PSEO
+  title="GEO Services Pricing: How to Sell GEO to Clients (2026)"
+  description="A pricing model for GEO services: sell it as a layer on the SEO retainer, bill a one-time baseline plus monthly tracking and content, and price the work, never a guaranteed citation."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  {/* ── HERO ──────────────────────────────────────────── */}
+  <header class="border-b border-line bg-[radial-gradient(600px_300px_at_88%_-10%,var(--accent-soft),transparent_70%),linear-gradient(180deg,var(--bg),var(--bg-2))] py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h1 class="mb-6 text-[clamp(34px,5vw,48px)] font-semibold leading-[1.05] tracking-[-0.025em] text-ink [text-wrap:balance]">
+        How to price GEO services for clients
+      </h1>
+      <p class="mb-5 text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
+        Sell GEO as a layer on the existing SEO retainer, not a standalone product, and price it on three things: a one-time baseline (audit + frozen prompt-set), a monthly tracking-and-reporting fee, and content/PR production billed by volume. The discipline that keeps it credible: price the <em>work</em>, never a guaranteed citation.
+      </p>
+      <div class="mt-7 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
+        <span>By <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
+        <span class="text-line">·</span>
+        <span>Published <time datetime={publishDate.toISOString().slice(0, 10)}>{publishDateDisplay}</time></span>
+        <span class="text-line">·</span>
+        <span>7 min read</span>
+      </div>
+    </div>
+  </header>
+
+  {/* ── BODY ──────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+      <h2 class="mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">Sell GEO as a layer, not a product</h2>
+      <p>GEO only works on top of SEO: AI engines cite pages that are already indexed and ranking, so an unindexed page has nothing to be cited from (the full argument is in <a href="/geo/does-geo-replace-seo" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">does GEO replace SEO?</a>). A standalone "GEO package" sold detached from content and technical SEO tends to oversell and underdeliver. The cleaner model is an <span class="font-medium text-ink">upgrade tier on the existing retainer</span>. The foundation is already there, so you're adding schema, answer-shaped content, and citation reporting on top of work the client already buys.</p>
+
+      <h2 class="mt-8 mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">Price the work, never the citation</h2>
+      <p>GEO is citation <em>readiness</em>, not a guaranteed placement, the engine decides whether to cite a source. So promising "we'll get you cited in ChatGPT" is both undeliverable and a credibility risk: the client can check the answer in ten seconds. Instead, scope and price the deliverables (content, schema, tracking, digital PR) and report <span class="font-medium text-ink">citation rate</span> as a trended outcome metric. You sell a process and a measurement, which is exactly what a retainer should be.</p>
+
+      <h2 class="mt-8 mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">There's no fixed market rate yet</h2>
+      <p>The category is new enough that quoting a single "GEO costs €X/mo" number would be guesswork, and anyone who gives you a precise market average is inventing it. Price it the way you'd price a content-plus-reporting retainer: a one-time baseline, then a monthly fee that scales with the number of engines tracked, prompts monitored, and pages produced. Scope the deliverables below, price those, and let the work, not a made-up benchmark, set the number.</p>
+    </div>
+  </section>
+
+  {/* ── PRICING COMPONENTS ────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[900px] px-8">
+      <div class="mb-8">
+        <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">The five pricing components</h2>
+      </div>
+      <div class="overflow-hidden rounded-lg border border-line bg-bg">
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[640px] text-sm">
+            <caption class="sr-only">The five things an agency bills for in a GEO engagement, the pricing model for each, and what scales it.</caption>
+            <thead class="bg-panel text-left font-mono text-[11px] uppercase tracking-[0.06em] text-ink-2">
+              <tr>
+                <th scope="col" class="px-5 py-3.5 font-medium">Deliverable</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">Pricing model</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">What scales it</th>
+              </tr>
+            </thead>
+            <tbody>
+              {PRICE_ROWS.map((row, i) => (
+                <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+                  <td class="px-5 py-3.5 text-ink font-medium">{row.line}</td>
+                  <td class="px-5 py-3.5 text-ink-2">{row.model}</td>
+                  <td class="px-5 py-3.5 text-ink-2">{row.driver}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p class="mt-5 text-[14px] leading-relaxed text-ink-3">The monthly reporting line is built from the method in <a href="/geo/track-ai-citations-for-clients" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">how to track AI citations for clients</a>; the content line, for stores, is detailed in <a href="/geo/optimize-shopify-for-chatgpt-shopping" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">optimize Shopify for ChatGPT Shopping</a>.</p>
+    </div>
+  </section>
+
+  {/* ── MARGIN ANGLE ──────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+      <h2 class="mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">Where the margin comes from</h2>
+      <p>The two cost centres in a GEO retainer are content production and monthly reporting, and both are where per-client labour quietly eats your margin as you add clients. Keeping the price competitive while protecting margin means driving those two lines down without dropping quality or shipping unreviewed AI to a client's brand.</p>
+      <p>That's the role {APP_NAME} plays: an <a href="/alternatives/contentbird" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">approval-first content engine</a> that produces answer-shaped, schema-rich pages per client, each reviewed before it publishes, and a white-label reporting portal to surface GEO-citation tracking under your own brand. At €69 Managed / €199 Agency, the platform cost sits well under a single client's GEO line, so the retainer's margin holds as the roster grows.</p>
+    </div>
+  </section>
+
+  {/* ── FAQ ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <div class="mb-8">
+        <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">Frequently asked questions</h2>
+      </div>
+      <div class="flex flex-col gap-3">
+        {FAQS.map((f) => (
+          <details class="group rounded-lg border border-line bg-bg p-5">
+            <summary class="flex cursor-pointer items-center justify-between gap-4 text-[15px] font-medium text-ink list-none">
+              <span>{f.question}</span>
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-panel text-ink-3 transition-transform group-open:rotate-45">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 5v14M5 12h14" /></svg>
+              </span>
+            </summary>
+            <p class="mt-3 text-sm leading-relaxed text-ink-2">{f.answer}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* ── CTA ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 text-center">
+      <h2 class="mb-3 text-[clamp(22px,3vw,28px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
+        Run a GEO offer with the margin built in
+      </h2>
+      <p class="mb-7 mx-auto max-w-[520px] text-[15px] leading-relaxed text-ink-2">
+        {APP_NAME} produces the citable content and the white-label reports a GEO retainer runs on, across every client, reviewed before it ships. Free to self-host, €69/mo managed.
+      </p>
+      <Button href={SIGNUP_URL} size="lg">
+  {PRIMARY_CTA.label}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
+</Button>
+    </div>
+  </section>
+</PSEO>

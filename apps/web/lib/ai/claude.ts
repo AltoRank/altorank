@@ -25,7 +25,19 @@ export class ClaudeProvider implements AIProvider {
 
     const stream = this.client.messages.stream({
       model: this.model,
-      max_tokens: 8192,
+      /**
+       * Headroom for thinking plus the article.
+       *
+       * 8192 was not enough and failed silently. Sonnet 5 spent 6,210 tokens
+       * thinking on a 3,000-word brief, leaving under 2,000 for prose, hit
+       * max_tokens mid-article, and on one run produced no text block at all -
+       * so a generation that burned 12,529 tokens stored an empty document
+       * titled "Untitled". Measured on 2026-08-30.
+       *
+       * A 3,000-word article is roughly 4,000-5,000 output tokens before
+       * markup, so the ceiling has to clear thinking AND the piece.
+       */
+      max_tokens: 24_000,
       system: systemPrompt,
       messages: [
         {
@@ -63,6 +75,17 @@ export class ClaudeProvider implements AIProvider {
       outputTokens = finalMessage.usage?.output_tokens ?? 0;
     }
 
+    // Truncation has to be loud. A run that stops at the ceiling produces a
+    // half-article or, when thinking consumed the whole budget, none at all -
+    // and both used to be stored as a finished draft.
+    if (finalMessage.stop_reason === "max_tokens") {
+      throw new Error(
+        `Generation hit the token ceiling after ${outputTokens} output tokens ` +
+          `(${fullHtml.length} chars of article). Raise max_tokens or lower the ` +
+          `target word count; storing a truncated draft would be worse.`,
+      );
+    }
+
     const { title, metaDescription, cleanHtml } = extractArticleMeta(fullHtml);
 
     return {
@@ -71,6 +94,8 @@ export class ClaudeProvider implements AIProvider {
       metaDescription,
       wordCount: countWords(cleanHtml),
       tokensUsed: inputTokens + outputTokens,
+      inputTokens,
+      outputTokens,
     };
   }
 }

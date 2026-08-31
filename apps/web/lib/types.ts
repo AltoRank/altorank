@@ -42,8 +42,13 @@ export type Workspace = {
   color: AvatarColor;
   plan: string;
   status: "on" | "review" | "paused" | "setup";
-  dr: number;
-  traffic: string;
+  /** Domain rating 0-100. null when nobody has measured it: render as —, never 0. */
+  dr: number | null;
+  /** Publishing platform observed during analysis. null when undetermined. */
+  detected_platform: string | null;
+  detected_platform_at: string | null;
+  /** Organic sessions/mo, preformatted. null when unmeasured: render —, never 0. */
+  traffic: string | null;
   ai_provider: AIProviderType | null;
   ai_model: string | null;
   language: string;
@@ -66,7 +71,12 @@ export type Article = {
   approved_by: string | null;
   approved_at: string | null;
   seo_score: number;
-  volume: number;
+  /** Citation readiness 0-100. null when not scored: render —, never 0. */
+  aeo_score: number | null;
+  aeo_checks: unknown;
+  /** Search volume for the target keyword, captured when the draft was written.
+   *  null when nothing supplied one: render —, never 0. */
+  volume: number | null;
   position: number | null;
   word_count: number;
   cms: string | null;
@@ -124,7 +134,8 @@ export type Backlink = {
   id: string;
   workspace_id: string;
   source_domain: string;
-  source_dr: number;
+  /** Referring domain rating. null when unmeasured: exclude from averages. */
+  source_dr: number | null;
   anchor_text: string;
   target_url: string;
   status: BacklinkStatus;
@@ -177,7 +188,8 @@ export type Report = {
   workspace_id: string;
   period: string;
   articles_count: number;
-  traffic: string;
+  /** Organic sessions/mo, preformatted. null when unmeasured: render —, never 0. */
+  traffic: string | null;
   keywords_count: number;
   status: string;
   url: string | null;
@@ -228,7 +240,8 @@ export type GenerationJob = {
 export type KeywordRanking = {
   id: string;
   keyword_id: string;
-  position: number;
+  /** Organic position. null when the domain was not in the results checked. */
+  position: number | null;
   url: string | null;
   checked_at: string;
 };

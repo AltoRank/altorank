@@ -1,0 +1,93 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { INDUSTRIES } from '@/data/industries';
+import { buildFAQSchema } from '@/lib/schema';
+import { APP_NAME, SIGNUP_URL, PRIMARY_CTA } from '@/constants';
+
+export function getStaticPaths() {
+  return INDUSTRIES.map((ind) => ({
+    params: { industry: ind.slug },
+    props: { industry: ind },
+  }));
+}
+
+const { industry } = Astro.props;
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Industries', href: '/for' },
+  { label: industry.name, href: `/for/${industry.slug}` },
+];
+
+const structuredData = buildFAQSchema(industry.faq);
+---
+
+<PSEO
+  title={`${APP_NAME} for ${industry.name}`}
+  description={industry.description}
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[1240px] px-8">
+      <div class="mx-auto max-w-[720px]">
+        <h1 class="mb-4 text-[42px] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+          {industry.headline}
+        </h1>
+        <p class="mb-12 text-lg text-ink-2 leading-relaxed">{industry.description}</p>
+
+        {/* Challenges */}
+        <div class="mb-10">
+          <h2 class="mb-4 text-xl font-semibold tracking-[-0.015em]">Common challenges</h2>
+          <ul class="flex flex-col gap-3">
+            {industry.challenges.map((challenge) => (
+              <li class="flex items-start gap-3 text-ink-2">
+                <svg class="mt-0.5 w-[16px] h-[16px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="oklch(0.55 0.13 25)" stroke-width="1.8">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="m9 9 6 6M15 9l-6 6" />
+                </svg>
+                {challenge}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Benefits */}
+        <div class="mb-10">
+          <h2 class="mb-4 text-xl font-semibold tracking-[-0.015em]">How {APP_NAME} helps</h2>
+          <ul class="flex flex-col gap-3">
+            {industry.benefits.map((benefit) => (
+              <li class="flex items-start gap-3 text-ink-2">
+                <svg class="mt-0.5 w-[16px] h-[16px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="oklch(0.55 0.13 155)" stroke-width="2">
+                  <path d="M5 12.5 10 17 19 7" />
+                </svg>
+                {benefit}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* CTA */}
+        <Button href={SIGNUP_URL} size="lg" arrow>
+  {PRIMARY_CTA.label}
+</Button>
+      </div>
+    </div>
+  </section>
+
+  {/* FAQ */}
+  <section class="border-b border-line py-16">
+    <div class="mx-auto max-w-[720px] px-8">
+      <h2 class="mb-6 text-2xl font-semibold tracking-[-0.015em]">FAQ</h2>
+      <div class="flex flex-col gap-4">
+        {industry.faq.map((item) => (
+          <div class="rounded-lg border border-line bg-panel p-5">
+            <h3 class="mb-2 font-semibold">{item.question}</h3>
+            <p class="text-sm text-ink-2 leading-relaxed">{item.answer}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+</PSEO>

@@ -23,6 +23,32 @@ export interface ReportData {
   }>;
   ga4Summary: { pageviews: number; sessions: number } | null;
   gscSummary: { clicks: number; impressions: number; ctr: number } | null;
+  /**
+   * AI visibility from the most recent GEO sweep, or null when this workspace
+   * has never been measured.
+   *
+   * The cron has been writing `geo_results` and the dashboard has been reading
+   * them, but the client report — the one artifact an agency actually hands to
+   * the person paying for GEO work — showed none of it. Measuring something and
+   * then omitting it from the invoice-adjacent document is the same class of
+   * problem as not measuring it.
+   *
+   * Null rather than zeroes when unmeasured, per the house rule: a workspace
+   * nobody probed is not a workspace with zero citations.
+   */
+  geoSummary: {
+    /** Distinct buyer questions asked this run. */
+    promptsTracked: number;
+    /** Engines the sweep covered, e.g. ChatGPT, Perplexity. */
+    engines: string[];
+    /** Share of answers naming the brand at all, 0-1. */
+    mentionRate: number;
+    /** Share of answers linking the brand's own domain, 0-1. */
+    citationRate: number;
+    /** Rival domains cited most often on the same questions. */
+    topCompetitors: Array<{ domain: string; citations: number }>;
+    checkedAt: string;
+  } | null;
 }
 
 /**
@@ -161,6 +187,54 @@ export async function aggregateReportData(
       }
     : null;
 
+  // --- AI visibility -------------------------------------------------------
+  // Scoped to the latest sweep rather than the report period: a GEO run is a
+  // snapshot of what the engines answer today, so averaging several sweeps
+  // across a month would blur the number the client is being shown. The window
+  // matches getLatestGeoResults, which the dashboard already uses, so the report
+  // and the screen agree.
+  const { data: geoRows } = await supabase
+    .from("geo_results")
+    .select("prompt, engine, mentioned, cited, competitor_domains, checked_at, error")
+    .eq("workspace_id", workspaceId)
+    .order("checked_at", { ascending: false })
+    .limit(200);
+
+  let geoSummary: ReportData["geoSummary"] = null;
+  if (geoRows?.length) {
+    const newest = new Date(geoRows[0].checked_at as string).getTime();
+    const SWEEP_WINDOW_MS = 60 * 60 * 1000;
+    const run = geoRows.filter(
+      (r) =>
+        !r.error &&
+        newest - new Date(r.checked_at as string).getTime() < SWEEP_WINDOW_MS,
+    );
+
+    // Every probe in the run errored: measured, but nothing to report. Left null
+    // so the report says "not measured" instead of "cited in 0% of answers",
+    // which would read as a finding rather than an absence.
+    if (run.length) {
+      const counts = new Map<string, number>();
+      for (const r of run) {
+        for (const domain of (r.competitor_domains as string[] | null) ?? []) {
+          counts.set(domain, (counts.get(domain) ?? 0) + 1);
+        }
+      }
+
+      geoSummary = {
+        promptsTracked: new Set(run.map((r) => r.prompt as string)).size,
+        engines: [...new Set(run.map((r) => r.engine as string))].sort(),
+        mentionRate: run.filter((r) => r.mentioned).length / run.length,
+        citationRate: run.filter((r) => r.cited).length / run.length,
+        topCompetitors: [...counts.entries()]
+          .map(([domain, citations]) => ({ domain, citations }))
+          .sort((a, b) => b.citations - a.citations)
+          .slice(0, 5),
+        checkedAt: geoRows[0].checked_at as string,
+      };
+    }
+  }
+
   return {
     period: `${startDate} to ${endDate}`,
     workspace: { name: workspace.name, domain: workspace.domain },
@@ -184,5 +258,6 @@ export async function aggregateReportData(
     keywordMovers: keywordMovers.slice(0, 10),
     ga4Summary,
     gscSummary,
+    geoSummary,
   };
 }

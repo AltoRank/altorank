@@ -37,13 +37,35 @@ export class DataForSEOError extends Error {
   }
 }
 
+/**
+ * Whether DataForSEO can authenticate at all.
+ *
+ * Callers used to each re-derive this from DATAFORSEO_LOGIN + DATAFORSEO_PASSWORD,
+ * so an .env holding only the pre-encoded DATAFORSEO_API_KEY reported "credentials
+ * not configured" from four different places while the client itself could have
+ * authenticated fine. One source of truth, next to the header it gates.
+ */
+export function hasDataForSEOCredentials(): boolean {
+  return Boolean(
+    process.env.DATAFORSEO_API_KEY ||
+      (process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD),
+  );
+}
+
 function getAuthHeader(): string {
+  // DataForSEO's dashboard hands out a single pre-encoded base64 blob as well
+  // as the login/password pair it was built from. Accept either: an .env
+  // holding only the blob used to fail closed with a 401 that read as an
+  // account problem rather than a missing variable.
+  const apiKey = process.env.DATAFORSEO_API_KEY;
+  if (apiKey) return "Basic " + apiKey;
+
   const login = process.env.DATAFORSEO_LOGIN;
   const password = process.env.DATAFORSEO_PASSWORD;
 
   if (!login || !password) {
     throw new DataForSEOError(
-      "DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD env vars are required",
+      "Set DATAFORSEO_API_KEY, or both DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD",
       401,
     );
   }
@@ -74,6 +96,25 @@ async function handleResponse<T>(res: Response): Promise<DataForSEOResponse<T>> 
     );
   }
 
+  // The envelope says 20000 "Ok." even when every task inside it failed: a
+  // suspended account, a rate limit, an out-of-credits balance and a malformed
+  // parameter all arrive this way, with `result: null`.
+  //
+  // Checking only the envelope turned all of those into a successful empty
+  // response. A suspended account was reported by the research layer as
+  // "0 ranking pages, 0 People Also Ask entries, no AI Overview" with status
+  // `ok`, so the article prompt was built telling the model there were no
+  // competitors, and an article got written blind with nothing anywhere
+  // signalling a problem. Observed for real: task 40201, account paused.
+  const failed = (json.tasks ?? []).filter((t) => t.status_code !== 20000);
+  if (failed.length && failed.length === (json.tasks ?? []).length) {
+    throw new DataForSEOError(
+      `DataForSEO task failed: ${failed[0].status_message}`,
+      failed[0].status_code,
+      failed.map((t) => `[${t.status_code}] ${t.status_message}`),
+    );
+  }
+
   return json;
 }
 
@@ -82,20 +123,92 @@ async function handleResponse<T>(res: Response): Promise<DataForSEOResponse<T>> 
  * @param endpoint  e.g. "/keywords_data/google_ads/keywords_for_site/live"
  * @param body      Array of task objects to send
  */
+/**
+ * Task statuses worth trying again.
+ *
+ * `40101 Internal SE Server Error` is DataForSEO's transient search-engine
+ * fault and it is common: the same keyword, sent three times in a row, returned
+ * Ok / 40101 / Ok. Anything at 50000 and above is a server error on their side.
+ *
+ * Deliberately narrow. A suspended account (40201), bad credentials, an empty
+ * balance or a malformed parameter are all permanent for this call, and
+ * retrying them wastes time and money without changing the answer.
+ */
+function isRetryableTaskStatus(code: number): boolean {
+  return code === 40101 || code >= 50000;
+}
+
+const MAX_ATTEMPTS = 3;
+
+/**
+ * Where to report what a call cost.
+ *
+ * A callback rather than an import: this module is used from `scripts/` and the
+ * MCP server, neither of which has a Supabase client, and making the HTTP layer
+ * depend on the database would break both. The app sets this once at startup;
+ * everything else keeps working with it unset.
+ */
+type SpendReporter = (entry: {
+  operation: string;
+  costUsd: number | null;
+}) => void;
+
+let reportSpend: SpendReporter | null = null;
+
+export function setSpendReporter(fn: SpendReporter | null): void {
+  reportSpend = fn;
+}
+
 export async function post<T = unknown>(
   endpoint: string,
   body: unknown[],
 ): Promise<DataForSEOResponse<T>> {
-  const res = await fetch(`${BASE_URL}${endpoint}`, {
-    method: "POST",
-    headers: {
-      Authorization: getAuthHeader(),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  let lastError: unknown;
 
-  return handleResponse<T>(res);
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(`${BASE_URL}${endpoint}`, {
+        method: "POST",
+        headers: {
+          Authorization: getAuthHeader(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      const parsed = await handleResponse<T>(res);
+      // Every response reports what it cost. Recording it here means no caller
+      // can forget, and a new endpoint is covered the day it is added.
+      if (reportSpend) {
+        try {
+          reportSpend({ operation: endpoint, costUsd: parsed.cost ?? null });
+        } catch {
+          // Never let bookkeeping break the call it is measuring.
+        }
+      }
+      return parsed;
+    } catch (err) {
+      lastError = err;
+
+      // `statusCode` carries either an HTTP status (3 digits) or a DataForSEO
+      // status (5 digits), and the two must not be compared with the same rule:
+      // `40201 >= 500` is true, so a naive HTTP check retried suspended-account
+      // errors three times. Split on magnitude.
+      const retryable =
+        err instanceof DataForSEOError &&
+        (err.statusCode >= 10000
+          ? isRetryableTaskStatus(err.statusCode)
+          : err.statusCode === 429 || err.statusCode >= 500);
+
+      if (!retryable || attempt === MAX_ATTEMPTS) throw err;
+
+      // A transient SE fault clears in well under a second; this is about
+      // riding out a blip, not backing off a rate limit we are hitting hard.
+      await new Promise((r) => setTimeout(r, 400 * attempt));
+    }
+  }
+
+  throw lastError;
 }
 
 /**

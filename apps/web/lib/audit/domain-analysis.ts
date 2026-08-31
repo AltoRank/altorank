@@ -22,11 +22,19 @@ import { crawlSite } from "./crawler";
 import { runAuditChecks, calculateAuditScore } from "./checks";
 import { fetchPageSpeedDetailed } from "./pagespeed";
 import { discoverKeywords } from "@/lib/seo/keywords";
+import { hasDataForSEOCredentials } from "@/lib/seo/client";
+import {
+  fetchRankedKeywords,
+  groupByPage,
+  strikingDistance,
+  type RankedKeyword,
+} from "@/lib/seo/ranked-keywords";
 import { classifyIntent } from "@/lib/seo/intent";
 import { buildTopicalProfile, type TopicalProfile } from "@/lib/seo/topical-profile";
+import { detectPlatform, type Detection } from "@/lib/cms/detect";
 
 export interface AnalysisLayer {
-  id: "readiness" | "crawl" | "pagespeed" | "keywords";
+  id: "readiness" | "crawl" | "pagespeed" | "platform" | "keywords" | "ranked_keywords";
   status: "ok" | "unavailable" | "failed";
   detail: string;
 }
@@ -41,6 +49,10 @@ export interface DomainAnalysis {
   issues: unknown[];
   pagespeed: Record<string, unknown>;
   keywordsFound: number;
+  /** Keywords the domain ranks for today, joined to the page that earns them. */
+  rankedKeywords: RankedKeyword[];
+  /** Of those, the ones close enough to page one to be worth a revision. */
+  strikingDistance: RankedKeyword[];
   layers: AnalysisLayer[];
   /** One-line summary for a human skimming the workspace. */
   headline: string;
@@ -115,7 +127,9 @@ export async function analyseDomain(options: {
       layers.push({
         id: "crawl",
         status: "ok",
-        detail: `${pages.length} pages crawled, ${issues.length} issues, score ${auditScore}/100`,
+        detail:
+          `${pages.length} pages crawled, ${issues.length} issues, ` +
+          (auditScore === null ? "not scored" : `score ${auditScore}/100`),
       });
     } else {
       layers.push({
@@ -151,11 +165,32 @@ export async function analyseDomain(options: {
     layers.push({ id: "pagespeed", status: ps.kind, detail: ps.detail });
   }
 
+  // --- What the site publishes with ----------------------------------------
+  //
+  // One public GET, so it runs before anyone has connected anything. This is
+  // the question onboarding used to make the user answer from a dropdown of
+  // twelve, and the site can usually answer it itself.
+  let detection: Detection | null = null;
+  try {
+    detection = await detectPlatform(domain);
+    layers.push({
+      id: "platform",
+      status: detection ? "ok" : "unavailable",
+      detail: detection
+        ? `${detection.platform} (${detection.confidence} confidence, ${detection.evidence})`
+        : "could not identify the platform from public signals",
+    });
+  } catch {
+    layers.push({
+      id: "platform",
+      status: "failed",
+      detail: "platform detection failed",
+    });
+  }
+
   // --- Keywords the domain already has some claim to ------------------------
   let keywordsFound = 0;
-  const hasDataForSeo = Boolean(
-    process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD,
-  );
+  const hasDataForSeo = hasDataForSEOCredentials();
   if (!hasDataForSeo) {
     layers.push({
       id: "keywords",
@@ -209,16 +244,71 @@ export async function analyseDomain(options: {
     }
   }
 
+  // --- What the domain already ranks for ------------------------------------
+  // Separate layer from `keywords` above on purpose. That one answers "what
+  // could this site target"; this one answers "what does it rank for today, on
+  // which of its pages". The second is what makes a first look feel like it is
+  // about them rather than about their industry, and it is the input
+  // `recommendKeywords` scores highest: striking distance is its largest
+  // multiplier, and without rank data that branch can never fire on a prospect.
+  let ranked: RankedKeyword[] = [];
+  let rankedPages = 0;
+  // Distinguishes "the lookup ran and returned nothing" from "the lookup never
+  // ran". Persisted as [] versus NULL, because a domain nobody could look up is
+  // not a domain that ranks for nothing.
+  let rankedLayerRan = false;
+  if (!hasDataForSeo) {
+    layers.push({
+      id: "ranked_keywords",
+      status: "unavailable",
+      detail: "DataForSEO credentials not configured",
+    });
+  } else {
+    try {
+      ranked = await fetchRankedKeywords(domain);
+      rankedLayerRan = true;
+      rankedPages = groupByPage(ranked).size;
+      const close = strikingDistance(ranked);
+
+      layers.push({
+        id: "ranked_keywords",
+        status: "ok",
+        detail: ranked.length
+          ? `${ranked.length} ranking keywords across ${rankedPages} pages` +
+            (close.length ? `, ${close.length} in striking distance` : "")
+          : // Zero rows is the failure mode two sibling parsers hid for months,
+            // so it is reported as its own state rather than as a quiet success.
+            "no ranking keywords returned for this domain",
+      });
+    } catch (err) {
+      layers.push({
+        id: "ranked_keywords",
+        status: "failed",
+        detail: err instanceof Error ? err.message : "rank lookup failed",
+      });
+    }
+  }
+
   // --- Headline ------------------------------------------------------------
   // Leads with the readiness gap, because that is what this product sells and
   // it is the finding a prospect has almost certainly never been shown.
   const failingChecks = readiness?.findings.filter((f) => !f.passed).length ?? 0;
+  // Rank data goes last in the sentence but is often the part a prospect reacts
+  // to, because it is about their own pages rather than their category.
+  const close = strikingDistance(ranked);
+  const rankNote = close.length
+    ? ` ${close.length} keyword${close.length === 1 ? "" : "s"} in striking distance of page one.`
+    : ranked.length
+      ? ` ${ranked.length} ranking keywords across ${rankedPages} pages.`
+      : "";
+
   const headline = readiness
     ? `Agent readiness ${readiness.score}/100` +
       (failingChecks ? `, ${failingChecks} checks failing` : ", all checks passing") +
-      (pagesCrawled ? `. ${issues.length} on-page issues across ${pagesCrawled} pages.` : ".")
+      (pagesCrawled ? `. ${issues.length} on-page issues across ${pagesCrawled} pages.` : ".") +
+      rankNote
     : pagesCrawled
-      ? `${issues.length} on-page issues across ${pagesCrawled} pages.`
+      ? `${issues.length} on-page issues across ${pagesCrawled} pages.${rankNote}`
       : "Could not analyse this domain from the public web.";
 
   const analysis: DomainAnalysis = {
@@ -230,6 +320,8 @@ export async function analyseDomain(options: {
     issues,
     pagespeed,
     keywordsFound,
+    rankedKeywords: ranked,
+    strikingDistance: strikingDistance(ranked),
     layers,
     headline,
   };
@@ -241,10 +333,16 @@ export async function analyseDomain(options: {
       workspace_id: workspaceId,
       status: "completed",
       pages_crawled: pagesCrawled,
-      overall_score: auditScore ?? readiness?.score ?? 0,
+      // Null stays null: an uncrawlable site has no on-page score, and storing 0
+      // would make it indistinguishable from a site that scored badly.
+      overall_score: auditScore ?? readiness?.score ?? null,
       issues,
       pagespeed,
       readiness,
+      // NULL when the lookup never ran, [] when it ran and found nothing. A
+      // domain nobody could look up is not a domain that ranks for nothing, and
+      // the report has to be able to tell those apart.
+      ranked_keywords: rankedLayerRan ? ranked : null,
       trigger: "auto_onboarding",
       started_at: now,
       completed_at: now,
@@ -254,6 +352,12 @@ export async function analyseDomain(options: {
       .from("workspaces")
       .update({
         first_analysed_at: now,
+        // Only when detection actually matched: null means "we could not tell",
+        // and overwriting a platform the user has already confirmed with a
+        // blank would be worse than never having looked.
+        ...(detection
+          ? { detected_platform: detection.platform, detected_platform_at: now }
+          : {}),
         // Only overwrite when this run actually produced one, so a later crawl
         // that gets blocked does not erase a good profile.
         ...(profile ? { topical_profile: profile } : {}),

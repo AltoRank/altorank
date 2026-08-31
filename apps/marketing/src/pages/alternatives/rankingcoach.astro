@@ -1,0 +1,265 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildArticleSchema, buildFAQSchema } from '@/lib/schema';
+import { APP_NAME, SIGNUP_URL, SITE_URL, AUTHOR_NAME, AUTHOR_URL, OSS_COMPARISON_LABEL } from '@/constants';
+
+const pageUrl = `${SITE_URL}/alternatives/rankingcoach`;
+
+const publishDate = new Date('2026-08-22');
+const dateModified = new Date('2026-08-22');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Alternatives', href: '/alternatives' },
+  { label: 'rankingCoach alternative', href: '/alternatives/rankingcoach' },
+];
+
+// Competitor facts below were read from rankingcoach.com on 2026-08-22. Pricing
+// is regional and changes, so re-verify before quoting it to a client.
+interface TldrRow {
+  name: string;
+  bestFor: string;
+  multiClient: string;
+  whiteLabel: string;
+  openSource: string;
+  price: string;
+  ours?: boolean;
+}
+
+const TLDR_ROWS: TldrRow[] = [
+  { name: APP_NAME, bestFor: 'Open source, SEO and AI-search content, one site or many', multiClient: 'Isolated per-client workspaces', whiteLabel: 'Included (Agency)', openSource: OSS_COMPARISON_LABEL, price: 'From $0 self-host', ours: true },
+  { name: 'rankingCoach', bestFor: 'Small businesses managing their own local presence, reviews and ads', multiClient: 'Agency tier offered', whiteLabel: 'Not documented publicly', openSource: 'No', price: 'Free tier, paid from about $40/mo' },
+];
+
+const ALTORANK_VS_RC = [
+  { feature: 'Built for', ours: 'Agencies producing SEO and GEO content across a client roster', theirs: 'Small and medium businesses running their own marketing' },
+  { feature: 'Core job', ours: 'Research, draft, approve and publish long-form content per client', theirs: 'Breadth of presence: local listings, reviews, social, Google Ads' },
+  { feature: 'Local directories', ours: 'Not a local-listings tool', theirs: 'One-click publishing to 46+ directories' },
+  { feature: 'Reviews and reputation', ours: 'Not offered', theirs: 'Review monitoring and AI-assisted replies' },
+  { feature: 'Paid ads', ours: 'Not offered', theirs: 'Google Ads campaign setup and budget control' },
+  { feature: 'Operating model', ours: 'Approval-first, nothing publishes without a human sign-off', theirs: 'Positioned as putting growth "on autopilot"' },
+  { feature: 'Source code', ours: 'Open source, self-hostable at no cost', theirs: 'Proprietary SaaS' },
+  { feature: 'AI-readiness audit', ours: 'Scores agent readiness, then generates the missing JSON-LD, markdown twins and llms.txt', theirs: 'None confirmed' },
+];
+
+const FAQ = [
+  {
+    question: 'What is the best rankingCoach alternative for agencies?',
+    answer: 'It depends on which job you are replacing. rankingCoach bundles local listings, reviews, social and Google Ads for small businesses. If what you actually need is SEO and AI-search content produced across many client brands with an editorial approval step, that is a different category of tool, and AltoRank is built for it. If you need the local presence bundle, rankingCoach is likely the better fit.',
+  },
+  {
+    question: 'Is AltoRank a direct replacement for rankingCoach?',
+    answer: 'No, and it would be misleading to claim otherwise. rankingCoach covers local directory listings, review management and paid ads, none of which AltoRank does. AltoRank covers content production: keyword research, drafting, editorial approval and publishing to the client CMS. Agencies frequently need both kinds of tool.',
+  },
+  {
+    question: 'How much does rankingCoach cost?',
+    answer: 'rankingCoach lists a free tier at $0 per month, and a paid rankingCoach 360 plan shown at around $40 per month, with the pricing page also referencing a one-time setup fee and a higher ongoing rate plus VAT. Pricing varies by region and changes, so check their pricing page before quoting a client. These figures were read on 22 August 2026.',
+  },
+  {
+    question: 'What is the difference between autopilot and approval-first SEO tools?',
+    answer: 'Autopilot tools publish on your behalf on a schedule. Approval-first tools require a human to review and sign off before anything goes live. rankingCoach positions its AI features around putting growth on autopilot. AltoRank is deliberately the opposite: the approval gate is a design constraint, because agencies carry the reputational risk when something wrong publishes under a client brand.',
+  },
+  {
+    question: 'Does rankingCoach support agencies?',
+    answer: 'Yes. rankingCoach publishes an Agency and Web-Professionals tier alongside its small-business plans. The publicly documented detail on white-label depth and per-client isolation is limited, so if those matter to your workflow it is worth asking them directly rather than relying on the marketing pages.',
+  },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: 'rankingCoach Alternatives for Agencies (2026)',
+    description: 'An honest comparison of rankingCoach and AltoRank: what each actually does, where they do not overlap, and which one fits an agency producing SEO content across a client roster.',
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildFAQSchema(FAQ),
+];
+---
+
+<PSEO
+  title="rankingCoach Alternatives for Agencies (2026)"
+  description="An honest comparison of rankingCoach and AltoRank: what each actually does, where they do not overlap, and which fits an agency running SEO content across many clients."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <h1 class="mb-5 text-[40px] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+        rankingCoach alternatives for agencies
+      </h1>
+
+      <p class="mb-6 text-lg leading-relaxed text-ink-2">
+        <strong class="text-ink">The short answer:</strong> rankingCoach and {APP_NAME} are not really competitors.
+        rankingCoach is a breadth tool for small businesses, covering local listings, reviews, social and Google Ads.
+        {APP_NAME} is a depth tool for agencies producing SEO and AI-search content across many client brands.
+        Pick rankingCoach if you need local presence managed. Pick {APP_NAME} if the bottleneck is publishing good content for clients.
+      </p>
+
+      <p class="mb-8 text-sm text-ink-3">
+        By{' '}
+        <a href={AUTHOR_URL} rel="author" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
+          {AUTHOR_NAME}
+        </a>
+        {' '}· Published {publishDateDisplay} · Competitor details read from rankingcoach.com on {publishDateDisplay}
+      </p>
+
+      {/* TL;DR table */}
+      <div class="overflow-x-auto rounded-xl border border-line">
+        <table class="w-full text-left text-sm">
+          <caption class="sr-only">AltoRank compared with rankingCoach</caption>
+          <thead class="border-b border-line bg-panel text-ink-2">
+            <tr>
+              <th scope="col" class="px-5 py-3.5 font-medium">Tool</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Best for</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Multi-client</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">White-label</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Open source</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Starting price</th>
+            </tr>
+          </thead>
+          <tbody>
+            {TLDR_ROWS.map((row, i) => (
+              <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+                <td class="px-5 py-4 font-medium">
+                  {row.name}{row.ours && <span class="ml-2 rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-accent-ink">ours</span>}
+                </td>
+                <td class="px-5 py-4 text-ink-2">{row.bestFor}</td>
+                <td class="px-5 py-4 text-ink-2">{row.multiClient}</td>
+                <td class="px-5 py-4 text-ink-2">{row.whiteLabel}</td>
+                <td class="px-5 py-4 text-ink-2">{row.openSource}</td>
+                <td class="px-5 py-4 text-ink-2">{row.price}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  {/* Why they are not the same category */}
+  <section class="border-b border-line py-16">
+    <div class="mx-auto max-w-[820px] px-8">
+      <h2 class="mb-5 text-2xl font-semibold tracking-[-0.015em]">These tools solve different problems</h2>
+      <p class="mb-4 text-ink-2 leading-relaxed">
+        Most "alternative" pages pretend two products compete so the comparison lands in the author's favour. That is
+        not honest here. rankingCoach describes itself as the complete digital marketing app for small businesses, and
+        its feature set matches that: publishing business data to more than 46 local directories, monitoring and
+        replying to reviews, scheduling social posts, and setting up Google Ads campaigns.
+      </p>
+      <p class="mb-4 text-ink-2 leading-relaxed">
+        {APP_NAME} does none of those things. It researches keywords, clusters them, drafts long-form content in each
+        client's voice, routes it through an editorial approval step, and publishes to the client's CMS. If you are an
+        agency, you may well need both, and swapping one for the other will leave a gap.
+      </p>
+      <p class="text-ink-2 leading-relaxed">
+        The genuine overlap is narrow: both touch SEO. rankingCoach approaches it as guided tasks and tutorials for a
+        business owner doing their own optimisation. {APP_NAME} approaches it as a production line for an agency that
+        has to ship content for twenty brands a month.
+      </p>
+    </div>
+  </section>
+
+  {/* Autopilot vs approval */}
+  <section class="border-b border-line py-16">
+    <div class="mx-auto max-w-[820px] px-8">
+      <h2 class="mb-5 text-2xl font-semibold tracking-[-0.015em]">Autopilot versus approval-first</h2>
+      <p class="mb-4 text-ink-2 leading-relaxed">
+        This is the real philosophical split, and it is worth understanding before you choose either tool.
+        rankingCoach markets its AI features around putting your online growth on autopilot. That is a reasonable
+        proposition for a small business owner with no marketing team, where the alternative is nothing happening at all.
+      </p>
+      <p class="text-ink-2 leading-relaxed">
+        {APP_NAME} is built the other way round on purpose. Nothing publishes without a human approving it, and that is
+        a design constraint rather than a setting. The reason is specific to agencies: when something inaccurate goes
+        live under a client's brand, the agency carries the relationship damage, not the vendor. An approval gate is
+        slower, and that is the point.
+      </p>
+    </div>
+  </section>
+
+  {/* Feature comparison */}
+  <section class="border-b border-line py-16">
+    <div class="mx-auto max-w-[820px] px-8">
+      <h2 class="mb-6 text-2xl font-semibold tracking-[-0.015em]">Side by side</h2>
+      <div class="overflow-x-auto rounded-xl border border-line">
+        <table class="w-full text-left text-sm">
+          <caption class="sr-only">Feature comparison between AltoRank and rankingCoach</caption>
+          <thead class="border-b border-line bg-panel text-ink-2">
+            <tr>
+              <th scope="col" class="px-4 py-3 font-medium">Feature</th>
+              <th scope="col" class="px-4 py-3 font-medium">{APP_NAME}</th>
+              <th scope="col" class="px-4 py-3 font-medium">rankingCoach</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ALTORANK_VS_RC.map((row, i) => (
+              <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+                <td class="px-4 py-3.5 font-medium">{row.feature}</td>
+                <td class="px-4 py-3.5 text-ok-ink">{row.ours}</td>
+                <td class="px-4 py-3.5 text-ink-3">{row.theirs}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  {/* When rankingCoach wins */}
+  <section class="border-b border-line py-16">
+    <div class="mx-auto max-w-[820px] px-8">
+      <h2 class="mb-5 text-2xl font-semibold tracking-[-0.015em]">When rankingCoach is the better choice</h2>
+      <ul class="flex flex-col gap-3 text-ink-2">
+        <li class="flex items-start gap-3">
+          <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-ink-3"></span>
+          Your clients are local businesses whose visibility problem is directory listings and reviews, not content.
+        </li>
+        <li class="flex items-start gap-3">
+          <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-ink-3"></span>
+          You want reputation management and Google Ads in the same subscription rather than as separate tools.
+        </li>
+        <li class="flex items-start gap-3">
+          <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-ink-3"></span>
+          The buyer is the business owner doing the work themselves, and guided tutorials are the right format.
+        </li>
+        <li class="flex items-start gap-3">
+          <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-ink-3"></span>
+          You need something at a free tier today, and long-form content is not the constraint.
+        </li>
+      </ul>
+      <p class="mt-6 text-ink-2 leading-relaxed">
+        If you are comparing content-production tools specifically, the wider roundup lives on
+        {' '}<a href="/alternatives" class="font-medium text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">the alternatives hub</a>,
+        and the closest head-to-head is
+        {' '}<a href="/alternatives/outrank" class="font-medium text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">Outrank</a>.
+      </p>
+    </div>
+  </section>
+
+  {/* FAQ */}
+  <section class="border-b border-line py-16">
+    <div class="mx-auto max-w-[820px] px-8">
+      <h2 class="mb-6 text-2xl font-semibold tracking-[-0.015em]">Frequently asked questions</h2>
+      <div class="flex flex-col gap-4">
+        {FAQ.map((item) => (
+          <div class="rounded-lg border border-line bg-panel p-5">
+            <h3 class="mb-2 font-semibold">{item.question}</h3>
+            <p class="text-sm text-ink-2 leading-relaxed">{item.answer}</p>
+          </div>
+        ))}
+      </div>
+
+      <div class="mt-10 text-center">
+        <Button href={SIGNUP_URL} size="lg" arrow>
+  Start with {APP_NAME}
+</Button>
+      </div>
+    </div>
+  </section>
+</PSEO>

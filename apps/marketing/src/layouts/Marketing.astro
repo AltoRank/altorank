@@ -1,0 +1,29 @@
+---
+import Base from './Base.astro';
+import Header from '@/components/layout/Header.astro';
+import Footer from '@/components/layout/Footer.astro';
+
+interface Props {
+  title: string;
+  description: string;
+  canonicalUrl?: string;
+  ogImage?: string;
+  ogType?: string;
+  structuredData?: object | object[];
+  noindex?: boolean;
+  lang?: string;
+  alternateLanguages?: { hreflang: string; href: string }[];
+  /** Header starts transparent over a dark first section. See Header.astro. */
+  headerOverlay?: boolean;
+}
+
+const { headerOverlay = false, ...props } = Astro.props;
+---
+
+<Base {...props}>
+  <Header overlay={headerOverlay} />
+  <main class="flex-1">
+    <slot />
+  </main>
+  <Footer />
+</Base>

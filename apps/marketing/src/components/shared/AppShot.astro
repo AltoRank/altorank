@@ -1,0 +1,265 @@
+---
+/**
+ * The hero product shot: a replica of the real dashboard at apps/web.
+ *
+ * It replaced a generic "April content plan" panel with a 30-square grid and
+ * two invented keyword rows, which showed nothing the product actually does.
+ * Every label here is copied from the app rather than invented:
+ *
+ *   nav groups + labels + NEW tags -> apps/web/lib/constants.ts DASHBOARD_NAV
+ *   status names and colours       -> apps/web/lib/constants.ts STATUS_META
+ *   stat strip and queue layout    -> apps/web/app/(dashboard)/dashboard/page.tsx
+ *   design tokens                  -> identical names in both apps
+ *
+ * On the data, this obeys the no-unverifiable-claims rule. The workspace is
+ * altorank.co, so no client is invented, and the three queued items are pages
+ * that genuinely exist on this site. Organic traffic renders as an em dash with
+ * "Connect analytics", which is both the app's real first-run state and the
+ * house rule about never drawing an unmeasured number. A rising traffic curve
+ * here would be exactly the fabricated traction two earlier commits removed.
+ */
+
+// Trimmed to what clears the fold. Full list lives in DASHBOARD_NAV.
+const NAV = [
+  {
+    group: 'Overview',
+    items: [
+      { label: 'Dashboard', icon: 'grid', active: true },
+      { label: 'Clients', icon: 'users' },
+    ],
+  },
+  {
+    group: 'Content',
+    items: [
+      { label: 'Articles', icon: 'doc' },
+      { label: 'Calendar', icon: 'cal' },
+      { label: 'Keywords', icon: 'key' },
+      { label: 'Brand Voice', icon: 'wave', tagNew: true },
+    ],
+  },
+  {
+    group: 'Growth',
+    items: [
+      { label: 'Agent readiness', icon: 'search', tagNew: true },
+      { label: 'AI visibility', icon: 'trend', tagNew: true },
+      { label: 'Backlinks', icon: 'link' },
+    ],
+  },
+];
+
+const STATS = [
+  { label: 'Articles published', value: '12', unit: ' / 18', delta: '12 live', tone: 'pos' },
+  { label: 'Organic traffic', value: '—', unit: '', delta: 'Connect analytics', tone: 'idle' },
+  { label: 'Keywords tracked', value: '240', unit: '', delta: 'altorank.co', tone: 'idle' },
+  { label: 'Pending reviews', value: '3', unit: '', delta: 'oldest 2d ago', tone: 'warn' },
+];
+
+// Real pages on this site. Statuses and labels come from STATUS_META.
+const QUEUE = [
+  {
+    title: 'Does GEO Replace SEO? (2026 Guide for Agencies)',
+    keyword: 'does geo replace seo',
+    status: 'In review',
+    cls: 'bg-warn-soft text-warn-ink',
+    dot: 'bg-warn',
+    score: 86,
+  },
+  {
+    title: 'Approval-First AI SEO Content: The Editorial Workflow',
+    keyword: 'approval-first seo content',
+    status: 'Drafting',
+    cls: 'bg-accent-soft text-accent-ink',
+    dot: 'bg-accent',
+    score: null,
+  },
+  {
+    title: 'Collection & Category Page SEO Content at Scale',
+    keyword: 'collection page seo content',
+    status: 'Scheduled',
+    cls: 'border border-line text-ink-3',
+    dot: 'bg-ink-3',
+    score: 91,
+  },
+];
+
+// 14x14 stroke icons, sized to the app's sidebar.
+const ICONS: Record<string, string> = {
+  grid: '<rect x="1.5" y="1.5" width="4.5" height="4.5" rx="1"/><rect x="8" y="1.5" width="4.5" height="4.5" rx="1"/><rect x="1.5" y="8" width="4.5" height="4.5" rx="1"/><rect x="8" y="8" width="4.5" height="4.5" rx="1"/>',
+  users: '<circle cx="5.25" cy="4.5" r="2.25"/><path d="M1.5 12c0-2.07 1.68-3.75 3.75-3.75S9 9.93 9 12"/><path d="M9.75 3.2a2.25 2.25 0 0 1 0 4.35M12.5 12c0-1.7-1-3.1-2.5-3.6"/>',
+  doc: '<path d="M3 1.5h5L11 4.5V12a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 3 12z"/><path d="M8 1.5V5h3"/>',
+  cal: '<rect x="1.75" y="2.75" width="10.5" height="9.5" rx="1.25"/><path d="M1.75 5.75h10.5M4.5 1.5v2.5M9.5 1.5v2.5"/>',
+  key: '<circle cx="5.5" cy="5.5" r="3.75"/><path d="M8.4 8.4 12.5 12.5"/>',
+  wave: '<path d="M1.5 7h1.6l1.3-3.6L6.1 10.5l1.5-5 1.2 3.1h3.7"/>',
+  search: '<circle cx="6" cy="6" r="4.25"/><path d="M9.2 9.2 12.5 12.5"/>',
+  trend: '<path d="M1.5 10.5 5 7l2.5 2.5L12.5 4"/><path d="M9.5 4h3v3"/>',
+  link: '<path d="M5.75 8.25a2.5 2.5 0 0 0 3.54 0l2-2a2.5 2.5 0 0 0-3.54-3.54l-.6.6"/><path d="M8.25 5.75a2.5 2.5 0 0 0-3.54 0l-2 2a2.5 2.5 0 0 0 3.54 3.54l.6-.6"/>',
+};
+---
+
+{/* Cropped by the fold on purpose: the frame has no bottom border and the
+    section below overlaps it. */}
+<div
+  class="mx-auto max-w-[880px] overflow-hidden rounded-t-lg border border-b-0 border-[oklch(1_0_0/0.14)] bg-bg text-left shadow-[0_-1px_0_oklch(1_0_0/0.10),0_-24px_60px_-30px_oklch(0.62_0.16_275/0.45)] sm:rounded-t-xl"
+>
+  {/* Browser chrome */}
+  <div class="flex h-[32px] items-center gap-1.5 border-b border-line bg-panel px-3">
+    <span class="h-[8px] w-[8px] rounded-full bg-line"></span>
+    <span class="h-[8px] w-[8px] rounded-full bg-line"></span>
+    <span class="h-[8px] w-[8px] rounded-full bg-line"></span>
+    <span
+      class="mx-auto hidden rounded border border-line bg-bg px-2.5 py-[2px] font-mono text-[11px] text-ink-3 sm:block"
+    >
+      app.altorank.co/dashboard
+    </span>
+  </div>
+
+  <div class="flex">
+    {/* Sidebar. Hidden on phones, where the app collapses it too. */}
+    <aside class="hidden w-[186px] shrink-0 flex-col border-r border-line bg-panel md:flex">
+      <div class="flex h-[42px] items-center gap-2 border-b border-line px-3">
+        <span class="relative grid h-[24px] w-[24px] place-items-center rounded-[7px] bg-ink">
+          <img src="/brand/altorank-mark-white.svg" alt="" width="9" height="10" />
+          <span class="absolute -bottom-[2px] -right-[2px] h-2 w-2 rounded-full border-2 border-panel bg-accent"></span>
+        </span>
+        <span class="text-[13.5px] font-semibold tracking-[-0.01em] text-ink">AltoRank</span>
+      </div>
+
+      {/* Workspace switcher */}
+      <div class="border-b border-line px-2.5 py-2">
+        <div class="flex items-center gap-2 rounded-[7px] border border-line bg-bg px-2 py-[6px]">
+          <span
+            class="grid h-[20px] w-[20px] shrink-0 place-items-center rounded-[5px] bg-accent font-mono text-[9.5px] font-medium text-white"
+          >
+            AR
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-[12px] font-medium leading-tight text-ink">AltoRank</span>
+            <span class="block truncate text-[10px] leading-tight text-ink-3">altorank.co</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-2.5 px-2.5 py-2.5">
+        {
+          NAV.map((group) => (
+            <div>
+              <div class="px-1.5 pb-1 text-[9.5px] font-medium uppercase tracking-[0.07em] text-ink-4">
+                {group.group}
+              </div>
+              {group.items.map((item) => (
+                <div
+                  class={`flex items-center gap-2 rounded-[6px] px-1.5 py-[5px] text-[12px] ${
+                    item.active ? 'bg-accent-soft font-medium text-accent-ink' : 'text-ink-2'
+                  }`}
+                >
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 14 14"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.3"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="shrink-0 opacity-80"
+                    set:html={ICONS[item.icon]}
+                  />
+                  <span class="truncate">{item.label}</span>
+                  {item.tagNew && (
+                    <span class="ml-auto rounded-[3px] bg-accent-soft px-1 py-px font-mono text-[8.5px] font-medium text-accent-ink">
+                      NEW
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))
+        }
+      </div>
+    </aside>
+
+    {/* Main column */}
+    <div class="min-w-0 flex-1">
+      {/* Topbar */}
+      <div class="flex h-[42px] items-center gap-2 border-b border-line px-3.5 sm:px-4">
+        <span class="text-[13.5px] font-semibold tracking-[-0.01em] text-ink">Dashboard</span>
+        <span
+          class="inline-flex items-center gap-[5px] rounded-full bg-ok-soft px-[7px] py-px text-[10.5px] font-medium text-ok-ink"
+        >
+          <span class="h-1.5 w-1.5 rounded-full bg-ok"></span>
+          All systems healthy
+        </span>
+        <span class="ml-auto hidden items-center gap-1.5 md:flex">
+          <span class="rounded-[6px] border border-line bg-bg px-2 py-[3px] text-[11.5px] text-ink-2">
+            Export report
+          </span>
+          <span class="rounded-[6px] bg-accent px-2 py-[3px] text-[11.5px] font-medium text-white">
+            Add client
+          </span>
+        </span>
+      </div>
+
+      {/* Stat strip */}
+      {/* 2x2 until lg. Four across needs about 130px a column before the
+          labels start truncating, which the sidebar leaves no room for
+          below 1024. */}
+      <div class="grid grid-cols-2 border-b border-line lg:grid-cols-4">
+        {
+          STATS.map((s, i) => (
+            <div
+              class={`border-line px-3.5 py-2.5 ${i % 2 === 0 ? 'border-r' : ''} ${
+                i < 2 ? 'border-b' : ''
+              } ${i < 3 ? 'lg:border-r' : 'lg:border-r-0'} lg:border-b-0`}
+            >
+              <div class="mb-[3px] truncate text-[10px] uppercase tracking-[0.06em] text-ink-3">{s.label}</div>
+              <div class="flex items-baseline gap-px">
+                <span class="text-[17px] font-semibold tracking-[-0.02em] text-ink">{s.value}</span>
+                {s.unit && <span class="text-[12px] text-ink-3">{s.unit}</span>}
+              </div>
+              <div
+                class={`mt-px truncate font-mono text-[10px] ${
+                  s.tone === 'pos' ? 'text-ok-ink' : s.tone === 'warn' ? 'text-warn-ink' : 'text-ink-3'
+                }`}
+              >
+                {s.delta}
+              </div>
+            </div>
+          ))
+        }
+      </div>
+
+      {/* Today's queue */}
+      <div class="px-3.5 py-3 sm:px-4">
+        <div class="mb-2 flex items-baseline justify-between">
+          <span class="text-[12.5px] font-semibold tracking-[-0.01em] text-ink">Today's queue</span>
+          <span class="font-mono text-[10.5px] text-ink-3">3 items</span>
+        </div>
+
+        {
+          QUEUE.map((row) => (
+            <div class="flex items-center gap-2.5 border-t border-line-soft py-2">
+              <span
+                class="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[5px] bg-accent font-mono text-[9.5px] font-medium text-white"
+              >
+                AR
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-[12.5px] font-medium leading-tight text-ink">{row.title}</span>
+                <span class="block truncate font-mono text-[10.5px] leading-tight text-ink-3">{row.keyword}</span>
+              </span>
+              <span class="hidden shrink-0 font-mono text-[11px] text-ink-2 sm:block">
+                {row.score ?? '—'}
+              </span>
+              <span
+                class={`inline-flex shrink-0 items-center gap-[5px] rounded-full px-[7px] py-px text-[10.5px] font-medium ${row.cls}`}
+              >
+                <span class={`h-1.5 w-1.5 rounded-full ${row.dot}`} />
+                {row.status}
+              </span>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </div>
+</div>

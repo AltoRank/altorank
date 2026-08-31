@@ -1,0 +1,123 @@
+---
+import Marketing from '@/layouts/Marketing.astro';
+import { buildItemListSchema, buildBreadcrumbSchema } from '@/lib/schema';
+import { APP_NAME, SITE_URL } from '@/constants';
+
+// The six /geo/* guides shipped without a parent page, so each was reachable
+// only through scattered contextual links and the sitemap. Google had discovered
+// most of them and indexed almost none. A hub gives the cluster a parent, six
+// internal links, and a place for the pillar to be stated once.
+interface GeoGuide {
+  slug: string;
+  title: string;
+  blurb: string;
+  group: 'Foundations' | 'Selling it' | 'E-commerce';
+}
+
+const GUIDES: GeoGuide[] = [
+  {
+    slug: 'does-geo-replace-seo',
+    title: 'Does GEO replace SEO?',
+    blurb: 'The short answer is no, and the long answer decides how you structure the retainer. Where the two disciplines share signals and where they diverge.',
+    group: 'Foundations',
+  },
+  {
+    slug: 'track-ai-citations-for-clients',
+    title: 'How to track AI citations for clients',
+    blurb: 'GEO has no ranking dashboard, so measurement is a fixed prompt set run on a cadence. The reporting framework that makes the work defensible in a client meeting.',
+    group: 'Foundations',
+  },
+  {
+    slug: 'geo-services-pricing',
+    title: 'How to price GEO services',
+    blurb: 'Whether to sell GEO as a line item or an uplift on the existing SEO retainer, and how to scope it so the margin survives contact with delivery.',
+    group: 'Selling it',
+  },
+  {
+    slug: 'collection-page-seo-content',
+    title: 'Collection and category page content at scale',
+    blurb: 'Category pages are the highest-commercial-intent pages on most stores and the thinnest. How to give them content worth ranking without writing each by hand.',
+    group: 'E-commerce',
+  },
+  {
+    slug: 'shopify-product-descriptions-at-scale',
+    title: 'Unique product descriptions at scale',
+    blurb: 'Duplicate manufacturer copy is the default failure mode of a large catalogue. The production pattern for making every product page genuinely distinct.',
+    group: 'E-commerce',
+  },
+  {
+    slug: 'optimize-shopify-for-chatgpt-shopping',
+    title: 'Optimise Shopify for ChatGPT Shopping',
+    blurb: 'What the assistant surfaces reads from structured data and clean product facts, not from your theme. The concrete checks for a Shopify store.',
+    group: 'E-commerce',
+  },
+];
+
+const GROUPS: GeoGuide['group'][] = ['Foundations', 'Selling it', 'E-commerce'];
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'GEO', href: '/geo' },
+];
+
+const structuredData = [
+  buildBreadcrumbSchema(breadcrumbs),
+  buildItemListSchema(
+    GUIDES.map((g) => ({
+      name: g.title,
+      url: `${SITE_URL}/geo/${g.slug}`,
+      description: g.blurb,
+    })),
+  ),
+];
+---
+
+<Marketing
+  title={`Generative Engine Optimization for Agencies | ${APP_NAME}`}
+  description="Practical GEO guides: what generative engine optimization is, how to measure citations, how to price it, and how to run it across e-commerce sites."
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[1240px] px-8">
+      <div class="mx-auto mb-14 max-w-[760px] text-center">
+        <h1 class="mb-4 text-[42px] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+          Generative engine optimization, for agencies
+        </h1>
+        <p class="text-base leading-relaxed text-ink-2">
+          GEO is the work of getting a client cited inside AI-generated answers rather than ranked in a list of links.
+          These guides cover the parts agencies actually have to solve: what changes versus SEO, how to measure
+          something with no ranking dashboard, how to price it, and how to run it across a roster of stores.
+        </p>
+      </div>
+
+      {GROUPS.map((group) => (
+        <div class="mb-12">
+          <h2 class="mb-5 text-sm font-medium uppercase tracking-[0.08em] text-ink-3">{group}</h2>
+          <div class="grid gap-6 md:grid-cols-2">
+            {GUIDES.filter((g) => g.group === group).map((g) => (
+              <a
+                href={`/geo/${g.slug}/`}
+                class="group flex flex-col rounded-xl border border-line bg-bg p-6 transition-colors hover:border-accent-soft"
+              >
+                <h3 class="mb-2 text-xl font-semibold tracking-[-0.015em] transition-colors group-hover:text-accent-ink">
+                  {g.title}
+                </h3>
+                <p class="text-sm leading-relaxed text-ink-2">{g.blurb}</p>
+              </a>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      <div class="mx-auto max-w-[760px] border-t border-line pt-10 text-center">
+        <p class="text-[15px] leading-relaxed text-ink-2">
+          If you are earlier than this and still choosing tools, the
+          {' '}<a href="/alternatives" class="font-medium text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">alternatives comparisons</a>
+          {' '}cover how {APP_NAME} sits against the rest of the market, and the
+          {' '}<a href="/blog" class="font-medium text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">blog</a>
+          {' '}goes deeper on the AI-search surfaces themselves.
+        </p>
+      </div>
+    </div>
+  </section>
+</Marketing>

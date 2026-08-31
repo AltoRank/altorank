@@ -22,14 +22,8 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
     router.push(`/content?${params.toString()}`);
   }
 
-  const view = searchParams.get("view") ?? "calendar";
   const clientFilter = searchParams.get("clients") ?? "all";
 
-  function setView(v: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("view", v);
-    router.push(`/content?${params.toString()}`);
-  }
 
   function setClientFilter(v: string) {
     const params = new URLSearchParams(searchParams.toString());
@@ -43,30 +37,6 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
 
   return (
     <div className="flex items-center gap-2 mb-4 flex-wrap">
-      <div className="flex gap-0.5 p-0.5 bg-panel-2 rounded-[7px]">
-        <button
-          onClick={() => setView("calendar")}
-          className={`px-2.5 py-[5px] text-xs rounded-[5px] font-medium ${
-            view === "calendar" ? "bg-bg" : "text-ink-2"
-          }`}
-        >
-          Calendar
-        </button>
-        <button
-          className="px-2.5 py-[5px] text-xs rounded-[5px] text-ink-3 cursor-not-allowed opacity-40"
-          title="Coming soon"
-          disabled
-        >
-          Timeline
-        </button>
-        <button
-          className="px-2.5 py-[5px] text-xs rounded-[5px] text-ink-3 cursor-not-allowed opacity-40"
-          title="Coming soon"
-          disabled
-        >
-          List
-        </button>
-      </div>
       <div className="flex items-center gap-2 ml-2">
         <IconButton ghost onClick={() => navigateMonth(-1)}>
           <Icons.arrowLeft size={14} />
@@ -78,7 +48,7 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
       </div>
       <div className="flex-1" />
       <Chip
-        label="All clients"
+        label="All workspaces"
         active={clientFilter === "all"}
         onClick={() => setClientFilter("all")}
       />

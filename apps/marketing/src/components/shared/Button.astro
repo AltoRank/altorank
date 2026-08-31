@@ -1,0 +1,71 @@
+---
+/**
+ * The one button.
+ *
+ * Before this, 45 button instances across 29 files each carried their own
+ * utility string, and the same chevron SVG was pasted 11 times in 9 files.
+ * Changing button geometry meant a find-and-replace and missing a few.
+ *
+ * Geometry lives in the .btn* classes in styles/globals.css, so a designer can
+ * retune every button on the site in one block. This component owns the markup:
+ * the element choice, the chevron, and which class combination a variant maps
+ * to. Add a variant here, not a new utility string at the call site.
+ */
+interface Props {
+  /** Renders an <a> when set, a <button> otherwise. */
+  href?: string;
+  variant?: 'primary' | 'secondary' | 'light' | 'ghost-dark';
+  size?: 'sm' | 'md' | 'lg';
+  /** Full width and a taller tap target below sm. */
+  block?: boolean;
+  /** Trailing chevron. Was hand-pasted at 11 call sites. */
+  arrow?: boolean;
+  type?: 'button' | 'submit';
+  external?: boolean;
+  class?: string;
+  [key: string]: unknown;
+}
+
+const {
+  href,
+  variant = 'primary',
+  size = 'md',
+  block = false,
+  arrow = false,
+  type = 'button',
+  external = false,
+  class: className = '',
+  ...rest
+} = Astro.props;
+
+const classes = [
+  'btn',
+  `btn-${variant}`,
+  size !== 'md' && `btn-${size}`,
+  block && 'btn-block',
+  className,
+]
+  .filter(Boolean)
+  .join(' ');
+
+const Tag = href ? 'a' : 'button';
+const extra = href
+  ? { href, ...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {}) }
+  : { type };
+---
+
+<Tag class={classes} {...extra} {...rest}>
+  <slot />
+  {arrow && (
+    <svg
+      class="btn-chevron"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      aria-hidden="true"
+    >
+      <path d="m9 6 6 6-6 6" />
+    </svg>
+  )}
+</Tag>

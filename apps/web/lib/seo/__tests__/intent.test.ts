@@ -5,10 +5,12 @@ import type { SerpData } from "../brief-data";
 const serp = (over: Partial<SerpData> = {}): SerpData => ({
   organic: [],
   peopleAlsoAsk: [],
+  aiOverview: null,
   ...over,
 });
 
 const page = (over: Partial<SerpData["organic"][number]> = {}) => ({
+  rank: null,
   title: "A page",
   url: "https://example.com/a",
   description: "",

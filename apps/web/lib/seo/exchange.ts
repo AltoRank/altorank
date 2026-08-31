@@ -16,8 +16,14 @@ type TiptapDoc = { type: "doc"; content: TiptapNode[] };
 /**
  * Calculate credits for a given DR using tiered formula:
  * DR 0-20 = 1, 21-40 = 2, 41-60 = 4, 61-80 = 8, 81-100 = 16
+ *
+ * Returns null for an unmeasured DR rather than falling through to the cheapest
+ * tier. Callers used to pass `workspace.dr ?? 0`, which priced every unmeasured
+ * host at 1 credit — the same as a genuinely worthless one — so the tiers did
+ * nothing and the price looked derived when it was invented.
  */
-export function creditsForDR(dr: number): number {
+export function creditsForDR(dr: number | null | undefined): number | null {
+  if (dr === null || dr === undefined) return null;
   if (dr <= 20) return 1;
   if (dr <= 40) return 2;
   if (dr <= 60) return 4;
@@ -49,14 +55,16 @@ export async function recordCredit(
   amount: number,
   reason: "host_link" | "place_link" | "bonus" | "adjustment",
   exchangeId?: string,
-  drAtTime?: number,
+  drAtTime?: number | null,
 ): Promise<void> {
   const { error } = await supabase.from("backlink_credits").insert({
     agency_id: agencyId,
     amount,
     reason,
     exchange_id: exchangeId ?? null,
-    dr_at_time: drAtTime ?? 0,
+    // This column is the audit trail for why a trade cost what it cost. Writing
+    // 0 for an unknown DR makes the ledger claim a reading that was never taken.
+    dr_at_time: drAtTime ?? null,
   });
 
   if (error) throw new Error(error.message);
@@ -244,6 +252,133 @@ export function insertBacklinkIntoContent(
 /**
  * Place a backlink in an article and update both the article and exchange in the DB.
  */
+const VERIFY_UA =
+  "Mozilla/5.0 (compatible; AltoRank-ExchangeVerifier/1.0; " +
+  "+https://altorank.co; backlink placement verification)";
+
+export type PlacementVerdict = {
+  ok: boolean;
+  /** The URL that was actually fetched, so a failure can be reproduced by hand. */
+  url: string | null;
+  httpStatus: number | null;
+  /** rel attribute found on the matching anchor, verbatim. */
+  rel: string | null;
+  reason: string;
+};
+
+/** Same link, written differently: trailing slash, scheme, case. */
+function sameTarget(href: string, target: string): boolean {
+  const norm = (u: string) =>
+    u.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "").replace(/#.*$/, "");
+  return norm(href) === norm(target);
+}
+
+/**
+ * Confirm a placed link is actually live on the public web.
+ *
+ * Credits used to move the moment a participant pressed a button: nothing ever
+ * fetched the page. A provider could mark a link placed, collect the credits and
+ * delete it, and the ledger would never notice. The cron comment promised that
+ * "credit transfer must follow a real verification, not a timer" — this is the
+ * verification that sentence assumed existed.
+ *
+ * Four things have to hold, and all four are things a reader or a crawler would
+ * see: the page loads, it is indexable, the anchor is present, and it carries
+ * the rel this network requires. A nofollow+sponsored link is the whole basis on
+ * which this exchange is not a link scheme, so a placement that quietly went
+ * dofollow is a failure, not a bonus.
+ */
+export async function verifyPlacementLive(
+  pageUrl: string | null,
+  targetUrl: string,
+): Promise<PlacementVerdict> {
+  if (!pageUrl) {
+    return {
+      ok: false,
+      url: null,
+      httpStatus: null,
+      rel: null,
+      reason:
+        "the hosting article has no published URL, so the link is not on the web yet",
+    };
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(pageUrl, {
+      headers: { "user-agent": VERIFY_UA },
+      redirect: "follow",
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      url: pageUrl,
+      httpStatus: null,
+      rel: null,
+      reason: `could not fetch the hosting page: ${err instanceof Error ? err.message : "unknown error"}`,
+    };
+  }
+
+  if (!res.ok) {
+    return {
+      ok: false,
+      url: pageUrl,
+      httpStatus: res.status,
+      rel: null,
+      reason: `hosting page returned ${res.status}`,
+    };
+  }
+
+  // A link on a page search engines are told to drop is worth nothing, and the
+  // header form is invisible in the HTML, so both are checked.
+  const xRobots = res.headers.get("x-robots-tag") ?? "";
+  const html = await res.text();
+  const metaRobots =
+    html.match(/<meta[^>]+name=["']robots["'][^>]*content=["']([^"']+)["']/i)?.[1] ?? "";
+  if (/noindex/i.test(xRobots) || /noindex/i.test(metaRobots)) {
+    return {
+      ok: false,
+      url: pageUrl,
+      httpStatus: res.status,
+      rel: null,
+      reason: "hosting page is noindex, so the placement carries no value",
+    };
+  }
+
+  for (const tag of html.match(/<a\b[^>]*>/gi) ?? []) {
+    const href = tag.match(/href=["']([^"']+)["']/i)?.[1];
+    if (!href || !sameTarget(href, targetUrl)) continue;
+
+    const rel = (tag.match(/rel=["']([^"']*)["']/i)?.[1] ?? "").toLowerCase();
+    const missing = ["nofollow", "sponsored"].filter((t) => !rel.split(/\s+/).includes(t));
+    if (missing.length) {
+      return {
+        ok: false,
+        url: pageUrl,
+        httpStatus: res.status,
+        rel: rel || null,
+        reason: `link found but rel is missing ${missing.join(" and ")} (found "${rel || "none"}")`,
+      };
+    }
+    return {
+      ok: true,
+      url: pageUrl,
+      httpStatus: res.status,
+      rel,
+      reason: "link is live, indexable and correctly marked nofollow sponsored",
+    };
+  }
+
+  return {
+    ok: false,
+    url: pageUrl,
+    httpStatus: res.status,
+    rel: null,
+    reason: "no link to the target URL found on the hosting page",
+  };
+}
+
 export async function placeBacklinkInArticle(
   supabase: SupabaseClient,
   exchangeId: string,

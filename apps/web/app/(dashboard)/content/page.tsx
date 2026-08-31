@@ -5,6 +5,7 @@ import { PageHead, DotSep, StatusPill, Avatar, Icons, Button } from "@/component
 import { Card } from "@/components/ui/card";
 import { CalendarControls } from "@/components/dashboard/calendar-controls";
 import type { Workspace } from "@/lib/types";
+import { plural } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Calendar" };
 
@@ -61,12 +62,9 @@ export default async function CalendarPage({ searchParams }: Props) {
     <>
       <PageHead
         title={`${monthLabel} plan`}
-        eyebrow={<><span>Content calendar</span>{runningCount > 0 && <StatusPill status="run" label={`${runningCount} running now`} />}</>}
-        subtitle={<><span>{filteredEntries.length} articles · {workspaces.length} clients</span><DotSep /><span>{doneCount} published · {queuedCount} queued</span></>}
+        subtitle={<>{runningCount > 0 && <StatusPill status="run" label={`${runningCount} running now`} />}<span>{plural(filteredEntries.length, "article")} · {plural(workspaces.length, "workspace")}</span><DotSep /><span>{doneCount} published · {queuedCount} queued</span></>}
         actions={
           <>
-            <Button disabled><Icons.refresh size={14} />Regenerate plan</Button>
-            <Button disabled variant="accent"><Icons.sparkle size={14} />Add to calendar</Button>
           </>
         }
       />

@@ -1,6 +1,6 @@
 export const APP_NAME = "AltoRank";
 export const APP_DESCRIPTION =
-  "Agency SEO automation. AI-powered content, keyword research, and backlinks — managed across all your clients.";
+  "SEO and AI-search content that nothing publishes without you. Keyword research, drafting, and review, a workspace per site or per client.";
 
 export const NAV_LINKS = [
   { label: "How it works", href: "/#how-it-works" },
@@ -29,7 +29,7 @@ export const DASHBOARD_NAV: NavGroup[] = [
     group: "Overview",
     items: [
       { id: "dashboard", label: "Dashboard", href: "/dashboard", icon: "dashboard" },
-      { id: "clients", label: "Clients", href: "/clients", icon: "clients" },
+      { id: "workspaces", label: "Workspaces", href: "/workspaces", icon: "clients" },
     ],
   },
   {
@@ -38,26 +38,38 @@ export const DASHBOARD_NAV: NavGroup[] = [
       { id: "articles", label: "Articles", href: "/articles", icon: "articles" },
       { id: "calendar", label: "Calendar", href: "/content", icon: "calendar" },
       { id: "keywords", label: "Keywords", href: "/keywords", icon: "keywords" },
-      { id: "voice", label: "Brand Voice", href: "/voice", icon: "voice", tagNew: true },
+      { id: "voice", label: "Brand Voice", href: "/voice", icon: "voice" },
+      // Under "Agency" until 2026-08-30, which is exactly backwards:
+      // connecting a CMS is onboarding step 4 for a solo founder, the least
+      // agency-specific job in the product.
+      { id: "integrations", label: "Integrations", href: "/connect", icon: "integrations" },
     ],
   },
   {
     group: "Growth",
     items: [
       { id: "backlinks", label: "Backlinks", href: "/backlinks", icon: "backlinks" },
-      { id: "audits", label: "Audits", href: "/audits", icon: "search", tagNew: true },
-      { id: "readiness", label: "Agent readiness", href: "/readiness", icon: "search", tagNew: true },
+      { id: "audits", label: "Site audits", href: "/audits", icon: "search" },
+      { id: "readiness", label: "Agent readiness", href: "/readiness", icon: "sparkle" },
       { id: "geo", label: "AI visibility", href: "/geo", icon: "trend", tagNew: true },
-      { id: "integrations", label: "Integrations", href: "/connect", icon: "integrations" },
       { id: "reports", label: "Reports", href: "/reports", icon: "reports" },
     ],
   },
+  // Named "Agency" until 2026-08-30. Billing and Settings are account chrome
+  // that every tier needs, and the label made ordinary controls read as
+  // features of the top rung - the exact question it prompted was "is the
+  // agency section displayed to everyone?". Team is genuinely multi-seat, but
+  // one mislabel does not earn a group of its own.
+  // Team and Billing are panes inside Settings now (settings-tabs.tsx), not
+  // nav entries: three sidebar items for one concept was the clutter, and
+  // "Account" as a group name never described anything the group did.
   {
-    group: "Agency",
+    group: "Account",
     items: [
-      { id: "team", label: "Team", href: "/settings/team", icon: "team" },
-      { id: "billing", label: "Billing", href: "/settings/billing", icon: "billing" },
       { id: "settings", label: "Settings", href: "/settings", icon: "settings" },
+      // Operator-only. Hidden by the layout for everyone else, and the page
+      // itself 404s rather than relying on the nav to hide it.
+      { id: "admin", label: "Operations", href: "/admin", icon: "trend" },
     ],
   },
 ];

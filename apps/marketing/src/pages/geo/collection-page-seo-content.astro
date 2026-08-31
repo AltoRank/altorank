@@ -1,0 +1,156 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildArticleSchema, buildFAQSchema, buildHowToSchema } from '@/lib/schema';
+import { APP_NAME, SIGNUP_URL, SITE_URL, AUTHOR_NAME, AUTHOR_URL, PRIMARY_CTA } from '@/constants';
+
+const pageUrl = `${SITE_URL}/geo/collection-page-seo-content`;
+
+const publishDate = new Date('2026-06-21');
+const dateModified = new Date('2026-06-21');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Collection page SEO content', href: '/geo/collection-page-seo-content' },
+];
+
+// STEPS drive both the visible on-page checklist and the HowTo JSON-LD (they must match).
+const STEPS = [
+  { name: 'Prioritise your top 10–20 collections first', text: 'Collection and category pages are the highest-value SEO real estate on most stores, they target high-intent category queries ("men’s waterproof running shoes") that product pages can’t. Start with the highest-traffic, highest-intent collections; expert content on those builds topical authority that lifts the whole site. Do not bulk-generate all of them at once.' },
+  { name: 'Lead with a unique, answer-shaped intro', text: 'Give each collection a self-contained 150–300-word intro that answers what is in this category, who it is for, and how to choose, written so an AI engine can quote a sentence out of context. Never recycle manufacturer boilerplate across pages; that is the duplicate-content trap that drags category pages down.' },
+  { name: 'Add FAQ, breadcrumb and collection schema', text: 'Mark up the category’s common questions with FAQPage, the path with BreadcrumbList, and the listing with CollectionPage/ItemList where it fits. Structured data is a citation-readiness signal, roughly two-thirds of AI-cited pages carry it, though it raises readiness, never guarantees inclusion.' },
+  { name: 'Place buying-guide content below the grid', text: 'Keep the products near the top, then put the substance (comparison tables, how-to-choose guidance, sizing/spec help) below the product grid. That is the content that earns links and citations, without pushing the products a shopper came for below the fold.' },
+  { name: 'Interlink to top products and sibling collections', text: 'Link from the collection copy to its best-selling products and to related collections. Internal links pass authority and hand crawlers and AI engines a clear concept graph of the category, which is part of how a page becomes citable for category and comparison queries.' },
+  { name: 'Keep every collection unique at scale', text: 'Across many client stores and thousands of categories, templated intros quietly converge into thin, near-duplicate content, a penalty and AI-slop risk. Each collection’s copy must be genuinely unique and human-reviewed before it publishes. This is the hard part of doing it at scale, and where most stores fail.' },
+];
+
+const FAQS = [
+  { question: 'What is collection page SEO content?', answer: 'Collection (or category) page SEO content is the unique, answer-shaped copy on a store’s category pages (Shopify collections, WooCommerce/Magento categories) that targets high-intent category queries and gives search and AI engines something to rank and cite, rather than a bare product grid. It typically includes a short intro above the grid and richer buying-guide content below it.' },
+  { question: 'Why are collection pages important for SEO?', answer: 'Because they target high-intent, transactional category terms (like "organic cotton bedding" or "trail running shoes") that attract shoppers actively comparing and ready to buy, and they are the highest-value SEO real estate on most e-commerce stores. Yet most are left thin, with just a product grid, which is exactly the gap a well-written collection page exploits.' },
+  { question: 'Where should collection page content go on the page?', answer: 'Put a short, unique intro (150–300 words) at the top so the answer is immediately visible to shoppers and quotable by AI engines, and place the richer buying-guide content (comparison tables, how-to-choose, specs) below the product grid. That keeps the products a shopper came for near the top while still giving engines the depth they reward.' },
+  { question: 'Does collection page content help with AI shopping?', answer: 'Yes. For category and comparison queries, AI shopping engines cite schema-rich, answer-shaped category content, so a well-structured collection page is a citation surface, not just a ranking one. The execution overlaps with making product pages citable; see optimizing Shopify for ChatGPT Shopping for the product side.' },
+  { question: 'How do agencies write collection content across many stores without duplicate content?', answer: `Per collection, prioritised top-20 first, and human-reviewed, never one template stamped across every category. Running that across many client catalogues by hand is the bottleneck, which is why ${APP_NAME} generates unique, answer-shaped collection copy with schema per store and gates every page behind editorial approval before it reaches a client’s brand.` },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: 'Collection & Category Page SEO Content at Scale (Agency Guide, 2026)',
+    description: 'How to write unique, citable SEO content for Shopify collection and WooCommerce/Magento category pages at scale: prioritise top collections, answer-shaped intros, schema, buying-guide depth, and avoiding duplicate content.',
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildHowToSchema({
+    name: 'How to write collection page SEO content at scale',
+    description: 'A six-step method for writing unique, citable SEO content for e-commerce collection and category pages across many stores.',
+    steps: STEPS,
+  }),
+  buildFAQSchema(FAQS),
+];
+---
+
+<PSEO
+  title="Collection & Category Page SEO Content at Scale (Agency Guide 2026)"
+  description="How to write unique, citable SEO content for Shopify collection and WooCommerce/Magento category pages at scale: answer-shaped intros, schema, buying-guide depth, and no duplicate content."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  {/* ── HERO ──────────────────────────────────────────── */}
+  <header class="border-b border-line bg-[radial-gradient(600px_300px_at_88%_-10%,var(--accent-soft),transparent_70%),linear-gradient(180deg,var(--bg),var(--bg-2))] py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h1 class="mb-6 text-[clamp(34px,5vw,48px)] font-semibold leading-[1.05] tracking-[-0.025em] text-ink [text-wrap:balance]">
+        Collection page SEO content at scale
+      </h1>
+      <p class="mb-5 text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
+        Collection and category pages are the highest-value, and most neglected, SEO real estate on an e-commerce store: they target high-intent category queries a product page can't. To make them rank and get cited, give each a unique 150–300-word answer-shaped intro, FAQ and collection schema, buying-guide depth below the grid, and tight internal links, without falling into the duplicate-content trap at scale.
+      </p>
+      <div class="mt-7 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
+        <span>By <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
+        <span class="text-line">·</span>
+        <span>Published <time datetime={publishDate.toISOString().slice(0, 10)}>{publishDateDisplay}</time></span>
+        <span class="text-line">·</span>
+        <span>8 min read</span>
+      </div>
+    </div>
+  </header>
+
+  {/* ── WHY ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+      <h2 class="mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">Why category pages out-earn product pages</h2>
+      <p>A product page targets one product and one buyer who already knows what they want. A collection page targets the <span class="font-medium text-ink">category query</span> ("waterproof hiking boots," "linen summer dresses") where the shopper is still comparing and the search volume is far higher. That's why collection pages are usually the real revenue engine of a store, and why ranking them well lifts everything beneath them.</p>
+      <p>The catch: most stores ship collection pages as a bare product grid with no copy at all, or with one boilerplate paragraph recycled across every category. Both leave the highest-value pages thin, which is the opening. A handful of genuinely useful, well-structured collection pages can outrank a competitor's entire catalogue of empty ones.</p>
+    </div>
+  </section>
+
+  {/* ── STEPS ─────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <div class="mb-8">
+        <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">Six steps, in order</h2>
+      </div>
+      <ol class="flex flex-col gap-4">
+        {STEPS.map((step, i) => (
+          <li class="flex gap-4 rounded-xl border border-line bg-bg p-5">
+            <span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent font-mono text-[12px] font-semibold text-white">{i + 1}</span>
+            <div>
+              <h3 class="mb-1.5 text-[16px] font-semibold tracking-[-0.015em] text-ink">{step.name}</h3>
+              <p class="text-[14.5px] leading-relaxed text-ink-2">{step.text}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  </section>
+
+  {/* ── AGENCY ANGLE ──────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+      <h2 class="mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">Doing this across a client roster</h2>
+      <p>One store's top 20 collections is a manageable afternoon. Ten clients with hundreds of categories each is a different problem, and the moment you templatise to keep up, you reintroduce the exact duplicate-content risk you were trying to avoid. The work is only valuable if every collection's copy is genuinely unique and reviewed before it goes live on a client's brand.</p>
+      <p>That's the case for an <a href="/alternatives/contentbird" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">e-commerce-native, approval-first</a> engine. {APP_NAME} generates unique, answer-shaped collection and product copy with schema per store, and gates every page behind <a href="/approval-first-seo-content" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">editorial approval</a> before publish. Pair this with the product-page side in <a href="/geo/optimize-shopify-for-chatgpt-shopping" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">optimize Shopify for ChatGPT Shopping</a> and <a href="/geo/shopify-product-descriptions-at-scale" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">unique product descriptions at scale</a>.</p>
+    </div>
+  </section>
+
+  {/* ── FAQ ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <div class="mb-8">
+        <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">Frequently asked questions</h2>
+      </div>
+      <div class="flex flex-col gap-3">
+        {FAQS.map((f) => (
+          <details class="group rounded-lg border border-line bg-bg p-5">
+            <summary class="flex cursor-pointer items-center justify-between gap-4 text-[15px] font-medium text-ink list-none">
+              <span>{f.question}</span>
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-panel text-ink-3 transition-transform group-open:rotate-45">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 5v14M5 12h14" /></svg>
+              </span>
+            </summary>
+            <p class="mt-3 text-sm leading-relaxed text-ink-2">{f.answer}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* ── CTA ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 text-center">
+      <h2 class="mb-3 text-[clamp(22px,3vw,28px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
+        Unique collection content for every client store
+      </h2>
+      <p class="mb-7 mx-auto max-w-[520px] text-[15px] leading-relaxed text-ink-2">
+        {APP_NAME} writes answer-shaped collection and product copy with schema across every store, each page unique and reviewed before it ships.
+      </p>
+      <Button href={SIGNUP_URL} size="lg">
+  {PRIMARY_CTA.label}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
+</Button>
+    </div>
+  </section>
+</PSEO>

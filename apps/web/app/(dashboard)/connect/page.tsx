@@ -60,8 +60,7 @@ export default async function IntegrationsPage({
     <>
       <PageHead
         title="Integrations"
-        eyebrow={<><span>Integrations</span><StatusPill status="on" label={`${integrations.length} available`} /></>}
-        subtitle={<span>Connect tools your agency and clients already use</span>}
+        subtitle={<><StatusPill status="on" label={`${integrations.length} available`} /><span>Connect the tools your sites already run on</span></>}
         actions={<ConnectActions workspaces={workspaces} integrations={integrations} />}
       />
 
@@ -139,7 +138,7 @@ export default async function IntegrationsPage({
                         : "Set a recurring publishing cadence per workspace"}
                     </p>
                     {workspaces.length > 0 ? (
-                      <Link href={`/clients/${workspaces[0].id}`}>
+                      <Link href={workspaces.length === 1 ? `/workspaces/${workspaces[0].id}` : "/workspaces"}>
                         <Button size="sm" variant="ghost" className="w-full justify-center">
                           Configure
                         </Button>

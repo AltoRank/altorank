@@ -21,6 +21,7 @@
  */
 
 import { gatherArticleResearch } from "@/lib/seo/research";
+import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { buildSystemPrompt } from "@/lib/ai/prompts";
 import { factCheckArticle } from "@/lib/ai/fact-check";
 import { ClaudeProvider } from "@/lib/ai/claude";
@@ -36,9 +37,7 @@ function heading(text: string): void {
 async function main(): Promise<void> {
   heading("1. Credentials");
   const anthropic = Boolean(process.env.ANTHROPIC_API_KEY);
-  const dataForSeo = Boolean(
-    process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD,
-  );
+  const dataForSeo = hasDataForSEOCredentials();
   console.log(`  ANTHROPIC_API_KEY   ${anthropic ? "set" : "MISSING (required)"}`);
   console.log(`  DataForSEO          ${dataForSeo ? "set" : "absent (research will degrade)"}`);
   console.log(`  model               ${anthropicModel("content")}`);

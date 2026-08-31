@@ -1,0 +1,187 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildArticleSchema, buildFAQSchema, buildHowToSchema } from '@/lib/schema';
+import { APP_NAME, SIGNUP_URL, SITE_URL, AUTHOR_NAME, AUTHOR_URL, PRIMARY_CTA } from '@/constants';
+
+const pageUrl = `${SITE_URL}/geo/track-ai-citations-for-clients`;
+
+const publishDate = new Date('2026-06-21');
+const dateModified = new Date('2026-06-21');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Track AI citations for clients', href: '/geo/track-ai-citations-for-clients' },
+];
+
+// STEPS drive both the visible on-page checklist and the HowTo JSON-LD (they must match).
+const STEPS = [
+  { name: 'Freeze a prompt-set of the questions your client’s buyers ask', text: 'Write 15–20 questions per client: category ("best running shoes for flat feet"), buyer-intent ("X vs Y, which is better"), and brand ("is [brand] any good"). Freeze the exact wording: this set is your measurement instrument, and changing it breaks month-over-month comparability. The questions are the ones real buyers type into ChatGPT, not keywords.' },
+  { name: 'Run each prompt across the AI engines, logged out', text: 'Run every prompt through ChatGPT, Perplexity, Google AI Mode / AI Overviews, Gemini and Copilot in a fresh, logged-out session so personalization and history don’t skew the result. Record the engine and the date. There is no "ranking API" for AI answers, visibility is measured by sampling, so a consistent method is what makes the data trustworthy.' },
+  { name: 'Log mention, citation, position and, above all, the sources', text: 'For each prompt × engine, record: is the brand mentioned? cited with a clickable link? where in the answer does it appear? which competitors show up? And critically, which domains the engine cites as its sources. The source-domain column is the most valuable data you collect. It is the map of who the engines trust today.' },
+  { name: 'Compute the metrics', text: 'Citation rate, answers that link the brand ÷ total answers, is the headline KPI. Also track mention rate (named but not linked) and share-of-voice (brand mentions ÷ all brand mentions in the set). Break each metric down per engine to see exactly where the brand is visible and where it is invisible.' },
+  { name: 'Map the incumbents, surface the gaps', text: 'The most-cited source domains are who the engines trust right now: that list is your client’s digital-PR, outreach and comparison-content target list. The prompts where the brand never appears are the content backlog. The tracking data tells you precisely what to build and where to earn mentions next.' },
+  { name: 'Report monthly and act on the trend', text: 'Re-run the identical prompt-set and engines every month, chart the trend, and convert the gaps into the next content sprint. A flat citation rate with a clear incumbent map is still a useful client report, it sets the baseline and lets you prove the work over time, which is what clients are actually paying to see.' },
+];
+
+const FAQS = [
+  { question: 'How do you track whether a brand is cited in ChatGPT?', answer: 'By sampling. Freeze a set of buyer questions, run them through ChatGPT (and Perplexity, AI Overviews, Gemini, Copilot) in a logged-out session each month, and log whether the brand is mentioned, cited with a link, and which domains the engine used as sources. Citation rate, answers that link the brand ÷ total, is the headline metric you trend over time.' },
+  { question: 'Is there a ranking API for ChatGPT or AI search?', answer: 'No. Unlike Google rank tracking, AI answers have no positions API. You cannot query "where do I rank in ChatGPT." Visibility is measured by sampling a fixed prompt-set across the engines and recording mentions and citations. That is exactly why method consistency (same prompts, same engines, logged-out, monthly) matters so much: it is what turns a sample into a real trend line.' },
+  { question: 'What is the headline metric for AI-search visibility?', answer: 'Citation rate, the share of AI answers that cite the brand with a clickable link, is the headline KPI, because a citation is what sends trust and traffic. Support it with mention rate (named but unlinked) and share-of-voice (the brand’s mentions versus all brands in the set). Report all three per engine, since a brand can be strong in Perplexity and invisible in AI Overviews.' },
+  { question: 'How often should agencies report AI citation tracking?', answer: 'Monthly, using the identical prompt-set and engines every time. AI answers shift week to week, so a frozen monthly cadence is what separates a real trend from noise. Monthly also matches how agencies already report SEO, so AI-visibility reporting slots into the existing client cadence rather than adding a new one.' },
+  { question: 'How do agencies do AI-citation tracking across many clients?', answer: `Per client, on a fixed monthly cadence, with the source-gap list feeding the content plan. Running it by hand across 10+ clients is the bottleneck, which is why ${APP_NAME} pairs an approval-first content engine (the answer-shaped, schema-rich content that earns citations) with a white-label reporting portal that surfaces GEO-citation tracking to each client under your brand.` },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: 'How to Track AI Citations for Clients (Agency GEO Reporting, 2026)',
+    description: 'A six-step method for agencies to measure AI-search visibility: freeze a prompt-set, sample ChatGPT/Perplexity/AI Overviews logged-out, log citations and sources, compute citation rate and share-of-voice, and report monthly.',
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildHowToSchema({
+    name: 'How to track AI citations for clients',
+    description: 'A six-step, tool-agnostic method for agencies to measure and report how often a client brand is cited in AI answers.',
+    steps: STEPS,
+  }),
+  buildFAQSchema(FAQS),
+];
+---
+
+<PSEO
+  title="How to Track AI Citations for Clients (Agency GEO Reporting 2026)"
+  description="A six-step method to measure AI-search visibility for clients: freeze a prompt-set, sample ChatGPT/Perplexity/AI Overviews logged-out, log citations and sources, compute citation rate, and report monthly."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  {/* ── HERO ──────────────────────────────────────────── */}
+  <header class="border-b border-line bg-[radial-gradient(600px_300px_at_88%_-10%,var(--accent-soft),transparent_70%),linear-gradient(180deg,var(--bg),var(--bg-2))] py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h1 class="mb-6 text-[clamp(34px,5vw,48px)] font-semibold leading-[1.05] tracking-[-0.025em] text-ink [text-wrap:balance]">
+        How to track AI citations for clients
+      </h1>
+      <p class="mb-5 text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
+        There's no ranking API for AI answers, so you measure visibility by <em>sampling</em>: freeze a set of buyer questions, run them through ChatGPT, Perplexity and AI Overviews logged-out each month, and log whether the brand is cited and which sources the engine trusts. Citation rate is the headline metric, and the "who gets cited instead" column is your content and outreach backlog.
+      </p>
+      <div class="mt-7 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
+        <span>By <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
+        <span class="text-line">·</span>
+        <span>Published <time datetime={publishDate.toISOString().slice(0, 10)}>{publishDateDisplay}</time></span>
+        <span class="text-line">·</span>
+        <span>8 min read</span>
+      </div>
+    </div>
+  </header>
+
+  {/* ── WHY SAMPLING ──────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+      <h2 class="mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">Why you sample, not query</h2>
+      <p>Google rank tracking works because there's a results page with positions you can read. AI answers don't have that, there's no endpoint that returns "you rank #3 in ChatGPT." Each answer is generated, sources vary by phrasing and session, and personalization shifts what you see. So the only honest way to measure AI-search visibility is to <span class="font-medium text-ink">sample it the way a buyer would experience it</span>: ask the questions, logged-out, and record what comes back.</p>
+      <p>That makes <span class="font-medium text-ink">method consistency the whole game</span>. The same prompts, the same engines, the same logged-out conditions, the same monthly cadence, change any of them and you're comparing noise to noise. Freeze the instrument and the trend line becomes real. (This is also why GEO is sold as citation <em>readiness</em>, never a guaranteed placement, the engine still decides; see <a href="/geo/does-geo-replace-seo" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">does GEO replace SEO?</a>)</p>
+    </div>
+  </section>
+
+  {/* ── STEPS ─────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <div class="mb-8">
+        <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">Six steps, repeated monthly</h2>
+      </div>
+      <ol class="flex flex-col gap-4">
+        {STEPS.map((step, i) => (
+          <li class="flex gap-4 rounded-xl border border-line bg-bg p-5">
+            <span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent font-mono text-[12px] font-semibold text-white">{i + 1}</span>
+            <div>
+              <h3 class="mb-1.5 text-[16px] font-semibold tracking-[-0.015em] text-ink">{step.name}</h3>
+              <p class="text-[14.5px] leading-relaxed text-ink-2">{step.text}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  </section>
+
+  {/* ── WHAT TO LOG ───────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[900px] px-8">
+      <div class="mb-8">
+        <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">One row per prompt × engine × month</h2>
+      </div>
+      <div class="overflow-hidden rounded-lg border border-line bg-bg">
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[640px] text-sm">
+            <caption class="sr-only">The columns to log for each prompt and engine when tracking AI citations.</caption>
+            <thead class="bg-panel text-left font-mono text-[11px] uppercase tracking-[0.06em] text-ink-2">
+              <tr>
+                <th scope="col" class="px-5 py-3.5 font-medium">Column</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">What to record</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="px-5 py-3.5 text-ink font-medium">run_date / engine</td><td class="px-5 py-3.5 text-ink-2">The month and which engine (chatgpt, perplexity, google-aim, gemini, copilot)</td></tr>
+              <tr class="border-t border-line-soft"><td class="px-5 py-3.5 text-ink font-medium">mentioned</td><td class="px-5 py-3.5 text-ink-2">Was the brand named at all? (Y/N)</td></tr>
+              <tr class="border-t border-line-soft"><td class="px-5 py-3.5 text-ink font-medium">cited</td><td class="px-5 py-3.5 text-ink-2">Named with a clickable source link? (Y/N), the headline signal</td></tr>
+              <tr class="border-t border-line-soft"><td class="px-5 py-3.5 text-ink font-medium">position</td><td class="px-5 py-3.5 text-ink-2">Order it appears in the answer (1 = first brand named)</td></tr>
+              <tr class="border-t border-line-soft"><td class="px-5 py-3.5 text-ink font-medium">competitors</td><td class="px-5 py-3.5 text-ink-2">Which rival brands the answer named instead</td></tr>
+              <tr class="border-t border-line-soft"><td class="px-5 py-3.5 text-ink font-medium">source_domains</td><td class="px-5 py-3.5 text-ink-2">Every domain the engine cited as a source, your incumbent map</td></tr>
+              <tr class="border-t border-line-soft"><td class="px-5 py-3.5 text-ink font-medium">snippet</td><td class="px-5 py-3.5 text-ink-2">Verbatim text if the brand is described (sentiment + accuracy)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {/* ── AGENCY ANGLE ──────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+      <h2 class="mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">Doing this across a client roster</h2>
+      <p>The method is simple; doing it by hand across 10+ clients, every month, across five engines, is the bottleneck, and the part clients will pay for is the report, not the spreadsheet labour. The two halves that matter are producing the content that earns citations in the first place, and presenting the trend back to the client under your brand.</p>
+      <p>That's the pairing {APP_NAME} is built around: an <a href="/alternatives/contentbird" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">approval-first content engine</a> that produces the answer-shaped, schema-rich pages AI engines cite, every page reviewed before it reaches a client's brand, plus a white-label reporting portal that surfaces GEO-citation tracking per client. The execution side for e-commerce is in <a href="/geo/optimize-shopify-for-chatgpt-shopping" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">optimize Shopify for ChatGPT Shopping</a>; packaging and pricing it as an offer is in <a href="/geo/geo-services-pricing" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">GEO services pricing</a>.</p>
+    </div>
+  </section>
+
+  {/* ── FAQ ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <div class="mb-8">
+        <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">Frequently asked questions</h2>
+      </div>
+      <div class="flex flex-col gap-3">
+        {FAQS.map((f) => (
+          <details class="group rounded-lg border border-line bg-bg p-5">
+            <summary class="flex cursor-pointer items-center justify-between gap-4 text-[15px] font-medium text-ink list-none">
+              <span>{f.question}</span>
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-panel text-ink-3 transition-transform group-open:rotate-45">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 5v14M5 12h14" /></svg>
+              </span>
+            </summary>
+            <p class="mt-3 text-sm leading-relaxed text-ink-2">{f.answer}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* ── CTA ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 text-center">
+      <h2 class="mb-3 text-[clamp(22px,3vw,28px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
+        The content that earns citations, plus the report that proves it
+      </h2>
+      <p class="mb-7 mx-auto max-w-[520px] text-[15px] leading-relaxed text-ink-2">
+        {APP_NAME} produces answer-shaped, schema-rich content across every client store, reviewed before it ships, with a white-label portal to report GEO visibility back to each client.
+      </p>
+      <Button href={SIGNUP_URL} size="lg">
+  {PRIMARY_CTA.label}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
+</Button>
+    </div>
+  </section>
+</PSEO>

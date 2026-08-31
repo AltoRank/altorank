@@ -35,6 +35,16 @@ export interface ArticlePrompt {
    * degrades to a shorter prompt rather than to invented context.
    */
   research?: ArticleResearch;
+  /**
+   * Other articles in this workspace, so an internal link can point at
+   * something that exists.
+   *
+   * The prompt has always asked for `{{internal-link:topic}}` placeholders, but
+   * never said what there was to link to, so "where relevant" read as "probably
+   * not": zero placeholders across six generated articles. A model cannot link
+   * to a library it has not been shown.
+   */
+  internalLinkTargets?: Array<{ title: string; keyword: string }>;
 }
 
 export interface ArticleResult {
@@ -43,6 +53,9 @@ export interface ArticleResult {
   metaDescription: string;
   wordCount: number;
   tokensUsed: number;
+  /** Split out because input and output bill at different rates. */
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 /**

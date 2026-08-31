@@ -1,0 +1,189 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildArticleSchema, buildFAQSchema, buildHowToSchema } from '@/lib/schema';
+import { APP_NAME, SIGNUP_URL, SITE_URL, AUTHOR_NAME, AUTHOR_URL, PRIMARY_CTA } from '@/constants';
+
+const pageUrl = `${SITE_URL}/approval-first-seo-content`;
+
+const publishDate = new Date('2026-06-21');
+const dateModified = new Date('2026-06-21');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Approval-first SEO content', href: '/approval-first-seo-content' },
+];
+
+// STEPS drive both the visible workflow list and the HowTo JSON-LD (they must match).
+const STEPS = [
+  { name: 'Draft is generated to a per-client brief', text: 'AI produces a draft against the client’s brief and voice profile: answer-shaped sections, internal links, and the right schema. It enters the system as a draft, never as a live page. Generation and publishing are deliberately separate steps.' },
+  { name: 'Internal editorial review', text: 'An editor reviews the draft for factual accuracy, brand voice, and SEO/GEO quality, then approves it or requests changes. Nothing can publish from this state. The review is a required gate, not an optional suggestion box.' },
+  { name: 'Optional client sign-off', text: 'The client approves or comments through a scoped review link: approve and comment only, never edit, and scoped to their own workspace so they never see another client’s work. Their approval is recorded as a timestamped sign-off.' },
+  { name: 'The approval gate', text: 'Only an approved (or scheduled) article can publish. The gate lives in the publish step itself, so automated jobs, bulk actions, and scheduled runs cannot bypass it. There is no path to a live page that skips human review.' },
+  { name: 'Schedule or publish', text: 'Once approved, the page publishes to the CMS or schedules for later, with Product/FAQ schema and resolved internal links injected at publish time. The agency controls timing; the client controls approval.' },
+  { name: 'Immutable audit trail', text: 'Every transition (who submitted, who reviewed, what changed, and the client’s sign-off with a timestamp) is recorded in an append-only log. That trail is the legal and trust record agencies need when content goes out under a client’s brand.' },
+];
+
+// Autopilot vs approval-first, a row-per-difference table (engines extract these for the snippet).
+const VS_ROWS = [
+  { dimension: 'Publishing', autopilot: 'Self-publishes on a schedule', approval: 'Nothing publishes without human approval' },
+  { dimension: "On a client's brand", autopilot: 'AI content goes live unreviewed', approval: 'Reviewed, and optionally client-signed-off, first' },
+  { dimension: 'Scaled-content-penalty risk', autopilot: 'Higher, unreviewed AI volume', approval: 'Lower, human review is the trust signal' },
+  { dimension: 'Audit trail', autopilot: 'None', approval: 'Append-only log of every approval' },
+  { dimension: 'Built for', autopilot: 'Solo sites, low-stakes pages', approval: 'Agencies publishing to client brands' },
+];
+
+const FAQS = [
+  { question: 'What is approval-first SEO content?', answer: 'Approval-first SEO content is a workflow where every AI-generated page is reviewed and approved by a human, and optionally signed off by the client, before it publishes to a brand. The publish step is gated, so nothing goes live unreviewed. It is the opposite of autopilot tools that self-publish AI content on a schedule.' },
+  { question: 'Why does editorial approval matter for AI SEO content?', answer: 'Because unreviewed AI content is now a liability. Google’s 2025 scaled-content-abuse enforcement penalised high-volume unreviewed AI, and for an agency, publishing unchecked AI to a client’s brand is an accuracy, reputation, and legal risk. A human approval gate is the trust signal both search engines and clients look for.' },
+  { question: 'What is the difference between approval-first and autopilot SEO tools?', answer: 'Autopilot tools generate and publish AI content automatically on a schedule. Approval-first tools gate the publish step behind human review (and optional client sign-off), so a page only goes live once a person has approved it. The two have very different risk profiles: autopilot optimises for volume, approval-first optimises for safety on client brands.' },
+  { question: 'Can clients approve content themselves?', answer: `Yes. With ${APP_NAME}, a client can approve or comment through a scoped review link (approve and comment only, never edit) limited to their own workspace so they never see another client’s content. Each approval is logged as a timestamped sign-off, giving the agency an audit trail of who approved what and when.` },
+  { question: 'Does an approval workflow slow agencies down?', answer: 'It adds a review step, but it removes the larger costs: cleaning up published mistakes, rebuilding client trust, and penalty risk from unreviewed AI. The workflow is built around a fast review queue and change requests rather than bureaucracy, so the gate protects the brand without becoming the bottleneck.' },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: 'Approval-First AI SEO Content: The Editorial Workflow for Agencies (2026)',
+    description: 'Approval-first SEO content gates every AI-generated page behind human (and optional client) review before it publishes. Why it matters after Google’s scaled-content enforcement, and how the workflow works.',
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildHowToSchema({
+    name: 'How an approval-first SEO content workflow works',
+    description: 'The six stages of an editorial approval workflow for AI SEO content, from draft to published with an immutable audit trail.',
+    steps: STEPS,
+  }),
+  buildFAQSchema(FAQS),
+];
+---
+
+<PSEO
+  title="Approval-First AI SEO Content: The Editorial Workflow for Agencies"
+  description="Approval-first SEO content gates every AI page behind human (and optional client) review before it publishes. Why it matters after Google’s scaled-content enforcement, and how the workflow works."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  {/* ── HERO ──────────────────────────────────────────── */}
+  <header class="border-b border-line bg-[radial-gradient(600px_300px_at_88%_-10%,var(--accent-soft),transparent_70%),linear-gradient(180deg,var(--bg),var(--bg-2))] py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h1 class="mb-6 text-[clamp(34px,5vw,48px)] font-semibold leading-[1.05] tracking-[-0.025em] text-ink [text-wrap:balance]">
+        Approval-first AI SEO content
+      </h1>
+      <p class="mb-5 text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
+        Approval-first means every AI-generated page is reviewed and approved by a human, and optionally signed off by the client, <em>before</em> it publishes to a brand. The publish step is gated, so nothing goes live unreviewed. After Google's 2025 scaled-content enforcement, that human gate is the trust signal both search engines and clients look for, and it's the opposite of autopilot tools that self-publish.
+      </p>
+      <div class="mt-7 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
+        <span>By <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
+        <span class="text-line">·</span>
+        <span>Published <time datetime={publishDate.toISOString().slice(0, 10)}>{publishDateDisplay}</time></span>
+        <span class="text-line">·</span>
+        <span>7 min read</span>
+      </div>
+    </div>
+  </header>
+
+  {/* ── WHY ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+      <h2 class="mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">Why unreviewed AI content became a liability</h2>
+      <p>For two years the pitch for AI SEO tools was volume: generate hundreds of articles, publish them automatically, watch the long tail fill in. Then Google's 2025 scaled-content-abuse enforcement changed the maths, high-volume, unreviewed AI content became a penalty risk, not a growth hack. The pages that held up were the ones that read as accurate, original, and reviewed.</p>
+      <p>For an agency, the stakes are higher still. Publishing unchecked AI to a <span class="font-medium text-ink">client's</span> brand is an accuracy risk (a hallucinated spec on a product page), a reputation risk (off-brand voice going live), and a legal one (claims no one signed off on). The agencies that win with AI aren't the ones generating the most, they're the ones who can prove a human approved every page. That proof is the product.</p>
+    </div>
+  </section>
+
+  {/* ── HOW IT WORKS ──────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <div class="mb-8">
+        <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">How an approval-first workflow works</h2>
+      </div>
+      <ol class="flex flex-col gap-4">
+        {STEPS.map((step, i) => (
+          <li class="flex gap-4 rounded-xl border border-line bg-bg p-5">
+            <span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent font-mono text-[12px] font-semibold text-white">{i + 1}</span>
+            <div>
+              <h3 class="mb-1.5 text-[16px] font-semibold tracking-[-0.015em] text-ink">{step.name}</h3>
+              <p class="text-[14.5px] leading-relaxed text-ink-2">{step.text}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  </section>
+
+  {/* ── VS TABLE ──────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[900px] px-8">
+      <div class="mb-8">
+        <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">Autopilot vs approval-first</h2>
+      </div>
+      <div class="overflow-hidden rounded-lg border border-line bg-bg">
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[640px] text-sm">
+            <caption class="sr-only">Autopilot SEO tools versus approval-first, compared across publishing, brand safety, penalty risk, audit trail, and who each is built for.</caption>
+            <thead class="bg-panel text-left font-mono text-[11px] uppercase tracking-[0.06em] text-ink-2">
+              <tr>
+                <th scope="col" class="px-5 py-3.5 font-medium">Dimension</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">Autopilot tools</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">Approval-first ({APP_NAME})</th>
+              </tr>
+            </thead>
+            <tbody>
+              {VS_ROWS.map((row, i) => (
+                <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+                  <td class="px-5 py-3.5 text-ink font-medium">{row.dimension}</td>
+                  <td class="px-5 py-3.5 text-ink-2">{row.autopilot}</td>
+                  <td class="px-5 py-3.5 text-ink-2">{row.approval}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p class="mt-5 text-[14px] leading-relaxed text-ink-3">See the wedge in practice against a daily-autopilot tool in <a href="/alternatives/rankyak" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">AltoRank vs RankYak</a>, and why both search and AI engines reward reviewed content in <a href="/geo/does-geo-replace-seo" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">does GEO replace SEO?</a></p>
+    </div>
+  </section>
+
+  {/* ── FAQ ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <div class="mb-8">
+        <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">Frequently asked questions</h2>
+      </div>
+      <div class="flex flex-col gap-3">
+        {FAQS.map((f) => (
+          <details class="group rounded-lg border border-line bg-bg p-5">
+            <summary class="flex cursor-pointer items-center justify-between gap-4 text-[15px] font-medium text-ink list-none">
+              <span>{f.question}</span>
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-panel text-ink-3 transition-transform group-open:rotate-45">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 5v14M5 12h14" /></svg>
+              </span>
+            </summary>
+            <p class="mt-3 text-sm leading-relaxed text-ink-2">{f.answer}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* ── CTA ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 text-center">
+      <h2 class="mb-3 text-[clamp(22px,3vw,28px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
+        AI SEO content your clients sign off on, before it ships
+      </h2>
+      <p class="mb-7 mx-auto max-w-[520px] text-[15px] leading-relaxed text-ink-2">
+        {APP_NAME} generates SEO content for every client store, then gates it behind editorial approval and optional client sign-off, with an audit trail of who approved what.
+      </p>
+      <Button href={SIGNUP_URL} size="lg">
+  {PRIMARY_CTA.label}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
+</Button>
+    </div>
+  </section>
+</PSEO>

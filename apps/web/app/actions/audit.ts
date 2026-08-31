@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import type { DomainAudit } from "@/lib/types";
 
@@ -23,15 +24,39 @@ export async function startDomainAudit(workspaceId: string): Promise<string> {
 
   if (error) throw new Error(error.message);
 
-  // Trigger the crawl via internal API (non-blocking)
+  // Hand the crawl to /api/audit, which answers 202 immediately and does the
+  // work in `after`. Two things here are deliberate and were both wrong before.
+  //
+  // The cookie header: that route authenticates the caller with
+  // supabase.auth.getUser(). A bare fetch() from a Server Function carries no
+  // cookies, so every one of these arrived anonymous and was answered 401.
+  //
+  // Awaiting the response: `fetch` does not reject on 4xx, so the old
+  // `.catch(() => {})` caught nothing and a 401 looked exactly like success.
+  // The row was left at "running" with nothing ever coming to clear it. We now
+  // wait for the 202 (fast, the crawl happens after it) and mark the audit
+  // failed if the worker refused the job, so the UI can say so.
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  fetch(`${baseUrl}/api/audit`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ auditId: audit.id, workspaceId }),
-  }).catch(() => {
-    // Fire and forget — the API route handles errors
-  });
+  const cookieHeader = (await cookies())
+    .getAll()
+    .map((c) => `${c.name}=${c.value}`)
+    .join("; ");
+
+  try {
+    const res = await fetch(`${baseUrl}/api/audit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", cookie: cookieHeader },
+      body: JSON.stringify({ auditId: audit.id, workspaceId }),
+    });
+    if (!res.ok) throw new Error(`worker returned ${res.status}`);
+  } catch (err) {
+    console.error(`[audit ${audit.id}] could not start:`, err);
+    await supabase
+      .from("domain_audits")
+      .update({ status: "failed", completed_at: new Date().toISOString() })
+      .eq("id", audit.id);
+    throw new Error("Could not start the audit. Please try again.");
+  }
 
   revalidatePath("/audits");
   return audit.id;

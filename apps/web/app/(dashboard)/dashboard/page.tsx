@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getRecentArticles, getArticles } from "@/lib/queries/articles";
+import { getKeywords } from "@/lib/queries/keywords";
 import { getTrafficSeries, type TrafficSeries } from "@/lib/queries/traffic";
-import { PageHead, DotSep, StatusPill, Avatar, Icons, Button, Chip, Card, StatStrip } from "@/components/ui";
+import { PageHead, DotSep, StatusPill, Avatar, Icons, Button, Chip, Card, StatStrip, ConnectPrompt } from "@/components/ui";
 import { ClientActions } from "@/components/dashboard/client-actions";
 import { WorkspaceGrid } from "@/components/dashboard/workspace-grid";
 import type { Workspace } from "@/lib/types";
+import { plural } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -25,17 +27,15 @@ export const metadata: Metadata = { title: "Dashboard" };
 function TrafficChart({ series }: { series: TrafficSeries }) {
   if (!series.hasData) {
     return (
-      <div className="h-[220px] grid place-items-center text-center px-6">
-        <div>
-          <div className="text-[13px] text-ink-2 font-medium mb-1">
-            No traffic data yet
-          </div>
-          <p className="text-[12.5px] text-ink-3 max-w-[46ch] leading-[1.6]">
-            Connect Google Search Console and the daily analytics sync will fill
-            this in. Nothing is estimated here, so the chart stays empty until
-            there are real clicks to plot.
-          </p>
-        </div>
+      <div className="h-[220px] grid place-items-center">
+        <ConnectPrompt
+          icon="trend"
+          service="Google Search Console"
+          title="No traffic data yet"
+          body="Connect Search Console and the daily sync fills this in. Nothing here is estimated, so the chart stays empty until there are real clicks to plot."
+          href="/connect"
+          cta="Connect Search Console"
+        />
       </div>
     );
   }
@@ -72,12 +72,26 @@ function TrafficChart({ series }: { series: TrafficSeries }) {
 }
 
 export default async function DashboardPage() {
-  const [workspaces, allArticles, recent, traffic] = await Promise.all([
+  const [workspaces, allArticles, recent, traffic, keywords] = await Promise.all([
     getWorkspaces(),
     getArticles(),
     getRecentArticles(6),
     getTrafficSeries(),
+    getKeywords(),
   ]);
+
+  // The header pill used to be a hardcoded "All systems healthy" while the
+  // Health card below it computed the same thing from real rows, so a run of
+  // failed publishes left a green pill sitting directly above the red count.
+  // One derivation, stated once.
+  const failedPublishes = allArticles.filter((a) => a.status === "error").length;
+
+  const keywordCount = keywords.length;
+  // Keywords that have entered the content workflow. Deliberately NOT labelled
+  // "with rank data": that would be a different query against keyword_rankings,
+  // and a delta that does not measure what it says is how this codebase keeps
+  // ending up with numbers nobody can trace.
+  const plannedCount = keywords.filter((k) => k.status !== "new").length;
 
   // Build per-workspace article counts
   const wsCounts = new Map<string, { total: number; live: number }>();
@@ -102,22 +116,24 @@ export default async function DashboardPage() {
     <>
       <PageHead
         title="Dashboard"
-        eyebrow={
-          <>
-            <span>Agency overview</span>
-            <StatusPill status="on" label="All systems healthy" />
-          </>
-        }
         subtitle={
           <>
-            <span>{workspaces.length} workspaces</span>
+            {/* A failed publish is the one thing on this page someone has to
+                act on, so it keeps its pill. It only renders when there is
+                one: "No failed publishes" is not news. */}
+            {failedPublishes > 0 && (
+              <StatusPill
+                status="error"
+                label={`${plural(failedPublishes, "publish", "publishes")} failed`}
+              />
+            )}
+            <span>{plural(workspaces.length, "workspace")}</span>
             <DotSep />
-            <span>{totalArticles} articles total</span>
+            <span>{plural(totalArticles, "article")} total</span>
           </>
         }
         actions={
           <>
-            <Button disabled><Icons.download size={14} />Export report</Button>
             <ClientActions />
           </>
         }
@@ -134,18 +150,38 @@ export default async function DashboardPage() {
               ? traffic.changePct === null
                 ? "no prior period"
                 : `${traffic.changePct >= 0 ? "+" : ""}${traffic.changePct}% vs previous 30d`
-              : "Connect analytics",
+              : (
+                  <ConnectPrompt
+                    dense
+                    icon="trend"
+                    title=""
+                    body=""
+                    href="/connect"
+                    cta="Connect analytics"
+                  />
+                ),
             deltaType: traffic.changePct != null && traffic.changePct > 0 ? "pos" : undefined,
           },
-          { label: "Keywords tracked", value: "—", delta: "Run keyword research" },
-          { label: "Pending reviews", value: String(pendingReviews), delta: `across ${new Set(allArticles.filter((a) => a.status === "review").map((a) => a.workspace_id)).size} workspaces` },
+          {
+            label: "Keywords tracked",
+            value: keywordCount ? keywordCount.toLocaleString() : "—",
+            delta: keywordCount ? (
+              `${plannedCount} in the content plan`
+            ) : (
+              <ConnectPrompt dense icon="keywords" title="" body="" href="/keywords" cta="Run keyword research" />
+            ),
+          },
+          { label: "Pending reviews", value: String(pendingReviews), delta: (() => {
+              const n = new Set(allArticles.filter((a) => a.status === "review").map((a) => a.workspace_id)).size;
+              return `across ${n} ${n === 1 ? "workspace" : "workspaces"}`;
+            })() },
         ]}
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
         <div className="grid grid-cols-12 gap-4">
           {/* Traffic chart */}
-          <Card title="Organic traffic · last 30 days" meta={<Chip label="All clients" soft />} className="col-span-8">
+          <Card title="Organic traffic · last 30 days" meta={<Chip label="All workspaces" soft />} className="col-span-8">
             <div className="p-[18px]">
               <TrafficChart series={traffic} />
               <div className="flex gap-4 text-[11.5px] text-ink-3 mt-2.5 font-mono">
@@ -160,10 +196,10 @@ export default async function DashboardPage() {
           </Card>
 
           {/* Today's queue */}
-          <Card title="Today's queue" meta={`${allArticles.filter((a) => ["drafting", "review", "scheduled"].includes(a.status)).length} items`} className="col-span-4">
+          <Card title="Needs your review" meta={`${pendingReviews} waiting`} className="col-span-4">
             <div className="px-2 py-1.5">
               {allArticles
-                .filter((a) => ["drafting", "review", "scheduled"].includes(a.status))
+                .filter((a) => a.status === "review")
                 .slice(0, 5)
                 .map((item) => {
                   const w = wsMap.get(item.workspace_id);
@@ -178,7 +214,7 @@ export default async function DashboardPage() {
                     </div>
                   );
                 })}
-              {allArticles.filter((a) => ["drafting", "review", "scheduled"].includes(a.status)).length === 0 && (
+              {pendingReviews === 0 && (
                 <div className="text-[13px] text-ink-3 px-2.5 py-4 text-center">No items in queue</div>
               )}
             </div>
@@ -190,7 +226,7 @@ export default async function DashboardPage() {
           </Card>
 
           {/* Recent articles */}
-          <Card title="Recent articles" meta={<Link href="/articles"><Button size="sm">View all</Button></Link>} className="col-span-8">
+          <Card title="Recent articles" meta={<Link href="/articles"><Button size="sm">View all</Button></Link>} className="col-span-12">
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
@@ -240,22 +276,6 @@ export default async function DashboardPage() {
             </table>
           </Card>
 
-          {/* Health */}
-          <Card title="Health" className="col-span-4">
-            <div className="px-[18px] py-1.5 pb-[18px]">
-              {[
-                { label: "Publishing queue", val: allArticles.filter((a) => a.status === "scheduled").length > 0 ? "On track" : "Empty", ok: true },
-                { label: "Failed publishes", val: allArticles.filter((a) => a.status === "error").length > 0 ? `${allArticles.filter((a) => a.status === "error").length} failed` : "None", warn: allArticles.filter((a) => a.status === "error").length > 0 },
-                { label: "Workspaces", val: `${workspaces.length} active`, ok: true },
-              ].map((h) => (
-                <div key={h.label} className="flex items-center py-2.5 border-b border-line-soft last:border-b-0 text-[13px]">
-                  <span className={`w-1.5 h-1.5 rounded-full mr-2 ${h.warn ? "bg-warn" : "bg-ok"}`} />
-                  <span className="flex-1 text-ink-2">{h.label}</span>
-                  <span className={`font-mono text-xs ${h.warn ? "text-warn-ink" : "text-ok-ink"}`}>{h.val}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
         </div>
       </div>
     </>

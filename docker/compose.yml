@@ -44,6 +44,10 @@ services:
       DATAFORSEO_PASSWORD: ${DATAFORSEO_PASSWORD:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      # Compared against the x-cron-secret header by every /api/cron/* route.
+      # It was documented in .env.example but never reached the container, so
+      # the routes rejected every request even when it was set.
+      CRON_SECRET: ${CRON_SECRET:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -51,3 +55,29 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
+  # Runs the eight scheduled jobs that the hosted deployment gets from Vercel.
+  #
+  # Without this, self-hosting shipped the dashboard but not the automation,
+  # which is the part the product is actually about: analysis, drafting, rank
+  # tracking and AI-visibility measurement only ever ran if somebody clicked.
+  # The routes existed in the app container and nothing called them.
+  #
+  # A separate container rather than a background process inside `web`, so a
+  # crashed scheduler shows up as a stopped container instead of a silently
+  # missing loop, and so scaling the app does not multiply the schedule.
+  cron:
+    image: alpine:3.20
+    depends_on:
+      - web
+    environment:
+      APP_URL: http://web:3000
+      # Required, not optional. Every /api/cron/* route rejects a request without
+      # a matching x-cron-secret, so a scheduler started without this would run
+      # on time and accomplish nothing, which is the hardest failure to notice.
+      CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET in docker/.env; the cron routes reject every request without it}
+    volumes:
+      - ./crontab:/etc/altorank/crontab:ro
+      - ./cron-entrypoint.sh:/usr/local/bin/cron-entrypoint.sh:ro
+    command: sh -c "apk add --no-cache curl >/dev/null && exec /usr/local/bin/cron-entrypoint.sh"
+    restart: unless-stopped

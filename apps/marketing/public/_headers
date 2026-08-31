@@ -1,0 +1,20 @@
+# Cloudflare Pages response headers.
+#
+# Link relations for agent discovery (RFC 8288). Only resources that actually
+# exist are advertised: pointing an agent at /.well-known/api-catalog when there
+# is no API would be a broken promise, and a 404 behind an advertised relation
+# is worse than no relation at all.
+#
+# `describedby` is the honest relation for llms.txt: it is a description of the
+# resource, not a service endpoint. There is no registered relation for llms.txt
+# yet, and inventing one to satisfy a scanner would be gaming the check.
+
+/*
+  Link: </llms.txt>; rel="describedby"; type="text/plain"
+  Link: </sitemap-index.xml>; rel="sitemap"; type="application/xml"
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/llms.txt
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=3600

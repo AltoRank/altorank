@@ -3,7 +3,8 @@ import type { RankingResult } from "@/lib/seo/serp";
 /** A row ready for insert into `keyword_rankings`. */
 export type RankingRow = {
   keyword_id: string;
-  position: number;
+  /** NULL means "checked, not found in the results". Never 0. */
+  position: number | null;
   url: string | null;
   checked_at: string;
 };
@@ -12,23 +13,30 @@ export type RankingRow = {
  * Turn SERP results into rows for `keyword_rankings`.
  *
  * This existed twice, byte for byte, in app/actions/seo.ts and
- * app/api/cron/serp/route.ts, and carried the same two bugs in both copies.
+ * app/api/cron/serp/route.ts, and both copies wrote `position ?? 0` for a
+ * keyword that did not rank. Rank 0 sorts ahead of rank 1, so a keyword
+ * ranking nowhere read as the best result in the workspace and dragged every
+ * average over the column toward zero. Migration 026 found 14 such rows and
+ * every one of them was a keyword the site did not rank for.
  *
- * The first was a fabricated measurement. Both copies wrote `position ?? 0`
- * because `keyword_rankings.position` is `integer not null`, so there was no
- * way to record "checked, did not rank". Storing 0 is not a neutral
- * placeholder: 0 sorts ahead of 1, so a keyword that ranked nowhere read as
- * the single best result in the workspace, and every average over the column
- * was dragged toward zero by terms that had never ranked at all. Rows with no
- * position are now dropped. Absence of a row is the honest encoding of
- * absence, and it needs no migration.
+ * Two fixes were written for this independently, in two sessions, on the same
+ * day. The first dropped the row. This is the other one, and it is better:
+ * migration 026 makes the column nullable so NULL can mean "checked, not
+ * found". Dropping the row loses the fact that a check happened at all, and
+ * for a young domain, which is most of this product's users, "we looked and
+ * you are still not there" is the whole point of a rank tracker. You cannot
+ * plot an absence you never recorded.
  *
- * The second was a type error that broke `next build` outright:
- * `.filter(Boolean)` does not narrow `(T | null)[]` to `T[]`, so the array
- * handed to `.insert()` still admitted null. A type predicate does narrow it.
+ * So: rows with no position are KEPT with position NULL. Rows whose keyword is
+ * not in this workspace are dropped, because they are not ours to record.
  *
- * If a future change needs to distinguish "not ranking" from "not checked",
- * that is a nullable column plus a migration, decided once, here.
+ * The type predicate on the filter is load-bearing and unrelated:
+ * `.filter(Boolean)` does not narrow `(T | null)[]` to `T[]`, which broke
+ * `next build` outright.
+ *
+ * Requires migration 026. Against an unmigrated database the column is still
+ * NOT NULL and these inserts will fail loudly, which is the correct failure:
+ * better a visible error than silently recording a rank of zero again.
  */
 export function buildRankingRows(
   rankings: RankingResult[],
@@ -38,10 +46,10 @@ export function buildRankingRows(
   return rankings
     .map((r) => {
       const keywordId = termToId.get(r.keyword);
-      if (!keywordId || r.position == null) return null;
+      if (!keywordId) return null;
       return {
         keyword_id: keywordId,
-        position: r.position,
+        position: r.position ?? null,
         url: r.url,
         checked_at: checkedAt,
       };

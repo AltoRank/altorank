@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { getArticle } from "@/lib/queries/articles";
 import { getWorkspace } from "@/lib/queries/workspaces";
 import { getPublishingCadence } from "@/lib/queries/schedule";
-import { PageHead, DotSep, StatusPill, Avatar, Icons, Button } from "@/components/ui";
+import { PageHead, DotSep, StatusPill } from "@/components/ui";
 import { ArticleEditor } from "@/components/dashboard/editor/article-editor";
 import { notFound } from "next/navigation";
 
@@ -35,26 +34,16 @@ export default async function ArticleEditorPage({ params }: Props) {
     <>
       <PageHead
         title={article.title}
-        eyebrow={
-          <>
-            <Link className="inline-flex items-center gap-1.5 text-ink-2 cursor-pointer hover:text-ink" href="/articles">
-              <Icons.arrowLeft size={13} /> Back to articles
-            </Link>
-            <DotSep />
-            <Avatar initials={workspace.initials} color={workspace.color} size="sm" className="w-[18px] h-[18px] text-[9px] rounded" />
-            <span>{workspace.name}</span>
-            <DotSep />
-            <StatusPill status={article.status} />
-            <span>Updated {dateStr}</span>
-          </>
-        }
+        backHref="/articles"
+        backLabel="Back to articles"
         subtitle={
           <>
-            <span className="font-mono">/blog/{article.slug}</span>
-            <DotSep />
+            <StatusPill status={article.status} />
             <span>{article.word_count ? `${article.word_count.toLocaleString()} words` : "Draft"}</span>
             <DotSep />
-            <span>Target keyword: <b className="text-ink">{article.keyword}</b></span>
+            <span className="font-mono truncate">/blog/{article.slug}</span>
+            <DotSep />
+            <span className="truncate">Updated {dateStr}</span>
           </>
         }
       />

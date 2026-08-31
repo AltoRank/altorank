@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { setSpendReporter } from "@/lib/seo/client";
+import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
 import { analyseDomain } from "@/lib/audit/domain-analysis";
 
@@ -30,7 +32,9 @@ const BATCH = 3;
 export async function GET(request: Request) {
   const cronSecret = request.headers.get("x-cron-secret");
   if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    setSpendReporter(null);
+
+  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const supabase = createServiceClient();
@@ -51,6 +55,15 @@ export async function GET(request: Request) {
   for (const ws of pending ?? []) {
     const workspaceId = ws.id as string;
     const domain = ws.domain as string;
+
+    setSpendReporter(({ operation, costUsd }) => {
+      void recordSpend(supabase, {
+        provider: "dataforseo",
+        operation,
+        costUsd,
+        workspaceId,
+      });
+    });
 
     try {
       const analysis = await analyseDomain({

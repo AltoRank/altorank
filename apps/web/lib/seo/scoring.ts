@@ -178,8 +178,17 @@ function checkHeadingStructure(content: string): ScoringCheck {
   };
 }
 
-function checkMetaDescriptionLength(content: string): ScoringCheck {
-  const meta = extractMetaDescription(content);
+function checkMetaDescriptionLength(
+  content: string,
+  stored?: string | null,
+): ScoringCheck {
+  // The meta description is extracted into its own column before the HTML is
+  // stored, so grepping the content for the tag found nothing - which made
+  // this check fail on every article that ever existed, including ones whose
+  // meta description was fine. A check that cannot pass is not a check.
+  // Callers pass the stored column; the extraction stays as a fallback for
+  // raw model output that still carries the tag.
+  const meta = stored?.trim() || extractMetaDescription(content);
 
   if (!meta) {
     return {
@@ -302,12 +311,16 @@ function checkInternalLinks(content: string): ScoringCheck {
  * @param keyword  Target keyword to check for
  * @returns        Overall score (0-100) and individual check results
  */
-export function scoreArticle(content: string, keyword: string): ScoringResult {
+export function scoreArticle(
+  content: string,
+  keyword: string,
+  opts?: { metaDescription?: string | null },
+): ScoringResult {
   const checks: ScoringCheck[] = [
     checkKeywordInTitle(content, keyword),
     checkKeywordDensity(content, keyword),
     checkHeadingStructure(content),
-    checkMetaDescriptionLength(content),
+    checkMetaDescriptionLength(content, opts?.metaDescription),
     checkWordCount(content),
     checkReadability(content),
     checkInternalLinks(content),

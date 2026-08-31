@@ -6,6 +6,7 @@ import { ExchangeRequestForm } from "@/components/dashboard/exchange-actions";
 import { BacklinkFilters } from "@/components/dashboard/backlink-filters";
 import { ExportCsv } from "@/components/dashboard/export-csv";
 import type { Workspace } from "@/lib/types";
+import { plural } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Backlinks" };
 
@@ -24,11 +25,16 @@ export default async function BacklinksPage({ searchParams }: Props) {
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));
   const liveCount = backlinks.filter((b) => b.status === "live").length;
   const pendingCount = backlinks.filter((b) => b.status === "pending").length;
-  const avgDr = backlinks.length > 0
-    ? Math.round(backlinks.reduce((s, b) => s + b.source_dr, 0) / backlinks.length)
-    : 0;
+  // Average over the links that actually carry a reading. Counting an
+  // unmeasured link as DR 0 drags the reported authority of the whole set down,
+  // and reporting 0 for "no links yet" states a measurement nobody took.
+  const measuredDr = backlinks
+    .map((b) => b.source_dr)
+    .filter((d): d is number => typeof d === "number");
+  const avgDr = measuredDr.length
+    ? String(Math.round(measuredDr.reduce((s, d) => s + d, 0) / measuredDr.length))
+    : "—";
 
-  const firstWs = workspaces[0];
 
   const csvColumns = ["Source", "DR", "Anchor", "Target", "Workspace", "Status", "Date"];
   const csvRows = backlinks.map((b) => {
@@ -48,12 +54,11 @@ export default async function BacklinksPage({ searchParams }: Props) {
     <>
       <PageHead
         title="Backlinks"
-        eyebrow={<><span>Link building</span><StatusPill status="on" label={`${backlinks.length} total`} /></>}
-        subtitle={<><span>Across {workspaces.length} workspaces</span><DotSep /><span>Avg DR {avgDr}</span></>}
+        subtitle={<><StatusPill status="on" label={plural(backlinks.length, "link")} /><span>Across {plural(workspaces.length, "workspace")}</span><DotSep /><span>Avg DR {avgDr}</span></>}
         actions={
           <>
             <ExportCsv columns={csvColumns} rows={csvRows} filename="backlinks" />
-            {firstWs && <ExchangeRequestForm workspaceId={firstWs.id} agencyId={firstWs.agency_id} />}
+            {workspaces.length > 0 && <ExchangeRequestForm workspaces={workspaces} />}
           </>
         }
       />
@@ -61,7 +66,7 @@ export default async function BacklinksPage({ searchParams }: Props) {
       <StatStrip
         stats={[
           { label: "Total backlinks", value: String(backlinks.length), delta: `${liveCount} live`, deltaType: "pos" },
-          { label: "Avg DR", value: String(avgDr), delta: "source authority" },
+          { label: "Avg DR", value: avgDr, delta: "source authority" },
           { label: "Pending", value: String(pendingCount), delta: "awaiting publisher" },
           { label: "Lost", value: String(backlinks.filter((b) => b.status === "lost").length) },
         ]}

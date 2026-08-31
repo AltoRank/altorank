@@ -6,8 +6,9 @@ const research = (competitors: Array<{ title: string; description: string; domai
   keyword: "widget",
   language: "English",
   intent: { intent: "info", confidence: "low", signals: [], lexicon: true },
-  competitors: competitors.map((c) => ({ ...c, url: `https://${c.domain}`, wordCount: null })),
+  competitors: competitors.map((c) => ({ ...c, rank: null, url: `https://${c.domain}`, wordCount: null })),
   peopleAlsoAsk: [],
+  aiOverview: null,
   relatedKeywords: [],
   existingPerformance: null,
   adjacentQueries: [],
@@ -48,11 +49,36 @@ describe("factCheckArticle — flagging unsourced figures", () => {
     expect(r.claims[0].kind).toBe("research_reference");
   });
 
-  it("flags money and multiplier claims", () => {
+  it("detects both a money figure and a multiplier in one sentence", () => {
+    // Both are found; they arrive as one claim because one sentence is one
+    // decision for the reviewer. Asserting two separate entries was asserting
+    // the emission shape, not the detection.
     const r = factCheckArticle("<p>Teams save €4,500 and ship 3x faster.</p>");
-    const kinds = r.claims.map((c) => c.kind);
-    expect(kinds).toContain("money");
-    expect(kinds).toContain("multiplier");
+    const figures = r.claims.flatMap((c) => c.figures);
+    expect(figures.some((f) => f.includes("4,500"))).toBe(true);
+    expect(figures.some((f) => /3x/i.test(f))).toBe(true);
+  });
+
+  it("reports one claim per sentence, not one per number", () => {
+    // Three figures in one sentence used to be three entries with the same
+    // sentence attached to each: three times the reading for one decision.
+    const r = factCheckArticle(
+      "<p>Pricing starts at $19.95 per month for 50,000 emails, against $15 elsewhere.</p>",
+    );
+    expect(r.claims).toHaveLength(1);
+    expect(r.claims[0].figures.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("treats a whole table as one claim, not one per cell", () => {
+    // A five-row pricing table produced eight entries. The reviewer's decision
+    // is about the table: cite it or cut it.
+    const r = factCheckArticle(
+      "<h1>x</h1><table><tr><td>$0</td><td>60 days</td></tr>" +
+        "<tr><td>$19.95</td><td>50,000/mo</td></tr>" +
+        "<tr><td>$34.95</td><td>100,000/mo</td></tr></table>",
+    );
+    expect(r.claims).toHaveLength(1);
+    expect(r.claims[0].figures.length).toBeGreaterThan(3);
   });
 
   it("downgrades a figure that names its source", () => {

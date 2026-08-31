@@ -17,6 +17,15 @@ type DFSSerpAdvancedItem = {
   extra?: {
     word_count?: number | null;
   };
+  /** Present on `ai_overview`: the rendered answer Google is showing. */
+  markdown?: string | null;
+  /** Present on `ai_overview`: the pages that answer cites. */
+  references?: Array<{
+    domain?: string | null;
+    url?: string | null;
+    title?: string | null;
+    source?: string | null;
+  }> | null;
   items?: Array<{
     type: string;
     title: string;
@@ -29,8 +38,28 @@ type SerpAdvancedResult = {
   items: DFSSerpAdvancedItem[] | null;
 };
 
+/**
+ * What Google's own AI answer says for this query, and which pages it cites.
+ *
+ * This arrives in the SERP call we already pay for and used to be dropped on the
+ * floor. For a product whose claim is AI visibility, it is the most direct
+ * evidence available of what an AI answer currently contains and who it trusts:
+ * the writer can see the ground already covered, and the specific competitors
+ * that have to be displaced to earn a citation.
+ *
+ * null when the SERP has no AI Overview, which is a real and common state, not
+ * an error. Never synthesise one.
+ */
+export type AiOverview = {
+  markdown: string;
+  citations: Array<{ domain: string; url: string; title: string }>;
+};
+
 export type SerpData = {
   organic: Array<{
+    /** Google's own rank for this result. NOT the `position` field, which is
+     *  DataForSEO's page-layout column ("left"/"right") and not a rank at all. */
+    rank: number | null;
     title: string;
     url: string;
     description: string;
@@ -38,6 +67,7 @@ export type SerpData = {
     wordCount: number | null;
   }>;
   peopleAlsoAsk: string[];
+  aiOverview: AiOverview | null;
 };
 
 export async function fetchAdvancedSerp(
@@ -57,6 +87,7 @@ export async function fetchAdvancedSerp(
 
   const organic: SerpData["organic"] = [];
   const peopleAlsoAsk: string[] = [];
+  let aiOverview: AiOverview | null = null;
 
   for (const task of response.tasks) {
     if (!task.result) continue;
@@ -67,6 +98,7 @@ export async function fetchAdvancedSerp(
       for (const item of result.items) {
         if (item.type === "organic" && organic.length < 10) {
           organic.push({
+            rank: typeof item.rank_group === "number" ? item.rank_group : null,
             title: item.title,
             url: item.url,
             description: item.description ?? "",
@@ -80,11 +112,24 @@ export async function fetchAdvancedSerp(
             if (paa.title) peopleAlsoAsk.push(paa.title);
           }
         }
+
+        if (item.type === "ai_overview" && item.markdown) {
+          aiOverview = {
+            markdown: item.markdown,
+            citations: (item.references ?? [])
+              .filter((r) => r.url)
+              .map((r) => ({
+                domain: r.domain ?? "",
+                url: r.url ?? "",
+                title: r.title ?? r.source ?? "",
+              })),
+          };
+        }
       }
     }
   }
 
-  return { organic, peopleAlsoAsk };
+  return { organic, peopleAlsoAsk, aiOverview };
 }
 
 // ── Related Keywords ───────────────────────────────────────────────────────

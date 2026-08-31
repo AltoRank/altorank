@@ -366,7 +366,20 @@ export async function recommendKeywords(
     // worthless because the business has nothing to say about it.
     const relevance = scoreRelevance(k.term as string, profile);
     score *= RELEVANCE_FLOOR + (1 - RELEVANCE_FLOOR) * relevance.score;
-    if (relevance.score < 1) reasons.push(relevance.reason);
+    // State it either way.
+    //
+    // Only pushing the reason on a partial match made the strongest case for a
+    // pick invisible: "sendgrid pricing" was chosen for resend.com because both
+    // words are in the site's own vocabulary - it is a direct competitor's
+    // pricing query - and the reviewer saw only "1,900 searches/mo, difficulty
+    // 9" and had to guess whether the topic fit at all.
+    if (relevance.score < 1) {
+      reasons.push(relevance.reason);
+    } else if (relevance.matched.length > 0) {
+      reasons.push(
+        `on-topic: ${relevance.matched.slice(0, 4).join(", ")} already appear on the site`,
+      );
+    }
 
     const { quality, note } = assessKeywordQuality(k.term as string, allTerms);
     if (quality === "suspect" && note) {

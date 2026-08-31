@@ -53,26 +53,23 @@ export default async function GeoPage() {
     <>
       <PageHead
         title="AI visibility"
-        eyebrow={
+        subtitle={
           <>
-            <span>Generative engine optimisation</span>
             <StatusPill
               status={tracked.length ? "on" : "setup"}
               label={tracked.length ? `${tracked.length} tracked` : "Not enabled"}
             />
+            <span className="truncate">
+              Whether ChatGPT, Claude, Gemini and Perplexity name this brand,
+              and which domains they name instead.
+            </span>
             {lastChecked && (
               <>
                 <DotSep />
-                <span>Last measured {lastChecked}</span>
+                <span className="whitespace-nowrap">Last measured {lastChecked}</span>
               </>
             )}
           </>
-        }
-        subtitle={
-          <span>
-            Whether ChatGPT, Claude, Gemini and Perplexity name this brand when
-            someone asks the buying question, and which domains they name instead.
-          </span>
         }
       />
 

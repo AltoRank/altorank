@@ -1,0 +1,331 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* ============================================================
+   AltoRank design tokens (OKLCH palette)
+   Warm monochrome neutrals + indigo accent
+   ============================================================ */
+
+:root {
+  /* neutrals (warm) */
+  --bg:           oklch(0.995 0.002 80);
+  --bg-2:         oklch(0.985 0.003 80);
+  --panel:        oklch(0.975 0.003 80);
+  --panel-2:      oklch(0.965 0.003 80);
+  --line:         oklch(0.915 0.004 80);
+  --line-soft:    oklch(0.945 0.003 80);
+  --ink:          oklch(0.17 0.008 80);
+  --ink-2:        oklch(0.38 0.006 80);
+  --ink-3:        oklch(0.56 0.005 80);
+  --ink-4:        oklch(0.72 0.004 80);
+
+  /* accent (indigo) */
+  --accent:       oklch(0.52 0.16 265);
+  --accent-2:     oklch(0.58 0.16 265);
+  --accent-soft:  oklch(0.955 0.035 265);
+  --accent-ink:   oklch(0.38 0.14 265);
+
+  /* semantic */
+  --ok:           oklch(0.6 0.11 155);
+  --ok-soft:      oklch(0.955 0.03 155);
+  --ok-ink:       oklch(0.35 0.09 155);
+  --warn:         oklch(0.72 0.14 85);
+  --warn-soft:    oklch(0.96 0.04 85);
+  --warn-ink:     oklch(0.45 0.1 75);
+  --err:          oklch(0.6 0.14 25);
+  --err-soft:     oklch(0.96 0.035 25);
+  --err-ink:      oklch(0.45 0.13 25);
+
+  /* layout */
+  /* Tightened 2026-08-30 from 8/12/16. The larger scale read soft and
+     consumer; this is closer to the register of a developer tool. */
+  --radius:       6px;
+  --radius-lg:    8px;
+  --radius-xl:    12px;
+
+  /* fonts set by Google Fonts <link> in Base.astro */
+  --font-archivo: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+  --font-jetbrains-mono: 'JetBrains Mono', ui-monospace, monospace;
+  /* Display italic, used on exactly one word: the verb in the homepage h1.
+     A serif italic against Archivo is the only typographic flourish on the
+     page, which is why it earns a third family. Keep it that way. */
+  --font-newsreader: 'Newsreader', Georgia, 'Times New Roman', serif;
+}
+
+/* === Tailwind theme mapping === */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-ink: var(--ok-ink);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-ink: var(--warn-ink);
+  --color-err: var(--err);
+  --color-err-soft: var(--err-soft);
+  --color-err-ink: var(--err-ink);
+  --radius-DEFAULT: var(--radius);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --font-sans: var(--font-archivo);
+  --font-mono: var(--font-jetbrains-mono);
+}
+
+/* === Buttons ===
+   45 button instances across 29 files were each carrying their own utility
+   string, four of which accounted for most of them. They are one system now, so
+   the next change to button geometry is one file rather than twenty-nine.
+
+   Geometry is deliberately compact: 32px tall with 12px padding, against the
+   44px-tall, 20px-padded buttons this replaces. Weight comes from the fill and
+   a 1px shadow, not from size. Below sm, .btn-block gives a 40px full-width
+   target, which is comfortable to hit without the button dominating the screen.
+
+   Retune the whole site here. Markup lives in components/shared/Button.astro. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.006em;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  /* A single hairline shadow, tinted with the accent's own hue so it reads as
+     depth rather than as grey haze sitting under a coloured shape. */
+  box-shadow: 0 1px 2px oklch(0.3 0.12 265 / 0.28);
+}
+.btn-primary:hover { background: var(--accent-2); }
+
+.btn-secondary {
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.04);
+}
+.btn-secondary:hover { background: var(--panel); border-color: var(--ink-4); }
+
+/* On the dark hero, where --line and --bg would disappear. */
+.btn-light {
+  background: #fff;
+  color: oklch(0.155 0.02 275);
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.2);
+}
+.btn-light:hover { background: oklch(0.94 0.015 275); }
+
+.btn-ghost-dark {
+  border: 1px solid oklch(1 0 0 / 0.22);
+  color: oklch(0.94 0.01 275);
+}
+.btn-ghost-dark:hover { background: oklch(1 0 0 / 0.08); border-color: oklch(1 0 0 / 0.34); }
+
+/* Hero and closing CTA only. Still well short of the old default. */
+.btn-lg { height: 36px; padding: 0 16px; font-size: 14px; }
+
+/* Nav bar, where anything taller crowds a 56px bar. */
+.btn-sm { height: 28px; padding: 0 10px; font-size: 12.5px; }
+
+/* Sized off the label so it stays proportional across the three sizes. */
+.btn-chevron { width: 1.05em; height: 1.05em; margin-right: -0.15em; }
+
+/* Stacked on a phone: full width, and tall enough to be a comfortable target. */
+@media (max-width: 639px) {
+  .btn-block { width: 100%; height: 40px; font-size: 14px; }
+}
+
+/* === Header overlay ===
+   The header sits ON the hero rather than above it, so on a page with a dark
+   hero it should read as part of that hero and only take on its own surface
+   once you have scrolled past. Two states on one element, driven by
+   data-overlay, which an IntersectionObserver flips at the hero's bottom edge.
+
+   Opt-in per page: only pages that actually have a dark first section pass
+   overlay to Header.astro. Everywhere else the header is solid from the start,
+   which is why this is an attribute rather than a global rule. */
+.site-header {
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.site-header[data-overlay="on"] {
+  background: transparent;
+  border-color: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Everything inside has to invert too, or you get ink text on a navy ground. */
+.site-header[data-overlay="on"] .nav-link,
+.site-header[data-overlay="on"] .nav-signin {
+  color: oklch(0.85 0.025 275);
+}
+.site-header[data-overlay="on"] .nav-link:hover,
+.site-header[data-overlay="on"] .nav-signin:hover {
+  color: #fff;
+  background: oklch(1 0 0 / 0.1);
+}
+.site-header[data-overlay="on"] .site-logo,
+.site-header[data-overlay="on"] .nav-burger {
+  color: #fff;
+}
+.site-header[data-overlay="on"] .site-logo:hover,
+.site-header[data-overlay="on"] .nav-burger:hover {
+  background: oklch(1 0 0 / 0.1);
+}
+
+/* The indigo CTA disappears into an indigo hero. White reads as the primary
+   action there, which is what the hero's own buttons already do. */
+.site-header[data-overlay="on"] .btn-primary {
+  background: #fff;
+  color: oklch(0.155 0.02 275);
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.2);
+}
+.site-header[data-overlay="on"] .btn-primary:hover {
+  background: oklch(0.94 0.015 275);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-header { transition: none; }
+}
+
+/* === Display italic (homepage h1 emphasis) === */
+.font-display-italic {
+  font-family: var(--font-newsreader);
+  font-style: italic;
+  font-weight: 400;
+  /* Newsreader sits optically larger and looser than Archivo at the same size. */
+  font-size: 1.04em;
+  letter-spacing: -0.008em;
+}
+
+/* === Base resets === */
+::selection { background: var(--accent-soft); }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* === Prose overrides (mapped to design tokens) === */
+.prose {
+  --tw-prose-body: var(--ink-2);
+  --tw-prose-headings: var(--ink);
+  --tw-prose-links: var(--accent-ink);
+  --tw-prose-bold: var(--ink);
+  --tw-prose-counters: var(--ink-3);
+  --tw-prose-bullets: var(--ink-3);
+  --tw-prose-hr: var(--line);
+  --tw-prose-quotes: var(--ink-2);
+  --tw-prose-quote-borders: var(--accent);
+  --tw-prose-captions: var(--ink-3);
+  --tw-prose-code: var(--accent-ink);
+  --tw-prose-pre-code: var(--ink-2);
+  --tw-prose-pre-bg: var(--panel);
+  --tw-prose-th-borders: var(--line);
+  --tw-prose-td-borders: var(--line-soft);
+}
+
+/* === Pulse animation for running status === */
+@keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.4 } }
+
+/* === Accessibility: visible focus for keyboard users === */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* Don't double-style elements that already render a ring (e.g. open <details>) */
+summary:focus-visible { outline-offset: 4px; }
+
+/* === Screen-reader-only utility (Tailwind ships .sr-only but make it explicit) === */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* === Print ===
+   These pages double as leave-behinds: /agency-blueprint in particular gets
+   printed to PDF and sent to agencies. Without these rules the PDF carries the
+   sticky nav and its "Get Started Free" button, the breadcrumb, the footer, and
+   cards split across page boundaries with the heading orphaned on the previous
+   sheet. Anything tagged data-print-hide is screen-only chrome. */
+@media print {
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  /* Keep the dark panels dark. Browsers strip backgrounds when printing. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Section rhythm is tuned for scrolling; on paper it wastes most of a sheet. */
+  section,
+  header {
+    padding-top: 1.75rem !important;
+    padding-bottom: 1.75rem !important;
+    border-bottom: 0 !important;
+  }
+
+  /* Never split a card, list item, or detail block across sheets. */
+  .rounded-xl,
+  li,
+  details,
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Keep a heading with the text it introduces. */
+  h1, h2, h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  /* Underlined links print as noise; the URL is not clickable on paper. */
+  a {
+    text-decoration: none !important;
+  }
+
+  /* FAQ answers are inside <details>, which print collapsed by default. */
+  details > summary ~ * {
+    display: block !important;
+  }
+  details {
+    display: block !important;
+  }
+}

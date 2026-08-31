@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
-import { creditsForDR, recordCredit, getCreditBalance, scoreRelevance, suggestPlacement, placeBacklinkInArticle } from "@/lib/seo/exchange";
+import { creditsForDR, recordCredit, getCreditBalance, scoreRelevance, suggestPlacement, placeBacklinkInArticle, verifyPlacementLive } from "@/lib/seo/exchange";
 
 /**
  * Create a new backlink exchange request.
@@ -27,9 +27,11 @@ export async function createExchangeRequest(
     .eq("agency_id", agencyId)
     .single();
 
-  if (!workspace) throw new Error("Workspace not found or not in your agency");
+  if (!workspace) throw new Error("Workspace not found or not in your account");
 
-  const creditsOffered = creditsForDR(workspace.dr ?? 0);
+  // Null when the requesting workspace has no measured DR. Advertising a price
+  // derived from a DR nobody took is worse than advertising none.
+  const creditsOffered = creditsForDR(workspace.dr);
 
   const { error } = await supabase.from("backlink_exchanges").insert({
     requester_agency_id: agencyId,
@@ -64,7 +66,7 @@ export async function acceptExchange(
     .eq("id", providerWorkspaceId)
     .eq("agency_id", providerAgencyId)
     .single();
-  if (!providerWs) throw new Error("Provider workspace not found or not in your agency");
+  if (!providerWs) throw new Error("Provider workspace not found or not in your account");
 
   // Fetch the exchange
   const { data: exchange, error: fetchErr } = await supabase
@@ -166,7 +168,31 @@ export async function verifyExchange(exchangeId: string) {
     .eq("id", exchange.provider_workspace_id)
     .single();
 
-  const credits = creditsForDR(providerWs?.dr ?? 0);
+  // Price the trade before doing it. An unmeasured host cannot be priced, and
+  // settling at the cheapest tier would pay a strong host and a worthless one
+  // the same — which is what made the tier table decorative.
+  const credits = creditsForDR(providerWs?.dr);
+  if (credits === null) {
+    throw new Error(
+      "The hosting workspace has no measured domain rating, so this placement cannot be priced. Measure DR before settling the exchange.",
+    );
+  }
+
+  // The link has to exist on the public web before any credit moves. Until this
+  // check existed, "verified" meant "somebody clicked verify".
+  const { data: providerArticle } = await supabase
+    .from("articles")
+    .select("published_url")
+    .eq("id", exchange.provider_article_id)
+    .single();
+
+  const verdict = await verifyPlacementLive(
+    providerArticle?.published_url ?? null,
+    exchange.target_url,
+  );
+  if (!verdict.ok) {
+    throw new Error(`Placement not verified: ${verdict.reason}`);
+  }
 
   // Provider earns credits for hosting the link
   await recordCredit(
@@ -175,7 +201,7 @@ export async function verifyExchange(exchangeId: string) {
     credits,
     "host_link",
     exchangeId,
-    providerWs?.dr ?? 0,
+    providerWs!.dr,
   );
 
   // Requester spends credits for placing their link
@@ -185,14 +211,16 @@ export async function verifyExchange(exchangeId: string) {
     -credits,
     "place_link",
     exchangeId,
-    providerWs?.dr ?? 0,
+    providerWs!.dr,
   );
 
-  // Update exchange status
+  // Update exchange status. placement_url is recorded here because this is the
+  // first point at which we know a real URL served the link.
   await supabase
     .from("backlink_exchanges")
     .update({
       status: "verified",
+      placement_url: verdict.url,
       verified_at: new Date().toISOString(),
     })
     .eq("id", exchangeId);

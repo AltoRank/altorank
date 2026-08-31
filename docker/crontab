@@ -1,0 +1,23 @@
+# Scheduled jobs for the self-hosted deployment.
+#
+# These are the same eight jobs, on the same schedules, that apps/web/vercel.json
+# registers for the hosted deployment. Kept deliberately in lockstep: if the two
+# drift, a self-hoster gets a quietly different product from the one documented,
+# which is worse than having no scheduler at all. Change one, change the other.
+#
+# Every route authenticates with the `x-cron-secret` header and refuses the
+# request when CRON_SECRET is unset, so this file does nothing useful until that
+# variable is set in docker/.env. That is deliberate: an unauthenticated
+# scheduler endpoint on a self-hosted box is a worse failure than no schedule.
+#
+# `-fsS` so curl stays quiet on success but still reports a real failure to the
+# container log, and `--max-time` so a hung request cannot overlap the next tick.
+
+*/15 * * * *  altorank-cron publish
+*/10 * * * *  altorank-cron analyze
+0 3 * * *     altorank-cron serp
+0 4 * * *     altorank-cron analytics
+0 5 * * *     altorank-cron exchange
+0 7 * * *     altorank-cron generate
+0 8 * * 1     altorank-cron geo
+0 6 1 * *     altorank-cron reports

@@ -124,6 +124,7 @@ export async function GET(request: Request) {
           reasons: next.reasons,
           score: next.score,
           difficulty: next.difficulty,
+          volume: next.volume,
         },
       });
 

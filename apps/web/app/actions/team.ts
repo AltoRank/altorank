@@ -56,7 +56,7 @@ export async function inviteMember(formData: FormData) {
     await sendInviteEmail(
       parsed.email,
       inviterName,
-      agency?.name ?? "your agency",
+      agency?.name ?? "your workspace",
       parsed.role,
       acceptUrl,
     );

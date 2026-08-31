@@ -29,16 +29,27 @@ export type ModelTier =
 
 const DEFAULTS = {
   /**
-   * Both Anthropic tiers currently resolve to the same model.
+   * The tiers now resolve to different models, measured rather than assumed.
    *
-   * That is deliberate. `structured` exists so the cheap, high-volume calls can
-   * be pointed at a smaller model without touching code, but defaulting it
-   * there would quietly change the output of briefs, clusters and meta
-   * descriptions as a side effect of a refactor that was only meant to remove
-   * duplication. Set ANTHROPIC_MODEL_STRUCTURED to opt in.
+   * Both were run through the real pipeline on 2026-08-30, same keywords, same
+   * research, full target length. Haiku matched the derived word count more
+   * closely (1.01x vs 0.81x) and was clean on the fact checker for two of three
+   * keywords, so it is not a bad writer. But on the same article Sonnet named
+   * real products where Haiku wrote "the right platform should automate
+   * repetitive tasks", produced 2 links against 0, dated its own title 2025,
+   * and Haiku wrapped the whole response in a ```html fence that would have
+   * shipped as literal text (see stripCodeFence in lib/ai/utils.ts).
+   *
+   * So: `structured` drops to Haiku, where the work is short, shaped and
+   * checkable - meta descriptions, clusters, SERP summaries, relevance scores.
+   * `content` stays on Sonnet, because the article is the product and the
+   * difference showed up in exactly the things that make one worth reading.
+   *
+   * Both remain env-overridable. Point ANTHROPIC_MODEL at Haiku to run the
+   * whole thing cheap and judge for yourself.
    */
   anthropicContent: "claude-sonnet-5",
-  anthropicStructured: "claude-sonnet-5",
+  anthropicStructured: "claude-haiku-4-5-20251001",
 
   /**
    * Left as-is. This was already the OpenAI default and is a current model;

@@ -73,9 +73,18 @@ function extractContentText(html: string): string {
       .replace(/&gt;/g, ">")
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
+      // Entities decode AFTER the tag strip, so markup that arrived
+      // entity-encoded (Next.js flight payloads, escaped attributes) survives
+      // the strip and decodes into fragments like `')">Solutions`. Cal.com's
+      // voice profile trained on exactly that, and the Voice page displayed
+      // it as a "sample sentence". Strip once more after decoding, and drop
+      // any part that still looks like attribute residue - a sentence a human
+      // wrote does not contain `="` or `">`.
+      .replace(/<[^>]+>/g, "")
       .replace(/\s+/g, " ")
       .trim();
-    if (text.length > 20) {
+    const looksLikeMarkup = /["'][)\]]*\s*>|\w+=["']/.test(text);
+    if (text.length > 20 && !looksLikeMarkup) {
       textParts.push(text);
     }
   }

@@ -60,3 +60,7 @@ npm-debug.log*
 coverage/
 .idea/
 .vscode/
+
+# Astro build cache
+.astro/
+apps/marketing/.astro/

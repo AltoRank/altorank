@@ -5,21 +5,23 @@ import { createClient } from "@/lib/supabase/server";
 import { ensureAgency } from "@/lib/queries/agency";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { z } from "zod";
+import { generateIndexNowKey } from "@/lib/seo/indexing";
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1),
   domain: z.string().optional(),
-  plan: z.string().default("starter"),
   initials: z.string().max(2).default(""),
   color: z.string().default("av-c1"),
 });
 
 export async function createWorkspace(formData: FormData) {
   const supabase = await createClient();
+  // `domain` comes via ?? undefined: FormData.get returns null for a missing
+  // field, z.optional() only accepts undefined, and the difference took the
+  // whole form down when the plan select was removed.
   const parsed = createWorkspaceSchema.parse({
     name: formData.get("name"),
-    domain: formData.get("domain"),
-    plan: formData.get("plan"),
+    domain: formData.get("domain") ?? undefined,
     initials: formData.get("initials") || (formData.get("name") as string).slice(0, 2).toUpperCase(),
     color: formData.get("color") || "av-c1",
   });
@@ -32,12 +34,12 @@ export async function createWorkspace(formData: FormData) {
 
   const { data, error } = await supabase
     .from("workspaces")
-    .insert({ ...parsed, agency_id: agencyId })
+    .insert({ ...parsed, agency_id: agencyId, indexnow_key: generateIndexNowKey() })
     .select("id")
     .single();
 
   if (error) throw new Error(error.message);
-  revalidatePath("/clients");
+  revalidatePath("/workspaces");
   return data.id as string;
 }
 
@@ -55,7 +57,7 @@ export async function updateWorkspace(id: string, formData: FormData) {
     .eq("id", id);
 
   if (error) throw new Error(error.message);
-  revalidatePath("/clients");
+  revalidatePath("/workspaces");
   revalidatePath("/articles");
 }
 
@@ -69,8 +71,8 @@ export async function activateWorkspace(id: string) {
     .eq("status", "setup"); // guard: only transition from setup
 
   if (error) throw new Error(error.message);
-  revalidatePath("/clients");
-  revalidatePath(`/clients/${id}`);
+  revalidatePath("/workspaces");
+  revalidatePath(`/workspaces/${id}`);
 }
 
 export async function deleteWorkspace(id: string) {
@@ -78,5 +80,5 @@ export async function deleteWorkspace(id: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("workspaces").delete().eq("id", id);
   if (error) throw new Error(error.message);
-  revalidatePath("/clients");
+  revalidatePath("/workspaces");
 }

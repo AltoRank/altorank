@@ -16,7 +16,7 @@ import {
   type StepId,
 } from "./onboarding-steps";
 import { useElementRect } from "@/lib/hooks/use-element-rect";
-import { completeOnboardingStep, dismissOnboarding } from "@/app/actions/onboarding";
+import { dismissOnboarding } from "@/app/actions/onboarding";
 import { Icons } from "@/components/ui";
 import { OnboardingChecklist } from "./onboarding-checklist";
 import { OnboardingSpotlight } from "./onboarding-spotlight";
@@ -28,9 +28,12 @@ interface OnboardingContextValue {
   state: OnboardingState;
   completedSteps: Record<string, boolean>;
   activeStepId: StepId | null;
+  /** Call when the deed is done, not when the explainer is read. */
   completeStep: (stepId: StepId) => void;
   dismiss: () => void;
   showStep: (stepId: StepId) => void;
+  /** Reopen the checklist after it was skipped or finished. */
+  openGuide: () => void;
 }
 
 export const OnboardingContext = createContext<OnboardingContextValue | null>(
@@ -39,16 +42,30 @@ export const OnboardingContext = createContext<OnboardingContextValue | null>(
 
 interface OnboardingProviderProps {
   children: React.ReactNode;
+  /** Counted from the tables by `getCompletedOnboardingSteps`. */
   initialSteps: Record<string, boolean>;
+  /** The person asked us to stop showing it. Reopening is still allowed. */
+  dismissed: boolean;
+}
+
+function allComplete(steps: Record<string, boolean>): boolean {
+  return ONBOARDING_STEPS.every((s) => steps[s.id]);
 }
 
 export function OnboardingProvider({
   children,
   initialSteps,
+  dismissed,
 }: OnboardingProviderProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const [state, setState] = useState<OnboardingState>("idle");
+  // Nothing left to do is the same as skipped, as far as the panel is
+  // concerned: an account that finished setup a month ago should not be
+  // greeted by a congratulations card on every page load. `openGuide` is how
+  // it comes back.
+  const [state, setState] = useState<OnboardingState>(
+    dismissed || allComplete(initialSteps) ? "dismissed" : "idle"
+  );
   const [completedSteps, setCompletedSteps] =
     useState<Record<string, boolean>>(initialSteps);
   const [activeStepId, setActiveStepId] = useState<StepId | null>(null);
@@ -69,13 +86,38 @@ export function OnboardingProvider({
     shouldTrack ? activeStep!.targetSelector : null
   );
 
+  /**
+   * Mark a step done because it was done.
+   *
+   * Called from the action components - `client-actions`, `keyword-actions`,
+   * `connect-actions` and so on - on a successful result. Nothing in the tour
+   * itself calls this any more, which was the whole bug: "Got it" wrote to the
+   * same store as "connected a CMS", and the checklist could not tell them
+   * apart.
+   *
+   * Local only, and deliberately: the server derives this from the tables on
+   * the next load, so there is nothing to write and nothing that can drift.
+   * This is the optimistic half, so the tick appears now rather than after a
+   * refresh.
+   */
   const completeStep = useCallback(
-    async (stepId: StepId, showMessage = false) => {
+    (stepId: StepId) => {
       const step = ONBOARDING_STEPS.find((s) => s.id === stepId);
-      setCompletedSteps((prev) => ({ ...prev, [stepId]: true }));
       setActiveStepId(null);
 
-      if (showMessage && step?.completionMessage) {
+      // Built outside the updater on purpose. Timers and other setState calls
+      // in a functional updater run twice under StrictMode, which would leave
+      // an orphaned timeout behind every completion.
+      const next = { ...completedSteps, [stepId]: true };
+      setCompletedSteps(next);
+
+      if (allComplete(next)) {
+        if (completionTimerRef.current) clearTimeout(completionTimerRef.current);
+        setCompletionMessage(null);
+        setAllDone(true);
+        setState("completed");
+        autoHideRef.current = setTimeout(() => setState("dismissed"), 2500);
+      } else if (step?.completionMessage) {
         setCompletionMessage(step.completionMessage);
         setState("step-completed");
         completionTimerRef.current = setTimeout(() => {
@@ -85,19 +127,8 @@ export function OnboardingProvider({
       } else {
         setState("idle");
       }
-
-      const result = await completeOnboardingStep(stepId);
-      if (result.allDone) {
-        if (completionTimerRef.current) clearTimeout(completionTimerRef.current);
-        setCompletionMessage(null);
-        setAllDone(true);
-        setState("completed");
-        autoHideRef.current = setTimeout(() => {
-          setState("dismissed");
-        }, 2500);
-      }
     },
-    []
+    [completedSteps]
   );
 
   const dismiss = useCallback(async () => {
@@ -121,39 +152,31 @@ export function OnboardingProvider({
     [pathname, router]
   );
 
-  const handleGotIt = useCallback(() => {
-    if (activeStepId) {
-      completeStep(activeStepId);
-    }
-  }, [activeStepId, completeStep]);
+  const openGuide = useCallback(() => {
+    setActiveStepId(null);
+    setAllDone(allComplete(completedSteps));
+    setState(allComplete(completedSteps) ? "completed" : "idle");
+  }, [completedSteps]);
 
-  const handleNext = useCallback(() => {
-    if (!activeStepId) return;
-
-    // Complete current step
-    completeStep(activeStepId);
-
-    // Find next incomplete step
-    const currentIndex = ONBOARDING_STEPS.findIndex(
-      (s) => s.id === activeStepId
-    );
-    const nextStep = ONBOARDING_STEPS.slice(currentIndex + 1).find(
-      (s) => !completedSteps[s.id]
-    );
-
-    if (nextStep) {
-      // Slight delay so the completion animation plays before spotlight moves
-      setTimeout(() => showStep(nextStep.id), 300);
-    }
-  }, [activeStepId, completedSteps, completeStep, showStep]);
-
-  const handleTargetClick = useCallback(() => {
-    // Dismiss the spotlight so the button's native onClick fires (opens modal)
+  /** Close the explainer. Reading it is not doing it, so nothing is ticked. */
+  const handleClose = useCallback(() => {
     setActiveStepId(null);
     setState("idle");
   }, []);
 
-  const handleClickOutside = useCallback(() => {
+  /** Move the spotlight on. Also does not tick anything. */
+  const handleNext = useCallback(() => {
+    if (!activeStepId) return;
+    const currentIndex = ONBOARDING_STEPS.findIndex((s) => s.id === activeStepId);
+    const nextStep = ONBOARDING_STEPS.slice(currentIndex + 1).find(
+      (s) => !completedSteps[s.id]
+    );
+    if (nextStep) showStep(nextStep.id);
+    else handleClose();
+  }, [activeStepId, completedSteps, showStep, handleClose]);
+
+  const handleTargetClick = useCallback(() => {
+    // Dismiss the spotlight so the button's native onClick fires (opens modal)
     setActiveStepId(null);
     setState("idle");
   }, []);
@@ -174,8 +197,9 @@ export function OnboardingProvider({
       completeStep,
       dismiss,
       showStep,
+      openGuide,
     }),
-    [state, completedSteps, activeStepId, completeStep, dismiss, showStep]
+    [state, completedSteps, activeStepId, completeStep, dismiss, showStep, openGuide]
   );
 
   const stepIndex = activeStep
@@ -209,7 +233,7 @@ export function OnboardingProvider({
                   <OnboardingSpotlight
                     targetRect={targetRect}
                     targetSelector={activeStep.targetSelector}
-                    onClickOutside={handleClickOutside}
+                    onClickOutside={handleClose}
                     onTargetClick={handleTargetClick}
                   />
                   <OnboardingTooltip
@@ -220,7 +244,7 @@ export function OnboardingProvider({
                     title={activeStep.title}
                     description={activeStep.description}
                     actionLabel={activeStep.actionLabel}
-                    onGotIt={handleGotIt}
+                    onClose={handleClose}
                     onNext={handleNext}
                     isLastStep={isLastStep}
                   />

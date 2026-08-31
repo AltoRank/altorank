@@ -55,9 +55,9 @@ export function SettingsForm({ agency }: SettingsFormProps) {
       <div className="grid grid-cols-2 gap-4">
         {/* Agency profile */}
         <div className="bg-bg border border-line rounded-lg p-5">
-          <h3 className="text-sm font-semibold mb-1">Agency profile</h3>
-          <p className="text-[12.5px] text-ink-3 mb-4">How you appear on reports and client-facing pages.</p>
-          <label className={labelClass}>Agency name</label>
+          <h3 className="text-sm font-semibold mb-1">Workspace profile</h3>
+          <p className="text-[12.5px] text-ink-3 mb-4">How you appear on reports and any page a client sees.</p>
+          <label className={labelClass}>Workspace name</label>
           <input name="name" className={inputClass} defaultValue={agency.name} />
           <label className={labelClass}>Reporting email</label>
           <input name="report_email" className={inputClass} defaultValue={agency.report_email ?? ""} />
@@ -66,16 +66,16 @@ export function SettingsForm({ agency }: SettingsFormProps) {
             <div className="w-12 h-12 bg-ink text-bg rounded-[10px] grid place-items-center font-mono font-semibold">
               {agency.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
             </div>
-            <Button type="button" size="sm" disabled>Upload</Button>
+            <span className="text-[12px] text-ink-3">
+              Reports use these initials for now. Logo upload is on the way.
+            </span>
           </div>
         </div>
 
         {/* White-label */}
         <div className="bg-bg border border-line rounded-lg p-5">
           <h3 className="text-sm font-semibold mb-1">White-label</h3>
-          <p className="text-[12.5px] text-ink-3 mb-4">Reports go out under your domain.</p>
-          <label className={labelClass}>Custom domain</label>
-          <input name="custom_domain" className={inputClass} defaultValue={agency.custom_domain ?? ""} />
+          <p className="text-[12.5px] text-ink-3 mb-4">Your logo and accent colour on every report PDF, and the AltoRank line removed.</p>
           <label className={labelClass}>Accent color</label>
           <div className="flex gap-2 mb-3.5">
             {COLORS.map((c) => (
@@ -93,11 +93,11 @@ export function SettingsForm({ agency }: SettingsFormProps) {
             ))}
           </div>
           <label className={labelClass}>Remove &ldquo;Powered by AltoRank&rdquo;</label>
-          <div className="flex items-center gap-2 text-[13px]">
+          <div className="flex items-center gap-2 text-[13px] text-ink-2">
             <div className="w-8 h-[18px] rounded-full bg-accent relative">
               <div className="absolute w-3.5 h-3.5 rounded-full bg-white top-0.5 right-0.5" />
             </div>
-            Enabled · Scale plan
+            Enabled. White-label is not gated on any plan.
           </div>
         </div>
 

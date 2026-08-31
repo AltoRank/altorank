@@ -3,18 +3,24 @@
 import { useCallback, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import Link from "@tiptap/extension-link";
+// Without these the editor treats a stored table as an unknown node and drops
+// it on the next save, which would turn a rendering bug into data loss.
+import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
 import Placeholder from "@tiptap/extension-placeholder";
 import { toast } from "sonner";
 import { Icons } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
+import { ConnectPrompt } from "@/components/ui/connect-prompt";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { PLATFORM_HINT, PLATFORM_LABEL, type DetectedPlatform } from "@/lib/cms/detect";
 import { updateArticle } from "@/app/actions/articles";
-import { publishArticle, approveArticle, requestChanges } from "@/app/actions/publish";
+import { publishArticle, approveArticle, requestChanges, markPublishedManually } from "@/app/actions/publish";
 import { SchedulePicker } from "@/components/dashboard/editor/schedule-picker";
 import { ResearchPanel, FactCheckPanel } from "@/components/dashboard/editor/research-panel";
 import { WhyPanel } from "@/components/dashboard/editor/why-panel";
 import type { Article, Workspace, PublishingCadence } from "@/lib/types";
+import type { ScoringCheck } from "@/lib/seo/scoring";
 
 type Props = {
   article: Article;
@@ -25,6 +31,15 @@ type Props = {
 export function ArticleEditor({ article, workspace, cadence }: Props) {
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [manualUrl, setManualUrl] = useState("");
+  const [manualError, setManualError] = useState<string | null>(null);
+
+  // What the first analysis observed, so the prompt can name the platform and
+  // the credential instead of showing an empty picker. A detection is only ever
+  // a suggestion: the user still connects it themselves.
+  const detected = workspace.detected_platform as DetectedPlatform | null;
+  const detectedHint = detected ? PLATFORM_HINT[detected] : null;
+  const detectedLabel = detected ? PLATFORM_LABEL[detected] : null;
   const [generating, setGenerating] = useState(false);
   const [streamHtml, setStreamHtml] = useState("");
   // Generation now has phases before any text appears. Without this the button
@@ -39,8 +54,11 @@ export function ArticleEditor({ article, workspace, cadence }: Props) {
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
-      Link.configure({ openOnClick: false }),
+      StarterKit.configure({ link: { openOnClick: false } }),
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
       Placeholder.configure({ placeholder: "Start writing…" }),
     ],
     content: initialContent,
@@ -241,10 +259,36 @@ export function ArticleEditor({ article, workspace, cadence }: Props) {
           <ToolbarBtn icon={<Icons.bold size={14} />} onClick={() => editor?.chain().focus().toggleBold().run()} active={editor?.isActive("bold")} />
           <ToolbarBtn icon={<Icons.italic size={14} />} onClick={() => editor?.chain().focus().toggleItalic().run()} active={editor?.isActive("italic")} />
           <ToolbarBtn icon={<Icons.list size={14} />} onClick={() => editor?.chain().focus().toggleBulletList().run()} active={editor?.isActive("bulletList")} />
-          <ToolbarBtn icon={<Icons.link size={14} />} onClick={() => {}} disabled />
+          <ToolbarBtn
+            icon={<Icons.link size={14} />}
+            active={editor?.isActive("link")}
+            onClick={() => {
+              if (!editor) return;
+              if (editor.isActive("link")) {
+                editor.chain().focus().unsetLink().run();
+                return;
+              }
+              const url = window.prompt("Link URL (https://…)");
+              if (!url) return;
+              const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+              editor.chain().focus().setLink({ href }).run();
+            }}
+          />
           <div className="flex-1" />
           {saving && <span className="text-[11px] text-ink-3 font-mono mr-2">Saving…</span>}
-          <Button size="sm" onClick={handleAskAI} disabled={generating}>
+          {/* Parked, not removed: the streaming generation behind this works and
+              is exercised by /api/generate. Turning it off in the editor is a
+              product decision, so the handler stays wired and the button simply
+              cannot be pressed. `title` is the coming-soon idiom already used by
+              the calendar's disabled view tabs; there is no shadcn in this repo
+              and adding it for one tooltip would be a lot of dependency for a
+              small affordance. */}
+          <Button
+            size="sm"
+            onClick={handleAskAI}
+            disabled
+            title="Coming soon"
+          >
             <Icons.sparkle size={13} />
             {phase === "researching"
               ? "Researching…"
@@ -280,28 +324,39 @@ export function ArticleEditor({ article, workspace, cadence }: Props) {
             intent={article.search_intent}
             checks={article.seo_checks}
             seoScore={article.seo_score}
+            aeoChecks={article.aeo_checks as never}
+            aeoScore={article.aeo_score}
           />
         </SidebarSection>
 
-        <SidebarSection title="SEO score">
-          <div className="flex items-center gap-3.5">
-            <div
-              className="w-14 h-14 rounded-full grid place-items-center"
-              style={{ background: `conic-gradient(var(--accent) 0 ${article.seo_score}%, var(--panel-2) ${article.seo_score}% 100%)` }}
-            >
-              <span className="w-11 h-11 rounded-full bg-bg grid place-items-center font-mono font-semibold text-sm">
-                {article.seo_score}
-              </span>
+        <SidebarSection title="Scores">
+          {/* Two rings, because they answer two different questions and a
+              reviewer needs both. SEO is "will Google rank it"; citation
+              readiness is "will an AI answer quote it", which is the thing this
+              product actually claims. One ring was hiding the second. */}
+          <TooltipProvider>
+            <div className="flex items-center gap-5">
+              <ScoreRing
+                value={article.seo_score > 0 ? article.seo_score : null}
+                label="SEO"
+                caption="Google ranking"
+                checks={article.seo_checks as ScoringCheck[] | null}
+                basis="Weighted from keyword placement, density, heading tree, meta length, length and readability."
+              />
+              <ScoreRing
+                value={article.aeo_score}
+                label="GEO"
+                caption="AI citation"
+                checks={article.aeo_checks as ScoringCheck[] | null}
+                basis="Weighted from answer-first opening, a liftable definition, quotable figures with sources, question headings and structure."
+              />
             </div>
-            <div className="flex-1">
-              <div className="font-semibold text-sm">
-                {article.seo_score >= 90 ? "Excellent" : article.seo_score >= 70 ? "Good" : article.seo_score >= 50 ? "Needs work" : "Not scored"}
-              </div>
-              <div className="text-[11.5px] text-ink-3 mt-0.5">
-                {article.seo_score > 0 ? "Based on latest audit" : "Generate content to score"}
-              </div>
-            </div>
-          </div>
+          </TooltipProvider>
+          <p className="mt-2.5 text-[11.5px] text-ink-3">
+            {article.seo_score > 0 || article.aeo_score !== null
+              ? "Both are computed from the draft, no model call. The checks below are what they are made of."
+              : "Generate content to score."}
+          </p>
         </SidebarSection>
 
         {/* Fact check — placed high because it is the thing that blocks approval */}
@@ -322,7 +377,7 @@ export function ArticleEditor({ article, workspace, cadence }: Props) {
           <div className="flex flex-col gap-1.5">
             <div className="flex justify-between px-2.5 py-1.5 rounded-[6px] text-[12.5px] border bg-accent-soft text-accent-ink border-transparent font-medium">
               <span>{article.keyword}</span>
-              <span className="font-mono text-[11px] text-accent-ink">{article.volume.toLocaleString()}</span>
+              <span className="font-mono text-[11px] text-accent-ink">{typeof article.volume === "number" ? article.volume.toLocaleString() : "—"}</span>
             </div>
           </div>
         </SidebarSection>
@@ -359,16 +414,6 @@ export function ArticleEditor({ article, workspace, cadence }: Props) {
                 </div>
                 <StatusPill status={article.status === "live" ? "on" : "on"} label="Ready" />
               </div>
-              {article.status === "review" && (
-                <Button
-                  size="sm"
-                  className="w-full justify-center mt-3"
-                  onClick={handleApprove}
-                  disabled={publishing}
-                >
-                  {publishing ? "Approving…" : "Approve for publishing"}
-                </Button>
-              )}
               {article.status === "approved" && (
                 <>
                   <Button
@@ -392,8 +437,82 @@ export function ArticleEditor({ article, workspace, cadence }: Props) {
               <SchedulePicker article={article} cadence={cadence ?? null} />
             </>
           ) : (
-            <div className="text-[12.5px] text-ink-3 italic">
-              Connect a CMS integration to publish
+            <ConnectPrompt
+              icon="integrations"
+              service={detectedLabel ? `Looks like ${detectedLabel}` : undefined}
+              title="No publishing destination yet"
+              body={
+                detectedHint
+                  ? `${detectedHint} Approve the draft whenever you are ready; nothing publishes on its own either way.`
+                  : "Approve the draft whenever you are ready. Connect a CMS and it can go out; nothing publishes on its own either way."
+              }
+              href="/connect"
+              cta={detectedLabel ? `Connect ${detectedLabel}` : "Connect a CMS"}
+            />
+          )}
+
+          {article.status === "review" && (
+            <Button
+              size="sm"
+              className="w-full justify-center mt-3"
+              onClick={handleApprove}
+              disabled={publishing}
+            >
+              {publishing ? "Approving…" : "Approve for publishing"}
+            </Button>
+          )}
+          {/* No CMS, and the site may not have one to connect: a Next.js, Astro
+              or Hugo build publishes from a repository. Rather than leave an
+              approved article stranded for ever, take the copy and record where
+              it went. A URL is required because without one there is no
+              evidence it is anywhere. */}
+          {article.status === "approved" && !article.cms && (
+            <div className="mt-3 flex flex-col gap-2">
+              <div className="text-[12px] text-ink-3 leading-relaxed">
+                Approved. Publish it yourself and paste the URL, or connect a CMS
+                above to have it go out from here.
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="justify-center"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(editor?.getHTML() ?? "");
+                  setManualError("Copied the article HTML.");
+                }}
+              >
+                <Icons.download size={13} />
+                Copy article HTML
+              </Button>
+              <input
+                value={manualUrl}
+                onChange={(e) => setManualUrl(e.target.value)}
+                placeholder="https://yoursite.com/blog/the-post"
+                aria-label="Published URL"
+                className="w-full px-2.5 py-1.5 bg-bg border border-line rounded-[6px] text-[12.5px]"
+              />
+              <Button
+                size="sm"
+                className="justify-center"
+                disabled={publishing || !manualUrl.trim()}
+                onClick={async () => {
+                  setPublishing(true);
+                  setManualError(null);
+                  try {
+                    await markPublishedManually(article.id, manualUrl);
+                    window.location.reload();
+                  } catch (err) {
+                    setManualError(err instanceof Error ? err.message : "Could not record it");
+                  } finally {
+                    setPublishing(false);
+                  }
+                }}
+              >
+                {publishing ? "Recording…" : "Mark as published"}
+              </Button>
+              {manualError && (
+                <div className="text-[11.5px] text-ink-3">{manualError}</div>
+              )}
             </div>
           )}
           {article.published_url && (
@@ -410,6 +529,70 @@ export function ArticleEditor({ article, workspace, cadence }: Props) {
         </SidebarSection>
       </aside>
     </div>
+  );
+}
+
+/**
+ * A score ring. `null` is unmeasured and renders hollow with a dash: a full
+ * grey ring at 0 would read as a measured zero, which is the mistake this repo
+ * has made in four other places.
+ */
+function ScoreRing({
+  value,
+  label,
+  caption,
+  checks,
+  basis,
+}: {
+  value: number | null;
+  label: string;
+  caption: string;
+  /** The per-check breakdown, so hovering explains the number. */
+  checks?: ScoringCheck[] | null;
+  basis: string;
+}) {
+  const known = typeof value === "number";
+  const tone = !known
+    ? "var(--panel-2)"
+    : value >= 80
+      ? "var(--ok)"
+      : value >= 60
+        ? "var(--warn)"
+        : "var(--err)";
+  const failed = (checks ?? []).filter((c) => !c.passed);
+
+  return (
+    <Tooltip delayDuration={150}>
+      <TooltipTrigger asChild>
+    <div className="flex items-center gap-2.5 cursor-default" tabIndex={0}>
+      <div
+        className="w-12 h-12 rounded-full grid place-items-center"
+        style={{
+          background: known
+            ? `conic-gradient(${tone} 0 ${value}%, var(--panel-2) ${value}% 100%)`
+            : "var(--panel-2)",
+        }}
+      >
+        <span className="w-9 h-9 rounded-full bg-bg grid place-items-center font-mono font-semibold text-[13px] tabular-nums">
+          {known ? value : "—"}
+        </span>
+      </div>
+      <div>
+        <div className="font-semibold text-[12.5px]">{label}</div>
+        <div className="text-[11px] text-ink-3">{caption}</div>
+      </div>
+    </div>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-[280px] whitespace-normal text-left">
+        {!known
+          ? "Not scored yet. That is different from scoring zero."
+          : failed.length === 0
+            ? `${value}/100. Every check passed. ${basis}`
+            : `${value}/100. ${basis} Losing points on: ${failed
+                .map((c) => c.name)
+                .join(", ")}.`}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

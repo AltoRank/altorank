@@ -1,0 +1,440 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildArticleSchema, buildFAQSchema, buildItemListSchema } from '@/lib/schema';
+import { APP_NAME, SIGNUP_URL, SITE_URL, AUTHOR_NAME, AUTHOR_URL, OSS_COMPARISON_LABEL, PRIMARY_CTA } from '@/constants';
+
+const pageUrl = `${SITE_URL}/alternatives/seowind`;
+
+const publishDate = new Date('2026-06-21');
+const dateModified = new Date('2026-06-21');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Alternatives', href: '/alternatives' },
+  { label: 'SEOwind alternative', href: '/alternatives/seowind' },
+];
+
+interface TldrRow {
+  name: string;
+  bestFor: string;
+  multiClient: string;
+  whiteLabel: string;
+  ecommerce: string;
+  price: string;
+  ours?: boolean;
+}
+
+const TLDR_ROWS: TldrRow[] = [
+  { name: APP_NAME, bestFor: 'Open source, draft → approve → publish', multiClient: 'Per-client workspaces', whiteLabel: 'Included (Agency)', ecommerce: 'Product + collection + schema', price: 'From $0 self-host', ours: true },
+  { name: 'SEOwind', bestFor: 'SaaS/B2B content briefs at scale', multiClient: 'White-label content (SaaS-oriented)', whiteLabel: 'Yes (content production)', ecommerce: 'Generic, not e-com-native', price: 'From $49/mo + free plan' },
+  { name: 'Frase', bestFor: 'Briefs + SERP research', multiClient: 'No', whiteLabel: 'No', ecommerce: 'No', price: 'From ~$15/mo' },
+  { name: 'NeuronWriter', bestFor: 'Budget on-page optimizer', multiClient: 'Projects', whiteLabel: 'No', ecommerce: 'Generic', price: 'From ~$23/mo' },
+  { name: 'Surfer SEO', bestFor: 'Technical on-page optimization', multiClient: 'Limited', whiteLabel: 'No', ecommerce: 'Generic', price: 'From ~$119/mo' },
+  { name: 'contentbird', bestFor: 'In-house B2B content teams', multiClient: 'Projects (add-on)', whiteLabel: 'Paid add-on', ecommerce: 'Generic', price: 'From €399/mo' },
+];
+
+const ALTORANK_VS_SEOWIND = [
+  { feature: 'Built for', ours: 'E-commerce agencies running content across client stores', theirs: 'SaaS/B2B content briefs + AI writing at scale' },
+  { feature: 'Output', ours: 'Full draft → publish to CMS, approval-gated', theirs: 'Content briefs + AI drafts you write/publish from' },
+  { feature: 'E-commerce', ours: 'Shopify/Woo native: product + collection schema, catalog', theirs: 'Generic content, not e-commerce-native' },
+  { feature: 'Multi-client', ours: 'Isolated per-client workspaces, priced per client', theirs: 'White-label content production, SaaS-oriented' },
+  { feature: 'Editorial control', ours: 'Draft → review → approve + client sign-off + audit trail', theirs: 'Brief/draft workflow' },
+  { feature: 'Publishing + GEO', ours: 'One-click to 11 CMSs + Product/FAQ schema at publish', theirs: 'Export and write; no native e-com schema output' },
+  { feature: 'Price', ours: 'From €69/mo, or €0 self-hosted', theirs: 'From $49/mo + free plan (briefs/intelligence)' },
+  { feature: 'Source code', ours: 'Open source, self-hostable at no cost', theirs: 'Proprietary SaaS' },
+  { feature: 'Editorial approval gate', ours: 'Required before anything publishes, by design', theirs: 'None confirmed' },
+  { feature: 'AI-readiness audit', ours: 'Scores agent readiness, then generates the missing JSON-LD, markdown twins and llms.txt', theirs: 'None confirmed' },
+];
+
+interface Tool {
+  index: string;
+  name: string;
+  ours?: boolean;
+  url?: string;
+  subtitle: string;
+  whatItIs: string;
+  bestFor: string;
+  pricing: string;
+  beatsRef: string;
+  beatsTheirs: string;
+}
+
+const TOOLS: Tool[] = [
+  {
+    index: '01',
+    name: APP_NAME,
+    ours: true,
+    subtitle: 'Best SEOwind Alternative for E-commerce Agencies',
+    whatItIs: 'An approval-first AI SEO content engine for e-commerce agencies. Where SEOwind builds SERP-driven content briefs and drafts, AltoRank runs the full pipeline, research to draft to approval-gated publish, across every client store, with e-commerce-native product/collection content and schema, per-client workspaces, and white-label reporting.',
+    bestFor: 'Agencies producing SEO content for Shopify/WooCommerce/Magento clients who need e-commerce-native output and a publish workflow, not just briefs.',
+    pricing: '€69/mo Managed (100 articles, model costs included, all CMS, rank tracking), €199/mo Agency (400 articles, unlimited client workspaces, white-label reports, referral traffic exchange).',
+    beatsRef: '',
+    beatsTheirs: "SEOwind is cheaper to start ($49/mo, with a free plan) and, if your core need is SERP-driven content briefs and intelligence for SaaS/B2B content, it’s a focused, well-reviewed tool. AltoRank is for the e-commerce agency that needs the full publish workflow and catalog-native output, not primarily a brief builder.",
+  },
+  {
+    index: '02',
+    name: 'SEOwind',
+    url: 'https://seowind.io',
+    subtitle: 'Reference, Content Briefs at Scale',
+    whatItIs: 'A SaaS SEO content-intelligence tool that builds SERP-driven content briefs and AI drafts at scale, now positioned around white-label content production for agencies and SaaS businesses. Reviewers praise ease of use; pricing starts at $49/mo with a free plan.',
+    bestFor: 'SaaS/B2B teams and agencies that mainly need keyword-driven briefs and AI drafts.',
+    pricing: 'From $49/mo, with a free plan for basic functionality.',
+    beatsRef: 'Affordable entry with a free plan, a praised, easy-to-use interface, and strong SERP-driven content briefs, if briefs and intelligence are the core need, it does that focused job well.',
+    beatsTheirs: `SEOwind is content-intelligence- and SaaS-oriented, not e-commerce-native: no Shopify/Woo product or collection schema, no catalog plumbing, and its workflow centers on briefs and drafts rather than an approval-gated publish to a client’s store. ${APP_NAME} is the e-commerce-agency engine with per-client workspaces, a publish workflow, and client sign-off.`,
+  },
+  {
+    index: '03',
+    name: 'Frase',
+    url: 'https://www.frase.io',
+    subtitle: 'Briefs + SERP Research',
+    whatItIs: 'A content-optimization tool focused on SERP research, briefs, and an AI writer, popular for affordable brief creation.',
+    bestFor: 'Writers and teams who want quick, affordable briefs and optimization.',
+    pricing: 'From roughly $15/mo.',
+    beatsRef: 'Even cheaper entry than SEOwind for briefs and SERP research, with a comprehensive optimization workflow.',
+    beatsTheirs: `Frase is a brief/optimization tool, not an agency publishing platform: no per-client workspaces, white-label, approval gate, or e-commerce-native output. ${APP_NAME} runs the full e-com agency pipeline around the content.`,
+  },
+  {
+    index: '04',
+    name: 'NeuronWriter',
+    url: 'https://neuronwriter.com',
+    subtitle: 'Budget On-Page Optimizer',
+    whatItIs: 'An affordable SEO content optimizer with SERP analysis and content briefs, strong value for on-page optimization.',
+    bestFor: 'Teams wanting solid on-page optimization at a low price.',
+    pricing: 'From roughly $23/mo.',
+    beatsRef: 'Excellent value for SERP-driven optimization and briefs at a fraction of premium-tool pricing.',
+    beatsTheirs: `NeuronWriter is an on-page optimizer, not a multi-client agency engine: no per-client isolation, white-label, approval workflow, or e-commerce-native publishing. ${APP_NAME} adds the agency operating layer and the e-com program.`,
+  },
+  {
+    index: '05',
+    name: 'Surfer SEO',
+    url: 'https://surferseo.com',
+    subtitle: 'Technical On-Page Optimization',
+    whatItIs: 'A well-known on-page optimization tool covering a deep on-page checklist, aimed at seasoned SEOs and larger teams.',
+    bestFor: 'SEO professionals who want a thorough technical on-page checklist.',
+    pricing: 'From roughly $119/mo.',
+    beatsRef: 'A broader, more technical on-page checklist than SEOwind, built for advanced SEO requirements.',
+    beatsTheirs: `Surfer is a premium on-page optimizer, not an agency content engine: no per-client workspaces, white-label client reporting, approval gate, or e-commerce-native catalog output. ${APP_NAME} is the agency e-com layer. See /alternatives for the wider stack.`,
+  },
+  {
+    index: '06',
+    name: 'contentbird',
+    url: 'https://contentbird.io',
+    subtitle: 'B2B Content-Ops Suite',
+    whatItIs: 'A Berlin content-operations suite with an approval workflow, aimed at in-house B2B content teams.',
+    bestFor: 'In-house B2B teams wanting a broad all-in-one suite.',
+    pricing: 'From €399/mo.',
+    beatsRef: 'A full content-ops suite with a mature approval workflow, well beyond SEOwind’s brief-centric scope.',
+    beatsTheirs: `contentbird is B2B-content-generic (no Shopify/Woo plumbing), priced from €399 with white-label as a paid add-on and no client-facing sign-off. ${APP_NAME} is e-commerce-agency-native at a quarter of the entry price. See /alternatives/contentbird.`,
+  },
+];
+
+interface DecisionRow {
+  when: string;
+  pick: string;
+  rationale: string;
+  ours?: boolean;
+}
+
+const DECISION_MATRIX: DecisionRow[] = [
+  { when: 'You run an agency producing SEO content for e-commerce clients', pick: APP_NAME, rationale: 'E-commerce-native output (product/collection schema), per-client workspaces, white-label, and an approval-gated publish workflow, not just briefs.', ours: true },
+  { when: 'You mainly need SERP-driven content briefs for SaaS/B2B content', pick: 'Use SEOwind', rationale: 'Affordable, easy to use, with a free plan, a focused brief/intelligence tool for non-e-com content.' },
+  { when: 'You want the cheapest brief + SERP research tool', pick: 'Frase', rationale: 'Lowest entry price for briefs and SERP research.' },
+  { when: 'You want budget on-page optimization', pick: 'NeuronWriter', rationale: 'Strong value for SERP-driven optimization.' },
+  { when: 'You want a deep technical on-page checklist', pick: 'Surfer SEO', rationale: 'The most thorough on-page optimization checklist for advanced SEOs.' },
+  { when: "You're a solo agency with one e-commerce client (and plans to grow)", pick: APP_NAME + ' Managed', rationale: '€69/mo with the full e-com program + approval, ready to scale to more clients.', ours: true },
+];
+
+const FAQS = [
+  { question: 'What is SEOwind?', answer: 'SEOwind is a SaaS SEO content-intelligence tool that builds SERP-driven content briefs and AI drafts at scale. It’s now positioned around white-label content production for agencies and SaaS businesses, starts at $49/mo with a free plan, and is well reviewed for ease of use. Its core strength is briefs and intelligence rather than e-commerce-native publishing.' },
+  { question: 'What is the best SEOwind alternative for e-commerce agencies?', answer: `${APP_NAME}. SEOwind builds briefs and drafts; ${APP_NAME} runs the full pipeline for e-commerce clients, research to draft to approval-gated publish, with Shopify/WooCommerce-native product and collection content and schema, isolated per-client workspaces, white-label reporting, and a client sign-off trail. It’s built for the e-commerce agency, where SEOwind is SaaS/B2B-content-oriented.` },
+  { question: 'Is AltoRank better than SEOwind?', answer: 'For e-commerce agencies, AltoRank is the better fit because it’s e-commerce-native and runs a full publish workflow with approval and client sign-off. If your need is mainly SERP-driven content briefs for SaaS/B2B content at a low price, SEOwind is a focused, well-reviewed tool with a free plan. They solve different jobs.' },
+  { question: 'Does AltoRank create content briefs like SEOwind?', answer: `Yes, AltoRank does keyword research and content planning per client, then takes the content all the way to an approval-gated publish with e-commerce schema, which SEOwind doesn’t do natively. If briefs and intelligence for non-e-commerce content are all you need, SEOwind’s focused tooling and free plan may be enough.` },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: `${APP_NAME} vs. SEOwind: 6 SEOwind Alternatives for E-commerce Agencies (2026)`,
+    description: 'SEOwind builds SERP-driven content briefs for SaaS/B2B content. For e-commerce agencies that need a full publish workflow and catalog-native output, AltoRank is the alternative. We compared 6.',
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildFAQSchema(FAQS),
+  buildItemListSchema(
+    TLDR_ROWS.map((t) => ({
+      name: t.name,
+      description: `${t.bestFor}, starting at ${t.price}`,
+    })),
+  ),
+];
+---
+
+<PSEO
+  title="6 SEOwind Alternatives for E-commerce Agencies (2026)"
+  description="SEOwind builds SERP-driven content briefs for SaaS/B2B content. For e-commerce agencies needing a full publish workflow and catalog-native output, we compared 6 alternatives."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  {/* ── HERO ──────────────────────────────────────────── */}
+  <header class="border-b border-line bg-[radial-gradient(600px_300px_at_88%_-10%,var(--accent-soft),transparent_70%),linear-gradient(180deg,var(--bg),var(--bg-2))] py-[72px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <h1 class="mb-6 text-[clamp(36px,5vw,52px)] font-semibold leading-[1.04] tracking-[-0.025em] text-ink [text-wrap:balance]">
+        {APP_NAME} vs. SEOwind: 6 SEOwind Alternatives for E-commerce Agencies (2026)
+      </h1>
+      <p class="mb-5 max-w-[680px] text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
+        For agencies running SEO content for e-commerce clients, {APP_NAME} is the strongest SEOwind alternative: it goes beyond SERP-driven briefs to the full pipeline, research to draft to approval-gated publish, with Shopify/Woo-native product and collection content, per-client workspaces, and white-label reporting.
+      </p>
+      <p class="mb-5 max-w-[680px] text-lg leading-relaxed text-ink-2 [text-wrap:pretty]">
+        <a href="https://seowind.io" target="_blank" rel="noopener noreferrer" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">SEOwind</a> is an affordable, well-reviewed content-intelligence tool: strong at SERP-driven briefs and drafts, now positioned around white-label content for SaaS and agencies. But it’s SaaS/B2B-content-oriented, not e-commerce-native, and stops short of an approval-gated publish to a client’s store. The 6 alternatives below are ranked by <strong class="font-semibold text-ink">e-commerce agency criteria</strong>, with an honest verdict on when SEOwind’s focused brief tooling is the right pick.
+      </p>
+      <p class="max-w-[680px] text-base leading-relaxed text-ink-2">
+        If your core need is SERP-driven briefs for SaaS/B2B content, SEOwind is a focused, affordable choice. If you're an e-commerce agency, read on.
+      </p>
+      <div class="mt-8 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
+        <span>By <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
+        <span class="text-line">·</span>
+        <span>Published <time datetime={publishDate.toISOString().slice(0, 10)}>{publishDateDisplay}</time></span>
+        <span class="text-line">·</span>
+        <span>14 min read</span>
+      </div>
+    </div>
+  </header>
+
+  {/* ── TL;DR TABLE ───────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[1100px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          The 6 tools at a glance
+        </h2>
+      </div>
+      <div class="overflow-hidden rounded-lg border border-line bg-bg">
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[820px] text-sm">
+            <caption class="sr-only">Comparison of SEOwind and 5 alternatives across multi-client support, white-label, e-commerce content depth, and starting price.</caption>
+            <thead class="bg-panel text-left font-mono text-[11px] uppercase tracking-[0.06em] text-ink-2">
+              <tr>
+                <th scope="col" class="px-5 py-3.5 font-medium">Tool</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">Best for</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">Multi-client</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">White-label</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">E-commerce content</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">Starting price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {TLDR_ROWS.map((row, i) => (
+                <tr class={`${i > 0 ? 'border-t border-line-soft' : ''} ${row.ours ? 'bg-accent-soft/30' : ''}`}>
+                  <td class={`px-5 py-3.5 ${row.ours ? 'font-semibold text-ink' : 'text-ink-2'}`}>
+                    {row.ours ? (
+                      <span class="inline-flex items-center gap-2">
+                        {row.name}
+                        <span class="rounded-full bg-accent px-1.5 py-[1px] font-mono text-[9.5px] tracking-[0.08em] text-white">OURS</span>
+                      </span>
+                    ) : (
+                      <span>{row.name}</span>
+                    )}
+                  </td>
+                  <td class="px-5 py-3.5 text-ink-2">{row.bestFor}</td>
+                  <td class="px-5 py-3.5 font-mono text-[12.5px] text-ink-2">{row.multiClient}</td>
+                  <td class="px-5 py-3.5 font-mono text-[12.5px] text-ink-2">{row.whiteLabel}</td>
+                  <td class="px-5 py-3.5 font-mono text-[12.5px] text-ink-2">{row.ecommerce}</td>
+                  <td class="px-5 py-3.5 font-mono text-[12.5px] text-ink-2">{row.price}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="mt-7 flex flex-wrap items-center justify-center gap-3">
+        <Button href={SIGNUP_URL}>
+  Add your domain with {APP_NAME}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
+</Button>
+      </div>
+    </div>
+  </section>
+
+  {/* ── WHY AGENCIES SEARCH ───────────────────────────── */}
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          Why e-commerce agencies outgrow a brief tool
+        </h2>
+      </div>
+      <div class="flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+        <p>SEOwind does a focused job well: turn a keyword into a SERP-driven brief and an AI draft. For SaaS and B2B content, that’s often enough. For an agency whose deliverable is e-commerce SEO across client stores, the gaps show up at the edges of the brief.</p>
+        <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">It’s not e-commerce-native</h3>
+        <p>A brief tool doesn’t produce the things e-commerce SEO runs on: <span class="font-medium text-ink">product and collection page content</span>, Product/Offer/Review/FAQ schema, catalog awareness, and the AI-shopping readiness that gets products cited. SEOwind’s output is generic content, not catalog-native.</p>
+        <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">The workflow stops at the draft</h3>
+        <p>Briefs and drafts still need to become <span class="font-medium text-ink">published pages on a client’s store</span>, reviewed first. An e-commerce agency wants research → draft → approval → one-click publish with schema, plus a client sign-off trail, not an export step followed by manual publishing.</p>
+        <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">The client layer is SaaS-shaped</h3>
+        <p>SEOwind’s white-label and agency positioning is oriented around SaaS content production. An e-commerce agency needs isolated <span class="font-medium text-ink">per-client workspaces</span> tied to each store, per-client billing, and white-label reporting built for the e-com engagement.</p>
+        <p>If briefs are the job, SEOwind is a fine, affordable tool. If the job is the whole e-commerce program, it’s one piece of it.</p>
+      </div>
+    </div>
+  </section>
+
+  {/* ── EVALUATION CRITERIA ───────────────────────────── */}
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          How we evaluated each SEOwind alternative
+        </h2>
+      </div>
+      <div class="flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+        <p>We scored each tool on what an e-commerce agency actually needs, not just brief quality:</p>
+        <ol class="my-2 flex flex-col gap-2 pl-5 list-decimal">
+          <li><strong class="font-semibold text-ink">E-commerce-native</strong>: product/collection content + schema, or generic copy?</li>
+          <li><strong class="font-semibold text-ink">Workflow</strong>: brief only, or research → draft → approval → publish?</li>
+          <li><strong class="font-semibold text-ink">Multi-client</strong>: isolated workspace, billing, and reporting per client store?</li>
+          <li><strong class="font-semibold text-ink">Editorial control</strong>, approval gate + client sign-off + audit trail?</li>
+        </ol>
+        <p>Most tools here can build a good brief. For an e-commerce agency, the differentiation is catalog-native output, the publish workflow, and the client layer.</p>
+      </div>
+    </div>
+  </section>
+
+  {/* ── TOOL SECTIONS ─────────────────────────────────── */}
+  {TOOLS.map((tool) => (
+    <section class={`border-b border-line py-[72px] ${tool.ours ? 'bg-accent-soft/15' : ''}`}>
+      <div class="mx-auto max-w-[820px] px-8">
+        <div class="mb-2 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">
+          <span>Tool {tool.index}</span>
+          {tool.ours && (
+            <span class="rounded-full bg-accent px-1.5 py-[1px] font-mono text-[9.5px] tracking-[0.08em] text-white">OURS</span>
+          )}
+        </div>
+        <h2 class="mb-2 text-[clamp(28px,3.5vw,34px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          {tool.name}
+        </h2>
+        <p class="mb-7 text-base font-medium text-accent-ink">{tool.subtitle}</p>
+        <div class="mb-5 grid gap-3 rounded-lg border border-line bg-bg p-5 sm:grid-cols-3">
+          <div>
+            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">What it is</div>
+            <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.whatItIs}</div>
+          </div>
+          <div>
+            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Best for</div>
+            <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.bestFor}</div>
+          </div>
+          <div>
+            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Pricing</div>
+            <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.pricing}</div>
+          </div>
+        </div>
+
+        {tool.ours ? (
+          <>
+            <h3 class="mt-7 mb-4 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">How {APP_NAME} differs from SEOwind</h3>
+            <div class="overflow-hidden rounded-lg border border-line bg-bg">
+              <table class="w-full text-sm">
+                <caption class="sr-only">{APP_NAME} versus SEOwind, feature-by-feature comparison.</caption>
+                <thead class="bg-panel text-left font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-2">
+                  <tr>
+                    <th scope="col" class="px-4 py-3 font-medium">Feature</th>
+                    <th scope="col" class="px-4 py-3 font-medium">{APP_NAME}</th>
+                    <th scope="col" class="px-4 py-3 font-medium">SEOwind</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ALTORANK_VS_SEOWIND.map((row, i) => (
+                    <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+                      <td class="px-4 py-3 text-ink">{row.feature}</td>
+                      <td class="px-4 py-3 text-ink-2">{row.ours}</td>
+                      <td class="px-4 py-3 font-mono text-[12.5px] text-ink-3">{row.theirs}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p class="mt-5 text-[15px] leading-relaxed text-ink-2">
+              The difference isn’t brief quality, SEOwind’s briefs are good. It’s that {APP_NAME} takes e-commerce content all the way to an approval-gated publish with catalog-native schema, across isolated client workspaces, where SEOwind is a SaaS-oriented brief and intelligence tool.
+            </p>
+            <p class="mt-4 text-[15px] leading-relaxed text-ink-2">
+              {APP_NAME} Managed is €69/mo; <a href="/pricing" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">Agency at €199/mo</a> adds 400 articles a month, unlimited client workspaces, white-label reports, and rank tracking.
+            </p>
+            <h3 class="mt-7 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Where {APP_NAME} loses</h3>
+            <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsTheirs}</p>
+            <div class="mt-7">
+              <Button href={SIGNUP_URL}>
+  {PRIMARY_CTA.label}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
+</Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h3 class="mt-6 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+              {tool.name === 'SEOwind' ? 'Where SEOwind wins' : `Where ${tool.name} differs from SEOwind`}
+            </h3>
+            <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsRef}</p>
+            <h3 class="mt-6 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+              {tool.name === 'SEOwind' ? `Where ${APP_NAME} wins` : `Where ${APP_NAME} beats ${tool.name}`}
+            </h3>
+            <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsTheirs}</p>
+            {tool.url && (
+              <p class="mt-6 text-[13px] text-ink-3">
+                Visit <a href={tool.url} target="_blank" rel="noopener noreferrer" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent hover:text-ink">{tool.name}</a> for current details.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  ))}
+
+  {/* ── DECISION MATRIX ───────────────────────────────── */}
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[1100px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          Which SEOwind alternative should you choose?
+        </h2>
+        <p class="mt-3 max-w-[640px] text-base leading-relaxed text-ink-2">After the tool deep-dives, here's the short version.</p>
+      </div>
+      <div class="grid gap-3 md:grid-cols-2">
+        {DECISION_MATRIX.map((row) => (
+          <div class={`rounded-xl border p-5 ${row.ours ? 'border-accent bg-accent-soft/40' : 'border-line bg-bg'}`}>
+            <div class="mb-2 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">If</div>
+            <div class="mb-3 text-[15px] font-medium text-ink">{row.when}</div>
+            <div class="mb-1 font-mono text-[11px] uppercase tracking-[0.08em] text-accent-ink">Then</div>
+            <div class="mb-2 text-lg font-semibold tracking-[-0.01em] text-ink">→ {row.pick}</div>
+            <p class="text-sm leading-relaxed text-ink-2">{row.rationale}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* ── FAQ ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          Frequently asked questions
+        </h2>
+      </div>
+      <div class="flex flex-col gap-3">
+        {FAQS.map((f) => (
+          <details class="group rounded-lg border border-line bg-bg p-5">
+            <summary class="flex cursor-pointer items-center justify-between gap-4 text-[15px] font-medium text-ink list-none">
+              <span>{f.question}</span>
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-panel text-ink-3 transition-transform group-open:rotate-45">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 5v14M5 12h14" /></svg>
+              </span>
+            </summary>
+            <p class="mt-3 text-sm leading-relaxed text-ink-2">{f.answer}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+</PSEO>

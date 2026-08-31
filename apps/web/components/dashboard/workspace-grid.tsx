@@ -49,7 +49,7 @@ export function WorkspaceGrid({ workspaces, counts }: WorkspaceGridProps) {
           return (
             <Link
               key={w.id}
-              href={`/clients/${w.id}`}
+              href={`/workspaces/${w.id}`}
               className="text-left p-3.5 border border-line rounded-[10px] bg-bg hover:bg-panel hover:border-[oklch(0.88_0.004_80)]"
             >
               <div className="flex items-center gap-2.5 mb-3.5">
@@ -63,9 +63,8 @@ export function WorkspaceGrid({ workspaces, counts }: WorkspaceGridProps) {
               <div className="grid grid-cols-2 gap-x-3.5 gap-y-2.5">
                 {[
                   { v: String(c.total), l: "Articles" },
-                  { v: w.traffic, l: "Traffic" },
-                  { v: `DR ${w.dr}`, l: "Authority" },
-                  { v: w.plan ?? "—", l: "Plan" },
+                  { v: w.traffic?.toLocaleString() ?? "—", l: "Traffic" },
+                  { v: typeof w.dr === "number" ? String(w.dr) : "—", l: "Authority" },
                 ].map((s) => (
                   <div key={s.l} className="flex flex-col">
                     <span className="font-mono text-[13px] font-semibold text-ink">{s.v}</span>

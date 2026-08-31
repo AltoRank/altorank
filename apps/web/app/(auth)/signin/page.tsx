@@ -28,7 +28,7 @@ export default async function SignInPage(props: { searchParams: Promise<{ error?
       <div className="text-center">
         <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
         <p className="mt-2 text-sm text-ink-3">
-          Sign in to your agency dashboard
+          Sign in to AltoRank
         </p>
       </div>
 
@@ -47,13 +47,21 @@ export default async function SignInPage(props: { searchParams: Promise<{ error?
             type="email"
             required
             className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
-            placeholder="you@agency.co"
+            placeholder="you@example.com"
           />
         </div>
         <div>
-          <label className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1.5 block">
-            Password
-          </label>
+          <div className="flex items-baseline justify-between mb-1.5">
+            <label className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 block">
+              Password
+            </label>
+            <Link
+              href="/reset-password"
+              className="text-[11.5px] text-ink-3 hover:text-ink"
+            >
+              Forgot it?
+            </Link>
+          </div>
           <input
             name="password"
             type="password"

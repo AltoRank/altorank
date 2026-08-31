@@ -12,7 +12,8 @@ interface OnboardingTooltipProps {
   title: string;
   description: string;
   actionLabel: string;
-  onGotIt: () => void;
+  /** Close the explainer. Reading it is not doing it, so nothing is ticked. */
+  onClose: () => void;
   onNext: () => void;
   isLastStep: boolean;
 }
@@ -166,7 +167,7 @@ export function OnboardingTooltip({
   title,
   description,
   actionLabel,
-  onGotIt,
+  onClose,
   onNext,
   isLastStep,
 }: OnboardingTooltipProps) {
@@ -194,17 +195,15 @@ export function OnboardingTooltip({
         {actionLabel}
       </p>
       <div className="flex items-center gap-2 justify-end">
-        <Button variant="ghost" size="sm" onClick={onGotIt}>
-          Got it
+        {/* Neither of these ticks the step. "Done" used to, and that is how an
+            empty account came to be told it was all set up. The checklist is
+            counted from the tables now; this is just an explainer. */}
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Close
         </Button>
         {!isLastStep && (
           <Button variant="accent" size="sm" onClick={onNext}>
             Next step
-          </Button>
-        )}
-        {isLastStep && (
-          <Button variant="accent" size="sm" onClick={onGotIt}>
-            Done
           </Button>
         )}
       </div>

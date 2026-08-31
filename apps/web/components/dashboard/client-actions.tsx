@@ -34,7 +34,7 @@ export function ClientActions() {
       const hasDomain = !!fd.get("domain");
       const workspaceId = await createWorkspace(fd);
 
-      onboarding?.completeStep("add-client");
+      onboarding?.completeStep("add-workspace");
 
       if (hasDomain && workspaceId) {
         // Run onboarding in the background while we show progress
@@ -54,11 +54,11 @@ export function ClientActions() {
         await new Promise((r) => setTimeout(r, 500));
         setOpen(false);
         setStep("idle");
-        router.push(`/clients/${workspaceId}`);
+        router.push(`/workspaces/${workspaceId}`);
       } else {
         setOpen(false);
         setStep("idle");
-        router.push(`/clients/${workspaceId}`);
+        router.push(`/workspaces/${workspaceId}`);
       }
     } catch (err) {
       console.error(err);
@@ -68,24 +68,20 @@ export function ClientActions() {
 
   return (
     <>
-      <Button disabled>
-        <Icons.upload size={14} />
-        Import
-      </Button>
       <Button
         variant="accent"
-        data-onboarding="add-client"
+        data-onboarding="add-workspace"
         onClick={() => setOpen(true)}
       >
         <Icons.plus size={14} />
-        Add client
+        Add workspace
       </Button>
 
       <Dialog
         open={open}
         onOpenChange={(v) => { if (!pending) setOpen(v); }}
-        title="Add client"
-        description="Create a new workspace for this client."
+        title="Add workspace"
+        description="One site or one client. Add the domain and the first analysis starts on its own."
       >
         <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
           <label className="flex flex-col gap-1.5">
@@ -107,20 +103,6 @@ export function ClientActions() {
               placeholder="acme.com"
               className="px-3 py-2 rounded-lg border border-line bg-panel text-[13px] text-ink placeholder:text-ink-3 outline-none focus:border-accent transition-colors disabled:opacity-50"
             />
-          </label>
-
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[12.5px] font-medium text-ink-2">Plan</span>
-            <select
-              name="plan"
-              defaultValue="starter"
-              disabled={pending}
-              className="px-3 py-2 rounded-lg border border-line bg-panel text-[13px] text-ink outline-none focus:border-accent transition-colors disabled:opacity-50"
-            >
-              <option value="starter">Starter</option>
-              <option value="growth">Growth</option>
-              <option value="scale">Scale</option>
-            </select>
           </label>
 
           {pending && (

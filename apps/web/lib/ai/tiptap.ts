@@ -97,9 +97,10 @@ function decodeEntities(text: string): string {
 
 const HEADING_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
 const LIST_TAGS = new Set(["ul", "ol"]);
+const TABLE_TAGS = ["table", "thead", "tbody", "tr", "th", "td"] as const;
 const BLOCK_TAGS = new Set([
   "p", "blockquote", "li", "hr", "br", "iframe", "figure",
-  ...HEADING_TAGS, ...LIST_TAGS,
+  ...HEADING_TAGS, ...LIST_TAGS, ...TABLE_TAGS,
 ]);
 const INLINE_MARK_MAP: Record<string, string> = {
   strong: "bold",
@@ -174,6 +175,13 @@ function parseTokens(tokens: Token[]): TiptapNode[] {
         type: listType,
         content: items.length > 0 ? items : undefined,
       });
+      pos = endPos;
+      continue;
+    }
+
+    if (tag === "table") {
+      const { node, endPos } = collectTable(tokens, pos + 1);
+      if (node) result.push(node);
       pos = endPos;
       continue;
     }
@@ -411,5 +419,66 @@ function createParagraph(content: TiptapNode[]): TiptapNode {
   return {
     type: "paragraph",
     content: content.length > 0 ? content : undefined,
+  };
+}
+
+
+/**
+ * Collect a `<table>` into Tiptap's table nodes.
+ *
+ * Comparison tables are exactly what "best X for Y" content is made of, and
+ * without this every cell collapsed into one paragraph of adjacent text nodes:
+ * a pricing table published as "Pricing modelHow it worksBest fitMonthly
+ * retainerFixed scope...". It survived unnoticed because the damage happens at
+ * HTML -> Tiptap, and publishing serialises back out of Tiptap, so the broken
+ * version is what shipped.
+ *
+ * `thead` and `tbody` are walked through rather than represented: Tiptap has no
+ * node for either, a header cell is just `tableHeader`.
+ */
+function collectTable(
+  tokens: Token[],
+  start: number,
+): { node: TiptapNode | null; endPos: number } {
+  const rows: TiptapNode[] = [];
+  let cells: TiptapNode[] = [];
+  let pos = start;
+
+  while (pos < tokens.length) {
+    const token = tokens[pos];
+
+    if (token.kind === "close" && token.tag === "table") {
+      pos++;
+      break;
+    }
+
+    if (token.kind === "open" && (token.tag === "th" || token.tag === "td")) {
+      const { nodes: inline, endPos } = collectInline(tokens, pos + 1, token.tag);
+      cells.push({
+        type: token.tag === "th" ? "tableHeader" : "tableCell",
+        attrs: { colspan: 1, rowspan: 1, colwidth: null },
+        // A cell, like a list item, must wrap its content in a block node.
+        content: [createParagraph(inline)],
+      });
+      pos = endPos;
+      continue;
+    }
+
+    if (token.kind === "close" && token.tag === "tr") {
+      if (cells.length) rows.push({ type: "tableRow", content: cells });
+      cells = [];
+      pos++;
+      continue;
+    }
+
+    pos++;
+  }
+
+  // A trailing row whose </tr> the model forgot to close.
+  if (cells.length) rows.push({ type: "tableRow", content: cells });
+
+  return {
+    node: rows.length ? { type: "table", content: rows } : null,
+    endPos: pos,
   };
 }

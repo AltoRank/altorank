@@ -37,10 +37,34 @@ export const billingEnabled = Boolean(process.env.STRIPE_SECRET_KEY);
 export type PlanTier = "starter" | "growth" | "scale";
 export type SelfServePlan = "starter" | "growth";
 
-// price id -> plan, for the webhook to resolve which tier a subscription is on.
-export const PLAN_PRICE_IDS: Record<SelfServePlan, string | undefined> = {
-  starter: process.env.STRIPE_PRICE_STARTER,
-  growth: process.env.STRIPE_PRICE_GROWTH,
+export type BillingInterval = "month" | "year";
+
+// price id per plan and interval, for checkout and for the webhook to resolve
+// which tier a subscription is on. Yearly is two months free, the same deal
+// pricing.ts states on the marketing site.
+export const PLAN_PRICE_IDS: Record<
+  SelfServePlan,
+  Record<BillingInterval, string | undefined>
+> = {
+  starter: {
+    month: process.env.STRIPE_PRICE_STARTER,
+    year: process.env.STRIPE_PRICE_STARTER_YEARLY,
+  },
+  growth: {
+    month: process.env.STRIPE_PRICE_GROWTH,
+    year: process.env.STRIPE_PRICE_GROWTH_YEARLY,
+  },
+};
+
+/**
+ * Included articles per calendar month, by tier. Restates the pricing page's
+ * feature list (apps/marketing/src/data/pricing.ts) - change them together.
+ * `scale` is sales-led: null means no metered ceiling here.
+ */
+export const PLAN_ARTICLE_LIMITS: Record<PlanTier, number | null> = {
+  starter: 100,
+  growth: 400,
+  scale: null,
 };
 
 // The `starter`/`growth` keys are persisted on subscriptions, so they stay as
@@ -53,7 +77,7 @@ export const PLAN_LABELS: Record<PlanTier, string> = {
 };
 
 export const PLAN_PRICES: Record<PlanTier, string> = {
-  starter: "€99",
+  starter: "€69",
   growth: "€199",
   scale: "Let's talk",
 };

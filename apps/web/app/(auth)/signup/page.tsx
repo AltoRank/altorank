@@ -32,12 +32,19 @@ async function signUp(formData: FormData) {
     redirect("/signup?error=" + encodeURIComponent(authErrorMessage(error.message)));
   }
 
-  // Create agency + member record using service role (user session not confirmed yet)
+  // Create the account record + membership using the service role (the user's
+  // session is not confirmed yet).
+  //
+  // The table is called `agencies` and keeps that name: it is the tenant row,
+  // and one of those holds a workspace per site or per client. The word only
+  // has to be right where a person reads it, and "Could not create your
+  // agency" reads as a broken product to the solo founder the signup form is
+  // now written for.
   if (data.user) {
     const admin = createServiceClient();
     const base =
       name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") ||
-      "agency";
+      "workspace";
 
     // `agencies.slug` is UNIQUE and the slug comes straight from the agency
     // name, so the second person to sign up as "Acme" collided. The insert
@@ -65,7 +72,7 @@ async function signUp(formData: FormData) {
     }
 
     if (!agencyId) {
-      redirect("/signup?error=" + encodeURIComponent(`Could not create your agency: ${lastError}`));
+      redirect("/signup?error=" + encodeURIComponent(`Could not set up your workspace: ${lastError}`));
     }
 
     const { error: memberError } = await admin.from("agency_members").insert({
@@ -76,7 +83,7 @@ async function signUp(formData: FormData) {
     if (memberError) {
       redirect(
         "/signup?error=" +
-          encodeURIComponent(`Could not add you to your agency: ${memberError.message}`),
+          encodeURIComponent(`Could not finish setting up your account: ${memberError.message}`),
       );
     }
   }
@@ -124,7 +131,7 @@ export default async function SignUpPage(props: { searchParams: Promise<{ error?
             type="text"
             required
             className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
-            placeholder="Your Agency"
+            placeholder="Acme"
           />
         </div>
         <div>
@@ -136,7 +143,7 @@ export default async function SignUpPage(props: { searchParams: Promise<{ error?
             type="email"
             required
             className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
-            placeholder="you@agency.co"
+            placeholder="you@example.com"
           />
         </div>
         <div>

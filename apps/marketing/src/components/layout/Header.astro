@@ -1,0 +1,176 @@
+---
+import Logo from '@/components/shared/Logo.astro';
+import Button from '@/components/shared/Button.astro';
+import { NAV_LINKS, SIGNIN_URL, PRIMARY_CTA } from '@/constants';
+
+interface Props {
+  /**
+   * Start transparent and sit ON the first section, flipping to the solid
+   * surface once the page scrolls past it. Only for pages whose first section
+   * is dark enough to carry white nav text: today that is the homepage.
+   *
+   * The page must also mark where the overlay ends with
+   * `data-header-overlay-end` on the element following that section, and pull
+   * that section up under the header. See src/pages/index.astro.
+   */
+  overlay?: boolean;
+}
+
+const { overlay = false } = Astro.props;
+---
+
+{/* Mobile had no menu at all: the nav links were `hidden md:flex` and nothing
+    replaced them, so How it works, Features, Open source, Compare, Pricing and
+    Blog were unreachable below 1024px. The disclosure below is a <details>, so
+    it works with no JavaScript and is keyboard accessible by default; the
+    script only closes it after a tap, which matters because the in-page anchors
+    do not reload and would otherwise leave the panel open over the target. */}
+<header
+  data-print-hide
+  class="site-header sticky top-0 z-50 border-b border-line bg-bg/85 backdrop-blur-lg"
+  data-overlay-capable={overlay ? 'true' : 'false'}
+  data-overlay={overlay ? 'on' : 'off'}
+>
+  <nav
+    class="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:h-16 lg:px-8"
+    aria-label="Primary"
+  >
+    <a
+      href="/"
+      class="site-logo -ml-2 inline-flex h-11 items-center rounded-md px-2 text-ink transition-colors hover:bg-panel/60"
+      aria-label="AltoRank, home"
+    >
+      <Logo size={16} tone="current" class="lg:hidden" />
+      <Logo size={17} tone="current" class="max-lg:hidden" />
+    </a>
+
+    <div class="hidden items-center gap-1 lg:flex">
+      {NAV_LINKS.map((link) => (
+        <a
+          href={link.href}
+          class="nav-link inline-flex h-11 items-center rounded-md px-3 text-[13px] text-ink-3 transition-colors hover:bg-panel/60 hover:text-ink"
+        >
+          {link.label}
+        </a>
+      ))}
+    </div>
+
+    <div class="flex items-center gap-1.5 sm:gap-2">
+      <a
+        href={SIGNIN_URL}
+        class="nav-signin hidden h-11 items-center rounded-md px-3 text-[13px] font-medium text-ink-2 transition-colors hover:bg-panel/60 hover:text-ink sm:inline-flex"
+      >
+        Sign in
+      </a>
+      <Button href={PRIMARY_CTA.href} size="sm">
+  {PRIMARY_CTA.short}
+</Button>
+
+      <details id="mobile-nav" class="lg:hidden">
+        <summary
+          class="nav-burger grid h-11 w-11 cursor-pointer list-none place-items-center rounded-md text-ink transition-colors hover:bg-panel/60 [&::-webkit-details-marker]:hidden"
+          aria-label="Menu"
+        >
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
+        </summary>
+
+        <div class="fixed inset-x-0 top-14 max-h-[calc(100dvh-3.5rem)] overflow-y-auto border-t border-line bg-bg shadow-[0_16px_32px_-16px_oklch(0.2_0_0/0.18)]">
+          <ul class="px-4 py-2 sm:px-6">
+            {NAV_LINKS.map((link) => (
+              <li class="border-b border-line-soft last:border-b-0">
+                <a
+                  href={link.href}
+                  class="flex h-[52px] items-center text-[15px] font-medium text-ink"
+                >
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+          <div class="border-t border-line px-4 py-4 sm:px-6">
+            <Button href={SIGNIN_URL} variant="secondary" block>
+  Sign in
+</Button>
+          </div>
+        </div>
+      </details>
+    </div>
+  </nav>
+</header>
+
+<script>
+  const nav = document.getElementById('mobile-nav') as HTMLDetailsElement | null;
+  const header = document.querySelector('.site-header') as HTMLElement | null;
+
+  // Anchor links do not reload, so the panel would stay open on top of the
+  // section it just scrolled to. Also close it if the viewport grows past the
+  // lg breakpoint, where the panel is hidden but `open` would persist.
+  if (nav) {
+    nav.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('a')) nav.open = false;
+    });
+    window.matchMedia('(min-width: 1024px)').addEventListener('change', (e) => {
+      if (e.matches) nav.open = false;
+    });
+  }
+
+  // Transparent over the first section, solid past it.
+  //
+  // A scroll listener rather than an IntersectionObserver. IO is the tidier
+  // tool and was the first implementation, but it could not be verified in the
+  // harness this was built in: a control observer on a plainly visible <h1>
+  // received zero callbacks. Rather than ship a nav-bar behaviour that might
+  // silently never fire, this uses scroll, which was verified working.
+  //
+  // The usual objection to scroll handlers is per-frame layout reads. There are
+  // none here: the switch point is measured once and on resize, and each scroll
+  // event only compares a cached number, throttled to one rAF.
+  if (header?.dataset.overlayCapable === 'true') {
+    const end = document.querySelector('[data-header-overlay-end]');
+
+    if (!end) {
+      // Asked for an overlay but never marked where it ends. Solid is the safe
+      // wrong answer: unreadable nav is worse than an early surface.
+      header.dataset.overlay = 'off';
+    } else {
+      let switchAt = 0;
+      let ticking = false;
+
+      const measure = () => {
+        switchAt = end.getBoundingClientRect().top + window.scrollY;
+      };
+
+      const update = () => {
+        ticking = false;
+        // While the mobile panel is open the header must be solid, or the
+        // panel's light surface hangs off a transparent bar.
+        const overHero = window.scrollY < switchAt && !(nav?.open ?? false);
+        header.dataset.overlay = overHero ? 'on' : 'off';
+      };
+
+      const onScroll = () => {
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(update);
+      };
+
+      const remeasure = () => {
+        measure();
+        update();
+      };
+
+      remeasure();
+      window.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('resize', remeasure);
+      nav?.addEventListener('toggle', update);
+
+      // The hero's height, and so the switch point, depends on how its display
+      // font wraps. This script runs before the webfont lands, so the first
+      // measurement is of fallback-font text and is stale the moment Newsreader
+      // swaps in. Re-measure once the real fonts are applied.
+      document.fonts?.ready.then(remeasure);
+    }
+  }
+</script>

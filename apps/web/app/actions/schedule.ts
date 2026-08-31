@@ -26,7 +26,7 @@ export async function upsertCadence(data: z.infer<typeof cadenceSchema>) {
 
   if (error) throw new Error(error.message);
 
-  revalidatePath(`/clients/${parsed.workspace_id}`);
+  revalidatePath(`/workspaces/${parsed.workspace_id}`);
 }
 
 export async function scheduleArticle(

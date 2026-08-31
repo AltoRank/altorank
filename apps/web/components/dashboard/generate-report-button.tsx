@@ -4,9 +4,18 @@ import { useTransition, useState } from "react";
 import { generateReportAction } from "@/app/actions/reports";
 import { Button, Icons } from "@/components/ui";
 
-export function GenerateReportButton({ workspaceId }: { workspaceId: string }) {
+type Ws = { id: string; name: string };
+
+/**
+ * Which workspace gets reported on is a choice, not an accident. This took a
+ * single workspaceId and the page passed `workspaces[0]`, so an agency with
+ * four clients silently generated a report for whichever was created first -
+ * the same first-row bug the Articles page had.
+ */
+export function GenerateReportButton({ workspaces }: { workspaces: Ws[] }) {
   const [pending, startTransition] = useTransition();
   const [showPicker, setShowPicker] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id ?? "");
 
   // Default: last month
   const now = new Date();
@@ -37,6 +46,20 @@ export function GenerateReportButton({ workspaceId }: { workspaceId: string }) {
         })
       }
     >
+      {workspaces.length > 1 && (
+        <div>
+          <label className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1 block">Workspace</label>
+          <select
+            value={workspaceId}
+            onChange={(e) => setWorkspaceId(e.target.value)}
+            className="px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent"
+          >
+            {workspaces.map((w) => (
+              <option key={w.id} value={w.id}>{w.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
       <div>
         <label className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1 block">From</label>
         <input name="start" type="date" defaultValue={defaultStart} className="px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent" />

@@ -10,3 +10,4 @@ export { SearchInput } from "./search-input";
 export { StatStrip } from "./stat-strip";
 export { StatusPill } from "./status-pill";
 export { TabRow } from "./tab-row";
+export { ConnectPrompt } from "./connect-prompt";

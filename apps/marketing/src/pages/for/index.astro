@@ -1,0 +1,64 @@
+---
+import Marketing from '@/layouts/Marketing.astro';
+import Button from '@/components/shared/Button.astro';
+import { INDUSTRIES } from '@/data/industries';
+import { buildItemListSchema } from '@/lib/schema';
+import { APP_NAME, SIGNUP_URL, SITE_URL } from '@/constants';
+
+const structuredData = [
+  buildItemListSchema(
+    INDUSTRIES.map((ind) => ({
+      name: `${APP_NAME} for ${ind.name}`,
+      url: `${SITE_URL}/for/${ind.slug}`,
+      description: ind.description,
+    })),
+  ),
+];
+---
+
+<Marketing
+  title={`${APP_NAME} by industry`}
+  description={`How ${APP_NAME} works for the teams that use it: marketing agencies, e-commerce stores, and SaaS companies.`}
+  {/* Thin templated hub (327 rendered words). Useful as navigation, not as an
+      index entry, until the industry pages carry real depth. */}
+  noindex={true}
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[1100px] px-8">
+      <div class="mb-12 max-w-[720px]">
+        <h1 class="text-[clamp(36px,5vw,52px)] font-semibold leading-[1.04] tracking-[-0.025em] text-ink [text-wrap:balance]">
+          {APP_NAME} by industry
+        </h1>
+        <p class="mt-5 text-lg leading-relaxed text-ink-2">
+          The same approval-first content engine, framed for how each team actually works.
+        </p>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {INDUSTRIES.map((ind) => (
+          <a
+            href={`/for/${ind.slug}`}
+            class="group flex flex-col gap-2 rounded-xl border border-line bg-bg p-6 transition-colors hover:border-accent hover:bg-accent-soft/15"
+          >
+            <h2 class="text-2xl font-semibold tracking-[-0.015em] text-ink">{ind.name}</h2>
+            <p class="text-sm leading-relaxed text-ink-2">{ind.description}</p>
+            <span class="mt-auto inline-flex items-center gap-1.5 pt-2 font-mono text-[12px] text-accent-ink">
+              {APP_NAME} for {ind.name}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="14" height="14" class="transition-transform group-hover:translate-x-0.5">
+                <path d="M5 12h14m0 0-6-6m6 6-6 6" />
+              </svg>
+            </span>
+          </a>
+        ))}
+      </div>
+
+      <div class="mt-12 text-center">
+        <Button href={SIGNUP_URL}>
+  Add your domain with {APP_NAME}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
+</Button>
+      </div>
+    </div>
+  </section>
+</Marketing>

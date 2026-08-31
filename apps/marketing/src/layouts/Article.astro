@@ -1,0 +1,118 @@
+---
+import Marketing from './Marketing.astro';
+import { buildBreadcrumbSchema, buildArticleSchema } from '@/lib/schema';
+import { AUTHOR_NAME, AUTHOR_URL } from '@/constants';
+
+interface Props {
+  title: string;
+  description: string;
+  publishDate: Date;
+  dateModified?: Date;
+  author: string;
+  category: string;
+  ogImage?: string;
+  breadcrumbs?: { label: string; href: string }[];
+}
+
+const {
+  title,
+  description,
+  publishDate,
+  dateModified,
+  author,
+  category,
+  ogImage,
+  breadcrumbs = [
+    { label: 'Home', href: '/' },
+    { label: 'Blog', href: '/blog' },
+    { label: title, href: Astro.url.pathname },
+  ],
+} = Astro.props;
+
+// A named Person with a resolvable profile is worth materially more for E-E-A-T
+// and AI citation than an anonymous team byline, but only when the name is real.
+// When the byline is our known author we attach the profile URL so the schema
+// carries sameAs; anything else falls back to an Organization byline rather than
+// claiming a Person who cannot be looked up.
+const isNamedAuthor = author === AUTHOR_NAME;
+
+const structuredData = [
+  buildArticleSchema({
+    title,
+    description,
+    publishDate,
+    dateModified,
+    author,
+    authorType: isNamedAuthor ? 'Person' : 'Organization',
+    ...(isNamedAuthor && { authorUrl: AUTHOR_URL }),
+    url: Astro.url.href,
+    // Absolute. `Base.astro` resolves the og:image meta tag against
+    // `Astro.site`, but the JSON-LD was handed the raw "/og/foo.png", which
+    // nothing outside the page can resolve. Google reads image as a URL.
+    image: ogImage ? new URL(ogImage, Astro.site).href : undefined,
+  }),
+  buildBreadcrumbSchema(breadcrumbs),
+];
+---
+
+<Marketing
+  title={`${title} | AltoRank`}
+  description={description}
+  ogImage={ogImage}
+  ogType="article"
+  structuredData={structuredData}
+>
+  <article class="border-b border-line py-16">
+    <div class="mx-auto max-w-[720px] px-6">
+      <!-- Breadcrumbs -->
+      <nav class="mb-8 flex items-center gap-2 text-xs text-ink-3">
+        {breadcrumbs.map((crumb, i) => (
+          <>
+            {i > 0 && <span>/</span>}
+            {i < breadcrumbs.length - 1 ? (
+              <a href={crumb.href} class="hover:text-ink transition-colors">{crumb.label}</a>
+            ) : (
+              <span class="text-ink-2">{crumb.label}</span>
+            )}
+          </>
+        ))}
+      </nav>
+
+      <!-- Meta -->
+      <div class="mb-6 flex items-center gap-3 text-sm text-ink-3">
+        <span class="rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[10.5px] text-accent-ink uppercase tracking-wider">
+          {category}
+        </span>
+        <time datetime={publishDate.toISOString()}>
+          {publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+        </time>
+        {dateModified && (
+          <>
+            <span>&middot;</span>
+            <span>
+              Updated{' '}
+              <time datetime={dateModified.toISOString()}>
+                {dateModified.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+              </time>
+            </span>
+          </>
+        )}
+        <span>&middot;</span>
+        {isNamedAuthor ? (
+          <a href={AUTHOR_URL} rel="author" class="hover:text-ink transition-colors">{author}</a>
+        ) : (
+          <span>{author}</span>
+        )}
+      </div>
+
+      <h1 class="mb-6 text-[36px] font-semibold leading-tight tracking-[-0.025em] [text-wrap:balance]">
+        {title}
+      </h1>
+
+      <!-- Content -->
+      <div class="prose prose-lg max-w-none">
+        <slot />
+      </div>
+    </div>
+  </article>
+</Marketing>

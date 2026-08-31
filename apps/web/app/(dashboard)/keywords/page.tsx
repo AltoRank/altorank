@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getKeywords } from "@/lib/queries/keywords";
-import { PageHead, DotSep, StatusPill, Avatar, Icons, Chip, Card, StatStrip } from "@/components/ui";
+import { PageHead, StatusPill, Avatar, Chip, Card, StatStrip } from "@/components/ui";
 import { KeywordActions } from "@/components/dashboard/keyword-actions";
 import { KeywordFilters } from "@/components/dashboard/keyword-filters";
 import { KeywordPlanButton } from "@/components/dashboard/keyword-plan-button";
@@ -10,8 +10,19 @@ import type { Workspace } from "@/lib/types";
 export const metadata: Metadata = { title: "Keywords" };
 
 type Props = {
-  searchParams: Promise<{ status?: string; intent?: string }>;
+  searchParams: Promise<{ status?: string; intent?: string; q?: string }>;
 };
+
+/**
+ * Case-insensitive substring match across the fields a person would actually
+ * type. Applied on the server, next to the data, so the filter bar only has to
+ * own the URL.
+ */
+function matchesQuery(fields: (string | null | undefined)[], q: string): boolean {
+  if (!q) return true;
+  const needle = q.trim().toLowerCase();
+  return fields.some((f) => (f ?? "").toLowerCase().includes(needle));
+}
 
 export default async function KeywordsPage({ searchParams }: Props) {
   const params = await searchParams;
@@ -22,6 +33,8 @@ export default async function KeywordsPage({ searchParams }: Props) {
   ]);
 
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));
+  const shown = keywords.filter((k) => matchesQuery([k.term], params.q ?? ""));
+
   const shippedCount = keywords.filter((k) => k.status === "shipped").length;
   const newCount = keywords.filter((k) => k.status === "new").length;
   const scored = keywords
@@ -32,8 +45,7 @@ export default async function KeywordsPage({ searchParams }: Props) {
     <>
       <PageHead
         title="Keywords"
-        eyebrow={<><span>Keyword research</span><StatusPill status="on" label={`${keywords.length} tracked`} /></>}
-        subtitle={<><span>Across all workspaces</span><DotSep /><span>{newCount} new opportunities</span></>}
+        subtitle={<span>Across all workspaces</span>}
         actions={<KeywordActions workspaces={workspaces} keywords={keywords} />}
       />
 
@@ -45,7 +57,11 @@ export default async function KeywordsPage({ searchParams }: Props) {
           // unknowns as 0 dragged the average toward "easy" in proportion to
           // how little we knew.
           { label: "Avg difficulty", value: scored.length > 0 ? Math.round(scored.reduce((s, d) => s + d, 0) / scored.length) : "—" },
-          { label: "Gap opportunities", value: String(newCount), delta: "to plan" },
+          {
+            label: "Unscored",
+            value: String(keywords.length - scored.length),
+            delta: scored.length === keywords.length ? "all have difficulty" : "no difficulty reading",
+          },
         ]}
       />
 
@@ -64,7 +80,7 @@ export default async function KeywordsPage({ searchParams }: Props) {
               </tr>
             </thead>
             <tbody>
-              {keywords.map((k) => {
+              {shown.map((k) => {
                 const w = wsMap.get(k.workspace_id);
                 const known = typeof k.difficulty === "number";
                 const diffColor = !known
@@ -111,7 +127,7 @@ export default async function KeywordsPage({ searchParams }: Props) {
                   </tr>
                 );
               })}
-              {keywords.length === 0 && (
+              {shown.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-3.5 py-8 text-center text-ink-3">No keywords yet. Click &quot;Find new keywords&quot; to get started.</td>
                 </tr>

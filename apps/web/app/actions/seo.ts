@@ -33,9 +33,14 @@ export async function runKeywordResearch(workspaceId: string) {
   }
 
   // Call DataForSEO with workspace locale
+  // withDifficulty matches what cron/analyze already requests. This path ran
+  // without it, which is why a fresh onboarding produced 1,000 keywords with
+  // 1,000 null difficulties while the cron's discoveries had numbers: two
+  // callers of one function, drifted by a flag.
   const keywords = await discoverKeywords(ws.domain, {
     languageCode: ws.language ?? "en",
     locationCode: ws.location_code ?? 2840,
+    withDifficulty: true,
   });
 
   // Upsert into keywords table
@@ -221,7 +226,9 @@ export async function scoreArticleSeo(articleId: string) {
   }
 
   // Run the scoring
-  const result = scoreArticle(htmlContent, article.keyword);
+  const result = scoreArticle(htmlContent, article.keyword, {
+    metaDescription: article.meta_description,
+  });
 
   // Insert the audit record
   const { error: auditError } = await supabase.from("seo_audits").insert({

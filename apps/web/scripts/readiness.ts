@@ -181,14 +181,27 @@ async function main(): Promise<void> {
   // 1. check
   const readiness = await runAgentReadiness(clean);
   if (readiness.error) {
-    console.error(`${clean}: ${readiness.error}`);
+    // Under --json the caller is parsing stdout, so a bare stderr string leaves
+    // it with nothing to read. The score is deliberately absent rather than 0:
+    // an unreachable site has no readiness, which is not the same as bad
+    // readiness.
+    if (asJson) {
+      console.log(JSON.stringify({ domain: clean, error: readiness.error }, null, 2));
+    } else {
+      console.error(`${clean}: ${readiness.error}`);
+    }
     process.exit(2);
   }
 
   // 2. fetch once more for the generators (the checker does not return HTML)
   const page = await fetchPage(url);
   if (!page.html) {
-    console.error(`${clean}: homepage fetch failed after checks passed; aborting`);
+    const detail = "homepage fetch failed after checks passed; aborting";
+    if (asJson) {
+      console.log(JSON.stringify({ domain: clean, error: detail }, null, 2));
+    } else {
+      console.error(`${clean}: ${detail}`);
+    }
     process.exit(2);
   }
 
@@ -261,7 +274,29 @@ async function main(): Promise<void> {
   );
 
   if (asJson) {
-    console.log(JSON.stringify({ domain: clean, score: readiness.score, artifacts }, null, 2));
+    // Previously this emitted only { domain, score, artifacts }, so the one
+    // consumer that cannot read the rendered report - an agent, or the CLI this
+    // ships as - got a number with nothing behind it and no way to tell which
+    // checks produced it. Mirrors report.json, minus the markdown body, which is
+    // on disk and too large to belong on stdout.
+    console.log(
+      JSON.stringify(
+        {
+          domain: clean,
+          score: readiness.score,
+          findings: readiness.findings,
+          passed: readiness.findings.filter((f) => f.passed).length,
+          failed: readiness.findings.filter((f) => !f.passed).length,
+          blocking: readiness.findings.filter(
+            (f) => !f.passed && f.severity !== "low",
+          ).length,
+          artifacts,
+          runDir,
+        },
+        null,
+        2,
+      ),
+    );
   } else {
     console.log(report);
     console.log(`\nwritten to ${runDir}/`);

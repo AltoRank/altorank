@@ -64,6 +64,7 @@ type LabsOverviewResult = {
     | Array<{
         keyword: string;
         keyword_properties?: { keyword_difficulty?: number | null };
+        keyword_info?: { search_volume?: number | null };
       }>
     | null;
 };
@@ -104,6 +105,49 @@ export async function fetchKeywordDifficulty(
       for (const item of result.items ?? []) {
         const kd = item.keyword_properties?.keyword_difficulty;
         if (typeof kd === "number") out.set(item.keyword.toLowerCase(), kd);
+      }
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Volume and difficulty for keywords that arrived outside discovery.
+ *
+ * A keyword typed into the "New article" modal never went through
+ * `discoverKeywords`, so the article stored volume null and difficulty null
+ * and the editor's dials read as dashes on a piece the machine had just
+ * researched. One overview call answers both numbers.
+ *
+ * Absent stays null. `null` here means "the API did not report it", and
+ * rendering that as 0 is the difficulty-coloured-green bug all over again.
+ */
+export async function fetchKeywordFacts(
+  keywords: string[],
+  options?: { languageCode?: string; locationCode?: number },
+): Promise<Map<string, { volume: number | null; difficulty: number | null }>> {
+  const out = new Map<string, { volume: number | null; difficulty: number | null }>();
+  if (!keywords.length) return out;
+
+  const response = await post<LabsOverviewResult>(
+    "/dataforseo_labs/google/keyword_overview/live",
+    [
+      {
+        keywords: keywords.slice(0, DIFFICULTY_BATCH),
+        location_code: options?.locationCode ?? 2840,
+        language_code: options?.languageCode ?? "en",
+      },
+    ],
+  );
+
+  for (const task of response.tasks) {
+    for (const result of task.result ?? []) {
+      for (const item of result.items ?? []) {
+        out.set(item.keyword.toLowerCase(), {
+          volume: item.keyword_info?.search_volume ?? null,
+          difficulty: item.keyword_properties?.keyword_difficulty ?? null,
+        });
       }
     }
   }

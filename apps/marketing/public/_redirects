@@ -1,0 +1,40 @@
+# Cloudflare Pages redirects.
+#
+# The /vs/* section was removed 2026-08-22. Each page carried only 108-355 words
+# of unique data on a shared template, and seven of them competed directly with a
+# far stronger /alternatives page for the same competitor intent (for example
+# /vs/outrank at 501 rendered words against /alternatives/outrank at 2,989).
+# Redirecting rather than deleting keeps whatever link equity those indexed URLs
+# hold and avoids ten crawl errors.
+#
+# Seven cannibalisation pairs, each to its stronger counterpart:
+/vs/outrank            /alternatives/outrank         301
+/vs/search-atlas       /alternatives/search-atlas    301
+/vs/contentbird        /alternatives/contentbird     301
+/vs/rankyak            /alternatives/rankyak         301
+/vs/shopify-magic      /alternatives/shopify-magic   301
+/vs/describely         /alternatives/describely      301
+/vs/seowind            /alternatives/seowind         301
+
+# Three had no /alternatives counterpart, so they go to the hub rather than 404.
+/vs/surfer-seo         /alternatives                 301
+/vs/jasper             /alternatives                 301
+/vs/semrush            /alternatives                 301
+
+# Hub and any straggler under /vs.
+/vs                    /alternatives                 301
+/vs/*                  /alternatives                 301
+
+# Removed 2026-08-22. Both were templated industry pages carrying only ~110-130
+# words of unique copy: /for/saas is off-ICP (the ICP is agencies broadly with
+# e-commerce as the lead vertical) and /for/agencies restated the homepage pitch.
+# /for/ecommerce survives, so these go to the home page rather than to it, which
+# would send a SaaS or agency visitor to a store-specific page.
+/for/saas              /                             301
+/for/agencies          /                             301
+
+# /integrations/* removed 2026-08-22: three templated pages of 120-141 unique
+# words each. The home page carries the integrations feature block, so it is the
+# closest surviving equivalent.
+/integrations          /                             301
+/integrations/*        /                             301

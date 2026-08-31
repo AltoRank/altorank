@@ -1,0 +1,508 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildArticleSchema, buildFAQSchema, buildItemListSchema } from '@/lib/schema';
+import { APP_NAME, SIGNUP_URL, SITE_URL, AUTHOR_NAME, AUTHOR_URL, OSS_COMPARISON_LABEL, PRIMARY_CTA } from '@/constants';
+
+const pageUrl = `${SITE_URL}/alternatives/search-atlas`;
+
+const publishDate = new Date('2026-05-23');
+const dateModified = new Date('2026-06-20');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Alternatives', href: '/alternatives' },
+  { label: 'Search Atlas alternative', href: '/alternatives/search-atlas' },
+];
+
+interface TldrRow {
+  name: string;
+  bestFor: string;
+  whiteLabelTier: string;
+  cmsCount: string;
+  voiceProfiles: string;
+  price: string;
+  ours?: boolean;
+}
+
+const TLDR_ROWS: TldrRow[] = [
+  { name: APP_NAME, bestFor: 'Open source, content-led SEO at any scale', whiteLabelTier: '€199 Agency tier', cmsCount: '12+', voiceProfiles: 'AI-trained per client', price: 'From $0 self-host', ours: true },
+  { name: 'Search Atlas', bestFor: 'Agencies wanting a kitchen-sink platform', whiteLabelTier: '$399 Pro tier', cmsCount: '~2 (Shopify, WP)', voiceProfiles: 'Not surfaced', price: '$99/mo' },
+  { name: 'Outrank', bestFor: 'Solo bloggers, autopilot publishing', whiteLabelTier: 'Not available', cmsCount: '9 + webhook', voiceProfiles: '5 tone presets', price: '$99/mo' },
+  { name: 'SE Ranking', bestFor: 'Established agencies needing white-label', whiteLabelTier: 'Add-on', cmsCount: 'Limited', voiceProfiles: 'Not focus', price: '$52-259/mo' },
+  { name: 'ContentMonk', bestFor: 'Solo content marketers (quality-first)', whiteLabelTier: 'Not available', cmsCount: 'Webhook + few', voiceProfiles: 'Sample-based', price: '$49/mo' },
+  { name: 'Jasper', bestFor: 'Enterprise brand voice', whiteLabelTier: 'Not available', cmsCount: 'Copy-paste', voiceProfiles: 'Workspaces (no isolation)', price: '$59/mo per seat' },
+  { name: 'SurferSEO', bestFor: 'On-page optimization (no generation)', whiteLabelTier: 'Not available', cmsCount: 'Google Docs only', voiceProfiles: 'Not applicable', price: '$89/mo' },
+  { name: 'Scalenut', bestFor: 'Budget all-in-one for in-house teams', whiteLabelTier: 'Not available', cmsCount: 'Limited', voiceProfiles: 'Tone presets', price: '$39/mo' },
+  { name: 'Rankability', bestFor: 'Content optimization scoring', whiteLabelTier: 'Not available', cmsCount: 'Manual export', voiceProfiles: 'Not focus', price: '$79/mo' },
+];
+
+const ALTORANK_VS_SA = [
+  { feature: 'White-label tier entry', ours: '€199 Agency (2nd tier)', theirs: '$399 Pro (3rd tier, locked behind premium)' },
+  { feature: 'Per-client voice profiles', ours: 'AI-trained from 3–5 sample articles per client', theirs: 'Not surfaced, broad-stack focus' },
+  { feature: 'CMS publishing breadth', ours: '12+ integrations (WordPress, Webflow, Shopify, Ghost, Framer, Wix, Notion, HubSpot, Magento, WooCommerce, webhook, HTML)', theirs: '~2 explicit (Shopify, WordPress)' },
+  { feature: 'Articles/month transparency', ours: 'Explicit (100 Managed / 400 Agency)', theirs: 'Vague AI quota' },
+  { feature: 'Backlink strategy', ours: 'Credit-based exchange network (many-to-many)', theirs: 'Outreach tool (one-to-one, Pitchbox/HARO style)' },
+  { feature: 'Editorial approval workflow', ours: 'Owner/Admin/Editor permissions, approve-before-publish by default', theirs: '"You\'re always in control" but no role-based publish gating' },
+  { feature: 'Content decay detection', ours: 'Flags aging articles, auto-drafts refreshes', theirs: 'Not surfaced' },
+  { feature: 'Focus', ours: 'SEO content engine (specialist)', theirs: 'SEO + Paid Ads + Local + GBP + Content (broad)' },
+  { feature: 'Multi-client at entry', ours: 'Unlimited client workspaces on every paid tier (from €69)', theirs: 'Starter supports multi-client at $99' },
+  { feature: 'Customer track record', ours: 'Pre-launch, early access', theirs: '3,200+ reviews, 3-year history' },
+  { feature: 'Source code', ours: 'Open source, self-hostable at no cost', theirs: 'Proprietary SaaS' },
+  { feature: 'Editorial approval gate', ours: 'Required before anything publishes, by design', theirs: 'None confirmed' },
+  { feature: 'AI-readiness audit', ours: 'Scores agent readiness, then generates the missing JSON-LD, markdown twins and llms.txt', theirs: 'None confirmed' },
+];
+
+interface Tool {
+  index: string;
+  name: string;
+  ours?: boolean;
+  url?: string;
+  subtitle: string;
+  whatItIs: string;
+  bestFor: string;
+  pricing: string;
+  beatsSA: string;
+  beatsOurs?: string;
+  beatsTheirs: string;
+}
+
+const TOOLS: Tool[] = [
+  {
+    index: '01',
+    name: APP_NAME,
+    ours: true,
+    subtitle: 'Best Search Atlas Alternative for Content-Focused Agencies',
+    whatItIs: 'An end-to-end SEO content engine purpose-built for agencies that want a content specialist, not a broad-stack marketing platform.',
+    bestFor: 'Digital, SEO, and content marketing agencies with 1–50+ client brands whose primary deliverable is SEO content. Sweet spot: 2–25 clients, 3–15 person team.',
+    pricing: '€69/mo Managed (100 articles, model costs included), €199/mo Agency (400 articles, unlimited client workspaces, white-label reports, referral traffic exchange).',
+    beatsSA: '',
+    beatsTheirs: 'No track record. Search Atlas has 3 years of agency case studies, real customer logos (autotrader, Hyundai, Zynga, Vendasta), and 3,200+ reviews. If you want established proof, they have it and we don\'t yet. We\'re pre-launch with early access pricing.',
+  },
+  {
+    index: '02',
+    name: 'Search Atlas',
+    url: 'https://searchatlas.com',
+    subtitle: 'Best for Agencies Wanting a Kitchen-Sink Platform',
+    whatItIs: 'An "agentic AI marketing platform" that does SEO + paid ads + local SEO + GBP management + content + website building, all in one system. OTTO SEO automates technical fixes and content updates.',
+    bestFor: 'Mid-to-large agencies who want one platform for SEO, Google Ads, Google Business Profile management, local citations, and content, and don\'t need deep per-client voice isolation.',
+    pricing: '$99/mo Starter, $199/mo Growth (LLM visibility, Smart Ads), $399/mo Pro (white-label, all LLMs).',
+    beatsSA: '',
+    beatsTheirs: `Search Atlas is broad. ${APP_NAME} is deep on SEO content specifically. If your agency primary deliverable is content production at multi-client scale, ${APP_NAME}'s per-client voice profiles, 12-CMS breadth, white-label at €199 (vs Search Atlas's $399), and referral traffic exchange are the agency-content layer Search Atlas doesn't ship at depth. If your agency runs paid ads, GBP management, and local citations alongside content, Search Atlas wins on scope.`,
+  },
+  {
+    index: '03',
+    name: 'Outrank',
+    url: 'https://outrank.so',
+    subtitle: 'Best for Solo Bloggers and Autopilot Publishing',
+    whatItIs: 'AI SEO content automation built for solo founders managing one site. Includes a backlink exchange network and CMS publishing.',
+    bestFor: 'Solo bloggers, freelancers, or single-brand owners who want unsupervised content automation without an editorial review step.',
+    pricing: '$99/mo for one site (3-day $1 trial).',
+    beatsSA: 'Outrank ships content automation faster and cheaper than Search Atlas for a single site. If you\'re one person, one site, full autopilot, Outrank\'s opinionated narrowness is a feature.',
+    beatsTheirs: `${APP_NAME} Managed is €69/mo against Outrank's $99/mo with multi-client architecture, white-label-ready foundations, rank tracking, and 12-CMS publishing already built in. For an agency operator with one client today and plans to add a second tomorrow, ${APP_NAME} is the better path. For a true solo blogger, Outrank's simpler autopilot is fine.`,
+  },
+  {
+    index: '04',
+    name: 'SE Ranking',
+    url: 'https://seranking.com',
+    subtitle: 'Best for Established Agencies Needing White-Label',
+    whatItIs: 'A mature SEO platform with a strong white-label add-on (the #1 result for "white label seo content tool"). Project management, rank tracking, site auditing, content marketing module.',
+    bestFor: 'Established agencies who already have a content workflow and just need white-label SEO reports + rank tracking + technical SEO.',
+    pricing: '$52-259/mo (essential to business) + white-label add-on pricing.',
+    beatsSA: 'SE Ranking has been in the agency white-label space longer than Search Atlas. Their white-label is more polished and their rank tracking is more granular.',
+    beatsTheirs: `${APP_NAME} generates the content; SE Ranking expects you to bring writers. If you have writers, SE Ranking is fine. If you want the content engine itself, ${APP_NAME} wins. Also: white-label at €199 not as an add-on.`,
+  },
+  {
+    index: '05',
+    name: 'ContentMonk',
+    url: 'https://www.contentmonk.io',
+    subtitle: 'Best for Solo Content Marketers (Quality-First)',
+    whatItIs: 'AI content writer focused on content quality and sample-based brand-voice calibration for one brand at a time.',
+    bestFor: 'Solo content marketers or in-house marketing teams with one or two brands where content quality is the primary frustration.',
+    pricing: '$49/mo starting, $9.90 max per article regardless of length.',
+    beatsSA: 'ContentMonk explicitly markets less "AI slop" than Search Atlas and other automation-first tools. The trade-off: narrower scope.',
+    beatsTheirs: 'ContentMonk is one brand at a time. No multi-client workspace, no white-label, no rank tracking, no agency role permissions. Great writer; not an agency operating system.',
+  },
+  {
+    index: '06',
+    name: 'Jasper',
+    url: 'https://www.jasper.ai',
+    subtitle: 'Best for Enterprise Brand Voice',
+    whatItIs: 'Purpose-built AI writing for marketing teams with strict brand guidelines. Multi-LLM access, 50+ marketing templates.',
+    bestFor: 'Mid-market and enterprise marketing teams with one to three brands and a written style guide that needs enforcement.',
+    pricing: '$59/mo per seat (annual) or $69/mo (monthly).',
+    beatsSA: 'Jasper\'s brand-voice consistency is genuinely stronger than Search Atlas\'s broader content tools. For tone-sensitive marketing teams, Jasper wins on writing quality.',
+    beatsTheirs: 'Jasper\'s "workspaces" aren\'t voice-isolated the way agencies need. Per-seat billing breaks down when your team includes contractors and client reviewers. No white-label.',
+  },
+  {
+    index: '07',
+    name: 'SurferSEO',
+    url: 'https://surferseo.com',
+    subtitle: 'Best On-Page Optimization Layer',
+    whatItIs: 'On-page SEO scoring and recommendations. Analyzes what\'s ranking and tells your writer which terms to add. Complementary to a writing workflow, not a replacement.',
+    bestFor: 'Agencies that already have writers and just need optimization grading.',
+    pricing: '$89/mo Essential.',
+    beatsSA: 'SurferSEO\'s on-page scoring is more polished than Search Atlas\'s Content Genius. If grading is your only need, Surfer is the specialist.',
+    beatsTheirs: `${APP_NAME} includes Surfer-like SEO scoring built into the generation pipeline (no separate $89/mo). If you don\'t already have writers, you need both Surfer and a generator, back to tool stitching.`,
+  },
+  {
+    index: '08',
+    name: 'Scalenut',
+    url: 'https://www.scalenut.com',
+    subtitle: 'Best Budget All-in-One for In-House Teams',
+    whatItIs: 'Mid-market all-in-one SEO content platform (research, write, optimize, publish) at a low entry price.',
+    bestFor: 'In-house marketing teams of 1–3 brands wanting a budget all-in-one option.',
+    pricing: '$39/mo Essential.',
+    beatsSA: 'Cheaper entry than Search Atlas. Real rank tracking included. Works for single-brand in-house teams.',
+    beatsTheirs: 'Voice profile depth, Scalenut uses tone presets similar to Outrank. No agency white-label, no per-client workspace isolation. Good for in-house, not agency-grade.',
+  },
+  {
+    index: '09',
+    name: 'Rankability',
+    url: 'https://www.rankability.com',
+    subtitle: 'Best for Content Optimization Scoring',
+    whatItIs: 'AI content optimization tool that scores your draft and recommends improvements. Listicle-friendly, they rank themselves #1 for "best AI SEO content optimization tools."',
+    bestFor: 'Teams who want a Surfer/Clearscope-style optimization tool at a lower price.',
+    pricing: '$79/mo.',
+    beatsSA: 'Narrower than Search Atlas, more focused on the optimization step specifically.',
+    beatsTheirs: `Like Surfer, Rankability optimizes. ${APP_NAME} generates AND optimizes in one workflow, no handoff.`,
+  },
+];
+
+interface DecisionRow {
+  when: string;
+  pick: string;
+  rationale: string;
+  ours?: boolean;
+}
+
+const DECISION_MATRIX: DecisionRow[] = [
+  { when: 'You run a digital agency where SEO content is the primary deliverable', pick: APP_NAME + ' Agency (€199/mo)', rationale: 'Content-specialist focus, white-label at this tier (Search Atlas locks it at $399), per-client voice profiles, 12-CMS publishing, referral traffic exchange.', ours: true },
+  { when: 'Your agency runs SEO + Google Ads + GBP + local citations + content as one stack', pick: 'Search Atlas', rationale: 'Their broad scope is genuinely the win. If you want one platform for everything, they ship that, and we don\'t.' },
+  { when: 'You\'re a solo agency operator starting with one client (planning to add more)', pick: APP_NAME + ' Managed (€69/mo)', rationale: '€69 against Outrank\'s $99, and multi-client architecture ready when you grow. Rank tracking and 12-CMS publishing built in.', ours: true },
+  { when: 'You\'re a solo blogger writing for yourself, full autopilot', pick: 'Outrank', rationale: 'Outrank\'s opinionated narrowness is a feature for the autopilot use case.' },
+  { when: 'You have established white-label SEO services and want only reports + rank tracking', pick: 'SE Ranking', rationale: 'Their white-label add-on is mature and the rank tracking is granular.' },
+  { when: 'You\'re a quality-obsessed solo content marketer at one company', pick: 'ContentMonk', rationale: 'Lower AI-slop than most. Stop here if you only need one brand.' },
+  { when: 'You\'re a mid-market enterprise with 1–3 brands and a strict style guide', pick: 'Jasper', rationale: 'Voice consistency is their strength. Pay for it.' },
+  { when: 'You already have writers and just need on-page grading', pick: 'SurferSEO or Rankability', rationale: 'Specialists at scoring. Don\'t pay for generation you won\'t use.' },
+  { when: 'You\'re an in-house team of 1–3 brands on a tight budget', pick: 'Scalenut', rationale: 'Cheapest credible option with rank tracking.' },
+];
+
+const FAQS = [
+  {
+    question: 'What is Search Atlas?',
+    answer: 'Search Atlas is an "agentic AI marketing platform" for agencies and brands that combines SEO automation (OTTO SEO), paid ad management (Smart Ads), Google Business Profile management (GBP Galactic), local citations, content generation, and website building in one platform. Pricing starts at $99/mo Starter, $199/mo Growth, $399/mo Pro.',
+  },
+  {
+    question: 'How is AltoRank different from Search Atlas?',
+    answer: `${APP_NAME} is a content specialist; Search Atlas is a broad-stack platform. Where Search Atlas covers Ads, Local, GBP, and Content, ${APP_NAME} focuses exclusively on SEO content for agencies: with deeper per-client voice profiles, 12+ CMS integrations (vs ~2), white-label at the €199 Agency tier (vs Search Atlas's $399), and a referral traffic exchange (vs outreach tool). For agencies whose primary deliverable is content production at multi-client scale, ${APP_NAME} is the deeper specialist.`,
+  },
+  {
+    question: 'Is AltoRank cheaper than Search Atlas?',
+    answer: `Entry tier: €69 Managed vs $99 Starter. Agency tier matches: €199 vs $199 Growth. The biggest difference is white-label: ${APP_NAME} includes it in the €199 Agency tier; Search Atlas locks it behind their $399 Pro tier. For agencies who need white-label, ${APP_NAME} is $200/mo cheaper.`,
+  },
+  {
+    question: 'Does Search Atlas do per-client voice profiles?',
+    answer: 'Search Atlas doesn\'t surface per-client voice profile training as a distinct feature. Their content generation (Content Genius) operates at the project level. AltoRank trains a dedicated AI voice profile from 3–5 sample articles per client workspace, so a 15-client agency maintains 15 distinct brand voices structurally, not by prompt discipline.',
+  },
+  {
+    question: 'Can I migrate from Search Atlas to AltoRank?',
+    answer: `Yes. Both platforms publish to WordPress and Shopify, so your live content stays in place. Export your articles, use them as voice profile training samples in ${APP_NAME}, connect your CMS, and resume publishing. Migration typically takes a few hours.`,
+  },
+  {
+    question: 'What about Search Atlas\'s LLM Visibility (AI search) feature?',
+    answer: `Search Atlas\'s LLM Visibility (on Growth+) tracks how brands appear in ChatGPT, Gemini, Perplexity. ${APP_NAME} builds AI-search-ready content structurally (schema markup, entity coverage, FAQ-formatted Q&A, definition-ready opening paragraphs) into every published article. Different approach: Search Atlas measures presence; ${APP_NAME} structures content to earn presence. They\'re complementary, not duplicative.`,
+  },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: `${APP_NAME} vs. Search Atlas: 9 Search Atlas Alternatives Tested for Agencies (2026)`,
+    description: 'Search Atlas is a broad-stack marketing platform. For agencies whose primary deliverable is SEO content, narrower specialists may be a better fit. We tested 9 alternatives across white-label, voice profiles, CMS breadth, and content depth.',
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildFAQSchema(FAQS),
+  buildItemListSchema(
+    TLDR_ROWS.map((t) => ({
+      name: t.name,
+      description: `${t.bestFor}, starting at ${t.price}`,
+    })),
+  ),
+];
+---
+
+<PSEO
+  title="9 Search Atlas Alternatives for Agencies (2026)"
+  description="Search Atlas is a broad-stack platform. For agencies whose primary deliverable is SEO content, narrower specialists may fit better. We tested 9 alternatives across white-label, voice profiles, CMS breadth."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  {/* ── HERO ──────────────────────────────────────────── */}
+  <header class="border-b border-line bg-[radial-gradient(600px_300px_at_88%_-10%,var(--accent-soft),transparent_70%),linear-gradient(180deg,var(--bg),var(--bg-2))] py-[72px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <h1 class="mb-6 text-[clamp(36px,5vw,52px)] font-semibold leading-[1.04] tracking-[-0.025em] text-ink [text-wrap:balance]">
+        {APP_NAME} vs. Search Atlas: We Tested 9 Search Atlas Alternatives for Agencies (2026)
+      </h1>
+      <p class="mb-5 max-w-[680px] text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
+        For agencies whose core deliverable is SEO content, a content specialist like {APP_NAME} fits better than Search Atlas's broad stack. You get per-client voice profiles, white-label reports, and deeper CMS breadth without paying for ads, GBP, and site-builder modules you won't use.
+      </p>
+      <p class="mb-5 max-w-[680px] text-lg leading-relaxed text-ink-2 [text-wrap:pretty]">
+        <a href="https://searchatlas.com" target="_blank" rel="noopener noreferrer" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">Search Atlas</a> is a broad-stack agentic marketing platform, SEO, paid ads, local SEO, Google Business Profile, content generation, website building, all in one. For agencies whose primary deliverable is SEO content, a content-specialist tool can be a better fit. The 9 Search Atlas alternatives below are ranked by <strong class="font-semibold text-ink">content-specialist criteria</strong>, with honest verdicts on when Search Atlas's broad-stack approach actually wins.
+      </p>
+      <p class="max-w-[680px] text-base leading-relaxed text-ink-2">
+        If your agency runs paid ads, GBP management, and local citations alongside content, Search Atlas's broad stack is the right answer, this article isn't for you. If content is the deliverable, read on.
+      </p>
+      <div class="mt-8 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
+        <span>By <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
+        <span class="text-line">·</span>
+        <span>Published <time datetime={publishDate.toISOString().slice(0, 10)}>{publishDateDisplay}</time></span>
+        <span class="text-line">·</span>
+        <span>22 min read</span>
+      </div>
+    </div>
+  </header>
+
+  {/* ── TL;DR TABLE ───────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[1100px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          The 9 tools at a glance
+        </h2>
+      </div>
+      <div class="overflow-hidden rounded-lg border border-line bg-bg">
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[920px] text-sm">
+            <caption class="sr-only">Comparison of 9 SEO content tools across white-label tier, CMS integrations, per-client voice profile support, and starting price.</caption>
+            <thead class="bg-panel text-left font-mono text-[11px] uppercase tracking-[0.06em] text-ink-2">
+              <tr>
+                <th scope="col" class="px-5 py-3.5 font-medium">Tool</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">Best for</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">White-label tier</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">CMS reach</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">Voice profiles</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">Starting price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {TLDR_ROWS.map((row, i) => (
+                <tr class={`${i > 0 ? 'border-t border-line-soft' : ''} ${row.ours ? 'bg-accent-soft/30' : ''}`}>
+                  <td class={`px-5 py-3.5 ${row.ours ? 'font-semibold text-ink' : 'text-ink-2'}`}>
+                    {row.ours ? (
+                      <span class="inline-flex items-center gap-2">
+                        {row.name}
+                        <span class="rounded-full bg-accent px-1.5 py-[1px] font-mono text-[9.5px] tracking-[0.08em] text-white">OURS</span>
+                      </span>
+                    ) : (
+                      <span>{row.name}</span>
+                    )}
+                  </td>
+                  <td class="px-5 py-3.5 text-ink-2">{row.bestFor}</td>
+                  <td class="px-5 py-3.5 font-mono text-[12.5px] text-ink-2">{row.whiteLabelTier}</td>
+                  <td class="px-5 py-3.5 font-mono text-[12.5px] text-ink-2">{row.cmsCount}</td>
+                  <td class="px-5 py-3.5 font-mono text-[12.5px] text-ink-2">{row.voiceProfiles}</td>
+                  <td class="px-5 py-3.5 font-mono text-[12.5px] text-ink-2">{row.price}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="mt-7 flex flex-wrap items-center justify-center gap-3">
+        <Button href={SIGNUP_URL}>
+  Add your domain with {APP_NAME}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
+</Button>
+        <Button href="/alternatives/outrank" variant="secondary">
+  Comparing to Outrank instead?
+</Button>
+      </div>
+    </div>
+  </section>
+
+  {/* ── WHY AGENCIES SEARCH ───────────────────────────── */}
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          Why agencies search for Search Atlas alternatives
+        </h2>
+      </div>
+      <div class="flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+        <p>Search Atlas is a genuinely strong product for what it set out to be: a broad-stack agentic marketing platform. For agencies who want one tool to run SEO, paid ads, Google Business Profile management, local citations, and content, all under one roof, Search Atlas delivers that.</p>
+        <p>The friction starts when agencies need <span class="font-medium text-ink">depth in one area</span> rather than breadth across all of them.</p>
+        <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">The breadth-vs-depth trade-off</h3>
+        <p>If SEO content is your agency's primary deliverable, articles, blog posts, content briefs, voice-matched drafts at multi-client scale, Search Atlas's content tooling (Content Genius, Topical Maps, Report Builder) is one feature set among many. It's good. It's not the deepest content engine on the market because that's not what the product is optimizing for.</p>
+        <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">The white-label tier gap</h3>
+        <p>Search Atlas locks white-label behind their $399/mo Pro tier. For most agencies, white-label dashboards, reports, and client-facing branding aren't a premium add-on, they're table stakes the day they sign their second client. <a href="/pricing" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">{APP_NAME} ships white-label in the €199 Agency tier</a>. That's $200/mo of arbitrage if white-label is the feature you actually need.</p>
+        <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">The per-client voice problem</h3>
+        <p>Running content for 15 client brands means maintaining 15 distinct voices. Search Atlas operates at the project level, switching between client voices requires prompt discipline and template management, not structural isolation. Agencies who care about voice consistency across hundreds of articles per client want the platform to enforce that boundary structurally, not by convention.</p>
+        <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">The CMS publishing breadth gap</h3>
+        <p>Search Atlas explicitly markets two CMS integrations: WordPress and Shopify. For agencies with a Webflow client, a Ghost client, a Framer client, a Notion-based client, a HubSpot client, or a Magento client, each one becomes a copy-paste workflow. {APP_NAME} ships 12+ CMS integrations natively because agencies don't get to pick their clients' CMS.</p>
+        <p>None of these are deal-breakers for an agency that uses Search Atlas's full breadth. They're structural gaps for an agency that uses it primarily for content.</p>
+      </div>
+    </div>
+  </section>
+
+  {/* ── EVALUATION CRITERIA ───────────────────────────── */}
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          How we evaluated each Search Atlas alternative
+        </h2>
+      </div>
+      <div class="flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+        <p>We tested each tool against five content-specialist scenarios:</p>
+        <ol class="my-2 flex flex-col gap-2 pl-5 list-decimal">
+          <li><strong class="font-semibold text-ink">Maintaining 15 distinct client voices across 200+ articles</strong>, does the tool enforce voice isolation structurally?</li>
+          <li><strong class="font-semibold text-ink">Publishing to a non-WordPress CMS</strong> (Webflow, Ghost, Framer, Notion, HubSpot, Magento) without copy-paste workarounds.</li>
+          <li><strong class="font-semibold text-ink">Producing a white-label client report</strong>, without paying premium-tier pricing.</li>
+          <li><strong class="font-semibold text-ink">Detecting content decay</strong>, does the tool flag aging articles whose rankings are slipping?</li>
+          <li><strong class="font-semibold text-ink">Editorial approval workflow</strong>, owner/admin/editor permissions, approve-before-publish gating.</li>
+        </ol>
+        <p>Each tool was scored against eight content-specialist criteria: per-client voice profile training, white-label tier accessibility, CMS integration breadth, content decay detection, role-based permissions, backlink network or outreach capability, articles-per-month transparency, and analytics integration depth.</p>
+        <p>We did not score on broad-stack breadth (paid ads, GBP, local citations). Search Atlas wins that category by design. The question is whether your agency needs breadth or depth.</p>
+      </div>
+    </div>
+  </section>
+
+  {/* ── TOOL SECTIONS ─────────────────────────────────── */}
+  {TOOLS.map((tool) => (
+    <section class={`border-b border-line py-[72px] ${tool.ours ? 'bg-accent-soft/15' : ''}`}>
+      <div class="mx-auto max-w-[820px] px-8">
+        <div class="mb-2 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">
+          <span>Tool {tool.index}</span>
+          {tool.ours && (
+            <span class="rounded-full bg-accent px-1.5 py-[1px] font-mono text-[9.5px] tracking-[0.08em] text-white">OURS</span>
+          )}
+        </div>
+        <h2 class="mb-2 text-[clamp(28px,3.5vw,34px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          {tool.name}
+        </h2>
+        <p class="mb-7 text-base font-medium text-accent-ink">{tool.subtitle}</p>
+        <div class="mb-5 grid gap-3 rounded-lg border border-line bg-bg p-5 sm:grid-cols-3">
+          <div>
+            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">What it is</div>
+            <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.whatItIs}</div>
+          </div>
+          <div>
+            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Best for</div>
+            <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.bestFor}</div>
+          </div>
+          <div>
+            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Pricing</div>
+            <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.pricing}</div>
+          </div>
+        </div>
+
+        {tool.ours ? (
+          <>
+            <h3 class="mt-7 mb-4 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">How {APP_NAME} differs from Search Atlas</h3>
+            <div class="overflow-hidden rounded-lg border border-line bg-bg">
+              <table class="w-full text-sm">
+                <caption class="sr-only">{APP_NAME} versus Search Atlas, content-specialist comparison.</caption>
+                <thead class="bg-panel text-left font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-2">
+                  <tr>
+                    <th scope="col" class="px-4 py-3 font-medium">Feature</th>
+                    <th scope="col" class="px-4 py-3 font-medium">{APP_NAME}</th>
+                    <th scope="col" class="px-4 py-3 font-medium">Search Atlas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ALTORANK_VS_SA.map((row, i) => (
+                    <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+                      <td class="px-4 py-3 text-ink">{row.feature}</td>
+                      <td class="px-4 py-3 text-ink-2">{row.ours}</td>
+                      <td class="px-4 py-3 font-mono text-[12.5px] text-ink-3">{row.theirs}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p class="mt-5 text-[15px] leading-relaxed text-ink-2">
+              The differentiator isn't breadth, Search Atlas wins on breadth. It's that {APP_NAME} ships agency-content depth at the entry tier: per-client voice profiles, 12-CMS publishing, white-label at €199, and a referral traffic exchange are built in, not gated behind premium tiers or absent entirely.
+            </p>
+            <h3 class="mt-7 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Where {APP_NAME} loses</h3>
+            <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsTheirs}</p>
+            <div class="mt-7">
+              <Button href={SIGNUP_URL}>
+  {PRIMARY_CTA.label}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
+</Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h3 class="mt-6 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+              Where {tool.name} differs from Search Atlas
+            </h3>
+            <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsSA}</p>
+            <h3 class="mt-6 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+              Where {APP_NAME} beats {tool.name}
+            </h3>
+            <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsTheirs}</p>
+            {tool.url && (
+              <p class="mt-6 text-[13px] text-ink-3">
+                Visit <a href={tool.url} target="_blank" rel="noopener noreferrer" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent hover:text-ink">{tool.name}</a> for current pricing and feature details.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  ))}
+
+  {/* ── DECISION MATRIX ───────────────────────────────── */}
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[1100px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          Which Search Atlas alternative should you choose?
+        </h2>
+        <p class="mt-3 max-w-[640px] text-base leading-relaxed text-ink-2">After nine tool deep-dives, here's the short version.</p>
+      </div>
+      <div class="grid gap-3 md:grid-cols-2">
+        {DECISION_MATRIX.map((row) => (
+          <div class={`rounded-xl border p-5 ${row.ours ? 'border-accent bg-accent-soft/40' : 'border-line bg-bg'}`}>
+            <div class="mb-2 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">If</div>
+            <div class="mb-3 text-[15px] font-medium text-ink">{row.when}</div>
+            <div class="mb-1 font-mono text-[11px] uppercase tracking-[0.08em] text-accent-ink">Then</div>
+            <div class="mb-2 text-lg font-semibold tracking-[-0.01em] text-ink">→ {row.pick}</div>
+            <p class="text-sm leading-relaxed text-ink-2">{row.rationale}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* ── FAQ ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          Frequently asked questions
+        </h2>
+      </div>
+      <div class="flex flex-col gap-3">
+        {FAQS.map((f) => (
+          <details class="group rounded-lg border border-line bg-bg p-5">
+            <summary class="flex cursor-pointer items-center justify-between gap-4 text-[15px] font-medium text-ink list-none">
+              <span>{f.question}</span>
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-panel text-ink-3 transition-transform group-open:rotate-45">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 5v14M5 12h14" /></svg>
+              </span>
+            </summary>
+            <p class="mt-3 text-sm leading-relaxed text-ink-2">{f.answer}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+</PSEO>

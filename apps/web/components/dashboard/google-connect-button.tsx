@@ -21,27 +21,49 @@ export function GoogleConnectButton({
   integrationId: "gsc" | "ga4";
   connected?: boolean;
 }) {
-  const { active } = useWorkspace();
+  const { workspaces, active, setActiveId } = useWorkspace();
 
-  if (!active) {
+  // This was the only consumer of the sidebar's workspace switcher: switching
+  // changed nothing on any page except which workspace this button would bind
+  // a Google account to, invisibly. The choice belongs here, next to its one
+  // effect, where it is visible at the moment it matters.
+  const target = active ?? workspaces[0];
+
+  if (!target) {
     return (
       <Button size="sm" disabled className="w-full justify-center">
-        Select a client first
+        Add a workspace first
       </Button>
     );
   }
 
-  const href = `/api/auth/google?workspaceId=${active.id}&integrationId=${integrationId}`;
+  const href = `/api/auth/google?workspaceId=${target.id}&integrationId=${integrationId}`;
 
   return (
-    <a href={href} className="block">
-      <Button
-        size="sm"
-        variant={connected ? "ghost" : "accent"}
-        className="w-full justify-center"
-      >
-        {connected ? `Reconnect for ${active.name}` : `Connect for ${active.name}`}
-      </Button>
-    </a>
+    <div className="flex flex-col gap-1.5">
+      {workspaces.length > 1 && (
+        <select
+          value={target.id}
+          onChange={(e) => setActiveId(e.target.value)}
+          aria-label="Workspace to connect"
+          className="w-full rounded-[6px] border border-line bg-panel px-2 py-1.5 text-[12px] text-ink-2"
+        >
+          {workspaces.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.name}
+            </option>
+          ))}
+        </select>
+      )}
+      <a href={href} className="block">
+        <Button
+          size="sm"
+          variant={connected ? "ghost" : "accent"}
+          className="w-full justify-center"
+        >
+          {connected ? `Reconnect for ${target.name}` : `Connect for ${target.name}`}
+        </Button>
+      </a>
+    </div>
   );
 }

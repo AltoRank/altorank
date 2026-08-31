@@ -1,0 +1,31 @@
+User-agent: *
+Allow: /
+
+# AI answer-engine crawlers — explicitly allowed (GEO/AEO). The wildcard above
+# already permits them; these entries document intent and guard against future
+# restrictive edits. See memory/research/strategy/2026-06-20-altorank-seo-aeo-geo-strategy.md.
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+# Content Signals (contentsignals.org, draft-romm-aipref-contentsignals).
+# Deliberate policy, not a default: AltoRank wants to be in the training corpus
+# and in AI answers. Entity resolution at DR 0.2 depends on being ingested, so
+# ai-train stays yes. Revisit only if that stops being the strategy.
+Content-Signal: ai-train=yes, search=yes, ai-input=yes
+
+Sitemap: https://altorank.co/sitemap-index.xml

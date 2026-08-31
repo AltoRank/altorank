@@ -1,0 +1,147 @@
+---
+/**
+ * The AltoRank logotype: the mark IS the A.
+ *
+ * Original mark, drawn 2026-08-30. It briefly used the Nomads "A" verbatim,
+ * which was replaced because using another company's registered mark as our
+ * own identity is a risk no amount of visual polish offsets.
+ *
+ * Same geometric family, different construction, so it is ours rather than a
+ * trace: the Nomads mark is a thin OPEN OUTLINE whose counter runs the full
+ * height; this is a SOLID peak with a shallow notch cut up from the baseline
+ * (apex 16-24, notch tip at 20,14, feet at 0 and 40). The result is
+ * substantially heavier, which is why the tail sits at 600 rather than the 500
+ * the thinner mark needed. See the weight note below.
+ *
+ * The mark used to sit beside the word with a gap, which read as "logo, then
+ * company name". It now substitutes for the capital A and the type continues
+ * "ltoRank", so the lockup reads as one word. That means it has to behave like
+ * a letter, not like an icon:
+ *
+ *   - The viewBox is exactly the path's bounds, so the box edges ARE the glyph
+ *     edges. With vertical-align:baseline that puts the mark's feet on the text
+ *     baseline; any padding in the box would float it above the baseline.
+ *   - Height is set in em off the cap height, so it scales with the type
+ *     instead of needing a second number kept in sync.
+ *   - Cap height and overshoot are measured off the loaded face, not guessed.
+ *     See CAP_RATIO / CAP_OVERSHOOT below.
+ *   - The tail is 600, matching the rest of the UI. The previous thin mark
+ *     needed 500 to avoid looking like two fonts; this one is solid enough to
+ *     carry Semibold, so that exception is gone. Checked at 60px against both.
+ *
+ * The capital R in "ltoRank" is deliberate: the brand is AltoRank, and setting
+ * the tail lowercase would quietly rename it to "Altorank" everywhere the
+ * logotype appears.
+ *
+ * scripts/generate-favicon.mjs and scripts/generate-og-default.mjs keep their
+ * own copies of the path because a .mjs cannot import an .astro file. All three
+ * are commented as a matched set. There is no fourth copy.
+ */
+interface Props {
+  /**
+   * With a wordmark: the type size in px, and the mark scales to its cap
+   * height. Without one: the mark's height in px directly.
+   */
+  size?: number;
+  /** Continue the mark into "ltoRank" so it reads as one word. */
+  wordmark?: boolean;
+  /** Render the mark knocked out of a filled rounded square (favicon shape). */
+  boxed?: boolean;
+  tone?: 'ink' | 'accent' | 'current';
+  class?: string;
+}
+
+const {
+  size = 16,
+  wordmark = true,
+  boxed = false,
+  tone = 'ink',
+  class: className = '',
+} = Astro.props;
+
+// Archivo's cap height as a fraction of font-size. Measured in-browser off the
+// loaded face via canvas TextMetrics (actualBoundingBoxAscent of "H" at 600
+// weight), not taken from a spec sheet: the guess was 0.717 and it is 0.686.
+const CAP_RATIO = 0.686;
+// Type designers usually draw a pointed "A" a hair taller than "H" so it reads
+// level. Archivo does NOT: measured, its A and H ascend to exactly the same
+// height. The Nomads mark also has a small flat apex rather than a true point,
+// so it matches cap height with no overshoot, exactly like the letter it
+// replaces. Kept as a named constant so the reasoning survives the next tweak.
+const CAP_OVERSHOOT = 1.0;
+
+// Drawn on a 40x46 grid, path bounds exactly x 0->40, y 0->46, so the viewBox
+// edges are the glyph edges and the feet land on the text baseline.
+const PATH = 'M16 0 L24 0 L40 46 L29.5 46 L20 14 L9.5 46 L0 46 Z';
+const VIEWBOX = '0 0 40 46';
+const RATIO = 40 / 46;
+
+const colour =
+  tone === 'accent' ? 'text-accent' : tone === 'ink' ? 'text-ink' : 'text-current';
+const boxColour =
+  tone === 'accent' ? 'bg-accent text-white' : tone === 'ink' ? 'bg-ink text-bg' : 'bg-current';
+
+const markH = CAP_RATIO * CAP_OVERSHOOT;
+// Two Preflight/SVG gotchas, both of which put "ltoRank" on its own line:
+//   1. Tailwind Preflight sets `svg { display: block }`, so the mark claimed a
+//      line box of its own and `vertical-align` was inert. Forced back inline.
+//   2. An <svg> defaults to width:100%, not to its aspect ratio, so `width:auto`
+//      let it expand to the container. Both axes are stated in em instead.
+const markEm = markH.toFixed(4);
+const markWEm = (markH * RATIO).toFixed(4);
+const glyphH = boxed ? Math.round(size * 0.56) : size;
+const glyphW = Math.round(glyphH * RATIO);
+---
+
+{wordmark ? (
+  /* One word. The mark is a letter here, so the whole thing is a single image
+     to assistive tech, not a graphic followed by a fragment reading "ltoRank".
+
+     The sr-only "A" is not redundant with aria-label, and deleting it will
+     silently rename the company. role="img" + aria-label covers assistive
+     tech, but it is ARIA: anything reading TEXT rather than the accessibility
+     tree sees only the visible span and extracts "ltoRank". That was happening
+     on every page, in the header and the footer. It matters more here than on
+     most sites, because the product sells being named correctly inside AI
+     answers, and LLM scrapers are precisely the readers that take text content
+     over ARIA. The sr-only span puts a real "A" in the text layer while
+     role="img" stops assistive tech reading the name twice. */
+  <span
+    role="img"
+    aria-label="AltoRank"
+    class={`inline-block whitespace-nowrap font-semibold tracking-[-0.022em] ${colour} ${className}`}
+    style={`font-size:${size}px;line-height:1`}
+  >
+    <svg
+      aria-hidden="true"
+      viewBox={VIEWBOX}
+      fill="currentColor"
+      style={`display:inline;height:${markEm}em;width:${markWEm}em;vertical-align:baseline;margin-right:0.035em`}
+    >
+      <path d={PATH} />
+    </svg><span class="sr-only">A</span><span aria-hidden="true">ltoRank</span>
+  </span>
+) : boxed ? (
+  <span
+    class={`grid shrink-0 place-items-center ${boxColour} ${className}`}
+    style={`width:${size}px;height:${size}px;border-radius:${Math.max(3, Math.round(size * 0.24))}px`}
+    role="img"
+    aria-label="AltoRank"
+  >
+    <svg width={glyphW} height={glyphH} viewBox={VIEWBOX} fill="currentColor" aria-hidden="true">
+      <path d={PATH} />
+    </svg>
+  </span>
+) : (
+  <svg
+    class={`shrink-0 ${colour} ${className}`}
+    width={glyphW}
+    height={glyphH}
+    viewBox={VIEWBOX}
+    fill="currentColor"
+    role="img"
+    aria-label="AltoRank"
+  >
+    <path d={PATH} />
+  </svg>
+)}

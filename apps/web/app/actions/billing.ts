@@ -3,20 +3,23 @@
 import { requireAuth } from "@/lib/auth/require-auth";
 import { createClient } from "@/lib/supabase/server";
 import { getStripe, PLAN_PRICE_IDS } from "@/lib/stripe";
-import type { SelfServePlan } from "@/lib/stripe";
+import type { SelfServePlan, BillingInterval } from "@/lib/stripe";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3100";
 
 /**
  * Start a Stripe Checkout session for a self-serve plan. Owner only.
  * Returns the hosted checkout URL for the client to redirect to.
  */
-export async function createCheckoutSession(plan: SelfServePlan): Promise<string> {
+export async function createCheckoutSession(
+  plan: SelfServePlan,
+  interval: BillingInterval = "month",
+): Promise<string> {
   const { agencyId } = await requireAuth(["owner"]);
   const supabase = await createClient();
 
-  const priceId = PLAN_PRICE_IDS[plan];
-  if (!priceId) throw new Error(`No Stripe price configured for the ${plan} plan`);
+  const priceId = PLAN_PRICE_IDS[plan][interval];
+  if (!priceId) throw new Error(`No Stripe price configured for the ${plan} plan (${interval})`);
 
   const { data: agency } = await supabase
     .from("agencies")

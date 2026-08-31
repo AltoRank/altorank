@@ -24,12 +24,18 @@ describe("buildRankingRows", () => {
     ]);
   });
 
-  it("drops a keyword that did not rank, rather than storing position 0", () => {
+  it("records a keyword that did not rank as NULL, never 0 and never dropped", () => {
     // The regression. `position: 0` is not a neutral placeholder: 0 sorts
     // ahead of 1, so a keyword ranking nowhere read as the best result in the
     // workspace and dragged every average toward zero.
+    //
+    // Nor is dropping the row right: that loses the fact a check happened, and
+    // "we looked and you are still not there" is what a rank tracker is for on
+    // a young domain. Migration 026 makes the column nullable so NULL can mean
+    // "checked, not found".
     const rows = buildRankingRows([r("ai seo tools", null)], termToId, at);
-    expect(rows).toEqual([]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].position).toBeNull();
     expect(rows.some((row) => row.position === 0)).toBe(false);
   });
 
@@ -44,13 +50,14 @@ describe("buildRankingRows", () => {
     expect(rows).toEqual([]);
   });
 
-  it("keeps the ranked ones and drops the rest in a mixed batch", () => {
+  it("keeps tracked keywords ranked or not, and drops only untracked ones", () => {
     const rows = buildRankingRows(
       [r("ai seo tools", 4), r("geo vs seo", null), r("untracked", 2)],
       termToId,
       at,
     );
-    expect(rows.map((row) => row.keyword_id)).toEqual(["kw-1"]);
+    expect(rows.map((row) => row.keyword_id)).toEqual(["kw-1", "kw-2"]);
+    expect(rows.map((row) => row.position)).toEqual([4, null]);
   });
 
   it("returns a null-free array, which is what next build enforces", () => {
@@ -58,7 +65,7 @@ describe("buildRankingRows", () => {
     // predicate does. This broke the build outright before the fix.
     const rows = buildRankingRows([r("ai seo tools", null), r("geo vs seo", 9)], termToId, at);
     expect(rows.every((row) => row !== null)).toBe(true);
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(2);
   });
 
   it("stamps every row with one checked_at, so a batch shares a timestamp", () => {

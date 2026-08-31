@@ -1,0 +1,156 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildArticleSchema, buildFAQSchema, buildHowToSchema } from '@/lib/schema';
+import { APP_NAME, SIGNUP_URL, SITE_URL, AUTHOR_NAME, AUTHOR_URL, PRIMARY_CTA } from '@/constants';
+
+const pageUrl = `${SITE_URL}/geo/shopify-product-descriptions-at-scale`;
+
+const publishDate = new Date('2026-06-21');
+const dateModified = new Date('2026-06-21');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Product descriptions at scale', href: '/geo/shopify-product-descriptions-at-scale' },
+];
+
+// STEPS drive both the visible on-page checklist and the HowTo JSON-LD (they must match).
+const STEPS = [
+  { name: 'Replace manufacturer boilerplate first', text: 'Distributors recycle the manufacturer’s description across every store, so the exact same copy lives on dozens of sites, duplicate content that Google and AI engines both discount. Find the SKUs where your copy matches competitors’ and rewrite those first; unique copy there is the fastest ranking win in a catalog.' },
+  { name: 'Write to a per-product brief, not one template', text: 'A single template stamped across thousands of SKUs converges into near-duplicate, detectable slop. Drive each description from the product’s real attributes (materials, use case, fit, specs, who it’s for) so every one is genuinely distinct. Bulk generation without per-product inputs is how stores recreate the duplicate-content problem at AI speed.' },
+  { name: 'Lead with an answer-shaped summary', text: 'Open each product page with a self-contained 40–55-word answer (what it is, who it’s for, why choose it) that an AI engine can quote out of context, then follow with specs and comparisons. That opening line is the GEO layer that makes a product citable in ChatGPT Shopping and AI Overviews.' },
+  { name: 'Add Product, Offer and FAQ schema', text: 'Mark up price, availability, GTIN/MPN and brand with Product + Offer, add FAQPage for common product questions, and include AggregateRating/Review only where you have real store reviews. Around two-thirds of AI-cited pages carry structured data: it’s a readiness signal, not a guarantee, and ratings must never be fabricated.' },
+  { name: 'Prioritise by impact, not all-at-once', text: 'Don’t bulk-rewrite the whole catalog blind. Start with high-traffic, high-margin, and high-duplication SKUs; expert copy on those builds the topical authority that lifts the rest of the catalog. A focused first pass beats a thin rewrite of everything.' },
+  { name: 'Gate every description behind review', text: 'At scale, unreviewed AI on a client’s brand is the scaled-content-penalty and accuracy risk (a hallucinated spec on a live PDP). A human approval step before publish is what keeps "at scale" from becoming "at risk", it’s the difference between volume and liability.' },
+];
+
+const FAQS = [
+  { question: 'How do you write unique product descriptions at scale?', answer: 'Drive each description from the product’s real attributes rather than one stamped template, lead with an answer-shaped summary, add Product/Offer/FAQ schema, prioritise high-impact SKUs first, and review before publishing. Bulk generation alone tends to recreate duplicate, thin content at speed, uniqueness plus structure plus a human gate is what makes scale safe.' },
+  { question: 'Why are duplicate product descriptions bad for SEO?', answer: 'Because manufacturer copy gets recycled across every distributor that sells the product, so the same text lives on dozens of sites and search and AI engines discount it, there’s nothing to distinguish your store. Unique, useful product copy is how a store differentiates and earns rankings and citations, especially for the same product sold everywhere.' },
+  { question: 'Do AI-generated product descriptions hurt SEO?', answer: 'Not inherently, unreviewed, templated bulk AI does. Google’s 2025 scaled-content-abuse enforcement penalised high-volume unreviewed AI, but unique, reviewed, schema-rich AI content is fine and is exactly what AI shopping surfaces cite. The risk isn’t that AI wrote it; it’s that no one reviewed it and every SKU reads the same.' },
+  { question: 'Does product schema help descriptions rank and get cited?', answer: 'Yes, Product/Offer/Review/FAQ schema makes a product machine-readable and is one of the strongest citation-readiness signals for AI shopping. It doesn’t guarantee inclusion, but its absence is a near-certain way to be skipped. Use GTIN/MPN and real ratings only. See optimizing Shopify for ChatGPT Shopping for the full product-page method.' },
+  { question: 'How do agencies write product descriptions across many client stores?', answer: `Per client, prioritised by impact, unique per SKU, and human-reviewed, never one template stamped across catalogs. Doing that by hand across many stores is the bottleneck, which is why ${APP_NAME} generates unique, answer-shaped product and collection copy with schema per store and gates every page behind editorial approval before it reaches a client’s brand.` },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: 'Unique Shopify Product Descriptions at Scale (Agency Guide, 2026)',
+    description: 'How to write unique, citable product descriptions at scale across thousands of SKUs and many client stores: replace boilerplate, per-product briefs, answer-shaped copy, Product/FAQ schema, prioritise by impact, and review before publish.',
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildHowToSchema({
+    name: 'How to write unique product descriptions at scale',
+    description: 'A six-step method for writing unique, citable, schema-rich product descriptions across large catalogs and many client stores.',
+    steps: STEPS,
+  }),
+  buildFAQSchema(FAQS),
+];
+---
+
+<PSEO
+  title="Unique Shopify Product Descriptions at Scale (Agency Guide 2026)"
+  description="How to write unique, citable product descriptions at scale across thousands of SKUs and many client stores: replace boilerplate, per-product briefs, answer-shaped copy, schema, and review before publish."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  {/* ── HERO ──────────────────────────────────────────── */}
+  <header class="border-b border-line bg-[radial-gradient(600px_300px_at_88%_-10%,var(--accent-soft),transparent_70%),linear-gradient(180deg,var(--bg),var(--bg-2))] py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h1 class="mb-6 text-[clamp(34px,5vw,48px)] font-semibold leading-[1.05] tracking-[-0.025em] text-ink [text-wrap:balance]">
+        Unique product descriptions at scale
+      </h1>
+      <p class="mb-5 text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
+        The hard part of product descriptions at scale isn't generating them: it's making each one <em>unique</em>, answer-shaped, and schema-rich across thousands of SKUs and many client stores, without recycling manufacturer boilerplate or shipping templated AI slop. Bulk generation alone recreates the duplicate-content problem at speed; the discipline is uniqueness, structure, and a human gate before publish.
+      </p>
+      <div class="mt-7 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
+        <span>By <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
+        <span class="text-line">·</span>
+        <span>Published <time datetime={publishDate.toISOString().slice(0, 10)}>{publishDateDisplay}</time></span>
+        <span class="text-line">·</span>
+        <span>8 min read</span>
+      </div>
+    </div>
+  </header>
+
+  {/* ── WHY ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+      <h2 class="mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">Why "at scale" usually means "duplicate"</h2>
+      <p>Two failure modes turn a bulk product-description project into a liability. The first is <span class="font-medium text-ink">manufacturer boilerplate</span>: the same supplied description gets pasted onto every distributor’s store, so dozens of sites carry identical copy and engines have no reason to prefer yours. The second is <span class="font-medium text-ink">templated AI</span>: one prompt stamped across the catalog produces thousands of near-identical, detectably generated pages, exactly the scaled-content pattern Google’s 2025 enforcement targeted.</p>
+      <p>Both come from the same root cause: copy that isn’t driven by the individual product. The fix isn’t less automation: it’s automation grounded in each SKU’s real attributes, shaped for citation, and reviewed before it goes live. That’s what separates a catalog that ranks from a catalog that gets discounted.</p>
+    </div>
+  </section>
+
+  {/* ── STEPS ─────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <div class="mb-8">
+        <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">Six steps, in order</h2>
+      </div>
+      <ol class="flex flex-col gap-4">
+        {STEPS.map((step, i) => (
+          <li class="flex gap-4 rounded-xl border border-line bg-bg p-5">
+            <span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent font-mono text-[12px] font-semibold text-white">{i + 1}</span>
+            <div>
+              <h3 class="mb-1.5 text-[16px] font-semibold tracking-[-0.015em] text-ink">{step.name}</h3>
+              <p class="text-[14.5px] leading-relaxed text-ink-2">{step.text}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  </section>
+
+  {/* ── AGENCY ANGLE ──────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+      <h2 class="mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">Doing this across a client roster</h2>
+      <p>Bulk product-copy tools solve the generation problem well, but for an agency, generation was never the hard part. The hard part is keeping every SKU unique and on-brand across many client stores, and proving a human reviewed it before it went live on a client’s catalogue. A template that’s fast across one store is a duplicate-content risk across ten.</p>
+      <p>That’s the case for an <a href="/alternatives/describely" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">approval-first agency engine</a> over a single-catalog copy tool. {APP_NAME} generates unique, answer-shaped product copy with schema per store and gates every page behind <a href="/approval-first-seo-content" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">editorial approval</a> before publish. Pair it with <a href="/geo/collection-page-seo-content" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">collection-page content</a> and the product-page method in <a href="/geo/optimize-shopify-for-chatgpt-shopping" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">optimize Shopify for ChatGPT Shopping</a>.</p>
+    </div>
+  </section>
+
+  {/* ── FAQ ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <div class="mb-8">
+        <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">Frequently asked questions</h2>
+      </div>
+      <div class="flex flex-col gap-3">
+        {FAQS.map((f) => (
+          <details class="group rounded-lg border border-line bg-bg p-5">
+            <summary class="flex cursor-pointer items-center justify-between gap-4 text-[15px] font-medium text-ink list-none">
+              <span>{f.question}</span>
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-panel text-ink-3 transition-transform group-open:rotate-45">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 5v14M5 12h14" /></svg>
+              </span>
+            </summary>
+            <p class="mt-3 text-sm leading-relaxed text-ink-2">{f.answer}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* ── CTA ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 text-center">
+      <h2 class="mb-3 text-[clamp(22px,3vw,28px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
+        Unique product copy for every client store, reviewed before it ships
+      </h2>
+      <p class="mb-7 mx-auto max-w-[520px] text-[15px] leading-relaxed text-ink-2">
+        {APP_NAME} writes answer-shaped product and collection copy with schema across every store, each SKU unique and editorially approved before publish.
+      </p>
+      <Button href={SIGNUP_URL} size="lg">
+  {PRIMARY_CTA.label}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
+</Button>
+    </div>
+  </section>
+</PSEO>

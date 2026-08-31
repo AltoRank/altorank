@@ -6,8 +6,16 @@ import { createServiceClient } from "@/lib/supabase/server";
 // Resolve a Stripe price id back to our plan tier.
 function planForPrice(priceId: string | undefined): "starter" | "growth" | undefined {
   if (!priceId) return undefined;
-  if (priceId === process.env.STRIPE_PRICE_STARTER) return "starter";
-  if (priceId === process.env.STRIPE_PRICE_GROWTH) return "growth";
+  if (
+    priceId === process.env.STRIPE_PRICE_STARTER ||
+    priceId === process.env.STRIPE_PRICE_STARTER_YEARLY
+  )
+    return "starter";
+  if (
+    priceId === process.env.STRIPE_PRICE_GROWTH ||
+    priceId === process.env.STRIPE_PRICE_GROWTH_YEARLY
+  )
+    return "growth";
   return undefined;
 }
 

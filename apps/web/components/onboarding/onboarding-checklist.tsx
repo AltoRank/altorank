@@ -25,7 +25,7 @@ export function OnboardingChecklist({
 
   return (
     <motion.div
-      className="fixed bottom-6 right-6 z-[100] w-[320px] bg-bg border border-line rounded-xl shadow-lg overflow-hidden"
+      className="fixed bottom-[72px] right-5 z-[100] w-[320px] bg-bg border border-line rounded-xl shadow-lg overflow-hidden"
       initial={{ y: 20, opacity: 0, scale: 0.95 }}
       animate={{ y: 0, opacity: 1, scale: 1 }}
       exit={{ y: 20, opacity: 0, scale: 0.95 }}

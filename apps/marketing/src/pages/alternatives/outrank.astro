@@ -1,0 +1,479 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildArticleSchema, buildFAQSchema, buildItemListSchema } from '@/lib/schema';
+import { APP_NAME, SIGNUP_URL, SITE_URL, AUTHOR_NAME, AUTHOR_URL, OSS_COMPARISON_LABEL, PRIMARY_CTA } from '@/constants';
+
+const pageUrl = `${SITE_URL}/alternatives/outrank`;
+
+// Fixed publish date, do not change to new Date() (re-renders would shift it on every build).
+// Bump dateModified when the article content materially changes.
+const publishDate = new Date('2026-05-22');
+const dateModified = new Date('2026-06-20');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Alternatives', href: '/alternatives' },
+  { label: 'Outrank alternative', href: '/alternatives/outrank' },
+];
+
+interface TldrRow {
+  name: string;
+  bestFor: string;
+  multiClient: string;
+  whiteLabel: string;
+  openSource: string;
+  price: string;
+  ours?: boolean;
+}
+
+const TLDR_ROWS: TldrRow[] = [
+  { name: APP_NAME, bestFor: 'Open source, one site or a client roster', multiClient: 'Unlimited', whiteLabel: 'Agency+', openSource: OSS_COMPARISON_LABEL, price: 'From $0 self-host', ours: true },
+  { name: 'Outrank', bestFor: 'Solo bloggers, small teams', multiClient: 'Multi-site (separate subs)', whiteLabel: 'No', openSource: 'No', price: '$99/mo' },
+  { name: 'ContentMonk', bestFor: 'Quality-first solo writers', multiClient: 'No', whiteLabel: 'No', openSource: 'No', price: '$49/mo' },
+  { name: 'Jasper', bestFor: 'Enterprise brand voice', multiClient: 'Workspaces (no voice isolation)', whiteLabel: 'No', openSource: 'No', price: '$59/mo' },
+  { name: 'SurferSEO', bestFor: 'On-page optimization', multiClient: 'No', whiteLabel: 'No', openSource: 'No', price: '$89/mo' },
+  { name: 'Scalenut', bestFor: 'Mid-tier all-in-one', multiClient: 'Partial', whiteLabel: 'No', openSource: 'No', price: '$39/mo' },
+  { name: 'Frase', bestFor: 'Content briefs + writing', multiClient: 'No', whiteLabel: 'No', openSource: 'No', price: '$45/mo' },
+  { name: 'AirOps', bestFor: 'Workflow ops at scale', multiClient: 'Custom builds', whiteLabel: 'No', openSource: 'No', price: '$200/mo' },
+  { name: 'Copy.ai', bestFor: 'Sales copy / GTM teams', multiClient: 'No', whiteLabel: 'No', openSource: 'No', price: '$29/mo' },
+];
+
+const ALTORANK_VS_OUTRANK = [
+  { feature: 'Workspace model', ours: 'Unified agency dashboard, switch clients in one click', theirs: 'Separate subscription per site' },
+  { feature: 'Voice profile depth', ours: 'AI-trained from 3–5 sample articles per client', theirs: '5 tone presets + sample calibration' },
+  { feature: 'White-label', ours: 'Reports, dashboards, custom domain, accent colors', theirs: 'None' },
+  { feature: 'Role-based permissions', ours: 'Owner / Admin / Editor with publish gates', theirs: 'Unlimited users, no role split' },
+  { feature: 'Rank tracking', ours: 'Real-time per-keyword position monitoring', theirs: 'None' },
+  { feature: 'Domain auditing', ours: 'BFS crawler, PageSpeed, technical SEO', theirs: 'None' },
+  { feature: 'Content decay detection', ours: 'Flags aging articles, auto-drafts refreshes', theirs: 'None' },
+  { feature: 'Analytics integration', ours: 'GA4 + Google Search Console', theirs: 'None confirmed' },
+  { feature: 'AI model', ours: 'Claude + OpenAI (selectable per workspace)', theirs: 'Single undisclosed model' },
+  { feature: 'CMS platforms', ours: '12+', theirs: '9 + webhook' },
+  { feature: 'Backlink exchange', ours: 'Credit-based, DR-weighted, agency-scoped', theirs: 'Credit-based, DR-weighted' },
+  { feature: 'Source code', ours: 'Open source, self-hostable at no cost', theirs: 'Proprietary SaaS' },
+  { feature: 'Editorial approval gate', ours: 'Required before anything publishes, by design', theirs: 'None confirmed' },
+  { feature: 'AI-readiness audit', ours: 'Scores agent readiness, then generates the missing JSON-LD, markdown twins and llms.txt', theirs: 'None confirmed' },
+];
+
+interface Tool {
+  index: string;
+  name: string;
+  ours?: boolean;
+  url?: string;
+  subtitle: string;
+  whatItIs: string;
+  bestFor: string;
+  pricing: string;
+  beatsOutrank: string;
+  beatsOurs?: string;
+  beatsTheirs: string;
+}
+
+const TOOLS: Tool[] = [
+  {
+    index: '01',
+    name: APP_NAME,
+    ours: true,
+    subtitle: 'Best Outrank Alternative for Agencies',
+    whatItIs: 'An end-to-end SEO content engine purpose-built for digital agencies managing 10–50 client brands. Replaces the keyword research → draft → optimize → publish pipeline that most agencies stitch together from 4–5 tools.',
+    bestFor: 'Digital, SEO, and content marketing agencies with 10–50 active client portfolios. Sweet spot is 15–25 clients and a 3–15 person content team.',
+    pricing: '€69/mo Managed (100 articles, model costs included, all CMS, rank tracking, below Outrank\'s $99), €199/mo Agency (400 articles, unlimited client workspaces, white-label reports, referral traffic exchange, priority support).',
+    beatsOutrank: '',
+    beatsTheirs: 'Newer platform. Smaller user community than Outrank, fewer third-party tutorials, no large public case-study library yet. If you want the safety of "I can Google any error I hit and find 50 forum threads," that\'s not us today.',
+  },
+  {
+    index: '02',
+    name: 'ContentMonk',
+    url: 'https://www.contentmonk.io',
+    subtitle: 'Best for Quality-First Solo Writers',
+    whatItIs: 'An AI content writer focused on content quality and brand-voice consistency. Built for solo content marketers and small in-house teams who care about how the article reads.',
+    bestFor: 'Solo content marketers, in-house marketing teams with one or two brands, and anyone whose primary frustration with Outrank is content quality.',
+    pricing: '$49/mo starting, $9.90 max per article regardless of length.',
+    beatsOutrank: 'ContentMonk\'s whole pitch is that they generate less "AI slop" than Outrank, and the testing they publish backs that up. Content quality is genuinely higher across most content types. If you\'ve been pulling out hours of editing per Outrank article, ContentMonk shrinks that to 15–30 minutes. Their pricing model also caps article cost at $9.90 regardless of length, which is rare and pleasant.',
+    beatsTheirs: 'ContentMonk is built for one brand at a time. No multi-client workspace, no per-client voice isolation, no white-label, no rank tracking, no agency role permissions. They\'re a great writer; agencies need an operating system. If you run content for one company, ContentMonk is a real contender. If you run content for fifteen, the math collapses fast.',
+  },
+  {
+    index: '03',
+    name: 'Jasper',
+    url: 'https://www.jasper.ai',
+    subtitle: 'Best for Enterprise Brand Voice',
+    whatItIs: 'A purpose-built AI writing platform for marketing teams with strict brand guidelines. Once the fastest-growing AI startup in history, now repositioned hard toward enterprise.',
+    bestFor: 'Mid-market and enterprise marketing teams with one to three brands and a written style guide that needs enforcement.',
+    pricing: '$59/mo per seat (annual) or $69/mo (monthly).',
+    beatsOutrank: 'Brand-voice consistency. Feed Jasper a corpus of existing content and it maintains tone across hundreds of outputs better than Outrank\'s preset model does. 50+ marketing templates, multi-LLM access (GPT-4, Claude, Gemini), strong team collaboration.',
+    beatsTheirs: 'Jasper\'s "workspaces" aren\'t voice-isolated the way agencies need. Switching between 15 distinct client voices in Jasper requires careful prompt discipline and template management, the platform doesn\'t enforce voice separation structurally. No white-label, no rank tracking, no content decay detection. Long-form content still requires meaningful editing for depth. Jasper\'s enterprise pricing also stings agencies running on margin: per-seat billing breaks down when your "team" includes part-time contractors and client reviewers.',
+  },
+  {
+    index: '04',
+    name: 'SurferSEO',
+    url: 'https://surferseo.com',
+    subtitle: 'Best On-Page Optimization Layer',
+    whatItIs: 'An on-page SEO optimization tool that scores and recommends, but doesn\'t generate content end-to-end. Complementary to a writing workflow, not a replacement for one.',
+    bestFor: 'Agencies that already have writers (in-house or freelance) and just need optimization grading on top.',
+    pricing: '$89/mo Essential.',
+    beatsOutrank: 'SurferSEO doesn\'t try to be Outrank. It analyzes what\'s ranking, gives your draft a real-time SEO score, and tells the writer which terms to add. The writer is still a human (or a separate AI tool).',
+    beatsTheirs: `If you don't already have a writing stack, SurferSEO is half the workflow. ${APP_NAME} includes Surfer-like SEO scoring built in (no separate $89/mo subscription), and actually drafts the content. If you have writers and want optimization grading only, SurferSEO is fine. If you don't have writers, you need both Surfer and a generator, and at that point you're back to tool stitching.`,
+  },
+  {
+    index: '05',
+    name: 'Scalenut',
+    url: 'https://www.scalenut.com',
+    subtitle: 'Best Budget All-in-One',
+    whatItIs: 'A mid-market all-in-one SEO content platform (research, write, optimize, publish) at a low entry price.',
+    bestFor: 'In-house marketing teams of one to three brands wanting a budget all-in-one option.',
+    pricing: '$39/mo Essential.',
+    beatsOutrank: 'Real rank tracking (Outrank doesn\'t have any), a usable content brief generator, and a lower entry price ($39/mo vs $99/mo). Decent all-in-one if you\'re a single brand.',
+    beatsTheirs: 'Voice profile depth, Scalenut uses tone presets similar to Outrank\'s preset model. No agency white-label, no per-client workspace isolation, no role-based permissions. Scalenut is a good Outrank replacement for in-house teams; it doesn\'t cross the line into agency-grade operations.',
+  },
+  {
+    index: '06',
+    name: 'Frase',
+    url: 'https://www.frase.io',
+    subtitle: 'Best Content Brief Generator',
+    whatItIs: 'A content brief and research tool that\'s especially strong at building the brief, the upstream artifact a writer (human or AI) uses.',
+    bestFor: 'Content teams that brief out to human writers and need a fast, AI-assisted brief workflow.',
+    pricing: '$45/mo Basic.',
+    beatsOutrank: 'Best-in-class content brief generation. If your workflow is brief → human writer → publish, Frase is excellent at step one. SERP scraping, competitor outline analysis, question mining.',
+    beatsTheirs: `Briefs are step one of seven. Frase stops at the brief; ${APP_NAME} does brief → draft → SEO scoring → internal linking → visual content → publish → rank tracking. If you already have a writing team and just need better briefs, Frase is a real tool. If you want the whole pipeline, you're back to stitching.`,
+  },
+  {
+    index: '07',
+    name: 'AirOps',
+    url: 'https://www.airops.com',
+    subtitle: 'Best for Custom Workflows',
+    whatItIs: 'A workflow orchestration platform for large-scale content operations, drag-and-drop workflow builder, multi-LLM access, spreadsheet-style bulk processing.',
+    bestFor: 'Technical agencies and large in-house teams with operations engineers who want to build the agency workflow from primitives.',
+    pricing: '$200/mo Starter, $2,000+/mo Enterprise.',
+    beatsOutrank: 'Workflow flexibility, multi-LLM access (40+ models), and the "Grids" feature for processing hundreds of articles in bulk. If you\'re refreshing 2,000 blog posts with updated statistics, AirOps can do it.',
+    beatsTheirs: `AirOps requires you to build the agency workflow. ${APP_NAME} ships it. The Starter tier costs $200/mo for 25,000 workflow tasks (roughly 6–7 finished articles per month after research and processing steps). The next tier jumps to $2,000+/mo. AirOps makes sense if you have a dedicated content operations engineer; for most agencies, the build-it-yourself overhead is steeper than the tool sprawl it replaces.`,
+  },
+  {
+    index: '08',
+    name: 'Copy.ai',
+    url: 'https://www.copy.ai',
+    subtitle: 'Best for Sales Copy and GTM Teams',
+    whatItIs: 'Formerly an AI writing tool, now repositioned as a "go-to-market AI platform" focused on sales and short-form copy workflows.',
+    bestFor: 'Sales and GTM teams writing emails, ad copy, and short-form social, not content marketing teams writing long-form articles.',
+    pricing: '$29/mo Chat (no workflow automation included).',
+    beatsOutrank: 'Strong short-form output, sales emails, ad copy, LinkedIn posts. Decent CRM integrations with Salesforce and HubSpot. If your job is outbound sales, this is the better tool.',
+    beatsTheirs: 'Copy.ai shows up on SERPs for "Outrank alternative," but it\'s not really a content marketing tool anymore. Including it for completeness so you can rule it out. If you\'re a content agency, this isn\'t your tool.',
+  },
+];
+
+interface DecisionRow {
+  when: string;
+  pick: string;
+  rationale: string;
+  ours?: boolean;
+}
+
+const DECISION_MATRIX: DecisionRow[] = [
+  { when: 'You run a digital agency with 10+ active client brands', pick: APP_NAME, rationale: "The multi-client workspaces, per-client voice profiles, white-label reports, and role-based permissions are the agency-operations layer Outrank doesn't ship.", ours: true },
+  { when: "You're a solo blogger writing for yourself, full autopilot", pick: 'Stick with Outrank', rationale: "Outrank is built for unsupervised content automation on one site. If editorial review is friction you don't want, use it." },
+  { when: "You're a solo agency operator with one client (and plans to add more)", pick: APP_NAME + ' Managed', rationale: "€69/mo against Outrank's $99, with multi-client architecture ready when you grow. Plus rank tracking and white-label-ready foundations Outrank doesn't ship.", ours: true },
+  { when: "You're a quality-obsessed solo content marketer at one company", pick: 'ContentMonk', rationale: 'Genuinely better content quality at $49/mo. Stop here if you only need one brand.' },
+  { when: "You're a mid-market enterprise with 1–3 brands and a strict style guide", pick: 'Jasper', rationale: 'Voice consistency is their strength. Pay for it.' },
+  { when: 'You already have writers and just need on-page grading', pick: 'SurferSEO', rationale: "Don't pay for a generator you won't use." },
+  { when: "You're an in-house team of 1–3 brands wanting a budget all-in-one", pick: 'Scalenut', rationale: 'Cheapest credible option with rank tracking.' },
+  { when: 'Your workflow is brief → human writer → publish', pick: 'Frase', rationale: 'Best brief generator on the market.' },
+  { when: 'You have operations engineers and want full custom workflows', pick: 'AirOps', rationale: 'Pay the $200/mo entry tier only if you have someone to actually build the workflows.' },
+  { when: "You're a sales or GTM team writing emails and ads", pick: 'Copy.ai', rationale: "You weren't really looking for an Outrank alternative." },
+];
+
+const FAQS = [
+  { question: 'What is Outrank.so?', answer: "Outrank.so is an AI SEO content automation platform that drafts and publishes articles for a single website. It's designed for solo founders and small teams running one blog or one e-commerce site. It includes a backlink exchange network, basic optimization scoring, and CMS publishing to nine platforms plus webhook." },
+  { question: 'Is Outrank worth $99/month?', answer: "Yes, if you're a solo blogger or small team running one site that needs volume-based SEO content with minimal setup. No, if you're an agency running content for multiple clients: the lack of multi-client workspaces, white-label, rank tracking, and role-based permissions makes the per-month cost compound quickly as you add clients." },
+  { question: "What's the best Outrank alternative for agencies?", answer: `${APP_NAME}. It was purpose-built for agencies managing 10–50 client brands, with per-client voice profiles, white-label reports, rank tracking, role-based permissions, and 12+ CMS integrations included. ContentMonk and Jasper are credible for in-house and enterprise use respectively, but neither has the multi-client agency layer.` },
+  { question: 'Does Outrank have a free trial?', answer: `Yes, Outrank offers a $1 three-day trial. ${APP_NAME} does not run a trial: the self-hosted build is free forever, and the hosted plans are paid from day one.` },
+  { question: 'Can I migrate content from Outrank to another tool?', answer: `Yes. Most alternatives integrate with the same CMS platforms (WordPress, Webflow, Shopify, Ghost), so your published content stays in place. You can export your Outrank articles and use them as voice profile training samples in ${APP_NAME}, ContentMonk, or Jasper. Migration typically takes a few hours of setup.` },
+  { question: "What's the difference between Outrank.so and Outranking.io?", answer: 'Different products. Outrank.so is the AI SEO content automation tool covered in this article. Outranking.io is a separate content optimization platform. They show up in similar SERP results, which causes regular confusion. This article is about Outrank.so.' },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: `${APP_NAME} vs. Outrank: 8 Outrank Alternatives Tested for Agencies (2026)`,
+    description: 'Outrank works for solo bloggers but breaks at agency scale. We tested 8 Outrank alternatives across multi-client workflows, white-label, and rank tracking.',
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildFAQSchema(FAQS),
+  buildItemListSchema(
+    TLDR_ROWS.map((t) => ({
+      name: t.name,
+      description: `${t.bestFor}, starting at ${t.price}`,
+    })),
+  ),
+];
+---
+
+<PSEO
+  title="8 Outrank Alternatives for Agencies (2026)"
+  description="Outrank works for solo bloggers but breaks at agency scale. We tested 8 Outrank alternatives across multi-client workflows, white-label, and rank tracking."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  {/* ── HERO ──────────────────────────────────────────── */}
+  <header class="border-b border-line bg-[radial-gradient(600px_300px_at_88%_-10%,var(--accent-soft),transparent_70%),linear-gradient(180deg,var(--bg),var(--bg-2))] py-[72px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <h1 class="mb-6 text-[clamp(36px,5vw,52px)] font-semibold leading-[1.04] tracking-[-0.025em] text-ink [text-wrap:balance]">
+        {APP_NAME} vs. Outrank: We Tested 8 Outrank Alternatives for Agencies (2026)
+      </h1>
+      <p class="mb-5 max-w-[680px] text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
+        For agencies running 10+ client brands, {APP_NAME} is the strongest Outrank alternative: it adds the multi-client workspaces, per-client voice profiles, white-label reports, and rank tracking that Outrank's single-site design lacks, from €69/mo.
+      </p>
+      <p class="mb-5 max-w-[680px] text-lg leading-relaxed text-ink-2 [text-wrap:pretty]">
+        <a href="https://outrank.so" target="_blank" rel="noopener noreferrer" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">Outrank</a> is a $99/mo AI SEO tool built for solo founders managing one site. For agencies running content across 10+ client brands, the same tool runs into structural limits: no multi-client workspaces, no per-client voice profiles, no white-label reporting, and no role-based permissions. The 8 Outrank alternatives below are ranked by <strong class="font-semibold text-ink">agency-fit criteria</strong> (not generic content quality), with honest verdicts on when each one wins.
+      </p>
+      <p class="max-w-[680px] text-base leading-relaxed text-ink-2">
+        If you're a solo blogger or freelancer running one site, this article isn't for you: stick with Outrank, it's cheap and built for what you do. Everyone else, read on.
+      </p>
+      <div class="mt-8 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
+        <span>By <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
+        <span class="text-line">·</span>
+        <span>Published <time datetime={publishDate.toISOString().slice(0, 10)}>{publishDateDisplay}</time></span>
+        <span class="text-line">·</span>
+        <span>24 min read</span>
+      </div>
+    </div>
+  </header>
+
+  {/* ── TL;DR TABLE ───────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[1100px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          The 9 tools at a glance
+        </h2>
+      </div>
+      <div class="overflow-hidden rounded-lg border border-line bg-bg">
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[820px] text-sm">
+            <caption class="sr-only">Comparison of 9 AI SEO content tools across multi-client workspace support, white-label, rank tracking, and starting price.</caption>
+            <thead class="bg-panel text-left font-mono text-[11px] uppercase tracking-[0.06em] text-ink-2">
+              <tr>
+                <th scope="col" class="px-5 py-3.5 font-medium">Tool</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">Best for</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">Multi-client</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">White-label</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">Open source</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">Starting price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {TLDR_ROWS.map((row, i) => (
+                <tr class={`${i > 0 ? 'border-t border-line-soft' : ''} ${row.ours ? 'bg-accent-soft/30' : ''}`}>
+                  <td class={`px-5 py-3.5 ${row.ours ? 'font-semibold text-ink' : 'text-ink-2'}`}>
+                    {row.ours ? (
+                      <span class="inline-flex items-center gap-2">
+                        {row.name}
+                        <span class="rounded-full bg-accent px-1.5 py-[1px] font-mono text-[9.5px] tracking-[0.08em] text-white">OURS</span>
+                      </span>
+                    ) : (
+                      <span>{row.name}</span>
+                    )}
+                  </td>
+                  <td class="px-5 py-3.5 text-ink-2">{row.bestFor}</td>
+                  <td class="px-5 py-3.5 font-mono text-[12.5px] text-ink-2">{row.multiClient}</td>
+                  <td class="px-5 py-3.5 font-mono text-[12.5px] text-ink-2">{row.whiteLabel}</td>
+                  <td class="px-5 py-3.5 font-mono text-[12.5px] text-ink-2">{row.openSource}</td>
+                  <td class="px-5 py-3.5 font-mono text-[12.5px] text-ink-2">{row.price}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="mt-7 flex flex-wrap items-center justify-center gap-3">
+        <Button href={SIGNUP_URL}>
+  Add your domain with {APP_NAME}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
+</Button>
+      </div>
+    </div>
+  </section>
+
+  {/* ── WHY AGENCIES SEARCH ───────────────────────────── */}
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          Why agencies search for Outrank alternatives
+        </h2>
+      </div>
+      <div class="flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+        <p>Outrank is a fine product for what it was built to do, automate SEO content for one website at a time. The friction starts when you try to use it as an agency.</p>
+        <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">The multi-client tax</h3>
+        <p>Outrank's pricing assumes one site. Run it for 15 clients and you're managing 15 logins, 15 billing entries, 15 disconnected voice profiles. Outrank ships volume discounts (10–20% off for 20+ sites), but the operational overhead doesn't shrink. Every client is a separate subscription with separate state. There's no unified agency dashboard, no single login for your team, no way to switch between clients in one click. You end up rebuilding the multi-client layer yourself in a spreadsheet.</p>
+        <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">The white-label vacuum</h3>
+        <p>Agencies sell content as a service. Clients want to see <span class="font-medium text-ink">the agency's</span> dashboard, not Outrank's. Outrank ships no white-label option, not for reports, not for the dashboard, not for the domain. When you send a monthly report to a client, it's branded Outrank. Your differentiation gets eaten by the tool every time you share a screen.</p>
+        <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">Editorial control vs. autopilot</h3>
+        <p>Outrank's value proposition is autopilot publishing, drafts go straight to the CMS. Most agencies need <span class="font-medium text-ink">editorial approval</span> between draft and publish. Clients aren't paying $3K/mo to have AI ship to their site unsupervised; they're paying for editorial judgment on top of automation. Outrank's role-based permissions are limited, with no clean owner/admin/editor split. You either trust the autopilot fully or you don't use the feature.</p>
+        <p>These aren't deal-breakers for a solo founder running one blog. They're structural failures for an agency running 25.</p>
+      </div>
+    </div>
+  </section>
+
+  {/* ── EVALUATION CRITERIA ───────────────────────────── */}
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          How we evaluated each Outrank alternative
+        </h2>
+      </div>
+      <div class="flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+        <p>We tested each tool against four real agency scenarios, not against generic content-quality scores:</p>
+        <ol class="my-2 flex flex-col gap-2 pl-5 list-decimal">
+          <li><strong class="font-semibold text-ink">Onboarding a new client brand</strong>, how long from signup to first publishable article?</li>
+          <li><strong class="font-semibold text-ink">Maintaining voice consistency across 5+ clients</strong>, does article #200 still sound like client #3's brand?</li>
+          <li><strong class="font-semibold text-ink">Producing a white-label client report</strong>, can the agency hand it to a client with no "powered by X" branding?</li>
+          <li><strong class="font-semibold text-ink">Detecting content decay</strong>, does the tool flag aging articles whose rankings are slipping?</li>
+        </ol>
+        <p>Each tool was scored against nine criteria: multi-client workspace architecture, per-client voice profile training depth, white-label capability, role-based permissions, rank tracking and content decay detection, CMS integration breadth, backlink network or outreach capability, pricing per active workspace, and analytics integration (GA4, GSC).</p>
+        <p>We did not score on raw content quality. Every tool in this list can produce a publishable article on a good prompt; the differentiation is operational.</p>
+      </div>
+    </div>
+  </section>
+
+  {/* ── TOOL SECTIONS ─────────────────────────────────── */}
+  {TOOLS.map((tool) => (
+    <section class={`border-b border-line py-[72px] ${tool.ours ? 'bg-accent-soft/15' : ''}`}>
+      <div class="mx-auto max-w-[820px] px-8">
+        <div class="mb-2 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">
+          <span>Tool {tool.index}</span>
+          {tool.ours && (
+            <span class="rounded-full bg-accent px-1.5 py-[1px] font-mono text-[9.5px] tracking-[0.08em] text-white">OURS</span>
+          )}
+        </div>
+        <h2 class="mb-2 text-[clamp(28px,3.5vw,34px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          {tool.name}
+        </h2>
+        <p class="mb-7 text-base font-medium text-accent-ink">{tool.subtitle}</p>
+        <div class="mb-5 grid gap-3 rounded-lg border border-line bg-bg p-5 sm:grid-cols-3">
+          <div>
+            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">What it is</div>
+            <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.whatItIs}</div>
+          </div>
+          <div>
+            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Best for</div>
+            <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.bestFor}</div>
+          </div>
+          <div>
+            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Pricing</div>
+            <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.pricing}</div>
+          </div>
+        </div>
+
+        {tool.ours ? (
+          <>
+            <h3 class="mt-7 mb-4 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">How {APP_NAME} differs from Outrank</h3>
+            <div class="overflow-hidden rounded-lg border border-line bg-bg">
+              <table class="w-full text-sm">
+                <caption class="sr-only">{APP_NAME} versus Outrank, feature-by-feature comparison.</caption>
+                <thead class="bg-panel text-left font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-2">
+                  <tr>
+                    <th scope="col" class="px-4 py-3 font-medium">Feature</th>
+                    <th scope="col" class="px-4 py-3 font-medium">{APP_NAME}</th>
+                    <th scope="col" class="px-4 py-3 font-medium">Outrank</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ALTORANK_VS_OUTRANK.map((row, i) => (
+                    <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+                      <td class="px-4 py-3 text-ink">{row.feature}</td>
+                      <td class="px-4 py-3 text-ink-2">{row.ours}</td>
+                      <td class="px-4 py-3 font-mono text-[12.5px] text-ink-3">{row.theirs}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p class="mt-5 text-[15px] leading-relaxed text-ink-2">
+              The differentiator isn't any single feature, it's that the agency-operations layer is built into the product from the entry tier, not bolted on at a premium.
+            </p>
+            <p class="mt-4 text-[15px] leading-relaxed text-ink-2">
+              {APP_NAME} Managed is €69/mo against Outrank's $99/mo, with 100 articles a month and multi-client architecture built in, and the upgrade path to <a href="/pricing" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">Agency at €199/mo</a> unlocks 400 articles, unlimited client workspaces, white-label reports, real-time rank tracking, and the referral traffic exchange.
+            </p>
+            <h3 class="mt-7 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Where {APP_NAME} loses</h3>
+            <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsTheirs}</p>
+            <div class="mt-7">
+              <Button href={SIGNUP_URL}>
+  {PRIMARY_CTA.label}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
+</Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h3 class="mt-6 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+              {tool.name === 'SurferSEO' ? `Where ${tool.name} differs from Outrank` : `Where ${tool.name} beats Outrank`}
+            </h3>
+            <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsOutrank}</p>
+            <h3 class="mt-6 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+              {tool.name === 'Copy.ai' ? "Why we're including it anyway" : `Where ${APP_NAME} beats ${tool.name}`}
+            </h3>
+            <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsTheirs}</p>
+            {tool.url && (
+              <p class="mt-6 text-[13px] text-ink-3">
+                Visit <a href={tool.url} target="_blank" rel="noopener noreferrer" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent hover:text-ink">{tool.name}</a> for current pricing and feature details.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  ))}
+
+  {/* ── DECISION MATRIX ───────────────────────────────── */}
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[1100px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          Which Outrank alternative should you choose?
+        </h2>
+        <p class="mt-3 max-w-[640px] text-base leading-relaxed text-ink-2">After eight tool deep-dives, here's the short version.</p>
+      </div>
+      <div class="grid gap-3 md:grid-cols-2">
+        {DECISION_MATRIX.map((row) => (
+          <div class={`rounded-xl border p-5 ${row.ours ? 'border-accent bg-accent-soft/40' : 'border-line bg-bg'}`}>
+            <div class="mb-2 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">If</div>
+            <div class="mb-3 text-[15px] font-medium text-ink">{row.when}</div>
+            <div class="mb-1 font-mono text-[11px] uppercase tracking-[0.08em] text-accent-ink">Then</div>
+            <div class="mb-2 text-lg font-semibold tracking-[-0.01em] text-ink">→ {row.pick}</div>
+            <p class="text-sm leading-relaxed text-ink-2">{row.rationale}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* ── FAQ ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          Frequently asked questions
+        </h2>
+      </div>
+      <div class="flex flex-col gap-3">
+        {FAQS.map((f) => (
+          <details class="group rounded-lg border border-line bg-bg p-5">
+            <summary class="flex cursor-pointer items-center justify-between gap-4 text-[15px] font-medium text-ink list-none">
+              <span>{f.question}</span>
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-panel text-ink-3 transition-transform group-open:rotate-45">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 5v14M5 12h14" /></svg>
+              </span>
+            </summary>
+            <p class="mt-3 text-sm leading-relaxed text-ink-2">{f.answer}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+</PSEO>

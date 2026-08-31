@@ -50,7 +50,10 @@ export function buildResearchSection(research: ArticleResearch): string[] {
     ];
     research.competitors.slice(0, 10).forEach((c, i) => {
       const wc = c.wordCount ? `, ~${c.wordCount} words` : "";
-      lines.push(`${i + 1}. "${c.title}" (${c.domain}${wc})`);
+      // Rank comes from the SERP, so number by it rather than by array order:
+      // "the page at #1" is a different instruction from "the first one listed".
+      const pos = typeof c.rank === "number" ? `#${c.rank}` : `${i + 1}.`;
+      lines.push(`${pos} "${c.title}" (${c.domain}${wc})`);
       if (c.description) lines.push(`   ${c.description}`);
     });
     lines.push(
@@ -73,6 +76,35 @@ export function buildResearchSection(research: ArticleResearch): string[] {
         ...research.peopleAlsoAsk.slice(0, 10).map((q) => `- ${q}`),
       ].join("\n"),
     );
+  }
+
+  // --- What Google's AI answer already says ----------------------------------
+  //
+  // The single most direct evidence available of what an AI answer contains for
+  // this query and which pages it trusts. It arrives in the SERP response we
+  // already pay for and used to be discarded. Being cited means adding something
+  // this block does not already have, so the model is told what it says rather
+  // than left to guess.
+  if (research.aiOverview) {
+    const ao = research.aiOverview;
+    const lines = [
+      "GOOGLE'S AI OVERVIEW FOR THIS QUERY:",
+      "This is the answer Google already shows above the results. To be cited " +
+        "instead of these sources, the article has to add something this does " +
+        "not have: a specific number, a first-hand test, a case it does not " +
+        "cover, or a sharper answer to the same question. Do not restate it.",
+      "",
+      ao.markdown.slice(0, 2000),
+    ];
+    if (ao.citations.length) {
+      lines.push(
+        "",
+        `Sources this AI Overview cites (${ao.citations.length}) — these are the ` +
+          "pages to displace:",
+        ...ao.citations.slice(0, 10).map((c) => `- ${c.domain}: ${c.title}`),
+      );
+    }
+    sections.push(lines.join("\n"));
   }
 
   // --- Terms to cover --------------------------------------------------------
@@ -151,6 +183,18 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       `well-structured article optimized for the keyword "${keyword}" in ${language}.`
   );
 
+  // --- Date ------------------------------------------------------------------
+  // Without this the model dates things to its training data: the first e2e
+  // article, generated in August 2026, titled itself "...in 2025". A wrong
+  // year in a title is the fastest way for a reader to write a page off as
+  // machine-made and stale, and it is also simply false.
+  const now = new Date();
+  sections.push(
+    `Today's date is ${now.toISOString().slice(0, 10)}. When the title or copy ` +
+      `references a year, use ${now.getFullYear()}. Do not date claims beyond ` +
+      `what your sources support.`
+  );
+
   // --- Title -----------------------------------------------------------------
   if (title) {
     sections.push(`Use the following title for the article:\n${title}`);
@@ -200,11 +244,31 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       "- Use semantic variations and related terms throughout.",
       "- Write a meta description (max 160 characters) that includes the keyword. " +
         'Output it as the very last line wrapped in: <meta-description>...</meta-description>',
-      "- Add internal link placeholders where relevant using: " +
-        '<a href="{{internal-link:related-topic}}">anchor text</a>',
       "- Structure content for featured snippets (clear definitions, numbered steps, tables).",
     ].join("\n")
   );
+
+  // --- What there is to link to ---------------------------------------------
+  //
+  // Naming the library is the whole difference. The instruction on its own
+  // produced no placeholders at all, because "where relevant" is not a question
+  // a model can answer without knowing what exists.
+  if (prompt.internalLinkTargets?.length) {
+    sections.push(
+      [
+        "INTERNAL LINKS — link to these, and only these:",
+        "Each line is an article that already exists on this site. Where the",
+        "draft naturally mentions one of these subjects, link to it once using",
+        'the placeholder form <a href="{{internal-link:KEYWORD}}">anchor</a>,',
+        "using the keyword exactly as written below. Two to four links is right",
+        "for an article of this length. Never invent a target that is not listed.",
+        "",
+        ...prompt.internalLinkTargets
+          .slice(0, 20)
+          .map((t) => `- ${t.keyword} — "${t.title}"`),
+      ].join("\n"),
+    );
+  }
 
   // --- Voice rules -----------------------------------------------------------
   if (voiceRules) {
@@ -290,14 +354,67 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     ].join("\n"),
   );
 
+  // --- Written to be quoted --------------------------------------------------
+  //
+  // These mirror lib/seo/aeo-scoring.ts one for one. Scoring a draft against
+  // rules the writer was never given is a way to produce a low number and no
+  // improvement, so the checks and the brief say the same thing.
+  sections.push(
+    [
+      "WRITTEN TO BE QUOTED:",
+      "An answer engine lifts a passage, it does not summarise a page. Every",
+      "rule below exists so there is a passage worth lifting.",
+      "",
+      "- Open by answering the question. First paragraph under 90 words, naming",
+      "  the subject in the first sentence. No throat-clearing, no context-setting.",
+      "- Include one standalone definition of 20-70 words that starts with the",
+      "  term and makes sense with nothing around it.",
+      "- Use at least three specific figures: a number, a percentage, a price, a",
+      "  duration. An adjective is not a fact.",
+      "- Attribute every figure to a named, linked source. If you cannot source a",
+      "  number, do not write the number - say plainly that no reliable figure",
+      "  exists, which is itself a quotable answer.",
+      "- Cite at least two external sources with real, working links. Never emit",
+      '  href="#" or a placeholder URL: a dead link ships as a dead link.',
+      "- A well-known rule of thumb is still an unsourced claim. \"Roughly 80% of",
+      "  results come from 20% of pages\", \"most experts agree\", \"studies show\" -",
+      "  the fact checker flags these and it is right to. Either attribute the",
+      "  figure to something citable or make the point without the number.",
+      "- Phrase at least two H2s as the question a person would actually type.",
+      "- Keep paragraphs under 120 words.",
+      "- Use a real HTML table for any comparison of three or more things.",
+    ].join("\n"),
+  );
+
   // --- Final instructions ----------------------------------------------------
   sections.push(
     [
       "IMPORTANT:",
       "- Write for humans first, search engines second.",
-      "- Avoid filler sentences and generic intros.",
       "- Every paragraph should deliver value.",
       "- Do NOT include any text outside of the HTML output and the meta-description tag.",
+      "",
+      // The generic register is the thing readers recognise as machine-written,
+      // and it is also what makes a page indistinguishable from the twenty
+      // others already ranking. A measured comparison on 2026-08-30 had one
+      // model open with "the right platform should automate repetitive tasks"
+      // while the other named four actual products; the second is the one worth
+      // publishing. These are the specific tells.
+      "NEVER WRITE LIKE THIS:",
+      '- Banned openers: "In today\'s fast-paced world", "In the ever-evolving landscape",',
+      '  "In the digital age", "Whether you are a ... or a ...", "Let\'s dive in", "Look no further".',
+      '- Banned connectives and filler: "delve", "tapestry", "realm", "navigate the",',
+      '  "unlock the power", "game-changer", "robust solution", "seamlessly", "leverage"',
+      '  as a verb, "it is important to note that", "in conclusion".',
+      "- No sentence whose only job is to announce what the next sentence will say.",
+      "- No paragraph that would still be true if the subject were a different product.",
+      '- Do not hedge a real answer into uselessness: "it depends" is only acceptable',
+      "  when followed immediately by what it depends on.",
+      "- Prefer a named product, number or example over an adjective. If you cannot",
+      "  name one, say plainly that there is no standard answer and why.",
+      "- Never use an em dash (\u2014). Use a comma, colon, period or parentheses.",
+      "  Em dashes are the single most recognised marker of machine writing, and",
+      "  a post-processor removes them anyway; write the sentence you mean.",
     ].join("\n")
   );
 

@@ -1,0 +1,218 @@
+---
+import '@/styles/globals.css';
+import { buildOrganizationSchema } from '@/lib/schema';
+import { SITE_URL, APP_NAME } from '@/constants';
+
+interface Props {
+  title: string;
+  description: string;
+  canonicalUrl?: string;
+  ogImage?: string;
+  ogType?: string;
+  structuredData?: object | object[];
+  noindex?: boolean;
+  lang?: string;
+  alternateLanguages?: { hreflang: string; href: string }[];
+}
+
+const {
+  title,
+  description,
+  canonicalUrl = Astro.url.href,
+  ogImage = '/og-default.png',
+  ogType = 'website',
+  structuredData,
+  noindex = false,
+  lang = 'en',
+  alternateLanguages,
+} = Astro.props;
+
+const siteName = APP_NAME;
+
+// Cloudflare Web Analytics, env-driven so the token can rotate without a
+// code change. Set PUBLIC_CF_ANALYTICS_TOKEN in Cloudflare Pages env vars
+// (Production + Preview). If unset, the beacon simply isn't emitted.
+const cfAnalyticsToken = import.meta.env.PUBLIC_CF_ANALYTICS_TOKEN;
+
+// Open-source, cookieless analytics. Cloudflare Web Analytics gives pageviews
+// but cannot record events, and the question that actually matters here is
+// whether organic traffic reaches the signup, which is an outbound click to
+// another host. That needs event tracking.
+//
+// Provider-agnostic on purpose: Umami (MIT) and Plausible (AGPL-3.0) expose the
+// same "track a named event" shape, so either can be dropped in by setting the
+// matching env vars, and neither sets a cookie or collects personal data, so no
+// consent banner is required under GDPR. Self-hosting keeps the data in the EU.
+const umamiSrc = import.meta.env.PUBLIC_UMAMI_SRC;
+const umamiWebsiteId = import.meta.env.PUBLIC_UMAMI_WEBSITE_ID;
+const plausibleSrc = import.meta.env.PUBLIC_PLAUSIBLE_SRC;
+const plausibleDomain = import.meta.env.PUBLIC_PLAUSIBLE_DOMAIN;
+
+const hasUmami = Boolean(umamiSrc && umamiWebsiteId);
+const hasPlausible = Boolean(plausibleSrc && plausibleDomain);
+const hasEventAnalytics = hasUmami || hasPlausible;
+
+// Sitewide entity schemas, every page contributes Organization + WebSite
+// signals to search engines and AI crawlers. Page-specific structuredData
+// (Article, FAQPage, ItemList, BreadcrumbList, etc.) layers on top via the
+// `structuredData` prop and gets concatenated below.
+const sitewideSchemas = [
+  buildOrganizationSchema(),
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: siteName,
+    url: SITE_URL,
+    // SearchAction omitted (2026-06-20): on-site blog search isn't implemented,
+    // so advertising a sitelinks-searchbox would be an inaccurate schema claim.
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebPage',
+    name: title,
+    description,
+    url: canonicalUrl,
+    isPartOf: { '@type': 'WebSite', name: siteName, url: SITE_URL },
+    inLanguage: lang,
+  },
+];
+
+const pageSchemas = Array.isArray(structuredData)
+  ? structuredData
+  : structuredData
+    ? [structuredData]
+    : [];
+const allSchemas = [...sitewideSchemas, ...pageSchemas];
+---
+
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Icons. favicon.ico is listed first as the bare-path fallback: browsers
+         request /favicon.ico unprompted, and it 404'd on every page before.
+         Regenerate the whole set with `npm run favicon:generate`. -->
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#1A1815" />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@1,16..72,400&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- SEO -->
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalUrl} />
+    {alternateLanguages?.map((alt) => (
+      <link rel="alternate" hreflang={alt.hreflang} href={alt.href} />
+    ))}
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+
+    <!-- Open Graph -->
+    <meta property="og:type" content={ogType} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:site_name" content={siteName} />
+    <meta property="og:image" content={new URL(ogImage, Astro.site).href} />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={new URL(ogImage, Astro.site).href} />
+
+    <!-- RSS -->
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={`${siteName} Blog`}
+      href="/rss.xml"
+    />
+
+    <!-- Structured Data (sitewide Organization + WebSite + WebPage, plus any page-specific layers) -->
+    <script type="application/ld+json" set:html={JSON.stringify(allSchemas)} />
+    {cfAnalyticsToken && (
+      <script
+        defer
+        src="https://static.cloudflareinsights.com/beacon.min.js"
+        data-cf-beacon={`{"token": "${cfAnalyticsToken}"}`}
+      ></script>
+    )}
+
+    {hasUmami && (
+      <script defer src={umamiSrc} data-website-id={umamiWebsiteId}></script>
+    )}
+    {hasPlausible && (
+      <script defer src={plausibleSrc} data-domain={plausibleDomain}></script>
+    )}
+
+    {hasEventAnalytics && (
+      /* Records the one conversion that matters: a click through to the signup
+         app. Delegated from the document so it covers every CTA on every page
+         without touching 27 call sites, and it reads the destination from the
+         link itself rather than a hardcoded host. Fails silently if the
+         provider script is blocked, which is the correct behaviour for a
+         tracker: it must never break navigation. */
+      <script is:inline>
+        document.addEventListener('click', function (event) {
+          var link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+          if (!link) return;
+          var href = link.getAttribute('href') || '';
+          if (href.indexOf('app.altorank.co') === -1) return;
+          var name = href.indexOf('/signup') !== -1 ? 'signup-click' : 'app-click';
+          var props = { path: window.location.pathname };
+          try {
+            if (window.umami && typeof window.umami.track === 'function') {
+              window.umami.track(name, props);
+            } else if (typeof window.plausible === 'function') {
+              window.plausible(name, { props: props });
+            }
+          } catch (err) {
+            /* analytics must never interfere with the click */
+          }
+        });
+      </script>
+    )}
+  </head>
+  <body class="min-h-screen flex flex-col">
+    <slot />
+
+    <!--
+      FAQ answers live inside <details>, and a closed <details> hides its content
+      in the UA shadow DOM where CSS cannot reach it. Printing therefore produced
+      a list of questions with no answers. Open them for print and restore after,
+      so the printed page and the PDF leave-behind carry the full text.
+    -->
+    <script is:inline>
+      (function () {
+        var opened = [];
+        function expand() {
+          opened = [];
+          document.querySelectorAll('details:not([open])').forEach(function (d) {
+            opened.push(d);
+            d.open = true;
+          });
+        }
+        function restore() {
+          opened.forEach(function (d) { d.open = false; });
+          opened = [];
+        }
+        window.addEventListener('beforeprint', expand);
+        window.addEventListener('afterprint', restore);
+        // Headless Chrome's --print-to-pdf does not reliably fire beforeprint,
+        // so honour an explicit ?print=1 for generating the PDF artifact.
+        if (location.search.indexOf('print=1') !== -1) expand();
+      })();
+    </script>
+  </body>
+</html>

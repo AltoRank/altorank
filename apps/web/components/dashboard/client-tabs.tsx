@@ -175,7 +175,7 @@ function ArticlesTab({ articles }: { articles: Article[] }) {
                   <td className="px-3.5 py-3 border-b border-line-soft font-mono text-xs text-ink-2">{a.keyword}</td>
                   <td className="px-3.5 py-3 border-b border-line-soft"><StatusPill status={a.status} /></td>
                   <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{a.seo_score || "—"}</td>
-                  <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{a.volume.toLocaleString()}</td>
+                  <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{typeof a.volume === "number" ? a.volume.toLocaleString() : "—"}</td>
                   <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{a.position ? `#${a.position}` : "—"}</td>
                   <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{dateStr}</td>
                 </tr>
@@ -457,7 +457,6 @@ function SettingsTab({ workspace, cadence }: { workspace: Workspace; cadence: Pu
           {[
             { label: "Name", value: workspace.name },
             { label: "Domain", value: workspace.domain || "—" },
-            { label: "Plan", value: workspace.plan ?? "—" },
             { label: "Status", value: workspace.status },
             { label: "AI Provider", value: workspace.ai_provider ?? "Not configured" },
             { label: "AI Model", value: workspace.ai_model ?? "Default" },

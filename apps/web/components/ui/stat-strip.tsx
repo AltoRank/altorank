@@ -1,10 +1,11 @@
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 type Stat = {
   label: string;
   value: string | number;
   unit?: string;
-  delta?: string;
+  delta?: ReactNode;
   deltaType?: "pos" | "neg" | "neutral";
 };
 

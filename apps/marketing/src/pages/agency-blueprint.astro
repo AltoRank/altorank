@@ -1,0 +1,353 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildArticleSchema, buildFAQSchema } from '@/lib/schema';
+import { APP_NAME, SITE_URL, AUTHOR_NAME, AUTHOR_URL, OSS_REPO_PUBLIC, PILOT_START } from '@/constants';
+import { PLANS } from '@/data/pricing';
+
+// Outreach artifact. This is the page you send when an agency asks "so what are
+// you actually building?", NOT a first-touch link.
+//
+// hanoi/leadgen/OUTREACH_PLAYBOOK.md is explicit that the first email is
+// exploration only: no product mention, no features, no pricing, no links. This
+// page would violate every one of those rules if it were sent cold. It exists
+// for the second move, once they have asked.
+//
+// Every figure below comes from the first-party agency scan in hanoi/leadgen
+// (geo_signal*.csv). The eu_new cohort is deliberately excluded from all
+// denominators because it was sourced by searching for agencies that already
+// market GEO, so it cannot sit in an adoption rate. Caveat recorded on ee08349.
+
+const pageUrl = `${SITE_URL}/agency-blueprint`;
+const publishDate = new Date('2026-08-15');
+const dateModified = new Date('2026-08-15');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', {
+  year: 'numeric', month: 'long', day: 'numeric',
+});
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Agency blueprint', href: '/agency-blueprint' },
+];
+
+// Scan figures. Denominator = 1,758 reachable agency sites, eu_new excluded.
+const SCAN = [
+  { stat: '1,758', label: 'agency sites scanned', note: 'Reachable, across 12 languages' },
+  { stat: '19%', label: 'sell GEO on a services page', note: 'With quoted evidence from the page itself' },
+  { stat: '27%', label: 'have strong SEO and no GEO at all', note: 'The capability is there, the offer is not' },
+];
+
+const PROBLEMS = [
+  {
+    title: 'Clients are asking, and there is no repeatable answer',
+    body: 'The question arrives before the offer does. Most agencies can explain what AI search is, but cannot hand a client a documented method, a scope of work, and a monthly report. Without those three things it stays a conversation rather than a line on an invoice.',
+  },
+  {
+    title: 'The measurement tools disagree with each other',
+    body: 'Point three AI visibility tools at the same brand with the same prompts and the citation rates come back different. Because each vendor keeps its methodology private, there is no way to tell which is closer to the truth, which makes the number very hard to defend in a client meeting.',
+  },
+  {
+    title: 'Volume does not scale across a roster without headcount',
+    body: 'Producing content for one brand is a workflow problem. Producing it for fifteen, each with its own voice, CMS, and approval chain, is an operations problem. The usual fix is hiring, which puts the margin back where it started.',
+  },
+  {
+    title: 'Unreviewed AI on a client brand is a real liability',
+    body: 'Google\'s 2025 scaled-content enforcement made high-volume unreviewed AI a penalty risk. On a client site that risk is not yours to take. Most tools in this category still default to publishing automatically.',
+  },
+];
+
+const SOLUTION = [
+  {
+    title: 'It is the execution layer, not another dashboard',
+    body: 'Research a keyword, build the brief, write the draft, score it, and publish it to the client CMS. The output is published pages, not a report telling you what to go and do.',
+  },
+  {
+    title: 'Open source, the whole product',
+    body: 'Self-host it on your own infrastructure. No per-seat pricing, no procurement cycle, and no vendor who can change the terms once your clients depend on it. Multi-client workspaces and white-label reporting are in the free build rather than behind a premium tier.',
+  },
+  {
+    title: 'Nothing publishes without a human approving it',
+    body: 'The approval gate sits inside the publish step, so scheduled jobs and bulk actions cannot route around it, and publishing defaults to draft. You can sell editorial judgement rather than automation, which is the safer thing to put on a client brand.',
+  },
+  {
+    title: 'The measurement is auditable',
+    body: 'The prompt set, the sampling method, and the scoring checks are readable source rather than a black box. When a client asks how the number was produced, you can show them, which is a materially different conversation from citing a vendor dashboard.',
+  },
+];
+
+const OUTCOMES = [
+  'A GEO or AI-visibility retainer you can scope, price, and defend, built on a method you can show the client.',
+  'A monthly client-facing report under your own brand, on work the system actually did rather than third-party data re-displayed.',
+  'Content throughput across the whole roster without adding writers, with per-client voice and 11 CMS destinations.',
+  'A software cost that is your infrastructure bill rather than a per-seat line that grows against you as you win clients.',
+];
+
+const FAQS = [
+  {
+    question: 'Is this available today?',
+    answer: OSS_REPO_PUBLIC
+      ? `Yes. The repository is public and you can self-host it now. The hosted tiers are also live.`
+      : `Not yet, and it would be a bad idea to pretend otherwise. The repository is not public at the time of writing, and ${APP_NAME} has no paying customers. The licence, the scope, and the pricing below are decided rather than aspirational, but this page is a description of what is being built and an invitation to shape it, not a product you can buy this afternoon.`,
+  },
+  {
+    question: 'What are you actually asking for?',
+    answer: 'A conversation, and for a small number of agencies, a design-partner relationship. That means you tell us how you currently scope, deliver, and report AI-search work, we build against that, and you get early access and direct influence over what ships. It is not a purchase and there is nothing to sign.',
+  },
+  {
+    question: 'Where do the numbers on this page come from?',
+    answer: 'From our own scan of 1,758 reachable agency websites across 12 languages, checking whether GEO or AI-search services appear on a services page with quoted evidence from the page itself. One cohort was sourced by searching specifically for agencies that market GEO, so it is excluded from every denominator here. It is first-party data, and we will show you the method if you want to argue with it.',
+  },
+  {
+    question: 'What does the licence mean for my agency?',
+    answer: 'Self-hosting it and running it as-is for your own clients carries no publication obligation. Using the software commercially and on behalf of clients is exactly what the licence permits. The obligation only triggers if you modify the source and then offer that modified version to others over a network. Running an agency on it is free and unencumbered.',
+  },
+  {
+    question: 'Why would you give away the parts other tools charge for?',
+    answer: 'Because the code is not the moat. Competitors have shipped the same features and the category is well served. What we do not have is distribution or a reason for an agency to trust a tool with no track record. Shipping everything open is how we buy both, and the licence is what stops a competitor from taking it and closing it.',
+  },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: `The agency blueprint: what ${APP_NAME} is building, and what it is for`,
+    description:
+      'The problem AltoRank is tackling for agencies, the approach, the outcome an agency can resell, and what it costs. Written for agencies weighing whether to build an AI-search offer.',
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildFAQSchema(FAQS),
+];
+---
+
+<PSEO
+  title="The agency blueprint: problem, approach, outcome, price"
+  description="What AltoRank is building for agencies and why: the problem, the approach, the outcome you can resell, and what it costs. Includes first-party data from a scan of 1,758 agency sites."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+  alternateLanguages={[
+    { hreflang: 'en', href: `${SITE_URL}/agency-blueprint` },
+    { hreflang: 'it', href: `${SITE_URL}/it/agency-blueprint` },
+    { hreflang: 'x-default', href: `${SITE_URL}/agency-blueprint` },
+  ]}
+>
+  {/* HERO */}
+  <header class="border-b border-line bg-[radial-gradient(600px_300px_at_88%_-10%,var(--accent-soft),transparent_70%),linear-gradient(180deg,var(--bg),var(--bg-2))] py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h1 class="mb-6 text-[clamp(34px,5vw,48px)] font-semibold leading-[1.05] tracking-[-0.025em] text-ink [text-wrap:balance]">
+        The blueprint, in one page
+      </h1>
+      <p class="mb-5 text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
+        What we are building, who it is for, what an agency can do with it, and what it
+        costs. No case studies, because there are none yet. If you would rather argue with
+        the premise than read a pitch, the premise is in the first section.
+      </p>
+      <div class="mt-7 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
+        <span>By <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
+        <span class="text-line">&middot;</span>
+        <span><time datetime={publishDate.toISOString().slice(0, 10)}>{publishDateDisplay}</time></span>
+        <span class="text-line">&middot;</span>
+        <span><a href="/it/agency-blueprint" class="underline decoration-line decoration-1 underline-offset-[3px] hover:text-ink-2 hover:decoration-accent">Leggi in italiano</a></span>
+      </div>
+    </div>
+  </header>
+
+  {/* THE DATA */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h2 class="mb-4 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
+        What we found looking at 1,758 agency sites
+      </h2>
+      <p class="mb-8 text-[15.5px] leading-relaxed text-ink-2">
+        Before building anything we scanned reachable agency websites in 12 languages and
+        checked, with quoted evidence from the page, whether they sell GEO or AI-search
+        services. The gap between capability and offer is the whole thesis.
+      </p>
+      <div class="grid gap-3 sm:grid-cols-3">
+        {SCAN.map((s) => (
+          <div class="rounded-xl border border-line bg-bg p-5">
+            <div class="text-[30px] font-semibold leading-none tracking-[-0.025em] text-ink">{s.stat}</div>
+            <div class="mt-2 text-[14px] font-medium text-ink">{s.label}</div>
+            <div class="mt-1.5 text-[12.5px] leading-relaxed text-ink-3">{s.note}</div>
+          </div>
+        ))}
+      </div>
+      <p class="mt-5 text-[13px] leading-relaxed text-ink-3">
+        Method note: one cohort was sourced by searching for agencies that already market
+        GEO, so it is excluded from every denominator above. The Italian and international
+        cohorts differ sharply, at 8% and 29% respectively, so treat the blended figure as
+        a range rather than a single market rate.
+      </p>
+    </div>
+  </section>
+
+  {/* PROBLEM */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h2 class="mb-3 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
+        The problem
+      </h2>
+      <p class="mb-8 text-[15.5px] leading-relaxed text-ink-2">
+        Not "agencies need more content." Four specific things that stop an AI-search offer
+        becoming a billable line.
+      </p>
+      <div class="flex flex-col gap-3">
+        {PROBLEMS.map((p, i) => (
+          <div class="flex gap-4 rounded-xl border border-line bg-bg p-5">
+            <span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-panel-2 font-mono text-[12px] font-semibold text-ink-2">{i + 1}</span>
+            <div>
+              <h3 class="mb-1.5 text-[16px] font-semibold tracking-[-0.015em] text-ink">{p.title}</h3>
+              <p class="text-[14.5px] leading-relaxed text-ink-2">{p.body}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* SOLUTION */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h2 class="mb-3 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
+        The approach
+      </h2>
+      <p class="mb-8 text-[15.5px] leading-relaxed text-ink-2">
+        Four decisions, each one aimed at a specific problem above.
+      </p>
+      <div class="flex flex-col gap-3">
+        {SOLUTION.map((s) => (
+          <div class="rounded-xl border border-line bg-bg p-5">
+            <h3 class="mb-1.5 text-[16px] font-semibold tracking-[-0.015em] text-ink">{s.title}</h3>
+            <p class="text-[14.5px] leading-relaxed text-ink-2">{s.body}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* OUTCOME */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <div class="relative overflow-hidden rounded-xl border border-ink bg-ink p-8 text-bg">
+        <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(500px_240px_at_100%_0%,oklch(0.45_0.15_265/0.45),transparent_60%)]"></div>
+        <div class="relative z-10">
+          <h2 class="mb-4 text-[clamp(23px,3vw,29px)] font-semibold leading-[1.15] tracking-[-0.02em] [text-wrap:balance]">
+            The outcome, stated as what you can sell
+          </h2>
+          <ul class="flex flex-col gap-3.5">
+            {OUTCOMES.map((o) => (
+              <li class="flex items-start gap-3 text-[15.5px] leading-relaxed text-[oklch(0.85_0.01_80)]">
+                <svg class="mt-1 h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="oklch(0.75 0.14 155)" stroke-width="2">
+                  <path d="M5 12.5 10 17 19 7" />
+                </svg>
+                {o}
+              </li>
+            ))}
+          </ul>
+          <p class="mt-6 border-t border-[oklch(0.3_0.008_80)] pt-5 text-[14px] leading-relaxed text-[oklch(0.72_0.01_80)]">
+            We are deliberately not putting a revenue multiple here. We have no customer
+            results to base one on, and you can price your own retainer better than we can
+            guess at it.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {/* PRICE */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h2 class="mb-3 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
+        The price
+      </h2>
+      <p class="mb-8 text-[15.5px] leading-relaxed text-ink-2">
+        Metering is on articles published and on who pays the model bill. It is not on
+        seats and not on how many client brands you run, because charging an agency for
+        winning clients is a bad way to be an agency's tool.
+      </p>
+      <div class="grid gap-3 sm:grid-cols-2">
+        {PLANS.map((plan) => (
+          <div class="rounded-xl border border-line bg-bg p-5">
+            <div class="mb-1 flex items-baseline gap-1.5">
+              <span class="text-[26px] font-semibold leading-none tracking-[-0.025em] text-ink">{plan.price}</span>
+              <span class="text-[13px] text-ink-3">{plan.period}</span>
+            </div>
+            <h3 class="mb-2 text-[15px] font-semibold tracking-[-0.015em] text-ink">{plan.name}</h3>
+            <p class="text-[13.5px] leading-relaxed text-ink-2">{plan.desc}</p>
+          </div>
+        ))}
+      </div>
+      <p class="mt-5 text-[13.5px] text-ink-3">
+        Full breakdown on the <a href="/pricing" class="font-medium text-accent-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">pricing page</a>, and the licence detail on <a href="/open-source" class="font-medium text-accent-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">the open-source page</a>.
+      </p>
+    </div>
+  </section>
+
+  {/* STATUS */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h2 class="mb-4 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
+        Where this actually is
+      </h2>
+      <div class="rounded-xl border border-line bg-panel p-6">
+        <ul class="flex flex-col gap-3 text-[15px] leading-relaxed text-ink-2">
+          <li class="flex items-start gap-2.5">
+            <span class="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-warn"></span>
+            <span>Pre-launch. No paying customers, and no case studies, which is why there are none on this page.</span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <span class="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-warn"></span>
+            <span>The repository is not public yet. The licence and scope are decided, the code is not out.</span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <span class="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-ok"></span>
+            <span>Early engagements are being lined up now. The first pilots start in {PILOT_START.en}.</span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <span class="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-ok"></span>
+            <span>The repository is public and carries the whole product, dashboard included, with an MCP server. A packaged CLI is not built yet.</span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <span class="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-ok"></span>
+            <span>The agency scan above is real, first-party, and we will share the method with anyone who asks.</span>
+          </li>
+        </ul>
+        <p class="mt-6 border-t border-line-soft pt-5 text-[15px] leading-relaxed text-ink-2">
+          If any of the four problems above is one you actually have, the useful next step
+          is twenty minutes on how your agency scopes and reports this work today. Not a
+          demo. There is nothing to demo yet, and your answer changes what gets built.
+        </p>
+        <Button href="mailto:hello@altorank.co?subject=Agency%20blueprint%20conversation" arrow class="mt-5">
+  Start that conversation
+</Button>
+        {/* A button is dead on paper. This page gets printed and handed over, so
+            the address needs to be readable, not just clickable. */}
+        <p class="mt-4 hidden text-[14px] text-ink-2 print:block">
+          hello@altorank.co
+        </p>
+      </div>
+    </div>
+  </section>
+
+  {/* FAQ */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h2 class="mb-8 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
+        The obvious questions
+      </h2>
+      <div class="flex flex-col gap-3">
+        {FAQS.map((faq) => (
+          <details class="group rounded-xl border border-line bg-bg p-5 open:bg-panel">
+            <summary class="cursor-pointer list-none text-[15.5px] font-semibold tracking-[-0.01em] text-ink marker:hidden">
+              {faq.question}
+            </summary>
+            <p class="mt-3 text-[14.5px] leading-relaxed text-ink-2">{faq.answer}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+</PSEO>

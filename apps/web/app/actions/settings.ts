@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { authErrorMessage } from "@/lib/auth/errors";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { randomBytes } from "crypto";
 
@@ -44,4 +45,22 @@ export async function rotateApiKey() {
   if (error) throw new Error(error.message);
   revalidatePath("/settings");
   return newKey;
+}
+
+/** Change the signed-in account's password. See components/dashboard/password-form.tsx. */
+export async function changePassword(formData: FormData): Promise<{ error?: string }> {
+  const password = formData.get("password") as string;
+  const confirm = formData.get("confirm") as string;
+  if (!password || password.length < 8) return { error: "Use at least 8 characters." };
+  if (password !== confirm) return { error: "The two passwords do not match." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) return { error: authErrorMessage(error.message) };
+  return {};
 }

@@ -51,7 +51,12 @@ export async function getPendingInvites(): Promise<Invite[]> {
     .select("*")
     .eq("agency_id", membership.agency_id)
     .is("accepted_at", null)
-    .order("created_at", { ascending: false });
+    // The invites table has no created_at - it never did - so this ordered by
+    // a column that does not exist and the Team page has thrown since the
+    // invites feature landed. Found the first time anyone actually loaded the
+    // page rather than reading its code. expires_at is creation plus a fixed
+    // TTL, so newest-first is the same order.
+    .order("expires_at", { ascending: false });
 
   if (error) throw new Error(error.message);
   return (data ?? []) as Invite[];

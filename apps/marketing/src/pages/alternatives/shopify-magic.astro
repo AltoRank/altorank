@@ -1,0 +1,447 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildArticleSchema, buildFAQSchema, buildItemListSchema } from '@/lib/schema';
+import { APP_NAME, SIGNUP_URL, SITE_URL, AUTHOR_NAME, AUTHOR_URL, OSS_COMPARISON_LABEL, PRIMARY_CTA } from '@/constants';
+
+const pageUrl = `${SITE_URL}/alternatives/shopify-magic`;
+
+const publishDate = new Date('2026-06-21');
+const dateModified = new Date('2026-06-21');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Alternatives', href: '/alternatives' },
+  { label: 'Shopify Magic alternative', href: '/alternatives/shopify-magic' },
+];
+
+interface TldrRow {
+  name: string;
+  bestFor: string;
+  multiClient: string;
+  whiteLabel: string;
+  ecommerce: string;
+  price: string;
+  ours?: boolean;
+}
+
+const TLDR_ROWS: TldrRow[] = [
+  { name: APP_NAME, bestFor: 'Open source, one Shopify store or many', multiClient: 'Per-client workspaces', whiteLabel: 'Included (Agency)', ecommerce: 'Product + collection + schema', price: 'From $0 self-host', ours: true },
+  { name: 'Shopify Magic', bestFor: 'Single-store owners', multiClient: 'One store, in-admin', whiteLabel: 'No', ecommerce: 'Product descriptions only', price: 'Free' },
+  { name: 'Describely', bestFor: 'Bulk product copy', multiClient: 'Multi-store via app', whiteLabel: 'No', ecommerce: 'Product/collection bulk', price: '~$0.75/product' },
+  { name: 'Hypotenuse', bestFor: 'Catalog generation', multiClient: 'Limited', whiteLabel: 'No', ecommerce: 'Bulk PDP via CSV', price: 'From $29/mo' },
+  { name: 'Outrank', bestFor: 'Solo blog/store autopilot', multiClient: 'No', whiteLabel: 'No', ecommerce: 'Generic blog', price: '$99/mo' },
+  { name: 'contentbird', bestFor: 'In-house B2B content teams', multiClient: 'Projects (add-on)', whiteLabel: 'Paid add-on', ecommerce: 'Generic', price: 'From €399/mo' },
+  { name: 'Frase', bestFor: 'Briefs + research', multiClient: 'No', whiteLabel: 'No', ecommerce: 'No', price: 'From $45/mo' },
+];
+
+const ALTORANK_VS_MAGIC = [
+  { feature: 'Scope', ours: 'Full content program, product, collection, blog, GEO', theirs: 'Single product descriptions + basic content, in-admin' },
+  { feature: 'Multi-client', ours: 'Isolated per-client workspaces', theirs: 'One store at a time, no agency layer' },
+  { feature: 'White-label', ours: 'Reports + portal, included at €199', theirs: 'None' },
+  { feature: 'Collection / category SEO', ours: 'Collection-page copy + indexable faceted states', theirs: 'Not addressed' },
+  { feature: 'GEO / AI shopping', ours: 'Product/Offer/Review/FAQ schema for ChatGPT Shopping', theirs: 'No structured GEO output' },
+  { feature: 'Editorial control', ours: 'Draft → approve → publish + client sign-off', theirs: 'Generate in-admin, edit manually' },
+  { feature: 'Rank tracking', ours: 'Real-time per-keyword', theirs: 'None' },
+  { feature: 'Price', ours: 'From €69/mo, or €0 self-hosted', theirs: 'Free (single store, no agency layer)' },
+  { feature: 'Source code', ours: 'Open source, self-hostable at no cost', theirs: 'Proprietary SaaS' },
+  { feature: 'Editorial approval gate', ours: 'Required before anything publishes, by design', theirs: 'None confirmed' },
+  { feature: 'AI-readiness audit', ours: 'Scores agent readiness, then generates the missing JSON-LD, markdown twins and llms.txt', theirs: 'None confirmed' },
+];
+
+interface Tool {
+  index: string;
+  name: string;
+  ours?: boolean;
+  url?: string;
+  subtitle: string;
+  whatItIs: string;
+  bestFor: string;
+  pricing: string;
+  beatsMagic: string;
+  beatsTheirs: string;
+}
+
+const TOOLS: Tool[] = [
+  {
+    index: '01',
+    name: APP_NAME,
+    ours: true,
+    subtitle: 'Best Shopify Magic Alternative for Agencies',
+    whatItIs: 'An approval-first AI SEO content engine for e-commerce agencies. It goes beyond single product descriptions to run the whole content program across every Shopify client (product copy, collection-page SEO, buying guides, and AI-shopping-ready schema) with a human approval gate and white-label reporting.',
+    bestFor: 'Agencies producing SEO content for Shopify (and WooCommerce/Magento) clients who need more than one-off product blurbs.',
+    pricing: '€69/mo Managed (100 articles, model costs included, all CMS, rank tracking), €199/mo Agency (400 articles, unlimited client workspaces, white-label reports, referral traffic exchange).',
+    beatsMagic: '',
+    beatsTheirs: "Shopify Magic is free and built into the admin, for a single store owner who just needs a quick product description, that's hard to beat on price. AltoRank is for the agency running content across many client stores, not the merchant writing one blurb.",
+  },
+  {
+    index: '02',
+    name: 'Shopify Magic',
+    url: 'https://www.shopify.com/magic',
+    subtitle: 'Reference, Free, Built-In',
+    whatItIs: "Shopify's built-in AI: generates product descriptions, email subject lines, basic blog posts and FAQ answers from inside the Shopify admin. Free with a Shopify plan.",
+    bestFor: 'Single-store merchants who want quick, in-admin AI copy.',
+    pricing: 'Free (included with Shopify).',
+    beatsMagic: 'Free, zero setup, and right inside the store where the merchant already works. For one store and one product at a time, it is the obvious default.',
+    beatsTheirs: `Shopify Magic stops at the product description. It has no agency layer (one store, in-admin), no per-client workspaces, no white-label, no collection-page SEO, no rank tracking, no GEO schema, and no approval workflow for a team. ${APP_NAME} is the content engine the agency running those stores needs, beyond the PDP.`,
+  },
+  {
+    index: '03',
+    name: 'Describely',
+    url: 'https://www.describely.ai',
+    subtitle: 'Bulk Product Copy',
+    whatItIs: 'A Shopify-native tool for generating product and collection descriptions in bulk, with SEO and structured-data features.',
+    bestFor: 'Stores/agencies that need unique copy across thousands of SKUs fast.',
+    pricing: '~$0.75/product.',
+    beatsMagic: 'Built for catalog scale, bulk product/collection generation with SEO fields, where Shopify Magic is one product at a time.',
+    beatsTheirs: `Describely is a bulk product-copy point tool, not a multi-client agency platform, no isolated client workspaces, no white-label, no approval gate, no full content program (blog, buying guides, GEO). ${APP_NAME} adds the agency operating layer over the catalog generation.`,
+  },
+  {
+    index: '04',
+    name: 'Hypotenuse',
+    url: 'https://www.hypotenuse.ai',
+    subtitle: 'Catalog Generation',
+    whatItIs: 'An AI content tool with bulk product-description generation (CSV import) plus general marketing copy.',
+    bestFor: 'Brands generating large product catalogs.',
+    pricing: 'From $29/mo.',
+    beatsMagic: 'Bulk catalog generation and broader copy types than Shopify Magic\'s single-product flow.',
+    beatsTheirs: `Hypotenuse is brand-side bulk generation, not an agency workflow, no per-client isolation, no white-label, no approval gate. ${APP_NAME} gives agencies an approval-gated, catalog-aware workspace per client.`,
+  },
+  {
+    index: '05',
+    name: 'Outrank',
+    url: 'https://www.outrank.so',
+    subtitle: 'Single-Site Autopilot',
+    whatItIs: 'A $99/mo AI SEO tool that drafts and auto-publishes blog articles for one site, with a backlink network and 9-CMS publishing.',
+    bestFor: 'Solo founders running one blog or store.',
+    pricing: '$99/mo per site.',
+    beatsMagic: 'Goes beyond product copy to full blog articles with auto-publishing and a backlink network.',
+    beatsTheirs: `Outrank is single-site autopilot: no multi-client workspaces, no per-client voice, no white-label, no approval gate, and no e-commerce-specific product/collection depth. See /alternatives/outrank for the full agency breakdown.`,
+  },
+  {
+    index: '06',
+    name: 'contentbird',
+    url: 'https://contentbird.io',
+    subtitle: 'B2B Content-Ops Suite',
+    whatItIs: 'A Berlin content-operations suite with an approval workflow, aimed at in-house B2B content teams.',
+    bestFor: 'In-house B2B teams wanting a broad all-in-one suite.',
+    pricing: 'From €399/mo.',
+    beatsMagic: 'A real approval workflow and a full content-ops suite, far beyond Shopify Magic\'s in-admin generation.',
+    beatsTheirs: `contentbird is B2B-content-generic (no Shopify/Woo plumbing), priced from €399 with white-label as a paid add-on, and has no client-facing sign-off. ${APP_NAME} is e-commerce-agency-native at a quarter of the entry price. See /alternatives/contentbird.`,
+  },
+];
+
+interface DecisionRow {
+  when: string;
+  pick: string;
+  rationale: string;
+  ours?: boolean;
+}
+
+const DECISION_MATRIX: DecisionRow[] = [
+  { when: 'You run an agency producing SEO content across Shopify client stores', pick: APP_NAME, rationale: "Beyond product blurbs: collection SEO, buying guides, GEO schema, approval + client sign-off, white-label, and per-client workspaces, none of which Shopify Magic offers.", ours: true },
+  { when: "You're a single-store owner who needs quick product descriptions", pick: 'Use Shopify Magic', rationale: 'Free, in-admin, zero setup. For one store and one product at a time, it is the right tool.' },
+  { when: "You're a solo agency with one Shopify client (and plans to grow)", pick: APP_NAME + ' Managed', rationale: '€69/mo with the full content program + e-commerce features + approval, ready to scale to more clients.', ours: true },
+  { when: 'You need unique copy across thousands of SKUs, one store', pick: 'Describely', rationale: 'Purpose-built for bulk product/collection generation.' },
+  { when: 'You generate large product catalogs brand-side', pick: 'Hypotenuse', rationale: 'Bulk CSV catalog generation.' },
+  { when: 'You want a broad in-house B2B content suite', pick: 'contentbird', rationale: 'Mature approval workflow + broad suite, if budget and B2B fit aren\'t constraints.' },
+];
+
+const FAQS = [
+  { question: 'What is Shopify Magic?', answer: "Shopify Magic is Shopify's built-in AI. From inside the Shopify admin it generates product descriptions, email subject lines, basic blog posts and FAQ answers. It's free with a Shopify plan and works one store and one item at a time: there's no agency layer, no multi-client workspaces, and no SEO/GEO depth beyond the copy itself." },
+  { question: "What's the best Shopify Magic alternative for agencies?", answer: `${APP_NAME}. Shopify Magic writes a product description; ${APP_NAME} runs the whole SEO content program for every Shopify client (product copy, collection-page SEO, buying guides, and AI-shopping-ready Product/FAQ schema) with per-client workspaces, white-label reports, rank tracking, and an editorial-approval gate. It's built for the agency managing the stores, not the single merchant.` },
+  { question: 'Is AltoRank worth paying for when Shopify Magic is free?', answer: `If you're a single-store owner writing the occasional product description, Shopify Magic's free in-admin tool is fine. If you're an agency producing SEO content across multiple client stores, the value is the agency layer Shopify Magic doesn't have: per-client isolation, white-label client reporting, collection-page and GEO content, rank tracking, and a human approval gate before anything publishes to a client's brand.` },
+  { question: 'Does AltoRank cover collection pages and AI shopping, not just product descriptions?', answer: `Yes, that's the core difference. Collection/category pages are often the real revenue engine and most stores leave them thin; ${APP_NAME} produces unique collection copy plus Product/Offer/Review/FAQ schema aimed at AI-shopping surfaces (ChatGPT Shopping, Perplexity, AI Overviews). Shopify Magic addresses neither.` },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: `${APP_NAME} vs. Shopify Magic: 6 Shopify Magic Alternatives for Agencies (2026)`,
+    description: 'Shopify Magic writes product descriptions. For agencies running SEO content across Shopify clients, AltoRank goes beyond the PDP. We tested 6 Shopify Magic alternatives.',
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildFAQSchema(FAQS),
+  buildItemListSchema(
+    TLDR_ROWS.map((t) => ({
+      name: t.name,
+      description: `${t.bestFor}, starting at ${t.price}`,
+    })),
+  ),
+];
+---
+
+<PSEO
+  title="6 Shopify Magic Alternatives for Agencies (2026)"
+  description="Shopify Magic writes product descriptions. For agencies running SEO content across Shopify clients, we tested 6 alternatives across multi-client, white-label, collection SEO, and GEO."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+  alternateLanguages={[
+    { hreflang: 'en', href: `${SITE_URL}/alternatives/shopify-magic` },
+    { hreflang: 'de', href: `${SITE_URL}/de/alternatives/shopify-magic` },
+    { hreflang: 'x-default', href: `${SITE_URL}/alternatives/shopify-magic` },
+  ]}
+>
+  {/* ── HERO ──────────────────────────────────────────── */}
+  <header class="border-b border-line bg-[radial-gradient(600px_300px_at_88%_-10%,var(--accent-soft),transparent_70%),linear-gradient(180deg,var(--bg),var(--bg-2))] py-[72px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <h1 class="mb-6 text-[clamp(36px,5vw,52px)] font-semibold leading-[1.04] tracking-[-0.025em] text-ink [text-wrap:balance]">
+        {APP_NAME} vs. Shopify Magic: 6 Shopify Magic Alternatives for Agencies (2026)
+      </h1>
+      <p class="mb-5 max-w-[680px] text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
+        For agencies managing Shopify clients, {APP_NAME} is the strongest Shopify Magic alternative: it goes beyond single product descriptions to a full, approval-gated, white-label content engine across every client store: collection SEO, buying guides, and AI-shopping-ready product schema Shopify Magic doesn't touch.
+      </p>
+      <p class="mb-5 max-w-[680px] text-lg leading-relaxed text-ink-2 [text-wrap:pretty]">
+        <a href="https://www.shopify.com/magic" target="_blank" rel="noopener noreferrer" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">Shopify Magic</a> is free, built into the Shopify admin, and great at one thing: a quick product description for one store. An <em>agency</em> running SEO content across many Shopify clients needs the whole program (collections, buying guides, GEO, approval, white-label) none of which Magic addresses. The 6 alternatives below are ranked by <strong class="font-semibold text-ink">agency e-commerce criteria</strong>, with honest verdicts on when the free built-in tool is all you need.
+      </p>
+      <p class="max-w-[680px] text-base leading-relaxed text-ink-2">
+        If you own one store and just need product descriptions, use Shopify Magic, it's free and right where you work. If you're an agency, read on.
+      </p>
+      <div class="mt-8 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
+        <span>By <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
+        <span class="text-line">·</span>
+        <span>Published <time datetime={publishDate.toISOString().slice(0, 10)}>{publishDateDisplay}</time></span>
+        <span class="text-line">·</span>
+        <span>15 min read</span>
+      </div>
+    </div>
+  </header>
+
+  {/* ── TL;DR TABLE ───────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[1100px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          The 7 tools at a glance
+        </h2>
+      </div>
+      <div class="overflow-hidden rounded-lg border border-line bg-bg">
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[820px] text-sm">
+            <caption class="sr-only">Comparison of Shopify Magic and 6 alternatives across multi-client support, white-label, e-commerce content depth, and starting price.</caption>
+            <thead class="bg-panel text-left font-mono text-[11px] uppercase tracking-[0.06em] text-ink-2">
+              <tr>
+                <th scope="col" class="px-5 py-3.5 font-medium">Tool</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">Best for</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">Multi-client</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">White-label</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">E-commerce content</th>
+                <th scope="col" class="px-5 py-3.5 font-medium">Starting price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {TLDR_ROWS.map((row, i) => (
+                <tr class={`${i > 0 ? 'border-t border-line-soft' : ''} ${row.ours ? 'bg-accent-soft/30' : ''}`}>
+                  <td class={`px-5 py-3.5 ${row.ours ? 'font-semibold text-ink' : 'text-ink-2'}`}>
+                    {row.ours ? (
+                      <span class="inline-flex items-center gap-2">
+                        {row.name}
+                        <span class="rounded-full bg-accent px-1.5 py-[1px] font-mono text-[9.5px] tracking-[0.08em] text-white">OURS</span>
+                      </span>
+                    ) : (
+                      <span>{row.name}</span>
+                    )}
+                  </td>
+                  <td class="px-5 py-3.5 text-ink-2">{row.bestFor}</td>
+                  <td class="px-5 py-3.5 font-mono text-[12.5px] text-ink-2">{row.multiClient}</td>
+                  <td class="px-5 py-3.5 font-mono text-[12.5px] text-ink-2">{row.whiteLabel}</td>
+                  <td class="px-5 py-3.5 font-mono text-[12.5px] text-ink-2">{row.ecommerce}</td>
+                  <td class="px-5 py-3.5 font-mono text-[12.5px] text-ink-2">{row.price}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="mt-7 flex flex-wrap items-center justify-center gap-3">
+        <Button href={SIGNUP_URL}>
+  Add your domain with {APP_NAME}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
+</Button>
+      </div>
+    </div>
+  </section>
+
+  {/* ── WHY AGENCIES SEARCH ───────────────────────────── */}
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          Why agencies outgrow Shopify Magic
+        </h2>
+      </div>
+      <div class="flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+        <p>Shopify Magic is a genuinely useful free feature, for a merchant filling in a product description inside their own store. The moment you're an agency running content for many client stores, its boundaries show up fast.</p>
+        <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">It stops at the product description</h3>
+        <p>Magic writes the PDP blurb and a few emails. It doesn't touch the parts that actually move e-commerce SEO: <span class="font-medium text-ink">collection/category pages</span> (often the real revenue engine, and usually left thin), buying guides, internal linking, or the structured data that gets products surfaced in AI shopping.</p>
+        <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">There's no agency layer</h3>
+        <p>It runs one store at a time, inside that store's admin. No isolated <span class="font-medium text-ink">per-client workspaces</span>, no white-label reporting to hand a client, no rank tracking, no approval workflow for a team. An agency managing 15 Shopify clients can't operate from 15 separate admins with no shared layer.</p>
+        <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">No AI-shopping readiness</h3>
+        <p>AI shopping (ChatGPT Shopping, Perplexity, AI Overviews) increasingly decides product discovery, and structured Product/Offer/Review/FAQ markup is what gets cited. Magic produces copy, not the <span class="font-medium text-ink">schema and answer-shaped content</span> that AI surfaces reward.</p>
+        <p>For a single store, none of this matters. For an agency, it's the whole job.</p>
+      </div>
+    </div>
+  </section>
+
+  {/* ── EVALUATION CRITERIA ───────────────────────────── */}
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          How we evaluated each Shopify Magic alternative
+        </h2>
+      </div>
+      <div class="flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+        <p>We scored each tool on what an agency running Shopify clients actually needs, not on raw copy quality:</p>
+        <ol class="my-2 flex flex-col gap-2 pl-5 list-decimal">
+          <li><strong class="font-semibold text-ink">Content scope</strong>: product only, or product + collection + blog + GEO?</li>
+          <li><strong class="font-semibold text-ink">Multi-client</strong>: isolated workspace, voice, and reporting per client?</li>
+          <li><strong class="font-semibold text-ink">White-label</strong>, can the agency hand it to a client under its own brand?</li>
+          <li><strong class="font-semibold text-ink">AI-shopping readiness</strong>, Product/Offer/Review/FAQ schema + answer-shaped content?</li>
+        </ol>
+        <p>Every tool here can write a product description. For an agency, the differentiation is scope, the client layer, and AI-shopping depth.</p>
+      </div>
+    </div>
+  </section>
+
+  {/* ── TOOL SECTIONS ─────────────────────────────────── */}
+  {TOOLS.map((tool) => (
+    <section class={`border-b border-line py-[72px] ${tool.ours ? 'bg-accent-soft/15' : ''}`}>
+      <div class="mx-auto max-w-[820px] px-8">
+        <div class="mb-2 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">
+          <span>Tool {tool.index}</span>
+          {tool.ours && (
+            <span class="rounded-full bg-accent px-1.5 py-[1px] font-mono text-[9.5px] tracking-[0.08em] text-white">OURS</span>
+          )}
+        </div>
+        <h2 class="mb-2 text-[clamp(28px,3.5vw,34px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          {tool.name}
+        </h2>
+        <p class="mb-7 text-base font-medium text-accent-ink">{tool.subtitle}</p>
+        <div class="mb-5 grid gap-3 rounded-lg border border-line bg-bg p-5 sm:grid-cols-3">
+          <div>
+            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">What it is</div>
+            <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.whatItIs}</div>
+          </div>
+          <div>
+            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Best for</div>
+            <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.bestFor}</div>
+          </div>
+          <div>
+            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Pricing</div>
+            <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.pricing}</div>
+          </div>
+        </div>
+
+        {tool.ours ? (
+          <>
+            <h3 class="mt-7 mb-4 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">How {APP_NAME} differs from Shopify Magic</h3>
+            <div class="overflow-hidden rounded-lg border border-line bg-bg">
+              <table class="w-full text-sm">
+                <caption class="sr-only">{APP_NAME} versus Shopify Magic, feature-by-feature comparison.</caption>
+                <thead class="bg-panel text-left font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-2">
+                  <tr>
+                    <th scope="col" class="px-4 py-3 font-medium">Feature</th>
+                    <th scope="col" class="px-4 py-3 font-medium">{APP_NAME}</th>
+                    <th scope="col" class="px-4 py-3 font-medium">Shopify Magic</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ALTORANK_VS_MAGIC.map((row, i) => (
+                    <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+                      <td class="px-4 py-3 text-ink">{row.feature}</td>
+                      <td class="px-4 py-3 text-ink-2">{row.ours}</td>
+                      <td class="px-4 py-3 font-mono text-[12.5px] text-ink-3">{row.theirs}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p class="mt-5 text-[15px] leading-relaxed text-ink-2">
+              The difference isn't whether AI can write a product description, both do. It's that {APP_NAME} runs the whole SEO content program for every client store, with an approval gate and white-label reporting, where Shopify Magic is a single-store, single-product helper.
+            </p>
+            <p class="mt-4 text-[15px] leading-relaxed text-ink-2">
+              {APP_NAME} Managed is €69/mo; <a href="/pricing" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">Agency at €199/mo</a> adds 400 articles a month, unlimited client workspaces, white-label reports, and rank tracking.
+            </p>
+            <h3 class="mt-7 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Where {APP_NAME} loses</h3>
+            <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsTheirs}</p>
+            <div class="mt-7">
+              <Button href={SIGNUP_URL}>
+  {PRIMARY_CTA.label}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
+</Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h3 class="mt-6 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+              {tool.name === 'Shopify Magic' ? 'Where Shopify Magic wins' : `Where ${tool.name} differs from Shopify Magic`}
+            </h3>
+            <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsMagic}</p>
+            <h3 class="mt-6 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+              {tool.name === 'Shopify Magic' ? `Where ${APP_NAME} wins` : `Where ${APP_NAME} beats ${tool.name}`}
+            </h3>
+            <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsTheirs}</p>
+            {tool.url && (
+              <p class="mt-6 text-[13px] text-ink-3">
+                Visit <a href={tool.url} target="_blank" rel="noopener noreferrer" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent hover:text-ink">{tool.name}</a> for current details.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  ))}
+
+  {/* ── DECISION MATRIX ───────────────────────────────── */}
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[1100px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          Which Shopify Magic alternative should you choose?
+        </h2>
+        <p class="mt-3 max-w-[640px] text-base leading-relaxed text-ink-2">After the tool deep-dives, here's the short version.</p>
+      </div>
+      <div class="grid gap-3 md:grid-cols-2">
+        {DECISION_MATRIX.map((row) => (
+          <div class={`rounded-xl border p-5 ${row.ours ? 'border-accent bg-accent-soft/40' : 'border-line bg-bg'}`}>
+            <div class="mb-2 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">If</div>
+            <div class="mb-3 text-[15px] font-medium text-ink">{row.when}</div>
+            <div class="mb-1 font-mono text-[11px] uppercase tracking-[0.08em] text-accent-ink">Then</div>
+            <div class="mb-2 text-lg font-semibold tracking-[-0.01em] text-ink">→ {row.pick}</div>
+            <p class="text-sm leading-relaxed text-ink-2">{row.rationale}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* ── FAQ ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[820px] px-8">
+      <div class="mb-10">
+        <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
+          Frequently asked questions
+        </h2>
+      </div>
+      <div class="flex flex-col gap-3">
+        {FAQS.map((f) => (
+          <details class="group rounded-lg border border-line bg-bg p-5">
+            <summary class="flex cursor-pointer items-center justify-between gap-4 text-[15px] font-medium text-ink list-none">
+              <span>{f.question}</span>
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-panel text-ink-3 transition-transform group-open:rotate-45">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 5v14M5 12h14" /></svg>
+              </span>
+            </summary>
+            <p class="mt-3 text-sm leading-relaxed text-ink-2">{f.answer}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+</PSEO>

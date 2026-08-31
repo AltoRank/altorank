@@ -34,9 +34,28 @@ export function KeywordFilters() {
     router.push(`/keywords?${params.toString()}`);
   }
 
+  const currentQuery = searchParams.get("q") ?? "";
+
+  function setQuery(value: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) {
+      params.set("q", value);
+    } else {
+      params.delete("q");
+    }
+    // `replace`, not `push`: typing should not fill the back button with a
+    // history entry per keystroke.
+    router.replace(`/keywords?${params.toString()}`);
+  }
+
   return (
     <div className="flex items-center gap-2 mb-4 flex-wrap">
-      <SearchInput placeholder="Search keywords…" className="flex-1 max-w-[320px]" />
+      <SearchInput
+        placeholder="Search keywords…"
+        className="flex-1 max-w-[320px]"
+        value={currentQuery}
+        onChange={setQuery}
+      />
       {STATUS_CHIPS.map((c) => (
         <Chip
           key={c.label}

@@ -1,0 +1,158 @@
+---
+import Marketing from '@/layouts/Marketing.astro';
+import Button from '@/components/shared/Button.astro';
+import { APP_NAME, SIGNUP_URL } from '@/constants';
+
+interface AlternativePage {
+  slug: string;
+  competitor: string;
+  bestFor: string;
+  toolCount: number;
+}
+
+// Pages that exist under /alternatives/*. Add a new entry when a new comparison ships.
+const ALTERNATIVES: AlternativePage[] = [
+  {
+    // Head-to-head. Distribb and BabyLoveGrowth are the two closest competitors
+    // by positioning: both open with "autopilot", both run a link exchange.
+    // A "best N alternatives" roundup would be padding.
+    slug: 'distribb',
+    competitor: 'Distribb',
+    bestFor: 'Anyone who wants the publishing decision back',
+    toolCount: 0,
+  },
+  {
+    slug: 'babylovegrowth',
+    competitor: 'BabyLoveGrowth',
+    bestFor: 'Anyone weighing an automated link network',
+    toolCount: 0,
+  },
+  {
+    slug: 'outrank',
+    competitor: 'Outrank',
+    bestFor: 'Agencies hitting Outrank\'s single-site limits',
+    toolCount: 8,
+  },
+  {
+    // Head-to-head rather than a roundup: rankingCoach is a small-business
+    // breadth tool, so a "best 8 alternatives" framing would be dishonest.
+    slug: 'rankingcoach',
+    competitor: 'rankingCoach',
+    bestFor: 'Agencies who need content depth, not a local-presence bundle',
+    toolCount: 2,
+  },
+  {
+    slug: 'search-atlas',
+    competitor: 'Search Atlas',
+    bestFor: 'Content-focused agencies tired of broad-stack bloat',
+    toolCount: 9,
+  },
+  {
+    slug: 'contentbird',
+    competitor: 'contentbird',
+    bestFor: 'E-commerce agencies priced out of contentbird\'s €399 floor',
+    toolCount: 8,
+  },
+  {
+    slug: 'rankyak',
+    competitor: 'RankYak',
+    bestFor: 'Agencies who can\'t publish unreviewed AI to client sites',
+    toolCount: 6,
+  },
+  {
+    slug: 'shopify-magic',
+    competitor: 'Shopify Magic',
+    bestFor: 'Shopify agencies who need more than in-admin product copy',
+    toolCount: 6,
+  },
+  {
+    slug: 'describely',
+    competitor: 'Describely',
+    bestFor: 'Agencies who need more than a single-catalog product-copy tool',
+    toolCount: 6,
+  },
+  {
+    slug: 'seowind',
+    competitor: 'SEOwind',
+    bestFor: 'E-commerce agencies who need publishing, not just briefs',
+    toolCount: 6,
+  },
+];
+---
+
+<Marketing
+  title={`Alternatives | ${APP_NAME}`}
+  description={`Honest comparisons of ${APP_NAME} against the SEO content tools agencies actually evaluate. Picked by use case, not marketing copy.`}
+>
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[1100px] px-8">
+      <div class="mb-12 max-w-[720px]">
+        <h1 class="text-[clamp(36px,5vw,52px)] font-semibold leading-[1.04] tracking-[-0.025em] text-ink [text-wrap:balance]">
+          Tool alternatives, evaluated by agency-fit criteria
+        </h1>
+        <p class="mt-5 text-lg leading-relaxed text-ink-2">
+          Every SEO content tool is sold as "all-in-one for agencies." These comparisons separate the ones that actually work at 10+ client brands from the ones built for solo operators with marketing copy that says otherwise.
+        </p>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        {ALTERNATIVES.map((alt) => (
+          <a
+            href={`/alternatives/${alt.slug}`}
+            class="group flex flex-col gap-3 rounded-xl border border-line bg-bg p-6 transition-colors hover:border-accent hover:bg-accent-soft/15"
+          >
+            <div class="flex items-center justify-between">
+              <span class="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+                {APP_NAME} vs. {alt.competitor}
+              </span>
+              {/* Head-to-head pages carry 0 here; "0 tools tested" is worse
+                  than no badge. */}
+              <span class="rounded-full bg-panel px-2 py-[2px] font-mono text-[10.5px] text-ink-2">
+                {alt.toolCount > 0 ? `${alt.toolCount} tools tested` : 'Head to head'}
+              </span>
+            </div>
+            <h2 class="text-2xl font-semibold tracking-[-0.015em] text-ink">
+              {alt.competitor} alternative
+            </h2>
+            <p class="text-sm leading-relaxed text-ink-2">{alt.bestFor}</p>
+            <span class="mt-auto inline-flex items-center gap-1.5 pt-2 font-mono text-[12px] text-accent-ink">
+              Read the comparison
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="14" height="14" class="transition-transform group-hover:translate-x-0.5">
+                <path d="M5 12h14m0 0-6-6m6 6-6 6" />
+              </svg>
+            </span>
+          </a>
+        ))}
+
+        {/* Coming soon, agencies search for these too */}
+        {['Jasper', 'SurferSEO', 'Semrush', 'Scalenut'].map((name) => (
+          <div class="flex flex-col gap-3 rounded-xl border border-dashed border-line bg-panel/40 p-6 opacity-70">
+            <div class="flex items-center justify-between">
+              <span class="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+                {APP_NAME} vs. {name}
+              </span>
+              <span class="rounded-full bg-panel px-2 py-[2px] font-mono text-[10.5px] text-ink-3">
+                Coming soon
+              </span>
+            </div>
+            <h2 class="text-2xl font-semibold tracking-[-0.015em] text-ink-2">
+              {name} alternative
+            </h2>
+            <p class="text-sm leading-relaxed text-ink-3">
+              In the pipeline. We're working through one comparison at a time.
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div class="mt-14 text-center">
+        <Button href={SIGNUP_URL}>
+  Skip the comparison, start free
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16">
+            <path d="M5 12h14m0 0-6-6m6 6-6 6" />
+          </svg>
+</Button>
+      </div>
+    </div>
+  </section>
+</Marketing>

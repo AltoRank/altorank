@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";
 import { tiptapToHtml } from "@/lib/cms/html";
 import { resolveInternalLinks } from "@/lib/seo/link-resolver";
+import { submitForIndexing } from "@/lib/seo/indexing";
+import { getValidAccessToken } from "@/lib/google/oauth";
 import { decryptConfig } from "@/lib/crypto";
 import type { CMSConfig } from "@/lib/types";
 
@@ -88,6 +90,53 @@ export async function publishArticleCore(
     .eq("id", articleId);
 
   if (updateErr) throw new Error(updateErr.message);
+
+  /**
+   * Tell the engines. Publishing used to end here, leaving discovery to
+   * whenever a crawler wandered past - days to weeks on a young domain, which
+   * is the whole gap between "we published" and "anyone can find it".
+   * Best-effort: a failed submission is logged on the article, never thrown,
+   * because the publish it would fail has already happened.
+   */
+  try {
+    const { data: ws } = await supabase
+      .from("workspaces")
+      .select("indexnow_key")
+      .eq("id", article.workspace_id)
+      .single();
+
+    // A live Search Console token, when the Google integration is connected.
+    let gscToken: string | null = null;
+    const { data: googleIntegrations } = await supabase
+      .from("workspace_integrations")
+      .select("id, tokens, integration:integrations(name)")
+      .eq("workspace_id", article.workspace_id);
+    const gsc = (googleIntegrations ?? []).find((wi) => {
+      const name = (wi.integration as { name?: string } | null)?.name ?? "";
+      return /search console/i.test(name);
+    });
+    const encrypted = (gsc?.tokens as { encrypted?: string } | null)?.encrypted;
+    if (gsc && encrypted) {
+      gscToken = await getValidAccessToken(encrypted, async (next) => {
+        await supabase
+          .from("workspace_integrations")
+          .update({ tokens: { encrypted: next } })
+          .eq("id", gsc.id);
+      });
+    }
+
+    const indexing = await submitForIndexing({
+      url: result.url,
+      indexNowKey: ws?.indexnow_key ?? null,
+      gscToken,
+    });
+    await supabase
+      .from("articles")
+      .update({ indexing_status: indexing })
+      .eq("id", articleId);
+  } catch (err) {
+    console.warn("[publish] indexing submission failed:", err);
+  }
 
   return result;
 }

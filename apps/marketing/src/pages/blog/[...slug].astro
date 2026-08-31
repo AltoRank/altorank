@@ -1,0 +1,49 @@
+---
+import Article from '@/layouts/Article.astro';
+import { getCollection, render } from 'astro:content';
+import { buildFAQSchema } from '@/lib/schema';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog', ({ data }) => !data.draft);
+  return posts.map((post) => ({
+    params: { slug: post.id },
+    props: { post },
+  }));
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+
+// Every post shared the product card in og-default.png, so a link to the
+// schema-markup post and a link to the pricing page arrived in a Slack channel
+// looking identical. `scripts/generate-og-posts.mjs` writes one card per post
+// at these paths; frontmatter still wins if a post supplies its own.
+const ogImage = post.data.ogImage ?? `/og/${post.id}.png`;
+---
+
+<Article
+  title={post.data.title}
+  description={post.data.description}
+  publishDate={post.data.publishDate}
+  dateModified={post.data.dateModified}
+  author={post.data.author}
+  category={post.data.category}
+  ogImage={ogImage}
+>
+  <Content />
+
+  {post.data.faq && post.data.faq.length > 0 && (
+    <section class="mt-12 border-t border-line pt-10">
+      <h2 class="mb-6 text-2xl font-semibold tracking-[-0.015em]">FAQ</h2>
+      <div class="flex flex-col gap-4">
+        {post.data.faq.map((item) => (
+          <div class="rounded-lg border border-line bg-panel p-5">
+            <h3 class="mb-2 font-semibold">{item.question}</h3>
+            <p class="text-sm text-ink-2 leading-relaxed">{item.answer}</p>
+          </div>
+        ))}
+      </div>
+      <script type="application/ld+json" set:html={JSON.stringify(buildFAQSchema(post.data.faq))} />
+    </section>
+  )}
+</Article>

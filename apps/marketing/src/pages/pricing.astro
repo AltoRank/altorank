@@ -1,0 +1,182 @@
+---
+import Marketing from '@/layouts/Marketing.astro';
+import Button from '@/components/shared/Button.astro';
+import { APP_NAME, SIGNUP_URL } from '@/constants';
+import { buildProductSchema } from '@/lib/schema';
+import { PLANS, YEARLY_MONTHS_FREE, yearlyMonthly } from '@/data/pricing';
+
+const structuredData = buildProductSchema();
+---
+
+<Marketing
+  title={`Pricing | ${APP_NAME}`}
+  description="Simple, transparent pricing. Self-host it free on your own infrastructure, or let us run it. No per-seat charges, and an agency tier when you need client workspaces."
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-[88px]">
+    <div class="mx-auto max-w-[1240px] px-5 sm:px-8">
+      {/* Header */}
+      <div class="mx-auto mb-9 max-w-[720px] text-center sm:mb-14">
+        <h1 class="mb-3 text-[30px] font-semibold leading-[1.12] tracking-[-0.02em] [text-wrap:balance] sm:text-[42px] sm:leading-[1.08] sm:tracking-[-0.025em]">
+          Simple, transparent pricing
+        </h1>
+        <p class="mx-auto max-w-[540px] text-[15px] text-ink-2 sm:text-base">
+          No per-seat charges. No hidden fees. Self-host it for free,
+          or let us run it.
+        </p>
+      </div>
+
+      {/* Cards */}
+      {/* Billing toggle.
+          Both prices are rendered and one is hidden, so the page still says
+          what it costs with JavaScript off - and the yearly figure is in the
+          HTML for anything reading the page without running it, which for this
+          product is the point. */}
+      <div class="mb-8 flex justify-center">
+        <div
+          id="billing-toggle"
+          role="group"
+          aria-label="Billing period"
+          class="inline-flex items-center gap-0.5 rounded-full border border-line bg-panel p-0.5"
+        >
+          <button
+            type="button"
+            data-period="monthly"
+            aria-pressed="true"
+            class="rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors"
+          >
+            Monthly
+          </button>
+          <button
+            type="button"
+            data-period="yearly"
+            aria-pressed="false"
+            class="rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors"
+          >
+            Yearly
+            <span class="ml-1 text-[11px] opacity-70">save {YEARLY_MONTHS_FREE} mo</span>
+          </button>
+        </div>
+      </div>
+
+      <div
+        class="mx-auto grid max-w-[1080px] items-stretch gap-6 sm:grid-cols-2 lg:grid-cols-3"
+      >
+        {PLANS.map((plan) => (
+          <div
+            class={`relative flex h-full flex-col overflow-hidden rounded-xl border p-6 ${
+              plan.popular
+                ? 'border-accent bg-ink text-bg shadow-[0_20px_40px_-20px_oklch(0.2_0.08_265/0.35)]'
+                : 'border-line bg-bg'
+            }`}
+          >
+            {plan.popular && (
+              <div class="absolute inset-0 bg-[radial-gradient(400px_200px_at_100%_0%,oklch(0.45_0.15_265/0.4),transparent_60%)] pointer-events-none"></div>
+            )}
+
+            <div class={`flex flex-1 flex-col ${plan.popular ? 'relative z-10' : ''}`}>
+              <h3 class="text-lg font-semibold tracking-[-0.015em]">{plan.name}</h3>
+              <div class="mt-3 flex items-baseline gap-1">
+                <span class="text-[42px] font-semibold tracking-[-0.025em] leading-none">
+                  <span data-price="monthly">{plan.price}</span>
+                  <span data-price="yearly" hidden>
+                    {plan.monthly > 0 ? `€${yearlyMonthly(plan.monthly)}` : plan.price}
+                  </span>
+                </span>
+                <span class={`text-sm ${plan.popular ? 'text-[oklch(0.7_0.03_265)]' : 'text-ink-3'}`}>
+                  {plan.period}
+                </span>
+              </div>
+              <p class={`mt-1.5 min-h-[18px] text-[12.5px] ${plan.popular ? 'text-[oklch(0.75_0.01_80)]' : 'text-ink-3'}`}>
+                {plan.monthly > 0 && (
+                  <>
+                  <span data-note="monthly">
+                    or €{yearlyMonthly(plan.monthly)}/mo billed yearly, {YEARLY_MONTHS_FREE} months free
+                  </span>
+                  <span data-note="yearly" hidden>
+                    €{yearlyMonthly(plan.monthly) * 12} billed once a year, {YEARLY_MONTHS_FREE} months free
+                  </span>
+                  </>
+                )}
+              </p>
+              <p class={`mt-3 min-h-[92px] text-sm leading-relaxed ${plan.popular ? 'text-[oklch(0.8_0.01_80)]' : 'text-ink-2'}`}>
+                {plan.desc}
+              </p>
+
+              <Button
+                href={plan.href ?? SIGNUP_URL}
+                variant={plan.popular ? 'primary' : 'secondary'}
+                block
+                arrow
+                class="mt-6 !flex w-full"
+              >
+                {plan.cta}
+              </Button>
+
+              <ul class="mt-6 flex flex-1 flex-col gap-3 border-t border-line-soft pt-6">
+                {plan.features.map((feat) => (
+                  <li
+                    class={`flex items-start gap-2.5 text-sm ${
+                      plan.popular ? 'text-[oklch(0.85_0.01_80)]' : 'text-ink-2'
+                    }`}
+                  >
+                    <svg
+                      class="mt-0.5 w-[16px] h-[16px] shrink-0"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke={plan.popular ? 'oklch(0.75 0.14 155)' : 'oklch(0.55 0.13 155)'}
+                      stroke-width="2"
+                    >
+                      <path d="M5 12.5 10 17 19 7" />
+                    </svg>
+                    {feat}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* FAQ teaser */}
+      <div class="mt-16 text-center text-sm text-ink-3">
+        Running content for 6+ client brands?{" "}
+        <a href="mailto:hello@altorank.co?subject=AltoRank%20Custom%20plan%20enquiry" class="font-medium text-accent-ink hover:text-accent">
+          Talk to sales &rarr;
+        </a>
+      </div>
+    </div>
+  </section>
+</Marketing>
+
+<script>
+  // Progressive: both prices ship in the HTML and this swaps which is hidden.
+  // Without it the page still shows the monthly price and the yearly line, so
+  // nothing is lost when the script does not run - which matters more than
+  // usual for a product about being readable by machines.
+  const group = document.getElementById("billing-toggle");
+  if (group) {
+    const setPeriod = (period: string) => {
+      for (const el of document.querySelectorAll<HTMLElement>("[data-price]")) {
+        el.hidden = el.dataset.price !== period;
+      }
+      for (const el of document.querySelectorAll<HTMLElement>("[data-note]")) {
+        el.hidden = el.dataset.note !== period;
+      }
+      for (const b of group.querySelectorAll<HTMLButtonElement>("button")) {
+        const on = b.dataset.period === period;
+        b.setAttribute("aria-pressed", String(on));
+        b.classList.toggle("bg-ink", on);
+        b.classList.toggle("text-bg", on);
+        b.classList.toggle("text-ink-2", !on);
+      }
+    };
+
+    group.addEventListener("click", (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-period]");
+      if (btn?.dataset.period) setPeriod(btn.dataset.period);
+    });
+
+    setPeriod("monthly");
+  }
+</script>

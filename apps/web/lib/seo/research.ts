@@ -19,7 +19,9 @@ import {
   fetchRelatedKeywords,
   type SerpData,
   type RelatedKeyword,
+  type AiOverview,
 } from "./brief-data";
+import { hasDataForSEOCredentials } from "./client";
 import { classifyIntent, type IntentClassification } from "./intent";
 import { getLocale } from "./locales";
 import { htmlToMarkdown } from "@/lib/audit/markdown";
@@ -32,6 +34,8 @@ export interface ResearchLayer {
 }
 
 export interface CompetitorPage {
+  /** Google's rank for this page, when the SERP reported one. */
+  rank: number | null;
   title: string;
   url: string;
   domain: string;
@@ -52,6 +56,9 @@ export interface ArticleResearch {
   intent: IntentClassification;
   competitors: CompetitorPage[];
   peopleAlsoAsk: string[];
+  /** Google's own AI answer for this query and who it cites. null when the SERP
+   *  shows none, which is common and is not a failure. */
+  aiOverview: AiOverview | null;
   relatedKeywords: RelatedKeyword[];
   /** Search Console evidence for this exact query, when the site already ranks. */
   existingPerformance: GscSignal | null;
@@ -350,9 +357,7 @@ export async function gatherArticleResearch(options: {
     locationCode: loc.locationCode,
   };
 
-  const hasDataForSeo = Boolean(
-    process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD,
-  );
+  const hasDataForSeo = hasDataForSEOCredentials();
 
   const [serpResult, keywordsResult, gscResult] = await Promise.allSettled([
     hasDataForSeo
@@ -382,7 +387,10 @@ export async function gatherArticleResearch(options: {
     id: "serp",
     status: serp ? "ok" : hasDataForSeo ? "failed" : "unavailable",
     detail: serp
-      ? `${serp.organic.length} ranking pages, ${serp.peopleAlsoAsk.length} People Also Ask entries`
+      ? `${serp.organic.length} ranking pages, ${serp.peopleAlsoAsk.length} People Also Ask entries, ` +
+        (serp.aiOverview
+          ? `AI Overview citing ${serp.aiOverview.citations.length} sources`
+          : "no AI Overview")
       : serpResult.status === "rejected"
         ? reasonToDetail(serpResult.reason)
         : "no SERP returned",
@@ -419,6 +427,7 @@ export async function gatherArticleResearch(options: {
   layers.push(gsc.layer);
 
   const rawCompetitors: CompetitorPage[] = (serp?.organic ?? []).map((r) => ({
+    rank: r.rank,
     title: r.title,
     url: r.url,
     domain: r.domain,
@@ -448,6 +457,7 @@ export async function gatherArticleResearch(options: {
     intent: classifyIntent(keyword, loc.languageCode, serp),
     competitors,
     peopleAlsoAsk: serp?.peopleAlsoAsk ?? [],
+    aiOverview: serp?.aiOverview ?? null,
     relatedKeywords,
     existingPerformance: gsc.existing,
     adjacentQueries: gsc.adjacent,

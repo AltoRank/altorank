@@ -21,8 +21,7 @@ export default async function VoicePage() {
     <>
       <PageHead
         title="Voice library"
-        eyebrow={<><span>Brand voice profiles</span><StatusPill status="on" label={`${trainedCount} / ${workspaces.length} trained`} /></>}
-        subtitle={<span>One voice profile per workspace — trained on approved sample text</span>}
+        subtitle={<><StatusPill status="on" label={`${trainedCount} / ${workspaces.length} trained`} /><span>One per workspace, trained on sample text you approve</span></>}
         actions={<VoiceActions workspaces={workspaces} />}
       />
 

@@ -4,6 +4,7 @@ import { getWorkspaceAudits } from "@/app/actions/audit";
 import { PageHead, StatusPill, Avatar, Icons, Button, Card, StatStrip } from "@/components/ui";
 import type { Workspace, DomainAudit } from "@/lib/types";
 import { StartAuditButton } from "@/components/dashboard/start-audit-button";
+import { plural } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Audits" };
 
@@ -34,7 +35,11 @@ export default async function AuditsPage() {
   const completedAudits = allAudits.filter((a) => a.status === "completed");
   const avgScore =
     completedAudits.length > 0
-      ? Math.round(completedAudits.reduce((s, a) => s + a.overall_score, 0) / completedAudits.length)
+      ? Math.round(
+          completedAudits.reduce((s, a) => s + (a.overall_score ?? 0), 0) /
+            // Average only over audits that actually produced a score.
+            Math.max(1, completedAudits.filter((a) => typeof a.overall_score === "number").length),
+        )
       : 0;
   const totalIssues = completedAudits.reduce((s, a) => s + a.issues.length, 0);
   const totalPages = completedAudits.reduce((s, a) => s + a.pages_crawled, 0);
@@ -44,10 +49,9 @@ export default async function AuditsPage() {
     <>
       <PageHead
         title="Site Audits"
-        eyebrow={<span>Technical SEO</span>}
         subtitle={
           <span>
-            {allAudits.length} audits across {workspaces.length} workspaces
+            {plural(allAudits.length, "audit")} across {plural(workspaces.length, "workspace")}
           </span>
         }
       />
@@ -55,7 +59,19 @@ export default async function AuditsPage() {
       <StatStrip
         stats={[
           { label: "Total audits", value: String(allAudits.length) },
-          { label: "Avg score", value: avgScore > 0 ? String(avgScore) : "—", delta: avgScore >= 80 ? "healthy" : avgScore >= 50 ? "needs work" : "critical", deltaType: avgScore >= 80 ? "pos" : "neg" },
+          {
+            label: "Avg score",
+            value: avgScore > 0 ? String(avgScore) : "—",
+            delta:
+              avgScore > 0
+                ? avgScore >= 80
+                  ? "healthy"
+                  : avgScore >= 50
+                    ? "needs work"
+                    : "critical"
+                : "no audits yet",
+            deltaType: avgScore > 0 ? (avgScore >= 80 ? "pos" : "neg") : undefined,
+          },
           { label: "Issues found", value: String(totalIssues) },
           { label: "Pages crawled", value: String(totalPages) },
         ]}
@@ -105,7 +121,7 @@ export default async function AuditsPage() {
                         <tr key={a.id} className="hover:[&>td]:bg-panel">
                           <td className="px-3.5 py-3 border-b border-line-soft font-mono text-xs text-ink-2">{date}</td>
                           <td className={`px-3.5 py-3 border-b border-line-soft text-right font-mono text-sm font-semibold ${scoreColor(a.overall_score)}`}>
-                            {a.status === "completed" ? a.overall_score : "—"}
+                            {a.status === "completed" && typeof a.overall_score === "number" ? a.overall_score : "—"}
                           </td>
                           <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{a.pages_crawled}</td>
                           <td className="px-3.5 py-3 border-b border-line-soft text-right">

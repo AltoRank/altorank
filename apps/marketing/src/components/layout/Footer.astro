@@ -1,0 +1,97 @@
+---
+import Logo from '@/components/shared/Logo.astro';
+import { APP_NAME, LEGAL_ENTITY } from '@/constants';
+
+const footerLinks = {
+  Product: [
+    { label: 'How it works', href: '/#how-it-works' },
+    { label: 'Features', href: '/#features' },
+    { label: 'Pricing', href: '/pricing' },
+    { label: 'Blog', href: '/blog' },
+  ],
+  Resources: [
+    { label: 'Success Stories', href: '/success-stories' },
+    { label: 'Free Tools', href: '/tools' },
+    { label: 'Alternatives', href: '/alternatives' },
+    { label: 'GEO guides', href: '/geo' },
+    // /agency-blueprint had no inbound link anywhere on the site: not in the
+    // nav, not here, and not referenced contextually. Google could only reach it
+    // through the sitemap, and had not indexed it.
+    { label: 'Agency blueprint', href: '/agency-blueprint' },
+  ],
+  Company: [
+    { label: 'About', href: '/about' },
+    { label: 'Privacy', href: '/privacy' },
+    { label: 'Terms', href: '/terms' },
+  ],
+};
+
+const year = new Date().getFullYear();
+---
+
+<footer data-print-hide class="border-t border-line bg-panel">
+  <div class="mx-auto max-w-7xl px-5 py-10 sm:px-6 md:py-12 lg:px-8">
+    <div class="grid grid-cols-2 gap-x-6 gap-y-9 md:grid-cols-4 md:gap-8">
+      <div class="col-span-2 md:col-span-1">
+        <a href="/" class="inline-flex" aria-label={`${APP_NAME}, home`}>
+          <Logo size={15} />
+        </a>
+        <p class="mt-3 text-[13px] text-ink-3 leading-relaxed">
+          The open-source AI SEO content engine. Research, write, and publish,
+          with an editor's approval on everything that ships.
+        </p>
+      </div>
+      {Object.entries(footerLinks).map(([group, links]) => (
+        <div>
+          <h3 class="text-[13px] font-semibold text-ink">{group}</h3>
+          <ul class="mt-3 space-y-2">
+            {links.map((link) => (
+              <li>
+                <a
+                  href={link.href}
+                  class="inline-flex min-h-[32px] items-center text-[14px] text-ink-2 transition-colors hover:text-ink md:min-h-0 md:text-[13px]"
+                >
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+    {/* Featured-on badge, folded into the legal bar rather than given a row of
+        its own so it costs no extra footer height. The badge is 64px and this
+        bar is text-xs, so the row is height-capped and the anchor scales the
+        SVG down inside it: h-8 on the wrapper, w-auto on the image via the
+        `[&>img]` selector, which styles the img without editing its markup.
+
+        The anchor and img below are tinyshelf's markup, verbatim, including
+        width/height. Their verifier rejects the badge if the link carries
+        rel="nofollow", "sponsored" or "ugc", so this link deliberately does
+        NOT follow the target="_blank" rel="noopener noreferrer" pattern the
+        supalabs.co link uses. Do not tidy it into line with the others.
+
+        It also has to appear in the HTML the server returns. It does: Astro
+        renders this footer at build time and the site is static, so the anchor
+        is in the response body rather than added by script afterwards. */}
+    <div class="mt-10 flex flex-col items-center gap-3 border-t border-line pt-6 text-center text-xs text-ink-3 sm:flex-row sm:justify-between sm:text-left">
+      <p>&copy; {year} {APP_NAME}. All rights reserved.</p>
+      <p>
+        A product of{' '}
+        <a
+          href={LEGAL_ENTITY.parentUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink"
+        >{LEGAL_ENTITY.parentLabel}</a>{' '}
+        &middot; {LEGAL_ENTITY.name}, {LEGAL_ENTITY.country} &middot; VAT {LEGAL_ENTITY.vat}
+      </p>
+      <div class="shrink-0 [&>a]:block [&>a>img]:h-7 [&>a>img]:w-auto">
+        <a href="https://www.tinyshelf.co/?ref=altorank.co" title="Featured on tinyshelf">
+  <img src="https://www.tinyshelf.co/badge/tinyshelf-badge-light-amber-1cdea1ce.svg"
+       alt="Featured on tinyshelf" width="216" height="64"/>
+</a>
+      </div>
+    </div>
+  </div>
+</footer>

@@ -1,0 +1,253 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildArticleSchema, buildFAQSchema } from '@/lib/schema';
+import { APP_NAME, SITE_URL, AUTHOR_NAME, AUTHOR_URL, OSS_COMPARISON_LABEL, PRIMARY_CTA } from '@/constants';
+
+const pageUrl = `${SITE_URL}/alternatives/distribb`;
+
+const publishDate = new Date('2026-08-30');
+const dateModified = new Date('2026-08-30');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Alternatives', href: '/alternatives' },
+  { label: 'Distribb alternative', href: '/alternatives/distribb' },
+];
+
+// Every Distribb claim on this page was read from distribb.io on 2026-08-30.
+// Quoted strings are verbatim from their homepage: the h1, the "You stay in
+// control" and "Boost Your Rankings with the Backlink Exchange" section
+// headings, and the meta description. Pricing tiers were visible on the page as
+// $97 / $297 / $495 / $990. Re-verify before quoting any of it to a client;
+// their site changes and a wrong competitor price is our credibility, not
+// theirs. Do not add a claim here that cannot be pointed at a source.
+const TLDR_ROWS = [
+  {
+    name: APP_NAME,
+    bestFor: 'Open source, one site or a client roster',
+    publishing: 'A human approves, or it does not ship',
+    links: 'Exchange exists, every placement human-approved',
+    openSource: OSS_COMPARISON_LABEL,
+    price: 'From €0 self-hosted',
+    ours: true,
+  },
+  {
+    name: 'Distribb',
+    bestFor: 'Founders wanting buy-intent SEO run for them',
+    publishing: 'Autopilot, publishes on your behalf',
+    links: 'Backlink exchange plus outreach campaigns',
+    openSource: 'No',
+    price: 'From $97/mo',
+  },
+];
+
+const COMPARE = [
+  { feature: 'Source code', ours: 'Open source, the whole product', theirs: 'Proprietary SaaS' },
+  { feature: 'Run it yourself', ours: 'Self-host free, no feature gates', theirs: 'Not offered' },
+  { feature: 'Publishing model', ours: 'Nothing publishes without a human approving it', theirs: 'Opens with "Autopilot" and publishes for you' },
+  { feature: 'Who enforces the gate', ours: 'The architecture: the MCP server exposes no publish tool', theirs: 'A section headed "You stay in control"' },
+  { feature: 'Scoring and ranking logic', ours: 'Readable source you can audit and change', theirs: 'Not inspectable' },
+  { feature: 'Backlink exchange', ours: 'Credit-based, but a person accepts, places and verifies each link', theirs: '"Boost Your Rankings with the Backlink Exchange"' },
+  { feature: 'Link outreach', ours: 'Not offered', theirs: 'Finds roundups and drafts pitches; higher tier runs the campaign' },
+  { feature: 'Distribution beyond your site', ours: 'Publishes to your CMS only', theirs: 'Also social and third-party platforms' },
+  { feature: 'Metering', ours: 'A workspace per site, or per client', theirs: 'Per site' },
+  { feature: 'Company', ours: 'SUPALABS SRL, an Italian company, GDPR by establishment', theirs: 'Not stated on the homepage' },
+];
+
+const PICK = [
+  {
+    when: 'You want the tool to publish without you',
+    pick: 'Distribb',
+    why: 'That is the product they sell and they say so in the first line. AltoRank cannot do it and will not add it; the approval gate is a design constraint, not a setting.',
+  },
+  {
+    when: 'You want link outreach run for you',
+    pick: 'Distribb',
+    why: 'They research ranking roundups, draft the pitch, and on the higher tier send and follow up. AltoRank has no outreach feature at all.',
+  },
+  {
+    when: 'Something wrong publishing under your name is the real risk',
+    pick: APP_NAME,
+    why: 'Nothing reaches a live site without a person approving that specific draft. If you are producing for clients, you carry that risk and an autopilot tool moves it onto you silently.',
+  },
+  {
+    when: 'You want to read the code before trusting it',
+    pick: APP_NAME,
+    why: `Open source, the whole product, including the scoring. With a closed tool, a disagreement about a score is a matter of vendor faith. With this one it is a question you can settle by reading the source.`,
+  },
+  {
+    when: 'You need it on your own infrastructure',
+    pick: APP_NAME,
+    why: 'Self-hosting is free and complete. Distribb does not offer it.',
+  },
+];
+
+const FAQ = [
+  {
+    question: 'What is the best Distribb alternative?',
+    answer: `It depends on whether you want the publishing decision. Distribb's homepage opens with "Your AI Agent Gets Customers on Autopilot With Buy-Intent SEO", and autopilot is the product. ${APP_NAME} is the opposite trade: the same research, drafting and publishing pipeline, but a person approves every article before it goes live, and the whole engine is open source, so you can self-host it for nothing.`,
+  },
+  {
+    question: 'How much does Distribb cost?',
+    answer: 'Distribb showed plans starting at $97/mo when we read distribb.io on 30 August 2026, with higher tiers visible at $297, $495 and $990. The $495 tier is where they run outreach campaigns for you rather than handing you drafted pitches. Pricing changes, so check their page before quoting it.',
+  },
+  {
+    question: 'Does Distribb run a backlink exchange?',
+    answer: 'Yes. Their homepage carries a section headed "Boost Your Rankings with the Backlink Exchange", and they also run real outreach, which is a different and more defensible mechanism. Worth knowing that Google’s spam policies name excessive link exchanges specifically, so it is a risk to weigh rather than a pure upside.',
+  },
+  {
+    question: `Does ${APP_NAME} have a backlink exchange too?`,
+    answer: `Yes, and it would be dishonest to pretend otherwise. The difference is who acts: in ${APP_NAME} the software proposes matches and scores topical relevance, but a person accepts the match, places the link, and verifies it before any credit moves. Nothing is inserted automatically. It is the same approval-first shape as the content pipeline. It is also small: we are early, so there are few counterparties, and we would rather say that than sell you a network that is not there yet.`,
+  },
+  {
+    question: `Is ${APP_NAME} really open source?`,
+    answer: `Open source, covering the whole product: multi-client workspaces, white-label reporting, the approval gate and the SEO scoring algorithm. There is no ee/ directory and no tier held back from the source. The repository is not public at the time of writing, which we would rather state plainly than imply a download link exists.`,
+  },
+  {
+    question: 'Who is behind AltoRank?',
+    answer: 'AltoRank is built and operated by SUPALABS SRL (VAT 04596950248), a company in Italy. That matters mainly if you care about contracting with a European entity: GDPR applies to us as a matter of establishment, not only because we sell into the EU.',
+  },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: 'Distribb Alternative: Open Source, Approval-First AI SEO (2026)',
+    description: 'An honest comparison of Distribb and AltoRank: autopilot publishing versus an editorial approval gate, backlink exchanges, and what open source changes.',
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildFAQSchema(FAQ),
+];
+---
+
+<PSEO
+  title="Distribb Alternative: Open Source, Approval-First AI SEO (2026)"
+  description="Distribb publishes on autopilot. AltoRank is the open-source alternative where nothing goes live until you approve it. An honest comparison, with sources."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h1 class="mb-5 text-[clamp(28px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+        Distribb alternative: the one that does not publish without you
+      </h1>
+
+      <p class="mb-6 text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        <strong class="text-ink">The short answer:</strong> Distribb sells autopilot. Their homepage opens
+        with &ldquo;Your AI Agent Gets Customers on Autopilot With Buy-Intent SEO&rdquo;, and buy-intent
+        targeting is a genuinely good idea. {APP_NAME} runs the same pipeline, research, drafting,
+        optimisation and publishing, and then stops at your inbox. It is also open source,
+        so you can self-host the whole thing for nothing and read the scoring yourself.
+      </p>
+
+      <p class="mb-8 text-sm text-ink-3">
+        By{' '}
+        <a href={AUTHOR_URL} rel="author" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
+          {AUTHOR_NAME}
+        </a>
+        {' '}&middot; Published {publishDateDisplay} &middot; Distribb details read from distribb.io on {publishDateDisplay}
+      </p>
+
+      <div class="overflow-x-auto rounded-lg border border-line">
+        <table class="w-full min-w-[720px] text-left text-sm">
+          <caption class="sr-only">AltoRank compared with Distribb</caption>
+          <thead class="border-b border-line bg-panel text-ink-2">
+            <tr>
+              <th scope="col" class="px-5 py-3.5 font-medium">Tool</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Best for</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Publishing</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Links</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Open source</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Starting price</th>
+            </tr>
+          </thead>
+          <tbody>
+            {TLDR_ROWS.map((row, i) => (
+              <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+                <td class="px-5 py-4 font-medium">
+                  {row.name}
+                  {row.ours && (
+                    <span class="ml-2 rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-accent-ink">ours</span>
+                  )}
+                </td>
+                <td class="px-5 py-4 text-ink-2">{row.bestFor}</td>
+                <td class="px-5 py-4 text-ink-2">{row.publishing}</td>
+                <td class="px-5 py-4 text-ink-2">{row.links}</td>
+                <td class="px-5 py-4 text-ink-2">{row.openSource}</td>
+                <td class="px-5 py-4 font-mono text-[12.5px] text-ink-2">{row.price}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line bg-panel py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em] [text-wrap:balance]">
+        Where they actually differ
+      </h2>
+      <div class="overflow-hidden rounded-lg border border-line bg-bg">
+        {COMPARE.map((row, i) => (
+          <div class={`grid gap-1 p-5 sm:grid-cols-[1fr_1.3fr_1.3fr] sm:gap-5 ${i > 0 ? 'border-t border-line-soft' : ''}`}>
+            <div class="text-[13.5px] font-semibold text-ink">{row.feature}</div>
+            <div class="text-[14px] text-ink"><span class="text-ink-3 sm:hidden">{APP_NAME}: </span>{row.ours}</div>
+            <div class="text-[14px] text-ink-3"><span class="sm:hidden">Distribb: </span>{row.theirs}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-3 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em] [text-wrap:balance]">
+        Which one to pick
+      </h2>
+      <p class="mb-8 text-[16px] leading-relaxed text-ink-2">
+        Distribb wins two of these outright. Saying so is more useful than pretending otherwise.
+      </p>
+      <div class="flex flex-col gap-3">
+        {PICK.map((p) => (
+          <div class="rounded-lg border border-line bg-bg p-5">
+            <div class="mb-1.5 text-[15px] font-semibold text-ink">{p.when}</div>
+            <div class="mb-2 text-[13px] font-medium text-accent-ink">Pick {p.pick}</div>
+            <p class="text-[14px] leading-relaxed text-ink-2">{p.why}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line bg-panel py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em]">
+        Common questions
+      </h2>
+      <div class="flex flex-col gap-2">
+        {FAQ.map((item) => (
+          <details class="group rounded-lg border border-line bg-bg">
+            <summary class="cursor-pointer list-none px-5 py-4 text-[15px] font-medium text-ink [&::-webkit-details-marker]:hidden">
+              {item.question}
+            </summary>
+            <p class="border-t border-line-soft px-5 py-4 text-[14.5px] leading-relaxed text-ink-2">
+              {item.answer}
+            </p>
+          </details>
+        ))}
+      </div>
+
+      <div class="mt-10 flex flex-wrap gap-2.5">
+        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/open-source" variant="secondary" size="lg">Read the licence</Button>
+      </div>
+    </div>
+  </section>
+</PSEO>

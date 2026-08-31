@@ -1,0 +1,147 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildArticleSchema, buildFAQSchema, buildHowToSchema } from '@/lib/schema';
+import { APP_NAME, SIGNUP_URL, SITE_URL, AUTHOR_NAME, AUTHOR_URL, PRIMARY_CTA } from '@/constants';
+
+const pageUrl = `${SITE_URL}/geo/optimize-shopify-for-chatgpt-shopping`;
+
+const publishDate = new Date('2026-06-21');
+const dateModified = new Date('2026-06-21');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Optimize Shopify for ChatGPT Shopping', href: '/geo/optimize-shopify-for-chatgpt-shopping' },
+];
+
+// STEPS drive both the visible on-page checklist and the HowTo JSON-LD (they must match).
+const STEPS = [
+  { name: 'Get indexed and ranking first', text: 'AI shopping cites pages that already rank, roughly 99% of AI Overview citations and the bulk of ChatGPT citations come from indexed top results. An unindexed product or collection page cannot be cited, so classic SEO (crawlability, indexation, authority) is the prerequisite, not an afterthought.' },
+  { name: 'Add Product, Offer, Review and FAQ schema', text: 'Mark up every product with Product + Offer (price, availability, GTIN/MPN, brand) and, where you have real reviews, AggregateRating/Review. Add FAQPage to product and collection pages. Around 65–71% of pages cited in AI Mode / ChatGPT carry structured data. It is a readiness signal, not a guarantee. Use real review data only; never fabricate ratings.' },
+  { name: 'Write answer-shaped product and collection copy', text: 'Lead each product and collection page with a self-contained 40–55-word answer (what it is, who it is for, why pick it), then specs and comparisons an engine can quote. Collection pages are often the real revenue engine and most stores leave them thin, unique collection copy is a large, under-served opportunity.' },
+  { name: 'Allow the AI crawlers', text: 'In robots.txt, explicitly allow GPTBot, OAI-SearchBot, ChatGPT-User, PerplexityBot and Google-Extended. As of 2026 these crawlers overwhelmingly skip llms.txt and read your HTML directly, so clean, semantic, schema-rich markup matters far more than novelty files.' },
+  { name: 'Prepare your product feed for agentic commerce', text: 'AI shopping is moving to feeds and agentic checkout: OpenAI\'s Agentic Commerce Protocol, Google\'s Unified Commerce Protocol (with Zalando), and Shopify\'s Winter ’26 Agentic Storefronts (one catalog surfaced to ChatGPT, Perplexity and Copilot). Keep product data accurate and complete so feeds carry the editorial layer they can\'t generate.' },
+  { name: 'Earn third-party reviews and mentions', text: 'AI engines weight cross-source consensus before recommending a product or brand: agreement across G2/Trustpilot-style reviews, editorial roundups and community mentions (Reddit). A store with no third-party footprint is rarely cited, however good its on-page content. Seed real reviews and earn honest mentions.' },
+];
+
+const FAQS = [
+  { question: 'Can you get Shopify products cited in ChatGPT Shopping?', answer: 'You can raise the likelihood, not guarantee it. AI shopping cites products from indexed pages that carry structured data (Product/Offer/Review/FAQ schema), answer-shaped copy, and third-party corroboration. Do those well and a product becomes citation-ready, but the engine decides whether to include it, so it is readiness, never a promise.' },
+  { question: 'Does product schema help with AI shopping?', answer: 'Yes. It is one of the strongest readiness signals. Around 65–71% of pages cited in AI Mode and ChatGPT carry structured data. Product + Offer + Review + FAQ schema (with GTIN/MPN and real ratings only) makes a product machine-readable and quotable. It does not guarantee inclusion, but its absence is a near-certain way to be skipped.' },
+  { question: 'What is agentic commerce / ChatGPT Shopping?', answer: 'Agentic commerce is AI assistants discovering, comparing and (increasingly) buying products on a shopper’s behalf. ChatGPT Shopping, Perplexity, Google AI Mode and Copilot surface products from feeds and indexed pages. New protocols (OpenAI’s ACP, Google’s UCP, Shopify’s Agentic Storefronts) let one catalog reach multiple AI surfaces.' },
+  { question: 'Do AI crawlers need llms.txt?', answer: 'No. As of 2026, GPTBot, PerplexityBot and ClaudeBot overwhelmingly ignore llms.txt and crawl your HTML directly. Clean, semantic, schema-rich HTML and an open robots.txt for the AI crawlers matter far more than adding an llms.txt file.' },
+  { question: 'How do agencies do this across many Shopify clients?', answer: `Per-client, at catalog scale, with a human review step. ${APP_NAME} produces answer-shaped product and collection content plus Product/FAQ schema across every client store, gated behind editorial approval before anything publishes to a client’s brand: so the work is consistent, citable, and reviewed, not bulk-generated.` },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: 'How to Optimize Shopify for ChatGPT Shopping (Agency Guide, 2026)',
+    description: 'Six steps to make Shopify products citation-ready for ChatGPT Shopping, Perplexity and AI Overviews: indexation, Product/Offer/Review/FAQ schema, answer-shaped copy, AI crawlers, feed readiness, and third-party signals.',
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildHowToSchema({
+    name: 'How to optimize a Shopify store for ChatGPT Shopping',
+    description: 'A six-step checklist to make Shopify products citation-ready for ChatGPT Shopping and other AI shopping surfaces.',
+    steps: STEPS,
+  }),
+  buildFAQSchema(FAQS),
+];
+---
+
+<PSEO
+  title="Optimize Shopify for ChatGPT Shopping (Agency Guide 2026)"
+  description="Six steps to make Shopify products citation-ready for ChatGPT Shopping, Perplexity and AI Overviews: schema, answer-shaped copy, AI crawlers, feeds, and third-party signals."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  {/* ── HERO ──────────────────────────────────────────── */}
+  <header class="border-b border-line bg-[radial-gradient(600px_300px_at_88%_-10%,var(--accent-soft),transparent_70%),linear-gradient(180deg,var(--bg),var(--bg-2))] py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h1 class="mb-6 text-[clamp(34px,5vw,48px)] font-semibold leading-[1.05] tracking-[-0.025em] text-ink [text-wrap:balance]">
+        How to optimize Shopify for ChatGPT Shopping
+      </h1>
+      <p class="mb-5 text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
+        To make a Shopify store's products citation-ready for ChatGPT Shopping (and Perplexity and AI Overviews), do six things: get indexed, add Product/Offer/Review/FAQ schema, write answer-shaped product and collection copy, allow the AI crawlers, prepare a product feed for agentic checkout, and earn third-party reviews. It raises citation <em>readiness</em>, the engine still decides.
+      </p>
+      <div class="mt-7 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
+        <span>By <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
+        <span class="text-line">·</span>
+        <span>Published <time datetime={publishDate.toISOString().slice(0, 10)}>{publishDateDisplay}</time></span>
+        <span class="text-line">·</span>
+        <span>9 min read</span>
+      </div>
+    </div>
+  </header>
+
+  {/* ── STEPS ─────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <div class="mb-8">
+        <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">Six steps, in order</h2>
+      </div>
+      <ol class="flex flex-col gap-4">
+        {STEPS.map((step, i) => (
+          <li class="flex gap-4 rounded-xl border border-line bg-bg p-5">
+            <span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent font-mono text-[12px] font-semibold text-white">{i + 1}</span>
+            <div>
+              <h3 class="mb-1.5 text-[16px] font-semibold tracking-[-0.015em] text-ink">{step.name}</h3>
+              <p class="text-[14.5px] leading-relaxed text-ink-2">{step.text}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  </section>
+
+  {/* ── AGENCY ANGLE ──────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+      <h2 class="mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">Doing this across many client stores</h2>
+      <p>For an agency, the hard part isn't knowing the six steps: it's executing them across thousands of SKUs and many client catalogs without shipping thin, duplicated, or unreviewed copy to a client's brand. Manufacturer descriptions get recycled across every distributor (a duplicate-content risk), and bulk AI generation converges into detectable slop.</p>
+      <p>That's the case for an <a href="/alternatives/contentbird" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">e-commerce-native, approval-first</a> workflow. {APP_NAME} produces answer-shaped product and collection content with Product/FAQ schema, per client, and gates every page behind editorial approval before it publishes: so what reaches a client's store is unique, citable, and reviewed. See also <a href="/geo/does-geo-replace-seo" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">does GEO replace SEO?</a></p>
+    </div>
+  </section>
+
+  {/* ── FAQ ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <div class="mb-8">
+        <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">Frequently asked questions</h2>
+      </div>
+      <div class="flex flex-col gap-3">
+        {FAQS.map((f) => (
+          <details class="group rounded-lg border border-line bg-bg p-5">
+            <summary class="flex cursor-pointer items-center justify-between gap-4 text-[15px] font-medium text-ink list-none">
+              <span>{f.question}</span>
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-panel text-ink-3 transition-transform group-open:rotate-45">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 5v14M5 12h14" /></svg>
+              </span>
+            </summary>
+            <p class="mt-3 text-sm leading-relaxed text-ink-2">{f.answer}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* ── CTA ───────────────────────────────────────────── */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8 text-center">
+      <h2 class="mb-3 text-[clamp(22px,3vw,28px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
+        AI-shopping-ready product content, reviewed before it ships
+      </h2>
+      <p class="mb-7 mx-auto max-w-[520px] text-[15px] leading-relaxed text-ink-2">
+        {APP_NAME} produces answer-shaped product and collection content with schema across every Shopify client, gated behind editorial approval.
+      </p>
+      <Button href={SIGNUP_URL} size="lg">
+  {PRIMARY_CTA.label}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
+</Button>
+    </div>
+  </section>
+</PSEO>

@@ -4,6 +4,9 @@ import { getPendingInvites } from "@/lib/queries/team";
 import { PageHead, Avatar, Icons, Chip, Card } from "@/components/ui";
 import { IconButton } from "@/components/ui/button";
 import { InviteMemberForm } from "@/components/dashboard/invite-member-form";
+import { CopyInviteLink } from "@/components/dashboard/copy-invite-link";
+import { SettingsTabs } from "../settings-tabs";
+import { plural } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Team" };
 
@@ -17,10 +20,11 @@ export default async function TeamPage() {
     <>
       <PageHead
         title="Team"
-        eyebrow={<span>Team · Agency</span>}
-        subtitle={<span>{members.length} members{invites.length > 0 ? ` · ${invites.length} pending` : ""}</span>}
+        subtitle={<span>{plural(members.length, "member")}{invites.length > 0 ? ` · ${invites.length} pending` : ""}</span>}
         actions={<InviteMemberForm />}
       />
+
+      <SettingsTabs />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll space-y-6">
         {/* Active members */}
@@ -49,7 +53,6 @@ export default async function TeamPage() {
                     </td>
                     <td className="px-3.5 py-3 border-b border-line-soft"><Chip label={m.role} soft /></td>
                     <td className="px-3.5 py-3 border-b border-line-soft">
-                      <IconButton ghost disabled><Icons.more size={14} /></IconButton>
                     </td>
                   </tr>
                 );
@@ -71,7 +74,7 @@ export default async function TeamPage() {
               <table className="w-full border-collapse text-[13px]">
                 <thead>
                   <tr>
-                    {["Email", "Role", "Expires", ""].map((h) => (
+                    {["Email", "Role", "Expires", "", ""].map((h, i) => (
                       <th key={h} className="font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel text-left">
                         {h}
                       </th>
@@ -94,6 +97,9 @@ export default async function TeamPage() {
                         </td>
                         <td className="px-3.5 py-3 border-b border-line-soft">
                           <Chip label="Pending" soft />
+                        </td>
+                        <td className="px-3.5 py-3 border-b border-line-soft text-right">
+                          {!isExpired && <CopyInviteLink token={inv.token} />}
                         </td>
                       </tr>
                     );
