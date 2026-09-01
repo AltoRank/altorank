@@ -11,6 +11,9 @@ function getResend(): Resend {
   return resendClient;
 }
 
+// The sending domain verified in Resend is updates.altorank.co (eu-west-1).
+// The old default, noreply@altorank.com, was a domain this company does not
+// own, so every send without RESEND_FROM_EMAIL set was refused.
 export async function sendInviteEmail(
   to: string,
   inviterName: string,
@@ -19,7 +22,7 @@ export async function sendInviteEmail(
   acceptUrl: string,
 ): Promise<void> {
   const resend = getResend();
-  const from = process.env.RESEND_FROM_EMAIL ?? "noreply@altorank.com";
+  const from = process.env.RESEND_FROM_EMAIL ?? "AltoRank <noreply@updates.altorank.co>";
 
   await resend.emails.send({
     from,
@@ -58,7 +61,7 @@ export async function sendReportEmail(
   },
 ): Promise<void> {
   const resend = getResend();
-  const from = process.env.RESEND_FROM_EMAIL ?? "noreply@altorank.com";
+  const from = process.env.RESEND_FROM_EMAIL ?? "AltoRank <noreply@updates.altorank.co>";
 
   const highlightRows = [
     `<tr><td style="padding:6px 0;color:#666;">Articles published</td><td style="padding:6px 0;font-weight:600;text-align:right;">${highlights.articlesPublished}</td></tr>`,
@@ -102,7 +105,7 @@ export async function sendToolResultEmail(
   bodyHtml: string,
 ): Promise<void> {
   const resend = getResend();
-  const from = process.env.RESEND_FROM_EMAIL ?? "noreply@altorank.com";
+  const from = process.env.RESEND_FROM_EMAIL ?? "AltoRank <noreply@updates.altorank.co>";
 
   await resend.emails.send({
     from,
