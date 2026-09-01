@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { authErrorMessage } from "@/lib/auth/errors";
+import { generateIndexNowKey } from "@/lib/seo/indexing";
+import { normalizeDomain, DOMAIN_PATTERN } from "@/lib/growth-plan/build";
 
 export const metadata: Metadata = {
   title: "Sign Up",
@@ -14,6 +16,10 @@ async function signUp(formData: FormData) {
   const name = formData.get("name") as string;
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
+  // Set when signup was reached from the homepage growth plan: the visitor has
+  // already typed their domain once and seen a plan for it, so the first
+  // workspace is created for that domain here rather than asked for again.
+  const domain = normalizeDomain((formData.get("domain") as string | null) ?? "");
   const supabase = await createClient();
 
   // Create auth user
@@ -86,6 +92,20 @@ async function signUp(formData: FormData) {
           encodeURIComponent(`Could not finish setting up your account: ${memberError.message}`),
       );
     }
+
+    if (DOMAIN_PATTERN.test(domain)) {
+      const { error: wsError } = await admin.from("workspaces").insert({
+        agency_id: agencyId,
+        name: domain,
+        domain,
+        initials: domain.slice(0, 2).toUpperCase(),
+        color: "av-c1",
+        indexnow_key: generateIndexNowKey(),
+      });
+      // Not fatal: the account exists, and the dashboard asks for a domain if
+      // there is no workspace. Log it so a silent miss here is findable.
+      if (wsError) console.error("[signup] workspace for", domain, wsError.message);
+    }
   }
 
   // Supabase returns a session here only when email confirmation is turned off.
@@ -99,19 +119,26 @@ async function signUp(formData: FormData) {
   redirect("/signup?success=Check+your+email+to+confirm+your+account");
 }
 
-export default async function SignUpPage(props: { searchParams: Promise<{ error?: string; success?: string }> }) {
+export default async function SignUpPage(props: {
+  searchParams: Promise<{ error?: string; success?: string; domain?: string }>;
+}) {
   const searchParams = await props.searchParams;
+  const domain = normalizeDomain(searchParams?.domain ?? "");
+  const prefilled = DOMAIN_PATTERN.test(domain) ? domain : null;
 
   return (
     <div className="space-y-6">
       <div className="text-center">
         <h1 className="text-2xl font-semibold tracking-tight">Create your account</h1>
         <p className="mt-2 text-sm text-ink-3">
-          Add a domain and AltoRank sets up your workspace
+          {prefilled
+            ? `Your workspace for ${prefilled} is set up the moment you sign up`
+            : "Add a domain and AltoRank sets up your workspace"}
         </p>
       </div>
 
       <form action={signUp} className="space-y-4">
+        {prefilled && <input type="hidden" name="domain" value={prefilled} />}
         {searchParams?.success && (
           <div className="text-sm text-accent-ink bg-accent-soft px-3 py-2 rounded-lg">
             {searchParams.success}

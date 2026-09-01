@@ -60,7 +60,7 @@ export function buildProductSchema() {
     applicationCategory: 'BusinessApplication',
     operatingSystem: 'Web',
     url: SITE_URL,
-    description: 'The open-source, approval-first AI SEO content engine. Keyword research, drafting, and publishing to eleven CMSs, and self-hostable on your own infrastructure.',
+    description: 'The open-source, approval-first AI SEO content engine. Keyword research, drafting, and publishing to twelve CMSs, and self-hostable on your own infrastructure.',
     // Range spans the three rungs in @/data/pricing: €0 self-host, €69
     // managed, €199 agency. All euros since 2026-08-30.
     // Keep offerCount in sync with PLANS.length.
