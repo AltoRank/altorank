@@ -52,7 +52,11 @@ checkable here: grep for a publish tool and you will not find one.
 | Rank tracking | scheduled SERP checks |
 | AI visibility | whether AI answers name you, and who they name instead |
 
-**Publishing destinations** (`apps/web/lib/cms/adapter.ts`): Framer, Ghost, git,
+**Publishing destinations** (`apps/web/lib/cms/adapter.ts`) — twelve adapters, of
+which ten are content management systems; `git` and `webhook` are publishing
+targets rather than CMSs, which is why the site says eleven CMSs and this table
+says twelve destinations. Both are counting honestly, just counting different
+things: Framer, Ghost, git,
 HubSpot, Magento, Notion, Shopify, Webflow, webhook, Wix, WooCommerce,
 WordPress.
 
@@ -101,7 +105,7 @@ query targets tables they create.
 ## Layout
 
 ```
-apps/web/
+apps/web/               the engine and dashboard (Next.js)
   app/(dashboard)/      dashboard routes
   lib/audit/            domain analysis, readiness checks
   lib/seo/              recommendations, scoring, locales, topical profile
@@ -110,8 +114,15 @@ apps/web/
   lib/cms/              12 publishing adapters
   lib/geo/              AI-answer visibility
   scripts/mcp.ts        MCP server
+apps/marketing/         altorank.co itself (Astro, static)
+docker/                 container setup for self-hosting
 tools/agent-readiness/  standalone agent-readiness scanner
 ```
+
+`apps/marketing` is the real site, not a demo of one. It is here because the
+claims a product makes about itself should be as auditable as its code: if the
+homepage says the engine does something, you can go and read whether it does.
+It carries no case studies, because there are none yet.
 
 Two conventions worth knowing before you send a patch:
 
