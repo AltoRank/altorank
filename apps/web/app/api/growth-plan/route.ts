@@ -79,9 +79,16 @@ export async function POST(request: NextRequest) {
     return json({ error: "Could not build a plan for that domain right now." }, 502, origin);
   }
 
-  // Cache even a partial plan: a site that blocks us today blocks us in an
-  // hour too, and retrying costs the same.
-  await supabase.from("growth_plans").upsert({ domain, plan, created_at: new Date().toISOString() });
+  // Cache a partial plan when the *site* is the reason (blocks crawlers, no
+  // rank history): that is true again in an hour and retrying costs the same.
+  // Do not cache when the *provider* is the reason: the first evening live,
+  // DataForSEO answered 402 on an empty balance, and caching that would have
+  // served a readiness-only plan for every domain for 24 hours after topping
+  // up. A failed rank layer is the provider's failure; an empty one is not.
+  const providerFailed = plan.layers.some((l) => l.id === "ranked" && !l.ok);
+  if (!providerFailed) {
+    await supabase.from("growth_plans").upsert({ domain, plan, created_at: new Date().toISOString() });
+  }
 
   return json(plan, 200, origin);
 }
