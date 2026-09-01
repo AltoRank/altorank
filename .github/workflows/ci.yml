@@ -39,3 +39,9 @@ jobs:
       - run: npm run test
 
       - run: npm run build
+
+      # The marketing app too. CI built only apps/web, so when Cloudflare
+      # started building apps/marketing from git it failed on a missing
+      # rolldown native binding that no check here would ever have caught:
+      # Astro 5 pulls rolldown, Next does not.
+      - run: npm run build:marketing

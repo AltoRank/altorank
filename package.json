@@ -12,8 +12,5 @@
     "test": "npm run test -w apps/web",
     "smoke": "npm run smoke -w apps/web"
   },
-  "optionalDependencies": {
-    "@rolldown/binding-darwin-arm64": "^1.0.0-rc.17"
-  },
   "license": "AGPL-3.0-only"
 }
