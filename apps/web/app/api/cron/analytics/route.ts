@@ -152,6 +152,12 @@ export async function GET(request: Request) {
           );
 
           const pages = await fetchGSCPageMetrics(accessToken, siteUrl, dateStr, dateStr);
+          // The type predicate below is load-bearing: `.filter(Boolean)` does
+          // not narrow `(T | null)[]` to `T[]`, so null stayed in the type and
+          // supabase-js 2.105 rejects it at .insert(). Older supabase types
+          // accepted it, which is why this compiled for months and only broke
+          // when a lockfile refresh moved 2.102 -> 2.105. Third instance of
+          // this pattern here; see lib/seo/rankings.ts for the shared fix.
           const pageRows = pages
             .map((pg) => {
               const articleId = byPath.get(norm(pg.pageUrl));
@@ -168,7 +174,7 @@ export async function GET(request: Request) {
                 page_url: pg.pageUrl,
               };
             })
-            .filter(Boolean);
+            .filter((row): row is NonNullable<typeof row> => row !== null);
 
           if (pageRows.length > 0) {
             await supabase.from("analytics_metrics").insert(pageRows);
