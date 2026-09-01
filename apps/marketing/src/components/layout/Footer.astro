@@ -86,11 +86,15 @@ const year = new Date().getFullYear();
         >{LEGAL_ENTITY.parentLabel}</a>{' '}
         &middot; {LEGAL_ENTITY.name}, {LEGAL_ENTITY.country} &middot; VAT {LEGAL_ENTITY.vat}
       </p>
-      <div class="shrink-0 [&>a]:block [&>a>img]:h-7 [&>a>img]:w-auto">
+      <div class="flex shrink-0 items-center gap-3 [&>a]:block [&>a>img]:h-7 [&>a>img]:w-auto">
         <a href="https://www.tinyshelf.co/?ref=altorank.co" title="Featured on tinyshelf">
   <img src="https://www.tinyshelf.co/badge/tinyshelf-badge-light-amber-1cdea1ce.svg"
        alt="Featured on tinyshelf" width="216" height="64"/>
 </a>
+        {/* Startup Fame badge, markup as issued by them (added 2026-09-01).
+            Same rule as tinyshelf: their verifier looks for this anchor in
+            the served HTML, so keep the href and attributes as given. */}
+        <a href="https://startupfa.me/s/altorank?utm_source=altorank.co" target="_blank"><img src="https://startupfa.me/badges/featured-badge-small.webp" alt="AltoRank - Featured on Startup Fame" width="224" height="36" /></a>
       </div>
     </div>
   </div>
