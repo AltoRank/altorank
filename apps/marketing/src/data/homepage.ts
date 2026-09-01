@@ -74,6 +74,27 @@ export const COMPARISON = [
     legacy: 'Subscription only',
     ours: '$0 self-hosted',
   },
+  // The next three rows are the category's Trustpilot pages, condensed. The
+  // most repeated one-star review across Outrank, RankPill and BabyLoveGrowth
+  // is a charge after a 3-day trial and no way to cancel from the app
+  // (altorank-notes, 2026-09-02-what-the-reviews-say.md). "Their" column
+  // states what their own pricing pages say; ours states what the billing
+  // page does (settings/billing: Cancel subscription opens the confirmation).
+  {
+    label: 'Trial',
+    legacy: '3-day trial, card first, charged on day 3',
+    ours: 'None. Nothing charged until you choose a plan',
+  },
+  {
+    label: 'Cancelling',
+    legacy: 'Through support, or a retention flow',
+    ours: 'A button on your billing page',
+  },
+  {
+    label: 'After you cancel',
+    legacy: 'Access ends with the plan',
+    ours: 'Articles and history stay readable',
+  },
 ];
 
 // Shown as the column header over the `legacy` values.

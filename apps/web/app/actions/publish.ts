@@ -72,7 +72,42 @@ export async function approveArticle(articleId: string) {
   if (error || !data) throw new Error("Article must be in review to approve");
 
   revalidatePath("/articles");
+  revalidatePath("/review");
   revalidatePath(`/content/${articleId}`);
+}
+
+/**
+ * Approve several review-state articles at once. Same transition, same
+ * sign-off record per article; the only thing batched is the click.
+ *
+ * Reviewers of the autopilot tools asked for exactly this ("batch review of
+ * drafts") and the tools could not offer it because their drafts were already
+ * live. Ours are not. Returns the ids that actually moved, so the caller can
+ * say "3 of 4 approved" when one was edited under it.
+ */
+export async function approveArticles(articleIds: string[]): Promise<string[]> {
+  const { user } = await requireAuth();
+  const supabase = await createClient();
+  const ids = [...new Set(articleIds)].filter(Boolean);
+  if (!ids.length) return [];
+
+  const { data, error } = await supabase
+    .from("articles")
+    .update({
+      status: "approved",
+      approved_by: user.id,
+      approved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .in("id", ids)
+    .eq("status", "review")
+    .select("id");
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/articles");
+  revalidatePath("/review");
+  for (const row of data ?? []) revalidatePath(`/content/${row.id}`);
+  return (data ?? []).map((r) => r.id as string);
 }
 
 /**

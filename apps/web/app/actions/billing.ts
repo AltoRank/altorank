@@ -48,13 +48,30 @@ export async function createCheckoutSession(
  * Open the Stripe customer billing portal (manage/cancel subscription, invoices,
  * payment method). Owner only. Returns the portal URL.
  */
-export async function createBillingPortalSession(): Promise<string> {
+export type PortalFlow = "manage" | "cancel" | "payment_method";
+
+/**
+ * `flow` opens the portal on a specific screen instead of its home:
+ *
+ *   cancel          the cancellation confirmation, one click from our page
+ *   payment_method  the card update / removal screen
+ *
+ * The category we compete in has "there is no cancel button in the app" as
+ * its single most repeated one-star review (see altorank-notes,
+ * 2026-09-02-what-the-reviews-say.md). A portal link that lands on a home
+ * screen with a cancel option three clicks deep is not a cancel button. This
+ * is: the button on our page says Cancel, and the next screen is the
+ * confirmation. Nothing about the plan, the data or the articles changes when
+ * they do it; the subscription ends at period end and the workspace stays
+ * readable.
+ */
+export async function createBillingPortalSession(flow: PortalFlow = "manage"): Promise<string> {
   const { agencyId } = await requireAuth(["owner"]);
   const supabase = await createClient();
 
   const { data: agency } = await supabase
     .from("agencies")
-    .select("stripe_customer_id")
+    .select("stripe_customer_id, stripe_subscription_id")
     .eq("id", agencyId)
     .single();
 
@@ -62,10 +79,32 @@ export async function createBillingPortalSession(): Promise<string> {
     throw new Error("No billing account yet — subscribe to a plan first");
   }
 
-  const session = await getStripe().billingPortal.sessions.create({
-    customer: agency.stripe_customer_id,
-    return_url: `${APP_URL}/settings/billing`,
-  });
+  const returnUrl = `${APP_URL}/settings/billing`;
+  const base = { customer: agency.stripe_customer_id, return_url: returnUrl };
 
+  if (flow === "cancel") {
+    if (!agency.stripe_subscription_id) {
+      throw new Error("There is no active subscription to cancel");
+    }
+    const session = await getStripe().billingPortal.sessions.create({
+      ...base,
+      flow_data: {
+        type: "subscription_cancel",
+        subscription_cancel: { subscription: agency.stripe_subscription_id },
+        after_completion: { type: "redirect", redirect: { return_url: `${returnUrl}?status=cancelled` } },
+      },
+    });
+    return session.url;
+  }
+
+  if (flow === "payment_method") {
+    const session = await getStripe().billingPortal.sessions.create({
+      ...base,
+      flow_data: { type: "payment_method_update" },
+    });
+    return session.url;
+  }
+
+  const session = await getStripe().billingPortal.sessions.create(base);
   return session.url;
 }

@@ -1,0 +1,256 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildArticleSchema, buildFAQSchema } from '@/lib/schema';
+import { APP_NAME, SITE_URL, AUTHOR_NAME, AUTHOR_URL, OSS_COMPARISON_LABEL, PRIMARY_CTA } from '@/constants';
+
+const pageUrl = `${SITE_URL}/alternatives/rankpill`;
+
+const publishDate = new Date('2026-09-02');
+const dateModified = new Date('2026-09-02');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Alternatives', href: '/alternatives' },
+  { label: 'RankPill alternative', href: '/alternatives/rankpill' },
+];
+
+// Every RankPill claim here was read from rankpill.com and rankpill.com/pricing on 2026-09-02. Quoted strings are verbatim: the h1, "Fully Autonomous", "Set it once and watch traffic grow", the $99 price and 30-article meter, the 6 integrations. The trial and refund statements come from their Trustpilot page and their own replies there, dated inline. Do not add a claim here that cannot be pointed at a source.
+const TLDR_ROWS = [
+  {
+    name: APP_NAME,
+    bestFor: 'Open source, one site or a client roster',
+    publishing: 'A human approves, or it does not ship',
+    links: 'Exchange exists, every placement human-approved',
+    openSource: OSS_COMPARISON_LABEL,
+    price: 'From €0 self-hosted',
+    ours: true,
+  },
+  {
+    name: 'RankPill',
+    bestFor: 'Solo founders and local businesses with no SEO time',
+    publishing: '"Fully Autonomous", publishes daily without review',
+    links: 'Reciprocal exchange, 30 credits a month',
+    openSource: 'No',
+    price: '$99/mo, 1 website, 30 articles',
+  },
+];
+
+const COMPARE = [
+  { feature: 'Source code', ours: 'Open source, the whole product', theirs: 'Proprietary SaaS' },
+  { feature: 'Run it yourself', ours: 'Self-host free, no feature gates', theirs: 'Not offered' },
+  { feature: 'Publishing model', ours: 'Nothing publishes without a human approving it', theirs: '"Fully Autonomous", "Set it once and watch traffic grow"' },
+  { feature: 'Who enforces the gate', ours: 'The architecture: the MCP server exposes no publish tool', theirs: 'No review gate; WordPress drafts only via webhooks' },
+  { feature: 'Trial and billing', ours: 'No trial, nothing charged until you choose a plan, cancel from your billing page', theirs: 'A $1 three-day trial that converts, and a no-refund policy (their Trustpilot replies confirm both)' },
+  { feature: 'Free check before signup', ours: 'A growth plan from live SERP data: what you rank for, what competitors hold, whether AI can read your site', theirs: 'A quiz that scrapes your homepage and returns an AI-written pitch; no SERP data at any step' },
+  { feature: 'Publishing destinations', ours: '12', theirs: '6 (WordPress, Shopify, Webflow, Wix, Framer, webhooks)' },
+  { feature: 'Backlink exchange', ours: 'Credit-based, but a person accepts, places and verifies each link', theirs: 'Reciprocal network among customers, matched automatically' },
+  { feature: 'AI visibility tracking', ours: 'Snapshots per workspace, and an AEO score on every article', theirs: '"Coming Soon" on their homepage' },
+  { feature: 'Rank tracking and Search Console', ours: 'Built in', theirs: 'Not offered, per independent tests' },
+  { feature: 'Languages', ours: '35 locales, counted in the code', theirs: '"100+" on the homepage, "50+" on their blog' },
+  { feature: 'More than one site', ours: 'A workspace per site, or per client', theirs: 'Per-site subscriptions, 10–20% volume discounts' },
+  { feature: 'Company', ours: 'SUPALABS SRL, an Italian company, GDPR by establishment', theirs: 'Solo founder, launched March 2025' },
+];
+
+const PICK = [
+  { when: 'You want the tool to publish without you', pick: 'RankPill', why: 'It is the product they sell: "Fully Autonomous", one article a day, no review step. AltoRank cannot do that and will not add it.' },
+  { when: 'You want a link network with people already in it', pick: 'RankPill', why: 'Their exchange has customers in it and ours has few counterparties yet. Read their reviews on how many links arrive before deciding what that is worth.' },
+  { when: 'Something wrong publishing under your name is the real risk', pick: APP_NAME, why: 'Nothing reaches a live site without a person approving that specific draft, and every draft carries a fact-check verdict before you open it.' },
+  { when: 'You have been burned by a trial that converted', pick: APP_NAME, why: 'There is no trial. Nothing is charged until you choose a plan, and cancelling is a button on the billing page. Your articles stay readable afterwards.' },
+  { when: 'You want to read the code before trusting it', pick: APP_NAME, why: 'Open source, the whole product, including the scoring. With a closed tool a disagreement about a score is a matter of vendor faith.' },
+  { when: 'You need it on your own infrastructure', pick: APP_NAME, why: 'Self-hosting is free and complete. RankPill does not offer it.' },
+];
+
+const FAQ = [
+  { question: 'What is the best RankPill alternative?', answer: `It depends on whether you want the publishing decision. RankPill's homepage is "Get Google, ChatGPT Traffic on Autopilot" and its product page says "Fully Autonomous". ${APP_NAME} runs the same pipeline, research, drafting and publishing to twelve CMSs, and stops at your inbox: a person approves every article before it goes live. It is also open source, so you can self-host it for nothing.` },
+  { question: 'How much does RankPill cost?', answer: `One plan at $99 a month for one website and 30 articles, read from rankpill.com/pricing on 2 September 2026, with 10–20% discounts from two sites up and backlink add-ons at $249 and $799 a month. Reviews describe a $1 three-day trial that converts to the full price and a no-refund policy; RankPill's own replies on Trustpilot confirm the policy.` },
+  { question: 'Does RankPill have a free trial?', answer: `Their pricing page does not state one. Their Trustpilot reviews describe a "$1 for 3 days" trial that charges the full plan on day three, and the most common one-star review is that charge. ${APP_NAME} has no trial at all: nothing is charged until you pick a plan.` },
+  { question: `What is RankPill's "free personalized growth plan"?`, answer: `A quiz. We ran it on our own domain: it scrapes the homepage, asks your goal and traffic band, and an AI writes a pitch for RankPill in the second person. It contains no data about your rankings. Our free plan on the homepage returns what your site ranks for, the page-one terms your competitors hold that you do not, and whether AI assistants can read your site, all from live SERP and crawl data.` },
+  { question: `Does ${APP_NAME} have a backlink exchange too?`, answer: `Yes. The difference is who acts: in ${APP_NAME} the software proposes matches and scores relevance, but a person accepts, places and verifies each link before any credit moves. It is also small; we are early and would rather say so than sell a network that is not there yet.` },
+  { question: 'Who is behind AltoRank?', answer: 'AltoRank is built and operated by SUPALABS SRL (VAT 04596950248), a company in Italy. GDPR applies to us as a matter of establishment, not only because we sell into the EU.' },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: 'RankPill Alternative: Open Source, Approval-First AI SEO (2026)',
+    description: 'RankPill publishes on autopilot with a $1 trial that converts and no refunds. AltoRank is the open-source alternative where nothing goes live until you approve it and nothing is charged until you choose a plan.',
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildFAQSchema(FAQ),
+];
+---
+
+<PSEO
+  title="RankPill Alternative: Open Source, Approval-First AI SEO (2026)"
+  description="RankPill publishes on autopilot with a $1 trial that converts and no refunds. AltoRank is the open-source alternative where nothing goes live until you approve it and nothing is charged until you choose a plan."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h1 class="mb-5 text-[clamp(28px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+        RankPill alternative: the one that does not publish without you
+      </h1>
+
+      <p class="mb-6 text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        <strong class="text-ink">The short answer:</strong> RankPill sells autopilot and says so plainly: &ldquo;Get Google, ChatGPT Traffic on Autopilot&rdquo;, &ldquo;Fully Autonomous&rdquo;, one article a day to one website for $99. {APP_NAME} runs the same pipeline, research, drafting and publishing to twelve CMSs, and then stops at your inbox. It has no trial that converts, a cancel button on the billing page, and it is open source, so you can self-host the whole thing for nothing.
+      </p>
+
+      <p class="mb-8 text-sm text-ink-3">
+        By{' '}
+        <a href={AUTHOR_URL} rel="author" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
+          {AUTHOR_NAME}
+        </a>
+        {' '}&middot; Published {publishDateDisplay} &middot; RankPill details read from rankpill.com on {publishDateDisplay}
+      </p>
+
+      <div class="overflow-x-auto rounded-lg border border-line">
+        <table class="w-full min-w-[720px] text-left text-sm">
+          <caption class="sr-only">AltoRank compared with RankPill</caption>
+          <thead class="border-b border-line bg-panel text-ink-2">
+            <tr>
+              <th scope="col" class="px-5 py-3.5 font-medium">Tool</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Best for</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Publishing</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Links</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Open source</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Starting price</th>
+            </tr>
+          </thead>
+          <tbody>
+            {TLDR_ROWS.map((row, i) => (
+              <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+                <td class="px-5 py-4 font-medium">
+                  {row.name}
+                  {row.ours && (
+                    <span class="ml-2 rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-accent-ink">ours</span>
+                  )}
+                </td>
+                <td class="px-5 py-4 text-ink-2">{row.bestFor}</td>
+                <td class="px-5 py-4 text-ink-2">{row.publishing}</td>
+                <td class="px-5 py-4 text-ink-2">{row.links}</td>
+                <td class="px-5 py-4 text-ink-2">{row.openSource}</td>
+                <td class="px-5 py-4 font-mono text-[12.5px] text-ink-2">{row.price}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line bg-panel py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em] [text-wrap:balance]">
+        Where they actually differ
+      </h2>
+      <div class="overflow-hidden rounded-lg border border-line bg-bg">
+        {COMPARE.map((row, i) => (
+          <div class={`grid gap-1 p-5 sm:grid-cols-[1fr_1.3fr_1.3fr] sm:gap-5 ${i > 0 ? 'border-t border-line-soft' : ''}`}>
+            <div class="text-[13.5px] font-semibold text-ink">{row.feature}</div>
+            <div class="text-[14px] text-ink"><span class="text-ink-3 sm:hidden">{APP_NAME}: </span>{row.ours}</div>
+            <div class="text-[14px] text-ink-3"><span class="sm:hidden">RankPill: </span>{row.theirs}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-3 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em] [text-wrap:balance]">
+        Which one to pick
+      </h2>
+      <p class="mb-8 text-[16px] leading-relaxed text-ink-2">
+        RankPill wins two of these outright. Saying so is more useful than pretending otherwise.
+      </p>
+      <div class="flex flex-col gap-3">
+        {PICK.map((p) => (
+          <div class="rounded-lg border border-line bg-bg p-5">
+            <div class="mb-1.5 text-[15px] font-semibold text-ink">{p.when}</div>
+            <div class="mb-2 text-[13px] font-medium text-accent-ink">Pick {p.pick}</div>
+            <p class="text-[14px] leading-relaxed text-ink-2">{p.why}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+
+
+  {/* ── WHAT THEIR CUSTOMERS SAY ──────────────────────────
+      Their numbers, their reviewers, dated. Read on 2 September 2026 from the
+      Trustpilot page linked below and the independent tests named inline.
+      These move monthly; re-read the source before touching a figure. */}
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-3 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em] [text-wrap:balance]">
+        What RankPill&rsquo;s customers say
+      </h2>
+      <p class="mb-6 text-[16px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        RankPill has one plan, one founder and a review page that turned in February 2026. Every figure below is from <a href="https://www.trustpilot.com/review/rankpill.com" target="_blank" rel="noopener noreferrer" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">their Trustpilot page</a> or a named independent test, as read on 2 September 2026.
+      </p>
+      <div class="mb-6 grid gap-3 sm:grid-cols-2">
+        <div class="rounded-lg border border-line bg-panel p-5">
+          <div class="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Trustpilot</div>
+          <div class="mt-1 text-[15px] font-medium text-ink">29 reviews, 2.9 out of 5, 52% one-star. Since March 2026, eight of ten negative reviews are about billing rather than the product, and the company has not replied to any review since 6 March 2026. The first review on the page is the founder&rsquo;s own five stars.</div>
+        </div>
+        <div class="rounded-lg border border-line bg-panel p-5">
+          <div class="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Independent tests</div>
+          <div class="mt-1 text-[15px] font-medium text-ink">aboahreviews (90 days, 3 sites, 36 articles): 40% of articles &ldquo;required more significant work&rdquo;, no editorial gate by default, no rank tracking or Search Console. Their AI-visibility tracking is still &ldquo;Coming Soon&rdquo;.</div>
+        </div>
+      </div>
+      <div class="flex flex-col gap-3">
+        <blockquote class="rounded-lg border border-line bg-bg p-5">
+          <p class="text-[14.5px] leading-relaxed text-ink">&ldquo;They say on the website - FREE trial, NO credit card required. In reality, I was charged $137 after only 3 days&rdquo;</p>
+          <footer class="mt-2 text-[12.5px] text-ink-3">Mykola Baldin, Trustpilot, 16 April 2026</footer>
+        </blockquote>
+        <blockquote class="rounded-lg border border-line bg-bg p-5">
+          <p class="text-[14.5px] leading-relaxed text-ink">&ldquo;they disabled my account and removed access to the service entirely, even though the billing period had already been paid&rdquo;</p>
+          <footer class="mt-2 text-[12.5px] text-ink-3">Rendimension D, Trustpilot, 5 March 2026</footer>
+        </blockquote>
+        <blockquote class="rounded-lg border border-line bg-bg p-5">
+          <p class="text-[14.5px] leading-relaxed text-ink">&ldquo;generic, shallow, and showed no understanding of search intent, topical depth, semantic SEO&rdquo;</p>
+          <footer class="mt-2 text-[12.5px] text-ink-3">em lewis, Trustpilot, 27 January 2026</footer>
+        </blockquote>
+        <blockquote class="rounded-lg border border-line bg-bg p-5">
+          <p class="text-[14.5px] leading-relaxed text-ink">&ldquo;Connected it to wordpress and haven&rsquo;t touched it since&rdquo;</p>
+          <footer class="mt-2 text-[12.5px] text-ink-3">David Robinson, 5★, Trustpilot, 23 March 2026</footer>
+        </blockquote>
+      </div>
+      <p class="mt-6 text-[14px] leading-relaxed text-ink-2">
+        The pattern across the category is the same and we would rather show it than describe it: the satisfied reviewers are the ones who read every draft before it ships, the one-star reviewers trusted the default. {APP_NAME} has no default that publishes, no trial that converts into a charge, and a cancel button on the billing page. None of that is a feature; it is the answer to the reviews above.
+      </p>
+    </div>
+  </section>
+  <section class="border-b border-line bg-panel py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em]">
+        Common questions
+      </h2>
+      <div class="flex flex-col gap-2">
+        {FAQ.map((item) => (
+          <details class="group rounded-lg border border-line bg-bg">
+            <summary class="cursor-pointer list-none px-5 py-4 text-[15px] font-medium text-ink [&::-webkit-details-marker]:hidden">
+              {item.question}
+            </summary>
+            <p class="border-t border-line-soft px-5 py-4 text-[14.5px] leading-relaxed text-ink-2">
+              {item.answer}
+            </p>
+          </details>
+        ))}
+      </div>
+
+      <div class="mt-10 flex flex-wrap gap-2.5">
+        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/open-source" variant="secondary" size="lg">Read the licence</Button>
+      </div>
+    </div>
+  </section>
+</PSEO>

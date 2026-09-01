@@ -36,6 +36,7 @@ export const DASHBOARD_NAV: NavGroup[] = [
     group: "Content",
     items: [
       { id: "articles", label: "Articles", href: "/articles", icon: "articles" },
+      { id: "review", label: "Review queue", href: "/review", icon: "check" },
       { id: "calendar", label: "Calendar", href: "/content", icon: "calendar" },
       { id: "keywords", label: "Keywords", href: "/keywords", icon: "keywords" },
       { id: "voice", label: "Brand Voice", href: "/voice", icon: "voice" },

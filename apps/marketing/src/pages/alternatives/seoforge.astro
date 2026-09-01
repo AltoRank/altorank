@@ -1,0 +1,243 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildArticleSchema, buildFAQSchema } from '@/lib/schema';
+import { APP_NAME, SITE_URL, AUTHOR_NAME, AUTHOR_URL, OSS_COMPARISON_LABEL, PRIMARY_CTA } from '@/constants';
+
+const pageUrl = `${SITE_URL}/alternatives/seoforge`;
+
+const publishDate = new Date('2026-09-02');
+const dateModified = new Date('2026-09-02');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Alternatives', href: '/alternatives' },
+  { label: 'SEOForge alternative', href: '/alternatives/seoforge' },
+];
+
+// Every SEOForge claim here was read from seoforge.ai on 2026-09-02; /pricing, /faq and /docs returned 404 that day, so the tier limits are marked not published rather than guessed. Quoted strings are verbatim from the homepage. The absence of reviews is itself verified (Trustpilot 404, G2 and SourceForge zero). Do not add a claim here that cannot be pointed at a source.
+const TLDR_ROWS = [
+  {
+    name: APP_NAME,
+    bestFor: 'Open source, one site or a client roster',
+    publishing: 'A human approves, or it does not ship',
+    links: 'Exchange exists, every placement human-approved',
+    openSource: OSS_COMPARISON_LABEL,
+    price: 'From €0 self-hosted',
+    ours: true,
+  },
+  {
+    name: 'SEOForge',
+    bestFor: 'Founders who want content and backlinks handled without looking',
+    publishing: '"generated and published on auto-pilot"',
+    links: '"$900+ worth high DR backlinks", method not disclosed',
+    openSource: 'No',
+    price: '$29 / $99 / $399 a month; tier limits not published',
+  },
+];
+
+const COMPARE = [
+  { feature: 'Source code', ours: 'Open source, the whole product', theirs: 'Proprietary SaaS' },
+  { feature: 'Run it yourself', ours: 'Self-host free, no feature gates', theirs: 'Not offered' },
+  { feature: 'Publishing model', ours: 'Nothing publishes without a human approving it', theirs: '"Go from draft to published article instantly"' },
+  { feature: 'Who enforces the gate', ours: 'The architecture: the MCP server exposes no publish tool', theirs: 'No review step described anywhere on the site' },
+  { feature: 'Trial and billing', ours: 'No trial, nothing charged until you choose a plan, cancel from your billing page', theirs: '3-day free trial; their /pricing page returns a 404 and the Starter and Pro limits are not published' },
+  { feature: 'Backlinks', ours: 'Credit-based, but a person accepts, places and verifies each link; small and we say so', theirs: '"$900+ worth high DR backlinks build for you on auto-pilot"; no page explains where they come from' },
+  { feature: 'Publishing destinations', ours: '12', theirs: '3 named (WordPress, Webflow, Framer) plus a webhook' },
+  { feature: 'AI visibility tracking', ours: 'Snapshots per workspace, and an AEO score on every article', theirs: 'Prompt tracking across LLMs' },
+  { feature: 'Free check before signup', ours: 'A growth plan from live SERP data', theirs: 'Nine generic generators and checkers; no audit of your site' },
+  { feature: 'Proof', ours: 'None claimed; we have zero customers and say so', theirs: '"Trusted by over 5,000+ people" with no Trustpilot page, zero reviews on G2 and SourceForge, first-name-only testimonials' },
+  { feature: 'Languages', ours: '35 locales, counted in the code', theirs: '"50+"' },
+  { feature: 'Company', ours: 'SUPALABS SRL, an Italian company, GDPR by establishment', theirs: 'Bidlytics, Inc., United States' },
+];
+
+const PICK = [
+  { when: 'You want content and backlinks handled without ever looking', pick: 'SEOForge', why: 'That is the pitch, "Your 24/7 SEO & AI Search Growth Partner", and AltoRank will not publish without you.' },
+  { when: 'You want AI-visibility prompt tracking on the cheapest tier', pick: 'SEOForge', why: 'Their Starter plan is $29 and lists tracking; ours starts at €69 hosted or €0 self-hosted.' },
+  { when: 'You want to know what you are buying before you pay', pick: APP_NAME, why: 'Their pricing page did not load on the day we checked and their tier limits are not published. Ours are one file in a public repository.' },
+  { when: 'You want to know where a backlink came from', pick: APP_NAME, why: '"$900+ worth" is a price, not a source. In AltoRank a person accepts, places and verifies every link, and you can read the code that proposes them.' },
+  { when: 'Something wrong publishing under your name is the real risk', pick: APP_NAME, why: 'Nothing reaches a live site without a person approving that specific draft.' },
+  { when: 'You need it on your own infrastructure', pick: APP_NAME, why: 'Self-hosting is free and complete. SEOForge does not offer it.' },
+];
+
+const FAQ = [
+  { question: 'What is the best SEOForge alternative?', answer: `It depends on whether you want the publishing decision. SEOForge's homepage promises articles "generated and published on auto-pilot" and backlinks "build for you on auto-pilot". ${APP_NAME} runs the same pipeline and stops at your inbox: a person approves every article before it goes live. It is also open source, so you can self-host it for nothing.` },
+  { question: 'How much does SEOForge cost?', answer: 'Three tiers on the homepage as read on 2 September 2026: Starter $29, Premium $99 (shown struck from $149) and Pro $399 a month, with a 3-day free trial. Premium lists 30 articles a month. What Starter and Pro include is not published, and seoforge.ai/pricing returned a 404 when we checked. We would rather say that than guess.' },
+  { question: `Where do SEOForge's backlinks come from?`, answer: `Their homepage says "$900+ worth high DR backlinks build for you on auto-pilot" and their FAQ and docs pages did not load. No page we could find explains the source. Google's spam policies name "using automated services to create links" as link spam, so an undisclosed automated source is a risk to weigh before it is a benefit.` },
+  { question: 'Is SEOForge reviewed anywhere?', answer: 'Not that we could find. There is no Trustpilot page, zero reviews on G2 and SourceForge, and the testimonials on its homepage are first name only. The one YouTube review is by its founder. That is not a criticism of the product; it means the "5,000+ people" claim cannot be checked, and we do not repeat what we cannot check.' },
+  { question: `Does ${APP_NAME} have a backlink exchange too?`, answer: `Yes. The difference is who acts: in ${APP_NAME} the software proposes matches and scores relevance, but a person accepts, places and verifies each link before any credit moves. It is also small; we are early and would rather say so.` },
+  { question: 'Who is behind AltoRank?', answer: 'AltoRank is built and operated by SUPALABS SRL (VAT 04596950248), a company in Italy. GDPR applies to us as a matter of establishment, not only because we sell into the EU.' },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: 'SEOForge Alternative: Open Source, Approval-First AI SEO (2026)',
+    description: 'SEOForge publishes on autopilot with undisclosed backlinks and unpublished tier limits. AltoRank is the open-source alternative where nothing goes live until you approve it and every number is in the code.',
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildFAQSchema(FAQ),
+];
+---
+
+<PSEO
+  title="SEOForge Alternative: Open Source, Approval-First AI SEO (2026)"
+  description="SEOForge publishes on autopilot with undisclosed backlinks and unpublished tier limits. AltoRank is the open-source alternative where nothing goes live until you approve it and every number is in the code."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h1 class="mb-5 text-[clamp(28px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+        SEOForge alternative: the one that does not publish without you
+      </h1>
+
+      <p class="mb-6 text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        <strong class="text-ink">The short answer:</strong> SEOForge sells &ldquo;High-Converting Traffic on Auto-Pilot&rdquo;: articles &ldquo;generated and published on auto-pilot&rdquo; and &ldquo;$900+ worth high DR backlinks&rdquo; whose source is not on the site. {APP_NAME} runs the same pipeline, research, drafting and publishing to twelve CMSs, and then stops at your inbox. Its pricing is one file in a public repository, and it is open source, so you can self-host the whole thing for nothing.
+      </p>
+
+      <p class="mb-8 text-sm text-ink-3">
+        By{' '}
+        <a href={AUTHOR_URL} rel="author" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
+          {AUTHOR_NAME}
+        </a>
+        {' '}&middot; Published {publishDateDisplay} &middot; SEOForge details read from seoforge.ai on {publishDateDisplay}
+      </p>
+
+      <div class="overflow-x-auto rounded-lg border border-line">
+        <table class="w-full min-w-[720px] text-left text-sm">
+          <caption class="sr-only">AltoRank compared with SEOForge</caption>
+          <thead class="border-b border-line bg-panel text-ink-2">
+            <tr>
+              <th scope="col" class="px-5 py-3.5 font-medium">Tool</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Best for</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Publishing</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Links</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Open source</th>
+              <th scope="col" class="px-5 py-3.5 font-medium">Starting price</th>
+            </tr>
+          </thead>
+          <tbody>
+            {TLDR_ROWS.map((row, i) => (
+              <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+                <td class="px-5 py-4 font-medium">
+                  {row.name}
+                  {row.ours && (
+                    <span class="ml-2 rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-accent-ink">ours</span>
+                  )}
+                </td>
+                <td class="px-5 py-4 text-ink-2">{row.bestFor}</td>
+                <td class="px-5 py-4 text-ink-2">{row.publishing}</td>
+                <td class="px-5 py-4 text-ink-2">{row.links}</td>
+                <td class="px-5 py-4 text-ink-2">{row.openSource}</td>
+                <td class="px-5 py-4 font-mono text-[12.5px] text-ink-2">{row.price}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line bg-panel py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em] [text-wrap:balance]">
+        Where they actually differ
+      </h2>
+      <div class="overflow-hidden rounded-lg border border-line bg-bg">
+        {COMPARE.map((row, i) => (
+          <div class={`grid gap-1 p-5 sm:grid-cols-[1fr_1.3fr_1.3fr] sm:gap-5 ${i > 0 ? 'border-t border-line-soft' : ''}`}>
+            <div class="text-[13.5px] font-semibold text-ink">{row.feature}</div>
+            <div class="text-[14px] text-ink"><span class="text-ink-3 sm:hidden">{APP_NAME}: </span>{row.ours}</div>
+            <div class="text-[14px] text-ink-3"><span class="sm:hidden">SEOForge: </span>{row.theirs}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-3 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em] [text-wrap:balance]">
+        Which one to pick
+      </h2>
+      <p class="mb-8 text-[16px] leading-relaxed text-ink-2">
+        SEOForge wins two of these. Saying so is more useful than pretending otherwise.
+      </p>
+      <div class="flex flex-col gap-3">
+        {PICK.map((p) => (
+          <div class="rounded-lg border border-line bg-bg p-5">
+            <div class="mb-1.5 text-[15px] font-semibold text-ink">{p.when}</div>
+            <div class="mb-2 text-[13px] font-medium text-accent-ink">Pick {p.pick}</div>
+            <p class="text-[14px] leading-relaxed text-ink-2">{p.why}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+
+
+  {/* ── WHAT THEIR CUSTOMERS SAY ──────────────────────────
+      Their numbers, their reviewers, dated. Read on 2 September 2026 from the
+      Trustpilot page linked below and the independent tests named inline.
+      These move monthly; re-read the source before touching a figure. */}
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-3 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em] [text-wrap:balance]">
+        What SEOForge&rsquo;s customers say
+      </h2>
+      <p class="mb-6 text-[16px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        SEOForge is the one tool in this category with no customer voice outside its own homepage, so this section is shorter than the others and says why. Every figure below is from <a href="https://www.seoforge.ai" target="_blank" rel="noopener noreferrer" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">their Trustpilot page</a> or a named independent test, as read on 2 September 2026.
+      </p>
+      <div class="mb-6 grid gap-3 sm:grid-cols-2">
+        <div class="rounded-lg border border-line bg-panel p-5">
+          <div class="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Trustpilot</div>
+          <div class="mt-1 text-[15px] font-medium text-ink">No Trustpilot page exists. Zero reviews on G2 and SourceForge; one directory shows 3.6 out of 5 from five ratings with no text. The 58 &ldquo;reviews&rdquo; on another directory repeat the same sentences under different names.</div>
+        </div>
+        <div class="rounded-lg border border-line bg-panel p-5">
+          <div class="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Independent tests</div>
+          <div class="mt-1 text-[15px] font-medium text-ink">None. No independent 30-, 60- or 90-day test of SEOForge has been published that we could find, so the edit rates and link velocity the rest of the category is measured on are unknown here.</div>
+        </div>
+      </div>
+      <div class="flex flex-col gap-3">
+        <blockquote class="rounded-lg border border-line bg-bg p-5">
+          <p class="text-[14.5px] leading-relaxed text-ink">&ldquo;We replaced our $5k/month content agency with SEOForge. Better results, 10x cheaper, fully on auto-pilot.&rdquo;</p>
+          <footer class="mt-2 text-[12.5px] text-ink-3">&ldquo;Touqeer, Growth Lead&rdquo;, homepage testimonial, first name only, Trustpilot, undated</footer>
+        </blockquote>
+      </div>
+      <p class="mt-6 text-[14px] leading-relaxed text-ink-2">
+        The pattern across the category is the same and we would rather show it than describe it: the satisfied reviewers are the ones who read every draft before it ships, the one-star reviewers trusted the default. {APP_NAME} has no default that publishes, no trial that converts into a charge, and a cancel button on the billing page. None of that is a feature; it is the answer to the reviews above.
+      </p>
+    </div>
+  </section>
+  <section class="border-b border-line bg-panel py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em]">
+        Common questions
+      </h2>
+      <div class="flex flex-col gap-2">
+        {FAQ.map((item) => (
+          <details class="group rounded-lg border border-line bg-bg">
+            <summary class="cursor-pointer list-none px-5 py-4 text-[15px] font-medium text-ink [&::-webkit-details-marker]:hidden">
+              {item.question}
+            </summary>
+            <p class="border-t border-line-soft px-5 py-4 text-[14.5px] leading-relaxed text-ink-2">
+              {item.answer}
+            </p>
+          </details>
+        ))}
+      </div>
+
+      <div class="mt-10 flex flex-wrap gap-2.5">
+        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/open-source" variant="secondary" size="lg">Read the licence</Button>
+      </div>
+    </div>
+  </section>
+</PSEO>

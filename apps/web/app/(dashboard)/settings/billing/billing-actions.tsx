@@ -25,10 +25,10 @@ export function BillingActions({ hasCustomer }: { hasCustomer: boolean }) {
     });
   }
 
-  function manage() {
+  function portal(flow: "manage" | "cancel" | "payment_method") {
     start(async () => {
       try {
-        const url = await createBillingPortalSession();
+        const url = await createBillingPortalSession(flow);
         window.location.href = url;
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Could not open billing portal");
@@ -37,10 +37,28 @@ export function BillingActions({ hasCustomer }: { hasCustomer: boolean }) {
   }
 
   if (hasCustomer) {
+    // Three buttons, not one. "Manage billing" alone hides the two actions
+    // people actually come here for, and hiding them is the complaint that
+    // fills our competitors' review pages. Cancel lands on the confirmation
+    // screen; nothing else is required and nothing in the workspace is lost.
     return (
-      <Button onClick={manage} disabled={pending}>
-        {pending ? "Opening…" : "Manage billing"}
-      </Button>
+      <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button onClick={() => portal("payment_method")} disabled={pending}>
+            Update card
+          </Button>
+          <Button onClick={() => portal("cancel")} disabled={pending}>
+            Cancel subscription
+          </Button>
+          <Button variant="accent" onClick={() => portal("manage")} disabled={pending}>
+            {pending ? "Opening…" : "Invoices and billing"}
+          </Button>
+        </div>
+        <p className="max-w-[46ch] text-right text-[11.5px] leading-relaxed text-ink-3">
+          Cancelling takes one confirmation and ends the plan at the period end. Your
+          workspaces, articles and history stay readable afterwards.
+        </p>
+      </div>
     );
   }
 
@@ -77,6 +95,10 @@ export function BillingActions({ hasCustomer }: { hasCustomer: boolean }) {
           {label.growth}
         </Button>
       </div>
+      <p className="max-w-[46ch] text-right text-[11.5px] leading-relaxed text-ink-3">
+        No trial. Nothing is charged until you choose a plan here, and you can cancel it
+        yourself from this page.
+      </p>
     </div>
   );
 }
