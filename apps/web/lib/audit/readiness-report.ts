@@ -5,6 +5,7 @@ import {
 } from "./agent-readiness";
 import { proposeSchema, renderJsonLd, type SchemaProposal } from "./schema-generator";
 import { htmlToMarkdown, buildLlmsTxt } from "./markdown";
+import { fetchLenient, isTlsChainError } from "./lenient-fetch";
 
 /**
  * Agent-readiness report for an arbitrary domain: check, then generate the
@@ -98,12 +99,17 @@ export async function buildReadinessReport(rawDomain: string): Promise<Readiness
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15_000);
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { "User-Agent": UA },
-      redirect: "follow",
-    });
-    html = await res.text();
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: { "User-Agent": UA },
+        redirect: "follow",
+      });
+      html = await res.text();
+    } catch (err) {
+      if (!isTlsChainError(err)) throw err;
+      html = (await fetchLenient(url, { userAgent: UA, timeoutMs: 15_000 })).body;
+    }
     clearTimeout(timeout);
   } catch {
     return {

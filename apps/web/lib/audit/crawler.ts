@@ -2,6 +2,8 @@
 // challenge or a stripped page from a share of real sites (the readiness
 // checker learned this across 272 agency sites); the identifier stays so a
 // site owner can see who visited.
+import { fetchLenient, isTlsChainError } from "./lenient-fetch";
+
 const CRAWLER_UA =
   "Mozilla/5.0 (compatible; AltoRank-Auditor/1.0; +https://altorank.co; site audit)";
 
@@ -27,6 +29,8 @@ export function usablePages<T extends { status: number }>(pages: T[]): T[] {
 export interface CrawlResult {
   /** Set when status is 0: why no response came back. */
   error?: string;
+  /** The page was read over a TLS chain Node could not verify. */
+  tlsUnverified?: boolean;
   url: string;
   status: number;
   title: string;
@@ -104,10 +108,35 @@ export async function crawlSite(
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     } catch (err) {
-      // Status 0 is "we never got a response". Keep the reason: a TLS chain
-      // the server does not complete (UNABLE_TO_VERIFY_LEAF_SIGNATURE on
-      // www.lully.ai, 2026-09-02) is a finding about the site, and the
-      // difference between that and a timeout is what the owner needs.
+      // A chain Node cannot verify (www.lully.ai serves no intermediate,
+      // 2026-09-02) is a finding about the site, not a reason to see nothing.
+      // Read it without verification, mark the page, and let the audit report
+      // the chain as an issue.
+      if (isTlsChainError(err)) {
+        try {
+          const start = Date.now();
+          const r = await fetchLenient(item.url, { userAgent: CRAWLER_UA, timeoutMs: 10_000 });
+          const loadTimeMs = Date.now() - start;
+          if ((r.headers["content-type"] ?? "").includes("text/html")) {
+            const parsed = parseHtml(r.body, item.url, base.origin);
+            results.push({ url: item.url, status: r.status, loadTimeMs, tlsUnverified: true, ...parsed });
+            if (item.depth < maxDepth) {
+              for (const link of parsed.links) {
+                if (link.isInternal && !visited.has(normalizeUrl(link.href))) {
+                  queue.push({ url: link.href, depth: item.depth + 1 });
+                }
+              }
+            }
+          } else {
+            results.push({ url: item.url, status: r.status, title: "", metaDescription: "", h1: [], h2: [], images: [], links: [], loadTimeMs, tlsUnverified: true });
+          }
+          continue;
+        } catch (err2) {
+          err = err2;
+        }
+      }
+      // Status 0 is "we never got a response". Keep the reason: the
+      // difference between a TLS error and a timeout is what the owner needs.
       results.push({
         url: item.url, status: 0, title: "", metaDescription: "",
         h1: [], h2: [], images: [], links: [], loadTimeMs: 0,

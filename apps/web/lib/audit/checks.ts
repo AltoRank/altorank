@@ -6,7 +6,17 @@ import type { AuditIssue } from "@/lib/types";
  */
 export function runAuditChecks(pages: CrawlResult[]): AuditIssue[] {
   const issues: AuditIssue[] = [];
-
+  // One issue for the site, not one per page: the chain is a server setting.
+  const unverified = pages.find((p) => p.tlsUnverified);
+  if (unverified) {
+    issues.push({
+      type: "tls_chain",
+      severity: "warning",
+      url: unverified.url,
+      message: "The TLS certificate chain is incomplete: the server does not send its intermediate certificate",
+      details: "Browsers fetch the missing certificate themselves, so visitors see a padlock. Crawlers, AI assistants and many APIs do not, and read the site as unreachable. Install the full chain (leaf + intermediate) on the server or CDN.",
+    });
+  }
   for (const page of pages) {
     // Broken links (non-2xx status on internal pages)
     if (page.status >= 400 || page.status === 0) {

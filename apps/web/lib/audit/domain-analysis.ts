@@ -21,7 +21,8 @@ import { runAgentReadiness, type ReadinessResult } from "./agent-readiness";
 import { crawlSite, usablePages } from "./crawler";
 import { runAuditChecks, calculateAuditScore } from "./checks";
 import { fetchPageSpeedDetailed } from "./pagespeed";
-import { discoverKeywords } from "@/lib/seo/keywords";
+import { discoverKeywords, discoverKeywordsFromSeeds } from "@/lib/seo/keywords";
+import { profileIsUsable, seedPhrasesFromPages, scoreRelevance } from "@/lib/seo/topical-profile";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import {
   fetchRankedKeywords,
@@ -112,12 +113,14 @@ export async function analyseDomain(options: {
 
   // --- Crawl + on-page checks ----------------------------------------------
   let pagesCrawled = 0;
+  let crawledPages: Awaited<ReturnType<typeof crawlSite>> = [];
   let auditScore: number | null = null;
   let issues: unknown[] = [];
   let profile: TopicalProfile | null = null;
   try {
     const fetched = await crawlSite(baseUrl, MAX_PAGES, MAX_DEPTH, CRAWL_DELAY_MS);
     const pages = usablePages(fetched);
+    crawledPages = pages;
     pagesCrawled = pages.length;
     if (!pages.length && fetched.length) {
       // Every fetch failed. Say why, and score nothing: the first version of
@@ -206,13 +209,39 @@ export async function analyseDomain(options: {
     });
   } else {
     try {
-      const discovered = await discoverKeywords(domain, { withDifficulty: true });
+      const fromSite = await discoverKeywords(domain, { withDifficulty: true });
+      // Seed a second lookup from the site's own vocabulary. For a small site
+      // the Ads endpoint returns the category head ("artificial intelligence"
+      // for a warehouse-software company); the headings say what it does.
+      let seeded: typeof fromSite = [];
+      const seeds = profileIsUsable(profile, domain) ? seedPhrasesFromPages(crawledPages, domain) : [];
+      if (seeds.length) {
+        seeded = await discoverKeywordsFromSeeds(seeds).catch(() => []);
+      }
+      const seenTerm = new Set(fromSite.map((k) => k.keyword.toLowerCase()));
+      // Seeded ideas share a word with the site, which is exactly how another
+      // company's brand query gets in ("warehouse 13", "worldfood warehouse").
+      // Navigational intent means someone is looking for a specific site, and
+      // it is not this one.
+      const discovered = [
+        ...fromSite,
+        ...seeded.filter((k) => !seenTerm.has(k.keyword.toLowerCase()) && k.intent !== "navigational"),
+      ];
       keywordsFound = discovered.length;
 
       if (supabase && workspaceId && discovered.length) {
+        // Store what fits the site, not what is biggest. Ranked by raw
+        // volume, www.lully.ai's stored set was "uscis case status" and
+        // "supreme court"; ranked by relevance to its own vocabulary it is
+        // warehouse terms first. With no usable profile, volume is all there is.
+        const usable = profileIsUsable(profile, domain);
+        const rel = (term: string) => (usable ? scoreRelevance(term, profile).score : 1);
         const top = [...discovered]
-          .sort((a, b) => b.volume - a.volume)
-          .slice(0, MAX_KEYWORDS_STORED);
+          .map((k) => ({ k, r: rel(k.keyword) }))
+          .filter(({ r }) => !usable || r > 0)
+          .sort((a, b) => b.r - a.r || b.k.volume - a.k.volume)
+          .slice(0, MAX_KEYWORDS_STORED)
+          .map(({ k }) => k);
 
         // Skip terms already tracked, so re-running does not duplicate rows.
         const { data: existing } = await supabase
@@ -240,7 +269,9 @@ export async function analyseDomain(options: {
       layers.push({
         id: "keywords",
         status: "ok",
-        detail: `${discovered.length} keywords found for the domain`,
+        detail: seeded.length
+          ? `${discovered.length} keywords found: ${fromSite.length} for the domain, ${seeded.length} from what its pages say`
+          : `${discovered.length} keywords found for the domain`,
       });
     } catch (err) {
       layers.push({

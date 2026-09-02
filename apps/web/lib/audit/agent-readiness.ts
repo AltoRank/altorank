@@ -26,6 +26,8 @@
  *    claim about someone's site.
  */
 
+import { fetchLenient, isTlsChainError } from "./lenient-fetch";
+
 export type ReadinessSeverity = "high" | "medium" | "low";
 
 export type ReadinessCheckId =
@@ -113,7 +115,18 @@ export const defaultFetcher: ResourceFetcher = async (url) => {
       headers[k.toLowerCase()] = v;
     });
     return { status: res.status, headers, body };
-  } catch {
+  } catch (err) {
+    // A chain Node cannot verify is not "unreachable". Read it anyway and
+    // let the checks see the real robots.txt and homepage; the incomplete
+    // chain is reported by the crawl audit, which sees the same flag.
+    if (isTlsChainError(err)) {
+      try {
+        const r = await fetchLenient(url, { userAgent: USER_AGENT, timeoutMs: FETCH_TIMEOUT_MS, maxBytes: MAX_BODY_BYTES });
+        return { status: r.status, headers: r.headers, body: r.body };
+      } catch {
+        return { status: 0, headers: {}, body: "" };
+      }
+    }
     return { status: 0, headers: {}, body: "" };
   } finally {
     clearTimeout(timeout);

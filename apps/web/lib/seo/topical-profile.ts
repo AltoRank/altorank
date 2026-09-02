@@ -63,6 +63,10 @@ const WEIGHTS = { title: 3, h1: 3, metaDescription: 1.5, h2: 2 } as const;
  * frequency signal survives on small sites where a per-page count would not.
  */
 const BOILERPLATE_SHARE = 0.25;
+/** A homepage-headline word may exceed BOILERPLATE_SHARE up to here. */
+const SIGNATURE_MAX_SHARE = 0.6;
+/** Weight multiplier for words in the homepage title and h1. */
+const SIGNATURE_BOOST = 3;
 
 /**
  * Below this many fragments, "appears in half of them" means nothing, so
@@ -87,13 +91,92 @@ const STOPWORDS = new Set([
   "and", "are", "for", "the", "you", "your", "with", "that", "this", "from", "how", "what",
   "why", "when", "who", "can", "any", "all", "our", "not", "but", "one", "get", "use",
   "und", "der", "die", "das", "für", "mit", "per", "con", "che", "del", "les", "des", "pour",
+  // Website furniture and call-to-action verbs. They top a heading-based
+  // profile on any site ("Learn more", "See how", "Next step", "Case studies")
+  // and say nothing about what the business does. www.lully.ai's profile led
+  // with "study, case, more, keep, see, next, step" before this list existed.
+  "more", "learn", "see", "keep", "next", "step", "steps", "here", "now", "today",
+  "home", "about", "contact", "schedule", "resources", "resource", "articles", "article",
+  "blog", "news", "faq", "faqs", "privacy", "policy", "terms",
+  "case", "study", "studies", "much", "also", "just", "into", "than", "them", "they",
+  "will", "have", "has", "been", "let", "lets", "hear", "peers",
 ]);
+
+/**
+ * Seed phrases for keyword discovery, from the page text that names what the
+ * site does: titles, h1s and h2s. Two- and three-word phrases with no
+ * stopword in them, counted across pages, title and h1 weighted above h2.
+ *
+ * Single tokens are not seeds. "case" seeded the keyword tool with US court
+ * records; "warehouse orchestration" seeds it with the site's actual market.
+ */
+export function seedPhrasesFromPages(
+  pages: Array<{ title?: string | null; h1?: string[] | null; h2?: string[] | null }>,
+  domain?: string,
+  limit = 8,
+): string[] {
+  const brand = new Set(domain ? domainTokens(domain) : []);
+  const score: Record<string, number> = {};
+  const add = (text: string | null | undefined, weight: number) => {
+    if (!text) return;
+    // Split on punctuation and separators first so a phrase never crosses
+    // "Warehouse Orchestration - Lully.ai" or "Effortlessly Adaptive. Endlessly".
+    for (const clause of decodeEntities(text).split(/[|:;,.!?()\[\]"“”\-–—/]+/)) {
+      const toks = clause.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+      for (let n = 3; n >= 2; n--) {
+        for (let i = 0; i + n <= toks.length; i++) {
+          const gram = toks.slice(i, i + n);
+          if (gram.some((t) => t.length < 3 || STOPWORDS.has(t) || brand.has(t) || /^\d+$/.test(t))) continue;
+          const key = gram.join(" ");
+          score[key] = (score[key] ?? 0) + weight * (n === 3 ? 1.2 : 1);
+        }
+      }
+    }
+  };
+  for (const p of pages) {
+    add(p.title, 3);
+    for (const h of p.h1 ?? []) add(h, 3);
+    for (const h of p.h2 ?? []) add(h, 1);
+  }
+  const ranked = Object.entries(score).sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  // Drop a bigram that only exists inside a higher-ranked trigram.
+  const out: string[] = [];
+  for (const phrase of ranked) {
+    if (out.some((o) => o.includes(phrase) || phrase.includes(o))) continue;
+    out.push(phrase);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/**
+ * The brand words in a hostname: "www.lully.ai" -> ["lully"],
+ * "shop.acme-tools.co.uk" -> ["shop", "acme", "tools"]. The previous regex,
+ * /\.[a-z.]+$/, stripped everything after the FIRST dot, so www.lully.ai
+ * became "www" and every profile on a www. site carried "www" as its brand.
+ */
+export function domainTokens(domain: string): string[] {
+  const host = domain.toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "");
+  const labels = host.split(".").filter(Boolean);
+  // Drop the public suffix: the last label, and a second one when it is a
+  // two-letter country code behind a generic label (co.uk, com.au).
+  let keep = labels.slice(0, -1);
+  if (keep.length >= 2 && /^(co|com|net|org|ac|gov|edu)$/.test(keep[keep.length - 1]) && labels[labels.length - 1].length === 2) {
+    keep = keep.slice(0, -1);
+  }
+  return tokenize(keep.join(" ").replace(/[-_]/g, " "));
+}
+
+// Two-letter tokens that are words in this market, not fragments. Without
+// this "AI-Driven Warehouse Orchestration" profiles as "driven warehouse
+// orchestration" and every "ai …" keyword is judged on its other word alone.
+const ACRONYMS = new Set(["ai", "ml", "ux", "ui", "hr", "vr", "ar", "3d", "5g", "b2b", "b2c", "cx", "erp", "crm", "wms", "tms", "3pl"]);
 
 function tokenize(text: string): string[] {
   return decodeEntities(text)
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
-    .filter((t) => t.length > 2 && t.length < 30 && !/^\d+$/.test(t) && !STOPWORDS.has(t));
+    .filter((t) => (t.length > 2 || ACRONYMS.has(t)) && t.length < 30 && !/^\d+$/.test(t) && !STOPWORDS.has(t));
 }
 
 /**
@@ -138,9 +221,19 @@ export function buildTopicalProfile(
   const filter = fragments.length >= MIN_FRAGMENTS_FOR_FILTERING;
   const terms: Record<string, number> = {};
 
+  // The first page's title and h1 are the positioning. A word there is never
+  // boilerplate however often it recurs: "warehouse" sat in a quarter of
+  // www.lully.ai's headings, because it is what the company does, and the
+  // share filter dropped it as navigation.
+  const first = pages[0];
+  const signature = new Set<string>(first ? [...tokenize(first.title ?? ""), ...(first.h1 ?? []).flatMap((h) => tokenize(h))] : []);
+
   for (const [token, weight] of Object.entries(weighted)) {
     const share = fragmentCount[token] / fragments.length;
-    if (filter && share > BOILERPLATE_SHARE) continue; // nav, footer, function words
+    // Signature words are exempt only while they are common, not universal:
+    // a word in every fragment is the nav bar even when it sits in the h1.
+    const positioning = signature.has(token) && share <= SIGNATURE_MAX_SHARE;
+    if (filter && share > BOILERPLATE_SHARE && !positioning) continue; // nav, footer, function words
 
     // Inverse document frequency, the standard weighting for exactly this.
     //
@@ -149,7 +242,9 @@ export function buildTopicalProfile(
     // terms for a real site. IDF is logarithmic in rarity, so a word in 2% of
     // fragments outweighs one in 40% by roughly four to one rather than by a
     // few percent.
-    const idf = Math.log(fragments.length / fragmentCount[token]);
+    // A signature word in every fragment would have idf 0; floor it so the
+    // positioning word survives with real weight.
+    const idf = Math.max(positioning ? 0.5 : 0, Math.log(fragments.length / fragmentCount[token]));
     // Sublinear term frequency, the other half of standard TF-IDF.
     //
     // Multiplying raw frequency by IDF was not enough on real sites: a function
@@ -158,7 +253,11 @@ export function buildTopicalProfile(
     // frequency logarithmically means saying a word twenty times is worth a
     // little more than saying it ten times, not twice as much, which is what
     // lets a rare product word outrank common filler.
-    const distinctiveness = Math.log(1 + weight) * idf;
+    // The homepage headline says what the business is; a case-study page
+    // says who one customer was. TF-IDF cannot tell them apart and rewards
+    // the rarer one, so www.lully.ai profiled as "fst, waco, shoe, company"
+    // above "warehouse". The signature multiplier puts positioning first.
+    const distinctiveness = Math.log(1 + weight) * idf * (signature.has(token) ? SIGNATURE_BOOST : 1);
     // A term in every fragment has idf 0 and carries no signal. Keeping it
     // would let a keyword "match" against a word that describes nothing.
     if (distinctiveness <= 0) continue;
@@ -167,7 +266,7 @@ export function buildTopicalProfile(
 
   // The domain name is a strong signal and often absent from the copy, so it is
   // added after filtering rather than competing in it.
-  for (const token of tokenize(domain.replace(/\.[a-z.]+$/i, "").replace(/[.-]/g, " "))) {
+  for (const token of domainTokens(domain)) {
     terms[token] = (terms[token] ?? 0) + WEIGHTS.title;
   }
 
@@ -191,6 +290,19 @@ export function buildTopicalProfile(
  * should not have every keyword suppressed; the absence of evidence is not
  * evidence of irrelevance.
  */
+/** Words that shape a query without naming its subject. Never counted as
+ *  evidence for or against relevance. */
+const QUALIFIERS = new Set([
+  "best", "top", "guide", "guides", "software", "tool", "tools", "system", "systems", "platform",
+  "platforms", "management", "manager", "service", "services", "pricing", "price", "prices", "cost",
+  "costs", "review", "reviews", "alternative", "alternatives", "solution", "solutions", "company",
+  "companies", "provider", "providers", "example", "examples", "template", "templates", "checklist",
+  "definition", "meaning", "benefits", "types", "list", "comparison", "online", "free", "cheap",
+  "small", "medium", "large", "enterprise", "agency", "agencies", "how", "what", "why", "when",
+  "tips", "ideas", "strategy", "strategies", "process", "processes", "automation", "automated",
+  "using", "use", "uses", "vendor", "vendors", "app", "apps", "api", "apis", "2024", "2025", "2026",
+]);
+
 export function scoreRelevance(
   keyword: string,
   profile: TopicalProfile | null | undefined,
@@ -253,7 +365,13 @@ export function scoreRelevance(
     (strength >= 0.25 ? matched : unmatched).push(token);
   }
 
-  const score = total / tokens.length;
+  // A content noun the site never uses is a different topic, whatever the
+  // other words do: "ai book" for an AI consultancy is a book query. Words
+  // that qualify a topic rather than name one ("best", "management",
+  // "pricing", "software") are free, or "warehouse management system" would
+  // fail on "management".
+  const foreign = unmatched.filter((t) => !QUALIFIERS.has(t) && strengthOf(t) === 0);
+  const score = foreign.length ? 0 : total / tokens.length;
 
   return {
     score,
@@ -276,7 +394,7 @@ export function scoreRelevance(
  */
 export function profileIsUsable(profile: TopicalProfile | null | undefined, domain?: string): boolean {
   if (!profile?.terms) return false;
-  const own = new Set(domain ? tokenize(domain.replace(/\.[a-z.]+$/i, "").replace(/[.-]/g, " ")) : []);
+  const own = new Set(domain ? domainTokens(domain) : []);
   own.add("www");
   return Object.keys(profile.terms).filter((t) => !own.has(t)).length >= 3;
 }

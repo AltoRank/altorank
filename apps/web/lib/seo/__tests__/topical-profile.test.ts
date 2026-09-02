@@ -151,3 +151,44 @@ describe("scoreRelevance", () => {
     expect(scoreRelevance("anything", empty).score).toBe(1);
   });
 });
+
+describe("seedPhrasesFromPages", () => {
+  it("seeds with the site's own phrases, not nav words or single tokens", async () => {
+    const { seedPhrasesFromPages } = await import("../topical-profile");
+    const seeds = seedPhrasesFromPages([
+      { title: "AI-Driven Warehouse Orchestration Platform - Lully.ai", h1: ["Warehouse Orchestration"], h2: ["By the Numbers:", "Lully's Why:", "AI Driven Warehouse Orchestration", "Hear from your Peers + More", "Case Studies"] },
+      { title: "Case Studies - Lully.ai", h1: ["Case Studies"], h2: ["Learn more", "Labor cost reduction at a 3PL"] },
+    ], "www.lully.ai");
+    expect(seeds[0]).toBe("warehouse orchestration");
+    expect(seeds.join(" ")).not.toContain("case stud");
+    expect(seeds.join(" ")).not.toContain("learn more");
+    expect(seeds.every((s) => s.split(" ").length >= 2)).toBe(true);
+  });
+});
+
+describe("domainTokens", () => {
+  it("keeps the brand and drops www and the public suffix", async () => {
+    const { domainTokens } = await import("../topical-profile");
+    expect(domainTokens("www.lully.ai")).toEqual(["lully"]);
+    expect(domainTokens("shop.acme-tools.co.uk")).toEqual(["shop", "acme", "tools"]);
+    expect(domainTokens("https://altorank.co/")).toEqual(["altorank"]);
+  });
+});
+
+describe("homepage signature", () => {
+  it("keeps a positioning word that recurs in most headings", async () => {
+    const { buildTopicalProfile } = await import("../topical-profile");
+    const page = (title: string, h1: string[], h2: string[]) => ({ url: "https://x.co/", status: 200, title, metaDescription: "", h1, h2, images: [], links: [], loadTimeMs: 1 });
+    const pages = [
+      page("AI-Driven Warehouse Orchestration Platform", ["Warehouse Orchestration"], ["Warehouse ops are complex", "By the numbers"]),
+      // Half the site says "warehouse" in its headings: common, not universal.
+      ...Array.from({ length: 5 }, (_, i) => page(`Warehouse guide ${i}`, [`Warehouse topic ${i}`], ["Learn more"])),
+      ...Array.from({ length: 5 }, (_, i) => page(`Article ${i}`, [`Topic ${i}`], ["Learn more"])),
+    ];
+    const prof = buildTopicalProfile("www.lully.ai", pages);
+    expect("warehouse" in prof.terms).toBe(true);
+    expect("orchestration" in prof.terms).toBe(true);
+    expect("www" in prof.terms).toBe(false);
+    expect("lully" in prof.terms).toBe(true);
+  });
+});

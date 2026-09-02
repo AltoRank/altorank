@@ -134,6 +134,14 @@ export function assessKeywordQuality(
   if (tokens.length > 1 && TRAILING_JUNK.has(tokens[tokens.length - 1])) {
     return { quality: "suspect", note: `ends with "${tokens[tokens.length - 1]}", a fragment rather than a query` };
   }
+  // "ai in company", "ai in world", "ai for business": a preposition and a
+  // bare generic noun. The Ads endpoint emits these as phrase fragments with
+  // the aggregate volume of everything they abbreviate.
+  const PREPOSITION = new Set(["in", "for", "of", "on", "at", "to"]);
+  const GENERIC_TAIL = new Set(["company", "companies", "business", "businesses", "world", "work", "real", "level", "levels", "things", "life", "people"]);
+  if (tokens.length === 3 && PREPOSITION.has(tokens[1]) && GENERIC_TAIL.has(tokens[2])) {
+    return { quality: "suspect", note: `"${tokens[1]} ${tokens[2]}" is a phrase fragment, not a query` };
+  }
 
   return { quality: "ok", note: null };
 }

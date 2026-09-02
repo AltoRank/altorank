@@ -401,7 +401,7 @@ export type DomainAudit = {
 };
 
 export type AuditIssue = {
-  type: "broken_link" | "missing_meta" | "missing_alt" | "heading_hierarchy" | "slow_page";
+  type: "broken_link" | "missing_meta" | "missing_alt" | "heading_hierarchy" | "slow_page" | "tls_chain" | "fetch_failed";
   severity: "error" | "warning" | "info";
   url: string;
   message: string;

@@ -40,6 +40,13 @@ describe("assessKeywordQuality — provider noise", () => {
     expect(assessKeywordQuality("ai in retail", terms()).quality).toBe("ok");
   });
 
+  it("rejects a preposition plus a bare generic noun", () => {
+    expect(assessKeywordQuality("ai in company", terms()).quality).toBe("suspect");
+    expect(assessKeywordQuality("ai for business", terms()).quality).toBe("suspect");
+    expect(assessKeywordQuality("ai in logistics", terms()).quality).toBe("ok");
+    expect(assessKeywordQuality("warehouse management system", terms()).quality).toBe("ok");
+  });
+
   it("rejects a term that repeats a word", () => {
     expect(assessKeywordQuality("seo and seo", terms()).quality).toBe("suspect");
     expect(assessKeywordQuality("seo what is seo", terms()).quality).toBe("suspect");

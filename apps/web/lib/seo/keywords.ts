@@ -252,3 +252,73 @@ export async function discoverKeywords(
 
   return results;
 }
+
+// ---------------------------------------------------------------------------
+// Keywords from what the site says about itself
+// ---------------------------------------------------------------------------
+//
+// `keywords_for_site` asks Google Ads what a domain is about, and for a small
+// site it answers with the head of the category: www.lully.ai, an AI warehouse
+// orchestration platform, came back as "artificial intelligence" 301,000/mo
+// and nothing about warehouses. The site's own headings know better. This
+// seeds DataForSEO Labs' keyword ideas with the topical profile's top terms,
+// so the queue starts from "warehouse orchestration" rather than "ai tools".
+
+type KeywordIdeasItem = {
+  keyword?: string | null;
+  keyword_info?: { search_volume?: number | null; cpc?: number | null; competition?: number | null } | null;
+  keyword_properties?: { keyword_difficulty?: number | null } | null;
+  search_intent_info?: { main_intent?: string | null } | null;
+};
+type KeywordIdeasResult = { items?: KeywordIdeasItem[] | null };
+
+export function parseKeywordIdea(item: KeywordIdeasItem, languageCode = "en"): DiscoveredKeyword | null {
+  const keyword = (item.keyword ?? "").trim();
+  if (!keyword) return null;
+  const volume = item.keyword_info?.search_volume ?? 0;
+  return {
+    keyword,
+    volume: typeof volume === "number" ? volume : 0,
+    difficulty: typeof item.keyword_properties?.keyword_difficulty === "number" ? item.keyword_properties.keyword_difficulty : null,
+    cpc: item.keyword_info?.cpc ?? 0,
+    competition: item.keyword_info?.competition ?? 0,
+    intent: item.search_intent_info?.main_intent
+      ? mapIntent(item.search_intent_info.main_intent)
+      : classifyIntent(keyword, languageCode).intent,
+  };
+}
+
+export async function discoverKeywordsFromSeeds(
+  seeds: string[],
+  options?: { languageCode?: string; locationCode?: number; limit?: number },
+): Promise<DiscoveredKeyword[]> {
+  const clean = [...new Set(seeds.map((s) => s.trim().toLowerCase()).filter((s) => s.length >= 3))].slice(0, 20);
+  if (!clean.length) return [];
+  const response = await post<KeywordIdeasResult>(
+    "/dataforseo_labs/google/keyword_ideas/live",
+    [
+      {
+        keywords: clean,
+        language_code: options?.languageCode ?? "en",
+        location_code: options?.locationCode ?? 2840,
+        limit: options?.limit ?? 100,
+        order_by: ["keyword_info.search_volume,desc"],
+      },
+    ],
+  );
+  const out: DiscoveredKeyword[] = [];
+  const seen = new Set<string>();
+  for (const task of response.tasks ?? []) {
+    for (const result of task.result ?? []) {
+      const items = Array.isArray(result?.items) ? result.items : [result as unknown as KeywordIdeasItem];
+      for (const item of items) {
+        if (!item || typeof item !== "object") continue;
+        const parsed = parseKeywordIdea(item, options?.languageCode ?? "en");
+        if (!parsed || seen.has(parsed.keyword.toLowerCase())) continue;
+        seen.add(parsed.keyword.toLowerCase());
+        out.push(parsed);
+      }
+    }
+  }
+  return out;
+}
