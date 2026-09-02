@@ -1,7 +1,7 @@
 ---
 import Logo from '@/components/shared/Logo.astro';
 import Button from '@/components/shared/Button.astro';
-import { NAV_LINKS, SIGNIN_URL, PRIMARY_CTA } from '@/constants';
+import { NAV_LINKS, SIGNIN_URL, SIGNUP_URL, PRIMARY_CTA } from '@/constants';
 
 interface Props {
   /**
@@ -62,6 +62,15 @@ const { overlay = false } = Astro.props;
       >
         Sign in
       </a>
+      {/* "Add your domain" is the positioning CTA and also creates the account,
+          but nobody scanning the top right for the conventional word finds it.
+          A plain "Sign up" beside "Sign in" is the word people look for. */}
+      <a
+        href={SIGNUP_URL}
+        class="nav-signup hidden h-11 items-center rounded-md px-3 text-[13px] font-medium text-ink-2 transition-colors hover:bg-panel/60 hover:text-ink sm:inline-flex"
+      >
+        Sign up
+      </a>
       <Button href={PRIMARY_CTA.href} size="sm">
   {PRIMARY_CTA.short}
 </Button>
@@ -89,7 +98,10 @@ const { overlay = false } = Astro.props;
               </li>
             ))}
           </ul>
-          <div class="border-t border-line px-4 py-4 sm:px-6">
+          <div class="flex flex-col gap-2.5 border-t border-line px-4 py-4 sm:px-6">
+            <Button href={SIGNUP_URL} block>
+  Sign up
+</Button>
             <Button href={SIGNIN_URL} variant="secondary" block>
   Sign in
 </Button>

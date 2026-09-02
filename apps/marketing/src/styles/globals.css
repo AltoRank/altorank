@@ -178,11 +178,13 @@
 
 /* Everything inside has to invert too, or you get ink text on a navy ground. */
 .site-header[data-overlay="on"] .nav-link,
-.site-header[data-overlay="on"] .nav-signin {
+.site-header[data-overlay="on"] .nav-signin,
+.site-header[data-overlay="on"] .nav-signup {
   color: oklch(0.85 0.025 275);
 }
 .site-header[data-overlay="on"] .nav-link:hover,
-.site-header[data-overlay="on"] .nav-signin:hover {
+.site-header[data-overlay="on"] .nav-signin:hover,
+.site-header[data-overlay="on"] .nav-signup:hover {
   color: #fff;
   background: oklch(1 0 0 / 0.1);
 }
