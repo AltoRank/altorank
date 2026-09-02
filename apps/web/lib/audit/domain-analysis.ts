@@ -25,6 +25,7 @@ import { discoverKeywords, discoverKeywordsFromSeeds, type DiscoveredKeyword } f
 import { profileIsUsable, seedPhrasesFromPages, scoreRelevance } from "@/lib/seo/topical-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
+import { dedupePermutations } from "@/lib/seo/keywords";
 import {
   fetchRankedKeywords,
   groupByPage,
@@ -73,6 +74,8 @@ const MAX_PAGES = 40;
 const MAX_DEPTH = 2;
 const CRAWL_DELAY_MS = 400;
 const MAX_KEYWORDS_STORED = 100;
+/** Ceiling on how much of a keyword list may come from keywords_for_site. */
+const ADS_FALLBACK_CAP = 40;
 
 function normalizeDomain(domain: string): string {
   return domain.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
@@ -326,11 +329,25 @@ export async function analyseDomain(options: {
       let usedFallback = false;
       if (depth === "full" && byTerm.size < MAX_KEYWORDS_STORED / 2) {
         const fromSite = await discoverKeywords(domain, { withDifficulty: true }).catch(() => []);
-        for (const k of fromSite) add(k, 2);
-        usedFallback = fromSite.length > 0;
+        // Capped, because this is the endpoint that produced every keyword we
+        // have ever had to throw away. Making the seeded source stricter made
+        // this one fire MORE often - fewer seeded results means the threshold
+        // above is met less - and it went from 0 to 71 of altorank.co's 100
+        // slots in a single run. A thin list of real keywords beats a full one
+        // padded from the source we do not trust.
+        const room = Math.max(0, ADS_FALLBACK_CAP - byTerm.size);
+        for (const k of fromSite.slice(0, room)) add(k, 2);
+        usedFallback = room > 0 && fromSite.length > 0;
       }
 
-      const candidates = [...byTerm.values()];
+      // Collapse phrasings across ALL three sources, not just the seeded one.
+      // keyword_suggestions is the worst offender but keywords_for_site emits
+      // the same shape: altorank.co came back with "seo for agency", "agency
+      // for seo" and "seo agent" as three separate rows at 27,100 each.
+      const candidatesAll = [...byTerm.values()];
+      const deduped = dedupePermutations(candidatesAll.map((c) => c.k));
+      const keep = new Set(deduped.map((k) => k.keyword));
+      const candidates = candidatesAll.filter((c) => keep.has(c.k.keyword));
       keywordsFound = candidates.length;
 
       if (supabase && workspaceId && candidates.length) {

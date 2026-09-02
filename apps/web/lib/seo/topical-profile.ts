@@ -142,6 +142,33 @@ export function seedPhrasesFromPages(
     for (const h of p.h1 ?? []) add(h, 3);
     for (const h of p.h2 ?? []) add(h, 1);
   }
+  // Page furniture is not a topic. "Frequently asked questions" is the h2 on
+  // half the sites in the world, and keyword_suggestions expands whatever it
+  // is given: supalabs.co came back with six FAQ keywords at 135,000 and
+  // 27,100 a month, which sorted straight to the top of its keyword list.
+  // These are matched as whole phrases, not tokens, so "questions to ask a
+  // supplier" is untouched.
+  const BOILERPLATE_PHRASES = new Set([
+    "frequently asked questions",
+    "frequently asked",
+    "asked questions",
+    "contact us",
+    "privacy policy",
+    "terms of service",
+    "terms and conditions",
+    "cookie policy",
+    "all rights reserved",
+    "sign up",
+    "log in",
+    "get started",
+    "learn more",
+    "read more",
+    "book a demo",
+    "case studies",
+    "how it works",
+  ]);
+  for (const phrase of BOILERPLATE_PHRASES) delete score[phrase];
+
   const ranked = Object.entries(score).sort((a, b) => b[1] - a[1]).map(([k]) => k);
   // Drop a bigram that only exists inside a higher-ranked trigram.
   const out: string[] = [];
