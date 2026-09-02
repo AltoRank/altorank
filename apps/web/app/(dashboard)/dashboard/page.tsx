@@ -10,6 +10,7 @@ import { ClientActions } from "@/components/dashboard/client-actions";
 import { WorkspaceGrid } from "@/components/dashboard/workspace-grid";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
+import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -34,11 +35,24 @@ function TrafficChart({ series, connected = false }: { series: TrafficSeries; co
       return (
         <div className="h-[220px] grid place-items-center px-8 text-center">
           <div className="max-w-[46ch] text-[13px] leading-relaxed text-ink-3">
-            <div className="mb-1 text-[13.5px] font-medium text-ink-2">Search Console is connected, with nothing to plot yet</div>
+            <div className="mb-1 text-[13.5px] font-medium text-ink-2">
+              {series.impressions
+                ? `Connected: ${series.impressions.toLocaleString()} impressions, no clicks yet`
+                : "Search Console is connected, with nothing to plot yet"}
+            </div>
+            {series.impressions ? (
+              <>
+                This chart plots clicks, and there are none so far. Impressions mean the
+                pages are being shown; clicks follow position. Nothing here is estimated.
+              </>
+            ) : (
+              <>
             Search Console reports with about a two-day lag, and only pages that
             received clicks appear at all. If this stays empty, open Integrations:
             the sync reports there when the connected Google account cannot see a
             property for this domain.
+              </>
+            )}
           </div>
         </div>
       );
@@ -89,12 +103,14 @@ function TrafficChart({ series, connected = false }: { series: TrafficSeries; co
 }
 
 export default async function DashboardPage() {
+  // Every section is about one site unless the switcher says otherwise.
+  const scopeId = await getScopedWorkspaceId();
   const [workspaces, allArticles, recent, traffic, keywords] = await Promise.all([
     getWorkspaces(),
-    getArticles(),
+    getArticles(scopeId ?? undefined),
     getRecentArticles(6),
-    getTrafficSeries(),
-    getKeywords(),
+    getTrafficSeries(scopeId ?? undefined),
+    getKeywords(scopeId ?? undefined),
   ]);
   // Whether any workspace has Google connected at all: it changes the empty
   // state from an instruction into an explanation.

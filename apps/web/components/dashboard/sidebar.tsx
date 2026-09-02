@@ -10,6 +10,7 @@ import { cn, plural } from "@/lib/utils";
 import { APP_NAME, DASHBOARD_NAV } from "@/lib/constants";
 import { Icons } from "@/components/ui/icons";
 import { Avatar } from "@/components/ui/avatar";
+import { WorkspaceSwitcher } from "@/components/dashboard/workspace-switcher";
 import { useOnboarding } from "@/components/onboarding/use-onboarding";
 import { signOut } from "@/app/actions/auth";
 
@@ -157,6 +158,7 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
           them. */}
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-2 pt-2 pb-3 scroll">
+        <WorkspaceSwitcher collapsed={collapsed} />
         {DASHBOARD_NAV.map((group) => {
           const items = group.items.filter((item) => !hidden.includes(item.id));
           // A group heading with nothing under it is worse than no group.

@@ -4,6 +4,7 @@ import { getGeoPrompts, getLatestGeoResults, summariseRows } from "@/lib/queries
 import { deriveGeoActions } from "@/lib/geo/actions";
 import { PageHead, StatusPill, Card, StatStrip, Chip, DotSep } from "@/components/ui";
 import type { AiEngine } from "@/lib/geo/ai-visibility";
+import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "AI visibility" };
 
@@ -15,10 +16,12 @@ const ENGINE_LABEL: Record<AiEngine, string> = {
 };
 
 export default async function GeoPage() {
+  // Every section is about one site unless the switcher says otherwise.
+  const scopeId = await getScopedWorkspaceId();
   const [workspaces, prompts, rows] = await Promise.all([
     getWorkspaces(),
-    getGeoPrompts(),
-    getLatestGeoResults(),
+    getGeoPrompts(scopeId ?? undefined),
+    getLatestGeoResults(scopeId ?? undefined),
   ]);
 
   const summary = summariseRows(rows);

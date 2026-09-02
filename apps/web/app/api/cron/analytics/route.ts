@@ -20,10 +20,17 @@ export async function GET(request: Request) {
  */
   const supabase = createServiceClient();
 
-  // Find all workspace_integrations with Google tokens
+  // One row per workspace, not one per integration.
+  //
+  // Connecting writes a gsc row and a ga4 row from the same consent, and this
+  // loop ran the whole sync once for each: two identical passes per workspace,
+  // and whichever ran last wrote its resolved Search Console property into the
+  // GA4 row's config (2026-09-02). The sync handles both services from one
+  // row, so it takes the gsc one.
   const { data: integrations, error: integrationsError } = await supabase
     .from("workspace_integrations")
     .select("*, workspace:workspaces(id, domain)")
+    .eq("integration_id", "gsc")
     .not("tokens", "is", null);
 
   // A query that failed and a workspace list that is genuinely empty both arrive

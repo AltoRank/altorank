@@ -41,7 +41,9 @@ export function WorkspaceProvider({
     []
   );
 
-  const active = workspaces.find((w) => w.id === activeId) ?? workspaces[0] ?? null;
+  // "all" is a real choice, not a missing one: the pages read the same
+  // cookie and show every workspace when it is set.
+  const active = activeId === "all" ? null : (workspaces.find((w) => w.id === activeId) ?? workspaces[0] ?? null);
 
   return (
     <WorkspaceContext value={{ workspaces, active, setActiveId }}>

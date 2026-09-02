@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { CalendarControls } from "@/components/dashboard/calendar-controls";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
+import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "Calendar" };
 
@@ -17,6 +18,8 @@ type Props = {
 };
 
 export default async function CalendarPage({ searchParams }: Props) {
+  // Every section is about one site unless the switcher says otherwise.
+  const scopeId = await getScopedWorkspaceId();
   const params = await searchParams;
 
   const now = new Date();
@@ -27,7 +30,7 @@ export default async function CalendarPage({ searchParams }: Props) {
 
   const [workspaces, entries] = await Promise.all([
     getWorkspaces(),
-    getCalendarEntries(undefined, month),
+    getCalendarEntries(scopeId ?? undefined, month),
   ]);
 
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));

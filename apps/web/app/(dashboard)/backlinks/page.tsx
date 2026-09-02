@@ -8,6 +8,7 @@ import { BacklinkFilters } from "@/components/dashboard/backlink-filters";
 import { ExportCsv } from "@/components/dashboard/export-csv";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
+import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "Backlinks" };
 
@@ -16,11 +17,13 @@ type Props = {
 };
 
 export default async function BacklinksPage({ searchParams }: Props) {
+  // Every section is about one site unless the switcher says otherwise.
+  const scopeId = await getScopedWorkspaceId();
   const params = await searchParams;
 
   const [workspaces, backlinks] = await Promise.all([
     getWorkspaces(),
-    getBacklinks(params.workspace, params.status),
+    getBacklinks(params.workspace ?? scopeId ?? undefined, params.status),
   ]);
 
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));

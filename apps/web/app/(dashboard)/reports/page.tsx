@@ -5,13 +5,16 @@ import { PageHead, StatusPill, Avatar, Icons, Card, ConnectPrompt } from "@/comp
 import { GenerateReportButton } from "@/components/dashboard/generate-report-button";
 import { OpenReportButton } from "@/components/dashboard/open-report-button";
 import type { Workspace } from "@/lib/types";
+import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "Reports" };
 
 export default async function ReportsPage() {
+  // Every section is about one site unless the switcher says otherwise.
+  const scopeId = await getScopedWorkspaceId();
   const [workspaces, reports] = await Promise.all([
     getWorkspaces(),
-    getReports(),
+    getReports(scopeId ?? undefined),
   ]);
 
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));

@@ -11,6 +11,9 @@ export interface TrafficSeries {
   changePct: number | null;
   /** False when no analytics have ever been synced. */
   hasData: boolean;
+  /** Impressions over the window. A site can have thousands with no clicks,
+   *  and a flat line at zero should say which of those two it is. */
+  impressions: number;
   days: number;
 }
 
@@ -23,6 +26,7 @@ const EMPTY: TrafficSeries = {
   previousTotal: 0,
   changePct: null,
   hasData: false,
+  impressions: 0,
   days: DAYS,
 };
 
@@ -46,7 +50,7 @@ export async function getTrafficSeries(workspaceId?: string): Promise<TrafficSer
 
   let query = supabase
     .from("analytics_metrics")
-    .select("metric_date, clicks")
+    .select("metric_date, clicks, impressions")
     .eq("source", "gsc")
     .gte("metric_date", startDate)
     .order("metric_date", { ascending: true });
@@ -86,5 +90,6 @@ export async function getTrafficSeries(workspaceId?: string): Promise<TrafficSer
       : null,
     hasData: true,
     days: DAYS,
-  };
+      impressions: (data ?? []).reduce((sum, r) => sum + ((r.impressions as number) ?? 0), 0),
+};
 }

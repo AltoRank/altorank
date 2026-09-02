@@ -5,13 +5,16 @@ import { PageHead, StatusPill, Avatar, Chip } from "@/components/ui";
 import { VoiceActions } from "@/components/dashboard/voice-actions";
 import { VoiceCardButton } from "@/components/dashboard/voice-card-button";
 import type { Workspace, VoiceProfile } from "@/lib/types";
+import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "Brand Voice" };
 
 export default async function VoicePage() {
+  // Every section is about one site unless the switcher says otherwise.
+  const scopeId = await getScopedWorkspaceId();
   const [workspaces, voiceProfiles] = await Promise.all([
     getWorkspaces(),
-    getVoiceProfiles(),
+    getVoiceProfiles(scopeId ?? undefined),
   ]);
 
   const voiceMap = new Map<string, VoiceProfile>(voiceProfiles.map((v) => [v.workspace_id, v]));

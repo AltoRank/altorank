@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { ReviewQueueActions, VerdictPill } from "./review-actions";
 import type { Article, Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
+import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "Review queue" };
 
@@ -26,8 +27,10 @@ export const metadata: Metadata = { title: "Review queue" };
  * is the sign-off, publishing is still its own step.
  */
 export default async function ReviewQueuePage() {
+  // Every section is about one site unless the switcher says otherwise.
+  const scopeId = await getScopedWorkspaceId();
   const [articles, workspaces] = await Promise.all([
-    getArticles(undefined, "review"),
+    getArticles(scopeId ?? undefined, "review"),
     getWorkspaces(),
   ]);
   const { user, agencyId } = await requireAuth();

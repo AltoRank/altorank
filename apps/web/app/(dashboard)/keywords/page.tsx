@@ -6,6 +6,7 @@ import { KeywordActions } from "@/components/dashboard/keyword-actions";
 import { KeywordFilters } from "@/components/dashboard/keyword-filters";
 import { KeywordPlanButton } from "@/components/dashboard/keyword-plan-button";
 import type { Workspace } from "@/lib/types";
+import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "Keywords" };
 
@@ -25,11 +26,13 @@ function matchesQuery(fields: (string | null | undefined)[], q: string): boolean
 }
 
 export default async function KeywordsPage({ searchParams }: Props) {
+  // Every section is about one site unless the switcher says otherwise.
+  const scopeId = await getScopedWorkspaceId();
   const params = await searchParams;
 
   const [workspaces, keywords] = await Promise.all([
     getWorkspaces(),
-    getKeywords(undefined, params.status, params.intent),
+    getKeywords(scopeId ?? undefined, params.status, params.intent),
   ]);
 
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));

@@ -8,6 +8,7 @@ import { ArticleFilters } from "@/components/dashboard/article-filters";
 import { ArticleRowMenu } from "@/components/dashboard/article-row-menu";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
+import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "Articles" };
 
@@ -16,11 +17,13 @@ type Props = {
 };
 
 export default async function ArticlesPage({ searchParams }: Props) {
+  // Every section is about one site unless the switcher says otherwise.
+  const scopeId = await getScopedWorkspaceId();
   const params = await searchParams;
 
   const [workspaces, allArticles] = await Promise.all([
     getWorkspaces(),
-    getArticles(undefined, params.status, params.sort),
+    getArticles(scopeId ?? undefined, params.status, params.sort),
   ]);
 
   /**
