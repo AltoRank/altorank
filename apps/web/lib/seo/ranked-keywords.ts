@@ -122,6 +122,25 @@ export function parseRankedItem(item: DFSRankedItem): RankedKeyword | null {
  * Returns an empty array rather than throwing when the payload is unrecognised,
  * so a first-look analysis degrades to "no rank data" instead of failing whole.
  */
+/**
+ * DataForSEO's `filters` payload: [field, op, value] triples joined by "and".
+ *
+ * Exported so the shape can be unit-tested without spending a call. The syntax
+ * is fussy and endpoint-specific - a malformed filter is a 40501 with no rows,
+ * not an error you notice in aggregate - so it is built in one place.
+ */
+export function buildRankedFilters(minVolume: number, maxRank: number): unknown[] {
+  const filters: unknown[] = [];
+  if (minVolume > 0) {
+    filters.push(["keyword_data.keyword_info.search_volume", ">", minVolume]);
+  }
+  if (maxRank > 0) {
+    if (filters.length) filters.push("and");
+    filters.push(["ranked_serp_element.serp_item.rank_absolute", "<=", maxRank]);
+  }
+  return filters;
+}
+
 export async function fetchRankedKeywords(
   domain: string,
   options?: {
@@ -129,11 +148,27 @@ export async function fetchRankedKeywords(
     locationCode?: number;
     /** Bounded so a first look cannot bill for tens of thousands of rows. */
     limit?: number;
+    /** Drop terms below this monthly volume server-side. 0 disables. */
+    minVolume?: number;
+    /** Ignore rankings past this absolute position. */
+    maxRank?: number;
   },
 ): Promise<RankedKeyword[]> {
   const languageCode = options?.languageCode ?? "en";
   const locationCode = options?.locationCode ?? 2840;
   const limit = options?.limit ?? 500;
+  const minVolume = options?.minVolume ?? 0;
+  const maxRank = options?.maxRank ?? 0;
+
+  // Filter and sort in the API rather than here.
+  //
+  // This used to pull 500 rows ordered by position and do the rest in memory,
+  // which meant paying for - and parsing - hundreds of terms with no search
+  // volume to reach the handful worth targeting. DataForSEO applies both
+  // server-side; `filters` takes [field, op, value] triples joined by "and".
+  // Verified against the live endpoint on cal.com (status 20000, $0.0132):
+  // volume > 500 and rank <= 20 returned 216 matches, ordered by volume.
+  const filters = buildRankedFilters(minVolume, maxRank);
 
   const response = await post<RankedKeywordsResult>(
     "/dataforseo_labs/google/ranked_keywords/live",
@@ -143,8 +178,12 @@ export async function fetchRankedKeywords(
         language_code: languageCode,
         location_code: locationCode,
         limit,
-        // Keep the payload to genuinely ranking terms.
-        order_by: ["ranked_serp_element.serp_item.rank_absolute,asc"],
+        ...(filters.length ? { filters } : {}),
+        // Volume first: the point of the call is what is worth writing about,
+        // and position is already bounded by `maxRank` when it matters.
+        order_by: minVolume > 0 || maxRank > 0
+          ? ["keyword_data.keyword_info.search_volume,desc"]
+          : ["ranked_serp_element.serp_item.rank_absolute,asc"],
       },
     ],
   );

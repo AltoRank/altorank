@@ -293,7 +293,7 @@ export async function recommendKeywords(
 
   const { data: keywords, error } = await supabase
     .from("keywords")
-    .select("id, term, volume, difficulty, intent, status")
+    .select("id, term, volume, difficulty, intent, status, source")
     .eq("workspace_id", workspaceId);
 
   if (error) throw new Error(`Could not read keywords: ${error.message}`);
@@ -435,11 +435,22 @@ export async function recommendKeywords(
     // --- Relevance ---------------------------------------------------------
     // The third axis. A keyword can be high-volume and easy to win and still be
     // worthless because the business has nothing to say about it.
-    const relevance = scoreRelevance(k.term as string, profile);
+    // A term the site already ranks for is not subject to this at all. The
+    // storage path says why - "the SERP already decided" - and then this
+    // re-scored it anyway, because the row carried no provenance. cal.com
+    // ranks 10-15 for "google calendar", 3.35M searches a month, and
+    // scoreRelevance scores it 0: "google" is not in cal.com's own headings.
+    // The filter is for terms nobody has tested. A ranking is a test result.
+    const proven = k.source === "ranked";
+    const relevance = proven
+      ? { score: 1, matched: [], unmatched: [], reason: "the site already ranks for this" }
+      : scoreRelevance(k.term as string, profile);
     // Squared, so a half-relevant term (one word of two on the site) is
     // worth a quarter of a fully on-topic one, not half. Volume differences
     // are logarithmic here; relevance has to be able to outvote them.
-    score *= RELEVANCE_FLOOR + (1 - RELEVANCE_FLOOR) * relevance.score * relevance.score;
+    if (!proven) {
+      score *= RELEVANCE_FLOOR + (1 - RELEVANCE_FLOOR) * relevance.score * relevance.score;
+    }
     if ((k.term as string).trim().split(/\s+/).length === 1) {
       score *= SINGLE_WORD_PENALTY;
       reasons.push("a one-word head term, hard to win and hard to write to");
@@ -451,7 +462,12 @@ export async function recommendKeywords(
     // words are in the site's own vocabulary - it is a direct competitor's
     // pricing query - and the reviewer saw only "1,900 searches/mo, difficulty
     // 9" and had to guess whether the topic fit at all.
-    if (relevance.score < 1) {
+    if (proven) {
+      // Say it out loud. Without this a ranked pick lost its strongest
+      // argument: score 1 and no matched words meant neither branch below
+      // fired, so the reviewer saw volume and difficulty and no reason at all.
+      reasons.push("the site already ranks for this");
+    } else if (relevance.score < 1) {
       reasons.push(relevance.reason);
     } else if (relevance.matched.length > 0) {
       reasons.push(
