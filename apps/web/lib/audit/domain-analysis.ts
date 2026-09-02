@@ -21,7 +21,7 @@ import { runAgentReadiness, type ReadinessResult } from "./agent-readiness";
 import { crawlSite, usablePages } from "./crawler";
 import { runAuditChecks, calculateAuditScore } from "./checks";
 import { fetchPageSpeedDetailed } from "./pagespeed";
-import { discoverKeywords, discoverKeywordsFromSeeds } from "@/lib/seo/keywords";
+import { discoverKeywords, discoverKeywordsFromSeeds, type DiscoveredKeyword } from "@/lib/seo/keywords";
 import { profileIsUsable, seedPhrasesFromPages, scoreRelevance } from "@/lib/seo/topical-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
@@ -201,98 +201,7 @@ export async function analyseDomain(options: {
     });
   }
 
-  // --- Keywords the domain already has some claim to ------------------------
-  let keywordsFound = 0;
   const hasDataForSeo = hasDataForSEOCredentials();
-  if (!hasDataForSeo) {
-    layers.push({
-      id: "keywords",
-      status: "unavailable",
-      detail: "DataForSEO credentials not configured",
-    });
-  } else {
-    try {
-      const fromSite = await discoverKeywords(domain, { withDifficulty: true });
-      // Seed a second lookup from the site's own vocabulary. For a small site
-      // the Ads endpoint returns the category head ("artificial intelligence"
-      // for a warehouse-software company); the headings say what it does.
-      let seeded: typeof fromSite = [];
-      const seeds = profileIsUsable(profile, domain) ? seedPhrasesFromPages(crawledPages, domain) : [];
-      if (seeds.length) {
-        seeded = await discoverKeywordsFromSeeds(seeds).catch(() => []);
-      }
-      const seenTerm = new Set(fromSite.map((k) => k.keyword.toLowerCase()));
-      // Seeded ideas share a word with the site, which is exactly how another
-      // company's brand query gets in ("warehouse 13", "worldfood warehouse").
-      // Navigational intent means someone is looking for a specific site, and
-      // it is not this one.
-      const discovered = [
-        ...fromSite,
-        ...seeded.filter((k) => !seenTerm.has(k.keyword.toLowerCase()) && k.intent !== "navigational"),
-      ];
-      keywordsFound = discovered.length;
-
-      if (supabase && workspaceId && discovered.length) {
-        // Store what fits the site, not what is biggest. Ranked by raw
-        // volume, www.lully.ai's stored set was "uscis case status" and
-        // "supreme court"; ranked by relevance to its own vocabulary it is
-        // warehouse terms first. With no usable profile, volume is all there is.
-        const usable = profileIsUsable(profile, domain);
-        const rel = (term: string) => (usable ? scoreRelevance(term, profile).score : 1);
-        // Ideas seeded from the site's own headings come first, whatever
-        // their relevance number: "warehouse management system" was pushed
-        // out of the store by fifty "ai …" terms that each scored a perfect
-        // match on one word. Then the rest by relevance, then volume.
-        const seededTerms = new Set(seeded.map((k) => k.keyword.toLowerCase()));
-        // Provider noise ("ai a ai", "ai and ai", "s eo") is filtered here,
-        // at storage, not only in the autonomous queue: a term nobody would
-        // type has no business on the keywords page either.
-        const allTerms = new Set(discovered.map((k) => k.keyword.toLowerCase()));
-        const ranked = [...discovered]
-          .filter((k) => assessKeywordQuality(k.keyword, allTerms).quality === "ok")
-          .map((k) => ({ k, r: rel(k.keyword), s: seededTerms.has(k.keyword.toLowerCase()) ? 1 : 0 }))
-          .filter(({ r }) => !usable || r > 0)
-          .sort((a, b) => b.s - a.s || b.r - a.r || b.k.volume - a.k.volume);
-        const top = ranked.slice(0, MAX_KEYWORDS_STORED).map(({ k }) => k);
-
-        // Skip terms already tracked, so re-running does not duplicate rows.
-        const { data: existing } = await supabase
-          .from("keywords")
-          .select("term")
-          .eq("workspace_id", workspaceId);
-        const seen = new Set(
-          (existing ?? []).map((k) => (k.term as string).toLowerCase()),
-        );
-
-        const rows = top
-          .filter((k) => !seen.has(k.keyword.toLowerCase()))
-          .map((k) => ({
-            workspace_id: workspaceId,
-            term: k.keyword,
-            volume: k.volume,
-            difficulty: k.difficulty,
-            intent: k.intent ?? classifyIntent(k.keyword, options.locale ?? "en").intent,
-            status: "new",
-          }));
-
-        if (rows.length) await supabase.from("keywords").insert(rows);
-      }
-
-      layers.push({
-        id: "keywords",
-        status: "ok",
-        detail: seeded.length
-          ? `${discovered.length} keywords found: ${fromSite.length} for the domain, ${seeded.length} from what its pages say`
-          : `${discovered.length} keywords found for the domain`,
-      });
-    } catch (err) {
-      layers.push({
-        id: "keywords",
-        status: "failed",
-        detail: err instanceof Error ? err.message : "keyword discovery failed",
-      });
-    }
-  }
 
   // --- What the domain already ranks for ------------------------------------
   // Separate layer from `keywords` above on purpose. That one answers "what
@@ -335,6 +244,146 @@ export async function analyseDomain(options: {
         id: "ranked_keywords",
         status: "failed",
         detail: err instanceof Error ? err.message : "rank lookup failed",
+      });
+    }
+  }
+
+  // --- What to write next --------------------------------------------------
+  //
+  // Three sources, in order of how much they know about this site:
+  //
+  //   1. what it already ranks for   observed on the live SERP, with the
+  //                                  position, so "one revision from page
+  //                                  one" is answerable
+  //   2. ideas seeded from its own   headings, which say what the business
+  //      pages                       does in its own words
+  //   3. Google Ads keywords-for-    an advertising tool, and the source of
+  //      site                        every junk set we have shipped:
+  //                                  "artificial artificial intelligence"
+  //                                  for a warehouse company, "ai stop" for
+  //                                  supalabs.co. Fallback only, when the
+  //                                  first two leave the queue too thin.
+  //
+  // Reordered 2026-09-02. Before this, (3) was the primary source and (1) was
+  // fetched for a headline and thrown away, so the strongest signal in the
+  // product never reached the queue that decides what gets written.
+  let keywordsFound = 0;
+  if (!hasDataForSeo) {
+    layers.push({
+      id: "keywords",
+      status: "unavailable",
+      detail: "DataForSEO credentials not configured",
+    });
+  } else {
+    try {
+      const usable = profileIsUsable(profile, domain);
+      const rel = (term: string) => (usable ? scoreRelevance(term, profile).score : 1);
+
+      // (1) Ranked terms, best position first.
+      const fromRanked: DiscoveredKeyword[] = ranked
+        .filter((k) => k.position !== null)
+        .map((k) => ({
+          keyword: k.keyword,
+          volume: k.volume ?? 0,
+          difficulty: k.difficulty,
+          cpc: k.cpc ?? 0,
+          competition: 0,
+          intent: classifyIntent(k.keyword, options.locale ?? "en").intent,
+        }));
+
+      // (2) Ideas from the site's own headings.
+      const seeds = usable ? seedPhrasesFromPages(crawledPages, domain) : [];
+      const seeded = seeds.length ? await discoverKeywordsFromSeeds(seeds).catch(() => []) : [];
+
+      const byTerm = new Map<string, { k: DiscoveredKeyword; rank: number }>();
+      const add = (k: DiscoveredKeyword, rank: number) => {
+        const key = k.keyword.trim().toLowerCase();
+        const prev = byTerm.get(key);
+        if (!prev || rank < prev.rank) byTerm.set(key, { k, rank });
+      };
+      for (const k of fromRanked) add(k, 0);
+      for (const k of seeded) if (k.intent !== "navigational") add(k, 1);
+
+      // (3) The Ads endpoint, only when the first two are thin.
+      let usedFallback = false;
+      if (byTerm.size < MAX_KEYWORDS_STORED / 2) {
+        const fromSite = await discoverKeywords(domain, { withDifficulty: true }).catch(() => []);
+        for (const k of fromSite) add(k, 2);
+        usedFallback = fromSite.length > 0;
+      }
+
+      const candidates = [...byTerm.values()];
+      keywordsFound = candidates.length;
+
+      if (supabase && workspaceId && candidates.length) {
+        const allTerms = new Set(candidates.map((c) => c.k.keyword.toLowerCase()));
+        const scored = candidates
+          .filter((c) => assessKeywordQuality(c.k.keyword, allTerms).quality === "ok")
+          .map((c) => ({ ...c, r: rel(c.k.keyword) }))
+          // A term the site ranks for is on-topic by definition, whatever the
+          // profile says: the SERP already decided.
+          .filter((c) => c.rank === 0 || !usable || c.r > 0)
+          .sort((a, b) => a.rank - b.rank || b.r - a.r || b.k.volume - a.k.volume);
+        const top = scored.slice(0, MAX_KEYWORDS_STORED);
+
+        const { data: existing } = await supabase
+          .from("keywords")
+          .select("id, term")
+          .eq("workspace_id", workspaceId);
+        const seen = new Map(
+          (existing ?? []).map((k) => [(k.term as string).toLowerCase(), k.id as string]),
+        );
+
+        const rows = top
+          .filter((c) => !seen.has(c.k.keyword.toLowerCase()))
+          .map((c) => ({
+            workspace_id: workspaceId,
+            term: c.k.keyword,
+            volume: c.k.volume,
+            difficulty: c.k.difficulty,
+            intent: c.k.intent ?? classifyIntent(c.k.keyword, options.locale ?? "en").intent,
+            status: "new",
+          }));
+        if (rows.length) {
+          const { data: inserted } = await supabase.from("keywords").insert(rows).select("id, term");
+          for (const r of inserted ?? []) seen.set((r.term as string).toLowerCase(), r.id as string);
+        }
+
+        // Positions, so the queue can see striking distance. Without this the
+        // strongest multiplier in recommendKeywords (a term sitting at 11-20,
+        // one revision from page one) could never fire on a new workspace:
+        // the ranked data was fetched, shown in a headline, and dropped.
+        const positions = ranked
+          .filter((k) => k.position !== null)
+          .map((k) => ({ id: seen.get(k.keyword.trim().toLowerCase()), position: k.position, url: k.url }))
+          .filter((r): r is { id: string; position: number; url: string | null } => Boolean(r.id));
+        if (positions.length) {
+          await supabase.from("keyword_rankings").insert(
+            positions.map((r) => ({
+              keyword_id: r.id,
+              position: r.position,
+              url: r.url,
+              checked_at: new Date().toISOString(),
+            })),
+          );
+        }
+      }
+
+      const parts = [
+        fromRanked.length ? `${fromRanked.length} it already ranks for` : "",
+        seeded.length ? `${seeded.length} from what its pages say` : "",
+        usedFallback ? "the rest from the ads keyword tool" : "",
+      ].filter(Boolean);
+      layers.push({
+        id: "keywords",
+        status: "ok",
+        detail: `${keywordsFound} keywords found: ${parts.join(", ") || "none"}`,
+      });
+    } catch (err) {
+      layers.push({
+        id: "keywords",
+        status: "failed",
+        detail: err instanceof Error ? err.message : "keyword discovery failed",
       });
     }
   }
