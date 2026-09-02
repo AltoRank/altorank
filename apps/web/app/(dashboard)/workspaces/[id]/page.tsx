@@ -8,6 +8,8 @@ import { getVoiceProfile } from "@/lib/queries/voice";
 import { getPublishingCadence } from "@/lib/queries/schedule";
 import { PageHead, DotSep, StatusPill, Avatar, StatStrip } from "@/components/ui";
 import { ClientTabs } from "@/components/dashboard/client-tabs";
+import { MetricHistory } from "@/components/dashboard/metric-history";
+import { getWorkspaceMetrics } from "@/lib/queries/metrics";
 import { plural } from "@/lib/utils";
 
 type Props = {
@@ -25,14 +27,27 @@ export default async function ClientDetailPage({ params }: Props) {
   const workspace = await getWorkspace(id);
   if (!workspace) notFound();
 
-  const [articles, keywords, calendar, backlinks, voice, cadence] = await Promise.all([
+  const [articles, keywords, calendar, backlinks, voice, cadence, metrics] = await Promise.all([
     getArticles(id),
     getKeywords(id),
     getCalendarEntries(id),
     getBacklinks(id),
     getVoiceProfile(id),
     getPublishingCadence(id),
+    getWorkspaceMetrics(id),
   ]);
+
+  // The clock FirstDraftLive measures a stalled draft against. It has to be
+  // the server's: a client timer restarts whenever the tab is reopened, so a
+  // draft that died an hour ago would read as "writing" for another ten
+  // minutes on every visit.
+  //
+  // react-hooks flags Date.now() in a component body because an impure read
+  // makes a client render non-idempotent. This is an async Server Component -
+  // it runs once per request, and every poll is a new request - so there is no
+  // re-render for the value to be unstable across.
+  // eslint-disable-next-line react-hooks/purity
+  const now = Date.now();
 
   const liveCount = articles.filter((a) => a.status === "live").length;
   const reviewCount = articles.filter((a) => a.status === "review").length;
@@ -71,8 +86,14 @@ export default async function ClientDetailPage({ params }: Props) {
         ]}
       />
 
+      {metrics.length > 0 && (
+        <div className="px-8 pt-4">
+          <MetricHistory points={metrics} />
+        </div>
+      )}
       <ClientTabs
         workspace={workspace}
+        now={now}
         articles={articles}
         keywords={keywords}
         calendar={calendar}

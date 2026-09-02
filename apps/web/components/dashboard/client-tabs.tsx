@@ -6,6 +6,7 @@ import { IconButton } from "@/components/ui/button";
 import { SetupWizard } from "@/components/dashboard/setup-wizard";
 import { PublishingCadenceForm } from "@/components/dashboard/publishing-cadence-form";
 import { LocaleSelector } from "@/components/dashboard/locale-selector";
+import { FirstDraftLive } from "./first-draft-live";
 import type { Article, Keyword, CalendarEntry, Backlink, VoiceProfile, Workspace, PublishingCadence } from "@/lib/types";
 
 type ClientTabsProps = {
@@ -16,6 +17,8 @@ type ClientTabsProps = {
   backlinks: Backlink[];
   voice: VoiceProfile | null;
   cadence: PublishingCadence | null;
+  /** Server clock at render; see FirstDraftLive. */
+  now: number;
 };
 
 const TABS = [
@@ -28,7 +31,7 @@ const TABS = [
   { id: "settings", label: "Settings", icon: <Icons.settings size={14} /> },
 ];
 
-export function ClientTabs({ workspace, articles, keywords, calendar, backlinks, voice, cadence }: ClientTabsProps) {
+export function ClientTabs({ workspace, articles, keywords, calendar, backlinks, voice, cadence, now }: ClientTabsProps) {
   const [activeTab, setActiveTab] = useState("overview");
 
   const tabs = TABS.map((t) => {
@@ -43,7 +46,7 @@ export function ClientTabs({ workspace, articles, keywords, calendar, backlinks,
     <>
       <TabRow tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
-        {activeTab === "overview" && <OverviewTab workspace={workspace} articles={articles} keywords={keywords} backlinks={backlinks} voice={voice} />}
+        {activeTab === "overview" && <OverviewTab workspace={workspace} articles={articles} keywords={keywords} backlinks={backlinks} voice={voice} now={now} />}
         {activeTab === "articles" && <ArticlesTab articles={articles} />}
         {activeTab === "keywords" && <KeywordsTab keywords={keywords} />}
         {activeTab === "calendar" && <CalendarTab calendar={calendar} />}
@@ -57,12 +60,13 @@ export function ClientTabs({ workspace, articles, keywords, calendar, backlinks,
 
 /* ── Overview ────────────────────────────────────────── */
 
-function OverviewTab({ workspace, articles, keywords, backlinks, voice }: {
+function OverviewTab({ workspace, articles, keywords, backlinks, voice, now }: {
   workspace: Workspace;
   articles: Article[];
   keywords: Keyword[];
   backlinks: Backlink[];
   voice: VoiceProfile | null;
+  now: number;
 }) {
   if (workspace.status === "setup") {
     return <SetupWizard workspace={workspace} voice={voice} keywords={keywords} articleCount={articles.length} />;
@@ -98,18 +102,16 @@ function OverviewTab({ workspace, articles, keywords, backlinks, voice }: {
         ))}
       </div>
 
-      {recentArticles.length === 0 && (
-        <Card className="p-5" flush>
-          <div className="text-[13px] font-medium text-ink mb-1">What happens next</div>
-          <div className="text-[12.5px] leading-relaxed text-ink-2">
-            This workspace is live. The pipeline picks the best-scoring keyword from the {keywords.length.toLocaleString()} tracked here,
-            writes a draft, fact-checks it and scores it, then puts it in your <a href="/review" className="text-accent-ink underline decoration-line underline-offset-[3px]">review queue</a>.
-            Nothing publishes until you approve it. Drafts are written on the daily schedule
-            {workspace.auto_generate ? "" : ", once automatic drafting is switched on in Settings"}; to get one now, open{" "}
-            <a href="/articles" className="text-accent-ink underline decoration-line underline-offset-[3px]">Articles</a> and choose New article.
-          </div>
-        </Card>
-      )}
+      {/* Owns all three of "writing now", "nothing yet" and "here is why it
+          chose that", because they are mutually exclusive and the condition
+          this replaced got it wrong: a workspace mid-draft already has an
+          article row, so this card disappeared the moment drafting started. */}
+      <FirstDraftLive
+        articles={articles}
+        keywordCount={keywords.length}
+        autoGenerate={workspace.auto_generate}
+        now={now}
+      />
 
       {recentArticles.length > 0 && (
         <div>

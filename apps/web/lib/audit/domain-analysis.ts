@@ -413,11 +413,13 @@ export async function analyseDomain(options: {
   // null: an unmeasured number is not a zero.
   let authority: number | null = null;
   let traffic: number | null = null;
+  let referringDomains: number | null = null;
   if (hasDataForSeo) {
     try {
       const m = await fetchDomainMetrics(domain, { languageCode: options.locale ?? "en" });
       authority = m.authority;
       traffic = m.traffic;
+      referringDomains = m.referringDomains;
       if (supabase && workspaceId && (m.authority !== null || m.traffic !== null)) {
         await supabase
           .from("workspaces")
@@ -477,6 +479,28 @@ export async function analyseDomain(options: {
     : pagesCrawled
       ? `${issues.length} on-page issues across ${pagesCrawled} pages.${rankNote}`
       : "Could not analyse this domain from the public web.";
+
+  // A snapshot of this run, from numbers already fetched: no extra provider
+  // call, and it turns single columns that get overwritten into a history the
+  // workspace page can plot (2026-09-02).
+  if (supabase && workspaceId) {
+    try {
+      await supabase.from("workspace_metrics").upsert(
+        {
+          workspace_id: workspaceId,
+          measured_on: new Date().toISOString().slice(0, 10),
+          authority,
+          traffic,
+          referring_domains: referringDomains,
+          ranking_keywords: ranked.length || null,
+          readiness: readiness?.score ?? null,
+        },
+        { onConflict: "workspace_id,measured_on" },
+      );
+    } catch (err) {
+      console.error("[analysis] metric snapshot:", err instanceof Error ? err.message : err);
+    }
+  }
 
   const analysis: DomainAnalysis = {
     domain,

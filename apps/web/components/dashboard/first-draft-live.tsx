@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card } from "@/components/ui";
@@ -40,29 +40,31 @@ export function FirstDraftLive({
   articles,
   keywordCount,
   autoGenerate,
+  now,
 }: {
   articles: Article[];
   keywordCount: number;
-  autoGenerate: boolean;
+  autoGenerate?: boolean | null;
+  /**
+   * The server's clock at render, refreshed by every poll. Staleness is
+   * measured against this rather than a client timer so that it survives a
+   * reload - a draft that died twenty minutes ago should still read as dead,
+   * not restart the countdown because the tab was reopened - and so the
+   * server and client agree on first paint.
+   */
+  now: number;
 }) {
   const router = useRouter();
   const drafting = articles.find((a) => a.status === "drafting");
-  const [stalled, setStalled] = useState(false);
+  const draftingId = drafting?.id ?? null;
+  const stalled =
+    drafting != null && now - new Date(drafting.created_at).getTime() > GIVE_UP_MS;
 
   useEffect(() => {
-    if (!drafting) return;
-    setStalled(false);
-    const startedAt = Date.now();
-    const timer = setInterval(() => {
-      if (Date.now() - startedAt > GIVE_UP_MS) {
-        clearInterval(timer);
-        setStalled(true);
-        return;
-      }
-      router.refresh();
-    }, POLL_MS);
-    return () => clearInterval(timer);
-  }, [drafting?.id, router]);
+    if (!draftingId || stalled) return;
+    const poll = setInterval(() => router.refresh(), POLL_MS);
+    return () => clearInterval(poll);
+  }, [draftingId, stalled, router]);
 
   if (drafting) {
     return (
