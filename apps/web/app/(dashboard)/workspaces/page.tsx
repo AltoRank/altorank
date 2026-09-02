@@ -26,8 +26,6 @@ type Props = {
  */
 function matchesQuery(fields: (string | null | undefined)[], q: string): boolean {
   if (!q) return true;
-  const { agencyId, user } = await requireAuth();
-  const allowance = await getWorkspaceAllowance(await createClient(), agencyId, user.email);
   const needle = q.trim().toLowerCase();
   return fields.some((f) => (f ?? "").toLowerCase().includes(needle));
 }
@@ -39,6 +37,8 @@ export default async function ClientsPage({ searchParams }: Props) {
     getWorkspaces(params.status),
     getArticles(),
   ]);
+  const { agencyId, user } = await requireAuth();
+  const allowance = await getWorkspaceAllowance(await createClient(), agencyId, user.email);
 
   const wsCounts = new Map<string, { total: number; live: number }>();
   for (const a of allArticles) {
