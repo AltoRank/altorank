@@ -154,6 +154,53 @@ export const PLATFORM_HINT: Record<DetectedPlatform, string> = {
 };
 
 /**
+ * Which tab of the connect dialog a detected platform lands on, so "Connect
+ * Webflow" can open on Webflow rather than on a twelve-tab picker. Null for a
+ * platform with nothing to connect (Squarespace has no write API).
+ */
+export const PLATFORM_CONNECT_TYPE: Record<DetectedPlatform, string | null> = {
+  wordpress: "wordpress",
+  woocommerce: "woocommerce",
+  shopify: "shopify",
+  webflow: "webflow",
+  ghost: "ghost",
+  framer: "framer",
+  wix: "wix",
+  hubspot: "hubspot",
+  magento: "magento",
+  squarespace: null,
+  nextjs: "git",
+  astro: "git",
+  hugo: "git",
+  jekyll: "git",
+};
+
+/**
+ * What the workspace knows about its own platform.
+ *
+ * Three states, because two of them used to be indistinguishable: the
+ * analysis only wrote `detected_platform_at` when a rule matched, so a site
+ * that had been fetched and found to run nothing we can post to looked exactly
+ * like a site nobody had looked at. The editor could only say "connect a CMS"
+ * to both. Now the analysis stamps the time on every run, and this reads it.
+ */
+export type PlatformState =
+  | { state: "matched"; platform: DetectedPlatform; checkedAt: string | null }
+  | { state: "checked"; checkedAt: string }
+  | { state: "unchecked" };
+
+export function platformState(ws: {
+  detected_platform: string | null;
+  detected_platform_at: string | null;
+}): PlatformState {
+  if (ws.detected_platform && ws.detected_platform in PLATFORM_LABEL) {
+    return { state: "matched", platform: ws.detected_platform as DetectedPlatform, checkedAt: ws.detected_platform_at };
+  }
+  if (ws.detected_platform_at) return { state: "checked", checkedAt: ws.detected_platform_at };
+  return { state: "unchecked" };
+}
+
+/**
  * Identify the publishing platform behind a domain.
  *
  * Returns null when nothing matched, which is a real and common answer: a

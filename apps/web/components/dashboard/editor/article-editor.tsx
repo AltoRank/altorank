@@ -15,9 +15,11 @@ import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
 import { ConnectPrompt } from "@/components/ui/connect-prompt";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { PLATFORM_HINT, PLATFORM_LABEL, type DetectedPlatform } from "@/lib/cms/detect";
+import { PLATFORM_HINT, PLATFORM_LABEL, PLATFORM_CONNECT_TYPE, platformState } from "@/lib/cms/detect";
 import { updateArticle } from "@/app/actions/articles";
 import { publishArticle, approveArticle, requestChanges, markPublishedManually } from "@/app/actions/publish";
+import { renderArticleMarkdown } from "@/lib/publishing/export";
+import type { Destination } from "@/lib/publishing/destinations";
 import { SchedulePicker } from "@/components/dashboard/editor/schedule-picker";
 import { ResearchPanel, FactCheckPanel } from "@/components/dashboard/editor/research-panel";
 import { WhyPanel } from "@/components/dashboard/editor/why-panel";
@@ -31,21 +33,31 @@ type Props = {
   /** Cloud account with no active plan: the draft is theirs to read and
       edit, approving or publishing it is where the plan is asked for. */
   needsPlan?: boolean;
+  /**
+   * The workspace's connected CMSs. These decide whether a Publish button
+   * exists. `article.cms` used to, and only the manual New-article form ever
+   * set it, so every generated draft was shown the copy-and-paste path even
+   * with WordPress connected.
+   */
+  destinations?: Destination[];
 };
 
-export function ArticleEditor({ article, workspace, cadence, needsPlan = false }: Props) {
+export function ArticleEditor({ article, workspace, cadence, needsPlan = false, destinations = [] }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [manualUrl, setManualUrl] = useState("");
   const [manualError, setManualError] = useState<string | null>(null);
 
-  // What the first analysis observed, so the prompt can name the platform and
-  // the credential instead of showing an empty picker. A detection is only ever
-  // a suggestion: the user still connects it themselves.
-  const detected = workspace.detected_platform as DetectedPlatform | null;
-  const detectedHint = detected ? PLATFORM_HINT[detected] : null;
-  const detectedLabel = detected ? PLATFORM_LABEL[detected] : null;
+  // What the first analysis observed, so the empty state can name the platform
+  // and its credential, or say plainly that the site runs nothing we can post
+  // to. A detection is only ever a suggestion: the user still connects it.
+  const platform = platformState(workspace);
+  // Which connection this publish goes through. One connection needs no
+  // choice; several get a picker, defaulting to the first, which is also what
+  // the scheduler would pick.
+  const [destinationId, setDestinationId] = useState<string | null>(destinations[0]?.id ?? null);
+  const destination = destinations.find((d) => d.id === destinationId) ?? destinations[0] ?? null;
   const [generating, setGenerating] = useState(false);
   const [streamHtml, setStreamHtml] = useState("");
   // Generation now has phases before any text appears. Without this the button
@@ -232,15 +244,52 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false }
   const handlePublish = useCallback(async () => {
     setPublishing(true);
     try {
-      await publishArticle(article.id);
-      toast.success("Article published successfully");
+      const result = await publishArticle(article.id, destination?.id);
+      toast.success(
+        destination ? `Published to ${destination.label}` : "Article published",
+        result?.url ? { description: result.url } : undefined,
+      );
       router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to publish article");
     } finally {
       setPublishing(false);
     }
-  }, [article.id, router]);
+  }, [article.id, destination, router]);
+
+  // Both render from what is on screen right now, synchronously inside the
+  // click, so the clipboard write stays within the user gesture Safari
+  // requires. Markdown is the file a git publish would commit, front matter
+  // included; HTML is for pasting into a CMS we have no adapter for.
+  const copyToClipboard = useCallback(async (text: string, done: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setManualError(done);
+    } catch {
+      // Clipboard access needs a focused, permitted document; when it is
+      // refused, say so rather than claiming a copy that did not happen.
+      setManualError("Could not reach the clipboard. Click into the page and try again.");
+    }
+  }, []);
+  const copyHtml = useCallback(
+    () => copyToClipboard(editor?.getHTML() ?? "", "Copied the article as HTML."),
+    [editor, copyToClipboard],
+  );
+  const copyMarkdown = useCallback(() => {
+    const markdown = renderArticleMarkdown(
+      {
+        title: article.title,
+        slug: article.slug,
+        html: editor?.getHTML() ?? "",
+        metaDescription: article.meta_description,
+        keyword: article.keyword,
+        featuredImageUrl: article.featured_image_url,
+        publishedAt: article.published_at,
+      },
+      `https://${workspace.domain}`,
+    );
+    return copyToClipboard(markdown, "Copied the article as Markdown, front matter included.");
+  }, [editor, article, workspace.domain, copyToClipboard]);
 
   const handleApprove = useCallback(async () => {
     setPublishing(true);
@@ -422,21 +471,44 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false }
 
         {/* Publish to */}
         <SidebarSection title="Publish to" last>
-          {article.cms ? (
+          {destinations.length > 0 ? (
             <>
-              <div className="flex items-center gap-2.5 p-2.5 bg-bg border border-line rounded-[7px]">
-                <div className="w-7 h-7 rounded-[6px] bg-ink text-bg grid place-items-center font-mono text-[10px] font-semibold">
-                  {article.cms.slice(0, 2).toUpperCase()}
+              {destinations.length === 1 ? (
+                <div className="flex items-center gap-2.5 p-2.5 bg-bg border border-line rounded-[7px]">
+                  <div className="w-7 h-7 rounded-[6px] bg-ink text-bg grid place-items-center font-mono text-[10px] font-semibold">
+                    {destinations[0].label.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-medium truncate">
+                      {destinations[0].label} — {workspace.domain}
+                    </div>
+                  </div>
+                  <StatusPill status="on" label={article.status === "live" ? "Live" : "Connected"} />
                 </div>
-                <div className="flex-1">
-                  <div className="text-[13px] font-medium">{article.cms} — {workspace.domain}</div>
-                </div>
-                <StatusPill status={article.status === "live" ? "on" : "on"} label="Ready" />
-              </div>
+              ) : (
+                <label className="block">
+                  <span className="mb-1 block font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">
+                    Destination
+                  </span>
+                  <select
+                    value={destination?.id ?? ""}
+                    onChange={(e) => setDestinationId(e.target.value)}
+                    disabled={article.status === "live"}
+                    aria-label="Publishing destination"
+                    className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent"
+                  >
+                    {destinations.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               {article.status === "approved" && needsPlan && (
                 <Link
                   href="/settings/billing"
-                  className="block w-full rounded-[7px] bg-accent px-3 py-2 text-center text-[13px] font-medium text-white hover:bg-accent-2"
+                  className="mt-3 block w-full rounded-[7px] bg-accent px-3 py-2 text-center text-[13px] font-medium text-white hover:bg-accent-2"
                 >
                   Choose a plan to publish
                 </Link>
@@ -449,7 +521,7 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false }
                     onClick={handlePublish}
                     disabled={publishing}
                   >
-                    {publishing ? "Publishing…" : "Publish now"}
+                    {publishing ? "Publishing…" : `Publish to ${destination?.label ?? "CMS"}`}
                   </Button>
                   <button
                     type="button"
@@ -463,18 +535,44 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false }
               )}
               <SchedulePicker article={article} cadence={cadence ?? null} />
             </>
+          ) : platform.state === "matched" ? (
+            // The analysis recognised the platform: name it and open the
+            // connection dialog on its tab, credential named in the hint.
+            <ConnectPrompt
+              icon="integrations"
+              service={`Looks like ${PLATFORM_LABEL[platform.platform]}`}
+              title="No publishing destination yet"
+              body={`${PLATFORM_HINT[platform.platform]} Approve the draft whenever you are ready; nothing publishes on its own either way.`}
+              href={
+                PLATFORM_CONNECT_TYPE[platform.platform]
+                  ? `/connect?connect=${PLATFORM_CONNECT_TYPE[platform.platform]}`
+                  : "/connect"
+              }
+              cta={
+                PLATFORM_CONNECT_TYPE[platform.platform]
+                  ? `Connect ${PLATFORM_LABEL[platform.platform]}`
+                  : "See the options"
+              }
+            />
+          ) : platform.state === "checked" ? (
+            // We fetched the site and nothing matched, which is the honest
+            // answer for a hand-built or headless site. Saying so beats a
+            // sixteen-tile grid: the options are three, and the first of them
+            // appears in this panel the moment the draft is approved.
+            <ConnectPrompt
+              icon="integrations"
+              title={`No CMS found on ${workspace.domain}`}
+              body={`We fetched ${workspace.domain} on ${new Date(platform.checkedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} and saw nothing we can post to directly. Sites like this publish by hand, by webhook, or from a git repository: approve the draft and copy it as Markdown or HTML below, or connect a webhook or repository.`}
+              href="/connect?connect=webhook"
+              cta="Connect a webhook or repository"
+            />
           ) : (
             <ConnectPrompt
               icon="integrations"
-              service={detectedLabel ? `Looks like ${detectedLabel}` : undefined}
               title="No publishing destination yet"
-              body={
-                detectedHint
-                  ? `${detectedHint} Approve the draft whenever you are ready; nothing publishes on its own either way.`
-                  : "Approve the draft whenever you are ready. Connect a CMS and it can go out; nothing publishes on its own either way."
-              }
+              body="Approve the draft whenever you are ready. Connect a CMS and it can go out from here; nothing publishes on its own either way."
               href="/connect"
-              cta={detectedLabel ? `Connect ${detectedLabel}` : "Connect a CMS"}
+              cta="Connect a CMS"
             />
           )}
 
@@ -502,29 +600,28 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false }
               {publishing ? "Approving…" : "Approve for publishing"}
             </Button>
           )}
-          {/* No CMS, and the site may not have one to connect: a Next.js, Astro
-              or Hugo build publishes from a repository. Rather than leave an
-              approved article stranded for ever, take the copy and record where
+          {/* No connection, and the site may have nothing to connect: a hand-
+              built app, or a Next.js, Astro or Hugo build that publishes from
+              a repository. Rather than leave an approved article stranded,
+              hand over the file in the shape the site wants and record where
               it went. A URL is required because without one there is no
               evidence it is anywhere. */}
-          {article.status === "approved" && !article.cms && (
+          {article.status === "approved" && destinations.length === 0 && (
             <div className="mt-3 flex flex-col gap-2">
               <div className="text-[12px] text-ink-3 leading-relaxed">
-                Approved. Publish it yourself and paste the URL, or connect a CMS
+                Approved. Publish it yourself and paste the URL, or connect a destination
                 above to have it go out from here.
               </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="justify-center"
-                onClick={async () => {
-                  await navigator.clipboard.writeText(editor?.getHTML() ?? "");
-                  setManualError("Copied the article HTML.");
-                }}
-              >
-                <Icons.download size={13} />
-                Copy article HTML
-              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button size="sm" variant="ghost" className="justify-center" onClick={copyMarkdown}>
+                  <Icons.download size={13} />
+                  Copy as Markdown
+                </Button>
+                <Button size="sm" variant="ghost" className="justify-center" onClick={copyHtml}>
+                  <Icons.download size={13} />
+                  Copy as HTML
+                </Button>
+              </div>
               <input
                 value={manualUrl}
                 onChange={(e) => setManualUrl(e.target.value)}
