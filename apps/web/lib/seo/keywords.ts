@@ -60,13 +60,11 @@ export type DiscoveredKeyword = {
 
 /** Labs returns difficulty; the Ads endpoint that lists keywords does not. */
 type LabsOverviewResult = {
-  items:
-    | Array<{
-        keyword: string;
-        keyword_properties?: { keyword_difficulty?: number | null };
-        keyword_info?: { search_volume?: number | null };
-      }>
-    | null;
+  items: Array<{
+    keyword: string;
+    keyword_properties?: { keyword_difficulty?: number | null };
+    keyword_info?: { search_volume?: number | null };
+  }> | null;
 };
 
 /** DataForSEO Labs accepts up to 700 keywords per task. */
@@ -127,7 +125,10 @@ export async function fetchKeywordFacts(
   keywords: string[],
   options?: { languageCode?: string; locationCode?: number },
 ): Promise<Map<string, { volume: number | null; difficulty: number | null }>> {
-  const out = new Map<string, { volume: number | null; difficulty: number | null }>();
+  const out = new Map<
+    string,
+    { volume: number | null; difficulty: number | null }
+  >();
   if (!keywords.length) return out;
 
   const response = await post<LabsOverviewResult>(
@@ -266,20 +267,30 @@ export async function discoverKeywords(
 
 type KeywordIdeasItem = {
   keyword?: string | null;
-  keyword_info?: { search_volume?: number | null; cpc?: number | null; competition?: number | null } | null;
+  keyword_info?: {
+    search_volume?: number | null;
+    cpc?: number | null;
+    competition?: number | null;
+  } | null;
   keyword_properties?: { keyword_difficulty?: number | null } | null;
   search_intent_info?: { main_intent?: string | null } | null;
 };
 type KeywordIdeasResult = { items?: KeywordIdeasItem[] | null };
 
-export function parseKeywordIdea(item: KeywordIdeasItem, languageCode = "en"): DiscoveredKeyword | null {
+export function parseKeywordIdea(
+  item: KeywordIdeasItem,
+  languageCode = "en",
+): DiscoveredKeyword | null {
   const keyword = (item.keyword ?? "").trim();
   if (!keyword) return null;
   const volume = item.keyword_info?.search_volume ?? 0;
   return {
     keyword,
     volume: typeof volume === "number" ? volume : 0,
-    difficulty: typeof item.keyword_properties?.keyword_difficulty === "number" ? item.keyword_properties.keyword_difficulty : null,
+    difficulty:
+      typeof item.keyword_properties?.keyword_difficulty === "number"
+        ? item.keyword_properties.keyword_difficulty
+        : null,
     cpc: item.keyword_info?.cpc ?? 0,
     competition: item.keyword_info?.competition ?? 0,
     intent: item.search_intent_info?.main_intent
@@ -288,37 +299,147 @@ export function parseKeywordIdea(item: KeywordIdeasItem, languageCode = "en"): D
   };
 }
 
+/**
+ * Content words, order-insensitive. "seo content marketing" and "content
+ * marketing seo" collapse to the same key.
+ */
+function permutationKey(term: string): string {
+  const FILLER = new Set([
+    "for",
+    "the",
+    "in",
+    "of",
+    "and",
+    "a",
+    "an",
+    "to",
+    "with",
+    "is",
+    "on",
+    "or",
+    "&",
+  ]);
+  return term
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w && !FILLER.has(w))
+    .sort()
+    .join(" ");
+}
+
+/**
+ * One keyword per idea, keeping the best-searched phrasing.
+ *
+ * keyword_suggestions returns every phrasing of a query as its own row: a
+ * single "seo content" seed came back with "content marketing and seo", "seo
+ * and content marketing", "seo marketing content", "content marketing seo",
+ * "seo & content marketing" and four more, all at 1,300 a month. Each one is
+ * individually clean - no repeated token, no fragment - so assessKeywordQuality
+ * passes all nine, and they would take nine of the hundred slots to say one
+ * thing.
+ *
+ * This is the same shape as the variant spam the old keywords_for_site path
+ * produced ("ai of ai", "ai for ai"); it just arrives one layer later.
+ */
+export function dedupePermutations(
+  keywords: DiscoveredKeyword[],
+): DiscoveredKeyword[] {
+  const best = new Map<string, DiscoveredKeyword>();
+  for (const k of keywords) {
+    const key = permutationKey(k.keyword);
+    if (!key) continue;
+    const prev = best.get(key);
+    // Highest volume wins; on a tie the shorter phrasing, which is the one a
+    // person is more likely to have typed.
+    if (
+      !prev ||
+      k.volume > prev.volume ||
+      (k.volume === prev.volume && k.keyword.length < prev.keyword.length)
+    ) {
+      best.set(key, k);
+    }
+  }
+  return [...best.values()];
+}
+
+/**
+ * Expand seeds into keywords that actually contain them.
+ *
+ * Was keyword_ideas, which expands by product *category* rather than by
+ * phrase. That is how seeds drawn from altorank.co's own headings - "seo
+ * content", "content engine" - returned "free people search" (246,000/mo) and
+ * "1998 google": people-search tools share a category with SEO tools, so the
+ * endpoint considers them ideas for the same site. Every one of them passed
+ * the topical filter too, because altorank.co is a content site whose blog
+ * headings contain "google", "search" and "free", giving it a 349-term profile
+ * that discriminates almost nothing.
+ *
+ * keyword_suggestions only returns phrases containing the seed, so that whole
+ * failure is structurally impossible rather than filtered afterwards. The cost
+ * is one call per seed instead of one for all of them, which is why the seed
+ * count is bounded.
+ */
 export async function discoverKeywordsFromSeeds(
   seeds: string[],
-  options?: { languageCode?: string; locationCode?: number; limit?: number },
+  options?: {
+    languageCode?: string;
+    locationCode?: number;
+    limit?: number;
+    /** Calls are per-seed now, so this bounds the spend of one discovery. */
+    maxSeeds?: number;
+    /** Drop long-tail noise server-side. */
+    minVolume?: number;
+  },
 ): Promise<DiscoveredKeyword[]> {
-  const clean = [...new Set(seeds.map((s) => s.trim().toLowerCase()).filter((s) => s.length >= 3))].slice(0, 20);
+  const clean = [
+    ...new Set(
+      seeds.map((s) => s.trim().toLowerCase()).filter((s) => s.length >= 3),
+    ),
+  ].slice(0, options?.maxSeeds ?? 5);
   if (!clean.length) return [];
-  const response = await post<KeywordIdeasResult>(
-    "/dataforseo_labs/google/keyword_ideas/live",
-    [
-      {
-        keywords: clean,
-        language_code: options?.languageCode ?? "en",
-        location_code: options?.locationCode ?? 2840,
-        limit: options?.limit ?? 100,
-        order_by: ["keyword_info.search_volume,desc"],
-      },
-    ],
+
+  const minVolume = options?.minVolume ?? 100;
+  const perSeed = Math.max(
+    10,
+    Math.floor((options?.limit ?? 100) / clean.length),
   );
+
+  const responses = await Promise.all(
+    clean.map((keyword) =>
+      post<KeywordIdeasResult>(
+        "/dataforseo_labs/google/keyword_suggestions/live",
+        [
+          {
+            keyword,
+            language_code: options?.languageCode ?? "en",
+            location_code: options?.locationCode ?? 2840,
+            limit: perSeed,
+            filters: [["keyword_info.search_volume", ">", minVolume]],
+            order_by: ["keyword_info.search_volume,desc"],
+          },
+        ],
+      ).catch(() => null),
+    ),
+  );
+
   const out: DiscoveredKeyword[] = [];
   const seen = new Set<string>();
-  for (const task of response.tasks ?? []) {
-    for (const result of task.result ?? []) {
-      const items = Array.isArray(result?.items) ? result.items : [result as unknown as KeywordIdeasItem];
-      for (const item of items) {
-        if (!item || typeof item !== "object") continue;
-        const parsed = parseKeywordIdea(item, options?.languageCode ?? "en");
-        if (!parsed || seen.has(parsed.keyword.toLowerCase())) continue;
-        seen.add(parsed.keyword.toLowerCase());
-        out.push(parsed);
+  for (const response of responses) {
+    if (!response) continue;
+    for (const task of response.tasks ?? []) {
+      for (const result of task.result ?? []) {
+        const items = Array.isArray(result?.items)
+          ? result.items
+          : [result as unknown as KeywordIdeasItem];
+        for (const item of items) {
+          if (!item || typeof item !== "object") continue;
+          const parsed = parseKeywordIdea(item, options?.languageCode ?? "en");
+          if (!parsed || seen.has(parsed.keyword.toLowerCase())) continue;
+          seen.add(parsed.keyword.toLowerCase());
+          out.push(parsed);
+        }
       }
     }
   }
-  return out;
+  return dedupePermutations(out);
 }
