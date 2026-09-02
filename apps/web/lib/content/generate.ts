@@ -54,6 +54,17 @@ export interface GenerateArticleOptions {
     difficulty: number | null;
     volume: number | null;
   };
+  /**
+   * Generate *into* an article that already exists, rather than creating one.
+   *
+   * The editor's "Ask AI" is writing the draft the user has open, so it passes
+   * the id it is showing. Without this the run would insert a second article
+   * and leave the open one empty - and for a content-refresh draft that is
+   * worse than untidy: its `replaces_article_id` link to the archived original
+   * is the only record of what the rewrite replaces, and a fresh row does not
+   * carry it.
+   */
+  articleId?: string;
   /** Streaming hook. Omitted by the unattended path. */
   onChunk?: (html: string) => void;
   /** Called once research completes, before the model starts. */
@@ -74,7 +85,7 @@ export async function generateArticle(
   options: GenerateArticleOptions,
 ): Promise<GenerateArticleResult> {
   const { supabase, workspaceId, keyword, title, autonomous, onChunk, onResearch,
-    selection,
+    selection, articleId,
   } = options;
 
   const { data: workspace, error: wsError } = await supabase
@@ -115,22 +126,59 @@ export async function generateArticle(
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
 
-  const { data: article, error: articleError } = await supabase
-    .from("articles")
-    .insert({
-      workspace_id: workspaceId,
-      title: title || keyword,
-      slug,
-      keyword,
-      status: "drafting",
-      ai_provider: workspace.ai_provider || "claude",
-      generated_autonomously: autonomous ?? false,
-    })
-    .select("id")
-    .single();
+  // Two shapes of run. The "new article" callers - the modal and the cron -
+  // have no row yet and get one. The editor is generating into a draft the user
+  // already has open and must write to that row.
+  let article: { id: string };
+  // The status the article carried before this run, so a failure can put it
+  // back. Only set on the in-place path; `articleId` itself, not this, is what
+  // the failure paths below key off, so a schema change to `status` can never
+  // turn "restore it" into "delete it".
+  let previousStatus: string | null = null;
 
-  if (articleError || !article) {
-    throw new Error(`Failed to create article: ${articleError?.message}`);
+  if (articleId) {
+    const { data: existing, error: existingError } = await supabase
+      .from("articles")
+      .select("id, status")
+      .eq("id", articleId)
+      // Scoped to the workspace the caller was authorised for, so an id
+      // belonging to another agency cannot be written through.
+      .eq("workspace_id", workspaceId)
+      .single();
+
+    if (existingError || !existing) {
+      throw new Error("Article not found in this workspace");
+    }
+
+    article = { id: existing.id };
+    previousStatus = existing.status as string;
+
+    // Same signal the insert path sets, so the list shows this article as
+    // being written while the run is open.
+    await supabase
+      .from("articles")
+      .update({ status: "drafting", updated_at: new Date().toISOString() })
+      .eq("id", existing.id);
+  } else {
+    const { data: created, error: articleError } = await supabase
+      .from("articles")
+      .insert({
+        workspace_id: workspaceId,
+        title: title || keyword,
+        slug,
+        keyword,
+        status: "drafting",
+        ai_provider: workspace.ai_provider || "claude",
+        generated_autonomously: autonomous ?? false,
+      })
+      .select("id")
+      .single();
+
+    if (articleError || !created) {
+      throw new Error(`Failed to create article: ${articleError?.message}`);
+    }
+
+    article = created;
   }
 
   const { data: job, error: jobError } = await supabase
@@ -147,7 +195,20 @@ export async function generateArticle(
     .single();
 
   if (jobError || !job) {
-    await supabase.from("articles").delete().eq("id", article.id);
+    // Only a row this run created may be deleted here. Generating into an
+    // article the user already had, this line would destroy their draft
+    // because a job row failed to insert.
+    if (articleId) {
+      await supabase
+        .from("articles")
+        .update({
+          status: previousStatus ?? "draft",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", article.id);
+    } else {
+      await supabase.from("articles").delete().eq("id", article.id);
+    }
     throw new Error(`Failed to create generation job: ${jobError?.message}`);
   }
 
@@ -418,9 +479,17 @@ export async function generateArticle(
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown generation error";
 
+    // A run that created the row marks it errored - the row exists only
+    // because of this run. A run that was writing into an article the user
+    // already had puts the status back where it found it: a failed generation
+    // should not strand a good draft in a state the UI reads as broken. The
+    // content is untouched either way, since it is only written on success.
     await supabase
       .from("articles")
-      .update({ status: "error", updated_at: new Date().toISOString() })
+      .update({
+        status: articleId ? (previousStatus ?? "draft") : "error",
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", article.id);
 
     await supabase

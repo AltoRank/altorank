@@ -114,6 +114,9 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false }
           workspaceId: workspace.id,
           keyword: article.keyword,
           title: article.title,
+          // Generate into this article rather than a new one. Without it the
+          // run created a second article and left this one empty.
+          articleId: article.id,
         }),
       });
 
@@ -156,9 +159,16 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false }
               setPhase("writing");
               accumulated += data.html;
               setStreamHtml(accumulated);
-              // Feed into editor
+              // Feed into editor.
+              //
+              // `emitUpdate: false` matters: setContent fires Tiptap's
+              // onUpdate by default, and onUpdate debounce-saves the document
+              // back to this same article. Left on, the client's 2s save races
+              // the server's final write of the same run and can land after
+              // it, overwriting the saved title, scores and fact checks with a
+              // half-streamed body.
               if (editor) {
-                editor.commands.setContent(accumulated);
+                editor.commands.setContent(accumulated, { emitUpdate: false });
               }
             } else if (data.type === "factcheck") {
               setPhase("checking");
@@ -168,10 +178,10 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false }
                 });
               }
             } else if (data.type === "complete") {
-              // Re-render the server components with the saved article
-              // (status, score, word count) without tearing down the
-              // editor: a full reload would drop the text just streamed
-              // in before the 2s auto-save debounce has flushed it.
+              // Generation wrote to this article, so there is nowhere to
+              // navigate: pick up the server's status, scores and word count
+              // and leave the editor - and the text just streamed into it -
+              // standing.
               router.refresh();
             } else if (data.type === "error") {
               throw new Error(data.error);
@@ -188,7 +198,7 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false }
       setGenerating(false);
       setPhase("idle");
     }
-  }, [workspace.id, article.keyword, article.title, editor, router]);
+  }, [workspace.id, article.id, article.keyword, article.title, editor, router]);
 
   /**
    * Select a flagged claim inside the document.
