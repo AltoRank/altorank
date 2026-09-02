@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { exchangeCode, encryptTokens } from "@/lib/google/oauth";
 import { backfillAnalytics } from "@/lib/google/sync";
+import { listGSCSites, matchGSCSite } from "@/lib/google/gsc";
+import { listGA4Properties, matchGA4Property } from "@/lib/google/ga4";
+import { getValidAccessToken } from "@/lib/google/oauth";
 
 /**
  * Google OAuth callback — exchanges code for tokens and saves them.
@@ -94,6 +97,43 @@ export async function GET(request: NextRequest) {
         { onConflict: "workspace_id,integration_id" },
       );
 
+    // One consent, every site it covers.
+    //
+    // The connection was stored against the single workspace whose button was
+    // pressed, so an account with five sites had to walk the same Google
+    // consent five times, and nothing told it which of its properties were
+    // already available. Google has just told us what this account can see:
+    // match it against every workspace in the account and connect the ones it
+    // covers, with the property resolved up front (2026-09-02).
+    let alsoConnected = 0;
+    try {
+      const accessToken = await getValidAccessToken(encrypted, async () => {});
+      const [sites, properties] = await Promise.all([
+        listGSCSites(accessToken).catch(() => []),
+        listGA4Properties(accessToken).catch(() => []),
+      ]);
+      const { data: siblings } = await supabase
+        .from("workspaces")
+        .select("id, domain")
+        .eq("agency_id", member.agency_id)
+        .not("domain", "is", null);
+
+      for (const ws of siblings ?? []) {
+        const domain = ws.domain as string;
+        const site = matchGSCSite(sites, domain);
+        const property = matchGA4Property(properties, domain);
+        if (!site && !property) continue;
+        const rows: Record<string, unknown>[] = [];
+        const connectedAt = new Date().toISOString();
+        if (site) rows.push({ workspace_id: ws.id, integration_id: "gsc", config: { type: "gsc", gscSiteUrl: site.siteUrl }, tokens: { encrypted }, connected_at: connectedAt });
+        if (property) rows.push({ workspace_id: ws.id, integration_id: "ga4", config: { type: "ga4", ga4PropertyId: property.propertyId }, tokens: { encrypted }, connected_at: connectedAt });
+        await supabase.from("workspace_integrations").upsert(rows, { onConflict: "workspace_id,integration_id" });
+        if (ws.id !== workspaceId) alsoConnected++;
+      }
+    } catch (err) {
+      console.error("[google] linking sibling workspaces:", err instanceof Error ? err.message : err);
+    }
+
     if (dbError) throw new Error(dbError.message);
 
     // Pull the last week now, so the workspace shows numbers on landing
@@ -109,7 +149,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.redirect(
-      new URL(`/workspaces/${workspaceId}?connected=${encodeURIComponent(integrationId)}&synced=${synced}`, request.url),
+      new URL(`/workspaces/${workspaceId}?connected=${encodeURIComponent(integrationId)}&synced=${synced}&also=${alsoConnected}`, request.url),
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
