@@ -22,7 +22,7 @@ export const metadata: Metadata = { title: "Users" };
  * way, and RLS would hide every row that is not ours.
  *
  * Nothing here is estimated. A user who has never signed in shows a dash under
- * "last seen", not a date; an agency with no subscription shows "No plan",
+ * "last seen", not a date; an account with no subscription shows "No plan",
  * not the `starter` default the row was created with.
  */
 
@@ -156,8 +156,8 @@ export default async function AdminUsersPage({
               type="search"
               name="q"
               defaultValue={q}
-              placeholder="Email, name, agency or domain"
-              aria-label="Search accounts"
+              placeholder="Email, name, account or domain"
+              aria-label="Search users"
               className="w-[260px] rounded-[7px] border border-line bg-panel-2 px-2.5 py-1.5 text-[13px] focus:border-line focus:bg-bg focus:outline-0"
             />
             {needle && (
@@ -173,9 +173,9 @@ export default async function AdminUsersPage({
 
       <StatStrip
         stats={[
-          { label: "Accounts", value: String(users.length), delta: `${confirmed} confirmed` },
+          { label: "Users", value: String(users.length), delta: `${confirmed} confirmed` },
           { label: "Seen this week", value: String(seenThisWeek), delta: "signed in within 7 days" },
-          { label: "Agencies", value: String((agencies ?? []).length), delta: `${paying} on a plan` },
+          { label: "Accounts", value: String((agencies ?? []).length), delta: `${paying} on a plan` },
           {
             label: "Workspaces",
             value: String((workspaces ?? []).length),
@@ -187,11 +187,11 @@ export default async function AdminUsersPage({
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll flex flex-col gap-5">
         <Card
           className="shrink-0"
-          title="Accounts"
+          title="Users"
           meta="“View as” opens their dashboard in this tab, with a bar to come back. Every use is logged below."
         >
           <Table
-            head={["Account", "Agency", "Plan", "Workspaces", "Articles", "Signed up", "Last seen", ""]}
+            head={["User", "Account", "Plan", "Workspaces", "Articles", "Signed up", "Last seen", ""]}
             empty={needle ? "No account matches that." : "No accounts yet."}
             rows={rows.map((r) => [
               <span key="who" className="flex flex-col gap-0.5">
@@ -210,7 +210,7 @@ export default async function AdminUsersPage({
                     {r.extraAgencies > 0 && <span className="text-ink-3"> +{r.extraAgencies}</span>}
                   </>
                 ) : (
-                  <span className="text-ink-3">no agency</span>
+                  <span className="text-ink-3">no account</span>
                 )}
               </span>,
               planLabel(r.agency),

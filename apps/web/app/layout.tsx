@@ -16,7 +16,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: `${APP_NAME} — Agency SEO Automation`,
+    default: `${APP_NAME} — AI SEO content engine`,
     template: `%s | ${APP_NAME}`,
   },
   description: APP_DESCRIPTION,
