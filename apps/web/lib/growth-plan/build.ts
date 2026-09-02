@@ -26,6 +26,7 @@ import {
 } from "@/lib/seo/ranked-keywords";
 import { fetchOrganicCompetitors, type OrganicCompetitor } from "@/lib/seo/competitors";
 import { buildReadinessReport, type ReadinessArtifact } from "@/lib/audit/readiness-report";
+import { analyseDomain } from "@/lib/audit/domain-analysis";
 import type { ReadinessFinding } from "@/lib/audit/agent-readiness";
 
 export interface ClosestWin {
@@ -55,6 +56,12 @@ export interface PlanCadence {
 export interface GrowthPlan {
   domain: string;
   generatedAt: string;
+  /** DataForSEO's domain rank mapped to 0-100. Null when unmeasured. */
+  authority: number | null;
+  /** Estimated monthly organic visits. Null when unmeasured. */
+  traffic: number | null;
+  /** What the site publishes with, when it can be read off the homepage. */
+  platform: string | null;
   rankingKeywords: number;
   closestWins: ClosestWin[];
   competitors: { domain: string; sharedKeywords: number }[];
@@ -230,12 +237,23 @@ export interface PlanSources {
   ranked: (domain: string, limit: number) => Promise<RankedKeyword[]>;
   competitors: (domain: string) => Promise<OrganicCompetitor[]>;
   readiness: typeof buildReadinessReport;
+  /**
+   * The same first look the app runs on a workspace, at "quick" depth. One
+   * code path means the free check on the marketing site and the analysis
+   * inside the app cannot disagree about a domain, and the plan gets the
+   * authority, traffic and platform the app already measures.
+   */
+  analysis?: (domain: string) => Promise<{ authority: number | null; traffic: number | null; platform: string | null }>;
 }
 
 const liveSources: PlanSources = {
   ranked: (domain, limit) => fetchRankedKeywords(domain, { limit }),
   competitors: (domain) => fetchOrganicCompetitors(domain, { limit: 10 }),
   readiness: buildReadinessReport,
+  analysis: async (domain) => {
+    const a = await analyseDomain({ domain, depth: "quick" });
+    return { authority: a.authority, traffic: a.traffic, platform: a.platform };
+  },
 };
 
 export async function buildGrowthPlan(
@@ -248,6 +266,8 @@ export async function buildGrowthPlan(
   // Readiness needs no paid API, so it runs alongside the rank lookups rather
   // than after them.
   const readinessP = sources.readiness(domain);
+  // Runs alongside: the visitor is waiting, and neither call needs the other.
+  const analysisP = sources.analysis?.(domain).catch(() => null) ?? Promise.resolve(null);
 
   let ranked: RankedKeyword[] = [];
   try {
@@ -299,7 +319,7 @@ export async function buildGrowthPlan(
   const closestWins = pickClosestWins(ranked);
   const gaps = pickGaps(ranked, competitorRanked);
 
-  const report = await readinessP;
+  const [report, analysis] = await Promise.all([readinessP, analysisP]);
   layers.push({
     id: "readiness",
     ok: !report.error,
@@ -309,6 +329,9 @@ export async function buildGrowthPlan(
   return {
     domain,
     generatedAt: new Date().toISOString(),
+    authority: analysis?.authority ?? null,
+    traffic: analysis?.traffic ?? null,
+    platform: analysis?.platform ?? null,
     rankingKeywords: ranked.length,
     closestWins,
     competitors: competitors.map((c) => ({ domain: c.domain, sharedKeywords: c.sharedKeywords })),

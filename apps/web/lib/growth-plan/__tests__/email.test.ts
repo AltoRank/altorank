@@ -5,6 +5,9 @@ import type { GrowthPlan } from "../build";
 const plan: GrowthPlan = {
   domain: "example.com",
   generatedAt: "2026-09-01T20:00:00.000Z",
+  authority: 34,
+  traffic: 9,
+  platform: "nextjs",
   rankingKeywords: 40,
   closestWins: [{ keyword: "seo <audit>", position: 12, volume: 1900, path: "/blog/audit" }],
   competitors: [{ domain: "rival.com", sharedKeywords: 50 }],

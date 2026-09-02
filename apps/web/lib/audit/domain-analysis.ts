@@ -57,6 +57,12 @@ export interface DomainAnalysis {
   rankedKeywords: RankedKeyword[];
   /** Of those, the ones close enough to page one to be worth a revision. */
   strikingDistance: RankedKeyword[];
+  /** DataForSEO's domain rank mapped to 0-100. Null when unmeasured. */
+  authority: number | null;
+  /** Estimated monthly organic visits. Null when unmeasured. */
+  traffic: number | null;
+  /** What the site publishes with, read off the homepage. */
+  platform: string | null;
   layers: AnalysisLayer[];
   /** One-line summary for a human skimming the workspace. */
   headline: string;
@@ -85,9 +91,20 @@ export async function analyseDomain(options: {
   supabase?: SupabaseClient;
   workspaceId?: string;
   locale?: string;
+  /**
+   * How much to do. "full" crawls up to 40 pages, builds the topical profile
+   * and discovers keywords: the right depth once a workspace exists. "quick"
+   * reads the homepage only, for the public growth plan, where the visitor is
+   * waiting and every call is unpaid.
+   *
+   * Both run the same code, so the free check on the marketing site and the
+   * first look inside the app can never disagree about a domain (2026-09-02).
+   */
+  depth?: "quick" | "full";
 }): Promise<DomainAnalysis> {
   const domain = normalizeDomain(options.domain);
   const { supabase, workspaceId } = options;
+  const depth = options.depth ?? "full";
   const baseUrl = `https://${domain}`;
   const layers: AnalysisLayer[] = [];
 
@@ -121,7 +138,7 @@ export async function analyseDomain(options: {
   let issues: unknown[] = [];
   let profile: TopicalProfile | null = null;
   try {
-    const fetched = await crawlSite(baseUrl, MAX_PAGES, MAX_DEPTH, CRAWL_DELAY_MS);
+    const fetched = await crawlSite(baseUrl, depth === "quick" ? 1 : MAX_PAGES, depth === "quick" ? 0 : MAX_DEPTH, CRAWL_DELAY_MS);
     const pages = usablePages(fetched);
     crawledPages = pages;
     pagesCrawled = pages.length;
@@ -161,7 +178,7 @@ export async function analyseDomain(options: {
 
   // --- PageSpeed -----------------------------------------------------------
   let pagespeed: Record<string, unknown> = {};
-  const ps = await fetchPageSpeedDetailed(baseUrl);
+  const ps = depth === "full" ? await fetchPageSpeedDetailed(baseUrl) : { ok: false as const, kind: "unavailable" as const, detail: "not run on a quick look" };
   if (ps.ok) {
     // PageSpeedResult is a fixed shape; the column is jsonb, so it is stored
     // as a plain object rather than reshaped.
@@ -291,8 +308,9 @@ export async function analyseDomain(options: {
           intent: classifyIntent(k.keyword, options.locale ?? "en").intent,
         }));
 
-      // (2) Ideas from the site's own headings.
-      const seeds = usable ? seedPhrasesFromPages(crawledPages, domain) : [];
+      // (2) Ideas from the site's own headings. A quick run has one page of
+      // headings and no budget for a second paid lookup.
+      const seeds = usable && depth === "full" ? seedPhrasesFromPages(crawledPages, domain) : [];
       const seeded = seeds.length ? await discoverKeywordsFromSeeds(seeds).catch(() => []) : [];
 
       const byTerm = new Map<string, { k: DiscoveredKeyword; rank: number }>();
@@ -306,7 +324,7 @@ export async function analyseDomain(options: {
 
       // (3) The Ads endpoint, only when the first two are thin.
       let usedFallback = false;
-      if (byTerm.size < MAX_KEYWORDS_STORED / 2) {
+      if (depth === "full" && byTerm.size < MAX_KEYWORDS_STORED / 2) {
         const fromSite = await discoverKeywords(domain, { withDifficulty: true }).catch(() => []);
         for (const k of fromSite) add(k, 2);
         usedFallback = fromSite.length > 0;
@@ -393,10 +411,14 @@ export async function analyseDomain(options: {
   // are measured. Only the manual onboarding action ever fetched them, so a
   // workspace analysed by the cron never had either (2026-09-02). Nulls stay
   // null: an unmeasured number is not a zero.
-  if (hasDataForSeo && supabase && workspaceId) {
+  let authority: number | null = null;
+  let traffic: number | null = null;
+  if (hasDataForSeo) {
     try {
       const m = await fetchDomainMetrics(domain, { languageCode: options.locale ?? "en" });
-      if (m.authority !== null || m.traffic !== null) {
+      authority = m.authority;
+      traffic = m.traffic;
+      if (supabase && workspaceId && (m.authority !== null || m.traffic !== null)) {
         await supabase
           .from("workspaces")
           .update({
@@ -421,7 +443,7 @@ export async function analyseDomain(options: {
   // --- Who links here -------------------------------------------------------
   // Only when there is a workspace to store into; the sales-side "check any
   // domain" path does not need it and should not pay for it.
-  if (hasDataForSeo && supabase && workspaceId) {
+  if (depth === "full" && hasDataForSeo && supabase && workspaceId) {
     try {
       const r = await syncBacklinks(supabase, workspaceId, domain);
       layers.push({
@@ -458,6 +480,9 @@ export async function analyseDomain(options: {
 
   const analysis: DomainAnalysis = {
     domain,
+    authority,
+    traffic,
+    platform: detection?.platform ?? null,
     readiness,
     topicalProfile: profile,
     pagesCrawled,
