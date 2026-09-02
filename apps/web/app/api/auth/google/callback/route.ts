@@ -80,13 +80,17 @@ export async function GET(request: NextRequest) {
     const { error: dbError } = await supabase
       .from("workspace_integrations")
       .upsert(
-        {
+        // One consent screen grants Search Console AND GA4 (lib/google/oauth
+        // asks for both scopes), so connecting one while the other still read
+        // "Not connected" was wrong: the access is there. Both rows come from
+        // the same tokens; each resolves its own property on first sync.
+        ["gsc", "ga4"].map((id) => ({
           workspace_id: workspaceId,
-          integration_id: integrationId,
-          config: { type: integrationId },
+          integration_id: id,
+          config: { type: id },
           tokens: { encrypted },
           connected_at: new Date().toISOString(),
-        },
+        })),
         { onConflict: "workspace_id,integration_id" },
       );
 

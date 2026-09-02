@@ -53,3 +53,45 @@ export async function fetchGA4Metrics(
     }),
   );
 }
+
+// ---------------------------------------------------------------------------
+// Which GA4 property does this account have for this site?
+// ---------------------------------------------------------------------------
+//
+// The sync only ran when `config.ga4PropertyId` was set, and nothing ever set
+// it, so GA4 was permanently "Not connected" even though the consent screen
+// already granted its scope alongside Search Console. Ask the Admin API what
+// the account can see, and match a property by the data stream's domain.
+
+const GA4_ADMIN = "https://analyticsadmin.googleapis.com/v1beta";
+
+export type GA4Property = { name: string; propertyId: string; displayName: string };
+
+export async function listGA4Properties(accessToken: string): Promise<GA4Property[]> {
+  const res = await fetch(`${GA4_ADMIN}/accountSummaries?pageSize=200`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`GA4 admin error (${res.status}): ${(await res.text()).slice(0, 200)}`);
+  const body = (await res.json()) as {
+    accountSummaries?: { propertySummaries?: { property?: string; displayName?: string }[] }[];
+  };
+  const out: GA4Property[] = [];
+  for (const acc of body.accountSummaries ?? []) {
+    for (const p of acc.propertySummaries ?? []) {
+      if (!p.property) continue;
+      out.push({ name: p.property, propertyId: p.property.replace("properties/", ""), displayName: p.displayName ?? p.property });
+    }
+  }
+  return out;
+}
+
+/** Property whose display name contains the domain or its brand word. */
+export function matchGA4Property(properties: GA4Property[], domain: string): GA4Property | null {
+  const bare = domain.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
+  const brand = bare.split(".")[0];
+  const byDomain = properties.find((p) => p.displayName.toLowerCase().includes(bare));
+  if (byDomain) return byDomain;
+  const byBrand = properties.filter((p) => p.displayName.toLowerCase().includes(brand));
+  // Only when it is unambiguous: two properties matching "acme" tell us nothing.
+  return byBrand.length === 1 ? byBrand[0] : null;
+}

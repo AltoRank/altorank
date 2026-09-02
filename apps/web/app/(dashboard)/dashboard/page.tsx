@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getRecentArticles, getArticles } from "@/lib/queries/articles";
@@ -24,8 +25,24 @@ export const metadata: Metadata = { title: "Dashboard" };
  * and "we have not measured this" is a different statement from "you have no
  * traffic".
  */
-function TrafficChart({ series }: { series: TrafficSeries }) {
+function TrafficChart({ series, connected = false }: { series: TrafficSeries; connected?: boolean }) {
   if (!series.hasData) {
+    // "Connect Search Console" under an account that has already connected it
+    // is the wrong instruction: the next step is a property or a wait, not a
+    // connection (2026-09-02).
+    if (connected) {
+      return (
+        <div className="h-[220px] grid place-items-center px-8 text-center">
+          <div className="max-w-[46ch] text-[13px] leading-relaxed text-ink-3">
+            <div className="mb-1 text-[13.5px] font-medium text-ink-2">Search Console is connected, with nothing to plot yet</div>
+            Search Console reports with about a two-day lag, and only pages that
+            received clicks appear at all. If this stays empty, open Integrations:
+            the sync reports there when the connected Google account cannot see a
+            property for this domain.
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="h-[220px] grid place-items-center">
         <ConnectPrompt
@@ -79,6 +96,14 @@ export default async function DashboardPage() {
     getTrafficSeries(),
     getKeywords(),
   ]);
+  // Whether any workspace has Google connected at all: it changes the empty
+  // state from an instruction into an explanation.
+  const gscSupabase = await createClient();
+  const { count: gscCount } = await gscSupabase
+    .from("workspace_integrations")
+    .select("id", { count: "exact", head: true })
+    .eq("integration_id", "gsc");
+  const gscConnected = (gscCount ?? 0) > 0;
 
   // The header pill used to be a hardcoded "All systems healthy" while the
   // Health card below it computed the same thing from real rows, so a run of
@@ -183,7 +208,7 @@ export default async function DashboardPage() {
           {/* Traffic chart */}
           <Card title="Organic traffic · last 30 days" meta={<Chip label="All workspaces" soft />} className="col-span-8">
             <div className="p-[18px]">
-              <TrafficChart series={traffic} />
+              <TrafficChart series={traffic} connected={gscConnected} />
               <div className="flex gap-4 text-[11.5px] text-ink-3 mt-2.5 font-mono">
                 <span className="flex items-center gap-1.5">
                   <i className="inline-block w-2.5 h-2.5 rounded-sm bg-accent" />Traffic
