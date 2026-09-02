@@ -28,6 +28,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { billingEnabled, PLAN_ARTICLE_LIMITS, type PlanTier } from "@/lib/stripe";
 import { getSimulation } from "@/lib/dev/simulation";
+import { isAdminEmail } from "@/lib/auth/operators";
 
 export type Quota = {
   /** Null means unmetered. */
@@ -39,11 +40,6 @@ export type Quota = {
   reason: "self-host" | "operator" | "plan" | "no-plan";
   plan: PlanTier | null;
 };
-
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? "helloaltorank@gmail.com")
-  .split(",")
-  .map((e) => e.trim().toLowerCase())
-  .filter(Boolean);
 
 function monthStart(): string {
   const now = new Date();
@@ -82,7 +78,7 @@ export async function getQuota(
     used = count ?? 0;
   }
 
-  if (userEmail && ADMIN_EMAILS.includes(userEmail.toLowerCase())) {
+  if (isAdminEmail(userEmail)) {
     return { limit: null, used, remaining: null, reason: "operator", plan: null };
   }
 

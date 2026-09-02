@@ -7,6 +7,8 @@ import { OnboardingProvider } from "@/components/onboarding/onboarding-provider"
 import { WorkspaceProvider } from "@/components/dashboard/workspace-context";
 import { ensureAgency } from "@/lib/queries/agency";
 import { isAdmin } from "@/lib/auth/admin";
+import { getImpersonation } from "@/lib/auth/impersonation";
+import { ImpersonationBanner } from "@/components/dashboard/impersonation-banner";
 import { getCompletedOnboardingSteps } from "@/lib/queries/onboarding";
 import { getQuota } from "@/lib/billing/quota";
 import { FeedbackWidget } from "@/components/dashboard/feedback-widget";
@@ -18,11 +20,15 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [workspaces, articles, supabase, cookieStore] = await Promise.all([
+  const [workspaces, articles, supabase, cookieStore, impersonation] = await Promise.all([
     getWorkspaces(),
     getArticles(),
     createClient(),
     cookies(),
+    // Non-null only while an operator is signed in as a customer. Everything
+    // below this line then describes the customer, which is the point; the
+    // banner is what says so.
+    getImpersonation(),
   ]);
 
   const {
@@ -114,7 +120,15 @@ export default async function DashboardLayout({
 
   const content = (
     <WorkspaceProvider workspaces={workspaces} initialId={initialWorkspaceId}>
-      <div className="grid h-screen min-h-[720px]" style={{ gridTemplateColumns: "auto 1fr" }}>
+      <div className="flex h-screen min-h-[720px] flex-col">
+      {impersonation && (
+        <ImpersonationBanner
+          operatorEmail={impersonation.operatorEmail}
+          targetEmail={impersonation.targetEmail}
+          startedAt={impersonation.startedAt}
+        />
+      )}
+      <div className="grid flex-1 min-h-0" style={{ gridTemplateColumns: "auto 1fr" }}>
         <Sidebar
           badges={{ articles: articles.length }}
           hidden={hiddenNav}
@@ -135,6 +149,7 @@ export default async function DashboardLayout({
             <DevToolbar simulation={simulation} />
           )}
         </div>
+      </div>
       </div>
     </WorkspaceProvider>
   );

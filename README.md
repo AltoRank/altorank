@@ -87,7 +87,7 @@ npm run smoke    # research → prompt → model → fact check, against real AP
 
 ### Database
 
-`apps/web/supabase/` carries a `config.toml` and 21 migrations that apply in
+`apps/web/supabase/` carries a `config.toml` and 30 migrations that apply in
 order. With the [Supabase CLI](https://supabase.com/docs/guides/cli):
 
 ```bash
