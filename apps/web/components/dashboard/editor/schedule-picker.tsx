@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Icons } from "@/components/ui/icons";
@@ -17,6 +18,7 @@ type Props = {
 };
 
 export function SchedulePicker({ article, cadence }: Props) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const [date, setDate] = useState("");
   const [time, setTime] = useState("10:00");
@@ -54,7 +56,7 @@ export function SchedulePicker({ article, cadence }: Props) {
                 try {
                   await unscheduleArticle(article.id);
                   toast.success("Schedule cancelled");
-                  window.location.reload();
+                  router.refresh();
                 } catch (err) {
                   toast.error(
                     err instanceof Error ? err.message : "Failed to cancel",
@@ -81,7 +83,7 @@ export function SchedulePicker({ article, cadence }: Props) {
                   const scheduledAt = new Date(`${date}T${time}`).toISOString();
                   await scheduleArticle(article.id, scheduledAt);
                   toast.success("Rescheduled");
-                  window.location.reload();
+                  router.refresh();
                 } catch (err) {
                   toast.error(
                     err instanceof Error ? err.message : "Failed to reschedule",
@@ -130,7 +132,7 @@ export function SchedulePicker({ article, cadence }: Props) {
                 const scheduledAt = new Date(`${date}T${time}`).toISOString();
                 await scheduleArticle(article.id, scheduledAt);
                 toast.success("Article scheduled");
-                window.location.reload();
+                router.refresh();
               } catch (err) {
                 toast.error(
                   err instanceof Error ? err.message : "Failed to schedule",
@@ -151,7 +153,7 @@ export function SchedulePicker({ article, cadence }: Props) {
               try {
                 await addToQueue(article.id);
                 toast.success("Added to publish queue");
-                window.location.reload();
+                router.refresh();
               } catch (err) {
                 toast.error(
                   err instanceof Error ? err.message : "Failed to add to queue",

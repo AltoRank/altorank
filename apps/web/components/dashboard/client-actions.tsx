@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Icons, Dialog } from "@/components/ui";
 import { useOnboarding } from "@/components/onboarding/use-onboarding";
@@ -75,11 +76,11 @@ export function ClientActions({ allowance }: { allowance?: { limit: number | nul
             <Icons.plus size={14} />
             Add workspace
           </Button>
-          <a href="/settings/billing" className="text-[11.5px] text-accent-ink underline decoration-line underline-offset-[3px]">
+          <Link href="/settings/billing" className="text-[11.5px] text-accent-ink underline decoration-line underline-offset-[3px]">
             {allowance?.noPlan
               ? "One workspace before choosing a plan. Choose a plan for more sites"
               : `All ${allowance?.limit} workspaces on this plan are in use. Upgrade for more`}
-          </a>
+          </Link>
         </div>
       ) : (
         <Button

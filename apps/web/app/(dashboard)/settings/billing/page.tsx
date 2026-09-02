@@ -2,13 +2,31 @@ import type { Metadata } from "next";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { createClient } from "@/lib/supabase/server";
 import { PageHead, StatusPill, Icons, Button, Card } from "@/components/ui";
-import { PLAN_LABELS, PLAN_PRICES, type PlanTier } from "@/lib/stripe";
+import {
+  PLAN_LABELS,
+  PLAN_PRICES,
+  PLAN_YEARLY_PRICES,
+  PLAN_TAGLINES,
+  PLAN_FEATURES,
+  type PlanTier,
+} from "@/lib/stripe";
 import { getSimulation } from "@/lib/dev/simulation";
 import { getQuota } from "@/lib/billing/quota";
-import { BillingActions } from "./billing-actions";
+import { PlanCards, type PlanCard } from "./plan-cards";
 import { SettingsTabs } from "../settings-tabs";
 
 export const metadata: Metadata = { title: "Billing" };
+
+const TIERS = ["starter", "growth", "scale"] as const satisfies readonly PlanTier[];
+
+const PLAN_CARDS: PlanCard[] = TIERS.map((tier) => ({
+  tier,
+  label: PLAN_LABELS[tier],
+  monthly: PLAN_PRICES[tier],
+  yearly: PLAN_YEARLY_PRICES[tier],
+  tagline: PLAN_TAGLINES[tier],
+  features: PLAN_FEATURES[tier],
+}));
 
 export default async function BillingPage(props: { searchParams?: Promise<{ return?: string; upgraded?: string }> }) {
   const returnTo = (await props.searchParams)?.return;
@@ -117,24 +135,18 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
             </div>
           </Card>
 
-          <Card title="Plan">
-            <div className="flex items-start justify-between gap-6 flex-wrap">
-              <div className="text-[13px] text-ink-2 max-w-[460px] pt-1">
-                {isActive ? (
-                  <>
-                    You&rsquo;re on the{" "}
-                    <span className="font-medium text-ink">{PLAN_LABELS[plan]}</span> plan
-                    {" "}({PLAN_PRICES[plan]}{plan !== "scale" ? "/mo" : ""}).
-                  </>
-                ) : (
-                  // `plan` defaults to "starter" when the row is empty, and the
-                  // old copy presented that default as a fact: "You're on the
-                  // Managed plan. Subscribe to activate." Nobody is on a plan
-                  // they have not bought.
-                  <>No plan yet. Pick one below, or self-host free.</>
-                )}
-              </div>
-              <BillingActions hasCustomer={!!agency?.stripe_customer_id} returnTo={returnTo} />
+          <Card title={isActive ? "Your plan" : "Choose a plan"} flush>
+            <div className="p-[18px]">
+              <PlanCards
+                plans={PLAN_CARDS}
+                /* Null unless something is actually being paid for: `plan`
+                   defaults to "starter" on an empty row, and this page has
+                   already once presented that default as a purchase. */
+                currentTier={isActive ? plan : null}
+                isActive={isActive}
+                hasCustomer={!!agency?.stripe_customer_id}
+                returnTo={returnTo}
+              />
             </div>
           </Card>
 

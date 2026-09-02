@@ -81,3 +81,68 @@ export const PLAN_PRICES: Record<PlanTier, string> = {
   growth: "€199",
   scale: "Let's talk",
 };
+
+/**
+ * Yearly price, as displayed. Ten months for twelve - the same "2 months free"
+ * deal the pricing page states, not a percentage, because the discount should
+ * be quoted in the unit the buyer thinks in.
+ */
+export const PLAN_YEARLY_PRICES: Record<PlanTier, string> = {
+  starter: "€690",
+  growth: "€1,990",
+  scale: "Let's talk",
+};
+
+/** One line on who each rung is for. Mirrors `desc` in the pricing data. */
+export const PLAN_TAGLINES: Record<PlanTier, string> = {
+  starter:
+    "No API keys to manage, because model and data costs are included. For solo operators and agencies running one or two brands.",
+  growth:
+    "For agencies running content across a full client roster. Everything metered on output, not seats or workspaces.",
+  scale:
+    "Volume beyond the Agency tier, or terms your procurement team needs in writing.",
+};
+
+/**
+ * What each rung includes, in the buyer's words.
+ *
+ * A deliberate second copy of the `features` arrays in
+ * apps/marketing/src/data/pricing.ts, for the same reason PLAN_ARTICLE_LIMITS
+ * and PLAN_PRICES are: apps/web and apps/marketing are separate workspaces and
+ * neither can import the other. Change them together. The billing page is the
+ * screen where a wrong figure becomes a chargeback, so it quotes the ladder
+ * rather than paraphrasing it.
+ *
+ * Nothing here is a capability the free self-host tier lacks - under AGPL there
+ * are no feature gates. The paid rungs sell hosting, included model and data
+ * costs, volume and support: the things self-hosting makes you provide
+ * yourself. Listing white-label or multi-tenant as a paid differentiator would
+ * contradict the open-source promise, which is why neither appears.
+ */
+export const PLAN_FEATURES: Record<PlanTier, string[]> = {
+  starter: [
+    "100 articles / month included",
+    "Up to 3 workspaces (sites or clients)",
+    "€0.60 per additional article",
+    "No API keys needed, costs included",
+    "Voice profile training",
+    "Keyword research + rank tracking",
+    "All 11 CMS integrations",
+    "Email support",
+  ],
+  growth: [
+    "Everything in Managed",
+    "400 articles / month included",
+    "Unlimited workspaces: a site or a client each",
+    "€0.45 per additional article",
+    "Role-based permissions for your team",
+    "Priority support, same-day",
+    "Onboarding call and migration help",
+  ],
+  scale: [
+    "Everything in Agency",
+    "Volume priced to your output",
+    "Invoicing and procurement terms",
+    "A named contact",
+  ],
+};

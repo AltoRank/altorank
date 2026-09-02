@@ -60,7 +60,7 @@ export default async function IntegrationsPage({
     <>
       <PageHead
         title="Integrations"
-        subtitle={<><StatusPill status="on" label={`${integrations.length} available`} /><span>Connect the tools your sites already run on</span><DotSep /><a href="/connect/google" className="text-accent-ink underline decoration-line underline-offset-[3px]">See every site this Google account can read</a></>}
+        subtitle={<><StatusPill status="on" label={`${integrations.length} available`} /><span>Connect the tools your sites already run on</span><DotSep /><Link href="/connect/google" className="text-accent-ink underline decoration-line underline-offset-[3px]">See every site this Google account can read</Link></>}
         actions={<ConnectActions workspaces={workspaces} integrations={integrations} />}
       />
 

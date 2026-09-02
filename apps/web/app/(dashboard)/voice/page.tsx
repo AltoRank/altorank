@@ -12,10 +12,13 @@ export const metadata: Metadata = { title: "Brand Voice" };
 export default async function VoicePage() {
   // Every section is about one site unless the switcher says otherwise.
   const scopeId = await getScopedWorkspaceId();
-  const [workspaces, voiceProfiles] = await Promise.all([
+  const [allWorkspaces, voiceProfiles] = await Promise.all([
     getWorkspaces(),
     getVoiceProfiles(scopeId ?? undefined),
   ]);
+  // A voice belongs to one site. Showing every site's card here made the
+  // page look like it had trained a voice it had not (2026-09-02).
+  const workspaces = scopeId ? allWorkspaces.filter((w) => w.id === scopeId) : allWorkspaces;
 
   const voiceMap = new Map<string, VoiceProfile>(voiceProfiles.map((v) => [v.workspace_id, v]));
   const trainedCount = voiceProfiles.filter((v) => v.trained).length;
@@ -24,7 +27,7 @@ export default async function VoicePage() {
     <>
       <PageHead
         title="Voice library"
-        subtitle={<><StatusPill status="on" label={`${trainedCount} / ${workspaces.length} trained`} /><span>One per workspace, trained on sample text you approve</span></>}
+        subtitle={<><StatusPill status={trainedCount > 0 ? "on" : "off"} label={trainedCount > 0 ? "Trained" : "Not trained yet"} /><span>Trained on sample text you approve, for {workspaces[0]?.domain ?? "this site"}</span></>}
         actions={<VoiceActions workspaces={workspaces} />}
       />
 

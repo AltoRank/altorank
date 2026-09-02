@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 // Without these the editor treats a stored table as an unknown node and drops
@@ -32,6 +34,7 @@ type Props = {
 };
 
 export function ArticleEditor({ article, workspace, cadence, needsPlan = false }: Props) {
+  const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [manualUrl, setManualUrl] = useState("");
@@ -165,8 +168,11 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false }
                 });
               }
             } else if (data.type === "complete") {
-              // Refresh the page to get updated article data
-              window.location.reload();
+              // Re-render the server components with the saved article
+              // (status, score, word count) without tearing down the
+              // editor: a full reload would drop the text just streamed
+              // in before the 2s auto-save debounce has flushed it.
+              router.refresh();
             } else if (data.type === "error") {
               throw new Error(data.error);
             }
@@ -182,7 +188,7 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false }
       setGenerating(false);
       setPhase("idle");
     }
-  }, [workspace.id, article.keyword, article.title, editor]);
+  }, [workspace.id, article.keyword, article.title, editor, router]);
 
   /**
    * Select a flagged claim inside the document.
@@ -218,39 +224,39 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false }
     try {
       await publishArticle(article.id);
       toast.success("Article published successfully");
-      window.location.reload();
+      router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to publish article");
     } finally {
       setPublishing(false);
     }
-  }, [article.id]);
+  }, [article.id, router]);
 
   const handleApprove = useCallback(async () => {
     setPublishing(true);
     try {
       await approveArticle(article.id);
       toast.success("Article approved — ready to publish");
-      window.location.reload();
+      router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to approve article");
     } finally {
       setPublishing(false);
     }
-  }, [article.id]);
+  }, [article.id, router]);
 
   const handleRequestChanges = useCallback(async () => {
     setPublishing(true);
     try {
       await requestChanges(article.id);
       toast.success("Sent back for changes");
-      window.location.reload();
+      router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to send back");
     } finally {
       setPublishing(false);
     }
-  }, [article.id]);
+  }, [article.id, router]);
 
   return (
     <div className="flex-1 grid min-h-0" style={{ gridTemplateColumns: "1fr 340px" }}>
@@ -418,12 +424,12 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false }
                 <StatusPill status={article.status === "live" ? "on" : "on"} label="Ready" />
               </div>
               {article.status === "approved" && needsPlan && (
-                <a
+                <Link
                   href="/settings/billing"
                   className="block w-full rounded-[7px] bg-accent px-3 py-2 text-center text-[13px] font-medium text-white hover:bg-accent-2"
                 >
                   Choose a plan to publish
-                </a>
+                </Link>
               )}
               {article.status === "approved" && !needsPlan && (
                 <>
@@ -464,12 +470,12 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false }
 
           {article.status === "review" && needsPlan && (
             <div className="mt-3">
-              <a
+              <Link
                 href="/settings/billing"
                 className="block w-full rounded-[7px] bg-accent px-3 py-2 text-center text-[13px] font-medium text-white hover:bg-accent-2"
               >
                 Choose a plan to approve
-              </a>
+              </Link>
               <p className="mt-2 text-[11.5px] leading-relaxed text-ink-3">
                 This draft is yours to read and edit. Nothing has been charged; approving and
                 publishing need a plan, and you cancel it yourself from the billing page.
@@ -525,7 +531,7 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false }
                   setManualError(null);
                   try {
                     await markPublishedManually(article.id, manualUrl);
-                    window.location.reload();
+                    router.refresh();
                   } catch (err) {
                     setManualError(err instanceof Error ? err.message : "Could not record it");
                   } finally {

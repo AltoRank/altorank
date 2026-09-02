@@ -174,6 +174,27 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
               const IconFn = iconMap[item.icon];
               const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
               const badgeValue = badges?.[item.id] ?? item.badge;
+
+              // Listed so the shape of the product is visible, not clickable
+              // because it does not work yet (2026-09-02).
+              if (item.soon) {
+                return (
+                  <div
+                    key={item.id}
+                    title="Being built. Listed so you know it is coming, not because it works yet."
+                    className="flex cursor-not-allowed items-center gap-2.5 rounded-[7px] px-2.5 py-[7px] text-[13px] text-ink-4"
+                  >
+                    <span className="ic-wrap shrink-0 text-ink-4">{IconFn ? IconFn({ size: 16 }) : null}</span>
+                    {!collapsed && (
+                      <>
+                        <span className="flex-1">{item.label}</span>
+                        <span className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-ink-4">soon</span>
+                      </>
+                    )}
+                  </div>
+                );
+              }
+
               const link = (
                 <Link
                   key={item.id}

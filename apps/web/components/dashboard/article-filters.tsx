@@ -3,10 +3,11 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Chip, SearchInput } from "@/components/ui";
 
+// Review leads: it is the only state that is waiting on a person.
 const STATUS_CHIPS = [
+  { label: "Needs review", value: "review" },
   { label: "All", value: "" },
   { label: "Live", value: "live" },
-  { label: "Review", value: "review" },
   { label: "Drafting", value: "drafting" },
   { label: "Scheduled", value: "scheduled" },
   { label: "Draft", value: "draft" },

@@ -9,6 +9,10 @@ import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "Reports" };
 
+/**
+ * Reachable by URL but not linked: the section is listed as "soon" in the
+ * sidebar because it is not ready to be relied on (2026-09-02).
+ */
 export default async function ReportsPage() {
   // Every section is about one site unless the switcher says otherwise.
   const scopeId = await getScopedWorkspaceId();

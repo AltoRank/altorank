@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getArticles } from "@/lib/queries/articles";
 import { createClient } from "@/lib/supabase/server";
@@ -12,6 +13,15 @@ import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "Articles" };
 
+/** How many drafts are waiting on a person, whatever the page is filtered to. */
+async function countArticlesInReview(workspaceId: string | null): Promise<number> {
+  const supabase = await createClient();
+  let q = supabase.from("articles").select("id", { count: "exact", head: true }).eq("status", "review");
+  if (workspaceId) q = q.eq("workspace_id", workspaceId);
+  const { count } = await q;
+  return count ?? 0;
+}
+
 type Props = {
   searchParams: Promise<{ status?: string; sort?: string; q?: string }>;
 };
@@ -20,6 +30,7 @@ export default async function ArticlesPage({ searchParams }: Props) {
   // Every section is about one site unless the switcher says otherwise.
   const scopeId = await getScopedWorkspaceId();
   const params = await searchParams;
+  const statusFilter = params.status ?? "";
 
   const [workspaces, allArticles] = await Promise.all([
     getWorkspaces(),
@@ -59,7 +70,12 @@ export default async function ArticlesPage({ searchParams }: Props) {
   const rows = allArticles;
 
   const liveCount = rows.filter((a) => a.status === "live").length;
-  const reviewCount = rows.filter((a) => a.status === "review").length;
+  // Counted independently of the active filter. Derived from `rows` it read
+  // as zero whenever someone was filtered onto Live, hiding the one thing
+  // that was waiting on them (2026-09-02).
+  const reviewCount = statusFilter
+    ? (await countArticlesInReview(scopeId))
+    : rows.filter((a) => a.status === "review").length;
   const scored = rows.filter((a) => a.seo_score > 0);
   const avgScore = scored.length > 0
     ? Math.round(scored.reduce((s, a) => s + a.seo_score, 0) / scored.length)
@@ -78,8 +94,12 @@ export default async function ArticlesPage({ searchParams }: Props) {
         subtitle={
           <>
             <span>{plural(rows.length, "article")}</span>
-            <DotSep />
-            <span>across {plural(workspaces.length, "workspace")}</span>
+            {wsMap.get(scopeId ?? "")?.domain ? (
+              <>
+                <DotSep />
+                <span className="font-mono text-[11.5px]">{wsMap.get(scopeId ?? "")?.domain}</span>
+              </>
+            ) : null}
           </>
         }
         actions={<ArticleActions workspaces={workspaces} articles={allArticles} scopedId={scopeId} />}
@@ -87,14 +107,31 @@ export default async function ArticlesPage({ searchParams }: Props) {
 
       <StatStrip
         stats={[
+          // Review leads the strip: it is the only number that is a request
+          // for someone to do something (2026-09-02).
+          { label: "Needs review", value: reviewCount, delta: reviewCount > 0 ? "waiting on you" : "nothing pending", deltaType: reviewCount > 0 ? "neg" : undefined },
           { label: "Live", value: liveCount, delta: `${liveCount} published`, deltaType: "pos" },
-          { label: "In review", value: reviewCount, delta: reviewCount > 0 ? "waiting on editor" : "none pending" },
           { label: "Avg SEO score", value: avgScore || "—", delta: avgScore > 0 ? "from audits" : "no data" },
           { label: "Total", value: rows.length },
         ]}
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
+        {/* The review queue used to be its own nav item, which meant the
+            work waiting on a person lived one click away from the page they
+            were already on. It is a banner here instead (2026-09-02). */}
+        {reviewCount > 0 && statusFilter !== "review" && (
+          <Link
+            href="/articles?status=review"
+            className="mb-4 flex items-center justify-between rounded-[9px] border border-line bg-panel px-4 py-3 text-[13px] hover:border-ink-4"
+          >
+            <span>
+              <strong className="font-medium">{plural(reviewCount, "article")}</strong>{" "}
+              <span className="text-ink-3">drafted and waiting for your yes before publishing.</span>
+            </span>
+            <span className="text-accent-ink underline decoration-line underline-offset-[3px]">Review them</span>
+          </Link>
+        )}
         <ArticleFilters />
 
         <Card flush>

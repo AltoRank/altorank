@@ -22,6 +22,8 @@ export type NavItem = {
   icon: string;
   badge?: number;
   tagNew?: boolean;
+  /** Built but not ready to be relied on: shown, labelled, not clickable. */
+  soon?: boolean;
 };
 
 export const DASHBOARD_NAV: NavGroup[] = [
@@ -34,8 +36,9 @@ export const DASHBOARD_NAV: NavGroup[] = [
   {
     group: "Content",
     items: [
+      // Review is the first thing that wants attention, so it is a state of
+      // Articles rather than a section beside it (2026-09-02).
       { id: "articles", label: "Articles", href: "/articles", icon: "articles" },
-      { id: "review", label: "Review queue", href: "/review", icon: "check" },
       { id: "calendar", label: "Calendar", href: "/content", icon: "calendar" },
       { id: "keywords", label: "Keywords", href: "/keywords", icon: "keywords" },
       { id: "voice", label: "Brand Voice", href: "/voice", icon: "voice" },
@@ -51,8 +54,8 @@ export const DASHBOARD_NAV: NavGroup[] = [
       { id: "backlinks", label: "Backlinks", href: "/backlinks", icon: "backlinks" },
       { id: "audits", label: "Site audits", href: "/audits", icon: "search" },
       { id: "readiness", label: "Agent readiness", href: "/readiness", icon: "sparkle" },
-      { id: "geo", label: "AI visibility", href: "/geo", icon: "trend", tagNew: true },
-      { id: "reports", label: "Reports", href: "/reports", icon: "reports" },
+      { id: "geo", label: "AI visibility", href: "/geo", icon: "trend", soon: true },
+      { id: "reports", label: "Reports", href: "/reports", icon: "reports", soon: true },
     ],
   },
   // Named "Agency" until 2026-08-30. Billing and Settings are account chrome
@@ -68,12 +71,17 @@ export const DASHBOARD_NAV: NavGroup[] = [
     items: [
       // The roster is account management, not a daily section: the sidebar
       // switcher is where a workspace is chosen (2026-09-02).
-      { id: "workspaces", label: "All workspaces", href: "/workspaces", icon: "clients" },
+      { id: "workspaces", label: "Your sites", href: "/workspaces", icon: "clients" },
       { id: "settings", label: "Settings", href: "/settings", icon: "settings" },
-      // Operator-only. Hidden by the layout for everyone else, and the page
-      // itself 404s rather than relying on the nav to hide it.
-      { id: "admin", label: "Operations", href: "/admin", icon: "trend" },
     ],
+  },
+  // Its own group, so an operator can see at a glance that this is staff
+  // tooling and not something a customer is looking at. The whole group
+  // disappears for everyone else, and /admin 404s rather than trusting the
+  // nav to hide it (2026-09-02).
+  {
+    group: "Admin only",
+    items: [{ id: "admin", label: "Operations", href: "/admin", icon: "trend" }],
   },
 ];
 

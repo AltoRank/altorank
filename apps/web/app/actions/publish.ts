@@ -78,7 +78,6 @@ export async function approveArticle(articleId: string) {
   if (error || !data) throw new Error("Article must be in review to approve");
 
   revalidatePath("/articles");
-  revalidatePath("/review");
   revalidatePath(`/content/${articleId}`);
 }
 
@@ -112,7 +111,6 @@ export async function approveArticles(articleIds: string[]): Promise<string[]> {
 
   if (error) throw new Error(error.message);
   revalidatePath("/articles");
-  revalidatePath("/review");
   for (const row of data ?? []) revalidatePath(`/content/${row.id}`);
   return (data ?? []).map((r) => r.id as string);
 }

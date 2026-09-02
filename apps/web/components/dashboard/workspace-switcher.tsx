@@ -38,7 +38,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
       </label>
       <div className="relative">
         <select
-          value={active?.id ?? "all"}
+          value={active?.id ?? ""}
           onChange={(e) => choose(e.target.value)}
           disabled={pending}
           aria-label="Choose which workspace to view"
@@ -47,7 +47,6 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
           {workspaces.map((w) => (
             <option key={w.id} value={w.id}>{w.name}</option>
           ))}
-          {workspaces.length > 1 && <option value="all">All workspaces</option>}
         </select>
         <Icons.caretDown size={13} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-ink-3" />
       </div>

@@ -29,7 +29,7 @@ export function WorkspaceProvider({
   children: React.ReactNode;
 }) {
   const [activeId, setActiveIdState] = useState(
-    () => initialId ?? workspaces[0]?.id ?? ""
+    () => (initialId && initialId !== "all" ? initialId : workspaces[0]?.id ?? "")
   );
 
   const setActiveId = useCallback(
@@ -41,9 +41,9 @@ export function WorkspaceProvider({
     []
   );
 
-  // "all" is a real choice, not a missing one: the pages read the same
-  // cookie and show every workspace when it is set.
-  const active = activeId === "all" ? null : (workspaces.find((w) => w.id === activeId) ?? workspaces[0] ?? null);
+  // There is no "all" choice any more, so a stale cookie holding it resolves
+  // to the first site, matching what the server decides (2026-09-02).
+  const active = workspaces.find((w) => w.id === activeId) ?? workspaces[0] ?? null;
 
   return (
     <WorkspaceContext value={{ workspaces, active, setActiveId }}>

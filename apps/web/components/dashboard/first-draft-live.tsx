@@ -131,7 +131,7 @@ export function FirstDraftLive({
           The pipeline picks the best-scoring keyword from the{" "}
           {keywordCount.toLocaleString()} tracked here, writes a draft,
           fact-checks it and scores it, then puts it in your{" "}
-          <Link href="/review" className="text-accent-ink underline decoration-line underline-offset-[3px]">
+          <Link href="/articles?status=review" className="text-accent-ink underline decoration-line underline-offset-[3px]">
             review queue
           </Link>
           . Nothing publishes until you approve it.{" "}

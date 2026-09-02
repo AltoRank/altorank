@@ -5,6 +5,7 @@ import { PageHead, StatusPill, Avatar, Icons, Button, Card, StatStrip } from "@/
 import type { Workspace, DomainAudit } from "@/lib/types";
 import { StartAuditButton } from "@/components/dashboard/start-audit-button";
 import { plural } from "@/lib/utils";
+import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "Audits" };
 
@@ -21,9 +22,13 @@ function auditStatus(a: DomainAudit): { status: string; label: string } {
 }
 
 export default async function AuditsPage() {
-  const workspaces = await getWorkspaces();
+  // One site at a time. Audits from two domains side by side read as one
+  // number and mean nothing (2026-09-02).
+  const scopeId = await getScopedWorkspaceId();
+  const all = await getWorkspaces();
+  const workspaces = scopeId ? all.filter((w) => w.id === scopeId) : all;
 
-  // Fetch audits for all workspaces
+  // Fetch audits for the workspace in scope
   const auditsByWs = await Promise.all(
     workspaces.map(async (ws) => ({
       workspace: ws,
@@ -51,7 +56,8 @@ export default async function AuditsPage() {
         title="Site Audits"
         subtitle={
           <span>
-            {plural(allAudits.length, "audit")} across {plural(workspaces.length, "workspace")}
+            {plural(allAudits.length, "audit")}
+            {workspaces[0]?.domain ? <> for <span className="font-mono text-ink-2">{workspaces[0].domain}</span></> : null}
           </span>
         }
       />
