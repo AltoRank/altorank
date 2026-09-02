@@ -36,6 +36,13 @@ export default async function BillingPage() {
 
   const quota = await getQuota(supabase, agencyId, user.email ?? null);
   const isActive = Boolean(simulation?.plan) || status === "active" || status === "trialing";
+  const euros = (n: number | string | null) =>
+    new Intl.NumberFormat("en-IE", {
+      style: "currency",
+      currency: "EUR",
+      minimumFractionDigits: 2,
+    }).format(Number(n ?? 0));
+
   const renews = agency?.current_period_end
     ? new Date(agency.current_period_end).toLocaleDateString("en-US", {
         month: "short",
@@ -69,7 +76,11 @@ export default async function BillingPage() {
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll space-y-6">
         <Card title="Usage this month">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
+          {/* The Card body renders children flush; every non-table card has to
+              pay for its own padding. 18px matches the inset of the title
+              above it, so the copy lines up with the heading instead of
+              starting 18px to its left and touching the border. */}
+          <div className="px-[18px] py-4 flex items-center justify-between gap-5 flex-wrap">
             <div className="text-[13px] text-ink-2">
               {quota.limit === null ? (
                 <>
@@ -103,8 +114,8 @@ export default async function BillingPage() {
         </Card>
 
         <Card title="Plan">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="text-[13px] text-ink-2 max-w-[460px]">
+          <div className="px-[18px] py-4 flex items-start justify-between gap-6 flex-wrap">
+            <div className="text-[13px] text-ink-2 max-w-[460px] pt-1">
               {isActive ? (
                 <>
                   You&rsquo;re on the{" "}
@@ -125,46 +136,48 @@ export default async function BillingPage() {
 
         <Card title="Recent invoices">
           {invoices && invoices.length > 0 ? (
-            <table className="w-full border-collapse text-[13px]">
-              <thead>
-                <tr>
-                  {["Invoice", "Period", "Articles", "Amount", "Status", ""].map((h) => (
-                    <th
-                      key={h}
-                      className={`font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel ${
-                        ["Articles", "Amount"].includes(h) ? "text-right" : "text-left"
-                      }`}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {invoices.map((inv) => (
-                  <tr key={inv.number} className="hover:[&>td]:bg-panel">
-                    <td className="px-3.5 py-3 border-b border-line-soft font-mono text-xs">{inv.number}</td>
-                    <td className="px-3.5 py-3 border-b border-line-soft">{inv.period}</td>
-                    <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{inv.articles}</td>
-                    <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">€{inv.amount}</td>
-                    <td className="px-3.5 py-3 border-b border-line-soft">
-                      <StatusPill status="on" label={inv.status ?? "—"} />
-                    </td>
-                    <td className="px-3.5 py-3 border-b border-line-soft">
-                      {inv.pdf_url ? (
-                        <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer">
-                          <Button size="sm"><Icons.download size={13} />PDF</Button>
-                        </a>
-                      ) : (
-                        <span className="text-ink-3">—</span>
-                      )}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[620px] border-collapse text-[13px]">
+                <thead>
+                  <tr>
+                    {["Invoice", "Period", "Articles", "Amount", "Status", ""].map((h) => (
+                      <th
+                        key={h}
+                        className={`font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel ${
+                          ["Articles", "Amount"].includes(h) ? "text-right" : "text-left"
+                        }`}
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {invoices.map((inv) => (
+                    <tr key={inv.number} className="hover:[&>td]:bg-panel">
+                      <td className="px-3.5 py-3 border-b border-line-soft font-mono text-xs">{inv.number}</td>
+                      <td className="px-3.5 py-3 border-b border-line-soft">{inv.period}</td>
+                      <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2 tabular-nums">{inv.articles}</td>
+                      <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2 tabular-nums">{euros(inv.amount)}</td>
+                      <td className="px-3.5 py-3 border-b border-line-soft">
+                        <StatusPill status="on" label={inv.status ?? "—"} />
+                      </td>
+                      <td className="px-3.5 py-3 border-b border-line-soft">
+                        {inv.pdf_url ? (
+                          <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer">
+                            <Button size="sm"><Icons.download size={13} />PDF</Button>
+                          </a>
+                        ) : (
+                          <span className="text-ink-3">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : (
-            <div className="text-[13px] text-ink-3 italic px-1 py-3">
+            <div className="text-[13px] text-ink-3 italic px-[18px] py-5">
               No invoices yet. They&rsquo;ll appear here after your first payment.
             </div>
           )}

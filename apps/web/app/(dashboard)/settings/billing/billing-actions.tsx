@@ -42,8 +42,8 @@ export function BillingActions({ hasCustomer }: { hasCustomer: boolean }) {
     // fills our competitors' review pages. Cancel lands on the confirmation
     // screen; nothing else is required and nothing in the workspace is lost.
     return (
-      <div className="flex flex-col items-end gap-2">
-        <div className="flex flex-wrap justify-end gap-2">
+      <div className="flex w-full flex-col items-stretch gap-2.5 sm:w-auto sm:items-end">
+        <div className="flex flex-wrap gap-2 sm:justify-end">
           <Button onClick={() => portal("payment_method")} disabled={pending}>
             Update card
           </Button>
@@ -54,7 +54,7 @@ export function BillingActions({ hasCustomer }: { hasCustomer: boolean }) {
             {pending ? "Opening…" : "Invoices and billing"}
           </Button>
         </div>
-        <p className="max-w-[46ch] text-right text-[11.5px] leading-relaxed text-ink-3">
+        <p className="m-0 max-w-[46ch] text-[12px] leading-relaxed text-ink-3 sm:text-right">
           Cancelling takes one confirmation and ends the plan at the period end. Your
           workspaces, articles and history stay readable afterwards.
         </p>
@@ -73,8 +73,8 @@ export function BillingActions({ hasCustomer }: { hasCustomer: boolean }) {
       : { starter: "Managed, €690/yr", growth: "Agency, €1,990/yr" };
 
   return (
-    <div className="flex flex-col items-end gap-2">
-      <div className="flex rounded-[7px] border border-line p-0.5 text-[12px]">
+    <div className="flex w-full flex-col items-stretch gap-2.5 sm:w-auto sm:items-end">
+      <div className="flex self-start rounded-[7px] border border-line p-0.5 text-[12px] sm:self-end">
         {(["month", "year"] as const).map((iv) => (
           <button
             key={iv}
@@ -87,7 +87,7 @@ export function BillingActions({ hasCustomer }: { hasCustomer: boolean }) {
           </button>
         ))}
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 sm:justify-end">
         <Button onClick={() => subscribe("starter")} disabled={pending}>
           {label.starter}
         </Button>
@@ -95,7 +95,7 @@ export function BillingActions({ hasCustomer }: { hasCustomer: boolean }) {
           {label.growth}
         </Button>
       </div>
-      <p className="max-w-[46ch] text-right text-[11.5px] leading-relaxed text-ink-3">
+      <p className="m-0 max-w-[46ch] text-[12px] leading-relaxed text-ink-3 sm:text-right">
         No trial. Nothing is charged until you choose a plan here, and you can cancel it
         yourself from this page.
       </p>
