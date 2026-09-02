@@ -34,6 +34,9 @@ export type AgencyMember = {
 export type AIProviderType = "claude" | "openai";
 
 export type Workspace = {
+  /** Cron writes drafts for this workspace (opt-in; set by activation and by the signup flow). */
+  auto_generate?: boolean;
+  auto_generate_weekly_limit?: number | null;
   id: string;
   agency_id: string;
   name: string;
