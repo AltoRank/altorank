@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cronSecretFrom } from "@/lib/cron-auth";
 import { setSpendReporter } from "@/lib/seo/client";
 import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -30,7 +31,7 @@ export const maxDuration = 300;
 const BATCH = 3;
 
 export async function GET(request: Request) {
-  const cronSecret = request.headers.get("x-cron-secret");
+  const cronSecret = cronSecretFrom(request);
   if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
     setSpendReporter(null);
 

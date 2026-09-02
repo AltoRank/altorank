@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cronSecretFrom } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
   probeVisibility,
@@ -33,7 +34,7 @@ const MAX_PROBES_PER_RUN = 24;
 const MAX_WORKSPACES_PER_RUN = 3;
 
 export async function GET(request: Request) {
-  const cronSecret = request.headers.get("x-cron-secret");
+  const cronSecret = cronSecretFrom(request);
   if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

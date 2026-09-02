@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cronSecretFrom } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/google/oauth";
 import { fetchGA4Metrics } from "@/lib/google/ga4";
@@ -8,7 +9,7 @@ import { fetchGSCQueryMetrics, fetchGSCPageMetrics } from "@/lib/google/gsc";
  * Daily cron: sync GA4 + GSC metrics for all connected workspaces.
  */
 export async function GET(request: Request) {
-  const cronSecret = request.headers.get("x-cron-secret");
+  const cronSecret = cronSecretFrom(request);
   if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

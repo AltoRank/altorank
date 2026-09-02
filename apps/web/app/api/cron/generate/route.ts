@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cronSecretFrom } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { profileIsUsable } from "@/lib/seo/topical-profile";
@@ -46,7 +47,7 @@ interface WorkspaceOutcome {
 }
 
 export async function GET(request: Request) {
-  const cronSecret = request.headers.get("x-cron-secret");
+  const cronSecret = cronSecretFrom(request);
   if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

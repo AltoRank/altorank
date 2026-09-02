@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cronSecretFrom } from "@/lib/cron-auth";
 import { setSpendReporter } from "@/lib/seo/client";
 import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -8,7 +9,7 @@ import { buildRankingRows } from "@/lib/seo/rankings";
 
 export async function GET(request: Request) {
   // Verify cron secret
-  const cronSecret = request.headers.get("x-cron-secret");
+  const cronSecret = cronSecretFrom(request);
 
   if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
     setSpendReporter(null);
