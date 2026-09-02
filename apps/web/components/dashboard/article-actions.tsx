@@ -11,11 +11,15 @@ interface ArticleActionsProps {
   /** One workspace (detail page) or all of them (the global Articles page). */
   workspaces: Workspace[];
   articles?: Article[];
+  /** The site the sidebar is scoped to; the dialog stops asking when set. */
+  scopedId?: string | null;
 }
 
-export function ArticleActions({ workspaces, articles = [] }: ArticleActionsProps) {
+export function ArticleActions({ workspaces, articles = [], scopedId }: ArticleActionsProps) {
   const [open, setOpen] = useState(false);
-  const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id ?? "");
+  // The sidebar decides which site this is for; the dialog only asks when
+  // you are looking at all of them.
+  const [workspaceId, setWorkspaceId] = useState(scopedId ?? workspaces[0]?.id ?? "");
   const workspace = workspaces.find((w) => w.id === workspaceId) ?? workspaces[0];
   const [pending, setPending] = useState(false);
   const [phase, setPhase] = useState<string | null>(null);
@@ -155,10 +159,10 @@ export function ArticleActions({ workspaces, articles = [] }: ArticleActionsProp
         open={open}
         onOpenChange={setOpen}
         title="Generate article"
-        description="Researched against the live SERP, written in the workspace's voice, held for your review."
+        description="Researched against the live SERP, written in your brand voice, held for your review."
       >
         <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
-          {workspaces.length > 1 && (
+          {!scopedId && workspaces.length > 1 && (
             <label className="flex flex-col gap-1.5">
               <span className="text-[12.5px] font-medium text-ink-2">Workspace</span>
               <select

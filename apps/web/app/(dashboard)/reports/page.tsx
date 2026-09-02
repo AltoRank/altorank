@@ -32,7 +32,7 @@ export default async function ReportsPage() {
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
-                {["Workspace", "Period", "Articles", "Traffic", "Keywords", "Status", ""].map((h) => (
+                {[...(scopeId ? [] : ["Workspace"]), "Period", "Articles", "Traffic", "Keywords", "Status", ""].map((h) => (
                   <th key={h} className={`font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel ${["Articles", "Traffic", "Keywords"].includes(h) ? "text-right" : "text-left"}`}>
                     {h}
                   </th>

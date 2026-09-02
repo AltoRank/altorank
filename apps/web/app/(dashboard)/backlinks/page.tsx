@@ -63,7 +63,7 @@ export default async function BacklinksPage({ searchParams }: Props) {
           <>
             <ExportCsv columns={csvColumns} rows={csvRows} filename="backlinks" />
             <DiscoverBacklinksButton workspaces={workspaces} scopedId={scopeId} />
-            {workspaces.length > 0 && <ExchangeRequestForm workspaces={workspaces} />}
+            {workspaces.length > 0 && <ExchangeRequestForm workspaces={workspaces} scopedId={scopeId} />}
           </>
         }
       />

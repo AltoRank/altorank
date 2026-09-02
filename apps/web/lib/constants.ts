@@ -29,7 +29,6 @@ export const DASHBOARD_NAV: NavGroup[] = [
     group: "Overview",
     items: [
       { id: "dashboard", label: "Dashboard", href: "/dashboard", icon: "dashboard" },
-      { id: "workspaces", label: "Workspaces", href: "/workspaces", icon: "clients" },
     ],
   },
   {
@@ -67,6 +66,9 @@ export const DASHBOARD_NAV: NavGroup[] = [
   {
     group: "Account",
     items: [
+      // The roster is account management, not a daily section: the sidebar
+      // switcher is where a workspace is chosen (2026-09-02).
+      { id: "workspaces", label: "All workspaces", href: "/workspaces", icon: "clients" },
       { id: "settings", label: "Settings", href: "/settings", icon: "settings" },
       // Operator-only. Hidden by the layout for everyone else, and the page
       // itself 404s rather than relying on the nav to hide it.

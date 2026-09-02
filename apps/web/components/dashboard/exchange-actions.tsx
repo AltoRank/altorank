@@ -9,12 +9,13 @@ type Ws = { id: string; name: string };
 type Props = {
   /** All of them: which site the link should point at is the request. */
   workspaces: Ws[];
+  scopedId?: string | null;
 };
 
-export function ExchangeRequestForm({ workspaces }: Props) {
+export function ExchangeRequestForm({ workspaces, scopedId }: Props) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id ?? "");
+  const [workspaceId, setWorkspaceId] = useState(scopedId ?? workspaces[0]?.id ?? "");
   const formRef = useRef<HTMLFormElement>(null);
 
   if (!open) {
@@ -44,7 +45,9 @@ export function ExchangeRequestForm({ workspaces }: Props) {
         })
       }
     >
-      {workspaces.length > 1 && (
+      {/* The sidebar chooses the site; this only asks in the all-workspaces
+          view, where there is no scope to inherit (2026-09-02). */}
+      {!scopedId && workspaces.length > 1 && (
         <div>
           <label className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1 block">Workspace</label>
           <select

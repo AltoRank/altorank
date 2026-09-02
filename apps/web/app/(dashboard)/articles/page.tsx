@@ -82,7 +82,7 @@ export default async function ArticlesPage({ searchParams }: Props) {
             <span>across {plural(workspaces.length, "workspace")}</span>
           </>
         }
-        actions={<ArticleActions workspaces={workspaces} articles={allArticles} />}
+        actions={<ArticleActions workspaces={workspaces} articles={allArticles} scopedId={scopeId} />}
       />
 
       <StatStrip
