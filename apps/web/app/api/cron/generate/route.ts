@@ -3,6 +3,7 @@ import { cronSecretFrom } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { profileIsUsable } from "@/lib/seo/topical-profile";
+import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { generateArticle } from "@/lib/content/generate";
 
 /**
@@ -56,7 +57,7 @@ export async function GET(request: Request) {
 
   const { data: workspaces, error } = await supabase
     .from("workspaces")
-    .select("id, domain, auto_generate_weekly_limit")
+    .select("id, domain, agency_id, auto_generate_weekly_limit")
     .eq("auto_generate", true)
     .neq("status", "paused");
 
@@ -95,6 +96,15 @@ export async function GET(request: Request) {
           status: "skipped",
           detail: `weekly limit reached (${count}/${limit})`,
         });
+        continue;
+      }
+
+      // Out of quota is a state, not an error. A no-plan account whose free
+      // draft is used would otherwise log an "error" every morning until it
+      // paid; the honest word is "skipped", with the reason the queue shows.
+      const quota = await getQuota(supabase, ws.agency_id as string, null);
+      if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
+        results.push({ workspaceId, domain, status: "skipped", detail: quotaExceededMessage(quota) });
         continue;
       }
 
