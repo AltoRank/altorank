@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Icons, Dialog } from "@/components/ui";
 import { useOnboarding } from "@/components/onboarding/use-onboarding";
 import type { Workspace, Article } from "@/lib/types";
+import { suggestKeywords, type KeywordSuggestion } from "@/app/actions/recommendations";
 
 interface ArticleActionsProps {
   /** One workspace (detail page) or all of them (the global Articles page). */
@@ -19,6 +20,23 @@ export function ArticleActions({ workspaces, articles = [] }: ArticleActionsProp
   const [pending, setPending] = useState(false);
   const [phase, setPhase] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The workspace's own scored queue: striking distance first, then volume
+  // against difficulty, intent and how well the term fits the site. The same
+  // ranking the unattended pipeline uses, so a person and the cron agree.
+  const [suggestions, setSuggestions] = useState<KeywordSuggestion[]>([]);
+  const [keyword, setKeyword] = useState("");
+  const [loadingSuggestions, startSuggestions] = useTransition();
+
+  useEffect(() => {
+    if (!open || !workspaceId) return;
+    startSuggestions(async () => {
+      try {
+        setSuggestions(await suggestKeywords(workspaceId, 8));
+      } catch {
+        setSuggestions([]);
+      }
+    });
+  }, [open, workspaceId]);
   const onboarding = useOnboarding();
   const router = useRouter();
 
@@ -162,10 +180,49 @@ export function ArticleActions({ workspaces, articles = [] }: ArticleActionsProp
             <input
               name="keyword"
               required
-              placeholder="best project management tools"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="Pick one below, or type your own"
               className="px-3 py-2 rounded-lg border border-line bg-panel text-[13px] text-ink placeholder:text-ink-3 outline-none focus:border-accent transition-colors"
             />
           </label>
+
+          {(loadingSuggestions || suggestions.length > 0) && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[12.5px] font-medium text-ink-2">
+                Best next from this workspace{" "}
+                <span className="font-normal text-ink-3">ranked by what it can win</span>
+              </span>
+              {loadingSuggestions ? (
+                <div className="text-[12px] text-ink-3">Reading the keyword queue…</div>
+              ) : (
+                <div className="flex flex-col rounded-lg border border-line overflow-hidden">
+                  {suggestions.map((s, i) => (
+                    <button
+                      key={s.term}
+                      type="button"
+                      onClick={() => setKeyword(s.term)}
+                      className={`flex items-baseline justify-between gap-3 px-3 py-2 text-left hover:bg-panel ${i > 0 ? "border-t border-line-soft" : ""} ${keyword === s.term ? "bg-accent-soft" : ""}`}
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] text-ink">{s.term}</span>
+                        <span className="block truncate text-[11px] text-ink-3">
+                          {s.action === "refresh" ? "refresh what you have · " : ""}
+                          {s.position ? `position ${s.position} · ` : ""}
+                          {s.intent !== "info" ? `${s.intent} intent · ` : ""}
+                          {s.reason}
+                        </span>
+                      </span>
+                      <span className="shrink-0 font-mono text-[11px] text-ink-2">
+                        {s.volume.toLocaleString()}/mo
+                        {s.difficulty !== null ? ` · KD ${s.difficulty}` : ""}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <label className="flex flex-col gap-1.5">
             <span className="text-[12.5px] font-medium text-ink-2">
