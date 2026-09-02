@@ -8,6 +8,7 @@ import { decryptConfig } from "@/lib/crypto";
 import type { CMSConfig } from "@/lib/types";
 import { getQuota } from "@/lib/billing/quota";
 import { appendAttribution, isOperatorAgency, shouldAttribute } from "@/lib/publishing/attribution";
+import { chooseDestination, toDestinations, type IntegrationRow } from "@/lib/publishing/destinations";
 
 /**
  * Publish a single article to its connected CMS.
@@ -19,6 +20,13 @@ import { appendAttribution, isOperatorAgency, shouldAttribute } from "@/lib/publ
 export async function publishArticleCore(
   supabase: SupabaseClient,
   articleId: string,
+  /**
+   * The workspace_integrations row to publish through, when the person chose
+   * one. Omitted by the cron and by the single-connection case, where
+   * `chooseDestination` falls back to where the article already went, then to
+   * the first connection.
+   */
+  opts: { destinationId?: string | null } = {},
 ) {
   const { data: article, error: articleErr } = await supabase
     .from("articles")
@@ -47,12 +55,14 @@ export async function publishArticleCore(
     .select("*, integration:integrations(*)")
     .eq("workspace_id", article.workspace_id);
 
-  const cmsIntegration = wsIntegrations?.find(
-    (wi: { integration?: { tag?: string } }) => wi.integration?.tag === "CMS",
+  // Same list the editor offers, same choice rule, so the button and the
+  // action cannot disagree about where this goes.
+  const destination = chooseDestination(
+    toDestinations((wsIntegrations ?? []) as IntegrationRow[]),
+    article,
+    opts.destinationId,
   );
-
-  if (!cmsIntegration)
-    throw new Error("No CMS integration connected for this workspace");
+  const cmsIntegration = (wsIntegrations ?? []).find((wi) => wi.id === destination.id)!;
 
   const config = decryptConfig(cmsIntegration.config as Record<string, unknown>) as CMSConfig;
   const adapter = resolveCMSAdapter(config);
@@ -112,7 +122,9 @@ export async function publishArticleCore(
     .from("articles")
     .update({
       status: "live",
-      cms: article.cms ?? config.type,
+      // Where it actually went, not where a form once said it might. A
+      // republish or an unpublish reads this to reach the same system.
+      cms: config.type,
       external_id: result.externalId,
       published_url: result.url,
       published_at: new Date().toISOString(),

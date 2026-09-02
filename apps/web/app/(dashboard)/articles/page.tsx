@@ -26,6 +26,11 @@ type Props = {
   searchParams: Promise<{ status?: string; sort?: string; q?: string }>;
 };
 
+/** ISO date `n` days back. Outside the component so the clock read is not part of render. */
+function daysAgo(n: number): string {
+  return new Date(Date.now() - n * 24 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
 export default async function ArticlesPage({ searchParams }: Props) {
   // Every section is about one site unless the switcher says otherwise.
   const scopeId = await getScopedWorkspaceId();
@@ -43,9 +48,7 @@ export default async function ArticlesPage({ searchParams }: Props) {
    * alone and never needed the article list it used to wait for.
    */
   const supabase = await createClient();
-  const since = new Date(Date.now() - 30 * 24 * 3600 * 1000)
-    .toISOString()
-    .slice(0, 10);
+  const since = daysAgo(30);
 
   const [workspaces, allArticles, { data: metricRows }] = await Promise.all([
     getWorkspaces(),
@@ -64,6 +67,21 @@ export default async function ArticlesPage({ searchParams }: Props) {
       (clicksByArticle.get(m.article_id) ?? 0) + (m.clicks ?? 0),
     );
   }
+
+  // Which workspaces can publish from this list: the ones with a CMS
+  // connected. The row menu offers "Publish now" for those; the rest are
+  // sent to the editor, where the copy-and-record path lives.
+  const { data: cmsRows } = workspaces.length
+    ? await supabase
+        .from("workspace_integrations")
+        .select("workspace_id, integration:integrations(tag)")
+        .in("workspace_id", workspaces.map((w) => w.id))
+    : { data: [] as Array<{ workspace_id: string; integration: unknown }> };
+  const cmsWorkspaces = new Set(
+    (cmsRows ?? [])
+      .filter((r) => (r.integration as { tag?: string } | null)?.tag === "CMS")
+      .map((r) => r.workspace_id as string),
+  );
 
   if (workspaces.length === 0) {
     return <div className="p-8 text-ink-3">No workspaces yet. Add one to start.</div>;
@@ -174,7 +192,11 @@ export default async function ArticlesPage({ searchParams }: Props) {
                     <td className="px-3.5 py-3 border-b border-line-soft font-mono text-xs text-ink-2">{a.cms ?? "—"}</td>
                     <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{dateStr}</td>
                     <td className="px-3.5 py-3 border-b border-line-soft">
-                      <ArticleRowMenu articleId={a.id} currentStatus={a.status} />
+                      <ArticleRowMenu
+                        articleId={a.id}
+                        currentStatus={a.status}
+                        canPublish={cmsWorkspaces.has(a.workspace_id)}
+                      />
                     </td>
                   </tr>
                 );

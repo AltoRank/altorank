@@ -3,21 +3,31 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { IconButton } from "@/components/ui/button";
 import { Icons } from "@/components/ui";
 import { updateArticle, deleteArticle } from "@/app/actions/articles";
+import { publishArticle } from "@/app/actions/publish";
 
 interface ArticleRowMenuProps {
   articleId: string;
   currentStatus: string;
+  /**
+   * The article's workspace has a CMS connected, so "Publish now" can go out
+   * from this row. Without one the item still appears for an approved article
+   * but opens the editor, where the copy-and-record path lives; publishing
+   * from a list an article nobody can see published would be a guess.
+   */
+  canPublish?: boolean;
 }
 
 /** Tallest the menu gets, with the status submenu open. */
-const MENU_MAX_HEIGHT = 240;
+const MENU_MAX_HEIGHT = 280;
 
-export function ArticleRowMenu({ articleId, currentStatus }: ArticleRowMenuProps) {
+export function ArticleRowMenu({ articleId, currentStatus, canPublish = false }: ArticleRowMenuProps) {
   const [open, setOpen] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   /**
    * Where to draw the menu, in viewport coordinates.
@@ -60,6 +70,28 @@ export function ArticleRowMenu({ articleId, currentStatus }: ArticleRowMenuProps
     setOpen(false);
     setShowStatusMenu(false);
     router.refresh();
+  }
+
+  // Approved and connected: publish from here, through the workspace's
+  // default destination, the same one the scheduler would use. Approved and
+  // not connected: the editor has the copy buttons and the URL field.
+  async function handlePublish() {
+    if (!canPublish) {
+      router.push(`/content/${articleId}`);
+      setOpen(false);
+      return;
+    }
+    setPublishing(true);
+    try {
+      const result = await publishArticle(articleId);
+      toast.success("Published", result?.url ? { description: result.url } : undefined);
+      setOpen(false);
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to publish");
+    } finally {
+      setPublishing(false);
+    }
   }
 
   async function handleDelete() {
@@ -118,6 +150,18 @@ export function ArticleRowMenu({ articleId, currentStatus }: ArticleRowMenuProps
           >
             Edit
           </button>
+          {currentStatus === "approved" && (
+            <button
+              className={`${menuItemClass} ${canPublish ? "font-medium text-accent-ink" : ""}`}
+              disabled={publishing}
+              onClick={(e) => {
+                e.stopPropagation();
+                void handlePublish();
+              }}
+            >
+              {publishing ? "Publishing…" : canPublish ? "Publish now" : "Publish…"}
+            </button>
+          )}
           <button
             className={menuItemClass}
             onClick={(e) => {

@@ -7,10 +7,16 @@ import { needsPlanToShip, CHOOSE_PLAN_MESSAGE } from "@/lib/billing/quota";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";
 import { decryptConfig } from "@/lib/crypto";
 import { publishArticleCore } from "@/lib/publishing/core";
+import { chooseDestination, toDestinations, type IntegrationRow } from "@/lib/publishing/destinations";
 import { submitForIndexing } from "@/lib/seo/indexing";
 import type { CMSConfig } from "@/lib/types";
 
-export async function publishArticle(articleId: string) {
+/**
+ * `destinationId` is the workspace_integrations row the person picked in the
+ * editor when the workspace has more than one CMS connected. Omitted, the core
+ * falls back to where the article already went, then to the first connection.
+ */
+export async function publishArticle(articleId: string, destinationId?: string | null) {
   const { user, agencyId } = await requireAuth();
   const supabase = await createClient();
   if (await needsPlanToShip(supabase, agencyId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
@@ -38,7 +44,7 @@ export async function publishArticle(articleId: string) {
   }
 
   try {
-    const result = await publishArticleCore(supabase, articleId);
+    const result = await publishArticleCore(supabase, articleId, { destinationId });
     await logPublish("success");
     revalidatePath("/articles");
     revalidatePath(`/content/${articleId}`);
@@ -157,11 +163,11 @@ export async function unpublishArticle(articleId: string) {
     .select("*, integration:integrations(*)")
     .eq("workspace_id", article.workspace_id);
 
-  const cmsIntegration = wsIntegrations?.find(
-    (wi) => wi.integration?.tag === "CMS"
-  );
-
-  if (!cmsIntegration) throw new Error("No CMS integration found");
+  // The system the article was published to, not the first one in the list:
+  // with two CMSs connected the old `find(tag === "CMS")` could ask the wrong
+  // one to delete a post it never held.
+  const destination = chooseDestination(toDestinations((wsIntegrations ?? []) as IntegrationRow[]), article);
+  const cmsIntegration = (wsIntegrations ?? []).find((wi) => wi.id === destination.id)!;
 
   const config = decryptConfig(cmsIntegration.config as Record<string, unknown>) as CMSConfig;
   const adapter = resolveCMSAdapter(config);

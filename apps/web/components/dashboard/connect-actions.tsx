@@ -26,6 +26,17 @@ type CMSType =
 interface ConnectActionsProps {
   workspaces: Workspace[];
   integrations: Integration[];
+  /** From `/connect?connect=<cms>`: open the dialog on this platform's tab. */
+  initialCmsType?: string | null;
+}
+
+const CMS_TYPES: CMSType[] = [
+  "wordpress", "shopify", "magento", "webflow", "ghost", "framer",
+  "wix", "notion", "hubspot", "woocommerce", "webhook", "git",
+];
+
+function isCmsType(value: unknown): value is CMSType {
+  return typeof value === "string" && (CMS_TYPES as string[]).includes(value);
 }
 
 const inputClass =
@@ -58,10 +69,14 @@ function Field({
   );
 }
 
-export function ConnectActions({ workspaces, integrations }: ConnectActionsProps) {
-  const [open, setOpen] = useState(false);
+export function ConnectActions({ workspaces, integrations, initialCmsType }: ConnectActionsProps) {
+  // A deep link lands on the right tab, so "Connect Webflow" in the editor
+  // means Webflow and not a twelve-tab picker. Anything that is not a known
+  // platform is ignored rather than trusted.
+  const initial = isCmsType(initialCmsType) ? initialCmsType : null;
+  const [open, setOpen] = useState(Boolean(initial));
   const [pending, setPending] = useState(false);
-  const [cmsType, setCmsType] = useState<CMSType>("wordpress");
+  const [cmsType, setCmsType] = useState<CMSType>(initial ?? "wordpress");
   const [detecting, setDetecting] = useState(false);
   const [derivation, setDerivation] = useState<BlogUrlDerivation | null>(null);
   const onboarding = useOnboarding();
@@ -137,7 +152,12 @@ export function ConnectActions({ workspaces, integrations }: ConnectActionsProps
 
       <Dialog
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(next) => {
+          setOpen(next);
+          // Closing a deep-linked dialog drops the parameter, or a refresh
+          // would reopen it.
+          if (!next && initial) router.replace("/connect");
+        }}
         title="Connect CMS"
         description="Link a content management system to publish directly."
       >
