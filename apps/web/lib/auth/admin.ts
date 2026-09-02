@@ -1,26 +1,27 @@
+import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { isAdminEmail } from "@/lib/auth/operators";
+
+export { ADMIN_EMAILS, isAdminEmail } from "@/lib/auth/operators";
 
 /**
- * Operator accounts, by email.
+ * The signed-in user, if they are an operator; null otherwise.
  *
- * A list rather than a role column because there is exactly one operator and
- * adding a `role` to `agency_members` would imply a permission system this
- * product does not have. When there are three of these, it becomes a column.
- *
- * Env-overridable so a self-hoster is the operator of their own install rather
- * than locked out of it by our address.
+ * Judged on the session the browser actually holds. While an operator is
+ * viewing as a customer (lib/auth/impersonation.ts) that session is the
+ * customer's, so this is null and the operator pages 404 until they come back.
+ * That is the point, not a limitation: the customer view is exactly the
+ * customer's, and nobody can chain one impersonation into another.
  */
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? "helloaltorank@gmail.com")
-  .split(",")
-  .map((e) => e.trim().toLowerCase())
-  .filter(Boolean);
-
-/** Whether the signed-in user may see cross-account operational data. */
-export async function isAdmin(): Promise<boolean> {
+export async function getOperator(): Promise<User | null> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const email = user?.email?.toLowerCase();
-  return Boolean(email && ADMIN_EMAILS.includes(email));
+  return user && isAdminEmail(user.email) ? user : null;
+}
+
+/** Whether the signed-in user may see cross-account operational data. */
+export async function isAdmin(): Promise<boolean> {
+  return (await getOperator()) !== null;
 }

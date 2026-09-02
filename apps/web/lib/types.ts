@@ -448,6 +448,19 @@ export type BacklinkCredit = {
   created_at: string;
 };
 
+// === Operator audit: who opened whose account (migration 030) ===
+export type AdminImpersonation = {
+  id: string;
+  operator_user_id: string;
+  operator_email: string;
+  target_user_id: string;
+  target_email: string;
+  started_at: string;
+  ended_at: string | null;
+  /** 'stopped' for a normal return; otherwise the error that ended the attempt. */
+  end_reason: string | null;
+};
+
 // === Invite ===
 export type Invite = {
   id: string;

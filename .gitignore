@@ -12,6 +12,9 @@ dist/
 *.tsbuildinfo
 next-env.d.ts
 
+# Supabase CLI scratch state, written by `supabase migration list` and friends.
+**/supabase/.temp/
+
 # ── Secrets ───────────────────────────────────────────────────────────────
 # Deny every .env, then allow only the examples back. Order matters: the
 # negations must come after the wildcard or they do nothing.

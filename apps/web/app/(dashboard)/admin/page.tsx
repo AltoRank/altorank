@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { PageHead, Card, StatStrip } from "@/components/ui";
 import { createServiceClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/auth/admin";
+import { AdminTabs } from "./admin-tabs";
+import { Table } from "./table";
 
 export const metadata: Metadata = { title: "Operations" };
 
@@ -83,6 +85,8 @@ export default async function AdminPage() {
         }
       />
 
+      <AdminTabs />
+
       <StatStrip
         stats={[
           { label: "Total spend", value: usd(total), delta: "as reported by providers" },
@@ -105,7 +109,7 @@ export default async function AdminPage() {
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll flex flex-col gap-5">
-        <Card title="Spend by provider">
+        <Card className="shrink-0" title="Spend by provider">
           <Table
             head={["Provider", "Calls", "USD"]}
             rows={[...byProvider.entries()]
@@ -114,7 +118,7 @@ export default async function AdminPage() {
           />
         </Card>
 
-        <Card title="Spend by operation">
+        <Card className="shrink-0" title="Spend by operation">
           <Table
             head={["Operation", "Calls", "USD", "Avg"]}
             rows={[...byOperation.entries()]
@@ -123,7 +127,7 @@ export default async function AdminPage() {
           />
         </Card>
 
-        <Card title="Accounts">
+        <Card className="shrink-0" title="Accounts">
           <Table
             head={["Domain", "Status", "Platform", "Analysed", "Auto", "Articles", "Spend"]}
             rows={(workspaces ?? []).map((w) => [
@@ -138,7 +142,7 @@ export default async function AdminPage() {
           />
         </Card>
 
-        <Card title="Recent calls">
+        <Card className="shrink-0" title="Recent calls">
           <Table
             head={["When", "Provider", "Operation", "Workspace", "USD"]}
             rows={rows.slice(0, 40).map((r) => [
@@ -153,50 +157,5 @@ export default async function AdminPage() {
         </Card>
       </div>
     </>
-  );
-}
-
-function Table({ head, rows }: { head: string[]; rows: string[][] }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-[13px]">
-        <thead>
-          <tr>
-            {head.map((h) => (
-              <th
-                key={h}
-                scope="col"
-                className="px-3.5 py-2.5 text-left font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-3 border-b border-line"
-              >
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 && (
-            <tr>
-              <td colSpan={head.length} className="px-3.5 py-8 text-center text-ink-3">
-                Nothing recorded yet.
-              </td>
-            </tr>
-          )}
-          {rows.map((r, i) => (
-            <tr key={i}>
-              {r.map((cell, j) => (
-                <td
-                  key={j}
-                  className={`px-3.5 py-2.5 border-b border-line-soft text-ink-2 ${
-                    j === 0 ? "" : "font-mono text-xs"
-                  }`}
-                >
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
   );
 }
