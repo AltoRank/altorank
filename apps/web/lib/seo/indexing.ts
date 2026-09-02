@@ -25,8 +25,23 @@
 import { randomBytes } from "node:crypto";
 
 export type IndexingResult = {
-  indexnow: "submitted" | "no-key" | "failed";
-  google: "sitemap-resubmitted" | "not-connected" | "failed";
+  indexnow: "submitted" | "no-key" | "failed" | "awaiting-build";
+  google: "sitemap-resubmitted" | "not-connected" | "failed" | "awaiting-build";
+  /**
+   * Only set for git publishes, where "published" and "live" are two events.
+   *
+   * Every other adapter's API returns a URL that already resolves, so there is
+   * nothing to confirm. A commit only triggers a build, so the URL is a
+   * prediction until a deploy has run - and submitting a prediction to IndexNow
+   * is how you report a 404 to Bing under a client's domain.
+   *
+   * pending     - committed, build not yet confirmed
+   * confirmed   - the URL resolved, and indexing was submitted at that point
+   * unconfirmed - never resolved within the retry budget; see publish cron
+   */
+  urlVerified?: "pending" | "confirmed" | "unconfirmed";
+  /** Verification passes spent so far, so the cron can give up. */
+  attempts?: number;
 };
 
 /** 32 hex chars, the format IndexNow's docs use. */

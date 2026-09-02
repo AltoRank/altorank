@@ -4,6 +4,9 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { publishArticleCore } from "@/lib/publishing/core";
 import { isCadenceDue, cadenceLocalDate } from "@/lib/publishing/cadence";
 import type { PublishingCadence } from "@/lib/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { urlIsLive, deriveBlogBaseUrl } from "@/lib/cms/blog-url";
+import { submitForIndexing, type IndexingResult } from "@/lib/seo/indexing";
 
 export const maxDuration = 60;
 
@@ -166,6 +169,19 @@ export async function GET(request: Request) {
     }
   }
 
+  // ── Phase 3: confirm git publishes that a build has had time to deploy ──
+  //
+  // Only git reaches here. Every other adapter returns a URL its own API has
+  // already confirmed; a commit returns a prediction. Until that prediction
+  // resolves, nothing is submitted to IndexNow and the article does not claim a
+  // URL it cannot back up.
+  //
+  // The budget is deliberately generous. A queued Netlify or Vercel build can
+  // sit for minutes, and a wrongly-abandoned article costs more than a few
+  // extra HEADs: the content is committed either way, so the only thing at
+  // stake is whether we can point at it.
+  const verified = await verifyPendingPublishes(supabase, now);
+
   const published = results.filter((r) => r.status === "success").length;
   const errors = results.filter((r) => r.status === "error").length;
 
@@ -173,6 +189,130 @@ export async function GET(request: Request) {
     success: true,
     published,
     errors,
+    verified,
     results,
   });
+}
+
+/** Passes before a pending URL is called unconfirmed. At a 15-minute cron, ~2 hours. */
+const MAX_VERIFY_ATTEMPTS = 8;
+
+/** Attempt at which a still-404 URL is treated as a wrong convention, not a slow build. */
+const REDERIVE_AT_ATTEMPT = 4;
+
+type PendingArticle = {
+  id: string;
+  workspace_id: string;
+  slug: string;
+  published_url: string | null;
+  indexing_status: IndexingResult | null;
+};
+
+async function verifyPendingPublishes(
+  supabase: SupabaseClient,
+  now: Date,
+): Promise<{ confirmed: number; stillPending: number; unconfirmed: number }> {
+  const out = { confirmed: 0, stillPending: 0, unconfirmed: 0 };
+
+  const { data: pending } = await supabase
+    .from("articles")
+    .select("id, workspace_id, slug, published_url, indexing_status")
+    .eq("status", "live")
+    .eq("indexing_status->>urlVerified", "pending")
+    .limit(50);
+
+  for (const article of (pending ?? []) as PendingArticle[]) {
+    const attempts = (article.indexing_status?.attempts ?? 0) + 1;
+    let url = article.published_url;
+    if (!url) continue;
+
+    let live = await urlIsLive(url);
+
+    /**
+     * A URL that is still missing after several passes is usually not a slow
+     * build - it is the wrong prefix. By now the build has almost certainly
+     * run, so the site's sitemap may list the post under its real path. Re-read
+     * it once and try that before giving up.
+     */
+    if (!live && attempts === REDERIVE_AT_ATTEMPT) {
+      const derived = await deriveBlogBaseUrl(url);
+      if (derived) {
+        const retry = `${derived.baseUrl}/${article.slug}${derived.trailingSlash ? "/" : ""}`;
+        if (retry !== url && (await urlIsLive(retry))) {
+          url = retry;
+          live = true;
+        }
+      }
+    }
+
+    if (live) {
+      const { data: ws } = await supabase
+        .from("workspaces")
+        .select("indexnow_key")
+        .eq("id", article.workspace_id)
+        .single();
+
+      const indexing = await submitForIndexing({
+        url,
+        indexNowKey: ws?.indexnow_key ?? null,
+        gscToken: null,
+      });
+
+      await supabase
+        .from("articles")
+        .update({
+          published_url: url,
+          indexing_status: { ...indexing, urlVerified: "confirmed", attempts },
+          updated_at: now.toISOString(),
+        })
+        .eq("id", article.id);
+      out.confirmed++;
+      continue;
+    }
+
+    if (attempts >= MAX_VERIFY_ATTEMPTS) {
+      /**
+       * Never confirmed. The commit succeeded and the Markdown is in the repo,
+       * so the content is not lost - but we cannot say where it is, and an
+       * agency showing a client a link that 404s is worse than showing none.
+       * Back to review, with the URL cleared rather than left as a bad claim.
+       */
+      await supabase
+        .from("articles")
+        .update({
+          status: "review",
+          published_url: null,
+          indexing_status: {
+            indexnow: "awaiting-build",
+            google: "awaiting-build",
+            urlVerified: "unconfirmed",
+            attempts,
+          } satisfies IndexingResult,
+          updated_at: now.toISOString(),
+        })
+        .eq("id", article.id);
+
+      await supabase.from("publish_log").insert({
+        article_id: article.id,
+        workspace_id: article.workspace_id,
+        status: "error",
+        error:
+          "Committed to the repo, but the published URL never resolved. " +
+          "Check the site built, and that the blog URL on the connection is right.",
+        triggered_by: "cron",
+      });
+      out.unconfirmed++;
+      continue;
+    }
+
+    await supabase
+      .from("articles")
+      .update({
+        indexing_status: { ...(article.indexing_status ?? {}), attempts },
+      })
+      .eq("id", article.id);
+    out.stillPending++;
+  }
+
+  return out;
 }

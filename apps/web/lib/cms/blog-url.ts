@@ -28,9 +28,14 @@ const MAX_URLS = 2000;
 const TIMEOUT_MS = 10_000;
 
 /**
- * Path segments that name a blog. Ordered: an exact match on one of these wins
- * over a merely-popular directory, because a marketing site's biggest folder is
- * usually /products or a locale, not its posts.
+ * Segments that name a blog and little else. An exact match wins over a merely
+ * popular directory, because a marketing site's biggest folder is usually
+ * /products or a locale, not its posts.
+ *
+ * Deliberately excludes "resources" and "guides", which read like blog words
+ * but are not: gohugo.io has /functions/resources, and an earlier version of
+ * this list returned that as a high-confidence blog. A word only belongs here
+ * if a directory named with it is a blog essentially always.
  */
 const BLOG_SEGMENTS = [
   "blog",
@@ -40,16 +45,40 @@ const BLOG_SEGMENTS = [
   "article",
   "news",
   "insights",
-  "guides",
-  "resources",
   "stories",
 ];
+
+/**
+ * How deep a named blog directory may sit. "/blog" and "/en/blog" are real;
+ * anything deeper is a section inside something else, not the blog root.
+ */
+const MAX_BLOG_DEPTH = 2;
 
 export type BlogUrlDerivation = {
   /** Origin + post directory, no trailing slash, e.g. "https://example.com/blog". */
   baseUrl: string;
+  /**
+   * Whether this site's post URLs end in "/".
+   *
+   * Not a detail. altorank.co's own sitemap lists
+   * "/blog/answer-engine-optimization/" - Astro and Cloudflare Pages default to
+   * trailing slashes - while the git adapter built "${base}/${slug}" without
+   * one. That redirects for a human and reads fine in a browser, but the
+   * non-canonical form is what would have been stored in published_url and
+   * handed to IndexNow. Read it off the samples instead of assuming.
+   */
+  trailingSlash: boolean;
   /** Real post URLs this was read off. Shown to the user so the claim is checkable. */
   samples: string[];
+  /**
+   * high: a directory that names itself a blog (/blog, /posts, /articles).
+   * low:  no such directory existed, so this is the sitemap's biggest section
+   *       and might be anything - gohugo.io yields /functions/resources.
+   *
+   * The connect UI prefills on high and only suggests on low. Same rule as
+   * lib/cms/detect.ts: never guess silently, and show the evidence.
+   */
+  confidence: "high" | "low";
   /** How it was decided, for the connect UI. */
   evidence: string;
 };
@@ -191,7 +220,9 @@ export async function deriveBlogBaseUrl(
   // posts is the answer even when `/products` has four hundred.
   const named = counted
     .filter((c) => {
-      const last = c.parent.split("/").filter(Boolean).pop() ?? "";
+      const segments = c.parent.split("/").filter(Boolean);
+      if (segments.length > MAX_BLOG_DEPTH) return false;
+      const last = segments[segments.length - 1] ?? "";
       return BLOG_SEGMENTS.includes(last.toLowerCase());
     })
     .sort((a, b) => b.count - a.count)[0];
@@ -199,12 +230,18 @@ export async function deriveBlogBaseUrl(
   const chosen = named ?? [...counted].sort((a, b) => b.count - a.count)[0];
   if (!chosen) return null;
 
+  // Majority vote rather than first-sample, so one stray URL cannot flip the
+  // convention for every article the workspace ever publishes.
+  const withSlash = chosen.samples.filter((u) => u.endsWith("/")).length;
+
   return {
     baseUrl: `${origin}${chosen.parent}`,
+    trailingSlash: withSlash * 2 >= chosen.samples.length,
     samples: chosen.samples.slice(0, 3),
+    confidence: named ? "high" : "low",
     evidence: named
       ? `Sitemap lists posts under ${chosen.parent}`
-      : `Sitemap's largest section is ${chosen.parent}; no /blog-style directory found`,
+      : `Sitemap's largest section is ${chosen.parent}; no /blog-style directory found, so check this`,
   };
 }
 

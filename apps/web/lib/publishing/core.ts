@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";
 import { tiptapToHtml } from "@/lib/cms/html";
 import { resolveInternalLinks } from "@/lib/seo/link-resolver";
-import { submitForIndexing } from "@/lib/seo/indexing";
+import { submitForIndexing, type IndexingResult } from "@/lib/seo/indexing";
 import { getValidAccessToken } from "@/lib/google/oauth";
 import { decryptConfig } from "@/lib/crypto";
 import type { CMSConfig } from "@/lib/types";
@@ -154,6 +154,27 @@ export async function publishArticleCore(
           .update({ tokens: { encrypted: next } })
           .eq("id", gsc.id);
       });
+    }
+
+    /**
+     * A git publish is a commit, not a deploy. The host still has to build,
+     * which takes tens of seconds to minutes, so the URL is guaranteed not to
+     * resolve yet and telling IndexNow about it now would submit a 404.
+     * app/api/cron/publish confirms it afterwards and submits then.
+     */
+    if (config.type === "git") {
+      await supabase
+        .from("articles")
+        .update({
+          indexing_status: {
+            indexnow: "awaiting-build",
+            google: "awaiting-build",
+            urlVerified: "pending",
+            attempts: 0,
+          } satisfies IndexingResult,
+        })
+        .eq("id", articleId);
+      return result;
     }
 
     const indexing = await submitForIndexing({

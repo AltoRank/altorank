@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button, Icons, Dialog } from "@/components/ui";
 import { useOnboarding } from "@/components/onboarding/use-onboarding";
-import { connectIntegration } from "@/app/actions/integrations";
+import { connectIntegration, deriveBlogUrl } from "@/app/actions/integrations";
 import type { Workspace, Integration, CMSConfig } from "@/lib/types";
+import type { BlogUrlDerivation } from "@/lib/cms/blog-url";
 
 type CMSType =
   | "wordpress"
@@ -19,7 +20,8 @@ type CMSType =
   | "notion"
   | "hubspot"
   | "woocommerce"
-  | "webhook";
+  | "webhook"
+  | "git";
 
 interface ConnectActionsProps {
   workspaces: Workspace[];
@@ -60,6 +62,8 @@ export function ConnectActions({ workspaces, integrations }: ConnectActionsProps
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [cmsType, setCmsType] = useState<CMSType>("wordpress");
+  const [detecting, setDetecting] = useState(false);
+  const [derivation, setDerivation] = useState<BlogUrlDerivation | null>(null);
   const onboarding = useOnboarding();
   const router = useRouter();
 
@@ -73,11 +77,24 @@ export function ConnectActions({ workspaces, integrations }: ConnectActionsProps
       const fd = new FormData(e.currentTarget);
       const workspaceId = fd.get("workspace_id") as string;
 
-      // Find the integration that matches the CMS type
+      /**
+       * Find the integrations row for this platform.
+       *
+       * This used to fall back to cmsIntegrations[0] when nothing matched,
+       * which does not fail - publishArticleCore resolves the adapter from
+       * config.type, so it would publish correctly - it just files the
+       * connection under the wrong platform and names that one back at you
+       * forever. A missing row is a seeding bug, so say so instead.
+       */
       const match = cmsIntegrations.find((i) =>
         i.id === cmsType || i.name.toLowerCase().includes(cmsType)
       );
-      const integrationId = match?.id ?? cmsIntegrations[0]?.id ?? "";
+      if (!match) {
+        throw new Error(
+          `No integration is registered for "${cmsType}". This is a setup problem, not something you did.`,
+        );
+      }
+      const integrationId = match.id;
 
       const config = buildConfig(cmsType, fd);
 
@@ -104,6 +121,7 @@ export function ConnectActions({ workspaces, integrations }: ConnectActionsProps
     { value: "hubspot", label: "HubSpot" },
     { value: "woocommerce", label: "WooCommerce" },
     { value: "webhook", label: "Webhook" },
+    { value: "git", label: "Git / static site" },
   ];
 
   return (
@@ -141,7 +159,7 @@ export function ConnectActions({ workspaces, integrations }: ConnectActionsProps
           ))}
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
+        <form id="cms-connect-form" onSubmit={handleSubmit} className="flex flex-col gap-3.5">
           <label className="flex flex-col gap-1.5">
             <span className="text-[12.5px] font-medium text-ink-2">Workspace</span>
             <select
@@ -248,6 +266,100 @@ export function ConnectActions({ workspaces, integrations }: ConnectActionsProps
             </>
           )}
 
+          {cmsType === "git" && (
+            <>
+              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
+                For sites built from a repository (Astro, Next, Hugo, Jekyll,
+                Eleventy). Articles are committed as Markdown; your host builds
+                and deploys them.
+              </p>
+              <Field name="owner" label="Repo owner" placeholder="acme" />
+              <Field name="repo" label="Repository" placeholder="website" />
+              <Field name="branch" label="Branch" placeholder="main" />
+              <Field
+                name="contentPath"
+                label="Content directory"
+                placeholder="src/content/blog"
+              />
+              <Field
+                name="token"
+                label="GitHub token (contents:write)"
+                type="password"
+              />
+
+              {/*
+                The public URL is the half that used to be guessed. Detection
+                reads it off the site's own sitemap, so what lands in the field
+                is a prefix that real published posts already use - and the
+                evidence line below says which ones.
+              */}
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <Field
+                    name="publicBaseUrl"
+                    label="Public URL of your blog"
+                    placeholder="https://example.com/blog"
+                    required={false}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  disabled={detecting}
+                  onClick={async () => {
+                    const form = document.getElementById(
+                      "cms-connect-form",
+                    ) as HTMLFormElement | null;
+                    const field = form?.elements.namedItem(
+                      "publicBaseUrl",
+                    ) as HTMLInputElement | null;
+                    const seed = field?.value?.trim();
+                    if (!seed) {
+                      toast.error("Enter your site URL first, e.g. https://example.com");
+                      return;
+                    }
+                    setDetecting(true);
+                    try {
+                      const found = await deriveBlogUrl(seed);
+                      if (!found) {
+                        setDerivation(null);
+                        toast.error(
+                          "No posts found in that site's sitemap. Enter the blog URL by hand.",
+                        );
+                        return;
+                      }
+                      if (field) field.value = found.baseUrl;
+                      setDerivation(found);
+                    } catch {
+                      toast.error("Could not read that site");
+                    } finally {
+                      setDetecting(false);
+                    }
+                  }}
+                >
+                  {detecting ? "Reading..." : "Detect"}
+                </Button>
+              </div>
+
+              <input
+                type="hidden"
+                name="trailingSlash"
+                value={String(derivation?.trailingSlash ?? false)}
+              />
+
+              {derivation && (
+                <p
+                  className={
+                    derivation.confidence === "high"
+                      ? "text-[12px] text-ink-3 -mt-1"
+                      : "text-[12px] text-amber-600 -mt-1"
+                  }
+                >
+                  {derivation.evidence}. Example: {derivation.samples[0]}
+                </p>
+              )}
+            </>
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" onClick={() => setOpen(false)}>
               Cancel
@@ -339,5 +451,26 @@ function buildConfig(type: CMSType, fd: FormData): CMSConfig {
         url: fd.get("url") as string,
         ...(fd.get("secret") ? { secret: fd.get("secret") as string } : {}),
       };
+    case "git": {
+      const base = (fd.get("publicBaseUrl") as string | null)?.trim();
+      return {
+        type: "git",
+        provider: "github",
+        token: fd.get("token") as string,
+        owner: fd.get("owner") as string,
+        repo: fd.get("repo") as string,
+        branch: fd.get("branch") as string,
+        contentPath: fd.get("contentPath") as string,
+        ...(base
+          ? {
+              publicBaseUrl: base,
+              // Carried from detection rather than inferred here: whether a
+              // site's post URLs end in "/" is a fact about the site, read off
+              // its sitemap, and guessing it is what this change removed.
+              trailingSlash: (fd.get("trailingSlash") as string) === "true",
+            }
+          : {}),
+      };
+    }
   }
 }

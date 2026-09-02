@@ -26,6 +26,7 @@
 
 import type { CMSAdapter, PublishPayload, PublishResult } from "./types";
 import { htmlToMarkdown } from "@/lib/audit/markdown";
+import { urlIsLive } from "./blog-url";
 
 export interface GitConfig {
   type: "git";
@@ -44,6 +45,13 @@ export interface GitConfig {
   frontmatterDefaults?: Record<string, string | boolean | string[]>;
   /** Public base URL for the published post, e.g. "https://altorank.co/blog". */
   publicBaseUrl?: string;
+  /**
+   * Whether this site's post URLs end in "/". Derived from the site's own
+   * sitemap by lib/cms/blog-url.ts, not assumed: altorank.co, astro.build and
+   * every other Astro-on-Cloudflare site say yes, and building the URL without
+   * one stores a form that only works because a redirect rescues it.
+   */
+  trailingSlash?: boolean;
   /** Commit author, defaults to the token's identity when omitted. */
   committer?: { name: string; email: string };
 }
@@ -222,9 +230,14 @@ export class GitAdapter implements CMSAdapter {
     const base = this.config.publicBaseUrl?.replace(/\/+$/, "");
     return {
       externalId: body.content?.path ?? path,
-      // The deployed URL is a convention of the host's routing, not something
-      // the API can confirm, so it is derived and only as right as the config.
-      url: base ? `${base}/${safeSlug(article.slug)}` : path,
+      // Still derived - the GitHub API cannot know the host's routing - but no
+      // longer guessed: publicBaseUrl and trailingSlash are read off the site's
+      // own sitemap at connect time and validated against a URL that already
+      // resolves. Whether it is live *now* is a separate question, answered
+      // after the build by the publish cron, because a commit is not a deploy.
+      url: base
+        ? `${base}/${safeSlug(article.slug)}${this.config.trailingSlash ? "/" : ""}`
+        : path,
     };
   }
 
@@ -270,6 +283,27 @@ export class GitAdapter implements CMSAdapter {
         return { ok: false, error: "Token rejected or missing contents:write" };
       }
       if (!res.ok) return { ok: false, error: `GitHub returned ${res.status}` };
+
+      /**
+       * The repo is reachable. The other half of a git connection is where the
+       * posts come out, and that is the half that used to be unchecked: a wrong
+       * publicBaseUrl produced an article marked live pointing at a URL that
+       * never existed, and submitted it to IndexNow.
+       *
+       * Checked against the base itself, which a site with a blog already
+       * serves. Not against a future post URL - that cannot exist until a build
+       * has run, so it would fail for everyone.
+       */
+      const base = this.config.publicBaseUrl?.replace(/\/+$/, "");
+      if (base) {
+        if (!(await urlIsLive(base))) {
+          return {
+            ok: false,
+            error: `Repo is fine, but ${base} did not respond. Check the public URL your posts appear at.`,
+          };
+        }
+      }
+
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : "unknown error" };

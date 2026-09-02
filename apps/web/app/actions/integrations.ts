@@ -6,6 +6,7 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";
 import { encryptConfig, decryptConfig } from "@/lib/crypto";
 import type { CMSConfig } from "@/lib/types";
+import { deriveBlogBaseUrl } from "@/lib/cms/blog-url";
 import { z } from "zod";
 
 const wordpressSchema = z.object({
@@ -82,6 +83,34 @@ const webhookSchema = z.object({
   headers: z.record(z.string(), z.string()).optional(),
 });
 
+/**
+ * The static-site case. lib/cms/git.ts existed and was tested for months before
+ * this schema did, which meant the adapter was unreachable: connectIntegration
+ * parses through this union, so a type missing from it cannot be saved by any
+ * route. lib/cms/detect.ts meanwhile told Astro, Hugo, Jekyll and Next sites
+ * that git was their answer, and the picker did not offer it.
+ *
+ * publicBaseUrl and trailingSlash are prefilled from the site's own sitemap by
+ * lib/cms/blog-url.ts and verified by GitAdapter.testConnection() before this
+ * ever saves, so they are checked values rather than typed guesses.
+ */
+const gitSchema = z.object({
+  type: z.literal("git"),
+  provider: z.literal("github"),
+  token: z.string().min(1),
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+  branch: z.string().min(1),
+  contentPath: z.string().min(1),
+  extension: z.enum(["md", "mdx"]).optional(),
+  frontmatterDefaults: z
+    .record(z.string(), z.union([z.string(), z.boolean(), z.array(z.string())]))
+    .optional(),
+  publicBaseUrl: z.string().url().optional(),
+  trailingSlash: z.boolean().optional(),
+  committer: z.object({ name: z.string().min(1), email: z.string().email() }).optional(),
+});
+
 const configSchema = z.discriminatedUnion("type", [
   wordpressSchema,
   shopifySchema,
@@ -94,7 +123,21 @@ const configSchema = z.discriminatedUnion("type", [
   hubspotSchema,
   woocommerceSchema,
   webhookSchema,
+  gitSchema,
 ]);
+
+/**
+ * Read a site's post directory off its own sitemap, for the git connect form.
+ *
+ * A server action because the derivation fetches the customer's site
+ * cross-origin, which the browser will not do. Returns null when the site has
+ * nothing published yet - a real case for a new blog, and the form then asks
+ * rather than prefilling.
+ */
+export async function deriveBlogUrl(siteUrl: string) {
+  await requireAuth();
+  return deriveBlogBaseUrl(siteUrl);
+}
 
 export async function connectIntegration(
   workspaceId: string,
