@@ -24,7 +24,9 @@
 // This is the same line Outrank draws - their watermark is on trial output,
 // not sold as an add-on (checked 2026-09-02).
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Quota } from "@/lib/billing/quota";
+import { isAdminEmail } from "@/lib/auth/operators";
 
 /** Where the link points. Bare and canonical: no query string to split. */
 export const ATTRIBUTION_URL = "https://altorank.co";
@@ -61,6 +63,41 @@ export function shouldAttribute(quota: Quota, removeBranding: boolean): boolean 
   if (quota.reason !== "no-plan") return false;
   void removeBranding;
   return true;
+}
+
+/**
+ * Whether the agency belongs to an operator, asked of the agency rather than
+ * of whoever triggered the publish.
+ *
+ * `getQuota` answers "operator" from the *caller's* address, which is right on
+ * a request and empty on a cron: a cron is nobody's operator, by design. So a
+ * dogfood workspace publishing on a schedule reached the billing check like
+ * any customer, found no subscription, and came back "no-plan" - which would
+ * have put "Powered by AltoRank" on altorank.co's own articles, a footer link
+ * from our domain to our domain (found 2026-09-02).
+ *
+ * Needs the service role to read addresses. On a request-scoped client the
+ * admin call fails, and false is the right answer there anyway, because
+ * `getQuota` has already resolved the signed-in operator itself.
+ */
+export async function isOperatorAgency(
+  supabase: SupabaseClient,
+  agencyId: string,
+): Promise<boolean> {
+  try {
+    const { data: members } = await supabase
+      .from("agency_members")
+      .select("user_id")
+      .eq("agency_id", agencyId);
+    for (const m of members ?? []) {
+      const { data } = await supabase.auth.admin.getUserById(m.user_id as string);
+      if (isAdminEmail(data?.user?.email)) return true;
+    }
+  } catch {
+    // No service role, or the lookup failed. Fall through to the caller-based
+    // answer rather than guessing.
+  }
+  return false;
 }
 
 /** The markup itself. Kept to one paragraph so every CMS accepts it. */

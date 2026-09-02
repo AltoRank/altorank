@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { Quota } from "@/lib/billing/quota";
 import {
   appendAttribution,
+  isOperatorAgency,
   attributionHtml,
   shouldAttribute,
   ATTRIBUTION_ANCHOR,
@@ -52,5 +53,31 @@ describe("appendAttribution", () => {
 
   it("keeps the original body intact", () => {
     expect(appendAttribution("<h2>Title</h2><p>Body</p>")).toContain("<h2>Title</h2><p>Body</p>");
+  });
+});
+
+describe("isOperatorAgency", () => {
+  function client(email: string | null) {
+    return {
+      from: () => ({ select: () => ({ eq: async () => ({ data: [{ user_id: "u1" }] }) }) }),
+      auth: { admin: { getUserById: async () => ({ data: email ? { user: { email } } : null }) } },
+    } as never;
+  }
+
+  it("recognises an operator-owned agency", async () => {
+    expect(await isOperatorAgency(client("helloaltorank@gmail.com"), "a1")).toBe(true);
+  });
+
+  it("does not flag a customer agency", async () => {
+    expect(await isOperatorAgency(client("someone@example.com"), "a1")).toBe(false);
+  });
+
+  it("answers false when the address cannot be read, rather than throwing", async () => {
+    // A request-scoped client has no service role; the publish must not fail.
+    const noAdmin = {
+      from: () => ({ select: () => ({ eq: async () => ({ data: [{ user_id: "u1" }] }) }) }),
+      auth: { admin: { getUserById: async () => { throw new Error("not authorized"); } } },
+    } as never;
+    expect(await isOperatorAgency(noAdmin, "a1")).toBe(false);
   });
 });

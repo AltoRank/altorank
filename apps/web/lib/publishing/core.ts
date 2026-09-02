@@ -7,7 +7,7 @@ import { getValidAccessToken } from "@/lib/google/oauth";
 import { decryptConfig } from "@/lib/crypto";
 import type { CMSConfig } from "@/lib/types";
 import { getQuota } from "@/lib/billing/quota";
-import { appendAttribution, shouldAttribute } from "@/lib/publishing/attribution";
+import { appendAttribution, isOperatorAgency, shouldAttribute } from "@/lib/publishing/attribution";
 
 /**
  * Publish a single article to its connected CMS.
@@ -88,7 +88,13 @@ export async function publishArticleCore(
       const quota = await getQuota(supabase, ws.agency_id);
       const removeBranding =
         (ws.agency as { remove_branding?: boolean } | null)?.remove_branding ?? false;
-      if (shouldAttribute(quota, removeBranding)) html = appendAttribution(html);
+      if (
+        shouldAttribute(quota, removeBranding) &&
+        // Crons carry no caller, so the operator check has to ask the agency.
+        !(await isOperatorAgency(supabase, ws.agency_id))
+      ) {
+        html = appendAttribution(html);
+      }
     }
   } catch {
     // Branding is never worth failing a publish over.
