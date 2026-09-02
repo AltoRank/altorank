@@ -4,9 +4,8 @@ import { setSpendReporter } from "@/lib/seo/client";
 import { syncBacklinks } from "@/lib/seo/backlinks";
 import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
-import { checkRankings } from "@/lib/seo/serp";
+import { postRankingTasks } from "@/lib/seo/serp";
 import type { Workspace, Keyword } from "@/lib/types";
-import { buildRankingRows } from "@/lib/seo/rankings";
 
 export async function GET(request: Request) {
   // Verify cron secret
@@ -42,6 +41,7 @@ export async function GET(request: Request) {
   const results: Array<{
     workspaceId: string;
     domain: string;
+    /** Tasks queued tonight; cron/serp-collect records the answers. */
     checked: number;
     error?: string;
   }> = [];
@@ -149,47 +149,25 @@ export async function GET(request: Request) {
         continue;
       }
 
-      const terms = keywords.map((k) => k.term);
-      const rankings = await checkRankings(terms, ws.domain, {
-        languageCode: (ws as { language?: string }).language ?? "en",
-        locationCode: (ws as { location_code?: number }).location_code ?? 2840,
-      });
-
-      // Build term -> keyword id map
-      const termToId = new Map(keywords.map((k) => [k.term, k.id]));
-
-      const rankingRows = buildRankingRows(rankings, termToId);
-
       /**
-       * The Articles page has always had a POSITION column, and articles have
-       * always had a `position` column, and nothing ever wrote it: every
-       * article showed a dash for as long as it lived. The ranking that just
-       * came back for an article's own keyword is that number.
+       * Post, don't wait. This used to call the live SERP endpoint for every
+       * keyword and process the answers here - $0.002 a keyword for a
+       * six-second turnaround that nothing at three in the morning needs.
+       * The standard queue is $0.0006 for the same SERP; cron/serp-collect
+       * picks the results up twenty minutes later. See lib/seo/serp.ts.
        */
-      for (const r of rankings) {
-        if (!articleTerms.has(r.keyword.toLowerCase())) continue;
-        await supabase
-          .from("articles")
-          .update({ position: r.position ?? null })
-          .eq("workspace_id", ws.id)
-          .eq("keyword", r.keyword);
+      const { posted, failed } = await postRankingTasks(
+        ws.id,
+        keywords.map((k) => ({ keywordId: k.id, term: k.term })),
+        {
+          languageCode: (ws as { language?: string }).language ?? "en",
+          locationCode: (ws as { location_code?: number }).location_code ?? 2840,
+        },
+      );
+      if (failed > 0) {
+        console.warn(`[serp] workspace ${ws.domain}: ${failed} task(s) refused by DataForSEO`);
       }
-
-      if (rankingRows.length > 0) {
-        const { error: insertError } = await supabase
-          .from("keyword_rankings")
-          .insert(rankingRows);
-
-        if (insertError) {
-          results.push({
-            workspaceId: ws.id,
-            domain: ws.domain,
-            checked: 0,
-            error: insertError.message,
-          });
-          continue;
-        }
-      }
+      const rankingRows = { length: posted };
 
       results.push({
         workspaceId: ws.id,
