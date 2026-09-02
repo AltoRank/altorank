@@ -36,24 +36,18 @@ function TrafficChart({ series, connected = false }: { series: TrafficSeries; co
       return (
         <div className="h-[220px] grid place-items-center px-8 text-center">
           <div className="max-w-[46ch] text-[13px] leading-relaxed text-ink-3">
+            {/* Nothing synced yet. The impressions branch that used to live
+                here could never run: this whole block requires `hasData` to be
+                false, and that path returns a hard-coded zero for impressions.
+                A site with impressions and no clicks now has `hasClicks` and
+                its own panel below. */}
             <div className="mb-1 text-[13.5px] font-medium text-ink-2">
-              {series.impressions
-                ? `Connected: ${series.impressions.toLocaleString()} impressions, no clicks yet`
-                : "Search Console is connected, with nothing to plot yet"}
+              Search Console is connected, with nothing to plot yet
             </div>
-            {series.impressions ? (
-              <>
-                This chart plots clicks, and there are none so far. Impressions mean the
-                pages are being shown; clicks follow position. Nothing here is estimated.
-              </>
-            ) : (
-              <>
             Search Console reports with about a two-day lag, and only pages that
             received clicks appear at all. If this stays empty, open Integrations:
             the sync reports there when the connected Google account cannot see a
             property for this domain.
-              </>
-            )}
           </div>
         </div>
       );
@@ -68,6 +62,37 @@ function TrafficChart({ series, connected = false }: { series: TrafficSeries; co
           href="/connect"
           cta="Connect Search Console"
         />
+      </div>
+    );
+  }
+
+  // Synced, and the measurement is zero. Drawing a flat line here would be a
+  // claim about the site rather than about the data, so the panel says which
+  // one it is. This is the ordinary state of a new domain: Google is showing
+  // the pages, and clicks follow position.
+  if (!series.hasClicks) {
+    return (
+      <div className="h-[220px] grid place-items-center px-8 text-center">
+        <div className="max-w-[46ch] text-[13px] leading-relaxed text-ink-3">
+          <div className="mb-1 text-[13.5px] font-medium text-ink-2">
+            {series.impressions
+              ? `${series.impressions.toLocaleString()} impressions, no clicks yet`
+              : "Measured, and there is nothing to plot yet"}
+          </div>
+          {series.impressions ? (
+            <>
+              This chart plots clicks, and Search Console reports none over the last{" "}
+              {series.days} days. Impressions mean the pages are being shown; clicks
+              follow position. Nothing here is estimated.
+            </>
+          ) : (
+            <>
+              Search Console reported no impressions and no clicks over the last{" "}
+              {series.days} days, so there is nothing to draw. That is a measurement,
+              not a gap in the data.
+            </>
+          )}
+        </div>
       </div>
     );
   }
@@ -193,10 +218,17 @@ export default async function DashboardPage() {
             label: "Organic traffic",
             value: traffic.hasData ? traffic.currentTotal.toLocaleString() : "—",
             unit: " clicks",
+            // A synced zero keeps its "0", because nobody clicking IS the
+            // measurement; the delta says what Google did report, so the row
+            // does not read as a broken integration.
             delta: traffic.hasData
-              ? traffic.changePct === null
-                ? "no prior period"
-                : `${traffic.changePct >= 0 ? "+" : ""}${traffic.changePct}% vs previous 30d`
+              ? !traffic.hasClicks
+                ? traffic.impressions
+                  ? `${traffic.impressions.toLocaleString()} impressions, no clicks yet`
+                  : "no impressions reported yet"
+                : traffic.changePct === null
+                  ? "no prior period"
+                  : `${traffic.changePct >= 0 ? "+" : ""}${traffic.changePct}% vs previous 30d`
               : (
                   <ConnectPrompt
                     dense

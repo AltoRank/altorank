@@ -7,7 +7,7 @@ export const STEPS = [
   {
     n: 2,
     title: 'Build the plan',
-    desc: 'A 30-day calendar, one keyword per day, ranked by traffic against difficulty for that specific domain.',
+    desc: 'A 30-day calendar, one keyword per day, ranked by traffic against difficulty for that specific domain. Connect Google Search Console and the plan starts from your own clicks, impressions and positions, read-only, rather than from an estimate.',
   },
   {
     n: 3,

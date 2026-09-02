@@ -11,6 +11,16 @@ export interface TrafficSeries {
   changePct: number | null;
   /** False when no analytics have ever been synced. */
   hasData: boolean;
+  /**
+   * False when the window was synced and nobody clicked.
+   *
+   * Distinct from `hasData` on purpose: "we have not measured this" and "we
+   * measured it and it is zero" are different statements, and only the second
+   * one earns a number. A new site with impressions and no clicks is the
+   * normal case, not an error, and a flat line at zero says nothing about
+   * which of the two it is.
+   */
+  hasClicks: boolean;
   /** Impressions over the window. A site can have thousands with no clicks,
    *  and a flat line at zero should say which of those two it is. */
   impressions: number;
@@ -26,6 +36,7 @@ const EMPTY: TrafficSeries = {
   previousTotal: 0,
   changePct: null,
   hasData: false,
+  hasClicks: false,
   impressions: 0,
   days: DAYS,
 };
@@ -73,6 +84,13 @@ export async function getTrafficSeries(workspaceId?: string): Promise<TrafficSer
     series.push(byDay.get(d) ?? 0);
   }
 
+  // Impressions over the whole window, so an all-zero click series can still
+  // say whether Google is showing the pages at all.
+  const impressions = (data as Array<{ impressions: number | null }>).reduce(
+    (sum, r) => sum + (r.impressions ?? 0),
+    0,
+  );
+
   const previous = series.slice(0, DAYS);
   const current = series.slice(DAYS);
   const currentTotal = current.reduce((a, b) => a + b, 0);
@@ -89,7 +107,8 @@ export async function getTrafficSeries(workspaceId?: string): Promise<TrafficSer
       ? Math.round(((currentTotal - previousTotal) / previousTotal) * 1000) / 10
       : null,
     hasData: true,
+    hasClicks: currentTotal > 0 || previousTotal > 0,
+    impressions,
     days: DAYS,
-      impressions: (data ?? []).reduce((sum, r) => sum + ((r.impressions as number) ?? 0), 0),
-};
+  };
 }
