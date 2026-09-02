@@ -156,6 +156,11 @@ export default async function VoicePage() {
                   workspaceId={w.id}
                   trained={!!voice?.trained}
                   hasSample={!!voice?.sample_text}
+                  /* Retrain re-reads the site; this edits what it concluded.
+                     Two different repairs: the site changed, or the model read
+                     it wrong. Only the first is fixed by asking again. */
+                  profileId={voice?.id ?? null}
+                  rules={(voice?.rules as Record<string, unknown>) ?? null}
                 />
               </div>
             );

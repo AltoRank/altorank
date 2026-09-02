@@ -4,16 +4,21 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Dialog } from "@/components/ui";
 import { createVoiceProfile, retrainVoice } from "@/app/actions/voice";
+import { VoiceManualEditor } from "./voice-manual-editor";
 
 interface VoiceCardButtonProps {
+  /** Null until the profile exists; manual editing needs something to edit. */
+  profileId?: string | null;
+  rules?: Record<string, unknown> | null;
   workspaceId: string;
   trained: boolean;
   hasSample: boolean;
 }
 
-export function VoiceCardButton({ workspaceId, trained, hasSample }: VoiceCardButtonProps) {
+export function VoiceCardButton({ workspaceId, trained, hasSample, profileId, rules }: VoiceCardButtonProps) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
+  const [editing, setEditing] = useState(false);
   const router = useRouter();
 
   async function handleTrain(e: React.FormEvent<HTMLFormElement>) {
@@ -46,14 +51,47 @@ export function VoiceCardButton({ workspaceId, trained, hasSample }: VoiceCardBu
 
   if (trained) {
     return (
-      <Button
-        size="sm"
-        className="w-full justify-center"
-        onClick={handleRetrain}
-        disabled={pending}
-      >
-        {pending ? "Retraining…" : "Edit voice"}
-      </Button>
+      <>
+        <div className="flex gap-2">
+          {profileId && rules && (
+            <Button
+              size="sm"
+              className="flex-1 justify-center"
+              onClick={() => setEditing(true)}
+              disabled={pending}
+            >
+              Edit manually
+            </Button>
+          )}
+          {/* Renamed. This button has always re-scraped the site and asked the
+              model again; calling that "Edit voice" is why there was no way to
+              correct a profile the model got wrong - the only control on offer
+              re-ran the thing that got it wrong. */}
+          <Button
+            size="sm"
+            className="flex-1 justify-center"
+            onClick={handleRetrain}
+            disabled={pending}
+          >
+            {pending ? "Retraining…" : "Retrain"}
+          </Button>
+        </div>
+
+        {editing && profileId && rules && (
+          <Dialog
+            open
+            onOpenChange={() => setEditing(false)}
+            title="Edit voice"
+            description="What the writer reads when it drafts for this site."
+          >
+            <VoiceManualEditor
+              profileId={profileId}
+              rules={rules}
+              onDone={() => setEditing(false)}
+            />
+          </Dialog>
+        )}
+      </>
     );
   }
 
