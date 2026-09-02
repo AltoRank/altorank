@@ -26,6 +26,7 @@ import { profileIsUsable, seedPhrasesFromPages, scoreRelevance } from "@/lib/seo
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { dedupePermutations } from "@/lib/seo/keywords";
+import { fetchCompetitorGap } from "@/lib/seo/keyword-gap";
 import {
   fetchRankedKeywords,
   groupByPage,
@@ -313,6 +314,22 @@ export async function analyseDomain(options: {
 
       // (2) Ideas from the site's own headings. A quick run has one page of
       // headings and no budget for a second paid lookup.
+      // (1a) What close competitors rank for and we do not. Costs one call to
+      // find out there are none, which is the answer for any site without a
+      // ranking footprint of its own - so it stops there rather than taking a
+      // content plan from whoever happened to share a keyword.
+      const gapRows = depth === "full"
+        ? await fetchCompetitorGap(domain, { languageCode: options.locale ?? "en" }).catch(() => [])
+        : [];
+      const fromGap: DiscoveredKeyword[] = gapRows.map((k) => ({
+        keyword: k.keyword,
+        volume: k.volume,
+        difficulty: k.difficulty,
+        cpc: k.cpc,
+        competition: 0,
+        intent: k.intent,
+      }));
+
       const seeds = usable && depth === "full" ? seedPhrasesFromPages(crawledPages, domain) : [];
       const seeded = seeds.length ? await discoverKeywordsFromSeeds(seeds).catch(() => []) : [];
 
@@ -323,7 +340,8 @@ export async function analyseDomain(options: {
         if (!prev || rank < prev.rank) byTerm.set(key, { k, rank });
       };
       for (const k of fromRanked) add(k, 0);
-      for (const k of seeded) if (k.intent !== "navigational") add(k, 1);
+      for (const k of fromGap) if (k.intent !== "navigational") add(k, 1);
+      for (const k of seeded) if (k.intent !== "navigational") add(k, 2);
 
       // (3) The Ads endpoint, only when the first two are thin.
       let usedFallback = false;
@@ -336,7 +354,7 @@ export async function analyseDomain(options: {
         // slots in a single run. A thin list of real keywords beats a full one
         // padded from the source we do not trust.
         const room = Math.max(0, ADS_FALLBACK_CAP - byTerm.size);
-        for (const k of fromSite.slice(0, room)) add(k, 2);
+        for (const k of fromSite.slice(0, room)) add(k, 3);
         usedFallback = room > 0 && fromSite.length > 0;
       }
 
@@ -383,7 +401,8 @@ export async function analyseDomain(options: {
             // keeps the exemption made just above - a ranked term is on-topic
             // because the SERP said so - available to the selector, which
             // otherwise re-applies the filter this row was excused from.
-            source: c.rank === 0 ? "ranked" : c.rank === 1 ? "ideas" : "ads",
+            source:
+              c.rank === 0 ? "ranked" : c.rank === 1 ? "gap" : c.rank === 2 ? "ideas" : "ads",
           }));
         if (rows.length) {
           const { data: inserted } = await supabase.from("keywords").insert(rows).select("id, term");
