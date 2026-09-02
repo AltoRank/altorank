@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { emailLayout, emailButton, emailParagraph, EMAIL_INK } from "./layout";
 
 let resendClient: Resend | null = null;
 
@@ -28,20 +29,16 @@ export async function sendInviteEmail(
     from,
     to,
     subject: `You've been invited to join ${agencyName} on AltoRank`,
-    html: `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
-        <h2 style="color: #1a1a1a; margin-bottom: 8px;">Join ${agencyName} on AltoRank</h2>
-        <p style="color: #666; line-height: 1.6;">
-          ${inviterName} has invited you to join <strong>${agencyName}</strong> as ${article(role)} <strong>${role}</strong>.
-        </p>
-        <a href="${acceptUrl}" style="display: inline-block; margin: 24px 0; padding: 12px 24px; background-color: #2563eb; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600;">
-          Accept Invitation
-        </a>
-        <p style="color: #999; font-size: 13px; line-height: 1.5;">
-          This invitation expires in 7 days. If you didn't expect this email, you can safely ignore it.
-        </p>
-      </div>
-    `,
+    html: emailLayout({
+      title: `Join ${agencyName} on AltoRank`,
+      preheader: `${inviterName} invited you to ${agencyName}`,
+      bodyHtml:
+        `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">Join ${agencyName} on AltoRank</h1>` +
+        emailParagraph(`${inviterName} invited you to work on ${agencyName}'s SEO content. Accept to get access to the workspaces, drafts and reports.`) +
+        emailButton(acceptUrl, "Accept invitation") +
+        emailParagraph(`The link works once and expires in seven days. If you were not expecting this, ignore it and nothing happens.`),
+      footerNote: `Sent because ${inviterName} added ${to} to a team on AltoRank.`,
+    }),
   });
 }
 
@@ -62,37 +59,29 @@ export async function sendReportEmail(
 ): Promise<void> {
   const resend = getResend();
   const from = process.env.RESEND_FROM_EMAIL ?? "AltoRank <noreply@updates.altorank.co>";
-
-  const highlightRows = [
-    `<tr><td style="padding:6px 0;color:#666;">Articles published</td><td style="padding:6px 0;font-weight:600;text-align:right;">${highlights.articlesPublished}</td></tr>`,
-    `<tr><td style="padding:6px 0;color:#666;">Keywords tracked</td><td style="padding:6px 0;font-weight:600;text-align:right;">${highlights.keywordsTracked}</td></tr>`,
-    highlights.topMover
-      ? `<tr><td style="padding:6px 0;color:#666;">Top mover</td><td style="padding:6px 0;font-weight:600;text-align:right;">${highlights.topMover}</td></tr>`
-      : "",
-  ].join("");
+  const row = (label: string, value: string | number) =>
+    `<tr><td style="padding:8px 0;color:#4A4A4A;border-bottom:1px solid #E6E5E2;">${label}</td><td style="padding:8px 0;font-weight:600;text-align:right;border-bottom:1px solid #E6E5E2;">${value}</td></tr>`;
+  const rows =
+    row("Articles published", highlights.articlesPublished) +
+    row("Keywords tracked", highlights.keywordsTracked) +
+    (highlights.topMover ? row("Top mover", highlights.topMover) : "");
 
   await resend.emails.send({
     from,
     to,
-    subject: `${workspaceName} — SEO Report for ${period}`,
-    html: `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
-        <p style="color: #999; font-size: 12px; margin-bottom: 4px;">${agencyName}</p>
-        <h2 style="color: #1a1a1a; margin-bottom: 8px;">Monthly SEO Report</h2>
-        <p style="color: #666; line-height: 1.6;">
-          Here's the performance summary for <strong>${workspaceName}</strong> covering <strong>${period}</strong>.
-        </p>
-        <table style="width:100%;border-collapse:collapse;margin:20px 0;font-size:14px;">
-          ${highlightRows}
-        </table>
-        <a href="${reportUrl}" style="display: inline-block; margin: 16px 0; padding: 12px 24px; background-color: #2563eb; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600;">
-          View Full Report (PDF)
-        </a>
-        <p style="color: #999; font-size: 13px; line-height: 1.5; margin-top: 24px;">
-          This report was generated automatically by AltoRank. Questions? Reply to this email.
-        </p>
-      </div>
-    `,
+    subject: `${workspaceName} — SEO report for ${period}`,
+    html: emailLayout({
+      title: `${workspaceName}: SEO report for ${period}`,
+      preheader: `${highlights.articlesPublished} articles published, ${highlights.keywordsTracked} keywords tracked`,
+      bodyHtml:
+        `<p style="margin:0 0 4px;font-size:12px;color:#8A8A8A;">${agencyName}</p>` +
+        `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">${workspaceName}: ${period}</h1>` +
+        emailParagraph(`What moved this period. Every number is measured; where nothing was measured the report says so rather than showing a zero.`) +
+        `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 4px;font-size:14px;">${rows}</table>` +
+        emailButton(reportUrl, "Open the full report") +
+        emailParagraph(`The report stays at that link; share it with whoever needs it.`),
+      footerNote: `Sent to ${to} as a member of ${agencyName} on AltoRank.`,
+    }),
   });
 }
 
@@ -111,15 +100,11 @@ export async function sendToolResultEmail(
     from,
     to,
     subject,
-    html: `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
-        ${bodyHtml}
-        <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;" />
-        <p style="color: #999; font-size: 12px; line-height: 1.5;">
-          Sent by <a href="https://altorank.co" style="color: #2563eb;">AltoRank</a> — free SEO tools for agencies.
-        </p>
-      </div>
-    `,
+    html: emailLayout({
+      title: subject,
+      bodyHtml,
+      footerNote: `Sent once, to ${to}, because you asked for it on altorank.co. There is no list to unsubscribe from.`,
+    }),
   });
 }
 

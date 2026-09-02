@@ -70,7 +70,7 @@ export async function POST(request: Request) {
 
   try {
     await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL ?? "AltoRank <onboarding@resend.dev>",
+      from: process.env.RESEND_FROM_EMAIL ?? "AltoRank <noreply@updates.altorank.co>",
       to: FEEDBACK_TO,
       // Reply goes straight back to the person who wrote it.
       replyTo: user.email ?? undefined,
