@@ -78,11 +78,22 @@ const MIN_FRAGMENTS_FOR_FILTERING = 8;
  * ranked in a real site's top ten terms. Decoding fixes the cause; a list of
  * known fragments would only have covered the ones already seen.
  */
+// Function words that survive the frequency filter in short titles and
+// headings. The median weighting in scoreRelevance already makes them nearly
+// worthless as matches; dropping them here keeps them out of the profile and
+// out of the "on-topic: agency, for, seo" reasons a reviewer reads. English
+// plus the handful that recur across the other locales' navigation.
+const STOPWORDS = new Set([
+  "and", "are", "for", "the", "you", "your", "with", "that", "this", "from", "how", "what",
+  "why", "when", "who", "can", "any", "all", "our", "not", "but", "one", "get", "use",
+  "und", "der", "die", "das", "für", "mit", "per", "con", "che", "del", "les", "des", "pour",
+]);
+
 function tokenize(text: string): string[] {
   return decodeEntities(text)
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
-    .filter((t) => t.length > 2 && t.length < 30 && !/^\d+$/.test(t));
+    .filter((t) => t.length > 2 && t.length < 30 && !/^\d+$/.test(t) && !STOPWORDS.has(t));
 }
 
 /**

@@ -112,6 +112,24 @@ export function assessKeywordQuality(
     return { quality: "suspect", note: "ends in a two-letter fragment, likely truncated" };
   }
 
+  // The first unattended run on altorank.co (2026-09-02) wrote an article for
+  // "no keywords", 27,100 searches a month, difficulty 0, "on-topic" because
+  // the site says "keywords" everywhere. The term is a fragment of a question
+  // nobody wants an article about. Two shapes catch that whole family:
+  //
+  //   a leading negation or function word    "no keywords", "not seo", "and seo"
+  //   a repeated token                        "seo and seo", "seo what is seo"
+  //
+  // Both are provider artifacts of keywords_for_site, which returns phrase
+  // fragments with their aggregate volume attached.
+  const LEADING_JUNK = new Set(["no", "not", "and", "or", "the", "a", "an", "of", "to", "in", "is", "vs"]);
+  if (tokens.length > 1 && LEADING_JUNK.has(tokens[0])) {
+    return { quality: "suspect", note: `starts with "${tokens[0]}", a fragment rather than a query` };
+  }
+  if (tokens.length > 1 && new Set(tokens).size < tokens.length) {
+    return { quality: "suspect", note: "repeats a word, a provider fragment rather than a query" };
+  }
+
   return { quality: "ok", note: null };
 }
 
@@ -194,8 +212,12 @@ function volumeScore(volume: number): number {
  * as "easy" would float every unmeasured keyword to the top, which is the same
  * failure as rendering a null difficulty as a green zero.
  */
-function winnability(difficulty: number | null): number {
+function winnability(difficulty: number | null, volume = 0): number {
   if (difficulty === null) return 0.6;
+  // Difficulty 0 on a term with real volume is the provider saying "not
+  // computed", not "free". Treated as easy it multiplies by 1.0 and floats a
+  // fragment like "no keywords" (27,100/mo, KD 0) to the top of the queue.
+  if (difficulty === 0 && volume >= 1000) return 0.6;
   const d = Math.min(Math.max(difficulty, 0), 100);
   return 1 - d / 100;
 }
@@ -329,7 +351,7 @@ export async function recommendKeywords(
       reasons.push(`${impressions.toLocaleString()} impressions already earned`);
     }
 
-    score *= winnability(difficulty);
+    score *= winnability(difficulty, volume);
     reasons.push(
       difficulty === null
         ? "difficulty unknown, scored conservatively"

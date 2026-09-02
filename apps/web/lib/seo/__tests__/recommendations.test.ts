@@ -26,6 +26,18 @@ describe("assessKeywordQuality — provider noise", () => {
     expect(assessKeywordQuality("all & one", terms()).quality).toBe("suspect");
   });
 
+  it("rejects a leading negation or function word", () => {
+    // Wrote "No Keywords Showing? What It Means and How to Fix It" for altorank.co.
+    expect(assessKeywordQuality("no keywords", terms()).quality).toBe("suspect");
+    expect(assessKeywordQuality("and seo", terms()).quality).toBe("suspect");
+    expect(assessKeywordQuality("keyword research", terms()).quality).toBe("ok");
+  });
+
+  it("rejects a term that repeats a word", () => {
+    expect(assessKeywordQuality("seo and seo", terms()).quality).toBe("suspect");
+    expect(assessKeywordQuality("seo what is seo", terms()).quality).toBe("suspect");
+  });
+
   it("rejects a trailing two-letter fragment", () => {
     // "seo co" is a truncation of "seo company" and reads as a typo in a title.
     expect(assessKeywordQuality("seo co", terms()).quality).toBe("suspect");
