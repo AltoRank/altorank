@@ -1,5 +1,6 @@
 ---
 import '@/styles/globals.css';
+import { ClientRouter } from 'astro:transitions';
 import { buildOrganizationSchema } from '@/lib/schema';
 import { SITE_URL, APP_NAME } from '@/constants';
 
@@ -99,6 +100,15 @@ const allSchemas = [...sitewideSchemas, ...pageSchemas];
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
     <meta name="theme-color" content="#1A1815" />
+
+    <!-- Client-side routing. Internal <a> navigations swap the document instead
+         of reloading it, so the stylesheet, fonts and analytics scripts are
+         parsed once for the whole session rather than once per page.
+
+         The cost is that module scripts do not re-execute on a soft navigation:
+         anything that binds to the DOM has to re-bind on `astro:page-load`.
+         See Header.astro, index.astro and pricing.astro. -->
+    <ClientRouter />
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />

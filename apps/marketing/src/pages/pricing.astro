@@ -153,6 +153,12 @@ const structuredData = buildProductSchema();
 </Marketing>
 
 <script>
+  // ClientRouter swaps the document without re-executing module scripts,
+  // so this re-binds the toggle each time the pricing page is navigated to.
+  // Every listener below is bound to an element inside the swapped DOM,
+  // which takes them with it when it goes: nothing to tear down.
+  document.addEventListener('astro:page-load', () => {
+
   // Progressive: both prices ship in the HTML and this swaps which is hidden.
   // Without it the page still shows the monthly price and the yearly line, so
   // nothing is lost when the script does not run - which matters more than
@@ -182,4 +188,5 @@ const structuredData = buildProductSchema();
 
     setPeriod("monthly");
   }
+  });
 </script>

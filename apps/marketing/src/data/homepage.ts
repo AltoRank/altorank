@@ -100,7 +100,23 @@ export const COMPARISON = [
 // Shown as the column header over the `legacy` values.
 export const COMPARISON_THEM = 'Outrank, Distribb, BabyLoveGrowth';
 
-export const CMS_LIST = [
+// Eleven connectable destinations, plus Git marked as not-yet.
+//
+// `soon` is not decoration and not a roadmap tease. apps/web/lib/cms/git.ts is
+// written and covered by tests, and adapter.ts resolves it - but the zod
+// discriminated union in apps/web/app/actions/integrations.ts has eleven
+// members and `git` is not one of them. There is no path, UI or action, by
+// which anyone can connect it. The adapter is reachable only by code that
+// already holds a config no form can produce.
+//
+// Listing it plain made this page claim twelve while pricing.ts, the STEPS
+// copy above ("the other seven", i.e. four named + seven) and open-source.astro
+// all said eleven. The count was the smaller problem: detect.ts tells an Astro,
+// Hugo, Jekyll or Next site its answer is the git adapter, so a visitor
+// following the site's own advice arrived at a picker that does not offer it.
+//
+// Remove the flag the day `git` joins that union, and not one commit before.
+export const CMS_LIST: { code: string; name: string; soon?: boolean }[] = [
   { code: 'SH', name: 'Shopify' },
   { code: 'WP', name: 'WordPress' },
   { code: 'MG', name: 'Magento' },
@@ -111,8 +127,8 @@ export const CMS_LIST = [
   { code: 'WX', name: 'Wix' },
   { code: 'NO', name: 'Notion' },
   { code: 'HS', name: 'HubSpot' },
-  { code: 'GT', name: 'Git' },
   { code: 'WH', name: 'Webhook' },
+  { code: 'GT', name: 'Git', soon: true },
 ];
 
 // The locale count the product actually supports. apps/web/lib/seo/locales.ts

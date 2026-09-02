@@ -345,13 +345,25 @@ const structuredData = [buildProductSchema()];
             Publishes where you already are
           </h3>
           <p class="mb-5 text-[14.5px] leading-relaxed text-ink-2">
-            Twelve destinations, plus {LOCALE_COUNT} locales if you do not sell
-            in English.
+            Eleven destinations you can connect today, plus {LOCALE_COUNT}
+            locales if you do not sell in English.
           </p>
           <div class="mt-auto flex flex-wrap gap-1.5">
             {CMS_LIST.map((cms) => (
-              <span class="rounded-md border border-line bg-panel px-2.5 py-1 text-[12px] text-ink-2">
+              <span
+                class:list={[
+                  'rounded-md border px-2.5 py-1 text-[12px]',
+                  cms.soon
+                    ? 'border-dashed border-line bg-transparent text-ink-3'
+                    : 'border-line bg-panel text-ink-2',
+                ]}
+              >
                 {cms.name}
+                {cms.soon && (
+                  <span class="ml-1.5 text-[10.5px] uppercase tracking-[0.04em]">
+                    Soon
+                  </span>
+                )}
               </span>
             ))}
           </div>
@@ -364,6 +376,12 @@ const structuredData = [buildProductSchema()];
 </Marketing>
 
 <script>
+  // ClientRouter swaps the document without re-executing module scripts,
+  // so this re-binds the form each time the homepage is navigated to.
+  // Every listener below is bound to an element inside the swapped DOM,
+  // which takes them with it when it goes: nothing to tear down.
+  document.addEventListener('astro:page-load', () => {
+
   // The growth plan hook. Progressive in the only way that matters here: with
   // no script the form still submits nowhere harmful (novalidate, no action),
   // and the rest of the page is unchanged.
@@ -494,4 +512,5 @@ const structuredData = [buildProductSchema()];
       }
     });
   }
+  });
 </script>

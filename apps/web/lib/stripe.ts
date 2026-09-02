@@ -116,12 +116,20 @@ export const PLAN_TAGLINES: Record<PlanTier, string> = {
  * Nothing here is a capability the free self-host tier lacks - under AGPL there
  * are no feature gates. The paid rungs sell hosting, included model and data
  * costs, volume and support: the things self-hosting makes you provide
- * yourself. Listing white-label or multi-tenant as a paid differentiator would
- * contradict the open-source promise, which is why neither appears.
+ * yourself. Listing multi-tenant as a paid differentiator would contradict the
+ * open-source promise, which is why it does not appear.
+ *
+ * The one line that reads like a gate and is not: "Articles publish without the
+ * AltoRank line". Self-hosters have never carried that line and still do not -
+ * it applies to the hosted free tier, where we are paying the model and data
+ * bills for someone publishing at no cost. Buying a plan is one of two ways to
+ * remove it; running your own instance is the other, and it is free
+ * (2026-09-02, see lib/publishing/attribution.ts).
  */
 export const PLAN_FEATURES: Record<PlanTier, string[]> = {
   starter: [
     "100 articles / month included",
+    "Articles publish without the AltoRank line",
     "Up to 3 workspaces (sites or clients)",
     "€0.60 per additional article",
     "No API keys needed, costs included",

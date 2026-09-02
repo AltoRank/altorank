@@ -48,7 +48,13 @@ export const PLANS = [
       'Everything open, no paid tier held back',
       'Runs on your own infrastructure',
       'Bring your own Anthropic key',
-      'CLI + MCP server',
+      // Was 'CLI + MCP server'. The MCP server is real
+      // (apps/web/scripts/mcp.ts, npm run mcp). The CLI is not: there is no
+      // `bin` entry in any package.json and nothing is published to a
+      // registry. open-source.astro already states plainly that "the one thing
+      // that is NOT built yet is a packaged command-line tool" - this card was
+      // selling it two sections above that sentence.
+      'MCP server, drive it from Claude Code',
       'All 11 CMS integrations',
       'Multi-tenant and white-label reports, ungated',
       'Community support',
@@ -74,6 +80,7 @@ export const PLANS = [
     desc: 'No API keys to manage, because model and data costs are included. For solo operators and agencies running one or two brands.',
     features: [
       '100 articles / month included',
+      'Articles publish without the AltoRank line',
       'Up to 3 workspaces (sites or clients)',
       '€0.60 per additional article',
       'No API keys needed, costs included',

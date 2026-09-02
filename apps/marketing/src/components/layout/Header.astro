@@ -113,76 +113,102 @@ const { overlay = false } = Astro.props;
 </header>
 
 <script>
-  const nav = document.getElementById('mobile-nav') as HTMLDetailsElement | null;
-  const header = document.querySelector('.site-header') as HTMLElement | null;
-
-  // Anchor links do not reload, so the panel would stay open on top of the
-  // section it just scrolled to. Also close it if the viewport grows past the
-  // lg breakpoint, where the panel is hidden but `open` would persist.
-  if (nav) {
-    nav.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('a')) nav.open = false;
-    });
-    window.matchMedia('(min-width: 1024px)').addEventListener('change', (e) => {
-      if (e.matches) nav.open = false;
-    });
-  }
-
-  // Transparent over the first section, solid past it.
+  // Re-bound on every navigation, not just the first load. ClientRouter swaps
+  // the document without re-executing module scripts, so a header rendered by
+  // a soft navigation would otherwise carry no listeners at all: the mobile
+  // panel would not close and the bar would not switch out of overlay.
   //
-  // A scroll listener rather than an IntersectionObserver. IO is the tidier
-  // tool and was the first implementation, but it could not be verified in the
-  // harness this was built in: a control observer on a plainly visible <h1>
-  // received zero callbacks. Rather than ship a nav-bar behaviour that might
-  // silently never fire, this uses scroll, which was verified working.
-  //
-  // The usual objection to scroll handlers is per-frame layout reads. There are
-  // none here: the switch point is measured once and on resize, and each scroll
-  // event only compares a cached number, throttled to one rAF.
-  if (header?.dataset.overlayCapable === 'true') {
-    const end = document.querySelector('[data-header-overlay-end]');
+  // Element listeners die with the DOM they were bound to, but the window,
+  // matchMedia and document ones outlive the swap, so everything is registered
+  // against an AbortController and the previous page's set is aborted on the
+  // way in. Without that, one listener per visited page accumulates.
+  let bound: AbortController | null = null;
 
-    if (!end) {
-      // Asked for an overlay but never marked where it ends. Solid is the safe
-      // wrong answer: unreadable nav is worse than an early surface.
-      header.dataset.overlay = 'off';
-    } else {
-      let switchAt = 0;
-      let ticking = false;
+  function initHeader() {
+    bound?.abort();
+    bound = new AbortController();
+    const { signal } = bound;
 
-      const measure = () => {
-        switchAt = end.getBoundingClientRect().top + window.scrollY;
-      };
+    const nav = document.getElementById('mobile-nav') as HTMLDetailsElement | null;
+    const header = document.querySelector('.site-header') as HTMLElement | null;
 
-      const update = () => {
-        ticking = false;
-        // While the mobile panel is open the header must be solid, or the
-        // panel's light surface hangs off a transparent bar.
-        const overHero = window.scrollY < switchAt && !(nav?.open ?? false);
-        header.dataset.overlay = overHero ? 'on' : 'off';
-      };
+    // Anchor links do not reload, so the panel would stay open on top of the
+    // section it just scrolled to. Also close it if the viewport grows past the
+    // lg breakpoint, where the panel is hidden but `open` would persist.
+    if (nav) {
+      nav.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('a')) nav.open = false;
+      }, { signal });
+      window.matchMedia('(min-width: 1024px)').addEventListener('change', (e) => {
+        if (e.matches) nav.open = false;
+      }, { signal });
+    }
 
-      const onScroll = () => {
-        if (ticking) return;
-        ticking = true;
-        requestAnimationFrame(update);
-      };
+    // Transparent over the first section, solid past it.
+    //
+    // A scroll listener rather than an IntersectionObserver. IO is the tidier
+    // tool and was the first implementation, but it could not be verified in the
+    // harness this was built in: a control observer on a plainly visible <h1>
+    // received zero callbacks. Rather than ship a nav-bar behaviour that might
+    // silently never fire, this uses scroll, which was verified working.
+    //
+    // The usual objection to scroll handlers is per-frame layout reads. There are
+    // none here: the switch point is measured once and on resize, and each scroll
+    // event only compares a cached number, throttled to one rAF.
+    if (header?.dataset.overlayCapable === 'true') {
+      const end = document.querySelector('[data-header-overlay-end]');
 
-      const remeasure = () => {
-        measure();
-        update();
-      };
+      if (!end) {
+        // Asked for an overlay but never marked where it ends. Solid is the safe
+        // wrong answer: unreadable nav is worse than an early surface.
+        header.dataset.overlay = 'off';
+      } else {
+        let switchAt = 0;
+        let ticking = false;
 
-      remeasure();
-      window.addEventListener('scroll', onScroll, { passive: true });
-      window.addEventListener('resize', remeasure);
-      nav?.addEventListener('toggle', update);
+        const measure = () => {
+          switchAt = end.getBoundingClientRect().top + window.scrollY;
+        };
 
-      // The hero's height, and so the switch point, depends on how its display
-      // font wraps. This script runs before the webfont lands, so the first
-      // measurement is of fallback-font text and is stale the moment Newsreader
-      // swaps in. Re-measure once the real fonts are applied.
-      document.fonts?.ready.then(remeasure);
+        const update = () => {
+          ticking = false;
+          // While the mobile panel is open the header must be solid, or the
+          // panel's light surface hangs off a transparent bar.
+          const overHero = window.scrollY < switchAt && !(nav?.open ?? false);
+          header.dataset.overlay = overHero ? 'on' : 'off';
+        };
+
+        const onScroll = () => {
+          if (ticking) return;
+          ticking = true;
+          requestAnimationFrame(update);
+        };
+
+        const remeasure = () => {
+          measure();
+          update();
+        };
+
+        remeasure();
+        window.addEventListener('scroll', onScroll, { passive: true, signal });
+        window.addEventListener('resize', remeasure, { signal });
+        nav?.addEventListener('toggle', update, { signal });
+
+        // The hero's height, and so the switch point, depends on how its display
+        // font wraps. This script runs before the webfont lands, so the first
+        // measurement is of fallback-font text and is stale the moment Newsreader
+        // swaps in. Re-measure once the real fonts are applied.
+        //
+        // The abort check matters on a soft navigation: fonts are already loaded
+        // by then, so this resolves against a header that may since have been
+        // swapped away.
+        document.fonts?.ready.then(() => {
+          if (!signal.aborted) remeasure();
+        });
+      }
     }
   }
+
+  // Fires on the first load as well as after every view-transition swap.
+  document.addEventListener('astro:page-load', initHeader);
 </script>

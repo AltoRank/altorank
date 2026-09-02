@@ -8,9 +8,15 @@ import type { Agency } from "@/lib/types";
 
 interface SettingsFormProps {
   agency: Agency;
+  /** Why the account's quota is what it is; decides the attribution line. */
+  quotaReason: "self-host" | "operator" | "plan" | "no-plan";
 }
 
-export function SettingsForm({ agency }: SettingsFormProps) {
+export function SettingsForm({ agency, quotaReason }: SettingsFormProps) {
+  // Only the hosted free tier publishes with the line. See
+  // lib/publishing/attribution.ts for why the rule lives on the plan and not
+  // on a toggle.
+  const attributionApplies = quotaReason === "no-plan";
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [apiKey, setApiKey] = useState(agency.api_key ?? "");
@@ -92,12 +98,22 @@ export function SettingsForm({ agency }: SettingsFormProps) {
               />
             ))}
           </div>
-          <label className={labelClass}>Remove &ldquo;Powered by AltoRank&rdquo;</label>
-          <div className="flex items-center gap-2 text-[13px] text-ink-2">
-            <div className="w-8 h-[18px] rounded-full bg-accent relative">
-              <div className="absolute w-3.5 h-3.5 rounded-full bg-white top-0.5 right-0.5" />
+          <label className={labelClass}>&ldquo;Powered by AltoRank&rdquo; on published articles</label>
+          <div className="flex items-start gap-2 text-[13px] text-ink-2">
+            <div className={`mt-0.5 h-[18px] w-8 shrink-0 rounded-full relative ${attributionApplies ? "bg-line" : "bg-accent"}`}>
+              <div className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white ${attributionApplies ? "left-0.5" : "right-0.5"}`} />
             </div>
-            Enabled. White-label is not gated on any plan.
+            {attributionApplies ? (
+              <span>
+                Free articles publish with one line linking back to AltoRank. Any paid
+                plan removes it — self-hosting removes it too, and always did.
+              </span>
+            ) : (
+              <span>
+                Removed. Your articles publish with no AltoRank line
+                {quotaReason === "self-host" ? " — self-hosted installs never carry one." : "."}
+              </span>
+            )}
           </div>
         </div>
 

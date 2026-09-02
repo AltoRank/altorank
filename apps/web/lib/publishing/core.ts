@@ -6,6 +6,8 @@ import { submitForIndexing } from "@/lib/seo/indexing";
 import { getValidAccessToken } from "@/lib/google/oauth";
 import { decryptConfig } from "@/lib/crypto";
 import type { CMSConfig } from "@/lib/types";
+import { getQuota } from "@/lib/billing/quota";
+import { appendAttribution, shouldAttribute } from "@/lib/publishing/attribution";
 
 /**
  * Publish a single article to its connected CMS.
@@ -67,6 +69,29 @@ export async function publishArticleCore(
     );
   } catch {
     // Link resolution is non-blocking — publish with whatever we have
+  }
+
+  /**
+   * The free tier's articles carry a "Powered by AltoRank" line. Decided by
+   * the quota's reason, so self-host, operators and every paid plan publish
+   * clean - see lib/publishing/attribution.ts for why it sits here and not
+   * behind a feature flag. Never blocks a publish: if we cannot tell what
+   * plan someone is on, we do not brand their article.
+   */
+  try {
+    const { data: ws } = await supabase
+      .from("workspaces")
+      .select("agency_id, agency:agencies(remove_branding)")
+      .eq("id", article.workspace_id)
+      .single();
+    if (ws?.agency_id) {
+      const quota = await getQuota(supabase, ws.agency_id);
+      const removeBranding =
+        (ws.agency as { remove_branding?: boolean } | null)?.remove_branding ?? false;
+      if (shouldAttribute(quota, removeBranding)) html = appendAttribution(html);
+    }
+  } catch {
+    // Branding is never worth failing a publish over.
   }
 
   const result = await adapter.publish({
