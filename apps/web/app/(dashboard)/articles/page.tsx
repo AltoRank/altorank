@@ -149,9 +149,14 @@ export default async function ArticlesPage({ searchParams }: Props) {
               {rows.map((a) => {
                 const dateStr = a.updated_at ? new Date(a.updated_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—";
                 return (
-                  <tr key={a.id} className="cursor-pointer hover:[&>td]:bg-panel">
+                  <tr key={a.id} className="hover:[&>td]:bg-panel">
                     <td className="px-3.5 py-3 border-b border-line-soft" style={{ maxWidth: 0 }}>
-                      <div className="truncate font-medium">{a.title}</div>
+                      <Link
+                        href={`/content/${a.id}`}
+                        className="block truncate font-medium hover:text-accent-ink hover:underline decoration-line underline-offset-[3px]"
+                      >
+                        {a.title}
+                      </Link>
                       <div className="text-[11px] text-ink-3 mt-0.5">{a.word_count ? `${a.word_count.toLocaleString()} words` : "Draft in progress"}</div>
                     </td>
                     {!scopeId && (

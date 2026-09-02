@@ -26,6 +26,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { KeywordIntent } from "@/lib/types";
 import { scoreRelevance, type TopicalProfile } from "./topical-profile";
+import { relativeDifficulty } from "./difficulty";
 
 export type RecommendedAction = "write" | "refresh" | "skip";
 
@@ -248,8 +249,20 @@ function volumeScore(volume: number): number {
  * as "easy" would float every unmeasured keyword to the top, which is the same
  * failure as rendering a null difficulty as a green zero.
  */
-function winnability(difficulty: number | null, volume = 0): number {
+function winnability(difficulty: number | null, volume = 0, authority?: number | null): number {
   if (difficulty === null) return 0.6;
+  // Judged against this site when we know its authority. KD is absolute - it
+  // describes the SERP, not the contender - so KD 40 is a rounding error at
+  // DR 80 and unreachable at DR 0.2, and ranking both the same way is how a
+  // new site gets a content plan it cannot execute. Both numbers are fetched
+  // in the same analyseDomain run and were never compared.
+  if (typeof authority === "number" && Number.isFinite(authority)) {
+    const { relative } = relativeDifficulty(difficulty, authority);
+    if (relative !== null) {
+      if (difficulty === 0 && volume >= 1000) return 0.6;
+      return 1 - relative / 100;
+    }
+  }
   // Difficulty 0 on a term with real volume is the provider saying "not
   // computed", not "free". Treated as easy it multiplies by 1.0 and floats a
   // fragment like "no keywords" (27,100/mo, KD 0) to the top of the queue.
@@ -304,11 +317,14 @@ export async function recommendKeywords(
   // different industry.
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("topical_profile")
+    .select("topical_profile, dr")
     .eq("id", workspaceId)
     .single();
 
   const profile = (workspace?.topical_profile as TopicalProfile | null) ?? null;
+  // Null when never measured, which relativeDifficulty treats as "do not
+  // judge" rather than "zero authority".
+  const authority = (workspace?.dr as number | null) ?? null;
 
   const keywordIds = keywords.map((k) => k.id as string);
   const allTerms = new Set(keywords.map((k) => (k.term as string).trim().toLowerCase()));
@@ -400,7 +416,7 @@ export async function recommendKeywords(
       reasons.push(`${impressions.toLocaleString()} impressions already earned`);
     }
 
-    score *= winnability(difficulty, volume);
+    score *= winnability(difficulty, volume, authority);
     reasons.push(
       difficulty === null
         ? "difficulty unknown, scored conservatively"
