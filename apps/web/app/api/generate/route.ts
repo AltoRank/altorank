@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
   }
 
   // --- Parse body ----------------------------------------------------------
-  let body: { workspaceId: string; keyword: string; title?: string };
+  let body: { workspaceId: string; keyword: string; title?: string; articleId?: string };
   try {
     body = await request.json();
   } catch {
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const { workspaceId, keyword, title } = body;
+  const { workspaceId, keyword, title, articleId } = body;
 
   if (!workspaceId || !keyword) {
     return new Response(
@@ -90,6 +90,9 @@ export async function POST(request: NextRequest) {
           workspaceId,
           keyword,
           title,
+          // Present when the editor is generating into the draft it has open.
+          // Absent for the "new article" modal, which wants a new row.
+          articleId,
           onResearch: (research) =>
             send({
               type: "research",
