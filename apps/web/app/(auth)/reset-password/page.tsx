@@ -25,10 +25,29 @@ async function requestReset(formData: FormData) {
   // account: the message below is the same either way.
   const h = await headers();
   const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-  if (checkToolRateLimit("password-reset", `${ip}:${email.toLowerCase()}`, 3, 15 * 60 * 1000)) {
-    await sendPasswordReset(email).catch((e) => console.error("[reset-password]", e instanceof Error ? e.message : e));
+  // Rate-limited and failed requests get that same banner too, so the form
+  // cannot be used to probe for accounts. The truth goes to the server log
+  // instead; before this, a dropped or refused request left no trace anywhere
+  // (2026-09-02).
+  const who = maskEmail(email);
+  if (!checkToolRateLimit("password-reset", `${ip}:${email.toLowerCase()}`, 3, 15 * 60 * 1000)) {
+    console.warn(`[reset-password] rate-limited ${who} from ${ip}: 3 requests per 15 minutes`);
+  } else {
+    try {
+      const sent = await sendPasswordReset(email);
+      if (!sent) console.info(`[reset-password] no account for ${who}; nothing sent`);
+    } catch (e) {
+      console.error(`[reset-password] ${who}: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
   redirect("/reset-password?sent=1");
+}
+
+/** `m***@example.com`: enough to match a support request, without a full address in the log. */
+function maskEmail(email: string): string {
+  const at = email.indexOf("@");
+  if (at < 1) return "***";
+  return `${email[0]}***${email.slice(at)}`;
 }
 
 export default async function ResetPasswordPage(props: {

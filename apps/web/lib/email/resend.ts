@@ -1,4 +1,4 @@
-import { Resend } from "resend";
+import { Resend, type CreateEmailOptions } from "resend";
 import { emailLayout, emailButton, emailParagraph, EMAIL_INK } from "./layout";
 
 let resendClient: Resend | null = null;
@@ -15,6 +15,31 @@ function getResend(): Resend {
 // The sending domain verified in Resend is updates.altorank.co (eu-west-1).
 // The old default, noreply@altorank.com, was a domain this company does not
 // own, so every send without RESEND_FROM_EMAIL set was refused.
+function fromAddress(): string {
+  return process.env.RESEND_FROM_EMAIL ?? "AltoRank <noreply@updates.altorank.co>";
+}
+
+/**
+ * Every email leaves through here.
+ *
+ * Resend's SDK does not throw when the API refuses a send. It resolves to
+ * `{ data: null, error }`, and with NODE_ENV=production it does not even log.
+ * So a wrong key, an unverified domain, a from-address the key may not use,
+ * or a rate limit all looked, to every caller in this file, exactly like
+ * success. Found on 2026-09-02: password-reset requests showed "on its way"
+ * while nothing left and no log line said why. A refusal is now an exception
+ * carrying Resend's own code and status, for the caller to log or show.
+ */
+async function deliver(payload: CreateEmailOptions): Promise<string> {
+  const { data, error } = await getResend().emails.send(payload);
+  if (error) {
+    const status = error.statusCode ? ` ${error.statusCode}` : "";
+    throw new Error(`Resend refused the email (${error.name}${status}): ${error.message}`);
+  }
+  if (!data) throw new Error("Resend returned neither an id nor an error");
+  return data.id;
+}
+
 export async function sendInviteEmail(
   to: string,
   inviterName: string,
@@ -22,11 +47,8 @@ export async function sendInviteEmail(
   role: string,
   acceptUrl: string,
 ): Promise<void> {
-  const resend = getResend();
-  const from = process.env.RESEND_FROM_EMAIL ?? "AltoRank <noreply@updates.altorank.co>";
-
-  await resend.emails.send({
-    from,
+  await deliver({
+    from: fromAddress(),
     to,
     subject: `You've been invited to join ${agencyName} on AltoRank`,
     html: emailLayout({
@@ -57,8 +79,6 @@ export async function sendReportEmail(
     topMover?: string;
   },
 ): Promise<void> {
-  const resend = getResend();
-  const from = process.env.RESEND_FROM_EMAIL ?? "AltoRank <noreply@updates.altorank.co>";
   const row = (label: string, value: string | number) =>
     `<tr><td style="padding:8px 0;color:#4A4A4A;border-bottom:1px solid #E6E5E2;">${label}</td><td style="padding:8px 0;font-weight:600;text-align:right;border-bottom:1px solid #E6E5E2;">${value}</td></tr>`;
   const rows =
@@ -66,8 +86,8 @@ export async function sendReportEmail(
     row("Keywords tracked", highlights.keywordsTracked) +
     (highlights.topMover ? row("Top mover", highlights.topMover) : "");
 
-  await resend.emails.send({
-    from,
+  await deliver({
+    from: fromAddress(),
     to,
     subject: `${workspaceName} — SEO report for ${period}`,
     html: emailLayout({
@@ -93,11 +113,8 @@ export async function sendToolResultEmail(
   subject: string,
   bodyHtml: string,
 ): Promise<void> {
-  const resend = getResend();
-  const from = process.env.RESEND_FROM_EMAIL ?? "AltoRank <noreply@updates.altorank.co>";
-
-  await resend.emails.send({
-    from,
+  await deliver({
+    from: fromAddress(),
     to,
     subject,
     html: emailLayout({
@@ -125,10 +142,8 @@ export async function sendTransactionalEmail(
   footerNote: string,
   preheader?: string,
 ): Promise<void> {
-  const resend = getResend();
-  const from = process.env.RESEND_FROM_EMAIL ?? "AltoRank <noreply@updates.altorank.co>";
-  await resend.emails.send({
-    from,
+  await deliver({
+    from: fromAddress(),
     to,
     subject,
     html: emailLayout({ title: subject, bodyHtml, footerNote, preheader }),
