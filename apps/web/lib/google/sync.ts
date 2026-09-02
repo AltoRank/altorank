@@ -9,12 +9,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getValidAccessToken } from "@/lib/google/oauth";
 import { fetchGA4Metrics } from "@/lib/google/ga4";
-import { fetchGSCQueryMetrics, fetchGSCPageMetrics } from "@/lib/google/gsc";
+import { fetchGSCQueryMetrics, fetchGSCPageMetrics, listGSCSites, matchGSCSite } from "@/lib/google/gsc";
 
 export type SyncableIntegration = {
   id: string;
   tokens: { encrypted?: string } | null;
-  config: { ga4PropertyId?: string } | null;
+  config: { ga4PropertyId?: string; gscSiteUrl?: string } | null;
   workspace: { id: string; domain: string | null } | null;
 };
 
@@ -59,7 +59,25 @@ export async function syncWorkspaceAnalytics(
     }
 
     if (ws.domain) {
-      const siteUrl = `sc-domain:${ws.domain.replace(/^www\./, "")}`;
+      // Resolved once and stored: the account may own a domain property, a
+      // URL-prefix property, or none at all, and guessing produced a 403 on
+      // every run for altorank.co (2026-09-02).
+      let siteUrl = integration.config?.gscSiteUrl;
+      if (!siteUrl) {
+        const sites = await listGSCSites(accessToken);
+        const match = matchGSCSite(sites, ws.domain);
+        if (!match) {
+          const owned = sites.map((s) => s.siteUrl).slice(0, 5).join(", ") || "none";
+          throw new Error(
+            `This Google account has no Search Console property for ${ws.domain}. It can see: ${owned}. Add the property in Search Console, or reconnect with the account that owns it.`,
+          );
+        }
+        siteUrl = match.siteUrl;
+        await supabase
+          .from("workspace_integrations")
+          .update({ config: { ...(integration.config ?? {}), gscSiteUrl: siteUrl } })
+          .eq("id", integration.id);
+      }
       const queries = await fetchGSCQueryMetrics(accessToken, siteUrl, dateStr, dateStr);
       const rows = queries.map((q) => ({ workspace_id: ws.id, source: "gsc" as const, metric_date: dateStr, clicks: q.clicks, impressions: q.impressions, ctr: q.ctr, avg_position: q.position, query: q.query }));
       await supabase.from("analytics_metrics").delete().eq("workspace_id", ws.id).eq("source", "gsc").eq("metric_date", dateStr);
