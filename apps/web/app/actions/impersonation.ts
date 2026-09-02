@@ -101,9 +101,12 @@ export async function startImpersonation(
     return { error: "That account is banned." };
   }
 
-  // The row first. If the swap then fails, the attempt is still on record,
-  // with why.
-  const { data: log } = await admin
+  // The row first, and nothing happens without it. If the swap then fails,
+  // the attempt is still on record with why; if the row itself cannot be
+  // written (migration 030 not applied, database down) the account is not
+  // opened, because an unlogged impersonation is the one thing this feature
+  // promises never to do.
+  const { data: log, error: logError } = await admin
     .from("admin_impersonations")
     .insert({
       operator_user_id: operator.id,
@@ -113,7 +116,12 @@ export async function startImpersonation(
     })
     .select("id")
     .single();
-  const logId: string | null = log?.id ?? null;
+  if (logError || !log?.id) {
+    return {
+      error: `Could not write the audit row (${logError?.message ?? "no id returned"}), so the account was not opened. Has migration 030 been applied?`,
+    };
+  }
+  const logId: string = log.id;
 
   const { data: link, error: linkError } = await admin.auth.admin.generateLink({
     type: "magiclink",
