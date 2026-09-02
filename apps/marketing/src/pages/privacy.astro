@@ -62,7 +62,19 @@ const updated = '21 June 2026';
           <p>We use essential cookies to run the service and, with consent, analytics cookies to understand usage. You can control non-essential cookies via your browser or our cookie settings.</p>
         </div>
         <div>
-          <h2 class="mb-1.5 text-xl font-semibold text-ink">9. Contact</h2>
+          {/* Required by Google before an OAuth app asking for sensitive
+              scopes can be verified: the policy has to name the data, the
+              purpose, the retention and the way out, and it has to carry the
+              Limited Use commitment verbatim enough to be recognisable.
+              Reviewers open this page, so the two scopes are named as the
+              product requests them (lib/google/oauth.ts). */}
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">9. Google Search Console and Google Analytics data</h2>
+          <p>If you connect a workspace to Google, {APP_NAME} requests two read-only scopes: <code class="rounded bg-panel-2 px-1 py-0.5 font-mono text-[0.85em]">webmasters.readonly</code> for Search Console and <code class="rounded bg-panel-2 px-1 py-0.5 font-mono text-[0.85em]">analytics.readonly</code> for Analytics. We use them to read the clicks, impressions, average positions, pageviews and sessions for the sites you choose, so the dashboard and reports can show how your published articles perform and so the content plan starts from what the site already ranks for rather than from an estimate. We never request write access, and there is no scope that would let us change or publish anything in your Google account.</p>
+          <p class="mt-2.5">We store the resulting metrics against your workspace, plus an OAuth refresh token encrypted at rest (AES-256-GCM). We never see or store your Google password. This data is not sold, is not shared with third parties beyond the hosting sub-processor that runs our database, is not used for advertising, and is not used to train models. You can disconnect at any time from Integrations, which removes the stored token, or revoke access directly at <a href="https://myaccount.google.com/permissions" class="underline decoration-line underline-offset-2 hover:decoration-current">myaccount.google.com/permissions</a>; deleting a workspace deletes its metrics with it.</p>
+          <p class="mt-2.5">{APP_NAME}&rsquo;s use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy" class="underline decoration-line underline-offset-2 hover:decoration-current">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+        </div>
+        <div>
+          <h2 class="mb-1.5 text-xl font-semibold text-ink">10. Contact</h2>
           <p>Questions about this policy or your data: hello@altorank.co.</p>
         </div>
       </div>
