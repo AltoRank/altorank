@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { exchangeCode, encryptTokens } from "@/lib/google/oauth";
+import { backfillAnalytics } from "@/lib/google/sync";
 
 /**
  * Google OAuth callback — exchanges code for tokens and saves them.
@@ -91,8 +92,20 @@ export async function GET(request: NextRequest) {
 
     if (dbError) throw new Error(dbError.message);
 
+    // Pull the last week now, so the workspace shows numbers on landing
+    // instead of "on the next scheduled sync", which meant 04:00 UTC
+    // tomorrow. Bounded: seven days, a couple of calls each. A failure here
+    // is not fatal; the nightly cron will cover the same days.
+    let synced = 0;
+    try {
+      const r = await backfillAnalytics(supabase, workspaceId, integrationId, 7);
+      synced = r.gsc + r.ga4;
+    } catch {
+      synced = 0;
+    }
+
     return NextResponse.redirect(
-      new URL("/connect?success=google", request.url),
+      new URL(`/workspaces/${workspaceId}?connected=${encodeURIComponent(integrationId)}&synced=${synced}`, request.url),
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
