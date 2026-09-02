@@ -1,3 +1,4 @@
+import { fetchSite } from "@/lib/audit/lenient-fetch";
 /**
 import { fetchSite } from "@/lib/audit/lenient-fetch";
  * Lightweight website text extractor — no dependencies beyond `fetch`.
