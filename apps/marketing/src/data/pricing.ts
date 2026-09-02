@@ -90,6 +90,21 @@ export const PLANS = [
       'Email support',
     ],
     cta: 'Get started',
+    /**
+     * The one free thing on the cloud side, and it was invisible.
+     *
+     * apps/web ships FREE_DRAFTS = 1: a signup with no plan gets a workspace,
+     * a first look and one complete article with its fact check, and cannot
+     * approve or publish it without choosing a plan (needsPlanToShip). That
+     * offer existed in the code and appeared nowhere a buyer could see it, so
+     * the only EUR 0 on this page was Self-host - a different product, on the
+     * buyer's own infrastructure, with their own API keys.
+     *
+     * Worded against what the code actually does. It is not a trial: no clock,
+     * no card, nothing expires. It is one article. Keep this in step with
+     * FREE_DRAFTS in apps/web/lib/billing/quota.ts.
+     */
+    ctaNote: 'First article free, no card. Approving or publishing it is where a plan starts.',
     href: null,
     popular: true,
   },
