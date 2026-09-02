@@ -105,20 +105,22 @@ function TrafficChart({ series, connected = false }: { series: TrafficSeries; co
 export default async function DashboardPage() {
   // Every section is about one site unless the switcher says otherwise.
   const scopeId = await getScopedWorkspaceId();
-  const [workspaces, allArticles, recent, traffic, keywords] = await Promise.all([
-    getWorkspaces(),
-    getArticles(scopeId ?? undefined),
-    getRecentArticles(6),
-    getTrafficSeries(scopeId ?? undefined),
-    getKeywords(scopeId ?? undefined),
-  ]);
   // Whether any workspace has Google connected at all: it changes the empty
-  // state from an instruction into an explanation.
+  // state from an instruction into an explanation. Independent of the five
+  // reads beside it, so it runs with them instead of after them.
   const gscSupabase = await createClient();
-  const { count: gscCount } = await gscSupabase
-    .from("workspace_integrations")
-    .select("id", { count: "exact", head: true })
-    .eq("integration_id", "gsc");
+  const [workspaces, allArticles, recent, traffic, keywords, { count: gscCount }] =
+    await Promise.all([
+      getWorkspaces(),
+      getArticles(scopeId ?? undefined),
+      getRecentArticles(6),
+      getTrafficSeries(scopeId ?? undefined),
+      getKeywords(scopeId ?? undefined),
+      gscSupabase
+        .from("workspace_integrations")
+        .select("id", { count: "exact", head: true })
+        .eq("integration_id", "gsc"),
+    ]);
   const gscConnected = (gscCount ?? 0) > 0;
 
   // The header pill used to be a hardcoded "All systems healthy" while the
