@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type { Article } from "@/lib/types";
 
@@ -27,7 +28,13 @@ export async function getArticles(
   return (data ?? []) as Article[];
 }
 
-export async function getArticle(id: string): Promise<Article | null> {
+/**
+ * Deduplicated per request: the editor route's `generateMetadata` wants the
+ * title and the page wants the whole row, so both called this on every load.
+ */
+export const getArticle = cache(async function getArticle(
+  id: string,
+): Promise<Article | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("articles")
@@ -37,7 +44,7 @@ export async function getArticle(id: string): Promise<Article | null> {
 
   if (error) return null;
   return data as Article;
-}
+});
 
 export async function getRecentArticles(limit: number = 6): Promise<Article[]> {
   const supabase = await createClient();
