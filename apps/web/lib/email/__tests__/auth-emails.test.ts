@@ -17,9 +17,11 @@ describe("auth emails", () => {
       expect(r.subject).toContain("AltoRank");
       // Attribute values are escaped, so the & in the query becomes &amp;.
       expect(r.html).toContain(url.replace("&", "&amp;"));
-      expect(r.html).not.toContain("a<b@x.co");
-      expect(r.html).toContain("a&lt;b@x.co");
-      const full = emailLayout({ title: r.subject, bodyHtml: r.html });
+      // The address lives in the footer note only, escaped by the layout.
+      const full = emailLayout({ title: r.subject, bodyHtml: r.html, footerNote: r.footerNote });
+      expect(full).not.toContain("a<b@x.co");
+      expect(full).toContain("a&lt;b@x.co");
+      expect((full.match(/Sent to/g) ?? []).length).toBe(1);
       expect(full).toContain("SUPALABS SRL");
       expect(full).toContain("#4B52D4");
     }
