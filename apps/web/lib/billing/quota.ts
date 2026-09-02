@@ -131,6 +131,27 @@ export async function getQuota(
   return { limit, used, remaining: Math.max(0, limit - used), reason: "plan", plan };
 }
 
+/**
+ * Whether an account is entitled to the scheduled paid loop.
+ *
+ * The free draft buys a look at the product: a workspace, a first look, one
+ * article with its fact check. It does not buy a standing subscription to
+ * DataForSEO. Rank tracking runs nightly and forever, so an account that
+ * signed up, took its free draft - which it cannot approve or publish without
+ * a plan - and never came back kept costing money every night for an article
+ * that could never ship.
+ *
+ * Cheap per account and unbounded in aggregate: a keyword is under two cents a
+ * month, and nothing ever stops.
+ *
+ * `no-plan` is the only refusal. `self-host` must always run - that install
+ * pays its own provider bills and gating it would break the open-source
+ * promise - and `operator` and `plan` are entitled by definition.
+ */
+export function entitledToScheduledWork(q: Quota): boolean {
+  return q.reason !== "no-plan";
+}
+
 /** Drafts an account gets before choosing a plan. Approving them needs one. */
 export const FREE_DRAFTS = 1;
 

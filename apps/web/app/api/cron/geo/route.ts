@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cronSecretFrom } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
+import { getQuota, entitledToScheduledWork } from "@/lib/billing/quota";
 import {
   probeVisibility,
   summariseVisibility,
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
 
   const { data: workspaces, error } = await supabase
     .from("workspaces")
-    .select("id, name, domain, geo_last_checked_at")
+    .select("id, name, domain, agency_id, geo_last_checked_at")
     .eq("geo_tracking", true)
     .not("domain", "is", null)
     .or(`geo_last_checked_at.is.null,geo_last_checked_at.lt.${cutoff}`)
@@ -62,6 +63,17 @@ export async function GET(request: Request) {
     const brandName = (ws.name as string) || domain;
 
     try {
+      // The most expensive thing the product can do on a schedule - a
+      // web-search answer is ~$0.066, and this runs every prompt across four
+      // engines - so it is the last place that should run unpaid. Ten prompts
+      // is about $11 a month. The toggle has no UI yet; this is here before it
+      // does, not after.
+      const quota = await getQuota(supabase, ws.agency_id as string, null);
+      if (!entitledToScheduledWork(quota)) {
+        results.push({ workspaceId, domain, status: "skipped", detail: "no active plan" });
+        continue;
+      }
+
       const { data: prompts } = await supabase
         .from("geo_prompts")
         .select("id, prompt")
