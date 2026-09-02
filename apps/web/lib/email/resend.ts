@@ -111,3 +111,26 @@ export async function sendToolResultEmail(
 function article(word: string): string {
   return /^[aeiou]/i.test(word) ? "an" : "a";
 }
+
+/**
+ * Any transactional email with its own one-line reason in the footer. The
+ * auth emails use this; sendToolResultEmail's footer ("because you asked for
+ * it on altorank.co") was wrong under a confirm-signup email and showed up
+ * twice with the body's own line.
+ */
+export async function sendTransactionalEmail(
+  to: string,
+  subject: string,
+  bodyHtml: string,
+  footerNote: string,
+  preheader?: string,
+): Promise<void> {
+  const resend = getResend();
+  const from = process.env.RESEND_FROM_EMAIL ?? "AltoRank <noreply@updates.altorank.co>";
+  await resend.emails.send({
+    from,
+    to,
+    subject,
+    html: emailLayout({ title: subject, bodyHtml, footerNote, preheader }),
+  });
+}

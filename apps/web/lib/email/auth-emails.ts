@@ -15,7 +15,7 @@
 // needed, so the link works in whichever browser opens it.
 
 import { createServiceClient } from "@/lib/supabase/server";
-import { sendToolResultEmail } from "@/lib/email/resend";
+import { sendTransactionalEmail } from "@/lib/email/resend";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_3 } from "@/lib/email/layout";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3100";
@@ -40,40 +40,40 @@ function fallbackLine(url: string): string {
 
 export function renderConfirmSignup(url: string, email: string) {
   return {
+    footerNote: `Sent to ${email} because an account was created on AltoRank with this address. If that was not you, ignore this email.`,
     subject: "Confirm your AltoRank account",
     html:
       `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">Confirm your email</h1>` +
       emailParagraph("One click and your account is live. Your workspace is already set up; the first thing you will see is what your site ranks for.") +
       emailButton(url, "Confirm my email") +
       emailParagraph("The link expires in 24 hours. Nothing is charged: there is no trial and no card on file until you choose a plan.") +
-      fallbackLine(url) +
-      `<p style="margin:0;font-size:12px;color:${EMAIL_INK_3};">Sent to ${esc(email)} because an account was created on AltoRank with this address. If that was not you, ignore this email.</p>`,
+      fallbackLine(url),
   };
 }
 
 export function renderPasswordReset(url: string, email: string) {
   return {
+    footerNote: `Sent to ${email} because a password reset was requested on AltoRank.`,
     subject: "Reset your AltoRank password",
     html:
       `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">Reset your password</h1>` +
       emailParagraph("Someone asked to reset the password for this AltoRank account. If it was you, set a new one below.") +
       emailButton(url, "Choose a new password") +
       emailParagraph("The link works once and expires in one hour. If you did not ask for this, your password is unchanged and you can ignore this email.") +
-      fallbackLine(url) +
-      `<p style="margin:0;font-size:12px;color:${EMAIL_INK_3};">Sent to ${esc(email)} because a password reset was requested on AltoRank.</p>`,
+      fallbackLine(url),
   };
 }
 
 export function renderMagicLink(url: string, email: string) {
   return {
+    footerNote: `Sent to ${email} because a sign-in link was requested on AltoRank.`,
     subject: "Your AltoRank sign-in link",
     html:
       `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">Sign in to AltoRank</h1>` +
       emailParagraph("Here is your one-time sign-in link. No password needed.") +
       emailButton(url, "Sign in") +
       emailParagraph("The link works once and expires in one hour. If you did not request it, ignore this email; nobody can sign in without it.") +
-      fallbackLine(url) +
-      `<p style="margin:0;font-size:12px;color:${EMAIL_INK_3};">Sent to ${esc(email)} because a sign-in link was requested on AltoRank.</p>`,
+      fallbackLine(url),
   };
 }
 
@@ -94,8 +94,8 @@ export async function sendSignupConfirmation(opts: { email: string; password: st
   if (error || !data.user) throw new Error(error?.message ?? "Could not create the account");
 
   const url = authLink("signup", data.properties.hashed_token, "/dashboard");
-  const { subject, html } = renderConfirmSignup(url, opts.email);
-  await sendToolResultEmail(opts.email, subject, html);
+  const { subject, html, footerNote } = renderConfirmSignup(url, opts.email);
+  await sendTransactionalEmail(opts.email, subject, html, footerNote, "One click and your account is live.");
   return data.user.id;
 }
 
@@ -108,8 +108,8 @@ export async function sendPasswordReset(email: string): Promise<boolean> {
   const { data, error } = await admin.auth.admin.generateLink({ type: "recovery", email });
   if (error || !data.properties?.hashed_token) return false;
   const url = authLink("recovery", data.properties.hashed_token, "/reset-password/confirm");
-  const { subject, html } = renderPasswordReset(url, email);
-  await sendToolResultEmail(email, subject, html);
+  const { subject, html, footerNote } = renderPasswordReset(url, email);
+  await sendTransactionalEmail(email, subject, html, footerNote, "Set a new password in one click.");
   return true;
 }
 
@@ -119,7 +119,7 @@ export async function sendMagicLink(email: string): Promise<boolean> {
   const { data, error } = await admin.auth.admin.generateLink({ type: "magiclink", email });
   if (error || !data.properties?.hashed_token) return false;
   const url = authLink("magiclink", data.properties.hashed_token, "/dashboard");
-  const { subject, html } = renderMagicLink(url, email);
-  await sendToolResultEmail(email, subject, html);
+  const { subject, html, footerNote } = renderMagicLink(url, email);
+  await sendTransactionalEmail(email, subject, html, footerNote, "Your one-time sign-in link.");
   return true;
 }
