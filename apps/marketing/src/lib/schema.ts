@@ -33,7 +33,7 @@ export function buildOrganizationSchema() {
     // which described an agency tool a month after agencies stopped being the
     // lead. Agencies are a tier; the entity description is for everyone.
     description:
-      'AltoRank is an open-source AI SEO content engine: articles that rank, published to your site every week. It researches keywords, drafts in your voice, and publishes to twelve CMSs, and nothing goes live until a person approves it. Self-host it free, or use the hosted version. Built by SUPALABS SRL in Italy.',
+      'AltoRank is an open-source AI SEO content engine: articles that rank, published to your site every week. It researches keywords, drafts in your voice, and publishes to eleven CMSs, and nothing goes live until a person approves it. Self-host it free, or use the hosted version. Built by SUPALABS SRL in Italy.',
     slogan: 'Articles that rank, published to your site every week.',
     areaServed: 'Europe',
     knowsAbout: [
@@ -64,7 +64,7 @@ export function buildProductSchema() {
     applicationCategory: 'BusinessApplication',
     operatingSystem: 'Web',
     url: SITE_URL,
-    description: 'The open-source, approval-first AI SEO content engine. Keyword research, drafting, and publishing to twelve CMSs, and self-hostable on your own infrastructure.',
+    description: 'The open-source, approval-first AI SEO content engine. Keyword research, drafting, and publishing to eleven CMSs, and self-hostable on your own infrastructure.',
     // Range spans the three rungs in @/data/pricing: €0 self-host, €69
     // managed, €199 agency. All euros since 2026-08-30.
     // Keep offerCount in sync with PLANS.length.
