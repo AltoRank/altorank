@@ -192,7 +192,7 @@ export default async function AdminUsersPage({
         >
           <Table
             head={["User", "Account", "Plan", "Workspaces", "Articles", "Signed up", "Last seen", ""]}
-            empty={needle ? "No account matches that." : "No accounts yet."}
+            empty={needle ? "No user matches that." : "No users yet."}
             rows={rows.map((r) => [
               <span key="who" className="flex flex-col gap-0.5">
                 <span className="flex items-center gap-2">
