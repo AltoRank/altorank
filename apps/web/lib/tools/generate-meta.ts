@@ -7,6 +7,7 @@ import { buildMetaPrompt } from "@/lib/ai/meta-prompt";
 import type { MetaDescriptionResult, MetaVariant } from "./types";
 
 import { anthropicModel } from "@/lib/ai/models";
+import { fetchSite } from "@/lib/audit/lenient-fetch";
 
 export async function generateMetaDescriptions(
   keyword: string,
@@ -18,7 +19,7 @@ export async function generateMetaDescriptions(
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8000);
-      const res = await fetch(url, {
+      const res = await fetchSite(url, {
         signal: controller.signal,
         headers: { "User-Agent": "AltoRank-MetaTool/1.0" },
       });

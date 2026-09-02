@@ -79,3 +79,36 @@ export function fetchLenient(
     req.end();
   });
 }
+
+/**
+ * Drop-in for `fetch()` wherever the URL is someone else's site: verified
+ * first, and only on a certificate-chain error re-read without verification.
+ * Returns a real Response so call sites keep using .ok/.status/.text(); a
+ * fallback read carries the header `x-altorank-tls-unverified: 1`.
+ *
+ * Every crawler, checker and scraper in this app must go through this or the
+ * site with an incomplete chain (www.lully.ai, 2026-09-02) reads as empty in
+ * one place and fine in another, and the product contradicts itself.
+ */
+export async function fetchSite(
+  url: string,
+  init: { headers?: Record<string, string>; signal?: AbortSignal; redirect?: RequestRedirect; timeoutMs?: number } = {},
+): Promise<Response> {
+  try {
+    return await fetch(url, { headers: init.headers, signal: init.signal, redirect: init.redirect ?? "follow" });
+  } catch (err) {
+    if (!isTlsChainError(err)) throw err;
+    const ua =
+      init.headers?.["User-Agent"] ?? init.headers?.["user-agent"] ?? "Mozilla/5.0 (compatible; AltoRank/1.0; +https://altorank.co)";
+    const r = await fetchLenient(url, { userAgent: ua, timeoutMs: init.timeoutMs ?? 10_000 });
+    const headers = new Headers();
+    for (const [k, v] of Object.entries(r.headers)) {
+      try { headers.set(k, v); } catch { /* a header name Node's Headers rejects; drop it */ }
+    }
+    headers.set("x-altorank-tls-unverified", "1");
+    // Response() refuses 1xx and >599; a redirect cannot reach here because
+    // fetchLenient followed it, so clamp anything odd to a plain 502.
+    const status = r.status >= 200 && r.status <= 599 ? r.status : 502;
+    return new Response(r.body, { status, headers });
+  }
+}

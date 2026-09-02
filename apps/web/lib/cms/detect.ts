@@ -1,4 +1,5 @@
 // ---------------------------------------------------------------------------
+import { fetchSite } from "@/lib/audit/lenient-fetch";
 // Platform detection from public signals
 // ---------------------------------------------------------------------------
 //
@@ -165,7 +166,7 @@ export async function detectPlatform(domain: string): Promise<Detection | null> 
 
   let res: Response;
   try {
-    res = await fetch(`https://${clean}/`, {
+    res = await fetchSite(`https://${clean}/`, {
       headers: { "user-agent": UA },
       redirect: "follow",
       signal: AbortSignal.timeout(12_000),

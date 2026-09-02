@@ -4,6 +4,7 @@
 
 import { fetchPageSpeed } from "@/lib/audit/pagespeed";
 import type { HealthCheckResult, HealthIssue } from "./types";
+import { fetchSite } from "@/lib/audit/lenient-fetch";
 
 export async function generateHealthCheck(
   url: string,
@@ -16,7 +17,7 @@ export async function generateHealthCheck(
   let html = "";
   let status = 0;
   try {
-    const res = await fetch(url, {
+    const res = await fetchSite(url, {
       signal: controller.signal,
       headers: { "User-Agent": "AltoRank-HealthChecker/1.0" },
       redirect: "follow",

@@ -25,6 +25,7 @@ import { hasDataForSEOCredentials } from "./client";
 import { classifyIntent, type IntentClassification } from "./intent";
 import { getLocale } from "./locales";
 import { htmlToMarkdown } from "@/lib/audit/markdown";
+import { fetchSite } from "@/lib/audit/lenient-fetch";
 
 export interface ResearchLayer {
   id: "serp" | "related_keywords" | "gsc" | "competitor_length";
@@ -188,7 +189,7 @@ async function measureCompetitorLengths(
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), MEASURE_TIMEOUT_MS);
       try {
-        const res = await fetch(c.url, {
+        const res = await fetchSite(c.url, {
           signal: controller.signal,
           headers: { "User-Agent": UA },
           redirect: "follow",

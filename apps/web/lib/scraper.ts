@@ -1,4 +1,5 @@
 /**
+import { fetchSite } from "@/lib/audit/lenient-fetch";
  * Lightweight website text extractor — no dependencies beyond `fetch`.
  * Strips non-content tags, extracts text from content elements,
  * and optionally follows blog links for richer voice samples.
@@ -32,7 +33,7 @@ async function fetchPage(url: string): Promise<string | null> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
-    const res = await fetch(url, {
+    const res = await fetchSite(url, {
       signal: controller.signal,
       headers: { "User-Agent": "AltoRankBot/1.0 (content analysis)" },
     });

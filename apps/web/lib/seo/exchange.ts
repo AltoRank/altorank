@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicModel } from "@/lib/ai/models";
+import { fetchSite } from "@/lib/audit/lenient-fetch";
 
 // Tiptap node types (minimal, matching lib/ai/tiptap.ts)
 type TiptapMark = { type: string; attrs?: Record<string, unknown> };
@@ -305,7 +306,7 @@ export async function verifyPlacementLive(
 
   let res: Response;
   try {
-    res = await fetch(pageUrl, {
+    res = await fetchSite(pageUrl, {
       headers: { "user-agent": VERIFY_UA },
       redirect: "follow",
       signal: AbortSignal.timeout(15_000),
