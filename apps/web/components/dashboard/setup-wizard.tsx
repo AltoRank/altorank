@@ -113,7 +113,7 @@ export function SetupWizard({ workspace, voice, keywords }: SetupWizardProps) {
     { id: "domain", label: "Confirm domain", description: workspace.domain ? `Current: ${workspace.domain}` : "Set your website domain", done: domainDone, disabled: false },
     { id: "voice", label: "Scan website & train voice", description: "Scrapes your site content and builds a writing style profile", done: voiceDone, disabled: !domainDone },
     { id: "keywords", label: "Discover keywords", description: "Runs keyword research to find ranking opportunities", done: keywordsDone, disabled: !domainDone },
-    { id: "activate", label: "Review & activate", description: "Go live — start generating content on autopilot", done: false, disabled: !allDone },
+    { id: "activate", label: "Review & activate", description: "Go live: drafts are written on a schedule and wait for your approval", done: false, disabled: !allDone },
   ];
 
   const completedCount = [domainDone, voiceDone, keywordsDone].filter(Boolean).length;
@@ -121,8 +121,8 @@ export function SetupWizard({ workspace, voice, keywords }: SetupWizardProps) {
   return (
     <div className="max-w-xl space-y-4">
       <div className="mb-2">
-        <h2 className="text-[15px] font-semibold">Get your blog on autopilot</h2>
-        <p className="text-[13px] text-ink-3 mt-1">{completedCount}/3 steps complete — finish setup to start publishing</p>
+        <h2 className="text-[15px] font-semibold">Set up the draft pipeline</h2>
+        <p className="text-[13px] text-ink-3 mt-1">{completedCount}/3 steps complete — finish setup and the first draft lands in your review queue</p>
       </div>
 
       {steps.map((step, i) => {

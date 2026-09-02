@@ -98,6 +98,19 @@ function OverviewTab({ workspace, articles, keywords, backlinks, voice }: {
         ))}
       </div>
 
+      {recentArticles.length === 0 && (
+        <Card className="p-5">
+          <div className="text-[13px] font-medium text-ink mb-1">What happens next</div>
+          <div className="text-[12.5px] leading-relaxed text-ink-2">
+            This workspace is live. The pipeline picks the best-scoring keyword from the {keywords.length.toLocaleString()} tracked here,
+            writes a draft, fact-checks it and scores it, then puts it in your <a href="/review" className="text-accent-ink underline decoration-line underline-offset-[3px]">review queue</a>.
+            Nothing publishes until you approve it. Drafts are written on the daily schedule
+            {workspace.auto_generate ? "" : ", once automatic drafting is switched on in Settings"}; to get one now, open{" "}
+            <a href="/articles" className="text-accent-ink underline decoration-line underline-offset-[3px]">Articles</a> and choose New article.
+          </div>
+        </Card>
+      )}
+
       {recentArticles.length > 0 && (
         <div>
           <h3 className="text-[13px] font-medium text-ink-2 mb-3">Recent articles</h3>
@@ -339,6 +352,14 @@ function VoiceTab({ voice }: { voice: VoiceProfile | null }) {
   const sentences = voice.sample_text
     ? voice.sample_text.split(/[.!?]+/).map((s) => s.trim()).filter((s) => s.length > 0)
     : [];
+  // The trainer stores tone, vocabulary and patterns, not counts, so these
+  // three read as "—" on every trained profile (seen on a fresh workspace,
+  // 2026-09-02). The sample is right here; count it. Stored counts win when
+  // a future trainer writes them.
+  const wordCount = rules.wordCount ?? (voice.sample_text ? voice.sample_text.split(/\s+/).filter(Boolean).length : null);
+  const sentenceCount = rules.sentenceCount ?? (sentences.length || null);
+  const avgSentenceLength =
+    rules.avgSentenceLength ?? (wordCount && sentenceCount ? Math.round(wordCount / sentenceCount) : null);
 
   return (
     <div className="space-y-4">
@@ -349,15 +370,15 @@ function VoiceTab({ voice }: { voice: VoiceProfile | null }) {
         <div className="grid grid-cols-3 gap-4 text-[13px]">
           <div>
             <div className="text-[11px] text-ink-3 uppercase tracking-[0.06em] mb-1">Words analyzed</div>
-            <div className="font-mono font-semibold">{rules.wordCount ?? "—"}</div>
+            <div className="font-mono font-semibold">{wordCount?.toLocaleString() ?? "—"}</div>
           </div>
           <div>
             <div className="text-[11px] text-ink-3 uppercase tracking-[0.06em] mb-1">Sentences</div>
-            <div className="font-mono font-semibold">{rules.sentenceCount ?? "—"}</div>
+            <div className="font-mono font-semibold">{sentenceCount ?? "—"}</div>
           </div>
           <div>
             <div className="text-[11px] text-ink-3 uppercase tracking-[0.06em] mb-1">Avg sentence length</div>
-            <div className="font-mono font-semibold">{rules.avgSentenceLength ?? "—"} words</div>
+            <div className="font-mono font-semibold">{avgSentenceLength ?? "—"} words</div>
           </div>
         </div>
       </Card>
