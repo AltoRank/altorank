@@ -12,12 +12,14 @@ type SetupWizardProps = {
   workspace: Workspace;
   voice: VoiceProfile | null;
   keywords: Keyword[];
+  /** Drafts already in this workspace; the last step reads differently when one exists. */
+  articleCount?: number;
 };
 
 type StepId = "domain" | "voice" | "keywords" | "activate";
 type StepResult = { ok: boolean; message: string };
 
-export function SetupWizard({ workspace, voice, keywords }: SetupWizardProps) {
+export function SetupWizard({ workspace, voice, keywords, articleCount = 0 }: SetupWizardProps) {
   const router = useRouter();
   const [running, setRunning] = useState<StepId | null>(null);
   const [results, setResults] = useState<Partial<Record<StepId, StepResult>>>({});
@@ -113,7 +115,16 @@ export function SetupWizard({ workspace, voice, keywords }: SetupWizardProps) {
     { id: "domain", label: "Confirm domain", description: workspace.domain ? `Current: ${workspace.domain}` : "Set your website domain", done: domainDone, disabled: false },
     { id: "voice", label: "Scan website & train voice", description: "Scrapes your site content and builds a writing style profile", done: voiceDone, disabled: !domainDone },
     { id: "keywords", label: "Discover keywords", description: "Runs keyword research to find ranking opportunities", done: keywordsDone, disabled: !domainDone },
-    { id: "activate", label: "Review & activate", description: "Go live: drafts are written on a schedule and wait for your approval", done: false, disabled: !allDone },
+    {
+      id: "activate",
+      label: "Review & activate",
+      description:
+        articleCount > 0
+          ? "Your first draft is already in the review queue. Activate to keep drafts coming on a schedule; nothing publishes without your approval."
+          : "Go live: drafts are written on a schedule and wait for your approval",
+      done: false,
+      disabled: !allDone,
+    },
   ];
 
   const completedCount = [domainDone, voiceDone, keywordsDone].filter(Boolean).length;

@@ -65,7 +65,7 @@ function OverviewTab({ workspace, articles, keywords, backlinks, voice }: {
   voice: VoiceProfile | null;
 }) {
   if (workspace.status === "setup") {
-    return <SetupWizard workspace={workspace} voice={voice} keywords={keywords} />;
+    return <SetupWizard workspace={workspace} voice={voice} keywords={keywords} articleCount={articles.length} />;
   }
 
   const liveCount = articles.filter((a) => a.status === "live").length;
