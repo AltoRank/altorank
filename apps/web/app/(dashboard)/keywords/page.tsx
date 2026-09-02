@@ -75,7 +75,7 @@ export default async function KeywordsPage({ searchParams }: Props) {
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
-                {["Keyword", "Workspace", "Intent", "Volume", "Difficulty", "Status", ""].map((h, i) => (
+                {["Keyword", ...(scopeId ? [] : ["Workspace"]), "Intent", "Volume", "Difficulty", "Status", ""].map((h, i) => (
                   <th key={h || i} className={`font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel ${h === "Volume" ? "text-right" : "text-left"}`}>
                     {h}
                   </th>
@@ -94,6 +94,7 @@ export default async function KeywordsPage({ searchParams }: Props) {
                     <td className="px-3.5 py-3 border-b border-line-soft">
                       <span className="font-mono text-[13px] text-ink font-medium">{k.term}</span>
                     </td>
+{!scopeId && (
                     <td className="px-3.5 py-3 border-b border-line-soft">
                       {w && (
                         <span className="inline-flex items-center gap-2">
@@ -102,6 +103,7 @@ export default async function KeywordsPage({ searchParams }: Props) {
                         </span>
                       )}
                     </td>
+                    )}
                     <td className="px-3.5 py-3 border-b border-line-soft">
                       <Chip label={k.intent} soft />
                     </td>

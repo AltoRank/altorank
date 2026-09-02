@@ -1,30 +1,24 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui";
 import { fetchBacklinks } from "@/app/actions/seo";
 import type { Workspace } from "@/lib/types";
 
 /** One click, one DataForSEO call: who links to this workspace's domain now. */
-export function DiscoverBacklinksButton({ workspaces }: { workspaces: Pick<Workspace, "id" | "name">[] }) {
-  const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id ?? "");
+/**
+ * Acts on the workspace the sidebar is scoped to. It used to carry its own
+ * dropdown, which sat next to the filter dropdown and the sidebar switcher:
+ * three controls for one idea (2026-09-02).
+ */
+export function DiscoverBacklinksButton({ workspaces, scopedId }: { workspaces: Pick<Workspace, "id" | "name">[]; scopedId?: string | null }) {
+  const workspaceId = scopedId ?? workspaces[0]?.id ?? "";
   const [pending, start] = useTransition();
   if (!workspaces.length) return null;
+  const only = workspaces.find((w) => w.id === workspaceId);
   return (
     <div className="flex items-center gap-2">
-      {workspaces.length > 1 && (
-        <select
-          value={workspaceId}
-          onChange={(e) => setWorkspaceId(e.target.value)}
-          className="h-9 rounded-lg border border-line bg-panel px-2 text-[12.5px] text-ink"
-          aria-label="Workspace"
-        >
-          {workspaces.map((w) => (
-            <option key={w.id} value={w.id}>{w.name}</option>
-          ))}
-        </select>
-      )}
       <Button
         disabled={pending || !workspaceId}
         onClick={() =>
@@ -42,7 +36,7 @@ export function DiscoverBacklinksButton({ workspaces }: { workspaces: Pick<Works
           })
         }
       >
-        {pending ? "Checking…" : "Discover backlinks"}
+        {pending ? "Checking…" : only && workspaces.length > 1 ? `Discover for ${only.name}` : "Discover backlinks"}
       </Button>
     </div>
   );

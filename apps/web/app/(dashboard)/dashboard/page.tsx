@@ -168,7 +168,7 @@ export default async function DashboardPage() {
                 label={`${plural(failedPublishes, "publish", "publishes")} failed`}
               />
             )}
-            <span>{plural(workspaces.length, "workspace")}</span>
+            <span>{scopeId ? (workspaces.find((w) => w.id === scopeId)?.domain ?? "one workspace") : plural(workspaces.length, "workspace")}</span>
             <DotSep />
             <span>{plural(totalArticles, "article")} total</span>
           </>
@@ -222,7 +222,7 @@ export default async function DashboardPage() {
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
         <div className="grid grid-cols-12 gap-4">
           {/* Traffic chart */}
-          <Card title="Organic traffic · last 30 days" meta={<Chip label="All workspaces" soft />} className="col-span-8">
+          <Card title="Organic traffic · last 30 days" meta={<Chip label={scopeId ? (workspaces.find((w) => w.id === scopeId)?.name ?? "This workspace") : "All workspaces"} soft />} className="col-span-8">
             <TrafficChart series={traffic} connected={gscConnected} />
             <div className="flex gap-4 text-[11.5px] text-ink-3 mt-2.5 font-mono">
               <span className="flex items-center gap-1.5">
@@ -259,10 +259,14 @@ export default async function DashboardPage() {
             </div>
           </Card>
 
-          {/* Workspaces grid */}
-          <Card title="Workspaces" className="col-span-12" flush>
-            <WorkspaceGrid workspaces={workspaces} counts={wsCountsObj} />
-          </Card>
+          {/* The roster belongs to the all-workspaces view. Scoped to one
+              site, a grid of every other site is noise on the page that is
+              supposed to be about this one (2026-09-02). */}
+          {!scopeId && (
+            <Card title="Workspaces" className="col-span-12" flush>
+              <WorkspaceGrid workspaces={workspaces} counts={wsCountsObj} />
+            </Card>
+          )}
 
           {/* Recent articles */}
           <Card title="Recent articles" meta={<Link href="/articles"><Button size="sm">View all</Button></Link>} className="col-span-12" flush>

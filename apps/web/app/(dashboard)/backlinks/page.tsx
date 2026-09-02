@@ -62,7 +62,7 @@ export default async function BacklinksPage({ searchParams }: Props) {
         actions={
           <>
             <ExportCsv columns={csvColumns} rows={csvRows} filename="backlinks" />
-            <DiscoverBacklinksButton workspaces={workspaces} />
+            <DiscoverBacklinksButton workspaces={workspaces} scopedId={scopeId} />
             {workspaces.length > 0 && <ExchangeRequestForm workspaces={workspaces} />}
           </>
         }
@@ -79,13 +79,13 @@ export default async function BacklinksPage({ searchParams }: Props) {
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
-        <BacklinkFilters workspaces={workspaces.map((w) => ({ id: w.id, name: w.name }))} />
+        <BacklinkFilters />
 
         <Card flush>
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
-                {["From", "DR", "Anchor", "To", "Link", "First seen", "Workspace", "Status"].map((h) => (
+                {["From", "DR", "Anchor", "To", "Link", "First seen", ...(scopeId ? [] : ["Workspace"]), "Status"].map((h) => (
                   <th key={h} className={`font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel ${["DR", "First seen"].includes(h) ? "text-right" : "text-left"}`}>
                     {h}
                   </th>
@@ -134,6 +134,7 @@ export default async function BacklinksPage({ searchParams }: Props) {
                     <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">
                       {b.first_seen ? new Date(b.first_seen).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "—"}
                     </td>
+                    {!scopeId && (
                     <td className="px-3.5 py-3 border-b border-line-soft">
                       {w && (
                         <span className="inline-flex items-center gap-2">
@@ -142,6 +143,7 @@ export default async function BacklinksPage({ searchParams }: Props) {
                         </span>
                       )}
                     </td>
+                    )}
                     <td className="px-3.5 py-3 border-b border-line-soft"><StatusPill status={b.status} /></td>
                   </tr>
                 );

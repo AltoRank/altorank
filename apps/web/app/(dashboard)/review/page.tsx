@@ -50,7 +50,7 @@ export default async function ReviewQueuePage() {
           <>
             <span>{plural(articles.length, "draft")} waiting</span>
             <DotSep />
-            <span>across {plural(new Set(articles.map((a) => a.workspace_id)).size, "workspace")}</span>
+            <span>{scopeId ? "in this workspace" : `across ${plural(new Set(articles.map((a) => a.workspace_id)).size, "workspace")}`}</span>
           </>
         }
         actions={<ReviewQueueActions cleanIds={clean.map((a) => a.id)} needsPlan={needsPlan} />}
@@ -89,7 +89,7 @@ export default async function ReviewQueuePage() {
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
-                  {["Draft", "Workspace", "Fact check", "SEO", "AEO", "Words", "Ready since", ""].map((h, i) => (
+                  {["Draft", ...(scopeId ? [] : ["Workspace"]), "Fact check", "SEO", "AEO", "Words", "Ready since", ""].map((h, i) => (
                     <th
                       key={h || i}
                       className={`font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel ${["SEO", "AEO", "Words", "Ready since"].includes(h) ? "text-right" : "text-left"}`}
@@ -112,7 +112,9 @@ export default async function ReviewQueuePage() {
                         </Link>
                         <div className="mt-0.5 font-mono text-[11px] text-ink-3">{a.keyword}</div>
                       </td>
-                      <td className="px-3.5 py-3 border-b border-line-soft text-xs text-ink-2">{wsMap.get(a.workspace_id)?.name ?? "—"}</td>
+                      {!scopeId && (
+                        <td className="px-3.5 py-3 border-b border-line-soft text-xs text-ink-2">{wsMap.get(a.workspace_id)?.name ?? "—"}</td>
+                      )}
                       <td className="px-3.5 py-3 border-b border-line-soft">
                         <VerdictPill verdict={a.fact_check_verdict} count={a.fact_checks?.counts?.total ?? null} />
                       </td>

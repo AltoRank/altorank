@@ -101,7 +101,7 @@ export default async function ArticlesPage({ searchParams }: Props) {
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
-                {["Article", "Workspace", "Keyword", "Status", "Score", "Vol /mo", "Position", "Clicks /30d", "CMS", "Updated", ""].map((h, i) => (
+                {["Article", ...(scopeId ? [] : ["Workspace"]), "Keyword", "Status", "Score", "Vol /mo", "Position", "Clicks /30d", "CMS", "Updated", ""].map((h, i) => (
                   <th key={h || i} className={`font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel ${["Score", "Vol /mo", "Position", "Clicks /30d", "Updated"].includes(h) ? "text-right" : "text-left"}`}>
                     {h}
                   </th>
@@ -117,7 +117,9 @@ export default async function ArticlesPage({ searchParams }: Props) {
                       <div className="truncate font-medium">{a.title}</div>
                       <div className="text-[11px] text-ink-3 mt-0.5">{a.word_count ? `${a.word_count.toLocaleString()} words` : "Draft in progress"}</div>
                     </td>
-                    <td className="px-3.5 py-3 border-b border-line-soft text-xs text-ink-2">{wsMap.get(a.workspace_id)?.name ?? "—"}</td>
+                    {!scopeId && (
+<td className="px-3.5 py-3 border-b border-line-soft text-xs text-ink-2">{wsMap.get(a.workspace_id)?.name ?? "—"}</td>
+                    )}
                     <td className="px-3.5 py-3 border-b border-line-soft font-mono text-xs text-ink-2">{a.keyword}</td>
                     <td className="px-3.5 py-3 border-b border-line-soft"><StatusPill status={a.status} /></td>
                     <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{a.seo_score || "—"}</td>
