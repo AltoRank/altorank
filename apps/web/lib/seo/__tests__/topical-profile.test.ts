@@ -126,9 +126,17 @@ describe("scoreRelevance", () => {
   });
 
   it("scores a partial match between the extremes", () => {
-    const r = scoreRelevance("workflow plumbing", SUPALABS);
+    // A qualifier the site never uses ("pricing") costs credit but does not
+    // change the subject. A content noun it never uses does: see the next test.
+    const r = scoreRelevance("workflow pricing", SUPALABS);
     expect(r.score).toBeGreaterThan(0);
     expect(r.score).toBeLessThan(1);
+  });
+
+  it("treats a content noun the site never mentions as a different topic", () => {
+    // "plumbing" is not a qualifier; whatever "workflow" matches, this is a
+    // plumbing query and an AI consultancy has nothing to say about it.
+    expect(scoreRelevance("workflow plumbing", SUPALABS).score).toBe(0);
   });
 
   it("matches across simple plural and suffix variation", () => {
