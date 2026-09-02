@@ -122,7 +122,7 @@ export default async function DashboardLayout({
           userInitials={userInitials}
           memberCount={memberCount ?? undefined}
           role={role}
-          quota={quota && quota.limit !== null ? { used: quota.used, limit: quota.limit } : null}
+          quota={quota && quota.limit !== null ? { used: quota.used, limit: quota.limit, noPlan: quota.reason === "no-plan" } : null}
         />
         {/* No topbar. It held a breadcrumb that restated the h1 immediately
             below it, and its two live controls moved into the sidebar, where

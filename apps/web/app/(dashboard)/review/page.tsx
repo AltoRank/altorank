@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getArticles } from "@/lib/queries/articles";
 import { getWorkspaces } from "@/lib/queries/workspaces";
+import { needsPlanToShip } from "@/lib/billing/quota";
+import { createClient } from "@/lib/supabase/server";
+import { requireAuth } from "@/lib/auth/require-auth";
 import { PageHead, DotSep, StatStrip } from "@/components/ui";
 import { Card } from "@/components/ui/card";
 import { ReviewQueueActions, VerdictPill } from "./review-actions";
@@ -27,6 +30,8 @@ export default async function ReviewQueuePage() {
     getArticles(undefined, "review"),
     getWorkspaces(),
   ]);
+  const { user, agencyId } = await requireAuth();
+  const needsPlan = await needsPlanToShip(await createClient(), agencyId, user.email);
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));
 
   const clean = articles.filter((a) => a.fact_check_verdict === "clean");
@@ -45,7 +50,7 @@ export default async function ReviewQueuePage() {
             <span>across {plural(new Set(articles.map((a) => a.workspace_id)).size, "workspace")}</span>
           </>
         }
-        actions={<ReviewQueueActions cleanIds={clean.map((a) => a.id)} />}
+        actions={<ReviewQueueActions cleanIds={clean.map((a) => a.id)} needsPlan={needsPlan} />}
       />
 
       <StatStrip
@@ -58,6 +63,17 @@ export default async function ReviewQueuePage() {
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
+        {needsPlan && articles.length > 0 && (
+          <div className="mb-4 flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent-soft px-4 py-3 text-[13px] text-accent-ink sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              Your free draft is here. Read it, edit it, rewrite it. Approving and publishing need a
+              plan; nothing has been charged.
+            </span>
+            <Link href="/settings/billing" className="shrink-0 rounded-[7px] bg-accent px-3 py-1.5 text-center font-medium text-white hover:bg-accent-2">
+              Choose a plan
+            </Link>
+          </div>
+        )}
         {articles.length === 0 ? (
           <Card>
             <div className="px-6 py-14 text-center text-[13.5px] text-ink-3">
@@ -102,7 +118,7 @@ export default async function ReviewQueuePage() {
                       <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{a.word_count ? a.word_count.toLocaleString() : "—"}</td>
                       <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{since}</td>
                       <td className="px-3.5 py-3 border-b border-line-soft text-right">
-                        <ReviewQueueActions rowId={a.id} verdict={a.fact_check_verdict} />
+                        <ReviewQueueActions rowId={a.id} verdict={a.fact_check_verdict} needsPlan={needsPlan} />
                       </td>
                     </tr>
                   );

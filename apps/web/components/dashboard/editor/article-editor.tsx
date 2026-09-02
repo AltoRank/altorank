@@ -26,9 +26,12 @@ type Props = {
   article: Article;
   workspace: Workspace;
   cadence?: PublishingCadence | null;
+  /** Cloud account with no active plan: the draft is theirs to read and
+      edit, approving or publishing it is where the plan is asked for. */
+  needsPlan?: boolean;
 };
 
-export function ArticleEditor({ article, workspace, cadence }: Props) {
+export function ArticleEditor({ article, workspace, cadence, needsPlan = false }: Props) {
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [manualUrl, setManualUrl] = useState("");
@@ -414,7 +417,15 @@ export function ArticleEditor({ article, workspace, cadence }: Props) {
                 </div>
                 <StatusPill status={article.status === "live" ? "on" : "on"} label="Ready" />
               </div>
-              {article.status === "approved" && (
+              {article.status === "approved" && needsPlan && (
+                <a
+                  href="/settings/billing"
+                  className="block w-full rounded-[7px] bg-accent px-3 py-2 text-center text-[13px] font-medium text-white hover:bg-accent-2"
+                >
+                  Choose a plan to publish
+                </a>
+              )}
+              {article.status === "approved" && !needsPlan && (
                 <>
                   <Button
                     size="sm"
@@ -451,7 +462,21 @@ export function ArticleEditor({ article, workspace, cadence }: Props) {
             />
           )}
 
-          {article.status === "review" && (
+          {article.status === "review" && needsPlan && (
+            <div className="mt-3">
+              <a
+                href="/settings/billing"
+                className="block w-full rounded-[7px] bg-accent px-3 py-2 text-center text-[13px] font-medium text-white hover:bg-accent-2"
+              >
+                Choose a plan to approve
+              </a>
+              <p className="mt-2 text-[11.5px] leading-relaxed text-ink-3">
+                This draft is yours to read and edit. Nothing has been charged; approving and
+                publishing need a plan, and you cancel it yourself from the billing page.
+              </p>
+            </div>
+          )}
+          {article.status === "review" && !needsPlan && (
             <Button
               size="sm"
               className="w-full justify-center mt-3"

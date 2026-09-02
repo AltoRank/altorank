@@ -109,7 +109,14 @@ export async function getQuota(
   }
 
   if (!active || !plan) {
-    return { limit: 0, used, remaining: 0, reason: "no-plan", plan };
+    // One draft before the paywall. The first outside signup (2026-09-02)
+    // created a workspace, ran an audit and left within seven minutes; the
+    // only place a plan was ever mentioned was a quota error behind a button
+    // they never pressed. A draft in the review queue, with its fact-check
+    // verdict, is the thing worth paying for; the audit alone is not. So the
+    // draft is free, and approving or publishing it is where the plan is
+    // asked for (see requireActivePlan). Nothing is charged until they choose.
+    return { limit: FREE_DRAFTS, used, remaining: Math.max(0, FREE_DRAFTS - used), reason: "no-plan", plan };
   }
 
   const limit = PLAN_ARTICLE_LIMITS[plan];
@@ -120,10 +127,13 @@ export async function getQuota(
   return { limit, used, remaining: Math.max(0, limit - used), reason: "plan", plan };
 }
 
+/** Drafts an account gets before choosing a plan. Approving them needs one. */
+export const FREE_DRAFTS = 1;
+
 /** Message for the moment generation is refused. Says what to do, not just no. */
 export function quotaExceededMessage(q: Quota): string {
   if (q.reason === "no-plan") {
-    return "This account has no active plan. Subscribe on the Billing page to generate articles, or self-host AltoRank free.";
+    return `The free draft is used. Choose a plan on the Billing page to keep going, or self-host AltoRank free.`;
   }
   return `This month's included ${q.limit} articles are used. The next article is billed as overage, or upgrade on the Billing page.`;
 }
@@ -137,3 +147,20 @@ export const OVERAGE_CENTS: Record<Exclude<PlanTier, "scale">, number> = {
   starter: 60,
   growth: 45,
 };
+
+/**
+ * True when approving or publishing needs a plan first: cloud billing is on,
+ * the caller is not an operator, and the agency has no active subscription.
+ * Self-host and operator accounts never see the gate.
+ */
+export async function needsPlanToShip(
+  supabase: SupabaseClient,
+  agencyId: string,
+  userEmail?: string | null,
+): Promise<boolean> {
+  const q = await getQuota(supabase, agencyId, userEmail);
+  return q.reason === "no-plan";
+}
+
+export const CHOOSE_PLAN_MESSAGE =
+  "Approving and publishing need a plan. Nothing has been charged yet; choose one on the Billing page and this draft is ready to go.";

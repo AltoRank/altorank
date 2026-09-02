@@ -40,11 +40,18 @@ export function VerdictPill({ verdict, count }: { verdict: Verdict; count: numbe
  * verdict is telling the reviewer there is something to read first. That is
  * the point of having a verdict.
  */
-export function ReviewQueueActions(props: { cleanIds?: string[]; rowId?: string; verdict?: Verdict }) {
+export function ReviewQueueActions(props: { cleanIds?: string[]; rowId?: string; verdict?: Verdict; needsPlan?: boolean }) {
   const [pending, start] = useTransition();
 
   if (props.rowId) {
     const id = props.rowId;
+    if (props.needsPlan) {
+      return (
+        <Link href="/settings/billing" className="text-[12px] font-medium text-accent-ink hover:underline">
+          Choose a plan
+        </Link>
+      );
+    }
     if (props.verdict !== "clean") {
       return (
         <Link href={`/content/${id}`} className="text-[12px] font-medium text-accent-ink hover:underline">
@@ -73,7 +80,7 @@ export function ReviewQueueActions(props: { cleanIds?: string[]; rowId?: string;
   }
 
   const ids = props.cleanIds ?? [];
-  if (!ids.length) return null;
+  if (!ids.length || props.needsPlan) return null;
   return (
     <Button
       disabled={pending}

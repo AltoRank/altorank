@@ -4,6 +4,8 @@ import { getWorkspace } from "@/lib/queries/workspaces";
 import { getPublishingCadence } from "@/lib/queries/schedule";
 import { PageHead, DotSep, StatusPill } from "@/components/ui";
 import { ArticleEditor } from "@/components/dashboard/editor/article-editor";
+import { needsPlanToShip } from "@/lib/billing/quota";
+import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 
 type Props = {
@@ -25,6 +27,8 @@ export default async function ArticleEditorPage({ params }: Props) {
   if (!workspace) return notFound();
 
   const cadence = await getPublishingCadence(workspace.id);
+  const supabase = await createClient();
+  const needsPlan = await needsPlanToShip(supabase, workspace.agency_id);
 
   const dateStr = article.updated_at
     ? new Date(article.updated_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
@@ -48,7 +52,7 @@ export default async function ArticleEditorPage({ params }: Props) {
         }
       />
 
-      <ArticleEditor article={article} workspace={workspace} cadence={cadence} />
+      <ArticleEditor article={article} workspace={workspace} cadence={cadence} needsPlan={needsPlan} />
     </>
   );
 }

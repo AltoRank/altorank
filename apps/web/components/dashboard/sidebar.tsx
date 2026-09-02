@@ -29,7 +29,7 @@ type SidebarProps = {
   /** From agency_members. Null hides the line rather than asserting "Owner". */
   role?: string | null;
   /** Metered article usage. Null (unmetered) renders no bar. */
-  quota?: { used: number; limit: number } | null;
+  quota?: { used: number; limit: number; noPlan: boolean } | null;
 };
 
 export function Sidebar({ badges, hidden = [], userName = "Account", userInitials = "A", memberCount, role, quota }: SidebarProps) {
@@ -242,12 +242,12 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
           className="block border-t border-line px-4 py-2.5 hover:bg-panel-2"
         >
           <div className="flex items-baseline justify-between text-[11px] text-ink-3 mb-1.5">
-            {/* limit 0 means no active plan; "1 / 0" is arithmetic, not
-                information. Say the situation instead. */}
-            <span>{quota.limit === 0 ? "No active plan" : "Articles this month"}</span>
-            <span className="font-mono tabular-nums">
-              {quota.limit === 0 ? "" : `${quota.used} / ${quota.limit}`}
-            </span>
+            {/* Without a plan the meter is the free draft, and the line is a
+                button, not a status: "No active plan" told people something
+                and asked nothing (the first outside signup left without ever
+                seeing a plan). */}
+            <span>{quota.noPlan ? "Free draft" : "Articles this month"}</span>
+            <span className="font-mono tabular-nums">{`${quota.used} / ${quota.limit}`}</span>
           </div>
           <div className="h-1 rounded-full bg-panel-2 overflow-hidden">
             <div
@@ -258,6 +258,11 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
               style={{ width: `${Math.min(100, (quota.used / Math.max(1, quota.limit)) * 100)}%` }}
             />
           </div>
+          {quota.noPlan && (
+            <div className="mt-2 rounded-[6px] bg-accent px-2.5 py-1.5 text-center text-[11.5px] font-medium text-white">
+              Choose a plan
+            </div>
+          )}
         </Link>
       )}
 

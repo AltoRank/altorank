@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
+import { needsPlanToShip, CHOOSE_PLAN_MESSAGE } from "@/lib/billing/quota";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";
 import { decryptConfig } from "@/lib/crypto";
 import { publishArticleCore } from "@/lib/publishing/core";
@@ -10,8 +11,9 @@ import { submitForIndexing } from "@/lib/seo/indexing";
 import type { CMSConfig } from "@/lib/types";
 
 export async function publishArticle(articleId: string) {
-  await requireAuth();
+  const { user, agencyId } = await requireAuth();
   const supabase = await createClient();
+  if (await needsPlanToShip(supabase, agencyId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
 
   // Fetch workspace_id up front so we can log to publish_log on BOTH the success
   // and the error path — closing the manual-publish audit gap fully (the cron
@@ -53,8 +55,12 @@ export async function publishArticle(articleId: string) {
  * checkpoint. Records who approved + when (the sign-off).
  */
 export async function approveArticle(articleId: string) {
-  const { user } = await requireAuth();
+  const { user, agencyId } = await requireAuth();
   const supabase = await createClient();
+  // The free draft can be read, edited and rewritten; it cannot ship without
+  // a plan. This is the one paywall in the product and it sits exactly where
+  // the value is, not at signup.
+  if (await needsPlanToShip(supabase, agencyId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
 
   const { data, error } = await supabase
     .from("articles")
@@ -86,8 +92,9 @@ export async function approveArticle(articleId: string) {
  * say "3 of 4 approved" when one was edited under it.
  */
 export async function approveArticles(articleIds: string[]): Promise<string[]> {
-  const { user } = await requireAuth();
+  const { user, agencyId } = await requireAuth();
   const supabase = await createClient();
+  if (await needsPlanToShip(supabase, agencyId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
   const ids = [...new Set(articleIds)].filter(Boolean);
   if (!ids.length) return [];
 
