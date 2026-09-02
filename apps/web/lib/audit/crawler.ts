@@ -1,4 +1,32 @@
+// Browser-shaped and honestly identified. A bare tool UA gets a WAF
+// challenge or a stripped page from a share of real sites (the readiness
+// checker learned this across 272 agency sites); the identifier stays so a
+// site owner can see who visited.
+const CRAWLER_UA =
+  "Mozilla/5.0 (compatible; AltoRank-Auditor/1.0; +https://altorank.co; site audit)";
+
+export function describeFetchError(err: unknown): string {
+  const e = err as { name?: string; message?: string; cause?: { code?: string } };
+  const code = e?.cause?.code;
+  if (e?.name === "AbortError") return "timed out after 10s";
+  if (code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" || code === "CERT_HAS_EXPIRED" || code === "ERR_TLS_CERT_ALTNAME_INVALID" || code === "SELF_SIGNED_CERT_IN_CHAIN") {
+    return `TLS certificate could not be verified (${code}); browsers may cope, crawlers will not`;
+  }
+  if (code === "ENOTFOUND") return "host not found";
+  if (code === "ECONNREFUSED") return "connection refused";
+  return code ?? e?.message ?? "fetch failed";
+}
+
+/** Pages that actually answered. Everything that scores or profiles a site
+ *  must start from this, never from the raw crawl, or a failed fetch becomes
+ *  a page with no title, no headings, a clean audit and an empty profile. */
+export function usablePages<T extends { status: number }>(pages: T[]): T[] {
+  return pages.filter((p) => p.status >= 200 && p.status < 400);
+}
+
 export interface CrawlResult {
+  /** Set when status is 0: why no response came back. */
+  error?: string;
   url: string;
   status: number;
   title: string;
@@ -41,7 +69,7 @@ export async function crawlSite(
 
       const res = await fetch(item.url, {
         signal: controller.signal,
-        headers: { "User-Agent": "AltoRank-Auditor/1.0" },
+        headers: { "User-Agent": CRAWLER_UA },
         redirect: "follow",
       });
 
@@ -75,10 +103,15 @@ export async function crawlSite(
       if (delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
-    } catch {
+    } catch (err) {
+      // Status 0 is "we never got a response". Keep the reason: a TLS chain
+      // the server does not complete (UNABLE_TO_VERIFY_LEAF_SIGNATURE on
+      // www.lully.ai, 2026-09-02) is a finding about the site, and the
+      // difference between that and a timeout is what the owner needs.
       results.push({
         url: item.url, status: 0, title: "", metaDescription: "",
         h1: [], h2: [], images: [], links: [], loadTimeMs: 0,
+        error: describeFetchError(err),
       });
     }
   }

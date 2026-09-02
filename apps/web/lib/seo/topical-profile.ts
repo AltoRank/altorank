@@ -264,3 +264,19 @@ export function scoreRelevance(
       : "every word appears in the site's own vocabulary",
   };
 }
+
+/**
+ * Whether a profile can judge relevance at all.
+ *
+ * The domain's own tokens are added to every profile, so a profile built from
+ * zero fragments is not empty: www.lully.ai's read {"www": 3} after every
+ * fetch failed on a TLS error, and the queue ranked "ai can" first because
+ * nothing could say it was off-topic. Three terms beyond the domain's own is
+ * the floor below which relevance is unknown rather than low.
+ */
+export function profileIsUsable(profile: TopicalProfile | null | undefined, domain?: string): boolean {
+  if (!profile?.terms) return false;
+  const own = new Set(domain ? tokenize(domain.replace(/\.[a-z.]+$/i, "").replace(/[.-]/g, " ")) : []);
+  own.add("www");
+  return Object.keys(profile.terms).filter((t) => !own.has(t)).length >= 3;
+}

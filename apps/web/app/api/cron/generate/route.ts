@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
+import { profileIsUsable } from "@/lib/seo/topical-profile";
 import { generateArticle } from "@/lib/content/generate";
 
 /**
@@ -92,6 +93,25 @@ export async function GET(request: Request) {
           domain,
           status: "skipped",
           detail: `weekly limit reached (${count}/${limit})`,
+        });
+        continue;
+      }
+
+      // No vocabulary, no unattended article. With nothing to judge relevance
+      // against, the queue is the provider's generic head terms, and the first
+      // draft on the lully.ai workspace would have been "ai can". A human can
+      // still pick a keyword by hand; the cron does not guess.
+      const { data: wsProfile } = await supabase
+        .from("workspaces")
+        .select("topical_profile")
+        .eq("id", workspaceId)
+        .single();
+      if (!profileIsUsable(wsProfile?.topical_profile as never, domain ?? undefined)) {
+        results.push({
+          workspaceId,
+          domain,
+          status: "skipped",
+          detail: "the site could not be read well enough to judge which keywords are on-topic; check the audit for why, then pick a keyword by hand",
         });
         continue;
       }

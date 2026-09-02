@@ -18,7 +18,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runAgentReadiness, type ReadinessResult } from "./agent-readiness";
-import { crawlSite } from "./crawler";
+import { crawlSite, usablePages } from "./crawler";
 import { runAuditChecks, calculateAuditScore } from "./checks";
 import { fetchPageSpeedDetailed } from "./pagespeed";
 import { discoverKeywords } from "@/lib/seo/keywords";
@@ -116,9 +116,16 @@ export async function analyseDomain(options: {
   let issues: unknown[] = [];
   let profile: TopicalProfile | null = null;
   try {
-    const pages = await crawlSite(baseUrl, MAX_PAGES, MAX_DEPTH, CRAWL_DELAY_MS);
+    const fetched = await crawlSite(baseUrl, MAX_PAGES, MAX_DEPTH, CRAWL_DELAY_MS);
+    const pages = usablePages(fetched);
     pagesCrawled = pages.length;
-    if (pages.length) {
+    if (!pages.length && fetched.length) {
+      // Every fetch failed. Say why, and score nothing: the first version of
+      // this gave www.lully.ai a 95/100 on-page score and a topical profile of
+      // {"www"} from a fetch that never got a response.
+      const why = fetched.find((p) => p.error)?.error ?? `HTTP ${fetched[0].status}`;
+      layers.push({ id: "crawl", status: "failed", detail: `no page could be fetched: ${why}` });
+    } else if (pages.length) {
       // Built here because this is the only point that holds the page content.
       // Recommendations need it on every run and must not re-crawl to get it.
       profile = buildTopicalProfile(domain, pages);

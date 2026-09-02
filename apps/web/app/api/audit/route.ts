@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { crawlSite } from "@/lib/audit/crawler";
+import { crawlSite, usablePages } from "@/lib/audit/crawler";
 import { runAuditChecks, calculateAuditScore } from "@/lib/audit/checks";
 import { fetchPageSpeed } from "@/lib/audit/pagespeed";
 
@@ -107,7 +107,25 @@ export async function POST(request: NextRequest) {
   // failure: the UI cannot tell "still working" from "died in 2026".
   after(async () => {
     try {
-      const pages = await crawlSite(baseUrl, MAX_PAGES, MAX_DEPTH, CRAWL_DELAY_MS);
+      const fetched = await crawlSite(baseUrl, MAX_PAGES, MAX_DEPTH, CRAWL_DELAY_MS);
+      const pages = usablePages(fetched);
+      if (!pages.length) {
+        // Nothing answered. A failed fetch is not a clean page: the first
+        // version scored www.lully.ai 95/100 on a TLS error. Record the reason
+        // as the audit's one issue so the UI can show it, and mark it failed.
+        const why = fetched.find((p) => p.error)?.error ?? `HTTP ${fetched[0]?.status ?? "?"}`;
+        await supabase
+          .from("domain_audits")
+          .update({
+            status: "failed",
+            pages_crawled: 0,
+            overall_score: null,
+            issues: [{ type: "fetch_failed", severity: "high", page: baseUrl, message: `The site could not be fetched: ${why}` }],
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", auditId);
+        return;
+      }
       const issues = runAuditChecks(pages);
       const score = calculateAuditScore(issues, pages.length);
       const pagespeed = (await fetchPageSpeed(baseUrl)) ?? {};

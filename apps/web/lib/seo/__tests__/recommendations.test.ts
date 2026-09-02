@@ -33,6 +33,13 @@ describe("assessKeywordQuality — provider noise", () => {
     expect(assessKeywordQuality("keyword research", terms()).quality).toBe("ok");
   });
 
+  it("rejects a term cut mid-phrase", () => {
+    // The lully.ai queue led with "ai can" (110/mo) on 2026-09-02.
+    expect(assessKeywordQuality("ai can", terms()).quality).toBe("suspect");
+    expect(assessKeywordQuality("ai in", terms()).quality).toBe("suspect");
+    expect(assessKeywordQuality("ai in retail", terms()).quality).toBe("ok");
+  });
+
   it("rejects a term that repeats a word", () => {
     expect(assessKeywordQuality("seo and seo", terms()).quality).toBe("suspect");
     expect(assessKeywordQuality("seo what is seo", terms()).quality).toBe("suspect");

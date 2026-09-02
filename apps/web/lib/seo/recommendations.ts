@@ -129,6 +129,11 @@ export function assessKeywordQuality(
   if (tokens.length > 1 && new Set(tokens).size < tokens.length) {
     return { quality: "suspect", note: "repeats a word, a provider fragment rather than a query" };
   }
+  // "ai can", "ai in": the query was cut mid-phrase. Nobody searches that.
+  const TRAILING_JUNK = new Set(["can", "in", "for", "and", "the", "of", "to", "is", "with", "on", "by", "or"]);
+  if (tokens.length > 1 && TRAILING_JUNK.has(tokens[tokens.length - 1])) {
+    return { quality: "suspect", note: `ends with "${tokens[tokens.length - 1]}", a fragment rather than a query` };
+  }
 
   return { quality: "ok", note: null };
 }
