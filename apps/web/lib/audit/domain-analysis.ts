@@ -236,12 +236,16 @@ export async function analyseDomain(options: {
         // warehouse terms first. With no usable profile, volume is all there is.
         const usable = profileIsUsable(profile, domain);
         const rel = (term: string) => (usable ? scoreRelevance(term, profile).score : 1);
-        const top = [...discovered]
-          .map((k) => ({ k, r: rel(k.keyword) }))
+        // Ideas seeded from the site's own headings come first, whatever
+        // their relevance number: "warehouse management system" was pushed
+        // out of the store by fifty "ai …" terms that each scored a perfect
+        // match on one word. Then the rest by relevance, then volume.
+        const seededTerms = new Set(seeded.map((k) => k.keyword.toLowerCase()));
+        const ranked = [...discovered]
+          .map((k) => ({ k, r: rel(k.keyword), s: seededTerms.has(k.keyword.toLowerCase()) ? 1 : 0 }))
           .filter(({ r }) => !usable || r > 0)
-          .sort((a, b) => b.r - a.r || b.k.volume - a.k.volume)
-          .slice(0, MAX_KEYWORDS_STORED)
-          .map(({ k }) => k);
+          .sort((a, b) => b.s - a.s || b.r - a.r || b.k.volume - a.k.volume);
+        const top = ranked.slice(0, MAX_KEYWORDS_STORED).map(({ k }) => k);
 
         // Skip terms already tracked, so re-running does not duplicate rows.
         const { data: existing } = await supabase

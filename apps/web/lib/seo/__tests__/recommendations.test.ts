@@ -40,6 +40,12 @@ describe("assessKeywordQuality — provider noise", () => {
     expect(assessKeywordQuality("ai in retail", terms()).quality).toBe("ok");
   });
 
+  it("rejects two words joined by and", () => {
+    expect(assessKeywordQuality("reviews and seo", terms()).quality).toBe("suspect");
+    expect(assessKeywordQuality("ai and logistics", terms()).quality).toBe("suspect");
+    expect(assessKeywordQuality("search and rescue training", terms()).quality).toBe("ok");
+  });
+
   it("rejects a preposition plus a bare generic noun", () => {
     expect(assessKeywordQuality("ai in company", terms()).quality).toBe("suspect");
     expect(assessKeywordQuality("ai for business", terms()).quality).toBe("suspect");

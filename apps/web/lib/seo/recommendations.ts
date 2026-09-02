@@ -137,6 +137,12 @@ export function assessKeywordQuality(
   // "ai in company", "ai in world", "ai for business": a preposition and a
   // bare generic noun. The Ads endpoint emits these as phrase fragments with
   // the aggregate volume of everything they abbreviate.
+  // "reviews and seo", "content and seo", "ai and logistics": two nouns
+  // joined by "and" is how the Ads endpoint labels a topic pair, and nobody
+  // types it. altorank.co's own queue led with "reviews and seo" (480/mo).
+  if (tokens.length === 3 && (tokens[1] === "and" || tokens[1] === "or")) {
+    return { quality: "suspect", note: `two words joined by "${tokens[1]}", a topic label rather than a query` };
+  }
   const PREPOSITION = new Set(["in", "for", "of", "on", "at", "to"]);
   const GENERIC_TAIL = new Set(["company", "companies", "business", "businesses", "world", "work", "real", "level", "levels", "things", "life", "people"]);
   if (tokens.length === 3 && PREPOSITION.has(tokens[1]) && GENERIC_TAIL.has(tokens[2])) {
@@ -241,12 +247,25 @@ function winnability(difficulty: number | null, volume = 0): number {
  * deliberately: intent is a tiebreak, not a thesis, and the classifier is a
  * lexicon rather than an oracle.
  */
+// Retuned 2026-09-02 after the first outside workspace (www.lully.ai) queued
+// "ai system" (9,900/mo, informational) above "warehouse management system"
+// (14,800/mo, commercial) and "ai orchestration" (their own product term).
+// Intent is no longer a tiebreak: a term closer to a sale is worth half again
+// as much as a definition query, and a navigational term (someone looking
+// for a specific other site) is worth very little.
 const INTENT_WEIGHT: Record<KeywordIntent, number> = {
-  transactional: 1.15,
-  commercial: 1.1,
-  navigational: 0.8,
+  transactional: 1.5,
+  commercial: 1.5,
+  navigational: 0.3,
   info: 1.0,
 };
+
+/**
+ * A one-word head term ("warehouse", "logistics", "ai") is a category, not
+ * an article. It carries huge volume, near-impossible difficulty, and no
+ * angle to write from; it should sit below any specific phrase that fits.
+ */
+const SINGLE_WORD_PENALTY = 0.5;
 
 export async function recommendKeywords(
   supabase: SupabaseClient,
@@ -400,7 +419,14 @@ export async function recommendKeywords(
     // The third axis. A keyword can be high-volume and easy to win and still be
     // worthless because the business has nothing to say about it.
     const relevance = scoreRelevance(k.term as string, profile);
-    score *= RELEVANCE_FLOOR + (1 - RELEVANCE_FLOOR) * relevance.score;
+    // Squared, so a half-relevant term (one word of two on the site) is
+    // worth a quarter of a fully on-topic one, not half. Volume differences
+    // are logarithmic here; relevance has to be able to outvote them.
+    score *= RELEVANCE_FLOOR + (1 - RELEVANCE_FLOOR) * relevance.score * relevance.score;
+    if ((k.term as string).trim().split(/\s+/).length === 1) {
+      score *= SINGLE_WORD_PENALTY;
+      reasons.push("a one-word head term, hard to win and hard to write to");
+    }
     // State it either way.
     //
     // Only pushing the reason on a partial match made the strongest case for a
