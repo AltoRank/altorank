@@ -1,25 +1,14 @@
 import type { Metadata } from "next";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getWorkspaceAudits } from "@/app/actions/audit";
-import { PageHead, StatusPill, Avatar, Icons, Button, Card, StatStrip } from "@/components/ui";
-import type { Workspace, DomainAudit } from "@/lib/types";
+import { PageHead, Avatar, Icons, Button, Card, StatStrip } from "@/components/ui";
+import type { Workspace } from "@/lib/types";
 import { StartAuditButton } from "@/components/dashboard/start-audit-button";
+import { AuditRow } from "@/components/dashboard/audit-row";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "Audits" };
-
-function scoreColor(score: number): string {
-  if (score >= 80) return "text-green-600";
-  if (score >= 50) return "text-yellow-600";
-  return "text-red-600";
-}
-
-function auditStatus(a: DomainAudit): { status: string; label: string } {
-  if (a.status === "running") return { status: "run", label: "Running" };
-  if (a.status === "failed") return { status: "error", label: "Failed" };
-  return { status: "on", label: "Completed" };
-}
 
 export default async function AuditsPage() {
   // One site at a time. Audits from two domains side by side read as one
@@ -114,40 +103,9 @@ export default async function AuditsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {wsAudits.map((a) => {
-                      const date = new Date(a.started_at).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      });
-                      const { status, label } = auditStatus(a);
-                      const errors = a.issues.filter((i) => i.severity === "error").length;
-                      const warnings = a.issues.filter((i) => i.severity === "warning").length;
-                      return (
-                        <tr key={a.id} className="hover:[&>td]:bg-panel">
-                          <td className="px-3.5 py-3 border-b border-line-soft font-mono text-xs text-ink-2">{date}</td>
-                          <td className={`px-3.5 py-3 border-b border-line-soft text-right font-mono text-sm font-semibold ${scoreColor(a.overall_score)}`}>
-                            {a.status === "completed" && typeof a.overall_score === "number" ? a.overall_score : "—"}
-                          </td>
-                          <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{a.pages_crawled}</td>
-                          <td className="px-3.5 py-3 border-b border-line-soft text-right">
-                            {a.status === "completed" ? (
-                              <span className="font-mono text-xs">
-                                {errors > 0 && <span className="text-red-600">{errors} errors</span>}
-                                {errors > 0 && warnings > 0 && <span className="text-ink-3"> · </span>}
-                                {warnings > 0 && <span className="text-yellow-600">{warnings} warnings</span>}
-                                {errors === 0 && warnings === 0 && <span className="text-green-600">None</span>}
-                              </span>
-                            ) : (
-                              <span className="text-ink-3">—</span>
-                            )}
-                          </td>
-                          <td className="px-3.5 py-3 border-b border-line-soft">
-                            <StatusPill status={status} label={label} />
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {wsAudits.map((a) => (
+                      <AuditRow key={a.id} audit={a} />
+                    ))}
                     {wsAudits.length === 0 && (
                       <tr>
                         <td colSpan={5} className="px-3.5 py-8 text-center text-ink-3">
