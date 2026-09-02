@@ -5,6 +5,7 @@ import { getWorkspaces } from "@/lib/queries/workspaces";
 import { PageHead, StatusPill, Button, Icons, DotSep } from "@/components/ui";
 import { ConnectActions } from "@/components/dashboard/connect-actions";
 import { GoogleConnectButton } from "@/components/dashboard/google-connect-button";
+import { BingConnectButton } from "@/components/dashboard/bing-connect-button";
 import type { PublishingCadence } from "@/lib/types";
 import { createClient } from "@/lib/supabase/server";
 
@@ -115,6 +116,8 @@ export default async function IntegrationsPage({
                         integrationId={i.id as "gsc" | "ga4"}
                         connected={connectedIds.has(i.id)}
                       />
+                    ) : i.id === "bing" ? (
+                      <BingConnectButton connected={connectedIds.has(i.id)} />
                     ) : CONNECTABLE_CMS.has(i.id) ? (
                       <Link href={`/connect?connect=${i.id}`} className="block">
                         <Button size="sm" className="w-full justify-center">
