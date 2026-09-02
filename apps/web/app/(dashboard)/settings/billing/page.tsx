@@ -11,6 +11,7 @@ import {
   type PlanTier,
 } from "@/lib/stripe";
 import { getSimulation } from "@/lib/dev/simulation";
+import { getOperatorPreview } from "@/lib/auth/preview";
 import { getQuota } from "@/lib/billing/quota";
 import { PlanCards, type PlanCard } from "./plan-cards";
 import { SettingsTabs } from "../settings-tabs";
@@ -50,11 +51,20 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
   // does not have, so each tier's billing view is checkable before Stripe
   // is even configured. Null everywhere outside development.
   const simulation = await getSimulation();
-  const plan = (simulation?.plan ?? agency?.plan ?? "starter") as PlanTier;
-  const status = agency?.plan_status ?? "inactive";
+  // The production preview overrides the same way the dev simulator does, and
+  // takes precedence: if an operator asked to see the Managed screens, showing
+  // them their real row instead answers a question they did not ask.
+  const preview = await getOperatorPreview();
+  const plan = (preview?.plan ?? simulation?.plan ?? agency?.plan ?? "starter") as PlanTier;
+  // The preview overrides the plan, so it has to override the status with it.
+  // Reading the real row here produced "Managed plan · inactive" beside a card
+  // badged "Your plan" - two contradictory answers to the same question, on
+  // the screen whose whole job is to state what you are paying for.
+  const status = preview?.plan ? "active" : (agency?.plan_status ?? "inactive");
 
   const quota = await getQuota(supabase, agencyId, user.email ?? null);
-  const isActive = Boolean(simulation?.plan) || status === "active" || status === "trialing";
+  const isActive =
+    Boolean(preview?.plan) || Boolean(simulation?.plan) || status === "active" || status === "trialing";
   const euros = (n: number | string | null) =>
     new Intl.NumberFormat("en-IE", {
       style: "currency",

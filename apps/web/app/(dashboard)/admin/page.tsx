@@ -5,6 +5,8 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/auth/admin";
 import { AdminTabs } from "./admin-tabs";
 import { Table } from "./table";
+import { PreviewControl } from "./preview-control";
+import { getOperatorPreview } from "@/lib/auth/preview";
 
 export const metadata: Metadata = { title: "Operations" };
 
@@ -34,6 +36,10 @@ export default async function AdminPage() {
       supabase.from("workspaces").select("id, domain, status, detected_platform, first_analysed_at, auto_generate"),
       supabase.from("articles").select("workspace_id, status"),
     ]);
+
+  // Null whenever the preview is off, and also for a non-operator, though
+  // this page 404s for those before we get here.
+  const previewActive = (await getOperatorPreview()) !== null;
 
   const rows = spend ?? [];
   const wsById = new Map((workspaces ?? []).map((w) => [w.id, w]));
@@ -109,6 +115,15 @@ export default async function AdminPage() {
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll flex flex-col gap-5">
+        <Card
+          className="shrink-0"
+          title="Preview as a customer"
+          meta="Your own account, operator bypasses off, writes refused"
+          flush
+        >
+          <PreviewControl active={previewActive} />
+        </Card>
+
         <Card className="shrink-0" title="Spend by provider" flush>
           <Table
             head={["Provider", "Calls", "USD"]}

@@ -15,6 +15,9 @@ import { getQuota } from "@/lib/billing/quota";
 import { FeedbackWidget } from "@/components/dashboard/feedback-widget";
 import { DevToolbar } from "@/components/dashboard/dev-toolbar";
 import { getSimulation } from "@/lib/dev/simulation";
+import { getOperatorPreview } from "@/lib/auth/preview";
+import { PLAN_LABELS } from "@/lib/stripe";
+import { PreviewBanner } from "@/components/dashboard/preview-banner";
 
 export default async function DashboardLayout({
   children,
@@ -101,6 +104,9 @@ export default async function DashboardLayout({
   // only take the entry away: pretending to be an operator would render a nav
   // item whose page 404s on the real email check.
   const simulation = await getSimulation();
+  const preview = await getOperatorPreview();
+  // isAdmin() already returns false inside a customer preview, so this only
+  // has to handle the dev simulator's separate switch.
   const operator = simulation?.admin === false ? false : await isAdmin();
 
   const hiddenNav =
@@ -123,6 +129,10 @@ export default async function DashboardLayout({
     <TooltipProvider delayDuration={150}>
     <WorkspaceProvider workspaces={workspaces} initialId={initialWorkspaceId}>
       <div className="flex h-screen min-h-[720px] flex-col">
+      {/* Both bars can be up at once - an operator can be impersonating and
+          previewing - and they stack rather than compete, because each says a
+          different true thing about why the app is behaving oddly. */}
+      {preview && <PreviewBanner plan={preview.plan ? PLAN_LABELS[preview.plan] : undefined} />}
       {impersonation && (
         <ImpersonationBanner
           operatorEmail={impersonation.operatorEmail}

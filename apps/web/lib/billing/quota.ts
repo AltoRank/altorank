@@ -29,6 +29,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { billingEnabled, PLAN_ARTICLE_LIMITS, type PlanTier } from "@/lib/stripe";
 import { getSimulation } from "@/lib/dev/simulation";
 import { isAdminEmail } from "@/lib/auth/operators";
+import { inCustomerPreview } from "@/lib/auth/preview";
 
 export type Quota = {
   /** Null means unmetered. */
@@ -78,7 +79,14 @@ export async function getQuota(
     used = count ?? 0;
   }
 
-  if (isAdminEmail(userEmail)) {
+  // The operator bypass is the single biggest difference between what we see
+  // and what a customer sees - unmetered against a real ceiling - so the
+  // customer preview has to lift it, or the preview would show the one screen
+  // it exists to check in the one state no customer is ever in.
+  //
+  // Only the bypass is dropped. Everything below runs against the real agency
+  // row, so quota is the account's actual usage, not a fixture.
+  if (isAdminEmail(userEmail) && !(await inCustomerPreview())) {
     return { limit: null, used, remaining: null, reason: "operator", plan: null };
   }
 
