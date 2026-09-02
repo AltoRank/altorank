@@ -207,21 +207,19 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-12 gap-4">
           {/* Traffic chart */}
           <Card title="Organic traffic · last 30 days" meta={<Chip label="All workspaces" soft />} className="col-span-8">
-            <div className="p-[18px]">
-              <TrafficChart series={traffic} connected={gscConnected} />
-              <div className="flex gap-4 text-[11.5px] text-ink-3 mt-2.5 font-mono">
-                <span className="flex items-center gap-1.5">
-                  <i className="inline-block w-2.5 h-2.5 rounded-sm bg-accent" />Traffic
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <i className="inline-block w-2.5 h-0.5 rounded-sm bg-ink-4 mt-[1px]" />Prev period
-                </span>
-              </div>
+            <TrafficChart series={traffic} connected={gscConnected} />
+            <div className="flex gap-4 text-[11.5px] text-ink-3 mt-2.5 font-mono">
+              <span className="flex items-center gap-1.5">
+                <i className="inline-block w-2.5 h-2.5 rounded-sm bg-accent" />Traffic
+              </span>
+              <span className="flex items-center gap-1.5">
+                <i className="inline-block w-2.5 h-0.5 rounded-sm bg-ink-4 mt-[1px]" />Prev period
+              </span>
             </div>
           </Card>
 
           {/* Today's queue */}
-          <Card title="Needs your review" meta={`${pendingReviews} waiting`} className="col-span-4">
+          <Card title="Needs your review" meta={`${pendingReviews} waiting`} className="col-span-4" flush>
             <div className="px-2 py-1.5">
               {allArticles
                 .filter((a) => a.status === "review")
@@ -246,12 +244,12 @@ export default async function DashboardPage() {
           </Card>
 
           {/* Workspaces grid */}
-          <Card title="Workspaces" className="col-span-12">
+          <Card title="Workspaces" className="col-span-12" flush>
             <WorkspaceGrid workspaces={workspaces} counts={wsCountsObj} />
           </Card>
 
           {/* Recent articles */}
-          <Card title="Recent articles" meta={<Link href="/articles"><Button size="sm">View all</Button></Link>} className="col-span-12">
+          <Card title="Recent articles" meta={<Link href="/articles"><Button size="sm">View all</Button></Link>} className="col-span-12" flush>
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>

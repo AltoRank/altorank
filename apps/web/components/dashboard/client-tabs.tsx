@@ -90,7 +90,7 @@ function OverviewTab({ workspace, articles, keywords, backlinks, voice }: {
               : "needs training",
           },
         ].map((s) => (
-          <Card key={s.label} className="p-4">
+          <Card key={s.label} className="p-4" flush>
             <div className="text-[11px] text-ink-3 uppercase tracking-[0.06em] font-medium">{s.label}</div>
             <div className="text-2xl font-semibold font-mono mt-1">{s.value}</div>
             <div className="text-[11px] text-ink-3 mt-0.5">{s.sub}</div>
@@ -99,7 +99,7 @@ function OverviewTab({ workspace, articles, keywords, backlinks, voice }: {
       </div>
 
       {recentArticles.length === 0 && (
-        <Card className="p-5">
+        <Card className="p-5" flush>
           <div className="text-[13px] font-medium text-ink mb-1">What happens next</div>
           <div className="text-[12.5px] leading-relaxed text-ink-2">
             This workspace is live. The pipeline picks the best-scoring keyword from the {keywords.length.toLocaleString()} tracked here,
@@ -114,7 +114,7 @@ function OverviewTab({ workspace, articles, keywords, backlinks, voice }: {
       {recentArticles.length > 0 && (
         <div>
           <h3 className="text-[13px] font-medium text-ink-2 mb-3">Recent articles</h3>
-          <Card>
+          <Card flush>
             <table className="w-full border-collapse text-[13px]">
               <tbody>
                 {recentArticles.map((a) => (
@@ -165,7 +165,7 @@ function ArticlesTab({ articles }: { articles: Article[] }) {
           <Chip key={c.label} label={c.label} active={statusFilter === c.value} onClick={() => setStatusFilter(c.value)} />
         ))}
       </div>
-      <Card>
+      <Card flush>
         <table className="w-full border-collapse text-[13px]">
           <thead>
             <tr>
@@ -231,7 +231,7 @@ function KeywordsTab({ keywords }: { keywords: Keyword[] }) {
           <Chip key={c.label} label={c.label} active={statusFilter === c.value} onClick={() => setStatusFilter(c.value)} />
         ))}
       </div>
-      <Card>
+      <Card flush>
         <table className="w-full border-collapse text-[13px]">
           <thead>
             <tr>
@@ -304,7 +304,7 @@ function CalendarTab({ calendar }: { calendar: CalendarEntry[] }) {
           <Chip key={c.label} label={c.label} active={statusFilter === c.value} onClick={() => setStatusFilter(c.value)} />
         ))}
       </div>
-      <Card>
+      <Card flush>
         <table className="w-full border-collapse text-[13px]">
           <thead>
             <tr>
@@ -340,7 +340,7 @@ function CalendarTab({ calendar }: { calendar: CalendarEntry[] }) {
 function VoiceTab({ voice }: { voice: VoiceProfile | null }) {
   if (!voice) {
     return (
-      <Card className="p-8 text-center">
+      <Card className="p-8 text-center" flush>
         <Icons.voice size={32} className="mx-auto text-ink-3 mb-3" />
         <div className="text-[13px] text-ink-2 font-medium mb-1">No voice profile</div>
         <div className="text-[12px] text-ink-3">A voice profile will be created automatically when a domain is configured, or you can train one manually.</div>
@@ -363,7 +363,7 @@ function VoiceTab({ voice }: { voice: VoiceProfile | null }) {
 
   return (
     <div className="space-y-4">
-      <Card className="p-5">
+      <Card className="p-5" flush>
         <div className="flex items-center gap-2 mb-3">
           <StatusPill status={voice.trained ? "on" : "setup"} label={voice.trained ? "Trained" : "Untrained"} />
         </div>
@@ -383,7 +383,7 @@ function VoiceTab({ voice }: { voice: VoiceProfile | null }) {
         </div>
       </Card>
       {sentences.length > 0 && (
-        <Card className="p-5">
+        <Card className="p-5" flush>
           <div className="text-[11px] text-ink-3 uppercase tracking-[0.06em] mb-2">Extracted sentences</div>
           <div className="space-y-1.5">
             {sentences.slice(0, 5).map((s, i) => (
@@ -398,7 +398,7 @@ function VoiceTab({ voice }: { voice: VoiceProfile | null }) {
         </Card>
       )}
       {rules.tags && rules.tags.length > 0 && (
-        <Card className="p-5">
+        <Card className="p-5" flush>
           <div className="text-[11px] text-ink-3 uppercase tracking-[0.06em] mb-2">Style tags</div>
           <div className="flex flex-wrap gap-2">
             {rules.tags.map((tag) => <Chip key={tag} label={tag} soft />)}
@@ -436,7 +436,7 @@ function BacklinksTab({ backlinks }: { backlinks: Backlink[] }) {
           <Chip key={c.label} label={c.label} active={statusFilter === c.value} onClick={() => setStatusFilter(c.value)} />
         ))}
       </div>
-      <Card>
+      <Card flush>
         <table className="w-full border-collapse text-[13px]">
           <thead>
             <tr>
@@ -472,7 +472,7 @@ function BacklinksTab({ backlinks }: { backlinks: Backlink[] }) {
 function SettingsTab({ workspace, cadence }: { workspace: Workspace; cadence: PublishingCadence | null }) {
   return (
     <div className="max-w-lg space-y-4">
-      <Card className="p-5">
+      <Card className="p-5" flush>
         <h3 className="text-[13px] font-medium mb-4">Workspace settings</h3>
         <div className="space-y-3 text-[13px]">
           {[

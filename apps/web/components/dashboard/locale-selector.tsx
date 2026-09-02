@@ -36,7 +36,7 @@ export function LocaleSelector({ workspaceId, currentLanguage }: LocaleSelectorP
   }
 
   return (
-    <Card className="p-5">
+    <Card className="p-5" flush>
       <h3 className="text-[13px] font-medium mb-1">Language &amp; region</h3>
       <p className="text-[12px] text-ink-3 mb-3">
         Sets the language and country for keyword research, SERP tracking, and content generation.

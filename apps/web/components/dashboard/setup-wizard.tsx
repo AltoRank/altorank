@@ -141,7 +141,7 @@ export function SetupWizard({ workspace, voice, keywords, articleCount = 0 }: Se
         const result = results[step.id];
 
         return (
-          <Card key={step.id} className="p-4">
+          <Card key={step.id} className="p-4" flush>
             <div className="flex items-start gap-3.5">
               {/* Step indicator */}
               <div className={`

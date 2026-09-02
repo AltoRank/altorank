@@ -77,7 +77,7 @@ export default async function BacklinksPage({ searchParams }: Props) {
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
         <BacklinkFilters />
 
-        <Card>
+        <Card flush>
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>

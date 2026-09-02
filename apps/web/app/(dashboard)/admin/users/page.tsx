@@ -189,6 +189,7 @@ export default async function AdminUsersPage({
           className="shrink-0"
           title="Users"
           meta="“View as” opens their dashboard in this tab, with a bar to come back. Every use is logged below."
+          flush
         >
           <Table
             head={["User", "Account", "Plan", "Workspaces", "Articles", "Signed up", "Last seen", ""]}
@@ -244,7 +245,7 @@ export default async function AdminUsersPage({
           />
         </Card>
 
-        <Card className="shrink-0" title="Recent “view as” sessions" meta="Newest first. Open rows have no end time yet.">
+        <Card className="shrink-0" title="Recent “view as” sessions" meta="Newest first. Open rows have no end time yet." flush>
           <Table
             head={["Operator", "Viewed", "Started", "Ended", "Outcome"]}
             empty="Nobody has viewed as another account yet."

@@ -76,11 +76,7 @@ export default async function BillingPage() {
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll space-y-6">
         <Card title="Usage this month">
-          {/* The Card body renders children flush; every non-table card has to
-              pay for its own padding. 18px matches the inset of the title
-              above it, so the copy lines up with the heading instead of
-              starting 18px to its left and touching the border. */}
-          <div className="px-[18px] py-4 flex items-center justify-between gap-5 flex-wrap">
+          <div className="flex items-center justify-between gap-5 flex-wrap">
             <div className="text-[13px] text-ink-2">
               {quota.limit === null ? (
                 <>
@@ -114,7 +110,7 @@ export default async function BillingPage() {
         </Card>
 
         <Card title="Plan">
-          <div className="px-[18px] py-4 flex items-start justify-between gap-6 flex-wrap">
+          <div className="flex items-start justify-between gap-6 flex-wrap">
             <div className="text-[13px] text-ink-2 max-w-[460px] pt-1">
               {isActive ? (
                 <>
@@ -134,7 +130,7 @@ export default async function BillingPage() {
           </div>
         </Card>
 
-        <Card title="Recent invoices">
+        <Card title="Recent invoices" flush>
           {invoices && invoices.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[620px] border-collapse text-[13px]">
@@ -177,7 +173,7 @@ export default async function BillingPage() {
               </table>
             </div>
           ) : (
-            <div className="text-[13px] text-ink-3 italic px-[18px] py-5">
+            <div className="text-[13px] text-ink-3 italic p-[18px]">
               No invoices yet. They&rsquo;ll appear here after your first payment.
             </div>
           )}

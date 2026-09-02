@@ -72,7 +72,7 @@ export default async function CalendarPage({ searchParams }: Props) {
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
         <CalendarControls currentMonth={month} monthLabel={monthLabel} />
 
-        <Card>
+        <Card flush>
           {/* Day headers */}
           <div className="grid grid-cols-7 bg-panel border-b border-line">
             {DAY_NAMES.map((d) => (

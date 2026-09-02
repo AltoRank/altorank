@@ -25,7 +25,7 @@ export default async function ReportsPage() {
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
-        <Card>
+        <Card flush>
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>

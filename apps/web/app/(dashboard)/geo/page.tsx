@@ -103,7 +103,7 @@ export default async function GeoPage() {
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll flex flex-col gap-5">
         {actions.length > 0 && (
-          <Card>
+          <Card flush>
             <div className="px-5 pt-4 pb-1 font-semibold text-sm">What to do about it</div>
             <div className="px-5 pb-3 text-[12.5px] text-ink-3">
               Derived from the answers above, ranked. Each one names the
@@ -125,7 +125,7 @@ export default async function GeoPage() {
         )}
 
         {!prompts.length && (
-          <Card>
+          <Card flush>
             <div className="p-5">
               <div className="font-semibold text-sm mb-1.5">No prompts defined yet</div>
               <p className="text-[13px] text-ink-2 leading-[1.6] max-w-[62ch]">
@@ -141,7 +141,7 @@ export default async function GeoPage() {
         )}
 
         {byEngine.size > 0 && (
-          <Card>
+          <Card flush>
             <div className="px-5 pt-4 pb-2 font-semibold text-sm">By answer engine</div>
             <table className="w-full border-collapse text-[13px]">
               <thead>
@@ -181,7 +181,7 @@ export default async function GeoPage() {
         )}
 
         {summary.topCompetitors.length > 0 && (
-          <Card>
+          <Card flush>
             <div className="px-5 pt-4 pb-1 font-semibold text-sm">
               Who gets cited instead
             </div>
@@ -234,7 +234,7 @@ export default async function GeoPage() {
         )}
 
         {prompts.length > 0 && (
-          <Card>
+          <Card flush>
             <div className="px-5 pt-4 pb-1 font-semibold text-sm">The prompt set</div>
             <div className="px-5 pb-3 text-[12.5px] text-ink-3">
               Every measurement above is the answer to one of these, asked of each

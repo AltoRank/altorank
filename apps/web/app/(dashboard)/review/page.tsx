@@ -75,14 +75,14 @@ export default async function ReviewQueuePage() {
           </div>
         )}
         {articles.length === 0 ? (
-          <Card>
+          <Card flush>
             <div className="px-6 py-14 text-center text-[13.5px] text-ink-3">
               Nothing is waiting for you. Drafts land here the moment they finish generating, and
               nothing leaves without your approval.
             </div>
           </Card>
         ) : (
-          <Card>
+          <Card flush>
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>

@@ -61,7 +61,7 @@ export function PublishingCadenceForm({ workspaceId, cadence }: Props) {
   }
 
   return (
-    <Card className="p-5">
+    <Card className="p-5" flush>
       <h3 className="text-[13px] font-medium mb-4">Publishing schedule</h3>
 
       <div className="space-y-4 text-[13px]">

@@ -91,7 +91,7 @@ export default async function AuditsPage() {
                 <StartAuditButton workspaceId={ws.id} />
               </div>
 
-              <Card>
+              <Card flush>
                 <table className="w-full border-collapse text-[13px]">
                   <thead>
                     <tr>

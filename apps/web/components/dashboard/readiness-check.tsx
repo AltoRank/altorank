@@ -47,7 +47,7 @@ export function ReadinessCheck() {
   return (
     <div className="flex flex-col gap-5">
       <Card title="Check a domain">
-        <div className="p-[18px] flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
           <div className="flex gap-2">
             <input
               value={domain}
@@ -70,7 +70,7 @@ export function ReadinessCheck() {
 
       {report?.error && (
         <Card title="Could not check that domain">
-          <div className="p-[18px] text-sm text-ink-2">{report.error}</div>
+          <div className="text-sm text-ink-2">{report.error}</div>
         </Card>
       )}
 
@@ -90,7 +90,7 @@ export function ReadinessCheck() {
             title={report.domain}
             meta={<StatusPill {...scoreLabel(report.result.score)} />}
           >
-            <div className="p-[18px] flex flex-col gap-4">
+            <div className="flex flex-col gap-4">
               {blocking.length > 0 && (
                 <div>
                   <h4 className="m-0 mb-2 text-xs font-semibold uppercase tracking-wide text-ink-3">
@@ -146,7 +146,7 @@ export function ReadinessCheck() {
               title={a.body ? a.name : `${a.name} (no artifact, instruction only)`}
               meta={a.body ? <CopyButton text={a.body} /> : null}
             >
-              <div className="p-[18px] flex flex-col gap-3">
+              <div className="flex flex-col gap-3">
                 {a.body && (
                   <pre className="m-0 p-3 bg-panel border border-line-soft rounded-md text-xs overflow-x-auto">
                     {a.body}
@@ -165,7 +165,7 @@ export function ReadinessCheck() {
           {report.proposals.map((p) =>
             p.provenance.length ? (
               <Card key={p.type} title={`${p.type}: where each field came from`}>
-                <div className="p-[18px] flex flex-col gap-2">
+                <div className="flex flex-col gap-2">
                   {p.provenance.map((pv) => (
                     <div key={pv.field} className="text-xs flex gap-2 flex-wrap">
                       <code className="text-ink font-semibold">{pv.field}</code>

@@ -109,7 +109,7 @@ export default async function AdminPage() {
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll flex flex-col gap-5">
-        <Card className="shrink-0" title="Spend by provider">
+        <Card className="shrink-0" title="Spend by provider" flush>
           <Table
             head={["Provider", "Calls", "USD"]}
             rows={[...byProvider.entries()]
@@ -118,7 +118,7 @@ export default async function AdminPage() {
           />
         </Card>
 
-        <Card className="shrink-0" title="Spend by operation">
+        <Card className="shrink-0" title="Spend by operation" flush>
           <Table
             head={["Operation", "Calls", "USD", "Avg"]}
             rows={[...byOperation.entries()]
@@ -127,7 +127,7 @@ export default async function AdminPage() {
           />
         </Card>
 
-        <Card className="shrink-0" title="Accounts">
+        <Card className="shrink-0" title="Accounts" flush>
           <Table
             head={["Domain", "Status", "Platform", "Analysed", "Auto", "Articles", "Spend"]}
             rows={(workspaces ?? []).map((w) => [
@@ -142,7 +142,7 @@ export default async function AdminPage() {
           />
         </Card>
 
-        <Card className="shrink-0" title="Recent calls">
+        <Card className="shrink-0" title="Recent calls" flush>
           <Table
             head={["When", "Provider", "Operation", "Workspace", "USD"]}
             rows={rows.slice(0, 40).map((r) => [

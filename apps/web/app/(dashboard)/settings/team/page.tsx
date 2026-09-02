@@ -28,7 +28,7 @@ export default async function TeamPage() {
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll space-y-6">
         {/* Active members */}
-        <Card>
+        <Card flush>
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
@@ -70,7 +70,7 @@ export default async function TeamPage() {
         {invites.length > 0 && (
           <div>
             <h3 className="text-sm font-semibold mb-2 text-ink-2">Pending invitations</h3>
-            <Card>
+            <Card flush>
               <table className="w-full border-collapse text-[13px]">
                 <thead>
                   <tr>
