@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getIntegrations } from "@/lib/queries/integrations";
 import { getWorkspaces } from "@/lib/queries/workspaces";
-import { PageHead, StatusPill, Button, Icons } from "@/components/ui";
+import { PageHead, StatusPill, Button, Icons, DotSep } from "@/components/ui";
 import { ConnectActions } from "@/components/dashboard/connect-actions";
 import { GoogleConnectButton } from "@/components/dashboard/google-connect-button";
 import type { PublishingCadence } from "@/lib/types";
@@ -60,7 +60,7 @@ export default async function IntegrationsPage({
     <>
       <PageHead
         title="Integrations"
-        subtitle={<><StatusPill status="on" label={`${integrations.length} available`} /><span>Connect the tools your sites already run on</span></>}
+        subtitle={<><StatusPill status="on" label={`${integrations.length} available`} /><span>Connect the tools your sites already run on</span><DotSep /><a href="/connect/google" className="text-accent-ink underline decoration-line underline-offset-[3px]">See every site this Google account can read</a></>}
         actions={<ConnectActions workspaces={workspaces} integrations={integrations} />}
       />
 

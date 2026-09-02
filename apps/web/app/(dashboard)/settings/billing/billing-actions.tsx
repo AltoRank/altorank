@@ -10,14 +10,14 @@ import { createCheckoutSession, createBillingPortalSession } from "@/app/actions
 type SelfServePlan = "starter" | "growth";
 type BillingInterval = "month" | "year";
 
-export function BillingActions({ hasCustomer }: { hasCustomer: boolean }) {
+export function BillingActions({ hasCustomer, returnTo }: { hasCustomer: boolean; returnTo?: string }) {
   const [pending, start] = useTransition();
   const [interval, setInterval] = useState<BillingInterval>("month");
 
   function subscribe(plan: SelfServePlan) {
     start(async () => {
       try {
-        const url = await createCheckoutSession(plan, interval);
+        const url = await createCheckoutSession(plan, interval, returnTo);
         window.location.href = url;
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Checkout failed");

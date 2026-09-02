@@ -24,12 +24,14 @@ export default async function SettingsPage() {
       <SettingsTabs />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
-        <SettingsForm agency={agency} />
+        <div className="max-w-[1140px]">
+          <SettingsForm agency={agency} />
 
-        <div className="mt-5">
-          <Card title="Password">
-            <PasswordForm />
-          </Card>
+          <div className="mt-5">
+            <Card title="Password">
+              <PasswordForm />
+            </Card>
+          </div>
         </div>
       </div>
     </>

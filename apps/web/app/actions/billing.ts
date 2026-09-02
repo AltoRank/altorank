@@ -14,6 +14,13 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3100";
 export async function createCheckoutSession(
   plan: SelfServePlan,
   interval: BillingInterval = "month",
+  /**
+   * Where to land after paying. Someone who hit the workspace limit while
+   * choosing Search Console properties should come back to that screen with
+   * their selection intact, not to a billing page (2026-09-02). Same-origin
+   * paths only: this value reaches Stripe and comes back as a redirect.
+   */
+  returnTo?: string,
 ): Promise<string> {
   const { agencyId } = await requireAuth(["owner"]);
   const supabase = await createClient();
@@ -36,7 +43,10 @@ export async function createCheckoutSession(
     // any subscription event back to the agency regardless of which fires first.
     metadata: { agency_id: agencyId },
     subscription_data: { metadata: { agency_id: agencyId } },
-    success_url: `${APP_URL}/settings/billing?status=success`,
+    success_url:
+      returnTo && /^\/[a-zA-Z0-9/_?=&%-]*$/.test(returnTo)
+        ? `${APP_URL}${returnTo}${returnTo.includes("?") ? "&" : "?"}upgraded=1`
+        : `${APP_URL}/settings/billing?status=success`,
     cancel_url: `${APP_URL}/settings/billing?status=cancelled`,
   });
 

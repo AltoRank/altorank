@@ -32,7 +32,10 @@ export async function GET(request: NextRequest) {
   const workspaceId = searchParams.get("workspaceId");
   const integrationId = searchParams.get("integrationId");
 
-  if (!workspaceId || !integrationId) {
+  // No workspace is a valid request now: connecting at the account level is
+  // how someone with no sites yet gets to pick properties and have the
+  // workspaces made for them. State carries "account" in the workspace slot.
+  if (!integrationId) {
     return back(request, { error: "missing_params" });
   }
   if (!SUPPORTED.has(integrationId)) {

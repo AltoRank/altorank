@@ -63,21 +63,38 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { data: wsCheck } = await supabase
-      .from("workspaces")
-      .select("id")
-      .eq("id", workspaceId)
-      .eq("agency_id", member.agency_id)
-      .single();
+    // An account-level connect has no workspace to verify yet; the account
+    // membership checked above is the whole authorisation.
+    if (workspaceId !== "account") {
+      const { data: wsCheck } = await supabase
+        .from("workspaces")
+        .select("id")
+        .eq("id", workspaceId)
+        .eq("agency_id", member.agency_id)
+        .single();
 
-    if (!wsCheck) {
-      return NextResponse.redirect(
-        new URL("/connect?error=workspace_not_found", request.url),
-      );
+      if (!wsCheck) {
+        return NextResponse.redirect(
+          new URL("/connect?error=workspace_not_found", request.url),
+        );
+      }
     }
 
     const tokens = await exchangeCode(code);
     const encrypted = encryptTokens(tokens);
+
+    // One consent per account, stored whichever route was taken, so a later
+    // workspace resolves its property without asking the person again.
+    await supabase.from("agency_integrations").upsert(
+      { agency_id: member.agency_id, provider: "google", tokens: { encrypted }, connected_at: new Date().toISOString() },
+      { onConflict: "agency_id,provider" },
+    );
+
+    // Account-level connect: there is no workspace to attach to yet, so take
+    // the person to the picker, where choosing properties creates them.
+    if (workspaceId === "account") {
+      return NextResponse.redirect(new URL("/connect/google", request.url));
+    }
 
     // Store encrypted tokens in workspace_integrations
     const { error: dbError } = await supabase
