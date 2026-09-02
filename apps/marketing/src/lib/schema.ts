@@ -27,14 +27,18 @@ export function buildOrganizationSchema() {
     // memory/hot-cache.md, which is now stale on this point.
     // Previously said "European e-commerce agencies", which contradicted the
     // homepage, PRODUCT.md, and branch ee08349. See memory/hot-cache.md.
+    // Text last changed 2026-09-02 to match the one line in
+    // altorank-notes/POSITIONING.md ("Articles that rank, published to your
+    // site every week"). The previous text said "across every client brand",
+    // which described an agency tool a month after agencies stopped being the
+    // lead. Agencies are a tier; the entity description is for everyone.
     description:
-      'AltoRank is the approval-first, open-source AI SEO content engine. It researches, writes, and publishes SEO and AI-search content across every client brand, and nothing goes live until a human approves it. E-commerce is the lead vertical.',
-    slogan: 'The approval-first, open-source AI SEO content engine.',
+      'AltoRank is an open-source AI SEO content engine: articles that rank, published to your site every week. It researches keywords, drafts in your voice, and publishes to twelve CMSs, and nothing goes live until a person approves it. Self-host it free, or use the hosted version. Built by SUPALABS SRL in Italy.',
+    slogan: 'Articles that rank, published to your site every week.',
     areaServed: 'Europe',
     knowsAbout: [
       'Search engine optimization',
       'Generative engine optimization',
-      'E-commerce content',
       'AI content',
       'Content marketing',
       'Open source software',
