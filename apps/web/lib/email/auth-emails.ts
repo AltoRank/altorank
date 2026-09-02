@@ -14,6 +14,7 @@
 // it server-side (`verifyOtp`) and sets the session. No PKCE cookie is
 // needed, so the link works in whichever browser opens it.
 
+import type { AuthError } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendTransactionalEmail } from "@/lib/email/resend";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_3 } from "@/lib/email/layout";
@@ -78,6 +79,32 @@ export function renderMagicLink(url: string, email: string) {
 }
 
 /**
+ * `generateLink` for an address with no account fails with `user_not_found`.
+ * That one stays silent on purpose: the request form shows the same message
+ * either way, so it cannot be used to find out which addresses have accounts.
+ * Everything else, such as a missing or wrong service-role key or Supabase
+ * being unreachable, is a configuration failure. Swallowing those too is what
+ * hid the broken reset flow on 2026-09-02, so they are thrown and reach the
+ * server log.
+ */
+function isUserNotFound(error: AuthError): boolean {
+  return error.code === "user_not_found" || /user not found/i.test(error.message);
+}
+
+/** Token hash for a one-time link; null when the address has no account. */
+async function tokenHashFor(type: "recovery" | "magiclink", email: string): Promise<string | null> {
+  const admin = createServiceClient();
+  const { data, error } = await admin.auth.admin.generateLink({ type, email });
+  if (error) {
+    if (isUserNotFound(error)) return null;
+    throw new Error(`Could not generate the ${type} link: ${error.message}`);
+  }
+  const token = data.properties?.hashed_token;
+  if (!token) throw new Error(`Supabase returned a ${type} link without a token hash`);
+  return token;
+}
+
+/**
  * Create the user (unconfirmed) and email the confirmation link.
  * Returns the new user's id, or throws with a message safe to show.
  */
@@ -100,25 +127,25 @@ export async function sendSignupConfirmation(opts: { email: string; password: st
 }
 
 /**
- * Email a password-reset link. Silent when the address has no account: the
- * caller shows the same "if that account exists" message either way.
+ * Email a password-reset link. Resolves false, silently, when the address has
+ * no account: the caller shows the same "if that account exists" message
+ * either way. Throws when the link could not be generated or the email was
+ * refused, so the caller can log the real reason.
  */
 export async function sendPasswordReset(email: string): Promise<boolean> {
-  const admin = createServiceClient();
-  const { data, error } = await admin.auth.admin.generateLink({ type: "recovery", email });
-  if (error || !data.properties?.hashed_token) return false;
-  const url = authLink("recovery", data.properties.hashed_token, "/reset-password/confirm");
+  const token = await tokenHashFor("recovery", email);
+  if (!token) return false;
+  const url = authLink("recovery", token, "/reset-password/confirm");
   const { subject, html, footerNote } = renderPasswordReset(url, email);
   await sendTransactionalEmail(email, subject, html, footerNote, "Set a new password in one click.");
   return true;
 }
 
-/** Email a one-time sign-in link. Silent when the address has no account. */
+/** Email a one-time sign-in link. False when the address has no account; throws on any other failure. */
 export async function sendMagicLink(email: string): Promise<boolean> {
-  const admin = createServiceClient();
-  const { data, error } = await admin.auth.admin.generateLink({ type: "magiclink", email });
-  if (error || !data.properties?.hashed_token) return false;
-  const url = authLink("magiclink", data.properties.hashed_token, "/dashboard");
+  const token = await tokenHashFor("magiclink", email);
+  if (!token) return false;
+  const url = authLink("magiclink", token, "/dashboard");
   const { subject, html, footerNote } = renderMagicLink(url, email);
   await sendTransactionalEmail(email, subject, html, footerNote, "Your one-time sign-in link.");
   return true;
