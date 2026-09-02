@@ -1,4 +1,5 @@
 import { Card } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { MetricPoint } from "@/lib/queries/metrics";
 
 /**
@@ -9,10 +10,30 @@ import type { MetricPoint } from "@/lib/queries/metrics";
  * the value and says when it was taken.
  */
 const SERIES = [
-  { key: "authority", label: "Authority", hint: "DataForSEO backlink rank, 0-100" },
-  { key: "traffic", label: "Organic visits", hint: "estimated, per month" },
-  { key: "referring_domains", label: "Referring domains", hint: "sites linking here" },
-  { key: "ranking_keywords", label: "Ranking keywords", hint: "terms found on the SERP" },
+  {
+    key: "authority",
+    label: "Authority",
+    hint: "DataForSEO backlink rank, 0-100",
+    source: "DataForSEO's backlinks summary: their domain rank, 0-1000, mapped to 0-100. Not Ahrefs DR.",
+  },
+  {
+    key: "traffic",
+    label: "Organic visits",
+    hint: "estimated, per month",
+    source: "DataForSEO's estimated monthly traffic from the terms this domain ranks for. An estimate from positions, not measured visits.",
+  },
+  {
+    key: "referring_domains",
+    label: "Referring domains",
+    hint: "sites linking here",
+    source: "Distinct domains with at least one link to this site, from the same backlinks summary.",
+  },
+  {
+    key: "ranking_keywords",
+    label: "Ranking keywords",
+    hint: "terms found on the SERP",
+    source: "Terms this domain was found ranking for in DataForSEO's index at the last check.",
+  },
 ] as const;
 
 function Spark({ values }: { values: number[] }) {
@@ -54,7 +75,14 @@ export function MetricHistory({ points }: { points: MetricPoint[] }) {
           const delta = values.length > 1 && typeof current === "number" ? current - first : null;
           return (
             <div key={s.key}>
-              <div className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">{s.label}</div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="inline-block cursor-help border-b border-dotted border-line-soft font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">
+                    {s.label}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[280px]">{s.source}</TooltipContent>
+              </Tooltip>
               <div className="mt-0.5 flex items-baseline gap-2">
                 <span className="font-mono text-[20px] font-semibold text-ink">
                   {current === null ? "—" : current.toLocaleString()}

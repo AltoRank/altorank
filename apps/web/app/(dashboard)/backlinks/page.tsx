@@ -3,7 +3,7 @@ import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getBacklinks } from "@/lib/queries/backlinks";
 import { PageHead, DotSep, StatusPill, Avatar, Icons, Button, Card, StatStrip } from "@/components/ui";
 import { ExchangeRequestForm } from "@/components/dashboard/exchange-actions";
-import { DiscoverBacklinksButton } from "@/components/dashboard/discover-backlinks-button";
+import { BacklinkFreshness } from "@/components/dashboard/backlink-freshness";
 import { BacklinkFilters } from "@/components/dashboard/backlink-filters";
 import { ExportCsv } from "@/components/dashboard/export-csv";
 import type { Workspace } from "@/lib/types";
@@ -27,6 +27,12 @@ export default async function BacklinksPage({ searchParams }: Props) {
   ]);
 
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));
+  // When this site's links were last looked up. The weekly pass inside the
+  // rank cron does it; the button only exists for when someone cannot wait.
+  const lastCheckedAt = backlinks.reduce<string | null>(
+    (latest, b) => (b.discovered_at && (!latest || b.discovered_at > latest) ? b.discovered_at : latest),
+    null,
+  );
   const liveCount = backlinks.filter((b) => b.status === "live").length;
   const pendingCount = backlinks.filter((b) => b.status === "pending").length;
   // Average over the links that actually carry a reading. Counting an
@@ -58,23 +64,24 @@ export default async function BacklinksPage({ searchParams }: Props) {
     <>
       <PageHead
         title="Backlinks"
-        subtitle={<><StatusPill status="on" label={plural(backlinks.length, "link")} /><span>Across {plural(workspaces.length, "workspace")}</span><DotSep /><span>Avg DR {avgDr}</span></>}
+        subtitle={<><StatusPill status="on" label={plural(backlinks.length, "link")} /><span>{wsMap.get(scopeId ?? "")?.domain ?? plural(workspaces.length, "workspace")}</span><DotSep /><span>Avg DR {avgDr}</span></>}
         actions={
           <>
             <ExportCsv columns={csvColumns} rows={csvRows} filename="backlinks" />
-            <DiscoverBacklinksButton workspaces={workspaces} scopedId={scopeId} />
+            <BacklinkFreshness workspaces={workspaces} scopedId={scopeId} lastCheckedAt={lastCheckedAt} />
             {workspaces.length > 0 && <ExchangeRequestForm workspaces={workspaces} scopedId={scopeId} />}
           </>
         }
       />
 
       <StatStrip
+        compact
         stats={[
-          { label: "Total backlinks", value: String(backlinks.length), delta: `${liveCount} live`, deltaType: "pos" },
-          { label: "Avg DR", value: avgDr, delta: "source authority" },
-          { label: "Followed", value: String(backlinks.filter((b) => b.is_dofollow).length), delta: "pass authority" },
-          { label: "Pending", value: String(pendingCount), delta: "awaiting publisher" },
-          { label: "Lost", value: String(backlinks.filter((b) => b.status === "lost").length) },
+          { label: "Total backlinks", value: String(backlinks.length), delta: `${liveCount} live`, deltaType: "pos", hint: "Links pointing at this site, one row per referring domain. From DataForSEO's backlink index, refreshed weekly." },
+          { label: "Avg DR", value: avgDr, delta: "source authority", hint: "Average authority of the linking domains: DataForSEO's 0-1000 domain rank mapped to 0-100. Not Ahrefs DR." },
+          { label: "Followed", value: String(backlinks.filter((b) => b.is_dofollow).length), delta: "pass authority", hint: "Links without rel=nofollow, ugc or sponsored. Only these pass authority; the rest are mentions." },
+          { label: "Pending", value: String(pendingCount), delta: "awaiting publisher", hint: "Exchange requests accepted but not yet placed by the other site." },
+          { label: "Lost", value: String(backlinks.filter((b) => b.status === "lost").length), delta: "gone since last check", hint: "Links present in an earlier check and missing from the latest one." },
         ]}
       />
 

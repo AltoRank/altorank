@@ -5,6 +5,7 @@ import { getArticles } from "@/lib/queries/articles";
 import { createClient } from "@/lib/supabase/server";
 import { OnboardingProvider } from "@/components/onboarding/onboarding-provider";
 import { WorkspaceProvider } from "@/components/dashboard/workspace-context";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ensureAgency } from "@/lib/queries/agency";
 import { isAdmin } from "@/lib/auth/admin";
 import { getImpersonation } from "@/lib/auth/impersonation";
@@ -119,6 +120,7 @@ export default async function DashboardLayout({
   const dismissed = Boolean(meta.onboarding_dismissed);
 
   const content = (
+    <TooltipProvider delayDuration={150}>
     <WorkspaceProvider workspaces={workspaces} initialId={initialWorkspaceId}>
       <div className="flex h-screen min-h-[720px] flex-col">
       {impersonation && (
@@ -152,6 +154,7 @@ export default async function DashboardLayout({
       </div>
       </div>
     </WorkspaceProvider>
+    </TooltipProvider>
   );
 
   // Always mounted, even when dismissed and even when every step is done. The

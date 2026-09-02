@@ -7,6 +7,7 @@ import { getBacklinks } from "@/lib/queries/backlinks";
 import { getVoiceProfile } from "@/lib/queries/voice";
 import { getPublishingCadence } from "@/lib/queries/schedule";
 import { PageHead, DotSep, StatusPill, Avatar, StatStrip } from "@/components/ui";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ClientTabs } from "@/components/dashboard/client-tabs";
 import { MetricHistory } from "@/components/dashboard/metric-history";
 import { getWorkspaceMetrics } from "@/lib/queries/metrics";
@@ -69,9 +70,30 @@ export default async function ClientDetailPage({ params }: Props) {
             <StatusPill status={workspace.status} />
             <span>{plural(articles.length, "article")}</span>
             <DotSep />
-            <span>{workspace.traffic?.toLocaleString() ?? "—"} organic /mo</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-help border-b border-dotted border-line-soft">
+                  {workspace.traffic?.toLocaleString() ?? "—"} organic /mo
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[280px]">
+                Estimated monthly organic visits, from DataForSEO&rsquo;s traffic value for the
+                terms this domain ranks for. An estimate from positions, not measured visits:
+                Search Console is the measured one.
+              </TooltipContent>
+            </Tooltip>
             <DotSep />
-            <span>{typeof workspace.dr === "number" ? `Authority ${workspace.dr}` : "Authority —"}</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-help border-b border-dotted border-line-soft">
+                  {typeof workspace.dr === "number" ? `Authority ${workspace.dr}` : "Authority —"}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[280px]">
+                DataForSEO&rsquo;s domain rank from the backlink index, 0-1000, mapped to 0-100.
+                It is not Ahrefs DR and the two will not match.
+              </TooltipContent>
+            </Tooltip>
 
           </>
         }
