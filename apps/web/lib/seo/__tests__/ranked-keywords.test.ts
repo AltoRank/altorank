@@ -1,14 +1,16 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildRankedFilters,
   parseRankedItem,
   groupByPage,
   strikingDistance,
   type RankedKeyword,
 } from "../ranked-keywords";
 
-// A row shaped the way the DataForSEO Labs docs describe it. This is a fixture,
-// not a captured response: until someone runs this against live credentials the
-// shape is an assumption, which is why the parser accepts several layouts.
+// A row shaped the way the DataForSEO Labs docs describe it. Confirmed against
+// live credentials on 2026-09-02 (cal.com, status 20000): responses do arrive
+// in this nested layout. The parser still accepts several, because the docs
+// describe more than one and only this branch has been seen.
 const nested = {
   keyword_data: {
     keyword: "agency seo software",
@@ -131,5 +133,35 @@ describe("strikingDistance", () => {
       "closer-bigger",
       "close",
     ]);
+  });
+});
+
+describe("buildRankedFilters", () => {
+  // Verified against the live endpoint on 2026-09-02: this exact payload
+  // returned status 20000 for cal.com, 216 matches, $0.0132. The field paths
+  // are the part that has to be right - DataForSEO answers a bad path with an
+  // empty result rather than an error, so a typo reads as "this site ranks for
+  // nothing" instead of as a bug.
+  it("joins two conditions with 'and'", () => {
+    expect(buildRankedFilters(500, 20)).toEqual([
+      ["keyword_data.keyword_info.search_volume", ">", 500],
+      "and",
+      ["ranked_serp_element.serp_item.rank_absolute", "<=", 20],
+    ]);
+  });
+
+  it("omits the join when only one condition is set", () => {
+    expect(buildRankedFilters(500, 0)).toEqual([
+      ["keyword_data.keyword_info.search_volume", ">", 500],
+    ]);
+    expect(buildRankedFilters(0, 20)).toEqual([
+      ["ranked_serp_element.serp_item.rank_absolute", "<=", 20],
+    ]);
+  });
+
+  // An empty array is not the same as no filters: sending `filters: []` is
+  // rejected, so the caller has to omit the key entirely.
+  it("returns empty when unbounded, so the caller can omit the key", () => {
+    expect(buildRankedFilters(0, 0)).toEqual([]);
   });
 });

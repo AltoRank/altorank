@@ -361,6 +361,12 @@ export async function analyseDomain(options: {
             difficulty: c.k.difficulty,
             intent: c.k.intent ?? classifyIntent(c.k.keyword, options.locale ?? "en").intent,
             status: "new",
+            // The rank is already the provenance: 0 is ranked_keywords, 1 the
+            // seeded expansion, 2 the domain-level ads fallback. Recording it
+            // keeps the exemption made just above - a ranked term is on-topic
+            // because the SERP said so - available to the selector, which
+            // otherwise re-applies the filter this row was excused from.
+            source: c.rank === 0 ? "ranked" : c.rank === 1 ? "ideas" : "ads",
           }));
         if (rows.length) {
           const { data: inserted } = await supabase.from("keywords").insert(rows).select("id, term");
