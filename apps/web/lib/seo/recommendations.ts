@@ -143,6 +143,23 @@ export function assessKeywordQuality(
   if (tokens.length === 3 && (tokens[1] === "and" || tokens[1] === "or")) {
     return { quality: "suspect", note: `two words joined by "${tokens[1]}", a topic label rather than a query` };
   }
+  // A word that carries no topic. Any keyword containing one is a fragment
+  // of a sentence the provider chopped up, not something a person typed:
+  // supalabs.co's list arrived as "ai stop", "ai makes", "ai are you",
+  // "not ai", "its ai", "ai more", "all the answers are correct"
+  // (2026-09-02). Question words and comparatives are deliberately absent:
+  // "what is logistics" and "best warehouse software" are real queries.
+  const FRAGMENT_WORDS = new Set([
+    "stop", "start", "adding", "add", "makes", "make", "made", "making",
+    "are", "you", "your", "we", "our", "us", "its", "it", "this", "that",
+    "than", "then", "being", "been", "correct", "answers", "answer",
+    "differently", "operating", "keep", "more", "less", "not", "into",
+    "through", "between", "started", "most",
+  ]);
+  if (tokens.some((t) => FRAGMENT_WORDS.has(t))) {
+    return { quality: "suspect", note: "contains a word that carries no topic; a sentence fragment rather than a query" };
+  }
+
   const PREPOSITION = new Set(["in", "for", "of", "on", "at", "to"]);
   const GENERIC_TAIL = new Set(["company", "companies", "business", "businesses", "world", "work", "real", "level", "levels", "things", "life", "people"]);
   if (tokens.length === 3 && PREPOSITION.has(tokens[1]) && GENERIC_TAIL.has(tokens[2])) {

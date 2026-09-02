@@ -46,6 +46,17 @@ describe("assessKeywordQuality — provider noise", () => {
     expect(assessKeywordQuality("search and rescue training", terms()).quality).toBe("ok");
   });
 
+  it("rejects a term containing a word that carries no topic", () => {
+    // supalabs.co's first keyword set, 2026-09-02.
+    for (const t of ["ai stop", "ai makes", "ai are you", "not ai", "its ai", "ai more", "all the answers are correct"]) {
+      expect(assessKeywordQuality(t, terms()).quality, t).toBe("suspect");
+    }
+    // Question words and comparatives are real queries, not fragments.
+    for (const t of ["what is logistics", "best warehouse software", "ai native operations"]) {
+      expect(assessKeywordQuality(t, terms()).quality, t).toBe("ok");
+    }
+  });
+
   it("rejects a preposition plus a bare generic noun", () => {
     expect(assessKeywordQuality("ai in company", terms()).quality).toBe("suspect");
     expect(assessKeywordQuality("ai for business", terms()).quality).toBe("suspect");

@@ -127,6 +127,10 @@ export function seedPhrasesFromPages(
         for (let i = 0; i + n <= toks.length; i++) {
           const gram = toks.slice(i, i + n);
           if (gram.some((t) => t.length < 3 || STOPWORDS.has(t) || brand.has(t) || /^\d+$/.test(t))) continue;
+          // A phrase of only everyday words is a slogan, not a topic:
+          // "all the answers are correct" seeded the keyword tool for
+          // supalabs.co and brought back 6,600 searches of nothing.
+          if (gram.every((t) => GENERIC_MATCH.has(t))) continue;
           const key = gram.join(" ");
           score[key] = (score[key] ?? 0) + weight * (n === 3 ? 1.2 : 1);
         }
@@ -301,6 +305,20 @@ const QUALIFIERS = new Set([
   "small", "medium", "large", "enterprise", "agency", "agencies", "how", "what", "why", "when",
   "tips", "ideas", "strategy", "strategies", "process", "processes", "automation", "automated",
   "using", "use", "uses", "vendor", "vendors", "app", "apps", "api", "apis", "2024", "2025", "2026",
+]);
+
+/**
+ * Everyday words. Kept in the profile, because "Stop adding AI. Start
+ * operating differently." is supalabs.co's actual positioning line, but a
+ * seed phrase made only of these is a slogan, not a topic.
+ */
+const GENERIC_MATCH = new Set([
+  "stop", "start", "starting", "add", "adding", "make", "makes", "making", "made",
+  "work", "working", "works", "more", "less", "better", "best", "good", "great",
+  "new", "get", "getting", "use", "used", "using", "keep", "keeping", "are", "you",
+  "your", "we", "our", "all", "answers", "answer", "correct", "right", "wrong",
+  "different", "differently", "operating", "operate", "run", "running", "way",
+  "why", "how", "what", "when", "where", "who", "top", "big", "small", "real",
 ]);
 
 export function scoreRelevance(
