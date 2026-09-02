@@ -95,6 +95,12 @@ async function signUp(formData: FormData) {
         initials: domain.slice(0, 2).toUpperCase(),
         color: "av-c1",
         indexnow_key: generateIndexNowKey(),
+        // The free draft is delivered by the generate cron, which only
+        // writes for opted-in workspaces. A workspace created at signup is
+        // the opt-in: the person typed their domain to get exactly this.
+        // Bounded by FREE_DRAFTS until they choose a plan.
+        auto_generate: true,
+        auto_generate_weekly_limit: 1,
       });
       // Not fatal: the account exists, and the dashboard asks for a domain if
       // there is no workspace. Log it so a silent miss here is findable.

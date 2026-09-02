@@ -23,6 +23,7 @@ import { runAuditChecks, calculateAuditScore } from "./checks";
 import { fetchPageSpeedDetailed } from "./pagespeed";
 import { discoverKeywords, discoverKeywordsFromSeeds } from "@/lib/seo/keywords";
 import { profileIsUsable, seedPhrasesFromPages, scoreRelevance } from "@/lib/seo/topical-profile";
+import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import {
   fetchRankedKeywords,
@@ -241,7 +242,12 @@ export async function analyseDomain(options: {
         // out of the store by fifty "ai …" terms that each scored a perfect
         // match on one word. Then the rest by relevance, then volume.
         const seededTerms = new Set(seeded.map((k) => k.keyword.toLowerCase()));
+        // Provider noise ("ai a ai", "ai and ai", "s eo") is filtered here,
+        // at storage, not only in the autonomous queue: a term nobody would
+        // type has no business on the keywords page either.
+        const allTerms = new Set(discovered.map((k) => k.keyword.toLowerCase()));
         const ranked = [...discovered]
+          .filter((k) => assessKeywordQuality(k.keyword, allTerms).quality === "ok")
           .map((k) => ({ k, r: rel(k.keyword), s: seededTerms.has(k.keyword.toLowerCase()) ? 1 : 0 }))
           .filter(({ r }) => !usable || r > 0)
           .sort((a, b) => b.s - a.s || b.r - a.r || b.k.volume - a.k.volume);
