@@ -73,6 +73,17 @@ function getAuthHeader(): string {
   return "Basic " + Buffer.from(`${login}:${password}`).toString("base64");
 }
 
+/**
+ * A task that succeeded. 20000 is "Ok." on a live call; 20100 is "Task
+ * Created." on a queued one, and is just as much a success - the answer is
+ * simply not here yet. Treating 20100 as a failure made the client throw on
+ * every successful task_post, which is how the first queued SERP submission
+ * on 2026-09-02 reported "DataForSEO task failed: Task Created."
+ */
+function isTaskOk(code: number): boolean {
+  return code === 20000 || code === 20100;
+}
+
 async function handleResponse<T>(res: Response): Promise<DataForSEOResponse<T>> {
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -86,7 +97,7 @@ async function handleResponse<T>(res: Response): Promise<DataForSEOResponse<T>> 
 
   if (json.status_code !== 20000) {
     const taskErrors = json.tasks
-      ?.filter((t) => t.status_code !== 20000)
+      ?.filter((t) => !isTaskOk(t.status_code))
       .map((t) => `[${t.status_code}] ${t.status_message}`);
 
     throw new DataForSEOError(
@@ -106,7 +117,7 @@ async function handleResponse<T>(res: Response): Promise<DataForSEOResponse<T>> 
   // `ok`, so the article prompt was built telling the model there were no
   // competitors, and an article got written blind with nothing anywhere
   // signalling a problem. Observed for real: task 40201, account paused.
-  const failed = (json.tasks ?? []).filter((t) => t.status_code !== 20000);
+  const failed = (json.tasks ?? []).filter((t) => !isTaskOk(t.status_code));
   if (failed.length && failed.length === (json.tasks ?? []).length) {
     throw new DataForSEOError(
       `DataForSEO task failed: ${failed[0].status_message}`,
@@ -159,6 +170,32 @@ export function setSpendReporter(fn: SpendReporter | null): void {
   reportSpend = fn;
 }
 
+/**
+ * Every response reports what it cost. Recording it here means no caller can
+ * forget, and a new endpoint is covered the day it is added.
+ *
+ * An armed reporter wins, because it knows the workspace, article and run. With
+ * none armed - onboarding, re-discovery, probes, scripts - the default records
+ * the call anyway, unattributed. Until 2026-09-02 that branch did nothing, and
+ * the provider behind discovery and rank tracking showed as $0 on Operations.
+ *
+ * The default is loaded lazily so this module stays importable from the test
+ * suite and the standalone scripts with no database in the environment.
+ */
+function report(operation: string, costUsd: number | null): void {
+  try {
+    if (reportSpend) {
+      reportSpend({ operation, costUsd });
+      return;
+    }
+    void import("@/lib/billing/default-spend")
+      .then((m) => m.recordSpendByDefault({ provider: "dataforseo", operation, costUsd }))
+      .catch(() => {});
+  } catch {
+    // Never let bookkeeping break the call it is measuring.
+  }
+}
+
 export async function post<T = unknown>(
   endpoint: string,
   body: unknown[],
@@ -177,15 +214,7 @@ export async function post<T = unknown>(
       });
 
       const parsed = await handleResponse<T>(res);
-      // Every response reports what it cost. Recording it here means no caller
-      // can forget, and a new endpoint is covered the day it is added.
-      if (reportSpend) {
-        try {
-          reportSpend({ operation: endpoint, costUsd: parsed.cost ?? null });
-        } catch {
-          // Never let bookkeeping break the call it is measuring.
-        }
-      }
+      report(endpoint, parsed.cost ?? null);
       return parsed;
     } catch (err) {
       lastError = err;
@@ -226,5 +255,7 @@ export async function get<T = unknown>(
     },
   });
 
-  return handleResponse<T>(res);
+  const parsed = await handleResponse<T>(res);
+  report(endpoint, parsed.cost ?? null);
+  return parsed;
 }

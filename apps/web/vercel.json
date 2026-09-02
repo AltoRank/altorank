@@ -21,6 +21,10 @@
       "schedule": "0 3 * * *"
     },
     {
+      "path": "/api/cron/serp-collect",
+      "schedule": "20 3 * * *"
+    },
+    {
       "path": "/api/cron/exchange",
       "schedule": "0 5 * * *"
     },
