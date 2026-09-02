@@ -143,6 +143,10 @@ export type Backlink = {
   target_url: string;
   status: BacklinkStatus;
   discovered_at: string;
+  source_url?: string | null;
+  is_dofollow?: boolean | null;
+  first_seen?: string | null;
+  last_seen?: string | null;
 };
 
 // === Calendar ===

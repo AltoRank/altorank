@@ -23,6 +23,9 @@ type DFSBacklinkItem = {
   domain_from_rank?: number | null;
   anchor?: string | null;
   url_to?: string | null;
+  dofollow?: boolean | null;
+  first_seen?: string | null;
+  last_seen?: string | null;
 };
 
 /** Result wrapper for the backlinks/live task. */
@@ -33,10 +36,16 @@ type BacklinksResult = {
 
 export type BacklinkData = {
   sourceDomain: string;
+  /** The exact page the link sits on. */
+  sourceUrl: string | null;
   /** DataForSEO's 0–1000 rank scaled to a DR-like 0–100. */
   sourceDr: number;
   anchorText: string;
   targetUrl: string;
+  /** False means the link passes no authority. Null when unstated. */
+  isDofollow: boolean | null;
+  firstSeen: string | null;
+  lastSeen: string | null;
 };
 
 export function parseBacklinkItem(item: DFSBacklinkItem): BacklinkData | null {
@@ -46,9 +55,13 @@ export function parseBacklinkItem(item: DFSBacklinkItem): BacklinkData | null {
   const rank = typeof item.domain_from_rank === "number" ? item.domain_from_rank : 0;
   return {
     sourceDomain,
+    sourceUrl: (item.url_from ?? "").trim() || null,
     sourceDr: Math.max(0, Math.min(100, Math.round(rank / 10))),
     anchorText: (item.anchor ?? "").trim(),
     targetUrl,
+    isDofollow: typeof item.dofollow === "boolean" ? item.dofollow : null,
+    firstSeen: item.first_seen ?? null,
+    lastSeen: item.last_seen ?? null,
   };
 }
 
@@ -121,9 +134,13 @@ export async function syncBacklinks(
     const rows = links.map((bl) => ({
       workspace_id: workspaceId,
       source_domain: bl.sourceDomain,
+      source_url: bl.sourceUrl,
       source_dr: bl.sourceDr,
       anchor_text: bl.anchorText,
       target_url: bl.targetUrl,
+      is_dofollow: bl.isDofollow,
+      first_seen: bl.firstSeen,
+      last_seen: bl.lastSeen,
       status: "live" as const,
       discovered_at: now,
     }));

@@ -11,10 +11,22 @@ const TAB_CHIPS = [
   { label: "All", value: "" },
 ];
 
-export function BacklinkFilters() {
+export function BacklinkFilters({ workspaces = [] }: { workspaces?: { id: string; name: string }[] }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentStatus = searchParams.get("status") ?? "";
+
+  const currentWorkspace = searchParams.get("workspace") ?? "";
+
+  // The page read only `status`, so the dropdown next to Export (which picks
+  // the target for discovery) looked like a filter and did nothing. This one
+  // is the filter (2026-09-02).
+  function setWorkspace(value: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) params.set("workspace", value);
+    else params.delete("workspace");
+    router.push(`/backlinks?${params.toString()}`);
+  }
 
   function setFilter(value: string) {
     const params = new URLSearchParams(searchParams.toString());
@@ -56,6 +68,19 @@ export function BacklinkFilters() {
           onClick={() => setFilter(c.value)}
         />
       ))}
+      {workspaces.length > 1 && (
+        <select
+          value={currentWorkspace}
+          onChange={(e) => setWorkspace(e.target.value)}
+          aria-label="Filter by workspace"
+          className="ml-auto h-8 rounded-lg border border-line bg-panel px-2 text-[12.5px] text-ink"
+        >
+          <option value="">All workspaces</option>
+          {workspaces.map((w) => (
+            <option key={w.id} value={w.id}>{w.name}</option>
+          ))}
+        </select>
+      )}
     </div>
   );
 }
