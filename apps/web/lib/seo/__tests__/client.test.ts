@@ -193,3 +193,13 @@ describe("spend recording", () => {
     );
   });
 });
+
+describe("spendOperation", () => {
+  it("folds the task id out of task_get so a night's collection is one operation", async () => {
+    const { spendOperation } = await import("../client");
+    expect(spendOperation("/serp/google/organic/task_get/regular/09022023-2413-0066-0000-1f6a6e02b1bb"))
+      .toBe("/serp/google/organic/task_get/regular/{id}");
+    expect(spendOperation("/serp/google/organic/task_post")).toBe("/serp/google/organic/task_post");
+    expect(spendOperation("/dataforseo_labs/google/ranked_keywords/live")).toBe("/dataforseo_labs/google/ranked_keywords/live");
+  });
+});
