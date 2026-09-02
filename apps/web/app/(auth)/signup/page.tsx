@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
+import { sendSignupConfirmation } from "@/lib/email/auth-emails";
 import { authErrorMessage } from "@/lib/auth/errors";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
 import { normalizeDomain, DOMAIN_PATTERN } from "@/lib/growth-plan/build";
@@ -20,23 +20,17 @@ async function signUp(formData: FormData) {
   // already typed their domain once and seen a plan for it, so the first
   // workspace is created for that domain here rather than asked for again.
   const domain = normalizeDomain((formData.get("domain") as string | null) ?? "");
-  const supabase = await createClient();
 
-  // Create auth user
-  const h = await headers();
-  const origin = h.get("origin") || `https://${h.get("host")}` || "http://localhost:3000";
-
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: { name },
-      emailRedirectTo: `${origin}/callback`,
-    },
-  });
-  if (error) {
-    redirect("/signup?error=" + encodeURIComponent(authErrorMessage(error.message)));
+  // Create the auth user and send OUR confirmation email. `auth.signUp`
+  // would make Supabase send its own from a dashboard template; this keeps
+  // the email in the repo (lib/email/auth-emails.ts).
+  let userId: string;
+  try {
+    userId = await sendSignupConfirmation({ email, password, name });
+  } catch (e) {
+    redirect("/signup?error=" + encodeURIComponent(authErrorMessage(e instanceof Error ? e.message : "Could not create the account")));
   }
+  const data = { user: { id: userId } };
 
   // Create the account record + membership using the service role (the user's
   // session is not confirmed yet).
@@ -106,14 +100,6 @@ async function signUp(formData: FormData) {
       // there is no workspace. Log it so a silent miss here is findable.
       if (wsError) console.error("[signup] workspace for", domain, wsError.message);
     }
-  }
-
-  // Supabase returns a session here only when email confirmation is turned off.
-  // Telling a user who is already signed in to go and check their email sent
-  // them looking for a mail that was never sent, while the dashboard rendered
-  // behind the message.
-  if (data.session) {
-    redirect("/dashboard");
   }
 
   redirect("/signup?success=Check+your+email+to+confirm+your+account");
