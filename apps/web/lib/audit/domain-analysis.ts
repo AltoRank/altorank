@@ -35,9 +35,10 @@ import { classifyIntent } from "@/lib/seo/intent";
 import { buildTopicalProfile, type TopicalProfile } from "@/lib/seo/topical-profile";
 import { detectPlatform, type Detection } from "@/lib/cms/detect";
 import { syncBacklinks } from "@/lib/seo/backlinks";
+import { fetchDomainMetrics } from "@/lib/seo/domain-metrics";
 
 export interface AnalysisLayer {
-  id: "readiness" | "crawl" | "pagespeed" | "platform" | "keywords" | "ranked_keywords" | "backlinks";
+  id: "readiness" | "crawl" | "pagespeed" | "platform" | "keywords" | "ranked_keywords" | "backlinks" | "authority";
   status: "ok" | "unavailable" | "failed";
   detail: string;
 }
@@ -335,6 +336,36 @@ export async function analyseDomain(options: {
         status: "failed",
         detail: err instanceof Error ? err.message : "rank lookup failed",
       });
+    }
+  }
+
+  // --- Authority and traffic ------------------------------------------------
+  // The workspace header reads "Authority —" and "— organic /mo" until these
+  // are measured. Only the manual onboarding action ever fetched them, so a
+  // workspace analysed by the cron never had either (2026-09-02). Nulls stay
+  // null: an unmeasured number is not a zero.
+  if (hasDataForSeo && supabase && workspaceId) {
+    try {
+      const m = await fetchDomainMetrics(domain, { languageCode: options.locale ?? "en" });
+      if (m.authority !== null || m.traffic !== null) {
+        await supabase
+          .from("workspaces")
+          .update({
+            ...(m.authority !== null ? { dr: m.authority } : {}),
+            ...(m.traffic !== null ? { traffic: m.traffic } : {}),
+          })
+          .eq("id", workspaceId);
+      }
+      layers.push({
+        id: "authority",
+        status: m.authority === null && m.traffic === null ? "unavailable" : "ok",
+        detail:
+          m.authority === null && m.traffic === null
+            ? "no authority or traffic estimate returned for this domain"
+            : `authority ${m.authority ?? "—"}, ${m.traffic?.toLocaleString() ?? "—"} organic visits a month`,
+      });
+    } catch (err) {
+      layers.push({ id: "authority", status: "failed", detail: err instanceof Error ? err.message : "authority lookup failed" });
     }
   }
 
