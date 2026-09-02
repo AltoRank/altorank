@@ -34,9 +34,10 @@ import {
 import { classifyIntent } from "@/lib/seo/intent";
 import { buildTopicalProfile, type TopicalProfile } from "@/lib/seo/topical-profile";
 import { detectPlatform, type Detection } from "@/lib/cms/detect";
+import { syncBacklinks } from "@/lib/seo/backlinks";
 
 export interface AnalysisLayer {
-  id: "readiness" | "crawl" | "pagespeed" | "platform" | "keywords" | "ranked_keywords";
+  id: "readiness" | "crawl" | "pagespeed" | "platform" | "keywords" | "ranked_keywords" | "backlinks";
   status: "ok" | "unavailable" | "failed";
   detail: string;
 }
@@ -334,6 +335,22 @@ export async function analyseDomain(options: {
         status: "failed",
         detail: err instanceof Error ? err.message : "rank lookup failed",
       });
+    }
+  }
+
+  // --- Who links here -------------------------------------------------------
+  // Only when there is a workspace to store into; the sales-side "check any
+  // domain" path does not need it and should not pay for it.
+  if (hasDataForSeo && supabase && workspaceId) {
+    try {
+      const r = await syncBacklinks(supabase, workspaceId, domain);
+      layers.push({
+        id: "backlinks",
+        status: "ok",
+        detail: r.total !== null ? `${r.total.toLocaleString()} backlinks in the index, ${r.fetched} referring domains stored` : `${r.fetched} referring domains stored`,
+      });
+    } catch (err) {
+      layers.push({ id: "backlinks", status: "failed", detail: err instanceof Error ? err.message : "backlink lookup failed" });
     }
   }
 

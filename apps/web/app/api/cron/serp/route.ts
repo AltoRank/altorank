@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cronSecretFrom } from "@/lib/cron-auth";
 import { setSpendReporter } from "@/lib/seo/client";
+import { syncBacklinks } from "@/lib/seo/backlinks";
 import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
 import { checkRankings } from "@/lib/seo/serp";
@@ -64,6 +65,23 @@ export async function GET(request: Request) {
         workspaceId: ws.id,
       });
     });
+
+    // Weekly backlink pass, folded into the daily rank cron: one DataForSEO
+    // call per workspace per week (~$0.05). Newest discovered_at older than
+    // seven days, or none at all, means it is due.
+    try {
+      const { data: newest } = await supabase
+        .from("backlinks")
+        .select("discovered_at")
+        .eq("workspace_id", ws.id)
+        .order("discovered_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const due = !newest || Date.now() - new Date(newest.discovered_at).getTime() > 7 * 24 * 3600 * 1000;
+      if (due) await syncBacklinks(supabase, ws.id, ws.domain);
+    } catch (err) {
+      console.error(`[cron/serp] backlinks for ${ws.domain}:`, err instanceof Error ? err.message : err);
+    }
 
     try {
       /**

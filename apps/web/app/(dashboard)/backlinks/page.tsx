@@ -3,6 +3,7 @@ import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getBacklinks } from "@/lib/queries/backlinks";
 import { PageHead, DotSep, StatusPill, Avatar, Icons, Button, Card, StatStrip } from "@/components/ui";
 import { ExchangeRequestForm } from "@/components/dashboard/exchange-actions";
+import { DiscoverBacklinksButton } from "@/components/dashboard/discover-backlinks-button";
 import { BacklinkFilters } from "@/components/dashboard/backlink-filters";
 import { ExportCsv } from "@/components/dashboard/export-csv";
 import type { Workspace } from "@/lib/types";
@@ -58,6 +59,7 @@ export default async function BacklinksPage({ searchParams }: Props) {
         actions={
           <>
             <ExportCsv columns={csvColumns} rows={csvRows} filename="backlinks" />
+            <DiscoverBacklinksButton workspaces={workspaces} />
             {workspaces.length > 0 && <ExchangeRequestForm workspaces={workspaces} />}
           </>
         }

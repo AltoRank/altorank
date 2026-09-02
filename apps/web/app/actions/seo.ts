@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { discoverKeywords } from "@/lib/seo/keywords";
 import { checkRankings } from "@/lib/seo/serp";
-import { getBacklinksData } from "@/lib/seo/backlinks";
+import { syncBacklinks } from "@/lib/seo/backlinks";
 import { scoreArticle } from "@/lib/seo/scoring";
 import type { Workspace, Keyword, Article } from "@/lib/types";
 import { buildRankingRows } from "@/lib/seo/rankings";
@@ -139,53 +139,17 @@ export async function checkSerpPositions(workspaceId: string) {
 
 export async function fetchBacklinks(workspaceId: string) {
   const supabase = await createClient();
-
-  // Fetch workspace domain
   const { data: workspace, error: wsError } = await supabase
     .from("workspaces")
-    .select("*")
+    .select("id, domain")
     .eq("id", workspaceId)
     .single();
+  if (wsError || !workspace) throw new Error("Workspace not found");
+  if (!workspace.domain) throw new Error("Workspace has no domain configured");
 
-  if (wsError || !workspace) {
-    throw new Error("Workspace not found");
-  }
-
-  const ws = workspace as Workspace;
-  if (!ws.domain) {
-    throw new Error("Workspace has no domain configured");
-  }
-
-  // Call DataForSEO
-  const backlinks = await getBacklinksData(ws.domain);
-
-  // Upsert into backlinks table
-  const rows = backlinks.map((bl) => ({
-    workspace_id: workspaceId,
-    source_domain: bl.sourceDomain,
-    source_dr: bl.sourceDr,
-    anchor_text: bl.anchorText,
-    target_url: bl.targetUrl,
-    status: "live" as const,
-    discovered_at: new Date().toISOString(),
-  }));
-
-  if (rows.length > 0) {
-    const { error: upsertError } = await supabase
-      .from("backlinks")
-      .upsert(rows, {
-        onConflict: "workspace_id,source_domain,target_url",
-        ignoreDuplicates: false,
-      });
-
-    if (upsertError) {
-      throw new Error(`Failed to upsert backlinks: ${upsertError.message}`);
-    }
-  }
-
+  const result = await syncBacklinks(supabase, workspaceId, workspace.domain as string);
   revalidatePath("/backlinks");
-
-  return { fetched: backlinks.length };
+  return result;
 }
 
 // ---------------------------------------------------------------------------
