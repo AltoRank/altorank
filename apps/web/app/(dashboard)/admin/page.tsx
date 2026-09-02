@@ -7,6 +7,14 @@ import { AdminTabs } from "./admin-tabs";
 import { Table } from "./table";
 import { PreviewControl } from "./preview-control";
 import { getOperatorPreview } from "@/lib/auth/preview";
+import { ScheduledWork } from "./scheduled-work";
+import {
+  forecastAll,
+  jobForOperation,
+  measuredRates,
+  type JobKey,
+  type WorkspaceDrivers,
+} from "@/lib/billing/forecast";
 
 export const metadata: Metadata = { title: "Operations" };
 
@@ -26,15 +34,20 @@ export default async function AdminPage() {
 
   const supabase = createServiceClient();
 
-  const [{ data: spend }, { data: workspaces }, { data: articles }] =
+  const [{ data: spend }, { data: workspaces }, { data: articles }, { data: trackedKw }, { data: prompts }] =
     await Promise.all([
       supabase
         .from("provider_spend")
-        .select("provider, operation, cost_usd, workspace_id, created_at")
+        .select("provider, operation, cost_usd, workspace_id, article_id, created_at")
         .order("created_at", { ascending: false })
         .limit(2000),
-      supabase.from("workspaces").select("id, domain, status, detected_platform, first_analysed_at, auto_generate"),
-      supabase.from("articles").select("workspace_id, status"),
+      supabase
+        .from("workspaces")
+        .select("id, domain, status, detected_platform, first_analysed_at, auto_generate, auto_generate_weekly_limit, geo_tracking"),
+      supabase.from("articles").select("workspace_id, status, keyword"),
+      // What cron/serp will track: the same status filter it uses.
+      supabase.from("keywords").select("workspace_id, term").in("status", ["planned", "shipped"]),
+      supabase.from("geo_prompts").select("workspace_id").eq("enabled", true),
     ]);
 
   // Null whenever the preview is off, and also for a non-operator, though
@@ -78,6 +91,58 @@ export default async function AdminPage() {
   }
 
   const usd = (n: number) => `$${n.toFixed(4)}`;
+
+  // --- What the schedule is expected to cost, from the users' settings -----
+  // Mirrors cron/serp's tracking rule: planned + shipped keywords, plus any
+  // article keyword not already among them, capped in the forecast.
+  const trackedByWs = new Map<string, Set<string>>();
+  for (const k of trackedKw ?? []) {
+    const set = trackedByWs.get(k.workspace_id) ?? new Set<string>();
+    set.add((k.term as string).toLowerCase());
+    trackedByWs.set(k.workspace_id, set);
+  }
+  for (const a of articles ?? []) {
+    if (!a.keyword) continue;
+    const set = trackedByWs.get(a.workspace_id) ?? new Set<string>();
+    set.add((a.keyword as string).toLowerCase());
+    trackedByWs.set(a.workspace_id, set);
+  }
+  const promptsByWs = new Map<string, number>();
+  for (const p of prompts ?? []) promptsByWs.set(p.workspace_id, (promptsByWs.get(p.workspace_id) ?? 0) + 1);
+
+  const drivers: WorkspaceDrivers[] = (workspaces ?? []).map((w) => ({
+    id: w.id,
+    domain: w.domain ?? "—",
+    trackedKeywords: trackedByWs.get(w.id)?.size ?? 0,
+    autoGenerate: Boolean(w.auto_generate),
+    weeklyLimit: (w.auto_generate_weekly_limit as number | null) ?? null,
+    geoTracking: Boolean(w.geo_tracking),
+    enabledPrompts: promptsByWs.get(w.id) ?? 0,
+    needsFirstLook: !w.first_analysed_at,
+  }));
+
+  const { rates, measured } = measuredRates(
+    rows.map((r) => ({
+      provider: r.provider,
+      operation: r.operation,
+      costUsd: r.cost_usd === null ? null : Number(r.cost_usd),
+      articleId: r.article_id,
+    })),
+  );
+  const forecast = forecastAll(drivers, rates);
+  const expectedByWs = new Map(forecast.perWorkspace.map((f) => [f.id, f.total]));
+
+  // Async Server Component: one render per request, so the read is stable for
+  // the render's lifetime. The rule guards client re-renders, which this
+  // page never has.
+  // eslint-disable-next-line react-hooks/purity
+  const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
+  const actual30d: Record<JobKey, number> = { serp: 0, backlinks: 0, generate: 0, geo: 0, analyze: 0 };
+  for (const r of rows) {
+    if (new Date(r.created_at).getTime() < cutoff) continue;
+    const job = jobForOperation(r.provider, r.operation);
+    if (job) actual30d[job] += Number(r.cost_usd ?? 0);
+  }
 
   return (
     <>
@@ -124,6 +189,21 @@ export default async function AdminPage() {
           <PreviewControl active={previewActive} />
         </Card>
 
+        <Card
+          className="shrink-0"
+          title="Scheduled work"
+          meta="What runs, when (UTC), and what it should cost given how the accounts are set up"
+          flush
+        >
+          <ScheduledWork
+            forecast={forecast}
+            actual30d={actual30d}
+            rates={rates}
+            measured={measured}
+            pendingFirstLooks={drivers.filter((d) => d.needsFirstLook).length}
+          />
+        </Card>
+
         <Card className="shrink-0" title="Spend by provider" flush>
           <Table
             head={["Provider", "Calls", "USD"]}
@@ -144,15 +224,17 @@ export default async function AdminPage() {
 
         <Card className="shrink-0" title="Accounts" flush>
           <Table
-            head={["Domain", "Status", "Platform", "Analysed", "Auto", "Articles", "Spend"]}
+            head={["Domain", "Status", "Platform", "Analysed", "Auto", "Tracked", "Articles", "Spend", "Expected / mo"]}
             rows={(workspaces ?? []).map((w) => [
               w.domain ?? "—",
               w.status ?? "—",
               w.detected_platform ?? "—",
               w.first_analysed_at ? "yes" : "no",
               w.auto_generate ? "on" : "off",
+              String(trackedByWs.get(w.id)?.size ?? 0),
               String(articleCount.get(w.id) ?? 0),
               byWorkspace.has(w.id) ? usd(byWorkspace.get(w.id)!) : "—",
+              (expectedByWs.get(w.id) ?? 0) > 0 ? `$${expectedByWs.get(w.id)!.toFixed(2)}` : "—",
             ])}
           />
         </Card>

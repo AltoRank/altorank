@@ -182,7 +182,19 @@ export function setSpendReporter(fn: SpendReporter | null): void {
  * The default is loaded lazily so this module stays importable from the test
  * suite and the standalone scripts with no database in the environment.
  */
+/**
+ * The operation as it should appear in spend: the endpoint, not the task.
+ *
+ * task_get carries the task id in its path, so recording the path verbatim
+ * made every collected SERP its own operation and turned "Spend by operation"
+ * into one row per keyword per night. The id is not the operation.
+ */
+export function spendOperation(endpoint: string): string {
+  return endpoint.replace(/\/task_get\/(regular|advanced|html)\/[0-9a-f-]{20,}$/, "/task_get/$1/{id}");
+}
+
 function report(operation: string, costUsd: number | null): void {
+  operation = spendOperation(operation);
   try {
     if (reportSpend) {
       reportSpend({ operation, costUsd });
