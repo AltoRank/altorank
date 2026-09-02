@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { IconButton } from "@/components/ui/button";
 import { Icons } from "@/components/ui";
@@ -11,10 +12,25 @@ interface ArticleRowMenuProps {
   currentStatus: string;
 }
 
+/** Tallest the menu gets, with the status submenu open. */
+const MENU_MAX_HEIGHT = 240;
+
 export function ArticleRowMenu({ articleId, currentStatus }: ArticleRowMenuProps) {
   const [open, setOpen] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  /**
+   * Where to draw the menu, in viewport coordinates.
+   *
+   * It used to be positioned `absolute` inside the row, which put it inside
+   * Card, which sets `overflow-hidden` so a table's corners do not poke
+   * through its rounded border. The menu was therefore clipped to the card and
+   * the last row's menu was mostly invisible. Card cannot stop clipping
+   * without squaring off every table it holds, so the menu leaves the card
+   * instead: a portal to document.body, positioned from the button's rect.
+   */
+  const [anchor, setAnchor] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
+  const buttonRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -26,7 +42,17 @@ export function ArticleRowMenu({ articleId, currentStatus }: ArticleRowMenuProps
       }
     }
     document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    // The menu is fixed to the viewport, so a scroll would leave it behind the
+    // row it belongs to. Close instead of tracking: a menu that follows the
+    // page is more surprising than one that dismisses.
+    const close = () => { setOpen(false); setShowStatusMenu(false); };
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
   }, [open]);
 
   async function handleStatusChange(status: string) {
@@ -47,19 +73,41 @@ export function ArticleRowMenu({ articleId, currentStatus }: ArticleRowMenuProps
 
   return (
     <div className="relative" ref={ref}>
+      <div ref={buttonRef} className="inline-flex">
       <IconButton
         ghost
         onClick={(e) => {
           e.stopPropagation();
+          const r = buttonRef.current?.getBoundingClientRect();
+          if (r) {
+            // Flip up when there is not room below. The row that needed this
+            // fix most is the last one in the table, which is exactly the row
+            // with no space under it: escaping the card only to fall off the
+            // viewport is not a fix.
+            const below = window.innerHeight - r.bottom;
+            setAnchor(
+              below < MENU_MAX_HEIGHT
+                ? { bottom: window.innerHeight - r.top + 4, right: window.innerWidth - r.right }
+                : { top: r.bottom + 4, right: window.innerWidth - r.right },
+            );
+          }
           setOpen(!open);
           setShowStatusMenu(false);
         }}
       >
         <Icons.more size={14} />
       </IconButton>
+      </div>
 
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-bg border border-line rounded-lg shadow-lg py-1 min-w-[160px]">
+      {open && anchor && createPortal(
+        <div
+          ref={ref}
+          style={{
+            position: "fixed",
+            ...(anchor.top !== undefined ? { top: anchor.top } : { bottom: anchor.bottom }),
+            right: anchor.right,
+          }}
+          className="z-[80] bg-bg border border-line rounded-lg shadow-lg py-1 min-w-[160px]">
           <button
             className={menuItemClass}
             onClick={(e) => {
@@ -109,7 +157,8 @@ export function ArticleRowMenu({ articleId, currentStatus }: ArticleRowMenuProps
               ))}
             </div>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

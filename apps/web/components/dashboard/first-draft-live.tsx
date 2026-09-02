@@ -164,7 +164,7 @@ export function FirstDraftLive({
         <div className="text-[13px] font-medium text-ink">
           Chose{" "}
           <Link
-            href={`/articles/${newest.id}`}
+            href={`/content/${newest.id}`}
             className="text-accent-ink underline decoration-line underline-offset-[3px]"
           >
             {newest.keyword || newest.title}
