@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cronSecretFrom } from "@/lib/cron-auth";
 import { setSpendReporter } from "@/lib/seo/client";
+import { getQuota, entitledToScheduledWork } from "@/lib/billing/quota";
 import { syncBacklinks } from "@/lib/seo/backlinks";
 import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -44,6 +45,8 @@ export async function GET(request: Request) {
     /** Tasks queued tonight; cron/serp-collect records the answers. */
     checked: number;
     error?: string;
+    /** Set when the workspace was passed over rather than failing. */
+    skipped?: string;
   }> = [];
 
   for (const ws of workspaces) {
@@ -53,6 +56,19 @@ export async function GET(request: Request) {
         domain: "",
         checked: 0,
         error: "No domain configured",
+      });
+      continue;
+    }
+
+    // Nothing below is free, and none of it is worth buying for an account
+    // that cannot ship what it produces. See entitledToScheduledWork.
+    const quota = await getQuota(supabase, ws.agency_id as string, null);
+    if (!entitledToScheduledWork(quota)) {
+      results.push({
+        workspaceId: ws.id,
+        domain: ws.domain,
+        checked: 0,
+        skipped: "no plan",
       });
       continue;
     }
@@ -186,12 +202,14 @@ export async function GET(request: Request) {
 
   const totalChecked = results.reduce((sum, r) => sum + r.checked, 0);
   const errors = results.filter((r) => r.error).length;
+  const skipped = results.filter((r) => r.skipped).length;
 
   return NextResponse.json({
     success: true,
     workspaces: results.length,
     totalChecked,
     errors,
+    skipped,
     results,
   });
 }
