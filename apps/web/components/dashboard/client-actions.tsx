@@ -18,7 +18,8 @@ const STEP_LABELS: Record<OnboardStep, string> = {
   done: "Done!",
 };
 
-export function ClientActions() {
+export function ClientActions({ allowance }: { allowance?: { limit: number | null; remaining: number | null; noPlan: boolean } }) {
+  const atLimit = allowance ? allowance.remaining !== null && allowance.remaining <= 0 : false;
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<OnboardStep>("idle");
   const onboarding = useOnboarding();
@@ -68,14 +69,28 @@ export function ClientActions() {
 
   return (
     <>
-      <Button
-        variant="accent"
-        data-onboarding="add-workspace"
-        onClick={() => setOpen(true)}
-      >
-        <Icons.plus size={14} />
-        Add workspace
-      </Button>
+      {atLimit ? (
+        <div className="flex flex-col items-end gap-1">
+          <Button variant="accent" data-onboarding="add-workspace" disabled>
+            <Icons.plus size={14} />
+            Add workspace
+          </Button>
+          <a href="/settings/billing" className="text-[11.5px] text-accent-ink underline decoration-line underline-offset-[3px]">
+            {allowance?.noPlan
+              ? "One workspace before choosing a plan. Choose a plan for more sites"
+              : `All ${allowance?.limit} workspaces on this plan are in use. Upgrade for more`}
+          </a>
+        </div>
+      ) : (
+        <Button
+          variant="accent"
+          data-onboarding="add-workspace"
+          onClick={() => setOpen(true)}
+        >
+          <Icons.plus size={14} />
+          Add workspace
+        </Button>
+      )}
 
       <Dialog
         open={open}
@@ -99,6 +114,7 @@ export function ClientActions() {
             <span className="text-[12.5px] font-medium text-ink-2">Domain</span>
             <input
               name="domain"
+              required
               disabled={pending}
               placeholder="acme.com"
               className="px-3 py-2 rounded-lg border border-line bg-panel text-[13px] text-ink placeholder:text-ink-3 outline-none focus:border-accent transition-colors disabled:opacity-50"

@@ -4,6 +4,9 @@ import { getArticles } from "@/lib/queries/articles";
 import { PageHead, StatusPill, Avatar, Chip, Card } from "@/components/ui";
 import { IconButton } from "@/components/ui/button";
 import { ClientActions } from "@/components/dashboard/client-actions";
+import { requireAuth } from "@/lib/auth/require-auth";
+import { createClient } from "@/lib/supabase/server";
+import { getWorkspaceAllowance } from "@/lib/billing/workspaces";
 import { ClientFilters } from "@/components/dashboard/client-filters";
 import { ClientRow } from "@/components/dashboard/client-row";
 import { plural } from "@/lib/utils";
@@ -23,6 +26,8 @@ type Props = {
  */
 function matchesQuery(fields: (string | null | undefined)[], q: string): boolean {
   if (!q) return true;
+  const { agencyId, user } = await requireAuth();
+  const allowance = await getWorkspaceAllowance(await createClient(), agencyId, user.email);
   const needle = q.trim().toLowerCase();
   return fields.some((f) => (f ?? "").toLowerCase().includes(needle));
 }
@@ -52,7 +57,7 @@ export default async function ClientsPage({ searchParams }: Props) {
       <PageHead
         title="Workspaces"
         subtitle={<><StatusPill status="on" label={plural(workspaces.length, "workspace")} /><span>{plural(totalLive, "article")} published</span></>}
-        actions={<ClientActions />}
+        actions={<ClientActions allowance={{ limit: allowance.limit, remaining: allowance.remaining, noPlan: allowance.reason === "no-plan" }} />}
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">

@@ -74,6 +74,7 @@ export const PLANS = [
     desc: 'No API keys to manage, because model and data costs are included. For solo operators and agencies running one or two brands.',
     features: [
       '100 articles / month included',
+      'Up to 3 workspaces (sites or clients)',
       '€0.60 per additional article',
       'No API keys needed, costs included',
       'Voice profile training',
@@ -94,6 +95,7 @@ export const PLANS = [
     features: [
       'Everything in Managed',
       '400 articles / month included',
+      'Unlimited workspaces: a site or a client each',
       '€0.45 per additional article',
       'Role-based permissions for your team',
       'Priority support, same-day',

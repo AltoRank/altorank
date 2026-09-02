@@ -6,10 +6,17 @@ import { ensureAgency } from "@/lib/queries/agency";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { z } from "zod";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
+import { getWorkspaceAllowance, workspaceLimitMessage } from "@/lib/billing/workspaces";
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1),
-  domain: z.string().optional(),
+  // Required since 2026-09-02: a workspace is a site, and one without a
+  // domain cannot be analysed, seeded or drafted for. Normalised so
+  // "https://www.Acme.com/" and "acme.com" are the same workspace.
+  domain: z
+    .string()
+    .transform((d) => d.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/[/?#].*$/, ""))
+    .pipe(z.string().regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/, "Enter a domain like acme.com")),
   initials: z.string().max(2).default(""),
   color: z.string().default("av-c1"),
 });
@@ -31,6 +38,22 @@ export async function createWorkspace(formData: FormData) {
   if (!user) throw new Error("Not authenticated");
 
   const agencyId = await ensureAgency(user.id, user.user_metadata ?? {});
+
+  // Workspaces are limited per plan (one before choosing one). Articles are
+  // the meter; this stops a free account from running fifty crawls and
+  // fifty free drafts under fifty domains.
+  const allowance = await getWorkspaceAllowance(supabase, agencyId, user.email);
+  if (allowance.remaining !== null && allowance.remaining <= 0) {
+    throw new Error(workspaceLimitMessage(allowance));
+  }
+
+  const { data: dup } = await supabase
+    .from("workspaces")
+    .select("id, name")
+    .eq("agency_id", agencyId)
+    .ilike("domain", parsed.domain)
+    .maybeSingle();
+  if (dup) throw new Error(`${parsed.domain} is already the workspace "${dup.name}". One workspace per site.`);
 
   const { data, error } = await supabase
     .from("workspaces")
