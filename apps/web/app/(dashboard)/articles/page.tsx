@@ -32,27 +32,30 @@ export default async function ArticlesPage({ searchParams }: Props) {
   const params = await searchParams;
   const statusFilter = params.status ?? "";
 
-  const [workspaces, allArticles] = await Promise.all([
-    getWorkspaces(),
-    getArticles(scopeId ?? undefined, params.status, params.sort),
-  ]);
-
   /**
-   * What each live article actually earned: Search Console clicks over the
-   * last 30 days, attributed per article by the analytics cron. Dash when
-   * nothing is attributed - either GSC is not connected or the article is
-   * not published - because "0 clicks" and "nobody measured" are different
-   * facts.
+   * The third read is what each live article actually earned: Search Console
+   * clicks over the last 30 days, attributed per article by the analytics
+   * cron. Dash when nothing is attributed - either GSC is not connected or the
+   * article is not published - because "0 clicks" and "nobody measured" are
+   * different facts.
+   *
+   * It joins the other two rather than following them: it is keyed by date
+   * alone and never needed the article list it used to wait for.
    */
   const supabase = await createClient();
   const since = new Date(Date.now() - 30 * 24 * 3600 * 1000)
     .toISOString()
     .slice(0, 10);
-  const { data: metricRows } = await supabase
-    .from("analytics_metrics")
-    .select("article_id, clicks")
-    .not("article_id", "is", null)
-    .gte("metric_date", since);
+
+  const [workspaces, allArticles, { data: metricRows }] = await Promise.all([
+    getWorkspaces(),
+    getArticles(scopeId ?? undefined, params.status, params.sort),
+    supabase
+      .from("analytics_metrics")
+      .select("article_id, clicks")
+      .not("article_id", "is", null)
+      .gte("metric_date", since),
+  ]);
   const clicksByArticle = new Map<string, number>();
   for (const m of metricRows ?? []) {
     if (!m.article_id) continue;
