@@ -5,6 +5,7 @@ import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getRecentArticles, getArticles } from "@/lib/queries/articles";
 import { getKeywords } from "@/lib/queries/keywords";
 import { getTrafficSeries, type TrafficSeries } from "@/lib/queries/traffic";
+import { getBingSummary } from "@/lib/queries/bing";
 import { PageHead, DotSep, StatusPill, Avatar, Icons, Button, Chip, Card, StatStrip, ConnectPrompt } from "@/components/ui";
 import { ClientActions } from "@/components/dashboard/client-actions";
 import { WorkspaceGrid } from "@/components/dashboard/workspace-grid";
@@ -109,7 +110,7 @@ export default async function DashboardPage() {
   // state from an instruction into an explanation. Independent of the five
   // reads beside it, so it runs with them instead of after them.
   const gscSupabase = await createClient();
-  const [workspaces, allArticles, recent, traffic, keywords, { count: gscCount }] =
+  const [workspaces, allArticles, recent, traffic, keywords, { count: gscCount }, bing] =
     await Promise.all([
       getWorkspaces(),
       getArticles(scopeId ?? undefined),
@@ -120,6 +121,9 @@ export default async function DashboardPage() {
         .from("workspace_integrations")
         .select("id", { count: "exact", head: true })
         .eq("integration_id", "gsc"),
+      // Bing, kept beside the chart rather than in it: two engines summed into
+      // one line would be a number that describes neither.
+      getBingSummary(scopeId ?? undefined),
     ]);
   const gscConnected = (gscCount ?? 0) > 0;
 
@@ -233,6 +237,13 @@ export default async function DashboardPage() {
               <span className="flex items-center gap-1.5">
                 <i className="inline-block w-2.5 h-0.5 rounded-sm bg-ink-4 mt-[1px]" />Prev period
               </span>
+              {bing.connected && (
+                <span className="ml-auto text-ink-3">
+                  {bing.hasData
+                    ? `Bing · ${bing.clicks.toLocaleString()} clicks · ${bing.impressions.toLocaleString()} impressions, ${bing.days}d`
+                    : "Bing connected · nothing reported yet"}
+                </span>
+              )}
             </div>
           </Card>
 

@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { cronSecretFrom } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { syncWorkspaceAnalytics, type SyncableIntegration } from "@/lib/google/sync";
+import { syncBingWorkspace, type BingIntegration, type BingSyncResult } from "@/lib/bing/sync";
 
 /**
- * Daily cron: sync GA4 + GSC metrics for all connected workspaces.
+ * Daily cron: sync GA4 + GSC metrics for all connected workspaces, then Bing.
  */
 export async function GET(request: Request) {
   const cronSecret = cronSecretFrom(request);
@@ -41,18 +42,29 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: integrationsError.message }, { status: 500 });
   }
 
-  if (!integrations?.length) {
-    return NextResponse.json({ success: true, synced: 0 });
-  }
-
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const dateStr = yesterday.toISOString().split("T")[0];
 
   const results: Array<{ workspaceId: string; ga4: number; gsc: number; error?: string }> = [];
-  for (const integration of integrations) {
+  for (const integration of integrations ?? []) {
     results.push(await syncWorkspaceAnalytics(supabase, integration as SyncableIntegration, dateStr));
   }
 
-  return NextResponse.json({ success: true, synced: results.length, results });
+  // Bing: the last week, replaced in place, because Bing revises recent days.
+  // One call per workspace returns the whole series, so this is cheap.
+  const { data: bingRows, error: bingError } = await supabase
+    .from("workspace_integrations")
+    .select("*, workspace:workspaces(id, domain)")
+    .eq("integration_id", "bing")
+    .not("tokens", "is", null);
+  if (bingError) {
+    return NextResponse.json({ error: bingError.message }, { status: 500 });
+  }
+  const bing: BingSyncResult[] = [];
+  for (const row of bingRows ?? []) {
+    bing.push(await syncBingWorkspace(supabase, row as BingIntegration, 7));
+  }
+
+  return NextResponse.json({ success: true, synced: results.length + bing.length, results, bing });
 }

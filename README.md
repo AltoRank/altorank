@@ -50,6 +50,7 @@ checkable here: grep for a publish tool and you will not find one.
 | Publishing | **12 destinations** (below) |
 | Locales | **35** (`apps/web/lib/seo/locales.ts`) |
 | Rank tracking | scheduled SERP checks |
+| Search analytics | Google Search Console; Bing Webmaster Tools (clicks and impressions per day) |
 | AI visibility | whether AI answers name you, and who they name instead |
 
 **Publishing destinations** (`apps/web/lib/cms/adapter.ts`) — twelve adapters, of

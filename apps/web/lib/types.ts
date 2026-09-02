@@ -380,7 +380,8 @@ export type AnalyticsMetric = {
   id: string;
   workspace_id: string;
   article_id: string | null;
-  source: "ga4" | "gsc";
+  /** bing rows are daily site totals: query and page_url are always null. */
+  source: "ga4" | "gsc" | "bing";
   metric_date: string;
   pageviews: number;
   sessions: number;
