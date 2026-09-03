@@ -41,11 +41,21 @@ import { orderByStaleness, latestPerWorkspace } from "@/lib/content/generate-que
  * seven in a week. The ceiling was a five-minute function, not a view about
  * how often a site should publish.
  *
- * So: four runs a day (01/07/13/19 UTC, slots no other cron uses), and an
- * explicit ceiling on how much any one invocation will do. Those go together -
- * a bound per run is what makes running more often safe, and frequent runs are
- * what make the bound cheap, because whatever is left waits six hours rather
- * than a day.
+ * So: four runs a day, and an explicit ceiling on how much any one invocation
+ * will do. Those go together - a bound per run is what makes running more often
+ * safe, and frequent runs are what make the bound cheap, because whatever is
+ * left waits six hours rather than a day.
+ *
+ * The four runs are not all in vercel.json. The Vercel account is on Hobby,
+ * which rejects any cron expression firing more than once a day - the
+ * deployment fails outright, so `0 1,7,13,19 * * *` here is not an option
+ * without a Pro upgrade. Vercel keeps the 07:00 run; .github/workflows/
+ * generate-cron.yml calls this same endpoint at 01/13/19 UTC with the same
+ * secret. One code path, two schedulers.
+ *
+ * If that workflow is not armed (its secret is unset), this route still behaves
+ * exactly as it did - once a day, bounded. Nothing here depends on the extra
+ * runs arriving.
  *
  * Nothing about the safety rails changes: `auto_generate` is still opt-in, the
  * weekly limit still caps each workspace, and the plan quota still caps the
@@ -122,7 +132,7 @@ export async function GET(request: Request) {
         workspaceId: ws.id as string,
         domain: (ws.domain as string | null) ?? null,
         status: "skipped",
-        detail: `run limit reached (${MAX_ARTICLES_PER_RUN}); the next run is in six hours`,
+        detail: `run limit reached (${MAX_ARTICLES_PER_RUN}); the next run starts here`,
       });
       continue;
     }
