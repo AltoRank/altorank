@@ -28,7 +28,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Matches .nvmrc and the engines field. CI was on 20 while local
+          # development runs 22, so CI was not testing the runtime that ships.
+          node-version: 22
           cache: npm
 
       # `npm ci` rather than `npm install`: it fails loudly when the lockfile

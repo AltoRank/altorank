@@ -12,5 +12,8 @@
     "test": "npm run test -w apps/web",
     "smoke": "npm run smoke -w apps/web"
   },
-  "license": "AGPL-3.0-only"
+  "license": "AGPL-3.0-only",
+  "engines": {
+    "node": ">=22"
+  }
 }
