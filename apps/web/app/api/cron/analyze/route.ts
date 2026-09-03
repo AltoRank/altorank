@@ -4,6 +4,13 @@ import { setSpendReporter } from "@/lib/seo/client";
 import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
 import { analyseDomain } from "@/lib/audit/domain-analysis";
+import {
+  PROFILE_MAX_AGE_DAYS,
+  refreshTopicalProfile,
+  selectStale,
+  type ProfileCandidate,
+  type RefreshOutcome,
+} from "@/lib/audit/profile-refresh";
 
 /**
  * First-look analysis for domains nobody has looked at yet.
@@ -22,7 +29,17 @@ import { analyseDomain } from "@/lib/audit/domain-analysis";
  * the database makes it restartable and survives a deploy mid-analysis.
  *
  * `first_analysed_at` is set even when layers fail, so a domain that cannot be
- * reached is not retried forever. Re-running is a manual action.
+ * reached is not retried forever. Re-running the full analysis is still a
+ * manual action.
+ *
+ * The topical profile is the exception, and it had to become one. Nothing ever
+ * rebuilt it, so the vocabulary a site was given the day it was added was the
+ * vocabulary it kept - and since that profile is what scoreRelevance judges
+ * every keyword against, a stale one quietly mis-ranks the whole unattended
+ * queue. It also meant a change to how profiles are built could not reach an
+ * existing site: PR #33 was inert in production until every site was re-crawled
+ * by hand. A refresh is only a crawl, with none of the paid layers, so it runs
+ * here on the slots first-look analysis did not need.
  */
 
 export const maxDuration = 300;
@@ -102,10 +119,39 @@ export async function GET(request: Request) {
     }
   }
 
+  // Refreshes take what first-look analysis left. A new domain has nothing at
+  // all and waits for no one; a month-old profile can wait another day. When
+  // three domains are pending this run does no refreshing, which is correct -
+  // both share one 300s invocation.
+  const refreshed: RefreshOutcome[] = [];
+  const slots = BATCH - (pending?.length ?? 0);
+
+  if (slots > 0) {
+    // Oldest first, nulls before them, so the queue rotates instead of
+    // re-crawling the same sites. `.lt()` on the JSON key would drop rows with
+    // no builtAt at all - the ones that need this most - so staleness is
+    // decided in selectStale rather than in the filter.
+    const { data: candidates } = await supabase
+      .from("workspaces")
+      .select("id, domain, built:topical_profile->>builtAt")
+      .not("domain", "is", null)
+      .not("first_analysed_at", "is", null)
+      .neq("status", "paused")
+      .order("topical_profile->>builtAt", { ascending: true, nullsFirst: true })
+      .limit(slots);
+
+    for (const ws of selectStale((candidates ?? []) as ProfileCandidate[], slots)) {
+      refreshed.push(await refreshTopicalProfile(supabase, ws.id, ws.domain as string));
+    }
+  }
+
   return NextResponse.json({
     pending: pending?.length ?? 0,
     analysed: results.filter((r) => r.status === "analysed").length,
     errors: results.filter((r) => r.status === "error").length,
+    profileMaxAgeDays: PROFILE_MAX_AGE_DAYS,
+    profilesRefreshed: refreshed.filter((r) => r.status === "refreshed").length,
     results,
+    refreshed,
   });
 }
