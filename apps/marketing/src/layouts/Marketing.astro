@@ -21,9 +21,9 @@ const { headerOverlay = false, ...props } = Astro.props;
 ---
 
 <Base {...props}>
-  <Header overlay={headerOverlay} />
+  <Header overlay={headerOverlay} lang={props.lang} />
   <main class="flex-1">
     <slot />
   </main>
-  <Footer />
+  <Footer lang={props.lang} />
 </Base>

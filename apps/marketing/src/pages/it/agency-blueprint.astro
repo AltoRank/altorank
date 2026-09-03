@@ -75,7 +75,7 @@ const SOLUTION = [
 const OUTCOMES = [
   'Un retainer GEO o di AI visibility che puoi definire, prezzare e difendere, costruito su un metodo che puoi mostrare al cliente.',
   'Un report mensile per il cliente con il tuo brand, sul lavoro che il sistema ha davvero fatto e non su dati di terzi ri-visualizzati.',
-  'Volume di contenuti su tutto il portafoglio senza aggiungere copywriter, con voce per cliente e 12 destinazioni CMS.',
+  'Volume di contenuti su tutto il portafoglio senza aggiungere copywriter, con voce per cliente e 11 destinazioni CMS.',
   'Un costo software che è la tua bolletta di infrastruttura, non una voce per postazione che cresce contro di te man mano che acquisisci clienti.',
 ];
 
@@ -102,6 +102,29 @@ const PLANS_IT = [
   },
 ];
 
+const AGENCY_LAYER = [
+  {
+    title: 'Un workspace per cliente, e i workspace non sono il contatore',
+    body: 'Ogni cliente ha un workspace isolato con il suo sito, il suo set di keyword, il suo profilo di voce e la sua destinazione di pubblicazione. Niente è condiviso tra loro se non lo condividi tu. Il piano Agency non mette un tetto a quanti ne apri, quindi prendere un cliente non costa nulla finché gli articoli di quel cliente non vengono davvero prodotti. Managed si ferma a tre workspace, che è la linea onesta tra un operatore singolo e un portafoglio.',
+  },
+  {
+    title: 'Il white-label non è dietro un piano, nemmeno nella build gratuita',
+    body: 'Logo, colore d’accento, dominio personalizzato e l’indirizzo da cui partono i report mensili sono impostazioni dell’account, applicate a tutto quello che il cliente vede. Non è un upsell: sotto la licenza non ci sono funzionalità bloccate, quindi la build self-hosted ha lo stesso white-label e la stessa capacità multi-cliente dei piani a pagamento. Chi ti vende il branding client-facing come piano premium ti sta facendo pagare qualcosa che noi non blocchiamo.',
+  },
+  {
+    title: 'Tre ruoli, così un copywriter non può cambiare il brand dell’account',
+    body: 'Owner, admin ed editor. Gli editor scrivono, revisionano e approvano i contenuti ma non toccano fatturazione, branding o portafoglio clienti, e modificare le impostazioni white-label è riservato a owner e admin. È la separazione che conta quando un copywriter junior lavora dentro il brand di un cliente vero e non in una sandbox.',
+  },
+  {
+    title: 'L’approvazione sta dentro la pubblicazione, con sign-off del cliente opzionale',
+    body: 'Il blocco fa parte dello step di pubblicazione e non è un campo di stato lì accanto, quindi job schedulati e azioni massive non possono aggirarlo, e la pubblicazione parte sempre in bozza. Aggiungi il cliente come revisore e la traccia registra chi ha approvato quale versione e quando: è esattamente il documento che ti serve quando un cliente chiede perché una pagina è andata online.',
+  },
+  {
+    title: 'Voce per cliente, undici destinazioni di pubblicazione',
+    body: 'Ogni workspace allena il proprio profilo di voce sui testi esistenti di quel cliente, così l’output non converge su un unico stile di casa su tutto il portafoglio. La pubblicazione arriva su WordPress, Shopify, WooCommerce, Magento, Webflow, Ghost, Wix, HubSpot, Notion, Framer o un repository git, che copre buona parte di quello che gira davvero su una base clienti mista.',
+  },
+];
+
 const FAQS = [
   {
     question: 'È disponibile oggi?',
@@ -125,13 +148,29 @@ const FAQS = [
     question: 'Perché regalare le parti che gli altri tool fanno pagare?',
     answer: 'Perché il codice non è il vantaggio competitivo. I concorrenti hanno già rilasciato le stesse funzionalità e la categoria è ben servita. Quello che non abbiamo è distribuzione, né un motivo per cui un’agenzia dovrebbe fidarsi di un tool senza storico. Rilasciare tutto in open source è il modo in cui compriamo entrambe le cose, e la licenza è ciò che impedisce a un concorrente di prenderlo e richiuderlo.',
   },
+  {
+    question: 'Fate pagare per workspace cliente o per postazione?',
+    answer: 'Né l’uno né l’altro. La misurazione è sugli articoli pubblicati e su chi paga il conto di modelli e dati. Il piano Agency a €199 al mese include 400 articoli e un numero illimitato di workspace, con i permessi per ruolo inclusi invece che pagati per utente. Acquisire un cliente non deve alzarti la bolletta software prima che quel cliente abbia prodotto qualcosa.',
+  },
+  {
+    question: 'Cosa succede se pubblico più di 400 articoli in un mese?',
+    answer: 'Ogni articolo aggiuntivo costa €0,45. Non c’è un salto forzato al piano superiore e non c’è una penale di eccedenza, perché il costo marginale è un costo reale di modelli e dati e non una leva di pricing. Su Managed la stessa eccedenza è €0,60, quindi il gradino Agency abbassa il costo marginale oltre ad alzare il volume incluso.',
+  },
+  {
+    question: 'Il report white-label è riservato al piano Agency?',
+    answer: 'No, ed è il caso di essere precisi perché la maggior parte dei tool di questa categoria lo blocca davvero. Branding white-label e workspace multi-cliente non sono dietro nessun piano, nemmeno nella build gratuita self-hosted. I piani a pagamento vendono hosting, costi di modelli e dati inclusi, volume, ruoli e supporto: non l’accesso al branding che vede il cliente.',
+  },
+  {
+    question: 'Un cliente può approvare i suoi contenuti prima che vadano online?',
+    answer: 'Sì. Il sign-off del cliente è un secondo blocco opzionale sopra la tua approvazione editoriale, e in ogni caso la pubblicazione parte in bozza. La traccia registra quale versione è stata approvata e da chi, così alla domanda "chi ha approvato questa pagina" si risponde con un registro e non con un ricordo.',
+  },
 ];
 
 const structuredData = [
   buildArticleSchema({
-    title: `Il piano per le agenzie: cosa stiamo costruendo con ${APP_NAME}`,
+    title: `Software di contenuti SEO white-label per agenzie: il piano ${APP_NAME}`,
     description:
-      'Il problema che AltoRank affronta per le agenzie, l’approccio, il risultato che puoi rivendere e quanto costa. Con dati di prima mano da un’analisi di 1.758 siti di agenzie.',
+      'Workspace multi-cliente, white-label non bloccato e approvazione prima di ogni pubblicazione. Il problema che AltoRank affronta per le agenzie, l’approccio, il risultato che puoi rivendere e quanto costa.',
     publishDate,
     dateModified,
     author: AUTHOR_NAME,
@@ -144,8 +183,8 @@ const structuredData = [
 ---
 
 <PSEO
-  title="Il piano per le agenzie: problema, approccio, risultato, prezzo"
-  description="Cosa stiamo costruendo con AltoRank per le agenzie e perché: il problema, l’approccio, il risultato che puoi rivendere e quanto costa. Con dati di prima mano su 1.758 siti di agenzie."
+  title="Software di contenuti SEO white-label per agenzie"
+  description="Workspace multi-cliente, white-label non bloccato, approvazione prima di pubblicare. Cosa costruiamo per le agenzie, quanto costa e i dati da 1.758 siti."
   breadcrumbs={breadcrumbs}
   structuredData={structuredData}
   lang="it"
@@ -275,6 +314,34 @@ const structuredData = [
           </p>
         </div>
       </div>
+    </div>
+  </section>
+
+  {/* IL LIVELLO AGENZIA */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h2 class="mb-3 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
+        Come funziona il livello agenzia
+      </h2>
+      <p class="mb-8 text-[15.5px] leading-relaxed text-ink-2">
+        Le parti che esistono perché un portafoglio non è un sito ripetuto. Workspace,
+        branding, ruoli e traccia di approvazione, descritti come sono davvero costruiti e
+        non come una griglia di funzionalità.
+      </p>
+      <div class="flex flex-col gap-3">
+        {AGENCY_LAYER.map((a) => (
+          <div class="rounded-xl border border-line bg-bg p-5">
+            <h3 class="mb-1.5 text-[16px] font-semibold tracking-[-0.015em] text-ink">{a.title}</h3>
+            <p class="text-[14.5px] leading-relaxed text-ink-2">{a.body}</p>
+          </div>
+        ))}
+      </div>
+      <p class="mt-6 rounded-xl border border-line bg-panel-2 p-5 text-[14.5px] leading-relaxed text-ink-2">
+        In termini di portafoglio: i 400 articoli inclusi nel piano Agency sono circa 26 al
+        mese su un book da quindici clienti, o 40 su dieci, prima di un solo euro di
+        eccedenza. Il primo limite che incontrerai è la capacità di revisione editoriale,
+        non il piano, ed è il limite che preferiamo tu incontri.
+      </p>
     </div>
   </section>
 

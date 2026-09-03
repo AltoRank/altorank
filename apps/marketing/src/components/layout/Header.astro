@@ -2,6 +2,7 @@
 import Logo from '@/components/shared/Logo.astro';
 import Button from '@/components/shared/Button.astro';
 import { NAV_LINKS, SIGNIN_URL, SIGNUP_URL, PRIMARY_CTA } from '@/constants';
+import { chrome, linkLabel } from '@/lib/i18n';
 
 interface Props {
   /**
@@ -14,9 +15,12 @@ interface Props {
    * that section up under the header. See src/pages/index.astro.
    */
   overlay?: boolean;
+  /** Page language, forwarded by Marketing. Unknown values fall back to English. */
+  lang?: string;
 }
 
-const { overlay = false } = Astro.props;
+const { overlay = false, lang } = Astro.props;
+const t = chrome(lang);
 ---
 
 {/* Mobile had no menu at all: the nav links were `hidden md:flex` and nothing
@@ -33,7 +37,7 @@ const { overlay = false } = Astro.props;
 >
   <nav
     class="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:h-16 lg:px-8"
-    aria-label="Primary"
+    aria-label={t.navAria}
   >
     <a
       href="/"
@@ -50,7 +54,7 @@ const { overlay = false } = Astro.props;
           href={link.href}
           class="nav-link inline-flex h-11 items-center rounded-md px-3 text-[13px] text-ink-3 transition-colors hover:bg-panel/60 hover:text-ink"
         >
-          {link.label}
+          {linkLabel(t, link.href, link.label)}
         </a>
       ))}
     </div>
@@ -60,7 +64,7 @@ const { overlay = false } = Astro.props;
         href={SIGNIN_URL}
         class="nav-signin hidden h-11 items-center rounded-md px-3 text-[13px] font-medium text-ink-2 transition-colors hover:bg-panel/60 hover:text-ink sm:inline-flex"
       >
-        Sign in
+        {t.signIn}
       </a>
       {/* "Add your domain" is the positioning CTA and also creates the account,
           but nobody scanning the top right for the conventional word finds it.
@@ -69,16 +73,16 @@ const { overlay = false } = Astro.props;
         href={SIGNUP_URL}
         class="nav-signup hidden h-11 items-center rounded-md px-3 text-[13px] font-medium text-ink-2 transition-colors hover:bg-panel/60 hover:text-ink sm:inline-flex"
       >
-        Sign up
+        {t.signUp}
       </a>
       <Button href={PRIMARY_CTA.href} size="sm">
-  {PRIMARY_CTA.short}
+  {t.ctaShort}
 </Button>
 
       <details id="mobile-nav" class="lg:hidden">
         <summary
           class="nav-burger grid h-11 w-11 cursor-pointer list-none place-items-center rounded-md text-ink transition-colors hover:bg-panel/60 [&::-webkit-details-marker]:hidden"
-          aria-label="Menu"
+          aria-label={t.menuAria}
         >
           <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
             <path d="M4 7h16M4 12h16M4 17h16" />
@@ -93,17 +97,17 @@ const { overlay = false } = Astro.props;
                   href={link.href}
                   class="flex h-[52px] items-center text-[15px] font-medium text-ink"
                 >
-                  {link.label}
+                  {linkLabel(t, link.href, link.label)}
                 </a>
               </li>
             ))}
           </ul>
           <div class="flex flex-col gap-2.5 border-t border-line px-4 py-4 sm:px-6">
             <Button href={SIGNUP_URL} block>
-  Sign up
+  {t.signUp}
 </Button>
             <Button href={SIGNIN_URL} variant="secondary" block>
-  Sign in
+  {t.signIn}
 </Button>
           </div>
         </div>

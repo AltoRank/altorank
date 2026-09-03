@@ -1,16 +1,29 @@
 ---
 import { PRIMARY_CTA } from '@/constants';
 import Button from '@/components/shared/Button.astro';
+import { chrome } from '@/lib/i18n';
+
+interface Props {
+  /** Page language, forwarded by PSEO. Unknown values fall back to English. */
+  lang?: string;
+}
+
+const { lang } = Astro.props;
+
+// This banner renders on EVERY PSEO page, the /it and /de ones included, so
+// leaving it English-only shipped an English call to action at the foot of
+// every localised page. Copy lives in lib/i18n.ts alongside the nav and footer
+// strings so the three cannot drift apart.
+const copy = chrome(lang).cta;
 ---
 
 <section data-print-hide class="border-b border-line bg-[radial-gradient(500px_260px_at_50%_0%,var(--accent-soft),transparent_70%),var(--bg)] py-14 text-center md:py-20 lg:py-[88px]">
   <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
     <h2 class="mb-4 text-[clamp(26px,5.2vw,42px)] font-semibold leading-[1.08] tracking-[-0.026em] [text-wrap:balance]">
-      Read the source before you trust it with your site.
+      {copy.heading}
     </h2>
     <p class="mx-auto mb-7 max-w-[52ch] text-[15.5px] leading-relaxed text-ink-2 [text-wrap:pretty] sm:text-[16.5px]">
-      Self-host it free and run it yourself, or let us host it. Either way
-      nothing goes live on your site until you say so.
+      {copy.body}
     </p>
 
     {/* The secondary used to be href="#", a dead anchor shipping on every PSEO
@@ -18,15 +31,15 @@ import Button from '@/components/shared/Button.astro';
         destination stay in step with the nav and the homepage hero. */}
     <div class="flex flex-col items-stretch gap-2.5 sm:inline-flex sm:flex-row sm:flex-wrap sm:justify-center">
       <Button href={PRIMARY_CTA.href} size="lg" block arrow>
-  {PRIMARY_CTA.label}
+  {copy.label}
 </Button>
       <Button href="/open-source" variant="secondary" size="lg" block>
-  Self-host it free
+  {copy.secondary}
 </Button>
     </div>
 
-    {PRIMARY_CTA.note && (
-      <p class="mt-4 text-[13px] text-ink-3">{PRIMARY_CTA.note}</p>
+    {copy.note && (
+      <p class="mt-4 text-[13px] text-ink-3">{copy.note}</p>
     )}
   </div>
 </section>
