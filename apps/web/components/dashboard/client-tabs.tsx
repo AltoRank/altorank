@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { TabRow, Icons, StatusPill, Avatar, Chip, Card, SearchInput, StatStrip } from "@/components/ui";
-import { IconButton } from "@/components/ui/button";
+import { TabRow, Icons, StatusPill, Chip, Card, SearchInput } from "@/components/ui";
 import { SetupWizard } from "@/components/dashboard/setup-wizard";
 import { PublishingCadenceForm } from "@/components/dashboard/publishing-cadence-form";
+import { GenerationPaceForm } from "@/components/dashboard/generation-pace-form";
 import { LocaleSelector } from "@/components/dashboard/locale-selector";
 import { FirstDraftLive } from "./first-draft-live";
 import type { Article, Keyword, CalendarEntry, Backlink, VoiceProfile, Workspace, PublishingCadence } from "@/lib/types";
@@ -17,6 +17,9 @@ type ClientTabsProps = {
   backlinks: Backlink[];
   voice: VoiceProfile | null;
   cadence: PublishingCadence | null;
+  /** The account's included articles a month, so the pace control can say
+   *  whether a setting reaches it. Null when unmetered. */
+  planIncluded: number | null;
   /** Server clock at render; see FirstDraftLive. */
   now: number;
 };
@@ -31,7 +34,7 @@ const TABS = [
   { id: "settings", label: "Settings", icon: <Icons.settings size={14} /> },
 ];
 
-export function ClientTabs({ workspace, articles, keywords, calendar, backlinks, voice, cadence, now }: ClientTabsProps) {
+export function ClientTabs({ workspace, articles, keywords, calendar, backlinks, voice, cadence, planIncluded, now }: ClientTabsProps) {
   const [activeTab, setActiveTab] = useState("overview");
 
   const tabs = TABS.map((t) => {
@@ -52,7 +55,9 @@ export function ClientTabs({ workspace, articles, keywords, calendar, backlinks,
         {activeTab === "calendar" && <CalendarTab calendar={calendar} />}
         {activeTab === "voice" && <VoiceTab voice={voice} />}
         {activeTab === "backlinks" && <BacklinksTab backlinks={backlinks} />}
-        {activeTab === "settings" && <SettingsTab workspace={workspace} cadence={cadence} />}
+        {activeTab === "settings" && (
+          <SettingsTab workspace={workspace} cadence={cadence} planIncluded={planIncluded} />
+        )}
       </div>
     </>
   );
@@ -471,7 +476,15 @@ function BacklinksTab({ backlinks }: { backlinks: Backlink[] }) {
 
 /* ── Settings ────────────────────────────────────────── */
 
-function SettingsTab({ workspace, cadence }: { workspace: Workspace; cadence: PublishingCadence | null }) {
+function SettingsTab({
+  workspace,
+  cadence,
+  planIncluded,
+}: {
+  workspace: Workspace;
+  cadence: PublishingCadence | null;
+  planIncluded: number | null;
+}) {
   return (
     <div className="max-w-lg space-y-4">
       <Card className="p-5" flush>
@@ -491,6 +504,11 @@ function SettingsTab({ workspace, cadence }: { workspace: Workspace; cadence: Pu
           ))}
         </div>
       </Card>
+      <GenerationPaceForm
+        workspaceId={workspace.id}
+        current={workspace.auto_generate_weekly_limit ?? null}
+        planIncluded={planIncluded}
+      />
       <LocaleSelector workspaceId={workspace.id} currentLanguage={workspace.language} />
       <PublishingCadenceForm workspaceId={workspace.id} cadence={cadence} />
     </div>
