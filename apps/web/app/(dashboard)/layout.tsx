@@ -40,7 +40,7 @@ export default async function DashboardLayout({
   } = await supabase.auth.getUser();
   const meta = user?.user_metadata ?? {};
 
-  const agencyId = user ? await ensureAgency(user.id, meta) : null;
+  const agencyId = user ? await ensureAgency(user.id, meta, user.email) : null;
 
   /**
    * Real identity for the sidebar footer.
