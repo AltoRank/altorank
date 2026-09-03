@@ -453,7 +453,16 @@ export type BacklinkExchange = {
   created_at: string;
 };
 
-export type BacklinkCreditReason = "host_link" | "place_link" | "bonus" | "adjustment";
+/** `supply_article` credits the writer, `receive_article` debits the publisher.
+ *  The `*_link` pair is the retired pre-039 direction that paid the publisher
+ *  for carrying the link; no row ever used it. */
+export type BacklinkCreditReason =
+  | "supply_article"
+  | "receive_article"
+  | "host_link"
+  | "place_link"
+  | "bonus"
+  | "adjustment";
 
 export type BacklinkCredit = {
   id: string;

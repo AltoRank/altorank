@@ -10,9 +10,10 @@ import type { OpenRequest } from "@/lib/queries/exchange";
 /**
  * One request, and the button that takes it.
  *
- * Deliberately says what the host spends as well as what they get. Writing the
- * article costs one of their own articles for the month, and that has to be on
- * screen before the click, not discovered afterwards in the quota meter.
+ * Deliberately says what the publisher spends as well as what they get. Since
+ * migration 039 that is a credit rather than one of their own monthly articles:
+ * the writing is billed to whoever asked for it. The number in the Credits
+ * column is what publishing will cost, not what it will earn.
  */
 function RequestRow({ request, workspaceId }: { request: OpenRequest; workspaceId: string }) {
   const router = useRouter();
@@ -56,14 +57,14 @@ function RequestRow({ request, workspaceId }: { request: OpenRequest; workspaceI
         {request.targetKeyword || "—"}
       </td>
       <td className="px-3.5 py-3 border-b border-line-soft align-top text-right font-mono text-xs text-ink-2">
-        {request.creditsOffered}
+        {request.creditsOffered === 1 ? "1 credit" : `${request.creditsOffered} credits`}
       </td>
       <td className="px-3.5 py-3 border-b border-line-soft align-top text-right">
         <form action={action}>
           <input type="hidden" name="exchange_id" value={request.id} />
           <input type="hidden" name="workspace_id" value={workspaceId} />
           <Button type="submit" size="sm" disabled={pending}>
-            {pending ? "Checking fit…" : "Write and host"}
+            {pending ? "Checking fit…" : "Take this article"}
           </Button>
         </form>
       </td>
@@ -85,12 +86,12 @@ export function ExchangeMarketplace({
       <table className="w-full border-collapse text-[13px]">
         <thead>
           <tr>
-            {["Topic", "Keyword", "Credits", ""].map((h, i) => (
+            {["Topic", "Keyword", "Costs", ""].map((h, i) => (
               <th
                 key={h || i}
                 scope="col"
                 className={`px-3.5 py-2.5 font-medium text-[11px] uppercase tracking-[0.06em] text-ink-3 border-b border-line bg-panel ${
-                  h === "Credits" ? "text-right" : "text-left"
+                  h === "Costs" ? "text-right" : "text-left"
                 }`}
               >
                 {h}
