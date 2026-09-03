@@ -5,7 +5,12 @@ import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { profileIsUsable } from "@/lib/seo/topical-profile";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { generateArticle } from "@/lib/content/generate";
-import { orderByStaleness, latestPerWorkspace } from "@/lib/content/generate-queue";
+import {
+  orderByStaleness,
+  latestPerWorkspace,
+  MAX_ARTICLES_PER_RUN,
+  RUN_BUDGET_SECONDS,
+} from "@/lib/content/generate-queue";
 
 /**
  * Scheduled draft generation.
@@ -62,23 +67,9 @@ import { orderByStaleness, latestPerWorkspace } from "@/lib/content/generate-que
  * account. Spend follows articles written, not runs.
  */
 
-export const maxDuration = 300;
-
-/**
- * Articles one invocation will write before stopping, across all workspaces.
- *
- * Derived from `maxDuration`: a draft is research, a model call, a fact check
- * and eleven scoring passes, so three is what fits in five minutes with room
- * to spare. There was no bound at all before - the loop wrote for every
- * eligible workspace, so ten opted-in sites meant ten sequential generations
- * inside one 300s function, and the timeout this file's header warns about was
- * one busy morning away.
- *
- * What is left over is not lost; the next run is six hours later. At the point
- * where demand routinely exceeds this, the answer is a queue, not a bigger
- * number.
- */
-const MAX_ARTICLES_PER_RUN = 3;
+// Kept in step with RUN_BUDGET_SECONDS, which MAX_ARTICLES_PER_RUN is derived
+// from and a test checks against.
+export const maxDuration = RUN_BUDGET_SECONDS;
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 

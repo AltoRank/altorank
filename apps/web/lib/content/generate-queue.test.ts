@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { orderByStaleness, latestPerWorkspace } from "./generate-queue";
+import {
+  orderByStaleness,
+  latestPerWorkspace,
+  MAX_ARTICLES_PER_RUN,
+  OBSERVED_SECONDS_PER_ARTICLE,
+  RUN_BUDGET_SECONDS,
+} from "./generate-queue";
 
 describe("latestPerWorkspace", () => {
   it("keeps the newest row per workspace when rows arrive newest first", () => {
@@ -68,5 +74,29 @@ describe("orderByStaleness", () => {
     expect(second).toContain(starved);
     // And across two runs every workspace has been written at least once.
     expect(new Set([...first, ...second])).toEqual(new Set(["a", "b", "c"]));
+  });
+});
+
+describe("MAX_ARTICLES_PER_RUN", () => {
+  it("fits inside the function's budget at the measured cost of a draft", () => {
+    // The guard this file exists for. The cap was 3 on an estimate; the first
+    // production run measured a draft at 103 seconds, which makes 3 about 310
+    // against a 300-second function. Raising the cap without also raising
+    // maxDuration or making a draft cheaper should fail here rather than time
+    // out mid-write and leave a row stuck in `drafting`.
+    expect(MAX_ARTICLES_PER_RUN * OBSERVED_SECONDS_PER_ARTICLE).toBeLessThan(RUN_BUDGET_SECONDS);
+  });
+
+  it("leaves enough headroom for a draft that runs slower than the average", () => {
+    // 103s is one sample. A cap that only just fits would overrun on any draft
+    // above the mean, so require room for a 40% slower one.
+    const slowest = OBSERVED_SECONDS_PER_ARTICLE * 1.4;
+    expect(MAX_ARTICLES_PER_RUN * slowest).toBeLessThan(RUN_BUDGET_SECONDS);
+  });
+
+  it("still writes more than one article per run", () => {
+    // Four runs a day at one each would be 4 a day, under the 100 a month the
+    // plan sells once several sites share the schedule.
+    expect(MAX_ARTICLES_PER_RUN).toBeGreaterThan(1);
   });
 });
