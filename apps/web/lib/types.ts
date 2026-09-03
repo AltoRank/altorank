@@ -5,7 +5,13 @@ import type { SearchIntent } from "./seo/intent";
 import type { ArticleResearch } from "./seo/research";
 import type { FactCheckReport } from "./ai/fact-check";
 
-// === Agency ===
+// === Account (stored as `agencies`) ===
+//
+// The tenant row: who is billed, who owns the workspaces, who holds the API
+// key. The table name predates the pivot and is left alone deliberately -
+// renaming it touches every query, policy and foreign key - but the thing it
+// models is an account, and "Agency" is now the name of one plan tier
+// (lib/stripe.ts), not the shape of every customer.
 export type Agency = {
   id: string;
   name: string;
@@ -30,7 +36,10 @@ export type AgencyMember = {
   created_at: string;
 };
 
-// === Workspace (Client) ===
+// === Workspace ===
+//
+// One site. An agency-tier customer has one per client, a solo customer has
+// one per project of their own; "client" was only ever true for the first.
 export type AIProviderType = "claude" | "openai";
 
 export type Workspace = {

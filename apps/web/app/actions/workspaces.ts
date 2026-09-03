@@ -37,7 +37,7 @@ export async function createWorkspace(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
 
-  const agencyId = await ensureAgency(user.id, user.user_metadata ?? {});
+  const agencyId = await ensureAgency(user.id, user.user_metadata ?? {}, user.email);
 
   // Workspaces are limited per plan (one before choosing one). Articles are
   // the meter; this stops a free account from running fifty crawls and
