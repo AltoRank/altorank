@@ -72,41 +72,6 @@ export async function recordCredit(
 }
 
 /**
- * Find matching exchange requests for a provider workspace.
- * Matches based on topic relevance and available credits.
- */
-export async function findMatchingRequests(
-  supabase: SupabaseClient,
-  providerAgencyId: string,
-  providerWorkspaceId: string,
-): Promise<Array<{
-  id: string;
-  target_url: string;
-  target_keyword: string;
-  target_topic: string;
-  credits_offered: number;
-  requester_agency_id: string;
-}>> {
-  const { data } = await supabase
-    .from("backlink_exchanges")
-    .select("*")
-    .eq("status", "requested")
-    .neq("requester_agency_id", providerAgencyId)
-    .is("provider_agency_id", null)
-    .order("credits_offered", { ascending: false })
-    .limit(20);
-
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    target_url: row.target_url,
-    target_keyword: row.target_keyword ?? "",
-    target_topic: row.target_topic ?? "",
-    credits_offered: row.credits_offered,
-    requester_agency_id: row.requester_agency_id,
-  }));
-}
-
-/**
  * Use AI to score relevance between an exchange request and a provider article.
  * Returns a 0-1 score.
  */
@@ -380,69 +345,117 @@ export async function verifyPlacementLive(
   };
 }
 
-export async function placeBacklinkInArticle(
-  supabase: SupabaseClient,
-  exchangeId: string,
-): Promise<void> {
-  // Fetch exchange with placement suggestion
-  const { data: exchange, error: exErr } = await supabase
+/**
+ * The decision half of settlement, kept pure so it can be tested without a
+ * database or a live page.
+ *
+ * Two rules, and the first is the whole point of the redesign. Credits settle
+ * because the host PUBLISHED the article, not because a link survived: if
+ * payment depended on the link, the credits would have bought the link, which
+ * is "exchanging goods or services for links" in Google's own words. The host
+ * may cut the citation while editing and still be paid. That is what makes
+ * this a content trade rather than a link purchase, and it is checkable here.
+ *
+ * The second rule is the old one and stays: an unmeasured host cannot be
+ * priced, because settling at the cheapest tier would pay a strong host and a
+ * worthless one the same.
+ */
+export type SettlementDecision =
+  | { settle: true; credits: number }
+  | { settle: false; reason: string };
+
+export function settlementDecision(exchange: {
+  status: string;
+  provider_agency_id: string | null;
+  requester_agency_id: string | null;
+  provider_dr: number | null | undefined;
+}): SettlementDecision {
+  if (exchange.status !== "placed") {
+    return { settle: false, reason: `exchange is ${exchange.status}, not placed` };
+  }
+  if (!exchange.provider_agency_id || !exchange.requester_agency_id) {
+    return { settle: false, reason: "exchange has no provider or requester" };
+  }
+  const credits = creditsForDR(exchange.provider_dr);
+  if (credits === null) {
+    return {
+      settle: false,
+      reason: "the hosting site has no measured domain rating, so the trade cannot be priced",
+    };
+  }
+  return { settle: true, credits };
+}
+
+export type SettlementOutcome =
+  | { settled: true; credits: number; citation: "kept" | "removed"; detail: string }
+  | { settled: false; reason: string };
+
+/**
+ * Settle the exchange an article belongs to, once that article is live.
+ *
+ * Called from the publish path for every article; almost every article belongs
+ * to no exchange, so the first query is the fast exit. Needs the service role
+ * and takes it rather than the caller's client: credits are written for two
+ * different accounts, and RLS scopes a member to inserting their own.
+ *
+ * Whether the citation survived is recorded, never enforced. The requester is
+ * owed the truth about what they got - a published article that cites them, or
+ * a published article that no longer does - and both are honest outcomes of a
+ * trade whose subject was the article.
+ */
+export async function settleExchangeForArticle(
+  admin: SupabaseClient,
+  articleId: string,
+): Promise<SettlementOutcome | null> {
+  const { data: exchange } = await admin
     .from("backlink_exchanges")
-    .select("*")
-    .eq("id", exchangeId)
-    .single();
+    .select("id, status, provider_agency_id, requester_agency_id, provider_workspace_id, target_url")
+    .eq("provider_article_id", articleId)
+    .maybeSingle();
+  if (!exchange) return null;
 
-  if (exErr || !exchange) throw new Error("Exchange not found");
-  if (exchange.status !== "accepted") {
-    throw new Error(`Cannot place link for exchange in status: ${exchange.status}`);
-  }
-  if (!exchange.provider_article_id) {
-    throw new Error("No provider article assigned to this exchange");
-  }
+  const { data: providerWs } = await admin
+    .from("workspaces")
+    .select("dr")
+    .eq("id", exchange.provider_workspace_id)
+    .maybeSingle();
 
-  // Fetch the article content
-  const { data: article, error: artErr } = await supabase
+  const decision = settlementDecision({
+    status: exchange.status as string,
+    provider_agency_id: exchange.provider_agency_id as string | null,
+    requester_agency_id: exchange.requester_agency_id as string | null,
+    provider_dr: providerWs?.dr as number | null | undefined,
+  });
+  if (!decision.settle) return { settled: false, reason: decision.reason };
+
+  const { data: article } = await admin
     .from("articles")
-    .select("id, content")
-    .eq("id", exchange.provider_article_id)
-    .single();
+    .select("published_url")
+    .eq("id", articleId)
+    .maybeSingle();
 
-  if (artErr || !article?.content) throw new Error("Article not found or has no content");
-
-  const placement = (exchange.suggested_placement as {
-    paragraphIndex?: number;
-    anchorText?: string;
-  }) ?? {};
-
-  const paragraphIndex = placement.paragraphIndex ?? 1;
-  const anchorText = placement.anchorText ?? exchange.target_keyword ?? "this resource";
-
-  // Insert the link
-  const updatedContent = insertBacklinkIntoContent(
-    article.content as TiptapDoc,
-    exchange.target_url,
-    anchorText,
-    paragraphIndex,
+  // A report, not a gate.
+  const verdict = await verifyPlacementLive(
+    (article?.published_url as string | null) ?? null,
+    exchange.target_url as string,
   );
 
-  // Update article content
-  const { error: updateArticleErr } = await supabase
-    .from("articles")
-    .update({
-      content: updatedContent,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", article.id);
+  await recordCredit(admin, exchange.provider_agency_id as string, decision.credits, "host_link", exchange.id as string, providerWs?.dr as number | null);
+  await recordCredit(admin, exchange.requester_agency_id as string, -decision.credits, "place_link", exchange.id as string, providerWs?.dr as number | null);
 
-  if (updateArticleErr) throw new Error(updateArticleErr.message);
-
-  // Update exchange status to "placed"
-  const { error: updateExErr } = await supabase
+  await admin
     .from("backlink_exchanges")
     .update({
-      status: "placed",
-      placed_at: new Date().toISOString(),
+      status: "live",
+      placement_url: (article?.published_url as string | null) ?? null,
+      verified_at: new Date().toISOString(),
     })
-    .eq("id", exchangeId);
+    .eq("id", exchange.id);
 
-  if (updateExErr) throw new Error(updateExErr.message);
+  return {
+    settled: true,
+    credits: decision.credits,
+    citation: verdict.ok ? "kept" : "removed",
+    detail: verdict.reason,
+  };
 }

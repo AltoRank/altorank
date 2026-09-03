@@ -1,4 +1,4 @@
--- 036: Search Console metrics were readable by every signed-in account
+-- 038: Search Console metrics were readable by every signed-in account
 -- Depends on: 006_analytics_metrics (the table), 001_initial_schema (user_agency_ids)
 --
 -- `analytics_metrics` was created in 006 without RLS and never gained it, so
