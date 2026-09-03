@@ -135,17 +135,23 @@ export default async function DashboardPage() {
   // state from an instruction into an explanation. Independent of the five
   // reads beside it, so it runs with them instead of after them.
   const gscSupabase = await createClient();
+  // Scoped like everything else on this page: connections live per workspace,
+  // so an unscoped count said "GSC connected" on the strength of a different
+  // client's account.
+  let gscQuery = gscSupabase
+    .from("workspace_integrations")
+    .select("id", { count: "exact", head: true })
+    .eq("integration_id", "gsc");
+  if (scopeId) gscQuery = gscQuery.eq("workspace_id", scopeId);
+
   const [workspaces, allArticles, recent, traffic, keywords, { count: gscCount }, bing] =
     await Promise.all([
       getWorkspaces(),
       getArticles(scopeId ?? undefined),
-      getRecentArticles(6),
+      getRecentArticles(6, scopeId ?? undefined),
       getTrafficSeries(scopeId ?? undefined),
       getKeywords(scopeId ?? undefined),
-      gscSupabase
-        .from("workspace_integrations")
-        .select("id", { count: "exact", head: true })
-        .eq("integration_id", "gsc"),
+      gscQuery,
       // Bing, kept beside the chart rather than in it: two engines summed into
       // one line would be a number that describes neither.
       getBingSummary(scopeId ?? undefined),
