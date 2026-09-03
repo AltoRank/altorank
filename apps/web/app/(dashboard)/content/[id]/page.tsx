@@ -5,6 +5,7 @@ import { getPublishingCadence } from "@/lib/queries/schedule";
 import { PageHead, DotSep, StatusPill } from "@/components/ui";
 import { ArticleEditor } from "@/components/dashboard/editor/article-editor";
 import { needsPlanToShip } from "@/lib/billing/quota";
+import { getDestinations } from "@/lib/publishing/destinations";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 
@@ -26,9 +27,18 @@ export default async function ArticleEditorPage({ params }: Props) {
   const workspace = await getWorkspace(article.workspace_id);
   if (!workspace) return notFound();
 
-  const cadence = await getPublishingCadence(workspace.id);
   const supabase = await createClient();
-  const needsPlan = await needsPlanToShip(supabase, workspace.agency_id);
+  // All three only need the workspace, and none needs another. Awaited one
+  // after the other they cost three round trips on the route the editor lives
+  // behind; the article and workspace lookups above genuinely are a chain,
+  // since each supplies the next one's id.
+  const [cadence, needsPlan, destinations] = await Promise.all([
+    getPublishingCadence(workspace.id),
+    needsPlanToShip(supabase, workspace.agency_id),
+    // The connected CMSs decide whether the editor offers a Publish button.
+    // `articles.cms` used to, and nothing set it for a generated draft.
+    getDestinations(supabase, workspace.id),
+  ]);
 
   const dateStr = article.updated_at
     ? new Date(article.updated_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
@@ -52,7 +62,13 @@ export default async function ArticleEditorPage({ params }: Props) {
         }
       />
 
-      <ArticleEditor article={article} workspace={workspace} cadence={cadence} needsPlan={needsPlan} />
+      <ArticleEditor
+        article={article}
+        workspace={workspace}
+        cadence={cadence}
+        needsPlan={needsPlan}
+        destinations={destinations}
+      />
     </>
   );
 }

@@ -588,12 +588,13 @@ export async function analyseDomain(options: {
       .from("workspaces")
       .update({
         first_analysed_at: now,
-        // Only when detection actually matched: null means "we could not tell",
-        // and overwriting a platform the user has already confirmed with a
-        // blank would be worse than never having looked.
-        ...(detection
-          ? { detected_platform: detection.platform, detected_platform_at: now }
-          : {}),
+        // The timestamp on every run, so the editor can tell "we fetched the
+        // site and found no CMS we can post to" from "nobody has looked yet";
+        // those used to be the same null and got the same "connect a CMS"
+        // prompt. The platform itself only on a match: a blank must never
+        // replace a platform the user has already confirmed.
+        detected_platform_at: now,
+        ...(detection ? { detected_platform: detection.platform } : {}),
         // Only overwrite when this run actually produced one, so a later crawl
         // that gets blocked does not erase a good profile.
         ...(profile ? { topical_profile: profile } : {}),

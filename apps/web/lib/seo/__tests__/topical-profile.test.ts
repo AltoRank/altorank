@@ -200,3 +200,112 @@ describe("homepage signature", () => {
     expect("lully" in prof.terms).toBe(true);
   });
 });
+
+/**
+ * A dropped token is a silent vote in favour.
+ *
+ * scoreRelevance used the profile-building tokenizer on the query side, and
+ * that one drops pure numerals - correctly, for headings. On a search query it
+ * deleted the word the searcher cared most about before anything judged it:
+ * "google of 1998" became ["google"], matched a word an SEO site uses
+ * constantly, and reported "every word appears in the site's own vocabulary".
+ * altorank.co had four variants of it at 90,500 searches a month sitting near
+ * the top of the queue, and wrote an article for one.
+ */
+describe("scoreRelevance keeps numerals in the query", () => {
+  const ALTORANK = buildTopicalProfile("altorank.co", [
+    page({
+      url: "https://altorank.co/",
+      title: "AltoRank — AI search visibility for agencies",
+      metaDescription: "Rank in Google and in AI answers. Built for SEO agencies and their clients.",
+      h1: ["Get cited by the search engines that answer"],
+      h2: ["Keyword research and rank tracking", "Agency reporting", "How Google reads your site"],
+    }),
+    page({
+      url: "https://altorank.co/geo",
+      title: "Generative engine optimization",
+      h1: ["Optimization for generative search engines"],
+      h2: ["Citations, not just links", "Google, ChatGPT and Perplexity"],
+    }),
+  ]);
+
+  /** The isolating pair: identical query, one numeral apart. */
+  it("vetoes on a numeral the site never uses, and only because of it", () => {
+    expect(scoreRelevance("search engines", ALTORANK).score).toBe(1);
+
+    const withYear = scoreRelevance("search engines 1998", ALTORANK);
+    expect(withYear.unmatched).toEqual(["1998"]);
+    expect(withYear.score).toBe(0);
+  });
+
+  it("no longer claims every word appears when one had been deleted", () => {
+    const r = scoreRelevance("search engines 1998", ALTORANK);
+    expect(r.reason).toContain("1998");
+    expect(r.reason).not.toContain("every word appears");
+  });
+
+  it("does not veto on stopwords, which are not a different topic", () => {
+    // "for" is dropped, as it should be - vetoing "agency for seo" on it would
+    // be absurd. Only numerals stopped being erased.
+    const r = scoreRelevance("optimization for search engines", ALTORANK);
+    expect(r.unmatched).not.toContain("for");
+    expect(r.score).toBe(1);
+  });
+});
+
+/**
+ * A word the site only ever writes inside a compound is not a word it uses.
+ *
+ * tokenize splits on every non-alphanumeric, so "first-party data" contributes
+ * "first" and "party" exactly as "first party data" would. On altorank.co the
+ * only sources of "party" were "first-party data" and "third-party signals",
+ * and the half landed in the vocabulary at strength 0.78 - high, because IDF
+ * rewards rarity. "search party", 60,500 searches a month and about a search
+ * party, scored 0.92 and reached the top of the unattended queue.
+ */
+describe("buildTopicalProfile ignores halves of compounds", () => {
+  // Eight fragments is the floor for filtering; below it nothing is excluded.
+  const pages = [
+    page({
+      url: "https://example.com/",
+      title: "Signal Analytics for retailers",
+      metaDescription: "We turn first-party data into retail forecasts.",
+      h1: ["Retail forecasting from your own data"],
+      h2: ["Forecasts you can act on", "Built for retail teams"],
+    }),
+    page({
+      url: "https://example.com/how",
+      title: "How the forecasting works",
+      h1: ["Third-party signals, blended with yours"],
+      h2: ["Retail data in, forecasts out", "Data quality"],
+    }),
+  ];
+  const profile = buildTopicalProfile("example.com", pages);
+
+  it("drops a token that only ever appears inside a compound", () => {
+    // "party" occurs twice, in two fragments, on two pages - frequency alone
+    // would keep it. It is never written as a word.
+    expect(profile.terms).not.toHaveProperty("party");
+  });
+
+  it("keeps the words the site actually writes", () => {
+    expect(profile.terms).toHaveProperty("retail");
+    expect(profile.terms).toHaveProperty("forecasting");
+    expect(profile.terms).toHaveProperty("signals");
+  });
+
+  /**
+   * "signals" survives while "party" does not, though both arrive in a
+   * hyphenated heading. "Third-party signals" is one compound and one word.
+   */
+  it("keeps the other half of the phrase when it is a word on its own", () => {
+    expect(profile.terms).toHaveProperty("signals");
+    expect(profile.terms).not.toHaveProperty("party");
+  });
+
+  it("stops a compound half from carrying an unrelated query", () => {
+    // The whole point: without the rule this scores as on-topic.
+    expect(scoreRelevance("street party", profile).score).toBe(0);
+    expect(scoreRelevance("retail forecasts", profile).score).toBeGreaterThan(0);
+  });
+});

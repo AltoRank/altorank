@@ -1,0 +1,62 @@
+# Extra runs of the article generator.
+#
+# Why this is not in vercel.json: the Vercel account is on Hobby, which rejects
+# any cron expression that would fire more than once a day - the deployment
+# fails outright, which is how this file came to exist. Vercel still runs
+# /api/cron/generate once daily; this adds three more runs so a site can reach
+# the 100 articles a month the plan sells.
+#
+# The endpoint is the same one Vercel calls and authenticates the same way, so
+# there is no second code path to keep in step. Each run is capped and every
+# workspace's weekly limit and the account quota still apply, so a run that has
+# nothing to do costs nothing.
+#
+# Dormant until CRON_SECRET is set as a repository secret; without it the job
+# reports that and exits clean rather than failing four times a day.
+
+name: Generate articles
+
+on:
+  schedule:
+    # 01/13/19 UTC. Not 07 - Vercel already runs that one, and two schedulers
+    # firing the same endpoint on the same hour is one wasted invocation, not
+    # two articles. GitHub runs scheduled jobs on a best-effort basis and can be
+    # late under load, which is fine: the generator is bounded by each
+    # workspace's weekly limit, not by landing on the hour.
+    - cron: "0 1,13,19 * * *"
+  workflow_dispatch:
+
+# Never let a delayed run pile up on top of a running one.
+concurrency:
+  group: generate-cron
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger generation
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          # Override with a repository variable to point at another deployment.
+          APP_URL: ${{ vars.APP_URL || 'https://app.altorank.co' }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "CRON_SECRET is not set for this repository."
+            echo "Add it under Settings > Secrets and variables > Actions to arm this schedule."
+            echo "Until then Vercel's once-daily run is the only one, and nothing here has changed."
+            exit 0
+          fi
+
+          # --fail-with-body so a 4xx/5xx fails the job *and* still prints what
+          # the server said; a silent red X would tell us nothing.
+          code=$(curl --silent --show-error --fail-with-body \
+            --max-time 300 \
+            --header "x-cron-secret: ${CRON_SECRET}" \
+            --write-out '\n%{http_code}' \
+            "${APP_URL}/api/cron/generate" | tee /dev/stderr | tail -1)
+
+          echo "HTTP ${code}"

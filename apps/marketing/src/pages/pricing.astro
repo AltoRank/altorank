@@ -20,13 +20,14 @@ const structuredData = buildProductSchema();
         <h1 class="mb-3 text-[30px] font-semibold leading-[1.12] tracking-[-0.02em] [text-wrap:balance] sm:text-[42px] sm:leading-[1.08] sm:tracking-[-0.025em]">
           Simple, transparent pricing
         </h1>
-        <p class="mx-auto max-w-[540px] text-[15px] text-ink-2 sm:text-base">
-          No per-seat charges. No hidden fees. Self-host it for free,
-          or let us run it.
-        No trial and no card up front: nothing is charged until you choose a plan,
-        cancelling is a button on your billing page, and your articles stay readable
-        after you do.
-      </p>
+        <p class="mx-auto max-w-[560px] text-[15px] text-ink-2 sm:text-base">
+          No per-seat charges. No hidden fees. Self-host it for free, or let us
+          run it. There is no trial and no card up front &mdash; your first
+          article is free instead, so you can read the draft and its fact check
+          before you decide. Nothing is charged until you choose a plan,
+          cancelling is a button on your billing page, and your articles stay
+          readable after you do.
+        </p>
       </div>
 
       {/* Cards */}
@@ -115,6 +116,16 @@ const structuredData = buildProductSchema();
               >
                 {plan.cta}
               </Button>
+
+              {plan.ctaNote && (
+                <p
+                  class={`mt-2.5 text-center text-[12.5px] leading-snug ${
+                    plan.popular ? 'text-[oklch(0.75_0.01_80)]' : 'text-ink-3'
+                  }`}
+                >
+                  {plan.ctaNote}
+                </p>
+              )}
 
               <ul class="mt-6 flex flex-1 flex-col gap-3 border-t border-line-soft pt-6">
                 {plan.features.map((feat) => (

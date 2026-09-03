@@ -5,6 +5,7 @@ import { getWorkspaces } from "@/lib/queries/workspaces";
 import { PageHead, StatusPill, Button, Icons, DotSep } from "@/components/ui";
 import { ConnectActions } from "@/components/dashboard/connect-actions";
 import { GoogleConnectButton } from "@/components/dashboard/google-connect-button";
+import { BingConnectButton } from "@/components/dashboard/bing-connect-button";
 import type { PublishingCadence } from "@/lib/types";
 import { createClient } from "@/lib/supabase/server";
 
@@ -14,21 +15,29 @@ const groups = ["CMS", "Analytics", "Data", "Notify", "Automate"];
 
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-// The integrations that have a real OAuth flow. Everything else still renders a
-// disabled Connect button, because those need per-platform credential forms that
-// do not exist yet, and a button that silently does nothing is worse than one
-// that says it is unavailable.
+// The integrations that have a real OAuth flow.
 const GOOGLE_INTEGRATIONS = new Set(["gsc", "ga4"]);
+
+// CMSs the connection dialog has a credential form for. Their tiles deep-link
+// to that dialog, opened on their tab. The rest (Ahrefs, Slack, Zapier) keep a
+// disabled button, because a button that silently does nothing is worse than
+// one that says it is unavailable.
+const CONNECTABLE_CMS = new Set([
+  "wordpress", "shopify", "magento", "webflow", "ghost", "framer",
+  "wix", "notion", "hubspot", "woocommerce", "webhook", "git",
+]);
 
 export default async function IntegrationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; connect?: string }>;
 }) {
   // The OAuth callback and the initiate route both redirect back here with
   // ?error= or ?success=. Nothing rendered them, so a failed connection looked
   // identical to never having clicked: the user landed on an unchanged page.
-  const { error: oauthError, success: oauthSuccess } = await searchParams;
+  // ?connect=<cms> opens the connection dialog on that platform; the editor's
+  // "Connect Webflow" and the tiles below use it.
+  const { error: oauthError, success: oauthSuccess, connect } = await searchParams;
   const [integrations, workspaces] = await Promise.all([
     getIntegrations(),
     getWorkspaces(),
@@ -61,7 +70,7 @@ export default async function IntegrationsPage({
       <PageHead
         title="Integrations"
         subtitle={<><StatusPill status="on" label={`${integrations.length} available`} /><span>Connect the tools your sites already run on</span><DotSep /><Link href="/connect/google" className="text-accent-ink underline decoration-line underline-offset-[3px]">See every site this Google account can read</Link></>}
-        actions={<ConnectActions workspaces={workspaces} integrations={integrations} />}
+        actions={<ConnectActions workspaces={workspaces} integrations={integrations} initialCmsType={connect} />}
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
@@ -107,6 +116,14 @@ export default async function IntegrationsPage({
                         integrationId={i.id as "gsc" | "ga4"}
                         connected={connectedIds.has(i.id)}
                       />
+                    ) : i.id === "bing" ? (
+                      <BingConnectButton connected={connectedIds.has(i.id)} />
+                    ) : CONNECTABLE_CMS.has(i.id) ? (
+                      <Link href={`/connect?connect=${i.id}`} className="block">
+                        <Button size="sm" className="w-full justify-center">
+                          Connect
+                        </Button>
+                      </Link>
                     ) : (
                       <Button size="sm" disabled className="w-full justify-center">
                         Connect

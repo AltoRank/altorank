@@ -78,8 +78,22 @@ export const PLANS = [
     monthly: 69,
     period: '/mo',
     desc: 'No API keys to manage, because model and data costs are included. For solo operators and agencies running one or two brands.',
+    // The included count is now reachable. It was not: cron/generate ran once a
+    // day and wrote one article per site, so a site topped out near 30 a month
+    // against a plan sold as 100. That ceiling was a five-minute serverless
+    // function, not a view about publishing, and it has been lifted - four runs
+    // a day, so the binding limit is `auto_generate_weekly_limit`, which is the
+    // customer's own setting. Hence "at the pace you set" rather than a
+    // frequency we would have to keep true - and since migration 041 there is
+    // a control on each site's Settings tab that actually sets it, which that
+    // sentence had been describing for a while without one existing. Choosing
+    // a plan raises a site from the free tier's 1 a week to 7, about 30 a
+    // month; the ceiling is 25 a week, about 108, so a single site can reach
+    // the included 100 if someone turns it up.
+    // Keep in step with PLAN_ARTICLE_LIMITS and the cadence in app/api/cron/generate.
+
     features: [
-      '100 articles / month included',
+      '100 articles / month included, at the pace you set per site',
       'Articles publish without the AltoRank line',
       'Up to 3 workspaces (sites or clients)',
       '€0.60 per additional article',
@@ -90,6 +104,21 @@ export const PLANS = [
       'Email support',
     ],
     cta: 'Get started',
+    /**
+     * The one free thing on the cloud side, and it was invisible.
+     *
+     * apps/web ships FREE_DRAFTS = 1: a signup with no plan gets a workspace,
+     * a first look and one complete article with its fact check, and cannot
+     * approve or publish it without choosing a plan (needsPlanToShip). That
+     * offer existed in the code and appeared nowhere a buyer could see it, so
+     * the only EUR 0 on this page was Self-host - a different product, on the
+     * buyer's own infrastructure, with their own API keys.
+     *
+     * Worded against what the code actually does. It is not a trial: no clock,
+     * no card, nothing expires. It is one article. Keep this in step with
+     * FREE_DRAFTS in apps/web/lib/billing/quota.ts.
+     */
+    ctaNote: 'First article free, no card. Approving or publishing it is where a plan starts.',
     href: null,
     popular: true,
   },
@@ -101,7 +130,7 @@ export const PLANS = [
     desc: 'For agencies running content across a full client roster. Everything metered on output, not seats or workspaces.',
     features: [
       'Everything in Managed',
-      '400 articles / month included',
+      '400 articles / month included, at the pace you set per site',
       'Unlimited workspaces: a site or a client each',
       '€0.45 per additional article',
       'Role-based permissions for your team',

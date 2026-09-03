@@ -11,6 +11,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ClientTabs } from "@/components/dashboard/client-tabs";
 import { MetricHistory } from "@/components/dashboard/metric-history";
 import { getWorkspaceMetrics } from "@/lib/queries/metrics";
+import { getQuota } from "@/lib/billing/quota";
+import { createClient } from "@/lib/supabase/server";
 import { plural } from "@/lib/utils";
 
 type Props = {
@@ -28,15 +30,20 @@ export default async function ClientDetailPage({ params }: Props) {
   const workspace = await getWorkspace(id);
   if (!workspace) notFound();
 
-  const [articles, keywords, calendar, backlinks, voice, cadence, metrics] = await Promise.all([
-    getArticles(id),
-    getKeywords(id),
-    getCalendarEntries(id),
-    getBacklinks(id),
-    getVoiceProfile(id),
-    getPublishingCadence(id),
-    getWorkspaceMetrics(id),
-  ]);
+  const supabase = await createClient();
+  const [articles, keywords, calendar, backlinks, voice, cadence, metrics, quota] =
+    await Promise.all([
+      getArticles(id),
+      getKeywords(id),
+      getCalendarEntries(id),
+      getBacklinks(id),
+      getVoiceProfile(id),
+      getPublishingCadence(id),
+      getWorkspaceMetrics(id),
+      // Only for the writing-pace control, which says whether a setting
+      // reaches the volume the plan includes. Null when unmetered.
+      getQuota(supabase, workspace.agency_id),
+    ]);
 
   // The clock FirstDraftLive measures a stalled draft against. It has to be
   // the server's: a client timer restarts whenever the tab is reopened, so a
@@ -122,6 +129,7 @@ export default async function ClientDetailPage({ params }: Props) {
         backlinks={backlinks}
         voice={voice}
         cadence={cadence}
+        planIncluded={quota.limit}
       />
     </>
   );

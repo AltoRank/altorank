@@ -9,6 +9,7 @@ import { listGSCSites, type GSCSite } from "@/lib/google/gsc";
 import { listGA4Properties, matchGA4Property } from "@/lib/google/ga4";
 import { getWorkspaceAllowance, workspaceLimitMessage } from "@/lib/billing/workspaces";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
+import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
 import { onboardWorkspace } from "@/app/actions/onboard-workspace";
 
 /** What a Search Console property looks like to the person choosing. */
@@ -152,7 +153,7 @@ export async function createWorkspacesFromProperties(siteUrls: string[]): Promis
         color: "av-c1",
         indexnow_key: generateIndexNowKey(),
         auto_generate: true,
-        auto_generate_weekly_limit: 2,
+        auto_generate_weekly_limit: PAID_DEFAULT_PACE,
       })
       .select("id")
       .single();

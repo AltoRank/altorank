@@ -30,6 +30,7 @@ import { billingEnabled, PLAN_ARTICLE_LIMITS, type PlanTier } from "@/lib/stripe
 import { getSimulation } from "@/lib/dev/simulation";
 import { isAdminEmail } from "@/lib/auth/operators";
 import { inCustomerPreview } from "@/lib/auth/preview";
+import { agencyHasOperator } from "@/lib/billing/operator-agency";
 
 export type Quota = {
   /** Null means unmetered. */
@@ -59,6 +60,11 @@ export async function getQuota(
   // Resolve the caller when not handed one. On the cookie client this is the
   // signed-in user (operator bypass works); on the cron's service client it is
   // null, which is right - a cron is nobody's operator.
+  // Captured before the lookup below, because an explicitly passed null is
+  // the crons' way of saying "there is no session here", and that is a
+  // different fact from a session that resolved to nobody.
+  const noSession = userEmail === null;
+
   if (userEmail === undefined) {
     const { data } = await supabase.auth.getUser();
     userEmail = data.user?.email ?? null;
@@ -87,6 +93,14 @@ export async function getQuota(
   // Only the bypass is dropped. Everything below runs against the real agency
   // row, so quota is the account's actual usage, not a fixture.
   if (isAdminEmail(userEmail) && !(await inCustomerPreview())) {
+    return { limit: null, used, remaining: null, reason: "operator", plan: null };
+  }
+
+  // Same bypass, reached the only way a cron can reach it. Without this our own
+  // agency is metered by every scheduled job: one draft a month from
+  // cron/generate, and since scheduled work was gated on a plan, no rank
+  // tracking at all. See lib/billing/operator-agency.ts.
+  if (noSession && (await agencyHasOperator(supabase, agencyId))) {
     return { limit: null, used, remaining: null, reason: "operator", plan: null };
   }
 
@@ -129,6 +143,27 @@ export async function getQuota(
   }
 
   return { limit, used, remaining: Math.max(0, limit - used), reason: "plan", plan };
+}
+
+/**
+ * Whether an account is entitled to the scheduled paid loop.
+ *
+ * The free draft buys a look at the product: a workspace, a first look, one
+ * article with its fact check. It does not buy a standing subscription to
+ * DataForSEO. Rank tracking runs nightly and forever, so an account that
+ * signed up, took its free draft - which it cannot approve or publish without
+ * a plan - and never came back kept costing money every night for an article
+ * that could never ship.
+ *
+ * Cheap per account and unbounded in aggregate: a keyword is under two cents a
+ * month, and nothing ever stops.
+ *
+ * `no-plan` is the only refusal. `self-host` must always run - that install
+ * pays its own provider bills and gating it would break the open-source
+ * promise - and `operator` and `plan` are entitled by definition.
+ */
+export function entitledToScheduledWork(q: Quota): boolean {
+  return q.reason !== "no-plan";
 }
 
 /** Drafts an account gets before choosing a plan. Approving them needs one. */

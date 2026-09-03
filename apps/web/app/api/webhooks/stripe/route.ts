@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
 import { createServiceClient } from "@/lib/supabase/server";
+import { paceOnActivation } from "@/lib/content/pace";
 
 // Resolve a Stripe price id back to our plan tier.
 function planForPrice(priceId: string | undefined): "starter" | "growth" | undefined {
@@ -72,6 +73,31 @@ export async function POST(request: Request) {
             plan_status: "active",
           })
           .eq("id", agencyId);
+
+        /**
+         * Start writing at a paid pace.
+         *
+         * Signup sets one article a week, which is right while the account is
+         * free: the quota allows one draft a calendar month, so a higher pace
+         * would only make the cron attempt work the quota gate then refuses.
+         * Nothing raised it afterwards, so a customer who paid for 100 a month
+         * kept getting about four, and there was no control anywhere to change
+         * it. `paceOnActivation` only ever raises, and only from a value the
+         * product itself chose - a site deliberately paused at 0, or set to
+         * anything above the free-tier pace, is left alone.
+         */
+        const { data: sites } = await supabase
+          .from("workspaces")
+          .select("id, auto_generate_weekly_limit")
+          .eq("agency_id", agencyId);
+        for (const site of sites ?? []) {
+          const next = paceOnActivation(site.auto_generate_weekly_limit as number | null);
+          if (next === null) continue;
+          await supabase
+            .from("workspaces")
+            .update({ auto_generate_weekly_limit: next })
+            .eq("id", site.id);
+        }
       }
       break;
     }

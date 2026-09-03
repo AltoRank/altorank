@@ -5,6 +5,7 @@ import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getRecentArticles, getArticles } from "@/lib/queries/articles";
 import { getKeywords } from "@/lib/queries/keywords";
 import { getTrafficSeries, type TrafficSeries } from "@/lib/queries/traffic";
+import { getBingSummary } from "@/lib/queries/bing";
 import { PageHead, DotSep, StatusPill, Avatar, Icons, Button, Chip, Card, StatStrip, ConnectPrompt } from "@/components/ui";
 import { ClientActions } from "@/components/dashboard/client-actions";
 import { WorkspaceGrid } from "@/components/dashboard/workspace-grid";
@@ -35,24 +36,18 @@ function TrafficChart({ series, connected = false }: { series: TrafficSeries; co
       return (
         <div className="h-[220px] grid place-items-center px-8 text-center">
           <div className="max-w-[46ch] text-[13px] leading-relaxed text-ink-3">
+            {/* Nothing synced yet. The impressions branch that used to live
+                here could never run: this whole block requires `hasData` to be
+                false, and that path returns a hard-coded zero for impressions.
+                A site with impressions and no clicks now has `hasClicks` and
+                its own panel below. */}
             <div className="mb-1 text-[13.5px] font-medium text-ink-2">
-              {series.impressions
-                ? `Connected: ${series.impressions.toLocaleString()} impressions, no clicks yet`
-                : "Search Console is connected, with nothing to plot yet"}
+              Search Console is connected, with nothing to plot yet
             </div>
-            {series.impressions ? (
-              <>
-                This chart plots clicks, and there are none so far. Impressions mean the
-                pages are being shown; clicks follow position. Nothing here is estimated.
-              </>
-            ) : (
-              <>
             Search Console reports with about a two-day lag, and only pages that
             received clicks appear at all. If this stays empty, open Integrations:
             the sync reports there when the connected Google account cannot see a
             property for this domain.
-              </>
-            )}
           </div>
         </div>
       );
@@ -67,6 +62,37 @@ function TrafficChart({ series, connected = false }: { series: TrafficSeries; co
           href="/connect"
           cta="Connect Search Console"
         />
+      </div>
+    );
+  }
+
+  // Synced, and the measurement is zero. Drawing a flat line here would be a
+  // claim about the site rather than about the data, so the panel says which
+  // one it is. This is the ordinary state of a new domain: Google is showing
+  // the pages, and clicks follow position.
+  if (!series.hasClicks) {
+    return (
+      <div className="h-[220px] grid place-items-center px-8 text-center">
+        <div className="max-w-[46ch] text-[13px] leading-relaxed text-ink-3">
+          <div className="mb-1 text-[13.5px] font-medium text-ink-2">
+            {series.impressions
+              ? `${series.impressions.toLocaleString()} impressions, no clicks yet`
+              : "Measured, and there is nothing to plot yet"}
+          </div>
+          {series.impressions ? (
+            <>
+              This chart plots clicks, and Search Console reports none over the last{" "}
+              {series.days} days. Impressions mean the pages are being shown; clicks
+              follow position. Nothing here is estimated.
+            </>
+          ) : (
+            <>
+              Search Console reported no impressions and no clicks over the last{" "}
+              {series.days} days, so there is nothing to draw. That is a measurement,
+              not a gap in the data.
+            </>
+          )}
+        </div>
       </div>
     );
   }
@@ -105,20 +131,25 @@ function TrafficChart({ series, connected = false }: { series: TrafficSeries; co
 export default async function DashboardPage() {
   // Every section is about one site unless the switcher says otherwise.
   const scopeId = await getScopedWorkspaceId();
-  const [workspaces, allArticles, recent, traffic, keywords] = await Promise.all([
-    getWorkspaces(),
-    getArticles(scopeId ?? undefined),
-    getRecentArticles(6),
-    getTrafficSeries(scopeId ?? undefined),
-    getKeywords(scopeId ?? undefined),
-  ]);
   // Whether any workspace has Google connected at all: it changes the empty
-  // state from an instruction into an explanation.
+  // state from an instruction into an explanation. Independent of the five
+  // reads beside it, so it runs with them instead of after them.
   const gscSupabase = await createClient();
-  const { count: gscCount } = await gscSupabase
-    .from("workspace_integrations")
-    .select("id", { count: "exact", head: true })
-    .eq("integration_id", "gsc");
+  const [workspaces, allArticles, recent, traffic, keywords, { count: gscCount }, bing] =
+    await Promise.all([
+      getWorkspaces(),
+      getArticles(scopeId ?? undefined),
+      getRecentArticles(6),
+      getTrafficSeries(scopeId ?? undefined),
+      getKeywords(scopeId ?? undefined),
+      gscSupabase
+        .from("workspace_integrations")
+        .select("id", { count: "exact", head: true })
+        .eq("integration_id", "gsc"),
+      // Bing, kept beside the chart rather than in it: two engines summed into
+      // one line would be a number that describes neither.
+      getBingSummary(scopeId ?? undefined),
+    ]);
   const gscConnected = (gscCount ?? 0) > 0;
 
   // The header pill used to be a hardcoded "All systems healthy" while the
@@ -187,10 +218,17 @@ export default async function DashboardPage() {
             label: "Organic traffic",
             value: traffic.hasData ? traffic.currentTotal.toLocaleString() : "—",
             unit: " clicks",
+            // A synced zero keeps its "0", because nobody clicking IS the
+            // measurement; the delta says what Google did report, so the row
+            // does not read as a broken integration.
             delta: traffic.hasData
-              ? traffic.changePct === null
-                ? "no prior period"
-                : `${traffic.changePct >= 0 ? "+" : ""}${traffic.changePct}% vs previous 30d`
+              ? !traffic.hasClicks
+                ? traffic.impressions
+                  ? `${traffic.impressions.toLocaleString()} impressions, no clicks yet`
+                  : "no impressions reported yet"
+                : traffic.changePct === null
+                  ? "no prior period"
+                  : `${traffic.changePct >= 0 ? "+" : ""}${traffic.changePct}% vs previous 30d`
               : (
                   <ConnectPrompt
                     dense
@@ -231,6 +269,13 @@ export default async function DashboardPage() {
               <span className="flex items-center gap-1.5">
                 <i className="inline-block w-2.5 h-0.5 rounded-sm bg-ink-4 mt-[1px]" />Prev period
               </span>
+              {bing.connected && (
+                <span className="ml-auto text-ink-3">
+                  {bing.hasData
+                    ? `Bing · ${bing.clicks.toLocaleString()} clicks · ${bing.impressions.toLocaleString()} impressions, ${bing.days}d`
+                    : "Bing connected · nothing reported yet"}
+                </span>
+              )}
             </div>
           </Card>
 

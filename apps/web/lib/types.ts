@@ -5,7 +5,13 @@ import type { SearchIntent } from "./seo/intent";
 import type { ArticleResearch } from "./seo/research";
 import type { FactCheckReport } from "./ai/fact-check";
 
-// === Agency ===
+// === Account (stored as `agencies`) ===
+//
+// The tenant row: who is billed, who owns the workspaces, who holds the API
+// key. The table name predates the pivot and is left alone deliberately -
+// renaming it touches every query, policy and foreign key - but the thing it
+// models is an account, and "Agency" is now the name of one plan tier
+// (lib/stripe.ts), not the shape of every customer.
 export type Agency = {
   id: string;
   name: string;
@@ -30,7 +36,10 @@ export type AgencyMember = {
   created_at: string;
 };
 
-// === Workspace (Client) ===
+// === Workspace ===
+//
+// One site. An agency-tier customer has one per client, a solo customer has
+// one per project of their own; "client" was only ever true for the first.
 export type AIProviderType = "claude" | "openai";
 
 export type Workspace = {
@@ -380,7 +389,8 @@ export type AnalyticsMetric = {
   id: string;
   workspace_id: string;
   article_id: string | null;
-  source: "ga4" | "gsc";
+  /** bing rows are daily site totals: query and page_url are always null. */
+  source: "ga4" | "gsc" | "bing";
   metric_date: string;
   pageviews: number;
   sessions: number;
@@ -443,7 +453,16 @@ export type BacklinkExchange = {
   created_at: string;
 };
 
-export type BacklinkCreditReason = "host_link" | "place_link" | "bonus" | "adjustment";
+/** `supply_article` credits the writer, `receive_article` debits the publisher.
+ *  The `*_link` pair is the retired pre-039 direction that paid the publisher
+ *  for carrying the link; no row ever used it. */
+export type BacklinkCreditReason =
+  | "supply_article"
+  | "receive_article"
+  | "host_link"
+  | "place_link"
+  | "bonus"
+  | "adjustment";
 
 export type BacklinkCredit = {
   id: string;

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Card } from "@/components/ui";
 import { updateWorkspace } from "@/app/actions/workspaces";
 import { getLocaleOptions, getLocale } from "@/lib/seo/locales";
@@ -14,25 +15,53 @@ type LocaleSelectorProps = {
 export function LocaleSelector({ workspaceId, currentLanguage }: LocaleSelectorProps) {
   const router = useRouter();
   const options = getLocaleOptions();
-  const current = getLocale(currentLanguage);
-  const [value, setValue] = useState(currentLanguage || "en");
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
 
-  async function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+  /**
+   * The menu shows the chosen language immediately, but the choice is the
+   * server's to confirm.
+   *
+   * Held in `useOptimistic` rather than `useState` so it lasts exactly as long
+   * as the write is in flight and then defers to the prop. Kept in local state
+   * a rejected save left the menu naming one country while keyword research,
+   * SERP tracking and generation all continued in another - and said "Saved"
+   * about none of it, since the throw skipped that too.
+   */
+  const [language, setLanguage] = useOptimistic(currentLanguage || "en");
+  const current = getLocale(language);
+
+  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const lang = e.target.value;
-    setValue(lang);
     setSaved(false);
 
-    const locale = getLocale(lang);
-    const fd = new FormData();
-    fd.set("language", lang);
-    fd.set("location_code", String(locale.locationCode));
+    startTransition(async () => {
+      // Inside the transition: an optimistic value set outside one is not
+      // tracked, and React warns rather than showing it.
+      setLanguage(lang);
 
-    await updateWorkspace(workspaceId, fd);
-    setSaved(true);
-    startTransition(() => router.refresh());
-    setTimeout(() => setSaved(false), 2000);
+      const locale = getLocale(lang);
+      const fd = new FormData();
+      fd.set("language", lang);
+      fd.set("location_code", String(locale.locationCode));
+
+      try {
+        await updateWorkspace(workspaceId, fd);
+        // Awaited here, still inside the transition, so the optimistic value
+        // holds until the re-rendered prop replaces it. Left outside, the menu
+        // would flash back to the old language in the gap between the write
+        // landing and the server render arriving.
+        router.refresh();
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      } catch (err) {
+        // No revert to write: leaving the transition drops the optimistic
+        // value, so the menu returns to the stored language on its own.
+        toast.error(
+          err instanceof Error ? err.message : "Could not change the language",
+        );
+      }
+    });
   }
 
   return (
@@ -43,7 +72,7 @@ export function LocaleSelector({ workspaceId, currentLanguage }: LocaleSelectorP
       </p>
       <div className="flex items-center gap-3">
         <select
-          value={value}
+          value={language}
           onChange={handleChange}
           disabled={isPending}
           className="flex-1 px-2.5 py-1.5 text-[13px] bg-panel border border-line rounded-md focus:outline-none focus:border-accent"

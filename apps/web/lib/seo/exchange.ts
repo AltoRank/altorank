@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { BacklinkCreditReason } from "@/lib/types";
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicModel } from "@/lib/ai/models";
 import { fetchSite } from "@/lib/audit/lenient-fetch";
@@ -15,22 +16,20 @@ type TiptapNode = {
 type TiptapDoc = { type: "doc"; content: TiptapNode[] };
 
 /**
- * Calculate credits for a given DR using tiered formula:
- * DR 0-20 = 1, 21-40 = 2, 41-60 = 4, 61-80 = 8, 81-100 = 16
+ * One article, one credit, whoever publishes it.
  *
- * Returns null for an unmeasured DR rather than falling through to the cheapest
- * tier. Callers used to pass `workspace.dr ?? 0`, which priced every unmeasured
- * host at 1 credit — the same as a genuinely worthless one — so the tiers did
- * nothing and the price looked derived when it was invented.
+ * This replaces a five-tier price derived from the publisher's domain rating,
+ * and the tiers had to go for the same reason the credit direction flipped: a
+ * price that rises with the publisher's authority is a price on the link, and a
+ * priced link is a paid link no matter which column the number sits in. What
+ * is actually being traded is a piece of writing, and one article costs about
+ * what another article costs.
+ *
+ * A flat price also makes the ledger mean something simple and checkable: your
+ * balance is how many articles you have written for other people minus how
+ * many you have taken from them.
  */
-export function creditsForDR(dr: number | null | undefined): number | null {
-  if (dr === null || dr === undefined) return null;
-  if (dr <= 20) return 1;
-  if (dr <= 40) return 2;
-  if (dr <= 60) return 4;
-  if (dr <= 80) return 8;
-  return 16;
-}
+export const CREDITS_PER_ARTICLE = 1;
 
 /**
  * Get the credit balance for an agency (sum of all credits).
@@ -54,7 +53,7 @@ export async function recordCredit(
   supabase: SupabaseClient,
   agencyId: string,
   amount: number,
-  reason: "host_link" | "place_link" | "bonus" | "adjustment",
+  reason: BacklinkCreditReason,
   exchangeId?: string,
   drAtTime?: number | null,
 ): Promise<void> {
@@ -63,47 +62,13 @@ export async function recordCredit(
     amount,
     reason,
     exchange_id: exchangeId ?? null,
-    // This column is the audit trail for why a trade cost what it cost. Writing
-    // 0 for an unknown DR makes the ledger claim a reading that was never taken.
+    // Retired by 039: the price is flat, so there is no domain rating behind
+    // it to record. Null rather than 0, which would claim a reading nobody
+    // took - the reason this column was made nullable in the first place.
     dr_at_time: drAtTime ?? null,
   });
 
   if (error) throw new Error(error.message);
-}
-
-/**
- * Find matching exchange requests for a provider workspace.
- * Matches based on topic relevance and available credits.
- */
-export async function findMatchingRequests(
-  supabase: SupabaseClient,
-  providerAgencyId: string,
-  providerWorkspaceId: string,
-): Promise<Array<{
-  id: string;
-  target_url: string;
-  target_keyword: string;
-  target_topic: string;
-  credits_offered: number;
-  requester_agency_id: string;
-}>> {
-  const { data } = await supabase
-    .from("backlink_exchanges")
-    .select("*")
-    .eq("status", "requested")
-    .neq("requester_agency_id", providerAgencyId)
-    .is("provider_agency_id", null)
-    .order("credits_offered", { ascending: false })
-    .limit(20);
-
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    target_url: row.target_url,
-    target_keyword: row.target_keyword ?? "",
-    target_topic: row.target_topic ?? "",
-    credits_offered: row.credits_offered,
-    requester_agency_id: row.requester_agency_id,
-  }));
 }
 
 /**
@@ -228,9 +193,19 @@ export function insertBacklinkIntoContent(
           attrs: {
             href: targetUrl,
             target: "_blank",
-            // Exchanged links are credit-compensated, so they MUST be nofollow +
-            // sponsored (Google link-scheme compliance). Never emit them dofollow.
-            rel: "noopener noreferrer nofollow sponsored",
+            /**
+             * Followed, and that is the point of migration 039.
+             *
+             * It was `nofollow sponsored` while the publisher earned credits
+             * for carrying it: value flowing to whoever hosts a link makes it
+             * a paid link, and a paid link has to be marked. Now the publisher
+             * PAYS for the article and the citation is the writer's byline, so
+             * nothing was paid for the link and there is nothing to disclose.
+             *
+             * `noopener noreferrer` stays because the anchor opens a new tab;
+             * neither is a ranking hint.
+             */
+            rel: "noopener noreferrer",
           },
         },
       ],
@@ -283,11 +258,14 @@ function sameTarget(href: string, target: string): boolean {
  * "credit transfer must follow a real verification, not a timer" — this is the
  * verification that sentence assumed existed.
  *
- * Four things have to hold, and all four are things a reader or a crawler would
- * see: the page loads, it is indexable, the anchor is present, and it carries
- * the rel this network requires. A nofollow+sponsored link is the whole basis on
- * which this exchange is not a link scheme, so a placement that quietly went
- * dofollow is a failure, not a bonus.
+ * Three things have to hold, and all three are things a reader or a crawler
+ * would see: the page loads, it is indexable, and the anchor is present. The
+ * rel is read and reported verbatim, never required. It used to be required -
+ * a placement that went dofollow failed - because the publisher was being paid
+ * to carry the link and an unmarked paid link is a link scheme. Since 039 the
+ * publisher pays instead, so a followed byline is the expected outcome and the
+ * publisher may still add nofollow if they prefer; either way the trade already
+ * settled on publication, so this decides nothing about credits.
  */
 export async function verifyPlacementLive(
   pageUrl: string | null,
@@ -352,22 +330,15 @@ export async function verifyPlacementLive(
     if (!href || !sameTarget(href, targetUrl)) continue;
 
     const rel = (tag.match(/rel=["']([^"']*)["']/i)?.[1] ?? "").toLowerCase();
-    const missing = ["nofollow", "sponsored"].filter((t) => !rel.split(/\s+/).includes(t));
-    if (missing.length) {
-      return {
-        ok: false,
-        url: pageUrl,
-        httpStatus: res.status,
-        rel: rel || null,
-        reason: `link found but rel is missing ${missing.join(" and ")} (found "${rel || "none"}")`,
-      };
-    }
+    const qualified = ["nofollow", "sponsored", "ugc"].filter((t) => rel.split(/\s+/).includes(t));
     return {
       ok: true,
       url: pageUrl,
       httpStatus: res.status,
-      rel,
-      reason: "link is live, indexable and correctly marked nofollow sponsored",
+      rel: rel || null,
+      reason: qualified.length
+        ? `citation is live and indexable, and the publisher qualified it with ${qualified.join(" ")}`
+        : "citation is live, indexable and followed",
     };
   }
 
@@ -380,69 +351,106 @@ export async function verifyPlacementLive(
   };
 }
 
-export async function placeBacklinkInArticle(
-  supabase: SupabaseClient,
-  exchangeId: string,
-): Promise<void> {
-  // Fetch exchange with placement suggestion
-  const { data: exchange, error: exErr } = await supabase
+/**
+ * The decision half of settlement, kept pure so it can be tested without a
+ * database or a live page.
+ *
+ * Credits settle because the article was PUBLISHED, not because a link
+ * survived: if payment depended on the link, the credits would have bought the
+ * link, which is "exchanging goods or services for links" in Google's own
+ * words. The publisher may cut the citation while editing and the trade still
+ * completes. That is what makes this a content trade rather than a link
+ * purchase, and this function is where it is checkable, because it is never
+ * told the citation's fate.
+ *
+ * Since 039 the direction is the publisher paying the writer, and the price is
+ * flat, so the old refusal to settle an unmeasured domain rating is gone with
+ * the tiers that needed it.
+ */
+export type SettlementDecision =
+  | { settle: true; credits: number }
+  | { settle: false; reason: string };
+
+export function settlementDecision(exchange: {
+  status: string;
+  provider_agency_id: string | null;
+  requester_agency_id: string | null;
+}): SettlementDecision {
+  if (exchange.status !== "placed") {
+    return { settle: false, reason: `exchange is ${exchange.status}, not placed` };
+  }
+  if (!exchange.provider_agency_id || !exchange.requester_agency_id) {
+    return { settle: false, reason: "exchange has no publisher or writer" };
+  }
+  return { settle: true, credits: CREDITS_PER_ARTICLE };
+}
+
+export type SettlementOutcome =
+  | { settled: true; credits: number; citation: "kept" | "removed"; detail: string }
+  | { settled: false; reason: string };
+
+/**
+ * Settle the exchange an article belongs to, once that article is live.
+ *
+ * Called from the publish path for every article; almost every article belongs
+ * to no exchange, so the first query is the fast exit. Needs the service role
+ * and takes it rather than the caller's client: credits are written for two
+ * different accounts, and RLS scopes a member to inserting their own.
+ *
+ * Whether the citation survived is recorded, never enforced. The writer is
+ * owed the truth about what they got - a published article that cites them, or
+ * a published article that no longer does - and both are honest outcomes of a
+ * trade whose subject was the article.
+ */
+export async function settleExchangeForArticle(
+  admin: SupabaseClient,
+  articleId: string,
+): Promise<SettlementOutcome | null> {
+  const { data: exchange } = await admin
     .from("backlink_exchanges")
-    .select("*")
-    .eq("id", exchangeId)
-    .single();
+    .select("id, status, provider_agency_id, requester_agency_id, provider_workspace_id, target_url")
+    .eq("provider_article_id", articleId)
+    .maybeSingle();
+  if (!exchange) return null;
 
-  if (exErr || !exchange) throw new Error("Exchange not found");
-  if (exchange.status !== "accepted") {
-    throw new Error(`Cannot place link for exchange in status: ${exchange.status}`);
-  }
-  if (!exchange.provider_article_id) {
-    throw new Error("No provider article assigned to this exchange");
-  }
+  const decision = settlementDecision({
+    status: exchange.status as string,
+    provider_agency_id: exchange.provider_agency_id as string | null,
+    requester_agency_id: exchange.requester_agency_id as string | null,
+  });
+  if (!decision.settle) return { settled: false, reason: decision.reason };
 
-  // Fetch the article content
-  const { data: article, error: artErr } = await supabase
+  const { data: article } = await admin
     .from("articles")
-    .select("id, content")
-    .eq("id", exchange.provider_article_id)
-    .single();
+    .select("published_url")
+    .eq("id", articleId)
+    .maybeSingle();
 
-  if (artErr || !article?.content) throw new Error("Article not found or has no content");
-
-  const placement = (exchange.suggested_placement as {
-    paragraphIndex?: number;
-    anchorText?: string;
-  }) ?? {};
-
-  const paragraphIndex = placement.paragraphIndex ?? 1;
-  const anchorText = placement.anchorText ?? exchange.target_keyword ?? "this resource";
-
-  // Insert the link
-  const updatedContent = insertBacklinkIntoContent(
-    article.content as TiptapDoc,
-    exchange.target_url,
-    anchorText,
-    paragraphIndex,
+  // A report, not a gate.
+  const verdict = await verifyPlacementLive(
+    (article?.published_url as string | null) ?? null,
+    exchange.target_url as string,
   );
 
-  // Update article content
-  const { error: updateArticleErr } = await supabase
-    .from("articles")
-    .update({
-      content: updatedContent,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", article.id);
+  // The publisher pays for the article they received; the writer is credited
+  // for having written it. Nothing is paid to whoever carries the link, which
+  // is the reason the citation may be followed at all (migration 039).
+  await recordCredit(admin, exchange.provider_agency_id as string, -decision.credits, "receive_article", exchange.id as string, null);
+  await recordCredit(admin, exchange.requester_agency_id as string, decision.credits, "supply_article", exchange.id as string, null);
 
-  if (updateArticleErr) throw new Error(updateArticleErr.message);
-
-  // Update exchange status to "placed"
-  const { error: updateExErr } = await supabase
+  await admin
     .from("backlink_exchanges")
     .update({
-      status: "placed",
-      placed_at: new Date().toISOString(),
+      status: "live",
+      placement_url: (article?.published_url as string | null) ?? null,
+      verified_at: new Date().toISOString(),
     })
-    .eq("id", exchangeId);
+    .eq("id", exchange.id);
 
-  if (updateExErr) throw new Error(updateExErr.message);
+  return {
+    settled: true,
+    credits: decision.credits,
+    citation: verdict.ok ? "kept" : "removed",
+    detail: verdict.reason,
+  };
 }

@@ -34,27 +34,35 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
   const { agencyId, user } = await requireAuth();
   const supabase = await createClient();
 
-  const { data: agency } = await supabase
-    .from("agencies")
-    .select("plan, plan_status, current_period_end, stripe_customer_id")
-    .eq("id", agencyId)
-    .single();
+  // Five independent reads. Each needs only the agency and user requireAuth
+  // just returned; none consumes another's result, and the plan and status
+  // below are computed from them afterwards rather than between them. Awaited
+  // one after the other they were five round trips on the page people open
+  // when they are about to pay.
+  const [{ data: agency }, { data: invoices }, simulation, preview, quota] =
+    await Promise.all([
+      supabase
+        .from("agencies")
+        .select("plan, plan_status, current_period_end, stripe_customer_id")
+        .eq("id", agencyId)
+        .single(),
+      supabase
+        .from("invoices")
+        .select("number, period, articles, amount, status, pdf_url")
+        .eq("agency_id", agencyId)
+        .order("created_at", { ascending: false })
+        .limit(12),
+      // Dev-only: the simulator cookie can stand in for a plan the local DB
+      // does not have, so each tier's billing view is checkable before Stripe
+      // is even configured. Null everywhere outside development.
+      getSimulation(),
+      // The production preview overrides the same way the dev simulator does,
+      // and takes precedence: if an operator asked to see the Managed screens,
+      // showing them their real row instead answers a question they did not ask.
+      getOperatorPreview(),
+      getQuota(supabase, agencyId, user.email ?? null),
+    ]);
 
-  const { data: invoices } = await supabase
-    .from("invoices")
-    .select("number, period, articles, amount, status, pdf_url")
-    .eq("agency_id", agencyId)
-    .order("created_at", { ascending: false })
-    .limit(12);
-
-  // Dev-only: the simulator cookie can stand in for a plan the local DB
-  // does not have, so each tier's billing view is checkable before Stripe
-  // is even configured. Null everywhere outside development.
-  const simulation = await getSimulation();
-  // The production preview overrides the same way the dev simulator does, and
-  // takes precedence: if an operator asked to see the Managed screens, showing
-  // them their real row instead answers a question they did not ask.
-  const preview = await getOperatorPreview();
   const plan = (preview?.plan ?? simulation?.plan ?? agency?.plan ?? "starter") as PlanTier;
   // The preview overrides the plan, so it has to override the status with it.
   // Reading the real row here produced "Managed plan · inactive" beside a card
@@ -62,7 +70,6 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
   // the screen whose whole job is to state what you are paying for.
   const status = preview?.plan ? "active" : (agency?.plan_status ?? "inactive");
 
-  const quota = await getQuota(supabase, agencyId, user.email ?? null);
   const isActive =
     Boolean(preview?.plan) || Boolean(simulation?.plan) || status === "active" || status === "trialing";
   const euros = (n: number | string | null) =>
