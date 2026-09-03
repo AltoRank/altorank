@@ -54,8 +54,16 @@ export async function runOnboarding(
   supabase: SupabaseClient,
   workspace: Workspace,
   emit: Emit,
+  /**
+   * The request's abort signal. Checked at every phase boundary: a client that
+   * disconnected (navigated away, or React re-ran the effect and aborted the
+   * first fetch) should not have a full crawl and a paid article written for
+   * nobody. Work already in flight finishes; nothing new starts.
+   */
+  signal?: AbortSignal,
 ): Promise<void> {
   const domain = workspace.domain;
+  const gone = () => signal?.aborted === true;
 
   // --- Phase 1: read the site, learn its voice ----------------------------
   emit({ phase: "scanning", status: "active" });
@@ -74,6 +82,8 @@ export async function runOnboarding(
       emit({ phase: "scanning", status: "failed", detail: message(err) });
     }
   }
+
+  if (gone()) return;
 
   // --- Phase 2: find what to write about ----------------------------------
   emit({ phase: "keywords", status: "active" });
@@ -104,6 +114,8 @@ export async function runOnboarding(
       emit({ phase: "keywords", status: "failed", detail: message(err) });
     }
   }
+
+  if (gone()) return;
 
   // --- Phase 3: write the first draft -------------------------------------
   emit({ phase: "drafting", status: "active" });

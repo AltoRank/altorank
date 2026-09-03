@@ -96,6 +96,27 @@ describe("runOnboarding", () => {
     expect(drafting[1]).toMatchObject({ detail: expect.stringMatching(/3 ranking pages.*2 questions/) });
   });
 
+  /**
+   * A client that aborted must not get a crawl and a paid article written for
+   * nobody. The phase in flight finishes; the next one never starts.
+   */
+  it("stops at the next phase boundary once the request is aborted", async () => {
+    const ac = new AbortController();
+    const events: OnboardingEvent[] = [];
+    scrape.mockImplementation(async () => { ac.abort(); return "word ".repeat(80); });
+    await runOnboarding(client(0), WS, (e) => events.push(e), ac.signal);
+    expect(phases(events)).toEqual(["scanning:active", "scanning:done"]);
+    expect(analyse).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("runs to completion when the signal is never aborted", async () => {
+    const ac = new AbortController();
+    const events: OnboardingEvent[] = [];
+    await runOnboarding(client(0), WS, (e) => events.push(e), ac.signal);
+    expect(events.at(-1)).toEqual({ phase: "ready" });
+  });
+
   it("skips the draft, with the reason, when the free draft is used", async () => {
     quota.mockResolvedValue({ limit: 1, used: 1, remaining: 0, reason: "no-plan" });
     const events = await collect();

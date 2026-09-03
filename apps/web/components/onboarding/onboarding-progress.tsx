@@ -42,16 +42,22 @@ export function OnboardingProgress({
   const router = useRouter();
   const [state, setState] = useState<OnboardingState>(initialOnboardingState);
   const [closed, setClosed] = useState(false);
-  const handedOff = useRef(false);
-  // One run per mount. Under React StrictMode the effect fires twice in
-  // development, and aborting the first fetch does not stop the pipeline it
-  // already started on the server - two crawls, two DataForSEO bills, and a
-  // race on "does this workspace already have a draft".
-  const started = useRef(false);
+  // `onDone` is a fresh arrow on every parent render. Reading it through a ref
+  // keeps it out of the hand-off effect's dependencies, so a parent re-render
+  // - the workspace list refreshing after creation, for one - cannot re-run
+  // that effect and clear its timer.
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
 
+  // No "started" guard here, on purpose. An earlier version kept a ref that
+  // survived the effect's cleanup, so when React re-ran the effect (StrictMode
+  // does, in development) the re-run returned early and the only request had
+  // already been aborted by cleanup: one dead stream, a screen frozen on three
+  // pending steps. An effect has to be re-runnable. Cleanup aborts; a re-run
+  // fetches again; and the route watches request.signal so the aborted run
+  // stops at its next phase boundary instead of finishing a crawl nobody is
+  // listening to.
   useEffect(() => {
-    if (started.current) return;
-    started.current = true;
     const controller = new AbortController();
 
     (async () => {
@@ -94,7 +100,13 @@ export function OnboardingProgress({
           setState((s) => reduceOnboarding(s, { phase: "error", detail: "Lost the connection while setting up." }));
         }
       } finally {
-        setClosed(true);
+        // Closed means the stream ended. An aborted fetch is not that: it is
+        // this effect's own cleanup, and the run it belongs to may be the one
+        // React is about to replace. Marking the run closed from here handed
+        // off to the dashboard six seconds in, with a live stream still going
+        // and nothing yet written, because the abandoned first fetch reported
+        // itself finished on behalf of the second.
+        if (!controller.signal.aborted) setClosed(true);
       }
     })();
 
@@ -107,14 +119,16 @@ export function OnboardingProgress({
   // (first-draft-live) and shows whatever did complete.
   const finished = isTerminal(state) || closed;
   useEffect(() => {
-    if (!finished || handedOff.current) return;
-    handedOff.current = true;
+    if (!finished) return;
+    // Re-runnable, like the effect above. A cleared timer is rescheduled by
+    // the next run; a `handedOff` ref here once made the re-run return early
+    // instead, and the dialog sat open for good with every step still pending.
     const t = setTimeout(() => {
-      onDone?.();
+      onDoneRef.current?.();
       router.push(`/workspaces/${workspaceId}`);
     }, HANDOFF_MS);
     return () => clearTimeout(t);
-  }, [finished, onDone, router, workspaceId]);
+  }, [finished, router, workspaceId]);
 
   const drafting = state.steps.find((s) => s.phase === "drafting");
 
