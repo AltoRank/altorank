@@ -1,5 +1,6 @@
 import type { AvatarColor } from "./constants";
 import type { ScoringCheck } from "@/lib/seo/scoring";
+import type { LinkCheck } from "@/lib/seo/link-check";
 import type { GitConfig } from "./cms/git";
 import type { SearchIntent } from "./seo/intent";
 import type { ArticleResearch } from "./seo/research";
@@ -116,6 +117,9 @@ export type Article = {
   keyword_difficulty: number | null;
   /** Full per-check breakdown from lib/seo/scoring.ts. */
   seo_checks: ScoringCheck[] | null;
+  /** What each outbound link answered when the draft was generated. Null for
+   *  drafts predating migration 043 or written by hand. */
+  link_checks: LinkCheck[] | null;
   created_at: string;
   updated_at: string;
 };

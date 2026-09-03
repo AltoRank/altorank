@@ -1,6 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { factCheckArticle, approvalBlocker } from "@/lib/ai/fact-check";
+import { tiptapToHtml } from "@/lib/cms/html";
+import type { ArticleResearch } from "@/lib/seo/research";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { needsPlanToShip, CHOOSE_PLAN_MESSAGE } from "@/lib/billing/quota";
@@ -68,6 +71,8 @@ export async function approveArticle(articleId: string) {
   // the value is, not at signup.
   if (await needsPlanToShip(supabase, agencyId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
 
+  await refuseUnsourcedFigures(supabase, articleId);
+
   const { data, error } = await supabase
     .from("articles")
     .update({
@@ -88,6 +93,38 @@ export async function approveArticle(articleId: string) {
 }
 
 /**
+ * The one hard gate on approval: a bare, unattributed figure.
+ *
+ * Re-runs the fact check on what is in the editor NOW, not on the report
+ * stored at generation, so a reviewer who has just sourced or cut the numbers
+ * is not refused on stale evidence; and stores the fresh report, so the panel
+ * agrees with the refusal. Named-but-unverified sources do not block: that is
+ * the reviewer's judgement, which is what the review step is for.
+ */
+async function refuseUnsourcedFigures(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  articleId: string,
+) {
+  const { data: article } = await supabase
+    .from("articles")
+    .select("content, research")
+    .eq("id", articleId)
+    .single();
+  if (!article?.content) return;
+
+  const html = tiptapToHtml(article.content as Record<string, unknown>);
+  const report = factCheckArticle(html, (article.research as ArticleResearch | null) ?? undefined);
+
+  await supabase
+    .from("articles")
+    .update({ fact_checks: report, fact_check_verdict: report.verdict })
+    .eq("id", articleId);
+
+  const blocker = approvalBlocker(report);
+  if (blocker) throw new Error(blocker);
+}
+
+/**
  * Approve several review-state articles at once. Same transition, same
  * sign-off record per article; the only thing batched is the click.
  *
@@ -100,7 +137,20 @@ export async function approveArticles(articleIds: string[]): Promise<string[]> {
   const { user, agencyId } = await requireAuth();
   const supabase = await createClient();
   if (await needsPlanToShip(supabase, agencyId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
-  const ids = [...new Set(articleIds)].filter(Boolean);
+  const requested = [...new Set(articleIds)].filter(Boolean);
+  if (!requested.length) return [];
+
+  // Same gate as the single approve, per article. A refused draft simply does
+  // not move, and the caller's "3 of 4 approved" already covers that outcome.
+  const ids: string[] = [];
+  for (const id of requested) {
+    try {
+      await refuseUnsourcedFigures(supabase, id);
+      ids.push(id);
+    } catch {
+      // refused: left in review
+    }
+  }
   if (!ids.length) return [];
 
   const { data, error } = await supabase

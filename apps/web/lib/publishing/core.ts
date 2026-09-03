@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";
 import { tiptapToHtml } from "@/lib/cms/html";
-import { resolveInternalLinks } from "@/lib/seo/link-resolver";
+import { fetchLinkTargets, resolveInternalLinks } from "@/lib/seo/link-resolver";
 import { submitForIndexing, type IndexingResult } from "@/lib/seo/indexing";
 import { getValidAccessToken } from "@/lib/google/oauth";
 import { decryptConfig } from "@/lib/crypto";
@@ -71,16 +71,17 @@ export async function publishArticleCore(
 
   let html = tiptapToHtml(article.content as Record<string, unknown>);
 
-  // Resolve any remaining internal link placeholders before publishing
+  // Resolve any internal link placeholder still in the document. Generation
+  // resolves or unwraps them, so this only matters for a draft written by hand
+  // or before that was true; either way nothing may publish with a template
+  // string, a `#` or a guessed path in an href.
   try {
-    html = await resolveInternalLinks(
-      supabase,
+    html = resolveInternalLinks(
       html,
-      article.workspace_id,
-      articleId,
+      await fetchLinkTargets(supabase, article.workspace_id, articleId),
     );
   } catch {
-    // Link resolution is non-blocking — publish with whatever we have
+    // Link resolution is non-blocking: publish with whatever we have.
   }
 
   /**

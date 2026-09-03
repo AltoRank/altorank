@@ -34,12 +34,19 @@ function stripCodeFence(html: string): string {
  * is an internal 404 for a crawler.
  *
  * Deterministic, so it does not depend on the model having a good day.
+ *
+ * `placeholders` also unwraps `{{internal-link:…}}` hrefs. Off by default
+ * because this runs on the raw model output, before the resolver has had its
+ * turn; the resolver switches it on for whatever it could not resolve.
  */
-export function stripDeadLinks(html: string): string {
-  return html.replace(
-    /<a\b[^>]*href=["'](?:#|javascript:void\(0\)|)["'][^>]*>([\s\S]*?)<\/a>/gi,
-    "$1",
-  );
+export function stripDeadLinks(
+  html: string,
+  opts: { placeholders?: boolean } = {},
+): string {
+  const dead = opts.placeholders
+    ? /<a\b[^>]*href=["'](?:#|javascript:void\(0\)|\{\{internal-link:[^}]*\}\}|)["'][^>]*>([\s\S]*?)<\/a>/gi
+    : /<a\b[^>]*href=["'](?:#|javascript:void\(0\)|)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  return html.replace(dead, "$1");
 }
 
 export function extractArticleMeta(rawHtml: string): {
