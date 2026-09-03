@@ -9,6 +9,8 @@ import type { CMSConfig } from "@/lib/types";
 import { getQuota } from "@/lib/billing/quota";
 import { appendAttribution, isOperatorAgency, shouldAttribute } from "@/lib/publishing/attribution";
 import { chooseDestination, toDestinations, type IntegrationRow } from "@/lib/publishing/destinations";
+import { settleExchangeForArticle } from "@/lib/seo/exchange";
+import { createServiceClient } from "@/lib/supabase/server";
 
 /**
  * Publish a single article to its connected CMS.
@@ -133,6 +135,19 @@ export async function publishArticleCore(
     .eq("id", articleId);
 
   if (updateErr) throw new Error(updateErr.message);
+
+  /**
+   * If this article was written for somebody else's exchange request, the
+   * trade settles now, because it published - not because a link survived
+   * (lib/seo/exchange.ts settlementDecision says why). Its own client, since
+   * credits are written for two accounts and RLS scopes a member to their own.
+   * Never worth failing a publish that already happened.
+   */
+  try {
+    await settleExchangeForArticle(createServiceClient(), articleId);
+  } catch (err) {
+    console.warn("[publish] exchange settlement failed:", err);
+  }
 
   /**
    * Tell the engines. Publishing used to end here, leaving discovery to

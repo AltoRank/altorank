@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getBacklinks } from "@/lib/queries/backlinks";
-import { PageHead, DotSep, StatusPill, Avatar, Icons, Button, Card, StatStrip } from "@/components/ui";
+import { PageHead, DotSep, StatusPill, Avatar, Card, StatStrip } from "@/components/ui";
 import { ExchangeRequestForm } from "@/components/dashboard/exchange-actions";
+import { ExchangeMarketplace } from "@/components/dashboard/exchange-marketplace";
+import { getOpenRequests } from "@/lib/queries/exchange";
+import { requireAuth } from "@/lib/auth/require-auth";
 import { BacklinkFreshness } from "@/components/dashboard/backlink-freshness";
 import { BacklinkFilters } from "@/components/dashboard/backlink-filters";
 import { ExportCsv } from "@/components/dashboard/export-csv";
@@ -21,9 +24,14 @@ export default async function BacklinksPage({ searchParams }: Props) {
   const scopeId = await getScopedWorkspaceId();
   const params = await searchParams;
 
-  const [workspaces, backlinks] = await Promise.all([
+  const { agencyId } = await requireAuth();
+  const [workspaces, backlinks, openRequests] = await Promise.all([
     getWorkspaces(),
     getBacklinks(params.workspace ?? scopeId ?? undefined, params.status),
+    // Other accounts' open requests. Reads with the service role behind a
+    // fixed column list, because RLS scopes a member to rows their agency is
+    // already part of, which an unclaimed request never is.
+    getOpenRequests(agencyId),
   ]);
 
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));
@@ -86,6 +94,27 @@ export default async function BacklinksPage({ searchParams }: Props) {
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
+        {/* The host side of the exchange. Hidden when nobody is asking, so an
+            empty network shows nothing rather than an empty promise; the
+            request form above is how a row gets here in the first place. */}
+        {openRequests.length > 0 && (
+          <Card
+            title="Requests you could host"
+            meta={`${openRequests.length} open`}
+            className="mb-5"
+            flush
+          >
+            <p className="px-[18px] py-3 text-[12.5px] leading-relaxed text-ink-2 border-b border-line-soft">
+              Taking one writes a full article for your own blog, on the next keyword your site
+              should rank for, with a single citation to the requester. It arrives in your review
+              queue as a draft: edit it, cut the citation if it does not belong, publish it or
+              reject it. You are paid the credits when you publish, whether or not the citation
+              survived. Writing it uses one of this month&rsquo;s articles.
+            </p>
+            <ExchangeMarketplace requests={openRequests} workspaceId={scopeId} />
+          </Card>
+        )}
+
         <BacklinkFilters />
 
         <Card flush>

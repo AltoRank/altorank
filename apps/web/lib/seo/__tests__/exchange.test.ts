@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { creditsForDR, verifyPlacementLive } from "../exchange";
+import { creditsForDR, settlementDecision, verifyPlacementLive } from "../exchange";
 
 // These cases were first run against real HTTP (a local fixture server and live
 // sites) and only then pinned here. Mocked fetch alone would prove the code
@@ -111,5 +111,52 @@ describe("verifyPlacementLive", () => {
     const v = await verifyPlacementLive("https://host.example/post", TARGET);
     expect(v.ok).toBe(false);
     expect(v.reason).toMatch(/could not fetch/);
+  });
+});
+
+describe("settlementDecision", () => {
+  const base = {
+    status: "placed",
+    provider_agency_id: "agency-host",
+    requester_agency_id: "agency-requester",
+    provider_dr: 45,
+  };
+
+  it("settles a placed exchange at the hosting site's tier", () => {
+    // DR 45 is the 41-60 tier: 4 credits.
+    expect(settlementDecision(base)).toEqual({ settle: true, credits: 4 });
+  });
+
+  it("does not care whether the citation survived", () => {
+    // The whole point of the redesign. The decision function is not given the
+    // link's fate, so it cannot depend on it: the host may cut the citation
+    // while editing and is still paid for publishing the article. Settlement
+    // that required the link would mean the credits bought the link.
+    expect(Object.keys(base)).not.toContain("citation");
+    expect(settlementDecision({ ...base, provider_dr: 10 })).toEqual({ settle: true, credits: 1 });
+  });
+
+  it("refuses to settle until the article is actually placed", () => {
+    for (const status of ["requested", "accepted", "live", "rejected", "expired"]) {
+      const d = settlementDecision({ ...base, status });
+      expect(d.settle).toBe(false);
+      expect(d.settle === false && d.reason).toContain(status);
+    }
+  });
+
+  it("refuses to price an unmeasured host rather than paying the cheapest tier", () => {
+    const d = settlementDecision({ ...base, provider_dr: null });
+    expect(d.settle).toBe(false);
+    expect(d.settle === false && d.reason).toContain("no measured domain rating");
+    expect(settlementDecision({ ...base, provider_dr: undefined }).settle).toBe(false);
+  });
+
+  it("refuses an exchange missing either side", () => {
+    expect(settlementDecision({ ...base, provider_agency_id: null }).settle).toBe(false);
+    expect(settlementDecision({ ...base, requester_agency_id: null }).settle).toBe(false);
+  });
+
+  it("still settles a genuinely measured zero", () => {
+    expect(settlementDecision({ ...base, provider_dr: 0 })).toEqual({ settle: true, credits: 1 });
   });
 });
