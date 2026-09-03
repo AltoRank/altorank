@@ -73,6 +73,36 @@ export const PILOT_START = {
   it: 'settembre 2026',
 };
 
+// Italian labels for the shared chrome. Keyed by the English label so a new
+// NAV_LINKS entry shows up untranslated (English fallback) rather than blank,
+// and so a rename in NAV_LINKS surfaces here as a missing key rather than a
+// silently stale translation. Same pattern as PILOT_START above.
+export const NAV_LABELS_IT: Record<string, string> = {
+  'How it works': 'Come funziona',
+  Features: 'Funzionalità',
+  'Open source': 'Open source',
+  'Approval-first': 'Prima l’approvazione',
+  Compare: 'Confronta',
+  Pricing: 'Prezzi',
+  Blog: 'Blog',
+  // Footer groups and links
+  Product: 'Prodotto',
+  Resources: 'Risorse',
+  Company: 'Azienda',
+  'Success Stories': 'Casi studio',
+  'Free Tools': 'Strumenti gratuiti',
+  Alternatives: 'Alternative',
+  'GEO guides': 'Guide GEO',
+  'Agency blueprint': 'Il piano per le agenzie',
+  About: 'Chi siamo',
+  Privacy: 'Privacy',
+  Terms: 'Termini',
+  // Actions
+  'Sign in': 'Accedi',
+  'Sign up': 'Registrati',
+  'Add your domain': 'Aggiungi il tuo dominio',
+};
+
 export const NAV_LINKS = [
   { label: 'How it works', href: '/#how-it-works' },
   { label: 'Features', href: '/#features' },

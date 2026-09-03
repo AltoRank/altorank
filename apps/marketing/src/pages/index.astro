@@ -3,7 +3,7 @@ import Marketing from '@/layouts/Marketing.astro';
 import Button from '@/components/shared/Button.astro';
 import CTABanner from '@/components/shared/CTABanner.astro';
 import AppShot from '@/components/shared/AppShot.astro';
-import { APP_NAME, OSS_LICENSE, PRIMARY_CTA, APP_URL, SIGNUP_URL } from '@/constants';
+import { APP_NAME, OSS_LICENSE, PRIMARY_CTA, APP_URL, SIGNUP_URL, SITE_URL } from '@/constants';
 import { buildProductSchema } from '@/lib/schema';
 import { STEPS, COMPARISON, COMPARISON_THEM, CMS_LIST, LOCALE_COUNT, READINESS_SCAN } from '@/data/homepage';
 
@@ -11,12 +11,21 @@ import { STEPS, COMPARISON, COMPARISON_THEM, CMS_LIST, LOCALE_COUNT, READINESS_S
 // page, so passing buildOrganizationSchema() here emitted a duplicate
 // Organization node on the homepage only. Dropped 2026-08-15.
 const structuredData = [buildProductSchema()];
+
+// The Italian mirror lives at /it (src/pages/it/index.astro). Declared both
+// ways so neither locale looks like a duplicate of the other.
+const alternateLanguages = [
+  { hreflang: 'en', href: SITE_URL },
+  { hreflang: 'it', href: `${SITE_URL}/it` },
+  { hreflang: 'x-default', href: SITE_URL },
+];
 ---
 
 <Marketing
   title="AltoRank | Open-source AI SEO content engine"
   description="Articles that rank, published to your site every week. Free growth plan for any domain in 60 seconds. Keyword research, drafts in your voice, publishing to eleven CMSs. Open source, self-host it free."
   structuredData={structuredData}
+  alternateLanguages={alternateLanguages}
   headerOverlay
 >
   {/* ── HERO ─────────────────────────────────────────────────────────────

@@ -18,12 +18,14 @@ interface Props {
 }
 
 const { headerOverlay = false, ...props } = Astro.props;
+// Shared chrome follows the page locale; anything but 'it' keeps English.
+const lang = props.lang ?? 'en';
 ---
 
 <Base {...props}>
-  <Header overlay={headerOverlay} />
+  <Header overlay={headerOverlay} lang={lang} />
   <main class="flex-1">
     <slot />
   </main>
-  <Footer />
+  <Footer lang={lang} />
 </Base>

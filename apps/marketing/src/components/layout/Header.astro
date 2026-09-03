@@ -1,7 +1,7 @@
 ---
 import Logo from '@/components/shared/Logo.astro';
 import Button from '@/components/shared/Button.astro';
-import { NAV_LINKS, SIGNIN_URL, SIGNUP_URL, PRIMARY_CTA } from '@/constants';
+import { NAV_LINKS, SIGNIN_URL, SIGNUP_URL, PRIMARY_CTA, NAV_LABELS_IT } from '@/constants';
 
 interface Props {
   /**
@@ -14,9 +14,16 @@ interface Props {
    * that section up under the header. See src/pages/index.astro.
    */
   overlay?: boolean;
+  /** Page locale. Anything but 'it' renders the English chrome. */
+  lang?: string;
 }
 
-const { overlay = false } = Astro.props;
+const { overlay = false, lang = 'en' } = Astro.props;
+
+// English label in, localised label out. Unknown keys fall back to English, so
+// adding a nav item never renders an empty link.
+const t = (label: string) => (lang === 'it' ? NAV_LABELS_IT[label] ?? label : label);
+const homeHref = lang === 'it' ? '/it' : '/';
 ---
 
 {/* Mobile had no menu at all: the nav links were `hidden md:flex` and nothing
@@ -36,7 +43,7 @@ const { overlay = false } = Astro.props;
     aria-label="Primary"
   >
     <a
-      href="/"
+      href={homeHref}
       class="site-logo -ml-2 inline-flex h-11 items-center rounded-md px-2 text-ink transition-colors hover:bg-panel/60"
       aria-label="AltoRank, home"
     >
@@ -50,7 +57,7 @@ const { overlay = false } = Astro.props;
           href={link.href}
           class="nav-link inline-flex h-11 items-center rounded-md px-3 text-[13px] text-ink-3 transition-colors hover:bg-panel/60 hover:text-ink"
         >
-          {link.label}
+          {t(link.label)}
         </a>
       ))}
     </div>
@@ -60,7 +67,7 @@ const { overlay = false } = Astro.props;
         href={SIGNIN_URL}
         class="nav-signin hidden h-11 items-center rounded-md px-3 text-[13px] font-medium text-ink-2 transition-colors hover:bg-panel/60 hover:text-ink sm:inline-flex"
       >
-        Sign in
+        {t('Sign in')}
       </a>
       {/* "Add your domain" is the positioning CTA and also creates the account,
           but nobody scanning the top right for the conventional word finds it.
@@ -69,10 +76,10 @@ const { overlay = false } = Astro.props;
         href={SIGNUP_URL}
         class="nav-signup hidden h-11 items-center rounded-md px-3 text-[13px] font-medium text-ink-2 transition-colors hover:bg-panel/60 hover:text-ink sm:inline-flex"
       >
-        Sign up
+        {t('Sign up')}
       </a>
       <Button href={PRIMARY_CTA.href} size="sm">
-  {PRIMARY_CTA.short}
+  {t(PRIMARY_CTA.short)}
 </Button>
 
       <details id="mobile-nav" class="lg:hidden">
@@ -93,17 +100,15 @@ const { overlay = false } = Astro.props;
                   href={link.href}
                   class="flex h-[52px] items-center text-[15px] font-medium text-ink"
                 >
-                  {link.label}
+                  {t(link.label)}
                 </a>
               </li>
             ))}
           </ul>
           <div class="flex flex-col gap-2.5 border-t border-line px-4 py-4 sm:px-6">
-            <Button href={SIGNUP_URL} block>
-  Sign up
-</Button>
+            <Button href={SIGNUP_URL} block>{t('Sign up')}</Button>
             <Button href={SIGNIN_URL} variant="secondary" block>
-  Sign in
+  {t('Sign in')}
 </Button>
           </div>
         </div>
