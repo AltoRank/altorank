@@ -5,6 +5,7 @@ import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { profileIsUsable } from "@/lib/seo/topical-profile";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { generateArticle } from "@/lib/content/generate";
+import { orderByStaleness, latestPerWorkspace } from "@/lib/content/generate-queue";
 
 /**
  * Scheduled draft generation.
@@ -32,9 +33,52 @@ import { generateArticle } from "@/lib/content/generate";
  * a serverless invocation that fans out across every workspace at once is the
  * one most likely to hit a wall-clock timeout halfway through and leave rows in
  * `drafting`.
+ *
+ * That caution had become a price. One article per workspace per run, once a
+ * day, capped a site near 30 a month against a plan sold as 100 - and made
+ * `auto_generate_weekly_limit` a setting a customer could raise past anything
+ * the schedule could deliver, since a daily run can never write more than
+ * seven in a week. The ceiling was a five-minute function, not a view about
+ * how often a site should publish.
+ *
+ * So: four runs a day, and an explicit ceiling on how much any one invocation
+ * will do. Those go together - a bound per run is what makes running more often
+ * safe, and frequent runs are what make the bound cheap, because whatever is
+ * left waits six hours rather than a day.
+ *
+ * The four runs are not all in vercel.json. The Vercel account is on Hobby,
+ * which rejects any cron expression firing more than once a day - the
+ * deployment fails outright, so `0 1,7,13,19 * * *` here is not an option
+ * without a Pro upgrade. Vercel keeps the 07:00 run; .github/workflows/
+ * generate-cron.yml calls this same endpoint at 01/13/19 UTC with the same
+ * secret. One code path, two schedulers.
+ *
+ * If that workflow is not armed (its secret is unset), this route still behaves
+ * exactly as it did - once a day, bounded. Nothing here depends on the extra
+ * runs arriving.
+ *
+ * Nothing about the safety rails changes: `auto_generate` is still opt-in, the
+ * weekly limit still caps each workspace, and the plan quota still caps the
+ * account. Spend follows articles written, not runs.
  */
 
 export const maxDuration = 300;
+
+/**
+ * Articles one invocation will write before stopping, across all workspaces.
+ *
+ * Derived from `maxDuration`: a draft is research, a model call, a fact check
+ * and eleven scoring passes, so three is what fits in five minutes with room
+ * to spare. There was no bound at all before - the loop wrote for every
+ * eligible workspace, so ten opted-in sites meant ten sequential generations
+ * inside one 300s function, and the timeout this file's header warns about was
+ * one busy morning away.
+ *
+ * What is left over is not lost; the next run is six hours later. At the point
+ * where demand routinely exceeds this, the answer is a queue, not a bigger
+ * number.
+ */
+const MAX_ARTICLES_PER_RUN = 3;
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -68,7 +112,31 @@ export async function GET(request: Request) {
   const results: WorkspaceOutcome[] = [];
   const since = new Date(Date.now() - WEEK_MS).toISOString();
 
-  for (const ws of workspaces ?? []) {
+  // Least-recently-written first, so the cap below rotates rather than serving
+  // whoever the database happened to return first on all four daily runs. The
+  // window matches the one the weekly limit uses; see lib/content/generate-queue.
+  const { data: recent } = await supabase
+    .from("articles")
+    .select("workspace_id, created_at")
+    .eq("generated_autonomously", true)
+    .gte("created_at", since)
+    .order("created_at", { ascending: false });
+
+  const queue = orderByStaleness(workspaces ?? [], latestPerWorkspace(recent ?? []));
+
+  let written = 0;
+
+  for (const ws of queue) {
+    if (written >= MAX_ARTICLES_PER_RUN) {
+      results.push({
+        workspaceId: ws.id as string,
+        domain: (ws.domain as string | null) ?? null,
+        status: "skipped",
+        detail: `run limit reached (${MAX_ARTICLES_PER_RUN}); the next run starts here`,
+      });
+      continue;
+    }
+
     const workspaceId = ws.id as string;
     const domain = (ws.domain as string | null) ?? null;
     const limit = (ws.auto_generate_weekly_limit as number) ?? 2;
@@ -158,6 +226,10 @@ export async function GET(request: Request) {
           volume: next.volume,
         },
       });
+
+      // Counted here, not before the call: a generation that threw consumed
+      // time but produced nothing, and the bound is on articles written.
+      written += 1;
 
       results.push({
         workspaceId,

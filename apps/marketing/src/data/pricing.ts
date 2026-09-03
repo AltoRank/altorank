@@ -78,15 +78,18 @@ export const PLANS = [
     monthly: 69,
     period: '/mo',
     desc: 'No API keys to manage, because model and data costs are included. For solo operators and agencies running one or two brands.',
-    // The included count is a ceiling, not a forecast. cron/generate writes one
-    // article per site per run and runs daily, so a single site tops out near
-    // 30 a month and the default weekly limit of 2 is nearer 9. Quoting 100
-    // alone read as a promise of output rather than of billing; both numbers
-    // are stated now. Keep in step with PLAN_ARTICLE_LIMITS and the cadence in
-    // app/api/cron/generate.
+    // The included count is now reachable. It was not: cron/generate ran once a
+    // day and wrote one article per site, so a site topped out near 30 a month
+    // against a plan sold as 100. That ceiling was a five-minute serverless
+    // function, not a view about publishing, and it has been lifted - four runs
+    // a day, so the binding limit is `auto_generate_weekly_limit`, which is the
+    // customer's own setting. Hence "at the pace you set" rather than a
+    // frequency we would have to keep true. Note the default weekly limit is 2,
+    // so an untouched workspace still writes about 9 a month.
+    // Keep in step with PLAN_ARTICLE_LIMITS and the cadence in app/api/cron/generate.
 
     features: [
-      '100 articles / month included, up to one a day per site',
+      '100 articles / month included, at the pace you set per site',
       'Articles publish without the AltoRank line',
       'Up to 3 workspaces (sites or clients)',
       '€0.60 per additional article',
@@ -123,7 +126,7 @@ export const PLANS = [
     desc: 'For agencies running content across a full client roster. Everything metered on output, not seats or workspaces.',
     features: [
       'Everything in Managed',
-      '400 articles / month included, up to one a day per site',
+      '400 articles / month included, at the pace you set per site',
       'Unlimited workspaces: a site or a client each',
       '€0.45 per additional article',
       'Role-based permissions for your team',

@@ -128,7 +128,7 @@ export const PLAN_TAGLINES: Record<PlanTier, string> = {
  */
 export const PLAN_FEATURES: Record<PlanTier, string[]> = {
   starter: [
-    "100 articles / month included, up to one a day per site",
+    "100 articles / month included, at the pace you set per site",
     "Articles publish without the AltoRank line",
     "Up to 3 workspaces (sites or clients)",
     "€0.60 per additional article",
@@ -140,7 +140,7 @@ export const PLAN_FEATURES: Record<PlanTier, string[]> = {
   ],
   growth: [
     "Everything in Managed",
-    "400 articles / month included, up to one a day per site",
+    "400 articles / month included, at the pace you set per site",
     "Unlimited workspaces: a site or a client each",
     "€0.45 per additional article",
     "Role-based permissions for your team",
