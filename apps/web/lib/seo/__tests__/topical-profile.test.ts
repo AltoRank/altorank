@@ -252,3 +252,60 @@ describe("scoreRelevance keeps numerals in the query", () => {
     expect(r.score).toBe(1);
   });
 });
+
+/**
+ * A word the site only ever writes inside a compound is not a word it uses.
+ *
+ * tokenize splits on every non-alphanumeric, so "first-party data" contributes
+ * "first" and "party" exactly as "first party data" would. On altorank.co the
+ * only sources of "party" were "first-party data" and "third-party signals",
+ * and the half landed in the vocabulary at strength 0.78 - high, because IDF
+ * rewards rarity. "search party", 60,500 searches a month and about a search
+ * party, scored 0.92 and reached the top of the unattended queue.
+ */
+describe("buildTopicalProfile ignores halves of compounds", () => {
+  // Eight fragments is the floor for filtering; below it nothing is excluded.
+  const pages = [
+    page({
+      url: "https://example.com/",
+      title: "Signal Analytics for retailers",
+      metaDescription: "We turn first-party data into retail forecasts.",
+      h1: ["Retail forecasting from your own data"],
+      h2: ["Forecasts you can act on", "Built for retail teams"],
+    }),
+    page({
+      url: "https://example.com/how",
+      title: "How the forecasting works",
+      h1: ["Third-party signals, blended with yours"],
+      h2: ["Retail data in, forecasts out", "Data quality"],
+    }),
+  ];
+  const profile = buildTopicalProfile("example.com", pages);
+
+  it("drops a token that only ever appears inside a compound", () => {
+    // "party" occurs twice, in two fragments, on two pages - frequency alone
+    // would keep it. It is never written as a word.
+    expect(profile.terms).not.toHaveProperty("party");
+  });
+
+  it("keeps the words the site actually writes", () => {
+    expect(profile.terms).toHaveProperty("retail");
+    expect(profile.terms).toHaveProperty("forecasting");
+    expect(profile.terms).toHaveProperty("signals");
+  });
+
+  /**
+   * "signals" survives while "party" does not, though both arrive in a
+   * hyphenated heading. "Third-party signals" is one compound and one word.
+   */
+  it("keeps the other half of the phrase when it is a word on its own", () => {
+    expect(profile.terms).toHaveProperty("signals");
+    expect(profile.terms).not.toHaveProperty("party");
+  });
+
+  it("stops a compound half from carrying an unrelated query", () => {
+    // The whole point: without the rule this scores as on-topic.
+    expect(scoreRelevance("street party", profile).score).toBe(0);
+    expect(scoreRelevance("retail forecasts", profile).score).toBeGreaterThan(0);
+  });
+});
