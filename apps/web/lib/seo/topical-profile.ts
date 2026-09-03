@@ -203,6 +203,33 @@ export function domainTokens(domain: string): string[] {
 // orchestration" and every "ai …" keyword is judged on its other word alone.
 const ACRONYMS = new Set(["ai", "ml", "ux", "ui", "hr", "vr", "ar", "3d", "5g", "b2b", "b2c", "cx", "erp", "crm", "wms", "tms", "3pl"]);
 
+/**
+ * Tokenize a search query, keeping numerals.
+ *
+ * `tokenize` drops pure numerals, which is right when building a profile from
+ * a site's own headings - a year in a heading is rarely what the page is about.
+ * Applied to the *query* side it erased the word the searcher cared most about:
+ * "google of 1998" tokenized to ["google"], scored 0.83 on the strength of a
+ * word altorank.co uses constantly, and reported "every word appears in the
+ * site's own vocabulary" - which was not true, because one of them had been
+ * deleted before anyone looked. It reached the top of the queue at 90,500
+ * searches a month and an article was written for it.
+ *
+ * A dropped token cannot be judged foreign, so dropping it is not neutral: it
+ * is a silent vote in favour. Numerals stay, and are matched like any other
+ * token. The profile contains no numerals, so a query carrying one is judged
+ * on whether the rest of it belongs - which for "google of 1998" it does not.
+ *
+ * Stopwords stay dropped. "of" and "for" are not evidence of a different
+ * topic, and vetoing "agency for seo" on the word "for" would be absurd.
+ */
+function tokenizeQuery(text: string): string[] {
+  return decodeEntities(text)
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((t) => (t.length > 2 || ACRONYMS.has(t)) && t.length < 30 && !STOPWORDS.has(t));
+}
+
 function tokenize(text: string): string[] {
   return decodeEntities(text)
     .toLowerCase()
@@ -361,7 +388,7 @@ export function scoreRelevance(
     };
   }
 
-  const tokens = tokenize(keyword);
+  const tokens = tokenizeQuery(keyword);
   if (!tokens.length) {
     return {
       score: 0.5,

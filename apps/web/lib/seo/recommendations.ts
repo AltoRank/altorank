@@ -457,7 +457,18 @@ export async function recommendKeywords(
     // ranks 10-15 for "google calendar", 3.35M searches a month, and
     // scoreRelevance scores it 0: "google" is not in cal.com's own headings.
     // The filter is for terms nobody has tested. A ranking is a test result.
-    const proven = k.source === "ranked";
+    //
+    // Provenance alone was the wrong test. `source` is NULL for every keyword
+    // in the hosted database - all 443 of them - so this was never true and the
+    // bypass the comment above describes has never once fired in production.
+    // Meanwhile supalabs.co ranks at 45, 46 and 69 for terms scored as
+    // untested, and was told "openai", "api" and "calculator" do not appear
+    // anywhere on the site. They do not. It ranks anyway.
+    //
+    // An observed position is the test result this is asking for, and it is
+    // already in scope. Where the row came from is bookkeeping; whether Google
+    // put the site on the page is evidence.
+    const proven = k.source === "ranked" || position !== null;
     const relevance = proven
       ? { score: 1, matched: [], unmatched: [], reason: "the site already ranks for this" }
       : scoreRelevance(k.term as string, profile);
