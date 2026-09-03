@@ -28,7 +28,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Astro 7 refuses to build on anything below 22.12.0. Kept in step
+          # with .nvmrc and the engines field in package.json, which is what
+          # Cloudflare Pages reads for the marketing deploy.
+          node-version: 22
           cache: npm
 
       # `npm ci` rather than `npm install`: it fails loudly when the lockfile
