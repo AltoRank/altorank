@@ -1,3 +1,5 @@
+import { classifyHref } from "@/lib/seo/links";
+
 // ---------------------------------------------------------------------------
 // HTML -> Tiptap ProseMirror JSON converter
 //
@@ -28,9 +30,20 @@ type TiptapDoc = {
 // Public API
 // ---------------------------------------------------------------------------
 
-export function htmlToTiptapJson(html: string): TiptapDoc {
+export interface TiptapOptions {
+  /**
+   * The site's own domain. A link to it is internal and is stored with no
+   * `rel` and no `target`, so it opens in the same tab and passes authority.
+   * Every link used to get `rel="noopener noreferrer nofollow"`, internal ones
+   * included, which the editor then serialised on Copy as HTML: the site was
+   * telling crawlers not to follow links to its own pages.
+   */
+  siteDomain?: string | null;
+}
+
+export function htmlToTiptapJson(html: string, opts: TiptapOptions = {}): TiptapDoc {
   const tokens = tokenize(html);
-  const content = parseTokens(tokens);
+  const content = parseTokens(tokens, opts);
 
   return {
     type: "doc",
@@ -113,7 +126,7 @@ const INLINE_MARK_MAP: Record<string, string> = {
   u: "underline",
 };
 
-function parseTokens(tokens: Token[]): TiptapNode[] {
+function parseTokens(tokens: Token[], opts: TiptapOptions = {}): TiptapNode[] {
   const result: TiptapNode[] = [];
   let pos = 0;
 
@@ -141,7 +154,7 @@ function parseTokens(tokens: Token[]): TiptapNode[] {
 
     if (HEADING_TAGS.has(tag)) {
       const level = parseInt(tag[1], 10);
-      const { nodes: inline, endPos } = collectInline(tokens, pos + 1, tag);
+      const { nodes: inline, endPos } = collectInline(tokens, pos + 1, tag, opts);
       result.push({
         type: "heading",
         attrs: { level },
@@ -152,14 +165,14 @@ function parseTokens(tokens: Token[]): TiptapNode[] {
     }
 
     if (tag === "p") {
-      const { nodes: inline, endPos } = collectInline(tokens, pos + 1, tag);
+      const { nodes: inline, endPos } = collectInline(tokens, pos + 1, tag, opts);
       result.push(createParagraph(inline));
       pos = endPos;
       continue;
     }
 
     if (tag === "blockquote") {
-      const { nodes: inner, endPos } = collectBlock(tokens, pos + 1, tag);
+      const { nodes: inner, endPos } = collectBlock(tokens, pos + 1, tag, opts);
       result.push({
         type: "blockquote",
         content: inner.length > 0 ? inner : [createParagraph([])],
@@ -169,7 +182,7 @@ function parseTokens(tokens: Token[]): TiptapNode[] {
     }
 
     if (tag === "ul" || tag === "ol") {
-      const { nodes: items, endPos } = collectListItems(tokens, pos + 1, tag);
+      const { nodes: items, endPos } = collectListItems(tokens, pos + 1, tag, opts);
       const listType = tag === "ol" ? "orderedList" : "bulletList";
       result.push({
         type: listType,
@@ -180,7 +193,7 @@ function parseTokens(tokens: Token[]): TiptapNode[] {
     }
 
     if (tag === "table") {
-      const { node, endPos } = collectTable(tokens, pos + 1);
+      const { node, endPos } = collectTable(tokens, pos + 1, opts);
       if (node) result.push(node);
       pos = endPos;
       continue;
@@ -213,7 +226,7 @@ function parseTokens(tokens: Token[]): TiptapNode[] {
 
     if (tag === "figure") {
       // Parse figure contents (may contain iframe or img)
-      const { nodes: inner, endPos } = collectBlock(tokens, pos + 1, tag);
+      const { nodes: inner, endPos } = collectBlock(tokens, pos + 1, tag, opts);
       if (inner.length > 0) {
         result.push(...inner);
       }
@@ -235,7 +248,7 @@ function parseTokens(tokens: Token[]): TiptapNode[] {
 
     // Unknown block or inline at top level -- try to parse as paragraph content
     if (!BLOCK_TAGS.has(tag)) {
-      const { nodes: inline, endPos } = collectInline(tokens, pos, "");
+      const { nodes: inline, endPos } = collectInline(tokens, pos, "", opts);
       if (inline.length > 0) {
         result.push(createParagraph(inline));
       }
@@ -256,7 +269,8 @@ function parseTokens(tokens: Token[]): TiptapNode[] {
 function collectInline(
   tokens: Token[],
   start: number,
-  closeTag: string
+  closeTag: string,
+  opts: TiptapOptions = {},
 ): { nodes: TiptapNode[]; endPos: number } {
   const nodes: TiptapNode[] = [];
   let pos = start;
@@ -305,15 +319,7 @@ function collectInline(
       // Link
       if (openTag === "a") {
         const href = openAttrs.href || "";
-        const linkMark: TiptapMark = {
-          type: "link",
-          attrs: {
-            href,
-            target: openAttrs.target || "_blank",
-            rel: "noopener noreferrer nofollow",
-          },
-        };
-        marks.push(linkMark);
+        marks.push({ type: "link", attrs: linkAttrs(href, opts) });
         pos++;
         continue;
       }
@@ -350,7 +356,8 @@ function collectInline(
 function collectBlock(
   tokens: Token[],
   start: number,
-  closeTag: string
+  closeTag: string,
+  opts: TiptapOptions = {},
 ): { nodes: TiptapNode[]; endPos: number } {
   const innerTokens: Token[] = [];
   let pos = start;
@@ -370,7 +377,7 @@ function collectBlock(
     pos++;
   }
 
-  return { nodes: parseTokens(innerTokens), endPos: pos };
+  return { nodes: parseTokens(innerTokens, opts), endPos: pos };
 }
 
 // ---------------------------------------------------------------------------
@@ -380,7 +387,8 @@ function collectBlock(
 function collectListItems(
   tokens: Token[],
   start: number,
-  closeTag: string
+  closeTag: string,
+  opts: TiptapOptions = {},
 ): { nodes: TiptapNode[]; endPos: number } {
   const items: TiptapNode[] = [];
   let pos = start;
@@ -394,7 +402,7 @@ function collectListItems(
     }
 
     if (token.kind === "open" && token.tag === "li") {
-      const { nodes: inline, endPos } = collectInline(tokens, pos + 1, "li");
+      const { nodes: inline, endPos } = collectInline(tokens, pos + 1, "li", opts);
       // List items in Tiptap must contain a paragraph
       items.push({
         type: "listItem",
@@ -414,6 +422,24 @@ function collectListItems(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Attributes for a link mark, by where the link goes.
+ *
+ * Internal links (a relative path, or an absolute URL on the site's own
+ * domain) get neither `rel` nor `target`: same tab, followed. Tiptap fills a
+ * missing mark attribute with the Link extension's default, which is
+ * `nofollow`, so the value has to be an explicit null rather than an omission.
+ * External links keep `_blank` and the full rel: a citation opening in a new
+ * tab is the convention, and nofollow on outbound links is unchanged here.
+ */
+function linkAttrs(href: string, opts: TiptapOptions): Record<string, unknown> {
+  const kind = classifyHref(href, opts.siteDomain);
+  if (kind === "internal" || kind === "anchor") {
+    return { href, target: null, rel: null };
+  }
+  return { href, target: "_blank", rel: "noopener noreferrer nofollow" };
+}
 
 function createParagraph(content: TiptapNode[]): TiptapNode {
   return {
@@ -439,6 +465,7 @@ function createParagraph(content: TiptapNode[]): TiptapNode {
 function collectTable(
   tokens: Token[],
   start: number,
+  opts: TiptapOptions = {},
 ): { node: TiptapNode | null; endPos: number } {
   const rows: TiptapNode[] = [];
   let cells: TiptapNode[] = [];
@@ -453,7 +480,7 @@ function collectTable(
     }
 
     if (token.kind === "open" && (token.tag === "th" || token.tag === "td")) {
-      const { nodes: inline, endPos } = collectInline(tokens, pos + 1, token.tag);
+      const { nodes: inline, endPos } = collectInline(tokens, pos + 1, token.tag, opts);
       cells.push({
         type: token.tag === "th" ? "tableHeader" : "tableCell",
         attrs: { colspan: 1, rowspan: 1, colwidth: null },

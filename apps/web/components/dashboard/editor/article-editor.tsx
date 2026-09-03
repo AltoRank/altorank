@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEditor, EditorContent } from "@tiptap/react";
@@ -24,6 +24,9 @@ import type { Destination } from "@/lib/publishing/destinations";
 import { SchedulePicker } from "@/components/dashboard/editor/schedule-picker";
 import { ResearchPanel, FactCheckPanel } from "@/components/dashboard/editor/research-panel";
 import { WhyPanel } from "@/components/dashboard/editor/why-panel";
+import { AuditPanel } from "@/components/dashboard/editor/audit-panel";
+import { TabRow } from "@/components/ui/tab-row";
+import { auditArticle } from "@/lib/seo/article-audit";
 import type { Article, Workspace, PublishingCadence, Integration } from "@/lib/types";
 import type { ScoringCheck } from "@/lib/seo/scoring";
 
@@ -47,6 +50,12 @@ type Props = {
    * unsaved edits is a bad thing to navigate away from to fill in a form.
    */
   integrations?: Integration[];
+  /**
+   * How many live articles this site has for the draft to link to. Zero turns
+   * the audit's "no internal links" from a defect into "nothing to point at
+   * yet". Undefined when the page did not count.
+   */
+  linkableArticles?: number | null;
 };
 
 export function ArticleEditor({
@@ -56,6 +65,7 @@ export function ArticleEditor({
   needsPlan = false,
   destinations = [],
   integrations = [],
+  linkableArticles,
 }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -87,6 +97,17 @@ export function ArticleEditor({
   const [phase, setPhase] = useState<"idle" | "researching" | "writing" | "checking">("idle");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Which sidebar tab is showing. "draft" is everything that was here before:
+  // why it exists, its scores, the fact check, research and publishing. "audit"
+  // is what it is missing, computed from the text on screen.
+  const [sidebarTab, setSidebarTab] = useState<"draft" | "audit">("draft");
+  // The document as HTML, refreshed shortly after each edit so the audit tracks
+  // what is on screen rather than what was saved at generation time. The
+  // persisted scores go stale the moment a reviewer starts editing; this does
+  // not.
+  const [docHtml, setDocHtml] = useState("");
+  const auditTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Use stored Tiptap JSON content if available, otherwise show placeholder
   const initialContent = article.content
     ? article.content
@@ -113,7 +134,16 @@ export function ArticleEditor({
         class: "prose prose-sm max-w-none focus:outline-none min-h-[400px]",
       },
     },
+    onCreate: ({ editor }) => {
+      setDocHtml(editor.getHTML());
+    },
     onUpdate: ({ editor }) => {
+      // The audit re-reads the document a beat after typing stops. Shorter
+      // than the save debounce because nothing is written; it only has to
+      // avoid serialising the whole document on every keystroke.
+      if (auditTimer.current) clearTimeout(auditTimer.current);
+      auditTimer.current = setTimeout(() => setDocHtml(editor.getHTML()), 300);
+
       // Debounced auto-save
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(async () => {
@@ -204,6 +234,9 @@ export function ArticleEditor({
               if (editor) {
                 editor.commands.setContent(accumulated, { emitUpdate: false });
               }
+              // With onUpdate suppressed the audit would not see the streamed
+              // text; feed it directly.
+              setDocHtml(accumulated);
             } else if (data.type === "factcheck") {
               setPhase("checking");
               if (data.verdict === "high_risk") {
@@ -358,6 +391,36 @@ export function ArticleEditor({
     }
   }, [article.id, router]);
 
+  // Pure and cheap: a handful of regexes over the HTML. Memoised on the
+  // document and the article facts it reads, so a sidebar re-render for any
+  // other reason does not recompute it.
+  const audit = useMemo(
+    () =>
+      auditArticle({
+        html: docHtml,
+        keyword: article.keyword,
+        siteDomain: workspace.domain,
+        title: article.title,
+        metaDescription: article.meta_description,
+        slug: article.slug,
+        featuredImageUrl: article.featured_image_url,
+        linkableArticles,
+        linkChecks: article.link_checks,
+      }),
+    [
+      docHtml,
+      article.keyword,
+      article.title,
+      article.meta_description,
+      article.slug,
+      article.featured_image_url,
+      article.link_checks,
+      workspace.domain,
+      linkableArticles,
+    ],
+  );
+  const auditOpen = audit.counts.fail + audit.counts.warn;
+
   return (
     <div className="flex-1 grid min-h-0" style={{ gridTemplateColumns: "1fr 340px" }}>
       {/* Editor pane */}
@@ -420,7 +483,26 @@ export function ArticleEditor({
       </div>
 
       {/* Right sidebar — SEO panel */}
-      <aside className="bg-panel overflow-y-auto p-6 scroll">
+      <aside className="bg-panel overflow-y-auto scroll flex flex-col min-h-0">
+        {/* Two tabs, two questions. "Draft" is why this exists and whether it
+            ships; "Audit" is what it is missing. The audit count on the tab is
+            the number of open items, so a reviewer on the first tab can see
+            there is something on the second. */}
+        <TabRow
+          className="sticky top-0 z-[1] px-3 bg-panel"
+          activeTab={sidebarTab}
+          onChange={(id) => setSidebarTab(id as "draft" | "audit")}
+          tabs={[
+            { id: "draft", label: "Draft" },
+            { id: "audit", label: "SEO audit", count: auditOpen > 0 ? auditOpen : undefined },
+          ]}
+        />
+
+        <div className="p-6">
+        {sidebarTab === "audit" && <AuditPanel audit={audit} onLocate={locateInEditor} />}
+
+        {sidebarTab === "draft" && (
+        <>
         {/* SEO score */}
         {/* First, because the reviewer's first question is "why am I looking
             at this?" rather than "what did it score?". */}
@@ -709,6 +791,9 @@ export function ArticleEditor({
             </a>
           )}
         </SidebarSection>
+        </>
+        )}
+        </div>
       </aside>
 
       {/*

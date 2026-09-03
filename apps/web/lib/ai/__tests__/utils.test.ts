@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractArticleMeta, stripAiTypography } from "../utils";
+import { extractArticleMeta, stripAiTypography, stripDeadLinks } from "../utils";
 
 // claude-haiku-4-5 wrapped a whole article in ```html on 2026-08-30 and the
 // fence reached the stored HTML, so the page would have opened with a literal
@@ -44,6 +44,18 @@ describe("extractArticleMeta — dead links", () => {
   it("leaves internal-link placeholders alone for the resolver", () => {
     const r = extractArticleMeta('<h1>T</h1><p><a href="{{internal-link:seo}}">x</a></p>');
     expect(r.cleanHtml).toContain("{{internal-link:seo}}");
+  });
+});
+
+describe("stripDeadLinks — placeholders", () => {
+  const html = '<p><a href="{{internal-link:seo}}">seo</a> <a href="#">x</a> <a href="/y">y</a></p>';
+
+  it("keeps placeholders by default, so the resolver gets its turn", () => {
+    expect(stripDeadLinks(html)).toBe('<p><a href="{{internal-link:seo}}">seo</a> x <a href="/y">y</a></p>');
+  });
+
+  it("unwraps them when asked, which is what the resolver does with its leftovers", () => {
+    expect(stripDeadLinks(html, { placeholders: true })).toBe('<p>seo x <a href="/y">y</a></p>');
   });
 });
 

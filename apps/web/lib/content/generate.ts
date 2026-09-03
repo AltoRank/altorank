@@ -27,7 +27,8 @@ import { anthropicModel } from "@/lib/ai/models";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
 import { generateImage } from "@/lib/ai/image-generator";
 import { uploadImageFromUrl } from "@/lib/storage/images";
-import { resolveInternalLinks } from "@/lib/seo/link-resolver";
+import { fetchLinkTargets, resolveInternalLinks } from "@/lib/seo/link-resolver";
+import { verifyOutboundLinks, type LinkCheck } from "@/lib/seo/link-check";
 import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research";
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
@@ -119,7 +120,7 @@ export async function generateArticle(
 
   const { data: workspace, error: wsError } = await supabase
     .from("workspaces")
-    .select("id, ai_provider, ai_model, agency_id, language, brand_style, location_code")
+    .select("id, domain, ai_provider, ai_model, agency_id, language, brand_style, location_code")
     .eq("id", workspaceId)
     .single();
 
@@ -314,16 +315,12 @@ export async function generateArticle(
     }
 
     const provider = resolveProvider(workspace.ai_provider, workspace.ai_model);
-    // The other articles in this workspace, so the draft can link to something
-    // that exists. Excludes itself, and anything still unwritten.
-    const { data: siblings } = await supabase
-      .from("articles")
-      .select("title, keyword")
-      .eq("workspace_id", workspaceId)
-      .neq("id", article.id)
-      .not("content", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(20);
+    // What the draft may link to: this site's live articles, fetched once and
+    // handed both to the prompt and to the resolver below. They used to read
+    // different sets (the prompt any sibling with content, the resolver only
+    // live rows), so the writer linked to drafts and every placeholder came
+    // back unresolved. One list, two readers, no disagreement.
+    const linkTargets = await fetchLinkTargets(supabase, workspaceId, article.id);
 
     const generator = provider.streamArticle({
       keyword,
@@ -331,10 +328,9 @@ export async function generateArticle(
       voiceRules,
       language: locale.label,
       research,
-      internalLinkTargets: (siblings ?? [])
-        .filter((a): a is { title: string; keyword: string } =>
-          Boolean(a.title && a.keyword))
-        .map((a) => ({ title: a.title, keyword: a.keyword })),
+      internalLinkTargets: linkTargets
+        .slice(0, 20)
+        .map((t) => ({ title: t.title, keyword: t.keyword })),
     });
 
     let articleResult;
@@ -386,9 +382,19 @@ export async function generateArticle(
     }
 
     await enhance("video embed", (html) => embedYouTubeVideos(html, keyword));
-    await enhance("internal links", (html) =>
-      resolveInternalLinks(supabase, html, workspaceId, article.id),
-    );
+    await enhance("internal links", async (html) => resolveInternalLinks(html, linkTargets));
+
+    // Open every outbound link once. The brief asks for real URLs and a model
+    // produces plausible ones; a 404 is unwrapped to its text and everything
+    // else is recorded so the audit tab can say what answered. No API cost,
+    // bounded fetch time. Runs through `enhance` for the same reason the two
+    // steps above do: a step that returns nothing must not wipe the article.
+    let linkChecks: LinkCheck[] | null = null;
+    await enhance("outbound link check", async (html) => {
+      const verified = await verifyOutboundLinks(html, workspace.domain);
+      linkChecks = verified.checks;
+      return verified.html;
+    });
 
     setSpendReporter(null);
 
@@ -416,13 +422,25 @@ export async function generateArticle(
     // scored / Generate content to score" beside it, on an article that had
     // just been generated. Scoring is pure and local, so there is no reason to
     // make a human press a button for it.
+    // Both scorers take the domain so a link to the site's own pages counts
+    // as internal and nothing else does. Without it a HubSpot citation passed
+    // the internal-link check and a link to a sibling article counted as an
+    // outbound source.
     const seo = scoreArticle(processedHtml, keyword, {
       metaDescription: articleResult.metaDescription,
+      siteDomain: workspace.domain,
+      // The length the SERP asked for, which is what the prompt wrote to. A
+      // flat 1,500 punished every transactional piece the research had
+      // correctly kept short.
+      targetWordCount: research.recommendedWordCount,
+      title: articleResult.title,
     });
     // The half that matches what this product actually claims: not "will it
     // rank" but "will an answer engine quote it".
-    const aeo = scoreCitationReadiness(processedHtml, keyword);
-    const tiptapContent = htmlToTiptapJson(processedHtml);
+    const aeo = scoreCitationReadiness(processedHtml, keyword, { siteDomain: workspace.domain });
+    // The domain tells the converter which links are the site's own, so those
+    // are stored followed and same-tab rather than nofollow like a citation.
+    const tiptapContent = htmlToTiptapJson(processedHtml, { siteDomain: workspace.domain });
 
     let featuredImageUrl: string | null = null;
     try {
@@ -452,6 +470,7 @@ export async function generateArticle(
         featured_image_url: featuredImageUrl,
         research,
         fact_checks: factCheck,
+        link_checks: linkChecks,
         search_intent: research.intent.intent,
         seo_score: seo.score,
         seo_checks: seo.checks,

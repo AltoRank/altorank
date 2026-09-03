@@ -172,6 +172,15 @@ export async function scoreArticleSeo(articleId: string) {
 
   const article = articleData as Article;
 
+  // The site's domain, so the internal-link check can tell the site's own
+  // pages from the ones it cites. Best effort: a missing domain scores the
+  // way it always did, it does not stop the score.
+  const { data: ws } = await supabase
+    .from("workspaces")
+    .select("domain")
+    .eq("id", article.workspace_id)
+    .single();
+
   // Convert Tiptap JSON content to HTML string for scoring.
   // If content is stored as Tiptap JSON, we serialise it simply;
   // if it's already a string, use it directly.
@@ -192,6 +201,9 @@ export async function scoreArticleSeo(articleId: string) {
   // Run the scoring
   const result = scoreArticle(htmlContent, article.keyword, {
     metaDescription: article.meta_description,
+    siteDomain: ws?.domain ?? null,
+    targetWordCount: article.research?.recommendedWordCount ?? null,
+    title: article.title,
   });
 
   // Insert the audit record

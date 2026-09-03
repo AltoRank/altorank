@@ -47,9 +47,10 @@ type Props = {
  */
 const CHECK_LABEL: Record<string, string> = {
   keywordInTitle: "Keyword in title",
+  titleLength: "Title length",
   keywordDensity: "Keyword density",
   headingStructure: "Heading structure",
-  metaDescriptionLength: "Meta description length",
+  metaDescriptionLength: "Meta description",
   wordCount: "Word count",
   readability: "Readability",
   internalLinks: "Internal links",
@@ -61,6 +62,7 @@ const CHECK_LABEL: Record<string, string> = {
   scannableStructure: "Scannable paragraphs",
   comparisonTable: "Comparison table",
   outboundAuthority: "Outbound citations",
+  summaryBox: "Key takeaways box",
 };
 
 function CheckList({

@@ -22,6 +22,7 @@
 // is a function of the HTML.
 
 import type { ScoringCheck, ScoringResult } from "./scoring";
+import { hrefsIn, isCitationLink } from "./links";
 
 /**
  * Weights, summing to 1.
@@ -36,13 +37,26 @@ import type { ScoringCheck, ScoringResult } from "./scoring";
 const WEIGHTS: Record<string, number> = {
   answerFirst: 0.18,
   definitionBlock: 0.12,
-  quotableStatistics: 0.15,
-  sourcedClaims: 0.15,
-  questionHeadings: 0.12,
-  scannableStructure: 0.10,
-  comparisonTable: 0.08,
-  outboundAuthority: 0.10,
+  quotableStatistics: 0.14,
+  sourcedClaims: 0.14,
+  questionHeadings: 0.11,
+  scannableStructure: 0.09,
+  comparisonTable: 0.07,
+  outboundAuthority: 0.08,
+  // Added 2026-09-03: the summary box is the second most reproduced block
+  // after the direct answer in the citation research, and the prompt already
+  // asks for a liftable opening; a takeaways list is the same idea for the
+  // whole page.
+  summaryBox: 0.07,
 };
+
+/**
+ * The phrases a summary block announces itself with, across the languages
+ * this product writes in. A heading or a bold lead that matches, followed by a
+ * list, is the block an answer engine lifts as "the gist".
+ */
+const SUMMARY_MARKER =
+  /\b(?:tl;?\s?dr|key takeaways?|in short|at a glance|quick answer|the short version|in breve|punti chiave|in sintesi|en r[ée]sum[ée]|l'essentiel|en resumen|puntos clave|kurz gesagt|das wichtigste|zusammenfassung)\b/i;
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
@@ -116,7 +130,7 @@ function checkDefinitionBlock(html: string, keyword: string): ScoringCheck {
 // ── Quotable content ───────────────────────────────────────────────────────
 
 /** Figures with a unit or a magnitude: the things an answer actually repeats. */
-function findFigures(text: string): string[] {
+export function findFigures(text: string): string[] {
   return [
     ...text.matchAll(/\b\d[\d,.]*\s?(?:%|percent|x\b|million|billion|k\b)|\B[$£€]\s?\d[\d,.]*/gi),
   ].map((m) => m[0]);
@@ -139,7 +153,7 @@ function checkQuotableStatistics(html: string): ScoringCheck {
   };
 }
 
-function checkSourcedClaims(html: string): ScoringCheck {
+function checkSourcedClaims(html: string, siteDomain?: string | null): ScoringCheck {
   const figures = findFigures(stripHtml(html));
   if (figures.length === 0) {
     // Vacuously true, and deliberately not a failure. This check asks whether
@@ -163,6 +177,11 @@ function checkSourcedClaims(html: string): ScoringCheck {
   // denominator on both sides: a comparison table restates figures the prose
   // has already cited, and asking for a link per cell would punish exactly
   // the table the comparisonTable check asks for.
+  //
+  // A source is a link to somewhere other than this site. The resolver writes
+  // internal links as absolute URLs on the workspace domain, and those used
+  // to pass as sources here, so "see our other guide" counted as a citation.
+  const cites = (block: string) => hrefsIn(block).some((h) => isCitationLink(h, siteDomain));
   const proseBlocks = [
     ...blocks(html, "p"),
     ...blocks(html, "li"),
@@ -178,9 +197,7 @@ function checkSourcedClaims(html: string): ScoringCheck {
     };
   }
   const sourced = proseFigures.filter((f) =>
-    proseBlocks.some(
-      (b) => stripHtml(b).includes(f) && /<a\s[^>]*href=["']https?:\/\//i.test(b),
-    ),
+    proseBlocks.some((b) => stripHtml(b).includes(f) && cites(b)),
   ).length;
   const ratio = sourced / proseFigures.length;
   return {
@@ -244,19 +261,54 @@ function checkComparisonTable(html: string): ScoringCheck {
   };
 }
 
-function checkOutboundAuthority(html: string): ScoringCheck {
-  const hrefs = [...html.matchAll(/<a[^>]+href=["']([^"']+)["']/gi)].map((m) => m[1]);
-  const external = hrefs.filter(
-    (h) => /^https?:\/\//i.test(h) && !h.includes("{{internal-link"),
-  );
-  const passed = external.length >= 2;
+function checkOutboundAuthority(html: string, siteDomain?: string | null): ScoringCheck {
+  // Outbound means off this site. Every absolute URL counted before, so an
+  // article whose only links were to its own siblings scored as well-cited.
+  const external = hrefsIn(html).filter((h) => isCitationLink(h, siteDomain));
+  // Two is the floor; a long piece wants roughly one citation per 500 words,
+  // which is the density the citation benchmarks ask for. A 3,000-word guide
+  // with two links at the top is not a sourced guide.
+  const words = stripHtml(html).split(/\s+/).filter(Boolean).length;
+  const required = Math.max(2, Math.round(words / 500));
+  const passed = external.length >= required;
   return {
     name: "outboundAuthority",
     passed,
-    score: Math.min(1, external.length / 2),
+    score: Math.min(1, external.length / required),
     note: passed
-      ? `${external.length} outbound citations.`
-      : `${external.length} outbound citations. Citing sources is one of the E-E-A-T signals engines weigh.`,
+      ? `${external.length} outbound citations for ${words} words.`
+      : `${external.length} outbound citations; ${required} wanted for ${words} words (one per 500, two minimum). Citing sources is one of the E-E-A-T signals engines weigh.`,
+  };
+}
+
+/**
+ * A summary block near the top: "Key takeaways", "TL;DR", "In short", as a
+ * heading or a bold lead, followed by a list. Looked for before the second
+ * H2, because a summary at the end is a conclusion, and conclusions are not
+ * what gets lifted.
+ */
+function checkSummaryBox(html: string): ScoringCheck {
+  const parts = html.split(/<h2\b/i);
+  const top = parts.slice(0, 2).join("<h2");
+  const markers = [
+    ...blocks(top, "h2"),
+    ...blocks(top, "h3"),
+    ...blocks(top, "strong"),
+    ...blocks(top, "b"),
+  ].map(stripHtml);
+  const marked = markers.some((t) => SUMMARY_MARKER.test(t));
+  const listed = /<(?:ul|ol)\b/i.test(top);
+  const score = marked && listed ? 1 : marked ? 0.5 : 0;
+  return {
+    name: "summaryBox",
+    passed: score === 1,
+    score,
+    note:
+      score === 1
+        ? "Has a takeaways block near the top, which engines lift as the gist."
+        : marked
+          ? "A summary heading near the top, but no list under it. Three to five bullets is the shape that gets lifted."
+          : "No key-takeaways or TL;DR block before the body. A short bulleted summary after the opening is the second most reproduced block after the direct answer.",
   };
 }
 
@@ -265,17 +317,26 @@ function checkOutboundAuthority(html: string): ScoringCheck {
  *
  * Returns the same shape as `scoreArticle`, so both render through one
  * component and a reviewer sees two scores built the same way.
+ *
+ * `siteDomain` lets the two link checks tell the site's own pages from
+ * citations. Without it every absolute URL is treated as outbound, which is
+ * the most that can be claimed about a page whose owner is unknown.
  */
-export function scoreCitationReadiness(html: string, keyword: string): ScoringResult {
+export function scoreCitationReadiness(
+  html: string,
+  keyword: string,
+  opts: { siteDomain?: string | null } = {},
+): ScoringResult {
   const checks: ScoringCheck[] = [
     checkAnswerFirst(html, keyword),
     checkDefinitionBlock(html, keyword),
     checkQuotableStatistics(html),
-    checkSourcedClaims(html),
+    checkSourcedClaims(html, opts.siteDomain),
     checkQuestionHeadings(html),
     checkScannableStructure(html),
     checkComparisonTable(html),
-    checkOutboundAuthority(html),
+    checkOutboundAuthority(html, opts.siteDomain),
+    checkSummaryBox(html),
   ];
 
   const score = checks.reduce(

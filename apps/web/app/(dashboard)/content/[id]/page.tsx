@@ -7,6 +7,7 @@ import { PageHead, DotSep, StatusPill } from "@/components/ui";
 import { ArticleEditor } from "@/components/dashboard/editor/article-editor";
 import { needsPlanToShip } from "@/lib/billing/quota";
 import { getDestinations } from "@/lib/publishing/destinations";
+import { fetchLinkTargets } from "@/lib/seo/link-resolver";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 
@@ -33,7 +34,7 @@ export default async function ArticleEditorPage({ params }: Props) {
   // after the other they cost three round trips on the route the editor lives
   // behind; the article and workspace lookups above genuinely are a chain,
   // since each supplies the next one's id.
-  const [cadence, needsPlan, destinations, integrations] = await Promise.all([
+  const [cadence, needsPlan, destinations, integrations, linkable] = await Promise.all([
     getPublishingCadence(workspace.id),
     needsPlanToShip(supabase, workspace.agency_id),
     // The connected CMSs decide whether the editor offers a Publish button.
@@ -42,6 +43,11 @@ export default async function ArticleEditorPage({ params }: Props) {
     // The catalogue rows, so the editor can open the connection dialog in
     // place instead of sending an unsaved draft to /connect.
     getIntegrations(),
+    // What this draft could link to. The audit tab reads the count so "no
+    // internal links" on a site with nothing live says so, rather than failing
+    // the draft for a link that could not exist. The same function feeds the
+    // generator's prompt and resolver, so all three agree on what a target is.
+    fetchLinkTargets(supabase, workspace.id, article.id),
   ]);
 
   const dateStr = article.updated_at
@@ -73,6 +79,7 @@ export default async function ArticleEditorPage({ params }: Props) {
         needsPlan={needsPlan}
         destinations={destinations}
         integrations={integrations}
+        linkableArticles={linkable.length}
       />
     </>
   );

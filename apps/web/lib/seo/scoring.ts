@@ -2,6 +2,8 @@
 // Local SEO content scoring — no external API required
 // ---------------------------------------------------------------------------
 
+import { classifyHref } from "./links";
+
 export type ScoringCheck = {
   name: string;
   passed: boolean;
@@ -14,16 +16,31 @@ export type ScoringResult = {
   checks: ScoringCheck[];
 };
 
-// Weights for each check (must sum to 1)
+/**
+ * Weights for each check (must sum to 1).
+ *
+ * Rebalanced 2026-09-03 against the rubrics in the installed SEO skills. The
+ * first version put 60% on keyword-in-title, density, heading tags and a flat
+ * word count, which is the on-page model of ten years ago: the Aaron pack's
+ * 80-item benchmark gives that whole family about 1%, and its own on-page
+ * rubric scores density above 3% as zero, where ours still passed it. Title
+ * length is new and carries the only click-through lever a body of text has.
+ * Density and readability lost weight; nothing about a page's usefulness is
+ * measured by how often the keyword repeats.
+ */
 const WEIGHTS: Record<string, number> = {
   keywordInTitle: 0.15,
-  keywordDensity: 0.15,
+  titleLength: 0.10,
+  keywordDensity: 0.10,
   headingStructure: 0.15,
   metaDescriptionLength: 0.10,
   wordCount: 0.15,
-  readability: 0.15,
+  readability: 0.10,
   internalLinks: 0.15,
 };
+
+/** Fallback word target when nothing better is known. */
+const DEFAULT_TARGET_WORDS = 1500;
 
 /** Strip HTML tags to get plain text. */
 function stripHtml(html: string): string {
@@ -50,21 +67,33 @@ function extractHeadings(html: string, level: number): string[] {
   return found;
 }
 
-/** Count internal links — relative paths, hash links, and resolved URLs (not placeholders or known external sites). */
-function countInternalLinks(html: string): number {
+/**
+ * Hosts an article links to for reasons other than citing its own site. Only
+ * consulted when no domain is known; see below.
+ */
+const KNOWN_THIRD_PARTY = /youtube\.com|wikipedia\.org|twitter\.com|facebook\.com|linkedin\.com/i;
+
+/**
+ * Count links to other pages on this site.
+ *
+ * With `siteDomain`, a link is internal when it is relative or points at that
+ * domain, which is the only honest definition. Without it, an absolute URL
+ * cannot be told inside from outside and the old heuristic stands in: anything
+ * not on a well-known third-party host is presumed the site's own. Either way,
+ * `href="#"`, an in-page anchor and an unresolved placeholder are not links
+ * to other pages and never count; the first version counted all three, so a
+ * draft with three dead anchors passed this check.
+ */
+function countInternalLinks(html: string, siteDomain?: string | null): number {
   const linkRegex = /<a[^>]+href=["']([^"']*)["'][^>]*>/gi;
   let count = 0;
   let m = linkRegex.exec(html);
   while (m) {
     const href = m[1];
-    const isPlaceholder = href.includes("{{internal-link:");
-    const isRelative = href.startsWith("/") || href.startsWith("#");
-    const isAbsolute = href.startsWith("http");
-    const isKnownExternal =
-      isAbsolute &&
-      /youtube\.com|wikipedia\.org|twitter\.com|facebook\.com|linkedin\.com/i.test(href);
-
-    if (!isPlaceholder && (isRelative || (isAbsolute && !isKnownExternal))) {
+    const kind = classifyHref(href, siteDomain);
+    if (kind === "internal") {
+      count++;
+    } else if (!siteDomain && kind === "external" && !KNOWN_THIRD_PARTY.test(href)) {
       count++;
     }
     m = linkRegex.exec(html);
@@ -125,15 +154,18 @@ function checkKeywordDensity(content: string, keyword: string): ScoringCheck {
   const keywordCount = countOccurrences(plainText, keyword);
   const keywordWordCount = keyword.split(/\s+/).length;
   const density = (keywordCount * keywordWordCount) / totalWords * 100;
-  const passed = density >= 1 && density <= 3;
+  // 0.5-2% is the band every current rubric agrees on. The old 1-3% band
+  // rewarded repetition that the same rubrics call stuffing, and stuffing is
+  // the one on-page pattern the AI-search research scores as a negative.
+  const passed = density >= 0.5 && density <= 2;
 
   let score: number;
-  if (density >= 1 && density <= 3) {
+  if (passed) {
     score = 100;
-  } else if (density > 0 && density < 1) {
-    score = Math.round(density * 100);
-  } else if (density > 3 && density <= 5) {
-    score = Math.round(100 - (density - 3) * 25);
+  } else if (density > 0 && density < 0.5) {
+    score = Math.round((density / 0.5) * 70);
+  } else if (density > 2 && density <= 3) {
+    score = Math.round(100 - (density - 2) * 50);
   } else {
     score = 0;
   }
@@ -142,7 +174,10 @@ function checkKeywordDensity(content: string, keyword: string): ScoringCheck {
     name: "keywordDensity",
     passed,
     score: Math.max(0, Math.min(100, score)),
-    note: `Keyword density: ${density.toFixed(1)}% (target: 1-3%)`,
+    note:
+      density > 3
+        ? `Keyword density: ${density.toFixed(1)}%. Above 3% reads as stuffing to a reader and to a ranker.`
+        : `Keyword density: ${density.toFixed(1)}% (target: 0.5-2%)`,
   };
 }
 
@@ -178,9 +213,43 @@ function checkHeadingStructure(content: string): ScoringCheck {
   };
 }
 
+/**
+ * Title length, for the one on-page lever that moves clicks.
+ *
+ * Google shows about 60 characters of a title; past that the end is cut,
+ * and the end of a generated title is usually where the year or the promise
+ * sits. Read from the H1, which is where the generator puts the title, or
+ * from the stored title when the caller has it.
+ */
+function checkTitleLength(content: string, stored?: string | null): ScoringCheck {
+  const h1 = content.match(/<h1[^>]*>(.*?)<\/h1>/i);
+  const title = (stored?.trim() || (h1 ? stripHtml(h1[1]) : "")).trim();
+  if (!title) {
+    return { name: "titleLength", passed: false, score: 0, note: "No title found" };
+  }
+  const len = title.length;
+  const passed = len >= 30 && len <= 60;
+  const score = passed
+    ? 100
+    : len > 60
+      ? Math.max(0, 100 - (len - 60) * 3)
+      : Math.round((len / 30) * 70);
+  return {
+    name: "titleLength",
+    passed,
+    score,
+    note: passed
+      ? `Title length: ${len} chars, displays whole in results`
+      : len > 60
+        ? `Title length: ${len} chars. Google truncates around 60, so the end will not show.`
+        : `Title length: ${len} chars. Short titles leave the result line half empty; 50-60 is the target.`,
+  };
+}
+
 function checkMetaDescriptionLength(
   content: string,
   stored?: string | null,
+  keyword?: string,
 ): ScoringCheck {
   // The meta description is extracted into its own column before the HTML is
   // stored, so grepping the content for the tag found nothing - which made
@@ -200,10 +269,14 @@ function checkMetaDescriptionLength(
   }
 
   const len = meta.length;
-  const passed = len >= 120 && len <= 160;
+  const lengthOk = len >= 120 && len <= 160;
+  // Google bolds the query where it appears in the snippet, which is a
+  // measurable click lift; a description without the keyword forfeits it.
+  const hasKeyword = !keyword || meta.toLowerCase().includes(keyword.toLowerCase());
+  const passed = lengthOk && hasKeyword;
 
   let score: number;
-  if (passed) {
+  if (lengthOk) {
     score = 100;
   } else if (len > 0 && len < 120) {
     score = Math.round((len / 120) * 80);
@@ -212,36 +285,47 @@ function checkMetaDescriptionLength(
   } else {
     score = 20;
   }
+  if (!hasKeyword) score = Math.round(score * 0.7);
+
+  const notes = [`${len} chars (target: 120-160)`];
+  if (!hasKeyword) notes.push("keyword missing, so nothing is bolded in the snippet");
 
   return {
     name: "metaDescriptionLength",
     passed,
     score: Math.max(0, Math.min(100, score)),
-    note: `Meta description length: ${len} chars (target: 120-160)`,
+    note: `Meta description: ${notes.join("; ")}`,
   };
 }
 
-function checkWordCount(content: string): ScoringCheck {
+/**
+ * Length against what the query actually wants.
+ *
+ * The research layer derives a target from the pages that rank (see
+ * `recommendedWordCount` in lib/seo/research.ts) and the prompt writes to it,
+ * so a transactional query that ranks 600-word pages was being told to write
+ * 600 words and then scored as if 1,500 were the floor. The target is passed
+ * in when known; 1,500 remains the fallback.
+ */
+function checkWordCount(content: string, target?: number | null): ScoringCheck {
   const plainText = stripHtml(content);
   const words = plainText.split(/\s+/).filter(Boolean).length;
-  const passed = words >= 1500;
+  const goal = target && target > 0 ? Math.round(target) : DEFAULT_TARGET_WORDS;
+  const passed = words >= goal * 0.8;
 
-  let score: number;
-  if (words >= 1500) {
-    score = 100;
-  } else if (words >= 1000) {
-    score = 70;
-  } else if (words >= 500) {
-    score = 40;
-  } else {
-    score = Math.round((words / 500) * 20);
-  }
+  const score = words >= goal
+    ? 100
+    : words >= goal * 0.8
+      ? 85
+      : Math.round((words / goal) * 70);
 
   return {
     name: "wordCount",
     passed,
     score,
-    note: `Word count: ${words} (target: 1500+)`,
+    note: target
+      ? `Word count: ${words} (target: ~${goal}, from what ranks for this query)`
+      : `Word count: ${words} (target: ${goal}+)`,
   };
 }
 
@@ -285,8 +369,8 @@ function checkReadability(content: string): ScoringCheck {
   };
 }
 
-function checkInternalLinks(content: string): ScoringCheck {
-  const count = countInternalLinks(content);
+function checkInternalLinks(content: string, siteDomain?: string | null): ScoringCheck {
+  const count = countInternalLinks(content, siteDomain);
   const passed = count >= 3;
 
   let score: number;
@@ -309,21 +393,32 @@ function checkInternalLinks(content: string): ScoringCheck {
  *
  * @param content  HTML content of the article
  * @param keyword  Target keyword to check for
+ * @param opts     `metaDescription`: the stored column, since the tag is
+ *                 extracted before the HTML is saved. `siteDomain`: the
+ *                 workspace domain, so a link can be told inside from outside.
+ *                 `targetWordCount`: the SERP-derived length from research.
+ *                 `title`: the stored title, when the H1 is not it.
  * @returns        Overall score (0-100) and individual check results
  */
 export function scoreArticle(
   content: string,
   keyword: string,
-  opts?: { metaDescription?: string | null },
+  opts?: {
+    metaDescription?: string | null;
+    siteDomain?: string | null;
+    targetWordCount?: number | null;
+    title?: string | null;
+  },
 ): ScoringResult {
   const checks: ScoringCheck[] = [
     checkKeywordInTitle(content, keyword),
+    checkTitleLength(content, opts?.title),
     checkKeywordDensity(content, keyword),
     checkHeadingStructure(content),
-    checkMetaDescriptionLength(content, opts?.metaDescription),
-    checkWordCount(content),
+    checkMetaDescriptionLength(content, opts?.metaDescription, keyword),
+    checkWordCount(content, opts?.targetWordCount),
     checkReadability(content),
-    checkInternalLinks(content),
+    checkInternalLinks(content, opts?.siteDomain),
   ];
 
   // Weighted average
