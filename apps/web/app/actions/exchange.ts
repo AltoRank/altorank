@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
-import { creditsForDR, getCreditBalance, scoreRelevance, suggestPlacement, insertBacklinkIntoContent } from "@/lib/seo/exchange";
+import { CREDITS_PER_ARTICLE, getCreditBalance, scoreRelevance, suggestPlacement, insertBacklinkIntoContent } from "@/lib/seo/exchange";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { generateArticle } from "@/lib/content/generate";
 
@@ -25,16 +25,16 @@ export async function createExchangeRequest(
   // Verify the workspace belongs to the caller's agency (defense-in-depth over RLS).
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("dr")
+    .select("id")
     .eq("id", workspaceId)
     .eq("agency_id", agencyId)
     .single();
 
   if (!workspace) throw new Error("Workspace not found or not in your account");
 
-  // Null when the requesting workspace has no measured DR. Advertising a price
-  // derived from a DR nobody took is worse than advertising none.
-  const creditsOffered = creditsForDR(workspace.dr);
+  // Flat, and the writer is the one who ends up credited: you are offering to
+  // write an article, not offering to buy a link (migration 039).
+  const creditsOffered = CREDITS_PER_ARTICLE;
 
   const { error } = await supabase.from("backlink_exchanges").insert({
     requester_agency_id: agencyId,
@@ -62,17 +62,20 @@ export async function createExchangeRequest(
  * verified live. A link nobody chose, in a page nobody re-read, paying no
  * authority. Nothing to want on either side.
  *
- * What happens now: the engine writes a full article for the host's own blog,
- * on a keyword from the host's own recommendation queue, and it lands in the
- * host's review queue as a draft like any other. The requester's page is
- * inserted as one citation. The host reads it, edits it, keeps or cuts the
- * citation, and approves or rejects. Credits settle when it publishes.
+ * What happens now: an article is written for the publisher's own blog, on a
+ * keyword from their own recommendation queue, and it lands in their review
+ * queue as a draft like any other. The writer's page is inserted as one
+ * citation. The publisher reads it, edits it, keeps or cuts the citation, and
+ * approves or rejects. The trade settles when it publishes.
  *
- * So the host is paid in content first and credits second, and the requester
- * buys a mention on a page a person chose to publish. The citation stays
- * `nofollow sponsored`: the host is still being compensated in connection with
- * publishing it, and pretending otherwise would be the link scheme this
- * refuses to be. See the disclaimer on the request form.
+ * Since migration 039 the money moves the other way and that is what lets the
+ * citation be followed: the publisher pays a credit for the article, the writer
+ * earns it for the writing, and nobody is paid to carry a link. Two things
+ * follow, and both are enforced here. The publisher must actually hold a
+ * credit, so taking articles without ever writing one is not possible. And the
+ * writing is billed to the WRITER's monthly quota, not the publisher's, because
+ * a publisher should not spend their own article allowance on an article
+ * somebody else commissioned.
  */
 export type HostRequestState =
   | { ok: true; keyword: string; relevance: number }
@@ -100,6 +103,18 @@ export async function hostExchangeRequest(
     .eq("agency_id", agencyId)
     .maybeSingle();
   if (!workspace) return { ok: false, error: "That site is not in your account." };
+
+  // The publisher pays for the article. A balance check here is what stops the
+  // ledger going negative, and it is the only thing asking anything of a
+  // publisher: writing for someone else is always allowed and is how the
+  // credit is earned in the first place.
+  const balance = await getCreditBalance(supabase, agencyId);
+  if (balance < CREDITS_PER_ARTICLE) {
+    return {
+      ok: false,
+      error: `Publishing somebody else's article costs ${CREDITS_PER_ARTICLE} credit and you have ${balance}. Credits come from writing for other sites: file a request of your own, write the article, and you can take one back.`,
+    };
+  }
 
   // The request itself is another tenant's row, so reading and claiming it
   // needs the service role; every condition that makes it claimable is
@@ -172,12 +187,16 @@ export async function hostExchangeRequest(
    */
   after(async () => {
     try {
-      const bg = await createClient();
+      // The service role, deliberately: the article row belongs to this
+      // publisher's workspace while the quota belongs to the writer's account,
+      // and a cookie client cannot see another tenant to bill it.
+      const bg = admin;
       const result = await generateArticle({
         supabase: bg,
         workspaceId,
         keyword: next.term,
         autonomous: true,
+        billToAgencyId: exchange.requester_agency_id as string,
         selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
       });
 

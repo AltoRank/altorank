@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { BacklinkCreditReason } from "@/lib/types";
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicModel } from "@/lib/ai/models";
 import { fetchSite } from "@/lib/audit/lenient-fetch";
@@ -15,22 +16,20 @@ type TiptapNode = {
 type TiptapDoc = { type: "doc"; content: TiptapNode[] };
 
 /**
- * Calculate credits for a given DR using tiered formula:
- * DR 0-20 = 1, 21-40 = 2, 41-60 = 4, 61-80 = 8, 81-100 = 16
+ * One article, one credit, whoever publishes it.
  *
- * Returns null for an unmeasured DR rather than falling through to the cheapest
- * tier. Callers used to pass `workspace.dr ?? 0`, which priced every unmeasured
- * host at 1 credit — the same as a genuinely worthless one — so the tiers did
- * nothing and the price looked derived when it was invented.
+ * This replaces a five-tier price derived from the publisher's domain rating,
+ * and the tiers had to go for the same reason the credit direction flipped: a
+ * price that rises with the publisher's authority is a price on the link, and a
+ * priced link is a paid link no matter which column the number sits in. What
+ * is actually being traded is a piece of writing, and one article costs about
+ * what another article costs.
+ *
+ * A flat price also makes the ledger mean something simple and checkable: your
+ * balance is how many articles you have written for other people minus how
+ * many you have taken from them.
  */
-export function creditsForDR(dr: number | null | undefined): number | null {
-  if (dr === null || dr === undefined) return null;
-  if (dr <= 20) return 1;
-  if (dr <= 40) return 2;
-  if (dr <= 60) return 4;
-  if (dr <= 80) return 8;
-  return 16;
-}
+export const CREDITS_PER_ARTICLE = 1;
 
 /**
  * Get the credit balance for an agency (sum of all credits).
@@ -54,7 +53,7 @@ export async function recordCredit(
   supabase: SupabaseClient,
   agencyId: string,
   amount: number,
-  reason: "host_link" | "place_link" | "bonus" | "adjustment",
+  reason: BacklinkCreditReason,
   exchangeId?: string,
   drAtTime?: number | null,
 ): Promise<void> {
@@ -63,8 +62,9 @@ export async function recordCredit(
     amount,
     reason,
     exchange_id: exchangeId ?? null,
-    // This column is the audit trail for why a trade cost what it cost. Writing
-    // 0 for an unknown DR makes the ledger claim a reading that was never taken.
+    // Retired by 039: the price is flat, so there is no domain rating behind
+    // it to record. Null rather than 0, which would claim a reading nobody
+    // took - the reason this column was made nullable in the first place.
     dr_at_time: drAtTime ?? null,
   });
 
@@ -193,9 +193,19 @@ export function insertBacklinkIntoContent(
           attrs: {
             href: targetUrl,
             target: "_blank",
-            // Exchanged links are credit-compensated, so they MUST be nofollow +
-            // sponsored (Google link-scheme compliance). Never emit them dofollow.
-            rel: "noopener noreferrer nofollow sponsored",
+            /**
+             * Followed, and that is the point of migration 039.
+             *
+             * It was `nofollow sponsored` while the publisher earned credits
+             * for carrying it: value flowing to whoever hosts a link makes it
+             * a paid link, and a paid link has to be marked. Now the publisher
+             * PAYS for the article and the citation is the writer's byline, so
+             * nothing was paid for the link and there is nothing to disclose.
+             *
+             * `noopener noreferrer` stays because the anchor opens a new tab;
+             * neither is a ranking hint.
+             */
+            rel: "noopener noreferrer",
           },
         },
       ],
@@ -248,11 +258,14 @@ function sameTarget(href: string, target: string): boolean {
  * "credit transfer must follow a real verification, not a timer" — this is the
  * verification that sentence assumed existed.
  *
- * Four things have to hold, and all four are things a reader or a crawler would
- * see: the page loads, it is indexable, the anchor is present, and it carries
- * the rel this network requires. A nofollow+sponsored link is the whole basis on
- * which this exchange is not a link scheme, so a placement that quietly went
- * dofollow is a failure, not a bonus.
+ * Three things have to hold, and all three are things a reader or a crawler
+ * would see: the page loads, it is indexable, and the anchor is present. The
+ * rel is read and reported verbatim, never required. It used to be required -
+ * a placement that went dofollow failed - because the publisher was being paid
+ * to carry the link and an unmarked paid link is a link scheme. Since 039 the
+ * publisher pays instead, so a followed byline is the expected outcome and the
+ * publisher may still add nofollow if they prefer; either way the trade already
+ * settled on publication, so this decides nothing about credits.
  */
 export async function verifyPlacementLive(
   pageUrl: string | null,
@@ -317,22 +330,15 @@ export async function verifyPlacementLive(
     if (!href || !sameTarget(href, targetUrl)) continue;
 
     const rel = (tag.match(/rel=["']([^"']*)["']/i)?.[1] ?? "").toLowerCase();
-    const missing = ["nofollow", "sponsored"].filter((t) => !rel.split(/\s+/).includes(t));
-    if (missing.length) {
-      return {
-        ok: false,
-        url: pageUrl,
-        httpStatus: res.status,
-        rel: rel || null,
-        reason: `link found but rel is missing ${missing.join(" and ")} (found "${rel || "none"}")`,
-      };
-    }
+    const qualified = ["nofollow", "sponsored", "ugc"].filter((t) => rel.split(/\s+/).includes(t));
     return {
       ok: true,
       url: pageUrl,
       httpStatus: res.status,
-      rel,
-      reason: "link is live, indexable and correctly marked nofollow sponsored",
+      rel: rel || null,
+      reason: qualified.length
+        ? `citation is live and indexable, and the publisher qualified it with ${qualified.join(" ")}`
+        : "citation is live, indexable and followed",
     };
   }
 
@@ -349,16 +355,17 @@ export async function verifyPlacementLive(
  * The decision half of settlement, kept pure so it can be tested without a
  * database or a live page.
  *
- * Two rules, and the first is the whole point of the redesign. Credits settle
- * because the host PUBLISHED the article, not because a link survived: if
- * payment depended on the link, the credits would have bought the link, which
- * is "exchanging goods or services for links" in Google's own words. The host
- * may cut the citation while editing and still be paid. That is what makes
- * this a content trade rather than a link purchase, and it is checkable here.
+ * Credits settle because the article was PUBLISHED, not because a link
+ * survived: if payment depended on the link, the credits would have bought the
+ * link, which is "exchanging goods or services for links" in Google's own
+ * words. The publisher may cut the citation while editing and the trade still
+ * completes. That is what makes this a content trade rather than a link
+ * purchase, and this function is where it is checkable, because it is never
+ * told the citation's fate.
  *
- * The second rule is the old one and stays: an unmeasured host cannot be
- * priced, because settling at the cheapest tier would pay a strong host and a
- * worthless one the same.
+ * Since 039 the direction is the publisher paying the writer, and the price is
+ * flat, so the old refusal to settle an unmeasured domain rating is gone with
+ * the tiers that needed it.
  */
 export type SettlementDecision =
   | { settle: true; credits: number }
@@ -368,22 +375,14 @@ export function settlementDecision(exchange: {
   status: string;
   provider_agency_id: string | null;
   requester_agency_id: string | null;
-  provider_dr: number | null | undefined;
 }): SettlementDecision {
   if (exchange.status !== "placed") {
     return { settle: false, reason: `exchange is ${exchange.status}, not placed` };
   }
   if (!exchange.provider_agency_id || !exchange.requester_agency_id) {
-    return { settle: false, reason: "exchange has no provider or requester" };
+    return { settle: false, reason: "exchange has no publisher or writer" };
   }
-  const credits = creditsForDR(exchange.provider_dr);
-  if (credits === null) {
-    return {
-      settle: false,
-      reason: "the hosting site has no measured domain rating, so the trade cannot be priced",
-    };
-  }
-  return { settle: true, credits };
+  return { settle: true, credits: CREDITS_PER_ARTICLE };
 }
 
 export type SettlementOutcome =
@@ -398,7 +397,7 @@ export type SettlementOutcome =
  * and takes it rather than the caller's client: credits are written for two
  * different accounts, and RLS scopes a member to inserting their own.
  *
- * Whether the citation survived is recorded, never enforced. The requester is
+ * Whether the citation survived is recorded, never enforced. The writer is
  * owed the truth about what they got - a published article that cites them, or
  * a published article that no longer does - and both are honest outcomes of a
  * trade whose subject was the article.
@@ -414,17 +413,10 @@ export async function settleExchangeForArticle(
     .maybeSingle();
   if (!exchange) return null;
 
-  const { data: providerWs } = await admin
-    .from("workspaces")
-    .select("dr")
-    .eq("id", exchange.provider_workspace_id)
-    .maybeSingle();
-
   const decision = settlementDecision({
     status: exchange.status as string,
     provider_agency_id: exchange.provider_agency_id as string | null,
     requester_agency_id: exchange.requester_agency_id as string | null,
-    provider_dr: providerWs?.dr as number | null | undefined,
   });
   if (!decision.settle) return { settled: false, reason: decision.reason };
 
@@ -440,8 +432,11 @@ export async function settleExchangeForArticle(
     exchange.target_url as string,
   );
 
-  await recordCredit(admin, exchange.provider_agency_id as string, decision.credits, "host_link", exchange.id as string, providerWs?.dr as number | null);
-  await recordCredit(admin, exchange.requester_agency_id as string, -decision.credits, "place_link", exchange.id as string, providerWs?.dr as number | null);
+  // The publisher pays for the article they received; the writer is credited
+  // for having written it. Nothing is paid to whoever carries the link, which
+  // is the reason the citation may be followed at all (migration 039).
+  await recordCredit(admin, exchange.provider_agency_id as string, -decision.credits, "receive_article", exchange.id as string, null);
+  await recordCredit(admin, exchange.requester_agency_id as string, decision.credits, "supply_article", exchange.id as string, null);
 
   await admin
     .from("backlink_exchanges")

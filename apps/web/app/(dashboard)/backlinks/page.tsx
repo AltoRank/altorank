@@ -105,11 +105,12 @@ export default async function BacklinksPage({ searchParams }: Props) {
             flush
           >
             <p className="px-[18px] py-3 text-[12.5px] leading-relaxed text-ink-2 border-b border-line-soft">
-              Taking one writes a full article for your own blog, on the next keyword your site
-              should rank for, with a single citation to the requester. It arrives in your review
-              queue as a draft: edit it, cut the citation if it does not belong, publish it or
-              reject it. You are paid the credits when you publish, whether or not the citation
-              survived. Writing it uses one of this month&rsquo;s articles.
+              Taking one gets you a full article for your own blog, on the next keyword your site
+              should rank for, written at the requester&rsquo;s expense rather than out of your own
+              monthly articles. It arrives in your review queue as a draft: edit it, cut the citation
+              if it does not belong, publish it or reject it. Publishing costs you one credit and
+              earns the writer one, which is why their citation can be a followed byline. Credits come
+              from writing for other sites.
             </p>
             <ExchangeMarketplace requests={openRequests} workspaceId={scopeId} />
           </Card>

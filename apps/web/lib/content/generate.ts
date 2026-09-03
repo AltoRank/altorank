@@ -65,6 +65,19 @@ export interface GenerateArticleOptions {
    * carry it.
    */
   articleId?: string;
+  /**
+   * Charge this account's monthly quota instead of the workspace's own.
+   *
+   * Only the exchange uses it: a writer supplies an article for somebody
+   * else's blog, so the row belongs to the publisher's workspace while the
+   * cost belongs to the writer who commissioned it. Without this the publisher
+   * would pay quota for an article they did not ask to have written.
+   *
+   * Needs a client that can see the billed account, which in practice means
+   * the service role; a caller's cookie client cannot read another tenant's
+   * workspaces and would compute an empty quota.
+   */
+  billToAgencyId?: string;
   /** Streaming hook. Omitted by the unattended path. */
   onChunk?: (html: string) => void;
   /** Called once research completes, before the model starts. */
@@ -85,7 +98,7 @@ export async function generateArticle(
   options: GenerateArticleOptions,
 ): Promise<GenerateArticleResult> {
   const { supabase, workspaceId, keyword, title, autonomous, onChunk, onResearch,
-    selection, articleId,
+    selection, articleId, billToAgencyId,
   } = options;
 
   const { data: workspace, error: wsError } = await supabase
@@ -105,12 +118,13 @@ export async function generateArticle(
    * published overage. Autonomous generation stops at the included volume:
    * a cron must never be the thing that spends a customer's money.
    */
-  const quota = await getQuota(supabase, workspace.agency_id);
+  const billedAgencyId = billToAgencyId ?? workspace.agency_id;
+  const quota = await getQuota(supabase, billedAgencyId);
   if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
     if (quota.reason === "no-plan" || autonomous) {
       throw new Error(quotaExceededMessage(quota));
     }
-    await recordOverageArticle(supabase, workspace.agency_id, quota);
+    await recordOverageArticle(supabase, billedAgencyId, quota);
   }
 
   const { data: voiceProfile } = await supabase

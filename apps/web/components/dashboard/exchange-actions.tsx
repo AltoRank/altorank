@@ -40,8 +40,8 @@ export function ExchangeRequestForm({ workspaces, scopedId }: Props) {
       <Dialog
         open={open}
         onOpenChange={setOpen}
-        title="Request a link"
-        description="Another site in the network hosts a link to your page, priced in credits by its domain rating."
+        title="Offer an article for a citation"
+        description="You write an article for another site in the network. It publishes with a citation to your page, and you earn a credit for the writing."
       >
         <form
           className="flex flex-col gap-3.5"
@@ -94,20 +94,28 @@ export function ExchangeRequestForm({ workspaces, scopedId }: Props) {
             </label>
           </div>
 
-          {/* Stated at the point of asking, because the honest version of this
-              feature is the one where nobody expects a ranking lift from it.
-              Exchanged links are placed and verified as rel="nofollow sponsored"
-              (lib/seo/exchange.ts), which is what keeps the network on the right
-              side of Google's and Bing's link-spam policies, and also what makes
-              it pass no authority. */}
+          {/* Rewritten with migration 039, which reversed who pays. While the
+              publisher earned credits for carrying the citation it had to be
+              nofollow sponsored and was worth nothing; now the publisher pays
+              for the article and the citation is a byline, so it is followed.
+              The residual risk is scale rather than direction, and saying so
+              is the point of putting this in front of the click. */}
           <p className="rounded-[7px] border border-line bg-panel px-3 py-2.5 text-[12px] leading-relaxed text-ink-2">
-            Exchanged links are always marked{" "}
-            <code className="rounded bg-panel-2 px-1 font-mono text-[0.9em]">rel=&quot;nofollow sponsored&quot;</code>.
-            Google and Bing treat compensated links without that mark as link spam, and sites on both
-            ends can be penalised; marked, the link passes no ranking authority. What a placement gives
-            you is a relevant mention on a real page, the referral traffic it earns, and a citation an AI
-            assistant may read. It will not move your position in Google, and anyone offering followed
-            links for credits is running a link scheme this network refuses to place.
+            How this works: a publisher in the network takes your request, an article is written for
+            their blog on a keyword their own site should rank for, and it goes through their review
+            queue like any of their drafts. They may edit it, and they may cut your citation. Writing
+            it spends one of your articles this month, and you earn a credit when they publish, which
+            is what lets you take an article for your own blog later.
+          </p>
+          <p className="rounded-[7px] border border-line bg-panel px-3 py-2.5 text-[12px] leading-relaxed text-ink-2">
+            The citation is a followed byline, because nobody is paid to carry it: the publisher pays
+            for the writing, you are paid for doing it. That is ordinary guest publishing rather than
+            a link exchange, and it is why the link is not marked{" "}
+            <code className="rounded bg-panel-2 px-1 font-mono text-[0.9em]">sponsored</code>. What
+            stays true regardless: Google treats automated link building as spam whoever pays, so this
+            works only while the articles are genuinely worth publishing and the anchors read like
+            your brand rather than your keywords. Publishers can always decline, and their approval is
+            the thing that makes the citation editorial.
           </p>
 
           <div className="flex justify-end gap-2 pt-1">
