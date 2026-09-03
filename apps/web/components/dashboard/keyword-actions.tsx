@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Icons, Dialog } from "@/components/ui";
 import { useOnboarding } from "@/components/onboarding/use-onboarding";
+import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { createKeyword } from "@/app/actions/keywords";
 import type { Workspace, Keyword } from "@/lib/types";
 
@@ -13,6 +14,11 @@ interface KeywordActionsProps {
 }
 
 export function KeywordActions({ workspaces, keywords = [] }: KeywordActionsProps) {
+  // Follows the sidebar switcher rather than offering its own choice.
+  // `workspaces` remains the fallback for the first render, before the
+  // provider has resolved an active row.
+  const { active } = useWorkspace();
+  const target = active ?? workspaces[0] ?? null;
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const onboarding = useOnboarding();
@@ -23,6 +29,11 @@ export function KeywordActions({ workspaces, keywords = [] }: KeywordActionsProp
     setPending(true);
     try {
       const fd = new FormData(e.currentTarget);
+      // The workspace field is no longer a `required` <select>, so nothing in
+      // the browser stops a submit when there is no workspace to bind to.
+      if (!fd.get("workspace_id")) {
+        throw new Error("Add a site before tracking keywords for it.");
+      }
       await createKeyword(fd);
       setOpen(false);
       onboarding?.completeStep("add-keywords");
@@ -69,19 +80,15 @@ export function KeywordActions({ workspaces, keywords = [] }: KeywordActionsProp
         description="Track a new keyword across your workspace."
       >
         <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
+          {/* Shown, not chosen: the sidebar switcher decides which site this
+              is for, and a second picker here could file the keyword under a
+              workspace the rest of the screen is not showing. */}
           <label className="flex flex-col gap-1.5">
             <span className="text-[12.5px] font-medium text-ink-2">Workspace</span>
-            <select
-              name="workspace_id"
-              required
-              className="px-3 py-2 rounded-lg border border-line bg-panel text-[13px] text-ink outline-none focus:border-accent transition-colors"
-            >
-              {workspaces.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
+            <input type="hidden" name="workspace_id" value={target?.id ?? ""} />
+            <div className="px-3 py-2 rounded-lg border border-line bg-panel text-[13px] text-ink-2">
+              {target?.name ?? "No workspace"}
+            </div>
           </label>
 
           <label className="flex flex-col gap-1.5">
