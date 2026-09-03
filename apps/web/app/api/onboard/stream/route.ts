@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
       }, 15_000);
 
       try {
-        await runOnboarding(supabase, workspace as never, send);
+        await runOnboarding(supabase, workspace as never, send, request.signal);
       } catch (err) {
         send({ phase: "error", detail: err instanceof Error ? err.message : "Onboarding failed" });
       } finally {
