@@ -1,4 +1,15 @@
--- The static-site publishing target.
+-- 040: the static-site publishing target
+--
+-- Numbered 035 until 2026-09-03, alongside 035_keyword_source.sql. Supabase
+-- records the leading digits as `schema_migrations.version`, which is the
+-- primary key, so two files sharing a prefix apply the first and then fail the
+-- second on a duplicate key. That is why nothing past 032 had ever reached the
+-- hosted project: the push died before it got here.
+--
+-- This file moved rather than the other one because 036_keyword_source_gap.sql
+-- rewrites the constraint 035_keyword_source.sql creates and has to follow it.
+-- This one is a single idempotent insert that nothing else depends on, so it
+-- is safe anywhere in the order.
 --
 -- lib/cms/git.ts and its adapter existed since the CMS layer was written, but
 -- three things had to be true for anyone to use it and only two ever were: the
