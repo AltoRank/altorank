@@ -78,8 +78,15 @@ export const PLANS = [
     monthly: 69,
     period: '/mo',
     desc: 'No API keys to manage, because model and data costs are included. For solo operators and agencies running one or two brands.',
+    // The included count is a ceiling, not a forecast. cron/generate writes one
+    // article per site per run and runs daily, so a single site tops out near
+    // 30 a month and the default weekly limit of 2 is nearer 9. Quoting 100
+    // alone read as a promise of output rather than of billing; both numbers
+    // are stated now. Keep in step with PLAN_ARTICLE_LIMITS and the cadence in
+    // app/api/cron/generate.
+
     features: [
-      '100 articles / month included',
+      '100 articles / month included, up to one a day per site',
       'Articles publish without the AltoRank line',
       'Up to 3 workspaces (sites or clients)',
       '€0.60 per additional article',
@@ -116,7 +123,7 @@ export const PLANS = [
     desc: 'For agencies running content across a full client roster. Everything metered on output, not seats or workspaces.',
     features: [
       'Everything in Managed',
-      '400 articles / month included',
+      '400 articles / month included, up to one a day per site',
       'Unlimited workspaces: a site or a client each',
       '€0.45 per additional article',
       'Role-based permissions for your team',
