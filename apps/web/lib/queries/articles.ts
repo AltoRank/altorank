@@ -46,13 +46,27 @@ export const getArticle = cache(async function getArticle(
   return data as Article;
 });
 
-export async function getRecentArticles(limit: number = 6): Promise<Article[]> {
+/**
+ * The dashboard's recent-articles strip.
+ *
+ * Takes the workspace for the same reason `getArticles` does: it renders one
+ * row below a list that is already scoped, and unscoped it filled that strip
+ * with another client's drafts while the page said it was about this one.
+ */
+export async function getRecentArticles(
+  limit: number = 6,
+  workspaceId?: string,
+): Promise<Article[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("articles")
     .select("*")
     .order("updated_at", { ascending: false })
     .limit(limit);
+
+  if (workspaceId) query = query.eq("workspace_id", workspaceId);
+
+  const { data, error } = await query;
 
   if (error) throw new Error(error.message);
   return (data ?? []) as Article[];

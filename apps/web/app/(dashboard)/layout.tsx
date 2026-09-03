@@ -95,8 +95,14 @@ export default async function DashboardLayout({
    * remember to switch it on. Every other nav item stays put even when empty,
    * because an empty Keywords page is how you get keywords.
    */
+  const backlinksQuery = supabase
+    .from("backlinks")
+    .select("id", { count: "exact", head: true });
   const [{ count: backlinkCount }, { count: exchangeCount }] = await Promise.all([
-    supabase.from("backlinks").select("id", { count: "exact", head: true }),
+    // Links belong to a site, so the entry appears for the site that has them.
+    // Exchanges do not: `backlink_exchanges` is keyed by agency on both sides,
+    // so it stays counted across the account, which is what it describes.
+    scopeId ? backlinksQuery.eq("workspace_id", scopeId) : backlinksQuery,
     supabase.from("backlink_exchanges").select("id", { count: "exact", head: true }),
   ]);
 
