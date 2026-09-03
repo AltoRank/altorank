@@ -10,7 +10,11 @@ export async function GET(context: APIContext) {
     description: 'SEO insights, content strategy, and agency growth, from the AltoRank team.',
     site: context.site!.toString(),
     items: posts
-      .sort((a, b) => b.data.publishDate.valueOf() - a.data.publishDate.valueOf())
+      .sort(
+        (a, b) =>
+          b.data.publishDate.valueOf() - a.data.publishDate.valueOf() ||
+          a.id.localeCompare(b.id),
+      )
       .map((post) => ({
         title: post.data.title,
         pubDate: post.data.publishDate,
