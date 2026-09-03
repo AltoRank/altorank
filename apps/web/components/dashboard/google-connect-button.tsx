@@ -21,12 +21,12 @@ export function GoogleConnectButton({
   integrationId: "gsc" | "ga4";
   connected?: boolean;
 }) {
-  const { workspaces, active, setActiveId } = useWorkspace();
+  const { workspaces, active } = useWorkspace();
 
-  // This was the only consumer of the sidebar's workspace switcher: switching
-  // changed nothing on any page except which workspace this button would bind
-  // a Google account to, invisibly. The choice belongs here, next to its one
-  // effect, where it is visible at the moment it matters.
+  // Binds to whatever the sidebar switcher is scoped to, like every other
+  // page. It used to carry its own workspace <select>, from when the switcher
+  // changed nothing else; now that the switcher scopes the whole app, a second
+  // picker here offered a site the rest of the screen was not showing.
   const target = active ?? workspaces[0];
 
   if (!target) {
@@ -41,20 +41,6 @@ export function GoogleConnectButton({
 
   return (
     <div className="flex flex-col gap-1.5">
-      {workspaces.length > 1 && (
-        <select
-          value={target.id}
-          onChange={(e) => setActiveId(e.target.value)}
-          aria-label="Workspace to connect"
-          className="w-full rounded-[6px] border border-line bg-panel px-2 py-1.5 text-[12px] text-ink-2"
-        >
-          {workspaces.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.name}
-            </option>
-          ))}
-        </select>
-      )}
       <a href={href} className="block">
         <Button
           size="sm"

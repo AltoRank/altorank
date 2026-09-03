@@ -54,7 +54,7 @@ export type WorkspaceDrivers = {
   /** planned + shipped keywords, plus article keywords not already counted. */
   trackedKeywords: number;
   autoGenerate: boolean;
-  /** workspaces.auto_generate_weekly_limit; cron/generate defaults to 2. */
+  /** workspaces.auto_generate_weekly_limit; cron/generate defaults to PAID_DEFAULT_PACE. */
   weeklyLimit: number | null;
   geoTracking: boolean;
   enabledPrompts: number;
@@ -77,7 +77,7 @@ export function forecastWorkspace(w: WorkspaceDrivers, rates: RateCard = DEFAULT
   const serp = tracked * rates.serpQueued * DAYS;
   const backlinks = rates.backlinksSync * WEEKS;
 
-  // cron/generate: `auto_generate_weekly_limit ?? 2` drafts a week, opt-in.
+  // cron/generate: `auto_generate_weekly_limit ?? PAID_DEFAULT_PACE` drafts a week, opt-in.
   const perWeek = w.autoGenerate ? (w.weeklyLimit ?? 2) : 0;
   const generate = perWeek * WEEKS * (rates.dfsPerArticle + rates.modelPerArticle);
 

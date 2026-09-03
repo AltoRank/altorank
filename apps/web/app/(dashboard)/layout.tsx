@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getArticles } from "@/lib/queries/articles";
+import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { createClient } from "@/lib/supabase/server";
 import { OnboardingProvider } from "@/components/onboarding/onboarding-provider";
 import { WorkspaceProvider } from "@/components/dashboard/workspace-context";
@@ -24,9 +25,13 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Scoped to the workspace the switcher is on, exactly like the Articles
+  // page. Unscoped, the badge counted every workspace RLS allowed and read as
+  // a lie next to a list showing fewer.
+  const scopeId = await getScopedWorkspaceId();
   const [workspaces, articles, supabase, cookieStore, impersonation] = await Promise.all([
     getWorkspaces(),
-    getArticles(),
+    getArticles(scopeId ?? undefined),
     createClient(),
     cookies(),
     // Non-null only while an operator is signed in as a customer. Everything

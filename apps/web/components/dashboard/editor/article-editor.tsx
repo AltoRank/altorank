@@ -14,6 +14,7 @@ import { Icons } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
 import { ConnectPrompt } from "@/components/ui/connect-prompt";
+import { ConnectCmsDialog } from "@/components/dashboard/connect-cms-dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { PLATFORM_HINT, PLATFORM_LABEL, PLATFORM_CONNECT_TYPE, platformState } from "@/lib/cms/detect";
 import { updateArticle } from "@/app/actions/articles";
@@ -23,7 +24,7 @@ import type { Destination } from "@/lib/publishing/destinations";
 import { SchedulePicker } from "@/components/dashboard/editor/schedule-picker";
 import { ResearchPanel, FactCheckPanel } from "@/components/dashboard/editor/research-panel";
 import { WhyPanel } from "@/components/dashboard/editor/why-panel";
-import type { Article, Workspace, PublishingCadence } from "@/lib/types";
+import type { Article, Workspace, PublishingCadence, Integration } from "@/lib/types";
 import type { ScoringCheck } from "@/lib/seo/scoring";
 
 type Props = {
@@ -40,9 +41,22 @@ type Props = {
    * with WordPress connected.
    */
   destinations?: Destination[];
+  /**
+   * The CMS integration rows, needed only so the connection dialog can open
+   * over this page. Connecting from here never leaves the editor: a draft with
+   * unsaved edits is a bad thing to navigate away from to fill in a form.
+   */
+  integrations?: Integration[];
 };
 
-export function ArticleEditor({ article, workspace, cadence, needsPlan = false, destinations = [] }: Props) {
+export function ArticleEditor({
+  article,
+  workspace,
+  cadence,
+  needsPlan = false,
+  destinations = [],
+  integrations = [],
+}: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -58,6 +72,14 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false, 
   // the scheduler would pick.
   const [destinationId, setDestinationId] = useState<string | null>(destinations[0]?.id ?? null);
   const destination = destinations.find((d) => d.id === destinationId) ?? destinations[0] ?? null;
+  // The connection dialog, opened in place from the Publish panel. `connectType`
+  // is the tab it opens on, taken from what detection saw.
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [connectType, setConnectType] = useState<string | null>(null);
+  function openConnect(type: string | null) {
+    setConnectType(type);
+    setConnectOpen(true);
+  }
   const [generating, setGenerating] = useState(false);
   const [streamHtml, setStreamHtml] = useState("");
   // Generation now has phases before any text appears. Without this the button
@@ -290,6 +312,25 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false, 
     );
     return copyToClipboard(markdown, "Copied the article as Markdown, front matter included.");
   }, [editor, article, workspace.domain, copyToClipboard]);
+
+  /**
+   * The two ways out for a site we cannot post to. Rendered both before and
+   * after approval: it used to appear only once the article was approved,
+   * which left a user with no CMS looking at a panel whose single button said
+   * "Connect a CMS" and no sign that approving was safe.
+   */
+  const copyPair = (
+    <div className="grid grid-cols-2 gap-2">
+      <Button size="sm" variant="ghost" className="justify-center" onClick={copyMarkdown}>
+        <Icons.download size={13} />
+        Copy as Markdown
+      </Button>
+      <Button size="sm" variant="ghost" className="justify-center" onClick={copyHtml}>
+        <Icons.download size={13} />
+        Copy as HTML
+      </Button>
+    </div>
+  );
 
   const handleApprove = useCallback(async () => {
     setPublishing(true);
@@ -543,11 +584,7 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false, 
               service={`Looks like ${PLATFORM_LABEL[platform.platform]}`}
               title="No publishing destination yet"
               body={`${PLATFORM_HINT[platform.platform]} Approve the draft whenever you are ready; nothing publishes on its own either way.`}
-              href={
-                PLATFORM_CONNECT_TYPE[platform.platform]
-                  ? `/connect?connect=${PLATFORM_CONNECT_TYPE[platform.platform]}`
-                  : "/connect"
-              }
+              onClick={() => openConnect(PLATFORM_CONNECT_TYPE[platform.platform] ?? null)}
               cta={
                 PLATFORM_CONNECT_TYPE[platform.platform]
                   ? `Connect ${PLATFORM_LABEL[platform.platform]}`
@@ -563,15 +600,15 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false, 
               icon="integrations"
               title={`No CMS found on ${workspace.domain}`}
               body={`We fetched ${workspace.domain} on ${new Date(platform.checkedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} and saw nothing we can post to directly. Sites like this publish by hand, by webhook, or from a git repository: approve the draft and copy it as Markdown or HTML below, or connect a webhook or repository.`}
-              href="/connect?connect=webhook"
+              onClick={() => openConnect("webhook")}
               cta="Connect a webhook or repository"
             />
           ) : (
             <ConnectPrompt
               icon="integrations"
               title="No publishing destination yet"
-              body="Approve the draft whenever you are ready. Connect a CMS and it can go out from here; nothing publishes on its own either way."
-              href="/connect"
+              body="Two ways out of here: connect a CMS and the draft can go out from this panel, or approve it and take the file — Markdown or HTML — to publish wherever you already do. Nothing publishes on its own either way."
+              onClick={() => openConnect(null)}
               cta="Connect a CMS"
             />
           )}
@@ -591,14 +628,30 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false, 
             </div>
           )}
           {article.status === "review" && !needsPlan && (
-            <Button
-              size="sm"
-              className="w-full justify-center mt-3"
-              onClick={handleApprove}
-              disabled={publishing}
-            >
-              {publishing ? "Approving…" : "Approve for publishing"}
-            </Button>
+            <>
+              <Button
+                size="sm"
+                className="w-full justify-center mt-3"
+                onClick={handleApprove}
+                disabled={publishing}
+              >
+                {publishing ? "Approving…" : "Approve for publishing"}
+              </Button>
+              {/* Approve stays available with nothing connected on purpose. The
+                  manual path — copy the file, publish it yourself, paste the
+                  URL back — only unlocks after approval, so gating approval on
+                  a connection would strand every site that will never have one:
+                  a headless build, a repo-published site, a hand-written app. */}
+              {destinations.length === 0 && (
+                <div className="mt-2 flex flex-col gap-2">
+                  <div className="text-[12px] text-ink-3 leading-relaxed">
+                    Or take the file and publish it yourself — you can paste the URL
+                    back here once it is live.
+                  </div>
+                  {copyPair}
+                </div>
+              )}
+            </>
           )}
           {/* No connection, and the site may have nothing to connect: a hand-
               built app, or a Next.js, Astro or Hugo build that publishes from
@@ -612,16 +665,7 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false, 
                 Approved. Publish it yourself and paste the URL, or connect a destination
                 above to have it go out from here.
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <Button size="sm" variant="ghost" className="justify-center" onClick={copyMarkdown}>
-                  <Icons.download size={13} />
-                  Copy as Markdown
-                </Button>
-                <Button size="sm" variant="ghost" className="justify-center" onClick={copyHtml}>
-                  <Icons.download size={13} />
-                  Copy as HTML
-                </Button>
-              </div>
+              {copyPair}
               <input
                 value={manualUrl}
                 onChange={(e) => setManualUrl(e.target.value)}
@@ -666,6 +710,28 @@ export function ArticleEditor({ article, workspace, cadence, needsPlan = false, 
           )}
         </SidebarSection>
       </aside>
+
+      {/*
+        Connecting happens over the editor, not on /connect. On success the
+        dialog closes and the route refreshes, so this panel re-renders with a
+        destination and a Publish button — which the user then presses. Saving
+        a credential is not consent to publish, and the empty state above
+        promises exactly that.
+      */}
+      <ConnectCmsDialog
+        open={connectOpen}
+        onOpenChange={setConnectOpen}
+        // Only this article's workspace: the picker exists for the settings
+        // page, where several are in play. Here, choosing another one would
+        // connect a CMS this draft cannot reach.
+        workspaces={[workspace]}
+        integrations={integrations}
+        initialCmsType={connectType}
+        onConnected={() => {
+          toast.success("Connected. Publish it whenever you are ready.");
+          router.refresh();
+        }}
+      />
     </div>
   );
 }

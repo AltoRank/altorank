@@ -12,8 +12,12 @@ type ConnectPromptProps = {
   title: string;
   /** Why it is missing and what filling it in buys. One or two sentences. */
   body: string;
-  /** Where the user goes to fix it. */
-  href: string;
+  /** Where the user goes to fix it. Omitted when `onClick` opens a dialog
+   *  in place instead — a page the user has unsaved work on should not send
+   *  them somewhere else to fix a hole in its own panel. */
+  href?: string;
+  /** Fix it without leaving the page. Takes precedence over `href`. */
+  onClick?: () => void;
   cta: string;
   /** The service being connected, named in text beside the icon. */
   service?: string;
@@ -39,20 +43,30 @@ export function ConnectPrompt({
   title,
   body,
   href,
+  onClick,
   cta,
   service,
   dense = false,
 }: ConnectPromptProps) {
   const IconFn = Icons[icon];
 
+  const label = (
+    <>
+      <IconFn size={12} />
+      <span className="underline decoration-line underline-offset-2">{cta}</span>
+    </>
+  );
+  const denseClass =
+    "inline-flex items-center gap-1.5 text-[12px] text-ink-3 hover:text-ink-2 transition-colors";
+
   if (dense) {
-    return (
-      <Link
-        href={href}
-        className="inline-flex items-center gap-1.5 text-[12px] text-ink-3 hover:text-ink-2 transition-colors"
-      >
-        <IconFn size={12} />
-        <span className="underline decoration-line underline-offset-2">{cta}</span>
+    return onClick ? (
+      <button type="button" onClick={onClick} className={denseClass}>
+        {label}
+      </button>
+    ) : (
+      <Link href={href ?? "#"} className={denseClass}>
+        {label}
       </Link>
     );
   }
@@ -68,11 +82,17 @@ export function ConnectPrompt({
         </div>
         <div className="text-[13px] text-ink-2 font-medium mb-1.5">{title}</div>
         <p className="text-[12.5px] text-ink-3 leading-[1.6] mb-4">{body}</p>
-        <Link href={href}>
-          <Button size="sm" variant="default">
+        {onClick ? (
+          <Button size="sm" variant="default" onClick={onClick}>
             {cta}
           </Button>
-        </Link>
+        ) : (
+          <Link href={href ?? "#"}>
+            <Button size="sm" variant="default">
+              {cta}
+            </Button>
+          </Link>
+        )}
       </div>
     </div>
   );

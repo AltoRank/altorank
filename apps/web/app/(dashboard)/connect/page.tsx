@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getIntegrations } from "@/lib/queries/integrations";
 import { getWorkspaces } from "@/lib/queries/workspaces";
+import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { PageHead, StatusPill, Button, Icons, DotSep } from "@/components/ui";
 import { ConnectActions } from "@/components/dashboard/connect-actions";
 import { GoogleConnectButton } from "@/components/dashboard/google-connect-button";
@@ -43,9 +44,13 @@ export default async function IntegrationsPage({
     getWorkspaces(),
   ]);
 
-  // Fetch all cadences for the user's workspaces
+  // Everything below is about the site the switcher is on, like every other
+  // section. Read across all workspaces, a tile said "Connected" because some
+  // other client's Search Console was wired up, and Auto-publish counted
+  // cadences belonging to sites not on screen.
   const supabase = await createClient();
-  const wsIds = workspaces.map((w) => w.id);
+  const scopeId = await getScopedWorkspaceId();
+  const wsIds = scopeId ? [scopeId] : [];
   const { data: cadencesData } = wsIds.length > 0
     ? await supabase
         .from("publishing_cadences")
@@ -55,8 +60,9 @@ export default async function IntegrationsPage({
   const cadences = (cadencesData ?? []) as PublishingCadence[];
   const enabledCadences = cadences.filter((c) => c.enabled);
 
-  // Which integrations are already connected, for any of this agency's
-  // workspaces. Used only to label the tile; connecting is per workspace.
+  // Which integrations this workspace has connected. Tokens live per
+  // workspace in `workspace_integrations`, so the label has to be per
+  // workspace too.
   const { data: connectedRows } = wsIds.length > 0
     ? await supabase
         .from("workspace_integrations")
@@ -155,7 +161,7 @@ export default async function IntegrationsPage({
                         : "Set a recurring publishing cadence per workspace"}
                     </p>
                     {workspaces.length > 0 ? (
-                      <Link href={workspaces.length === 1 ? `/workspaces/${workspaces[0].id}` : "/workspaces"}>
+                      <Link href={scopeId ? `/workspaces/${scopeId}` : "/workspaces"}>
                         <Button size="sm" variant="ghost" className="w-full justify-center">
                           Configure
                         </Button>
