@@ -80,6 +80,22 @@ describe("runOnboarding", () => {
     expect(order).toEqual(["generate", "ready"]);
   });
 
+  /**
+   * The longest silence in the run is the model writing. onResearch is the one
+   * boundary inside it, and it must surface as the same phase still active -
+   * a progress note, not a second start and not a premature done.
+   */
+  it("reports research inside the draft phase without changing its status", async () => {
+    generate.mockImplementation(async (opts: { onResearch?: (r: unknown) => void }) => {
+      opts.onResearch?.({ competitors: [1, 2, 3], peopleAlsoAsk: [1, 2] });
+      return { articleId: "a1", title: "T", wordCount: 900, factCheck: { verdict: "review" } };
+    });
+    const events = await collect();
+    const drafting = events.filter((e) => e.phase === "drafting");
+    expect(phases(drafting)).toEqual(["drafting:active", "drafting:active", "drafting:done"]);
+    expect(drafting[1]).toMatchObject({ detail: expect.stringMatching(/3 ranking pages.*2 questions/) });
+  });
+
   it("skips the draft, with the reason, when the free draft is used", async () => {
     quota.mockResolvedValue({ limit: 1, used: 1, remaining: 0, reason: "no-plan" });
     const events = await collect();

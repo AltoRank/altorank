@@ -76,6 +76,16 @@ describe("reduceOnboarding", () => {
     expect(isTerminal(s)).toBe(true);
   });
 
+  /** A mid-phase progress note replaces the detail and leaves the status alone. */
+  it("updates detail on a repeated active event without leaving active", () => {
+    const s = run([
+      { phase: "drafting", status: "active" },
+      { phase: "drafting", status: "active", detail: "Writing now." },
+    ]);
+    expect(s.steps[2]).toEqual({ phase: "drafting", status: "active", detail: "Writing now." });
+    expect(isTerminal(s)).toBe(false);
+  });
+
   it("does not mutate the previous state", () => {
     const before = initialOnboardingState();
     const frozen = JSON.stringify(before);

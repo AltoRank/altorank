@@ -133,6 +133,19 @@ export async function runOnboarding(
             keyword: next.term,
             autonomous: true,
             selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
+            // The one boundary inside the draft: research is done, the model
+            // is about to write. Emitted as the same phase still active, with
+            // a new detail, so the screen can say what is happening during the
+            // longest silence in the run instead of showing a spinner for two
+            // minutes.
+            onResearch: (research) =>
+              emit({
+                phase: "drafting",
+                status: "active",
+                detail:
+                  `Read ${research.competitors.length} ranking page${research.competitors.length === 1 ? "" : "s"}` +
+                  ` and ${research.peopleAlsoAsk.length} question${research.peopleAlsoAsk.length === 1 ? "" : "s"} people ask. Writing now.`,
+              }),
           });
           emit({
             phase: "drafting",

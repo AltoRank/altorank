@@ -43,8 +43,15 @@ export function OnboardingProgress({
   const [state, setState] = useState<OnboardingState>(initialOnboardingState);
   const [closed, setClosed] = useState(false);
   const handedOff = useRef(false);
+  // One run per mount. Under React StrictMode the effect fires twice in
+  // development, and aborting the first fetch does not stop the pipeline it
+  // already started on the server - two crawls, two DataForSEO bills, and a
+  // race on "does this workspace already have a draft".
+  const started = useRef(false);
 
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
     const controller = new AbortController();
 
     (async () => {
@@ -162,7 +169,7 @@ function StepRow({ step }: { step: OnboardingStep }) {
       </span>
       <div className="min-w-0">
         <div className={`text-[13px] ${muted ? "text-ink-3" : "text-ink"}`}>{label}</div>
-        {step.detail && step.status !== "active" && (
+        {step.detail && (
           <div className={`mt-0.5 text-[12px] leading-relaxed ${step.status === "failed" ? "text-err-ink" : "text-ink-3"}`}>
             {step.detail}
           </div>

@@ -65,11 +65,26 @@ export async function POST(request: NextRequest) {
         }
       };
 
+      // Keep the connection audibly alive through the quiet stretches. The
+      // model call inside the draft phase can go 60-120s without a boundary to
+      // report, and a proxy that sees no bytes for that long closes the
+      // socket - which the client reads as "the run ended" and hands off
+      // while the draft is still being written. An SSE comment line is
+      // invisible to the parser and enough to keep every intermediary happy.
+      const heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(": keepalive\n\n"));
+        } catch {
+          clearInterval(heartbeat);
+        }
+      }, 15_000);
+
       try {
         await runOnboarding(supabase, workspace as never, send);
       } catch (err) {
         send({ phase: "error", detail: err instanceof Error ? err.message : "Onboarding failed" });
       } finally {
+        clearInterval(heartbeat);
         try {
           controller.close();
         } catch {
