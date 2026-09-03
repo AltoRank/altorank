@@ -28,10 +28,17 @@
 # Removed 2026-08-22. Both were templated industry pages carrying only ~110-130
 # words of unique copy: /for/saas is off-ICP (the ICP is agencies broadly with
 # e-commerce as the lead vertical) and /for/agencies restated the homepage pitch.
-# /for/ecommerce survives, so these go to the home page rather than to it, which
-# would send a SaaS or agency visitor to a store-specific page.
+# /for/ecommerce survives, so /for/saas goes to the home page rather than to it,
+# which would send a SaaS visitor to a store-specific page.
 /for/saas              /                             301
-/for/agencies          /                             301
+# Repointed 2026-09-02. /agency-blueprint is now the agency page in substance:
+# it carries the workspace, white-label, roles and approval detail plus the
+# first-party scan, so an agency visitor belongs there rather than on the home
+# page. Deliberately NOT renaming /agency-blueprint itself: the URL has been
+# sent to prospects as an outreach artifact, it is paired with /it/agency-blueprint
+# via hreflang, and a slug is a far weaker signal than the title and body it
+# would cost two more redirects to change.
+/for/agencies          /agency-blueprint             301
 
 # /integrations/* removed 2026-08-22: three templated pages of 120-141 unique
 # words each. The home page carries the integrations feature block, so it is the

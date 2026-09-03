@@ -1,6 +1,7 @@
 ---
 import Logo from '@/components/shared/Logo.astro';
 import { APP_NAME, LEGAL_ENTITY } from '@/constants';
+import { chrome, linkLabel } from '@/lib/i18n';
 
 const footerLinks = {
   Product: [
@@ -26,6 +27,14 @@ const footerLinks = {
   ],
 };
 
+interface Props {
+  /** Page language, forwarded by Marketing. Unknown values fall back to English. */
+  lang?: string;
+}
+
+const { lang } = Astro.props;
+const t = chrome(lang);
+
 const year = new Date().getFullYear();
 ---
 
@@ -37,13 +46,12 @@ const year = new Date().getFullYear();
           <Logo size={15} />
         </a>
         <p class="mt-3 text-[13px] text-ink-3 leading-relaxed">
-          The open-source AI SEO content engine. Research, write, and publish,
-          with an editor's approval on everything that ships.
+          {t.tagline}
         </p>
       </div>
       {Object.entries(footerLinks).map(([group, links]) => (
         <div>
-          <h3 class="text-[13px] font-semibold text-ink">{group}</h3>
+          <h3 class="text-[13px] font-semibold text-ink">{t.groups[group] ?? group}</h3>
           <ul class="mt-3 space-y-2">
             {links.map((link) => (
               <li>
@@ -51,7 +59,7 @@ const year = new Date().getFullYear();
                   href={link.href}
                   class="inline-flex min-h-[32px] items-center text-[14px] text-ink-2 transition-colors hover:text-ink md:min-h-0 md:text-[13px]"
                 >
-                  {link.label}
+                  {linkLabel(t, link.href, link.label)}
                 </a>
               </li>
             ))}
@@ -75,16 +83,16 @@ const year = new Date().getFullYear();
         renders this footer at build time and the site is static, so the anchor
         is in the response body rather than added by script afterwards. */}
     <div class="mt-10 flex flex-col items-center gap-3 border-t border-line pt-6 text-center text-xs text-ink-3 sm:flex-row sm:justify-between sm:text-left">
-      <p>&copy; {year} {APP_NAME}. All rights reserved.</p>
+      <p>&copy; {year} {APP_NAME}. {t.rights}</p>
       <p>
-        A product of{' '}
+        {t.productOf}{' '}
         <a
           href={LEGAL_ENTITY.parentUrl}
           target="_blank"
           rel="noopener noreferrer"
           class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink"
         >{LEGAL_ENTITY.parentLabel}</a>{' '}
-        &middot; {LEGAL_ENTITY.name}, {LEGAL_ENTITY.country} &middot; VAT {LEGAL_ENTITY.vat}
+        &middot; {LEGAL_ENTITY.name}, {LEGAL_ENTITY.country} &middot; {t.vat} {LEGAL_ENTITY.vat}
       </p>
       <div class="flex shrink-0 items-center gap-3 [&>a]:block [&>a>img]:h-7 [&>a>img]:w-auto">
         <a href="https://www.tinyshelf.co/?ref=altorank.co" title="Featured on tinyshelf">

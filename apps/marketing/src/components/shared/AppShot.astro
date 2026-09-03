@@ -20,7 +20,19 @@
  */
 
 // Trimmed to what clears the fold. Full list lives in DASHBOARD_NAV.
-const NAV = [
+//
+// Annotated rather than inferred: most items omit `active` and `tagNew`, so the
+// inferred type is a union in which neither property exists on every member and
+// both reads below fail to typecheck.
+interface NavItem {
+  label: string;
+  /** Key into ICONS below. */
+  icon: string;
+  active?: boolean;
+  tagNew?: boolean;
+}
+
+const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: 'Overview',
     items: [

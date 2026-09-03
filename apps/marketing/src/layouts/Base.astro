@@ -28,6 +28,15 @@ const {
   alternateLanguages,
 } = Astro.props;
 
+// hreflang must resolve to the SAME URL as the canonical, or the annotation
+// points at a redirect and the pair is weaker than it looks. Canonicals here
+// carry a trailing slash: astro.config.ts leaves `trailingSlash` at the default
+// and the build is directory-format, so `Astro.url.href` ends in "/". Pages
+// author their alternates as `${SITE_URL}/path` with no slash, so normalise in
+// one place rather than trusting six call sites (and every future one) to
+// remember.
+const withTrailingSlash = (href: string) => (href.endsWith('/') ? href : `${href}/`);
+
 const siteName = APP_NAME;
 
 // Cloudflare Web Analytics, env-driven so the token can rotate without a
@@ -123,7 +132,7 @@ const allSchemas = [...sitewideSchemas, ...pageSchemas];
     <meta name="description" content={description} />
     <link rel="canonical" href={canonicalUrl} />
     {alternateLanguages?.map((alt) => (
-      <link rel="alternate" hreflang={alt.hreflang} href={alt.href} />
+      <link rel="alternate" hreflang={alt.hreflang} href={withTrailingSlash(alt.href)} />
     ))}
     {noindex && <meta name="robots" content="noindex, nofollow" />}
 

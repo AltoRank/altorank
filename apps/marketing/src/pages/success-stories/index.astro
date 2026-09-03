@@ -5,15 +5,20 @@ import { getCollection } from 'astro:content';
 
 const stories = (await getCollection('success-stories', ({ data }) => !data.draft))
   .sort((a, b) => b.data.publishDate.valueOf() - a.data.publishDate.valueOf());
+// Both stories are correctly draft:true (no real customers yet), so this hub
+// renders empty at 269 words. Keep it reachable but out of the index until
+// there is a real story to show.
+//
+// Kept in the frontmatter: a {/* … */} comment inside the component's attribute
+// list makes `astro check` report an unterminated string literal at the closing
+// tag.
+const NOINDEX = true;
 ---
 
 <Marketing
   title="Success Stories | AltoRank"
   description="Worked examples of the AltoRank content workflow, from keyword research through to an approved, published article."
-  {/* Both stories are correctly draft:true (no real customers yet), so this hub
-      renders empty at 269 words. Keep it reachable but out of the index until
-      there is a real story to show. */}
-  noindex={true}
+  noindex={NOINDEX}
 >
   <section class="border-b border-line py-[88px]">
     <div class="mx-auto max-w-[1240px] px-8">

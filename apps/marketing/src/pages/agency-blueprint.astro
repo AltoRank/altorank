@@ -82,6 +82,34 @@ const OUTCOMES = [
   'A software cost that is your infrastructure bill rather than a per-seat line that grows against you as you win clients.',
 ];
 
+// The agency operations layer, described feature by feature. Deliberately does
+// NOT frame white-label or multi-tenant as Agency-tier perks: pricing.ts is
+// explicit that under AGPL nothing is gated, and the Self-host card already
+// lists both. What the paid rung actually sells is volume, marginal cost,
+// roles, and support. Every figure here is read from data/pricing.ts.
+const AGENCY_LAYER = [
+  {
+    title: 'One workspace per client, and workspaces are not the meter',
+    body: 'Each client gets an isolated workspace carrying its own site, keyword set, voice profile, and publishing destination. Nothing is shared between them unless you share it. The Agency tier does not cap how many you run, so taking on a client costs nothing until that client\u2019s articles are actually produced. Managed stops at three workspaces, which is the honest line between one operator and a roster.',
+  },
+  {
+    title: 'White-label is ungated, including in the free build',
+    body: 'The logo, accent colour, custom domain, and the address monthly reports are sent from are account-level settings, applied to everything a client sees. This is not an upsell: under the licence there are no feature gates, so the self-hosted build carries the same white-label and multi-tenant capability as the paid rungs. Anyone selling you client-facing branding as a premium tier is charging for something we do not gate.',
+  },
+  {
+    title: 'Three roles, so a writer cannot rebrand the account',
+    body: 'Owner, admin, and editor. Editors draft, review, and approve content but cannot touch billing, branding, or the client roster, and changing white-label settings is restricted to owner and admin. That is the split that matters once a junior writer is working inside a live client brand rather than a sandbox.',
+  },
+  {
+    title: 'Approval sits inside publish, with optional client sign-off',
+    body: 'The gate is part of the publish step rather than a status field beside it, so scheduled jobs and bulk actions cannot route around it, and publishing defaults to draft. Add the client as a reviewer and the trail records who approved which version and when, which is the artifact you want when a client asks why a page went live.',
+  },
+  {
+    title: 'Per-client voice, eleven publishing destinations',
+    body: 'Every workspace trains its own voice profile from that client\u2019s existing writing, so output does not converge on one house style across the roster. Publishing targets WordPress, Shopify, WooCommerce, Magento, Webflow, Ghost, Wix, HubSpot, Notion, Framer, or a git repository, which covers most of what a mixed client base actually runs.',
+  },
+];
+
 const FAQS = [
   {
     question: 'Is this available today?',
@@ -102,6 +130,22 @@ const FAQS = [
     answer: 'Self-hosting it and running it as-is for your own clients carries no publication obligation. Using the software commercially and on behalf of clients is exactly what the licence permits. The obligation only triggers if you modify the source and then offer that modified version to others over a network. Running an agency on it is free and unencumbered.',
   },
   {
+    question: 'Do you charge per client workspace or per seat?',
+    answer: 'Neither. Metering is on articles published and on who pays the model and data bill. The Agency tier at \u20ac199 a month includes 400 articles and an unlimited number of workspaces, with role-based permissions for your team included rather than priced per user. Winning a client should not increase your software bill before that client has produced anything.',
+  },
+  {
+    question: 'What happens if I publish more than 400 articles in a month?',
+    answer: 'Each additional article is \u20ac0.45. There is no forced jump to a higher tier and no overage penalty, because the marginal cost is a real model and data cost rather than a pricing lever. On Managed the same overage is \u20ac0.60, so the Agency rung lowers your marginal cost as well as raising the included volume.',
+  },
+  {
+    question: 'Is white-label reporting locked to the Agency tier?',
+    answer: 'No, and this is worth being precise about because most tools in this category do lock it. White-label branding and multi-client workspaces are ungated, including in the free self-hosted build. The paid rungs sell hosting, included model and data costs, volume, roles, and support, not access to client-facing branding.',
+  },
+  {
+    question: 'Can a client approve their own content before it goes live?',
+    answer: 'Yes. Client sign-off is an optional second gate on top of your own editorial approval, and publishing defaults to draft either way. The audit trail records which version was approved and by whom, so the answer to \u201cwho signed off on this page\u201d is a record rather than a memory.',
+  },
+  {
     question: 'Why would you give away the parts other tools charge for?',
     answer: 'Because the code is not the moat. Competitors have shipped the same features and the category is well served. What we do not have is distribution or a reason for an agency to trust a tool with no track record. Shipping everything open is how we buy both, and the licence is what stops a competitor from taking it and closing it.',
   },
@@ -109,9 +153,9 @@ const FAQS = [
 
 const structuredData = [
   buildArticleSchema({
-    title: `The agency blueprint: what ${APP_NAME} is building, and what it is for`,
+    title: `White-label SEO content software for agencies: the ${APP_NAME} blueprint`,
     description:
-      'The problem AltoRank is tackling for agencies, the approach, the outcome an agency can resell, and what it costs. Written for agencies weighing whether to build an AI-search offer.',
+      'Multi-client workspaces, ungated white-label, and an approval gate before anything publishes. The problem AltoRank is tackling for agencies, the approach, the outcome you can resell, and what it costs.',
     publishDate,
     dateModified,
     author: AUTHOR_NAME,
@@ -124,8 +168,8 @@ const structuredData = [
 ---
 
 <PSEO
-  title="The agency blueprint: problem, approach, outcome, price"
-  description="What AltoRank is building for agencies and why: the problem, the approach, the outcome you can resell, and what it costs. Includes first-party data from a scan of 1,758 agency sites."
+  title="White-label SEO content software for agencies"
+  description="Multi-client workspaces, ungated white-label, approval before publish. What AltoRank is building for agencies, what it costs, and data from 1,758 agency sites."
   breadcrumbs={breadcrumbs}
   structuredData={structuredData}
   alternateLanguages={[
@@ -254,6 +298,34 @@ const structuredData = [
           </p>
         </div>
       </div>
+    </div>
+  </section>
+
+  {/* AGENCY LAYER */}
+  <section class="border-b border-line py-[72px]">
+    <div class="mx-auto max-w-[760px] px-8">
+      <h2 class="mb-3 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
+        How the agency layer works
+      </h2>
+      <p class="mb-8 text-[15.5px] leading-relaxed text-ink-2">
+        The parts that exist because a roster is not one site repeated. Workspaces,
+        branding, roles, and the approval trail, described as they are actually built
+        rather than as a feature grid.
+      </p>
+      <div class="flex flex-col gap-3">
+        {AGENCY_LAYER.map((a) => (
+          <div class="rounded-xl border border-line bg-bg p-5">
+            <h3 class="mb-1.5 text-[16px] font-semibold tracking-[-0.015em] text-ink">{a.title}</h3>
+            <p class="text-[14.5px] leading-relaxed text-ink-2">{a.body}</p>
+          </div>
+        ))}
+      </div>
+      <p class="mt-6 rounded-xl border border-line bg-panel-2 p-5 text-[14.5px] leading-relaxed text-ink-2">
+        Put in roster terms: the Agency tier's 400 included articles is roughly 26 a month
+        across a fifteen-client book, or 40 across ten, before a single overage euro. The
+        constraint you will hit first is editorial review capacity, not the plan, which is
+        the constraint we would rather you hit.
+      </p>
     </div>
   </section>
 

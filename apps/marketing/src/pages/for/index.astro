@@ -14,14 +14,19 @@ const structuredData = [
     })),
   ),
 ];
+// Thin templated hub (327 rendered words). Useful as navigation, not as an
+// index entry, until the industry pages carry real depth.
+//
+// Kept in the frontmatter: a {/* … */} comment inside the component's attribute
+// list makes `astro check` report an unterminated string literal at the closing
+// tag.
+const NOINDEX = true;
 ---
 
 <Marketing
   title={`${APP_NAME} by industry`}
-  description={`How ${APP_NAME} works for the teams that use it: marketing agencies, e-commerce stores, and SaaS companies.`}
-  {/* Thin templated hub (327 rendered words). Useful as navigation, not as an
-      index entry, until the industry pages carry real depth. */}
-  noindex={true}
+  description={`How ${APP_NAME} works for e-commerce stores on Shopify, Magento, and WooCommerce.`}
+  noindex={NOINDEX}
   structuredData={structuredData}
 >
   <section class="border-b border-line py-[88px]">
