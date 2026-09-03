@@ -18,7 +18,15 @@
  */
 export const OBSERVED_SECONDS_PER_ARTICLE = 103;
 
-/** The route's `maxDuration`. Restated here so the cap can be checked against it. */
+/**
+ * The route's `maxDuration`, restated so the cap can be checked against it.
+ *
+ * Restated rather than imported the other way round because route segment
+ * config is read statically: `export const maxDuration = RUN_BUDGET_SECONDS`
+ * fails the build with "Invalid segment configuration export detected". The
+ * duplication is real, so a test reads the literal out of the route file and
+ * fails if the two drift.
+ */
 export const RUN_BUDGET_SECONDS = 300;
 
 /**

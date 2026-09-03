@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import {
   orderByStaleness,
@@ -92,6 +93,19 @@ describe("MAX_ARTICLES_PER_RUN", () => {
     // above the mean, so require room for a 40% slower one.
     const slowest = OBSERVED_SECONDS_PER_ARTICLE * 1.4;
     expect(MAX_ARTICLES_PER_RUN * slowest).toBeLessThan(RUN_BUDGET_SECONDS);
+  });
+
+  it("agrees with the maxDuration the route actually declares", () => {
+    // The one place this budget is duplicated, because Next reads segment
+    // config statically and will not take an imported constant. Reading the
+    // literal keeps the "keep in step" comment enforceable.
+    const route = readFileSync(
+      new URL("../../app/api/cron/generate/route.ts", import.meta.url),
+      "utf8",
+    );
+    const declared = route.match(/export const maxDuration = (\d+)/)?.[1];
+    expect(declared).toBeDefined();
+    expect(Number(declared)).toBe(RUN_BUDGET_SECONDS);
   });
 
   it("still writes more than one article per run", () => {

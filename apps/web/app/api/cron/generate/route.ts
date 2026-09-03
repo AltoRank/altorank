@@ -9,7 +9,6 @@ import {
   orderByStaleness,
   latestPerWorkspace,
   MAX_ARTICLES_PER_RUN,
-  RUN_BUDGET_SECONDS,
 } from "@/lib/content/generate-queue";
 
 /**
@@ -67,9 +66,11 @@ import {
  * account. Spend follows articles written, not runs.
  */
 
-// Kept in step with RUN_BUDGET_SECONDS, which MAX_ARTICLES_PER_RUN is derived
-// from and a test checks against.
-export const maxDuration = RUN_BUDGET_SECONDS;
+// A literal, and it has to be: route segment config is read statically, so
+// `= RUN_BUDGET_SECONDS` fails the build with "Invalid segment configuration
+// export detected". Kept in step with that constant, which MAX_ARTICLES_PER_RUN
+// is derived from, by a test that reads this line rather than by hoping.
+export const maxDuration = 300;
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
