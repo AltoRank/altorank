@@ -265,9 +265,29 @@ export function buildTopicalProfile(
 
   const weighted: Record<string, number> = {};
   const fragmentCount: Record<string, number> = {};
+  /**
+   * Tokens the site writes as words in their own right.
+   *
+   * `tokenize` splits on every non-alphanumeric, so a hyphenated compound is
+   * indistinguishable from two words: "first-party data" contributes "first"
+   * and "party" exactly as "first party data" would. The halves then sit in the
+   * vocabulary claiming the site talks about them, and the rarer the half, the
+   * higher IDF scores it.
+   *
+   * A token earns its place by appearing at least once outside a compound.
+   * "party" never does on altorank.co - only "first-party" and "third-party" -
+   * while "search", "google" and "keyword" appear alone constantly.
+   */
+  const standalone = new Set<string>();
 
   for (const { text, weight } of fragments) {
     const tokens = tokenize(text);
+    // Whitespace-delimited words; anything with an internal separator is a
+    // compound, and its pieces do not count as standalone use.
+    for (const word of decodeEntities(text).toLowerCase().split(/\s+/)) {
+      const parts = word.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+      if (parts.length === 1) standalone.add(parts[0]);
+    }
     for (const token of tokens) weighted[token] = (weighted[token] ?? 0) + weight;
     // Count each term once per fragment, so a word repeated inside one heading
     // does not look like a word used all over the site.
@@ -292,6 +312,13 @@ export function buildTopicalProfile(
     // a word in every fragment is the nav bar even when it sits in the h1.
     const positioning = signature.has(token) && share <= SIGNATURE_MAX_SHARE;
     if (filter && share > BOILERPLATE_SHARE && !positioning) continue; // nav, footer, function words
+
+    // A word the site only ever writes inside a compound is not a word the
+    // site uses. "party" reached the vocabulary at strength 0.78 purely from
+    // "first-party data" and "third-party signals", and carried "search party"
+    // - 60,500 searches a month, about a search party - to the top of the
+    // queue. Neither page is about parties.
+    if (filter && !standalone.has(token) && !signature.has(token)) continue;
 
     // Inverse document frequency, the standard weighting for exactly this.
     //
