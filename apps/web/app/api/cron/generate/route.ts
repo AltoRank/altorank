@@ -5,6 +5,9 @@ import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { profileIsUsable } from "@/lib/seo/topical-profile";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { generateArticle } from "@/lib/content/generate";
+import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
+import { agencyRecipients } from "@/lib/email/agency-recipients";
+import { sendArticleDraftedEmails } from "@/lib/email/article-emails";
 import {
   orderByStaleness,
   latestPerWorkspace,
@@ -131,7 +134,9 @@ export async function GET(request: Request) {
 
     const workspaceId = ws.id as string;
     const domain = (ws.domain as string | null) ?? null;
-    const limit = (ws.auto_generate_weekly_limit as number) ?? 2;
+    // Falls back to the same number the column now defaults to (042), so a
+    // row written before that migration is not quietly held at the old 2.
+    const limit = (ws.auto_generate_weekly_limit as number) ?? PAID_DEFAULT_PACE;
 
     try {
       if (limit <= 0) {
@@ -227,13 +232,42 @@ export async function GET(request: Request) {
       // time but produced nothing, and the bound is on articles written.
       written += 1;
 
+      // Announce it. A draft nobody is told about is the failure mode this
+      // whole schedule creates: four runs a day writing into a queue that only
+      // shows itself to someone who opens the dashboard.
+      //
+      // After the article is saved, and never allowed to fail the run. The
+      // work is done and the row exists; an unreachable mail provider must not
+      // turn that into an "error" the operator has to investigate, and must not
+      // cost the workspace its weekly slot. The outcome is reported instead.
+      let notified = "";
+      try {
+        const to = await agencyRecipients(supabase, ws.agency_id as string);
+        const out = await sendArticleDraftedEmails(to, {
+          domain,
+          keyword: next.term,
+          title: result.title,
+          wordCount: result.wordCount,
+          verdict: result.factCheck.verdict,
+          reasons: next.reasons,
+          articleId: result.articleId,
+        });
+        notified = out.failed
+          ? `, emailed ${out.sent}/${to.length} (${out.lastError ?? "failed"})`
+          : out.sent
+            ? `, emailed ${out.sent}`
+            : ", nobody to email";
+      } catch (err) {
+        notified = `, email failed (${err instanceof Error ? err.message : "unknown"})`;
+      }
+
       results.push({
         workspaceId,
         domain,
         status: "generated",
         keyword: next.term,
         articleId: result.articleId,
-        detail: `${result.wordCount} words, fact check ${result.factCheck.verdict}, chosen because ${next.reasons[0]}`,
+        detail: `${result.wordCount} words, fact check ${result.factCheck.verdict}, chosen because ${next.reasons[0]}${notified}`,
       });
     } catch (err) {
       results.push({
