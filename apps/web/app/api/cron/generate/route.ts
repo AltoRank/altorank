@@ -215,6 +215,10 @@ export async function GET(request: Request) {
         workspaceId,
         keyword: next.term,
         autonomous: true,
+        // Explicitly nobody, matching the getQuota call above. Without this the
+        // gate inside generateArticle resolves its own answer and can reach a
+        // different verdict for the same agency.
+        callerEmail: null,
         // Carry the rationale onto the draft. It used to reach the reviewer
         // only as reasons[0] inside an activity-log line, which is the wrong
         // place: the person deciding whether to publish is looking at the
