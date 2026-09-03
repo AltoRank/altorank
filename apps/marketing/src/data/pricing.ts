@@ -84,8 +84,12 @@ export const PLANS = [
     // function, not a view about publishing, and it has been lifted - four runs
     // a day, so the binding limit is `auto_generate_weekly_limit`, which is the
     // customer's own setting. Hence "at the pace you set" rather than a
-    // frequency we would have to keep true. Note the default weekly limit is 2,
-    // so an untouched workspace still writes about 9 a month.
+    // frequency we would have to keep true - and since migration 041 there is
+    // a control on each site's Settings tab that actually sets it, which that
+    // sentence had been describing for a while without one existing. Choosing
+    // a plan raises a site from the free tier's 1 a week to 7, about 30 a
+    // month; the ceiling is 25 a week, about 108, so a single site can reach
+    // the included 100 if someone turns it up.
     // Keep in step with PLAN_ARTICLE_LIMITS and the cadence in app/api/cron/generate.
 
     features: [

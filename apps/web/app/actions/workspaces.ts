@@ -7,6 +7,7 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { z } from "zod";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
 import { getWorkspaceAllowance, workspaceLimitMessage } from "@/lib/billing/workspaces";
+import { MAX_PACE, normalisePace, PAID_DEFAULT_PACE } from "@/lib/content/pace";
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1),
@@ -84,6 +85,38 @@ export async function updateWorkspace(id: string, formData: FormData) {
   revalidatePath("/articles");
 }
 
+/**
+ * How many articles a week the unattended generator may write for one site.
+ *
+ * The pricing page sells "at the pace you set per site" and until this action
+ * there was no way to set it: the value was only ever written by signup, by
+ * the Google property import and by activating a workspace, all to a fixed
+ * number. `MAX_PACE` is what migration 041 allows, and 0 pauses the site
+ * without turning `auto_generate` off, which keeps the distinction between
+ * "not now" and "never" visible in the row.
+ */
+export async function setGenerationPace(workspaceId: string, requested: unknown) {
+  const { agencyId } = await requireAuth();
+  const pace = normalisePace(requested);
+  if (pace === null) {
+    throw new Error(`Pick a number of articles a week between 0 and ${MAX_PACE}.`);
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("workspaces")
+    .update({ auto_generate_weekly_limit: pace })
+    .eq("id", workspaceId)
+    // Defence in depth over RLS, and the reason this is not a bare update:
+    // the id arrives from the browser.
+    .eq("agency_id", agencyId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/workspaces/${workspaceId}`);
+  revalidatePath("/dashboard");
+  return pace;
+}
+
 export async function activateWorkspace(id: string) {
   await requireAuth();
   const supabase = await createClient();
@@ -93,7 +126,7 @@ export async function activateWorkspace(id: string) {
   // nothing else (2026-09-02). Two drafts a week is the default cadence.
   const { error } = await supabase
     .from("workspaces")
-    .update({ status: "on", auto_generate: true, auto_generate_weekly_limit: 2 })
+    .update({ status: "on", auto_generate: true, auto_generate_weekly_limit: PAID_DEFAULT_PACE })
     .eq("id", id)
     .eq("status", "setup"); // guard: only transition from setup
 

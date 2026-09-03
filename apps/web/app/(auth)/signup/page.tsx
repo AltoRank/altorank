@@ -5,6 +5,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { sendSignupConfirmation } from "@/lib/email/auth-emails";
 import { authErrorMessage } from "@/lib/auth/errors";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
+import { FREE_TIER_PACE } from "@/lib/content/pace";
 import { normalizeDomain, DOMAIN_PATTERN } from "@/lib/growth-plan/build";
 
 export const metadata: Metadata = {
@@ -98,9 +99,11 @@ async function signUp(formData: FormData) {
         // The free draft is delivered by the generate cron, which only
         // writes for opted-in workspaces. A workspace created at signup is
         // the opt-in: the person typed their domain to get exactly this.
-        // Bounded by FREE_DRAFTS until they choose a plan.
+        // Bounded by FREE_DRAFTS until they choose a plan, which is why the
+        // pace is one a week and not more: the quota would refuse the rest.
+        // The Stripe webhook raises it when they subscribe.
         auto_generate: true,
-        auto_generate_weekly_limit: 1,
+        auto_generate_weekly_limit: FREE_TIER_PACE,
       });
       // Not fatal: the account exists, and the dashboard asks for a domain if
       // there is no workspace. Log it so a silent miss here is findable.
