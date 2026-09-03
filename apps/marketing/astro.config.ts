@@ -44,6 +44,11 @@ const NOINDEX_ROUTES = ['privacy', 'terms', 'success-stories', 'for'];
 
 export default defineConfig({
   site: 'https://altorank.co',
+
+  // Astro 7 changed the default to 'jsx', which strips whitespace between
+  // inline elements. On a copy-heavy site that silently reflows rendered text,
+  // so this keeps the v5/v6 behaviour. Revisit deliberately, not by upgrade.
+  compressHTML: true,
   output: 'static',
   vite: {
     plugins: [tailwindcss()],
