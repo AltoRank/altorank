@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getArticle } from "@/lib/queries/articles";
 import { getWorkspace } from "@/lib/queries/workspaces";
+import { getIntegrations } from "@/lib/queries/integrations";
 import { getPublishingCadence } from "@/lib/queries/schedule";
 import { PageHead, DotSep, StatusPill } from "@/components/ui";
 import { ArticleEditor } from "@/components/dashboard/editor/article-editor";
@@ -32,12 +33,15 @@ export default async function ArticleEditorPage({ params }: Props) {
   // after the other they cost three round trips on the route the editor lives
   // behind; the article and workspace lookups above genuinely are a chain,
   // since each supplies the next one's id.
-  const [cadence, needsPlan, destinations] = await Promise.all([
+  const [cadence, needsPlan, destinations, integrations] = await Promise.all([
     getPublishingCadence(workspace.id),
     needsPlanToShip(supabase, workspace.agency_id),
     // The connected CMSs decide whether the editor offers a Publish button.
     // `articles.cms` used to, and nothing set it for a generated draft.
     getDestinations(supabase, workspace.id),
+    // The catalogue rows, so the editor can open the connection dialog in
+    // place instead of sending an unsaved draft to /connect.
+    getIntegrations(),
   ]);
 
   const dateStr = article.updated_at
@@ -68,6 +72,7 @@ export default async function ArticleEditorPage({ params }: Props) {
         cadence={cadence}
         needsPlan={needsPlan}
         destinations={destinations}
+        integrations={integrations}
       />
     </>
   );
