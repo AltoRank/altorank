@@ -1,6 +1,7 @@
-import type { CMSAdapter } from "./types";
+import type { AdapterContext, CMSAdapter } from "./types";
 import type { CMSConfig } from "@/lib/types";
 import { WordPressAdapter } from "./wordpress";
+import { WordPressPluginAdapter } from "./wordpress-plugin";
 import { ShopifyAdapter } from "./shopify";
 import { MagentoAdapter } from "./magento";
 import { WebflowAdapter } from "./webflow";
@@ -13,10 +14,17 @@ import { WooCommerceAdapter } from "./woocommerce";
 import { WebhookAdapter } from "./webhook";
 import { GitAdapter } from "./git";
 
-export function resolveCMSAdapter(config: CMSConfig): CMSAdapter {
+/**
+ * `context` carries what an adapter may report back while it works - today
+ * only the webhook's per-attempt delivery hook. Optional, because most callers
+ * (connection tests, unpublish) have nowhere to put it.
+ */
+export function resolveCMSAdapter(config: CMSConfig, context: AdapterContext = {}): CMSAdapter {
   switch (config.type) {
     case "wordpress":
       return new WordPressAdapter(config);
+    case "wordpress-plugin":
+      return new WordPressPluginAdapter(config);
     case "shopify":
       return new ShopifyAdapter(config);
     case "magento":
@@ -38,7 +46,7 @@ export function resolveCMSAdapter(config: CMSConfig): CMSAdapter {
     case "git":
       return new GitAdapter(config);
     case "webhook":
-      return new WebhookAdapter(config);
+      return new WebhookAdapter(config, context);
     default:
       throw new Error(`Unsupported CMS type: ${(config as { type: string }).type}`);
   }
