@@ -8,6 +8,9 @@ import { getTrafficSeries, type TrafficSeries } from "@/lib/queries/traffic";
 import { getBingSummary } from "@/lib/queries/bing";
 import { PageHead, DotSep, StatusPill, Avatar, Icons, Button, Chip, Card, StatStrip, ConnectPrompt } from "@/components/ui";
 import { ClientActions } from "@/components/dashboard/client-actions";
+import { ShareResults } from "@/components/dashboard/share-results";
+import { getShareCardFacts } from "@/lib/queries/share";
+import { buildShareCard } from "@/lib/share/card";
 import { WorkspaceGrid } from "@/components/dashboard/workspace-grid";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
@@ -144,7 +147,7 @@ export default async function DashboardPage() {
     .eq("integration_id", "gsc");
   if (scopeId) gscQuery = gscQuery.eq("workspace_id", scopeId);
 
-  const [workspaces, allArticles, recent, traffic, keywords, { count: gscCount }, bing] =
+  const [workspaces, allArticles, recent, traffic, keywords, { count: gscCount }, bing, shareFacts] =
     await Promise.all([
       getWorkspaces(),
       getArticles(scopeId ?? undefined),
@@ -155,6 +158,8 @@ export default async function DashboardPage() {
       // Bing, kept beside the chart rather than in it: two engines summed into
       // one line would be a number that describes neither.
       getBingSummary(scopeId ?? undefined),
+      // The share card: measured facts for this site, or nothing to share.
+      scopeId ? getShareCardFacts(scopeId) : Promise.resolve(null),
     ]);
   const gscConnected = (gscCount ?? 0) > 0;
 
@@ -212,6 +217,9 @@ export default async function DashboardPage() {
         }
         actions={
           <>
+            {shareFacts && scopeId && (
+              <ShareResults card={buildShareCard(shareFacts)} ogPath={`/api/og/workspace/${scopeId}`} />
+            )}
             <ClientActions />
           </>
         }
