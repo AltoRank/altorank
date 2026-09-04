@@ -5,7 +5,7 @@ import { INTEGRATIONS, DOCUMENTED } from '@/data/integrations';
 import { buildItemListSchema, buildBreadcrumbSchema } from '@/lib/schema';
 import { APP_NAME, SITE_URL, PRIMARY_CTA, OSS_REPO_URL } from '@/constants';
 
-const undocumented = INTEGRATIONS.filter((i) => !i.documented && !i.soon);
+const soon = INTEGRATIONS.filter((i) => i.soon);
 
 const breadcrumbs = [
   { label: 'Home', href: '/' },
@@ -59,13 +59,18 @@ const structuredData = [
         ))}
       </div>
 
+      <div class="mb-8 rounded-lg border border-accent bg-accent-soft/40 p-5">
+        <a href="/docs/mcp" class="text-[15.5px] font-semibold text-ink hover:text-accent-ink">MCP server: drive it from an AI agent &rarr;</a>
+        <p class="mt-1.5 text-[14px] leading-relaxed text-ink-2">
+          Four tools for auditing AI readability across a roster, and no publish tool. The autopilot
+          tools ship a CLI at best.
+        </p>
+      </div>
+
       <p class="text-[14.5px] leading-relaxed text-ink-3">
-        {undocumented.map((i) => i.name).join(', ')} are set up the same way inside the app and are
-        listed with their authentication method on{' '}
-        <a href="/integrations" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
-          the integrations page
-        </a>. Written guides for those are still to come; rather than publish four thin pages to fill a
-        nav, this page lists what exists.
+        Every connector we ship has a guide. {soon.map((i) => i.name).join(', ')} {soon.length === 1 ? 'is' : 'are'} shipping
+        next and {soon.length === 1 ? 'gets a guide' : 'get guides'} when {soon.length === 1 ? 'it lands' : 'they land'} &mdash;
+        see <a href="/integrations" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">the integrations page</a> for the full list.
       </p>
 
       <div class="mt-10 flex flex-wrap gap-2.5">

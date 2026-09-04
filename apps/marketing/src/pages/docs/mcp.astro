@@ -1,0 +1,119 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildHowToSchema, buildFAQSchema } from '@/lib/schema';
+import { APP_NAME, PRIMARY_CTA, OSS_REPO_URL } from '@/constants';
+
+// The MCP page. This is the one place the category has no answer: the
+// autopilot tools ship a CLI at best. Everything on this page is read from
+// apps/web/scripts/mcp.ts - the four tool names are the four registerTool()
+// calls, and the "no publish tool" claim is that file's own documented scope.
+// If a fifth tool is registered, add it here.
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Docs', href: '/docs' },
+  { label: 'MCP server', href: '/docs/mcp' },
+];
+
+const TOOLS = [
+  { name: 'altorank_check_readiness', desc: 'Run the nine AI-readability checks against a URL and return the per-signal result. This is the check an agent starts with, because a site that fails it cannot be cited no matter what you publish.' },
+  { name: 'altorank_propose_schema', desc: 'Propose the structured data a page is missing, as JSON-LD ready to paste or commit. Describes what the page is; it does not invent claims the page does not make.' },
+  { name: 'altorank_generate_machine_readable', desc: 'Generate the machine-readable artifacts an assistant needs to parse a site, from the crawl rather than from a template.' },
+  { name: 'altorank_readiness_report', desc: 'Produce the full readiness report for a site, the same artifact the dashboard renders, so an agent can hand a client a document without a human opening the app.' },
+];
+
+const STEPS = [
+  { name: 'Install it', text: `Clone ${OSS_REPO_URL} and install dependencies. The server is a stdio MCP server at apps/web/scripts/mcp.ts and runs with npm run mcp from apps/web.` },
+  { name: 'Register it with your agent', text: 'In Claude Code: claude mcp add altorank -- npx tsx apps/web/scripts/mcp.ts. Any MCP-compatible client works the same way; the transport is stdio.' },
+  { name: 'Point it at a roster', text: 'Ask your agent to check readiness across a list of domains and generate the fixes. The tools are namespaced altorank_* so they compose alongside other MCP servers in the same session.' },
+];
+
+const FAQ = [
+  { question: `Can an AI agent publish articles through ${APP_NAME}?`, answer: 'No, and that is deliberate rather than unfinished. The MCP server exposes no publish tool. Publishing needs per-workspace CMS credentials and a human approval, and an agent-triggered publish that bypasses the approval is precisely what the approval gate exists to prevent. Publishing will land here only when it can go through that gate rather than around it.' },
+  { question: 'Which tools does the server expose?', answer: `Four today: ${TOOLS.map((t) => t.name).join(', ')}. They cover the readiness-remediation loop - check a site, propose the structured data, generate the machine-readable artifacts, produce the report.` },
+  { question: 'Do I need a paid plan to use the MCP server?', answer: 'No. It is in the open-source build, so cloning the repo and bringing your own model key is enough. The managed plans exist for people who would rather not run infrastructure.' },
+  { question: 'Does it work with anything other than Claude Code?', answer: 'Yes. It is a standard MCP server over stdio, so any MCP-compatible client can register it. Claude Code is just the one the command above is written for.' },
+  { question: 'Why an MCP server rather than a REST API?', answer: 'Because the useful unit of work here is an agent session across a roster, not a single HTTP call. An agent can check twenty client sites, decide which fail, and generate the fixes without a human clicking through twenty dashboards. There is no public REST API today; if you need one, the repository is the honest starting point.' },
+];
+
+const structuredData = [
+  buildHowToSchema({ name: `Drive ${APP_NAME} from an AI agent with MCP`, description: 'Install and register the AltoRank MCP server so an agent can audit and remediate AI readability across a client roster.', steps: STEPS }),
+  buildFAQSchema(FAQ),
+];
+---
+
+<PSEO
+  title={`MCP Server: Drive ${APP_NAME} from Claude Code`}
+  description={`${APP_NAME} ships an MCP server so an AI agent can audit AI-readability across a client roster and generate the fixes. Four tools, no publish tool - the approval gate is architectural.`}
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Docs · For AI agents</p>
+      <h1 class="mb-5 text-[clamp(28px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+        Drive it from <span class="text-accent-ink">an AI agent</span>
+      </h1>
+      <p class="mb-7 text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        {APP_NAME} ships an MCP server, so &ldquo;point Claude at a client roster and it audits every
+        site and generates the fixes&rdquo; is a thing you can actually run. The readiness tooling makes
+        <em>client sites</em> readable by agents; this makes {APP_NAME} <em>itself</em> drivable by one.
+      </p>
+      <div class="mb-10 rounded-lg border border-line bg-panel p-5">
+        <p class="mb-2 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Register in Claude Code</p>
+        <code class="block overflow-x-auto whitespace-pre font-mono text-[13px] text-ink">claude mcp add altorank -- npx tsx apps/web/scripts/mcp.ts</code>
+      </div>
+
+      <h2 class="mb-4 text-[clamp(20px,3vw,26px)] font-semibold tracking-[-0.02em]">The tools it exposes</h2>
+      <div class="mb-10 overflow-hidden rounded-lg border border-line">
+        {TOOLS.map((t, i) => (
+          <div class={`p-5 ${i > 0 ? 'border-t border-line-soft' : ''}`}>
+            <code class="font-mono text-[13px] font-medium text-accent-ink">{t.name}</code>
+            <p class="mt-2 text-[14px] leading-relaxed text-ink-2">{t.desc}</p>
+          </div>
+        ))}
+      </div>
+
+      <div class="mb-10 rounded-lg border border-accent bg-accent-soft/40 p-5">
+        <h2 class="mb-2 text-[17px] font-semibold text-ink">There is no publish tool, on purpose</h2>
+        <p class="text-[14.5px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+          An agent can research, audit, propose schema and write a report. It cannot publish, because an
+          agent-triggered publish that bypasses a human approving the draft is exactly what the approval
+          gate exists to prevent. This is the difference between a gate you can switch off and one that
+          is not implemented in the first place.
+        </p>
+      </div>
+
+      <h2 class="mb-4 text-[clamp(20px,3vw,26px)] font-semibold tracking-[-0.02em]">Setup</h2>
+      <ol class="mb-4 flex flex-col gap-4">
+        {STEPS.map((s, i) => (
+          <li class="rounded-lg border border-line bg-panel p-5">
+            <div class="mb-1.5 flex items-baseline gap-2.5">
+              <span class="font-mono text-[12px] text-accent-ink">{i + 1}</span>
+              <span class="text-[15px] font-semibold text-ink">{s.name}</span>
+            </div>
+            <p class="text-[14px] leading-relaxed text-ink-2">{s.text}</p>
+          </li>
+        ))}
+      </ol>
+    </div>
+  </section>
+
+  <section class="border-b border-line bg-panel py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em]">Common questions</h2>
+      <div class="flex flex-col gap-2">
+        {FAQ.map((item) => (
+          <details class="group rounded-lg border border-line bg-bg">
+            <summary class="cursor-pointer list-none px-5 py-4 text-[15px] font-medium text-ink [&::-webkit-details-marker]:hidden">{item.question}</summary>
+            <p class="border-t border-line-soft px-5 py-4 text-[14.5px] leading-relaxed text-ink-2">{item.answer}</p>
+          </details>
+        ))}
+      </div>
+      <div class="mt-10 flex flex-wrap gap-2.5">
+        <Button href={OSS_REPO_URL} variant="secondary" size="lg" external>View the source</Button>
+        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
+      </div>
+    </div>
+  </section>
+</PSEO>

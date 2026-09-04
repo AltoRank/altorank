@@ -1,0 +1,117 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildFAQSchema, buildBreadcrumbSchema } from '@/lib/schema';
+import { INTEGRATIONS } from '@/data/integrations';
+import { APP_NAME, PRIMARY_CTA } from '@/constants';
+
+// The e-commerce landing page. The content existed but was scattered across
+// /for/ecommerce and three /geo/* Shopify guides with no page collecting it.
+// Slug is /ecommerce rather than /shopify because four of the eleven
+// destinations are commerce platforms, not one.
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'E-commerce', href: '/ecommerce' },
+];
+
+const COMMERCE = INTEGRATIONS.filter((i) => ['shopify', 'woocommerce', 'magento', 'wix'].includes(i.slug));
+
+const WHAT = [
+  { h: 'Collection and category pages, not just blog posts', p: 'The pages that actually convert in commerce search are collection pages. They get written and scored the same way an article does, with the same approval gate.' },
+  { h: 'Product descriptions at scale, each one different', p: 'Per-product copy that does not read as the same sentence with the SKU swapped. The failure mode of every bulk description tool is duplication, so the voice profile and the fact-check run per item.' },
+  { h: 'Structured data that survives a theme update', p: 'Product and article schema emitted with the content rather than bolted on by a plugin that a theme change can silently break.' },
+  { h: 'Answers to the questions buyers actually type', p: 'Comparison, sizing, compatibility and "is X worth it" queries, built from live SERP data for your catalogue rather than guessed from the category name.' },
+];
+
+const FAQ = [
+  { question: `Which e-commerce platforms does ${APP_NAME} publish to?`, answer: 'Shopify, WooCommerce, Magento and Wix today, plus WordPress, Webflow, Ghost, Framer, Notion, HubSpot and any webhook. Each uses a credential you create in your own admin and can revoke without changing your login.' },
+  { question: 'Will it write duplicate descriptions across similar products?', answer: 'That is the specific failure this is built against. Each item is written against your voice profile and checked individually, and near-duplicate output is the thing the SEO score penalises hardest. You also review before anything publishes, so a bad batch never reaches the store.' },
+  { question: 'Can it write collection pages, not only articles?', answer: 'Yes, and for most stores collection pages are the higher-value work: they sit closer to the purchase and they are usually thin. There is a full guide on doing it at scale.' },
+  { question: 'Does this help with ChatGPT shopping and AI Overviews?', answer: 'Yes. Assistants recommend products from pages they can read, extract and attribute. The nine readability checks and the structured data are the prerequisites, and there is a guide specifically on optimising a Shopify store for ChatGPT shopping.' },
+  { question: 'Will it publish to my live store without me?', answer: 'No. Every draft stops for a human approval before it reaches the store. Connecting a platform makes it a destination, not a permission.' },
+];
+
+const structuredData = [buildBreadcrumbSchema(breadcrumbs), buildFAQSchema(FAQ)];
+---
+
+<PSEO
+  title={`E-commerce SEO Content | Shopify, WooCommerce & Magento | ${APP_NAME}`}
+  description={`Collection pages, product descriptions and buyer-intent articles for your store, approved before they publish. Connects to Shopify, WooCommerce, Magento and Wix. Open source, self-host free.`}
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[900px] px-5 sm:px-6 lg:px-8">
+      <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">E-commerce</p>
+      <h1 class="mb-5 text-[clamp(28px,5vw,44px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+        Content for stores, <span class="text-accent-ink">including the pages that sell</span>.
+      </h1>
+      <p class="mb-7 max-w-[62ch] text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        Collection pages, product descriptions and buyer-intent articles, written against your voice
+        and your live SERP data, and reviewed by a person before anything touches the store.
+      </p>
+      <div class="flex flex-wrap gap-2.5">
+        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/for/ecommerce" variant="secondary" size="lg">The e-commerce playbook</Button>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line bg-panel py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[1100px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 max-w-[24ch] md:mb-11 text-[clamp(25px,5vw,36px)] font-semibold leading-[1.08] tracking-[-0.024em] [text-wrap:balance]">
+        What it writes for a store
+      </h2>
+      <div class="grid gap-4 sm:grid-cols-2">
+        {WHAT.map((w) => (
+          <div class="rounded-lg border border-line bg-bg p-5 sm:p-6">
+            <h3 class="mb-2.5 text-[17px] font-semibold leading-snug tracking-[-0.015em] [text-wrap:balance]">{w.h}</h3>
+            <p class="text-[14px] leading-relaxed text-ink-2">{w.p}</p>
+          </div>
+        ))}
+      </div>
+      <div class="mt-7 flex flex-wrap gap-2.5">
+        <Button href="/geo/collection-page-seo-content" variant="secondary" arrow>Collection pages at scale</Button>
+        <Button href="/geo/shopify-product-descriptions-at-scale" variant="secondary" arrow>Product descriptions at scale</Button>
+        <Button href="/geo/optimize-shopify-for-chatgpt-shopping" variant="secondary" arrow>Shopify for ChatGPT shopping</Button>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[900px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(25px,5vw,36px)] font-semibold leading-[1.08] tracking-[-0.024em]">
+        Commerce platforms it publishes to
+      </h2>
+      <div class="grid gap-3 sm:grid-cols-2">
+        {COMMERCE.map((i) => (
+          <a href={`/docs/${i.slug}`} class="group flex items-center gap-3 rounded-lg border border-line bg-bg p-4 hover:border-accent">
+            <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-line bg-panel font-mono text-[11px] font-medium text-ink-2">{i.code}</span>
+            <span>
+              <span class="block text-[14.5px] font-semibold text-ink group-hover:text-accent-ink">{i.name}</span>
+              <span class="block text-[12.5px] text-ink-3">{i.auth}</span>
+            </span>
+          </a>
+        ))}
+      </div>
+      <p class="mt-5 text-[14px] text-ink-3">
+        Plus seven more on <a href="/integrations" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">the integrations page</a>.
+      </p>
+    </div>
+  </section>
+
+  <section class="border-b border-line bg-panel py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(25px,5vw,36px)] font-semibold leading-[1.08] tracking-[-0.024em]">Common questions</h2>
+      <div class="flex flex-col gap-2">
+        {FAQ.map((item) => (
+          <details class="group rounded-lg border border-line bg-bg">
+            <summary class="cursor-pointer list-none px-5 py-4 text-[15px] font-medium text-ink [&::-webkit-details-marker]:hidden">{item.question}</summary>
+            <p class="border-t border-line-soft px-5 py-4 text-[14.5px] leading-relaxed text-ink-2">{item.answer}</p>
+          </details>
+        ))}
+      </div>
+      <div class="mt-10"><Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button></div>
+    </div>
+  </section>
+</PSEO>

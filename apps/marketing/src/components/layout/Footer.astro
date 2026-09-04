@@ -8,26 +8,37 @@ const footerLinks = {
     { label: 'How it works', href: '/#how-it-works' },
     { label: 'Features', href: '/#features' },
     { label: 'Pricing', href: '/pricing' },
+    { label: 'Integrations', href: '/integrations' },
+    { label: 'For agencies', href: '/for-agencies' },
+    { label: 'E-commerce', href: '/ecommerce' },
+    { label: 'Open source', href: '/open-source' },
     { label: 'Blog', href: '/blog' },
   ],
   Documentation: [
-    { label: 'Integrations', href: '/integrations' },
     { label: 'Setup guides', href: '/docs' },
+    { label: 'MCP server', href: '/docs/mcp' },
     { label: 'WordPress', href: '/docs/wordpress' },
     { label: 'Shopify', href: '/docs/shopify' },
+    { label: 'Webflow', href: '/docs/webflow' },
+    { label: 'Ghost', href: '/docs/ghost' },
     { label: 'Webhook', href: '/docs/webhook' },
     { label: 'Source code', href: OSS_REPO_URL },
   ],
+  Compare: [
+    { label: `${APP_NAME} vs Outrank`, href: '/alternatives/outrank' },
+    { label: `${APP_NAME} vs RankPill`, href: '/alternatives/rankpill' },
+    { label: `${APP_NAME} vs Search Atlas`, href: '/alternatives/search-atlas' },
+    { label: `${APP_NAME} vs contentbird`, href: '/alternatives/contentbird' },
+    { label: 'All comparisons', href: '/compare' },
+    { label: `${APP_NAME} alternatives`, href: '/alternatives/altorank' },
+  ],
   Resources: [
-    { label: 'Success Stories', href: '/success-stories' },
-    { label: 'Free Tools', href: '/tools' },
-    { label: 'Alternatives', href: '/alternatives' },
-    { label: `Compare ${APP_NAME}`, href: '/compare' },
+    { label: 'Free growth plan', href: '/growth-plan' },
+    { label: 'Free tools', href: '/tools' },
     { label: 'GEO guides', href: '/geo' },
-    // /agency-blueprint had no inbound link anywhere on the site: not in the
-    // nav, not here, and not referenced contextually. Google could only reach it
-    // through the sitemap, and had not indexed it.
+    { label: 'Industry playbooks', href: '/for' },
     { label: 'Agency blueprint', href: '/agency-blueprint' },
+    { label: 'Success stories', href: '/success-stories' },
   ],
   Company: [
     { label: 'About', href: '/about' },
@@ -49,7 +60,7 @@ const year = new Date().getFullYear();
 
 <footer data-print-hide class="border-t border-line bg-panel">
   <div class="mx-auto max-w-7xl px-5 py-10 sm:px-6 md:py-12 lg:px-8">
-    <div class="grid grid-cols-2 gap-x-6 gap-y-9 md:grid-cols-5 md:gap-8">
+    <div class="grid grid-cols-2 gap-x-6 gap-y-9 md:grid-cols-6 md:gap-8">
       <div class="col-span-2 md:col-span-1">
         <a href="/" class="inline-flex" aria-label={`${APP_NAME}, home`}>
           <Logo size={15} />

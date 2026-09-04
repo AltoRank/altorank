@@ -1,0 +1,117 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { buildFAQSchema, buildBreadcrumbSchema } from '@/lib/schema';
+import { PLANS } from '@/data/pricing';
+import { READINESS_SCAN } from '@/data/homepage';
+import { APP_NAME, PRIMARY_CTA, LEGAL_ENTITY } from '@/constants';
+
+// The agency landing page. /agency-blueprint already existed and is a good
+// page, but it is titled "White-label SEO content software for agencies" and
+// sits at a slug nobody searches. This page owns the query ("seo tool for
+// agencies", "white label seo content") and links to the blueprint as the
+// deeper read, rather than duplicating it.
+//
+// Agencies are the ICP: the roster model, white-label reports and the approval
+// gate are all things an agency needs and a solo operator does not.
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'For agencies', href: '/for-agencies' },
+];
+
+const WHY = [
+  { h: 'A workspace per client', p: 'Each client gets its own voice profile, keyword plan, CMS connection and report. Nothing leaks between them, and adding the eleventh client is the same work as the first.' },
+  { h: 'White-label reports, in the free build', p: 'Client-facing reporting under your brand. Not a paid add-on and not gated behind an enterprise tier: it is in the self-hosted build too.' },
+  { h: 'The approval gate is your safety net', p: 'Nothing publishes to a client site until someone at your agency approves that specific draft. This is the difference between using AI and being liable for it.' },
+  { h: 'Priced on output, not seats', p: 'Articles per month, not per-user licences and not per-workspace fees. Your team size is your business.' },
+  { h: 'Self-host it and keep the margin', p: 'Run the whole engine on your own infrastructure with your own model keys. Charge your clients what the work is worth; the software is not the line item.' },
+  { h: 'Every client site is measurably readable', p: `We scanned ${READINESS_SCAN.sites} agency sites for the nine signals an AI assistant needs. ${READINESS_SCAN.failedEverything} failed all nine. Checking that per client is part of the product, not a separate audit engagement.` },
+];
+
+const FAQ = [
+  { question: `Can I white-label ${APP_NAME} for clients?`, answer: 'Yes, and it is not a paid tier. Client-facing reports carry your brand, and if you self-host, so does the whole deployment. There is no licence conversation and no revenue share.' },
+  { question: 'How does pricing work across a client roster?', answer: `Plans are metered on articles per month rather than seats or workspaces, so the Agency plan is ${PLANS[2].price}/mo with unlimited workspaces - one per site or client - and a per-article rate beyond the included volume. Self-hosting is €0 and unlimited.` },
+  { question: 'Does each client need their own CMS connection?', answer: 'Yes, and that is the point: the connection belongs to that client\'s workspace, uses a credential they can revoke, and cannot publish to any other client\'s site. Eleven destinations are supported today.' },
+  { question: 'What stops the AI publishing something embarrassing to a client site?', answer: 'An architectural gate rather than a policy. The publish path requires a human approval on the specific draft, and the MCP server exposes no publish tool, so an agent driving the product cannot route around it either. Every draft arrives with an SEO score and a fact-check verdict.' },
+  { question: 'Can my team have different permission levels?', answer: 'Role-based permissions are on the Agency plan, so a contractor can draft and review without touching billing or client connections.' },
+  { question: `Who is ${APP_NAME} built by?`, answer: `${APP_NAME} is built and operated by ${LEGAL_ENTITY.name} (VAT ${LEGAL_ENTITY.vat}), a company in ${LEGAL_ENTITY.country}. GDPR applies to us as a matter of establishment, which matters if your clients ask where their data sits.` },
+];
+
+const structuredData = [buildBreadcrumbSchema(breadcrumbs), buildFAQSchema(FAQ)];
+---
+
+<PSEO
+  title={`SEO Content for Agencies | White-Label & Self-Hosted | ${APP_NAME}`}
+  description={`Run SEO content across a full client roster: a workspace per client, white-label reports, an approval gate before anything reaches a client site, and metered pricing. Self-host it free.`}
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[900px] px-5 sm:px-6 lg:px-8">
+      <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">For agencies</p>
+      <h1 class="mb-5 text-[clamp(28px,5vw,44px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+        Scale content across every client, <span class="text-accent-ink">without scaling the risk</span>.
+      </h1>
+      <p class="mb-7 max-w-[62ch] text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        A workspace per client, white-label reports, and an approval gate that means nothing reaches a
+        client&rsquo;s site until someone at your agency has read it. Priced on articles, not seats.
+        Open source, so you can run the whole thing yourself and keep the margin.
+      </p>
+      <div class="flex flex-wrap gap-2.5">
+        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/agency-blueprint" variant="secondary" size="lg">Read the agency blueprint</Button>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line bg-panel py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[1100px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 max-w-[24ch] md:mb-11 text-[clamp(25px,5vw,36px)] font-semibold leading-[1.08] tracking-[-0.024em] [text-wrap:balance]">
+        Why agencies run it
+      </h2>
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {WHY.map((w) => (
+          <div class="rounded-lg border border-line bg-bg p-5 sm:p-6">
+            <h3 class="mb-2.5 text-[17px] font-semibold leading-snug tracking-[-0.015em] [text-wrap:balance]">{w.h}</h3>
+            <p class="text-[14px] leading-relaxed text-ink-2">{w.p}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[900px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-4 max-w-[24ch] text-[clamp(25px,5vw,36px)] font-semibold leading-[1.08] tracking-[-0.024em] [text-wrap:balance]">
+        Sell it as GEO, not just blog posts
+      </h2>
+      <p class="mb-7 max-w-[60ch] text-[16px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        The pitch that closes in 2026 is not &ldquo;more articles&rdquo;. It is that a client&rsquo;s
+        site cannot currently be read by an AI assistant, and you can prove it and fix it. The guides
+        below are written for that conversation, including how to price it.
+      </p>
+      <div class="flex flex-wrap gap-2.5">
+        <Button href="/geo/geo-services-pricing" variant="secondary" arrow>How to price GEO for clients</Button>
+        <Button href="/geo/track-ai-citations-for-clients" variant="secondary" arrow>Reporting AI citations</Button>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line bg-panel py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(25px,5vw,36px)] font-semibold leading-[1.08] tracking-[-0.024em]">Common questions</h2>
+      <div class="flex flex-col gap-2">
+        {FAQ.map((item) => (
+          <details class="group rounded-lg border border-line bg-bg">
+            <summary class="cursor-pointer list-none px-5 py-4 text-[15px] font-medium text-ink [&::-webkit-details-marker]:hidden">{item.question}</summary>
+            <p class="border-t border-line-soft px-5 py-4 text-[14.5px] leading-relaxed text-ink-2">{item.answer}</p>
+          </details>
+        ))}
+      </div>
+      <div class="mt-10 flex flex-wrap gap-2.5">
+        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/pricing" variant="secondary" size="lg">See pricing</Button>
+      </div>
+    </div>
+  </section>
+</PSEO>
