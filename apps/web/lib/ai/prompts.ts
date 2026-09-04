@@ -210,9 +210,15 @@ export function buildRefreshSection(refresh: NonNullable<ArticlePrompt["refreshO
     refresh.existingHtml.length > MAX_BODY
       ? refresh.existingHtml.slice(0, MAX_BODY) + "\n<!-- truncated for length -->"
       : refresh.existingHtml;
+  const { current, max } = refreshLengthBudget(refresh.existingHtml);
   return [
     [
       "THIS IS A REWRITE OF AN EXISTING PAGE, NOT A NEW ARTICLE.",
+      `- The page is about ${current.toLocaleString()} words. The rewrite must stay under ` +
+        `${max.toLocaleString()} words. This cap wins over the brief: if the brief asks for more ` +
+        "than fits, sharpen existing sections instead of adding new ones, and add at most two " +
+        "new sections. The first run of this prompt without a cap produced a page that could " +
+        "not finish.",
       refresh.url ? `- The page lives at ${refresh.url}.` : "",
       refresh.title ? `- Its current title is: ${refresh.title}` : "",
       refresh.metaDescription ? `- Its current meta description is: ${refresh.metaDescription}` : "",
@@ -236,6 +242,15 @@ export function buildRefreshSection(refresh: NonNullable<ArticlePrompt["refreshO
     ["THE BRIEF FOR THIS REWRITE:", refresh.brief.trim()].join("\n"),
     ["THE CURRENT PAGE BODY (HTML):", body].join("\n"),
   ];
+}
+
+/**
+ * How long a rewrite may get: the current length plus a third, floored so a
+ * very short page can still be brought up to a useful size.
+ */
+export function refreshLengthBudget(existingHtml: string): { current: number; max: number } {
+  const current = existingHtml.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
+  return { current, max: Math.max(900, Math.round(current * 1.3)) };
 }
 
 export function buildSystemPrompt(prompt: ArticlePrompt): string {
@@ -300,8 +315,9 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
   // --- Length -----------------------------------------------------------------
   sections.push(
     prompt.refreshOf
-      ? `Length follows the brief: extend where it says the page is thin, otherwise stay ` +
-          `close to the current length. Never cut the page by more than a third.`
+      ? `Length: stay between ${Math.round(refreshLengthBudget(prompt.refreshOf.existingHtml).current * 0.7).toLocaleString()} ` +
+          `and ${refreshLengthBudget(prompt.refreshOf.existingHtml).max.toLocaleString()} words. Extend where the brief ` +
+          `says the page is thin; never cut it by more than a third; never run past the cap.`
       : `Target approximately ${targetWordCount} words. ` +
           (research
             ? `This length is derived from the live SERP: ${research.wordCountBasis}. `

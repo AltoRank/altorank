@@ -197,6 +197,9 @@ export function buildBriefPrompt(input: BriefInput): { system: string; user: str
     "",
     "Rules: be specific to this page and this query; never invent statistics; do not suggest",
     "adding filler; every instruction must be checkable by reading the rewritten page.",
+    "The rewrite may grow the page by about a third at most, so prefer sharpening sections",
+    "that exist over adding new ones: at most two new sections, and say which existing",
+    "section each instruction applies to.",
   ].join("\n");
 
   const user = [
