@@ -1,0 +1,72 @@
+---
+import ToolShell from './ToolShell.astro';
+---
+<ToolShell label="Word count & readability">
+  <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="wc-text">Paste your text</label>
+  <textarea id="wc-text" rows="9" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft" placeholder="Paste a draft here…"></textarea>
+  <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+    {[['w','Words'],['c','Characters'],['s','Sentences'],['p','Paragraphs'],['r','Read time'],['g','Grade level']].map(([k,label]) => (
+      <div class="rounded-lg border border-line bg-bg p-3">
+        <div class="text-[20px] font-semibold leading-none tracking-[-0.02em] text-ink" data-wc={k}>0</div>
+        <div class="mt-1.5 text-[12px] text-ink-3">{label}</div>
+      </div>
+    ))}
+  </div>
+  <p class="mt-3 text-[12.5px] leading-relaxed text-ink-3" data-wc="verdict"></p>
+</ToolShell>
+
+<script>
+  // Flesch Reading Ease, then the standard band mapping. Syllable counting is
+  // heuristic - it has to be, without a dictionary - so treat the grade level
+  // as a band rather than a number to optimise. The useful signal is the
+  // direction it moves when you shorten a sentence.
+  function initWordCounter() {
+    const ta = document.getElementById('wc-text') as HTMLTextAreaElement | null;
+    if (!ta) return;
+    const set = (k: string, v: string) => {
+      const el = document.querySelector(`[data-wc="${k}"]`);
+      if (el) el.textContent = v;
+    };
+    const syllables = (word: string) => {
+      const w = word.toLowerCase().replace(/[^a-z]/g, '');
+      if (w.length <= 3) return w.length ? 1 : 0;
+      const m = w.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '').match(/[aeiouy]{1,2}/g);
+      return m ? m.length : 1;
+    };
+    const render = () => {
+      const text = ta.value.trim();
+      const words = text ? text.split(/\s+/).filter(Boolean) : [];
+      const sentences = text ? text.split(/[.!?]+(?:\s|$)/).filter((s) => s.trim().length > 0) : [];
+      const paras = text ? text.split(/\n\s*\n/).filter((s) => s.trim().length > 0) : [];
+      set('w', String(words.length));
+      set('c', String(ta.value.length));
+      set('s', String(sentences.length));
+      set('p', String(paras.length));
+      const mins = words.length / 225;
+      set('r', words.length ? (mins < 1 ? '<1 min' : Math.round(mins) + ' min') : '0 min');
+      if (words.length < 20 || sentences.length === 0) {
+        set('g', '—');
+        set('verdict', words.length ? 'Paste at least 20 words for a readability estimate.' : '');
+        return;
+      }
+      const syl = words.reduce((n, w) => n + syllables(w), 0);
+      const ease = 206.835 - 1.015 * (words.length / sentences.length) - 84.6 * (syl / words.length);
+      const bands: [number, string, string][] = [
+        [90, '5th grade', 'Very easy. Fine for consumer copy, probably too simple for a technical audience.'],
+        [80, '6th grade', 'Easy. Reads like conversational marketing copy.'],
+        [70, '7th grade', 'Fairly easy. A good target for most blog content.'],
+        [60, '8-9th grade', 'Plain English. This is the band most editorial guidelines aim for.'],
+        [50, '10-12th grade', 'Fairly difficult. Acceptable for a technical or professional reader.'],
+        [30, 'College', 'Difficult. Shorten sentences before shortening words.'],
+        [-999, 'Graduate', 'Very difficult. Almost always a sentence-length problem rather than a vocabulary one.'],
+      ];
+      const band = bands.find(([min]) => ease >= min)!;
+      set('g', band[1]);
+      set('verdict', `Flesch Reading Ease ${Math.round(ease)} · ${band[2]} Average sentence: ${(words.length / sentences.length).toFixed(1)} words.`);
+    };
+    ta.addEventListener('input', render);
+    render();
+  }
+  initWordCounter();
+  document.addEventListener('astro:page-load', initWordCounter);
+</script>

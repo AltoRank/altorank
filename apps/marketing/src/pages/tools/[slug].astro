@@ -1,6 +1,12 @@
 ---
 import PSEO from '@/layouts/PSEO.astro';
 import Button from '@/components/shared/Button.astro';
+import SerpPreview from '@/components/tools/SerpPreview.astro';
+import WordCounter from '@/components/tools/WordCounter.astro';
+import KeywordDensity from '@/components/tools/KeywordDensity.astro';
+import RobotsTxt from '@/components/tools/RobotsTxt.astro';
+import SchemaGenerator from '@/components/tools/SchemaGenerator.astro';
+import SlugGenerator from '@/components/tools/SlugGenerator.astro';
 import { getCollection, render } from 'astro:content';
 import { buildArticleSchema, buildFAQSchema, buildHowToSchema } from '@/lib/schema';
 import { SIGNUP_URL, APP_NAME, AUTHOR_NAME, AUTHOR_URL, SITE_URL } from '@/constants';
@@ -58,6 +64,19 @@ const relatedTitles = await getCollection('tools').then((tools) =>
   Object.fromEntries(tools.map((t) => [t.data.slug, t.data.title])),
 );
 
+// Widget lookup. The schema already restricts `widget` to these keys, so an
+// unknown value cannot reach here; the ?? undefined is belt and braces for a
+// content file edited ahead of a schema change.
+const WIDGETS = {
+  'serp-preview': SerpPreview,
+  'word-counter': WordCounter,
+  'keyword-density': KeywordDensity,
+  'robots-txt': RobotsTxt,
+  'schema-generator': SchemaGenerator,
+  'slug-generator': SlugGenerator,
+} as const;
+const Widget = d.widget ? WIDGETS[d.widget] ?? undefined : undefined;
+
 const displayDate = d.dateModified ?? d.datePublished;
 const dateLabel = displayDate
   ? displayDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -95,6 +114,19 @@ const dateLabel = displayDate
       </div>
     </div>
   </section>
+
+  {/* The tool itself, directly under the hero.
+      A "free tool" page that makes you read 800 words before it does anything
+      is an article wearing a tool's title. If there is a widget, it goes above
+      the explanation, and the explanation becomes the thing you scroll to when
+      the widget raises a question. */}
+  {Widget && (
+    <section class="border-b border-line bg-panel py-10 md:py-14">
+      <div class="mx-auto max-w-[900px] px-5 sm:px-6 lg:px-8">
+        <Widget />
+      </div>
+    </section>
+  )}
 
   {/* Use cases */}
   <section class="border-b border-line py-16">

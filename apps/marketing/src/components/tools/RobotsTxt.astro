@@ -1,0 +1,87 @@
+---
+import ToolShell from './ToolShell.astro';
+---
+<ToolShell label="robots.txt builder">
+  <div class="grid gap-4 md:grid-cols-[1fr_1.1fr]">
+    <div class="flex flex-col gap-3">
+      <div>
+        <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="rb-sitemap">Sitemap URL</label>
+        <input id="rb-sitemap" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft" value="https://example.com/sitemap.xml" />
+      </div>
+      <div>
+        <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="rb-disallow">Disallow paths (one per line)</label>
+        <textarea id="rb-disallow" rows="3" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft">/cart
+/checkout
+/search</textarea>
+      </div>
+      <fieldset>
+        <legend class="mb-1.5 block text-[13px] font-medium text-ink-2">AI crawlers</legend>
+        <div class="flex flex-col gap-2 rounded-lg border border-line bg-bg p-3.5">
+          <label class="flex items-center gap-2 text-[13.5px] text-ink-2">
+            <input type="radio" name="rb-ai" value="allow" checked class="h-4 w-4" /> Allow them (be citable)
+          </label>
+          <label class="flex items-center gap-2 text-[13.5px] text-ink-2">
+            <input type="radio" name="rb-ai" value="block" class="h-4 w-4" /> Block them
+          </label>
+          <label class="flex items-center gap-2 text-[13.5px] text-ink-2">
+            <input type="radio" name="rb-ai" value="split" class="h-4 w-4" /> Allow search, block training
+          </label>
+        </div>
+      </fieldset>
+    </div>
+    <div>
+      <div class="flex items-center justify-between">
+        <p class="mb-1.5 block text-[13px] font-medium text-ink-2">robots.txt</p>
+        <button type="button" data-rb="copy" class="rounded-md border border-line bg-bg px-2.5 py-1 text-[12px] text-ink-2 hover:border-accent">Copy</button>
+      </div>
+      <pre class="mt-4 max-h-[320px] overflow-auto rounded-lg border border-line bg-bg p-4 font-mono text-[12.5px] leading-relaxed text-ink whitespace-pre-wrap" data-rb="out"></pre>
+    </div>
+  </div>
+  <p class="mt-3 text-[12.5px] leading-relaxed text-ink-3">
+    Blocking an AI crawler removes you from the answers it generates. That is a legitimate choice, but it
+    is a choice: a page no assistant may read cannot be a page any assistant cites.
+  </p>
+</ToolShell>
+
+<script>
+  // The bot lists are split by what the crawler is FOR, because conflating
+  // them is the common mistake. GPTBot and ClaudeBot fetch for training;
+  // OAI-SearchBot, ChatGPT-User and Claude-User fetch to answer a live
+  // question. Blocking the second group is what removes you from answers.
+  function initRobots() {
+    const sm = document.getElementById('rb-sitemap') as HTMLInputElement | null;
+    const dis = document.getElementById('rb-disallow') as HTMLTextAreaElement | null;
+    const out = document.querySelector('[data-rb="out"]');
+    const copy = document.querySelector('[data-rb="copy"]');
+    if (!sm || !dis || !out) return;
+    const TRAIN = ['GPTBot', 'ClaudeBot', 'Google-Extended', 'CCBot', 'anthropic-ai', 'Applebot-Extended'];
+    const SEARCH = ['OAI-SearchBot', 'ChatGPT-User', 'Claude-User', 'PerplexityBot'];
+    const render = () => {
+      const mode = (document.querySelector('input[name="rb-ai"]:checked') as HTMLInputElement | null)?.value ?? 'allow';
+      const paths = dis.value.split('\n').map((s) => s.trim()).filter(Boolean);
+      const lines: string[] = ['# robots.txt', '', 'User-agent: *'];
+      paths.forEach((p) => lines.push(`Disallow: ${p}`));
+      if (!paths.length) lines.push('Disallow:');
+      const block = (names: string[]) => names.forEach((n) => lines.push('', `User-agent: ${n}`, 'Disallow: /'));
+      const allow = (names: string[]) => names.forEach((n) => lines.push('', `User-agent: ${n}`, 'Allow: /'));
+      if (mode === 'allow') { lines.push('', '# AI crawlers: allowed, so this site can be read and cited'); allow([...SEARCH, ...TRAIN]); }
+      if (mode === 'block') { lines.push('', '# AI crawlers: blocked'); block([...SEARCH, ...TRAIN]); }
+      if (mode === 'split') {
+        lines.push('', '# Answer engines: allowed, so this site can be cited');
+        allow(SEARCH);
+        lines.push('', '# Training crawlers: blocked');
+        block(TRAIN);
+      }
+      if (sm.value.trim()) lines.push('', `Sitemap: ${sm.value.trim()}`);
+      out.textContent = lines.join('\n');
+    };
+    [sm, dis].forEach((el) => el.addEventListener('input', render));
+    document.querySelectorAll('input[name="rb-ai"]').forEach((el) => el.addEventListener('change', render));
+    copy?.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(out.textContent ?? ''); copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy'; }, 1400); } catch { copy.textContent = 'Select and copy'; }
+    });
+    render();
+  }
+  initRobots();
+  document.addEventListener('astro:page-load', initRobots);
+</script>

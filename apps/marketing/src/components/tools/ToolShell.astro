@@ -1,0 +1,19 @@
+---
+// Shared chrome for every interactive tool widget: the bordered panel, the
+// label, and the "runs in your browser" note.
+//
+// That note is load-bearing rather than decorative. Every one of these tools
+// works with no account and no network call, and saying so is the difference
+// between a free tool and a demo of a paid one.
+interface Props { label: string; note?: string }
+const { label, note } = Astro.props;
+---
+<div class="rounded-xl border border-line bg-panel p-5 text-left sm:p-6">
+  <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+    <p class="font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">{label}</p>
+    <p class="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">
+      {note ?? 'Runs in your browser · nothing sent anywhere'}
+    </p>
+  </div>
+  <slot />
+</div>

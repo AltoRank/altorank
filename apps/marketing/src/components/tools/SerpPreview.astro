@@ -1,0 +1,90 @@
+---
+import ToolShell from './ToolShell.astro';
+---
+<ToolShell label="SERP snippet preview">
+  <div class="grid gap-4 md:grid-cols-2">
+    <div class="flex flex-col gap-3">
+      <div>
+        <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="sp-title">Title tag</label>
+        <input id="sp-title" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft" value="Free SEO Growth Plan for Any Domain" />
+        <p class="mt-1 text-[12px] text-ink-3"><span data-sp="tw">0</span> px · <span data-sp="tc">0</span> chars <span data-sp="tf" class="font-medium"></span></p>
+      </div>
+      <div>
+        <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="sp-url">URL</label>
+        <input id="sp-url" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft" value="https://altorank.co/growth-plan" />
+      </div>
+      <div>
+        <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="sp-desc">Meta description</label>
+        <textarea id="sp-desc" rows="4" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft">Type a domain and get what it ranks for, the page-one terms competitors hold that it does not, and whether AI assistants can read it. Free, no signup.</textarea>
+        <p class="mt-1 text-[12px] text-ink-3"><span data-sp="dw">0</span> px · <span data-sp="dc">0</span> chars <span data-sp="df" class="font-medium"></span></p>
+      </div>
+    </div>
+    <div>
+      <p class="mb-1.5 block text-[13px] font-medium text-ink-2">Desktop result</p>
+      <div class="rounded-lg border border-line bg-bg p-4">
+        <div class="mb-1 truncate text-[12.5px] text-ink-3" data-sp="pu"></div>
+        <div class="mb-1 text-[18px] leading-snug text-[#1a0dab] dark:text-[#8ab4f8]" data-sp="pt"></div>
+        <div class="text-[13.5px] leading-relaxed text-ink-2" data-sp="pd"></div>
+      </div>
+      <p class="mt-3 text-[12.5px] leading-relaxed text-ink-3">
+        Google truncates on pixel width, not characters, so the widths above matter more than the counts.
+        Roughly 600px for a title and 960px for a description on desktop.
+      </p>
+    </div>
+  </div>
+</ToolShell>
+
+<script>
+  // Pixel widths are measured with a canvas rather than assumed from character
+  // counts, because "155 characters" is the wrong unit: an i and a W differ by
+  // about 4x. This is still an approximation - Google renders in its own font
+  // stack - but it is a far closer one than counting.
+  function initSerpPreview() {
+    const t = document.getElementById('sp-title') as HTMLInputElement | null;
+    const d = document.getElementById('sp-desc') as HTMLTextAreaElement | null;
+    const u = document.getElementById('sp-url') as HTMLInputElement | null;
+    if (!t || !d || !u) return;
+    const q = (k: string) => document.querySelector(`[data-sp="${k}"]`);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const width = (text: string, font: string) => {
+      if (!ctx) return text.length * 8;
+      ctx.font = font;
+      return Math.round(ctx.measureText(text).width);
+    };
+    const TITLE_PX = 600, DESC_PX = 960;
+    const clip = (text: string, font: string, max: number) => {
+      if (width(text, font) <= max) return text;
+      let out = text;
+      while (out.length > 1 && width(out + '…', font) > max) out = out.slice(0, -1);
+      return out + '…';
+    };
+    const verdict = (px: number, max: number) => {
+      if (px === 0) return ['', ''];
+      if (px > max) return ['· truncated', 'text-[oklch(0.55_0.16_25)]'];
+      if (px > max * 0.9) return ['· near the limit', 'text-[oklch(0.6_0.14_75)]'];
+      return ['· fits', 'text-[oklch(0.5_0.13_155)]'];
+    };
+    const set = (k: string, v: string) => { const el = q(k); if (el) el.textContent = v; };
+    const render = () => {
+      const tf = '400 18px arial, sans-serif';
+      const df = '400 13.5px arial, sans-serif';
+      const tpx = width(t.value, tf), dpx = width(d.value, df);
+      set('tw', String(tpx)); set('tc', String(t.value.length));
+      set('dw', String(dpx)); set('dc', String(d.value.length));
+      const [tv, tcls] = verdict(tpx, TITLE_PX);
+      const [dv, dcls] = verdict(dpx, DESC_PX);
+      const tfEl = q('tf'), dfEl = q('df');
+      if (tfEl) { tfEl.textContent = tv; tfEl.className = 'font-medium ' + tcls; }
+      if (dfEl) { dfEl.textContent = dv; dfEl.className = 'font-medium ' + dcls; }
+      set('pt', clip(t.value, tf, TITLE_PX));
+      set('pd', clip(d.value, df, DESC_PX));
+      let pretty = u.value.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      set('pu', pretty.split('/').join(' › '));
+    };
+    [t, d, u].forEach((el) => el.addEventListener('input', render));
+    render();
+  }
+  initSerpPreview();
+  document.addEventListener('astro:page-load', initSerpPreview);
+</script>
