@@ -77,6 +77,9 @@ export async function fetchLinkTargets(
     .from("site_pages")
     .select("url, title, keyword")
     .eq("workspace_id", workspaceId)
+    // Articles only. Linking a sentence to /blog or /blog/de sends the reader
+    // to an index to search again, which is worse than not linking at all.
+    .eq("page_type", "article")
     .gte("status", 200)
     .lt("status", 400)
     .not("title", "is", null)

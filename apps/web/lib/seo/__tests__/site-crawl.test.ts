@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { prioritise, crawlPage, keywordForPage } from "../site-crawl";
+import { prioritise, crawlPage, keywordForPage, classifyPageType } from "../site-crawl";
 
 // The crawl exists because domain-analysis walks links breadth-first to depth
 // 2 and reached 2 of fitsuite.co's 204 posts. These pin the parts that decide
@@ -63,6 +63,7 @@ describe("crawlPage", () => {
     try {
       const p = await crawlPage("https://x.co/blog/widget-pricing", { domain });
       expect(p.status).toBe(200);
+      expect(p.page_type).toBe("article");
       // /pricing and /terms live outside <main> and must not be counted.
       expect(p.internal_links).toBe(1);
       expect(p.external_links).toBe(1);
@@ -121,6 +122,20 @@ describe("crawlPage", () => {
     } finally { restore(); }
   });
 
+  it("stores an index without scoring it or giving it a keyword", async () => {
+    const restore = serve("<html><head><title>Blog</title></head><body><main><h1>Blog</h1><p>Tutti gli articoli.</p></main></body></html>");
+    try {
+      const p = await crawlPage("https://x.co/blog/de", { domain });
+      expect(p.page_type).toBe("listing");
+      expect(p.keyword).toBeNull();
+      expect(p.seo_score).toBeNull();
+      expect(p.aeo_score).toBeNull();
+      // Still a row: its title and status are worth knowing.
+      expect(p.title).toBe("Blog");
+      expect(p.status).toBe(200);
+    } finally { restore(); }
+  });
+
   it("skips a non-HTML response", async () => {
     const restore = serve("{}", { type: "application/json" });
     try {
@@ -153,5 +168,39 @@ describe("keywordForPage", () => {
 
   it("returns null when there is nothing to go on", () => {
     expect(keywordForPage("/", null, "x.co")).toBeNull();
+  });
+});
+
+describe("classifyPageType", () => {
+  // /blog, /blog/de and /blog/fr were scored as articles: keyword "blog",
+  // GEO 14, top of the "weakest pages" list, and dragging the site average
+  // down with pages that are not writing.
+  it("calls a section root, a locale root and a pagination page an index", () => {
+    for (const p of ["/blog", "/blog/de", "/blog/fr", "/blog/page/2", "/news", "/"]) {
+      expect(classifyPageType(p)).toBe("listing");
+    }
+  });
+
+  it("calls a post under a blog directory an article, in any language", () => {
+    expect(classifyPageType("/blog/app-personal-trainer")).toBe("article");
+    expect(classifyPageType("/blog/ro/aplicatii-pentru-antrenori")).toBe("article");
+  });
+
+  it("believes the page's own schema over its URL", () => {
+    expect(classifyPageType("/x", { schemaTypes: ["BlogPosting"] })).toBe("article");
+    // Even a section root, if it declares itself an article.
+    expect(classifyPageType("/blog/de", { schemaTypes: ["Article"] })).toBe("article");
+  });
+
+  it("takes a published date as evidence of writing", () => {
+    expect(classifyPageType("/2026/some-post", { publishedAt: "2026-01-01T00:00:00Z" })).toBe("article");
+  });
+
+  it("calls everything else a page, rather than guessing it is writing", () => {
+    // A pricing page scored against a slug-derived keyword is the same
+    // unactionable noise the indexes were.
+    for (const p of ["/pricing", "/about", "/tools/1rm-calculator"]) {
+      expect(classifyPageType(p)).toBe("page");
+    }
   });
 });

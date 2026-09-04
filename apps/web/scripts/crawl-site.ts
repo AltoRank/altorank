@@ -33,9 +33,13 @@ const heading = (s: string) => console.log(`\n${s}\n${"-".repeat(s.length)}`);
 function report(pages: SitePage[], discovered: number) {
   const ok = pages.filter((p) => p.status >= 200 && p.status < 400);
   const scored = ok.filter((p) => p.seo_score !== null);
+  const byType = (t: string) => ok.filter((p) => p.page_type === t).length;
 
   heading("What was found");
   console.log(`  ${discovered} URLs in the sitemap, ${pages.length} fetched, ${ok.length} answered`);
+  console.log(`  ${byType("article")} articles, ${byType("listing")} indexes, ${byType("page")} other pages`);
+  console.log(`  (indexes and non-article pages are stored but not scored: an index has no`);
+  console.log(`   term it is trying to win, and scoring one produced GEO 14 on /blog/de)`);
   const failed = pages.filter((p) => p.status === 0 || p.status >= 400);
   if (failed.length) {
     console.log(`  ${failed.length} did not:`);
@@ -48,7 +52,7 @@ function report(pages: SitePage[], discovered: number) {
   }
 
   const avg = (ns: number[]) => Math.round(ns.reduce((a, b) => a + b, 0) / ns.length);
-  heading("How the existing content scores");
+  heading("How the writing scores");
   console.log(`  SEO  ${avg(scored.map((p) => p.seo_score!))} avg`);
   console.log(`  GEO  ${avg(scored.map((p) => p.aeo_score!))} avg`);
   console.log(`  ${scored.filter((p) => (p.internal_links ?? 0) === 0).length} pages link to nothing on the site`);
