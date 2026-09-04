@@ -51,13 +51,25 @@ export const DEFAULTS = {
 /** Path segments that name a blog. Same list `lib/cms/blog-url.ts` reasons over. */
 const POST_SEGMENTS = /\/(blog|posts?|articles?|news|insights|stories|guide|guida|guides)\//i;
 
+/**
+ * Schema types that say "this page is a piece of writing". A page that
+ * declares one is an article whatever its URL looks like.
+ */
+const ARTICLE_SCHEMA = /^(Article|BlogPosting|NewsArticle|TechArticle|Report|ScholarlyArticle)$/i;
+
+/** Two-letter locale segments, so /blog/de reads as a section, not a post. */
+const LOCALE_SEGMENT = /^[a-z]{2}(-[a-z]{2})?$/i;
+
 /** Pages that are never content: feeds, assets, and the index pages themselves. */
 const NOT_CONTENT =
   /\.(xml|json|txt|rss|atom|pdf|jpg|jpeg|png|gif|svg|webp|ico|css|js|zip)(\?|$)/i;
 
+export type PageType = "article" | "listing" | "page";
+
 export interface SitePage {
   url: string;
   path: string;
+  page_type: PageType;
   content_hash: string | null;
   title: string | null;
   meta_description: string | null;
@@ -266,6 +278,45 @@ export function keywordForPage(
   return headWords.length ? headWords.join(" ") : null;
 }
 
+/**
+ * What kind of page this is.
+ *
+ * The question that matters is "is this a piece of writing, or the index that
+ * lists the writing", because only the first can be scored or linked to
+ * meaningfully. Three signals, in order of how much they know:
+ *
+ *   1. the page's own schema. Article/BlogPosting is the site saying so.
+ *   2. a published date. Indexes do not have one; posts almost always do.
+ *   3. the shape of the path. A last segment that is a section name
+ *      ("/blog"), a locale ("/blog/de") or a page number ("/blog/page/2") is
+ *      an index. Anything with a slug on the end is not.
+ *
+ * Defaults to "page" rather than "article": a pricing page is not writing
+ * either, and scoring it against a guessed keyword produces the same
+ * unactionable noise the indexes did.
+ */
+export function classifyPageType(
+  path: string,
+  opts: { schemaTypes?: string[] | null; publishedAt?: string | null } = {},
+): PageType {
+  if ((opts.schemaTypes ?? []).some((t) => ARTICLE_SCHEMA.test(t))) return "article";
+
+  const segments = path.split("/").filter(Boolean);
+  const last = segments[segments.length - 1] ?? "";
+  const isSectionRoot =
+    segments.length === 0 ||
+    POST_SEGMENTS.test(`/${last}/`) ||
+    LOCALE_SEGMENT.test(last) ||
+    /^\d+$/.test(last) ||
+    last === "page";
+  if (isSectionRoot) return "listing";
+
+  if (opts.publishedAt) return "article";
+  // Under a blog directory with a slug of its own: a post whose markup simply
+  // says nothing about itself.
+  return POST_SEGMENTS.test(path) ? "article" : "page";
+}
+
 export interface PageContext {
   domain: string;
   /** Best-positioned ranked keyword per pathname, when the SERP told us. */
@@ -284,7 +335,7 @@ export async function crawlPage(url: string, ctx: PageContext): Promise<SitePage
   })();
 
   const base: SitePage = {
-    url, path, content_hash: null, title: null, meta_description: null, h1: null,
+    url, path, page_type: classifyPageType(path), content_hash: null, title: null, meta_description: null, h1: null,
     word_count: null, keyword: null, keyword_source: null, position: null,
     seo_score: null, seo_checks: null, aeo_score: null, aeo_checks: null, audit: null,
     internal_links: null, external_links: null, published_at: null, modified_at: null,
@@ -324,13 +375,19 @@ export async function crawlPage(url: string, ctx: PageContext): Promise<SitePage
   const h1 = textOf(body, "h1") ?? textOf(html, "h1");
   const metaDescription = metaContent(html, ["description", "og:description"]);
 
+  const schemaTypes = collectJsonLdTypes(html);
+  const publishedAt = isoOrNull(metaContent(html, ["article:published_time", "datePublished"]));
+  const pageType = classifyPageType(path, { schemaTypes, publishedAt });
+
   const ranked = ctx.rankedByPath?.get(path);
-  const keyword = ranked?.keyword ?? keywordForPage(path, h1, ctx.domain);
-  const keywordSource: SitePage["keyword_source"] = ranked
-    ? "ranked"
-    : keyword
-      ? "heading"
-      : null;
+  // Only writing gets a keyword. An index has no term it is trying to win,
+  // and giving it one ("blog") produced a scored page nobody could act on.
+  const keyword = pageType === "article" ? ranked?.keyword ?? keywordForPage(path, h1, ctx.domain) : null;
+  const keywordSource: SitePage["keyword_source"] = !keyword
+    ? null
+    : ranked
+      ? "ranked"
+      : "heading";
 
   const links = extractLinks(body, ctx.domain);
   const words = body.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
@@ -353,7 +410,7 @@ export async function crawlPage(url: string, ctx: PageContext): Promise<SitePage
     : null;
 
   return {
-    url, path,
+    url, path, page_type: pageType,
     content_hash: createHash("sha256").update(body).digest("hex").slice(0, 32),
     title, meta_description: metaDescription, h1,
     word_count: words,
@@ -363,9 +420,9 @@ export async function crawlPage(url: string, ctx: PageContext): Promise<SitePage
     audit: audit ? { verdict: audit.verdict, counts: audit.counts, items: audit.items } : null,
     internal_links: links.filter((l) => l.kind === "internal").length,
     external_links: links.filter((l) => l.kind === "external").length,
-    published_at: isoOrNull(metaContent(html, ["article:published_time", "datePublished"])),
+    published_at: publishedAt,
     modified_at: isoOrNull(metaContent(html, ["article:modified_time", "dateModified"])),
-    schema_types: collectJsonLdTypes(html),
+    schema_types: schemaTypes,
     status, error: null,
   };
 }
