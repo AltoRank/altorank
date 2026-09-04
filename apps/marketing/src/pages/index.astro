@@ -3,14 +3,15 @@ import Marketing from '@/layouts/Marketing.astro';
 import Button from '@/components/shared/Button.astro';
 import CTABanner from '@/components/shared/CTABanner.astro';
 import AppShot from '@/components/shared/AppShot.astro';
-import { APP_NAME, OSS_LICENSE, PRIMARY_CTA, APP_URL, SIGNUP_URL } from '@/constants';
-import { buildProductSchema } from '@/lib/schema';
-import { STEPS, COMPARISON, COMPARISON_THEM, CMS_LIST, LOCALE_COUNT, READINESS_SCAN } from '@/data/homepage';
+import { APP_NAME, PRIMARY_CTA, APP_URL, SIGNUP_URL } from '@/constants';
+import { buildProductSchema, buildFAQSchema } from '@/lib/schema';
+import { STEPS, COMPARISON, COMPARISON_THEM, CMS_LIST, READINESS_SCAN, STATS, REPLACES, MORE_FEATURES, CMS_BLURB, HOME_FAQ } from '@/data/homepage';
+import { PLANS } from '@/data/pricing';
 
 // Base.astro already auto-injects Organization + WebSite + WebPage on every
 // page, so passing buildOrganizationSchema() here emitted a duplicate
 // Organization node on the homepage only. Dropped 2026-08-15.
-const structuredData = [buildProductSchema()];
+const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
 ---
 
 <Marketing
@@ -74,6 +75,15 @@ const structuredData = [buildProductSchema()];
       <p class="mb-9 mt-4 text-[12.5px] text-[oklch(0.68_0.03_275)] sm:text-[13px] md:mb-12">
         Free. About 60 seconds. No signup. Or <a href={PRIMARY_CTA.href} class="underline decoration-white/30 underline-offset-[3px] hover:decoration-white">add your domain</a> and self-host it free.
       </p>
+      {/* The category puts avatars, five stars and "750m+ views" here. We put
+          the one number we can defend, and the licence. */}
+      <p class="-mt-6 mb-10 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[12.5px] text-[oklch(0.78_0.03_275)] md:mb-12">
+        <span>{READINESS_SCAN.sites} sites scanned</span>
+        <span aria-hidden="true" class="text-[oklch(0.5_0.03_275)]">&middot;</span>
+        <span>{READINESS_SCAN.failedEverything} unreadable by AI</span>
+        <span aria-hidden="true" class="text-[oklch(0.5_0.03_275)]">&middot;</span>
+        <a href="/open-source" class="underline decoration-white/30 underline-offset-[3px] hover:decoration-white">Open source, self-host free</a>
+      </p>
 
       {/* Results land here. Hidden until there is something to show, so the
           page reads exactly as before for anyone who never types a domain. */}
@@ -93,81 +103,132 @@ const structuredData = [buildProductSchema()];
       -mb-px cancels the 1px it costs the layout. */}
   <div data-header-overlay-end aria-hidden="true" class="h-px -mb-px"></div>
 
-  {/* ── COMPARISON ───────────────────────────────────────────────────────
-      Was two cards, one of them dark with a radial gradient, separated by a
-      circled arrow and topped with an ALL-IN-ONE badge. It was always a table.  */}
-  <section id="vs" class="border-b border-line py-14 md:py-20 lg:py-[88px]">
+  {/* ── PROOF ─────────────────────────────────────────────────────────────
+      The category opens with four customer testimonials and a stat bar
+      ("750,000+ articles"). We have no customers to quote, so this slot holds
+      the one dataset we actually own: the readiness scan. Every number names
+      its source in data/homepage.ts. A testimonial block goes here the day a
+      real customer says something, and not one commit before.               */}
+  <section id="proof" class="border-b border-line py-14 md:py-20 lg:py-[88px]">
     <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
+      <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">What we measured</p>
+      <h2 class="mb-3 max-w-[24ch] text-[clamp(25px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.026em] text-ink [text-wrap:balance]">
+        Most sites cannot be <span class="text-accent-ink">read by AI</span> at all.
+      </h2>
+      <p class="mb-8 max-w-[60ch] md:mb-11 text-[15.5px] leading-relaxed text-ink-2 sm:text-[16.5px] [text-wrap:pretty]">
+        We scanned {READINESS_SCAN.sites} agency sites for the nine technical signals an AI assistant
+        needs to read a page. {READINESS_SCAN.failedEverything} failed every one. That is the gap the
+        product is built to close, and it is the only statistic on this page, because it is the only
+        one we have earned.
+      </p>
+      <div class="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+        {STATS.map((s) => (
+          <div class="rounded-lg border border-line bg-panel p-5">
+            <div class="text-[clamp(30px,4.5vw,44px)] font-semibold leading-none tracking-[-0.03em] text-ink">{s.value}</div>
+            <div class="mt-2 text-[13.5px] leading-snug text-ink-2">{s.label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* ── PROBLEM / SOLUTION ───────────────────────────────────────────────  */}
+  <section id="replaces" class="border-b border-line bg-panel py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
+      <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">Your problem, our solution</p>
       <h2 class="mb-3 max-w-[22ch] text-[clamp(25px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.026em] text-ink [text-wrap:balance]">
-        Same job as the autopilot tools. Opposite answer on who presses publish.
+        Six tools and a spreadsheet, <span class="text-accent-ink">or one workspace</span>.
       </h2>
       <p class="mb-8 max-w-[58ch] md:mb-11 text-[15.5px] leading-relaxed text-ink-2 sm:text-[16.5px] [text-wrap:pretty]">
-        Outrank, Distribb and BabyLoveGrowth all open with the word
-        &ldquo;autopilot&rdquo;. Every row below is checkable against their own
-        homepages.
+        Every row is a capability that exists in the product today, not on a roadmap.
       </p>
-
-      {/* Two renderings of one array. A three-column table needs about 640px
-          to stay readable, so on a phone it either scrolls sideways or the
-          columns collapse to two words each. Below md the same rows stack as
-          per-job cards; from md up it is the table. COMPARISON is the single
-          source, so the two cannot drift. */}
-      <ul class="flex flex-col gap-3 md:hidden">
-        {COMPARISON.map((row) => (
-          <li class="rounded-lg border border-line bg-bg p-4">
-            <div class="text-[14px] font-semibold tracking-[-0.01em] text-ink">{row.label}</div>
-            <dl class="mt-3 flex flex-col gap-2.5">
-              <div class="flex flex-col gap-0.5">
-                <dt class="text-[12px] text-ink-3">{COMPARISON_THEM}</dt>
-                <dd class="ml-0 text-[14px] text-ink-3">{row.legacy}</dd>
-              </div>
-              <div class="flex flex-col gap-0.5 border-t border-line-soft pt-2.5">
-                <dt class="text-[12px] text-accent-ink">{APP_NAME}</dt>
-                <dd class="ml-0 text-[14px] font-medium text-ink">{row.ours}</dd>
-              </div>
-            </dl>
-          </li>
+      <div class="overflow-hidden rounded-lg border border-line bg-bg">
+        {REPLACES.map((r, i) => (
+          <div class={`grid gap-1 p-5 sm:grid-cols-[1fr_1.8fr] sm:gap-6 ${i > 0 ? 'border-t border-line-soft' : ''}`}>
+            <div class="text-[14px] text-ink-3 line-through decoration-line-soft sm:no-underline sm:text-ink-2">
+              <span class="sm:hidden">Replaces: </span>{r.tool}
+            </div>
+            <div class="text-[14.5px] font-medium leading-relaxed text-ink">{r.ours}</div>
+          </div>
         ))}
-      </ul>
+      </div>
+    </div>
+  </section>
 
-      <table class="hidden w-full border-collapse text-left md:table">
-        <thead>
-          <tr>
-            <th class="w-[30%] border-b border-ink pb-3 text-[13.5px] font-medium text-ink-3">
-              <span class="sr-only">Job</span>
-            </th>
-            <th class="w-[35%] border-b border-ink pb-3 text-[14px] font-medium text-ink-3">
-              Traditional SEO stack
-            </th>
-            <th class="w-[35%] border-b border-ink pb-3 text-[14px] font-semibold tracking-[-0.01em] text-ink">
-              {APP_NAME}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {COMPARISON.map((row) => (
+  {/* ── HOW IT WORKS ─────────────────────────────────────────────────────  */}
+  <section id="how-it-works" class="border-b border-line py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
+      <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">How it works</p>
+      <h2 class="mb-3 max-w-[20ch] text-[clamp(25px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.026em] text-ink [text-wrap:balance]">
+        Four steps. <span class="text-accent-ink">You own the third.</span>
+      </h2>
+      <p class="mb-8 max-w-[58ch] md:mb-11 text-[15.5px] leading-relaxed text-ink-2 sm:text-[16.5px] [text-wrap:pretty]">
+        Research, plan and draft are automatic. Approval is not, and cannot be made so.
+      </p>
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {STEPS.map((step) => (
+          <div class={`rounded-lg border p-5 sm:p-6 ${step.n === 3 ? 'border-accent bg-accent-soft/40' : 'border-line bg-bg'}`}>
+            <div class="mb-3 font-mono text-[12px] text-accent-ink">0{step.n}</div>
+            <h3 class="mb-2.5 text-[17px] font-semibold tracking-[-0.015em]">{step.title}</h3>
+            <p class="text-sm leading-relaxed text-ink-2">{step.desc}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* ── COMPARISON (kept) ────────────────────────────────────────────────  */}
+  <section id="vs" class="border-b border-line bg-panel py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
+      <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">Versus the autopilot tools</p>
+      <h2 class="mb-3 max-w-[22ch] text-[clamp(25px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.026em] text-ink [text-wrap:balance]">
+        Same job as the autopilot tools. Opposite answer on <span class="text-accent-ink">who presses publish</span>.
+      </h2>
+      <p class="mb-8 max-w-[58ch] md:mb-11 text-[15.5px] leading-relaxed text-ink-2 sm:text-[16.5px] [text-wrap:pretty]">
+        {COMPARISON_THEM} all open with the word &ldquo;autopilot&rdquo;. Every row below is checkable
+        against their own homepages, and the full head-to-heads are on{' '}
+        <a href="/compare" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">the compare page</a>.
+      </p>
+      <div class="flex flex-col gap-3 md:hidden">
+        {COMPARISON.map((row) => (
+          <div class="rounded-lg border border-line bg-bg p-4">
+            <div class="text-[13px] font-semibold text-ink">{row.label}</div>
+            <dl class="mt-3 flex flex-col gap-2.5">
+              <div><dt class="text-[12px] text-ink-3">{COMPARISON_THEM}</dt><dd class="ml-0 text-[14px] text-ink-3">{row.legacy}</dd></div>
+              <div><dt class="text-[12px] text-accent-ink">{APP_NAME}</dt><dd class="ml-0 text-[14px] font-medium text-ink">{row.ours}</dd></div>
+            </dl>
+          </div>
+        ))}
+      </div>
+      <div class="hidden overflow-hidden rounded-lg border border-line bg-bg md:block">
+        <table class="w-full text-left text-sm">
+          <thead class="border-b border-line bg-panel text-ink-2">
             <tr>
-              <td class="border-b border-line-soft py-3.5 pr-6 align-top text-[14px] text-ink-2">
-                {row.label}
-              </td>
-              <td class="border-b border-line-soft py-3.5 pr-6 align-top text-[14px] text-ink-3">
-                {row.legacy}
-              </td>
-              <td class="border-b border-line-soft py-3.5 align-top text-[14px] font-medium text-ink">
-                {row.ours}
-              </td>
+              <th scope="col" class="px-5 py-3.5 font-medium"></th>
+              <th scope="col" class="px-5 py-3.5 font-medium">{COMPARISON_THEM}</th>
+              <th scope="col" class="px-5 py-3.5 font-medium text-accent-ink">{APP_NAME}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {COMPARISON.map((row, i) => (
+              <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+                <th scope="row" class="px-5 py-4 font-semibold text-ink">{row.label}</th>
+                <td class="px-5 py-4 text-ink-3">{row.legacy}</td>
+                <td class="px-5 py-4 font-medium text-ink">{row.ours}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   </section>
 
   {/* ── OPEN SOURCE ──────────────────────────────────────────────────────  */}
-  <section class="border-b border-line bg-panel py-14 md:py-20 lg:py-[88px]">
+  <section id="open-source" class="border-b border-line py-14 md:py-20 lg:py-[88px]">
     <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
       <div class="grid items-start gap-10 lg:gap-12 lg:grid-cols-[1.15fr_1fr]">
         <div>
+          <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">Open source</p>
           <h2 class="mb-4 max-w-[22ch] text-[clamp(25px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.026em] text-ink [text-wrap:balance]">
             Run it yourself, put your brand on it, keep the margin.
           </h2>
@@ -219,155 +280,200 @@ const structuredData = [buildProductSchema()];
     </div>
   </section>
 
-  {/* ── HOW IT WORKS ─────────────────────────────────────────────────────
-      Numbered, because this is genuinely a sequence and the order is the
-      information. The number sits inside the h3 rather than floating above it
-      as a separate label.                                                    */}
-  <section id="how-it-works" class="border-b border-line py-14 md:py-20 lg:py-[88px]">
+  {/* ── LINKS ─────────────────────────────────────────────────────────────
+      The category sells a "Backlink Exchange" here. apps/web/lib/seo/exchange.ts
+      implements one, so we say so; it is small and every placement is
+      human-approved, so we say that too.                                      */}
+  <section id="links" class="border-b border-line bg-panel py-14 md:py-20 lg:py-[88px]">
     <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
+      <div class="grid gap-10 lg:grid-cols-[1fr_1fr] lg:gap-14">
+        <div>
+          <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">Authority</p>
+          <h2 class="mb-4 max-w-[20ch] text-[clamp(25px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.026em] text-ink [text-wrap:balance]">
+            Links, with a <span class="text-accent-ink">person in the loop</span>.
+          </h2>
+          <p class="mb-5 max-w-[56ch] text-[15.5px] leading-relaxed text-ink-2 sm:text-[16.5px] [text-wrap:pretty]">
+            Every article links to your existing pages, chosen from your sitemap. Between sites, a
+            credit-based exchange proposes matches and scores relevance &mdash; and then a person
+            accepts, places and verifies each link before any credit moves.
+          </p>
+          <p class="max-w-[56ch] text-[14.5px] leading-relaxed text-ink-3 [text-wrap:pretty]">
+            It is small, because we are early. We would rather say so than sell a network that is not
+            there yet.
+          </p>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+          {[
+            { h: 'Internal links in every draft', p: 'From the pages you already have, not invented anchors.' },
+            { h: 'Relevance scored, never automatic', p: 'The software proposes. A human accepts, places and verifies.' },
+            { h: 'Verified before it counts', p: 'A link is checked live on the page before a credit moves.' },
+          ].map((c) => (
+            <div class="rounded-lg border border-line bg-panel p-5">
+              <div class="mb-1.5 text-[15px] font-semibold text-ink">{c.h}</div>
+              <p class="text-[13.5px] leading-relaxed text-ink-2">{c.p}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {/* ── INTEGRATIONS ─────────────────────────────────────────────────────  */}
+  <section id="integrations" class="border-b border-line py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
+      <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">Integrations</p>
       <h2 class="mb-3 max-w-[20ch] text-[clamp(25px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.026em] text-ink [text-wrap:balance]">
-        Five working days from domain to first published article.
+        One click to <span class="text-accent-ink">any platform</span>.
       </h2>
       <p class="mb-8 max-w-[58ch] md:mb-11 text-[15.5px] leading-relaxed text-ink-2 sm:text-[16.5px] [text-wrap:pretty]">
-        Ten minutes of setup: the domain, three published pieces so it learns
-        your voice, and the CMS connection. After that it runs on its own, and
-        stops at your inbox.
+        A connection is a destination, not a permission. Each one uses a credential you create and can
+        revoke yourself, and nothing publishes to it until you approve the draft.
       </p>
-
-      <div class="grid overflow-hidden rounded-lg border border-line bg-bg md:grid-cols-2 lg:grid-cols-4">
-        {STEPS.map((step, i) => (
-          <div
-            class={`p-5 sm:p-6 ${i < STEPS.length - 1 ? 'border-b border-line md:border-b-0 md:border-r' : ''}`}
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        {CMS_LIST.map((cms) => (
+          <a
+            href={cms.soon ? '/integrations' : `/integrations`}
+            class:list={[
+              'group flex items-center gap-3 rounded-lg border p-4 transition-colors',
+              cms.soon ? 'border-dashed border-line bg-transparent' : 'border-line bg-bg hover:border-accent',
+            ]}
           >
-            <h3 class="mb-2.5 text-[17px] font-semibold tracking-[-0.015em]">
-              <span class="mr-1 font-medium tabular-nums text-ink-3">{step.n}.</span>
-              {step.title}
-            </h3>
-            <p class="text-sm leading-relaxed text-ink-2">{step.desc}</p>
+            <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-line bg-panel font-mono text-[11px] font-medium text-ink-2">{cms.code}</span>
+            <span class="min-w-0">
+              <span class="block truncate text-[14.5px] font-semibold text-ink group-hover:text-accent-ink">
+                {cms.name}{cms.soon && <span class="ml-1.5 font-mono text-[10px] uppercase tracking-[0.04em] text-ink-3">Soon</span>}
+              </span>
+              <span class="block truncate text-[12.5px] text-ink-3">{CMS_BLURB[cms.code]}</span>
+            </span>
+          </a>
+        ))}
+      </div>
+      <p class="mt-5 text-[14px] text-ink-3">
+        Setup guides for WordPress, Shopify, Ghost and the webhook are in{' '}
+        <a href="/docs" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">the docs</a>.
+      </p>
+    </div>
+  </section>
+
+  {/* ── MORE FEATURES ────────────────────────────────────────────────────  */}
+  <section id="features" class="border-b border-line bg-panel py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
+      <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">Everything else</p>
+      <h2 class="mb-8 max-w-[24ch] md:mb-11 text-[clamp(25px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.026em] text-ink [text-wrap:balance]">
+        Built to be <span class="text-accent-ink">read</span>, not just run.
+      </h2>
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {MORE_FEATURES.map((f) => (
+          <div class="flex flex-col rounded-lg border border-line bg-bg p-5 sm:p-6">
+            <h3 class="mb-2.5 text-[17px] font-semibold leading-snug tracking-[-0.018em] [text-wrap:balance]">{f.title}</h3>
+            <p class="text-[14px] leading-relaxed text-ink-2">{f.desc}</p>
+            {f.href && (
+              <a href={f.href} class="mt-4 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-accent-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
+                Read more <span aria-hidden="true">&rarr;</span>
+              </a>
+            )}
           </div>
         ))}
       </div>
     </div>
   </section>
 
-  {/* ── AGENT READINESS ──────────────────────────────────────────────────
-      Replaces the dark card that drew a fake AI-citation tracker for a feature
-      that does not exist (the removed comment said so outright). This is the
-      one piece of original data the site owns, so it gets a real section.     */}
-  <section class="border-b border-line bg-panel py-14 md:py-20 lg:py-[88px]">
-    <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
-      <div class="grid items-start gap-10 lg:gap-12 lg:grid-cols-[1.15fr_1fr]">
-        <div>
-          <h2 class="mb-4 max-w-[20ch] text-[clamp(25px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.026em] text-ink [text-wrap:balance]">
-            Most sites are invisible to AI assistants.
-          </h2>
-          <p class="mb-5 max-w-[56ch] text-[15.5px] leading-relaxed text-ink-2 sm:text-[16.5px] [text-wrap:pretty]">
-            We scanned {READINESS_SCAN.sites} agency websites against nine checks
-            that decide whether an assistant can read a site at all: crawler
-            rules, structured data, a resolvable entity, a machine-readable copy
-            of each page. {READINESS_SCAN.failedEverything}% had done none of
-            them. Agency sites are the population we measured; nothing suggests
-            the rest of the web does better.
-          </p>
-          <p class="mb-6 max-w-[56ch] md:mb-7 text-[15.5px] leading-relaxed text-ink-2 sm:text-[16.5px] [text-wrap:pretty]">
-            {APP_NAME} runs those nine checks on any domain you add, then
-            generates the fixes rather than handing you a list.
-          </p>
-          <Button href="/geo/track-ai-citations-for-clients" variant="secondary" arrow>
-  Read the methodology
-</Button>
-        </div>
+  {/* ── EXAMPLES ─────────────────────────────────────────────────────────  */}
+  <section id="examples" class="border-b border-line py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[1240px] px-5 text-center sm:px-6 lg:px-8">
+      <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">Examples</p>
+      <h2 class="mx-auto mb-4 max-w-[22ch] text-[clamp(25px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.026em] text-ink [text-wrap:balance]">
+        Read what it writes <span class="text-accent-ink">before you trust it</span>.
+      </h2>
+      <p class="mx-auto mb-7 max-w-[56ch] text-[15.5px] leading-relaxed text-ink-2 sm:text-[16.5px] [text-wrap:pretty]">
+        Our own blog is produced by the product, approved by a person, and published through the same
+        gate every customer gets. Every claim in it cites a source that resolves.
+      </p>
+      <Button href="/blog" variant="secondary" size="lg" arrow>Visit the blog</Button>
+    </div>
+  </section>
 
-        <div class="rounded-lg border border-line bg-bg p-5 sm:p-6">
-          <div class="flex items-baseline gap-3">
-            <span class="text-[56px] font-semibold leading-none tracking-[-0.035em] tabular-nums text-ink">
-              {READINESS_SCAN.failedEverything}%
-            </span>
-            <span class="text-[15px] leading-snug text-ink-2">
-              failed every check
-            </span>
+  {/* ── AI VISIBILITY ────────────────────────────────────────────────────  */}
+  <section id="ai" class="border-b border-line bg-panel py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
+      <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">AI search</p>
+      <h2 class="mb-3 max-w-[20ch] text-[clamp(25px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.026em] text-ink [text-wrap:balance]">
+        Make AI assistants <span class="text-accent-ink">recommend you</span>.
+      </h2>
+      <p class="mb-8 max-w-[58ch] md:mb-11 text-[15.5px] leading-relaxed text-ink-2 sm:text-[16.5px] [text-wrap:pretty]">
+        ChatGPT, Perplexity and AI Overviews cite pages they can read, extract and attribute. Most sites
+        fail the first step.
+      </p>
+      <div class="grid gap-4 md:grid-cols-3">
+        {[
+          { h: 'How an assistant chooses', p: 'It reads the pages a search returns, extracts a passage it can attribute, and cites the source it can verify. Pages it cannot parse are simply not in the running.' },
+          { h: 'What we do about it', p: `Nine technical checks on whether your site can be read at all, fixed rather than scored. Then articles structured to be extractable: a direct answer up top, headings shaped like questions, schema that describes rather than disguises.` },
+          { h: 'Why now', p: 'Assistants form their preferences from what already ranks and already parses. The sites that are readable this year are the ones cited next year.' },
+        ].map((c) => (
+          <div class="rounded-lg border border-line bg-bg p-5 sm:p-6">
+            <h3 class="mb-2.5 text-[17px] font-semibold tracking-[-0.015em]">{c.h}</h3>
+            <p class="text-[14px] leading-relaxed text-ink-2">{c.p}</p>
           </div>
-          <p class="mt-4 border-t border-line-soft pt-4 text-[13.5px] leading-relaxed text-ink-3">
-            {READINESS_SCAN.sites} agency sites, scanned August 2026.
-            Nine checks, run by the same code that runs on client domains.
-          </p>
-        </div>
+        ))}
+      </div>
+      <div class="mt-7">
+        <Button href="/geo" variant="secondary" arrow>The GEO guides</Button>
       </div>
     </div>
   </section>
 
-  {/* ── WHAT IT DOES ─────────────────────────────────────────────────────
-      Three real capabilities, stated once. The six numbered cards this
-      replaces included a drawn Google SERP with invented competitors, a
-      language card claiming 142 languages the code does not have, and a
-      domain-rating ticker for two agencies that were deleted as fabricated in
-      cfd78ef / edc6ed9 and had survived here.                                */}
-  <section id="features" class="border-b border-line py-14 md:py-20 lg:py-[88px]">
+  {/* ── PRICING ──────────────────────────────────────────────────────────
+      Renders from data/pricing.ts so this and /pricing cannot drift. The
+      struck-through "was" price the category shows is absent on purpose: a
+      price we never charged is a fabricated discount.                         */}
+  <section id="pricing" class="border-b border-line py-14 md:py-20 lg:py-[88px]">
     <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
-      <h2 class="mb-8 max-w-[24ch] md:mb-11 text-[clamp(25px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.026em] text-ink [text-wrap:balance]">
-        Built to be read, not just run.
+      <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">Pricing</p>
+      <h2 class="mb-3 max-w-[22ch] text-[clamp(25px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.026em] text-ink [text-wrap:balance]">
+        Free to run yourself. <span class="text-accent-ink">Paid to have it run for you.</span>
       </h2>
-
+      <p class="mb-8 max-w-[58ch] md:mb-11 text-[15.5px] leading-relaxed text-ink-2 sm:text-[16.5px] [text-wrap:pretty]">
+        No trial that converts. Nothing is charged until you choose a plan, and cancelling is a button.
+      </p>
       <div class="grid gap-4 md:grid-cols-3">
-        <div class="flex flex-col rounded-lg border border-line bg-bg p-5 sm:p-6">
-          <h3 class="mb-3 text-[19px] font-semibold leading-snug tracking-[-0.018em] [text-wrap:balance]">
-            It writes in your voice, not a model&rsquo;s
-          </h3>
-          <p class="text-[14.5px] leading-relaxed text-ink-2">
-            Upload three to five published pieces. {APP_NAME} extracts tone,
-            cadence, vocabulary and the phrases you refuse to use, into a voice
-            profile every draft is written against. One profile per workspace,
-            so a second site never inherits the first one&rsquo;s voice.
-          </p>
-        </div>
-
-        <div class="flex flex-col rounded-lg border border-line bg-bg p-5 sm:p-6">
-          <h3 class="mb-3 text-[19px] font-semibold leading-snug tracking-[-0.018em] [text-wrap:balance]">
-            Nothing publishes unreviewed
-          </h3>
-          <p class="text-[14.5px] leading-relaxed text-ink-2">
-            Not a setting you leave switched off, an absence. The MCP server
-            exposes no publish tool, and <code class="rounded bg-panel-2 px-1 py-0.5 font-mono text-[0.85em]">auto_generate</code>
-            has no publish counterpart. A machine picks the topic and writes the
-            draft. A person decides it ships.
-          </p>
-          <a
-            href="/approval-first-seo-content"
-            class="mt-4 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-accent-ink underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:decoration-current"
-          >
-            Why the gate is the product
-            <span aria-hidden="true">&rarr;</span>
-          </a>
-        </div>
-
-        <div class="flex flex-col rounded-lg border border-line bg-bg p-5 sm:p-6">
-          <h3 class="mb-3 text-[19px] font-semibold leading-snug tracking-[-0.018em] [text-wrap:balance]">
-            Publishes where you already are
-          </h3>
-          <p class="mb-5 text-[14.5px] leading-relaxed text-ink-2">
-            Eleven destinations you can connect today, plus {LOCALE_COUNT}
-            locales if you do not sell in English.
-          </p>
-          <div class="mt-auto flex flex-wrap gap-1.5">
-            {CMS_LIST.map((cms) => (
-              <span
-                class:list={[
-                  'rounded-md border px-2.5 py-1 text-[12px]',
-                  cms.soon
-                    ? 'border-dashed border-line bg-transparent text-ink-3'
-                    : 'border-line bg-panel text-ink-2',
-                ]}
-              >
-                {cms.name}
-                {cms.soon && (
-                  <span class="ml-1.5 text-[10.5px] uppercase tracking-[0.04em]">
-                    Soon
-                  </span>
-                )}
-              </span>
-            ))}
+        {PLANS.map((plan) => (
+          <div class="flex flex-col rounded-lg border border-line bg-bg p-6">
+            <div class="mb-1 text-[13px] font-medium text-ink-3">{plan.name}</div>
+            <div class="mb-3 text-[clamp(30px,4vw,40px)] font-semibold leading-none tracking-[-0.03em] text-ink">
+              {plan.price}<span class="text-[14px] font-normal text-ink-3">{plan.price === '€0' ? '' : '/mo'}</span>
+            </div>
+            <p class="mb-5 text-[14px] leading-relaxed text-ink-2">{plan.desc}</p>
+            <ul class="mb-6 flex flex-col gap-2">
+              {plan.features.slice(0, 4).map((f) => (
+                <li class="flex gap-2.5 text-[13.5px] leading-snug text-ink-2">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.2" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true"><path d="M5 12.5 10 17 19 7" /></svg>
+                  <span>{f}</span>
+                </li>
+              ))}
+            </ul>
+            <div class="mt-auto">
+              <Button href="/pricing" variant="secondary" block>See the full plan</Button>
+            </div>
           </div>
-        </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* ── FAQ ──────────────────────────────────────────────────────────────  */}
+  <section id="faq" class="border-b border-line bg-panel py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">FAQ</p>
+      <h2 class="mb-8 text-[clamp(25px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.026em] text-ink">
+        Have questions?
+      </h2>
+      <div class="flex flex-col gap-2">
+        {HOME_FAQ.map((item) => (
+          <details class="group rounded-lg border border-line bg-bg">
+            <summary class="cursor-pointer list-none px-5 py-4 text-[15px] font-medium text-ink [&::-webkit-details-marker]:hidden">{item.question}</summary>
+            <p class="border-t border-line-soft px-5 py-4 text-[14.5px] leading-relaxed text-ink-2">{item.answer}</p>
+          </details>
+        ))}
       </div>
     </div>
   </section>
