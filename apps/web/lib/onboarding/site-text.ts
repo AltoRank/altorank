@@ -58,10 +58,14 @@ async function pageText(url: string): Promise<string> {
 export async function readSiteText(domain: string, maxChars = 12_000): Promise<SiteText> {
   const done = (text: string, source: SiteTextSource): SiteText => ({ text: text.slice(0, maxChars), source, chars: text.length });
 
-  const stat = await scrapeWebsiteText(domain).catch(() => "");
+  // Discovery is needed by the next wizard screen anyway and is cheap, so it
+  // runs alongside the static read instead of after it.
+  const [stat, discovery] = await Promise.all([
+    scrapeWebsiteText(domain).catch(() => ""),
+    discoverSite(domain).catch(() => null),
+  ]);
   if (stat.length >= MIN_CHARS) return done(stat, "static");
 
-  const discovery = await discoverSite(domain).catch(() => null);
   if (discovery?.exampleArticleUrls.length) {
     const parts = await Promise.all(discovery.exampleArticleUrls.slice(0, 3).map(pageText));
     const joined = [stat, ...parts].filter(Boolean).join("\n\n");

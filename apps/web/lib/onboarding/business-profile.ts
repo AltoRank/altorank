@@ -43,7 +43,8 @@ export const EMPTY_PROFILE: BusinessProfile = {
 };
 
 /** Enough of the site to characterise it; more than this is wasted tokens. */
-const MAX_CHARS = 12_000;
+// 8k chars is plenty to describe a business and keeps the proposal under ~15 s.
+const MAX_CHARS = 8_000;
 
 const PROMPT = [
   "You are reading a company's website to fill in their profile for an SEO tool.",
