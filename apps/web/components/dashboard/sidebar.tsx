@@ -318,7 +318,9 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
             </span>
           )}
         </div>
-        <>
+        {/* Grouped tightly: four controls at the footer's own gap left the
+            account name about forty pixels, which is four letters. */}
+        <div className={cn("flex items-center shrink-0", collapsed ? "flex-col gap-2" : "gap-0.5")}>
             {/* Reopens the setup checklist. Lived in the topbar until the
                 topbar went; "Skip setup" is still the only way to hide it, so
                 there has to be a way back. */}
@@ -360,7 +362,7 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
               </TooltipTrigger>
               <TooltipContent side="top">Sign out</TooltipContent>
             </Tooltip>
-        </>
+        </div>
       </div>
     </aside>
     </TooltipProvider>

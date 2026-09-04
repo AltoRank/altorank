@@ -78,6 +78,10 @@ export function ArticleHistory({
                   className={cn(
                     "font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel",
                     ["Difficulty", "Volume", "Date"].includes(h) ? "text-right" : "text-left",
+                    // The title gets a fixed share of the row, or the numeric
+                    // columns take what they like and the one column a person
+                    // reads truncates to five letters.
+                    h === "Title" && "w-[34%]",
                   )}
                 >
                   {h}
