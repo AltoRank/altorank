@@ -222,3 +222,40 @@ describe("rollUp", () => {
     expect(rollUp({ fail: 0, warn: 0, pass: 9, info: 3 })).toBe("ready");
   });
 });
+
+describe("auditArticle — a guessed keyword", () => {
+  // The site crawl infers a keyword from the URL when nobody has told it what
+  // a page targets. Exact-phrase placement checks against a guess cannot pass
+  // (the phrase IS the headline), and produced 40 unactionable failures out
+  // of 40 pages on fitsuite.co.
+  const html =
+    "<h1>Le 5 Funzionalita di un App</h1><p>Un paragrafo introduttivo che non ripete la frase esatta.</p><h2>Quanto costa?</h2>";
+  const args = {
+    html,
+    keyword: "app personal trainer",
+    siteDomain: "fitsuite.co",
+    title: "Le 5 Funzionalita Essenziali di un App per Personal Trainer",
+    metaDescription: "x".repeat(140),
+    slug: "app-personal-trainer",
+  };
+
+  it("does not run the placement checks, and says why", () => {
+    const items = auditArticle({ ...args, keywordConfidence: "guessed" }).items;
+    expect(items.find((i) => i.id === "keyword-in-subheading")).toBeUndefined();
+    expect(items.find((i) => i.id === "keyword-in-intro")).toBeUndefined();
+    const note = find(items, "keyword-placement");
+    expect(note.status).toBe("info");
+    expect(note.detail).toContain("inferred from its URL");
+  });
+
+  it("judges the meta description on length alone when the keyword is a guess", () => {
+    expect(find(auditArticle({ ...args, keywordConfidence: "guessed" }).items, "meta-description").status).toBe("pass");
+    expect(find(auditArticle({ ...args, keywordConfidence: "known" }).items, "meta-description").status).toBe("warn");
+  });
+
+  it("still runs them when the keyword is known", () => {
+    const items = auditArticle({ ...args, keywordConfidence: "known" }).items;
+    expect(items.find((i) => i.id === "keyword-in-subheading")).toBeDefined();
+    expect(items.find((i) => i.id === "keyword-placement")).toBeUndefined();
+  });
+});

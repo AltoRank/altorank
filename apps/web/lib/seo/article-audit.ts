@@ -68,6 +68,20 @@ export interface ArticleAuditInput {
    * `articles.link_checks`. Turns "not verified" into a count of what was.
    */
   linkChecks?: LinkCheck[] | null;
+  /**
+   * Whether `keyword` is the term the page actually targets, or our guess.
+   *
+   * `guessed` when it was inferred from a slug or heading by the site crawl,
+   * because nobody told us. The three checks that ask where the keyword
+   * appears - in a subheading, in the opening paragraph, in the meta
+   * description - are exact-phrase tests, and an inferred multi-word phrase
+   * cannot pass them: it is the headline, so it will not also be inside its
+   * own H2. On fitsuite.co that produced 40 failures out of 40 pages, none of
+   * which a person could act on, because the fix would be "insert this phrase
+   * we made up". So they are not run at all on a guess, and the panel says
+   * why rather than showing a pass nobody earned.
+   */
+  keywordConfidence?: "known" | "guessed";
 }
 
 export interface ArticleAudit {
@@ -358,7 +372,19 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
     locate: skips.slice(0, 6),
   });
 
-  if (kw) {
+  const keywordKnown = (input.keywordConfidence ?? "known") === "known";
+
+  if (kw && !keywordKnown) {
+    push({
+      id: "keyword-placement",
+      group: "structure",
+      status: "info",
+      label: "Keyword placement not checked",
+      detail: `Nothing told us what this page targets, so "${keyword}" was inferred from its URL. Where a keyword appears is only worth measuring against the real one; connect Search Console or run a rank check and these become answerable.`,
+    });
+  }
+
+  if (kw && keywordKnown) {
     push({
       id: "keyword-in-subheading",
       group: "structure",
@@ -432,7 +458,11 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
   if (meta) {
     if (meta.length < 120) metaIssues.push(`${meta.length} characters is short; 120 to 160 fills the snippet`);
     if (meta.length > 160) metaIssues.push(`${meta.length} characters will be truncated around 160`);
-    if (kw && !meta.toLowerCase().includes(kw)) metaIssues.push("it does not contain the keyword, which Google bolds when it matches the query");
+    // Same reasoning as the placement checks: only meaningful against a
+    // keyword somebody actually chose.
+    if (kw && keywordKnown && !meta.toLowerCase().includes(kw)) {
+      metaIssues.push("it does not contain the keyword, which Google bolds when it matches the query");
+    }
   }
   push({
     id: "meta-description",

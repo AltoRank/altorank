@@ -60,6 +60,8 @@ export type Workspace = {
   /** Publishing platform observed during analysis. null when undetermined. */
   detected_platform: string | null;
   detected_platform_at: string | null;
+  /** When lib/seo/site-crawl.ts last read this site's own pages. */
+  last_pages_crawl_at?: string | null;
   /** Organic sessions/mo, preformatted. null when unmeasured: render —, never 0. */
   traffic: string | null;
   ai_provider: AIProviderType | null;
