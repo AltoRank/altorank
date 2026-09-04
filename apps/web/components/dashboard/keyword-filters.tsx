@@ -18,11 +18,17 @@ const INTENT_OPTIONS = [
   { label: "Navigational", value: "navigational" },
 ];
 
-export function KeywordFilters() {
+/**
+ * `rankingAvailable` is false when no workspace is scoped: positions, clicks
+ * and impressions belong to one site, and a table of them across several
+ * would be numbers describing none of them.
+ */
+export function KeywordFilters({ rankingAvailable = false }: { rankingAvailable?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentStatus = searchParams.get("status") ?? "";
   const currentIntent = searchParams.get("intent") ?? "";
+  const currentView = searchParams.get("view") === "ranking" ? "ranking" : "plan";
 
   function setFilter(key: string, value: string) {
     const params = new URLSearchParams(searchParams.toString());
@@ -65,6 +71,12 @@ export function KeywordFilters() {
         />
       ))}
       <div className="flex-1" />
+      {rankingAvailable && (
+        <div className="flex items-center gap-1 mr-2 pr-2 border-r border-line">
+          <Chip label="Plan" active={currentView === "plan"} onClick={() => setFilter("view", "")} soft={currentView !== "plan"} />
+          <Chip label="Ranking" active={currentView === "ranking"} onClick={() => setFilter("view", "ranking")} soft={currentView !== "ranking"} />
+        </div>
+      )}
       {INTENT_OPTIONS.map((c) => (
         <Chip
           key={c.label}
