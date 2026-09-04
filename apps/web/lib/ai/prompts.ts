@@ -162,6 +162,82 @@ export function buildResearchSection(research: ArticleResearch): string[] {
   return sections;
 }
 
+/**
+ * The register that reads as machine-written, as a list.
+ *
+ * The prompt below bans these in prose; lib/refresh/validate.ts checks a
+ * rewrite against the same list so the check and the instruction cannot
+ * drift apart. Lower-case, matched as substrings of the page text.
+ */
+export const BANNED_PHRASES: readonly string[] = [
+  "in today's fast-paced world",
+  "in the ever-evolving landscape",
+  "in the digital age",
+  "let's dive in",
+  "look no further",
+  "delve",
+  "tapestry",
+  "unlock the power",
+  "game-changer",
+  "robust solution",
+  "seamlessly",
+  "it is important to note that",
+  "in conclusion",
+];
+
+/**
+ * The user turn. One place, so both providers say the same thing and a
+ * refresh asks for a rewrite rather than a fresh article.
+ */
+export function buildUserMessage(prompt: ArticlePrompt): string {
+  if (prompt.refreshOf) {
+    return `Rewrite the existing page now, following the brief, for the keyword: "${prompt.keyword}"`;
+  }
+  return `Write the article now for the keyword: "${prompt.keyword}"`;
+}
+
+/**
+ * The section that turns the article brief into a rewrite brief.
+ *
+ * Placed right after the role so the model reads "this page exists" before it
+ * reads the format rules, which otherwise describe a blank page. The body is
+ * capped because a refresh of a very long page still has to leave room for
+ * the output; the cap is generous enough that nothing normal is cut.
+ */
+export function buildRefreshSection(refresh: NonNullable<ArticlePrompt["refreshOf"]>): string[] {
+  const MAX_BODY = 60_000;
+  const body =
+    refresh.existingHtml.length > MAX_BODY
+      ? refresh.existingHtml.slice(0, MAX_BODY) + "\n<!-- truncated for length -->"
+      : refresh.existingHtml;
+  return [
+    [
+      "THIS IS A REWRITE OF AN EXISTING PAGE, NOT A NEW ARTICLE.",
+      refresh.url ? `- The page lives at ${refresh.url}.` : "",
+      refresh.title ? `- Its current title is: ${refresh.title}` : "",
+      refresh.metaDescription ? `- Its current meta description is: ${refresh.metaDescription}` : "",
+      "- Preserve the section order and every H2 that already addresses the topic. Strengthen",
+      "  headings that are vague; do not rename ones that are already the question a reader types.",
+      "- Keep every existing link exactly as it is (same href, same anchor unless the sentence",
+      "  around it changes) and every image (same src and alt). Removing a link or an image",
+      "  is a regression, not an edit.",
+      "- Refresh facts, figures, prices and dates that have aged. Do not invent replacements:",
+      "  a figure you cannot source is cut, not updated.",
+      "- Improve coverage where the brief says the page is thin, and add the questions the",
+      "  brief lists as their own H2 or H3 with a self-contained answer.",
+      "- Write a stronger title and meta description if the brief asks for it; otherwise keep",
+      "  them close to the current ones.",
+      "- Keep paragraphs that are already good. The reviewer sees a block-by-block diff, and",
+      "  a rewrite that rewords every sentence for no reason is harder to trust than one",
+      "  that changes what needed changing.",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    ["THE BRIEF FOR THIS REWRITE:", refresh.brief.trim()].join("\n"),
+    ["THE CURRENT PAGE BODY (HTML):", body].join("\n"),
+  ];
+}
+
 export function buildSystemPrompt(prompt: ArticlePrompt): string {
   const {
     keyword,
@@ -179,9 +255,18 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
 
   // --- Role ------------------------------------------------------------------
   sections.push(
-    `You are an expert SEO content writer. Your task is to write a comprehensive, ` +
-      `well-structured article optimized for the keyword "${keyword}" in ${language}.`
+    prompt.refreshOf
+      ? `You are an expert SEO editor. Your task is to rewrite an existing, well-structured ` +
+          `page so it ranks and converts better for the keyword "${keyword}" in ${language}, ` +
+          `changing what the brief says needs changing and keeping the rest.`
+      : `You are an expert SEO content writer. Your task is to write a comprehensive, ` +
+          `well-structured article optimized for the keyword "${keyword}" in ${language}.`
   );
+
+  // --- The page being rewritten ---------------------------------------------
+  if (prompt.refreshOf) {
+    sections.push(...buildRefreshSection(prompt.refreshOf));
+  }
 
   // --- Date ------------------------------------------------------------------
   // Without this the model dates things to its training data: the first e2e
@@ -214,12 +299,15 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
 
   // --- Length -----------------------------------------------------------------
   sections.push(
-    `Target approximately ${targetWordCount} words. ` +
-      (research
-        ? `This length is derived from the live SERP: ${research.wordCountBasis}. `
-        : "") +
-      `Ensure the content is thorough and provides genuine value to the reader. ` +
-      `Do not pad to reach the target: stop when the topic is covered.`
+    prompt.refreshOf
+      ? `Length follows the brief: extend where it says the page is thin, otherwise stay ` +
+          `close to the current length. Never cut the page by more than a third.`
+      : `Target approximately ${targetWordCount} words. ` +
+          (research
+            ? `This length is derived from the live SERP: ${research.wordCountBasis}. `
+            : "") +
+          `Ensure the content is thorough and provides genuine value to the reader. ` +
+          `Do not pad to reach the target: stop when the topic is covered.`
   );
 
   // --- Research --------------------------------------------------------------

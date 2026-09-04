@@ -33,7 +33,7 @@ import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research"
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { getLocale } from "@/lib/seo/locales";
-import type { VoiceRules } from "@/lib/ai/types";
+import type { RefreshContext, VoiceRules } from "@/lib/ai/types";
 
 export interface GenerateArticleOptions {
   supabase: SupabaseClient;
@@ -99,6 +99,20 @@ export interface GenerateArticleOptions {
   onChunk?: (html: string) => void;
   /** Called once research completes, before the model starts. */
   onResearch?: (research: ArticleResearch) => void;
+  /**
+   * Rewrite an existing page instead of writing a new one.
+   *
+   * Same pipeline - quota, research, model, typography, link checks, fact
+   * check, scoring - with two differences: the prompt carries the current
+   * body and a brief, and nothing is written to `articles`. The result comes
+   * back as HTML for the caller (lib/refresh/rewrite.ts) to diff against the
+   * original and store as an execution awaiting review. Writing the rewrite
+   * into the article row here would put an unreviewed body under a live page.
+   *
+   * `articleId` names the page we wrote, when we did, so the job and the
+   * spend are attributed to it; `url` is where the page lives either way.
+   */
+  refreshOf?: RefreshContext & { articleId?: string | null };
 }
 
 export interface GenerateArticleResult {
@@ -109,13 +123,33 @@ export interface GenerateArticleResult {
   tokensUsed: number;
   research: ArticleResearch;
   factCheck: FactCheckReport;
+  /** The processed body. Always set; a refresh caller has nowhere else to read it. */
+  html: string;
+  metaDescription: string;
+  linkChecks: LinkCheck[] | null;
+  seoScore: number;
+  aeoScore: number;
 }
 
+/** A rewrite of a page the product did not write has no article id. */
+export type RefreshArticleResult = Omit<GenerateArticleResult, "articleId"> & {
+  articleId: string | null;
+};
+
+// Two signatures, one body: a caller writing a new article always gets an id
+// back; a refresh caller may not, and the types say so rather than handing
+// the cron an `articleId` it has to null-check for a case it never hits.
+export async function generateArticle(
+  options: GenerateArticleOptions & { refreshOf: NonNullable<GenerateArticleOptions["refreshOf"]> },
+): Promise<RefreshArticleResult>;
+export async function generateArticle(
+  options: GenerateArticleOptions & { refreshOf?: undefined },
+): Promise<GenerateArticleResult>;
 export async function generateArticle(
   options: GenerateArticleOptions,
-): Promise<GenerateArticleResult> {
+): Promise<GenerateArticleResult | RefreshArticleResult> {
   const { supabase, workspaceId, keyword, title, autonomous, onChunk, onResearch,
-    selection, articleId, billToAgencyId, callerEmail,
+    selection, articleId, billToAgencyId, callerEmail, refreshOf,
   } = options;
 
   const { data: workspace, error: wsError } = await supabase
@@ -166,14 +200,19 @@ export async function generateArticle(
   // Two shapes of run. The "new article" callers - the modal and the cron -
   // have no row yet and get one. The editor is generating into a draft the user
   // already has open and must write to that row.
-  let article: { id: string };
+  let article: { id: string | null };
   // The status the article carried before this run, so a failure can put it
   // back. Only set on the in-place path; `articleId` itself, not this, is what
   // the failure paths below key off, so a schema change to `status` can never
   // turn "restore it" into "delete it".
   let previousStatus: string | null = null;
 
-  if (articleId) {
+  if (refreshOf) {
+    // A rewrite touches no article row: the original stays exactly as it is
+    // until a person pushes the reviewed result. The id, when there is one,
+    // is only for attributing the job and the spend.
+    article = { id: refreshOf.articleId ?? null };
+  } else if (articleId) {
     const { data: existing, error: existingError } = await supabase
       .from("articles")
       .select("id, status")
@@ -225,7 +264,10 @@ export async function generateArticle(
       article_id: article.id,
       status: "running",
       ai_provider: workspace.ai_provider || "claude",
-      prompt_config: { keyword, title, voiceRules, autonomous: autonomous ?? false },
+      prompt_config: {
+        keyword, title, voiceRules, autonomous: autonomous ?? false,
+        ...(refreshOf ? { refresh: { url: refreshOf.url ?? null, brief: refreshOf.brief } } : {}),
+      },
       started_at: new Date().toISOString(),
     })
     .select("id")
@@ -235,7 +277,9 @@ export async function generateArticle(
     // Only a row this run created may be deleted here. Generating into an
     // article the user already had, this line would destroy their draft
     // because a job row failed to insert.
-    if (articleId) {
+    if (refreshOf) {
+      // Nothing was written, so there is nothing to undo.
+    } else if (articleId) {
       await supabase
         .from("articles")
         .update({
@@ -320,7 +364,7 @@ export async function generateArticle(
     // different sets (the prompt any sibling with content, the resolver only
     // live rows), so the writer linked to drafts and every placeholder came
     // back unresolved. One list, two readers, no disagreement.
-    const linkTargets = await fetchLinkTargets(supabase, workspaceId, article.id);
+    const linkTargets = await fetchLinkTargets(supabase, workspaceId, article.id ?? undefined);
 
     const generator = provider.streamArticle({
       keyword,
@@ -331,6 +375,15 @@ export async function generateArticle(
       internalLinkTargets: linkTargets
         .slice(0, 20)
         .map((t) => ({ title: t.title, keyword: t.keyword })),
+      refreshOf: refreshOf
+        ? {
+            existingHtml: refreshOf.existingHtml,
+            brief: refreshOf.brief,
+            url: refreshOf.url ?? null,
+            title: refreshOf.title ?? null,
+            metaDescription: refreshOf.metaDescription ?? null,
+          }
+        : undefined,
     });
 
     let articleResult;
@@ -381,7 +434,9 @@ export async function generateArticle(
       }
     }
 
-    await enhance("video embed", (html) => embedYouTubeVideos(html, keyword));
+    // Not on a rewrite: the brief says preserve the page, and a video the
+    // original did not have is a new block for the reviewer to reject.
+    if (!refreshOf) await enhance("video embed", (html) => embedYouTubeVideos(html, keyword));
     await enhance("internal links", async (html) => resolveInternalLinks(html, linkTargets));
 
     // Open every outbound link once. The brief asks for real URLs and a model
@@ -450,13 +505,15 @@ export async function generateArticle(
     // (measured 2026-09-03: 15 of 15). The generation still must not fail over
     // an image, so the outcome is logged rather than thrown.
     let featuredImageUrl: string | null = null;
-    if (!process.env.OPENAI_API_KEY) {
+    if (!process.env.OPENAI_API_KEY && !refreshOf) {
       console.warn(
         "[generate] no featured image: OPENAI_API_KEY is not set, so image generation is skipped for every article",
       );
     }
     try {
-      if (process.env.OPENAI_API_KEY) {
+      // A rewrite keeps the page's own hero; generating another would be spend
+      // with nowhere to put it.
+      if (process.env.OPENAI_API_KEY && !refreshOf && article.id) {
         const imageResult = await generateImage(
           articleResult.title,
           keyword,
@@ -474,6 +531,36 @@ export async function generateArticle(
         "[generate] featured image failed:",
         err instanceof Error ? err.message : err,
       );
+    }
+
+    // A rewrite stops here. The body goes back to the caller, which diffs it
+    // against the original and stores the hunks for review; the article row,
+    // if there is one, is not touched until "Push to site".
+    if (refreshOf) {
+      await supabase
+        .from("generation_jobs")
+        .update({
+          status: "completed",
+          tokens_used: articleResult.tokensUsed,
+          result: { wordCount: articleResult.wordCount, title: articleResult.title, refresh: true },
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", job.id);
+
+      return {
+        articleId: article.id,
+        jobId: job.id,
+        title: articleResult.title,
+        wordCount: articleResult.wordCount,
+        tokensUsed: articleResult.tokensUsed,
+        research,
+        factCheck,
+        html: processedHtml,
+        metaDescription: articleResult.metaDescription,
+        linkChecks,
+        seoScore: seo.score,
+        aeoScore: aeo.score,
+      };
     }
 
     const { error: saveError } = await supabase
@@ -539,13 +626,20 @@ export async function generateArticle(
       .eq("id", job.id);
 
     return {
-      articleId: article.id,
+      // Non-null on this path: the row was created or resolved above, and a
+      // refresh returned before reaching here.
+      articleId: article.id as string,
       jobId: job.id,
       title: articleResult.title,
       wordCount: articleResult.wordCount,
       tokensUsed: articleResult.tokensUsed,
       research,
       factCheck,
+      html: processedHtml,
+      metaDescription: articleResult.metaDescription,
+      linkChecks,
+      seoScore: seo.score,
+      aeoScore: aeo.score,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown generation error";
@@ -555,13 +649,16 @@ export async function generateArticle(
     // already had puts the status back where it found it: a failed generation
     // should not strand a good draft in a state the UI reads as broken. The
     // content is untouched either way, since it is only written on success.
-    await supabase
-      .from("articles")
-      .update({
-        status: articleId ? (previousStatus ?? "draft") : "error",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", article.id);
+    // A rewrite wrote no row and restores nothing.
+    if (!refreshOf && article.id) {
+      await supabase
+        .from("articles")
+        .update({
+          status: articleId ? (previousStatus ?? "draft") : "error",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", article.id);
+    }
 
     await supabase
       .from("generation_jobs")

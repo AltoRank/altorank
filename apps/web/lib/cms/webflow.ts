@@ -58,6 +58,36 @@ export class WebflowAdapter implements CMSAdapter {
     };
   }
 
+  /** Edit the item in place, then publish it so the change goes live. */
+  async update(externalId: string, article: PublishPayload): Promise<PublishResult> {
+    const res = await fetch(
+      `${WEBFLOW_API}/collections/${this.collectionId}/items/${externalId}`,
+      {
+        method: "PATCH",
+        headers: this.headers(),
+        body: JSON.stringify({
+          fieldData: {
+            name: article.title,
+            "post-body": article.html,
+            "post-summary": article.metaDescription ?? "",
+          },
+        }),
+      },
+    );
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Webflow update failed (${res.status}): ${err}`);
+    }
+    await fetch(
+      `${WEBFLOW_API}/collections/${this.collectionId}/items/${externalId}/publish`,
+      { method: "POST", headers: this.headers() },
+    );
+    return {
+      externalId,
+      url: `https://${this.siteId}.webflow.io/${article.slug}`,
+    };
+  }
+
   async unpublish(externalId: string): Promise<void> {
     const res = await fetch(
       `${WEBFLOW_API}/collections/${this.collectionId}/items/${externalId}`,
