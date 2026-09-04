@@ -147,3 +147,75 @@ export const READINESS_SCAN = {
   sites: 274,
   failedEverything: 86,
 };
+
+// ── Homepage sections added 2026-09-04 ────────────────────────────────────
+//
+// The page now follows the section architecture the category converges on:
+// proof -> stats -> problem/solution -> how it works -> features -> links ->
+// integrations -> more features -> examples -> AI visibility -> pricing -> FAQ
+// -> CTA. The ARCHITECTURE is borrowed. The CLAIMS are not: every number below
+// is one we can evidence, and the two sections the category fills with
+// testimonials and a review wall are deliberately absent here, because we have
+// no customers to quote and will not invent any (see the deleted Results block
+// in PRODUCT.md, and cfd78ef / edc6ed9).
+
+/** The stats bar. Each figure names its source; do not restate one elsewhere
+ *  without checking it. */
+export const STATS: { value: string; label: string; source: string }[] = [
+  { value: '274', label: 'sites scanned for AI readability', source: 'READINESS_SCAN.sites' },
+  { value: '86', label: 'of them failed every one of the nine checks', source: 'READINESS_SCAN.failedEverything' },
+  { value: '11', label: 'publishing destinations, live today', source: 'CMS_LIST minus soon' },
+  { value: `${LOCALE_COUNT}`, label: 'locales, counted in the code', source: 'LOCALE_COUNT' },
+];
+
+/** "Your problem / our solution": the tools one workspace replaces. Each row
+ *  is a capability that exists in apps/web today. */
+export const REPLACES: { tool: string; ours: string }[] = [
+  { tool: 'A keyword research tool', ours: 'Gap keywords for your specific domain, ranked by traffic against difficulty, from live SERP data' },
+  { tool: 'A writer, or a writing tool', ours: 'A draft every morning in your voice, trained on three to five of your own pieces' },
+  { tool: 'An on-page checker', ours: 'An SEO score and a fact-check verdict on every draft before you open it' },
+  { tool: 'An internal-linking plugin', ours: 'Links to your existing pages, chosen from your sitemap, in every article' },
+  { tool: 'A publishing workflow', ours: 'One click to any of eleven destinations, after a person approves' },
+  { tool: 'A client reporting tool', ours: 'White-label reports and a workspace per client, in the free build' },
+];
+
+/** The "and so much more" grid. Nine capabilities that are already stated on
+ *  this site or exist in apps/web. Keep each `href` pointing at the page that
+ *  substantiates the claim. */
+export const MORE_FEATURES: { title: string; desc: string; href?: string }[] = [
+  { title: 'An inbox, not an autopilot', desc: 'Every draft lands with an SEO score and a fact-check verdict. You approve it or send it back; there is no third option and no setting that skips this.', href: '/approval-first-seo-content' },
+  { title: 'Written in your voice', desc: 'Three to five published pieces become a voice profile: tone, cadence, vocabulary and the phrases you refuse to use. One profile per workspace.' },
+  { title: 'Search Console, read-only', desc: 'Connect it and the plan starts from your own clicks, impressions and positions rather than an estimate. It never writes to your property.' },
+  { title: 'Rank and AI-citation tracking', desc: 'Positions per keyword, and snapshots of whether ChatGPT, Perplexity and AI Overviews cite your pages, per workspace.', href: '/geo/track-ai-citations-for-clients' },
+  { title: 'A workspace per client', desc: 'Each site or client gets its own voice, plan, connections and report. Agencies run a roster; nothing leaks between them.' },
+  { title: 'White-label reporting', desc: 'Client-facing reports under your brand, in the free self-hosted build, not behind a paid tier.', href: '/open-source' },
+  { title: 'Nine AI-readability checks', desc: 'The technical signals that decide whether an AI assistant can read a site at all, checked and fixed, not just scored.', href: '/geo' },
+  { title: 'Drive it from Claude Code', desc: 'An MCP server exposes research, drafting and review. It exposes no publish tool, so an agent cannot route around the approval either.' },
+  { title: `${LOCALE_COUNT} locales`, desc: 'Counted in the code rather than rounded up on a landing page. If you do not sell in English, the plan and the drafts follow the market you pick.' },
+];
+
+/** One line per destination, for the integrations tiles. Keys match CMS_LIST. */
+export const CMS_BLURB: Record<string, string> = {
+  SH: 'Store blog, product-aware',
+  WP: 'Any self-hosted site',
+  MG: 'Admin-token publish',
+  WC: 'WordPress with a shop',
+  WF: 'CMS collections',
+  GH: 'Native Admin API',
+  FR: 'CMS collections',
+  WX: 'Wix Blog',
+  NO: 'Fill a database',
+  HS: 'HubSpot blog',
+  WH: 'Anything that takes JSON',
+  GT: 'Markdown to your repo',
+};
+
+/** Homepage FAQ. Answers restate claims made elsewhere on the site; nothing new. */
+export const HOME_FAQ: { question: string; answer: string }[] = [
+  { question: 'Does AltoRank publish articles automatically?', answer: 'No. It researches, drafts and scores automatically, then stops at your inbox. A person approves each draft before it reaches a live site, and the MCP server exposes no publish tool, so this holds even when an AI agent is driving the product.' },
+  { question: 'Is it really free to self-host?', answer: 'Yes. The whole product is open source under AGPL-3.0, with multi-client workspaces, white-label reports and the approval gate all in the free build. You bring your own model API key. The managed plans exist for people who would rather not run infrastructure.' },
+  { question: 'Which platforms can it publish to?', answer: 'WordPress, Shopify, Magento, WooCommerce, Webflow, Ghost, Framer, Wix, Notion, HubSpot and any webhook endpoint - eleven today - with Git for static sites shipping next. Each connector uses a credential you create and can revoke yourself.' },
+  { question: 'How does it learn my writing voice?', answer: 'You point it at three to five pieces you have already published. It extracts tone, cadence, vocabulary and the phrases you avoid into a voice profile, and every draft in that workspace is written against it. A second site never inherits the first one\'s voice.' },
+  { question: 'Does it help with ChatGPT and AI search, not only Google?', answer: 'Yes. It checks the nine technical signals that decide whether an AI assistant can read a site, fixes the ones it can, structures articles to be extractable and citable, and tracks whether your pages are being cited.' },
+  { question: 'Who is behind AltoRank?', answer: 'AltoRank is built and operated by SUPALABS SRL (VAT 04596950248), a company in Italy. GDPR applies to us as a matter of establishment, not only because we sell into the EU.' },
+];
