@@ -105,6 +105,8 @@ export async function analyseDomain(options: {
    * first look inside the app can never disagree about a domain (2026-09-02).
    */
   depth?: "quick" | "full";
+  /** The workspace's search market, e.g. 2380 for Italy. Paired with `locale`. */
+  locationCode?: number;
 }): Promise<DomainAnalysis> {
   const domain = normalizeDomain(options.domain);
   const { supabase, workspaceId } = options;
@@ -458,7 +460,16 @@ export async function analyseDomain(options: {
   let referringDomains: number | null = null;
   if (hasDataForSeo) {
     try {
-      const m = await fetchDomainMetrics(domain, { languageCode: options.locale ?? "en" });
+      // Location travels with language or the pair is rejected. This passed
+      // the workspace's language and let the location default to the United
+      // States, so an Italian site asked for Italian results in the US and
+      // DataForSEO answered "Invalid Field: 'language_code'" - which reads
+      // like the field is wrong rather than the combination. Traffic was
+      // therefore null on every non-English workspace (2026-09-04).
+      const m = await fetchDomainMetrics(domain, {
+        languageCode: options.locale ?? "en",
+        locationCode: options.locationCode,
+      });
       authority = m.authority;
       traffic = m.traffic;
       referringDomains = m.referringDomains;

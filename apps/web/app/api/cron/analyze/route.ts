@@ -59,7 +59,7 @@ export async function GET(request: Request) {
 
   const { data: pending, error } = await supabase
     .from("workspaces")
-    .select("id, domain, language")
+    .select("id, domain, language, location_code")
     .is("first_analysed_at", null)
     .not("domain", "is", null)
     .neq("status", "paused")
@@ -89,6 +89,7 @@ export async function GET(request: Request) {
         supabase,
         workspaceId,
         locale: (ws.language as string) ?? "en",
+        locationCode: (ws.location_code as number | null) ?? undefined,
       });
 
       results.push({
