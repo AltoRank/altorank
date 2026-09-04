@@ -17,6 +17,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicModel } from "@/lib/ai/models";
 import { readSiteText, type SiteTextSource, MIN_CHARS } from "./site-text";
+import { e2eStubsEnabled, stubInferProfile } from "@/lib/e2e/stubs";
 
 export interface BusinessProfile {
   /** The business's own name for itself, not the domain. */
@@ -82,6 +83,8 @@ export interface InferenceResult {
  * words "we've filled this in".
  */
 export async function inferBusinessProfileDetailed(domain: string): Promise<InferenceResult> {
+  // E2E_STUBS: a fixture instead of a site read and a model call (lib/e2e/stubs.ts).
+  if (e2eStubsEnabled()) return stubInferProfile(domain);
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return { profile: null, reason: "no_model", source: "none" };
 
