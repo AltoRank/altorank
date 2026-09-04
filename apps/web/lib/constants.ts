@@ -40,6 +40,8 @@ export const DASHBOARD_NAV: NavGroup[] = [
       // Articles rather than a section beside it (2026-09-02).
       { id: "articles", label: "Articles", href: "/articles", icon: "articles" },
       { id: "calendar", label: "Calendar", href: "/content", icon: "calendar" },
+      // Rewrites of pages that already rank, each waiting for a yes.
+      { id: "improvements", label: "Improvements", href: "/improvements", icon: "refresh" },
       { id: "keywords", label: "Keywords", href: "/keywords", icon: "keywords" },
       { id: "voice", label: "Brand Voice", href: "/voice", icon: "voice" },
       // Under "Agency" until 2026-08-30, which is exactly backwards:
