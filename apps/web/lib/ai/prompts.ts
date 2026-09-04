@@ -241,6 +241,15 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       "- Use <ul>/<ol> and <li> for lists when they improve readability.",
       "- Use <strong> and <em> for emphasis where natural.",
       "- Do NOT include <html>, <head>, <body>, or <style> tags.",
+      // The alt rule sits with the format rules rather than with SEO because
+      // the SEO framing is what produced the problem: told to "include the
+      // keyword", a model writes alt="the keyword". It passes a has-alt check
+      // and is useless to the screen reader and the crawler alike.
+      "- Do not invent <img> URLs. Any image that does appear in the article carries",
+      "  an alt attribute that is a full sentence describing what the image shows, at",
+      '  least six words ("Bar chart comparing the monthly price of five email tools").',
+      `  Never the keyword on its own: alt="${keyword}" tells a screen reader nothing`,
+      "  and reads as keyword stuffing to a crawler.",
     ].join("\n")
   );
 
@@ -388,6 +397,12 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       "- Cite external sources with real, working links: two at minimum, and about",
       "  one for every 500 words. Every link is fetched after you write; one that",
       '  does not resolve is removed. Never emit href="#" or a placeholder URL.',
+      "- Put the link in the sentence that makes the claim: the <a> wraps words inside",
+      "  that sentence, next to the figure or the name it supports. Do not collect",
+      "  citations in a Sources, References or Further reading list at the end; a link",
+      "  three screens below the claim is a link nobody follows, and an answer engine",
+      "  quoting the passage does not carry it. If you add such a list anyway, every",
+      "  URL in it must already be linked inline where the claim is made.",
       "- A well-known rule of thumb is still an unsourced claim. \"Roughly 80% of",
       "  results come from 20% of pages\", \"most experts agree\", \"studies show\" -",
       "  the fact checker flags these and it is right to. Either attribute the",
