@@ -1,0 +1,138 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import GrowthPlanScript from '@/components/shared/GrowthPlanScript.astro';
+import { buildFAQSchema, buildBreadcrumbSchema, buildSoftwareAppSchema } from '@/lib/schema';
+import { READINESS_SCAN } from '@/data/homepage';
+import { APP_NAME, PRIMARY_CTA, APP_URL, SIGNUP_URL, SITE_URL } from '@/constants';
+
+// The free tool, as its own page.
+//
+// The category runs two of these (an "SEO audit" and a "competitor analysis")
+// as separate lead magnets. We already have the thing itself - the homepage
+// hero form posts to /api/growth-plan and renders a real result - it just had
+// no page of its own to rank. This page owns the query and reuses the same
+// endpoint and the same client script contract as the hero.
+//
+// The form markup and the data-* attributes must stay identical to the hero's,
+// because src/pages/index.astro's script binds by #growth-plan-form and
+// #growth-plan. If you rename either, rename it in both places.
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Free growth plan', href: '/growth-plan' },
+];
+
+const RETURNS = [
+  { h: 'What you already rank for', p: 'Pulled from live SERP data for your domain, not estimated from your homepage copy. Every line names a term or a URL that is actually yours.' },
+  { h: 'The page-one terms your competitors hold', p: 'The gap: queries where sites in your category rank and you do not, ranked by traffic against difficulty rather than by volume alone.' },
+  { h: 'Whether an AI assistant can read your site', p: `The nine technical signals that decide whether ChatGPT, Perplexity or AI Overviews can parse a page at all. We scanned ${READINESS_SCAN.sites} sites and ${READINESS_SCAN.failedEverything} failed every one of them.` },
+  { h: 'The fixes, generated', p: 'Not a score with a sad face. Where a signal fails and the fix is machine-generatable, the plan generates it.' },
+];
+
+const FAQ = [
+  { question: 'Is it really free, and is there a signup?', answer: 'Free, and no signup. You type a domain and the result renders on the page. There is no email gate before the result, because a gated result is a promise and a visible one is an outcome.' },
+  { question: 'How long does it take?', answer: 'About sixty seconds. It is doing real work in that time: crawling pages, pulling live SERP data for the domain and running the readability checks.' },
+  { question: 'Can I run it on a domain I do not own?', answer: 'Yes. Nothing about the plan requires access to the site, because everything it reads is public. Agencies typically run it on a prospect before the first call.' },
+  { question: 'What is the catch?', answer: `There is a real one, so here it is: the plan is genuinely useful on its own, and it is also the top of our funnel. If you want the plan executed - articles drafted in your voice, reviewed and published - that is the product. If you only want the plan, take it.` },
+  { question: `Do I need ${APP_NAME} to act on it?`, answer: 'No. The output is specific enough to hand to a writer or do yourself. And the whole engine is open source, so if you would rather run it than buy it, that path is complete and free.' },
+];
+
+const structuredData = [
+  buildBreadcrumbSchema(breadcrumbs),
+  buildSoftwareAppSchema({
+    name: `${APP_NAME} free growth plan`,
+    description: 'A free SEO and AI-readability growth plan for any domain: what you rank for, the gap terms competitors hold, and whether AI assistants can read your site.',
+    url: `${SITE_URL}/growth-plan`,
+    category: 'BusinessApplication',
+  }),
+  buildFAQSchema(FAQ),
+];
+---
+
+<PSEO
+  title={`Free SEO Growth Plan for Any Domain (60 Seconds, No Signup)`}
+  description={`Type a domain and get what it ranks for, the page-one terms competitors hold that it does not, and whether AI assistants can read it. Free, about 60 seconds, no signup.`}
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">Free tool</p>
+      <h1 class="mb-5 text-[clamp(28px,5vw,42px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+        A growth plan for any domain, <span class="text-accent-ink">in about a minute</span>.
+      </h1>
+      <p class="mb-8 max-w-[62ch] text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        What the site ranks for, the page-one terms its competitors hold that it does not, and whether
+        an AI assistant can read it at all. Free, no signup, and every line names a real URL or term.
+      </p>
+
+      <form
+        id="growth-plan-form"
+        class="flex max-w-[560px] flex-col gap-2.5 sm:flex-row"
+        data-api={`${APP_URL}/api/growth-plan`}
+        data-lead={`${APP_URL}/api/growth-plan/lead`}
+        data-signup={SIGNUP_URL}
+        novalidate
+      >
+        <label for="growth-plan-domain" class="sr-only">Your domain</label>
+        <input
+          id="growth-plan-domain"
+          name="domain"
+          type="text"
+          inputmode="url"
+          autocomplete="url"
+          spellcheck="false"
+          required
+          placeholder="yourdomain.com"
+          class="h-12 flex-1 rounded-[9px] border border-line bg-bg px-4 text-[15px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft"
+        />
+        <button
+          type="submit"
+          class="inline-flex h-12 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-[9px] bg-accent px-5 text-[15px] font-medium text-white transition-colors hover:bg-accent-strong"
+        >
+          <span data-label>Get my growth plan</span>
+        </button>
+      </form>
+      <p class="mt-4 text-[13px] text-ink-3">
+        Free. About 60 seconds. No signup. Or <a href={PRIMARY_CTA.href} class="underline decoration-line underline-offset-[3px] hover:decoration-accent">add your domain</a> to have the plan executed.
+      </p>
+
+      <section id="growth-plan" hidden aria-live="polite" class="mt-10 text-left"></section>
+    </div>
+  </section>
+
+  <section class="border-b border-line bg-panel py-14 md:py-20">
+    <div class="mx-auto max-w-[1000px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 max-w-[24ch] text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em] [text-wrap:balance]">
+        What the plan returns
+      </h2>
+      <div class="grid gap-4 sm:grid-cols-2">
+        {RETURNS.map((r) => (
+          <div class="rounded-lg border border-line bg-bg p-5 sm:p-6">
+            <h3 class="mb-2.5 text-[17px] font-semibold leading-snug tracking-[-0.015em] [text-wrap:balance]">{r.h}</h3>
+            <p class="text-[14px] leading-relaxed text-ink-2">{r.p}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em]">Common questions</h2>
+      <div class="flex flex-col gap-2">
+        {FAQ.map((item) => (
+          <details class="group rounded-lg border border-line bg-bg">
+            <summary class="cursor-pointer list-none px-5 py-4 text-[15px] font-medium text-ink [&::-webkit-details-marker]:hidden">{item.question}</summary>
+            <p class="border-t border-line-soft px-5 py-4 text-[14.5px] leading-relaxed text-ink-2">{item.answer}</p>
+          </details>
+        ))}
+      </div>
+      <div class="mt-10 flex flex-wrap gap-2.5">
+        <Button href="/tools" variant="secondary" size="lg">All free tools</Button>
+        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
+      </div>
+    </div>
+  </section>
+  <GrowthPlanScript />
+</PSEO>
