@@ -26,7 +26,7 @@ import { setSpendReporter } from "@/lib/seo/client";
 import { anthropicModel } from "@/lib/ai/models";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
 import { generateImage } from "@/lib/ai/image-generator";
-import { uploadImageFromUrl } from "@/lib/storage/images";
+import { uploadImageBuffer } from "@/lib/storage/images";
 import { fetchLinkTargets, resolveInternalLinks } from "@/lib/seo/link-resolver";
 import { verifyOutboundLinks, type LinkCheck } from "@/lib/seo/link-check";
 import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research";
@@ -462,10 +462,11 @@ export async function generateArticle(
           keyword,
           workspace.brand_style as Record<string, unknown> | undefined,
         );
-        featuredImageUrl = await uploadImageFromUrl(
+        featuredImageUrl = await uploadImageBuffer(
           supabase,
-          imageResult.url,
-          `${workspaceId}/${article.id}.png`,
+          imageResult.data,
+          `${workspaceId}/${article.id}.${imageResult.extension}`,
+          imageResult.contentType,
         );
       }
     } catch (err) {
