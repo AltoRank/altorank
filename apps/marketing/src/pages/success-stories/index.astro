@@ -5,9 +5,15 @@ import { getCollection } from 'astro:content';
 
 const stories = (await getCollection('success-stories', ({ data }) => !data.draft))
   .sort((a, b) => b.data.publishDate.valueOf() - a.data.publishDate.valueOf());
-// Both stories are correctly draft:true (no real customers yet), so this hub
-// renders empty at 269 words. Keep it reachable but out of the index until
-// there is a real story to show.
+// There are no story files at all: src/content/success-stories/ is empty, so
+// the collection resolves to zero entries and this hub renders the empty state
+// below. That is the correct behaviour and the copy says so honestly - the
+// comment previously claimed two draft stories existed, which was stale.
+//
+// Keep it reachable but out of the index until there is a real story to show.
+// Adding one means dropping a .md into src/content/success-stories/ matching
+// the schema in src/content.config.ts and flipping NOINDEX to false. Do not
+// invent a customer to fill it.
 //
 // Kept in the frontmatter: a {/* … */} comment inside the component's attribute
 // list makes `astro check` report an unterminated string literal at the closing

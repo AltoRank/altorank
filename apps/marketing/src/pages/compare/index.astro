@@ -1,0 +1,130 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { COMPETITORS } from '@/data/competitors';
+import { buildItemListSchema, buildFAQSchema, buildBreadcrumbSchema } from '@/lib/schema';
+import { APP_NAME, SITE_URL, PRIMARY_CTA, OSS_COMPARISON_LABEL } from '@/constants';
+
+// WHY THIS IS A HUB AND NOT TWELVE /compare/{slug} PAGES.
+//
+// The obvious build was a page per competitor under /compare, mirroring
+// /alternatives/{slug}. It was the wrong build: our /alternatives/{slug} pages
+// ARE the head-to-heads already, complete with a "Where they actually differ"
+// table. A second body per competitor under a second URL is one thing only -
+// two of our own pages competing for `altorank vs x`, which is the
+// cannibalisation we tell customers to avoid.
+//
+// So this hub serves the "compare" intent, and every row links to the one
+// canonical head-to-head. One body per competitor, two doors.
+const dateModified = new Date('2026-09-04');
+const verified = dateModified.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Compare', href: '/compare' },
+];
+
+const FAQ = [
+  {
+    question: `How does ${APP_NAME} differ from the other AI SEO tools?`,
+    answer: `On one axis, mostly: who decides to publish. Every tool on this page researches keywords and drafts articles. ${APP_NAME} is the one where nothing reaches a live site until a person approves that specific draft, and the gate is architectural rather than a setting - the MCP server exposes no publish tool. It is also open source, so you can self-host the whole product for nothing and read the scoring code.`,
+  },
+  {
+    question: 'Are these comparisons honest about where the other tool wins?',
+    answer: `Each head-to-head has a "Which one to pick" section that names the cases where the other tool is the better choice, and several of them do. A comparison that concludes we win every row is a sales page, not a comparison, and it is easy to check: open any of the pages below and read that section.`,
+  },
+  {
+    question: 'When were these last checked?',
+    answer: `Every competitor claim carries the source and the date it was read on its own page, and each page states which pages and pricing tables were used. The set as a whole was reviewed in ${verified}. Prices in this category move monthly, so check the date on the page before quoting a figure.`,
+  },
+];
+
+const structuredData = [
+  buildBreadcrumbSchema(breadcrumbs),
+  buildItemListSchema(
+    COMPETITORS.map((c) => ({
+      name: `${APP_NAME} vs ${c.name}`,
+      url: `${SITE_URL}/alternatives/${c.slug}`,
+      description: `${APP_NAME} (${OSS_COMPARISON_LABEL.toLowerCase()}, approval-first) compared with ${c.name} (${c.theirCategory.toLowerCase()}).`,
+    })),
+  ),
+  buildFAQSchema(FAQ),
+];
+---
+
+<PSEO
+  title={`Compare ${APP_NAME} to Every AI SEO Tool (2026)`}
+  description={`Feature-by-feature comparisons of ${APP_NAME} against the AI SEO tools people actually evaluate: publishing model, backlinks, integrations and price. Each page names where the other tool wins.`}
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[900px] px-5 sm:px-6 lg:px-8">
+      <h1 class="mb-5 text-[clamp(28px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+        How {APP_NAME} compares to every AI SEO tool
+      </h1>
+      <p class="mb-3 text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        Twelve head-to-heads. Every one of them opens with a table, states where the other tool is the
+        better pick, and cites the page and date each figure was read from. The axis that decides most
+        of them is the same: whether software is allowed to publish under your name without you.
+      </p>
+      <p class="mb-8 text-sm text-ink-3">Set reviewed {verified}</p>
+
+      <div class="overflow-hidden rounded-lg border border-line">
+        {COMPETITORS.map((c, i) => (
+          <a
+            href={`/alternatives/${c.slug}`}
+            class={`group grid gap-1 p-5 sm:grid-cols-[1fr_1.15fr_1.15fr] sm:gap-5 hover:bg-panel ${i > 0 ? 'border-t border-line-soft' : ''}`}
+          >
+            <div>
+              <div class="text-[15px] font-semibold text-ink group-hover:text-accent-ink">
+                {APP_NAME} vs {c.name}
+              </div>
+              <div class="mt-0.5 font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">
+                {c.theirCategory}
+              </div>
+            </div>
+            <div class="text-[14px] leading-relaxed text-ink-2">
+              <span class="text-ink-3 sm:hidden">Decided by: </span>{c.axis}
+            </div>
+            <div class="text-[14px] leading-relaxed text-ink-3">
+              <span class="sm:hidden">Pick them if: </span>{c.bestFor}
+            </div>
+          </a>
+        ))}
+      </div>
+
+      <p class="mt-6 text-[15px] leading-relaxed text-ink-2">
+        Looking for the roundup rather than a single comparison?{' '}
+        <a href="/alternatives/altorank" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
+          {APP_NAME} alternatives
+        </a>{' '}
+        lists all twelve on one page, including the cases where we are the wrong choice.
+      </p>
+    </div>
+  </section>
+
+  <section class="border-b border-line bg-panel py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em]">
+        Common questions
+      </h2>
+      <div class="flex flex-col gap-2">
+        {FAQ.map((item) => (
+          <details class="group rounded-lg border border-line bg-bg">
+            <summary class="cursor-pointer list-none px-5 py-4 text-[15px] font-medium text-ink [&::-webkit-details-marker]:hidden">
+              {item.question}
+            </summary>
+            <p class="border-t border-line-soft px-5 py-4 text-[14.5px] leading-relaxed text-ink-2">
+              {item.answer}
+            </p>
+          </details>
+        ))}
+      </div>
+      <div class="mt-10 flex flex-wrap gap-2.5">
+        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/open-source" variant="secondary" size="lg">Read the licence</Button>
+      </div>
+    </div>
+  </section>
+</PSEO>

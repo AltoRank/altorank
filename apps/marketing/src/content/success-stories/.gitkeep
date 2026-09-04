@@ -1,0 +1,7 @@
+Real customer stories go here, one .md per story, matching the
+`success-stories` schema in src/content.config.ts.
+
+This directory is intentionally empty and intentionally tracked: the collection
+globs it, and without the directory every build logs a glob-loader warning for
+a path that does not exist. /success-stories renders an honest empty state and
+is noindex while this stays empty. Do not invent a customer to fill it.

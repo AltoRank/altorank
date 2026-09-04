@@ -1,0 +1,131 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { INTEGRATIONS } from '@/data/integrations';
+import { buildItemListSchema, buildFAQSchema, buildBreadcrumbSchema } from '@/lib/schema';
+import { APP_NAME, SITE_URL, PRIMARY_CTA } from '@/constants';
+
+// The site claimed twelve destinations in three places and had no page that
+// listed them. This is that page, and it renders from src/data/integrations.ts,
+// which in turn tracks apps/web/app/actions/integrations.ts. Adding a
+// connector to the product and forgetting this page is now a one-line diff
+// rather than an invisible omission.
+const pageUrl = `${SITE_URL}/integrations`;
+const live = INTEGRATIONS.filter((i) => !i.soon);
+const soon = INTEGRATIONS.filter((i) => i.soon);
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Integrations', href: '/integrations' },
+];
+
+const FAQ = [
+  {
+    question: `Does connecting a CMS mean ${APP_NAME} can publish on its own?`,
+    answer: `No, and that is the point of the product. A connection is a destination, not a permission to act: the publish path requires a person to approve that specific draft first. Connecting WordPress does not create a robot that posts daily; it removes the copy-and-paste step after you have said yes.`,
+  },
+  {
+    question: 'What if my platform is not listed?',
+    answer: `Use the webhook connector. It posts the approved article to any https:// endpoint you control, optionally signed with a shared secret, so anything that can receive JSON can be a destination. Static sites built with Astro, Hugo, Jekyll or Next are the other common case, and a Git connector for those is next.`,
+  },
+  {
+    question: 'How are my credentials stored?',
+    answer: `Encrypted at rest, and only the named secret fields of each connection are encrypted, so the connector type stays readable without a key. Every connector on this list uses a credential you create and can revoke yourself, without changing your platform login. If you would rather not hand credentials to a hosted service at all, self-host: it is the same product and the keys never leave your infrastructure.`,
+  },
+  {
+    question: 'Can one workspace publish to more than one destination?',
+    answer: `Yes. Connections belong to the workspace, and the publish step offers whichever of them are connected. Agencies typically run a workspace per client with that client's own CMS attached to it.`,
+  },
+];
+
+const structuredData = [
+  buildBreadcrumbSchema(breadcrumbs),
+  buildItemListSchema(
+    live.map((i) => ({
+      name: i.name,
+      url: i.documented ? `${SITE_URL}/docs/${i.slug}` : pageUrl,
+      description: `Publish approved articles to ${i.name}. Authentication: ${i.auth}.`,
+    })),
+  ),
+  buildFAQSchema(FAQ),
+];
+---
+
+<PSEO
+  title={`Integrations | Publish to ${live.length} Destinations | ${APP_NAME}`}
+  description={`${APP_NAME} publishes approved articles to WordPress, Shopify, Magento, WooCommerce, Webflow, Ghost, Framer, Wix, Notion, HubSpot or any webhook. What each one asks you for, and what it never asks for.`}
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[900px] px-5 sm:px-6 lg:px-8">
+      <h1 class="mb-5 text-[clamp(28px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+        Publish to {live.length} destinations
+      </h1>
+      <p class="mb-8 text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        A connection is a destination, not a permission. Every one of these publishes only after a
+        person has approved the specific draft &mdash; connecting your CMS removes the copy-and-paste
+        step, not the review. Each connector uses a credential you create and can revoke yourself,
+        without touching your platform login.
+      </p>
+
+      <div class="overflow-hidden rounded-lg border border-line">
+        {live.map((i, idx) => (
+          <div class={`grid gap-1.5 p-5 sm:grid-cols-[1fr_1.2fr_auto] sm:items-center sm:gap-5 ${idx > 0 ? 'border-t border-line-soft' : ''}`}>
+            <div class="flex items-center gap-3">
+              <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-line bg-panel font-mono text-[11px] font-medium text-ink-2">
+                {i.code}
+              </span>
+              <span class="text-[15px] font-semibold text-ink">{i.name}</span>
+            </div>
+            <div class="text-[14px] text-ink-2">
+              <span class="text-ink-3 sm:hidden">Authenticates with: </span>{i.auth}
+            </div>
+            <div class="text-[13.5px]">
+              {i.documented ? (
+                <a href={`/docs/${i.slug}`} class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
+                  Setup guide
+                </a>
+              ) : (
+                <span class="text-ink-3">In-app setup</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {soon.length > 0 && (
+        <p class="mt-5 text-[14.5px] leading-relaxed text-ink-3">
+          Shipping next: {soon.map((i) => i.name).join(', ')} &mdash; for static sites built with Astro,
+          Hugo, Jekyll or Next, committing Markdown to your repository instead of calling an API. The
+          adapter is written and tested; it is not in the picker yet, so it is listed here as coming
+          rather than counted above.
+        </p>
+      )}
+    </div>
+  </section>
+
+  <section class="border-b border-line bg-panel py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em]">
+        Common questions
+      </h2>
+      <div class="flex flex-col gap-2">
+        {FAQ.map((item) => (
+          <details class="group rounded-lg border border-line bg-bg">
+            <summary class="cursor-pointer list-none px-5 py-4 text-[15px] font-medium text-ink [&::-webkit-details-marker]:hidden">
+              {item.question}
+            </summary>
+            <p class="border-t border-line-soft px-5 py-4 text-[14.5px] leading-relaxed text-ink-2">
+              {item.answer}
+            </p>
+          </details>
+        ))}
+      </div>
+      <div class="mt-10 flex flex-wrap gap-2.5">
+        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/docs" variant="secondary" size="lg">Read the setup guides</Button>
+      </div>
+    </div>
+  </section>
+</PSEO>

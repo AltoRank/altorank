@@ -1,6 +1,6 @@
 ---
 import Logo from '@/components/shared/Logo.astro';
-import { APP_NAME, LEGAL_ENTITY } from '@/constants';
+import { APP_NAME, LEGAL_ENTITY, OSS_REPO_URL } from '@/constants';
 import { chrome, linkLabel } from '@/lib/i18n';
 
 const footerLinks = {
@@ -10,10 +10,19 @@ const footerLinks = {
     { label: 'Pricing', href: '/pricing' },
     { label: 'Blog', href: '/blog' },
   ],
+  Documentation: [
+    { label: 'Integrations', href: '/integrations' },
+    { label: 'Setup guides', href: '/docs' },
+    { label: 'WordPress', href: '/docs/wordpress' },
+    { label: 'Shopify', href: '/docs/shopify' },
+    { label: 'Webhook', href: '/docs/webhook' },
+    { label: 'Source code', href: OSS_REPO_URL },
+  ],
   Resources: [
     { label: 'Success Stories', href: '/success-stories' },
     { label: 'Free Tools', href: '/tools' },
     { label: 'Alternatives', href: '/alternatives' },
+    { label: `Compare ${APP_NAME}`, href: '/compare' },
     { label: 'GEO guides', href: '/geo' },
     // /agency-blueprint had no inbound link anywhere on the site: not in the
     // nav, not here, and not referenced contextually. Google could only reach it
@@ -40,7 +49,7 @@ const year = new Date().getFullYear();
 
 <footer data-print-hide class="border-t border-line bg-panel">
   <div class="mx-auto max-w-7xl px-5 py-10 sm:px-6 md:py-12 lg:px-8">
-    <div class="grid grid-cols-2 gap-x-6 gap-y-9 md:grid-cols-4 md:gap-8">
+    <div class="grid grid-cols-2 gap-x-6 gap-y-9 md:grid-cols-5 md:gap-8">
       <div class="col-span-2 md:col-span-1">
         <a href="/" class="inline-flex" aria-label={`${APP_NAME}, home`}>
           <Logo size={15} />

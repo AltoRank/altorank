@@ -1,0 +1,162 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { INTEGRATIONS } from '@/data/integrations';
+import { buildHowToSchema, buildFAQSchema } from '@/lib/schema';
+import { APP_NAME, PRIMARY_CTA } from '@/constants';
+
+// One page per documented connector, rendered statically.
+//
+// Deliberately NOT client-rendered. These are the pages an AI assistant cites
+// when someone asks how to automate publishing to a given CMS, and a docs page
+// that needs JavaScript to show its own body is invisible to anything that
+// does not run a browser. Astro ships HTML by default; the win is free and it
+// is the difference between being quotable and not.
+//
+// Every field listed comes from src/data/integrations.ts, which tracks the zod
+// schemas in apps/web/app/actions/integrations.ts. Do not add a step here that
+// the product does not actually ask for.
+export function getStaticPaths() {
+  return INTEGRATIONS.filter((i) => i.documented).map((i) => ({
+    params: { slug: i.slug },
+    props: { integration: i },
+  }));
+}
+
+const { integration } = Astro.props;
+const fields = integration.fields ?? [];
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Docs', href: '/docs' },
+  { label: integration.name, href: `/docs/${integration.slug}` },
+];
+
+const STEPS = [
+  {
+    name: `Create the credential in ${integration.name}`,
+    text: `Go to ${integration.where}. ${APP_NAME} never asks for your ${integration.name} login: you create a scoped credential there and paste it here, so revoking our access later is one click on your side and does not change how you sign in.`,
+  },
+  {
+    name: `Add the connection in ${APP_NAME}`,
+    text: `In your workspace, open Integrations, choose ${integration.name}, and fill in ${fields.filter((f) => f.required).map((f) => f.label.toLowerCase()).join(', ')}. The connection is tested before it saves, so a wrong value fails here rather than silently at publish time.`,
+  },
+  {
+    name: 'Approve an article',
+    text: `Nothing publishes on connection. Open a draft, read the fact-check verdict, and approve it. Only then does ${APP_NAME} call ${integration.name}. There is no setting that skips this step and no agent route around it.`,
+  },
+];
+
+const FAQ = [
+  {
+    question: `Does ${APP_NAME} publish to ${integration.name} automatically?`,
+    answer: `Only after a person approves the specific draft. Connecting ${integration.name} removes the copy-and-paste step; it does not hand over the decision. The publish path requires a human approval and the MCP server exposes no publish tool, so this holds even when an AI agent is driving the product.`,
+  },
+  {
+    question: `What ${integration.name} credentials does ${APP_NAME} need?`,
+    answer: `${fields.map((f) => `${f.label}${f.required ? '' : ' (optional)'}`).join(', ')}. ${integration.auth}. Nothing else, and never your ${integration.name} account password.`,
+  },
+  {
+    question: 'Can I revoke access without breaking my site?',
+    answer: `Yes. The credential is created in ${integration.name} and revoked there, independently of your login. Revoking it stops ${APP_NAME} publishing and changes nothing else. Articles already published stay where they are: they are ordinary posts on your platform, not embeds pointed at us.`,
+  },
+  {
+    question: `Can I use ${integration.name} on the self-hosted version?`,
+    answer: `Yes. Self-hosting is the same product under AGPL-3.0 with no feature gates, so every connector works and your credentials never leave your own infrastructure.`,
+  },
+];
+
+const structuredData = [
+  buildHowToSchema({
+    name: `How to connect ${integration.name} to ${APP_NAME}`,
+    description: `Connect ${integration.name} as a publishing destination. Approved articles publish with one click; nothing publishes without an approval.`,
+    steps: STEPS,
+  }),
+  buildFAQSchema(FAQ),
+];
+---
+
+<PSEO
+  title={`Connect ${integration.name} to ${APP_NAME}: Setup Guide`}
+  description={`How to publish approved articles to ${integration.name} from ${APP_NAME}. What the connector asks for, what it never asks for, and how to revoke it.`}
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[780px] px-5 sm:px-6 lg:px-8">
+      <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Setup guide</p>
+      <h1 class="mb-5 text-[clamp(28px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+        Connect {integration.name} to {APP_NAME}
+      </h1>
+      <p class="mb-8 text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        {integration.name} authenticates with a {integration.auth.toLowerCase()} that you create and can
+        revoke yourself. Connecting it makes {integration.name} an available destination &mdash; it does
+        not give {APP_NAME} permission to publish. That still takes a person approving the draft.
+      </p>
+
+      <h2 class="mb-4 text-[clamp(20px,3vw,26px)] font-semibold tracking-[-0.02em]">What you will need</h2>
+      <div class="mb-10 overflow-hidden rounded-lg border border-line">
+        {fields.map((f, i) => (
+          <div class={`grid gap-1 p-5 sm:grid-cols-[1fr_1.6fr] sm:gap-5 ${i > 0 ? 'border-t border-line-soft' : ''}`}>
+            <div>
+              <div class="text-[14.5px] font-semibold text-ink">{f.label}</div>
+              {!f.required && <div class="mt-0.5 font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-3">Optional</div>}
+            </div>
+            <div class="text-[14px] leading-relaxed text-ink-2">{f.hint}</div>
+          </div>
+        ))}
+      </div>
+
+      <h2 class="mb-4 text-[clamp(20px,3vw,26px)] font-semibold tracking-[-0.02em]">Setup</h2>
+      <ol class="mb-10 flex flex-col gap-4">
+        {STEPS.map((s, i) => (
+          <li class="rounded-lg border border-line bg-panel p-5">
+            <div class="mb-1.5 flex items-baseline gap-2.5">
+              <span class="font-mono text-[12px] text-accent-ink">{i + 1}</span>
+              <span class="text-[15px] font-semibold text-ink">{s.name}</span>
+            </div>
+            <p class="text-[14px] leading-relaxed text-ink-2">{s.text}</p>
+          </li>
+        ))}
+      </ol>
+
+      {integration.notes && integration.notes.length > 0 && (
+        <>
+          <h2 class="mb-4 text-[clamp(20px,3vw,26px)] font-semibold tracking-[-0.02em]">Worth knowing</h2>
+          <ul class="mb-4 flex flex-col gap-2.5">
+            {integration.notes.map((n) => (
+              <li class="flex gap-2.5 text-[14.5px] leading-relaxed text-ink-2">
+                <span class="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-accent" aria-hidden="true"></span>
+                <span>{n}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  </section>
+
+  <section class="border-b border-line bg-panel py-14 md:py-20">
+    <div class="mx-auto max-w-[780px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em]">
+        Common questions
+      </h2>
+      <div class="flex flex-col gap-2">
+        {FAQ.map((item) => (
+          <details class="group rounded-lg border border-line bg-bg">
+            <summary class="cursor-pointer list-none px-5 py-4 text-[15px] font-medium text-ink [&::-webkit-details-marker]:hidden">
+              {item.question}
+            </summary>
+            <p class="border-t border-line-soft px-5 py-4 text-[14.5px] leading-relaxed text-ink-2">
+              {item.answer}
+            </p>
+          </details>
+        ))}
+      </div>
+      <div class="mt-10 flex flex-wrap gap-2.5">
+        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/integrations" variant="secondary" size="lg">All destinations</Button>
+      </div>
+    </div>
+  </section>
+</PSEO>
