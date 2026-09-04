@@ -1,7 +1,7 @@
 ---
 title: "Meta Descriptions: How to Write Ones That Earn Clicks"
 slug: "meta-description-generator"
-description: "How to write meta descriptions that survive Google's rewriting and earn clicks: the length that actually displays, five patterns that work, and why most descriptions get replaced."
+description: "Meta descriptions that survive Google's rewriting: the length that displays, and five patterns that work."
 category: "content"
 heroHeadline: "Meta descriptions that earn clicks, not just impressions."
 heroSubhead: "Google rewrites most meta descriptions. Here is how to write the ones it keeps, why length is not the real constraint, and five patterns you can apply to any page."

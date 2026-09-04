@@ -1,7 +1,7 @@
 ---
 title: "SERP Analysis: How to Read a Search Result Page"
 slug: "serp-analyzer"
-description: "How to analyse a SERP before you brief a writer: read intent from the result mix, spot the fortress keywords worth skipping, and record it all on a repeatable template."
+description: "Read a SERP before you brief a writer: intent from the result mix, and the keywords worth skipping."
 category: "analytics"
 heroHeadline: "See exactly what Google rewards, for any keyword."
 heroSubhead: "A SERP tells you what Google thinks the query means and how much authority it takes to compete. Here is how to read one properly, and the template we use to record it."

@@ -1,7 +1,7 @@
 ---
-title: "Word Count and Readability: What the Numbers Actually Tell You"
+title: "Word Count and Readability: What the Numbers Tell You"
 slug: "word-counter"
-description: "Count words, sentences and reading time, and get a Flesch reading-ease grade. Plus why word count is a symptom rather than a target, and which number to act on."
+description: "Words, sentences, reading time and a Flesch grade. Plus why word count is a symptom, not a target."
 category: "content"
 heroHeadline: "Count the words. Then ignore the count."
 heroSubhead: "Word count, reading time and a readability grade for any draft. The useful part is not the total — it is the average sentence length hiding underneath it."

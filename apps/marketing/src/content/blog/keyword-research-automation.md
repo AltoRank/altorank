@@ -1,6 +1,6 @@
 ---
-title: "Agency Keyword Research: A Workflow for Running It Across 10+ Clients"
-description: "The agency keyword research workflow that scales: per-client keyword sets, AI prompt sets, opportunity scoring, and a monthly refresh cadence without burning the strategy team."
+title: "Agency Keyword Research Across 10+ Clients"
+description: "Per-client keyword sets, opportunity scoring and a monthly refresh cadence that does not burn the strategy team."
 publishDate: 2026-05-24
 author: "Mike Cecconello"
 category: "seo"
