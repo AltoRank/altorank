@@ -13,9 +13,10 @@ useCases:
 relatedTools:
   - "content-brief-generator"
   - "seo-health-checker"
+widget: "serp-preview"
 published: true
 datePublished: 2026-08-22
-dateModified: 2026-08-22
+dateModified: 2026-09-04
 steps:
   - name: "Find the query the page actually ranks for"
     text: "Pull the top query for that URL from Search Console. Write for that query, not for the keyword you originally targeted, because they are frequently different and the live one is the one earning impressions."

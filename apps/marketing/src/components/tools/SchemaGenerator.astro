@@ -1,0 +1,85 @@
+---
+import ToolShell from './ToolShell.astro';
+---
+<ToolShell label="JSON-LD generator">
+  <div class="grid gap-4 md:grid-cols-[1fr_1.1fr]">
+    <div class="flex flex-col gap-3">
+      <div>
+        <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="sg-type">Type</label>
+        <select id="sg-type" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft">
+          <option value="Article">Article</option>
+          <option value="FAQPage">FAQPage</option>
+          <option value="BreadcrumbList">BreadcrumbList</option>
+        </select>
+      </div>
+      <div data-sg="f-article">
+        <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="sg-headline">Headline</label>
+        <input id="sg-headline" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft" value="How to write a meta description" />
+        <label class="mb-1.5 block text-[13px] font-medium text-ink-2 mt-3" for="sg-author">Author</label>
+        <input id="sg-author" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft" value="Jane Doe" />
+        <label class="mb-1.5 block text-[13px] font-medium text-ink-2 mt-3" for="sg-url">URL</label>
+        <input id="sg-url" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft" value="https://example.com/blog/meta-descriptions" />
+        <label class="mb-1.5 block text-[13px] font-medium text-ink-2 mt-3" for="sg-date">Date published</label>
+        <input id="sg-date" type="date" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft" value="2026-09-04" />
+      </div>
+      <div data-sg="f-faq" hidden>
+        <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="sg-faq">One Q and A per line, separated by a pipe</label>
+        <textarea id="sg-faq" rows="5" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft">What is a meta description?|The short summary in a page's head that search engines may show under the title.
+Is it a ranking factor?|No. It affects click-through rate, not ranking.</textarea>
+      </div>
+      <div data-sg="f-crumbs" hidden>
+        <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="sg-crumbs">One crumb per line: label|url</label>
+        <textarea id="sg-crumbs" rows="4" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft">Home|https://example.com/
+Blog|https://example.com/blog/
+Meta descriptions|https://example.com/blog/meta-descriptions</textarea>
+      </div>
+    </div>
+    <div>
+      <div class="flex items-center justify-between">
+        <p class="mb-1.5 block text-[13px] font-medium text-ink-2">Paste into your &lt;head&gt;</p>
+        <button type="button" data-sg="copy" class="rounded-md border border-line bg-bg px-2.5 py-1 text-[12px] text-ink-2 hover:border-accent">Copy</button>
+      </div>
+      <pre class="mt-4 max-h-[320px] overflow-auto rounded-lg border border-line bg-bg p-4 font-mono text-[12.5px] leading-relaxed text-ink whitespace-pre-wrap" data-sg="out"></pre>
+    </div>
+  </div>
+  <p class="mt-3 text-[12.5px] leading-relaxed text-ink-3">
+    Schema describes what a page already says. It cannot add authority a page has not earned, and marking
+    up a claim the page does not make is the one use of structured data that reliably backfires.
+  </p>
+</ToolShell>
+
+<script>
+  function initSchemaGen() {
+    const type = document.getElementById('sg-type') as HTMLSelectElement | null;
+    const out = document.querySelector('[data-sg="out"]');
+    if (!type || !out) return;
+    const val = (id: string) => (document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null)?.value ?? '';
+    const show = (k: string, on: boolean) => {
+      const el = document.querySelector(`[data-sg="f-${k}"]`) as HTMLElement | null;
+      if (el) el.hidden = !on;
+    };
+    const render = () => {
+      const t = type.value;
+      show('article', t === 'Article'); show('faq', t === 'FAQPage'); show('crumbs', t === 'BreadcrumbList');
+      let obj: Record<string, unknown> = { '@context': 'https://schema.org', '@type': t };
+      if (t === 'Article') {
+        obj = { ...obj, headline: val('sg-headline'), author: { '@type': 'Person', name: val('sg-author') }, url: val('sg-url'), datePublished: val('sg-date'), dateModified: val('sg-date') };
+      } else if (t === 'FAQPage') {
+        obj.mainEntity = val('sg-faq').split('\n').map((l) => l.split('|')).filter((p) => p.length >= 2 && p[0].trim()).map(([q, a]) => ({ '@type': 'Question', name: q.trim(), acceptedAnswer: { '@type': 'Answer', text: a.trim() } }));
+      } else {
+        obj.itemListElement = val('sg-crumbs').split('\n').map((l) => l.split('|')).filter((p) => p.length >= 2 && p[0].trim()).map(([name, item], i) => ({ '@type': 'ListItem', position: i + 1, name: name.trim(), item: item.trim() }));
+      }
+      out.textContent = '<script type="application/ld+json">\n' + JSON.stringify(obj, null, 2) + '\n<\/script>';
+    };
+    document.querySelectorAll('#sg-type, [data-sg^="f-"] input, [data-sg^="f-"] textarea').forEach((el) => {
+      el.addEventListener('input', render); el.addEventListener('change', render);
+    });
+    document.querySelector('[data-sg="copy"]')?.addEventListener('click', async function () {
+      const b = this as HTMLButtonElement;
+      try { await navigator.clipboard.writeText(out.textContent ?? ''); b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy'; }, 1400); } catch { b.textContent = 'Select and copy'; }
+    });
+    render();
+  }
+  initSchemaGen();
+  document.addEventListener('astro:page-load', initSchemaGen);
+</script>

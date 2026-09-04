@@ -1,0 +1,70 @@
+---
+import ToolShell from './ToolShell.astro';
+---
+<ToolShell label="Keyword density">
+  <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="kd-text">Paste your text</label>
+  <textarea id="kd-text" rows="8" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft" placeholder="Paste an article here…"></textarea>
+  <div class="mt-3 flex flex-wrap items-center gap-3">
+    <label class="text-[13px] text-ink-2" for="kd-n">Phrase length</label>
+    <select id="kd-n" class="rounded-[9px] border border-line bg-bg px-3 py-2 text-[13.5px] text-ink focus:border-accent focus:outline-none">
+      <option value="1">1 word</option>
+      <option value="2">2 words</option>
+      <option value="3">3 words</option>
+    </select>
+    <label class="ml-2 flex items-center gap-2 text-[13px] text-ink-2">
+      <input id="kd-stop" type="checkbox" checked class="h-4 w-4 rounded border-line" /> Ignore common words
+    </label>
+  </div>
+  <div class="mt-4 overflow-hidden rounded-lg border border-line bg-bg" data-kd="out"></div>
+  <p class="mt-3 text-[12.5px] leading-relaxed text-ink-3">
+    There is no correct density figure and there has not been for years. Use this to catch the opposite
+    problem: a page that never states its own subject, or one that repeats it so often it reads as spam.
+  </p>
+</ToolShell>
+
+<script>
+  function initKeywordDensity() {
+    const ta = document.getElementById('kd-text') as HTMLTextAreaElement | null;
+    const nSel = document.getElementById('kd-n') as HTMLSelectElement | null;
+    const stopCb = document.getElementById('kd-stop') as HTMLInputElement | null;
+    const out = document.querySelector('[data-kd="out"]');
+    if (!ta || !nSel || !stopCb || !out) return;
+    const STOP = new Set('a an the and or but if then than that this these those of to in on at for with by from as is are was were be been being it its i you your we our they their he she his her not no do does did have has had will would can could should may might must about into over after before'.split(' '));
+    const render = () => {
+      const n = parseInt(nSel.value, 10);
+      const skip = stopCb.checked;
+      const words = ta.value.toLowerCase().replace(/[^\p{L}\p{N}\s'-]/gu, ' ').split(/\s+/).filter(Boolean);
+      if (words.length < n) { out.innerHTML = '<p class="p-5 text-[13.5px] text-ink-3">Paste some text to see the phrases it actually uses.</p>'; return; }
+      const counts = new Map<string, number>();
+      for (let i = 0; i + n <= words.length; i++) {
+        const gram = words.slice(i, i + n);
+        if (skip && gram.some((w) => STOP.has(w))) continue;
+        if (gram.some((w) => w.length < 2)) continue;
+        const key = gram.join(' ');
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      const total = Math.max(1, words.length - n + 1);
+      const rows = [...counts.entries()].filter(([, c]) => c > 1).sort((a, b) => b[1] - a[1]).slice(0, 15);
+      if (!rows.length) { out.innerHTML = '<p class="p-5 text-[13.5px] text-ink-3">No phrase of that length repeats. For a short passage that is normal.</p>'; return; }
+      const max = rows[0][1];
+      out.innerHTML = rows.map(([term, c], i) => {
+        const pct = ((c / total) * 100).toFixed(2);
+        const bar = Math.round((c / max) * 100);
+        return `<div class="${i > 0 ? 'border-t border-line-soft' : ''} p-3.5">
+          <div class="flex items-baseline justify-between gap-3">
+            <span class="text-[14px] font-medium text-ink">${term.replace(/[<>&]/g, '')}</span>
+            <span class="shrink-0 font-mono text-[12px] text-ink-3">${c}× · ${pct}%</span>
+          </div>
+          <div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-panel-2">
+            <div class="h-full rounded-full bg-accent" style="width:${bar}%"></div>
+          </div>
+        </div>`;
+      }).join('');
+    };
+    [ta, nSel, stopCb].forEach((el) => el.addEventListener('input', render));
+    nSel.addEventListener('change', render);
+    render();
+  }
+  initKeywordDensity();
+  document.addEventListener('astro:page-load', initKeywordDensity);
+</script>

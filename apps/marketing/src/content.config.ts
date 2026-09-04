@@ -41,6 +41,20 @@ const tools = defineCollection({
     published: z.boolean().default(false),
     datePublished: z.coerce.date().optional(),
     dateModified: z.coerce.date().optional(),
+    // Optional interactive widget rendered directly under the hero, which is
+    // what makes a tool page a tool rather than an article about one. The
+    // value names a component in components/tools/; an unknown name renders
+    // nothing rather than breaking the page. Every widget runs entirely in the
+    // browser with no API call, so a tool page keeps working for a visitor who
+    // never signs up - and we are not claiming a capability we bill for.
+    widget: z.enum([
+      'serp-preview',
+      'word-counter',
+      'keyword-density',
+      'robots-txt',
+      'schema-generator',
+      'slug-generator',
+    ]).optional(),
     // Optional ordered steps. When present, the page emits HowTo schema and can
     // render the method as a numbered walkthrough.
     steps: z.array(z.object({
