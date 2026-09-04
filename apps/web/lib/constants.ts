@@ -88,6 +88,10 @@ export const DASHBOARD_NAV: NavGroup[] = [
 export const STATUS_META: Record<string, { label: string; cls: string }> = {
   live: { label: "Live", cls: "s-ok" },
   review: { label: "In review", cls: "s-warn" },
+  // Signed off, not yet sent. Both are article states the database allows
+  // (migration 013) that had no label, so the pill printed the raw value.
+  approved: { label: "Approved", cls: "s-ok" },
+  archived: { label: "Archived", cls: "s-idle" },
   drafting: { label: "Drafting", cls: "s-run" },
   scheduled: { label: "Scheduled", cls: "s-idle" },
   error: { label: "Failed", cls: "s-err" },
