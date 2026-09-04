@@ -7,7 +7,9 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { z } from "zod";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
 import { getWorkspaceAllowance, workspaceLimitMessage } from "@/lib/billing/workspaces";
-import { MAX_PACE, normalisePace, PAID_DEFAULT_PACE } from "@/lib/content/pace";
+import { MAX_PACE, normalisePace, PAID_DEFAULT_PACE, FREE_TIER_PACE } from "@/lib/content/pace";
+import { schedulePlan } from "@/lib/onboarding/plan";
+import type { PausedMeta } from "@/lib/types";
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1),
@@ -141,4 +143,105 @@ export async function deleteWorkspace(id: string) {
   const { error } = await supabase.from("workspaces").delete().eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/workspaces");
+}
+
+/** Every page that shows a site's status or its calendar. */
+function revalidateSite(id: string) {
+  revalidatePath("/workspaces");
+  revalidatePath(`/workspaces/${id}`);
+  revalidatePath("/content");
+  revalidatePath("/dashboard");
+}
+
+/**
+ * Pause one site. Nothing is written or published for it until Resume: the
+ * generate, analyze, site-pages and publish crons all skip `status = 'paused'`
+ * (lib/plan/__tests__/cron-pause-guard.test.ts holds them to it).
+ *
+ * Deliberately touches nothing else. Drafts stay in review, planned entries
+ * stay on their days, the pace stays set: pausing is "not now", and a person
+ * who comes back in a month should find the site as they left it. Distinct
+ * from the account-wide pause on Billing (sup-settings-roles), which sets
+ * `paused_until` and is what Stripe is told about; this one is a single site
+ * and no money changes.
+ */
+export async function pauseWorkspace(id: string): Promise<PausedMeta> {
+  const { agencyId, user } = await requireAuth();
+  const supabase = await createClient();
+  const { data: ws, error: readError } = await supabase
+    .from("workspaces")
+    .select("id, status, paused_meta")
+    .eq("id", id)
+    .eq("agency_id", agencyId)
+    .maybeSingle();
+  if (readError) throw new Error(readError.message);
+  if (!ws) throw new Error("That site is not in your account.");
+  if (ws.status === "paused") return ws.paused_meta as PausedMeta;
+
+  const meta: PausedMeta = {
+    since: new Date().toISOString(),
+    previous_status: (ws.status as PausedMeta["previous_status"]) ?? "on",
+    by: user.id,
+  };
+  const { error } = await supabase
+    .from("workspaces")
+    .update({ status: "paused", paused_meta: meta })
+    .eq("id", id)
+    .eq("agency_id", agencyId);
+  if (error) throw new Error(error.message);
+  revalidateSite(id);
+  return meta;
+}
+
+/**
+ * Resume a site paused by hand. Puts back the status it had, then re-plans the
+ * calendar from today: the planned days it missed while paused are in the
+ * past, and a plan that promises yesterday is not a plan. Nothing written is
+ * touched - `schedulePlan` replaces only queued entries with no article.
+ *
+ * The re-plan is reported rather than allowed to fail the resume. The status
+ * is the thing that matters and is already written; a recommendation call
+ * that times out should not leave a site reading "Paused" when it is not.
+ */
+export async function resumeWorkspace(id: string): Promise<{ status: string; replanned: number | null }> {
+  const { agencyId } = await requireAuth();
+  const supabase = await createClient();
+  const { data: ws, error: readError } = await supabase
+    .from("workspaces")
+    .select("id, status, paused_meta, auto_generate_weekly_limit")
+    .eq("id", id)
+    .eq("agency_id", agencyId)
+    .maybeSingle();
+  if (readError) throw new Error(readError.message);
+  if (!ws) throw new Error("That site is not in your account.");
+  if (ws.status !== "paused") return { status: ws.status as string, replanned: null };
+
+  const meta = (ws.paused_meta ?? null) as PausedMeta | null;
+  const previous: PausedMeta["previous_status"] =
+    meta?.previous_status === "review" || meta?.previous_status === "setup" ? meta.previous_status : "on";
+
+  const { error } = await supabase
+    .from("workspaces")
+    .update({ status: previous, paused_meta: null })
+    .eq("id", id)
+    .eq("agency_id", agencyId);
+  if (error) throw new Error(error.message);
+
+  let replanned: number | null = null;
+  try {
+    const { data: cadence } = await supabase
+      .from("publishing_cadences")
+      .select("days_of_week, enabled")
+      .eq("workspace_id", id)
+      .maybeSingle();
+    const days = cadence?.enabled ? (cadence.days_of_week as number[]) : undefined;
+    const plan = await schedulePlan(supabase, id, (ws.auto_generate_weekly_limit as number | null) ?? FREE_TIER_PACE, {
+      daysOfWeek: days,
+    });
+    replanned = plan.length;
+  } catch {
+    replanned = null;
+  }
+  revalidateSite(id);
+  return { status: previous, replanned };
 }

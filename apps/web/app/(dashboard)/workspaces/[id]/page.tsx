@@ -9,6 +9,7 @@ import { getPublishingCadence } from "@/lib/queries/schedule";
 import { PageHead, DotSep, StatusPill, Avatar, StatStrip } from "@/components/ui";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ClientTabs } from "@/components/dashboard/client-tabs";
+import { PausedBanner, PauseSiteControl } from "@/components/dashboard/paused-banner";
 import { MetricHistory } from "@/components/dashboard/metric-history";
 import { getWorkspaceMetrics } from "@/lib/queries/metrics";
 import { getQuota } from "@/lib/billing/quota";
@@ -104,7 +105,14 @@ export default async function ClientDetailPage({ params }: Props) {
 
           </>
         }
+        actions={<PauseSiteControl workspaceId={workspace.id} name={workspace.name} status={workspace.status} asButton />}
       />
+
+      {workspace.status === "paused" && (
+        <div className="px-8 pt-4">
+          <PausedBanner workspaceId={workspace.id} meta={workspace.paused_meta} />
+        </div>
+      )}
 
       <StatStrip
         stats={[
