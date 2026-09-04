@@ -130,6 +130,16 @@ export function assessKeywordQuality(
   if (tokens.length > 1 && new Set(tokens).size < tokens.length) {
     return { quality: "suspect", note: "repeats a word, a provider fragment rather than a query" };
   }
+  // "worlder inc", "acme ltd", "soluzioni srl": a company name from a
+  // competitor's ranked keywords. It has volume because people search the
+  // brand, and an article titled "Worlder Inc: A Complete Guide" on someone
+  // else's site is the wrong thing to write. Planned on the first live
+  // onboarding run (2026-09-04), which is how this rule got here.
+  const COMPANY_SUFFIX = new Set(["inc", "ltd", "llc", "gmbh", "srl", "sas", "corp", "plc", "ag", "bv", "oy", "pty", "sa", "spa", "kg"]);
+  if (tokens.length > 1 && COMPANY_SUFFIX.has(tokens[tokens.length - 1].replace(/\.$/, ""))) {
+    return { quality: "suspect", note: "names a company rather than a topic" };
+  }
+
   // "ai can", "ai in": the query was cut mid-phrase. Nobody searches that.
   const TRAILING_JUNK = new Set(["can", "in", "for", "and", "the", "of", "to", "is", "with", "on", "by", "or"]);
   if (tokens.length > 1 && TRAILING_JUNK.has(tokens[tokens.length - 1])) {

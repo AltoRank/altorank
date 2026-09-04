@@ -4,6 +4,12 @@ import { assessKeywordQuality, normalizeTarget } from "../recommendations";
 const terms = (...t: string[]) => new Set(t.map((x) => x.toLowerCase()));
 
 describe("assessKeywordQuality — provider noise", () => {
+  it("flags company names carried over from competitor rankings", () => {
+    expect(assessKeywordQuality("worlder inc", terms()).quality).toBe("suspect");
+    expect(assessKeywordQuality("acme ltd.", terms()).quality).toBe("suspect");
+    expect(assessKeywordQuality("venture builders", terms()).quality).toBe("ok");
+    expect(assessKeywordQuality("inc", terms()).quality).toBe("ok");
+  });
   it("accepts an ordinary multi-word query", () => {
     expect(assessKeywordQuality("seo for agencies", terms()).quality).toBe("ok");
   });
