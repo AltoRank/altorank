@@ -45,6 +45,22 @@ export interface ArticlePrompt {
    * to a library it has not been shown.
    */
   internalLinkTargets?: Array<{ title: string; keyword: string }>;
+  /**
+   * Per-site output preferences from onboarding / settings. Every field is a
+   * prompt switch; none of them touches what publishes.
+   */
+  output?: OutputPrefs;
+}
+
+export interface OutputPrefs {
+  tone?: string;
+  internalLinks?: number;
+  tableOfContents?: boolean;
+  callToAction?: boolean;
+  firstPerson?: boolean;
+  mentionSimilarProducts?: boolean;
+  /** Free-text rules the site owner wrote; they outrank everything but safety. */
+  customInstructions?: string | null;
 }
 
 export interface ArticleResult {

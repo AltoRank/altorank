@@ -158,6 +158,25 @@ export async function generateArticle(
 
   const voiceRules = (voiceProfile?.rules as VoiceRules) ?? undefined;
 
+  // Output preferences from onboarding. Absent rows (older workspaces, or an
+  // install that has not run 049) fall through to the prompt's defaults.
+  const { data: outputRow } = await supabase
+    .from("workspace_output_settings")
+    .select("tone, internal_links, table_of_contents, call_to_action, first_person, mention_similar_products, global_article_prompt")
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  const output = outputRow
+    ? {
+        tone: outputRow.tone as string,
+        internalLinks: outputRow.internal_links as number,
+        tableOfContents: outputRow.table_of_contents as boolean,
+        callToAction: outputRow.call_to_action as boolean,
+        firstPerson: outputRow.first_person as boolean,
+        mentionSimilarProducts: outputRow.mention_similar_products as boolean,
+        customInstructions: outputRow.global_article_prompt as string | null,
+      }
+    : undefined;
+
   const slug = (title || keyword)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -331,6 +350,7 @@ export async function generateArticle(
       internalLinkTargets: linkTargets
         .slice(0, 20)
         .map((t) => ({ title: t.title, keyword: t.keyword })),
+      output,
     });
 
     let articleResult;

@@ -8,20 +8,27 @@
 // - is what lets it be tested against an exact event sequence rather than
 // against a rendered component.
 
-export type OnboardingPhase = "scanning" | "keywords" | "drafting";
+export type OnboardingPhase = "scanning" | "keywords" | "planning" | "drafting";
 
 /** Where a phase is in its life. `skipped` is a real outcome, not a failure. */
 export type PhaseStatus = "pending" | "active" | "done" | "skipped" | "failed";
 
-export const PHASE_ORDER: readonly OnboardingPhase[] = ["scanning", "keywords", "drafting"];
+export const PHASE_ORDER: readonly OnboardingPhase[] = ["scanning", "keywords", "planning", "drafting"];
 
 export const PHASE_LABELS: Record<OnboardingPhase, { active: string; rest: string }> = {
   scanning: { active: "Reading your site", rest: "Read your site" },
   keywords: { active: "Finding what to write about", rest: "Found what to write about" },
+  planning: { active: "Scheduling your first month", rest: "Scheduled your first month" },
   drafting: { active: "Writing your first draft", rest: "Wrote your first draft" },
 };
 
 /** A draft, reduced to what the calendar chip and the redirect need. */
+export interface OnboardingPlanned {
+  term: string;
+  /** YYYY-MM-DD */
+  date: string;
+}
+
 export interface OnboardingArticle {
   id: string;
   title: string;
@@ -39,7 +46,7 @@ export interface OnboardingArticle {
  * one - keywords its count, drafting its article.
  */
 export type OnboardingEvent =
-  | { phase: OnboardingPhase; status: Exclude<PhaseStatus, "pending">; detail?: string; keywordsFound?: number; article?: OnboardingArticle }
+  | { phase: OnboardingPhase; status: Exclude<PhaseStatus, "pending">; detail?: string; keywordsFound?: number; planned?: OnboardingPlanned[]; article?: OnboardingArticle }
   | { phase: "ready" }
   | { phase: "error"; detail: string };
 
@@ -52,6 +59,7 @@ export interface OnboardingStep {
 export interface OnboardingState {
   steps: OnboardingStep[];
   keywordsFound: number | null;
+  planned: OnboardingPlanned[];
   article: OnboardingArticle | null;
   /** True once the run has emitted `ready`: the screen may hand off. */
   ready: boolean;
@@ -62,6 +70,7 @@ export function initialOnboardingState(): OnboardingState {
   return {
     steps: PHASE_ORDER.map((phase) => ({ phase, status: "pending" as PhaseStatus })),
     keywordsFound: null,
+    planned: [],
     article: null,
     ready: false,
     error: null,
@@ -85,6 +94,7 @@ export function reduceOnboarding(state: OnboardingState, event: OnboardingEvent)
     ...state,
     steps,
     keywordsFound: event.keywordsFound ?? state.keywordsFound,
+    planned: event.planned ?? state.planned,
     article: event.article ?? state.article,
   };
 }

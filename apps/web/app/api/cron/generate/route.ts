@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cronSecretFrom } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
+import { duePlannedKeyword, fulfilPlannedEntry } from "@/lib/onboarding/plan";
 import { profileIsUsable } from "@/lib/seo/topical-profile";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { generateArticle } from "@/lib/content/generate";
@@ -193,7 +194,11 @@ export async function GET(request: Request) {
       }
 
       const recommendations = await recommendKeywords(supabase, workspaceId, { limit: 25 });
-      const next = pickNextKeyword(recommendations);
+      // The calendar is a promise. If the plan says today is "<term>", write
+      // that, and fall back to the live queue only when nothing is due.
+      const due = await duePlannedKeyword(supabase, workspaceId);
+      const planned = due ? recommendations.find((r) => r.term === due.term) ?? null : null;
+      const next = planned ?? pickNextKeyword(recommendations);
 
       if (!next) {
         results.push({
@@ -231,6 +236,7 @@ export async function GET(request: Request) {
       // Counted here, not before the call: a generation that threw consumed
       // time but produced nothing, and the bound is on articles written.
       written += 1;
+      if (due && planned) await fulfilPlannedEntry(supabase, due.entryId, result.articleId);
 
       // Announce it. A draft nobody is told about is the failure mode this
       // whole schedule creates: four runs a day writing into a queue that only
