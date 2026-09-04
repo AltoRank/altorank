@@ -1,4 +1,4 @@
--- 048: WordPress through the AltoRank plugin, and per-attempt webhook delivery rows
+-- 056: WordPress through the AltoRank plugin, and per-attempt webhook delivery rows
 --
 -- A second WordPress connection method. The application-password row
 -- ('wordpress', 002) talks to wp/v2 with a WordPress user's credentials and can
