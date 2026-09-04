@@ -31,10 +31,20 @@ export interface LinkTarget {
 }
 
 /**
- * Pages of this site a draft may link to: live articles with a URL, excluding
- * the article being written. Used by the prompt (so the writer knows what
- * exists) and by the resolver (so what it wrote can be honoured), so the two
- * cannot disagree.
+ * Pages of this site a draft may link to. Used by the prompt (so the writer
+ * knows what exists) and by the resolver (so what it wrote can be honoured),
+ * so the two cannot disagree.
+ *
+ * Two sources, and the second is the one that matters on a real site:
+ *
+ *   articles    what AltoRank wrote and published, with a URL we recorded.
+ *   site_pages  what the customer had already published before they arrived,
+ *               discovered from their own sitemap by lib/seo/site-crawl.ts.
+ *
+ * Until the crawl existed this was articles alone, so a customer with 204
+ * published posts had zero link targets and every generated draft linked to
+ * nothing. Articles come first: a page we wrote, approved and published is
+ * better understood than one we merely read.
  */
 export async function fetchLinkTargets(
   supabase: SupabaseClient,
@@ -52,12 +62,37 @@ export async function fetchLinkTargets(
   if (excludeArticleId) query = query.neq("id", excludeArticleId);
 
   const { data } = await query;
-  return (data ?? [])
+  const targets: LinkTarget[] = (data ?? [])
     .filter(
       (a): a is { title: string; keyword: string; published_url: string } =>
         Boolean(a.title && a.keyword && a.published_url),
     )
     .map((a) => ({ keyword: a.keyword, title: a.title, url: a.published_url }));
+
+  // Crawled pages that answered, carry a title, and have a term to match on.
+  // A page whose keyword had to be guessed from its H1 is still a fine link
+  // target: the anchor text the writer chooses is matched against title and
+  // path as well, and a wrong guess simply scores too low to be picked.
+  const { data: crawled } = await supabase
+    .from("site_pages")
+    .select("url, title, keyword")
+    .eq("workspace_id", workspaceId)
+    .gte("status", 200)
+    .lt("status", 400)
+    .not("title", "is", null)
+    .not("keyword", "is", null)
+    .order("position", { ascending: true, nullsFirst: false })
+    .limit(200);
+
+  const seen = new Set(targets.map((t) => t.url));
+  for (const p of crawled ?? []) {
+    const url = p.url as string;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    targets.push({ keyword: p.keyword as string, title: p.title as string, url });
+  }
+
+  return targets;
 }
 
 /**
