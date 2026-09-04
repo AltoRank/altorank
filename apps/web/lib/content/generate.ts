@@ -442,7 +442,19 @@ export async function generateArticle(
     // are stored followed and same-tab rather than nofollow like a citation.
     const tiptapContent = htmlToTiptapJson(processedHtml, { siteDomain: workspace.domain });
 
+    // A featured image, when a provider is configured for one.
+    //
+    // This used to fail into `catch {}`, so "no key configured" and "the image
+    // API returned an error" both looked exactly like "no image", and every
+    // article in the database had none without anything ever saying so
+    // (measured 2026-09-03: 15 of 15). The generation still must not fail over
+    // an image, so the outcome is logged rather than thrown.
     let featuredImageUrl: string | null = null;
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn(
+        "[generate] no featured image: OPENAI_API_KEY is not set, so image generation is skipped for every article",
+      );
+    }
     try {
       if (process.env.OPENAI_API_KEY) {
         const imageResult = await generateImage(
@@ -456,8 +468,11 @@ export async function generateArticle(
           `${workspaceId}/${article.id}.png`,
         );
       }
-    } catch {
-      // Image generation is optional.
+    } catch (err) {
+      console.warn(
+        "[generate] featured image failed:",
+        err instanceof Error ? err.message : err,
+      );
     }
 
     const { error: saveError } = await supabase
