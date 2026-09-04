@@ -53,3 +53,32 @@ alter table calendar_entries
 
 create index if not exists idx_calendar_entries_workspace_date
   on calendar_entries (workspace_id, scheduled_date);
+
+-- `workspaces.language` is a locale code that every research call reads. The
+-- wizard shows a label ("English", "Italian"), and writing the label here
+-- instead of the code makes DataForSEO answer 40501 for that site and nothing
+-- else: no error surfaces until a keyword run comes back empty. A local test
+-- row read "English", so the class is real even though production is clean.
+--
+-- Normalise the obvious labels first, then refuse anything that is not a code.
+update workspaces
+   set language = case
+     when language ilike 'english%' then 'en'
+     when language ilike 'italian%' then 'it'
+     when language ilike 'spanish%' then 'es'
+     when language ilike 'french%' then 'fr'
+     when language ilike 'german%' then 'de'
+     when language ilike 'portuguese%' then 'pt'
+     when language ilike 'dutch%' then 'nl'
+     else lower(left(language, 2))
+   end
+ where language is not null
+   and language !~ '^[a-z]{2}(-[a-z]{2})?$';
+
+alter table workspaces drop constraint if exists workspaces_language_is_code;
+alter table workspaces
+  add constraint workspaces_language_is_code
+  check (language ~ '^[a-z]{2}(-[a-z]{2})?$');
+
+comment on constraint workspaces_language_is_code on workspaces is
+  'A locale code, not a label. Labels belong in business_profile.language.';
