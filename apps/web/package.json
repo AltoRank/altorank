@@ -14,7 +14,8 @@
     "dogfood": "tsx --env-file=.env.local scripts/dogfood.ts",
     "audit:articles": "tsx --env-file=.env.local scripts/audit-articles.ts",
     "test:article": "tsx --env-file=.env.local scripts/generate-test-article.ts",
-    "crawl:site": "tsx --env-file=.env.local scripts/crawl-site.ts"
+    "crawl:site": "tsx --env-file=.env.local scripts/crawl-site.ts",
+    "analyse": "tsx --env-file=.env.local scripts/analyse-domain.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
