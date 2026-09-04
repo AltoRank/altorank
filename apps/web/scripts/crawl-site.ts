@@ -30,7 +30,7 @@ const DRY = args.includes("--dry");
 const pad = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s).padEnd(n);
 const heading = (s: string) => console.log(`\n${s}\n${"-".repeat(s.length)}`);
 
-function report(pages: SitePage[], discovered: number) {
+function report(pages: SitePage[], discovered: number, opts: { rankAware: boolean } = { rankAware: true }) {
   const ok = pages.filter((p) => p.status >= 200 && p.status < 400);
   const scored = ok.filter((p) => p.seo_score !== null);
   const byType = (t: string) => ok.filter((p) => p.page_type === t).length;
@@ -69,10 +69,27 @@ function report(pages: SitePage[], discovered: number) {
   const close = scored
     .filter((p) => p.position !== null && p.position! >= 4 && p.position! <= 30)
     .sort((a, b) => (a.aeo_score ?? 0) - (b.aeo_score ?? 0));
+  // "Nobody has measured this" and "we measured and nothing is close" are
+  // different findings and must not share a message. The first version said
+  // "no rank data" on a site that had just been analysed, which sent the
+  // reader to re-run an analysis that would change nothing.
+  const withPosition = scored.filter((p) => p.position !== null);
   if (!close.length) {
     heading("Refresh queue");
-    console.log("  Needs rank data: which page ranks where comes from the domain analysis,");
-    console.log("  and this workspace has none stored yet. Run the analysis, then re-crawl.");
+    if (!opts.rankAware) {
+      console.log("  Not available on a dry run: positions come from the stored domain");
+      console.log("  analysis, which is only read when the crawl writes. Drop --dry to see it.");
+    } else if (!withPosition.length) {
+      console.log("  Needs rank data: which page ranks where comes from the domain analysis,");
+      console.log("  and this workspace has none stored. Run `npm run analyse`, then re-crawl.");
+    } else {
+      const best = [...withPosition].sort((a, b) => a.position! - b.position!)[0];
+      console.log(`  Empty, and that is the finding. ${withPosition.length} of ${scored.length} pages rank at all;`);
+      console.log(`  none sits between 4 and 30, where a rewrite has somewhere to go.`);
+      console.log(`  Best placed: ${best.path} at position ${best.position}.`);
+      console.log(`  A site this size with this little ranking needs authority and coverage,`);
+      console.log(`  not refreshes.`);
+    }
   }
   if (close.length) {
     heading(`Refresh queue: ranking 4-30, weakest citation readiness first (${close.length})`);
@@ -123,7 +140,7 @@ async function main(): Promise<void> {
         }
       }),
     );
-    report(pages, all.length);
+    report(pages, all.length, { rankAware: false });
     return;
   }
 
