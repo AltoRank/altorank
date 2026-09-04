@@ -18,9 +18,11 @@ import { ConnectCmsDialog } from "@/components/dashboard/connect-cms-dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { PLATFORM_HINT, PLATFORM_LABEL, PLATFORM_CONNECT_TYPE, platformState } from "@/lib/cms/detect";
 import { updateArticle } from "@/app/actions/articles";
-import { publishArticle, approveArticle, requestChanges, markPublishedManually } from "@/app/actions/publish";
+import { publishArticle, approveArticle, requestChanges, markPublishedManually, retryPublish } from "@/app/actions/publish";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
 import type { Destination } from "@/lib/publishing/destinations";
+import { canRetryPublish, type LastPublish } from "@/lib/publishing/log";
+import { publishVerb } from "@/lib/cms/publish-mode";
 import { SchedulePicker } from "@/components/dashboard/editor/schedule-picker";
 import { ResearchPanel, FactCheckPanel } from "@/components/dashboard/editor/research-panel";
 import { WhyPanel } from "@/components/dashboard/editor/why-panel";
@@ -56,6 +58,13 @@ type Props = {
    * yet". Undefined when the page did not count.
    */
   linkableArticles?: number | null;
+  /**
+   * The most recent publish_log row for this article. A failed one turns the
+   * panel into the recovery path - the error, and a Retry that goes back
+   * through the same connection - instead of a Publish button that has
+   * quietly vanished because the status is 'error'.
+   */
+  lastPublish?: LastPublish | null;
 };
 
 export function ArticleEditor({
@@ -66,6 +75,7 @@ export function ArticleEditor({
   destinations = [],
   integrations = [],
   linkableArticles,
+  lastPublish = null,
 }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -301,7 +311,9 @@ export function ArticleEditor({
     try {
       const result = await publishArticle(article.id, destination?.id);
       toast.success(
-        destination ? `Published to ${destination.label}` : "Article published",
+        result.publishMode === "draft"
+          ? `Saved as a draft on ${destination?.label ?? "the CMS"}`
+          : destination ? `Published to ${destination.label}` : "Article published",
         result?.url ? { description: result.url } : undefined,
       );
       router.refresh();
@@ -311,6 +323,25 @@ export function ArticleEditor({
       setPublishing(false);
     }
   }, [article.id, destination, router]);
+
+  // Same connection the failed attempt used - the action reads it off the log
+  // - so this is not a chance to pick a different one.
+  const handleRetry = useCallback(async () => {
+    setPublishing(true);
+    try {
+      const result = await retryPublish(article.id);
+      toast.success(
+        result.publishMode === "draft" ? "Saved as a draft this time" : "Published this time",
+        result?.url ? { description: result.url } : undefined,
+      );
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "The retry failed too");
+    } finally {
+      setPublishing(false);
+    }
+  }, [article.id, router]);
+  const retryable = canRetryPublish(lastPublish, article.status);
 
   // Both render from what is on screen right now, synchronously inside the
   // click, so the clipboard write stays within the user gesture Safari
@@ -606,7 +637,16 @@ export function ArticleEditor({
                       {destinations[0].label} — {workspace.domain}
                     </div>
                   </div>
-                  <StatusPill status="on" label={article.status === "live" ? "Live" : "Connected"} />
+                  <StatusPill
+                    status="on"
+                    label={
+                      article.status === "live"
+                        ? lastPublish?.status === "success" && lastPublish.publish_mode === "draft"
+                          ? "Draft on CMS"
+                          : "Live"
+                        : "Connected"
+                    }
+                  />
                 </div>
               ) : (
                 <label className="block">
@@ -636,16 +676,43 @@ export function ArticleEditor({
                   Choose a plan to publish
                 </Link>
               )}
-              {article.status === "approved" && !needsPlan && (
-                <>
+              {/*
+                The recovery path. Shown for an approved article whose last
+                attempt failed, and for an 'error' article - which the cron
+                leaves behind and which otherwise had no button at all.
+              */}
+              {retryable && !needsPlan && (
+                <div className="mt-3 rounded-[7px] border border-[var(--err)]/40 bg-[var(--err)]/5 p-2.5">
+                  <div className="text-[12px] font-medium text-[var(--err)]">Last publish failed</div>
+                  {lastPublish?.error && (
+                    <div className="mt-1 text-[12px] text-ink-2 break-words leading-[1.45]">
+                      {lastPublish.error}
+                    </div>
+                  )}
                   <Button
                     size="sm"
-                    className="w-full justify-center mt-3"
-                    onClick={handlePublish}
+                    className="w-full justify-center mt-2"
+                    onClick={handleRetry}
                     disabled={publishing}
                   >
-                    {publishing ? "Publishing…" : `Publish to ${destination?.label ?? "CMS"}`}
+                    {publishing ? "Retrying…" : "Retry publish"}
                   </Button>
+                </div>
+              )}
+              {article.status === "approved" && !needsPlan && (
+                <>
+                  {!retryable && (
+                    <Button
+                      size="sm"
+                      className="w-full justify-center mt-3"
+                      onClick={handlePublish}
+                      disabled={publishing}
+                    >
+                      {publishing
+                        ? destination?.publishMode === "draft" ? "Saving…" : "Publishing…"
+                        : publishVerb(destination?.publishMode, destination?.label ?? "CMS")}
+                    </Button>
+                  )}
                   <button
                     type="button"
                     className="w-full text-center mt-2 text-[12px] text-ink-3 hover:text-ink transition-colors disabled:opacity-50"

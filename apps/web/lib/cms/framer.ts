@@ -34,7 +34,7 @@ export class FramerAdapter implements CMSAdapter {
             content: article.html,
             description: article.metaDescription ?? "",
           },
-          isDraft: false,
+          isDraft: article.publishMode === "draft",
         }),
       },
     );

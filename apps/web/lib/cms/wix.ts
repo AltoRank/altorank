@@ -62,6 +62,13 @@ export class WixAdapter implements CMSAdapter {
     const draftId = createData.draftPost?.id;
     if (!draftId) throw new Error("Wix returned no draft post ID");
 
+    // A draft connection stops here: Wix's own model is draft-then-publish,
+    // so "save as draft" is simply not taking the second step. No public URL
+    // exists yet, and none is claimed.
+    if (article.publishMode === "draft") {
+      return { externalId: draftId, url: "" };
+    }
+
     // Step 2: Publish the draft
     const publishRes = await fetch(
       `${WIX_API}/blog/v3/draft-posts/${draftId}/publish`,

@@ -149,6 +149,11 @@ export function renderPost(
     publishDate: (article.publishedAt ?? new Date().toISOString()).slice(0, 10),
     tags: article.tags?.length ? article.tags : undefined,
     ogImage: article.featuredImageUrl,
+    // After the defaults so a collection whose defaults say `draft: false`
+    // still gets a draft when the connection asks for one. Only ever set for
+    // a draft: a live publish leaves the field to the defaults, which is what
+    // every commit before this did.
+    ...(article.publishMode === "draft" ? { draft: true } : {}),
   });
 
   return { path, contents: `${frontmatter}\n${markdown}\n` };

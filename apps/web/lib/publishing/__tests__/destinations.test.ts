@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { chooseDestination, toDestinations, type Destination } from "../destinations";
 
-const wp: Destination = { id: "wi-wp", integrationId: "wordpress", label: "WordPress", type: "wordpress" };
-const ghost: Destination = { id: "wi-ghost", integrationId: "ghost", label: "Ghost", type: "ghost" };
+const wp: Destination = { id: "wi-wp", integrationId: "wordpress", label: "WordPress", type: "wordpress", publishMode: "publish" };
+const ghost: Destination = { id: "wi-ghost", integrationId: "ghost", label: "Ghost", type: "ghost", publishMode: "draft" };
 
 describe("toDestinations", () => {
   it("keeps CMS connections and drops analytics ones", () => {
@@ -23,6 +23,18 @@ describe("toDestinations", () => {
       { id: "c", config: null, integration: { id: "ghost", name: "Ghost", tag: "CMS" } },
     ]);
     expect(out.map((d) => d.type)).toEqual(["git", "webhook", "ghost"]);
+  });
+
+  it("carries the connection's publish mode, and reads live for a row without one", () => {
+    const out = toDestinations([
+      { id: "a", config: { type: "wordpress" }, publish_mode: "draft", integration: { id: "wordpress", name: "WordPress", tag: "CMS" } },
+      { id: "b", config: { type: "ghost" }, publish_mode: "publish", integration: { id: "ghost", name: "Ghost", tag: "CMS" } },
+      // Predates the column, or was selected without it: it has been
+      // publishing live all along, and must not turn into a draft.
+      { id: "c", config: { type: "git" }, integration: { id: "git", name: "Git", tag: "CMS" } },
+      { id: "d", config: { type: "git" }, publish_mode: "nonsense", integration: { id: "git", name: "Git", tag: "CMS" } },
+    ]);
+    expect(out.map((d) => d.publishMode)).toEqual(["draft", "publish", "publish", "publish"]);
   });
 
   it("is empty for nothing connected", () => {

@@ -9,8 +9,11 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { needsPlanToShip, CHOOSE_PLAN_MESSAGE } from "@/lib/billing/quota";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";
 import { decryptConfig } from "@/lib/crypto";
-import { publishArticleCore } from "@/lib/publishing/core";
+import { publishArticleCore, PublishError, type PublishContext } from "@/lib/publishing/core";
 import { chooseDestination, toDestinations, type IntegrationRow } from "@/lib/publishing/destinations";
+import { recordPublish } from "@/lib/publishing/log";
+import { prepareRetry } from "@/lib/publishing/retry";
+import type { PublishResult } from "@/lib/cms/types";
 import { submitForIndexing } from "@/lib/seo/indexing";
 import type { CMSConfig } from "@/lib/types";
 
@@ -33,27 +36,56 @@ export async function publishArticle(articleId: string, destinationId?: string |
     .eq("id", articleId)
     .single();
 
-  async function logPublish(status: "success" | "error", error?: string) {
-    if (!art) return;
-    const { error: logErr } = await supabase.from("publish_log").insert({
-      article_id: articleId,
-      workspace_id: art.workspace_id,
-      status,
-      triggered_by: "manual",
-      ...(error ? { error } : {}),
-    });
-    // Don't fail the publish on a logging error, but don't swallow it silently.
-    if (logErr) console.error("publish_log insert failed:", logErr.message);
-  }
+  return runAndLog(supabase, articleId, art?.workspace_id ?? null, () =>
+    publishArticleCore(supabase, articleId, { destinationId }),
+  );
+}
 
+/**
+ * Run one publish attempt and write its publish_log row either way.
+ *
+ * The row carries which connection the attempt used and in which mode - on
+ * success from the result, on failure from the PublishError the core throws
+ * once a destination is known. A failure before that (not approved, nothing
+ * connected) is logged with neither, and is not something a retry can fix.
+ */
+async function runAndLog(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  articleId: string,
+  workspaceId: string | null,
+  attempt: () => Promise<PublishResult & PublishContext>,
+  retryOf: string | null = null,
+) {
   try {
-    const result = await publishArticleCore(supabase, articleId, { destinationId });
-    await logPublish("success");
+    const result = await attempt();
+    if (workspaceId) {
+      await recordPublish(supabase, {
+        articleId,
+        workspaceId,
+        status: "success",
+        triggeredBy: "manual",
+        destinationId: result.destinationId,
+        publishMode: result.publishMode,
+        retryOf,
+      });
+    }
     revalidatePath("/articles");
     revalidatePath(`/content/${articleId}`);
     return result;
   } catch (err) {
-    await logPublish("error", err instanceof Error ? err.message : String(err));
+    if (workspaceId) {
+      const context = err instanceof PublishError ? err.context : null;
+      await recordPublish(supabase, {
+        articleId,
+        workspaceId,
+        status: "error",
+        error: err instanceof Error ? err.message : String(err),
+        triggeredBy: "manual",
+        destinationId: context?.destinationId,
+        publishMode: context?.publishMode,
+        retryOf,
+      });
+    }
     throw err;
   }
 }
@@ -239,18 +271,28 @@ export async function unpublishArticle(articleId: string) {
   revalidatePath(`/content/${articleId}`);
 }
 
+/**
+ * Retry the last failed publish of an article.
+ *
+ * Same article, same connection the failed attempt used, one more publish_log
+ * row pointing back at the failed one. Refuses when there is nothing failed to
+ * retry - a second Publish button is what the old version amounted to - and
+ * never creates a second post: the core edits in place when the article
+ * already has an external id (lib/publishing/core.ts says how).
+ */
 export async function retryPublish(articleId: string) {
-  await requireAuth();
-  // Reset and try again. Re-publishing implies the article was already approved
-  // (it had to clear the gate to reach 'error'), so reset to 'approved' — a reset
-  // to 'review' would now be rejected by the approval gate in publishArticleCore.
+  const { user, agencyId } = await requireAuth();
   const supabase = await createClient();
-  await supabase
-    .from("articles")
-    .update({ status: "approved", updated_at: new Date().toISOString() })
-    .eq("id", articleId);
+  if (await needsPlanToShip(supabase, agencyId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
 
-  return publishArticle(articleId);
+  const { workspaceId, last } = await prepareRetry(supabase, articleId);
+  return runAndLog(
+    supabase,
+    articleId,
+    workspaceId,
+    () => publishArticleCore(supabase, articleId, { destinationId: last.destination_id }),
+    last.id,
+  );
 }
 
 /**

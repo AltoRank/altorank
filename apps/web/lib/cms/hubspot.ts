@@ -51,7 +51,7 @@ export class HubSpotAdapter implements CMSAdapter {
         postBody: article.html,
         contentGroupId: blogId,
         metaDescription: article.metaDescription ?? "",
-        currentState: "PUBLISHED",
+        currentState: article.publishMode === "draft" ? "DRAFT" : "PUBLISHED",
       }),
     });
 

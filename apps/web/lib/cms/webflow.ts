@@ -22,12 +22,16 @@ export class WebflowAdapter implements CMSAdapter {
   }
 
   async publish(article: PublishPayload): Promise<PublishResult> {
+    const draft = article.publishMode === "draft";
     const res = await fetch(
       `${WEBFLOW_API}/collections/${this.collectionId}/items`,
       {
         method: "POST",
         headers: this.headers(),
         body: JSON.stringify({
+          // A draft item is staged in the collection and never pushed to the
+          // live site; the publish call below is what would make it public.
+          isDraft: draft,
           fieldData: {
             name: article.title,
             slug: article.slug,
@@ -46,11 +50,14 @@ export class WebflowAdapter implements CMSAdapter {
     const data = await res.json();
     const itemId = data.id ?? data._id;
 
-    // Publish the item live
-    await fetch(
-      `${WEBFLOW_API}/collections/${this.collectionId}/items/${itemId}/publish`,
-      { method: "POST", headers: this.headers() },
-    );
+    // Publish the item live - unless the connection asked for a draft, in
+    // which case staging it is the whole job.
+    if (!draft) {
+      await fetch(
+        `${WEBFLOW_API}/collections/${this.collectionId}/items/${itemId}/publish`,
+        { method: "POST", headers: this.headers() },
+      );
+    }
 
     return {
       externalId: String(itemId),
