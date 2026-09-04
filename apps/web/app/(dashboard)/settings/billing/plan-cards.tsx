@@ -37,6 +37,7 @@ export function PlanCards({
   isActive,
   hasCustomer,
   returnTo,
+  canManage,
 }: {
   plans: PlanCard[];
   /** The tier actually being paid for, or null when nothing is. */
@@ -50,8 +51,14 @@ export function PlanCards({
    * user to billing and makes them find their way back.
    */
   returnTo?: string;
+  /**
+   * Owner only. Editors and admins see the ladder and the current plan but
+   * every button is inert with a reason; the actions refuse them anyway.
+   */
+  canManage?: boolean;
 }) {
   const [pending, start] = useTransition();
+  const locked = canManage === false;
   const [interval, setInterval] = useState<BillingInterval>("month");
 
   function subscribe(plan: SelfServePlan) {
@@ -148,7 +155,11 @@ export function PlanCards({
               {/* Pushed to the bottom so the buttons line up across cards whose
                   feature lists are different lengths. */}
               <div className="mt-auto pt-4">
-                {current ? (
+                {locked ? (
+                  <div className="text-center text-[12px] leading-relaxed text-ink-3">
+                    {current ? "Your plan." : ""} Only the account owner can change the plan or billing.
+                  </div>
+                ) : current ? (
                   <div className="flex flex-col gap-2">
                     <Button onClick={() => portal("manage")} disabled={pending} className="w-full justify-center">
                       {pending ? "Opening…" : "Invoices and billing"}

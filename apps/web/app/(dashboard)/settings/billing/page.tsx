@@ -14,7 +14,9 @@ import { getSimulation } from "@/lib/dev/simulation";
 import { getOperatorPreview } from "@/lib/auth/preview";
 import { getQuota } from "@/lib/billing/quota";
 import { PlanCards, type PlanCard } from "./plan-cards";
+import { RetentionCard } from "./retention-card";
 import { SettingsTabs } from "../settings-tabs";
+import { canManageBilling } from "@/lib/team/access";
 
 export const metadata: Metadata = { title: "Billing" };
 
@@ -31,19 +33,21 @@ const PLAN_CARDS: PlanCard[] = TIERS.map((tier) => ({
 
 export default async function BillingPage(props: { searchParams?: Promise<{ return?: string; upgraded?: string }> }) {
   const returnTo = (await props.searchParams)?.return;
-  const { agencyId, user } = await requireAuth();
+  const { agencyId, user, role } = await requireAuth();
   const supabase = await createClient();
+  // Editors and admins read this page; only the owner changes what it pays.
+  const canManage = canManageBilling(role);
 
   // Five independent reads. Each needs only the agency and user requireAuth
   // just returned; none consumes another's result, and the plan and status
   // below are computed from them afterwards rather than between them. Awaited
   // one after the other they were five round trips on the page people open
   // when they are about to pay.
-  const [{ data: agency }, { data: invoices }, simulation, preview, quota] =
+  const [{ data: agency }, { data: invoices }, simulation, preview, quota, { data: pausedRows }] =
     await Promise.all([
       supabase
         .from("agencies")
-        .select("plan, plan_status, current_period_end, stripe_customer_id")
+        .select("plan, plan_status, current_period_end, stripe_customer_id, stripe_subscription_id, cancels_at")
         .eq("id", agencyId)
         .single(),
       supabase
@@ -61,7 +65,18 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
       // showing them their real row instead answers a question they did not ask.
       getOperatorPreview(),
       getQuota(supabase, agencyId, user.email ?? null),
+      // The account pause writes the same date on every workspace; one row is
+      // enough to know it is on. Rows paused by hand carry no date.
+      supabase
+        .from("workspaces")
+        .select("paused_until")
+        .eq("agency_id", agencyId)
+        .eq("status", "paused")
+        .not("paused_until", "is", null)
+        .order("paused_until", { ascending: false })
+        .limit(1),
     ]);
+  const pausedUntil = (pausedRows?.[0]?.paused_until as string | undefined) ?? null;
 
   const plan = (preview?.plan ?? simulation?.plan ?? agency?.plan ?? "starter") as PlanTier;
   // The preview overrides the plan, so it has to override the status with it.
@@ -163,9 +178,22 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
                 isActive={isActive}
                 hasCustomer={!!agency?.stripe_customer_id}
                 returnTo={returnTo}
+                canManage={canManage}
               />
             </div>
           </Card>
+
+          {/* Only when there is something to pause or end. Self-host and
+              accounts without a subscription have no billing to stop, and a
+              pause control over nothing would be theatre. Owner only, like
+              every other change to what the account pays. */}
+          {canManage && isActive && agency?.stripe_subscription_id && (
+            <RetentionCard
+              pausedUntil={pausedUntil}
+              cancelsAt={agency.cancels_at ?? null}
+              periodEnd={agency.current_period_end ?? null}
+            />
+          )}
 
           <Card title="Recent invoices" flush>
             {invoices && invoices.length > 0 ? (
