@@ -6,6 +6,12 @@ import { Button, Dialog } from "@/components/ui";
 import { useOnboarding } from "@/components/onboarding/use-onboarding";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { connectIntegration, deriveBlogUrl } from "@/app/actions/integrations";
+import {
+  DEFAULT_PUBLISH_MODE,
+  DRAFT_BEHAVIOUR,
+  draftSupport,
+  type PublishMode,
+} from "@/lib/cms/publish-mode";
 import type { Workspace, Integration, CMSConfig } from "@/lib/types";
 import type { BlogUrlDerivation } from "@/lib/cms/blog-url";
 
@@ -102,6 +108,12 @@ export function ConnectCmsDialog({
   const [cmsType, setCmsType] = useState<CMSType>(initial ?? "wordpress");
   const [detecting, setDetecting] = useState(false);
   const [derivation, setDerivation] = useState<BlogUrlDerivation | null>(null);
+  // Draft by default. The option is per connection and travels with the
+  // credentials, so it is chosen here and nowhere else.
+  const [publishMode, setPublishMode] = useState<PublishMode>(DEFAULT_PUBLISH_MODE);
+  // Notion's draft depends on a property the person names, so the refusal has
+  // to update as they type rather than only on submit.
+  const [notionStatusProperty, setNotionStatusProperty] = useState("");
   const onboarding = useOnboarding();
 
   // The dialog stays mounted while closed, so the opening tab has to follow
@@ -160,7 +172,15 @@ export function ConnectCmsDialog({
 
       const config = buildConfig(cmsType, fd);
 
-      await connectIntegration(workspaceId, integrationId, config);
+      // The same check the server runs, here so the refusal is a sentence in
+      // the dialog rather than a toast after a round trip - and so a platform
+      // that cannot save drafts is never connected as if it could.
+      if (publishMode === "draft") {
+        const support = draftSupport(config);
+        if (!support.ok) throw new Error(support.reason);
+      }
+
+      await connectIntegration(workspaceId, integrationId, config, publishMode);
       onOpenChange(false);
       onboarding?.completeStep("connect-cms");
       onConnected?.();
@@ -185,6 +205,11 @@ export function ConnectCmsDialog({
     { value: "webhook", label: "Webhook" },
     { value: "git", label: "Git / static site" },
   ];
+  const tabLabel = (t: CMSType) => tabs.find((tab) => tab.value === t)?.label ?? t;
+  const draftCheck =
+    publishMode === "draft"
+      ? draftSupport({ type: cmsType, statusProperty: notionStatusProperty } as CMSConfig)
+      : ({ ok: true } as const);
 
   return (
     <Dialog
@@ -283,6 +308,28 @@ export function ConnectCmsDialog({
             <>
               <Field name="databaseId" label="Database ID" placeholder="e.g. a1b2c3d4..." />
               <Field name="integrationToken" label="Integration token" type="password" placeholder="secret_..." />
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[12.5px] font-medium text-ink-2">
+                  Status property {publishMode === "draft" ? "" : "(optional)"}
+                </span>
+                <input
+                  name="statusProperty"
+                  type="text"
+                  placeholder="Status"
+                  value={notionStatusProperty}
+                  onChange={(e) => setNotionStatusProperty(e.target.value)}
+                  className={inputClass}
+                />
+                <span className="text-[11.5px] text-ink-3">
+                  A Status-type property on the database. Drafts set it to
+                  &ldquo;Draft&rdquo;, live publishes to &ldquo;Published&rdquo;; change the
+                  option names below if yours differ.
+                </span>
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <Field name="draftStatus" label="Draft option" placeholder="Draft" required={false} />
+                <Field name="publishedStatus" label="Published option" placeholder="Published" required={false} />
+              </div>
             </>
           )}
 
@@ -408,11 +455,72 @@ export function ConnectCmsDialog({
             </>
           )}
 
+          {/*
+            What pressing Publish will do through this connection. Stated per
+            platform, because "draft" is a WordPress status, a Webflow staging
+            flag, a Shopify visibility bit and a git front-matter field, and a
+            person deciding should know which they are getting.
+          */}
+          <fieldset className="flex flex-col gap-2 pt-1">
+            <legend className="text-[12.5px] font-medium text-ink-2 mb-1.5">
+              When an article is published
+            </legend>
+            <label
+              className={`flex gap-2.5 items-start rounded-lg border px-3 py-2.5 cursor-pointer transition-colors ${
+                publishMode === "draft" ? "border-ink bg-panel" : "border-line hover:border-ink-4"
+              }`}
+            >
+              <input
+                type="radio"
+                name="publishMode"
+                value="draft"
+                checked={publishMode === "draft"}
+                onChange={() => setPublishMode("draft")}
+                className="mt-0.5"
+              />
+              <span className="flex flex-col gap-0.5">
+                <span className="text-[13px] font-medium text-ink">
+                  Save as a draft on {tabLabel(cmsType)}{" "}
+                  <span className="font-normal text-ink-3">— safe default</span>
+                </span>
+                <span className="text-[12px] text-ink-3 leading-[1.45]">
+                  {DRAFT_BEHAVIOUR[cmsType]} Nothing goes live until someone releases it there.
+                </span>
+              </span>
+            </label>
+            <label
+              className={`flex gap-2.5 items-start rounded-lg border px-3 py-2.5 cursor-pointer transition-colors ${
+                publishMode === "publish" ? "border-ink bg-panel" : "border-line hover:border-ink-4"
+              }`}
+            >
+              <input
+                type="radio"
+                name="publishMode"
+                value="publish"
+                checked={publishMode === "publish"}
+                onChange={() => setPublishMode("publish")}
+                className="mt-0.5"
+              />
+              <span className="flex flex-col gap-0.5">
+                <span className="text-[13px] font-medium text-ink">Publish live</span>
+                <span className="text-[12px] text-ink-3 leading-[1.45]">
+                  The article is public on {tabLabel(cmsType)} the moment you press
+                  Publish, or the schedule fires.
+                </span>
+              </span>
+            </label>
+            {!draftCheck.ok && (
+              <p role="alert" className="text-[12px] text-[var(--err)] leading-[1.45]">
+                {draftCheck.reason}
+              </p>
+            )}
+          </fieldset>
+
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" variant="accent" disabled={pending}>
+            <Button type="submit" variant="accent" disabled={pending || !draftCheck.ok}>
               {pending ? "Connecting..." : "Connect"}
             </Button>
           </div>
@@ -473,12 +581,19 @@ function buildConfig(type: CMSType, fd: FormData): CMSConfig {
         siteId: fd.get("siteId") as string,
         apiKey: fd.get("apiKey") as string,
       };
-    case "notion":
+    case "notion": {
+      const statusProperty = (fd.get("statusProperty") as string | null)?.trim();
+      const draftStatus = (fd.get("draftStatus") as string | null)?.trim();
+      const publishedStatus = (fd.get("publishedStatus") as string | null)?.trim();
       return {
         type: "notion",
         databaseId: fd.get("databaseId") as string,
         integrationToken: fd.get("integrationToken") as string,
+        ...(statusProperty ? { statusProperty } : {}),
+        ...(draftStatus ? { draftStatus } : {}),
+        ...(publishedStatus ? { publishedStatus } : {}),
       };
+    }
     case "hubspot":
       return {
         type: "hubspot",

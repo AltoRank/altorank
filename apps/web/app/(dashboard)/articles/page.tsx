@@ -10,6 +10,7 @@ import { ArticleRowMenu } from "@/components/dashboard/article-row-menu";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
+import { canRetryPublish, getLastPublishes } from "@/lib/publishing/log";
 
 export const metadata: Metadata = { title: "Articles" };
 
@@ -81,6 +82,14 @@ export default async function ArticlesPage({ searchParams }: Props) {
     (cmsRows ?? [])
       .filter((r) => (r.integration as { tag?: string } | null)?.tag === "CMS")
       .map((r) => r.workspace_id as string),
+  );
+
+  // Whose last publish failed. The row menu offers "Retry publish" for those
+  // instead of a "Publish now" that would silently start over.
+  const lastPublishes = await getLastPublishes(
+    supabase,
+    workspaces.map((w) => w.id),
+    allArticles.map((a) => a.id),
   );
 
   if (workspaces.length === 0) {
@@ -196,6 +205,7 @@ export default async function ArticlesPage({ searchParams }: Props) {
                         articleId={a.id}
                         currentStatus={a.status}
                         canPublish={cmsWorkspaces.has(a.workspace_id)}
+                        canRetry={canRetryPublish(lastPublishes.get(a.id), a.status)}
                       />
                     </td>
                   </tr>

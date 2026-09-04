@@ -1,3 +1,4 @@
+import type { PublishMode } from "@/lib/cms/types";
 import type { AvatarColor } from "./constants";
 import type { ScoringCheck } from "@/lib/seo/scoring";
 import type { LinkCheck } from "@/lib/seo/link-check";
@@ -192,6 +193,12 @@ export type WorkspaceIntegration = {
   integration_id: string;
   config: Record<string, unknown>;
   connected_at: string;
+  /**
+   * Whether articles reach this CMS as drafts or go live. A column, not a
+   * config key, because config is the encrypted credential blob and this has
+   * to be readable by every list that shows the connection.
+   */
+  publish_mode: PublishMode;
 };
 
 // === Voice ===
@@ -330,6 +337,15 @@ export type NotionConfig = {
   type: "notion";
   databaseId: string;
   integrationToken: string;
+  /**
+   * A Status-type property on the database that says whether a page is a
+   * draft. Notion pages have no publish state of their own, so without this
+   * the connection cannot save drafts and the dialog refuses to pretend it can.
+   */
+  statusProperty?: string;
+  /** Option names in that property. Defaults: "Draft" and "Published". */
+  draftStatus?: string;
+  publishedStatus?: string;
 };
 
 export type HubSpotConfig = {
@@ -387,6 +403,11 @@ export type PublishLogEntry = {
   status: "success" | "error";
   error: string | null;
   triggered_by: "cron" | "manual";
+  /** The workspace_integrations row the attempt went through; a retry reuses it. */
+  destination_id: string | null;
+  publish_mode: PublishMode | null;
+  /** The failed entry this attempt retried, when it was a retry. */
+  retry_of: string | null;
   created_at: string;
 };
 
