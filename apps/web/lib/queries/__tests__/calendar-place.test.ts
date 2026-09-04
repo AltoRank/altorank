@@ -11,6 +11,7 @@ vi.mock("@/lib/supabase/server", () => ({
         select: () => q,
         eq: () => q,
         is: () => q,
+        in: () => q,
         then: (r: (v: { data: unknown; error: null }) => unknown) => r({ data, error: null }),
       };
       return q;
