@@ -5,8 +5,8 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { rewriteFieldAction } from "@/app/actions/editor-ai";
 import type { MicroAction } from "@/lib/ai/micro";
-import { fieldCounter } from "@/lib/editor/proposals";
 import { AiActionMenu, ProposalCard } from "./ai-menu";
+import { Counter } from "./counter";
 
 // ---------------------------------------------------------------------------
 // Title and meta description, with their counters and AI actions
@@ -14,21 +14,9 @@ import { AiActionMenu, ProposalCard } from "./ai-menu";
 //
 // Both are proposed, never written: an action fills the card below the field,
 // Accept moves it into the field (staged), Save is what persists. The counter
-// is a count against what a result page displays and turns red past it.
+// (./counter) is a count against what a result page displays, red past it.
 
 type Field = "title" | "meta_description";
-
-export function Counter({ text, field, className }: { text: string; field: Field; className?: string }) {
-  const c = fieldCounter(text, field);
-  return (
-    <span
-      className={cn("font-mono text-[11px] tabular-nums", c.over ? "text-err-ink" : "text-ink-3", className)}
-      aria-label={`${c.count} of ${c.limit} characters${c.over ? ", over the limit" : ""}`}
-    >
-      {c.count}/{c.limit}
-    </span>
-  );
-}
 
 export function MetaFields({
   articleId,

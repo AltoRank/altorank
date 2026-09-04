@@ -131,7 +131,19 @@ export function ArticleEditor({
   // rather than read off the ref in render, so the header can show it.
   const [dirty, setDirty] = useState(false);
   const documentRef = useRef<HTMLDivElement>(null);
-  const bumpBody = useCallback(() => setPending((p) => ({ ...p, body: p.body + 1 })), []);
+  // Set once the editor exists; declared here so the editor's own callbacks
+  // can reach it. An accepted body proposal counts as one change and becomes
+  // the new snapshot, otherwise the same edit would be counted twice: once as
+  // the proposal, once as "typed since the snapshot".
+  const editorRef = useRef<ReturnType<typeof useEditor>>(null);
+  const bumpBody = useCallback(() => {
+    setPending((p) => ({ ...p, body: p.body + 1 }));
+    const ed = editorRef.current;
+    if (ed) {
+      snapshot.current = JSON.stringify(ed.getJSON());
+      setDirty(false);
+    }
+  }, []);
 
   // Which sidebar tab is showing. "draft" is everything that was here before:
   // why it exists, its scores, the fact check, research and publishing. "audit"
@@ -190,6 +202,10 @@ export function ArticleEditor({
       }, 300);
     },
   });
+
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
 
   useEffect(() => {
     editor?.setEditable(mode === "editor");
