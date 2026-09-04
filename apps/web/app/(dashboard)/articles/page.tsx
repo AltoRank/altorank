@@ -7,6 +7,9 @@ import { PageHead, DotSep, StatusPill, Card, StatStrip } from "@/components/ui";
 import { ArticleActions } from "@/components/dashboard/article-actions";
 import { ArticleFilters } from "@/components/dashboard/article-filters";
 import { ArticleRowMenu } from "@/components/dashboard/article-row-menu";
+import { IndexBadge } from "@/components/dashboard/gsc-blocks";
+import { coverageBucket } from "@/lib/gsc/analysis";
+import { inspectionFrom } from "@/lib/google/inspection";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
@@ -55,17 +58,25 @@ export default async function ArticlesPage({ searchParams }: Props) {
     getArticles(scopeId ?? undefined, params.status, params.sort),
     supabase
       .from("analytics_metrics")
-      .select("article_id, clicks")
+      .select("article_id, clicks, impressions")
       .not("article_id", "is", null)
+      // Page rows only. The sync also stores (query, page) rows that carry
+      // the article id, and summing both shapes counts every click twice
+      // (lib/gsc/analysis.ts).
+      .is("query", null)
       .gte("metric_date", since),
   ]);
   const clicksByArticle = new Map<string, number>();
+  // Served in search at least once: the page is in Google's index, whatever
+  // else we do or do not know about it.
+  const servedArticles = new Set<string>();
   for (const m of metricRows ?? []) {
     if (!m.article_id) continue;
     clicksByArticle.set(
       m.article_id,
       (clicksByArticle.get(m.article_id) ?? 0) + (m.clicks ?? 0),
     );
+    if ((m.impressions ?? 0) > 0) servedArticles.add(m.article_id);
   }
 
   // Which workspaces can publish from this list: the ones with a CMS
@@ -159,7 +170,7 @@ export default async function ArticlesPage({ searchParams }: Props) {
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
-                {["Article", ...(scopeId ? [] : ["Workspace"]), "Keyword", "Status", "Score", "Vol /mo", "Position", "Clicks /30d", "CMS", "Updated", ""].map((h, i) => (
+                {["Article", ...(scopeId ? [] : ["Workspace"]), "Keyword", "Status", "Score", "Vol /mo", "Position", "Clicks /30d", "Index", "CMS", "Updated", ""].map((h, i) => (
                   <th key={h || i} className={`font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel ${["Score", "Vol /mo", "Position", "Clicks /30d", "Updated"].includes(h) ? "text-right" : "text-left"}`}>
                     {h}
                   </th>
@@ -189,6 +200,24 @@ export default async function ArticlesPage({ searchParams }: Props) {
                     <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{typeof a.volume === "number" ? a.volume.toLocaleString() : "—"}</td>
                     <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{a.position ? `#${a.position}` : "—"}</td>
                     <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{clicksByArticle.has(a.id) ? clicksByArticle.get(a.id)!.toLocaleString() : "—"}</td>
+                    <td className="px-3.5 py-3 border-b border-line-soft">
+                      {a.published_url ? (() => {
+                        const inspection = inspectionFrom(a.indexing_status);
+                        const bucket = coverageBucket(inspection, servedArticles.has(a.id));
+                        return (
+                          <IndexBadge
+                            bucket={bucket}
+                            title={
+                              inspection?.coverageState
+                                ? `${inspection.coverageState} (URL inspection)`
+                                : bucket === "indexed"
+                                  ? "Served in Google search in the last 30 days"
+                                  : "Not inspected and not seen in search. Check indexing from the editor."
+                            }
+                          />
+                        );
+                      })() : <span className="text-ink-4 text-xs">—</span>}
+                    </td>
                     <td className="px-3.5 py-3 border-b border-line-soft font-mono text-xs text-ink-2">{a.cms ?? "—"}</td>
                     <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{dateStr}</td>
                     <td className="px-3.5 py-3 border-b border-line-soft">
@@ -203,7 +232,7 @@ export default async function ArticlesPage({ searchParams }: Props) {
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="px-3.5 py-8 text-center text-ink-3">No articles yet</td>
+                  <td colSpan={12} className="px-3.5 py-8 text-center text-ink-3">No articles yet</td>
                 </tr>
               )}
             </tbody>

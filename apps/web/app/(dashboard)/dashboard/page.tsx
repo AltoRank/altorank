@@ -4,7 +4,25 @@ import Link from "next/link";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getRecentArticles, getArticles } from "@/lib/queries/articles";
 import { getKeywords, getKeywordSourceYields } from "@/lib/queries/keywords";
-import { getTrafficSeries, type TrafficSeries } from "@/lib/queries/traffic";
+import { knownPagesFor, loadGscRows, syncHealthFor, type SyncHealth } from "@/lib/gsc/queries";
+import {
+  cannibalization,
+  indexCoverage,
+  queryOpportunities,
+  searchPerformance,
+  servedUrls,
+  topPages,
+  WINDOW_DAYS,
+} from "@/lib/gsc/analysis";
+import {
+  BestArticlesBlock,
+  CannibalizationBlock,
+  DataFreshness,
+  IndexCoverageBlock,
+  OpportunitiesList,
+  SearchPerformanceBlock,
+  describeChange,
+} from "@/components/dashboard/gsc-blocks";
 import { getBingSummary } from "@/lib/queries/bing";
 import { PageHead, DotSep, StatusPill, Avatar, Icons, Button, Chip, Card, StatStrip, ConnectPrompt } from "@/components/ui";
 import { ClientActions } from "@/components/dashboard/client-actions";
@@ -20,120 +38,12 @@ import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 export const metadata: Metadata = { title: "Dashboard" };
 
 /**
- * Organic clicks from Search Console.
- *
- * Both series used to be hardcoded arrays rising from 14 to 80, so every
- * account saw the same invented growth curve, directly under a stat that read
- * "Organic traffic — / Connect analytics". A chart is a claim; this one was
- * making a claim nobody had measured.
- *
- * Renders nothing when there is no data. A flat line at zero is also a claim,
- * and "we have not measured this" is a different statement from "you have no
- * traffic".
+ * The Search Console chart and the blocks under it live in
+ * components/dashboard/gsc-blocks.tsx. Every number there is read from rows
+ * the nightly sync stored and shown as measured; the locked and not-yet-synced
+ * states are worded once, in GscGate, and the chart renders nothing rather
+ * than a flat line when there is nothing measured to draw.
  */
-function TrafficChart({ series, connected = false }: { series: TrafficSeries; connected?: boolean }) {
-  if (!series.hasData) {
-    // "Connect Search Console" under an account that has already connected it
-    // is the wrong instruction: the next step is a property or a wait, not a
-    // connection (2026-09-02).
-    if (connected) {
-      return (
-        <div className="h-[220px] grid place-items-center px-8 text-center">
-          <div className="max-w-[46ch] text-[13px] leading-relaxed text-ink-3">
-            {/* Nothing synced yet. The impressions branch that used to live
-                here could never run: this whole block requires `hasData` to be
-                false, and that path returns a hard-coded zero for impressions.
-                A site with impressions and no clicks now has `hasClicks` and
-                its own panel below. */}
-            <div className="mb-1 text-[13.5px] font-medium text-ink-2">
-              Search Console is connected, with nothing to plot yet
-            </div>
-            Search Console reports with about a two-day lag, and only pages that
-            received clicks appear at all. If this stays empty, open Integrations:
-            the sync reports there when the connected Google account cannot see a
-            property for this domain.
-          </div>
-        </div>
-      );
-    }
-    // Locked, and said plainly. An empty axis under a heading looks like a
-    // measurement of nothing; this is a block we cannot fill yet.
-    return (
-      <div className="h-[220px] grid place-items-center">
-        <ConnectPrompt
-          icon="trend"
-          service="Google Search Console"
-          title="Without Search Console we cannot show real search data here"
-          body="Nothing on this chart is estimated. Connect Search Console and the daily sync plots the clicks Google actually reports."
-          href="/connect"
-          cta="Connect Search Console"
-        />
-      </div>
-    );
-  }
-
-  // Synced, and the measurement is zero. Drawing a flat line here would be a
-  // claim about the site rather than about the data, so the panel says which
-  // one it is. This is the ordinary state of a new domain: Google is showing
-  // the pages, and clicks follow position.
-  if (!series.hasClicks) {
-    return (
-      <div className="h-[220px] grid place-items-center px-8 text-center">
-        <div className="max-w-[46ch] text-[13px] leading-relaxed text-ink-3">
-          <div className="mb-1 text-[13.5px] font-medium text-ink-2">
-            {series.impressions
-              ? `${series.impressions.toLocaleString()} impressions, no clicks yet`
-              : "Measured, and there is nothing to plot yet"}
-          </div>
-          {series.impressions ? (
-            <>
-              This chart plots clicks, and Search Console reports none over the last{" "}
-              {series.days} days. Impressions mean the pages are being shown; clicks
-              follow position. Nothing here is estimated.
-            </>
-          ) : (
-            <>
-              Search Console reported no impressions and no clicks over the last{" "}
-              {series.days} days, so there is nothing to draw. That is a measurement,
-              not a gap in the data.
-            </>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  const data = series.current;
-  const prev = series.previous;
-  const W = 900, H = 160, pad = 24;
-  // Guard the all-zero case: a max of 0 makes every y NaN and the path vanishes.
-  const max = Math.max(...data, ...prev, 1) * 1.1;
-  const x = (i: number) => pad + (i * (W - pad * 2)) / (data.length - 1);
-  const y = (v: number) => H - pad - ((v / max) * (H - pad * 2));
-  const path = (arr: number[]) => arr.map((v, i) => `${i ? "L" : "M"} ${x(i)} ${y(v)}`).join(" ");
-  const area = path(data) + ` L ${x(data.length - 1)} ${H - pad} L ${x(0)} ${H - pad} Z`;
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="220" preserveAspectRatio="none">
-      <defs>
-        <linearGradient id="g1" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stopColor="var(--accent)" stopOpacity="0.18" />
-          <stop offset="1" stopColor="var(--accent)" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      {[0, 0.25, 0.5, 0.75, 1].map((f) => (
-        <line key={f} x1={pad} x2={W - pad} y1={pad + f * (H - pad * 2)} y2={pad + f * (H - pad * 2)} stroke="var(--line-soft)" strokeWidth="1" />
-      ))}
-      <path d={area} fill="url(#g1)" />
-      <path d={path(prev)} fill="none" stroke="var(--ink-4)" strokeWidth="1.5" strokeDasharray="4 4" />
-      <path d={path(data)} fill="none" stroke="var(--accent)" strokeWidth="2" />
-      {data.map((v, i) => i % 3 === 0 ? (
-        <circle key={i} cx={x(i)} cy={y(v)} r="2.5" fill="var(--bg)" stroke="var(--accent)" strokeWidth="1.5" />
-      ) : null)}
-    </svg>
-  );
-}
-
 export default async function DashboardPage() {
   // Every section is about one site unless the switcher says otherwise.
   const scopeId = await getScopedWorkspaceId();
@@ -164,12 +74,15 @@ export default async function DashboardPage() {
     .is("article_id", null);
   if (scopeId) plannedQuery = plannedQuery.eq("workspace_id", scopeId);
 
-  const [workspaces, allArticles, recent, traffic, keywords, { count: gscCount }, bing, cmsRes, { count: plannedEntries }, yields, profileRes] =
+  const now = new Date();
+  const [workspaces, allArticles, recent, gscRows, keywords, { count: gscCount }, bing, cmsRes, { count: plannedEntries }, yields, profileRes, health, knownPages] =
     await Promise.all([
       getWorkspaces(),
       getArticles(scopeId ?? undefined),
       getRecentArticles(6, scopeId ?? undefined),
-      getTrafficSeries(scopeId ?? undefined),
+      // One read of the two Search Console windows feeds the chart, the
+      // stat, best articles, cannibalisation and coverage below.
+      loadGscRows(scopeId ?? undefined, now),
       getKeywords(scopeId ?? undefined),
       gscQuery,
       // Bing, kept beside the chart rather than in it: two engines summed into
@@ -181,7 +94,16 @@ export default async function DashboardPage() {
       scopeId
         ? gscSupabase.from("workspaces").select("business_profile").eq("id", scopeId).maybeSingle()
         : Promise.resolve({ data: null }),
+      // Per-site by nature: a sync time and a page inventory across several
+      // sites would be two numbers describing none of them.
+      scopeId ? syncHealthFor(scopeId) : Promise.resolve<SyncHealth | null>(null),
+      scopeId ? knownPagesFor(scopeId) : Promise.resolve(null),
     ]);
+  const traffic = searchPerformance(gscRows, now);
+  const bestPages = scopeId ? topPages(gscRows, now) : [];
+  const cannibals = scopeId ? cannibalization(gscRows, now) : [];
+  const opportunities = scopeId ? queryOpportunities(gscRows, now, WINDOW_DAYS, 6) : [];
+  const coverage = knownPages ? indexCoverage(knownPages, servedUrls(gscRows, now)) : null;
   const gscConnected = (gscCount ?? 0) > 0;
   // Same test the Articles page applies: any connected integration tagged CMS.
   const cmsConnected = (cmsRes.data ?? []).some(
@@ -262,19 +184,18 @@ export default async function DashboardPage() {
           { label: "Articles published", value: `${totalLive}`, unit: ` / ${totalArticles}`, delta: `${totalLive} live`, deltaType: "pos" },
           {
             label: "Organic traffic",
-            value: traffic.hasData ? traffic.currentTotal.toLocaleString() : "—",
+            value: traffic.hasData ? traffic.clicks.current.toLocaleString() : "—",
             unit: " clicks",
+            hint: `Clicks Google reported for the last ${traffic.days} days, ending yesterday. Nothing here is estimated.`,
             // A synced zero keeps its "0", because nobody clicking IS the
             // measurement; the delta says what Google did report, so the row
             // does not read as a broken integration.
             delta: traffic.hasData
               ? !traffic.hasClicks
-                ? traffic.impressions
-                  ? `${traffic.impressions.toLocaleString()} impressions, no clicks yet`
+                ? traffic.impressions.current
+                  ? `${traffic.impressions.current.toLocaleString()} impressions, no clicks yet`
                   : "no impressions reported yet"
-                : traffic.changePct === null
-                  ? "no prior period"
-                  : `${traffic.changePct >= 0 ? "+" : ""}${traffic.changePct}% vs previous 30d`
+                : describeChange(traffic.clicks, traffic.days, "clicks")
               : (
                   <ConnectPrompt
                     dense
@@ -285,7 +206,7 @@ export default async function DashboardPage() {
                     cta="Connect analytics"
                   />
                 ),
-            deltaType: traffic.changePct != null && traffic.changePct > 0 ? "pos" : undefined,
+            deltaType: traffic.clicks.changePct != null && traffic.clicks.changePct > 0 ? "pos" : undefined,
           },
           {
             label: "Keywords tracked",
@@ -307,15 +228,20 @@ export default async function DashboardPage() {
         <RecommendedActionsStrip actions={actions} />
         <div className="grid grid-cols-12 gap-4">
           {/* Traffic chart */}
-          <Card title="Organic traffic · last 30 days" meta={<Chip label={scopeId ? (workspaces.find((w) => w.id === scopeId)?.name ?? "This workspace") : "All workspaces"} soft />} className="col-span-8">
-            <TrafficChart series={traffic} connected={gscConnected} />
-            <div className="flex gap-4 text-[11.5px] text-ink-3 mt-2.5 font-mono">
+          <Card title={`Search performance · last ${traffic.days} days`} meta={<Chip label={scopeId ? (workspaces.find((w) => w.id === scopeId)?.name ?? "This workspace") : "All workspaces"} soft />} className="col-span-8">
+            <SearchPerformanceBlock perf={traffic} connected={gscConnected} />
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-ink-3 mt-2.5 font-mono">
               <span className="flex items-center gap-1.5">
-                <i className="inline-block w-2.5 h-2.5 rounded-sm bg-accent" />Traffic
+                <i className="inline-block w-2.5 h-2.5 rounded-sm bg-accent" />Current {traffic.days}d
               </span>
               <span className="flex items-center gap-1.5">
-                <i className="inline-block w-2.5 h-0.5 rounded-sm bg-ink-4 mt-[1px]" />Prev period
+                <i className="inline-block w-2.5 h-0.5 rounded-sm bg-ink-4 mt-[1px]" />Previous {traffic.days}d
               </span>
+              {traffic.hasData && traffic.previousMeasured && (
+                <span className="text-ink-3">
+                  impressions {describeChange(traffic.impressions, traffic.days, "impressions")}
+                </span>
+              )}
               {bing.connected && (
                 <span className="ml-auto text-ink-3">
                   {bing.hasData
@@ -324,6 +250,12 @@ export default async function DashboardPage() {
                 </span>
               )}
             </div>
+            {/* When the rows were written and when the next batch lands.
+                "Never" is what a fresh connection honestly says. */}
+            <div className="mt-2">
+              <DataFreshness health={health} now={now} />
+            </div>
+            {gscConnected && traffic.hasData && <OpportunitiesList opportunities={opportunities} />}
           </Card>
 
           {/* Today's queue */}
@@ -350,6 +282,27 @@ export default async function DashboardPage() {
               )}
             </div>
           </Card>
+
+          {/* The Search Console blocks. Per site only: each is about one
+              property, and the page has no honest way to add two of them. */}
+          {scopeId && coverage && (
+            <>
+              <Card title={`Best articles · last ${traffic.days} days`} meta="clicks per page, Google's count" className="col-span-7" flush>
+                <BestArticlesBlock pages={bestPages} connected={gscConnected} hasData={traffic.hasData} days={traffic.days} />
+              </Card>
+              <Card title="Index coverage" meta="from what we hold" className="col-span-5" flush>
+                <IndexCoverageBlock coverage={coverage} connected={gscConnected} hasData={traffic.hasData} />
+              </Card>
+              <Card
+                title="Cannibalization"
+                meta={cannibals.length > 0 ? `${plural(cannibals.length, "query", "queries")} with competing pages` : "queries with two or more of your pages ranking"}
+                className="col-span-12"
+                flush
+              >
+                <CannibalizationBlock items={cannibals} connected={gscConnected} hasData={traffic.hasData} days={traffic.days} />
+              </Card>
+            </>
+          )}
 
           {/* Where the keywords came from and what each source produced.
               Counts only: a zero beside a competitor is a real finding (that

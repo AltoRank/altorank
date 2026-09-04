@@ -26,6 +26,8 @@ import { SchedulePicker } from "@/components/dashboard/editor/schedule-picker";
 import { ResearchPanel, FactCheckPanel } from "@/components/dashboard/editor/research-panel";
 import { WhyPanel } from "@/components/dashboard/editor/why-panel";
 import { AuditPanel } from "@/components/dashboard/editor/audit-panel";
+import { IndexingStatus } from "@/components/dashboard/check-indexing-button";
+import { inspectionFrom } from "@/lib/google/inspection";
 import { TabRow } from "@/components/ui/tab-row";
 import { auditArticle } from "@/lib/seo/article-audit";
 import type { Article, Workspace, PublishingCadence, Integration } from "@/lib/types";
@@ -792,6 +794,15 @@ export function ArticleEditor({
               <Icons.externalLink size={12} />
               View published article
             </a>
+          )}
+          {/* Whether Google has the page, asked of Google. Only offered once
+              there is a URL to ask about. */}
+          {article.published_url && (
+            <IndexingStatus
+              articleId={article.id}
+              inspection={inspectionFrom(article.indexing_status)}
+              published={Boolean(article.published_url)}
+            />
           )}
         </SidebarSection>
         </>
