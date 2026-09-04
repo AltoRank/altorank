@@ -38,6 +38,7 @@ export function PlanCards({
   hasCustomer,
   returnTo,
   canManage,
+  cancelHandledBelow = false,
 }: {
   plans: PlanCard[];
   /** The tier actually being paid for, or null when nothing is. */
@@ -56,6 +57,13 @@ export function PlanCards({
    * every button is inert with a reason; the actions refuse them anyway.
    */
   canManage?: boolean;
+  /**
+   * The Billing page renders the pause-or-cancel card below the ladder when
+   * there is a subscription to end. The card owns cancelling then - survey,
+   * then confirmation - so this button and its sentence step aside rather
+   * than offering a second, shorter door to the same place.
+   */
+  cancelHandledBelow?: boolean;
 }) {
   const [pending, start] = useTransition();
   const locked = canManage === false;
@@ -168,9 +176,11 @@ export function PlanCards({
                       <Button onClick={() => portal("payment_method")} disabled={pending} className="flex-1 justify-center">
                         Update card
                       </Button>
-                      <Button onClick={() => portal("cancel")} disabled={pending} className="flex-1 justify-center">
-                        Cancel
-                      </Button>
+                      {!cancelHandledBelow && (
+                        <Button onClick={() => portal("cancel")} disabled={pending} className="flex-1 justify-center">
+                          Cancel
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ) : sales ? (
@@ -195,10 +205,17 @@ export function PlanCards({
 
       <p className="m-0 max-w-[76ch] text-[12px] leading-relaxed text-ink-3">
         {hasCustomer ? (
-          <>
-            Cancelling takes one confirmation and ends the plan at the period
-            end. Your workspaces, articles and history stay readable afterwards.
-          </>
+          cancelHandledBelow ? (
+            <>
+              Pausing and cancelling are below. Either way your workspaces,
+              articles and history stay readable afterwards.
+            </>
+          ) : (
+            <>
+              Cancelling takes one confirmation and ends the plan at the period
+              end. Your workspaces, articles and history stay readable afterwards.
+            </>
+          )
         ) : (
           <>
             No trial. Nothing is charged until you choose a plan here, and you

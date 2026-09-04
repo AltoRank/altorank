@@ -87,6 +87,9 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
 
   const isActive =
     Boolean(preview?.plan) || Boolean(simulation?.plan) || status === "active" || status === "trialing";
+  // Owner only, like every other change to what the account pays, and only
+  // when there is a subscription to pause or end.
+  const showRetention = canManage && isActive && Boolean(agency?.stripe_subscription_id);
   const euros = (n: number | string | null) =>
     new Intl.NumberFormat("en-IE", {
       style: "currency",
@@ -179,6 +182,7 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
                 hasCustomer={!!agency?.stripe_customer_id}
                 returnTo={returnTo}
                 canManage={canManage}
+                cancelHandledBelow={showRetention}
               />
             </div>
           </Card>
@@ -187,11 +191,11 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
               accounts without a subscription have no billing to stop, and a
               pause control over nothing would be theatre. Owner only, like
               every other change to what the account pays. */}
-          {canManage && isActive && agency?.stripe_subscription_id && (
+          {showRetention && (
             <RetentionCard
               pausedUntil={pausedUntil}
-              cancelsAt={agency.cancels_at ?? null}
-              periodEnd={agency.current_period_end ?? null}
+              cancelsAt={agency?.cancels_at ?? null}
+              periodEnd={agency?.current_period_end ?? null}
             />
           )}
 

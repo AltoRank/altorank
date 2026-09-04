@@ -53,7 +53,11 @@ export async function getShareCardFacts(workspaceId: string): Promise<ShareCardF
 
   return {
     domain: ws.domain ?? "",
-    dr: typeof ws.dr === "number" ? ws.dr : null,
+    // 001 gave `dr` a default of 0, so a row nobody measured reads 0 and a row
+    // measured at 0 reads the same. The card cannot tell them apart, and a
+    // "0" from a column default is exactly the fabricated figure this card
+    // exists to avoid, so only a positive rating counts as measured.
+    dr: typeof ws.dr === "number" && ws.dr > 0 ? ws.dr : null,
     published: published ?? 0,
     planned: planned ?? 0,
     gscConnected,
