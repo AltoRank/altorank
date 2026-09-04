@@ -56,10 +56,6 @@ const ALLOWED: Record<string, string> = {
   "lib/content/generate.ts:articles":
     "generation resolves its article by id first (and checks workspace_id when " +
     "it does); the later writes address that same row",
-  "app/(dashboard)/articles/page.tsx:analytics_metrics":
-    "rows are looked up by article_id against an already-scoped article list, so " +
-    "foreign rows are never read - wasteful, not wrong. Worth scoping if this " +
-    "query ever grows past a few hundred rows",
 };
 
 const ROOT = join(__dirname, "..", "..", "..");

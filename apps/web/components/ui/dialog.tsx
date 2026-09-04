@@ -114,7 +114,12 @@ export function Dialog({
             aria-label={title}
             tabIndex={-1}
             className={cn(
-              "fixed z-[201] top-1/2 left-1/2 w-full max-w-[480px] -translate-x-1/2 -translate-y-1/2",
+              // No -translate-y-1/2 here. Tailwind v4 sets the CSS `translate`
+              // property, which composes with the `transform` framer-motion
+              // animates to y: -50% below, so both together moved the panel up
+              // a full height: the bottom edge sat at the viewport's centre and
+              // anything taller than half a screen lost its title off the top.
+              "fixed z-[201] top-1/2 left-1/2 w-full max-w-[480px] -translate-x-1/2",
               "bg-bg border border-line rounded-xl shadow-xl outline-none",
               className
             )}

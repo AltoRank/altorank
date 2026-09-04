@@ -11,8 +11,10 @@ import { APP_NAME, DASHBOARD_NAV } from "@/lib/constants";
 import { Icons } from "@/components/ui/icons";
 import { Avatar } from "@/components/ui/avatar";
 import { WorkspaceSwitcher } from "@/components/dashboard/workspace-switcher";
+import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 import { useOnboarding } from "@/components/onboarding/use-onboarding";
 import { signOut } from "@/app/actions/auth";
+import type { SiteAllowance } from "@/lib/workspaces/slots";
 
 const iconMap: Record<string, (p?: { size?: number }) => React.ReactNode> = Icons;
 
@@ -31,9 +33,11 @@ type SidebarProps = {
   role?: string | null;
   /** Metered article usage. Null (unmetered) renders no bar. */
   quota?: { used: number; limit: number; noPlan: boolean } | null;
+  /** How many sites the plan allows, for the switcher's Add row. Null renders a dash. */
+  siteAllowance?: SiteAllowance;
 };
 
-export function Sidebar({ badges, hidden = [], userName = "Account", userInitials = "A", memberCount, role, quota }: SidebarProps) {
+export function Sidebar({ badges, hidden = [], userName = "Account", userInitials = "A", memberCount, role, quota, siteAllowance = null }: SidebarProps) {
   const pathname = usePathname();
   // Null if the provider is ever absent; the button just does not render.
   const onboarding = useOnboarding();
@@ -103,7 +107,7 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
                 onClick={toggleCollapsed}
                 aria-label="Expand sidebar"
                 aria-expanded={false}
-                className="w-[26px] h-[26px] rounded-[7px] bg-ink grid place-items-center relative hover:opacity-80"
+                className="w-[26px] h-[26px] rounded-[7px] bg-mark grid place-items-center relative hover:opacity-80"
               >
                 <Image
                   src="/brand/altorank-mark-white.svg"
@@ -119,7 +123,7 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
           </Tooltip>
         ) : (
           <>
-            <div className="w-[26px] h-[26px] rounded-[7px] bg-ink grid place-items-center relative shrink-0">
+            <div className="w-[26px] h-[26px] rounded-[7px] bg-mark grid place-items-center relative shrink-0">
               {/* The real mark, shipped by scripts/generate-brand.mjs. */}
               <Image
                 src="/brand/altorank-mark-white.svg"
@@ -158,7 +162,7 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
           them. */}
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-2 pt-2 pb-3 scroll">
-        <WorkspaceSwitcher collapsed={collapsed} />
+        <WorkspaceSwitcher collapsed={collapsed} allowance={siteAllowance} />
         {DASHBOARD_NAV.map((group) => {
           const items = group.items.filter((item) => !hidden.includes(item.id));
           // A group heading with nothing under it is worse than no group.
@@ -314,7 +318,9 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
             </span>
           )}
         </div>
-        <>
+        {/* Grouped tightly: four controls at the footer's own gap left the
+            account name about forty pixels, which is four letters. */}
+        <div className={cn("flex items-center shrink-0", collapsed ? "flex-col gap-2" : "gap-0.5")}>
             {/* Reopens the setup checklist. Lived in the topbar until the
                 topbar went; "Skip setup" is still the only way to hide it, so
                 there has to be a way back. */}
@@ -332,6 +338,9 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
                 <TooltipContent side="top">Setup guide</TooltipContent>
               </Tooltip>
             )}
+            {/* Light or dark. Persisted per browser; the root layout's inline
+                script applies it before paint (lib/theme.ts). */}
+            <ThemeToggle />
             {/* Had no onClick at all. It is a settings button beside an account
                 name, so it goes to settings. */}
             <Link
@@ -353,7 +362,7 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
               </TooltipTrigger>
               <TooltipContent side="top">Sign out</TooltipContent>
             </Tooltip>
-        </>
+        </div>
       </div>
     </aside>
     </TooltipProvider>
