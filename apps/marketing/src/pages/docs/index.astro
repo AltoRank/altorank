@@ -1,0 +1,77 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { INTEGRATIONS, DOCUMENTED } from '@/data/integrations';
+import { buildItemListSchema, buildBreadcrumbSchema } from '@/lib/schema';
+import { APP_NAME, SITE_URL, PRIMARY_CTA, OSS_REPO_URL } from '@/constants';
+
+const undocumented = INTEGRATIONS.filter((i) => !i.documented && !i.soon);
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Docs', href: '/docs' },
+];
+
+const structuredData = [
+  buildBreadcrumbSchema(breadcrumbs),
+  buildItemListSchema(
+    DOCUMENTED.map((i) => ({
+      name: `Connect ${i.name} to ${APP_NAME}`,
+      url: `${SITE_URL}/docs/${i.slug}`,
+      description: `Setup guide for the ${i.name} publishing destination.`,
+    })),
+  ),
+];
+---
+
+<PSEO
+  title={`Docs | Setup Guides | ${APP_NAME}`}
+  description={`Setup guides for ${APP_NAME} publishing destinations: what each connector asks for, what it never asks for, and how to revoke it.`}
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h1 class="mb-5 text-[clamp(28px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+        Docs
+      </h1>
+      <p class="mb-8 text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        Setup guides for the publishing destinations. Each one lists the exact fields the connector
+        asks for, taken from the code rather than written from memory, and says what it never asks for.
+        The product itself is open source, so the definitive answer to any &ldquo;what does it actually
+        do&rdquo; question is{' '}
+        <a href={OSS_REPO_URL} target="_blank" rel="noopener noreferrer" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
+          the repository
+        </a>.
+      </p>
+
+      <div class="mb-8 overflow-hidden rounded-lg border border-line">
+        {DOCUMENTED.map((i, idx) => (
+          <a href={`/docs/${i.slug}`} class={`group grid gap-1 p-5 sm:grid-cols-[1fr_1.3fr] sm:items-center sm:gap-5 hover:bg-panel ${idx > 0 ? 'border-t border-line-soft' : ''}`}>
+            <div class="flex items-center gap-3">
+              <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-line bg-panel font-mono text-[11px] font-medium text-ink-2">
+                {i.code}
+              </span>
+              <span class="text-[15px] font-semibold text-ink group-hover:text-accent-ink">{i.name}</span>
+            </div>
+            <div class="text-[14px] text-ink-2">{i.auth}</div>
+          </a>
+        ))}
+      </div>
+
+      <p class="text-[14.5px] leading-relaxed text-ink-3">
+        {undocumented.map((i) => i.name).join(', ')} are set up the same way inside the app and are
+        listed with their authentication method on{' '}
+        <a href="/integrations" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
+          the integrations page
+        </a>. Written guides for those are still to come; rather than publish four thin pages to fill a
+        nav, this page lists what exists.
+      </p>
+
+      <div class="mt-10 flex flex-wrap gap-2.5">
+        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/integrations" variant="secondary" size="lg">All destinations</Button>
+      </div>
+    </div>
+  </section>
+</PSEO>

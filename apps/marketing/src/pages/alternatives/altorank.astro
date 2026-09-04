@@ -1,0 +1,223 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import Button from '@/components/shared/Button.astro';
+import { COMPETITORS } from '@/data/competitors';
+import { buildArticleSchema, buildItemListSchema, buildFAQSchema } from '@/lib/schema';
+import { APP_NAME, SITE_URL, AUTHOR_NAME, AUTHOR_URL, PRIMARY_CTA, OSS_REPO_URL } from '@/constants';
+
+// Owns our OWN branded query: `altorank alternatives`.
+//
+// /alternatives (the directory) targets a generic "Alternatives | AltoRank"
+// and /alternatives/{slug} each target `{competitor} alternative`. Nothing
+// targeted our own brand, so the highest-intent query a wavering customer
+// types had no page of ours to land on. Competitors in this category all write
+// their own; whoever does not, cedes it to whoever will.
+//
+// The rule for this page: it has to be worth reading by someone who is
+// leaving. That means the "when we are the wrong choice" block is not a
+// rhetorical device, it is the reason the page ranks and the reason anyone
+// believes the rest of it. No claim about a competitor appears here that is not
+// already sourced and dated on its own head-to-head.
+const pageUrl = `${SITE_URL}/alternatives/altorank`;
+
+const publishDate = new Date('2026-09-04');
+const dateModified = new Date('2026-09-04');
+const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Alternatives', href: '/alternatives' },
+  { label: `${APP_NAME} alternatives`, href: '/alternatives/altorank' },
+];
+
+const WRONG_CHOICE = [
+  {
+    when: 'You want the tool to publish without you',
+    why: `That is the one thing ${APP_NAME} will not do, and it is not a settings toggle we forgot. The publish path requires a human approval on the specific draft, and the MCP server exposes no publish tool, so an agent cannot route around it either. If unattended daily publishing is what you are buying, buy one of the tools below that sells it.`,
+  },
+  {
+    when: 'You want a large link network on day one',
+    why: `The exchange exists and every placement is human-approved, but it is small because we are early. A network with more counterparties in it is worth more than a better-designed one with fewer. Read the review pages of the tools that run one before deciding what that is worth.`,
+  },
+  {
+    when: 'You want case studies before you buy',
+    why: `We do not have them yet, which is why /success-stories says so instead of showing a logo wall. If proof from named customers is your gate, that is a fair gate and we currently fail it.`,
+  },
+  {
+    when: 'You need one tool for local presence, listings and reviews',
+    why: `That is a different product. ${APP_NAME} does content and AI-search visibility properly and nothing else. rankingCoach and the broader suites cover the local bundle.`,
+  },
+];
+
+const WHY_US = [
+  { h: 'Nothing publishes without a person', p: 'Every draft stops at an inbox with a fact-check verdict attached. The gate is in the architecture, not in a preference pane, which is the only version of that promise that survives an agent driving the product.' },
+  { h: 'Open source, the whole product', p: `AGPL-3.0 at ${OSS_REPO_URL}, including the scoring. With a closed tool, a disagreement about why an article scored what it did is a matter of vendor faith.` },
+  { h: 'Self-host it for nothing', p: 'Bring your own API keys and run it on your own infrastructure at €0, with no feature gates between the free and paid paths. The managed plans exist because most people do not want to run infrastructure, not because self-hosting is crippled.' },
+  { h: 'A workspace per site or per client', p: 'Built for a roster from the start, rather than a per-site subscription with a volume discount bolted on.' },
+  { h: 'Twelve publishing destinations', p: 'WordPress, Shopify, Magento, WooCommerce, Webflow, Ghost, Framer, Wix, Notion, HubSpot and a generic webhook, with Git for static sites shipping next. Each one is documented.' },
+];
+
+const FAQ = [
+  {
+    question: `What are the best ${APP_NAME} alternatives?`,
+    answer: `The twelve tools on this page are the ones people genuinely evaluate against us: Outrank, Distribb, BabyLoveGrowth, RankPill, SEOForge, rankingCoach, Search Atlas, contentbird, RankYak, Shopify Magic, Describely and SEOWind. Which one is right depends almost entirely on one question: do you want to keep the decision to publish? If not, several of them are a better fit than ${APP_NAME} and we say which on each page.`,
+  },
+  {
+    question: `Why would I leave ${APP_NAME}?`,
+    answer: `Three honest reasons: you want unattended publishing, you want a link network that already has scale, or you want named customer case studies before committing. We fail all three today and there is a section above that says so plainly.`,
+  },
+  {
+    question: `Is there a free ${APP_NAME} alternative?`,
+    answer: `${APP_NAME} is itself the free option in this category: it is AGPL-3.0 and self-hosting is complete and costs nothing beyond your own API keys. Among the tools on this page, none is open source and none offers self-hosting, so "free" elsewhere means a trial or a limited tier rather than the software.`,
+  },
+  {
+    question: `How does ${APP_NAME} pricing compare?`,
+    answer: `Self-hosted is €0. The managed plans are on the pricing page and include model and data costs. The tools on this page start between roughly $49 and €399 a month depending on the tier and the site count; each head-to-head carries that tool's figure with the date it was read, because prices in this category move monthly.`,
+  },
+  {
+    question: 'Who is behind AltoRank?',
+    answer: 'AltoRank is built and operated by SUPALABS SRL (VAT 04596950248), a company in Italy. GDPR applies to us as a matter of establishment, not only because we sell into the EU.',
+  },
+];
+
+const structuredData = [
+  buildArticleSchema({
+    title: `${APP_NAME} Alternatives (2026): An Honest Roundup`,
+    description: `The twelve tools people evaluate against ${APP_NAME}, what each is genuinely better at, and the four cases where ${APP_NAME} is the wrong choice.`,
+    publishDate,
+    dateModified,
+    author: AUTHOR_NAME,
+    authorType: 'Person',
+    authorUrl: AUTHOR_URL,
+    url: pageUrl,
+  }),
+  buildItemListSchema(
+    COMPETITORS.map((c) => ({
+      name: c.name,
+      url: `${SITE_URL}/alternatives/${c.slug}`,
+      description: `${c.theirCategory}. Best for: ${c.bestFor}.`,
+    })),
+  ),
+  buildFAQSchema(FAQ),
+];
+---
+
+<PSEO
+  title={`${APP_NAME} Alternatives (2026): An Honest Roundup`}
+  description={`The twelve tools people evaluate against ${APP_NAME}, what each is genuinely better at, and the four cases where ${APP_NAME} is the wrong choice. Written by us, about us.`}
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[860px] px-5 sm:px-6 lg:px-8">
+      <h1 class="mb-5 text-[clamp(28px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+        {APP_NAME} alternatives, written by {APP_NAME}
+      </h1>
+
+      <p class="mb-6 text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        <strong class="text-ink">The short answer:</strong> if you want software to publish under your
+        name without you reading it first, {APP_NAME} is the wrong tool and several of the twelve below
+        are the right one. If that is exactly the thing that worries you, keep reading. This page is
+        written by us, which you should weigh accordingly &mdash; so every competitor claim links to a
+        head-to-head that names its source and the date it was read.
+      </p>
+
+      <p class="mb-8 text-sm text-ink-3">
+        By{' '}
+        <a href={AUTHOR_URL} rel="author" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
+          {AUTHOR_NAME}
+        </a>
+        {' '}&middot; Published {publishDateDisplay}
+      </p>
+
+      <div class="overflow-hidden rounded-lg border border-line">
+        {COMPETITORS.map((c, i) => (
+          <a
+            href={`/alternatives/${c.slug}`}
+            class={`group grid gap-1.5 p-5 sm:grid-cols-[1fr_1.4fr] sm:gap-5 hover:bg-panel ${i > 0 ? 'border-t border-line-soft' : ''}`}
+          >
+            <div>
+              <div class="text-[15.5px] font-semibold text-ink group-hover:text-accent-ink">
+                {i + 1}. {c.name}
+              </div>
+              <div class="mt-0.5 font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">
+                {c.theirCategory}
+              </div>
+            </div>
+            <div class="text-[14px] leading-relaxed text-ink-2">
+              <span class="font-medium text-ink">Pick them if:</span> {c.bestFor}.
+              <span class="mt-1 block text-ink-3">Decided by: {c.axis.toLowerCase()}.</span>
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line bg-panel py-14 md:py-20">
+    <div class="mx-auto max-w-[860px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-3 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em] [text-wrap:balance]">
+        When {APP_NAME} is the wrong choice
+      </h2>
+      <p class="mb-8 text-[16px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        Four cases, and they are real rather than rhetorical. If one of these is you, the page above is
+        more useful to you than the one below.
+      </p>
+      <div class="flex flex-col gap-3">
+        {WRONG_CHOICE.map((w) => (
+          <div class="rounded-lg border border-line bg-bg p-5">
+            <div class="mb-2 text-[15px] font-semibold text-ink">{w.when}</div>
+            <p class="text-[14px] leading-relaxed text-ink-2">{w.why}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[860px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em] [text-wrap:balance]">
+        What {APP_NAME} does that none of them do
+      </h2>
+      <div class="flex flex-col gap-3">
+        {WHY_US.map((w) => (
+          <div class="rounded-lg border border-line bg-bg p-5">
+            <div class="mb-1.5 text-[15px] font-semibold text-ink">{w.h}</div>
+            <p class="text-[14px] leading-relaxed text-ink-2">{w.p}</p>
+          </div>
+        ))}
+      </div>
+      <p class="mt-6 text-[15px] leading-relaxed text-ink-2">
+        Prefer a single head-to-head?{' '}
+        <a href="/compare" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
+          Compare {APP_NAME} to every tool
+        </a>{' '}
+        indexes all twelve.
+      </p>
+    </div>
+  </section>
+
+  <section class="border-b border-line bg-panel py-14 md:py-20">
+    <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em]">
+        Common questions
+      </h2>
+      <div class="flex flex-col gap-2">
+        {FAQ.map((item) => (
+          <details class="group rounded-lg border border-line bg-bg">
+            <summary class="cursor-pointer list-none px-5 py-4 text-[15px] font-medium text-ink [&::-webkit-details-marker]:hidden">
+              {item.question}
+            </summary>
+            <p class="border-t border-line-soft px-5 py-4 text-[14.5px] leading-relaxed text-ink-2">
+              {item.answer}
+            </p>
+          </details>
+        ))}
+      </div>
+      <div class="mt-10 flex flex-wrap gap-2.5">
+        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/open-source" variant="secondary" size="lg">Self-host it instead</Button>
+      </div>
+    </div>
+  </section>
+</PSEO>
