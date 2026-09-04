@@ -55,6 +55,13 @@ function freshSeed(): Seed {
       metric_date: "2026-09-01",
       clicks: 1,
       impressions: 10,
+      // Search Console rows carry the query; keyword rows carry its price.
+      // Both workspaces share the terms, which is the point: the value
+      // query must price A's clicks with A's research only.
+      source: "gsc",
+      query: `term ${i}`,
+      article_id: "article-shared",
+      cpc: 2,
       config: { type: "wordpress" },
     }));
   }
@@ -178,5 +185,34 @@ describe("getRecentArticles", () => {
     const { getRecentArticles } = await import("../articles");
     const rows = await getRecentArticles(6);
     expect(rows.length).toBe(6);
+  });
+});
+
+describe("getTrafficValue", () => {
+  // Value is clicks × cpc, so a leak here is not a longer list but a bigger
+  // number - the kind that reads as good news and gets put in a report.
+  it("prices only the workspace it was given", async () => {
+    const { getTrafficValue } = await import("../value");
+    const v = await getTrafficValue(WORKSPACE_A);
+    expect(v.clicks).toBe(3);
+    expect(v.value).toBe(6);
+  });
+
+  it("sums the account, per site, when no workspace is given", async () => {
+    const { getTrafficValue } = await import("../value");
+    const v = await getTrafficValue();
+    expect(v.clicks).toBe(6);
+    expect(v.value).toBe(12);
+  });
+});
+
+describe("getArticleValue", () => {
+  it("counts only this workspace's rows for the article", async () => {
+    // The fixture gives both workspaces rows under one article id, which the
+    // real schema forbids; here it is the leak the filter has to refuse.
+    const { getArticleValue } = await import("../value");
+    const v = await getArticleValue("article-shared", WORKSPACE_A, "term 0");
+    expect(v.clicks).toBe(3);
+    expect(v.value).toBe(6);
   });
 });

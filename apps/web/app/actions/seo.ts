@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { discoverKeywords } from "@/lib/seo/keywords";
+import { discoverKeywords, storedCpc } from "@/lib/seo/keywords";
 import { checkRankings } from "@/lib/seo/serp";
 import { syncBacklinks } from "@/lib/seo/backlinks";
 import { scoreArticle } from "@/lib/seo/scoring";
@@ -49,6 +49,9 @@ export async function runKeywordResearch(workspaceId: string) {
     term: kw.keyword,
     volume: kw.volume,
     difficulty: kw.difficulty,
+    // The one field that prices the traffic later. Fetched on every call
+    // since day one and dropped here until migration 060.
+    cpc: storedCpc(kw.cpc),
     intent: kw.intent,
     status: "new" as const,
   }));
