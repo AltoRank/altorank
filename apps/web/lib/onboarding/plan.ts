@@ -122,3 +122,126 @@ export async function duePlannedKeyword(
 export async function fulfilPlannedEntry(supabase: SupabaseClient, entryId: string, articleId: string): Promise<void> {
   await supabase.from("calendar_entries").update({ article_id: articleId, status: "scheduled" }).eq("id", entryId);
 }
+
+// ---------------------------------------------------------------------------
+// Adding to a plan that already exists
+// ---------------------------------------------------------------------------
+//
+// `schedulePlan` rebuilds the whole queue from the recommendation ranking. The
+// research drawer does something smaller: the person has picked specific
+// keywords and wants them on the calendar without disturbing what is already
+// there. So this finds the free slots at the workspace's pace and fills them,
+// and refuses past the cap rather than silently dropping the tail.
+
+/** The most planned keywords one calendar holds, across every status short of written. */
+export const SCHEDULE_CAP = 60;
+
+/**
+ * The next `count` open dates at `weeklyLimit` a week, starting at `from`.
+ *
+ * `occupied` lists the dates already carrying a planned entry; a day is open
+ * while it holds fewer entries than the pace allows (one a day at 7/week,
+ * one every seventh day at 1/week). Pure, so the fill order can be tested.
+ */
+export function nextOpenDates(
+  occupied: string[],
+  weeklyLimit: number,
+  count: number,
+  from: Date = new Date(),
+): string[] {
+  const weekly = Math.max(0, Math.min(7, Math.floor(weeklyLimit)));
+  if (weekly === 0 || count <= 0) return [];
+  const start = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
+  const step = 7 / weekly;
+  const taken = new Set(occupied);
+  const out: string[] = [];
+  // Walk the pace grid forward until enough open days are found. Bounded so
+  // a fully booked year cannot spin: past a year out, the answer is "no".
+  for (let i = 0; out.length < count && i < 366 * weekly; i++) {
+    const date = isoDate(new Date(start + Math.round(i * step) * DAY_MS));
+    if (taken.has(date)) continue;
+    taken.add(date);
+    out.push(date);
+  }
+  return out;
+}
+
+export interface ScheduleOutcome {
+  scheduled: PlannedEntry[];
+  /** Keyword ids that did not fit under the cap. Reported, never dropped quietly. */
+  refused: string[];
+  capacity: { scheduled: number; cap: number; slots: number };
+}
+
+/**
+ * Put specific keywords on the calendar.
+ *
+ * Marks each keyword `planned` and adds a queued calendar entry on the next
+ * open day. Ids already on the calendar are skipped rather than doubled.
+ * Stops at `SCHEDULE_CAP` planned entries and returns what it could not fit.
+ */
+export async function scheduleKeywords(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  keywordIds: string[],
+  fromDate: Date = new Date(),
+): Promise<ScheduleOutcome> {
+  const wanted = [...new Set(keywordIds.filter(Boolean))];
+
+  const [{ data: ws }, { data: planned }] = await Promise.all([
+    supabase.from("workspaces").select("auto_generate_weekly_limit").eq("id", workspaceId).maybeSingle(),
+    supabase
+      .from("calendar_entries")
+      .select("keyword_id, scheduled_date")
+      .eq("workspace_id", workspaceId)
+      .in("status", ["queue", "scheduled"]),
+  ]);
+
+  const rows = (planned ?? []) as Array<{ keyword_id: string | null; scheduled_date: string }>;
+  const alreadyPlanned = new Set(rows.map((r) => r.keyword_id).filter((id): id is string => Boolean(id)));
+  const occupied = rows.map((r) => r.scheduled_date);
+  const existingCount = rows.length;
+  const slots = Math.max(0, SCHEDULE_CAP - existingCount);
+
+  const fresh = wanted.filter((id) => !alreadyPlanned.has(id));
+  const fits = fresh.slice(0, slots);
+  const refused = fresh.slice(slots);
+
+  if (!fits.length) {
+    return { scheduled: [], refused, capacity: { scheduled: existingCount, cap: SCHEDULE_CAP, slots } };
+  }
+
+  const { data: keywords, error: kwError } = await supabase
+    .from("keywords")
+    .select("id, term")
+    .eq("workspace_id", workspaceId)
+    .in("id", fits);
+  if (kwError) throw new Error(kwError.message);
+  const terms = new Map((keywords ?? []).map((k) => [k.id as string, k.term as string]));
+
+  const weekly = (ws?.auto_generate_weekly_limit as number | null) ?? 1;
+  const ids = fits.filter((id) => terms.has(id));
+  const dates = nextOpenDates(occupied, Math.max(1, weekly), ids.length, fromDate);
+  const scheduled: PlannedEntry[] = ids.slice(0, dates.length).map((id, i) => ({ keywordId: id, term: terms.get(id)!, date: dates[i] }));
+
+  if (scheduled.length) {
+    const { error } = await supabase.from("calendar_entries").insert(
+      scheduled.map((p) => ({
+        workspace_id: workspaceId,
+        keyword_id: p.keywordId,
+        keyword: p.term,
+        scheduled_date: p.date,
+        status: "queue",
+      })),
+    );
+    if (error) throw new Error(error.message);
+    await supabase
+      .from("keywords")
+      .update({ status: "planned" })
+      .eq("workspace_id", workspaceId)
+      .in("id", scheduled.map((p) => p.keywordId));
+  }
+
+  const total = existingCount + scheduled.length;
+  return { scheduled, refused, capacity: { scheduled: total, cap: SCHEDULE_CAP, slots: Math.max(0, SCHEDULE_CAP - total) } };
+}

@@ -131,7 +131,8 @@ export type Article = {
 // and what the DB check constraint allows, and two hand-maintained copies of
 // the same union drift the moment one gains a member.
 export type KeywordIntent = SearchIntent;
-export type KeywordStatus = "new" | "planned" | "drafting" | "scheduled" | "shipped" | "error";
+/** `stored` = researched and kept off the calendar on purpose (migration 054). */
+export type KeywordStatus = "new" | "stored" | "planned" | "drafting" | "scheduled" | "shipped" | "error";
 
 export type Keyword = {
   id: string;

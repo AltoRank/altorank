@@ -6,6 +6,7 @@ import { Chip, SearchInput, Button, Icons } from "@/components/ui";
 const STATUS_CHIPS = [
   { label: "All", value: "" },
   { label: "New", value: "new" },
+  { label: "Stored", value: "stored" },
   { label: "Planned", value: "planned" },
   { label: "Shipped", value: "shipped" },
 ];

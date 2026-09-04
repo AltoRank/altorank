@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { IconButton } from "@/components/ui/button";
 import { Chip, Icons } from "@/components/ui";
+import { ResearchButtons } from "@/components/dashboard/keyword-research/research-buttons";
 
 interface CalendarControlsProps {
   currentMonth: string; // "2026-05"
@@ -57,6 +58,7 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
         active={clientFilter === "publishing"}
         onClick={() => setClientFilter("publishing")}
       />
+      <ResearchButtons />
     </div>
   );
 }

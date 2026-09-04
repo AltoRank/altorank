@@ -38,3 +38,26 @@ describe("buildPlan", () => {
     expect(buildPlan(many(3), { weeklyLimit: 7, from })).toHaveLength(3);
   });
 });
+
+import { nextOpenDates, SCHEDULE_CAP } from "../plan";
+
+describe("nextOpenDates", () => {
+  it("fills one a day from today at 7/week, skipping days already planned", () => {
+    expect(nextOpenDates(["2026-09-05"], 7, 3, from)).toEqual(["2026-09-04", "2026-09-06", "2026-09-07"]);
+  });
+  it("keeps the weekly grid at 1/week", () => {
+    expect(nextOpenDates([], 1, 3, from)).toEqual(["2026-09-04", "2026-09-11", "2026-09-18"]);
+    expect(nextOpenDates(["2026-09-04"], 1, 2, from)).toEqual(["2026-09-11", "2026-09-18"]);
+  });
+  it("never returns a date twice, even when asked for more than one at once", () => {
+    const dates = nextOpenDates([], 3, 10, from);
+    expect(new Set(dates).size).toBe(10);
+  });
+  it("returns nothing for a paused pace or a zero count", () => {
+    expect(nextOpenDates([], 0, 5, from)).toEqual([]);
+    expect(nextOpenDates([], 7, 0, from)).toEqual([]);
+  });
+  it("the cap is the competitor-verified 60", () => {
+    expect(SCHEDULE_CAP).toBe(60);
+  });
+});
