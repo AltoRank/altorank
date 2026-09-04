@@ -4,9 +4,9 @@
 // The onboarding wizard
 // ---------------------------------------------------------------------------
 //
-// Five steps over one idea: the site is read first, and every screen after that
-// is verification rather than authorship. Chips arrive filled, the description
-// arrives written, and the person deletes what is wrong.
+// Five steps over one idea, then one question. The site is read first, and every
+// screen after that is verification rather than authorship. Chips arrive filled,
+// the description arrives written, and the person deletes what is wrong.
 //
 // Three rules, each from watching the first version fail:
 //
@@ -20,8 +20,15 @@
 //    shows it happening, with the deferred setup offered as things to do while
 //    you wait.
 //
-// The CMS step is still last and still skippable. A credential before value
-// is asking someone to prove they own a site before they have a reason to care.
+// The CMS step is still the last thing asked about the site and still skippable.
+// A credential before value is asking someone to prove they own a site before
+// they have a reason to care.
+//
+// After it, once per account, comes the only question that is about the person:
+// where they heard of us. It is last because by then they have watched the
+// product read their site and have a reason to answer honestly; it is asked
+// even on "Skip setup" because a skipped wizard is the one place a referrer
+// tells us nothing, and one click is not a wall.
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -34,6 +41,8 @@ import {
   saveOutputSettings,
   completeWizard,
 } from "@/app/actions/onboarding-wizard";
+import { saveAttribution } from "@/app/actions/attribution";
+import { AttributionPicker, EMPTY_ATTRIBUTION, attributionComplete, type AttributionDraft } from "@/components/onboarding/attribution-picker";
 import { TONES, TONE_LABELS, type OutputSettings, type SiteDetails } from "@/lib/onboarding/output-settings";
 import type { BusinessProfile, InferenceReason } from "@/lib/onboarding/business-profile";
 import type { SiteDiscovery } from "@/lib/onboarding/site-discovery";
@@ -42,8 +51,10 @@ import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
 import type { OnboardingState } from "@/lib/onboarding/events";
 
-const STEPS = ["Business", "Audience & Competitors", "Blog", "Articles", "Integration"] as const;
-type StepIndex = 0 | 1 | 2 | 3 | 4;
+const SITE_STEPS = ["Business", "Audience & Competitors", "Blog", "Articles", "Integration"];
+// The question about the person, after every step about the site. Present only
+// while the account has not answered; a second workspace goes straight to plan.
+const ATTRIBUTION_STEP = SITE_STEPS.length;
 
 export type Destination = { id: string; name: string; description: string | null };
 
@@ -65,6 +76,7 @@ export function OnboardingWizard({
   initialSite,
   initialOutput,
   destinations,
+  askAttribution,
 }: {
   workspaceId: string;
   domain: string;
@@ -73,9 +85,17 @@ export function OnboardingWizard({
   initialSite: SiteDetails;
   initialOutput: OutputSettings;
   destinations: Destination[];
+  askAttribution: boolean;
 }) {
   const router = useRouter();
-  const [step, setStep] = useState<StepIndex>(0);
+  const steps = askAttribution ? [...SITE_STEPS, "About you"] : SITE_STEPS;
+  const last = steps.length - 1;
+  const [step, setStep] = useState(0);
+  const [attribution, setAttribution] = useState<AttributionDraft>(EMPTY_ATTRIBUTION);
+  // Set when "Skip setup" was pressed: which screen it was pressed on, so Back
+  // returns there, and the finish goes to the dashboard rather than to a plan.
+  const [skipFrom, setSkipFrom] = useState<number | null>(null);
+  const skipping = skipFrom !== null;
   const [profile, setProfile] = useState<BusinessProfile | null>(initialProfile);
   const [site, setSite] = useState<SiteDetails>(initialSite);
   const [output, setOutput] = useState<OutputSettings>(initialOutput);
@@ -134,10 +154,11 @@ export function OnboardingWizard({
   }
 
   /** Persist the screen being left. Each step owns one save. */
-  async function persist(s: StepIndex) {
+  async function persist(s: number) {
     if ((s === 0 || s === 1) && profile) await saveProfile(workspaceId, profile);
     if (s === 2) await saveSiteDetails(workspaceId, site);
     if (s === 3) await saveOutputSettings(workspaceId, output);
+    if (s === ATTRIBUTION_STEP && attribution.source) await saveAttribution(attribution.source, attribution.note);
   }
 
   function next() {
@@ -145,11 +166,15 @@ export function OnboardingWizard({
     start(async () => {
       try {
         await persist(step);
-        if (step === 4) {
+        if (step !== last) {
+          setStep(step + 1);
+        } else if (skipping) {
+          if (profile) await saveProfile(workspaceId, profile);
+          await completeWizard(workspaceId, { skipped: true });
+          router.push("/dashboard");
+        } else {
           await completeWizard(workspaceId);
           setRunning(true);
-        } else {
-          setStep((s) => (s + 1) as StepIndex);
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not save this step.");
@@ -158,6 +183,14 @@ export function OnboardingWizard({
   }
 
   function skipAll() {
+    // Skipping the site setup still passes through the one question that is
+    // about the person. It is answered with a click and finished from there.
+    if (askAttribution) {
+      setError(null);
+      setSkipFrom(step);
+      setStep(ATTRIBUTION_STEP);
+      return;
+    }
     start(async () => {
       try {
         if (profile) await saveProfile(workspaceId, profile);
@@ -177,7 +210,7 @@ export function OnboardingWizard({
 
   return (
     <div className="min-h-screen bg-bg">
-      <Stepper current={step} />
+      <Stepper steps={steps} current={step} />
 
       <div className="mx-auto max-w-[720px] px-6 pb-28 pt-8">
         {step === 0 && (
@@ -195,7 +228,9 @@ export function OnboardingWizard({
         {step === 1 && <AudienceStep profile={profile} patch={patch} />}
         {step === 2 && <BlogStep site={site} setSite={setSite} discovery={discovery} domain={domain} />}
         {step === 3 && <ArticlesStep output={output} setOutput={setOutput} />}
-        {step === 4 && <IntegrationStep destinations={destinations} weeklyLimit={weeklyLimit} />}
+        {step === 4 && <IntegrationStep destinations={destinations} />}
+        {step === ATTRIBUTION_STEP && <AttributionStep value={attribution} onChange={setAttribution} skipping={skipping} />}
+        {step === last && !skipping && <NextUp weeklyLimit={weeklyLimit} />}
         {error && <p className="mt-4 rounded-lg bg-err-soft px-3 py-2 text-[12.5px] text-err-ink">{error}</p>}
       </div>
 
@@ -206,22 +241,35 @@ export function OnboardingWizard({
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
-              onClick={() => setStep((s) => Math.max(0, s - 1) as StepIndex)}
+              onClick={() => {
+                if (skipFrom !== null) {
+                  setStep(skipFrom);
+                  setSkipFrom(null);
+                } else {
+                  setStep((s) => Math.max(0, s - 1));
+                }
+              }}
               disabled={step === 0 || pending}
             >
               Back
             </Button>
-            <button
-              type="button"
-              onClick={skipAll}
-              disabled={pending}
-              className="text-[12px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink"
-            >
-              Skip setup
-            </button>
+            {step !== ATTRIBUTION_STEP && (
+              <button
+                type="button"
+                onClick={skipAll}
+                disabled={pending}
+                className="text-[12px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink"
+              >
+                Skip setup
+              </button>
+            )}
           </div>
-          <Button variant="accent" onClick={next} disabled={pending}>
-            {pending ? "Saving…" : step === 4 ? "Finish and plan my first month" : "Continue"}
+          <Button
+            variant="accent"
+            onClick={next}
+            disabled={pending || (step === ATTRIBUTION_STEP && !attributionComplete(attribution))}
+          >
+            {pending ? "Saving…" : step !== last ? "Continue" : skipping ? "Skip and finish" : "Finish and plan my first month"}
           </Button>
         </div>
       </div>
@@ -229,11 +277,11 @@ export function OnboardingWizard({
   );
 }
 
-function Stepper({ current }: { current: number }) {
+function Stepper({ steps, current }: { steps: string[]; current: number }) {
   return (
     <div className="border-b border-line bg-panel">
       <div className="mx-auto flex max-w-[860px] items-center gap-2 overflow-x-auto px-6 py-4">
-        {STEPS.map((label, i) => (
+        {steps.map((label, i) => (
           <div key={label} className="flex items-center gap-2 whitespace-nowrap">
             <span
               className={`grid h-4 w-4 place-items-center rounded-full text-[9px] ${
@@ -243,7 +291,7 @@ function Stepper({ current }: { current: number }) {
               {i < current ? "✓" : ""}
             </span>
             <span className={`text-[12.5px] ${i <= current ? "text-ink" : "text-ink-3"}`}>{label}</span>
-            {i < STEPS.length - 1 && <span className="mx-1 h-px w-6 bg-line" />}
+            {i < steps.length - 1 && <span className="mx-1 h-px w-6 bg-line" />}
           </div>
         ))}
       </div>
@@ -634,7 +682,7 @@ function ArticlesStep({ output, setOutput }: { output: OutputSettings; setOutput
   );
 }
 
-function IntegrationStep({ destinations, weeklyLimit }: { destinations: Destination[]; weeklyLimit: number }) {
+function IntegrationStep({ destinations }: { destinations: Destination[] }) {
   return (
     <>
       <Head
@@ -661,13 +709,46 @@ function IntegrationStep({ destinations, weeklyLimit }: { destinations: Destinat
         On Next.js, Astro, Hugo or Jekyll? <strong className="font-medium text-ink-2">Git / static site</strong> commits
         Markdown to your repo and lets your own build deploy it.
       </p>
-      <p className="mt-6 text-center text-[12.5px] leading-[1.6] text-ink-2">
-        Next: we read your site properly, find what to write about, schedule{" "}
-        <strong className="font-medium text-ink">
-          {weeklyLimit >= 7 ? "one article a day" : `${weeklyLimit} article${weeklyLimit === 1 ? "" : "s"} a week`}
-        </strong>{" "}
-        for the next 30 days, and write the first one. Every draft waits in review.
-      </p>
+    </>
+  );
+}
+
+/** What Finish does, under whichever screen is last. */
+function NextUp({ weeklyLimit }: { weeklyLimit: number }) {
+  return (
+    <p className="mt-6 text-center text-[12.5px] leading-[1.6] text-ink-2">
+      Next: we read your site properly, find what to write about, schedule{" "}
+      <strong className="font-medium text-ink">
+        {weeklyLimit >= 7 ? "one article a day" : `${weeklyLimit} article${weeklyLimit === 1 ? "" : "s"} a week`}
+      </strong>{" "}
+      for the next 30 days, and write the first one. Every draft waits in review.
+    </p>
+  );
+}
+
+/**
+ * The one question about the person. The copy says why we ask, because a
+ * question with no visible reason gets the answer that closes it fastest, and
+ * the answer we most need to be true is the one about AI.
+ */
+function AttributionStep({
+  value,
+  onChange,
+  skipping,
+}: {
+  value: AttributionDraft;
+  onChange: (v: AttributionDraft) => void;
+  skipping: boolean;
+}) {
+  return (
+    <>
+      <Head
+        title={skipping ? "One thing before you go" : "One last thing"}
+        sub="How did you hear about us? Pick the closest. It is the only way we can tell whether an AI answer sent you here, which is the thing we sell."
+      />
+      <div className="rounded-[10px] border border-line bg-panel p-5">
+        <AttributionPicker value={value} onChange={onChange} />
+      </div>
     </>
   );
 }
