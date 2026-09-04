@@ -29,6 +29,7 @@ import { generateImage } from "@/lib/ai/image-generator";
 import { uploadImageBuffer } from "@/lib/storage/images";
 import { fetchLinkTargets, resolveInternalLinks } from "@/lib/seo/link-resolver";
 import { verifyOutboundLinks, type LinkCheck } from "@/lib/seo/link-check";
+import { enrichArticle } from "@/lib/content/enrich";
 import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research";
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
@@ -394,6 +395,27 @@ export async function generateArticle(
       const verified = await verifyOutboundLinks(html, workspace.domain);
       linkChecks = verified.checks;
       return verified.html;
+    });
+
+    // Everything a finished article has beyond prose: heading ids, a table of
+    // contents, section images, a how-to video, charts for quoted numbers, a
+    // closing pointer to the site, FAQ schema. One call; the steps, their
+    // settings lookup and their fallbacks live in lib/content/enrich. The
+    // report rides on `research.enrichment`, which is saved below as-is.
+    await enhance("body enrichment", async (html) => {
+      const enriched = await enrichArticle(html, {
+        supabase,
+        workspaceId,
+        articleId: article.id,
+        runId: job.id,
+        keyword,
+        title: articleResult.title,
+        domain: workspace.domain,
+        language: workspace.language,
+        brandStyle: workspace.brand_style as Record<string, unknown> | null,
+        research: research as unknown as Record<string, unknown>,
+      });
+      return enriched.html;
     });
 
     setSpendReporter(null);
