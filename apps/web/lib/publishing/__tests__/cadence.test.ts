@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isCadenceDue, cadenceLocalDate } from "../cadence";
+import { isCadenceDue, cadenceLocalDate, withoutPaused } from "../cadence";
 
 // These tests replace the isCadenceSlotNow suite. That function matched a
 // 15-minute window starting at publish_time, which required a cron every 15
@@ -94,5 +94,20 @@ describe("cadenceLocalDate", () => {
     const lateUtc = new Date("2026-04-29T23:30:00Z");
     expect(cadenceLocalDate("Europe/Rome", lateUtc)).toBe("2026-04-30");
     expect(cadenceLocalDate("UTC", lateUtc)).toBe("2026-04-29");
+  });
+});
+
+describe("withoutPaused", () => {
+  it("drops rows whose workspace is paused and keeps the rest in order", () => {
+    const rows = [
+      { id: "a", workspace_id: "w1" },
+      { id: "b", workspace_id: "w2" },
+      { id: "c", workspace_id: "w1" },
+    ];
+    expect(withoutPaused(rows, new Set(["w1"])).map((r) => r.id)).toEqual(["b"]);
+  });
+  it("changes nothing when nothing is paused", () => {
+    const rows = [{ id: "a", workspace_id: "w1" }];
+    expect(withoutPaused(rows, new Set())).toEqual(rows);
   });
 });

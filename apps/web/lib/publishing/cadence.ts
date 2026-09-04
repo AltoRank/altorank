@@ -83,3 +83,19 @@ export function isCadenceDue(
   // At or past the time, with no upper bound. The upper bound was the bug.
   return minutes >= targetMins;
 }
+
+/**
+ * Drop cadences (or scheduled articles) belonging to paused workspaces.
+ *
+ * `workspaces.status = 'paused'` is what "Pause this site" sets, and it has to
+ * stop publishing as surely as it stops writing. The generate, analyze and
+ * site-pages crons filter on the workspace row directly; publishing starts
+ * from cadences and articles, which carry only a workspace_id, so the paused
+ * set is read once and applied here.
+ */
+export function withoutPaused<T extends { workspace_id: string }>(
+  rows: readonly T[],
+  pausedWorkspaceIds: ReadonlySet<string>,
+): T[] {
+  return rows.filter((r) => !pausedWorkspaceIds.has(r.workspace_id));
+}
