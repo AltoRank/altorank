@@ -56,7 +56,11 @@ const DEFAULTS = {
    * guessing at a newer id would risk a 404 on every OpenAI-backed workspace.
    */
   openaiContent: "gpt-4o",
-  openaiImage: "dall-e-3",
+  // `dall-e-3` was the default and is not in the account's model list at all
+  // (checked 2026-09-04), so every image call returned model-not-found. The
+  // mini tier is the cheapest that produces a usable hero, and this runs on
+  // every generated article.
+  openaiImage: "gpt-image-1-mini",
 } as const;
 
 function fromEnv(name: string, fallback: string): string {
