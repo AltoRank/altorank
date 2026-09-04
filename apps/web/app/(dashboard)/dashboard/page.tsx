@@ -196,7 +196,9 @@ export default async function DashboardPage() {
                   ? `${traffic.impressions.current.toLocaleString()} impressions, no clicks yet`
                   : "no impressions reported yet"
                 : describeChange(traffic.clicks, traffic.days, "clicks")
-              : (
+              : gscConnected
+                ? "connected · Google has not returned rows yet"
+                : (
                   <ConnectPrompt
                     dense
                     icon="trend"
