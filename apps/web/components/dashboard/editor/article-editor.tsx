@@ -21,6 +21,7 @@ import { updateArticle } from "@/app/actions/articles";
 import { publishArticle, approveArticle, requestChanges, markPublishedManually } from "@/app/actions/publish";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
 import type { Destination } from "@/lib/publishing/destinations";
+import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { SchedulePicker } from "@/components/dashboard/editor/schedule-picker";
 import { ResearchPanel, FactCheckPanel } from "@/components/dashboard/editor/research-panel";
 import { WhyPanel } from "@/components/dashboard/editor/why-panel";
@@ -598,9 +599,11 @@ export function ArticleEditor({
             <>
               {destinations.length === 1 ? (
                 <div className="flex items-center gap-2.5 p-2.5 bg-bg border border-line rounded-[7px]">
-                  <div className="w-7 h-7 rounded-[6px] bg-ink text-bg grid place-items-center font-mono text-[10px] font-semibold">
-                    {destinations[0].label.slice(0, 2).toUpperCase()}
-                  </div>
+                  <IntegrationIcon
+                    id={destinations[0].integrationId}
+                    name={destinations[0].label}
+                    size={28}
+                  />
                   <div className="flex-1 min-w-0">
                     <div className="text-[13px] font-medium truncate">
                       {destinations[0].label} — {workspace.domain}
