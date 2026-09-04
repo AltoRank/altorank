@@ -1,0 +1,120 @@
+{
+  "//": "Work order for scripts/daily-blog.mjs. Nothing schedules this file, so entries are inert until the script is run by hand. Editorial planning, prioritisation rationale and competitive research live outside this repository.",
+  "queue": [
+    {
+      "slug": "seo-content-from-claude-code-mcp",
+      "title": "Run an SEO Content Pipeline From Claude Code: Keyword to Published Draft With the AltoRank MCP Server",
+      "primary_keyword": "claude code seo mcp server",
+      "secondary_keywords": [
+        "mcp server seo",
+        "claude code seo workflow",
+        "ai seo agent publish wordpress",
+        "seo content pipeline claude"
+      ],
+      "target_word_count": 2000,
+      "intent": "Developer tutorial for readers already using Claude Code who want a research-to-publish pipeline.",
+      "wedge": "The MCP servers in this space are data sources. Show the full loop instead: keyword research, draft, human approval, publish. State plainly that the MCP server exposes no publish tool and the last step is a person approving.",
+      "competitors_to_cover": [
+        "SE Ranking MCP",
+        "Frase MCP",
+        "SEO Ladders MCP",
+        "claude-blog skill",
+        "WP MCP Ultimate"
+      ],
+      "serp_notes": "Checked 2026-09-03. Results are tutorials and vendor MCP docs; no product owns the end-to-end pipeline query.",
+      "category": "product",
+      "tags": [
+        "mcp",
+        "claude code",
+        "developer",
+        "open source"
+      ]
+    },
+    {
+      "slug": "ai-seo-articles-as-pull-requests",
+      "title": "Content as Code: AI-Drafted SEO Articles That Arrive as Pull Requests",
+      "primary_keyword": "ai seo content git repository markdown",
+      "secondary_keywords": [
+        "content as code",
+        "ai blog posts astro markdown automatic",
+        "publish ai articles to git",
+        "hugo ai blog pipeline",
+        "next.js mdx ai content"
+      ],
+      "target_word_count": 1800,
+      "intent": "Developer or technical marketer running a static site who wants AI drafts without giving up review.",
+      "wedge": "Publishing to a git repository makes the approval step a pull request, which is a review flow the reader already uses. Show a real PR: frontmatter, dateModified, schema, the diff.",
+      "competitors_to_cover": [
+        "n8n GitHub workflow template",
+        "claude-blog skill",
+        "kevingabeci/astro-seo-blog-template",
+        "Steakhouse content-as-code post"
+      ],
+      "serp_notes": "Checked 2026-09-03. Results are templates, GitHub topics and one automation workflow; no product page.",
+      "category": "product",
+      "tags": [
+        "git",
+        "content as code",
+        "astro",
+        "hugo",
+        "next.js",
+        "open source"
+      ]
+    },
+    {
+      "slug": "eu-gdpr-ai-seo-content-tool",
+      "title": "An AI SEO Content Tool You Can Run Under GDPR: Where Every Byte Is Processed",
+      "primary_keyword": "gdpr ai seo content tool",
+      "secondary_keywords": [
+        "eu data residency ai content",
+        "ai seo tool europe hosted",
+        "dpa ai content generation",
+        "frankfurt ireland ai seo"
+      ],
+      "target_word_count": 1600,
+      "intent": "European buyer with a data-processing question that blocks purchase.",
+      "wedge": "Publish the subprocessor list with processing regions rather than claiming compliance. Frankfurt app, Ireland database, EUR pricing, Italian company, self-hosting as the strongest residency answer. Describe processing; do not claim compliance.",
+      "competitors_to_cover": [
+        "Requesty EU gateway",
+        "HostYourAI",
+        "BabyLoveGrowth (Slovenian, hosting unstated)",
+        "Outrank (FR SaaS)"
+      ],
+      "serp_notes": "Checked 2026-09-03. Results are infrastructure vendors; no AI SEO content tool addresses the query.",
+      "category": "product",
+      "tags": [
+        "gdpr",
+        "eu",
+        "data residency",
+        "self-host"
+      ]
+    },
+    {
+      "slug": "it-generatore-articoli-seo-ai",
+      "title": "Generatore di articoli SEO con AI: cosa pubblica davvero su WordPress (e cosa lascia in bozza)",
+      "primary_keyword": "generatore articoli seo intelligenza artificiale",
+      "secondary_keywords": [
+        "scrivere articoli seo con ai",
+        "pubblicazione automatica wordpress ai",
+        "contenuti seo ai italiano",
+        "open source seo ai"
+      ],
+      "target_word_count": 1800,
+      "intent": "Italian SMB, freelancer or small agency.",
+      "wedge": "Italian-language coverage is thin. Treat SEOZoom as the established incumbent rather than a strawman. Lead with review-before-publish, which Italian results already emphasise.",
+      "competitors_to_cover": [
+        "SEOZoom AI Writer",
+        "register.it plugin roundup",
+        "itlabsrl",
+        "wp-ai.it"
+      ],
+      "serp_notes": "Checked 2026-09-03. Low-to-mid authority plugin roundups and agency blogs.",
+      "category": "seo",
+      "tags": [
+        "italiano",
+        "seozoom",
+        "wordpress"
+      ]
+    }
+  ]
+}
