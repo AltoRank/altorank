@@ -9,7 +9,7 @@ const recommend = vi.fn();
 const pick = vi.fn();
 const creds = vi.fn();
 
-vi.mock("@/lib/scraper", () => ({ scrapeWebsiteText: (...a: unknown[]) => scrape(...a) }));
+vi.mock("../site-text", () => ({ readSiteText: async (...a: unknown[]) => { const text = (await scrape(...a)) as string; return { text, source: text ? "static" : "none", chars: text.length }; } }));
 vi.mock("@/app/actions/voice", () => ({ createVoiceProfile: (...a: unknown[]) => voice(...a) }));
 vi.mock("@/lib/audit/domain-analysis", () => ({ analyseDomain: (...a: unknown[]) => analyse(...a) }));
 vi.mock("@/lib/content/generate", () => ({ generateArticle: (...a: unknown[]) => generate(...a) }));
@@ -19,6 +19,8 @@ vi.mock("@/lib/seo/recommendations", () => ({
   pickNextKeyword: (...a: unknown[]) => pick(...a),
 }));
 vi.mock("@/lib/seo/client", () => ({ hasDataForSEOCredentials: () => creds() }));
+const plan = vi.fn(async () => [] as unknown[]);
+vi.mock("../plan", () => ({ schedulePlan: () => plan(), fulfilPlannedEntry: vi.fn(async () => undefined) }));
 
 import { runOnboarding } from "../pipeline";
 import type { OnboardingEvent } from "../events";
@@ -60,6 +62,7 @@ describe("runOnboarding", () => {
     expect(phases(events)).toEqual([
       "scanning:active", "scanning:done",
       "keywords:active", "keywords:done",
+      "planning:active", "planning:skipped",
       "drafting:active", "drafting:done",
       "ready",
     ]);
@@ -139,6 +142,7 @@ describe("runOnboarding", () => {
     expect(phases(events)).toEqual([
       "scanning:active", "scanning:done",
       "keywords:active", "keywords:failed",
+      "planning:active", "planning:skipped",
       "drafting:active", "drafting:done",
       "ready",
     ]);

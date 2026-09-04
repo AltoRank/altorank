@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getArticles } from "@/lib/queries/articles";
@@ -39,6 +40,25 @@ export default async function DashboardLayout({
     // banner is what says so.
     getImpersonation(),
   ]);
+
+  /**
+   * A site nobody has set up yet goes to the wizard, not to a dashboard of
+   * dashes. The gate is per workspace and it is two dates, so it releases the
+   * moment the wizard finishes or is skipped, and never fires twice for a
+   * second member of the same agency.
+   */
+  let wizardDone = true;
+  if (scopeId) {
+    const { data: ws } = await supabase
+      .from("workspaces")
+      .select("business_profile, onboarded_at, onboarding_skipped_at")
+      .eq("id", scopeId)
+      .maybeSingle();
+    if (ws && !ws.onboarded_at && !ws.onboarding_skipped_at) {
+      wizardDone = false;
+      if (!ws.business_profile) redirect("/onboarding");
+    }
+  }
 
   const {
     data: { user },
@@ -134,7 +154,8 @@ export default async function DashboardLayout({
    * "stop popping this up" is a thing only the person can tell us.
    */
   const initialSteps = await getCompletedOnboardingSteps();
-  const dismissed = Boolean(meta.onboarding_dismissed);
+  // The wizard replaces the checklist for a site it has set up.
+  const dismissed = Boolean(meta.onboarding_dismissed) || wizardDone;
 
   const content = (
     <TooltipProvider delayDuration={150}>

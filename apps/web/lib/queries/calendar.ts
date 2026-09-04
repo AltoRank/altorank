@@ -99,5 +99,31 @@ export async function getCalendarEntries(
     });
   }
 
+  // Planned keywords with no article yet. The plan is the product's promise
+  // for the month; a calendar that only showed what had already been written
+  // was a history, not a plan.
+  let planned = supabase
+    .from("calendar_entries")
+    .select("id, workspace_id, keyword, scheduled_date, status, created_at")
+    .is("article_id", null)
+    .eq("status", "queue");
+  if (workspaceId) planned = planned.eq("workspace_id", workspaceId);
+  const { data: plannedRows } = await planned;
+  for (const p of (plannedRows ?? []) as Array<{ id: string; workspace_id: string; keyword: string | null; scheduled_date: string; created_at: string }>) {
+    if (start !== null && end !== null) {
+      const t = new Date(p.scheduled_date).getTime();
+      if (Number.isNaN(t) || t < start || t >= end) continue;
+    }
+    entries.push({
+      id: p.id,
+      workspace_id: p.workspace_id,
+      article_id: null,
+      keyword: p.keyword || "Planned",
+      scheduled_date: p.scheduled_date,
+      status: "queue",
+      created_at: p.created_at,
+    });
+  }
+
   return entries.sort((x, y) => x.scheduled_date.localeCompare(y.scheduled_date));
 }
