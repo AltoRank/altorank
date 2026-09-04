@@ -122,7 +122,11 @@ function TrafficChart({ series, connected = false }: { series: TrafficSeries; co
         <line key={f} x1={pad} x2={W - pad} y1={pad + f * (H - pad * 2)} y2={pad + f * (H - pad * 2)} stroke="var(--line-soft)" strokeWidth="1" />
       ))}
       <path d={area} fill="url(#g1)" />
-      <path d={path(prev)} fill="none" stroke="var(--ink-4)" strokeWidth="1.5" strokeDasharray="4 4" />
+      {/* Only when that window was synced. A dashed flat zero for a month
+          that was never measured reads as "no traffic last month". */}
+      {series.previousMeasured && (
+        <path d={path(prev)} fill="none" stroke="var(--ink-4)" strokeWidth="1.5" strokeDasharray="4 4" />
+      )}
       <path d={path(data)} fill="none" stroke="var(--accent)" strokeWidth="2" />
       {data.map((v, i) => i % 3 === 0 ? (
         <circle key={i} cx={x(i)} cy={y(v)} r="2.5" fill="var(--bg)" stroke="var(--accent)" strokeWidth="1.5" />
@@ -280,9 +284,13 @@ export default async function DashboardPage() {
               <span className="flex items-center gap-1.5">
                 <i className="inline-block w-2.5 h-2.5 rounded-sm bg-accent" />Traffic
               </span>
-              <span className="flex items-center gap-1.5">
-                <i className="inline-block w-2.5 h-0.5 rounded-sm bg-ink-4 mt-[1px]" />Prev period
-              </span>
+              {traffic.previousMeasured ? (
+                <span className="flex items-center gap-1.5">
+                  <i className="inline-block w-2.5 h-0.5 rounded-sm bg-ink-4 mt-[1px]" />Prev period
+                </span>
+              ) : traffic.hasData ? (
+                <span className="text-ink-4">Previous period not synced yet</span>
+              ) : null}
               {bing.connected && (
                 <span className="ml-auto text-ink-3">
                   {bing.hasData

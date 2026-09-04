@@ -83,6 +83,16 @@ describe("getTrafficSeries", () => {
     expect(s.previous).toHaveLength(s.days);
   });
 
+  it("knows whether the comparison window was synced at all", async () => {
+    // A week of backfill after connecting: the current window has rows, the
+    // previous one has none. Drawing a dashed line from it would claim last
+    // month had zero clicks; the flag lets the chart leave it out instead.
+    result = { data: [{ metric_date: day(2), clicks: 3, impressions: 30 }], error: null };
+    expect((await series()).previousMeasured).toBe(false);
+    result = { data: [{ metric_date: day(2), clicks: 3, impressions: 30 }, { metric_date: day(40), clicks: 0, impressions: 10 }], error: null };
+    expect((await series()).previousMeasured).toBe(true);
+  });
+
   it("counts clicks that fall only in the previous window", async () => {
     // 45 days ago is outside the current 30 but inside the comparison window,
     // so there are clicks to plot even though the current total is zero.

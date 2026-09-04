@@ -24,6 +24,14 @@ export interface TrafficSeries {
   /** Impressions over the window. A site can have thousands with no clicks,
    *  and a flat line at zero should say which of those two it is. */
   impressions: number;
+  /**
+   * Whether any row was synced for the comparison window at all. Connecting
+   * Search Console backfills about a week, so for the first month the earlier
+   * window holds no rows, and a dashed "previous period" line drawn from it
+   * would be a flat zero claiming last month had no traffic. The chart draws
+   * that line only when this is true.
+   */
+  previousMeasured: boolean;
   days: number;
 }
 
@@ -38,6 +46,7 @@ const EMPTY: TrafficSeries = {
   hasData: false,
   hasClicks: false,
   impressions: 0,
+  previousMeasured: false,
   days: DAYS,
 };
 
@@ -93,6 +102,8 @@ export async function getTrafficSeries(workspaceId?: string): Promise<TrafficSer
 
   const previous = series.slice(0, DAYS);
   const current = series.slice(DAYS);
+  const currentStart = new Date(Date.now() - (DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+  const previousMeasured = (data as Array<{ metric_date: string }>).some((r) => r.metric_date < currentStart);
   const currentTotal = current.reduce((a, b) => a + b, 0);
   const previousTotal = previous.reduce((a, b) => a + b, 0);
 
@@ -109,6 +120,7 @@ export async function getTrafficSeries(workspaceId?: string): Promise<TrafficSer
     hasData: true,
     hasClicks: currentTotal > 0 || previousTotal > 0,
     impressions,
+    previousMeasured,
     days: DAYS,
   };
 }
