@@ -26,19 +26,18 @@ import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 const STEPS = ["Business", "Audience & Competitors", "Blog", "Articles", "Integration"] as const;
 type StepIndex = 0 | 1 | 2 | 3 | 4;
 
-const CMS = [
-  "wordpress", "webflow", "shopify", "notion", "ghost",
-  "framer", "wix", "woocommerce", "hubspot", "magento", "webhook",
-];
+export type Destination = { id: string; name: string; description: string | null };
 
 export function OnboardingWizard({
   workspaceId,
   domain,
   initialProfile,
+  destinations,
 }: {
   workspaceId: string;
   domain: string;
   initialProfile: BusinessProfile | null;
+  destinations: Destination[];
 }) {
   const router = useRouter();
   const [step, setStep] = useState<StepIndex>(0);
@@ -92,7 +91,7 @@ export function OnboardingWizard({
         {step === 1 && <AudienceStep profile={profile} patch={patch} />}
         {step === 2 && <BlogStep domain={domain} />}
         {step === 3 && <ArticlesStep />}
-        {step === 4 && <IntegrationStep />}
+        {step === 4 && <IntegrationStep destinations={destinations} />}
       </div>
 
       {/* The bar is fixed because the Articles step is long and a Continue you
@@ -376,7 +375,7 @@ function ArticlesStep() {
   );
 }
 
-function IntegrationStep() {
+function IntegrationStep({ destinations }: { destinations: Destination[] }) {
   return (
     <>
       <Head
@@ -384,17 +383,25 @@ function IntegrationStep() {
         sub="You can do this later — drafts are yours either way, and you can export any article as Markdown."
       />
       <div className="grid grid-cols-3 gap-3">
-        {CMS.map((id) => (
+        {destinations.map((d) => (
           <a
-            key={id}
-            href={`/connect?connect=${id}`}
-            className="flex flex-col items-center gap-2 rounded-[10px] border border-line bg-panel px-3 py-5 transition-colors hover:border-accent"
+            key={d.id}
+            href={`/connect?connect=${d.id}`}
+            title={d.description ?? undefined}
+            className="flex flex-col items-center gap-2 rounded-[10px] border border-line bg-panel px-3 py-5 text-center transition-colors hover:border-accent"
           >
-            <IntegrationIcon id={id} name={id} size={30} />
-            <span className="text-[12px] capitalize">{id}</span>
+            <IntegrationIcon id={d.id} name={d.name} size={30} />
+            <span className="text-[12px] leading-[1.35]">{d.name}</span>
           </a>
         ))}
       </div>
+      {/* Named rather than left to the grid: a static site has no CMS to pick,
+          and someone on Next.js or Astro will otherwise read this screen as
+          "not supported" and skip a destination we do have. */}
+      <p className="mt-4 text-center text-[12px] leading-[1.6] text-ink-3">
+        On Next.js, Astro, Hugo or Jekyll? <strong className="font-medium text-ink-2">Git / static site</strong>{" "}
+        commits Markdown to your repo and lets your own build deploy it.
+      </p>
     </>
   );
 }
