@@ -199,8 +199,16 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
   if (title) {
     sections.push(`Use the following title for the article:\n${title}`);
   } else {
+    // The length rule is here because the scorer measures it and the writer
+    // was never told. Measured 2026-09-03 across every article in the
+    // database: all fifteen ran past 60 characters, four of them past 80, so
+    // Google was cutting the end off every one of them. The model writes a
+    // full sentence when nothing stops it.
     sections.push(
-      `Generate a compelling, SEO-optimized title that naturally includes the keyword "${keyword}".`
+      `Generate a compelling, SEO-optimized title that naturally includes the keyword "${keyword}". ` +
+        `Keep it between 50 and 60 characters: Google truncates a title around 60 and the ` +
+        `end of the line is where these titles put the year and the promise. Count the ` +
+        `characters. Prefer cutting a clause to cutting a word from the keyword.`
     );
   }
 
