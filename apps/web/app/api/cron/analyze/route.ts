@@ -11,6 +11,8 @@ import {
   type ProfileCandidate,
   type RefreshOutcome,
 } from "@/lib/audit/profile-refresh";
+import { monthlyTarget, schedulePlan } from "@/lib/onboarding/plan";
+import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
 
 /**
  * First-look analysis for domains nobody has looked at yet.
@@ -146,13 +148,58 @@ export async function GET(request: Request) {
     }
   }
 
+  // Keep the calendar full. The plan onboarding wrote covers thirty days; on
+  // day thirty-one the generate cron would fall back to the live queue and the
+  // calendar would go blank, which reads as "nothing is coming". So each run
+  // tops up any opted-in workspace whose unwritten plan has dropped below what
+  // its pace promises for a month. Additive - it never moves or removes an
+  // entry a person placed - and bounded by the same 60 cap as the planner.
+  const toppedUp = await topUpPlans(supabase);
+
   return NextResponse.json({
     pending: pending?.length ?? 0,
     analysed: results.filter((r) => r.status === "analysed").length,
     errors: results.filter((r) => r.status === "error").length,
     profileMaxAgeDays: PROFILE_MAX_AGE_DAYS,
     profilesRefreshed: refreshed.filter((r) => r.status === "refreshed").length,
+    plansToppedUp: toppedUp.filter((t) => t.added > 0).length,
     results,
     refreshed,
+    toppedUp,
   });
+}
+
+type TopUp = { workspaceId: string; queued: number; target: number; added: number; error?: string };
+
+async function topUpPlans(supabase: ReturnType<typeof createServiceClient>): Promise<TopUp[]> {
+  const out: TopUp[] = [];
+  const { data: workspaces } = await supabase
+    .from("workspaces")
+    .select("id, auto_generate_weekly_limit")
+    .eq("auto_generate", true)
+    .neq("status", "paused");
+
+  for (const ws of workspaces ?? []) {
+    const workspaceId = ws.id as string;
+    const pace = (ws.auto_generate_weekly_limit as number | null) ?? PAID_DEFAULT_PACE;
+    const target = monthlyTarget(pace);
+    const { count } = await supabase
+      .from("calendar_entries")
+      .select("id", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId)
+      .eq("status", "queue")
+      .is("article_id", null);
+    const queued = count ?? 0;
+    if (target === 0 || queued >= target) {
+      out.push({ workspaceId, queued, target, added: 0 });
+      continue;
+    }
+    try {
+      const added = await schedulePlan(supabase, workspaceId, pace, new Date(), { mode: "top-up" });
+      out.push({ workspaceId, queued, target, added: added.length });
+    } catch (err) {
+      out.push({ workspaceId, queued, target, added: 0, error: err instanceof Error ? err.message : "unknown error" });
+    }
+  }
+  return out;
 }
