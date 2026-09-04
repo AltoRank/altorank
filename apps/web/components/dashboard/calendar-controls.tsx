@@ -3,6 +3,9 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { IconButton } from "@/components/ui/button";
 import { Chip, Icons } from "@/components/ui";
+import { ArticlesPlanPopover } from "@/components/dashboard/articles-plan-popover";
+import { PausedBanner } from "@/components/dashboard/paused-banner";
+import { useWorkspace } from "@/components/dashboard/workspace-context";
 
 interface CalendarControlsProps {
   currentMonth: string; // "2026-05"
@@ -12,6 +15,7 @@ interface CalendarControlsProps {
 export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { active } = useWorkspace();
 
   function navigateMonth(delta: number) {
     const [y, m] = currentMonth.split("-").map(Number);
@@ -36,6 +40,10 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
   }
 
   return (
+    <>
+    {active?.status === "paused" && (
+      <PausedBanner workspaceId={active.id} meta={active.paused_meta} className="mb-4" />
+    )}
     <div className="flex items-center gap-2 mb-4 flex-wrap">
       <div className="flex items-center gap-2 ml-2">
         <IconButton ghost onClick={() => navigateMonth(-1)}>
@@ -47,6 +55,7 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
         </IconButton>
       </div>
       <div className="flex-1" />
+      <ArticlesPlanPopover />
       <Chip
         label="All workspaces"
         active={clientFilter === "all"}
@@ -58,5 +67,6 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
         onClick={() => setClientFilter("publishing")}
       />
     </div>
+    </>
   );
 }
