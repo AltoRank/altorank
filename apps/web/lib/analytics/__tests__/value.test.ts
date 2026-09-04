@@ -152,6 +152,11 @@ describe("describeOrganicValue", () => {
     expect(text).toContain("10 of 40 clicks (25%)");
   });
 
+  it("takes a dated period for a report", () => {
+    const v = estimateOrganicValue([], new Map());
+    expect(describeOrganicValue(v, "2026-08-01 to 2026-08-31")).toContain("over 2026-08-01 to 2026-08-31 ×");
+  });
+
   it("says why there is no number", () => {
     expect(describeOrganicValue(estimateOrganicValue([], new Map()), 30)).toContain("Nothing is measured");
     expect(

@@ -220,8 +220,10 @@ export function formatOrganicValue(
  * once so the dashboard tooltip, the editor caption and the report footnote
  * cannot drift into three different formulas.
  */
-export function describeOrganicValue(v: OrganicValue, days: number): string {
-  const base = `Estimate: clicks over the last ${days} days × the Google Ads cost-per-click of the search term, summed, in US dollars.`;
+export function describeOrganicValue(v: OrganicValue, window: number | string): string {
+  // A day count on the live surfaces; a dated period on a report.
+  const when = typeof window === "number" ? `the last ${window} days` : window;
+  const base = `Estimate: clicks over ${when} × the Google Ads cost-per-click of the search term, summed, in US dollars.`;
   if (v.value === null) {
     return v.clicks > 0
       ? `${base} None of the terms that sent these ${v.clicks.toLocaleString()} clicks has a cost-per-click on file yet; run keyword research to fill it in.`
