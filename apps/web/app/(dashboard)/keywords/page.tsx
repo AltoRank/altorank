@@ -5,6 +5,8 @@ import { PageHead, StatusPill, Avatar, Chip, Card, StatStrip } from "@/component
 import { KeywordActions } from "@/components/dashboard/keyword-actions";
 import { KeywordFilters } from "@/components/dashboard/keyword-filters";
 import { KeywordPlanButton } from "@/components/dashboard/keyword-plan-button";
+import { HowItWorks } from "@/components/dashboard/how-it-works";
+import { keywordsExplainer } from "@/lib/explainers";
 import type { Workspace } from "@/lib/types";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
@@ -49,7 +51,12 @@ export default async function KeywordsPage({ searchParams }: Props) {
       <PageHead
         title="Keywords"
         subtitle={<span>Across all workspaces</span>}
-        actions={<KeywordActions workspaces={workspaces} keywords={keywords} />}
+        actions={
+          <>
+            <HowItWorks explainer={keywordsExplainer} />
+            <KeywordActions workspaces={workspaces} keywords={keywords} />
+          </>
+        }
       />
 
       <StatStrip
@@ -134,7 +141,17 @@ export default async function KeywordsPage({ searchParams }: Props) {
               })}
               {shown.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3.5 py-8 text-center text-ink-3">No keywords yet. Click &quot;Find new keywords&quot; to get started.</td>
+                  <td colSpan={7} className="px-3.5 py-10 text-center text-ink-3">
+                    {keywords.length === 0 ? (
+                      <span className="inline-block max-w-[56ch] leading-[1.6]">
+                        No keywords yet. The first analysis of a site fills this from what it already ranks for, what
+                        competitors rank for that it does not, and phrases seeded from its own pages. Add one by hand
+                        with Find new keywords; the nightly analysis run adds more as the site is read.
+                      </span>
+                    ) : (
+                      <>No keyword matches these filters.</>
+                    )}
+                  </td>
                 </tr>
               )}
             </tbody>
