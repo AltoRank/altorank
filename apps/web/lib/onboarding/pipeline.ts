@@ -38,6 +38,7 @@ interface Workspace {
   domain: string | null;
   agency_id: string;
   language: string | null;
+  location_code?: number | null;
 }
 
 /**
@@ -99,6 +100,8 @@ export async function runOnboarding(
         supabase,
         workspaceId: workspace.id,
         locale: workspace.language ?? "en",
+        // Paired with the locale, or DataForSEO rejects the combination.
+        locationCode: workspace.location_code ?? undefined,
       });
       keywordsFound = analysis.keywordsFound;
       emit({

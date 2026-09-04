@@ -57,7 +57,7 @@ async function main(): Promise<void> {
 
   const { data: ws } = await db
     .from("workspaces")
-    .select("id, domain, language, first_analysed_at")
+    .select("id, domain, language, location_code, first_analysed_at")
     .eq("domain", DOMAIN)
     .maybeSingle();
   if (!ws) {
@@ -87,6 +87,7 @@ async function main(): Promise<void> {
     supabase: db,
     workspaceId: ws.id as string,
     locale: (ws.language as string) ?? "en",
+    locationCode: (ws.location_code as number | null) ?? undefined,
   });
   setSpendReporter(null);
 
