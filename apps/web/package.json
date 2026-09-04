@@ -12,7 +12,8 @@
     "mcp": "tsx scripts/mcp.ts",
     "smoke": "tsx --env-file=.env.local scripts/smoke.ts",
     "dogfood": "tsx --env-file=.env.local scripts/dogfood.ts",
-    "audit:articles": "tsx --env-file=.env.local scripts/audit-articles.ts"
+    "audit:articles": "tsx --env-file=.env.local scripts/audit-articles.ts",
+    "test:article": "tsx --env-file=.env.local scripts/generate-test-article.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
