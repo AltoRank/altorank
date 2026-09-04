@@ -398,6 +398,30 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     ].join("\n"),
   );
 
+  // --- Site output preferences ---------------------------------------------
+  // Set once in onboarding. Rendered only when set, so an install without the
+  // settings table behaves exactly as before.
+  if (prompt.output) {
+    const o = prompt.output;
+    const prefs: string[] = [];
+    if (o.tone && o.tone !== "informative") prefs.push(`- Overall tone: ${o.tone}.`);
+    if (typeof o.internalLinks === "number") {
+      prefs.push(
+        o.internalLinks === 0
+          ? "- Do not add internal-link placeholders."
+          : `- Aim for about ${o.internalLinks} internal-link placeholder${o.internalLinks === 1 ? "" : "s"} where they genuinely help.`,
+      );
+    }
+    if (o.tableOfContents === false) prefs.push("- Do not add a table of contents.");
+    if (o.callToAction === false) prefs.push("- Do not add a closing call to action.");
+    if (o.firstPerson === false) prefs.push("- Write in the third person; never \"we\", \"our\" or \"I\".");
+    if (o.firstPerson === true) prefs.push("- First person (\"we\", \"our\") is fine where it reads naturally.");
+    if (o.mentionSimilarProducts === false) prefs.push("- Do not name or compare competing products.");
+    if (o.mentionSimilarProducts === true) prefs.push("- Where relevant, name and fairly compare similar products or tools.");
+    if (o.customInstructions?.trim()) prefs.push(`- Site owner's standing instructions: ${o.customInstructions.trim()}`);
+    if (prefs.length) sections.push("", "SITE PREFERENCES:", ...prefs);
+  }
+
   // --- Final instructions ----------------------------------------------------
   sections.push(
     [

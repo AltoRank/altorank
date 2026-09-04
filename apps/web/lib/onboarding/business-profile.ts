@@ -16,7 +16,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicModel } from "@/lib/ai/models";
-import { scrapeWebsiteText } from "@/lib/scraper";
+import { readSiteText, type SiteTextSource, MIN_CHARS } from "./site-text";
 
 export interface BusinessProfile {
   /** The business's own name for itself, not the domain. */
@@ -62,33 +62,58 @@ const PROMPT = [
   "  Return [] rather than guessing if the category is unclear.",
 ].join("\n");
 
+export type InferenceReason = "ok" | "no_model" | "unreadable" | "model_failed";
+
+export interface InferenceResult {
+  profile: BusinessProfile | null;
+  /** Why `profile` is null, or "ok". The wizard shows this instead of pretending. */
+  reason: InferenceReason;
+  /** Which read of the site produced the text the model saw. */
+  source: SiteTextSource;
+}
+
+/**
+ * Read `domain` and propose a profile, saying how it went.
+ *
+ * `unreadable` is the common failure and it is not ours to hide: a
+ * client-rendered homepage, a block page or a site with nothing on it all
+ * yield too little text to describe a business from. The wizard tells the
+ * person that and asks; the earlier version showed empty fields under the
+ * words "we've filled this in".
+ */
+export async function inferBusinessProfileDetailed(domain: string): Promise<InferenceResult> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return { profile: null, reason: "no_model", source: "none" };
+
+  const read = await readSiteText(domain, MAX_CHARS);
+  if (read.source === "none" || read.text.length < Math.min(MIN_CHARS, 250)) {
+    return { profile: null, reason: "unreadable", source: read.source };
+  }
+
+  try {
+    const client = new Anthropic({ apiKey });
+    const response = await client.messages.create({
+      model: anthropicModel("structured"),
+      max_tokens: 1200,
+      messages: [{ role: "user", content: `${PROMPT}\n\nSITE: ${domain}\n\n${read.text}` }],
+    });
+    const raw = response.content[0]?.type === "text" ? response.content[0].text : "";
+    const profile = parseProfile(raw, domain);
+    return profile ? { profile, reason: "ok", source: read.source } : { profile: null, reason: "model_failed", source: read.source };
+  } catch {
+    return { profile: null, reason: "model_failed", source: read.source };
+  }
+}
+
 /**
  * Read `domain` and propose a profile.
  *
  * Returns null when there is nothing to read or no API key: the caller shows an
- * empty form rather than a failure, because a wizard that cannot be completed
- * without a working model is worse than one that asks a few more questions.
+ * empty form rather than a failure. Kept for callers that only need the
+ * profile; the wizard uses the detailed form.
  */
-export async function inferBusinessProfile(
-  domain: string,
-): Promise<BusinessProfile | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
-
-  const text = (await scrapeWebsiteText(domain)).slice(0, MAX_CHARS);
-  // A page that yielded almost nothing is usually a JS shell or a block page.
-  // Guessing from 200 characters produces confident nonsense, so decline.
-  if (text.length < 400) return null;
-
-  const client = new Anthropic({ apiKey });
-  const response = await client.messages.create({
-    model: anthropicModel("structured"),
-    max_tokens: 1200,
-    messages: [{ role: "user", content: `${PROMPT}\n\nSITE: ${domain}\n\n${text}` }],
-  });
-
-  const raw = response.content[0]?.type === "text" ? response.content[0].text : "";
-  return parseProfile(raw, domain);
+export async function inferBusinessProfile(domain: string): Promise<BusinessProfile | null> {
+  return (await inferBusinessProfileDetailed(domain)).profile;
 }
 
 /**

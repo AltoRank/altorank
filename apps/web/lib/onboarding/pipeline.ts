@@ -22,7 +22,7 @@
 // than nothing, and the dashboard shows whatever got done.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { scrapeWebsiteText } from "@/lib/scraper";
+import { readSiteText } from "./site-text";
 import { createVoiceProfile } from "@/app/actions/voice";
 import { analyseDomain } from "@/lib/audit/domain-analysis";
 import { generateArticle } from "@/lib/content/generate";
@@ -30,6 +30,8 @@ import { getQuota } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import type { OnboardingEvent } from "./events";
+import { schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
+import { FREE_TIER_PACE } from "@/lib/content/pace";
 
 export type Emit = (event: OnboardingEvent) => void;
 
@@ -39,6 +41,7 @@ interface Workspace {
   agency_id: string;
   language: string | null;
   location_code?: number | null;
+  auto_generate_weekly_limit?: number | null;
 }
 
 /**
@@ -72,12 +75,20 @@ export async function runOnboarding(
     emit({ phase: "scanning", status: "skipped", detail: "No domain on this workspace yet." });
   } else {
     try {
-      const text = await scrapeWebsiteText(domain);
+      // Same reader as the wizard: homepage, then the blog when the homepage
+      // is a JavaScript shell, then a rendered fetch. A voice learned from the
+      // site's own articles is better than one learned from its landing page.
+      const read = await readSiteText(domain);
+      const text = read.text;
       if (text && text.split(/\s+/).length > 50) {
         await createVoiceProfile(workspace.id, text);
-        emit({ phase: "scanning", status: "done", detail: "Learned how your site writes." });
+        emit({
+          phase: "scanning",
+          status: "done",
+          detail: read.source === "sitemap" ? "Learned how your site writes, from its articles." : "Learned how your site writes.",
+        });
       } else {
-        emit({ phase: "scanning", status: "skipped", detail: "Too little text on the site to learn a voice." });
+        emit({ phase: "scanning", status: "skipped", detail: "Too little readable text on the site to learn a voice." });
       }
     } catch (err) {
       emit({ phase: "scanning", status: "failed", detail: message(err) });
@@ -121,6 +132,28 @@ export async function runOnboarding(
   if (gone()) return;
 
   // --- Phase 3: write the first draft -------------------------------------
+  emit({ phase: "planning", status: "active" });
+  let plan: PlannedEntry[] = [];
+  if (keywordsFound === 0) {
+    emit({ phase: "planning", status: "skipped", detail: "Nothing to schedule until there are keywords." });
+  } else {
+    try {
+      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE);
+      emit({
+        phase: "planning",
+        status: plan.length > 0 ? "done" : "skipped",
+        detail:
+          plan.length > 0
+            ? `Planned ${plan.length} article${plan.length === 1 ? "" : "s"} over the next 30 days. Drag, drop or delete any of them.`
+            : "No keyword clear enough to plan yet.",
+        planned: plan.map((p) => ({ term: p.term, date: p.date })),
+      });
+    } catch (err) {
+      emit({ phase: "planning", status: "failed", detail: message(err) });
+    }
+  }
+
+  if (gone()) return;
   emit({ phase: "drafting", status: "active" });
   try {
     // Not if one already exists: this pipeline can be re-run, and a second
@@ -138,7 +171,11 @@ export async function runOnboarding(
       if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
         emit({ phase: "drafting", status: "skipped", detail: "Your free draft is already used. Choose a plan to keep drafting." });
       } else {
-        const next = pickNextKeyword(await recommendKeywords(supabase, workspace.id, { limit: 25 }));
+        const recs = await recommendKeywords(supabase, workspace.id, { limit: 25 });
+        // The first day of the plan is what the person just watched get
+        // scheduled; writing anything else would contradict the calendar.
+        const first = plan[0];
+        const next = (first && recs.find((r) => r.term === first.term)) ?? pickNextKeyword(recs);
         if (!next) {
           emit({ phase: "drafting", status: "skipped", detail: "No keyword clear enough to write to yet." });
         } else {
@@ -162,6 +199,17 @@ export async function runOnboarding(
                   ` and ${research.peopleAlsoAsk.length} question${research.peopleAlsoAsk.length === 1 ? "" : "s"} people ask. Writing now.`,
               }),
           });
+          const entry = plan.find((p) => p.term === next.term);
+          if (entry) {
+            const { data: row } = await supabase
+              .from("calendar_entries")
+              .select("id")
+              .eq("workspace_id", workspace.id)
+              .eq("keyword_id", entry.keywordId)
+              .is("article_id", null)
+              .maybeSingle();
+            if (row?.id) await fulfilPlannedEntry(supabase, row.id as string, result.articleId);
+          }
           emit({
             phase: "drafting",
             status: "done",
