@@ -1,4 +1,4 @@
--- 059: what a paused site was doing before, and since when
+-- 061: what a paused site was doing before, and since when
 -- Depends on: 001_initial_schema (workspaces.status)
 -- Alongside:  053_workspace_roles adds `paused_until` for the account-wide
 --             pause on Billing (paused_until set = Billing paused it, with an
