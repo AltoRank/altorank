@@ -23,6 +23,7 @@ import { fetchSite } from "@/lib/audit/lenient-fetch";
 import { fetchInstantPage } from "@/lib/audit/onpage";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { discoverSite } from "./site-discovery";
+import { e2eStubsEnabled, stubReadSiteText } from "@/lib/e2e/stubs";
 
 export type SiteTextSource = "static" | "sitemap" | "rendered" | "none";
 
@@ -56,6 +57,8 @@ async function pageText(url: string): Promise<string> {
 }
 
 export async function readSiteText(domain: string, maxChars = 12_000): Promise<SiteText> {
+  // E2E_STUBS: fixture text, no fetch (lib/e2e/stubs.ts).
+  if (e2eStubsEnabled()) return stubReadSiteText(domain, maxChars);
   const done = (text: string, source: SiteTextSource): SiteText => ({ text: text.slice(0, maxChars), source, chars: text.length });
 
   // Discovery is needed by the next wizard screen anyway and is cheap, so it
