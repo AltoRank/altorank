@@ -35,9 +35,18 @@ import { scoreCitationReadiness } from "./aeo-scoring";
 import { auditArticle } from "./article-audit";
 import { extractLinks } from "./links";
 import { groupByPage, type RankedKeyword } from "./ranked-keywords";
+import { fetchInstantPage, type OnPageFacts } from "@/lib/audit/onpage";
+import { hasDataForSEOCredentials } from "./client";
 
 const UA =
   "Mozilla/5.0 (compatible; AltoRank-Auditor/1.0; +https://altorank.co; site audit)";
+
+/**
+ * Below this a fetched page has no readable body: almost always a shell whose
+ * content arrives from JavaScript. A genuinely thin page exists, but scoring
+ * one on fifty words says nothing either.
+ */
+const MIN_WORDS = 60;
 
 /** Bounds, so one site cannot become an hour of fetching. */
 export const DEFAULTS = {
@@ -90,6 +99,14 @@ export interface SitePage {
   schema_types: string[] | null;
   status: number;
   error: string | null;
+  /**
+   * Set when our own fetch read nothing and DataForSEO's browser was used
+   * instead. Those pages have facts but no scores: the API returns counts and
+   * checks, not markup, and the scorers need to see headings and anchors.
+   */
+  rendered_by?: "dataforseo" | null;
+  /** DataForSEO's own 0-100 score, only on a rendered page. */
+  onpage_score?: number | null;
 }
 
 export interface CrawlSummary {
@@ -319,6 +336,15 @@ export function classifyPageType(
 
 export interface PageContext {
   domain: string;
+  /**
+   * Pay for a browser when our own fetch returns nothing usable.
+   *
+   * Off by default and deliberately so: rendering costs $0.0051 a page
+   * against $0.00015 unrendered and nothing for a plain GET, so 204 pages
+   * would be $1.04 instead of free. It earns that only on a site we cannot
+   * read at all, where the alternative is an empty first look.
+   */
+  renderFallback?: boolean;
   /** Best-positioned ranked keyword per pathname, when the SERP told us. */
   rankedByPath?: Map<string, { keyword: string; position: number | null }>;
   timeoutMs?: number;
@@ -371,6 +397,15 @@ export async function crawlPage(url: string, ctx: PageContext): Promise<SitePage
   const main = extractMainContent(html);
   const body = main.html;
 
+  // A client-rendered page returns its shell: a valid 200 with no words in it.
+  // That is the one case worth paying a browser for, and only if the caller
+  // has opted in.
+  const words = body.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
+  if (words < MIN_WORDS && ctx.renderFallback && hasDataForSEOCredentials()) {
+    const rendered = await renderPage(url, path, ctx);
+    if (rendered) return rendered;
+  }
+
   const title = metaContent(html, ["og:title"]) ?? textOf(html, "title");
   const h1 = textOf(body, "h1") ?? textOf(html, "h1");
   const metaDescription = metaContent(html, ["description", "og:description"]);
@@ -390,7 +425,6 @@ export async function crawlPage(url: string, ctx: PageContext): Promise<SitePage
       : "heading";
 
   const links = extractLinks(body, ctx.domain);
-  const words = body.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
 
   // Scoring needs a keyword. With none, store the page as a link target and
   // leave the scores null rather than scoring against an empty string, which
@@ -542,4 +576,62 @@ async function loadRankedKeywords(
     if (best) out.set(path, { keyword: best.keyword, position: best.position });
   }
   return out;
+}
+
+/**
+ * Recover a page our own fetch could not read, through DataForSEO's browser.
+ *
+ * Returns facts and no scores, on purpose. `instant_pages` gives counts,
+ * headings and 52 checks but not markup, and the SEO and GEO scorers read
+ * markup: they need to see whether a table exists, whether a heading is a
+ * question, whether a figure sits in a paragraph that links its source.
+ * Deriving a score from what is available here would produce a number built
+ * on less evidence than every other number in the table, indistinguishable
+ * from them. `rendered_by` marks the row so nothing downstream mistakes one
+ * for the other.
+ */
+async function renderPage(
+  url: string,
+  path: string,
+  ctx: PageContext,
+): Promise<SitePage | null> {
+  let facts: OnPageFacts | null = null;
+  try {
+    facts = await fetchInstantPage(url, { javascript: true });
+  } catch (err) {
+    console.warn(`[site-crawl] render failed for ${url}:`, err instanceof Error ? err.message : err);
+    return null;
+  }
+  if (!facts || facts.statusCode >= 400) return null;
+
+  const h1 = facts.h1[0] ?? null;
+  return {
+    url,
+    path,
+    page_type: classifyPageType(path),
+    content_hash: null,
+    title: facts.title,
+    meta_description: facts.description,
+    h1,
+    word_count: facts.wordCount,
+    // A keyword still costs nothing to infer, and makes the page a link
+    // target. What it does not get is a score against that keyword.
+    keyword: keywordForPage(path, h1, ctx.domain),
+    keyword_source: "heading",
+    position: ctx.rankedByPath?.get(path)?.position ?? null,
+    seo_score: null,
+    seo_checks: null,
+    aeo_score: null,
+    aeo_checks: null,
+    audit: null,
+    internal_links: facts.internalLinks,
+    external_links: facts.externalLinks,
+    published_at: null,
+    modified_at: null,
+    schema_types: null,
+    status: facts.statusCode,
+    error: null,
+    rendered_by: "dataforseo",
+    onpage_score: facts.onPageScore,
+  };
 }

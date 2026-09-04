@@ -204,3 +204,40 @@ describe("classifyPageType", () => {
     }
   });
 });
+
+describe("crawlPage — the render fallback", () => {
+  const domain = "x.co";
+  // A client-rendered page: a valid 200 whose body has nothing in it.
+  const SHELL = '<html><head><title>App</title></head><body><main><div id="root"></div></main></body></html>';
+
+  const serveShell = () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(SHELL, { status: 200, headers: { "content-type": "text/html" } })) as typeof fetch;
+    return () => { globalThis.fetch = original; };
+  };
+
+  it("does not pay for a browser unless the caller opted in", async () => {
+    // The default must stay free. 204 pages rendered is $1.04; fetched, nothing.
+    const restore = serveShell();
+    try {
+      const p = await crawlPage("https://x.co/blog/spa", { domain });
+      expect(p.rendered_by).toBeUndefined();
+      expect(p.status).toBe(200);
+    } finally { restore(); }
+  });
+
+  it("leaves a page our own fetch could read alone", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        `<html><head><title>T</title></head><body><main><h1>Real</h1><p>${"word ".repeat(200)}</p></main></body></html>`,
+        { status: 200, headers: { "content-type": "text/html" } },
+      )) as typeof fetch;
+    try {
+      const p = await crawlPage("https://x.co/blog/real", { domain, renderFallback: true });
+      expect(p.rendered_by).toBeUndefined();
+      expect(p.seo_score).not.toBeNull();
+    } finally { globalThis.fetch = original; }
+  });
+});
