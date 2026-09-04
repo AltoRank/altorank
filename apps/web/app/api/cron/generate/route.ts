@@ -216,6 +216,9 @@ export async function GET(request: Request) {
         supabase,
         workspaceId,
         keyword: next.term,
+        // The planned entry names its keyword row, and that row carries the
+        // owner's brief: instructions, answers, shape, length.
+        keywordId: planned ? (due?.keywordId ?? next.keywordId) : next.keywordId,
         autonomous: true,
         // Explicitly nobody, matching the getQuota call above. Without this the
         // gate inside generateArticle resolves its own answer and can reach a

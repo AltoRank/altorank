@@ -1,6 +1,7 @@
 import type { ArticlePrompt } from "./types";
 import type { ArticleResearch } from "@/lib/seo/research";
 import { INTENT_GUIDANCE } from "@/lib/seo/intent";
+import { LENGTH_BANDS, TAXONOMY_LABELS, targetWordCountFor } from "@/lib/keywords/taxonomy";
 
 // ---------------------------------------------------------------------------
 // Build the system prompt sent to the AI model for article generation.
@@ -171,9 +172,16 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     research,
   } = prompt;
 
-  // An explicit target wins; otherwise use the length derived from what ranks.
+  // An explicit target wins; then the owner's length band for this keyword;
+  // otherwise the length derived from what ranks.
+  const band =
+    prompt.brief?.expectedLength && prompt.brief.expectedLength !== "auto" && prompt.brief.expectedLength in LENGTH_BANDS
+      ? LENGTH_BANDS[prompt.brief.expectedLength as keyof typeof LENGTH_BANDS]
+      : null;
   const targetWordCount =
-    prompt.targetWordCount ?? research?.recommendedWordCount ?? 1500;
+    prompt.targetWordCount ??
+    targetWordCountFor(prompt.brief?.expectedLength, research?.recommendedWordCount) ??
+    1500;
 
   const sections: string[] = [];
 
@@ -214,13 +222,58 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
 
   // --- Length -----------------------------------------------------------------
   sections.push(
-    `Target approximately ${targetWordCount} words. ` +
-      (research
-        ? `This length is derived from the live SERP: ${research.wordCountBasis}. `
-        : "") +
+    (band && !prompt.targetWordCount
+      ? `Write between ${band.min} and ${band.max} words: the site owner chose this length for this article. `
+      : `Target approximately ${targetWordCount} words. ` +
+        (research
+          ? `This length is derived from the live SERP: ${research.wordCountBasis}. `
+          : "")) +
       `Ensure the content is thorough and provides genuine value to the reader. ` +
       `Do not pad to reach the target: stop when the topic is covered.`
   );
+
+  // --- The owner's brief -----------------------------------------------------
+  // Before the research, because it outranks it: the SERP says what readers
+  // expect, the owner says what this business has actually done. Answers are
+  // quoted rather than summarised so the model has the exact words to use,
+  // and the boundary is stated twice because the failure mode - a plausible
+  // extra anecdote in the owner's voice - is exactly the kind of thing that
+  // reads well and is false.
+  if (prompt.brief) {
+    const b = prompt.brief;
+    const lines: string[] = [];
+    const label = b.articleSubtype && b.articleSubtype in TAXONOMY_LABELS
+      ? TAXONOMY_LABELS[b.articleSubtype as keyof typeof TAXONOMY_LABELS]
+      : b.articleType === "listicle"
+        ? "List"
+        : b.articleType === "guide"
+          ? "Guide"
+          : null;
+    if (label) {
+      lines.push(
+        `- Article shape: ${label}. ` +
+          (b.articleType === "listicle"
+            ? "Structure the body as a ranked or grouped list of distinct items, one H2 per item, each with what it is, who it suits and one concrete detail."
+            : b.articleSubtype === "howTo"
+              ? "Structure the body as numbered steps a reader can follow in order, each with the expected result."
+              : b.articleSubtype === "comparison"
+                ? "Set the options against each other on the same criteria, in a table, and end with a recommendation that names who should pick which."
+                : "Lead with the direct answer, then the detail a reader needs to act on it."),
+      );
+    }
+    if (b.instructions?.trim()) lines.push(`- Instructions for this article: ${b.instructions.trim()}`);
+    if (b.answers.length) {
+      lines.push(
+        "- First-hand experience, in the owner's own words. Use it as the article's",
+        "  evidence, attributed to the site (\"we\", \"our team\", or the business name),",
+        "  and quote or closely paraphrase it. Use ONLY what is written here as the",
+        "  owner's experience: do not invent further examples, results, tools, clients",
+        "  or anecdotes in their voice, and do not extend an answer beyond what it says.",
+        ...b.answers.flatMap((a) => [`  Q: ${a.question.trim()}`, `  A: ${a.answer.trim()}`]),
+      );
+    }
+    if (lines.length) sections.push(["WHAT THE SITE OWNER TOLD US:", ...lines].join("\n"));
+  }
 
   // --- Research --------------------------------------------------------------
   // Placed before the format and SEO rules so the model has the subject matter
