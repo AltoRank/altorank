@@ -53,3 +53,29 @@ describe("withInstructions", () => {
     expect(withInstructions("  UK only  ", "PROMPT")).toBe("KEYWORD INSTRUCTIONS FROM THE SITE OWNER (follow these first):\nUK only\n\nPROMPT");
   });
 });
+
+import { languageCodeOf } from "../pipeline";
+
+describe("languageCodeOf", () => {
+  it("accepts a locale key, a code, or the label a wizard stored, and defaults to en", () => {
+    expect(languageCodeOf("it")).toBe("it");
+    expect(languageCodeOf("en-gb")).toBe("en");
+    expect(languageCodeOf("English")).toBe("en");
+    expect(languageCodeOf("Italian")).toBe("it");
+    expect(languageCodeOf("zh-CN")).toBe("zh-CN");
+    expect(languageCodeOf(null)).toBe("en");
+    expect(languageCodeOf("klingon")).toBe("en");
+  });
+});
+
+import { isBranded } from "../pipeline";
+
+describe("isBranded", () => {
+  it("catches the competitor's name in any spacing, leaves generic terms alone", () => {
+    expect(isBranded("uipath stock", "uipath")).toBe(true);
+    expect(isBranded("ui path alternatives", "uipath")).toBe(true);
+    expect(isBranded("cal.com vs calendly", "cal.com")).toBe(true);
+    expect(isBranded("rpa software", "uipath")).toBe(false);
+    expect(isBranded("anything", "ai")).toBe(false);
+  });
+});

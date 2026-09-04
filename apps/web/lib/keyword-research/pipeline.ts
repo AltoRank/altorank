@@ -21,7 +21,9 @@ import { fetchRankedKeywords } from "@/lib/seo/ranked-keywords";
 import { discoverKeywordsFromSeeds } from "@/lib/seo/keywords";
 import { classifyIntent } from "@/lib/seo/intent";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
+import { LOCALES } from "@/lib/seo/locales";
 import { applyFunnel, MIN_VOLUME, type ExistingKeyword } from "./funnel";
+import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { fetchTermMetrics, type TermMetrics } from "./metrics";
 import { withInstructions } from "./instructions";
 import { buildPlaybookSeeds, competitorName, PLAYBOOKS, type PlaybookId } from "./seeds";
@@ -45,6 +47,8 @@ export interface ResearchOptions {
 const MAX_COMPETITORS = 5;
 const PER_COMPETITOR = 40;
 const MAX_SEEDS = 12;
+/** keyword_suggestions is one paid call per seed, so expansion is bounded. */
+const EXPAND_SEEDS = 4;
 
 export const GENERATE_DEFAULT = 5;
 export const GENERATE_MAX = 30;
@@ -117,7 +121,8 @@ const SEED_PROMPT = [
   "",
   "Rules:",
   "- Each seed is a phrase a person in one of the AUDIENCES would type into Google while looking for what this business sells.",
-  "- 2 to 5 words. Lower case. No brand names, no punctuation, no question marks.",
+  "- 2 to 4 words. Lower case. No brand names, no punctuation, no question marks.",
+  "- Prefer the short head of a topic that many people search (\"venture building\", \"corporate innovation program\") over a precise long tail nobody types.",
   "- Mix informational (how to, what is), commercial (best, tools, software) and comparison shapes.",
   "- Specific beats broad: \"warehouse slotting software\" not \"software\".",
   "- Never repeat a phrase or a trivial re-ordering of one.",
@@ -234,13 +239,31 @@ export async function researchGenerate(
       );
       let found = 0;
       let failed = 0;
+      let branded = 0;
+      let suspect = 0;
+      const failures: string[] = [];
       results.forEach((r, i) => {
         if (r.status !== "fulfilled") {
           failed++;
+          failures.push(r.reason instanceof Error ? r.reason.message : String(r.reason));
           return;
         }
+        const name = competitorName(domains[i]);
         for (const k of r.value) {
           found++;
+          // What a competitor ranks for includes its own name: the first live
+          // run led with "uipath stock" and "uipath alternatives". Those are
+          // searches FOR the competitor, and a rival cannot win them with an
+          // article. The Alternatives and Vs playbooks cover the comparison
+          // angle deliberately; here the brand is noise.
+          if (isBranded(k.keyword, name)) {
+            branded++;
+            continue;
+          }
+          if (assessKeywordQuality(k.keyword, new Set()).quality === "suspect") {
+            suspect++;
+            continue;
+          }
           // Difficulty 0 with real volume is "not computed" (see metrics.ts).
           const difficulty = k.difficulty === 0 && (k.volume ?? 0) >= 1000 ? null : k.difficulty;
           raw.push({
@@ -255,7 +278,11 @@ export async function researchGenerate(
           });
         }
       });
-      trace.push(`Researched ${domains.length} competitor${domains.length === 1 ? "" : "s"} → ${found} candidates${failed ? ` (${failed} could not be read)` : ""}`);
+      const drops = [branded ? `${branded} about the competitor's own brand` : "", suspect ? `${suspect} provider fragments` : ""].filter(Boolean);
+      trace.push(`Researched ${domains.length} competitor${domains.length === 1 ? "" : "s"} → ${found} candidates${drops.length ? ` (dropped ${drops.join(", ")})` : ""}${failed ? ` (${failed} could not be read)` : ""}`);
+      // The reason, not just the count: "could not be read" hid a malformed
+      // language_code for a whole run on the first live test.
+      if (failures.length) notes.push(`Competitor lookup failed: ${failures[0].length > 160 ? `${failures[0].slice(0, 157)}...` : failures[0]}`);
     }
   }
 
@@ -267,10 +294,41 @@ export async function researchGenerate(
       const { seeds, note } = await generateAudienceSeeds(ws, audiences, count, opts.instructions);
       if (note) notes.push(note);
       if (seeds.length) {
-        const looked = await lookupPhrases(seeds, () => `audience: ${audiences.length === 1 ? audiences[0] : "seed phrase"}`, ws);
+        const origin = `audience: ${audiences.length === 1 ? audiences[0] : "seed phrase"}`;
+        const looked = await lookupPhrases(seeds, () => origin, ws);
         const withData = looked.filter((c) => c.volume !== null).length;
         raw.push(...looked);
         trace.push(`Proposed ${seeds.length} seed phrases for ${audiences.length} audience${audiences.length === 1 ? "" : "s"} → ${withData} had search data`);
+        // A model's exact phrasing is rarely the phrasing people search: the
+        // first live run proposed ten seeds and the index knew none of them.
+        // Expand the seeds into real queries that contain them; one call per
+        // seed, bounded, and only when the exact lookups fell short.
+        if (withData < count) {
+          const expanded = await discoverKeywordsFromSeeds(seeds, {
+            languageCode: ws.languageCode,
+            locationCode: ws.locationCode,
+            limit: Math.max(20, count * 4),
+            maxSeeds: EXPAND_SEEDS,
+            minVolume: MIN_VOLUME,
+          }).catch((err: unknown) => {
+            notes.push(`Seed expansion failed: ${err instanceof Error ? err.message : String(err)}`);
+            return [];
+          });
+          for (const k of expanded) {
+            if (assessKeywordQuality(k.keyword, new Set()).quality === "suspect") continue;
+            raw.push({
+              term: k.keyword,
+              volume: k.volume > 0 ? k.volume : null,
+              difficulty: k.difficulty === 0 && k.volume >= 1000 ? null : k.difficulty,
+              cpc: k.cpc > 0 ? k.cpc : null,
+              intent: k.intent,
+              origin: "audience: expanded from a seed phrase",
+              existingId: null,
+              existingStatus: null,
+            });
+          }
+          trace.push(`Expanded ${Math.min(EXPAND_SEEDS, seeds.length)} seeds into real queries → ${expanded.length} candidates`);
+        }
       }
     }
   }
@@ -404,6 +462,14 @@ export async function researchImport(
 // Shared bits
 // ---------------------------------------------------------------------------
 
+/** Does the term name the competitor? "uipath stock" does; "rpa software" does not. */
+export function isBranded(term: string, competitor: string): boolean {
+  const t = term.toLowerCase();
+  const name = competitor.toLowerCase().replace(/\.[a-z]+$/, "");
+  if (!name || name.length < 3) return false;
+  return t.includes(name) || t.replace(/\s+/g, "").includes(name.replace(/\s+/g, ""));
+}
+
 export function emptyFunnel(): ResearchResult["funnel"] {
   return { found: 0, skippedNoData: 0, skippedLowVolume: 0, skippedExisting: 0, proposed: 0 };
 }
@@ -427,6 +493,20 @@ function nothingNote(f: ResearchResult["funnel"], notes: string[]): string {
   return `Found ${f.found}, but none to propose: ${reasons.join(", ")}.${notes.length ? ` ${notes.join(" ")}` : ""}`;
 }
 
+/**
+ * `workspaces.language` should hold a locale key ("en", "it"), but the
+ * Supalabs row holds the label "English", and DataForSEO answers a label with
+ * 40501 Invalid Field. Accept a key, a language code or a label; fall back to
+ * English rather than fail the run.
+ */
+export function languageCodeOf(raw: string | null | undefined): string {
+  const v = (raw ?? "").trim().toLowerCase();
+  if (!v) return "en";
+  if (LOCALES[v]) return LOCALES[v].languageCode;
+  const hit = Object.values(LOCALES).find((e) => e.label.toLowerCase() === v || e.languageCode.toLowerCase() === v);
+  return hit?.languageCode ?? "en";
+}
+
 /** Read the workspace as the pipeline needs it, or null when it is not on this account. */
 export async function loadResearchWorkspace(supabase: SupabaseClient, workspaceId: string): Promise<ResearchWorkspace | null> {
   const { data } = await supabase
@@ -440,7 +520,7 @@ export async function loadResearchWorkspace(supabase: SupabaseClient, workspaceI
     id: data.id as string,
     name: (data.name as string) ?? "",
     domain: (data.domain as string) ?? "",
-    languageCode: ((data.language as string | null) ?? "en").split("-")[0],
+    languageCode: languageCodeOf(data.language as string | null),
     locationCode: (data.location_code as number | null) ?? 2840,
     profile: {
       name: profile?.name ?? (data.name as string) ?? "",
