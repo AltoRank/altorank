@@ -339,7 +339,7 @@ export async function generateArticle(
     // different sets (the prompt any sibling with content, the resolver only
     // live rows), so the writer linked to drafts and every placeholder came
     // back unresolved. One list, two readers, no disagreement.
-    const linkTargets = await fetchLinkTargets(supabase, workspaceId, article.id);
+    const linkTargets = await fetchLinkTargets(supabase, workspaceId, article.id, { keyword });
 
     const generator = provider.streamArticle({
       keyword,

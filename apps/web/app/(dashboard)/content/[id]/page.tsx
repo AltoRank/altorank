@@ -34,7 +34,7 @@ export default async function ArticleEditorPage({ params }: Props) {
   // after the other they cost three round trips on the route the editor lives
   // behind; the article and workspace lookups above genuinely are a chain,
   // since each supplies the next one's id.
-  const [cadence, needsPlan, destinations, integrations, linkable] = await Promise.all([
+  const [cadence, needsPlan, destinations, integrations, linkable, outputRow] = await Promise.all([
     getPublishingCadence(workspace.id),
     needsPlanToShip(supabase, workspace.agency_id),
     // The connected CMSs decide whether the editor offers a Publish button.
@@ -47,7 +47,14 @@ export default async function ArticleEditorPage({ params }: Props) {
     // internal links" on a site with nothing live says so, rather than failing
     // the draft for a link that could not exist. The same function feeds the
     // generator's prompt and resolver, so all three agree on what a target is.
-    fetchLinkTargets(supabase, workspace.id, article.id),
+    fetchLinkTargets(supabase, workspace.id, article.id, { keyword: article.keyword }),
+    // How many internal links this site asked for per article, so the editor
+    // can say whether the draft has them.
+    supabase
+      .from("workspace_output_settings")
+      .select("internal_links")
+      .eq("workspace_id", workspace.id)
+      .maybeSingle(),
   ]);
 
   const dateStr = article.updated_at
@@ -80,6 +87,8 @@ export default async function ArticleEditorPage({ params }: Props) {
         destinations={destinations}
         integrations={integrations}
         linkableArticles={linkable.length}
+        linkTargets={linkable}
+        internalLinksWanted={(outputRow.data?.internal_links as number | undefined) ?? null}
       />
     </>
   );
