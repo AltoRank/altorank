@@ -29,7 +29,6 @@ import { generateImage } from "@/lib/ai/image-generator";
 import { uploadImageBuffer } from "@/lib/storage/images";
 import { fetchLinkTargets, resolveInternalLinks } from "@/lib/seo/link-resolver";
 import { verifyOutboundLinks, type LinkCheck } from "@/lib/seo/link-check";
-import { enrichArticle } from "@/lib/content/enrich";
 import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research";
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
@@ -402,7 +401,11 @@ export async function generateArticle(
     // closing pointer to the site, FAQ schema. One call; the steps, their
     // settings lookup and their fallbacks live in lib/content/enrich. The
     // report rides on `research.enrichment`, which is saved below as-is.
+    // Imported here rather than at the top: the pipeline pulls in the image,
+    // video and audit modules, and the quota-gate tests import this file
+    // under a five-second budget they were already close to.
     await enhance("body enrichment", async (html) => {
+      const { enrichArticle } = await import("@/lib/content/enrich");
       const enriched = await enrichArticle(html, {
         supabase,
         workspaceId,
