@@ -19,10 +19,20 @@ export type PageSpeedOutcome =
 const ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
 
 /**
- * Lighthouse can take a while on a slow site, and the default fetch timeout is
- * no timeout at all, which would let one bad URL hold a crawl open indefinitely.
+ * Lighthouse runs on Google's machines, and the default fetch timeout is no
+ * timeout at all, which would let one bad URL hold a crawl open indefinitely.
+ *
+ * 60s per attempt, twice, rather than 90s once. Measured against fitsuite.co
+ * on 2026-09-04: mobile answered in 32s and desktop in 23s, yet the same URL
+ * had timed out at 90s inside an analysis run twenty minutes earlier. So the
+ * call is not slow, it is occasionally queued - which a longer wait does not
+ * fix and a second attempt does. Two 60s attempts also bound the worst case
+ * below the single 90s one plus its retry, which matters because the analyze
+ * cron has 300s for every layer and PageSpeed was eating 80% of it on the run
+ * that failed.
  */
-const TIMEOUT_MS = 90_000;
+const TIMEOUT_MS = 60_000;
+const ATTEMPTS = 2;
 
 function extract(lighthouse: {
   categories?: { performance?: { score?: number | null } };
@@ -64,11 +74,39 @@ export async function fetchPageSpeedDetailed(
     ...(apiKey ? { key: apiKey } : {}),
   });
 
+  let lastTransient: PageSpeedOutcome | null = null;
+
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    const outcome = await attemptOnce(`${ENDPOINT}?${params}`, apiKey, attempt);
+    if (outcome.ok || !outcome.transient) return strip(outcome);
+    lastTransient = strip(outcome);
+  }
+
+  return lastTransient!;
+}
+
+/** Drop the internal `transient` flag before the outcome leaves this module. */
+function strip(o: Attempt): PageSpeedOutcome {
+  if (o.ok) return { ok: true, result: o.result };
+  return { ok: false, kind: o.kind, detail: o.detail };
+}
+
+/**
+ * One request. `transient` marks the failures worth trying again - a timeout
+ * or a 5xx from Google - as opposed to a rejected key or a page Lighthouse
+ * genuinely cannot load, where a second identical request wastes 60 seconds
+ * to produce the same answer.
+ */
+type Attempt =
+  | { ok: true; result: PageSpeedResult; transient?: false }
+  | { ok: false; kind: "unavailable" | "failed"; detail: string; transient: boolean };
+
+async function attemptOnce(url: string, apiKey: string | undefined, attempt: number): Promise<Attempt> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    const res = await fetch(`${ENDPOINT}?${params}`, { signal: controller.signal });
+    const res = await fetch(url, { signal: controller.signal });
 
     if (!res.ok) {
       // Google returns a structured error; its message names the actual cause.
@@ -87,6 +125,8 @@ export async function fetchPageSpeedDetailed(
           detail: apiKey
             ? `PageSpeed quota exhausted: ${message}`
             : "PageSpeed rate limit hit; set PAGESPEED_API_KEY to raise it",
+          // A quota does not refill in the second it takes to ask again.
+          transient: false,
         };
       }
       if (res.status === 400 || res.status === 403) {
@@ -94,14 +134,20 @@ export async function fetchPageSpeedDetailed(
           ok: false,
           kind: "unavailable",
           detail: `PageSpeed rejected the request: ${message}`,
+          transient: false,
         };
       }
-      return { ok: false, kind: "failed", detail: message };
+      return { ok: false, kind: "failed", detail: message, transient: res.status >= 500 };
     }
 
     const data = (await res.json()) as { lighthouseResult?: Parameters<typeof extract>[0] };
     if (!data.lighthouseResult) {
-      return { ok: false, kind: "failed", detail: "PageSpeed returned no Lighthouse result" };
+      return {
+        ok: false,
+        kind: "failed",
+        detail: "PageSpeed returned no Lighthouse result",
+        transient: false,
+      };
     }
 
     return { ok: true, result: extract(data.lighthouseResult) };
@@ -110,13 +156,18 @@ export async function fetchPageSpeedDetailed(
       return {
         ok: false,
         kind: "failed",
-        detail: `PageSpeed timed out after ${TIMEOUT_MS / 1000}s`,
+        detail:
+          attempt >= ATTEMPTS
+            ? `PageSpeed timed out after ${TIMEOUT_MS / 1000}s, twice`
+            : `PageSpeed timed out after ${TIMEOUT_MS / 1000}s`,
+        transient: true,
       };
     }
     return {
       ok: false,
       kind: "failed",
       detail: err instanceof Error ? err.message : "PageSpeed request failed",
+      transient: true,
     };
   } finally {
     clearTimeout(timer);
