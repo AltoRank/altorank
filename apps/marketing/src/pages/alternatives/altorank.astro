@@ -72,7 +72,7 @@ const FAQ = [
   },
   {
     question: `How does ${APP_NAME} pricing compare?`,
-    answer: `Self-hosted is €0. The managed plans are on the pricing page and include model and data costs. The tools on this page start between roughly $49 and €399 a month depending on the tier and the site count; each head-to-head carries that tool's figure with the date it was read, because prices in this category move monthly.`,
+    answer: `Self-hosted is €0. The managed plans are on the pricing page and include model and data costs. Every tool on this page is priced differently and several are cheaper than us at the entry tier, so rather than quote a range here, each head-to-head carries that tool's own figure with the date it was read. Prices in this category move monthly; the date on the page is the one to trust.`,
   },
   {
     question: 'Who is behind AltoRank?',
@@ -82,8 +82,8 @@ const FAQ = [
 
 const structuredData = [
   buildArticleSchema({
-    title: `${APP_NAME} Alternatives (2026): An Honest Roundup`,
-    description: `The twelve tools people evaluate against ${APP_NAME}, what each is genuinely better at, and the four cases where ${APP_NAME} is the wrong choice.`,
+    title: `${APP_NAME} Alternatives: Twelve Tools, and When to Pick One Over Us`,
+    description: `The twelve tools people evaluate against ${APP_NAME}, what each is genuinely better at, and the four cases where ${APP_NAME} is the wrong choice. Written by us, about us.`,
     publishDate,
     dateModified,
     author: AUTHOR_NAME,
@@ -103,15 +103,15 @@ const structuredData = [
 ---
 
 <PSEO
-  title={`${APP_NAME} Alternatives (2026): An Honest Roundup`}
-  description={`The twelve tools people evaluate against ${APP_NAME}, what each is genuinely better at, and the four cases where ${APP_NAME} is the wrong choice. Written by us, about us.`}
+  title={`${APP_NAME} Alternatives: Twelve Tools, and When to Pick One Over Us`}
+  description={`The twelve tools people evaluate against ${APP_NAME}, what each is genuinely better at, and the four cases where ${APP_NAME} is the wrong choice. Written by us, about us — weigh it accordingly.`}
   breadcrumbs={breadcrumbs}
   structuredData={structuredData}
 >
   <section class="border-b border-line py-14 md:py-20">
     <div class="mx-auto max-w-[860px] px-5 sm:px-6 lg:px-8">
       <h1 class="mb-5 text-[clamp(28px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
-        {APP_NAME} alternatives, written by {APP_NAME}
+        Twelve {APP_NAME} alternatives, and when to pick one
       </h1>
 
       <p class="mb-6 text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
