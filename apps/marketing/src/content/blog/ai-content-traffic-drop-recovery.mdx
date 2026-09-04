@@ -1,0 +1,119 @@
+---
+title: "AI Content Traffic Drop: The Recovery Path the Data Actually Supports"
+description: "Your AI content lost its Google traffic. There is no manual action to appeal and no reconsideration request to file. Here is what the 2026 evidence shows about why it happened, and the recovery sequence that follows from it."
+publishDate: 2026-09-03
+author: "Mike Cecconello"
+category: "seo"
+tags: ["scaled content abuse", "google updates", "ai content", "editorial review", "traffic recovery"]
+featured: false
+draft: true
+faq:
+  - question: "Does Google penalize AI-generated content?"
+    answer: "No. Google's spam policies contain no rule against AI authorship. What they name is scaled content abuse, defined as generating many pages primarily to manipulate rankings rather than to help users, with AI listed as one way that happens. The distinction is not academic: it means the fix is not removing AI from your workflow, it is removing the pages that were published without anyone establishing they were worth publishing."
+  - question: "How do I know if my traffic drop was scaled content abuse and not a core update?"
+    answer: "Three signals point to scaled content suppression rather than a broad core update. First, the decline concentrates in a cohort of pages published in a short window rather than spreading across the site's history. Second, it lands off the published core update calendar. Third, impressions collapse faster than positions decay, because the pages are being dropped from the index rather than reranked. Check Search Console's Pages report for a rise in Crawled - currently not indexed across that cohort."
+  - question: "Will I get a manual action notice if I am hit?"
+    answer: "Usually not. Scaled content abuse is enforced algorithmically as well as manually, and algorithmic suppression generates no Search Console message. There is nothing to appeal and no reconsideration request to file, because there is no manual action on record. Your only signal is the traffic graph, and your only route back is changing what the system is measuring."
+  - question: "Should I delete all of my AI-generated pages?"
+    answer: "Not as a first move. Deletion is irreversible and it destroys the evidence you need to diagnose the problem. Segment the cohort by whether each page has any measurable demand, then consolidate the pages that address a real query into fewer, better ones and noindex the remainder while you work. Deleting a page that was actually earning impressions makes the recovery slower, not faster."
+  - question: "How long does recovery take?"
+    answer: "Longer than the damage took, and nobody can give you a reliable number. Algorithmic suppression lifts when the system re-evaluates the site, which depends on recrawl rates you do not control. Published recovery accounts commonly describe months rather than weeks. Treat any tool or agency quoting a specific recovery timeline as guessing."
+  - question: "Can I keep using AI to write content after a drop?"
+    answer: "Yes, and most sites that recover do. The variable the evidence points at is review, not authorship. The practical change is putting a person between generation and publication, so that nothing reaches the index until someone has confirmed it says something the reader could not already get elsewhere."
+---
+
+Your traffic fell off a cliff, you published a lot of AI-written pages before it happened, and Search Console shows no manual action to appeal. That combination is the most common AI content traffic drop recovery scenario of 2026, and the reason it feels unresolvable is that the enforcement is algorithmic: there is no notice, no reconsideration request, and no confirmation you were hit at all. What the evidence supports is narrower and more useful than the headlines suggest. Google does not penalise AI authorship, it suppresses pages published at scale without anyone establishing they were worth publishing, and the recovery path follows directly from that distinction.
+
+**This guide is not for you if** your drop coincides with a confirmed broad core update and spans your whole site history, or if you published fewer than a couple of dozen AI-assisted pages. Those are different problems with different fixes, and the diagnostic section below will tell you which one you have before you start deleting anything.
+
+## TL;DR
+
+- Google's spam policies contain **no rule against AI authorship**. The named violation is scaled content abuse: many pages generated primarily to manipulate rankings rather than help users.
+- Enforcement is frequently **algorithmic and silent**. No manual action means nothing to appeal, so recovery is rebuilding, not petitioning.
+- The best available public experiment shows a **sharply asymmetric outcome**: the same mass-published AI content that Google deindexed was cited heavily by Microsoft Copilot. "AI content does not work" is not what the data says.
+- The largest public dataset of affected sites is **correlational, on third-party estimates**, and its author says so plainly. Anyone quoting it as proof of causation is overselling it.
+- The operative variable across recovery accounts is **editorial review before publication**, not the removal of AI from the workflow.
+
+## What actually happened to your traffic
+
+Google's spam policies define scaled content abuse as pages "generated for the primary purpose of manipulating search rankings and not helping users." The list of examples that follows includes "using generative AI tools or other similar tools to generate many pages without adding value for users."
+
+Read that wording closely, because the whole recovery plan sits inside it. The policy does not describe a tool. It describes a *ratio*: pages produced against value added. A site with two hundred AI-assisted pages that each answer a real question is not described by that sentence. A site with two hundred AI-assisted pages that restate what the top three results already said is described by it exactly, and would be equally described by it if a human had typed them.
+
+This is why "should we stop using AI" is the wrong first question. The systems are not measuring authorship, because they cannot reliably detect it. They are measuring what the pages do for the person who lands on them.
+
+## The evidence, and what it does not say
+
+Two public datasets are worth your time. Both are more qualified than the summaries circulating about them.
+
+**Lily Ray's May 2026 analysis** tracked more than 220 websites, drawn from the customer case studies that over a dozen AI content platforms publish about themselves. Of those sites, 54% had lost 30% or more of their peak organic traffic, 39% had lost 50% or more, and 22% had lost 75% or more. The measurement rests on Ahrefs organic traffic and page-count time series, corroborated against the Sistrix Visibility Index.
+
+Read the sample before you read the number. These are not randomly chosen sites: they are the ones AI content vendors selected as their own success stories, which is a population already skewed toward aggressive publication. Ray is explicit that the finding is correlational — "I am not asserting that any AI content tool directly caused any traffic outcome described in this piece" — and lists algorithmic changes, the operators' own site changes, competitive dynamics, acquisitions and seasonality among the alternatives. Her conclusion is the useful part: "The tools themselves are not the problem, but the implementation can be."
+
+That is strong evidence the pattern is dangerous. It is not evidence that a given number of AI pages produces a given amount of loss, and you should discount any page that presents it that way.
+
+**The Otterly experiment** is the more informative of the two, because it was constructed rather than observed. Two fresh domains in the same niche each received roughly 1,000 fully AI-generated posts published in under a day, running from April to late July 2026. One domain peaked at 2,426 daily Google impressions on 5 April and collapsed to 15 by 9 April. The second climbed to around 21,700 weekly impressions by mid-May before falling from 859 to 85 daily impressions across 25–26 June. Both were deindexed algorithmically, with no manual action issued.
+
+## The finding that complicates the story
+
+Here is the part that most recovery articles leave out, and the reason "AI content gets penalised" is too crude to plan around.
+
+While Google was deindexing those same domains, AI search surfaces were doing the opposite. Citations for the first domain went from 100 in April to 1,666 in the first 27 days of July, a rise that happened *while it was absent from Google*. Across both sites the experiment tracked 3,934 citations over seven platforms, with Microsoft Copilot accounting for 69% of them. Combined Bing impressions went from 3,882 in April to 119,935 in July. ChatGPT crawled the sites 5,332 times and cited them zero times.
+
+Three conclusions follow, and they matter for what you rebuild:
+
+1. **The surfaces disagree.** Optimising against a single system's tolerance is not a strategy, because the tolerances differ by an order of magnitude and change without notice.
+2. **Traffic and citation are different currencies.** A site can be commercially dead on Google and simultaneously feeding answers elsewhere. If you only watch sessions, you will misread your own recovery. Our guide to [answer engine optimisation](/blog/answer-engine-optimization) covers measuring the second surface.
+3. **Copilot's tolerance today is not a plan.** It is an artefact of one system's current retrieval behaviour, on a corpus that Google has already judged. Building on it is a bet that the least discriminating system stays that way.
+
+## Diagnose before you delete
+
+The most expensive mistake at this stage is bulk deletion, because it removes the evidence you need and cannot be undone. Establish which problem you have first.
+
+| Signal | Points to scaled content | Points to a core update | Points to something else |
+| --- | --- | --- | --- |
+| Timing of the drop | Off the published update calendar, often abrupt | Lands within a confirmed core update window | Tracks a migration, redesign or robots change |
+| Page distribution | Concentrated in one publication cohort | Spread across the site's full history | Concentrated by template or directory |
+| Impressions vs positions | Impressions collapse faster than positions decay | Positions slide, impressions follow | Both stable, clicks fall (SERP layout change) |
+| Search Console Pages report | Cohort moves to *Crawled – currently not indexed* | Pages stay indexed, rank lower | Coverage errors, redirect or canonical faults |
+| Manual actions | Empty | Empty | Sometimes populated |
+
+Export the affected URL cohort with its publication dates, then segment it by whether each page has ever recorded a non-zero impression count. That split is your working inventory for everything below.
+
+## The recovery sequence
+
+Order matters here. Each step is cheaper to reverse than the one after it.
+
+1. **Stop publishing into the hole.** Any scheduled generation still running is adding to the cohort being measured. Pause it before anything else, and do not restart it until step 5 is in place.
+2. **Noindex, do not delete.** Apply `noindex` to the zero-impression segment. It leaves the pages recoverable, removes them from evaluation, and preserves your ability to diagnose.
+3. **Consolidate the survivors.** Pages with real impressions that overlap in intent should merge into single, better resources with 301s from the retired URLs. Ten thin pages on one topic competing with each other is both a cannibalisation problem and a scale signal.
+4. **Add what the page did not have.** For every page you keep, name the thing on it that the reader could not have got from the results above you: original measurement, first-hand testing, a named practitioner's judgement, a document nobody else assembled. If you cannot name it, the page is not a keeper, and no rewrite will change that.
+5. **Put a person between generation and publication.** This is the structural change, and it is the one the recovery accounts consistently share. Not a spot check, a gate: nothing enters the index that a named human has not approved. We wrote about how that workflow is structured in [approval-first SEO content](/approval-first-seo-content).
+6. **Re-request indexing selectively, then wait.** Submit the consolidated pages. Recrawl rates on a suppressed site are slow and outside your control, which is why nobody can honestly quote you a recovery date.
+
+## What "adding value" means operationally
+
+Google's wording is a policy sentence, not a spec. Translated into something you can check on a Friday afternoon, a page adds value when it contains at least one of:
+
+- **Original data** you collected, at any scale. Twenty tests you ran yourself outrank a citation of somebody else's thousand.
+- **First-hand experience** with a named person attached to it, expressed as judgement the reader cannot derive from the SERP.
+- **Synthesis with a position.** Assembling six scattered sources into one argued conclusion is genuine work. Restating each of them in turn is not.
+- **A resource that did not previously exist** in usable form: a calculator, a dataset, a template, a comparison somebody actually had to build.
+
+The failure mode of AI-assisted publishing is not bad prose. Modern models write cleanly. The failure mode is that a model asked to write about a topic will reliably produce the *consensus* of what has already been written about it, and consensus restated is precisely the thing Google's sentence describes. That gap does not close by editing the output. It closes by putting something into the input that was not on the internet already.
+
+## Which situation, which action
+
+| Your situation | First move | Do not |
+| --- | --- | --- |
+| Hundreds of AI pages, near-zero impressions across the cohort | Noindex the cohort, keep 10–20 with the strongest intent match, rebuild those with original input | Bulk delete. You lose the diagnostic trail and any residual equity |
+| Mixed cohort, some pages still earning | Segment by impressions, consolidate overlapping survivors, noindex the rest | Rewrite everything. Most of it should not exist at all |
+| Drop aligns with a confirmed core update, spread site-wide | Treat as a quality and intent problem across the whole site, not a scaled-content problem | Apply this guide. It is the wrong diagnosis |
+| Traffic dead on Google, citations rising elsewhere | Track both surfaces separately, but rebuild for the stricter one | Conclude you are fine. You are dependent on one system's tolerance |
+| You need to keep publishing during recovery | Cut volume hard, add a named reviewer and an approval gate before anything ships | Restart the scheduler and hope the last drop was the algorithm's mistake |
+
+---
+
+AltoRank exists because of the distinction this article is built on. It researches, drafts, scores and fact-checks articles, and it has no path to publish one without a person approving it: the MCP server exposes no publish tool, and automated generation has no publishing counterpart. That is an architectural absence rather than a setting, which is why it is [checkable in the source](/open-source) rather than a promise in our copy. If you are rebuilding after a drop and you want the throughput without re-entering the same hole, the [pricing page](/pricing) has the three tiers, starting with self-hosting it free.
+
+**Sources:** [Google Search spam policies](https://developers.google.com/search/docs/essentials/spam-policies) · [Lily Ray, *It Works Until It Doesn't: AI Content Strategies That Backfire*](https://lilyraynyc.substack.com/p/it-works-until-it-doesnt-ai-content-risks) · [Otterly.ai, *The 2,000 AI Blogs Experiment*](https://otterly.ai/blog/geo-experiment-2000-ai-blogs-google-penalization/)

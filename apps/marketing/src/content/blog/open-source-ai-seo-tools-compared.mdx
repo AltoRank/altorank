@@ -1,0 +1,120 @@
+---
+title: "Open Source AI SEO Tools, Compared by What They Actually Publish"
+description: "Five open-source AI SEO projects, verified against the GitHub API on 3 September 2026: licence, maintenance status, and the question the listicles skip — which of them can actually publish an article to a CMS."
+publishDate: 2026-09-03
+dateModified: 2026-09-03
+author: "Mike Cecconello"
+category: "seo"
+tags: ["open source", "self-hosted", "comparison", "agpl", "seo tools"]
+featured: false
+draft: true
+faq:
+  - question: "What are the open source AI SEO tools available in 2026?"
+    answer: "Five projects are actively worth knowing. OpenSEO by every-app (MIT) is a research and analytics platform covering keyword research, rank tracking, backlinks and site audits. A separate, unrelated project also called openSEO, by Juliusolsson05, generates structured blog posts and publishes by webhook, though GitHub does not resolve its licence to a recognised identifier. BlogPilot (MIT) is a content studio that exports files rather than publishing. AltoRank (AGPL-3.0) generates articles and publishes to twelve destinations. TuxSEO (MIT) generated blog content but its repository is archived."
+  - question: "Which open source SEO tool can publish directly to WordPress or Shopify?"
+    answer: "Of the projects verified here, only AltoRank publishes directly to named content management systems, covering twelve destinations including WordPress, Shopify, Webflow, Ghost and Notion. Juliusolsson05's openSEO publishes by webhook, meaning it sends structured JSON to an endpoint you configure yourself. BlogPilot exports files such as WordPress WXR and Ghost JSON for manual import. Neither approach removes the manual step, which is the distinction most comparison listicles omit."
+  - question: "Is OpenSEO a competitor to AltoRank?"
+    answer: "No. They solve adjacent problems and can be run together. OpenSEO by every-app is a research and analytics platform that does not generate or publish content, and it exposes an MCP server so AI agents can query its data. AltoRank generates articles and publishes them. A reasonable stack uses OpenSEO for keyword and rank data and a content engine for production."
+  - question: "What is the difference between MIT and AGPL for an SEO tool?"
+    answer: "MIT permits anyone to take the code, modify it and run it as a closed commercial service without publishing changes. AGPL-3.0 requires that anyone offering the software as a network service makes their modified source available to users. For a self-hoster the practical difference is minimal, since both allow free use. The difference matters if a vendor forks the project to run a competing hosted product."
+  - question: "Do open source AI SEO tools still cost money to run?"
+    answer: "Yes, in almost every case. Keyword volume, difficulty and rank data come from paid APIs, most commonly DataForSEO, and article generation requires a model API key. OpenSEO and BlogPilot both operate on a bring-your-own-key basis. The saving is the platform margin rather than the underlying data and inference cost, which you pay directly at cost."
+  - question: "Which open source SEO project is the most established?"
+    answer: "By adoption, OpenSEO by every-app is far ahead of the rest. Verified against the GitHub API on 3 September 2026, it had 16,778 stars and 2,073 forks, with a commit that same day. Every other project compared here is below 100 stars. Star counts measure attention rather than quality, but a large, actively committed project carries lower abandonment risk, and one of the five compared here is already archived."
+---
+
+Most listicles about open source AI SEO tools compare features nobody checks. This one compares the thing that decides whether the software is useful on a Tuesday afternoon: whether it can put a finished article on your site without you copying and pasting. Five projects, every claim verified against the GitHub API on 3 September 2026, licences and maintenance status included. One of the five turns out to be archived, two of them share a name and are unrelated, and only one publishes to a named CMS.
+
+**This guide is not for you if** you want a hosted tool with a support contract, or if you are looking for an open-source replacement for Semrush's data. The data underneath all of these comes from the same paid APIs; open source changes who holds the margin, not whether the data costs money.
+
+**How this was verified.** Capability claims come from each project's own repository README and product page. Stars, forks, licence and last-commit dates come from the GitHub REST API, read on 3 September 2026, not from the projects' marketing pages. Figures are stamped with that date because star counts move.
+
+**Disclosure.** I maintain AltoRank, one of the five projects below. There are no affiliate links on this page. Where a competing project is better at something, the table says so, and the section headed "What AltoRank does not have" is there because a comparison written by a participant is worth nothing without it.
+
+## TL;DR
+
+- **Only one of the five publishes directly to named content management systems.** The rest export files or post JSON to a webhook you have to build.
+- **Two unrelated projects are both called openSEO.** One is a research platform, one is a content generator. Listicles routinely merge them into a single row.
+- **Approval before publishing is not a differentiator.** Two of the five ship it, and the mainstream commercial tools ship it too.
+- **TuxSEO is archived.** Its repository has had no commit since 26 May 2026.
+- **One project's licence does not resolve.** GitHub reports `NOASSERTION` for Juliusolsson05's openSEO, so check the terms yourself before commercial use.
+- **Adoption is wildly lopsided:** 16,778 stars for the leader, under 100 for everything else, and one star for AltoRank.
+
+## The five projects, verified
+
+| Project | Licence | Stars | Last commit | Research data | Generates articles | Publishes to a CMS |
+| --- | --- | --- | --- | --- | --- | --- |
+| [OpenSEO](https://github.com/every-app/open-seo) (every-app) | MIT | 16,778 | 3 Sep 2026 | Yes — keywords, ranks, backlinks, audits | No | No |
+| [openSEO](https://github.com/Juliusolsson05/openSEO) (Juliusolsson05) | **unresolved** (see below) | 3 | 30 Jun 2026 | No | Yes — structured, block-based | Webhook only |
+| [BlogPilot](https://github.com/IamRamgarhia/BlogPilot-Open-Source-AI-SEO-Content-Studio) | MIT | 19 | 15 Aug 2026 | Partial — research modules | Yes | No — file export only |
+| [TuxSEO](https://github.com/rasulkireev/TuxSEO) | MIT | 59 | 26 May 2026 (**archived**) | Keywords, gap analysis | Yes | Not verified |
+| [AltoRank](https://github.com/AltoRank/altorank) | AGPL-3.0 | 1 | active | Yes — via DataForSEO | Yes | **Yes — 12 destinations** |
+
+Stars, forks, licence and commit dates read from the GitHub REST API on 3 September 2026.
+
+## The two projects called openSEO are not the same project
+
+This is the single most common error in the listicles currently ranking for this topic, and it will waste an afternoon if you install the wrong one. Two active, unrelated projects use the name.
+
+**OpenSEO by every-app**, which runs the hosted product at openseo.so, is a research and analytics platform. It covers keyword research, rank tracking, backlink analysis, competitor insight, technical audits and AI visibility monitoring, and it exposes an MCP server so agents like Claude Code can query the data directly. It requires your own DataForSEO key. It does not write articles and it does not publish anything. It is MIT licensed, and at 16,778 stars and 2,073 forks it is by a wide margin the most adopted project in this comparison, created in February 2026 and committed to on the day this was written.
+
+**openSEO by Juliusolsson05** is a content engine. It generates blog posts as structured elements rather than a markdown blob, across 28-plus element types including FAQs, comparison tables and checklists, and it offers a block-by-block editor. It sits at 3 stars with no forks and 27 open issues, and its last commit was 30 June 2026. Its README is unusually straight about scope: publishing is webhook-only, and the agent and MCP integration is documented but not yet working code.
+
+Its licence needs care. GitHub's licence detection returns no recognised identifier for the repository — the API reports `NOASSERTION` — even though the project presents itself as GPL-3.0. That is not an accusation of anything; detection fails for ordinary reasons like a modified or non-standard licence file. It does mean that if you are putting this into a commercial workflow, read the licence terms in the repository directly rather than trusting a badge.
+
+If you are choosing between them you are not really choosing. One is a research tool, the other is a writing tool.
+
+## Which of them can actually publish
+
+Publishing is where the category quietly splits, and it is the difference between software that saves you an hour and software that saves you a step.
+
+**Direct CMS publishing** means the tool holds a credential for your site and creates the post itself. Among these five, only AltoRank does this, across twelve destinations: WordPress, Shopify, Webflow, Ghost, HubSpot, Magento, Notion, Wix, WooCommerce and Framer, plus git and webhook, which are publishing targets rather than content management systems.
+
+**Webhook publishing**, which is Juliusolsson05's openSEO, sends structured JSON to an endpoint. That is genuinely CMS-agnostic and it is also work: somebody has to write and host the receiver that turns that JSON into a post.
+
+**Export publishing**, which is BlogPilot, produces files — Markdown, HTML, JSON, WordPress WXR, Ghost JSON, Webflow CSV, Hugo TOML — that you then import. Broad format coverage, but the last step is still a human at a keyboard.
+
+None of these three is wrong. They are different amounts of remaining work, and the listicles that put a green tick in a "publishing" column for all of them are hiding that difference.
+
+## Where each project is the better choice
+
+**Choose OpenSEO by every-app** if what you actually need is data. It is the only project here that does rank tracking and backlink analysis, it is the most adopted by an enormous margin, and its MCP server makes it the natural data layer behind an agent workflow. If you already have a writing process, this is the piece you are missing. It is also the one project on this list I would recommend running alongside AltoRank rather than instead of it.
+
+**Choose BlogPilot** if you want breadth in one self-hosted install and do not mind importing. Twelve-plus model providers including a free Gemini tier, deterministic non-AI generators for scoring, schema and internal linking, and export formats covering most static site generators.
+
+**Choose Juliusolsson05's openSEO** if structured, block-level control over the draft matters more than delivery, and you are comfortable building a webhook receiver. Two caveats: the last commit was 30 June 2026, and the licence does not resolve.
+
+**Do not choose TuxSEO** for new work. MIT, Python and Django, 59 stars, and a repository that is archived with no commit since 26 May 2026. It is worth reading if you want the approach; it is not worth depending on.
+
+## Approval before publishing is not a differentiator
+
+AltoRank's positioning leans on an approval gate, so it is worth stating plainly that this is not a unique property, and anyone claiming otherwise in this category is drawing the comparison set to flatter themselves.
+
+Juliusolsson05's openSEO says it directly in its README: not fully autonomous, humans review and publish. Its block editor exists for exactly that. Outside open source, the mainstream commercial tools — Jasper, Frase, Writesonic — all hand you a draft and expect you to publish it. Draft-then-review is the category default. The tools that publish unreviewed by default are a specific subcategory, and comparing only against those makes an ordinary property look like an achievement.
+
+What is unusual about AltoRank's version is narrower and more boring: the gate is enforced in one place in the publish path rather than offered as a setting, and the MCP server exposes no publish tool at all, so an agent cannot route around it. That is a design choice you can verify by reading the source, which is the only reason it is worth mentioning at all.
+
+## What AltoRank does not have
+
+A comparison written by a participant needs this section to be worth reading.
+
+It has **one GitHub star**, against 16,778 for OpenSEO. It has **no paying customers and no case studies**, and nothing on the site carries a growth figure. There is **no packaged command-line tool** yet, only an MCP server. It does **no rank tracking or backlink analysis of the depth** OpenSEO offers, and it depends on DataForSEO for the keyword data it does have, so the research layer skips rather than fails when that key is absent. It is **AGPL-3.0**, which is more restrictive than the MIT of most projects here: fine for self-hosting, deliberately awkward for anyone wanting to fork it into a closed hosted competitor.
+
+If your decision rests on maturity or community, the honest answer is that OpenSEO wins and it is not close.
+
+## Which one, for which situation
+
+| Your situation | Project | Why |
+| --- | --- | --- |
+| Need keyword, rank and backlink data without a Semrush bill | OpenSEO (every-app) | The only one doing it, and by far the most maintained |
+| Need an article to appear on WordPress or Shopify with no manual step | AltoRank | The only one publishing to named CMSs |
+| Running a static site and happy to import files | BlogPilot | Widest export coverage, free model tier available |
+| Want block-level control and will build a receiver | openSEO (Juliusolsson05) | Structured generation, webhook delivery |
+| Want a research layer plus a publishing layer | OpenSEO + a content engine | They are complements, not alternatives |
+| Want a hosted product with support | None of these | Open source is the wrong aisle |
+
+---
+
+AltoRank is the AGPL-3.0 project in the table: keyword research, drafting, scoring and fact-checking, publishing to twelve destinations, in 35 locales, with the approval gate enforced in the publish path. Self-hosting is free and ungated — [the repository](/open-source) is the whole product, not a trimmed community edition. Hosted plans are on the [pricing page](/pricing) if you would rather not hold the API keys.
+
+**Sources:** GitHub REST API (stars, forks, licence, commit dates, read 3 September 2026) · [every-app/open-seo](https://github.com/every-app/open-seo) · [Juliusolsson05/openSEO](https://github.com/Juliusolsson05/openSEO) · [BlogPilot](https://github.com/IamRamgarhia/BlogPilot-Open-Source-AI-SEO-Content-Studio) · [rasulkireev/TuxSEO](https://github.com/rasulkireev/TuxSEO) · [openseo.so](https://openseo.so/)
