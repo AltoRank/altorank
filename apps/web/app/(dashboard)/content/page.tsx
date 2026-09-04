@@ -65,7 +65,7 @@ export default async function CalendarPage({ searchParams }: Props) {
     <>
       <PageHead
         title={`${monthLabel} plan`}
-        subtitle={<>{runningCount > 0 && <StatusPill status="run" label={`${runningCount} running now`} />}<span>{plural(filteredEntries.length, "article")} · {plural(workspaces.length, "workspace")}</span><DotSep /><span>{doneCount} published · {queuedCount} queued</span></>}
+        subtitle={<>{runningCount > 0 && <StatusPill status="run" label={`${runningCount} running now`} />}<span>{plural(filteredEntries.length, "article")}</span>{wsMap.get(scopeId ?? "")?.domain ? (<><DotSep /><span className="font-mono text-[11.5px]">{wsMap.get(scopeId ?? "")?.domain}</span></>) : null}<DotSep /><span>{doneCount} published · {queuedCount} queued</span></>}
         actions={
           <>
           </>
