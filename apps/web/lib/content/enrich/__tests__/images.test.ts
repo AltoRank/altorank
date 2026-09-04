@@ -12,6 +12,21 @@ describe("images: where they go", () => {
     for (let i = 1; i < points.length; i++) expect(points[i] - points[i - 1]).toBeGreaterThanOrEqual(2);
   });
 
+  it("never illustrates a summary, FAQ or takeaways section", () => {
+    const sections = [
+      { headingText: "Key takeaways", body: `<p>${LONG}</p>` },
+      { headingText: "How it works", body: `<p>${LONG}</p>` },
+      { headingText: "Frequently asked questions", body: `<p>${LONG}</p>` },
+    ];
+    expect(chooseInsertionPoints(sections, 3)).toEqual([1]);
+  });
+
+  it("uses the heading as caption when the first sentence introduces a list", async () => {
+    const html = `<h1>T</h1><p>i</p><h2>Stages</h2><p>The stages are as follows: ${LONG}</p>`;
+    const { html: out } = await addSectionImages(html, { produce: async () => "https://cdn.test/s.webp", max: 1 });
+    expect(out).toContain("<figcaption>Stages</figcaption>");
+  });
+
   it("skips short sections and sections that already carry a figure", () => {
     const sections = [
       { body: "<p>short</p>" },

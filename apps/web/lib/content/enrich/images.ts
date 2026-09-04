@@ -89,14 +89,26 @@ export const STYLE_PROMPT: Record<ImageStyle, string> = {
  * spread through the article and never adjacent. Sections already carrying a
  * figure, and short ones, are not candidates.
  */
+/**
+ * Sections that summarise or list rather than explain. An image drawn from
+ * "Key takeaways" or "FAQ" illustrates nothing in particular.
+ */
+const NOT_ILLUSTRATED =
+  /key takeaways?|summary|tl;?dr|conclusion|final thoughts|\bfaqs?\b|frequently asked|domande frequenti|preguntas frecuentes|references|sources|further reading/i;
+
 export function chooseInsertionPoints(
-  sections: { body: string }[],
+  sections: { body: string; headingText?: string }[],
   max: number,
   minSectionWords = 80,
 ): number[] {
   const candidates = sections
     .map((s, i) => ({ i, s }))
-    .filter(({ s }) => !/<(img|iframe|svg)\b/i.test(s.body) && wordCount(s.body) >= minSectionWords)
+    .filter(
+      ({ s }) =>
+        !/<(img|iframe|svg)\b/i.test(s.body) &&
+        !NOT_ILLUSTRATED.test(s.headingText ?? "") &&
+        wordCount(s.body) >= minSectionWords,
+    )
     .map(({ i }) => i);
   if (!candidates.length || max <= 0) return [];
   if (candidates.length <= max) {
@@ -157,8 +169,11 @@ export async function addSectionImages(
       // was drawn in. The caption is the section heading: a fact about where
       // the image sits, not a claim about what it depicts.
       const alt = `${labels.illustration[style]} ${section.headingText}`;
+      // A sentence that introduces a list ("...describe the fuller arc:") is
+      // not a caption; the heading is.
       const sentence = firstSentence(excerpt);
-      const caption = sentence && sentence.length <= 140 ? sentence : section.headingText;
+      const caption =
+        sentence && sentence.length <= 140 && /[.!?]$/.test(sentence) ? sentence : section.headingText;
       figures.set(i, renderImageFigure(url, alt, caption));
     } catch (err) {
       warnings.push(`image ${n + 1} failed: ${err instanceof Error ? err.message : String(err)}`);

@@ -360,8 +360,10 @@ function collectInline(
     }
 
     if (token.kind === "close") {
-      // Closing an inline mark
-      const markType = INLINE_MARK_MAP[token.tag];
+      // Closing an inline mark. `</a>` closes the link mark; without this the
+      // link ran to the end of the paragraph, so "Visit <a>site</a>." stored
+      // the full stop as a second link (seen in a generated CTA, 2026-09-04).
+      const markType = token.tag === "a" ? "link" : INLINE_MARK_MAP[token.tag];
       if (markType) {
         const idx = marks.findLastIndex((m) => m.type === markType);
         if (idx !== -1) marks.splice(idx, 1);

@@ -52,6 +52,16 @@ describe("htmlToTiptapJson — enrichment markup", () => {
   });
 });
 
+describe("htmlToTiptapJson — link marks end at </a>", () => {
+  it("does not carry the link mark onto the text after the anchor", () => {
+    const [p] = doc('<p>Visit <a href="https://x.test">here</a> now.</p>').content;
+    const [, link, after] = p.content!;
+    expect(link).toMatchObject({ text: "here", marks: [{ type: "link" }] });
+    expect(after.text).toBe(" now.");
+    expect((after as { marks?: unknown[] }).marks).toBeUndefined();
+  });
+});
+
 describe("tiptapToHtml — enrichment nodes", () => {
   it("round-trips an enriched fragment", () => {
     const html =

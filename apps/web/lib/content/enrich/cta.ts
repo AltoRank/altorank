@@ -10,7 +10,7 @@
 
 import { labelsFor } from "./labels";
 import { normaliseDomain } from "@/lib/seo/links";
-import { escapeHtml, escapeAttr } from "./html";
+import { escapeHtml, escapeAttr, slugify } from "./html";
 
 export interface CtaOptions {
   /** `workspace_output_settings.call_to_action`; defaults on. */
@@ -38,7 +38,7 @@ export function addCallToAction(html: string, opts: CtaOptions = {}): { html: st
 
   const section =
     `<section class="cta">` +
-    `<h2>${escapeHtml(labels.learnMore(name))}</h2>` +
+    `<h2 id="${slugify(labels.learnMore(name))}">${escapeHtml(labels.learnMore(name))}</h2>` +
     `<p>${escapeHtml(labels.publishedBy(name))} ${escapeHtml(labels.visit)} ` +
     `<a href="${escapeAttr(url)}">${escapeHtml(host)}</a>.</p>` +
     `</section>`;

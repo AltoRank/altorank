@@ -5,7 +5,7 @@ describe("cta", () => {
   it("appends a section with a heading, one sentence and a link to the domain", () => {
     const { html, added } = addCallToAction("<p>Body.</p>", { domain: "https://www.Example.com/", businessName: "Example Ltd" });
     expect(added).toBe(true);
-    expect(html).toContain('<section class="cta"><h2>Learn more about Example Ltd</h2>');
+    expect(html).toContain('<section class="cta"><h2 id="learn-more-about-example-ltd">Learn more about Example Ltd</h2>');
     expect(html).toContain('This article is published by Example Ltd. Visit <a href="https://example.com">example.com</a>.');
     expect(html.indexOf("<section")).toBeGreaterThan(html.indexOf("Body."));
   });
