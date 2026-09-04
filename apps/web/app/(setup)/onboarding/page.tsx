@@ -35,11 +35,22 @@ export default async function OnboardingPage() {
 
   if (!workspace) redirect("/workspaces");
 
+  // The destination grid is the integrations table, not a list in the
+  // component. A hardcoded grid drifts the moment a connector is added or
+  // removed - and it already had, silently omitting Git / static site, which
+  // is the one destination a Next.js, Astro or Hugo site can use.
+  const { data: destinations } = await supabase
+    .from("integrations")
+    .select("id, name, description")
+    .eq("tag", "CMS")
+    .order("name");
+
   return (
     <OnboardingWizard
       workspaceId={workspace.id}
       domain={workspace.domain ?? ""}
       initialProfile={(workspace.business_profile as BusinessProfile | null) ?? null}
+      destinations={destinations ?? []}
     />
   );
 }
