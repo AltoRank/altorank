@@ -49,7 +49,18 @@ export async function createArticle(formData: FormData) {
   revalidatePath("/articles");
 }
 
-export async function updateArticle(id: string, data: { content?: unknown; status?: string; title?: string; seo_score?: number }) {
+export async function updateArticle(
+  id: string,
+  data: {
+    content?: unknown;
+    status?: string;
+    title?: string;
+    seo_score?: number;
+    meta_description?: string | null;
+    featured_image_url?: string | null;
+    word_count?: number;
+  },
+) {
   await requireAuth();
   const supabase = await createClient();
   const { error } = await supabase

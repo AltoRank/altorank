@@ -63,10 +63,22 @@ const CONTENT_TYPE: Record<string, string> = {
   jpeg: "image/jpeg",
 };
 
+/**
+ * What the editor adds when it regenerates one image by hand. Both optional;
+ * the generator's own call passes neither.
+ */
+export interface ImageGuidance {
+  /** The paragraph the image sits beside, so an in-body image illustrates it. */
+  context?: string;
+  /** The person's own words for what they want changed. */
+  instruction?: string;
+}
+
 export async function generateImage(
   articleTitle: string,
   keyword: string,
   brandStyle?: Record<string, unknown>,
+  guidance?: ImageGuidance,
 ): Promise<ImageGenerationResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY not configured");
@@ -81,10 +93,16 @@ export async function generateImage(
   const prompt = [
     `Create a professional, visually striking featured image for a blog article titled "${articleTitle}".`,
     `The article is about "${keyword}".`,
+    guidance?.context?.trim()
+      ? `It illustrates this passage: "${guidance.context.trim().slice(0, 400)}".`
+      : "",
     `The image should be clean, modern, and suitable as a hero image on a professional website.`,
     `No text or watermarks in the image.`,
     styleHints,
     colorHints,
+    guidance?.instruction?.trim()
+      ? `Direction from the editor: ${guidance.instruction.trim().slice(0, 400)}.`
+      : "",
   ]
     .filter(Boolean)
     .join(" ");

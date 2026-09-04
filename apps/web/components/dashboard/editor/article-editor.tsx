@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, ReactNodeViewRenderer } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 // Without these the editor treats a stored table as an unknown node and drops
 // it on the next save, which would turn a rendering bug into data loss.
@@ -27,7 +27,25 @@ import { WhyPanel } from "@/components/dashboard/editor/why-panel";
 import { AuditPanel } from "@/components/dashboard/editor/audit-panel";
 import { TabRow } from "@/components/ui/tab-row";
 import { auditArticle } from "@/lib/seo/article-audit";
+import { ArticleImage } from "@/lib/editor/image-node";
+import { NO_CHANGES, pendingCount, pendingLabel, outlineOf, type PendingChanges } from "@/lib/editor/proposals";
+import { EditorAiContext, type EditorMode } from "@/components/dashboard/editor/editor-ai-context";
+import { MetaFields } from "@/components/dashboard/editor/meta-fields";
+import { FeaturedImage, ImageNodeView } from "@/components/dashboard/editor/image-tools";
+import { SelectionBar } from "@/components/dashboard/editor/selection-bar";
+import { LinkPopover } from "@/components/dashboard/editor/link-popover";
+import { RewritePanel } from "@/components/dashboard/editor/rewrite-panel";
+import { ExportMenu } from "@/components/dashboard/editor/export-menu";
 import type { Article, Workspace, PublishingCadence, Integration } from "@/lib/types";
+
+// The body's image node, drawn with the per-image toolbar. Defined once at
+// module level: a new extension object on every render would rebuild the
+// editor's schema each time.
+const ArticleImageWithTools = ArticleImage.extend({
+  addNodeView() {
+    return ReactNodeViewRenderer(ImageNodeView);
+  },
+});
 import type { ScoringCheck } from "@/lib/seo/scoring";
 
 type Props = {
@@ -95,7 +113,25 @@ export function ArticleEditor({
   // Generation now has phases before any text appears. Without this the button
   // reads "Generating…" through a SERP round trip with nothing on screen.
   const [phase, setPhase] = useState<"idle" | "researching" | "writing" | "checking">("idle");
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Review is read-only with the AI actions; Editor is direct editing. Both
+  // stage changes; neither writes. Save is the one commit, below.
+  const [mode, setMode] = useState<EditorMode>("review");
+  // The staged values of the fields outside the document. They start as what
+  // was loaded and diverge as proposals are accepted or, in Editor mode, typed.
+  const [title, setTitle] = useState(article.title);
+  const [meta, setMeta] = useState(article.meta_description ?? "");
+  const [featured, setFeatured] = useState<string | null>(article.featured_image_url);
+  const [pending, setPending] = useState<PendingChanges>(NO_CHANGES);
+  // The document as last saved (or as last applied), so "Discard edits" has
+  // something to return to and "Apply to article" can tell whether anything
+  // changed.
+  const snapshot = useRef<string>("");
+  // Typed since the snapshot. Kept as state (set from the update debounce)
+  // rather than read off the ref in render, so the header can show it.
+  const [dirty, setDirty] = useState(false);
+  const documentRef = useRef<HTMLDivElement>(null);
+  const bumpBody = useCallback(() => setPending((p) => ({ ...p, body: p.body + 1 })), []);
 
   // Which sidebar tab is showing. "draft" is everything that was here before:
   // why it exists, its scores, the fact check, research and publishing. "audit"
@@ -120,9 +156,12 @@ export function ArticleEditor({
       TableRow,
       TableHeader,
       TableCell,
+      ArticleImageWithTools,
       Placeholder.configure({ placeholder: "Start writing…" }),
     ],
     content: initialContent,
+    // Review mode first. Editor mode flips this on.
+    editable: false,
     // Required under the App Router. Without it Tiptap builds an editor during
     // the server render, throws "SSR has been detected", and React recovers by
     // discarding the server tree and re-rendering the whole route on the
@@ -136,35 +175,118 @@ export function ArticleEditor({
     },
     onCreate: ({ editor }) => {
       setDocHtml(editor.getHTML());
+      snapshot.current = JSON.stringify(editor.getJSON());
     },
     onUpdate: ({ editor }) => {
-      // The audit re-reads the document a beat after typing stops. Shorter
-      // than the save debounce because nothing is written; it only has to
-      // avoid serialising the whole document on every keystroke.
+      // The audit re-reads the document a beat after typing stops: short,
+      // because nothing is written; it only has to avoid serialising the whole
+      // document on every keystroke. There is no auto-save any more. Every
+      // change, typed or proposed, is staged until the Save button, which is
+      // the one place the article is written from this screen.
       if (auditTimer.current) clearTimeout(auditTimer.current);
-      auditTimer.current = setTimeout(() => setDocHtml(editor.getHTML()), 300);
-
-      // Debounced auto-save
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(async () => {
-        setSaving(true);
-        try {
-          const json = editor.getJSON();
-          const text = editor.getText();
-          const wordCount = text.split(/\s+/).filter(Boolean).length;
-          await updateArticle(article.id, {
-            content: json,
-            seo_score: article.seo_score,
-          });
-          // Could update word count too but that requires schema change
-        } catch {
-          // Silent fail on auto-save
-        } finally {
-          setSaving(false);
-        }
-      }, 2000);
+      auditTimer.current = setTimeout(() => {
+        setDocHtml(editor.getHTML());
+        setDirty(JSON.stringify(editor.getJSON()) !== snapshot.current);
+      }, 300);
     },
   });
+
+  useEffect(() => {
+    editor?.setEditable(mode === "editor");
+  }, [editor, mode]);
+
+  // Editor mode's two buttons. Apply keeps what was typed and counts it as
+  // one change; Discard returns to the snapshot. Neither writes.
+  const applyEdits = useCallback(() => {
+    if (!editor) return;
+    const now = JSON.stringify(editor.getJSON());
+    if (now === snapshot.current) {
+      toast.info("Nothing typed since the last apply.");
+      return;
+    }
+    snapshot.current = now;
+    setDirty(false);
+    bumpBody();
+    toast.success("Applied. Save to keep it.");
+  }, [editor, bumpBody]);
+  const discardEdits = useCallback(() => {
+    if (!editor || !snapshot.current) return;
+    editor.commands.setContent(JSON.parse(snapshot.current), { emitUpdate: false });
+    setDocHtml(editor.getHTML());
+    setDirty(false);
+  }, [editor]);
+
+  /** The whole-article rewrite, accepted: swap the body, count it once. */
+  const replaceBody = useCallback(
+    (html: string) => {
+      if (!editor) return;
+      editor.commands.setContent(html, { emitUpdate: false });
+      snapshot.current = JSON.stringify(editor.getJSON());
+      setDocHtml(editor.getHTML());
+      setDirty(false);
+      bumpBody();
+    },
+    [editor, bumpBody],
+  );
+
+  // Accepted proposals stage the field; typing in Editor mode does the same.
+  const stageTitle = useCallback(
+    (next: string) => {
+      setTitle(next);
+      setPending((p) => ({ ...p, title: next !== article.title }));
+    },
+    [article.title],
+  );
+  const stageMeta = useCallback(
+    (next: string) => {
+      setMeta(next);
+      setPending((p) => ({ ...p, meta: next !== (article.meta_description ?? "") }));
+    },
+    [article.meta_description],
+  );
+  const stageFeatured = useCallback(
+    (next: string | null) => {
+      setFeatured(next);
+      setPending((p) => ({ ...p, featuredImage: next !== article.featured_image_url }));
+    },
+    [article.featured_image_url],
+  );
+
+  // The one write. Typed edits not yet applied go too: a person who pressed
+  // Save meant what is on screen.
+  const handleSave = useCallback(async () => {
+    if (!editor) return;
+    setSaving(true);
+    try {
+      const json = editor.getJSON();
+      const wordCount = editor.getText().split(/\s+/).filter(Boolean).length;
+      await updateArticle(article.id, {
+        content: json,
+        title: title.trim() || article.title,
+        meta_description: meta.trim() || null,
+        featured_image_url: featured,
+        word_count: wordCount,
+      });
+      snapshot.current = JSON.stringify(json);
+      setPending(NO_CHANGES);
+      setDirty(false);
+      toast.success("Saved");
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setSaving(false);
+    }
+  }, [editor, article.id, article.title, title, meta, featured, router]);
+
+  const outline = useMemo(() => outlineOf(docHtml), [docHtml]);
+  const aiContext = useMemo(
+    () => ({ articleId: article.id, mode, outline, docHtml, onBodyChange: bumpBody }),
+    [article.id, mode, outline, docHtml, bumpBody],
+  );
+  // Typed-but-unapplied edits count as one change: Save takes them too.
+  const changes = pendingCount(pending) + (dirty ? 1 : 0);
+  const getHtml = useCallback(() => editor?.getHTML() ?? "", [editor]);
 
   const handleAskAI = useCallback(async () => {
     setGenerating(true);
@@ -333,18 +455,18 @@ export function ArticleEditor({
   const copyMarkdown = useCallback(() => {
     const markdown = renderArticleMarkdown(
       {
-        title: article.title,
+        title,
         slug: article.slug,
         html: editor?.getHTML() ?? "",
-        metaDescription: article.meta_description,
+        metaDescription: meta || null,
         keyword: article.keyword,
-        featuredImageUrl: article.featured_image_url,
+        featuredImageUrl: featured,
         publishedAt: article.published_at,
       },
       `https://${workspace.domain}`,
     );
     return copyToClipboard(markdown, "Copied the article as Markdown, front matter included.");
-  }, [editor, article, workspace.domain, copyToClipboard]);
+  }, [editor, article, title, meta, featured, workspace.domain, copyToClipboard]);
 
   /**
    * The two ways out for a site we cannot post to. Rendered both before and
@@ -396,24 +518,26 @@ export function ArticleEditor({
   // other reason does not recompute it.
   const audit = useMemo(
     () =>
+      // The staged title, description and image, not the saved ones: the
+      // audit should answer for what the person is about to save.
       auditArticle({
         html: docHtml,
         keyword: article.keyword,
         siteDomain: workspace.domain,
-        title: article.title,
-        metaDescription: article.meta_description,
+        title,
+        metaDescription: meta || null,
         slug: article.slug,
-        featuredImageUrl: article.featured_image_url,
+        featuredImageUrl: featured,
         linkableArticles,
         linkChecks: article.link_checks,
       }),
     [
       docHtml,
       article.keyword,
-      article.title,
-      article.meta_description,
+      title,
+      meta,
       article.slug,
-      article.featured_image_url,
+      featured,
       article.link_checks,
       workspace.domain,
       linkableArticles,
@@ -421,47 +545,73 @@ export function ArticleEditor({
   );
   const auditOpen = audit.counts.fail + audit.counts.warn;
 
+  const editing = mode === "editor";
+
   return (
-    <div className="flex-1 grid min-h-0" style={{ gridTemplateColumns: "1fr 340px" }}>
+    <EditorAiContext.Provider value={aiContext}>
+    <div className="flex-1 grid min-h-0" style={{ gridTemplateColumns: "280px 1fr 340px" }}>
+      {/* Rewrite panel: the whole-article proposal path. */}
+      <RewritePanel
+        articleId={article.id}
+        getHtml={getHtml}
+        onReplace={replaceBody}
+        className="border-r border-line"
+      />
+
       {/* Editor pane */}
       <div className="border-r border-line flex flex-col min-h-0">
-        {/* Toolbar */}
-        <div className="sticky top-0 z-[2] flex gap-0.5 items-center px-8 py-2.5 bg-bg border-b border-line">
-          <ToolbarBtn icon={<Icons.h1 size={14} />} onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} active={editor?.isActive("heading")} />
-          <ToolbarBtn icon={<Icons.bold size={14} />} onClick={() => editor?.chain().focus().toggleBold().run()} active={editor?.isActive("bold")} />
-          <ToolbarBtn icon={<Icons.italic size={14} />} onClick={() => editor?.chain().focus().toggleItalic().run()} active={editor?.isActive("italic")} />
-          <ToolbarBtn icon={<Icons.list size={14} />} onClick={() => editor?.chain().focus().toggleBulletList().run()} active={editor?.isActive("bulletList")} />
+        {/* Header: mode, formatting (Editor mode only), changes, export, save */}
+        <div className="sticky top-0 z-[2] flex gap-0.5 items-center px-6 py-2.5 bg-bg border-b border-line">
+          <div className="mr-3 inline-flex rounded-[7px] border border-line bg-panel p-0.5" role="tablist" aria-label="Mode">
+            {(["review", "editor"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={mode === m}
+                onClick={() => setMode(m)}
+                className={`rounded-[5px] px-2.5 py-1 text-[12px] font-medium transition-colors ${
+                  mode === m ? "bg-bg text-ink shadow-[0_1px_2px_rgba(0,0,0,0.06)]" : "text-ink-3 hover:text-ink"
+                }`}
+              >
+                {m === "review" ? "Review" : "Editor"}
+              </button>
+            ))}
+          </div>
+          <ToolbarBtn disabled={!editing} icon={<Icons.h1 size={14} />} onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} active={editor?.isActive("heading")} />
+          <ToolbarBtn disabled={!editing} icon={<Icons.bold size={14} />} onClick={() => editor?.chain().focus().toggleBold().run()} active={editor?.isActive("bold")} />
+          <ToolbarBtn disabled={!editing} icon={<Icons.italic size={14} />} onClick={() => editor?.chain().focus().toggleItalic().run()} active={editor?.isActive("italic")} />
+          <ToolbarBtn disabled={!editing} icon={<Icons.list size={14} />} onClick={() => editor?.chain().focus().toggleBulletList().run()} active={editor?.isActive("bulletList")} />
           <ToolbarBtn
+            disabled={!editing}
             icon={<Icons.link size={14} />}
             active={editor?.isActive("link")}
             onClick={() => {
               if (!editor) return;
               if (editor.isActive("link")) {
-                editor.chain().focus().unsetLink().run();
+                // Selecting into the link opens the Edit URL popover.
+                editor.chain().focus().extendMarkRange("link").run();
                 return;
               }
-              const url = window.prompt("Link URL (https://…)");
-              if (!url) return;
-              const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-              editor.chain().focus().setLink({ href }).run();
+              if (editor.state.selection.empty) {
+                toast.info("Select the words to link first.");
+                return;
+              }
+              editor.chain().focus().setLink({ href: "https://" }).extendMarkRange("link").run();
             }}
           />
           <div className="flex-1" />
-          {saving && <span className="text-[11px] text-ink-3 font-mono mr-2">Saving…</span>}
-          {/* Parked, not removed: the streaming generation behind this works and
-              is exercised by /api/generate. Turning it off in the editor is a
-              product decision, so the handler stays wired and the button simply
-              cannot be pressed. `title` is the coming-soon idiom already used by
-              the calendar's disabled view tabs; there is no shadcn in this repo
-              and adding it for one tooltip would be a lot of dependency for a
-              small affordance. */}
-          <Button
-            size="sm"
-            onClick={handleAskAI}
-            disabled
-            title="Coming soon"
+          <span
+            className={`mr-2 font-mono text-[11px] ${changes > 0 ? "text-accent-ink" : "text-ink-3"}`}
+            aria-live="polite"
           >
-            <Icons.sparkle size={13} />
+            {changes === 0 ? "No changes yet" : pendingLabel({ ...NO_CHANGES, body: changes })}
+          </span>
+          {/* Parked, not removed: the streaming first-draft generation behind
+              this works and is exercised by /api/generate. Turning it off in
+              the editor is a product decision, so the handler stays wired and
+              the button simply cannot be pressed. */}
+          <Button size="sm" variant="ghost" onClick={handleAskAI} disabled title="Coming soon">
             {phase === "researching"
               ? "Researching…"
               : phase === "writing"
@@ -470,15 +620,54 @@ export function ArticleEditor({
                   ? "Checking claims…"
                   : generating
                     ? "Generating…"
-                    : "Ask AI"}
+                    : "Generate draft"}
+          </Button>
+          <ExportMenu
+            articleId={article.id}
+            getHtml={getHtml}
+            title={title}
+            metaDescription={meta || null}
+            featuredImageUrl={featured}
+          />
+          <Button size="sm" variant="primary" onClick={handleSave} disabled={saving || changes === 0} className="ml-1">
+            {saving ? "Saving…" : "Save"}
           </Button>
         </div>
 
-        {/* Document */}
-        <div className="flex-1 overflow-y-auto scroll">
-          <div className="max-w-[720px] mx-auto px-8 py-10 pb-20 [&_.ProseMirror_h1]:text-[32px] [&_.ProseMirror_h1]:font-semibold [&_.ProseMirror_h1]:tracking-[-0.02em] [&_.ProseMirror_h1]:leading-[1.15] [&_.ProseMirror_h1]:mb-3.5 [&_.ProseMirror_h2]:text-xl [&_.ProseMirror_h2]:font-semibold [&_.ProseMirror_h2]:mt-7 [&_.ProseMirror_h2]:mb-2.5 [&_.ProseMirror_p]:text-[14.5px] [&_.ProseMirror_p]:leading-[1.65] [&_.ProseMirror_p]:mb-3.5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_ol]:mb-3.5 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ul]:mb-3.5 [&_.ProseMirror_li]:mb-1.5 [&_.ProseMirror_strong]:font-semibold [&_.ProseMirror_em]:italic [&_.ProseMirror_a]:text-accent-ink [&_.ProseMirror_a]:border-b [&_.ProseMirror_a]:border-accent-soft [&_.ProseMirror_.is-editor-empty:first-child::before]:text-ink-4 [&_.ProseMirror_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_.is-editor-empty:first-child::before]:h-0 [&_.ProseMirror_.is-editor-empty:first-child::before]:pointer-events-none">
-            <EditorContent editor={editor} />
+        {/* Editor mode: the typed-edit session's two buttons. */}
+        {editing && (
+          <div className="flex items-center gap-2 border-b border-line bg-panel px-6 py-1.5 text-[12px] text-ink-3">
+            <Icons.edit size={12} />
+            <span>Editing directly. Click a link to edit its URL; alt text sits under each image.</span>
+            <div className="flex-1" />
+            <Button size="sm" variant="ghost" onClick={discardEdits}>
+              Discard edits
+            </Button>
+            <Button size="sm" onClick={applyEdits}>
+              Apply to article
+            </Button>
           </div>
+        )}
+
+        {/* Document */}
+        <div ref={documentRef} className="relative flex-1 overflow-y-auto scroll">
+          <div className="max-w-[720px] mx-auto px-8 py-8 pb-20">
+            <MetaFields
+              articleId={article.id}
+              title={title}
+              meta={meta}
+              editable={editing}
+              outline={outline}
+              onTitle={stageTitle}
+              onMeta={stageMeta}
+            />
+            <FeaturedImage articleId={article.id} url={featured} onChange={stageFeatured} />
+            <div className="[&_.ProseMirror_h1]:text-[32px] [&_.ProseMirror_h1]:font-semibold [&_.ProseMirror_h1]:tracking-[-0.02em] [&_.ProseMirror_h1]:leading-[1.15] [&_.ProseMirror_h1]:mb-3.5 [&_.ProseMirror_h2]:text-xl [&_.ProseMirror_h2]:font-semibold [&_.ProseMirror_h2]:mt-7 [&_.ProseMirror_h2]:mb-2.5 [&_.ProseMirror_p]:text-[14.5px] [&_.ProseMirror_p]:leading-[1.65] [&_.ProseMirror_p]:mb-3.5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_ol]:mb-3.5 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ul]:mb-3.5 [&_.ProseMirror_li]:mb-1.5 [&_.ProseMirror_strong]:font-semibold [&_.ProseMirror_em]:italic [&_.ProseMirror_a]:text-accent-ink [&_.ProseMirror_a]:border-b [&_.ProseMirror_a]:border-accent-soft [&_.ProseMirror_.is-editor-empty:first-child::before]:text-ink-4 [&_.ProseMirror_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_.is-editor-empty:first-child::before]:h-0 [&_.ProseMirror_.is-editor-empty:first-child::before]:pointer-events-none">
+              <EditorContent editor={editor} />
+            </div>
+          </div>
+          <SelectionBar editor={editor} container={documentRef} />
+          <LinkPopover editor={editor} container={documentRef} enabled={editing} />
         </div>
       </div>
 
@@ -818,6 +1007,7 @@ export function ArticleEditor({
         }}
       />
     </div>
+    </EditorAiContext.Provider>
   );
 }
 
