@@ -111,6 +111,14 @@ export interface GenerateArticleResult {
   factCheck: FactCheckReport;
 }
 
+/** The URL slug a new article gets from its title or keyword. Shared with the agent API, which creates the row before this runs. */
+export function slugFor(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
 export async function generateArticle(
   options: GenerateArticleOptions,
 ): Promise<GenerateArticleResult> {
@@ -158,10 +166,7 @@ export async function generateArticle(
 
   const voiceRules = (voiceProfile?.rules as VoiceRules) ?? undefined;
 
-  const slug = (title || keyword)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
+  const slug = slugFor(title || keyword);
 
   // Two shapes of run. The "new article" callers - the modal and the cron -
   // have no row yet and get one. The editor is generating into a draft the user
