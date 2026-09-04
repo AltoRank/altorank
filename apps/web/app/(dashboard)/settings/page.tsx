@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
-import { PageHead, Card } from "@/components/ui";
+import { Card } from "@/components/ui";
 import { getAgency } from "@/lib/queries/agency";
 import { SettingsForm } from "@/components/dashboard/settings-form";
 import { PasswordForm } from "@/components/dashboard/password-form";
-import { SettingsTabs } from "./settings-tabs";
+import { BusinessForm } from "@/components/settings/business-form";
+import { SettingsShell, NoWorkspaceCard } from "./settings-shell";
 import { createClient } from "@/lib/supabase/server";
 import { getQuota } from "@/lib/billing/quota";
+import { getWorkspaceSettings } from "@/lib/settings/workspace-settings";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -20,28 +22,23 @@ export default async function SettingsPage() {
   // gated on any plan. It is now, for the hosted free tier only, so the panel
   // has to read the real answer (2026-09-02).
   const supabase = await createClient();
-  const quota = await getQuota(supabase, agency.id);
+  const [quota, ws] = await Promise.all([getQuota(supabase, agency.id), getWorkspaceSettings()]);
 
   return (
-    <>
-      <PageHead
-        title="Settings"
-        subtitle={<span>Account-wide defaults, report branding, and API access</span>}
-      />
+    <SettingsShell
+      title="Settings"
+      subtitle={<span>{ws ? `${ws.domain} · ` : ""}business profile, account defaults, report branding and API access</span>}
+    >
+      {/* The site first, the account after: the wizard's first screen is the
+          thing people come back to change, and it is about the workspace the
+          switcher is on. */}
+      {ws ? <BusinessForm workspaceId={ws.id} domain={ws.domain} initial={ws.profile} /> : <NoWorkspaceCard />}
 
-      <SettingsTabs />
+      <SettingsForm agency={agency} quotaReason={quota.reason} />
 
-      <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
-        <div className="max-w-[1140px]">
-          <SettingsForm agency={agency} quotaReason={quota.reason} />
-
-          <div className="mt-5">
-            <Card title="Password">
-              <PasswordForm />
-            </Card>
-          </div>
-        </div>
-      </div>
-    </>
+      <Card title="Password">
+        <PasswordForm />
+      </Card>
+    </SettingsShell>
   );
 }

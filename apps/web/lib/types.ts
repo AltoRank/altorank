@@ -26,6 +26,8 @@ export type Agency = {
   plan: "starter" | "growth" | "scale";
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  /** Period end at which the subscription stops, when cancel-at-period-end is set. null = renewing. */
+  cancels_at?: string | null;
   created_at: string;
 };
 
@@ -34,6 +36,8 @@ export type AgencyMember = {
   agency_id: string;
   user_id: string;
   role: "owner" | "admin" | "editor";
+  /** Which sites this member sees. null = every workspace, including future ones (migration 053). */
+  workspace_ids: string[] | null;
   created_at: string;
 };
 
@@ -55,6 +59,8 @@ export type Workspace = {
   color: AvatarColor;
   plan: string;
   status: "on" | "review" | "paused" | "setup";
+  /** Set with status=paused by the account pause on Billing. null on a paused row = paused by hand. */
+  paused_until?: string | null;
   /** Domain rating 0-100. null when nobody has measured it: render as —, never 0. */
   dr: number | null;
   /** Publishing platform observed during analysis. null when undetermined. */
@@ -499,6 +505,8 @@ export type Invite = {
   agency_id: string;
   email: string;
   role: "owner" | "admin" | "editor";
+  /** Copied to agency_members.workspace_ids on acceptance. null = all sites. */
+  workspace_ids: string[] | null;
   token: string;
   invited_by: string;
   expires_at: string;
