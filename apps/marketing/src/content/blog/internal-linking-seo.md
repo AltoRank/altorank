@@ -1,6 +1,6 @@
 ---
-title: "Internal Linking Automation for Agencies: The Production Discipline That Compounds Traffic"
-description: "The best internal linking automation for agencies proposes links rather than inserting them. Here are the criteria that decide which tool works, and the publish-time pattern that scales across 10+ clients."
+title: "Internal Linking Automation for Agencies"
+description: "The best internal linking tools propose links rather than insert them. The criteria, and the pattern that scales."
 publishDate: 2026-05-24
 dateModified: 2026-08-22
 author: "Mike Cecconello"

@@ -1,7 +1,7 @@
 ---
 title: "SEO Health Check: The Agency Audit Checklist"
 slug: "seo-health-checker"
-description: "A repeatable SEO health check for client sites: the crawl, indexation, structure, and AI-readiness checks that matter, in the order that finds real problems fastest."
+description: "A repeatable SEO health check: crawl, indexation, structure and AI-readiness, in problem-finding order."
 category: "technical"
 heroHeadline: "Know exactly what is holding a page back."
 heroSubhead: "Most SEO health checks return a long list of warnings and no decision. This is the shorter checklist we run, ordered so the problems that actually block ranking surface first."

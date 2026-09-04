@@ -1,7 +1,7 @@
 ---
 title: "Keyword Gap Analysis: Finding What Competitors Rank For"
 slug: "keyword-gap-analyzer"
-description: "How to run a keyword gap analysis that produces a content plan instead of a spreadsheet: pick the right competitors, filter the noise, and separate real gaps from irrelevant ones."
+description: "A keyword gap analysis that produces a content plan, not a spreadsheet: pick competitors, filter the noise."
 category: "keyword"
 heroHeadline: "Find the keywords your competitors rank for, and you do not."
 heroSubhead: "A gap analysis is easy to run and easy to misread. Here is how to choose comparison sites, strip out the gaps that do not matter, and turn what is left into a plan."

@@ -1,7 +1,7 @@
 ---
 title: "Keyword Cluster Mapper"
 slug: "keyword-cluster-mapper"
-description: "A repeatable method for grouping a raw keyword list into topical clusters, with a copy-paste template and the page-type decisions that stop client sites from cannibalizing themselves."
+description: "Group a raw keyword list into topical clusters, with the page-type decisions that stop cannibalization."
 category: "keyword"
 heroHeadline: "Turn a keyword list into a content strategy."
 heroSubhead: "Grouping a raw keyword export into topical clusters is what separates a content calendar from a pile of blog ideas. Here is the method we use, plus a template you can copy."

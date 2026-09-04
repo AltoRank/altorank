@@ -18,7 +18,7 @@ export const INDUSTRIES: Industry[] = [
     slug: 'ecommerce',
     name: 'E-commerce',
     headline: 'The SEO content engine built for Shopify, Magento & WooCommerce',
-    description: 'E-commerce pages are badly under-represented in AI answers. AltoRank helps your store rank on Google and get cited by ChatGPT, Perplexity, and AI Overviews, using buying guides, category content, and product schema generated at scale.',
+    description: 'E-commerce pages are under-represented in AI answers. Rank on Google and get cited, with buying guides and schema.',
     challenges: [
       'Scaling content across hundreds of product categories and collections',
       'Ranking for commercial-intent keywords against Amazon and marketplace listings',

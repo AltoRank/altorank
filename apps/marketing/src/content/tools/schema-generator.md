@@ -1,7 +1,7 @@
 ---
 title: "JSON-LD Schema: Describe the Page, Do Not Dress It Up"
 slug: "schema-generator"
-description: "Generate valid Article, FAQPage and BreadcrumbList JSON-LD. Plus the rule that decides whether structured data helps you or gets you a manual action."
+description: "Generate valid Article, FAQPage and BreadcrumbList JSON-LD, and the one rule that keeps it from backfiring."
 category: "technical"
 heroHeadline: "Structured data, generated and valid."
 heroSubhead: "Article, FAQPage and BreadcrumbList JSON-LD you can paste straight into your head. Schema describes what a page already says — the moment it describes something else, it is a liability."

@@ -1,6 +1,6 @@
 ---
-title: "SEO Content Strategy for Agencies: The 2026 Operating Model"
-description: "How agencies running 10+ client brands systematize SEO content production into a repeatable engine: voice, inputs, production, and measurement, without hiring more writers."
+title: "SEO Content Strategy for Agencies: An Operating Model"
+description: "How agencies turn SEO content into a repeatable engine: voice, inputs, production and measurement."
 publishDate: 2026-05-24
 author: "Mike Cecconello"
 category: "agencies"

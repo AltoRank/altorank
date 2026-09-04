@@ -1,7 +1,7 @@
 ---
 title: "Content Briefs: A Template Writers Actually Follow"
 slug: "content-brief-generator"
-description: "What belongs in an SEO content brief and what does not: the fields that change the draft, the ones that get ignored, and a template you can copy for client work."
+description: "What belongs in an SEO content brief and what does not, plus a template you can copy for client work."
 category: "content"
 heroHeadline: "Generate SEO briefs that writers actually follow."
 heroSubhead: "Most briefs are either too thin to be useful or so long nobody reads them. Here is the shorter structure that changes what comes back, and the template behind it."
