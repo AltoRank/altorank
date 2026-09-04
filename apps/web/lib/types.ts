@@ -143,6 +143,19 @@ export type Keyword = {
   intent: KeywordIntent;
   status: KeywordStatus;
   created_at: string;
+  /** Article shape, from lib/keywords/taxonomy. Null on rows predating 050. */
+  article_type?: "guide" | "listicle" | null;
+  article_subtype?: string | null;
+  expected_length?: string | null;
+  /** The owner's free-text brief for this keyword's article. */
+  instructions?: string | null;
+  /** {id, question, answer}[]; read through parseStoredQuestions. */
+  quality_questions?: unknown;
+  source?: string | null;
+  source_type?: string | null;
+  source_ref?: string | null;
+  cpc?: number | null;
+  plan_excluded_at?: string | null;
 };
 
 // === Backlink ===
@@ -169,10 +182,18 @@ export type CalendarEntry = {
   id: string;
   workspace_id: string;
   article_id: string | null;
+  /** The keyword row behind this entry, when one exists. */
+  keyword_id: string | null;
   keyword: string;
   scheduled_date: string;
   status: "done" | "run" | "scheduled" | "queue";
   created_at: string;
+  /**
+   * True for a row of `calendar_entries` (a planned keyword), false for an
+   * entry derived from an article's own dates. Only the former can be moved
+   * or removed on the planner.
+   */
+  planned: boolean;
 };
 
 // === Integration ===
