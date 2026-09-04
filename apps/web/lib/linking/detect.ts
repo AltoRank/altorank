@@ -93,7 +93,10 @@ async function fetchText(url: string): Promise<string | null> {
 
 export interface SourceRead {
   urls: string[];
+  /** Set when the source could not be read at all. */
   error: string | null;
+  /** Read fine, but worth saying: an index that answered and listed nothing. */
+  note?: string;
 }
 
 /**
@@ -177,7 +180,17 @@ export async function readSource(
     case "blog_root": {
       const html = await get(source.url);
       if (!html) return { urls: [], error: "Could not fetch the blog index." };
-      return { urls: pageLinksFromIndex(html, source.url), error: null };
+      const urls = pageLinksFromIndex(html, source.url);
+      // A 200 with no links under its own path is usually a list drawn by
+      // JavaScript after load, which a plain fetch never sees. Zero is the
+      // honest count; the note says what to do about it.
+      return {
+        urls,
+        error: null,
+        note: urls.length
+          ? undefined
+          : "The page answered but linked to no pages under its path. It may render its list with JavaScript; the sitemap is the better source.",
+      };
     }
     case "sitemap": {
       const direct = await readSitemap(source.url, get);
@@ -278,14 +291,17 @@ export async function detectLinks(
   for (const s of (sourceRows ?? []) as Array<Pick<LinkSourceRow, "id" | "kind" | "url">>) {
     const read = await readSource(s, get);
     for (const u of read.urls) foundUrls.add(u);
+    // Null when the source could not be read at all; a source that answered
+    // and listed nothing is 0, with the note kept so the screen can say why.
     const pagesFound = read.error ? null : read.urls.length;
-    sources.push({ id: s.id, kind: s.kind, url: s.url, pagesFound, error: read.error });
+    const error = read.error ?? read.note ?? null;
+    sources.push({ id: s.id, kind: s.kind, url: s.url, pagesFound, error });
 
     // Each source records its own outcome. A failed source keeps its previous
     // count out of the picture: null says "we do not know right now".
     await supabase
       .from("link_sources")
-      .update({ last_detected_at: now, pages_found: pagesFound, error: read.error })
+      .update({ last_detected_at: now, pages_found: pagesFound, error })
       .eq("id", s.id)
       .eq("workspace_id", workspaceId);
   }

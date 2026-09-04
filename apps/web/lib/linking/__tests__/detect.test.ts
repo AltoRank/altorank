@@ -110,6 +110,16 @@ describe("readSource: blog root", () => {
     ]);
   });
 
+  it("says so when the index answered but listed nothing, and still counts zero", async () => {
+    const read = await readSource(
+      { kind: "blog_root", url: "https://x.co/blog/" },
+      fetcher({ "https://x.co/blog/": "<html><body><div id=app></div></body></html>" }),
+    );
+    expect(read.urls).toEqual([]);
+    expect(read.error).toBeNull();
+    expect(read.note).toMatch(/JavaScript/);
+  });
+
   it("reports a blog index it could not fetch", async () => {
     const read = await readSource({ kind: "blog_root", url: "https://x.co/blog/" }, fetcher({}));
     expect(read.urls).toEqual([]);
