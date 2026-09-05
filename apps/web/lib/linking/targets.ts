@@ -216,6 +216,33 @@ export async function fetchPoolTargets(
 }
 
 /**
+ * Every URL on the site we can show exists: the whole configured pool
+ * (not the ranked slice the prompt sees), every crawled page, and every
+ * published article. This is what the unwrap step and the scorer treat as
+ * "known"; a link to a real page ranked 21st in the pool, or to /about (which
+ * the pool builder drops as not article-shaped), must not be stripped.
+ */
+export async function fetchKnownPages(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  excludeArticleId?: string,
+): Promise<{ url: string }[]> {
+  const [pool, crawled, published] = await Promise.all([
+    fetchPoolTargets(supabase, workspaceId),
+    supabase.from("site_pages").select("url").eq("workspace_id", workspaceId).limit(5000),
+    fetchPublishedTargets(supabase, workspaceId, excludeArticleId),
+  ]);
+  const seen = new Set<string>();
+  const out: { url: string }[] = [];
+  for (const row of [...pool, ...((crawled.data ?? []) as { url: string }[]), ...published]) {
+    if (!row.url || seen.has(row.url)) continue;
+    seen.add(row.url);
+    out.push({ url: row.url });
+  }
+  return out;
+}
+
+/**
  * The list the prompt and the resolver both read, for one draft. `limit` is
  * how many the prompt shows; the resolver is handed the same slice so it
  * cannot honour a link to a page the writer was never told about.

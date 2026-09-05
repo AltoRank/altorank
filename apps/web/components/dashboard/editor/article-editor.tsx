@@ -86,6 +86,8 @@ type Props = {
   linkableArticles?: number | null;
   /** The pages the draft was offered, so the sidebar can name where each link goes. */
   linkTargets?: LinkTarget[];
+  /** Every page we can show exists; the audit's internal-link item reads this, not the offered slice. */
+  knownPages?: { url: string }[];
   /** Internal links per article the site asked for in its output settings. */
   internalLinksWanted?: number | null;
   /**
@@ -113,6 +115,7 @@ export function ArticleEditor({
   integrations = [],
   linkableArticles,
   linkTargets = [],
+  knownPages,
   internalLinksWanted = null,
   lastPublish = null,
   value = null,
@@ -603,7 +606,7 @@ export function ArticleEditor({
         linkableArticles,
         // The pool this draft was offered, so a same-domain link to a page
         // not in it fails the item rather than counting towards a pass.
-        knownPages: linkTargets,
+        knownPages: knownPages ?? linkTargets,
         linkChecks: article.link_checks,
       }),
     [

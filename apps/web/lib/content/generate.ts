@@ -24,6 +24,7 @@ import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recordOverageArticle } from "@/lib/billing/overage";
 import { spendClient } from "@/lib/billing/default-spend";
 import { setSpendReporter } from "@/lib/seo/client";
+import { fetchKnownPages } from "@/lib/linking/targets";
 import { anthropicModel } from "@/lib/ai/models";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
 import { generateImage } from "@/lib/ai/image-generator";
@@ -552,6 +553,7 @@ export async function generateArticle(
     // step would have removed.
     const knownPages: { url: string }[] = [
       ...linkTargets,
+      ...(await fetchKnownPages(supabase, workspaceId, article.id ?? undefined)),
       ...existingInternalLinks(refreshOf?.existingHtml, workspace.domain),
     ];
     await enhance("internal link check", async (html) => {

@@ -6,7 +6,7 @@ import { discoverKeywords, storedCpc } from "@/lib/seo/keywords";
 import { checkRankings } from "@/lib/seo/serp";
 import { syncBacklinks } from "@/lib/seo/backlinks";
 import { scoreArticle } from "@/lib/seo/scoring";
-import { fetchLinkTargets } from "@/lib/seo/link-resolver";
+import { fetchKnownPages } from "@/lib/linking/targets";
 import type { Workspace, Keyword, Article } from "@/lib/types";
 import { buildRankingRows } from "@/lib/seo/rankings";
 
@@ -214,9 +214,7 @@ export async function scoreArticleSeo(articleId: string) {
   // The pages this article may link to, so a same-domain link to a page not
   // in the pool is not counted as an internal link. Same list the generator
   // and the editor read.
-  const knownPages = await fetchLinkTargets(supabase, article.workspace_id, articleId, {
-    keyword: article.keyword,
-  });
+  const knownPages = await fetchKnownPages(supabase, article.workspace_id, articleId);
 
   // Run the scoring
   const result = scoreArticle(htmlContent, article.keyword, {
