@@ -65,7 +65,15 @@ export async function getCalendarEntries(
 
   if (workspaceId) query = query.eq("workspace_id", workspaceId);
 
-  const { data, error } = await query;
+  // Planned keywords with no article yet (used further down). Independent of
+  // the articles read, so both go out together rather than one after the other.
+  let planned = supabase
+    .from("calendar_entries")
+    .select("id, workspace_id, keyword, keyword_id, scheduled_date, status, created_at, article_id")
+    .in("status", ["queue", "scheduled"]);
+  if (workspaceId) planned = planned.eq("workspace_id", workspaceId);
+
+  const [{ data, error }, { data: plannedRows }] = await Promise.all([query, planned]);
   if (error) throw new Error(error.message);
 
   // The month filter runs here rather than in SQL because which column holds
@@ -110,12 +118,6 @@ export async function getCalendarEntries(
   // too, unless the article already placed itself (scheduled, drafting,
   // approved, live): a draft sitting in review is otherwise invisible on the
   // very day the plan promised it.
-  let planned = supabase
-    .from("calendar_entries")
-    .select("id, workspace_id, keyword, keyword_id, scheduled_date, status, created_at, article_id")
-    .in("status", ["queue", "scheduled"]);
-  if (workspaceId) planned = planned.eq("workspace_id", workspaceId);
-  const { data: plannedRows } = await planned;
   const placedArticles = new Set(entries.map((e) => e.article_id));
   type PlannedRow = { id: string; workspace_id: string; keyword: string | null; keyword_id: string | null; scheduled_date: string; created_at: string; article_id: string | null };
   for (const p of (plannedRows ?? []) as PlannedRow[]) {

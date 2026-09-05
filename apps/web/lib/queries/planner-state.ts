@@ -48,24 +48,29 @@ export type InFlightDraft = {
  */
 export async function getDraftsInFlight(workspaceId: string): Promise<InFlightDraft[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("articles")
-    .select("id, keyword_id, keyword, created_at")
-    .eq("workspace_id", workspaceId)
-    .eq("status", "drafting");
+  // Both reads are scoped by workspace on their own, so they need not wait on
+  // each other: the running jobs for one site are the handful being written
+  // right now, and matching them to the drafting articles is done here.
+  const [{ data, error }, { data: jobs }] = await Promise.all([
+    supabase
+      .from("articles")
+      .select("id, keyword_id, keyword, created_at")
+      .eq("workspace_id", workspaceId)
+      .eq("status", "drafting"),
+    supabase
+      .from("generation_jobs")
+      .select("article_id, result")
+      .eq("workspace_id", workspaceId)
+      .eq("status", "running"),
+  ]);
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as Array<{ id: string; keyword_id: string | null; keyword: string | null; created_at: string }>;
   if (rows.length === 0) return [];
 
-  const { data: jobs } = await supabase
-    .from("generation_jobs")
-    .select("article_id, result")
-    .eq("workspace_id", workspaceId)
-    .eq("status", "running")
-    .in("article_id", rows.map((r) => r.id));
+  const drafting = new Set(rows.map((r) => r.id));
   const phaseByArticle = new Map<string, "research" | "drafting">();
   for (const j of (jobs ?? []) as Array<{ article_id: string | null; result: unknown }>) {
-    if (!j.article_id) continue;
+    if (!j.article_id || !drafting.has(j.article_id)) continue;
     const phase = (j.result as { phase?: unknown } | null)?.phase;
     phaseByArticle.set(j.article_id, phase === "drafting" ? "drafting" : "research");
   }

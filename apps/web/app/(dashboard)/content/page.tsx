@@ -6,7 +6,8 @@ import { getPlannerKeywords, type PlannerKeyword } from "@/lib/queries/keywords"
 import { getPlannerArticleStates, getDraftsInFlight, inFlightFor } from "@/lib/queries/planner-state";
 import { countScheduled, PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
 import { buildMonthCells } from "@/lib/plan/day-groups";
-import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
+import { quotaExceededMessage } from "@/lib/billing/quota";
+import { getRequestQuota } from "@/lib/queries/quota";
 import { PageHead, DotSep, StatusPill } from "@/components/ui";
 import { Card } from "@/components/ui/card";
 import { CalendarControls } from "@/components/dashboard/calendar-controls";
@@ -34,36 +35,41 @@ export default async function CalendarPage({ searchParams }: Props) {
   const monthDate = new Date(yearNum, monthNum - 1, 1);
   const monthLabel = monthDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
+  // Two waves of reads, not five. Everything that needs only the scope goes
+  // out at once; everything that needs those results goes out together after.
+  // Each extra wave is a full round trip to the database on the render's
+  // critical path, and this page (with the layout around it) had enough of
+  // them in a row to take seconds on a calendar of three entries.
   const supabase = await createClient();
-  const [workspaces, entries, scheduled, drafts] = await Promise.all([
+  const [workspaces, entries, scheduled, drafts, { data: auth }] = await Promise.all([
     getWorkspaces(),
     getCalendarEntries(scopeId ?? undefined, month),
     scopeId ? countScheduled(supabase, scopeId) : Promise.resolve(0),
     scopeId ? getDraftsInFlight(scopeId) : Promise.resolve([]),
+    supabase.auth.getUser(),
   ]);
 
-  // The keyword objects behind the squares (shape, volume, difficulty, brief)
-  // and the articles they became (status, live URL).
-  const [keywordRows, articleStates] = scopeId
+  const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));
+  const scopedWs = scopeId ? wsMap.get(scopeId) : undefined;
+
+  // The keyword objects behind the squares (shape, volume, difficulty, brief),
+  // the articles they became (status, live URL), and the quota that decides
+  // whether "Write now" may run. The quota is the same one the sidebar shows,
+  // computed once per request (lib/queries/quota.ts).
+  const [keywordRows, articleStates, quota] = scopeId
     ? await Promise.all([
         getPlannerKeywords(scopeId, entries.map((e) => e.keyword_id).filter((id): id is string => Boolean(id))),
         getPlannerArticleStates(scopeId, entries.map((e) => e.article_id).filter((id): id is string => Boolean(id))),
+        scopedWs ? getRequestQuota(scopedWs.agency_id, auth.user?.email ?? null) : Promise.resolve(null),
       ])
-    : [[], new Map()];
+    : [[], new Map(), null];
   const kwById = new Map<string, PlannerKeyword>(keywordRows.map((k) => [k.id, k]));
-
-  const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));
 
   // Whether "Write now" can run at all. Only the free draft's exhaustion is a
   // refusal; a paid plan at its limit writes as overage, like any generation.
   let writeGate: WriteGate = { ok: true };
-  const scopedWs = scopeId ? wsMap.get(scopeId) : undefined;
-  if (scopedWs) {
-    const { data: auth } = await supabase.auth.getUser();
-    const quota = await getQuota(supabase, scopedWs.agency_id, auth.user?.email ?? null);
-    if (quota.reason === "no-plan" && quota.limit !== null && (quota.remaining ?? 0) <= 0) {
-      writeGate = { ok: false, reason: quotaExceededMessage(quota) };
-    }
+  if (quota && quota.reason === "no-plan" && quota.limit !== null && (quota.remaining ?? 0) <= 0) {
+    writeGate = { ok: false, reason: quotaExceededMessage(quota) };
   }
 
   // Apply client filter
