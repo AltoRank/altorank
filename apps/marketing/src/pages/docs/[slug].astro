@@ -1,9 +1,9 @@
 ---
 import PSEO from '@/layouts/PSEO.astro';
 import Button from '@/components/shared/Button.astro';
-import { INTEGRATIONS } from '@/data/integrations';
+import { INTEGRATIONS, logoSvg } from '@/data/integrations';
 import { buildHowToSchema, buildFAQSchema } from '@/lib/schema';
-import { APP_NAME, PRIMARY_CTA } from '@/constants';
+import { APP_NAME, PRIMARY_CTA, OSS_REPO_URL } from '@/constants';
 
 // One page per documented connector, rendered statically.
 //
@@ -13,9 +13,13 @@ import { APP_NAME, PRIMARY_CTA } from '@/constants';
 // does not run a browser. Astro ships HTML by default; the win is free and it
 // is the difference between being quotable and not.
 //
-// Every field listed comes from src/data/integrations.ts, which tracks the zod
-// schemas in apps/web/app/actions/integrations.ts. Do not add a step here that
-// the product does not actually ask for.
+// Every field, behaviour and destination-side field name comes from
+// src/data/integrations.ts, which tracks the zod schemas in
+// apps/web/app/actions/integrations.ts and the adapters in apps/web/lib/cms.
+// Do not add a step here that the product does not actually ask for. The two
+// connector-specific blocks (the webhook contract, the git file) are the
+// adapter's own request and file shapes, spelled out because a receiver has to
+// be written against them.
 export function getStaticPaths() {
   return INTEGRATIONS.filter((i) => i.documented).map((i) => ({
     params: { slug: i.slug },
@@ -25,6 +29,11 @@ export function getStaticPaths() {
 
 const { integration } = Astro.props;
 const fields = integration.fields ?? [];
+const formFields = fields.filter((f) => !f.advanced);
+const advancedFields = fields.filter((f) => f.advanced);
+const logo = logoSvg(integration.code);
+const isWebhook = integration.slug === 'webhook';
+const isGit = integration.slug === 'git';
 
 const breadcrumbs = [
   { label: 'Home', href: '/' },
@@ -39,7 +48,7 @@ const STEPS = [
   },
   {
     name: `Add the connection in ${APP_NAME}`,
-    text: `In your workspace, open Integrations, choose ${integration.name}, and fill in ${fields.filter((f) => f.required).map((f) => f.label.toLowerCase()).join(', ')}. The connection is tested before it saves, so a wrong value fails here rather than silently at publish time.`,
+    text: `In your workspace, open Integrations, choose ${integration.name}, and fill in ${formFields.filter((f) => f.required).map((f) => f.label.toLowerCase()).join(', ')}. The connection is tested before it saves, so a wrong value fails here rather than silently at publish time.`,
   },
   {
     name: 'Approve an article',
@@ -54,15 +63,19 @@ const FAQ = [
   },
   {
     question: `What ${integration.name} credentials does ${APP_NAME} need?`,
-    answer: `${fields.map((f) => `${f.label}${f.required ? '' : ' (optional)'}`).join(', ')}. ${integration.auth}. Nothing else, and never your ${integration.name} account password.`,
+    answer: `${formFields.map((f) => `${f.label}${f.required ? '' : ' (optional)'}`).join(', ')}. ${integration.auth}. Nothing else, and never your ${integration.name} account password.`,
+  },
+  {
+    question: `Can I publish to ${integration.name} as a draft instead of live?`,
+    answer: `Not from ${APP_NAME}: the review happens here, before anything is sent, so approving is the act of publishing. On approve, ${integration.publishes} If you want a staging destination, connect Notion as well and approve there first. Unpublishing is available afterwards: ${integration.unpublishes}`,
   },
   {
     question: 'Can I revoke access without breaking my site?',
-    answer: `Yes. The credential is created in ${integration.name} and revoked there, independently of your login. Revoking it stops ${APP_NAME} publishing and changes nothing else. Articles already published stay where they are: they are ordinary posts on your platform, not embeds pointed at us.`,
+    answer: `Yes. The credential is created in ${integration.name} and revoked there, independently of your login. Revoking it stops ${APP_NAME} publishing and changes nothing else. Articles already published stay where they are: they are ordinary content on your platform, not embeds pointed at us.`,
   },
   {
     question: `Can I use ${integration.name} on the self-hosted version?`,
-    answer: `Yes. Self-hosting is the same product under AGPL-3.0 with no feature gates, so every connector works and your credentials never leave your own infrastructure.`,
+    answer: `Yes. Self-hosting is the same product under an open-source licence with no feature gates, so every connector works and your credentials never leave your own infrastructure. The adapter is apps/web/lib/cms/${integration.slug}.ts in the repository.`,
   },
 ];
 
@@ -74,6 +87,47 @@ const structuredData = [
   }),
   buildFAQSchema(FAQ),
 ];
+
+// The webhook adapter's exact request shapes (apps/web/lib/cms/webhook.ts).
+const WEBHOOK_PUBLISH = `POST <your endpoint>
+Content-Type: application/json
+X-Webhook-Signature: sha256=<hex HMAC-SHA256 of the raw body>   (only when a signing secret is set)
+<your extra headers, if configured>
+
+{
+  "action": "publish",
+  "article": {
+    "title": "The article title",
+    "html": "<h2>...</h2><p>...</p>",
+    "slug": "the-article-slug",
+    "metaDescription": "The approved meta description",
+    "publishedAt": "2026-09-05T08:00:00.000Z"
+  }
+}`;
+const WEBHOOK_UNPUBLISH = `{ "action": "unpublish", "externalId": "<the id your endpoint returned on publish>" }`;
+const WEBHOOK_TEST = `{ "action": "test" }`;
+const WEBHOOK_RESPONSE = `HTTP 200
+Content-Type: application/json
+
+{ "id": "your-record-id", "url": "https://example.com/blog/the-article-slug" }`;
+const WEBHOOK_VERIFY = `import { createHmac, timingSafeEqual } from 'node:crypto';
+
+const expected = 'sha256=' + createHmac('sha256', process.env.SIGNING_SECRET).update(rawBody).digest('hex');
+const given = req.headers['x-webhook-signature'] ?? '';
+const ok = given.length === expected.length && timingSafeEqual(Buffer.from(given), Buffer.from(expected));`;
+
+// The file the git adapter commits (apps/web/lib/cms/git.ts renderPost).
+const GIT_FILE = `<content directory>/<slug>.md
+
+---
+title: "The article title"
+description: "The approved meta description"
+publishDate: "2026-09-05"
+tags: ["only", "when set"]
+ogImage: "https://... only when the article has a featured image"
+---
+
+The body, converted from the approved HTML to Markdown.`;
 ---
 
 <PSEO
@@ -84,9 +138,18 @@ const structuredData = [
 >
   <section class="border-b border-line py-14 md:py-20">
     <div class="mx-auto max-w-[780px] px-5 sm:px-6 lg:px-8">
-      <h1 class="mb-5 text-[clamp(28px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
-        Connect {integration.name} to {APP_NAME}
-      </h1>
+      <div class="mb-5 flex items-center gap-3.5">
+        <span class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-line bg-panel text-ink" aria-hidden="true">
+          {logo ? (
+            <span class="inline-flex h-6 w-6 [&>svg]:h-full [&>svg]:w-full" set:html={logo} />
+          ) : (
+            <span class="font-mono text-[12px] font-semibold">{integration.code}</span>
+          )}
+        </span>
+        <h1 class="text-[clamp(28px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+          Connect {integration.name} to {APP_NAME}
+        </h1>
+      </div>
       <p class="mb-8 text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
         {integration.name} authenticates with a {integration.auth.toLowerCase()} that you create and can
         revoke yourself. Connecting it makes {integration.name} an available destination &mdash; it does
@@ -94,17 +157,36 @@ const structuredData = [
       </p>
 
       <h2 class="mb-4 text-[clamp(20px,3vw,26px)] font-semibold tracking-[-0.02em]">What you will need</h2>
-      <div class="mb-10 overflow-hidden rounded-lg border border-line">
-        {fields.map((f, i) => (
+      <div class="mb-4 overflow-hidden rounded-lg border border-line">
+        {formFields.map((f, i) => (
           <div class={`grid gap-1 p-5 sm:grid-cols-[1fr_1.6fr] sm:gap-5 ${i > 0 ? 'border-t border-line-soft' : ''}`}>
             <div>
               <div class="text-[14.5px] font-semibold text-ink">{f.label}</div>
-              {!f.required && <div class="mt-0.5 font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-3">Optional</div>}
+              {!f.required && <div class="mt-0.5 text-[12px] text-ink-3">Optional</div>}
             </div>
             <div class="text-[14px] leading-relaxed text-ink-2">{f.hint}</div>
           </div>
         ))}
       </div>
+      {advancedFields.length > 0 && (
+        <details class="mb-10 rounded-lg border border-line bg-panel">
+          <summary class="cursor-pointer list-none px-5 py-4 text-[14.5px] font-medium text-ink [&::-webkit-details-marker]:hidden">
+            Also accepted by the connector, not asked for by the form ({advancedFields.length})
+          </summary>
+          <div class="border-t border-line-soft">
+            {advancedFields.map((f, i) => (
+              <div class={`grid gap-1 px-5 py-4 sm:grid-cols-[1fr_1.6fr] sm:gap-5 ${i > 0 ? 'border-t border-line-soft' : ''}`}>
+                <div class="font-mono text-[13px] text-ink">{f.key}</div>
+                <div class="text-[14px] leading-relaxed text-ink-2">{f.hint}</div>
+              </div>
+            ))}
+            <p class="border-t border-line-soft px-5 py-4 text-[13.5px] leading-relaxed text-ink-3">
+              These keys are in the connection schema and work when a connection is created from your own code or on a self-hosted install. They are listed so the docs match the code, not because you need them.
+            </p>
+          </div>
+        </details>
+      )}
+      {advancedFields.length === 0 && <div class="mb-6"></div>}
 
       <h2 class="mb-4 text-[clamp(20px,3vw,26px)] font-semibold tracking-[-0.02em]">Setup</h2>
       <ol class="mb-10 flex flex-col gap-4">
@@ -119,6 +201,101 @@ const structuredData = [
         ))}
       </ol>
 
+      <h2 class="mb-4 text-[clamp(20px,3vw,26px)] font-semibold tracking-[-0.02em]">What approving does in {integration.name}</h2>
+      <div class="mb-10 overflow-hidden rounded-lg border border-line">
+        <div class="grid gap-1 p-5 sm:grid-cols-[1fr_1.6fr] sm:gap-5">
+          <div class="text-[14.5px] font-semibold text-ink">On approve</div>
+          <div class="text-[14px] leading-relaxed text-ink-2">{integration.publishes}</div>
+        </div>
+        <div class="grid gap-1 border-t border-line-soft p-5 sm:grid-cols-[1fr_1.6fr] sm:gap-5">
+          <div class="text-[14.5px] font-semibold text-ink">On unpublish</div>
+          <div class="text-[14px] leading-relaxed text-ink-2">{integration.unpublishes}</div>
+        </div>
+      </div>
+
+      {integration.writes && integration.writes.length > 0 && (
+        <>
+          <h2 class="mb-2 text-[clamp(20px,3vw,26px)] font-semibold tracking-[-0.02em]">Fields {integration.name} receives</h2>
+          <p class="mb-4 text-[14.5px] leading-relaxed text-ink-2">
+            The connector writes to these names exactly. They have to exist on the destination before the first publish.
+          </p>
+          <div class="mb-10 overflow-hidden rounded-lg border border-line">
+            {integration.writes.map((w, i) => (
+              <div class={`grid gap-1 p-4 sm:grid-cols-[1fr_1.6fr] sm:gap-5 ${i > 0 ? 'border-t border-line-soft' : ''}`}>
+                <code class="font-mono text-[13px] text-ink">{w.field}</code>
+                <div class="text-[14px] leading-relaxed text-ink-2">receives {w.receives}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {isWebhook && (
+        <>
+          <h2 class="mb-2 text-[clamp(20px,3vw,26px)] font-semibold tracking-[-0.02em]">The requests your endpoint receives</h2>
+          <p class="mb-4 text-[14.5px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+            Three actions, one endpoint, always <code class="font-mono text-[13px]">POST</code> with a JSON body. The
+            article ships as rendered HTML with its slug and approved meta description; there is no separate Markdown
+            field. <code class="font-mono text-[13px]">tags</code> is included only when the article carries tags.
+          </p>
+          <div class="mb-3 rounded-lg border border-line bg-panel p-4">
+            <p class="mb-2 text-[12.5px] font-medium text-ink-3">publish &mdash; sent when a person approves a draft</p>
+            <pre class="overflow-x-auto font-mono text-[12.5px] leading-relaxed text-ink"><code>{WEBHOOK_PUBLISH}</code></pre>
+          </div>
+          <div class="mb-3 rounded-lg border border-line bg-panel p-4">
+            <p class="mb-2 text-[12.5px] font-medium text-ink-3">unpublish &mdash; sent when an editor unpublishes</p>
+            <pre class="overflow-x-auto font-mono text-[12.5px] leading-relaxed text-ink"><code>{WEBHOOK_UNPUBLISH}</code></pre>
+          </div>
+          <div class="mb-6 rounded-lg border border-line bg-panel p-4">
+            <p class="mb-2 text-[12.5px] font-medium text-ink-3">test &mdash; sent once when you connect; the connection saves only on a 2xx</p>
+            <pre class="overflow-x-auto font-mono text-[12.5px] leading-relaxed text-ink"><code>{WEBHOOK_TEST}</code></pre>
+          </div>
+
+          <h3 class="mb-2 text-[17px] font-semibold tracking-[-0.01em] text-ink">What to return</h3>
+          <p class="mb-3 text-[14.5px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+            Any 2xx status counts as published. A JSON body is optional; when present, <code class="font-mono text-[13px]">id</code>
+            (or <code class="font-mono text-[13px]">externalId</code>) is stored and sent back to you on unpublish, and
+            <code class="font-mono text-[13px]">url</code> (or <code class="font-mono text-[13px]">link</code>) is recorded as where the
+            article lives. Return 2xx only once you have stored the article: there is no automatic retry, and a non-2xx marks the
+            publish as failed in the log so an editor can retry it from the article.
+          </p>
+          <div class="mb-6 rounded-lg border border-line bg-panel p-4">
+            <pre class="overflow-x-auto font-mono text-[12.5px] leading-relaxed text-ink"><code>{WEBHOOK_RESPONSE}</code></pre>
+          </div>
+
+          <h3 class="mb-2 text-[17px] font-semibold tracking-[-0.01em] text-ink">Verifying the signature</h3>
+          <p class="mb-3 text-[14.5px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+            With a signing secret set, every request carries <code class="font-mono text-[13px]">X-Webhook-Signature</code>:
+            the string <code class="font-mono text-[13px]">sha256=</code> followed by the hex HMAC-SHA256 of the raw request body.
+            Compute it over the bytes you received, before parsing, and compare in constant time.
+          </p>
+          <div class="mb-10 rounded-lg border border-line bg-panel p-4">
+            <pre class="overflow-x-auto font-mono text-[12.5px] leading-relaxed text-ink"><code>{WEBHOOK_VERIFY}</code></pre>
+          </div>
+        </>
+      )}
+
+      {isGit && (
+        <>
+          <h2 class="mb-2 text-[clamp(20px,3vw,26px)] font-semibold tracking-[-0.02em]">The file it commits</h2>
+          <p class="mb-4 text-[14.5px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+            One Markdown file per article, written only inside the content directory you named. Any front matter
+            defaults you configured come first, then the article&rsquo;s own keys. The commit message is
+            <code class="font-mono text-[13px]">content: publish "&lt;title&gt;"</code>, or
+            <code class="font-mono text-[13px]">content: update "&lt;title&gt;"</code> when the file already exists, and
+            <code class="font-mono text-[13px]">content: unpublish &lt;path&gt;</code> when it is deleted.
+          </p>
+          <div class="mb-4 rounded-lg border border-line bg-panel p-4">
+            <pre class="overflow-x-auto font-mono text-[12.5px] leading-relaxed text-ink"><code>{GIT_FILE}</code></pre>
+          </div>
+          <p class="mb-10 text-[14.5px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+            Whether those keys match your collection schema is something your own build answers. The editor&rsquo;s
+            &ldquo;copy as Markdown&rdquo; renders the identical file, so you can drop one into the repository and run the
+            build before connecting anything.
+          </p>
+        </>
+      )}
+
       {integration.notes && integration.notes.length > 0 && (
         <>
           <h2 class="mb-4 text-[clamp(20px,3vw,26px)] font-semibold tracking-[-0.02em]">Worth knowing</h2>
@@ -132,6 +309,13 @@ const structuredData = [
           </ul>
         </>
       )}
+
+      <p class="mt-8 text-[14px] leading-relaxed text-ink-3">
+        The adapter behind this page is{' '}
+        <a href={`${OSS_REPO_URL}/blob/main/apps/web/lib/cms/${integration.slug}.ts`} target="_blank" rel="noopener noreferrer" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
+          apps/web/lib/cms/{integration.slug}.ts
+        </a>. If this page and that file disagree, the file is right and the page has a bug.
+      </p>
     </div>
   </section>
 
@@ -153,8 +337,8 @@ const structuredData = [
         ))}
       </div>
       <div class="mt-10 flex flex-wrap gap-2.5">
-        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
-        <Button href="/integrations" variant="secondary" size="lg">All destinations</Button>
+        <Button href={PRIMARY_CTA.href} size="sm" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/integrations" variant="secondary" size="sm">All destinations</Button>
       </div>
     </div>
   </section>
