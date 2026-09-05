@@ -90,7 +90,7 @@ export class WordPressAdapter implements CMSAdapter {
     return out;
   }
 
-  private async postBody(article: PublishPayload, status: "publish" | "draft") {
+  private async postBody(article: PublishPayload, status: "publish" | "draft" | null) {
     const content = await this.importInlineImages(article.html);
     const featured = article.featuredImageUrl
       ? await this.sideload(article.featuredImageUrl)
@@ -100,7 +100,7 @@ export class WordPressAdapter implements CMSAdapter {
       title: article.title,
       content,
       slug: article.slug,
-      status,
+      ...(status ? { status } : {}),
       excerpt: article.metaDescription ?? "",
       ...(article.tags?.length && { tags: article.tags }),
       ...(featured ? { featured_media: featured.id } : {}),
@@ -138,7 +138,7 @@ export class WordPressAdapter implements CMSAdapter {
     const res = await fetch(`${this.baseUrl}/wp-json/wp/v2/posts/${externalId}`, {
       method: "PUT",
       headers: this.jsonHeaders(),
-      body: JSON.stringify(await this.postBody(article, statusFor(article))),
+      body: JSON.stringify(await this.postBody(article, null /* an update edits content; the post keeps whatever state it has on the site */)),
     });
 
     if (!res.ok) {

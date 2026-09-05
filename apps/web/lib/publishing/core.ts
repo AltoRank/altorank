@@ -265,10 +265,14 @@ async function pushToDestination(
     result = await adapter.publish(payload);
   }
 
+  // A draft on the CMS is not on the web. Marking it live here made the
+  // dashboard count it as published, told agents not to regenerate it, and
+  // shipped the keyword. It stays approved until the far side publishes it.
+  const heldAsDraft = publishMode === "draft" || result.status === "draft";
   const { error: updateErr } = await supabase
     .from("articles")
     .update({
-      status: "live",
+      status: heldAsDraft ? "approved" : "live",
       // Where it actually went, not where a form once said it might. A
       // republish or an unpublish reads this to reach the same system.
       cms: config.type,

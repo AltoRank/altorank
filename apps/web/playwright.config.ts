@@ -47,6 +47,9 @@ export default defineConfig({
     env: {
       ...process.env,
       E2E_STUBS: "1",
+      // Own build directory, so this server can start beside a plain `next dev`
+      // of the same checkout (Next 16 locks `.next/dev` per process).
+      NEXT_DIST_DIR: ".next-e2e",
       // Belt and braces: even a path the stubs miss cannot authenticate to a
       // paid provider, and the approval gate is exercised as self-host (no
       // Stripe), where approving needs no plan.

@@ -70,8 +70,9 @@ export async function getPlanCapacity(
       .from("calendar_entries")
       .select("id", { count: "exact", head: true })
       .eq("workspace_id", workspaceId)
-      .eq("status", "queue")
-      .is("article_id", null),
+      // The same rows scheduleKeywords checks against the cap: planned and
+      // already written both hold a slot this month.
+      .in("status", ["queue", "scheduled"]),
   ]);
   return computeCapacity({
     scheduled: count ?? 0,

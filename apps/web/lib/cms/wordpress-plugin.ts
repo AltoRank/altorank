@@ -153,7 +153,8 @@ export class WordPressPluginAdapter implements CMSAdapter {
     const res = await this.deliver("update", {
       path: "edit",
       method: "PUT",
-      body: JSON.stringify({ ...this.body(article), post_id: externalId, external_id: article.id ?? externalId }),
+      // An update edits content; the post keeps whatever state it has on the site.
+      body: JSON.stringify({ ...this.body(article), status: undefined, post_id: externalId, external_id: article.id ?? externalId }),
     });
     return this.toResult((await res.json()) as PluginPostResponse);
   }

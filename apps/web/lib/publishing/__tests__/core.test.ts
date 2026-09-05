@@ -251,7 +251,8 @@ describe("publishArticleCore", () => {
     const update = supabase.from.mock.results
       .map((r) => r.value?.update)
       .find((u) => u?.mock.calls.length > 0);
-    expect(update.mock.calls[0][0]).toMatchObject({ published_url: null, external_id: "ext-1", status: "live" });
+    // Held as a draft on the CMS: not on the web, so not live here either.
+    expect(update.mock.calls[0][0]).toMatchObject({ published_url: null, external_id: "ext-1", status: "approved" });
   });
 
   it("updates in place, never creating a second post, when the article already has an external id", async () => {

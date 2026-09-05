@@ -53,7 +53,8 @@ describe("buildPlan", () => {
 describe("monthlyTarget", () => {
   it("is what a month at the pace should hold, capped", () => {
     expect(monthlyTarget(7)).toBe(30);
-    expect(monthlyTarget(1)).toBe(5);
+    // Same arithmetic as the plan copy ("about N a month"): 52 weeks / 12.
+    expect(monthlyTarget(1)).toBe(4);
     expect(monthlyTarget(3)).toBe(13);
     expect(monthlyTarget(0)).toBe(0);
     // A pace above 7 is clamped like buildPlan clamps it.

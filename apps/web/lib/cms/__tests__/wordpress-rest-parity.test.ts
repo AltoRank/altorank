@@ -121,7 +121,9 @@ describe("WordPressAdapter SEO meta", () => {
     const [url, opts] = mockFetch.mock.calls[0];
     expect(url).toBe("https://example.com/wp-json/wp/v2/posts/4");
     expect(opts.method).toBe("PUT");
-    expect(JSON.parse(opts.body).status).toBe("publish");
+    // An update edits content; it must not resend a status, or a post published
+    // by hand on the site would be pulled back to draft by a draft-mode connection.
+    expect(JSON.parse(opts.body).status).toBeUndefined();
   });
 });
 

@@ -175,7 +175,7 @@ async function topUpPlans(supabase: ReturnType<typeof createServiceClient>): Pro
   const out: TopUp[] = [];
   const { data: workspaces } = await supabase
     .from("workspaces")
-    .select("id, auto_generate_weekly_limit")
+    .select("id, auto_generate_weekly_limit, publishing_cadences(days_of_week, enabled)")
     .eq("auto_generate", true)
     .neq("status", "paused");
 
@@ -195,7 +195,12 @@ async function topUpPlans(supabase: ReturnType<typeof createServiceClient>): Pro
       continue;
     }
     try {
-      const added = await schedulePlan(supabase, workspaceId, pace, { mode: "top-up" });
+      // The site's publishing days, as the Articles-plan control passes them;
+      // without this the top-up spread entries over days the cadence excludes.
+      const cadence = (ws as { publishing_cadences?: { days_of_week: number[]; enabled: boolean } | { days_of_week: number[]; enabled: boolean }[] | null }).publishing_cadences;
+      const row = Array.isArray(cadence) ? cadence[0] : cadence;
+      const daysOfWeek = row?.enabled && row.days_of_week?.length ? row.days_of_week : undefined;
+      const added = await schedulePlan(supabase, workspaceId, pace, { mode: "top-up", daysOfWeek });
       out.push({ workspaceId, queued, target, added: added.length });
     } catch (err) {
       out.push({ workspaceId, queued, target, added: 0, error: err instanceof Error ? err.message : "unknown error" });

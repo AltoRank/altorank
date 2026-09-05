@@ -14,6 +14,7 @@
 // entry and still lands it in review.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { monthlyFromPace } from "@/lib/content/pace";
 import { recommendKeywords, type KeywordRecommendation } from "@/lib/seo/recommendations";
 import { classifyKeyword } from "@/lib/keywords/taxonomy";
 import { generateQualityQuestionsBatch, parseStoredQuestions, toQualityQuestions } from "@/lib/keywords/questions";
@@ -47,7 +48,9 @@ export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 /** How many entries a month at `weeklyLimit` should hold. */
 export function monthlyTarget(weeklyLimit: number): number {
   const weekly = Math.max(0, Math.min(7, Math.floor(weeklyLimit)));
-  return Math.min(PLAN_MAX_ENTRIES, Math.ceil((weekly * PLAN_HORIZON_DAYS) / 7));
+  // The same arithmetic the plan copy quotes ("about N a month"), so the
+  // top-up floor never promises more than the pricing page did.
+  return Math.min(PLAN_MAX_ENTRIES, monthlyFromPace(weekly));
 }
 
 /**
