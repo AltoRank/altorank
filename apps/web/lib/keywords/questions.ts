@@ -42,6 +42,7 @@ const PROMPT = [
   "anything that could be looked up.",
   "",
   "Make each question specific to its keyword. Reuse the keyword's own nouns.",
+  "Plain sentences: no em dashes, no semicolons, no quotation marks inside a question.",
   "",
   "Return ONLY a JSON object, no prose, no code fence, keyed by the keyword exactly as given,",
   'each value an array of 4 strings: {"keyword one": ["q1","q2","q3","q4"], ...}',
