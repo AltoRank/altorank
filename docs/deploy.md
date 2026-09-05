@@ -264,7 +264,7 @@ From the repository root, on a clean checkout of `main`:
 npm ci
 npm run build:marketing         # astro build + scripts/generate-agent-files.mjs → apps/marketing/dist
 npx wrangler login              # once; or export CLOUDFLARE_API_TOKEN
-npx wrangler pages deploy apps/marketing/dist --project-name <pages-project> --branch main
+npx wrangler pages deploy apps/marketing/dist --project-name altorank-marketing --branch main
 ```
 
 or, equivalently, `CF_PAGES_PROJECT=<pages-project> npm run deploy -w apps/marketing`.
