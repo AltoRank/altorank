@@ -75,6 +75,7 @@ export const Icons = {
   lightbulb: (p: IconProps = {}) => <Icon {...p}><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.3 1 2.1h5c0-.8.4-1.6 1-2.1A6 6 0 0 0 12 3Z"/></Icon>,
   question: (p: IconProps = {}) => <Icon {...p}><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M10.5 9a1.5 1.5 0 0 1 3 0c0 1.2-1.5 1.2-1.5 2.4M12 14h.01"/></Icon>,
   trash: (p: IconProps = {}) => <Icon {...p}><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></Icon>,
+  grip: (p: IconProps = {}) => <Icon {...p}><path d="M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01"/></Icon>,
 };
 
 export type IconName = keyof typeof Icons;

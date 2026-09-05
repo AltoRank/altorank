@@ -10,12 +10,13 @@
 // well as the row id: the id alone is enough for RLS (agency scope) and not
 // enough for the page (workspace scope). See AGENTS.md.
 //
-// Nothing here publishes or approves anything.
+// Nothing here publishes or approves anything. `writeNow` writes, into review.
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { countScheduled, ensureQuestionsFor, schedulePlan, PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
+import { writePlannedEntryNow } from "@/lib/plan/write-now";
 import { parseStoredQuestions, type QualityQuestion } from "@/lib/keywords/questions";
 import { isExpectedLength } from "@/lib/keywords/taxonomy";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
@@ -180,4 +181,18 @@ export async function planMonth(): Promise<{ planned: number; scheduled: number;
   const planned = await schedulePlan(supabase, workspaceId, pace, new Date(), { mode: "top-up" });
   refresh();
   return { planned: planned.length, scheduled: await countScheduled(supabase, workspaceId), max: PLAN_MAX_ENTRIES };
+}
+
+/**
+ * Write a planned keyword's article now. The behaviour is lib/plan/write-now;
+ * this is its server-action door. The planner card uses the route instead
+ * (app/api/plan/write-now), for the reason given there.
+ */
+export async function writeNow(entryId: string): Promise<{ articleId: string }> {
+  const { supabase, workspaceId } = await scoped();
+  const { data: auth } = await supabase.auth.getUser();
+  const result = await writePlannedEntryNow(supabase, workspaceId, entryId, auth.user?.email ?? undefined);
+  refresh();
+  revalidatePath("/articles");
+  return result;
 }
