@@ -336,13 +336,27 @@ export async function analyzeWorkspace(
   if (!gsc?.length) return { reason: "gsc_not_connected" };
 
   const since = new Date(now.getTime() - 56 * 86_400_000).toISOString().slice(0, 10);
-  const { data: metricRows } = await supabase
-    .from("analytics_metrics")
-    .select("metric_date, query, page_url, article_id, clicks, impressions, avg_position")
-    .eq("workspace_id", workspaceId)
-    .eq("source", "gsc")
-    .gte("metric_date", since);
-  const windows = splitWindows((metricRows ?? []) as MetricRow[], now);
+  // Paged: PostgREST caps a single select at 1,000 rows and says nothing. A
+  // site with a hundred queries a day passes that inside the 56-day window,
+  // and once per-page rows are stored too (four shapes a day) it passes it in
+  // a week. A truncated window makes "declining" a comparison of two random
+  // slices, so read until a page comes back short.
+  const metricRows: MetricRow[] = [];
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("analytics_metrics")
+      .select("metric_date, query, page_url, article_id, clicks, impressions, avg_position")
+      .eq("workspace_id", workspaceId)
+      .eq("source", "gsc")
+      .gte("metric_date", since)
+      .order("metric_date", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    metricRows.push(...((data ?? []) as MetricRow[]));
+    if (!data || data.length < PAGE) break;
+  }
+  const windows = splitWindows(metricRows, now);
   const current = aggregateQueries(windows.current);
   const previous = aggregateQueries(windows.previous);
 
