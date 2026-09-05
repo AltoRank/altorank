@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { addSectionImages, chooseInsertionPoints, resolveImageStyle } from "../images";
+import { addSectionImages, chooseInsertionPoints } from "../images";
 import { ARTICLE, SECTION } from "./fixtures";
 
 const LONG = Array(90).fill("word").join(" ");
@@ -72,16 +72,5 @@ describe("images: the figures", () => {
     const { added, html } = await addSectionImages(ARTICLE, { produce: async () => null });
     expect(added).toBe(0);
     expect(html).toBe(ARTICLE);
-  });
-});
-
-describe("images: style preset", () => {
-  it("uses a stored preset, infers one from the free-text style, defaults to illustration", () => {
-    expect(resolveImageStyle({ image_style: "watercolor" })).toEqual({ style: "watercolor", persist: false });
-    expect(resolveImageStyle({ style: "hand-drawn pencil look" })).toEqual({ style: "sketch", persist: true });
-    expect(resolveImageStyle({ style: "photographic, warm" }).style).toBe("realistic");
-    expect(resolveImageStyle({})).toEqual({ style: "illustration", persist: true });
-    expect(resolveImageStyle(null).style).toBe("illustration");
-    expect(resolveImageStyle({ image_style: "nonsense" }).persist).toBe(true);
   });
 });

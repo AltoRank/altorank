@@ -51,6 +51,54 @@ export function Toggle({
   );
 }
 
+/**
+ * One choice among a few, each with a label and one line of what it means.
+ * Tiles, not a select, because the line matters more than the label; no
+ * thumbnails, because there are no sample images to show.
+ */
+export function RadioTiles<T extends string>({
+  name,
+  value,
+  options,
+  onChange,
+  columns = 3,
+}: {
+  name: string;
+  value: T;
+  options: { value: T; label: string; hint: string }[];
+  onChange: (v: T) => void;
+  columns?: 2 | 3;
+}) {
+  return (
+    <div role="radiogroup" className={`grid gap-2 ${columns === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"}`}>
+      {options.map((o) => {
+        const selected = o.value === value;
+        return (
+          <label
+            key={o.value}
+            className={`flex cursor-pointer flex-col gap-1 rounded-[8px] border px-3 py-2.5 transition-colors ${
+              selected ? "border-accent bg-panel" : "border-line bg-bg hover:border-ink-3"
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <input
+                type="radio"
+                name={name}
+                value={o.value}
+                checked={selected}
+                onChange={() => onChange(o.value)}
+                className="h-3.5 w-3.5 accent-[var(--accent)]"
+              />
+              <span className="text-[13px] font-medium">{o.label}</span>
+            </span>
+            <span className="text-[11.5px] leading-[1.5] text-ink-3">{o.hint}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Removable chips with an add box. Deleting is the main verb here. */
 export function ChipList({
   items,

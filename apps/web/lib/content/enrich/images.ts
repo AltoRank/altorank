@@ -6,7 +6,8 @@
 // puts two to four more into the body, one before a major section, generated
 // from that section's heading and opening paragraph so the picture is about
 // what the reader is about to read. The same generator, the same bucket, the
-// same brand style; the only new thing is where the prompt comes from.
+// site's `image_style` preset from `workspace_output_settings`; the only new
+// thing is where the prompt comes from.
 //
 // Spend is the constraint. Every image is a paid call, so the count is capped
 // (three by default), the step skips entirely without a key or under
@@ -18,6 +19,7 @@ import { openaiImageModel } from "@/lib/ai/models";
 import { uploadImageBuffer } from "@/lib/storage/images";
 import { recordSpend } from "@/lib/billing/spend";
 import { labelsFor, type ImageStyle } from "./labels";
+import { DEFAULT_OUTPUT_SETTINGS } from "@/lib/onboarding/output-settings";
 import {
   splitSections,
   firstParagraph,
@@ -28,8 +30,6 @@ import {
   escapeAttr,
   escapeHtml,
 } from "./html";
-
-export const IMAGE_STYLES: ImageStyle[] = ["sketch", "watercolor", "realistic", "illustration", "brand-text"];
 
 export const DEFAULT_MAX_IMAGES = 3;
 
@@ -52,37 +52,6 @@ export interface ImagesOptions {
   /** A section shorter than this is not major enough to illustrate. */
   minSectionWords?: number;
 }
-
-/**
- * The style preset for a workspace, from `brand_style.image_style` when it is
- * set and otherwise inferred from the free-text `brand_style.style` the
- * featured-image prompt already reads. `persist` says whether the caller
- * should write the choice back so every later image agrees with this one.
- */
-export function resolveImageStyle(
-  brandStyle: Record<string, unknown> | null | undefined,
-): { style: ImageStyle; persist: boolean } {
-  const stored = brandStyle?.image_style;
-  if (typeof stored === "string" && (IMAGE_STYLES as string[]).includes(stored)) {
-    return { style: stored as ImageStyle, persist: false };
-  }
-  const hint = typeof brandStyle?.style === "string" ? brandStyle.style.toLowerCase() : "";
-  let style: ImageStyle = "illustration";
-  if (/sketch|line ?art|hand[- ]?drawn|pencil/.test(hint)) style = "sketch";
-  else if (/watercolou?r|aquarell/.test(hint)) style = "watercolor";
-  else if (/photo|realis/.test(hint)) style = "realistic";
-  else if (/typograph|lettering|text/.test(hint)) style = "brand-text";
-  return { style, persist: true };
-}
-
-/** How each preset is described to the generator. */
-export const STYLE_PROMPT: Record<ImageStyle, string> = {
-  sketch: "hand-drawn pencil sketch, monochrome line art on a white background",
-  watercolor: "soft watercolour painting with visible brush texture and paper grain",
-  realistic: "photorealistic editorial photograph, natural light, shallow depth of field",
-  illustration: "flat vector illustration, clean geometric shapes, limited palette",
-  "brand-text": "bold minimal graphic composition built from the brand colours and abstract letterforms, no legible words",
-};
 
 /**
  * Where images go: before the H2 of each chosen section, chosen so they are
@@ -152,7 +121,7 @@ export async function addSectionImages(
   if (!points.length) return { html, added: 0, warnings: [] };
 
   const labels = labelsFor(opts.language);
-  const style = opts.style ?? "illustration";
+  const style = opts.style ?? DEFAULT_OUTPUT_SETTINGS.imageStyle;
   const warnings: string[] = [];
   const figures = new Map<number, string>();
 
@@ -199,15 +168,18 @@ export function storageImageProducer(args: {
   articleId: string;
   keyword: string;
   brandStyle: Record<string, unknown> | null | undefined;
+  /** `workspace_output_settings.brand_color`. */
+  brandColor?: string | null;
   runId?: string | null;
 }): ImageProducer | null {
   if (!process.env.OPENAI_API_KEY || process.env.E2E_STUBS) return null;
-  const { supabase, workspaceId, articleId, keyword, brandStyle, runId } = args;
+  const { supabase, workspaceId, articleId, keyword, brandStyle, brandColor, runId } = args;
   return async (brief, index) => {
-    const result = await generateImage(brief.heading, keyword, {
-      ...(brandStyle ?? {}),
-      style: STYLE_PROMPT[brief.style],
-    }, { section: { heading: brief.heading, excerpt: brief.excerpt } });
+    const result = await generateImage(brief.heading, keyword, brandStyle ?? undefined, {
+      section: { heading: brief.heading, excerpt: brief.excerpt },
+      style: brief.style,
+      brandColor,
+    });
     // The images endpoint reports no price, so cost stays null rather than a
     // guess: an unmeasured number is not a zero.
     void recordSpend(supabase, {

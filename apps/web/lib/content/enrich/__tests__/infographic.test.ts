@@ -32,6 +32,19 @@ describe("infographic: recognising comparable numbers", () => {
 });
 
 describe("infographic: rendering", () => {
+  it("fills the bars with the brand colour when one is set, currentColor otherwise, and refuses a non-hex", () => {
+    const spec = { unit: "%", source: "s", data: [{ label: "a", value: 1 }, { label: "b", value: 2 }] };
+    expect(renderBarChart(spec, "en")).toContain('fill="currentColor"');
+    const branded = renderBarChart(spec, "en", "#1a1815");
+    expect(branded).toContain('fill="#1a1815"');
+    expect(isSafeSvg(branded.match(/<svg[\s\S]*<\/svg>/)?.[0])).toBe(true);
+    expect(renderBarChart(spec, "en", 'red" onload="x')).toContain('fill="currentColor"');
+  });
+
+  it("adds nothing when infographics are off", () => {
+    expect(addInfographics(ARTICLE, { enabled: false })).toEqual({ html: ARTICLE, added: 0 });
+  });
+
   it("renders an accessible inline SVG with a caption naming the source", () => {
     const figure = renderBarChart({ unit: "%", source: "From 42% to 61%.", data: [{ label: "from", value: 42 }, { label: "to", value: 61 }] });
     expect(figure).toContain('role="img"');

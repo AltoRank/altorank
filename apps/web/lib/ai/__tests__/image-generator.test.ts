@@ -64,6 +64,43 @@ describe("generateImage", () => {
     expect(prompt).toContain("No text or watermarks");
   });
 
+  it("puts the preset's wording in the prompt in place of the free-text style", async () => {
+    generate.mockResolvedValue({ data: [{ b64_json: PIXEL }] });
+    await generateImage("A Title", "a keyword", { style: "flat" }, { style: "watercolor" });
+    const { prompt } = generate.mock.calls[0][0];
+    expect(prompt).toContain("soft watercolour painting");
+    expect(prompt).not.toContain("style: flat");
+    expect(prompt).toContain("No text or watermarks");
+  });
+
+  it("names the brand colour as the accent, over brand_style.colors", async () => {
+    generate.mockResolvedValue({ data: [{ b64_json: PIXEL }] });
+    await generateImage("A Title", "a keyword", { colors: "#123456" }, { brandColor: "#1a1815" });
+    const { prompt } = generate.mock.calls[0][0];
+    expect(prompt).toContain("brand colour #1a1815");
+    expect(prompt).not.toContain("#123456");
+  });
+
+  it("a title cover sets the title in type and lifts the no-text rule, and only then", async () => {
+    generate.mockResolvedValue({ data: [{ b64_json: PIXEL }] });
+    await generateImage("Choosing a CRM", "crm", undefined, { titleCover: true, brandColor: "#1a1815" });
+    const { prompt } = generate.mock.calls[0][0];
+    expect(prompt).toContain('The title text "Choosing a CRM"');
+    expect(prompt).toContain("legible type");
+    expect(prompt).toContain("background in the brand colour #1a1815");
+    expect(prompt).not.toContain("No text or watermarks");
+    expect(prompt).toContain("No watermarks");
+  });
+
+  it("a section image keeps the section brief and takes the body preset", async () => {
+    generate.mockResolvedValue({ data: [{ b64_json: PIXEL }] });
+    await generateImage("A Title", "crm", undefined, { section: { heading: "Pricing", excerpt: "It costs." }, style: "sketch", titleCover: true });
+    const { prompt } = generate.mock.calls[0][0];
+    expect(prompt).toContain('for the section "Pricing"');
+    expect(prompt).toContain("pencil sketch");
+    expect(prompt).not.toContain("The title text");
+  });
+
   it("refuses a DALL-E-shaped response rather than restoring the expiring-URL path", async () => {
     generate.mockResolvedValue({ data: [{ url: "https://oai.example/tmp.png" }] });
     await expect(generateImage("A Title", "a keyword")).rejects.toThrow(/returned no image data/);

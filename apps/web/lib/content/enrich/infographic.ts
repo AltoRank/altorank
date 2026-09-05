@@ -13,17 +13,22 @@
 //
 // Everything else - a paragraph with three unrelated percentages, a year and a
 // price, a count and a ratio - is not clearly comparable and is left alone.
-// Years are never charted. The SVG uses `currentColor` so it takes the
-// publishing theme's text colour, and it carries role, label and title so a
-// screen reader gets the same numbers a sighted reader does.
+// Years are never charted. The bars take the site's brand colour when one is
+// set and `currentColor` (the publishing theme's text colour) otherwise, and
+// the SVG carries role, label and title so a screen reader gets the same
+// numbers a sighted reader does.
 
 import { splitSections, stripTags, escapeHtml, escapeAttr, truncate } from "./html";
 import { labelsFor } from "./labels";
 
 export interface InfographicOptions {
+  /** `workspace_output_settings.infographics`; defaults on. */
+  enabled?: boolean;
   /** Upper bound per article. Two is plenty; more reads as decoration. */
   max?: number;
   language?: string | null;
+  /** `workspace_output_settings.brand_color`: the bar fill. Without one the bars take the page's text colour. */
+  brandColor?: string | null;
 }
 
 export interface Datum {
@@ -167,8 +172,11 @@ function formatValue(value: number, unit: string): string {
  * article column and scaled by the viewBox. Text is real text so it can be
  * selected and read aloud.
  */
-export function renderBarChart(spec: ChartSpec, language?: string | null): string {
+export function renderBarChart(spec: ChartSpec, language?: string | null, brandColor?: string | null): string {
   const labels = labelsFor(language);
+  // Validated again here: this string lands inside an attribute of markup that
+  // is stored and re-rendered, and the SVG allowlist trusts what this writes.
+  const fill = brandColor && /^#[0-9a-fA-F]{6}$/.test(brandColor) ? brandColor : "currentColor";
   const width = 600;
   const rowHeight = 32;
   const labelWidth = 180;
@@ -185,7 +193,7 @@ export function renderBarChart(spec: ChartSpec, language?: string | null): strin
       const w = max > 0 ? Math.max(2, Math.round((d.value / max) * barMax)) : 2;
       return (
         `<text x="${labelWidth - 8}" y="${y + rowHeight / 2 + 4}" text-anchor="end" font-size="13">${escapeHtml(d.label)}</text>` +
-        `<rect x="${labelWidth}" y="${y + 6}" width="${w}" height="${rowHeight - 12}" rx="3" fill="currentColor" opacity="${i === 0 ? 0.85 : 0.6}"></rect>` +
+        `<rect x="${labelWidth}" y="${y + 6}" width="${w}" height="${rowHeight - 12}" rx="3" fill="${fill}" opacity="${i === 0 ? 0.85 : 0.6}"></rect>` +
         `<text x="${labelWidth + w + 8}" y="${y + rowHeight / 2 + 4}" font-size="13">${escapeHtml(formatValue(d.value, spec.unit))}</text>`
       );
     })
@@ -206,6 +214,7 @@ export function addInfographics(
   html: string,
   opts: InfographicOptions = {},
 ): { html: string; added: number } {
+  if (opts.enabled === false) return { html, added: 0 };
   const max = opts.max ?? 2;
   if (max <= 0) return { html, added: 0 };
   const { intro, sections } = splitSections(html);
@@ -224,7 +233,7 @@ export function addInfographics(
       const spec = chartFromList(list[0])!;
       const at = list.index + list[0].length;
       added++;
-      return s.body.slice(0, at) + "\n" + renderBarChart(spec, opts.language) + "\n" + s.body.slice(at);
+      return s.body.slice(0, at) + "\n" + renderBarChart(spec, opts.language, opts.brandColor) + "\n" + s.body.slice(at);
     }
 
     for (const p of s.body.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)) {
@@ -235,7 +244,7 @@ export function addInfographics(
       if (!spec || p.index === undefined) continue;
       const at = p.index + p[0].length;
       added++;
-      return s.body.slice(0, at) + "\n" + renderBarChart(spec, opts.language) + "\n" + s.body.slice(at);
+      return s.body.slice(0, at) + "\n" + renderBarChart(spec, opts.language, opts.brandColor) + "\n" + s.body.slice(at);
     }
     return s.body;
   });

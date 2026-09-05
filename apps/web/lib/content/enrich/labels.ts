@@ -3,6 +3,10 @@
 // English rather than to a machine translation: a wrong label in the reader's
 // language is worse than a right one in the wrong language.
 
+import type { ImageStyle } from "@/lib/onboarding/output-settings";
+
+export type { ImageStyle };
+
 export type Labels = {
   contents: string;
   video: string;
@@ -13,8 +17,6 @@ export type Labels = {
   visit: string;
   illustration: Record<ImageStyle, string>;
 };
-
-export type ImageStyle = "sketch" | "watercolor" | "realistic" | "illustration" | "brand-text";
 
 const EN: Labels = {
   contents: "Contents",

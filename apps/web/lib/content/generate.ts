@@ -28,6 +28,7 @@ import { fetchKnownPages } from "@/lib/linking/targets";
 import { anthropicModel } from "@/lib/ai/models";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
 import { generateImage } from "@/lib/ai/image-generator";
+import { outputFromRow, resolveFeaturedImage, type OutputSettingsRow } from "@/lib/onboarding/output-settings";
 import { uploadImageBuffer } from "@/lib/storage/images";
 import {
   existingInternalLinks,
@@ -218,22 +219,27 @@ export async function generateArticle(
 
   const voiceRules = (voiceProfile?.rules as VoiceRules) ?? undefined;
 
-  // Output preferences from onboarding. Absent rows (older workspaces, or an
-  // install that has not run 049) fall through to the prompt's defaults.
+  // Output preferences from onboarding, parsed once and read three times: the
+  // prompt, the body enrichment and the featured image. An absent row (older
+  // workspaces, or an install that has not run 049) means the defaults, which
+  // are also the table's own; a row from before 064 parses with defaults for
+  // the columns it lacks.
   const { data: outputRow } = await supabase
     .from("workspace_output_settings")
-    .select("tone, internal_links, table_of_contents, call_to_action, first_person, mention_similar_products, global_article_prompt")
+    .select("*")
     .eq("workspace_id", workspaceId)
     .maybeSingle();
+  const outputSettings = outputFromRow(outputRow as OutputSettingsRow | null);
   const output = outputRow
     ? {
-        tone: outputRow.tone as string,
-        internalLinks: outputRow.internal_links as number,
-        tableOfContents: outputRow.table_of_contents as boolean,
-        callToAction: outputRow.call_to_action as boolean,
-        firstPerson: outputRow.first_person as boolean,
-        mentionSimilarProducts: outputRow.mention_similar_products as boolean,
-        customInstructions: outputRow.global_article_prompt as string | null,
+        tone: outputSettings.tone,
+        internalLinks: outputSettings.internalLinks,
+        tableOfContents: outputSettings.tableOfContents,
+        callToAction: outputSettings.callToAction,
+        firstPerson: outputSettings.firstPerson,
+        mentionSimilarProducts: outputSettings.mentionSimilarProducts,
+        emojis: outputSettings.emojis,
+        customInstructions: outputSettings.globalArticlePrompt || null,
       }
     : undefined;
 
@@ -598,6 +604,7 @@ export async function generateArticle(
         domain: workspace.domain,
         language: workspace.language,
         brandStyle: workspace.brand_style as Record<string, unknown> | null,
+        settings: outputSettings,
         research: research as unknown as Record<string, unknown>,
       });
       return enriched.html;
@@ -667,10 +674,14 @@ export async function generateArticle(
       // A rewrite keeps the page's own hero; generating another would be spend
       // with nowhere to put it.
       if (process.env.OPENAI_API_KEY && !refreshOf && article.id) {
+        // In the site's featured preset: a title card, a body preset, or
+        // whatever the body images use.
+        const featured = resolveFeaturedImage(outputSettings);
         const imageResult = await generateImage(
           articleResult.title,
           keyword,
           workspace.brand_style as Record<string, unknown> | undefined,
+          { style: featured.style, titleCover: featured.titleCover, brandColor: outputSettings.brandColor },
         );
         featuredImageUrl = await uploadImageBuffer(
           supabase,

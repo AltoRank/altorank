@@ -25,7 +25,7 @@ describe("enrichArticle", () => {
     expect(report.warnings).toEqual([]);
     expect(report.format?.headingIds).toBeGreaterThanOrEqual(4);
     expect(report.faqSchema?.mainEntity).toHaveLength(3);
-    expect(report.imageStyle).toBe("illustration");
+    expect(report.imageStyle).toBe("sketch");
 
     // Order in the document: TOC, then sections with images/video/chart, CTA last.
     const order = ["<nav class=\"toc\"", "<figure class=\"article-image\"", "video-embed", "<figure class=\"infographic\"", "<section class=\"cta\""]
@@ -85,6 +85,63 @@ describe("enrichArticle", () => {
   });
 });
 
+describe("enrichArticle: every switch", () => {
+  const base = {
+    workspaceId: "ws",
+    keyword: "k",
+    title: "t",
+    domain: "example.com",
+    imageProducer: null,
+    fetchTitle: async () => null,
+  };
+
+  it("skips infographics, video and FAQ schema when they are off, and leaves the prose alone", async () => {
+    const videoSearch = vi.fn(async () => [VIDEO]);
+    const { html, report } = await enrichArticle(ARTICLE, {
+      ...base,
+      settings: { infographics: false, video: false, faqSchema: false },
+      videoSearch,
+    });
+    expect(report.infographics).toBe(0);
+    expect(html).not.toContain('<figure class="infographic"');
+    expect(report.video).toBe(false);
+    expect(videoSearch).not.toHaveBeenCalled();
+    expect(report.faq).toBe(0);
+    expect(report.faqSchema).toBeNull();
+    // The FAQ prose is still there; only the structured data is withheld.
+    expect(html).toContain("Frequently asked questions");
+    expect(report.warnings).toEqual([]);
+  });
+
+  it("runs them when on, and paints the chart bars in the brand colour", async () => {
+    const { html, report } = await enrichArticle(ARTICLE, {
+      ...base,
+      settings: { brandColor: "#1a1815" },
+      videoSearch: async () => [VIDEO],
+    });
+    expect(report.infographics).toBe(1);
+    expect(html).toContain('fill="#1a1815"');
+    expect(report.video).toBe(true);
+    expect(report.faq).toBe(3);
+  });
+
+  it("generates body images in the site's preset", async () => {
+    const briefs: string[] = [];
+    const { report } = await enrichArticle(ARTICLE, {
+      ...base,
+      settings: { imageStyle: "watercolor" },
+      imageProducer: async (b, i) => {
+        briefs.push(b.style);
+        return `https://cdn.test/${i}.webp`;
+      },
+      videoSearch: async () => [],
+    });
+    expect(report.imageStyle).toBe("watercolor");
+    expect(briefs.length).toBeGreaterThan(0);
+    expect(new Set(briefs)).toEqual(new Set(["watercolor"]));
+  });
+});
+
 describe("loadEnrichmentSettings", () => {
   function client(response: { data: unknown; error?: unknown }) {
     return {
@@ -97,10 +154,42 @@ describe("loadEnrichmentSettings", () => {
     expect(await loadEnrichmentSettings(client({ data: null }), "ws")).toEqual(DEFAULT_SETTINGS);
   });
 
-  it("reads the two columns it needs", async () => {
+  it("reads the row through the one parser and defaults what a pre-064 row lacks", async () => {
     expect(
       await loadEnrichmentSettings(client({ data: { table_of_contents: false, call_to_action: true } }), "ws"),
-    ).toEqual({ tableOfContents: false, callToAction: true });
+    ).toEqual({ ...DEFAULT_SETTINGS, tableOfContents: false, callToAction: true });
+    expect(
+      await loadEnrichmentSettings(
+        client({
+          data: {
+            table_of_contents: true,
+            call_to_action: true,
+            infographics: false,
+            video: false,
+            faq_schema: false,
+            image_style: "watercolor",
+            brand_color: "#1A1815",
+            youtube_channel: "@acme",
+          },
+        }),
+        "ws",
+      ),
+    ).toEqual({
+      tableOfContents: true,
+      callToAction: true,
+      infographics: false,
+      video: false,
+      faqSchema: false,
+      imageStyle: "watercolor",
+      brandColor: "#1a1815",
+      youtubeChannel: "@acme",
+    });
+  });
+
+  it("never renders an unknown preset: it falls to the default", async () => {
+    const s = await loadEnrichmentSettings(client({ data: { image_style: "oil on canvas", brand_color: "red" } }), "ws");
+    expect(s.imageStyle).toBe("sketch");
+    expect(s.brandColor).toBeNull();
   });
 
   it("swallows a client that throws", async () => {
