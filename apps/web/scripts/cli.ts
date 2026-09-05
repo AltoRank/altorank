@@ -60,6 +60,8 @@ const USAGE =
 async function run(argv: string[]): Promise<Envelope> {
   const { positional, flags } = parseArgs(argv);
   const [group, command, id] = positional;
+  // Asking for help is not an error, and neither is running with no command.
+  if (flags.help || flags.h || !group) return ok({ usage: USAGE }, "Pick a command from the usage line; every one returns this envelope.");
   const apiKey = str(flags["api-key"]);
   const workspace = str(flags.workspace) ?? str(flags["workspace-id"]);
 

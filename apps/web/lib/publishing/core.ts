@@ -373,6 +373,13 @@ async function pushToDestination(
       return result;
     }
 
+    // A local or preview run must not tell IndexNow or Search Console about a
+    // customer's URL: a re-test did exactly that once. Production, or an
+    // explicit opt-in, is the only place these submissions leave the box.
+    if (process.env.NODE_ENV !== "production" && process.env.ALLOW_INDEXING_SUBMISSIONS !== "1") {
+      console.warn("[publish] indexing submission skipped outside production");
+      return result;
+    }
     const indexing = await submitForIndexing({
       url: result.url,
       indexNowKey: ws?.indexnow_key ?? null,

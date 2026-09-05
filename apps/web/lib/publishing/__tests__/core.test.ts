@@ -228,6 +228,8 @@ describe("publishArticleCore", () => {
   }
 
   it("a live publish submits the URL for indexing", async () => {
+    // Outside production the submission is skipped on purpose; this test is about the submission.
+    process.env.ALLOW_INDEXING_SUBMISSIONS = "1";
     (resolveCMSAdapter as ReturnType<typeof vi.fn>).mockReturnValue({
       publish: vi.fn().mockResolvedValue({ externalId: "ext-1", url: "https://example.com/blog/test" }),
     });

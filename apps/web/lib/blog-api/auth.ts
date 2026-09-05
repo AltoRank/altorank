@@ -18,6 +18,7 @@
 // must belong to that agency. Nothing is read before both hold.
 
 import { NextResponse } from "next/server";
+import { apiKeyState, hashApiKey, looksLikeApiKey } from "@/lib/agent/api-keys";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
 
@@ -46,11 +47,29 @@ export async function authenticateBlogRequest(request: Request): Promise<BlogAut
 
   const supabase = createServiceClient();
 
-  const { data: agency } = await supabase
-    .from("agencies")
-    .select("id")
-    .eq("api_key", key)
-    .maybeSingle();
+  // Scoped keys (settings → API keys) first; the legacy single account key
+  // stays accepted until every install has rotated to a scoped one.
+  let agency: { id: string } | null = null;
+  if (looksLikeApiKey(key)) {
+    const { data: row } = await supabase
+      .from("api_keys")
+      .select("agency_id, revoked_at, expires_at, scopes")
+      .eq("key_hash", hashApiKey(key))
+      .maybeSingle();
+    if (row && apiKeyState(row) === "active") {
+      const scopes = (row.scopes as string[] | null) ?? [];
+      if (scopes.length && !scopes.includes("read")) return deny(403, "This key cannot read articles");
+      agency = { id: row.agency_id as string };
+    }
+  }
+  if (!agency) {
+    const { data: legacy } = await supabase
+      .from("agencies")
+      .select("id")
+      .eq("api_key", key)
+      .maybeSingle();
+    agency = legacy ? { id: legacy.id as string } : null;
+  }
   if (!agency) return deny(401, "Invalid API key");
 
   const { data: workspace } = await supabase

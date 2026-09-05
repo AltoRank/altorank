@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { createServiceClient } from "@/lib/supabase/server";
-import { checkToolRateLimit } from "@/lib/tools/rate-limit";
+import { takeToolRateLimit, rateLimitHeaders } from "@/lib/tools/rate-limit";
 import { json, preflight, clientIp } from "@/lib/growth-plan/http";
 import { parsePublicDomain } from "@/lib/public-check/domain";
 import { AGENT_GUIDANCE, type PublicCheckData } from "@/lib/public-check/shape";
@@ -85,12 +85,16 @@ export async function POST(request: NextRequest) {
   let data: PublicCheckData | null = body.force ? null : await loadCachedCheck(supabase, domain);
   let cached = data !== null;
 
+  let limitHeaders: Record<string, string> = {};
   if (!data) {
-    if (!checkToolRateLimit("public-readiness", ip, RATE_LIMIT, RATE_WINDOW_MS)) {
+    const limitState = takeToolRateLimit("public-readiness", ip, RATE_LIMIT, RATE_WINDOW_MS);
+    limitHeaders = rateLimitHeaders(limitState);
+    if (!limitState.allowed) {
       return json(
         { ok: false, error: `That is ${RATE_LIMIT} checks in an hour from this connection. Try again later.` },
         429,
         origin,
+        limitHeaders,
       );
     }
     try {
@@ -108,7 +112,7 @@ export async function POST(request: NextRequest) {
     lead = await saveLead(supabase, body.email, data, ip);
   }
 
-  return json({ ok: true, data, cached, ...(lead ? { lead } : {}), agent_guidance: AGENT_GUIDANCE }, 200, origin);
+  return json({ ok: true, data, cached, ...(lead ? { lead } : {}), agent_guidance: AGENT_GUIDANCE }, 200, origin, limitHeaders);
 }
 
 async function saveLead(
@@ -117,7 +121,7 @@ async function saveLead(
   data: PublicCheckData,
   ip: string,
 ): Promise<{ saved: boolean; emailed: boolean }> {
-  if (!checkToolRateLimit("public-readiness-lead", ip, RATE_LIMIT, RATE_WINDOW_MS)) {
+  if (!takeToolRateLimit("public-readiness-lead", ip, RATE_LIMIT, RATE_WINDOW_MS).allowed) {
     return { saved: false, emailed: false };
   }
   const { error } = await supabase.from("tool_leads").insert({
