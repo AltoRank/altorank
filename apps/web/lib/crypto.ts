@@ -64,6 +64,8 @@ export function decrypt(encoded: string): string {
  *   v1  the original set. `token` was missing, so the git adapter's GitHub
  *       token sat in the clear in workspace_integrations.config.
  *   v2  adds `token` (git, wordpress-plugin).
+ *   v3  adds `clientSecret` (shopify client-credentials apps). `clientId` is
+ *       not listed: Shopify treats it as public, and it is the cache key.
  */
 const SENSITIVE_CONFIG_FIELDS_V1 = new Set([
   "applicationPassword",
@@ -77,17 +79,25 @@ const SENSITIVE_CONFIG_FIELDS_V1 = new Set([
   "username",
 ]);
 const SENSITIVE_CONFIG_FIELDS_V2 = new Set([...SENSITIVE_CONFIG_FIELDS_V1, "token"]);
-const CURRENT_VERSION = 2;
+const SENSITIVE_CONFIG_FIELDS_V3 = new Set([...SENSITIVE_CONFIG_FIELDS_V2, "clientSecret"]);
+const CURRENT_VERSION = 3;
 
 function fieldsForVersion(version: unknown): Set<string> {
-  return version === 2 ? SENSITIVE_CONFIG_FIELDS_V2 : SENSITIVE_CONFIG_FIELDS_V1;
+  switch (version) {
+    case 3:
+      return SENSITIVE_CONFIG_FIELDS_V3;
+    case 2:
+      return SENSITIVE_CONFIG_FIELDS_V2;
+    default:
+      return SENSITIVE_CONFIG_FIELDS_V1;
+  }
 }
 
 /** Encrypt sensitive fields in a config object before storage. */
 export function encryptConfig(config: Record<string, unknown>): Record<string, unknown> {
   const result = { ...config };
   for (const key of Object.keys(result)) {
-    if (SENSITIVE_CONFIG_FIELDS_V2.has(key) && typeof result[key] === "string") {
+    if (SENSITIVE_CONFIG_FIELDS_V3.has(key) && typeof result[key] === "string") {
       result[key] = encrypt(result[key] as string);
     }
   }

@@ -6,12 +6,24 @@ beforeAll(() => {
 });
 
 describe("config encryption versions", () => {
-  it("encrypts `token` on new rows and marks them version 2", () => {
+  it("encrypts `token` on new rows and marks them with the current version", () => {
     const stored = encryptConfig({ type: "wordpress-plugin", siteUrl: "https://x", token: "ab".repeat(32) });
-    expect(stored.__encrypted).toBe(2);
+    expect(stored.__encrypted).toBe(3);
     expect(stored.token).not.toBe("ab".repeat(32));
     expect(stored.siteUrl).toBe("https://x");
     expect(decryptConfig(stored)).toEqual({ type: "wordpress-plugin", siteUrl: "https://x", token: "ab".repeat(32) });
+  });
+
+  it("encrypts a Shopify client secret and leaves the client id readable", () => {
+    const stored = encryptConfig({ type: "shopify", storeUrl: "https://s.myshopify.com", clientId: "cid", clientSecret: "shh" });
+    expect(stored.clientId).toBe("cid");
+    expect(stored.clientSecret).not.toBe("shh");
+    expect(decryptConfig(stored)).toEqual({ type: "shopify", storeUrl: "https://s.myshopify.com", clientId: "cid", clientSecret: "shh" });
+  });
+
+  it("reads a version-2 row without touching fields it did not encrypt", () => {
+    const v2 = { __encrypted: 2, type: "shopify", storeUrl: "https://s", accessToken: encrypt("tok"), clientSecret: "never-encrypted-in-v2" };
+    expect(decryptConfig(v2)).toEqual({ type: "shopify", storeUrl: "https://s", accessToken: "tok", clientSecret: "never-encrypted-in-v2" });
   });
 
   it("reads a version-1 git row whose token was stored in the clear", () => {

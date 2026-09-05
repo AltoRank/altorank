@@ -19,7 +19,7 @@ import { parseWebflowFieldMap } from "@/lib/cms/webflow-fields";
 import { CONNECTOR_NOTES } from "@/lib/cms/connector-notes";
 import { WebflowPicker } from "./connect-cms-webflow";
 import { WixPicker } from "./connect-cms-wix";
-import { ShopifyGuide } from "./connect-cms-shopify";
+import { ShopifyGuide, shopifyCredentialsFromForm } from "./connect-cms-shopify";
 
 type CMSType =
   | "wordpress"
@@ -234,6 +234,11 @@ export function ConnectCmsDialog({
       }
 
       await connectIntegration(workspaceId, integrationId, config, publishMode);
+      if (config.type === "shopify" && config.clientSecret) {
+        // The secret is stored encrypted and never read back into a form;
+        // this is the one acknowledgement the person gets that it went in.
+        toast.success("Shopify connected. Client secret saved; it will not be shown again.");
+      }
       onOpenChange(false);
       onboarding?.completeStep("connect-cms");
       onConnected?.();
@@ -737,7 +742,9 @@ function buildConfig(type: CMSType, fd: FormData): CMSConfig {
       return {
         type: "shopify",
         storeUrl: (fd.get("storeUrl") as string).trim(),
-        accessToken: fd.get("accessToken") as string,
+        // The guide renders one credential mode's inputs at a time, so the
+        // form carries exactly one credential; the server re-checks that.
+        ...shopifyCredentialsFromForm(fd),
         ...(blogId ? { blogId } : {}),
       };
     }
