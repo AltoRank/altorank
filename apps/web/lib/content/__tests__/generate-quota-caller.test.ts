@@ -23,6 +23,15 @@ vi.mock("@/lib/billing/quota", () => ({
   quotaExceededMessage: () => "The free draft is used.",
 }));
 
+// Imported here, not inside the first test. generate.ts pulls in the whole
+// AI, SEO and billing tree, and transforming that on a loaded worker took
+// longer than a test's 5s budget - the file timed out on main in two
+// independent full-suite runs on 2026-09-04 and passed alone every time. At
+// module level the cost lands on collection, which has no such clock.
+// `vi.mock` is hoisted above this line, so the mock is in place before the
+// import runs.
+import { generateArticle } from "../generate";
+
 /** Enough client to reach the quota gate and no further. */
 function client() {
   return {
@@ -50,7 +59,6 @@ beforeEach(() => {
 
 describe("generateArticle quota gate", () => {
   it("forwards an explicit null, so a cron is judged sessionless", async () => {
-    const { generateArticle } = await import("../generate");
     await expect(
       generateArticle({ supabase: client(), workspaceId: "ws1", keyword: "k",
                         autonomous: true, callerEmail: null }),
@@ -63,7 +71,6 @@ describe("generateArticle quota gate", () => {
   });
 
   it("passes undefined when the caller has a session to resolve", async () => {
-    const { generateArticle } = await import("../generate");
     await expect(
       generateArticle({ supabase: client(), workspaceId: "ws1", keyword: "k",
                         autonomous: true }),
@@ -79,7 +86,6 @@ describe("generateArticle quota gate", () => {
    * cron's answer would hand an operator bypass to whoever is onboarding.
    */
   it("does not infer sessionlessness from autonomous", async () => {
-    const { generateArticle } = await import("../generate");
     await expect(
       generateArticle({ supabase: client(), workspaceId: "ws1", keyword: "k",
                         autonomous: true }),

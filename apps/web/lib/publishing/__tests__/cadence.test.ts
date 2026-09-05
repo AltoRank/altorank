@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isCadenceDue, cadenceLocalDate } from "../cadence";
+import { isCadenceDue, cadenceDueState, cadenceLocalDate, withoutPaused } from "../cadence";
 
 // These tests replace the isCadenceSlotNow suite. That function matched a
 // 15-minute window starting at publish_time, which required a cron every 15
@@ -88,11 +88,42 @@ describe("isCadenceDue", () => {
   });
 });
 
+describe("cadenceDueState", () => {
+  const wednesday1005CET = new Date("2026-04-29T08:05:00Z");
+  const cadence = { timezone: "Europe/Rome", days_of_week: [1, 3, 5], publish_time: "10:00" };
+
+  it("names why a cadence is skipped, so an empty run is not mistaken for no cadences", () => {
+    expect(cadenceDueState(cadence, new Date("2026-04-30T08:05:00Z"), null)).toEqual({ due: false, reason: "not a publishing day" });
+    expect(cadenceDueState(cadence, new Date("2026-04-29T07:00:00Z"), null)).toEqual({ due: false, reason: "before publish time" });
+    const today = cadenceLocalDate(cadence.timezone, wednesday1005CET);
+    expect(cadenceDueState(cadence, wednesday1005CET, today)).toEqual({ due: false, reason: "already published today" });
+    expect(cadenceDueState(cadence, wednesday1005CET, null)).toEqual({ due: true, reason: null });
+  });
+  it("is the single source isCadenceDue reads from", () => {
+    expect(isCadenceDue(cadence, wednesday1005CET, null)).toBe(cadenceDueState(cadence, wednesday1005CET, null).due);
+  });
+});
+
 describe("cadenceLocalDate", () => {
   it("returns the local calendar date, not the UTC one", () => {
     // 23:30 UTC on the 29th is already 01:30 on the 30th in Rome.
     const lateUtc = new Date("2026-04-29T23:30:00Z");
     expect(cadenceLocalDate("Europe/Rome", lateUtc)).toBe("2026-04-30");
     expect(cadenceLocalDate("UTC", lateUtc)).toBe("2026-04-29");
+  });
+});
+
+describe("withoutPaused", () => {
+  it("drops rows whose workspace is paused and keeps the rest in order", () => {
+    const rows = [
+      { id: "a", workspace_id: "w1" },
+      { id: "b", workspace_id: "w2" },
+      { id: "c", workspace_id: "w1" },
+    ];
+    expect(withoutPaused(rows, new Set(["w1"])).map((r) => r.id)).toEqual(["b"]);
+  });
+  it("changes nothing when nothing is paused", () => {
+    const rows = [{ id: "a", workspace_id: "w1" }];
+    expect(withoutPaused(rows, new Set())).toEqual(rows);
   });
 });

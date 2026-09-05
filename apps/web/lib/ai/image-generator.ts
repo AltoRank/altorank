@@ -63,10 +63,27 @@ const CONTENT_TYPE: Record<string, string> = {
   jpeg: "image/jpeg",
 };
 
+/**
+ * What a caller adds beyond the article. All optional; the featured-image call
+ * in lib/content/generate.ts passes nothing.
+ */
+export interface ImageGenerationOptions {
+  /**
+   * An in-article image rather than the hero: the prompt then describes the
+   * passage it sits beside instead of the article as a whole. The body
+   * enrichment (lib/content/enrich/images.ts) names the section heading; the
+   * editor's regenerate-one-image passes the paragraph as the excerpt.
+   */
+  section?: { heading?: string; excerpt: string };
+  /** The person's own words for what they want changed (editor regenerate). */
+  instruction?: string;
+}
+
 export async function generateImage(
   articleTitle: string,
   keyword: string,
   brandStyle?: Record<string, unknown>,
+  options: ImageGenerationOptions = {},
 ): Promise<ImageGenerationResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY not configured");
@@ -78,13 +95,28 @@ export async function generateImage(
     ? `, using brand colors: ${brandStyle.colors}`
     : "";
 
+  const subject = options.section
+    ? [
+        options.section.heading
+          ? `Create an illustration for the section "${options.section.heading}" of a blog article about "${keyword}".`
+          : `Create an illustration for a passage of the blog article "${articleTitle}", which is about "${keyword}".`,
+        options.section.excerpt ? `The passage says: "${options.section.excerpt.trim().slice(0, 400)}".` : "",
+        `The image should be clean and suit an editorial article on a professional website.`,
+      ]
+    : [
+        `Create a professional, visually striking featured image for a blog article titled "${articleTitle}".`,
+        `The article is about "${keyword}".`,
+        `The image should be clean, modern, and suitable as a hero image on a professional website.`,
+      ];
+
   const prompt = [
-    `Create a professional, visually striking featured image for a blog article titled "${articleTitle}".`,
-    `The article is about "${keyword}".`,
-    `The image should be clean, modern, and suitable as a hero image on a professional website.`,
+    ...subject,
     `No text or watermarks in the image.`,
     styleHints,
     colorHints,
+    options.instruction?.trim()
+      ? `Direction from the editor: ${options.instruction.trim().slice(0, 400)}.`
+      : "",
   ]
     .filter(Boolean)
     .join(" ");

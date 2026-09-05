@@ -115,4 +115,22 @@ describe("normalizeTarget — cannibalisation", () => {
   it("is order independent", () => {
     expect(normalizeTarget("content marketing")).toBe(normalizeTarget("marketing content"));
   });
+
+  it("folds agent and verbal-noun endings, so the writer and the writing are one target", () => {
+    // Caught by the autonomous queue: it planned "seo content writing" and
+    // "seo content writer" as two articles. Same results page, same reader.
+    const a = normalizeTarget("seo content writing");
+    expect(normalizeTarget("seo content writer")).toBe(a);
+    expect(normalizeTarget("seo content writers")).toBe(a);
+    expect(normalizeTarget("seo content writers' guide")).toBe(normalizeTarget("seo content writing guide"));
+    expect(normalizeTarget("link building")).toBe(normalizeTarget("link builder"));
+  });
+
+  it("leaves a short word whole rather than stemming it to nothing", () => {
+    // "user" is not "us", "thing" is not "th": the ending must leave a stem
+    // that still says what the word was.
+    expect(normalizeTarget("user")).toBe("user");
+    expect(normalizeTarget("thing")).toBe("thing");
+    expect(normalizeTarget("string")).toBe("string");
+  });
 });

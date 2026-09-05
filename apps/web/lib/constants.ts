@@ -24,6 +24,14 @@ export type NavItem = {
   tagNew?: boolean;
   /** Built but not ready to be relied on: shown, labelled, not clickable. */
   soon?: boolean;
+  /** Active only on this exact path, not on paths beneath it. */
+  exact?: boolean;
+  /**
+   * Sub-items rendered indented under this one, expanded by default and
+   * collapsible (the shape Outrank uses for its Articles group). The parent
+   * row toggles; its href is where the collapsed rail sends a click.
+   */
+  children?: readonly NavItem[];
 };
 
 export const DASHBOARD_NAV: NavGroup[] = [
@@ -36,16 +44,36 @@ export const DASHBOARD_NAV: NavGroup[] = [
   {
     group: "Content",
     items: [
-      // Review is the first thing that wants attention, so it is a state of
-      // Articles rather than a section beside it (2026-09-02).
-      { id: "articles", label: "Articles", href: "/articles", icon: "articles" },
-      { id: "calendar", label: "Calendar", href: "/content", icon: "calendar" },
-      { id: "keywords", label: "Keywords", href: "/keywords", icon: "keywords" },
-      { id: "voice", label: "Brand Voice", href: "/voice", icon: "voice" },
-      // Under "Agency" until 2026-08-30, which is exactly backwards:
-      // connecting a CMS is onboarding step 4 for a solo founder, the least
-      // agency-specific job in the product.
-      { id: "integrations", label: "Integrations", href: "/connect", icon: "integrations" },
+      // One expandable "Articles" entry with the pipeline under it, in the
+      // order the work happens: plan, improve, see what was written, then the
+      // inputs (keywords, voice, links, CMS) and the settings that shape it.
+      // Re-assessed against Outrank's sidebar on 2026-09-05: its Articles
+      // group nests Content Planner, Improvements, Content History, Articles
+      // Settings, Integrations and Linking Configuration; a flat list of eight
+      // siblings hid that these are one workflow.
+      {
+        id: "articles-group",
+        label: "Articles",
+        href: "/content",
+        icon: "articles",
+        children: [
+          { id: "calendar", label: "Content planner", href: "/content", icon: "calendar" },
+          // Rewrites of pages that already rank, each waiting for a yes.
+          { id: "improvements", label: "Improvements", href: "/improvements", icon: "refresh" },
+          // Review is the first thing that wants attention, so it is a state of
+          // Articles rather than a section beside it (2026-09-02).
+          { id: "articles", label: "Content history", href: "/articles", icon: "articles" },
+          { id: "keywords", label: "Keywords", href: "/keywords", icon: "keywords" },
+          { id: "voice", label: "Brand voice", href: "/voice", icon: "voice" },
+          { id: "linking", label: "Linking", href: "/linking", icon: "link" },
+          // Under "Agency" until 2026-08-30, which is exactly backwards:
+          // connecting a CMS is onboarding step 4 for a solo founder, the least
+          // agency-specific job in the product.
+          { id: "integrations", label: "Integrations", href: "/connect", icon: "integrations" },
+          // The wizard's step-4 screen, permanently: nothing is onboarding-only.
+          { id: "article-settings", label: "Article settings", href: "/settings/articles", icon: "settings" },
+        ],
+      },
     ],
   },
   {
@@ -72,7 +100,10 @@ export const DASHBOARD_NAV: NavGroup[] = [
       // The roster is account management, not a daily section: the sidebar
       // switcher is where a workspace is chosen (2026-09-02).
       { id: "workspaces", label: "Your sites", href: "/workspaces", icon: "clients" },
-      { id: "settings", label: "Settings", href: "/settings", icon: "settings" },
+      // General settings. The article-shaped tabs are reached from the
+      // Articles group above, so this entry stays exact: it must not light up
+      // while someone is on Article settings under Articles.
+      { id: "settings", label: "Settings", href: "/settings", icon: "settings", exact: true },
     ],
   },
   // Its own group, so an operator can see at a glance that this is staff
@@ -88,6 +119,10 @@ export const DASHBOARD_NAV: NavGroup[] = [
 export const STATUS_META: Record<string, { label: string; cls: string }> = {
   live: { label: "Live", cls: "s-ok" },
   review: { label: "In review", cls: "s-warn" },
+  // Signed off, not yet sent. Both are article states the database allows
+  // (migration 013) that had no label, so the pill printed the raw value.
+  approved: { label: "Approved", cls: "s-ok" },
+  archived: { label: "Archived", cls: "s-idle" },
   drafting: { label: "Drafting", cls: "s-run" },
   scheduled: { label: "Scheduled", cls: "s-idle" },
   error: { label: "Failed", cls: "s-err" },
@@ -102,6 +137,7 @@ export const STATUS_META: Record<string, { label: string; cls: string }> = {
   negotiating: { label: "Negotiating", cls: "s-run" },
   lost: { label: "Lost", cls: "s-err" },
   new: { label: "New", cls: "s-idle" },
+  stored: { label: "Stored", cls: "s-draft" },
   planned: { label: "Planned", cls: "s-idle" },
   shipped: { label: "Shipped", cls: "s-ok" },
 };
@@ -112,3 +148,10 @@ export const AVATAR_COLORS = [
 ] as const;
 
 export type AvatarColor = (typeof AVATAR_COLORS)[number];
+
+// Mirrors OSS_REPO_PUBLIC / OSS_REPO_URL in apps/marketing/src/constants.ts,
+// which is the source of truth and carries the history. Flipped true
+// 2026-08-30 when github.com/AltoRank/altorank went public. Change both.
+export const OSS_REPO_PUBLIC = true;
+export const OSS_REPO_URL = "https://github.com/AltoRank/altorank";
+export const MARKETING_URL = "https://altorank.co";

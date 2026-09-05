@@ -3,6 +3,10 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { IconButton } from "@/components/ui/button";
 import { Chip, Icons } from "@/components/ui";
+import { ResearchButtons } from "@/components/dashboard/keyword-research/research-buttons";
+import { ArticlesPlanPopover } from "@/components/dashboard/articles-plan-popover";
+import { PausedBanner } from "@/components/dashboard/paused-banner";
+import { useWorkspace } from "@/components/dashboard/workspace-context";
 
 interface CalendarControlsProps {
   currentMonth: string; // "2026-05"
@@ -12,6 +16,7 @@ interface CalendarControlsProps {
 export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { active } = useWorkspace();
 
   function navigateMonth(delta: number) {
     const [y, m] = currentMonth.split("-").map(Number);
@@ -36,6 +41,10 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
   }
 
   return (
+    <>
+    {active?.status === "paused" && (
+      <PausedBanner workspaceId={active.id} meta={active.paused_meta} className="mb-4" />
+    )}
     <div className="flex items-center gap-2 mb-4 flex-wrap">
       <div className="flex items-center gap-2 ml-2">
         <IconButton ghost onClick={() => navigateMonth(-1)}>
@@ -47,6 +56,7 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
         </IconButton>
       </div>
       <div className="flex-1" />
+      <ArticlesPlanPopover />
       {/* Was "All workspaces", which named the wrong axis: the calendar is
           scoped to one site, and this chip filters entry kind, not workspace. */}
       <Chip
@@ -59,6 +69,8 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
         active={clientFilter === "publishing"}
         onClick={() => setClientFilter("publishing")}
       />
+      <ResearchButtons />
     </div>
+    </>
   );
 }

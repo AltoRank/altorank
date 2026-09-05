@@ -28,7 +28,9 @@ export class WooCommerceAdapter implements CMSAdapter {
         title: article.title,
         content: article.html,
         slug: article.slug,
-        status: "publish",
+        // A draft connection saves the post for someone to publish from the
+        // admin; the REST field is the same one unpublish() writes.
+        status: article.publishMode === "draft" ? "draft" : "publish",
         excerpt: article.metaDescription ?? "",
         ...(article.tags?.length && { tags: article.tags }),
       }),

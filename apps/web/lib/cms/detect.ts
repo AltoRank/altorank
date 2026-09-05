@@ -159,7 +159,9 @@ export const PLATFORM_HINT: Record<DetectedPlatform, string> = {
  * platform with nothing to connect (Squarespace has no write API).
  */
 export const PLATFORM_CONNECT_TYPE: Record<DetectedPlatform, string | null> = {
-  wordpress: "wordpress",
+  // The plugin path, not the application-password one: it needs no WordPress
+  // user account and is the only one that writes every SEO plugin's fields.
+  wordpress: "wordpress-plugin",
   woocommerce: "woocommerce",
   shopify: "shopify",
   webflow: "webflow",

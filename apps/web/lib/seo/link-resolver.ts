@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { stripDeadLinks } from "@/lib/ai/utils";
+import { getLinkTargetsForPrompt } from "@/lib/linking/targets";
+import { extractLinks, isKnownPage, type LinkRef } from "@/lib/seo/links";
 
 // ---------------------------------------------------------------------------
 // Internal links: one library, offered to the writer and resolved afterwards
@@ -16,8 +18,9 @@ import { stripDeadLinks } from "@/lib/ai/utils";
 //      internal links pointing at `#` or at a guessed path.
 //
 //   2. A target is a page with a URL we have observed, which means a live
-//      article with `published_url`. There is no workspace-wide blog base URL
-//      to build one from (the derivation in lib/cms/blog-url.ts is per git
+//      article with `published_url`, a page the crawl read, or a row of the
+//      configured link pool. There is no workspace-wide blog base URL to
+//      build one from (the derivation in lib/cms/blog-url.ts is per git
 //      integration), so `domain/slug` was a guess and usually a 404.
 //
 // A placeholder that cannot be resolved is unwrapped to its text. A link that
@@ -28,6 +31,11 @@ export interface LinkTarget {
   keyword: string;
   title: string;
   url: string;
+  /**
+   * Anchor texts the site owner prefers for this page, from the link pool.
+   * When set, the resolver uses one of them as the link's text.
+   */
+  anchors?: string[];
 }
 
 /**
@@ -35,67 +43,18 @@ export interface LinkTarget {
  * knows what exists) and by the resolver (so what it wrote can be honoured),
  * so the two cannot disagree.
  *
- * Two sources, and the second is the one that matters on a real site:
- *
- *   articles    what AltoRank wrote and published, with a URL we recorded.
- *   site_pages  what the customer had already published before they arrived,
- *               discovered from their own sitemap by lib/seo/site-crawl.ts.
- *
- * Until the crawl existed this was articles alone, so a customer with 204
- * published posts had zero link targets and every generated draft linked to
- * nothing. Articles come first: a page we wrote, approved and published is
- * better understood than one we merely read.
+ * The list is the configured pool on /linking merged with our own live
+ * articles and the crawl's pages, ranked for the article being written; see
+ * lib/linking/targets.ts. Pass `keyword` so the ranking can prefer pages on
+ * the draft's subject.
  */
 export async function fetchLinkTargets(
   supabase: SupabaseClient,
   workspaceId: string,
   excludeArticleId?: string,
+  opts: { keyword?: string | null; limit?: number } = {},
 ): Promise<LinkTarget[]> {
-  let query = supabase
-    .from("articles")
-    .select("title, keyword, published_url")
-    .eq("workspace_id", workspaceId)
-    .eq("status", "live")
-    .not("published_url", "is", null)
-    .order("published_at", { ascending: false, nullsFirst: false });
-
-  if (excludeArticleId) query = query.neq("id", excludeArticleId);
-
-  const { data } = await query;
-  const targets: LinkTarget[] = (data ?? [])
-    .filter(
-      (a): a is { title: string; keyword: string; published_url: string } =>
-        Boolean(a.title && a.keyword && a.published_url),
-    )
-    .map((a) => ({ keyword: a.keyword, title: a.title, url: a.published_url }));
-
-  // Crawled pages that answered, carry a title, and have a term to match on.
-  // A page whose keyword had to be guessed from its H1 is still a fine link
-  // target: the anchor text the writer chooses is matched against title and
-  // path as well, and a wrong guess simply scores too low to be picked.
-  const { data: crawled } = await supabase
-    .from("site_pages")
-    .select("url, title, keyword")
-    .eq("workspace_id", workspaceId)
-    // Articles only. Linking a sentence to /blog or /blog/de sends the reader
-    // to an index to search again, which is worse than not linking at all.
-    .eq("page_type", "article")
-    .gte("status", 200)
-    .lt("status", 400)
-    .not("title", "is", null)
-    .not("keyword", "is", null)
-    .order("position", { ascending: true, nullsFirst: false })
-    .limit(200);
-
-  const seen = new Set(targets.map((t) => t.url));
-  for (const p of crawled ?? []) {
-    const url = p.url as string;
-    if (seen.has(url)) continue;
-    seen.add(url);
-    targets.push({ keyword: p.keyword as string, title: p.title as string, url });
-  }
-
-  return targets;
+  return getLinkTargetsForPrompt(supabase, workspaceId, { ...opts, excludeArticleId });
 }
 
 /**
@@ -105,6 +64,10 @@ export async function fetchLinkTargets(
  * Pure: the caller fetches the targets once and hands the same list to the
  * prompt. Each target is used at most once, so two placeholders for related
  * topics do not both land on the same page.
+ *
+ * A target with preferred anchors gets one of them as the link text: the one
+ * the writer already used if it is on the list, the first otherwise. A target
+ * without anchors keeps whatever the writer wrote.
  */
 export function resolveInternalLinks(html: string, targets: LinkTarget[]): string {
   const placeholderRegex = /\{\{internal-link:([^}]+)\}\}/g;
@@ -112,21 +75,23 @@ export function resolveInternalLinks(html: string, targets: LinkTarget[]): strin
   for (const m of html.matchAll(placeholderRegex)) topics.add(m[1].trim().toLowerCase());
   if (topics.size === 0) return html;
 
-  const resolved = new Map<string, string>();
+  const resolved = new Map<string, LinkTarget>();
   const used = new Set<string>();
   for (const topic of topics) {
     const best = findBestMatch(topic, targets, used);
     if (best) {
-      resolved.set(topic, best.url);
+      resolved.set(topic, best);
       used.add(best.url);
     }
   }
 
   const linked = html.replace(
-    /href=(["'])\{\{internal-link:([^}]+)\}\}\1/g,
-    (full, quote: string, rawTopic: string) => {
-      const url = resolved.get(rawTopic.trim().toLowerCase());
-      return url ? `href=${quote}${escapeAttr(url)}${quote}` : full;
+    /<a\b([^>]*?)href=(["'])\{\{internal-link:([^}]+)\}\}\2([^>]*)>([\s\S]*?)<\/a>/gi,
+    (full, before: string, quote: string, rawTopic: string, after: string, text: string) => {
+      const target = resolved.get(rawTopic.trim().toLowerCase());
+      if (!target) return full;
+      const href = `href=${quote}${escapeAttr(target.url)}${quote}`;
+      return `<a${before}${href}${after}>${preferredAnchor(text, target)}</a>`;
     },
   );
 
@@ -136,8 +101,70 @@ export function resolveInternalLinks(html: string, targets: LinkTarget[]): strin
   return stripDeadLinks(linked, { placeholders: true });
 }
 
+/**
+ * Unwrap every link to this site whose URL is not a page we know.
+ *
+ * The prompt lists what exists and says "link to these, and only these", and
+ * the model links to `/guides/founder-equity-splits` anyway: a same-domain
+ * URL it made up because the subject deserved a link and nothing on the list
+ * fit. The first draft for a fresh site (2026-09-05) carried four of them,
+ * each a 404 waiting to be published, and the pool it was offered was empty.
+ * A link to a page on the customer's own domain that we cannot show exists is
+ * a claim the code cannot verify, so it does not ship: the words stay, the
+ * link goes. Same rule the outbound check applies to a 404, applied before
+ * anything has to be fetched.
+ *
+ * `known` is the pool the draft was offered plus, on a rewrite, the links the
+ * existing page already had (see `existingInternalLinks`). Same-domain means
+ * the workspace domain with or without `www.`, or a relative path.
+ */
+export function unwrapUnknownInternalLinks(
+  html: string,
+  siteDomain: string | null | undefined,
+  known: readonly { url: string }[],
+): { html: string; removed: LinkRef[] } {
+  const removed: LinkRef[] = [];
+  const cleaned = html.replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (full, attrs: string, inner: string) => {
+    const [ref] = extractLinks(`<a${attrs}>x</a>`, siteDomain);
+    if (!ref || ref.kind !== "internal") return full;
+    if (isKnownPage(ref.href, siteDomain, known)) return full;
+    removed.push({ ...ref, anchor: inner.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() });
+    return inner;
+  });
+  return { html: cleaned, removed };
+}
+
+/**
+ * The pages an existing page already linked to on its own site. A rewrite is
+ * told to keep every link the page had, and those were real before we
+ * arrived, so they are known pages for `unwrapUnknownInternalLinks` even
+ * when the pool has never heard of them.
+ */
+export function existingInternalLinks(
+  existingHtml: string | null | undefined,
+  siteDomain: string | null | undefined,
+): { url: string }[] {
+  if (!existingHtml) return [];
+  return extractLinks(existingHtml, siteDomain)
+    .filter((l) => l.kind === "internal")
+    .map((l) => ({ url: l.href }));
+}
+
+/** The link text to publish: the writer's, unless the pool prefers otherwise. */
+export function preferredAnchor(written: string, target: LinkTarget): string {
+  const anchors = (target.anchors ?? []).map((a) => a.trim()).filter(Boolean);
+  if (anchors.length === 0) return written;
+  const plain = written.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+  const kept = anchors.find((a) => a.toLowerCase() === plain);
+  return escapeText(kept ?? anchors[0]);
+}
+
 function escapeAttr(url: string): string {
   return url.replace(/"/g, "%22").replace(/'/g, "%27");
+}
+
+function escapeText(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 // ---------------------------------------------------------------------------
@@ -169,13 +196,23 @@ function findBestMatch(
 
 function scoreSimilarity(topic: string, target: LinkTarget): number {
   if (target.keyword.trim().toLowerCase() === topic) return 1;
+  // A preferred anchor names the page as its owner would; matching one is as
+  // good as matching the keyword.
+  if ((target.anchors ?? []).some((a) => a.trim().toLowerCase() === topic)) return 1;
 
   const topicWords = tokenize(topic);
   const keywordOverlap = wordOverlap(topicWords, tokenize(target.keyword));
   const titleOverlap = wordOverlap(topicWords, tokenize(target.title));
   const slugOverlap = wordOverlap(topicWords, tokenize(pathWords(target.url)));
+  const anchorOverlap = Math.max(
+    0,
+    ...(target.anchors ?? []).map((a) => wordOverlap(topicWords, tokenize(a))),
+  );
 
-  return keywordOverlap * 0.5 + titleOverlap * 0.35 + slugOverlap * 0.15;
+  return Math.max(
+    keywordOverlap * 0.5 + titleOverlap * 0.35 + slugOverlap * 0.15,
+    anchorOverlap * 0.6,
+  );
 }
 
 function pathWords(url: string): string {

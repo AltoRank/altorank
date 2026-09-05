@@ -22,23 +22,39 @@ import { scoreCitationReadiness } from "@/lib/seo/aeo-scoring";
 import { recordSpend, anthropicCost } from "@/lib/billing/spend";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recordOverageArticle } from "@/lib/billing/overage";
+import { spendClient } from "@/lib/billing/default-spend";
 import { setSpendReporter } from "@/lib/seo/client";
+import { fetchKnownPages } from "@/lib/linking/targets";
 import { anthropicModel } from "@/lib/ai/models";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
 import { generateImage } from "@/lib/ai/image-generator";
 import { uploadImageBuffer } from "@/lib/storage/images";
-import { fetchLinkTargets, resolveInternalLinks } from "@/lib/seo/link-resolver";
+import {
+  existingInternalLinks,
+  fetchLinkTargets,
+  resolveInternalLinks,
+  unwrapUnknownInternalLinks,
+} from "@/lib/seo/link-resolver";
 import { verifyOutboundLinks, type LinkCheck } from "@/lib/seo/link-check";
 import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research";
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { getLocale } from "@/lib/seo/locales";
-import type { VoiceRules } from "@/lib/ai/types";
+import type { ArticleBrief, RefreshContext, VoiceRules } from "@/lib/ai/types";
+import { classifyKeyword, targetWordCountFor } from "@/lib/keywords/taxonomy";
+import { parseStoredQuestions } from "@/lib/keywords/questions";
+import { e2eStubsEnabled, stubGenerateArticle } from "@/lib/e2e/stubs";
 
 export interface GenerateArticleOptions {
   supabase: SupabaseClient;
   workspaceId: string;
   keyword: string;
+  /**
+   * The keyword row this draft is for, when the caller knows it (a planned
+   * calendar entry does). Without it the row is looked up by term, which is
+   * right in every case but a workspace tracking the same term twice.
+   */
+  keywordId?: string;
   title?: string;
   /** Marks the draft as machine-chosen, so a reviewer can tell. */
   autonomous?: boolean;
@@ -99,6 +115,20 @@ export interface GenerateArticleOptions {
   onChunk?: (html: string) => void;
   /** Called once research completes, before the model starts. */
   onResearch?: (research: ArticleResearch) => void;
+  /**
+   * Rewrite an existing page instead of writing a new one.
+   *
+   * Same pipeline - quota, research, model, typography, link checks, fact
+   * check, scoring - with two differences: the prompt carries the current
+   * body and a brief, and nothing is written to `articles`. The result comes
+   * back as HTML for the caller (lib/refresh/rewrite.ts) to diff against the
+   * original and store as an execution awaiting review. Writing the rewrite
+   * into the article row here would put an unreviewed body under a live page.
+   *
+   * `articleId` names the page we wrote, when we did, so the job and the
+   * spend are attributed to it; `url` is where the page lives either way.
+   */
+  refreshOf?: RefreshContext & { articleId?: string | null };
 }
 
 export interface GenerateArticleResult {
@@ -109,13 +139,43 @@ export interface GenerateArticleResult {
   tokensUsed: number;
   research: ArticleResearch;
   factCheck: FactCheckReport;
+  /** The processed body. Always set; a refresh caller has nowhere else to read it. */
+  html: string;
+  metaDescription: string;
+  linkChecks: LinkCheck[] | null;
+  seoScore: number;
+  aeoScore: number;
 }
 
+/** The URL slug a new article gets from its title or keyword. Shared with the agent API, which creates the row before this runs. */
+export function slugFor(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+/** A rewrite of a page the product did not write has no article id. */
+export type RefreshArticleResult = Omit<GenerateArticleResult, "articleId"> & {
+  articleId: string | null;
+};
+
+// Two signatures, one body: a caller writing a new article always gets an id
+// back; a refresh caller may not, and the types say so rather than handing
+// the cron an `articleId` it has to null-check for a case it never hits.
+export async function generateArticle(
+  options: GenerateArticleOptions & { refreshOf: NonNullable<GenerateArticleOptions["refreshOf"]> },
+): Promise<RefreshArticleResult>;
+export async function generateArticle(
+  options: GenerateArticleOptions & { refreshOf?: undefined },
+): Promise<GenerateArticleResult>;
 export async function generateArticle(
   options: GenerateArticleOptions,
-): Promise<GenerateArticleResult> {
-  const { supabase, workspaceId, keyword, title, autonomous, onChunk, onResearch,
-    selection, articleId, billToAgencyId, callerEmail,
+): Promise<GenerateArticleResult | RefreshArticleResult> {
+  // E2E_STUBS: a fixture draft through the same rows and the same review gate (lib/e2e/stubs.ts).
+  if (e2eStubsEnabled()) return stubGenerateArticle(options);
+  const { supabase, workspaceId, keyword, keywordId, title, autonomous, onChunk, onResearch,
+    selection, articleId, billToAgencyId, callerEmail, refreshOf,
   } = options;
 
   const { data: workspace, error: wsError } = await supabase
@@ -158,22 +218,67 @@ export async function generateArticle(
 
   const voiceRules = (voiceProfile?.rules as VoiceRules) ?? undefined;
 
-  const slug = (title || keyword)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
+  // Output preferences from onboarding. Absent rows (older workspaces, or an
+  // install that has not run 049) fall through to the prompt's defaults.
+  const { data: outputRow } = await supabase
+    .from("workspace_output_settings")
+    .select("tone, internal_links, table_of_contents, call_to_action, first_person, mention_similar_products, global_article_prompt")
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  const output = outputRow
+    ? {
+        tone: outputRow.tone as string,
+        internalLinks: outputRow.internal_links as number,
+        tableOfContents: outputRow.table_of_contents as boolean,
+        callToAction: outputRow.call_to_action as boolean,
+        firstPerson: outputRow.first_person as boolean,
+        mentionSimilarProducts: outputRow.mention_similar_products as boolean,
+        customInstructions: outputRow.global_article_prompt as string | null,
+      }
+    : undefined;
+
+  // The keyword as an object: what the owner said about this article in
+  // particular. By id when the plan supplies one, else by term within the
+  // workspace. Absent for a term typed straight into the modal, which is fine:
+  // the draft then carries no brief rather than a guessed one.
+  type KeywordRow = {
+    id: string;
+    term: string;
+    instructions: string | null;
+    quality_questions: unknown;
+    article_type: string | null;
+    article_subtype: string | null;
+    expected_length: string | null;
+  };
+  let keywordRow: KeywordRow | null = null;
+  {
+    let q = supabase
+      .from("keywords")
+      .select("id, term, instructions, quality_questions, article_type, article_subtype, expected_length")
+      .eq("workspace_id", workspaceId);
+    q = keywordId ? q.eq("id", keywordId) : q.ilike("term", keyword.replace(/[\\%_]/g, (c) => `\\${c}`));
+    const { data } = await q.limit(1).maybeSingle();
+    keywordRow = (data as KeywordRow | null) ?? null;
+  }
+
+  const slug = slugFor(title || keyword);
 
   // Two shapes of run. The "new article" callers - the modal and the cron -
   // have no row yet and get one. The editor is generating into a draft the user
   // already has open and must write to that row.
-  let article: { id: string };
+  let article: { id: string | null };
   // The status the article carried before this run, so a failure can put it
   // back. Only set on the in-place path; `articleId` itself, not this, is what
   // the failure paths below key off, so a schema change to `status` can never
   // turn "restore it" into "delete it".
   let previousStatus: string | null = null;
 
-  if (articleId) {
+  if (refreshOf) {
+    // A rewrite touches no article row: the original stays exactly as it is
+    // until a person pushes the reviewed result. The id, when there is one,
+    // is only for attributing the job and the spend.
+    article = { id: refreshOf.articleId ?? null };
+  } else if (articleId) {
     const { data: existing, error: existingError } = await supabase
       .from("articles")
       .select("id, status")
@@ -204,6 +309,7 @@ export async function generateArticle(
         title: title || keyword,
         slug,
         keyword,
+        keyword_id: keywordRow?.id ?? null,
         status: "drafting",
         ai_provider: workspace.ai_provider || "claude",
         generated_autonomously: autonomous ?? false,
@@ -225,7 +331,10 @@ export async function generateArticle(
       article_id: article.id,
       status: "running",
       ai_provider: workspace.ai_provider || "claude",
-      prompt_config: { keyword, title, voiceRules, autonomous: autonomous ?? false },
+      prompt_config: {
+        keyword, title, voiceRules, autonomous: autonomous ?? false,
+        ...(refreshOf ? { refresh: { url: refreshOf.url ?? null, brief: refreshOf.brief } } : {}),
+      },
       started_at: new Date().toISOString(),
     })
     .select("id")
@@ -235,7 +344,9 @@ export async function generateArticle(
     // Only a row this run created may be deleted here. Generating into an
     // article the user already had, this line would destroy their draft
     // because a job row failed to insert.
-    if (articleId) {
+    if (refreshOf) {
+      // Nothing was written, so there is nothing to undo.
+    } else if (articleId) {
       await supabase
         .from("articles")
         .update({
@@ -252,11 +363,21 @@ export async function generateArticle(
   try {
     const locale = getLocale(workspace.language ?? "en");
 
+    // Spend is written with the service role, whatever client the caller
+    // holds. provider_spend is select-only under RLS, so a user-session client
+    // (onboarding, the "New article" modal) had every insert refused and
+    // recordSpend, which never throws, dropped the row without a trace: the
+    // first draft of every onboarding run cost real money and recorded none.
+    // The cron already passes a service client, so for it this is the same
+    // client either way. Only without a service key (tests, scripts) does the
+    // caller's client stand in.
+    const spendDb = spendClient() ?? supabase;
+
     // Attribute every DataForSEO call this run makes to this article, then
     // detach: the reporter is module-level, so leaving it set would bill a
     // later run's calls to this article.
     setSpendReporter(({ operation, costUsd }) => {
-      void recordSpend(supabase, {
+      void recordSpend(spendDb, {
         provider: "dataforseo",
         operation,
         costUsd,
@@ -287,9 +408,10 @@ export async function generateArticle(
      * Best-effort on purpose: enrichment must never take the draft down with
      * it, and null remains the honest value when the lookup fails.
      */
-    let facts: { volume: number | null; difficulty: number | null } = {
+    let facts: { volume: number | null; difficulty: number | null; cpc: number | null } = {
       volume: selection?.volume ?? null,
       difficulty: selection?.difficulty ?? null,
+      cpc: null,
     };
     if (facts.volume === null && facts.difficulty === null && hasDataForSEOCredentials()) {
       try {
@@ -304,8 +426,12 @@ export async function generateArticle(
             term: keyword,
             volume: facts.volume,
             difficulty: facts.difficulty,
+            cpc: facts.cpc,
             intent: research.intent.intent,
             status: "planned",
+            // Provenance only for a row this call creates. An existing row
+            // already knows where it came from and must keep saying so.
+            ...(keywordRow ? {} : { source_type: "manual" }),
           },
           { onConflict: "workspace_id,term" },
         );
@@ -320,7 +446,28 @@ export async function generateArticle(
     // different sets (the prompt any sibling with content, the resolver only
     // live rows), so the writer linked to drafts and every placeholder came
     // back unresolved. One list, two readers, no disagreement.
-    const linkTargets = await fetchLinkTargets(supabase, workspaceId, article.id);
+    const linkTargets = await fetchLinkTargets(supabase, workspaceId, article.id ?? undefined, { keyword });
+
+    // The brief: shape, length, instructions and answered questions. Shape
+    // falls back to the rule-based classification so every draft carries one,
+    // and only answered questions are passed; an unanswered question is not a
+    // fact about the business.
+    const shape =
+      keywordRow?.article_type && keywordRow.article_subtype
+        ? { article_type: keywordRow.article_type, article_subtype: keywordRow.article_subtype }
+        : classifyKeyword(keyword, research.intent.intent);
+    const answers = parseStoredQuestions(keywordRow?.quality_questions)
+      .filter((q): q is typeof q & { answer: string } => Boolean(q.answer))
+      .map((q) => ({ question: q.question, answer: q.answer }));
+    const expectedLength = keywordRow?.expected_length ?? "auto";
+    const brief: ArticleBrief = {
+      instructions: keywordRow?.instructions ?? null,
+      answers,
+      articleType: shape.article_type,
+      articleSubtype: shape.article_subtype,
+      expectedLength,
+    };
+    const targetWordCount = targetWordCountFor(expectedLength, research.recommendedWordCount);
 
     const generator = provider.streamArticle({
       keyword,
@@ -331,6 +478,17 @@ export async function generateArticle(
       internalLinkTargets: linkTargets
         .slice(0, 20)
         .map((t) => ({ title: t.title, keyword: t.keyword })),
+      output,
+      brief,
+      refreshOf: refreshOf
+        ? {
+            existingHtml: refreshOf.existingHtml,
+            brief: refreshOf.brief,
+            url: refreshOf.url ?? null,
+            title: refreshOf.title ?? null,
+            metaDescription: refreshOf.metaDescription ?? null,
+          }
+        : undefined,
     });
 
     let articleResult;
@@ -381,8 +539,32 @@ export async function generateArticle(
       }
     }
 
-    await enhance("video embed", (html) => embedYouTubeVideos(html, keyword));
+    // Not on a rewrite: the brief says preserve the page, and a video the
+    // original did not have is a new block for the reviewer to reject.
+    if (!refreshOf) await enhance("video embed", (html) => embedYouTubeVideos(html, keyword));
     await enhance("internal links", async (html) => resolveInternalLinks(html, linkTargets));
+
+    // What the draft may point at on its own site: the pool it was offered
+    // and, on a rewrite, the links the page already had. Every other
+    // same-domain link is one the writer made up (four on the first
+    // draft for a fresh site, all 404s, on an empty pool), and a URL on the
+    // customer's domain that we cannot show exists is not published. The
+    // same list is handed to the scorer below so it cannot count what this
+    // step would have removed.
+    const knownPages: { url: string }[] = [
+      ...linkTargets,
+      ...(await fetchKnownPages(supabase, workspaceId, article.id ?? undefined)),
+      ...existingInternalLinks(refreshOf?.existingHtml, workspace.domain),
+    ];
+    await enhance("internal link check", async (html) => {
+      const { html: cleaned, removed } = unwrapUnknownInternalLinks(html, workspace.domain, knownPages);
+      if (removed.length) {
+        console.warn(
+          `[generate] unwrapped ${removed.length} internal link(s) to pages not in the pool: ${removed.map((r) => r.href).join(", ")}`,
+        );
+      }
+      return cleaned;
+    });
 
     // Open every outbound link once. The brief asks for real URLs and a model
     // produces plausible ones; a 404 is unwrapped to its text and everything
@@ -396,10 +578,35 @@ export async function generateArticle(
       return verified.html;
     });
 
+    // Everything a finished article has beyond prose: heading ids, a table of
+    // contents, section images, a how-to video, charts for quoted numbers, a
+    // closing pointer to the site, FAQ schema. One call; the steps, their
+    // settings lookup and their fallbacks live in lib/content/enrich. The
+    // report rides on `research.enrichment`, which is saved below as-is.
+    // Imported here rather than at the top: the pipeline pulls in the image,
+    // video and audit modules, and the quota-gate tests import this file
+    // under a five-second budget they were already close to.
+    await enhance("body enrichment", async (html) => {
+      const { enrichArticle } = await import("@/lib/content/enrich");
+      const enriched = await enrichArticle(html, {
+        supabase,
+        workspaceId,
+        articleId: article.id,
+        runId: job.id,
+        keyword,
+        title: articleResult.title,
+        domain: workspace.domain,
+        language: workspace.language,
+        brandStyle: workspace.brand_style as Record<string, unknown> | null,
+        research: research as unknown as Record<string, unknown>,
+      });
+      return enriched.html;
+    });
+
     setSpendReporter(null);
 
     const model = anthropicModel("content");
-    await recordSpend(supabase, {
+    await recordSpend(spendDb, {
       provider: "anthropic",
       operation: model,
       costUsd: anthropicCost(
@@ -429,10 +636,11 @@ export async function generateArticle(
     const seo = scoreArticle(processedHtml, keyword, {
       metaDescription: articleResult.metaDescription,
       siteDomain: workspace.domain,
-      // The length the SERP asked for, which is what the prompt wrote to. A
-      // flat 1,500 punished every transactional piece the research had
-      // correctly kept short.
-      targetWordCount: research.recommendedWordCount,
+      knownPages,
+      // The length the prompt wrote to: the owner's band when they chose one,
+      // else what the SERP asked for. A flat 1,500 punished every
+      // transactional piece the research had correctly kept short.
+      targetWordCount,
       title: articleResult.title,
     });
     // The half that matches what this product actually claims: not "will it
@@ -450,13 +658,15 @@ export async function generateArticle(
     // (measured 2026-09-03: 15 of 15). The generation still must not fail over
     // an image, so the outcome is logged rather than thrown.
     let featuredImageUrl: string | null = null;
-    if (!process.env.OPENAI_API_KEY) {
+    if (!process.env.OPENAI_API_KEY && !refreshOf) {
       console.warn(
         "[generate] no featured image: OPENAI_API_KEY is not set, so image generation is skipped for every article",
       );
     }
     try {
-      if (process.env.OPENAI_API_KEY) {
+      // A rewrite keeps the page's own hero; generating another would be spend
+      // with nowhere to put it.
+      if (process.env.OPENAI_API_KEY && !refreshOf && article.id) {
         const imageResult = await generateImage(
           articleResult.title,
           keyword,
@@ -474,6 +684,36 @@ export async function generateArticle(
         "[generate] featured image failed:",
         err instanceof Error ? err.message : err,
       );
+    }
+
+    // A rewrite stops here. The body goes back to the caller, which diffs it
+    // against the original and stores the hunks for review; the article row,
+    // if there is one, is not touched until "Push to site".
+    if (refreshOf) {
+      await supabase
+        .from("generation_jobs")
+        .update({
+          status: "completed",
+          tokens_used: articleResult.tokensUsed,
+          result: { wordCount: articleResult.wordCount, title: articleResult.title, refresh: true },
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", job.id);
+
+      return {
+        articleId: article.id,
+        jobId: job.id,
+        title: articleResult.title,
+        wordCount: articleResult.wordCount,
+        tokensUsed: articleResult.tokensUsed,
+        research,
+        factCheck,
+        html: processedHtml,
+        metaDescription: articleResult.metaDescription,
+        linkChecks,
+        seoScore: seo.score,
+        aeoScore: aeo.score,
+      };
     }
 
     const { error: saveError } = await supabase
@@ -497,6 +737,18 @@ export async function generateArticle(
         // rather than a fabricated rationale.
         selection_reasons: selection?.reasons ?? null,
         selection_score: selection?.score ?? null,
+        // What the writer was told, frozen. Editing the keyword later must
+        // not rewrite what this draft was written from.
+        keyword_id: keywordRow?.id ?? null,
+        article_type: shape.article_type,
+        article_subtype: shape.article_subtype,
+        expected_length: expectedLength,
+        instructions_snapshot: {
+          instructions: brief.instructions,
+          answers: brief.answers,
+          targetWordCount: targetWordCount ?? null,
+          capturedAt: new Date().toISOString(),
+        },
         // Deliberately not `?? 0`. Unmeasured difficulty is not zero difficulty.
         keyword_difficulty: facts.difficulty,
         // Same reasoning, and the same column the picker already knew: this
@@ -539,13 +791,20 @@ export async function generateArticle(
       .eq("id", job.id);
 
     return {
-      articleId: article.id,
+      // Non-null on this path: the row was created or resolved above, and a
+      // refresh returned before reaching here.
+      articleId: article.id as string,
       jobId: job.id,
       title: articleResult.title,
       wordCount: articleResult.wordCount,
       tokensUsed: articleResult.tokensUsed,
       research,
       factCheck,
+      html: processedHtml,
+      metaDescription: articleResult.metaDescription,
+      linkChecks,
+      seoScore: seo.score,
+      aeoScore: aeo.score,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown generation error";
@@ -555,13 +814,16 @@ export async function generateArticle(
     // already had puts the status back where it found it: a failed generation
     // should not strand a good draft in a state the UI reads as broken. The
     // content is untouched either way, since it is only written on success.
-    await supabase
-      .from("articles")
-      .update({
-        status: articleId ? (previousStatus ?? "draft") : "error",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", article.id);
+    // A rewrite wrote no row and restores nothing.
+    if (!refreshOf && article.id) {
+      await supabase
+        .from("articles")
+        .update({
+          status: articleId ? (previousStatus ?? "draft") : "error",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", article.id);
+    }
 
     await supabase
       .from("generation_jobs")
@@ -569,5 +831,10 @@ export async function generateArticle(
       .eq("id", job.id);
 
     throw err;
+  } finally {
+    // The reporter is module-level. Detached on success above, but a throw
+    // between arming and that line left it pointing at this article, so the
+    // next run's DataForSEO calls were billed here. Always detach.
+    setSpendReporter(null);
   }
 }

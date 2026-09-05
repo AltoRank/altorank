@@ -21,7 +21,7 @@ import { runAgentReadiness, type ReadinessResult } from "./agent-readiness";
 import { crawlSite, usablePages } from "./crawler";
 import { runAuditChecks, calculateAuditScore } from "./checks";
 import { fetchPageSpeedDetailed } from "./pagespeed";
-import { discoverKeywords, discoverKeywordsFromSeeds, type DiscoveredKeyword } from "@/lib/seo/keywords";
+import { discoverKeywords, discoverKeywordsFromSeeds, type DiscoveredKeyword, storedCpc } from "@/lib/seo/keywords";
 import { profileIsUsable, seedPhrasesFromPages, scoreRelevance } from "@/lib/seo/topical-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
@@ -38,6 +38,7 @@ import { buildTopicalProfile, type TopicalProfile } from "@/lib/seo/topical-prof
 import { detectPlatform, type Detection } from "@/lib/cms/detect";
 import { syncBacklinks } from "@/lib/seo/backlinks";
 import { fetchDomainMetrics } from "@/lib/seo/domain-metrics";
+import { e2eStubsEnabled, stubAnalyseDomain } from "@/lib/e2e/stubs";
 
 export interface AnalysisLayer {
   id: "readiness" | "crawl" | "pagespeed" | "platform" | "keywords" | "ranked_keywords" | "backlinks" | "authority";
@@ -69,6 +70,9 @@ export interface DomainAnalysis {
   /** One-line summary for a human skimming the workspace. */
   headline: string;
 }
+
+/** A discovered keyword plus, for a gap row, the rival that holds it. */
+type Sourced = DiscoveredKeyword & { competitor?: string };
 
 /** Bounded so a first look cannot become an hour-long crawl of a huge site. */
 const MAX_PAGES = 40;
@@ -108,6 +112,8 @@ export async function analyseDomain(options: {
   /** The workspace's search market, e.g. 2380 for Italy. Paired with `locale`. */
   locationCode?: number;
 }): Promise<DomainAnalysis> {
+  // E2E_STUBS: fixture keywords, no crawl, no provider, nothing measured (lib/e2e/stubs.ts).
+  if (e2eStubsEnabled()) return stubAnalyseDomain(options);
   const domain = normalizeDomain(options.domain);
   const { supabase, workspaceId } = options;
   const depth = options.depth ?? "full";
@@ -323,20 +329,24 @@ export async function analyseDomain(options: {
       const gapRows = depth === "full"
         ? await fetchCompetitorGap(domain, { languageCode: options.locale ?? "en" }).catch(() => [])
         : [];
-      const fromGap: DiscoveredKeyword[] = gapRows.map((k) => ({
+      // The competitor is kept on the row: it becomes the keyword's
+      // provenance, which is what lets the dashboard say how many keywords
+      // each named rival actually produced.
+      const fromGap: Sourced[] = gapRows.map((k) => ({
         keyword: k.keyword,
         volume: k.volume,
         difficulty: k.difficulty,
         cpc: k.cpc,
         competition: 0,
         intent: k.intent,
+        competitor: k.competitor,
       }));
 
       const seeds = usable && depth === "full" ? seedPhrasesFromPages(crawledPages, domain) : [];
       const seeded = seeds.length ? await discoverKeywordsFromSeeds(seeds).catch(() => []) : [];
 
-      const byTerm = new Map<string, { k: DiscoveredKeyword; rank: number }>();
-      const add = (k: DiscoveredKeyword, rank: number) => {
+      const byTerm = new Map<string, { k: Sourced; rank: number }>();
+      const add = (k: Sourced, rank: number) => {
         const key = k.keyword.trim().toLowerCase();
         const prev = byTerm.get(key);
         if (!prev || rank < prev.rank) byTerm.set(key, { k, rank });
@@ -368,6 +378,8 @@ export async function analyseDomain(options: {
       const deduped = dedupePermutations(candidatesAll.map((c) => c.k));
       const keep = new Set(deduped.map((k) => k.keyword));
       const candidates = candidatesAll.filter((c) => keep.has(c.k.keyword));
+      // Overwritten below with what actually passes the quality and relevance
+      // filters; the wizard said "Found 8" while 3 rows were stored.
       keywordsFound = candidates.length;
 
       if (supabase && workspaceId && candidates.length) {
@@ -380,6 +392,7 @@ export async function analyseDomain(options: {
           .filter((c) => c.rank === 0 || !usable || c.r > 0)
           .sort((a, b) => a.rank - b.rank || b.r - a.r || b.k.volume - a.k.volume);
         const top = scored.slice(0, MAX_KEYWORDS_STORED);
+        keywordsFound = top.length;
 
         const { data: existing } = await supabase
           .from("keywords")
@@ -396,6 +409,7 @@ export async function analyseDomain(options: {
             term: c.k.keyword,
             volume: c.k.volume,
             difficulty: c.k.difficulty,
+            cpc: storedCpc(c.k.cpc),
             intent: c.k.intent ?? classifyIntent(c.k.keyword, options.locale ?? "en").intent,
             status: "new",
             // The rank is already the provenance: 0 is ranked_keywords, 1 the
@@ -405,6 +419,11 @@ export async function analyseDomain(options: {
             // otherwise re-applies the filter this row was excused from.
             source:
               c.rank === 0 ? "ranked" : c.rank === 1 ? "gap" : c.rank === 2 ? "ideas" : "ads",
+            // The finer provenance the dashboard rolls up: which competitor,
+            // or that it came from the site's own pages ("profile").
+            source_type:
+              c.rank === 0 ? "ranked" : c.rank === 1 ? "competitor" : c.rank === 2 ? "profile" : "ads",
+            source_ref: c.rank === 1 ? c.k.competitor ?? null : c.rank === 2 ? "profile" : null,
           }));
         if (rows.length) {
           const { data: inserted } = await supabase.from("keywords").insert(rows).select("id, term");

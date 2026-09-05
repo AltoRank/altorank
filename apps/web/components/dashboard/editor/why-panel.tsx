@@ -76,37 +76,49 @@ function CheckList({
   scored: boolean;
   footnote: string;
 }) {
-  // Failures first: they are the only ones that change a decision.
-  const failed = checks.filter((c) => !c.passed);
-  const passed = checks.filter((c) => c.passed);
+  // Failures first: they are the only ones that change a decision. A check
+  // that could not measure anything is neither: it sits last, hollow, and is
+  // left out of the tally so "7/7 passed" and the score agree on what was
+  // counted.
+  const failed = checks.filter((c) => !c.passed && !c.unverified);
+  const passed = checks.filter((c) => c.passed && !c.unverified);
+  const unverified = checks.filter((c) => c.unverified);
+  const counted = failed.length + passed.length;
 
   return (
     <div className="border-t border-line-soft pt-3">
       <div className="mb-2 flex items-baseline justify-between">
         <span className="text-[12px] text-ink-3">{title}</span>
         <span className="font-mono text-[11.5px] tabular-nums text-ink-3">
-          {passed.length}/{checks.length} passed
+          {passed.length}/{counted} passed
+          {unverified.length > 0 && ` · ${unverified.length} not counted`}
         </span>
       </div>
 
       <ul className="flex flex-col gap-1.5">
-        {[...failed, ...passed].map((check) => (
+        {[...failed, ...passed, ...unverified].map((check) => (
           <li key={check.name} className="flex gap-2 text-[12px] leading-snug">
             <span
               aria-hidden="true"
               className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${
-                check.passed ? "bg-ok" : "bg-warn"
+                check.unverified
+                  ? "border border-ink-4 bg-transparent"
+                  : check.passed
+                    ? "bg-ok"
+                    : "bg-warn"
               }`}
             />
             <span className="flex-1">
-              <span className={check.passed ? "text-ink-3" : "text-ink"}>
+              <span className={check.passed || check.unverified ? "text-ink-3" : "text-ink"}>
                 {CHECK_LABEL[check.name] ?? check.name}
               </span>
               {check.note && (
                 <span className="block text-[11.5px] text-ink-4">{check.note}</span>
               )}
             </span>
-            <span className="sr-only">{check.passed ? "passed" : "needs attention"}</span>
+            <span className="sr-only">
+              {check.unverified ? "not counted" : check.passed ? "passed" : "needs attention"}
+            </span>
           </li>
         ))}
       </ul>
@@ -298,7 +310,7 @@ export function WhyPanel({
           title="On-page checks"
           checks={checks}
           scored={seoScore > 0}
-          footnote="Whether Google will rank it. Weights are in lib/seo/scoring.ts."
+          footnote="Whether Google will rank it."
         />
       )}
 
@@ -310,7 +322,7 @@ export function WhyPanel({
           title="Citation readiness"
           checks={aeoChecks}
           scored={aeoScore !== null}
-          footnote="Whether an AI answer can quote it. Weights are in lib/seo/aeo-scoring.ts."
+          footnote="Whether an AI answer can quote it."
         />
       )}
 

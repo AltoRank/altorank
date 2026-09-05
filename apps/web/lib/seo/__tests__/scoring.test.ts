@@ -113,3 +113,93 @@ describe("scoreArticle — internal links", () => {
     expect(check(html, "example.com").note).toContain("found: 2");
   });
 });
+
+describe("scoreArticle — internal links against the pool", () => {
+  // The first draft for a fresh site: four links to invented same-domain paths on
+  // an empty pool, reported as "Internal links found: 4 · passed".
+  const invented = `<h1>W</h1><p>
+    <a href="/glossary/startup-studio">a</a>
+    <a href="/guides/corporate-venture-building">b</a>
+    <a href="https://example.com/guides/founder-equity-splits">c</a>
+    <a href="https://www.example.com/guides/x">d</a></p>`;
+
+  it("counts nothing that the pool does not know, and cannot pass while one remains", () => {
+    const withPool = scoreArticle(invented, "widgets", { siteDomain: "example.com", knownPages: [] })
+      .checks.find((x) => x.name === "internalLinks")!;
+    expect(withPool.passed).toBe(false);
+    expect(withPool.score).toBe(0);
+    expect(withPool.unverified).toBeUndefined();
+    expect(withPool.note).toContain("4 to pages not in the link pool");
+    expect(withPool.note).toContain("/glossary/startup-studio");
+  });
+
+  it("baseline without a pool still counts by domain (the caller made no claim)", () => {
+    expect(check(invented, "example.com").passed).toBe(true);
+  });
+
+  it("counts the known ones, names the rest, and fails while any unknown remains", () => {
+    const html = `<h1>W</h1><p>
+      <a href="/a">a</a> <a href="/b">b</a> <a href="https://www.example.com/c/">c</a>
+      <a href="/made-up">d</a></p>`;
+    const pool = [{ url: "https://example.com/a" }, { url: "https://example.com/b" }, { url: "https://example.com/c" }];
+    const c = scoreArticle(html, "widgets", { siteDomain: "example.com", knownPages: pool })
+      .checks.find((x) => x.name === "internalLinks")!;
+    expect(c.score).toBe(100);
+    expect(c.passed).toBe(false);
+    expect(c.note).toContain("3 to known pages");
+    expect(c.note).toContain("/made-up");
+    // Drop the invented one and it passes.
+    const clean = scoreArticle(html.replace('<a href="/made-up">d</a>', "d"), "widgets", {
+      siteDomain: "example.com",
+      knownPages: pool,
+    }).checks.find((x) => x.name === "internalLinks")!;
+    expect(clean.passed).toBe(true);
+    expect(clean.note).toBe("Internal links found: 3 (target: 3+)");
+  });
+
+  it("does not count the site root as an invented page", () => {
+    const html = '<h1>W</h1><p><a href="https://example.com/">home</a></p>';
+    const c = scoreArticle(html, "widgets", { siteDomain: "example.com", knownPages: [] })
+      .checks.find((x) => x.name === "internalLinks")!;
+    expect(c.note).toBe("Internal links found: 1 (target: 3+)");
+  });
+
+  it("is unverified, and carries no weight, when there are no links and no pool", () => {
+    const html = "<h1>W</h1><p>No links here.</p>";
+    const r = scoreArticle(html, "widgets", { siteDomain: "example.com", knownPages: [] });
+    const c = r.checks.find((x) => x.name === "internalLinks")!;
+    expect(c.unverified).toBe(true);
+    expect(c.passed).toBe(false);
+    expect(c.note).toContain("Not counted");
+    // Same draft, pool unknown: the check counts and scores zero, so the
+    // total is lower. The unverified variant redistributes its 15%.
+    const counted = scoreArticle(html, "widgets", { siteDomain: "example.com" });
+    expect(r.score).toBeGreaterThan(counted.score);
+  });
+});
+
+describe("scoreArticle — the number agrees with the list", () => {
+  const filler = "This sentence explains one useful thing about the topic in twelve words. ";
+  const withKw = "Small teams pick widgets for the metered pricing and simple setup. ";
+  const perfect = (extraKw: number) =>
+    "<h1>The Best Widgets for Small Teams in 2026</h1>" +
+    `<p>Widgets are small. ${filler.repeat(20)}${withKw}</p>` +
+    "<h2>Why widgets?</h2>" +
+    `<p>${filler.repeat(10)}${withKw}${"widgets ".repeat(extraKw)}</p>` +
+    "<h2>Which widgets?</h2>" +
+    `<p>${filler.repeat(10)}${withKw}</p>` +
+    '<p><a href="/a">Pricing guide.</a> <a href="/b">Setup guide.</a> <a href="/c">Comparison table.</a></p>';
+  const opts = { metaDescription: "Widgets compared for small teams: " + "x".repeat(100), targetWordCount: 500 };
+
+  it("never shows 100 beside a check that needs attention", () => {
+    // Density just over 2% scores 95, which at 10% weight rounds the total to
+    // 100. Seen on 2026-09-05: "100" over "Keyword density 2.1% needs attention".
+    const r = scoreArticle(perfect(5), "widgets", opts);
+    const density = r.checks.find((c) => c.name === "keywordDensity")!;
+    expect(density.passed).toBe(false);
+    expect(density.note).toMatch(/Keyword density: 2\.\d%/);
+    expect(r.score).toBeLessThan(100);
+    // And the clean draft still earns its 100.
+    expect(scoreArticle(perfect(0), "widgets", opts).score).toBe(100);
+  });
+});

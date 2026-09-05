@@ -77,12 +77,19 @@ export function classifyHref(href: string, siteDomain: string | null | undefined
 /** Every `<a>` in `html`, with its decoded href and visible text. */
 export function extractLinks(html: string, siteDomain: string | null | undefined): LinkRef[] {
   const out: LinkRef[] = [];
-  for (const m of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
+  for (const m of html.matchAll(/<a\b([^>]*)>/gi)) {
+    // The anchor's text runs to its closing tag or to the next `<a`, whichever
+    // comes first. A browser closes an anchor where another opens inside it;
+    // matching `<a>…</a>` lazily instead swallowed the nested tag as body text,
+    // so a draft with three links counted two (linking track, 2026-09-04).
+    const rest = html.slice((m.index ?? 0) + m[0].length);
+    const end = rest.search(/<\/a\s*>|<a\b/i);
+    const body = end === -1 ? rest : rest.slice(0, end);
     const hrefMatch = m[1].match(/\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
     // The editor escapes `&` as `&amp;` inside attributes too, so decode
     // before classifying or the URL that opens is not the one the text held.
     const href = decodeEntities(hrefMatch?.[1] ?? hrefMatch?.[2] ?? "").trim();
-    const anchor = decodeEntities(m[2].replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+    const anchor = decodeEntities(body.replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
     out.push({ href, anchor, kind: classifyHref(href, siteDomain) });
   }
   return out;
@@ -102,4 +109,66 @@ export function hrefsIn(html: string): string[] {
  */
 export function isCitationLink(href: string, siteDomain: string | null | undefined): boolean {
   return classifyHref(href, siteDomain) === "external";
+}
+
+// ---------------------------------------------------------------------------
+// Is this internal link a page we know?
+// ---------------------------------------------------------------------------
+//
+// "Internal" says where a link points. It does not say the page exists. The
+// writer is told which pages do (the link pool: configured targets, our own
+// live articles, the crawl) and told to link to those only, and it links to
+// `/guides/founder-equity-splits` anyway when the subject deserved a pointer
+// and nothing on the list fit. A same-domain URL nobody has observed is a
+// 404 with the customer's name on it, so every reader of a draft asks the
+// same question here: the resolver that unwraps it, the scorer that would
+// otherwise count it, the audit, and the editor panel that names it.
+
+/**
+ * One URL on this site reduced to the form two links to the same page compare
+ * equal under: host without `www.`, path without a trailing slash, no query
+ * or hash. A relative href resolves against the site domain.
+ */
+export function normaliseSiteUrl(href: string, siteDomain: string | null | undefined): string {
+  const site = normaliseDomain(siteDomain);
+  try {
+    const u = new URL(href.trim(), site ? `https://${site}` : "https://invalid.local");
+    u.hash = "";
+    u.search = "";
+    return `${u.host.replace(/^www\./, "")}${u.pathname.replace(/\/+$/, "")}`.toLowerCase();
+  } catch {
+    return href.trim().replace(/\/+$/, "").toLowerCase();
+  }
+}
+
+/** The known page `href` points at, or null when it points at none of them. */
+export function findKnownPage<T extends { url: string }>(
+  href: string,
+  siteDomain: string | null | undefined,
+  pages: readonly T[],
+): T | null {
+  const want = normaliseSiteUrl(href, siteDomain);
+  for (const p of pages) {
+    if (normaliseSiteUrl(p.url, siteDomain) === want) return p;
+  }
+  return null;
+}
+
+/** Whether `href` is the site's root: `https://example.com/`, `/`, or the bare domain. */
+export function isSiteRoot(href: string, siteDomain: string | null | undefined): boolean {
+  const site = normaliseDomain(siteDomain);
+  return Boolean(site) && normaliseSiteUrl(href, siteDomain) === site;
+}
+
+/**
+ * Whether an internal `href` points at a page we can show exists: one of
+ * `pages`, or the site's own root. The root is the one page whose existence
+ * the workspace itself asserts, and the closing call to action links to it.
+ */
+export function isKnownPage(
+  href: string,
+  siteDomain: string | null | undefined,
+  pages: readonly { url: string }[],
+): boolean {
+  return isSiteRoot(href, siteDomain) || findKnownPage(href, siteDomain, pages) !== null;
 }

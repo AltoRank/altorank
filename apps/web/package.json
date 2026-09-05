@@ -11,8 +11,12 @@
     "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "lint": "eslint",
     "test": "vitest run",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "dev:e2e": "E2E_STUBS=1 NEXT_DIST_DIR=.next-e2e next dev -p 3110",
     "readiness": "tsx scripts/readiness.ts",
     "mcp": "tsx scripts/mcp.ts",
+    "cli": "tsx scripts/cli.ts",
     "smoke": "tsx --env-file=.env.local scripts/smoke.ts",
     "dogfood": "tsx --env-file=.env.local scripts/dogfood.ts",
     "audit:articles": "tsx --env-file=.env.local scripts/audit-articles.ts",
@@ -22,6 +26,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/utilities": "^3.2.2",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@radix-ui/react-tooltip": "^1.2.16",
     "@react-pdf/renderer": "^4.5.1",
@@ -49,6 +55,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

@@ -1,6 +1,7 @@
 import type { ArticlePrompt } from "./types";
 import type { ArticleResearch } from "@/lib/seo/research";
 import { INTENT_GUIDANCE } from "@/lib/seo/intent";
+import { LENGTH_BANDS, TAXONOMY_LABELS, targetWordCountFor } from "@/lib/keywords/taxonomy";
 
 // ---------------------------------------------------------------------------
 // Build the system prompt sent to the AI model for article generation.
@@ -162,6 +163,97 @@ export function buildResearchSection(research: ArticleResearch): string[] {
   return sections;
 }
 
+/**
+ * The register that reads as machine-written, as a list.
+ *
+ * The prompt below bans these in prose; lib/refresh/validate.ts checks a
+ * rewrite against the same list so the check and the instruction cannot
+ * drift apart. Lower-case, matched as substrings of the page text.
+ */
+export const BANNED_PHRASES: readonly string[] = [
+  "in today's fast-paced world",
+  "in the ever-evolving landscape",
+  "in the digital age",
+  "let's dive in",
+  "look no further",
+  "delve",
+  "tapestry",
+  "unlock the power",
+  "game-changer",
+  "robust solution",
+  "seamlessly",
+  "it is important to note that",
+  "in conclusion",
+];
+
+/**
+ * The user turn. One place, so both providers say the same thing and a
+ * refresh asks for a rewrite rather than a fresh article.
+ */
+export function buildUserMessage(prompt: ArticlePrompt): string {
+  if (prompt.refreshOf) {
+    return `Rewrite the existing page now, following the brief, for the keyword: "${prompt.keyword}"`;
+  }
+  return `Write the article now for the keyword: "${prompt.keyword}"`;
+}
+
+/**
+ * The section that turns the article brief into a rewrite brief.
+ *
+ * Placed right after the role so the model reads "this page exists" before it
+ * reads the format rules, which otherwise describe a blank page. The body is
+ * capped because a refresh of a very long page still has to leave room for
+ * the output; the cap is generous enough that nothing normal is cut.
+ */
+export function buildRefreshSection(refresh: NonNullable<ArticlePrompt["refreshOf"]>): string[] {
+  const MAX_BODY = 60_000;
+  const body =
+    refresh.existingHtml.length > MAX_BODY
+      ? refresh.existingHtml.slice(0, MAX_BODY) + "\n<!-- truncated for length -->"
+      : refresh.existingHtml;
+  const { current, max } = refreshLengthBudget(refresh.existingHtml);
+  return [
+    [
+      "THIS IS A REWRITE OF AN EXISTING PAGE, NOT A NEW ARTICLE.",
+      `- The page is about ${current.toLocaleString()} words. The rewrite must stay under ` +
+        `${max.toLocaleString()} words. This cap wins over the brief: if the brief asks for more ` +
+        "than fits, sharpen existing sections instead of adding new ones, and add at most two " +
+        "new sections. The first run of this prompt without a cap produced a page that could " +
+        "not finish.",
+      refresh.url ? `- The page lives at ${refresh.url}.` : "",
+      refresh.title ? `- Its current title is: ${refresh.title}` : "",
+      refresh.metaDescription ? `- Its current meta description is: ${refresh.metaDescription}` : "",
+      "- Preserve the section order and every H2 that already addresses the topic. Strengthen",
+      "  headings that are vague; do not rename ones that are already the question a reader types.",
+      "- Keep every existing link exactly as it is (same href, same anchor unless the sentence",
+      "  around it changes) and every image (same src and alt). Removing a link or an image",
+      "  is a regression, not an edit.",
+      "- Refresh facts, figures, prices and dates that have aged. Do not invent replacements:",
+      "  a figure you cannot source is cut, not updated.",
+      "- Improve coverage where the brief says the page is thin, and add the questions the",
+      "  brief lists as their own H2 or H3 with a self-contained answer.",
+      "- Write a stronger title and meta description if the brief asks for it; otherwise keep",
+      "  them close to the current ones.",
+      "- Keep paragraphs that are already good. The reviewer sees a block-by-block diff, and",
+      "  a rewrite that rewords every sentence for no reason is harder to trust than one",
+      "  that changes what needed changing.",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    ["THE BRIEF FOR THIS REWRITE:", refresh.brief.trim()].join("\n"),
+    ["THE CURRENT PAGE BODY (HTML):", body].join("\n"),
+  ];
+}
+
+/**
+ * How long a rewrite may get: the current length plus a third, floored so a
+ * very short page can still be brought up to a useful size.
+ */
+export function refreshLengthBudget(existingHtml: string): { current: number; max: number } {
+  const current = existingHtml.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
+  return { current, max: Math.max(900, Math.round(current * 1.3)) };
+}
+
 export function buildSystemPrompt(prompt: ArticlePrompt): string {
   const {
     keyword,
@@ -171,17 +263,33 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     research,
   } = prompt;
 
-  // An explicit target wins; otherwise use the length derived from what ranks.
+  // An explicit target wins; then the owner's length band for this keyword;
+  // otherwise the length derived from what ranks.
+  const band =
+    prompt.brief?.expectedLength && prompt.brief.expectedLength !== "auto" && prompt.brief.expectedLength in LENGTH_BANDS
+      ? LENGTH_BANDS[prompt.brief.expectedLength as keyof typeof LENGTH_BANDS]
+      : null;
   const targetWordCount =
-    prompt.targetWordCount ?? research?.recommendedWordCount ?? 1500;
+    prompt.targetWordCount ??
+    targetWordCountFor(prompt.brief?.expectedLength, research?.recommendedWordCount) ??
+    1500;
 
   const sections: string[] = [];
 
   // --- Role ------------------------------------------------------------------
   sections.push(
-    `You are an expert SEO content writer. Your task is to write a comprehensive, ` +
-      `well-structured article optimized for the keyword "${keyword}" in ${language}.`
+    prompt.refreshOf
+      ? `You are an expert SEO editor. Your task is to rewrite an existing, well-structured ` +
+          `page so it ranks and converts better for the keyword "${keyword}" in ${language}, ` +
+          `changing what the brief says needs changing and keeping the rest.`
+      : `You are an expert SEO content writer. Your task is to write a comprehensive, ` +
+          `well-structured article optimized for the keyword "${keyword}" in ${language}.`
   );
+
+  // --- The page being rewritten ---------------------------------------------
+  if (prompt.refreshOf) {
+    sections.push(...buildRefreshSection(prompt.refreshOf));
+  }
 
   // --- Date ------------------------------------------------------------------
   // Without this the model dates things to its training data: the first e2e
@@ -214,13 +322,64 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
 
   // --- Length -----------------------------------------------------------------
   sections.push(
-    `Target approximately ${targetWordCount} words. ` +
-      (research
-        ? `This length is derived from the live SERP: ${research.wordCountBasis}. `
-        : "") +
-      `Ensure the content is thorough and provides genuine value to the reader. ` +
-      `Do not pad to reach the target: stop when the topic is covered.`
+    prompt.refreshOf
+      ? `Length: stay between ${Math.round(refreshLengthBudget(prompt.refreshOf.existingHtml).current * 0.7).toLocaleString()} ` +
+          `and ${refreshLengthBudget(prompt.refreshOf.existingHtml).max.toLocaleString()} words. Extend where the brief ` +
+          `says the page is thin; never cut it by more than a third; never run past the cap.`
+      : band && !prompt.targetWordCount
+        ? `Write between ${band.min} and ${band.max} words: the site owner chose this length for this article. ` +
+          `Ensure the content is thorough and provides genuine value to the reader. ` +
+          `Do not pad to reach the target: stop when the topic is covered.`
+        : `Target approximately ${targetWordCount} words. ` +
+          (research
+            ? `This length is derived from the live SERP: ${research.wordCountBasis}. `
+            : "") +
+          `Ensure the content is thorough and provides genuine value to the reader. ` +
+          `Do not pad to reach the target: stop when the topic is covered.`
   );
+
+  // --- The owner's brief -----------------------------------------------------
+  // Before the research, because it outranks it: the SERP says what readers
+  // expect, the owner says what this business has actually done. Answers are
+  // quoted rather than summarised so the model has the exact words to use,
+  // and the boundary is stated twice because the failure mode - a plausible
+  // extra anecdote in the owner's voice - is exactly the kind of thing that
+  // reads well and is false.
+  if (prompt.brief) {
+    const b = prompt.brief;
+    const lines: string[] = [];
+    const label = b.articleSubtype && b.articleSubtype in TAXONOMY_LABELS
+      ? TAXONOMY_LABELS[b.articleSubtype as keyof typeof TAXONOMY_LABELS]
+      : b.articleType === "listicle"
+        ? "List"
+        : b.articleType === "guide"
+          ? "Guide"
+          : null;
+    if (label) {
+      lines.push(
+        `- Article shape: ${label}. ` +
+          (b.articleType === "listicle"
+            ? "Structure the body as a ranked or grouped list of distinct items, one H2 per item, each with what it is, who it suits and one concrete detail."
+            : b.articleSubtype === "howTo"
+              ? "Structure the body as numbered steps a reader can follow in order, each with the expected result."
+              : b.articleSubtype === "comparison"
+                ? "Set the options against each other on the same criteria, in a table, and end with a recommendation that names who should pick which."
+                : "Lead with the direct answer, then the detail a reader needs to act on it."),
+      );
+    }
+    if (b.instructions?.trim()) lines.push(`- Instructions for this article: ${b.instructions.trim()}`);
+    if (b.answers.length) {
+      lines.push(
+        "- First-hand experience, in the owner's own words. Use it as the article's",
+        "  evidence, attributed to the site (\"we\", \"our team\", or the business name),",
+        "  and quote or closely paraphrase it. Use ONLY what is written here as the",
+        "  owner's experience: do not invent further examples, results, tools, clients",
+        "  or anecdotes in their voice, and do not extend an answer beyond what it says.",
+        ...b.answers.flatMap((a) => [`  Q: ${a.question.trim()}`, `  A: ${a.answer.trim()}`]),
+      );
+    }
+    if (lines.length) sections.push(["WHAT THE SITE OWNER TOLD US:", ...lines].join("\n"));
+  }
 
   // --- Research --------------------------------------------------------------
   // Placed before the format and SEO rules so the model has the subject matter
@@ -241,6 +400,15 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       "- Use <ul>/<ol> and <li> for lists when they improve readability.",
       "- Use <strong> and <em> for emphasis where natural.",
       "- Do NOT include <html>, <head>, <body>, or <style> tags.",
+      // The alt rule sits with the format rules rather than with SEO because
+      // the SEO framing is what produced the problem: told to "include the
+      // keyword", a model writes alt="the keyword". It passes a has-alt check
+      // and is useless to the screen reader and the crawler alike.
+      "- Do not invent <img> URLs. Any image that does appear in the article carries",
+      "  an alt attribute that is a full sentence describing what the image shows, at",
+      '  least six words ("Bar chart comparing the monthly price of five email tools").',
+      `  Never the keyword on its own: alt="${keyword}" tells a screen reader nothing`,
+      "  and reads as keyword stuffing to a crawler.",
     ].join("\n")
   );
 
@@ -261,7 +429,16 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
   // Naming the library is the whole difference. The instruction on its own
   // produced no placeholders at all, because "where relevant" is not a question
   // a model can answer without knowing what exists.
-  if (prompt.internalLinkTargets?.length) {
+  //
+  // And when the library is empty the prompt says so, in the imperative. It
+  // used to say nothing, and a writer told to produce a well-linked article
+  // with no list to link from invented same-domain paths: four on the first
+  // draft for a fresh site, all 404s. Any such link is unwrapped after generation
+  // (lib/seo/link-resolver.ts), but a link never written is cheaper than one
+  // removed, and the sentence around a removed link often still reads as if
+  // it pointed somewhere.
+  const hasLinkPool = Boolean(prompt.internalLinkTargets?.length);
+  if (hasLinkPool) {
     sections.push(
       [
         "INTERNAL LINKS — link to these, and only these:",
@@ -269,11 +446,24 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
         "draft naturally mentions one of these subjects, link to it once using",
         'the placeholder form <a href="{{internal-link:KEYWORD}}">anchor</a>,',
         "using the keyword exactly as written below. Two to four links is right",
-        "for an article of this length. Never invent a target that is not listed.",
+        "for an article of this length. Never invent a target that is not listed:",
+        "do not write any other href on this site's domain or any other relative",
+        "path. A link to a page not on this list is removed before publishing.",
         "",
-        ...prompt.internalLinkTargets
+        ...prompt.internalLinkTargets!
           .slice(0, 20)
           .map((t) => `- ${t.keyword} — "${t.title}"`),
+      ].join("\n"),
+    );
+  } else {
+    sections.push(
+      [
+        "INTERNAL LINKS — do not add any.",
+        "This site has no pages in its link pool yet, so there is nothing to",
+        "link to. Do not write an <a> to any path or URL on this site, and do",
+        'not use the {{internal-link:...}} placeholder. A link to a page that',
+        "does not exist is a 404 the reader hits; where a subject deserves a",
+        "pointer, name it in plain text. Outbound citations are unaffected.",
       ].join("\n"),
     );
   }
@@ -388,6 +578,12 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       "- Cite external sources with real, working links: two at minimum, and about",
       "  one for every 500 words. Every link is fetched after you write; one that",
       '  does not resolve is removed. Never emit href="#" or a placeholder URL.',
+      "- Put the link in the sentence that makes the claim: the <a> wraps words inside",
+      "  that sentence, next to the figure or the name it supports. Do not collect",
+      "  citations in a Sources, References or Further reading list at the end; a link",
+      "  three screens below the claim is a link nobody follows, and an answer engine",
+      "  quoting the passage does not carry it. If you add such a list anyway, every",
+      "  URL in it must already be linked inline where the claim is made.",
       "- A well-known rule of thumb is still an unsourced claim. \"Roughly 80% of",
       "  results come from 20% of pages\", \"most experts agree\", \"studies show\" -",
       "  the fact checker flags these and it is right to. Either attribute the",
@@ -397,6 +593,33 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       "- Use a real HTML table for any comparison of three or more things.",
     ].join("\n"),
   );
+
+  // --- Site output preferences ---------------------------------------------
+  // Set once in onboarding. Rendered only when set, so an install without the
+  // settings table behaves exactly as before.
+  if (prompt.output) {
+    const o = prompt.output;
+    const prefs: string[] = [];
+    if (o.tone && o.tone !== "informative") prefs.push(`- Overall tone: ${o.tone}.`);
+    // The wanted count only makes sense against a pool. With none, the
+    // INTERNAL LINKS section above already said "do not add any", and asking
+    // for "about 3" here would contradict it.
+    if (typeof o.internalLinks === "number" && (o.internalLinks === 0 || hasLinkPool)) {
+      prefs.push(
+        o.internalLinks === 0
+          ? "- Do not add internal-link placeholders."
+          : `- Aim for about ${o.internalLinks} internal-link placeholder${o.internalLinks === 1 ? "" : "s"} where they genuinely help.`,
+      );
+    }
+    if (o.tableOfContents === false) prefs.push("- Do not add a table of contents.");
+    if (o.callToAction === false) prefs.push("- Do not add a closing call to action.");
+    if (o.firstPerson === false) prefs.push("- Write in the third person; never \"we\", \"our\" or \"I\".");
+    if (o.firstPerson === true) prefs.push("- First person (\"we\", \"our\") is fine where it reads naturally.");
+    if (o.mentionSimilarProducts === false) prefs.push("- Do not name or compare competing products.");
+    if (o.mentionSimilarProducts === true) prefs.push("- Where relevant, name and fairly compare similar products or tools.");
+    if (o.customInstructions?.trim()) prefs.push(`- Site owner's standing instructions: ${o.customInstructions.trim()}`);
+    if (prefs.length) sections.push("", "SITE PREFERENCES:", ...prefs);
+  }
 
   // --- Final instructions ----------------------------------------------------
   sections.push(

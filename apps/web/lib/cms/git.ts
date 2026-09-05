@@ -149,6 +149,11 @@ export function renderPost(
     publishDate: (article.publishedAt ?? new Date().toISOString()).slice(0, 10),
     tags: article.tags?.length ? article.tags : undefined,
     ogImage: article.featuredImageUrl,
+    // After the defaults so a collection whose defaults say `draft: false`
+    // still gets a draft when the connection asks for one. Only ever set for
+    // a draft: a live publish leaves the field to the defaults, which is what
+    // every commit before this did.
+    ...(article.publishMode === "draft" ? { draft: true } : {}),
   });
 
   return { path, contents: `${frontmatter}\n${markdown}\n` };
@@ -221,6 +226,45 @@ export class GitAdapter implements CMSAdapter {
       url: base
         ? `${base}/${safeSlug(article.slug)}${this.config.trailingSlash ? "/" : ""}`
         : path,
+    };
+  }
+
+  /**
+   * Rewrite the committed file at the path we published to.
+   *
+   * The external id IS the path, so this writes there rather than deriving a
+   * path from the slug again: a slug that changed would otherwise create a
+   * second file and leave the first one serving the old page.
+   */
+  async update(externalId: string, article: PublishPayload): Promise<PublishResult> {
+    const dir = this.config.contentPath.replace(/^\/+|\/+$/g, "");
+    if (!externalId.startsWith(`${dir}/`) || externalId.includes("..")) {
+      throw new Error(`Refusing to write outside ${dir}`);
+    }
+    const { contents } = renderPost(article, this.config);
+    const sha = await this.existingSha(externalId);
+    if (!sha) throw new Error(`No file at ${externalId} to update`);
+
+    const res = await fetch(this.contentsUrl(externalId), {
+      method: "PUT",
+      headers: this.headers(),
+      body: JSON.stringify({
+        message: `content: refresh "${article.title}"`,
+        content: Buffer.from(contents, "utf8").toString("base64"),
+        branch: this.config.branch,
+        sha,
+        ...(this.config.committer ? { committer: this.config.committer } : {}),
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(`GitHub update failed (${res.status}): ${await res.text()}`);
+    }
+    const base = this.config.publicBaseUrl?.replace(/\/+$/, "");
+    return {
+      externalId,
+      url: base
+        ? `${base}/${safeSlug(article.slug)}${this.config.trailingSlash ? "/" : ""}`
+        : externalId,
     };
   }
 

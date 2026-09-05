@@ -9,7 +9,7 @@ const recommend = vi.fn();
 const pick = vi.fn();
 const creds = vi.fn();
 
-vi.mock("@/lib/scraper", () => ({ scrapeWebsiteText: (...a: unknown[]) => scrape(...a) }));
+vi.mock("../site-text", () => ({ readSiteText: async (...a: unknown[]) => { const text = (await scrape(...a)) as string; return { text, source: text ? "static" : "none", chars: text.length }; } }));
 vi.mock("@/app/actions/voice", () => ({ createVoiceProfile: (...a: unknown[]) => voice(...a) }));
 vi.mock("@/lib/audit/domain-analysis", () => ({ analyseDomain: (...a: unknown[]) => analyse(...a) }));
 vi.mock("@/lib/content/generate", () => ({ generateArticle: (...a: unknown[]) => generate(...a) }));
@@ -18,7 +18,15 @@ vi.mock("@/lib/seo/recommendations", () => ({
   recommendKeywords: (...a: unknown[]) => recommend(...a),
   pickNextKeyword: (...a: unknown[]) => pick(...a),
 }));
-vi.mock("@/lib/seo/client", () => ({ hasDataForSEOCredentials: () => creds() }));
+const setSpendReporter = vi.fn();
+vi.mock("@/lib/seo/client", () => ({
+  hasDataForSEOCredentials: () => creds(),
+  setSpendReporter: (fn: unknown) => setSpendReporter(fn),
+}));
+const recordSpendByDefault = vi.fn();
+vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault: (e: unknown) => recordSpendByDefault(e) }));
+const plan = vi.fn(async () => [] as unknown[]);
+vi.mock("../plan", () => ({ schedulePlan: () => plan(), fulfilPlannedEntry: vi.fn(async () => undefined) }));
 
 import { runOnboarding } from "../pipeline";
 import type { OnboardingEvent } from "../events";
@@ -40,7 +48,7 @@ const phases = (events: OnboardingEvent[]) =>
   events.map((e) => ("status" in e ? `${e.phase}:${e.status}` : e.phase));
 
 beforeEach(() => {
-  for (const m of [scrape, voice, analyse, generate, quota, recommend, pick, creds]) m.mockReset();
+  for (const m of [scrape, voice, analyse, generate, quota, recommend, pick, creds, setSpendReporter, recordSpendByDefault]) m.mockReset();
   scrape.mockResolvedValue("word ".repeat(80));
   voice.mockResolvedValue(undefined);
   creds.mockReturnValue(true);
@@ -60,6 +68,7 @@ describe("runOnboarding", () => {
     expect(phases(events)).toEqual([
       "scanning:active", "scanning:done",
       "keywords:active", "keywords:done",
+      "planning:active", "planning:skipped",
       "drafting:active", "drafting:done",
       "ready",
     ]);
@@ -139,6 +148,7 @@ describe("runOnboarding", () => {
     expect(phases(events)).toEqual([
       "scanning:active", "scanning:done",
       "keywords:active", "keywords:failed",
+      "planning:active", "planning:skipped",
       "drafting:active", "drafting:done",
       "ready",
     ]);
@@ -158,6 +168,38 @@ describe("runOnboarding", () => {
     const events = await collect();
     expect(analyse).not.toHaveBeenCalled();
     expect(phases(events)).toContain("keywords:skipped");
+  });
+
+  /**
+   * Discovery is the expensive phase and it ran with no reporter armed, so its
+   * DataForSEO rows fell through to the unattributed default: fourteen rows
+   * from one onboarding, none with a workspace_id. The reporter is armed for
+   * the whole run, stamps every call with this workspace, and is cleared
+   * however the run ends - including an abort partway through.
+   */
+  it("attributes every DataForSEO call in the run to the workspace, then disarms", async () => {
+    analyse.mockImplementation(async () => {
+      // What lib/seo/client does after each response, while discovery runs.
+      const armed = setSpendReporter.mock.calls.at(-1)?.[0] as (e: unknown) => void;
+      armed({ operation: "/dataforseo_labs/google/ranked_keywords/live", costUsd: 0.0132 });
+      return { keywordsFound: 94 };
+    });
+    await collect();
+    expect(recordSpendByDefault).toHaveBeenCalledWith({
+      provider: "dataforseo",
+      operation: "/dataforseo_labs/google/ranked_keywords/live",
+      costUsd: 0.0132,
+      workspaceId: "ws1",
+    });
+    expect(setSpendReporter.mock.calls[0][0]).toEqual(expect.any(Function));
+    expect(setSpendReporter.mock.calls.at(-1)).toEqual([null]);
+  });
+
+  it("disarms the spend reporter when the run is aborted early", async () => {
+    const ac = new AbortController();
+    scrape.mockImplementation(async () => { ac.abort(); return "word ".repeat(80); });
+    await runOnboarding(client(0), WS, () => {}, ac.signal);
+    expect(setSpendReporter.mock.calls.at(-1)).toEqual([null]);
   });
 
   it("skips everything that needs a domain when there is none", async () => {

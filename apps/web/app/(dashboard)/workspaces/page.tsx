@@ -105,7 +105,13 @@ export default async function ClientsPage({ searchParams }: Props) {
               })}
               {workspaces.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3.5 py-8 text-center text-ink-3">No workspaces yet</td>
+                  <td colSpan={5} className="px-3.5 py-10 text-center text-ink-3">
+                    <span className="inline-block max-w-[56ch] leading-[1.6]">
+                      No sites yet. Add workspace above takes a name and a domain, and the first analysis starts on its
+                      own: agent readiness, a crawl of the site&rsquo;s pages, PageSpeed, and the keywords it already
+                      ranks for. Everything else in the app is about one of these.
+                    </span>
+                  </td>
                 </tr>
               )}
             </tbody>

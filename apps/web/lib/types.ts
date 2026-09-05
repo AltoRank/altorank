@@ -1,3 +1,4 @@
+import type { PublishMode } from "@/lib/cms/types";
 import type { AvatarColor } from "./constants";
 import type { ScoringCheck } from "@/lib/seo/scoring";
 import type { LinkCheck } from "@/lib/seo/link-check";
@@ -5,6 +6,7 @@ import type { GitConfig } from "./cms/git";
 import type { SearchIntent } from "./seo/intent";
 import type { ArticleResearch } from "./seo/research";
 import type { FactCheckReport } from "./ai/fact-check";
+import type { AttributionSource } from "./attribution";
 
 // === Account (stored as `agencies`) ===
 //
@@ -26,6 +28,12 @@ export type Agency = {
   plan: "starter" | "growth" | "scale";
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  /** Period end at which the subscription stops, when cancel-at-period-end is set. null = renewing. */
+  cancels_at?: string | null;
+  /** Self-reported at the end of onboarding; null until answered. See lib/attribution.ts. */
+  attribution_source: AttributionSource | null;
+  attribution_note: string | null;
+  attribution_answered_at: string | null;
   created_at: string;
 };
 
@@ -34,6 +42,8 @@ export type AgencyMember = {
   agency_id: string;
   user_id: string;
   role: "owner" | "admin" | "editor";
+  /** Which sites this member sees. null = every workspace, including future ones (migration 053). */
+  workspace_ids: string[] | null;
   created_at: string;
 };
 
@@ -42,6 +52,13 @@ export type AgencyMember = {
 // One site. An agency-tier customer has one per client, a solo customer has
 // one per project of their own; "client" was only ever true for the first.
 export type AIProviderType = "claude" | "openai";
+
+/** Why a site reads "Paused since …" and what Resume puts back. */
+export type PausedMeta = {
+  since: string;
+  previous_status: "on" | "review" | "setup";
+  by: string | null;
+};
 
 export type Workspace = {
   /** Cron writes drafts for this workspace (opt-in; set by activation and by the signup flow). */
@@ -55,6 +72,10 @@ export type Workspace = {
   color: AvatarColor;
   plan: string;
   status: "on" | "review" | "paused" | "setup";
+  /** Set with status=paused by the account pause on Billing. null on a paused row = paused by hand. */
+  paused_until?: string | null;
+  /** Set while paused by hand (migration 061); null otherwise. */
+  paused_meta?: PausedMeta | null;
   /** Domain rating 0-100. null when nobody has measured it: render as —, never 0. */
   dr: number | null;
   /** Publishing platform observed during analysis. null when undetermined. */
@@ -122,6 +143,9 @@ export type Article = {
   /** What each outbound link answered when the draft was generated. Null for
    *  drafts predating migration 043 or written by hand. */
   link_checks: LinkCheck[] | null;
+  /** What each engine said about the published URL (lib/seo/indexing.ts), plus
+   *  `inspection` from the URL Inspection API (lib/google/inspection.ts). */
+  indexing_status?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 };
@@ -131,7 +155,8 @@ export type Article = {
 // and what the DB check constraint allows, and two hand-maintained copies of
 // the same union drift the moment one gains a member.
 export type KeywordIntent = SearchIntent;
-export type KeywordStatus = "new" | "planned" | "drafting" | "scheduled" | "shipped" | "error";
+/** `stored` = researched and kept off the calendar on purpose (migration 054). */
+export type KeywordStatus = "new" | "stored" | "planned" | "drafting" | "scheduled" | "shipped" | "error";
 
 export type Keyword = {
   id: string;
@@ -140,9 +165,24 @@ export type Keyword = {
   volume: number;
   /** 0-100, or null when no provider supplied one. Never defaulted to 0. */
   difficulty: number | null;
+  /** Google Ads cost-per-click in USD. null when no advertiser data, or
+   *  stored before migration 060: unmeasured, not free. */
+  cpc: number | null;
   intent: KeywordIntent;
   status: KeywordStatus;
   created_at: string;
+  /** Article shape, from lib/keywords/taxonomy. Null on rows predating 050. */
+  article_type?: "guide" | "listicle" | null;
+  article_subtype?: string | null;
+  expected_length?: string | null;
+  /** The owner's free-text brief for this keyword's article. */
+  instructions?: string | null;
+  /** {id, question, answer}[]; read through parseStoredQuestions. */
+  quality_questions?: unknown;
+  source?: string | null;
+  source_type?: string | null;
+  source_ref?: string | null;
+  plan_excluded_at?: string | null;
 };
 
 // === Backlink ===
@@ -169,10 +209,18 @@ export type CalendarEntry = {
   id: string;
   workspace_id: string;
   article_id: string | null;
+  /** The keyword row behind this entry, when one exists. */
+  keyword_id: string | null;
   keyword: string;
   scheduled_date: string;
   status: "done" | "run" | "scheduled" | "queue";
   created_at: string;
+  /**
+   * True for a row of `calendar_entries` (a planned keyword), false for an
+   * entry derived from an article's own dates. Only the former can be moved
+   * or removed on the planner.
+   */
+  planned: boolean;
 };
 
 // === Integration ===
@@ -192,6 +240,12 @@ export type WorkspaceIntegration = {
   integration_id: string;
   config: Record<string, unknown>;
   connected_at: string;
+  /**
+   * Whether articles reach this CMS as drafts or go live. A column, not a
+   * config key, because config is the encrypted credential blob and this has
+   * to be readable by every list that shows the connection.
+   */
+  publish_mode: PublishMode;
 };
 
 // === Voice ===
@@ -285,6 +339,18 @@ export type WordPressConfig = {
   applicationPassword: string;
 };
 
+/**
+ * WordPress through our own plugin (packages/wordpress-plugin) rather than an
+ * application password. The token is the plugin's only credential: 32 random
+ * bytes as hex, generated in the connect dialog and pasted into the site's
+ * Settings -> AltoRank page.
+ */
+export type WordPressPluginConfig = {
+  type: "wordpress-plugin";
+  siteUrl: string;
+  token: string;
+};
+
 export type ShopifyConfig = {
   type: "shopify";
   storeUrl: string;
@@ -299,11 +365,25 @@ export type MagentoConfig = {
   storeCode?: string;
 };
 
+/**
+ * Which collection field takes which part of an article, by field slug.
+ * Chosen in the connect dialog from the collection's own fields; absent on
+ * connections made before the picker existed, which keep the template slugs.
+ */
+export type WebflowFieldMap = {
+  title: string;
+  slug: string;
+  body: string;
+  summary?: string;
+  image?: string;
+};
+
 export type WebflowConfig = {
   type: "webflow";
   siteId: string;
   collectionId: string;
   apiToken: string;
+  fieldMap?: WebflowFieldMap;
 };
 
 export type GhostConfig = {
@@ -330,6 +410,15 @@ export type NotionConfig = {
   type: "notion";
   databaseId: string;
   integrationToken: string;
+  /**
+   * A Status-type property on the database that says whether a page is a
+   * draft. Notion pages have no publish state of their own, so without this
+   * the connection cannot save drafts and the dialog refuses to pretend it can.
+   */
+  statusProperty?: string;
+  /** Option names in that property. Defaults: "Draft" and "Published". */
+  draftStatus?: string;
+  publishedStatus?: string;
 };
 
 export type HubSpotConfig = {
@@ -354,6 +443,7 @@ export type WebhookConfig = {
 
 export type CMSConfig =
   | WordPressConfig
+  | WordPressPluginConfig
   | ShopifyConfig
   | MagentoConfig
   | WebflowConfig
@@ -386,7 +476,13 @@ export type PublishLogEntry = {
   workspace_id: string;
   status: "success" | "error";
   error: string | null;
-  triggered_by: "cron" | "manual";
+  /** `webhook` rows are per-attempt delivery records; see lib/cms/delivery.ts. */
+  triggered_by: "cron" | "manual" | "webhook";
+  /** The workspace_integrations row the attempt went through; a retry reuses it. */
+  destination_id: string | null;
+  publish_mode: PublishMode | null;
+  /** The failed entry this attempt retried, when it was a retry. */
+  retry_of: string | null;
   created_at: string;
 };
 
@@ -499,8 +595,27 @@ export type Invite = {
   agency_id: string;
   email: string;
   role: "owner" | "admin" | "editor";
+  /** Copied to agency_members.workspace_ids on acceptance. null = all sites. */
+  workspace_ids: string[] | null;
   token: string;
   invited_by: string;
   expires_at: string;
   accepted_at: string | null;
+};
+
+// === API key (agent surface) ===
+//
+// What the settings page lists. Deliberately without `key_hash`: the query
+// never selects it, so this type has no field for it.
+export type ApiKeyRow = {
+  id: string;
+  agency_id: string;
+  name: string;
+  prefix: string;
+  scopes: string[];
+  expires_at: string | null;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  created_by: string | null;
+  created_at: string;
 };

@@ -3,6 +3,46 @@ import type { ShopifyConfig } from "@/lib/types";
 
 const SHOPIFY_API_VERSION = "2025-01";
 
+/**
+ * Every call this adapter makes is to /blogs.json and /blogs/{id}/articles.json,
+ * which Shopify files under the `content` scope pair. Nothing else is asked
+ * for, and the connect dialog reads this list rather than restating it.
+ * https://shopify.dev/docs/api/usage/access-scopes
+ */
+export const SHOPIFY_REQUIRED_SCOPES = ["read_content", "write_content"] as const;
+
+export interface ShopifyBlog {
+  id: string;
+  title: string;
+  handle: string;
+}
+
+/**
+ * The store's blogs. Shared by the adapter (to default to the first one) and
+ * the connect dialog (to let the person pick), so both see the same list.
+ */
+export async function listShopifyBlogs(storeUrl: string, accessToken: string): Promise<ShopifyBlog[]> {
+  const base = storeUrl.replace(/\/+$/, "");
+  const res = await fetch(`${base}/admin/api/${SHOPIFY_API_VERSION}/blogs.json`, {
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": accessToken,
+    },
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Shopify ${res.status}${err ? `: ${err}` : ""}`);
+  }
+  const data = (await res.json()) as {
+    blogs?: Array<{ id: number | string; title?: string; handle?: string }>;
+  };
+  return (data.blogs ?? []).map((b) => ({
+    id: String(b.id),
+    title: b.title ?? b.handle ?? String(b.id),
+    handle: b.handle ?? "",
+  }));
+}
+
 export class ShopifyAdapter implements CMSAdapter {
   private storeUrl: string;
   private accessToken: string;
@@ -24,22 +64,16 @@ export class ShopifyAdapter implements CMSAdapter {
   private async resolveBlogId(): Promise<string> {
     if (this.blogId) return this.blogId;
 
-    const res = await fetch(`${this.storeUrl}/admin/api/${SHOPIFY_API_VERSION}/blogs.json`, {
-      headers: this.headers(),
-    });
+    const blogs = await listShopifyBlogs(this.storeUrl, this.accessToken);
+    if (!blogs.length) throw new Error("No blogs found on Shopify store");
 
-    if (!res.ok) throw new Error(`Shopify blogs fetch failed (${res.status})`);
-
-    const data = await res.json();
-    const blogs = data.blogs;
-    if (!blogs?.length) throw new Error("No blogs found on Shopify store");
-
-    this.blogId = String(blogs[0].id);
+    this.blogId = blogs[0].id;
     return this.blogId;
   }
 
   async publish(article: PublishPayload): Promise<PublishResult> {
     const blogId = await this.resolveBlogId();
+    const draft = article.publishMode === "draft";
 
     const res = await fetch(`${this.storeUrl}/admin/api/${SHOPIFY_API_VERSION}/blogs/${blogId}/articles.json`, {
       method: "POST",
@@ -49,8 +83,10 @@ export class ShopifyAdapter implements CMSAdapter {
           title: article.title,
           body_html: article.html,
           tags: article.tags?.join(", ") ?? "",
-          published: true,
-          published_at: article.publishedAt ?? new Date().toISOString(),
+          // An unpublished article is Shopify's draft: it exists in the admin
+          // and is hidden from the storefront until someone sets it visible.
+          published: !draft,
+          ...(draft ? {} : { published_at: article.publishedAt ?? new Date().toISOString() }),
           summary_html: article.metaDescription ? `<p>${article.metaDescription}</p>` : undefined,
         },
       }),

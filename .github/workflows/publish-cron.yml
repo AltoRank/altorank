@@ -1,0 +1,53 @@
+# Hourly runs of the publisher.
+#
+# Why this is not in vercel.json: the Vercel account is on Hobby, which rejects
+# any cron expression that fires more than once a day. Vercel runs
+# /api/cron/publish once at 09:00 UTC; a site whose publish time is later than
+# that in its own timezone (12:00 in Rome, say) would otherwise never be
+# reached, because the cadence gate is "at or after publish_time" and there is
+# no later run to satisfy it.
+#
+# Same endpoint, same secret, so there is no second code path. The publisher
+# is idempotent per local day ("already published today"), so extra runs cost
+# a lookup per cadence and never a second article.
+#
+# Dormant until CRON_SECRET is set as a repository secret.
+
+name: Publish scheduled articles
+
+on:
+  schedule:
+    # Every hour except 09 UTC, which Vercel already covers.
+    - cron: "0 0-8,10-23 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: publish-cron
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger publishing
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ vars.APP_URL || 'https://app.altorank.co' }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "CRON_SECRET is not set for this repository."
+            echo "Add it under Settings > Secrets and variables > Actions to arm this schedule."
+            echo "Until then Vercel's 09:00 UTC run is the only one."
+            exit 0
+          fi
+
+          code=$(curl --silent --show-error --fail-with-body \
+            --max-time 300 \
+            --header "x-cron-secret: ${CRON_SECRET}" \
+            --write-out '\n%{http_code}' \
+            "${APP_URL}/api/cron/publish" | tee /dev/stderr | tail -1)
+
+          echo "HTTP ${code}"

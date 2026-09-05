@@ -7,6 +7,10 @@ import { resolveCMSAdapter } from "@/lib/cms/adapter";
 import { encryptConfig, decryptConfig } from "@/lib/crypto";
 import type { CMSConfig } from "@/lib/types";
 import { deriveBlogBaseUrl } from "@/lib/cms/blog-url";
+import { assertPublishMode, DEFAULT_PUBLISH_MODE, type PublishMode } from "@/lib/cms/publish-mode";
+import { listWebflowSites, listWebflowCollections, listWebflowFields } from "@/lib/cms/webflow";
+import { listWixSites } from "@/lib/cms/wix";
+import { listShopifyBlogs } from "@/lib/cms/shopify";
 import { z } from "zod";
 
 const wordpressSchema = z.object({
@@ -14,6 +18,17 @@ const wordpressSchema = z.object({
   siteUrl: z.string().url(),
   username: z.string().min(1),
   applicationPassword: z.string().min(1),
+});
+
+/**
+ * The plugin path. The token is what the connect dialog generated - 32 random
+ * bytes as hex - and the plugin compares it with hash_equals, so its shape is
+ * checked here too: anything else was typed by hand and will never match.
+ */
+const wordpressPluginSchema = z.object({
+  type: z.literal("wordpress-plugin"),
+  siteUrl: z.string().url(),
+  token: z.string().regex(/^[0-9a-f]{64}$/, "Integration token must be 64 hex characters"),
 });
 
 const shopifySchema = z.object({
@@ -35,6 +50,18 @@ const webflowSchema = z.object({
   siteId: z.string().min(1),
   collectionId: z.string().min(1),
   apiToken: z.string().min(1),
+  // Field slugs chosen from the collection's own schema in the connect
+  // dialog. Optional so connections saved before the picker existed still
+  // parse; the adapter falls back to the template slugs for those.
+  fieldMap: z
+    .object({
+      title: z.string().min(1),
+      slug: z.string().min(1),
+      body: z.string().min(1),
+      summary: z.string().min(1).optional(),
+      image: z.string().min(1).optional(),
+    })
+    .optional(),
 });
 
 const ghostSchema = z.object({
@@ -61,6 +88,12 @@ const notionSchema = z.object({
   type: z.literal("notion"),
   databaseId: z.string().min(1),
   integrationToken: z.string().min(1),
+  // The draft story for Notion: a Status property to set. Optional, because a
+  // connection that publishes live needs none; required in effect for a draft
+  // connection, which assertPublishMode enforces below.
+  statusProperty: z.string().optional(),
+  draftStatus: z.string().optional(),
+  publishedStatus: z.string().optional(),
 });
 
 const hubspotSchema = z.object({
@@ -113,6 +146,7 @@ const gitSchema = z.object({
 
 const configSchema = z.discriminatedUnion("type", [
   wordpressSchema,
+  wordpressPluginSchema,
   shopifySchema,
   magentoSchema,
   webflowSchema,
@@ -139,15 +173,94 @@ export async function deriveBlogUrl(siteUrl: string) {
   return deriveBlogBaseUrl(siteUrl);
 }
 
+const publishModeSchema = z.enum(["publish", "draft"]);
+
+// ---------------------------------------------------------------------------
+// Discovery, for the connect dialog's pickers
+// ---------------------------------------------------------------------------
+//
+// Each one takes the credential the person just typed, asks the vendor what it
+// can see, and returns the list or the vendor's own error text. Nothing is
+// stored and nothing is logged: the token is in the argument and nowhere else.
+// They call the adapters' listing functions rather than fetching themselves,
+// so the picker and the publisher speak to the vendor in one voice.
+
+export type ListResult<T> = { ok: true; data: T } | { ok: false; error: string };
+
+async function attempt<T>(fn: () => Promise<T>): Promise<ListResult<T>> {
+  try {
+    return { ok: true, data: await fn() };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function listWebflowSitesAction(apiToken: string) {
+  await requireAuth();
+  return attempt(() => listWebflowSites(apiToken));
+}
+
+export async function listWebflowCollectionsAction(apiToken: string, siteId: string) {
+  await requireAuth();
+  return attempt(() => listWebflowCollections(apiToken, siteId));
+}
+
+export async function listWebflowFieldsAction(apiToken: string, collectionId: string) {
+  await requireAuth();
+  return attempt(() => listWebflowFields(apiToken, collectionId));
+}
+
+export async function listWixSitesAction(apiKey: string, accountId: string) {
+  await requireAuth();
+  return attempt(() => listWixSites(apiKey, accountId));
+}
+
+export async function listShopifyBlogsAction(storeUrl: string, accessToken: string) {
+  await requireAuth();
+  return attempt(() => listShopifyBlogs(storeUrl, accessToken));
+}
+
+/**
+ * The same live test connectIntegration runs, without the save.
+ *
+ * "Send test" in the dialog: the person sees the vendor's exact answer to the
+ * values as typed, and can fix them before anything is stored. The publish
+ * mode is checked too, so a draft connection to a platform that cannot draft
+ * fails here with the same sentence it would fail with on save.
+ */
+export async function testIntegrationConfig(
+  config: CMSConfig,
+  publishMode: PublishMode = DEFAULT_PUBLISH_MODE,
+): Promise<ListResult<true>> {
+  await requireAuth();
+  return attempt(async () => {
+    const parsed = configSchema.parse(config);
+    const mode = publishModeSchema.parse(publishMode);
+    assertPublishMode(parsed, mode);
+    const test = await resolveCMSAdapter(parsed).testConnection();
+    if (!test.ok) throw new Error(test.error ?? "Connection failed");
+    return true as const;
+  });
+}
+
 export async function connectIntegration(
   workspaceId: string,
   integrationId: string,
-  config: CMSConfig
+  config: CMSConfig,
+  /**
+   * Drafts unless the person chose otherwise. Refused outright when the
+   * platform cannot save a draft, before the connection test and before
+   * anything is stored: a connection that says "draft" and publishes live
+   * is the one outcome this must never produce.
+   */
+  publishMode: PublishMode = DEFAULT_PUBLISH_MODE,
 ) {
   await requireAuth();
 
   // Validate config
   const parsed = configSchema.parse(config);
+  const mode = publishModeSchema.parse(publishMode);
+  assertPublishMode(parsed, mode);
 
   // Test connection before saving (uses plaintext credentials)
   const adapter = resolveCMSAdapter(parsed);
@@ -168,6 +281,7 @@ export async function connectIntegration(
       workspace_id: workspaceId,
       integration_id: integrationId,
       config: encryptedConfig,
+      publish_mode: mode,
       connected_at: new Date().toISOString(),
     }, {
       onConflict: "workspace_id,integration_id",
