@@ -52,7 +52,11 @@ export interface ChatReply {
 
 const SOURCES = ["both", "competitors", "audiences"] as const;
 
-export const CHAT_TOOLS: Anthropic.Tool[] = [
+export // No `minimum`/`maximum`/`minItems`/`maxItems` in these schemas: the live API rejects
+// them (400 "properties maximum, minimum are not supported"), and unit tests cannot
+// see that. The bounds are enforced by the zod parsers in parseToolCall and stated
+// in the descriptions.
+const CHAT_TOOLS: Anthropic.Tool[] = [
   {
     name: "generate",
     description:
@@ -61,7 +65,7 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
       type: "object",
       properties: {
         source: { type: "string", enum: [...SOURCES], description: "Which evidence to use." },
-        count: { type: "integer", minimum: 1, maximum: 30, description: "How many keywords to propose." },
+        count: { type: "integer", description: "How many keywords to propose." },
       },
       required: ["source", "count"],
       additionalProperties: false,
@@ -84,7 +88,7 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
     description: "Look up metrics for a list of exact terms in one batch.",
     input_schema: {
       type: "object",
-      properties: { terms: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 100 } },
+      properties: { terms: { type: "array", items: { type: "string" } } },
       required: ["terms"],
       additionalProperties: false,
     },
@@ -97,7 +101,7 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
     input_schema: {
       type: "object",
       properties: {
-        terms: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 60 },
+        terms: { type: "array", items: { type: "string" } },
         reason: { type: "string", description: "One sentence on why these." },
       },
       required: ["terms", "reason"],
@@ -112,7 +116,7 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
     input_schema: {
       type: "object",
       properties: {
-        terms: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 60 },
+        terms: { type: "array", items: { type: "string" } },
         reason: { type: "string" },
       },
       required: ["terms", "reason"],
