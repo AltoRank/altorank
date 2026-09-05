@@ -7,12 +7,28 @@
 // Handlers only ever build envelopes; they never see a Response.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { takeToolRateLimit, rateLimitHeaders as toolRateLimitHeaders } from "@/lib/tools/rate-limit";
 import type { ApiKeyScope } from "./api-keys";
 import { authenticateAgentRequest, type AgentContext } from "./auth";
-import { ERROR_STATUS, fail, type Envelope } from "./envelope";
+import { ERROR_STATUS, fail, GUIDANCE, type Envelope } from "./envelope";
 import { rateLimitHeaders, type RateLimitDecision } from "./rate-limit";
 
-export type HandlerResult = Envelope | { envelope: Envelope; status: number };
+/**
+ * A handler returns an envelope, an envelope with an explicit status, or -
+ * for the one endpoint that serves a file - a finished Response.
+ */
+export type HandlerResult = Envelope | { envelope: Envelope; status: number } | Response;
+
+/**
+ * Mutations get a second, tighter window on top of the per-key 120/min: 30 a
+ * minute per key. A looping agent that reschedules the same keyword forever
+ * is stopped before it has moved the whole month around, and the reads it
+ * needs to notice are not throttled with it. Same in-memory limiter the free
+ * tools use (lib/tools/rate-limit.ts), keyed by API key id.
+ */
+export const MUTATION_LIMIT = 30;
+export const MUTATION_WINDOW_MS = 60_000;
+const MUTATION_SLUG = "agent-mutations";
 
 export type AgentHandler<P> = (
   request: NextRequest,
@@ -21,7 +37,7 @@ export type AgentHandler<P> = (
 ) => Promise<HandlerResult>;
 
 export function envelopeResponse(
-  result: HandlerResult,
+  result: Exclude<HandlerResult, Response>,
   rate?: RateLimitDecision,
   extraHeaders: Record<string, string> = {},
 ): NextResponse {
@@ -39,15 +55,37 @@ export function envelopeResponse(
 
 export function withAgent<P = Record<string, never>>(
   handler: AgentHandler<P>,
-  options: { scope?: ApiKeyScope } = {},
+  options: { scope?: ApiKeyScope; mutation?: boolean } = {},
 ) {
   return async (request: NextRequest, route?: { params: Promise<P> }): Promise<NextResponse> => {
     const auth = await authenticateAgentRequest(request, options.scope ?? "read");
     if (!auth.ok) return envelopeResponse(auth.envelope, auth.rate);
 
+    let extraHeaders: Record<string, string> = {};
+    if (options.mutation) {
+      const m = takeToolRateLimit(MUTATION_SLUG, auth.ctx.key.id, MUTATION_LIMIT, MUTATION_WINDOW_MS);
+      // Prefixed so they sit beside, not over, the per-key read headers.
+      extraHeaders = Object.fromEntries(
+        Object.entries(toolRateLimitHeaders(m)).map(([k, v]) => [k === "Retry-After" ? k : k.replace("X-RateLimit-", "X-RateLimit-Mutations-"), v]),
+      );
+      if (!m.allowed) {
+        const retryAfter = Math.max(1, Math.ceil((m.resetAt - Date.now()) / 1000));
+        return envelopeResponse(
+          fail("rate_limited", `Too many mutations for this API key (${MUTATION_LIMIT}/min).`, GUIDANCE.rateLimited(retryAfter)),
+          auth.ctx.rate,
+          extraHeaders,
+        );
+      }
+    }
+
     const params = route ? await route.params : ({} as P);
     try {
-      return envelopeResponse(await handler(request, auth.ctx, params), auth.ctx.rate);
+      const result = await handler(request, auth.ctx, params);
+      if (result instanceof Response) {
+        for (const [k, v] of Object.entries({ ...rateLimitHeaders(auth.ctx.rate), ...extraHeaders })) result.headers.set(k, v);
+        return result as NextResponse;
+      }
+      return envelopeResponse(result, auth.ctx.rate, extraHeaders);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       console.error("[agent api]", request.method, request.nextUrl.pathname, message);

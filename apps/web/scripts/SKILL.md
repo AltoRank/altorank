@@ -1,14 +1,17 @@
 ---
 name: altorank
-description: Drive AltoRank from a coding agent - audit a site's agent readiness, find keywords, and write SEO drafts into a human's review queue. Never publishes.
+description: Drive AltoRank from a coding agent - audit a site's agent readiness, read Search Console, find keywords, write SEO drafts into a human's review queue, move the content plan, edit drafts by find-and-replace. Never publishes or approves.
 ---
 
 # AltoRank for coding agents
 
 AltoRank writes search and AI-search content for websites. You can read an
-account and create **drafts**. A person reviews, approves and publishes in the
-editor. There is no publish, approve or delete call in this API, and you must
-not look for a way around that.
+account, create **drafts**, move planned keywords on the calendar, edit a draft
+by find-and-replace, and pause or resume a site. A person reviews, approves and
+publishes in the editor. There is no publish, approve or delete call in this
+API, and you must not look for a way around that. (`retry-publish` is the one
+exception in name only: it re-runs a publish a human already approved and
+that failed; it cannot publish anything else.)
 
 Two surfaces, one contract:
 
@@ -69,12 +72,55 @@ Every response, every surface:
    Approval is theirs.
 
 `GET /articles/{id}/content?format=markdown` gives you the body to read or
-critique. Suggestions go to the human; you cannot edit through this API.
+critique. Wording suggestions go to the human. The one edit you can make is a
+literal find-and-replace (`POST /articles/{id}/replace`), and it proposes first.
+
+## Mutations (need the `write` scope)
+
+Every mutation follows the same shape: **inspect, propose, confirm, write**.
+The routes return the standard envelope; `_human` (when present) is how to
+describe what happened to a person.
+
+| Do | Call | Notes |
+|---|---|---|
+| Move planned keywords | `POST /keywords/bulk-reschedule` `{ workspace_id, items:[{keyword_id,date}] }` or `{ workspace_id, keyword_ids, shift_days }` | Only unwritten planned entries move; `planned_for` on `GET /keywords` shows the current day. Per-keyword outcomes, never all-or-nothing. |
+| Take keywords off the plan | `POST /keywords/bulk-remove` `{ workspace_id, keyword_ids }` | Same as the planner's Remove: the calendar entry goes, the keyword stays tracked and is marked excluded. Nothing is deleted. |
+| Export keywords | `GET /keywords/export?workspace_id=&format=csv\|json` | `csv` returns a file, not an envelope. Empty cells are unmeasured, never 0. |
+| Find-and-replace in a draft | `POST /articles/{id}/replace` `{ find, replace, match_case?, whole_word?, preview_only? }` | **`preview_only` defaults to true.** Show the human the hits (before → after); only then resend with `preview_only: false`. Status never changes. Refused on approved, scheduled, live. |
+| …across drafts | `POST /articles/bulk-replace` `{ workspace_id, find, replace, article_ids?, preview_only? }` | Capped at 10 articles. Approved/scheduled/live are skipped with the reason, never edited. |
+| Retry a failed publish | `POST /articles/{id}/retry-publish` | Only when `GET /articles/{id}` shows `allowed_mutations.retry_publish.allowed: true` (approved + last publish failed). Otherwise refused; a human must approve. Tell the human before calling. |
+| Pause / resume a site | `POST /workspaces/{id}/pause`, `POST /workspaces/{id}/resume` | Pause stops drafting and publishing; drafts, plan and pace stay. Resume re-plans from today. Cannot lift the account-wide billing pause. |
+
+Mutations share a second limit of 30 a minute per key on top of the 120/min.
+`X-RateLimit-Mutations-*` headers say where you stand.
+
+## Search Console (read-only, stored data)
+
+`GET /gsc/performance`, `/gsc/cannibalization`, `/gsc/coverage` and
+`/gsc/url-inspection?url=` (all `?workspace_id=`, optional `&days=`) serve the
+rows the nightly sync already stored - the same numbers the dashboard shows.
+Nothing calls Google. Two states you must keep apart:
+
+- **Not connected** → `ok: false`, `not_available`. There is no data. Do not
+  say "no traffic"; say Search Console is not connected and a human connects it
+  on the Integrations page.
+- **Connected, nothing synced yet** → `ok: true` with `has_data: false`. Say the
+  numbers are not in yet.
+
+`changePct: null` means no baseline, not no change. `bucket: "unknown"` on
+coverage means nobody asked Google, not "not indexed". A fresh URL inspection is
+the human's click ("Check indexing") in the editor.
 
 ## Rules you never break
 
 - Never attempt to publish, approve, schedule or delete. No endpoint does it;
-  do not improvise one through the dashboard or the CMS.
+  do not improvise one through the dashboard or the CMS. `retry-publish` only
+  re-runs a publish a human already approved and that failed.
+- Propose before you write. `replace` and `bulk-replace` default to
+  `preview_only: true`; show the hits, get a yes, then write. Never send
+  `preview_only: false` on the first call.
+- Do not edit an approved article. The API refuses; do not ask the human to
+  "request changes" just so you can edit unless they raised the change.
 - Never fabricate metrics. Volume, difficulty, scores and traffic come from
   the API or they do not exist. `null` is "unmeasured", not a number.
 - Ask before spending: keyword suggestions cost research credits; each draft
@@ -88,7 +134,7 @@ critique. Suggestions go to the human; you cannot edit through this API.
 | `error.code` | HTTP | Means | Do |
 |---|---|---|---|
 | `unauthorized` | 401 | Missing, malformed, unknown, expired or revoked key | Ask the human for a new key at `/settings/api-keys`; export `ALTORANK_API_KEY`; retry |
-| `forbidden` | 403 | Key lacks the scope | Ask for a key with that scope |
+| `forbidden` | 403 | Key lacks the scope (mutations need `write`) | Ask for a key created with "Allow edits" ticked |
 | `not_found` | 404 | Id is not in this account | Re-list and use an id from the list |
 | `invalid_request` | 400 | Bad or missing parameter | Fix the request per `agent_guidance` |
 | `rate_limited` | 429 | Over 120 req/min for this key | Wait `Retry-After` seconds; batch reads |
@@ -114,8 +160,25 @@ running instance of the app, so treat it as a floor, not a contract.
 | GET | `/articles/{id}` | read |
 | GET | `/articles/{id}/content?format=` | read |
 | POST | `/articles/generate` | generate |
+| POST | `/articles/{id}/replace` | write |
+| POST | `/articles/bulk-replace` | write |
+| POST | `/articles/{id}/retry-publish` | write |
+| POST | `/keywords/bulk-reschedule` | write |
+| POST | `/keywords/bulk-remove` | write |
+| GET | `/keywords/export?workspace_id=&format=csv\|json` | read |
+| GET | `/gsc/performance?workspace_id=&days=` | read |
+| GET | `/gsc/cannibalization?workspace_id=&days=&min_impressions=&limit=` | read |
+| GET | `/gsc/coverage?workspace_id=&days=&bucket=` | read |
+| GET | `/gsc/url-inspection?workspace_id=&url=` | read |
+| POST | `/workspaces/{id}/pause` | write |
+| POST | `/workspaces/{id}/resume` | write |
 | GET | `/readiness?workspace_id=` (or `?domain=`) | read |
 | GET | `/usage` | read |
+
+CLI equivalents: `keywords export|bulk-reschedule|bulk-remove`,
+`articles replace|bulk-replace|retry-publish`, `workspaces pause|resume`,
+`gsc performance|cannibalization|coverage|inspect`. `replace` writes only with
+`--apply`.
 
 ## Configuration
 

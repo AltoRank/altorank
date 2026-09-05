@@ -12,7 +12,7 @@
 // machine; it is never 0 in either place.
 
 import type { Article, Keyword, Workspace } from "@/lib/types";
-import { articleMutations, keywordMutations, type AllowedMutations } from "./mutations";
+import { articleMutations, keywordMutations, type AllowedMutations, type ArticleMutationContext } from "./mutations";
 import { valueLabel, type HumanPresentation } from "./envelope";
 
 export const STATUS_LABELS: Record<Article["status"], string> = {
@@ -58,7 +58,7 @@ export type AgentArticle = {
   allowed_mutations: AllowedMutations;
 };
 
-export function toAgentArticle(a: Article, baseUrl: string): AgentArticle {
+export function toAgentArticle(a: Article, baseUrl: string, context: ArticleMutationContext = {}): AgentArticle {
   return {
     id: a.id,
     workspace_id: a.workspace_id,
@@ -82,7 +82,7 @@ export function toAgentArticle(a: Article, baseUrl: string): AgentArticle {
     created_at: a.created_at,
     updated_at: a.updated_at,
     editor_url: `${baseUrl}/content/${a.id}`,
-    allowed_mutations: articleMutations(a),
+    allowed_mutations: articleMutations(a, context),
   };
 }
 
@@ -94,11 +94,13 @@ export type AgentKeyword = {
   difficulty: number | null;
   intent: Keyword["intent"];
   status: Keyword["status"];
+  /** The day its article is planned for, when it is on the plan and unwritten. */
+  planned_for: string | null;
   created_at: string;
   allowed_mutations: AllowedMutations;
 };
 
-export function toAgentKeyword(k: Keyword): AgentKeyword {
+export function toAgentKeyword(k: Keyword, plannedFor: string | null = null): AgentKeyword {
   return {
     id: k.id,
     workspace_id: k.workspace_id,
@@ -107,6 +109,7 @@ export function toAgentKeyword(k: Keyword): AgentKeyword {
     difficulty: k.difficulty ?? null,
     intent: k.intent,
     status: k.status,
+    planned_for: plannedFor,
     created_at: k.created_at,
     allowed_mutations: keywordMutations(k),
   };

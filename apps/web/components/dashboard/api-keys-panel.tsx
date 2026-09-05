@@ -46,8 +46,9 @@ export function ApiKeysPanel({ keys, canManage }: { keys: ApiKeyRow[]; canManage
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <p className="text-[13px] text-ink-2 max-w-[620px]">
-          Keys let coding agents and scripts read this account and create drafts for review.
-          They can never approve or publish; that stays with a person in the editor.
+          Keys let coding agents and scripts read this account and create drafts for review;
+          with edits allowed they can also move the plan and edit drafts. They can never
+          approve or publish; that stays with a person in the editor.
         </p>
         {canManage ? (
           <Button variant="accent" onClick={() => { setError(null); setCreateOpen(true); }}>
@@ -140,6 +141,14 @@ export function ApiKeysPanel({ keys, canManage }: { keys: ApiKeyRow[]; canManage
               ))}
             </select>
           </div>
+          <label className="flex items-start gap-2.5 text-[12.5px] text-ink-2 cursor-pointer">
+            <input type="checkbox" name="allow_write" className="mt-0.5" />
+            <span>
+              <span className="font-medium text-ink">Allow edits</span> — move or remove planned keywords,
+              find-and-replace inside drafts, retry a failed publish, pause or resume a site.
+              Still cannot approve or publish.
+            </span>
+          </label>
           <p className="text-[12.5px] text-amber-700 bg-amber-500/10 border border-amber-500/20 rounded-md px-3 py-2">
             Save the key right after creation. The full value will only be displayed once.
           </p>

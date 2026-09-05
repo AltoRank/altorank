@@ -2,6 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { writePlannedEntryNow } from "@/lib/plan/write-now";
+import {
+  removePlannedEntry as removePlannedEntryCore,
+  removePlannedEntries,
+  reschedulePlannedEntry as reschedulePlannedEntryCore,
+} from "@/lib/plan/entries";
 import { createClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { parseStoredQuestions, type QualityQuestion } from "@/lib/keywords/questions";
@@ -132,23 +137,13 @@ export async function ensureKeywordQuestions(keywordId: string): Promise<Quality
 }
 
 /**
- * Take a planned keyword off the calendar. The entry goes; the keyword stays
- * tracked, stamped so the planner does not put it straight back. Only an
- * entry with no article can be removed: once written, the article is the
- * record and is managed from the Articles page.
+ * Take a planned keyword off the calendar. The behaviour is
+ * lib/plan/entries.ts (shared with the agent API's bulk-remove); this is its
+ * server-action door.
  */
 export async function removePlannedEntry(entryId: string): Promise<void> {
   const { supabase, workspaceId } = await scoped();
-  const { data: entry } = await supabase
-    .from("calendar_entries")
-    .select("id, keyword_id, article_id")
-    .eq("id", entryId)
-    .eq("workspace_id", workspaceId)
-    .maybeSingle();
-  if (!entry) throw new Error("This entry is not on the plan.");
-  if (entry.article_id) throw new Error("This article has already been written; manage it from Articles.");
-
-  await removeEntries(supabase, workspaceId, [{ id: entry.id as string, keyword_id: (entry.keyword_id as string | null) ?? null }]);
+  await removePlannedEntryCore(supabase, workspaceId, entryId);
   refresh();
 }
 
@@ -176,48 +171,15 @@ export async function removeInactiveEntries(): Promise<{ removed: number }> {
     .is("article_id", null);
   if (error) throw new Error(error.message);
   const entries = (rows ?? []).map((r) => ({ id: r.id as string, keyword_id: (r.keyword_id as string | null) ?? null }));
-  await removeEntries(supabase, workspaceId, entries);
+  await removePlannedEntries(supabase, workspaceId, entries);
   refresh();
   return { removed: entries.length };
 }
 
-/** The one way an entry leaves the plan. Callers have already checked it has no article. */
-async function removeEntries(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  workspaceId: string,
-  entries: Array<{ id: string; keyword_id: string | null }>,
-): Promise<void> {
-  if (entries.length === 0) return;
-  const { error } = await supabase
-    .from("calendar_entries")
-    .delete()
-    .eq("workspace_id", workspaceId)
-    .in("id", entries.map((e) => e.id));
-  if (error) throw new Error(error.message);
-  const keywordIds = entries.map((e) => e.keyword_id).filter((id): id is string => Boolean(id));
-  if (keywordIds.length) {
-    await supabase
-      .from("keywords")
-      .update({ plan_excluded_at: new Date().toISOString() })
-      .eq("workspace_id", workspaceId)
-      .in("id", keywordIds);
-  }
-}
-
-/** Move a planned entry to another day. */
+/** Move a planned entry to another day. Same core as the agent API's bulk-reschedule. */
 export async function reschedulePlannedEntry(entryId: string, date: string): Promise<void> {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T00:00:00Z`).getTime())) {
-    throw new Error("Pick a date.");
-  }
   const { supabase, workspaceId } = await scoped();
-  const { error, count } = await supabase
-    .from("calendar_entries")
-    .update({ scheduled_date: date }, { count: "exact" })
-    .eq("id", entryId)
-    .eq("workspace_id", workspaceId)
-    .is("article_id", null);
-  if (error) throw new Error(error.message);
-  if (!count) throw new Error("This entry cannot be moved.");
+  await reschedulePlannedEntryCore(supabase, workspaceId, entryId, date);
   refresh();
 }
 
