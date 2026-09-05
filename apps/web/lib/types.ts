@@ -546,3 +546,20 @@ export type Invite = {
   expires_at: string;
   accepted_at: string | null;
 };
+
+// === API key (agent surface) ===
+//
+// What the settings page lists. Deliberately without `key_hash`: the query
+// never selects it, so this type has no field for it.
+export type ApiKeyRow = {
+  id: string;
+  agency_id: string;
+  name: string;
+  prefix: string;
+  scopes: string[];
+  expires_at: string | null;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  created_by: string | null;
+  created_at: string;
+};
