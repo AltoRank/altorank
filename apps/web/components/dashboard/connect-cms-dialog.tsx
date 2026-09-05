@@ -16,6 +16,7 @@ import type { Workspace, Integration, CMSConfig } from "@/lib/types";
 import type { BlogUrlDerivation } from "@/lib/cms/blog-url";
 import { pluginInstallUrl } from "@/lib/cms/wordpress-plugin";
 import { parseWebflowFieldMap } from "@/lib/cms/webflow-fields";
+import { CONNECTOR_NOTES } from "@/lib/cms/connector-notes";
 import { WebflowPicker } from "./connect-cms-webflow";
 import { WixPicker } from "./connect-cms-wix";
 
@@ -337,14 +338,30 @@ export function ConnectCmsDialog({
             </div>
           </label>
 
+          {/*
+            Limits before effort. What this platform needs and cannot do, from
+            its own documentation or our adapter, stated before the person goes
+            looking for a token. lib/cms/connector-notes.ts is the one source.
+          */}
+          <p className="text-[12px] text-ink-3 leading-[1.5] -mt-1 mb-1">
+            {CONNECTOR_NOTES[cmsType].text}
+            {CONNECTOR_NOTES[cmsType].docUrl && (
+              <>
+                {" "}
+                <a
+                  href={CONNECTOR_NOTES[cmsType].docUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent-ink underline decoration-line underline-offset-[3px]"
+                >
+                  {CONNECTOR_NOTES[cmsType].docLabel ?? "Vendor documentation"}
+                </a>
+              </>
+            )}
+          </p>
+
           {cmsType === "wordpress-plugin" && (
             <>
-              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
-                Recommended. No WordPress login is shared: the plugin holds one
-                token for this site. Images are imported into the media library
-                and Rank Math, Yoast, SEOPress and AIOSEO fields are filled in.
-                Posts arrive as drafts unless you change that in the plugin.
-              </p>
               <label className="flex flex-col gap-1.5">
                 <span className="text-[12.5px] font-medium text-ink-2">Site URL</span>
                 <input
@@ -407,11 +424,6 @@ export function ConnectCmsDialog({
 
           {cmsType === "wordpress" && (
             <>
-              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
-                Uses a WordPress application password over the REST API. Works
-                without a plugin; SEOPress and AIOSEO fields cannot be written
-                this way.
-              </p>
               <Field name="siteUrl" label="Site URL" placeholder="https://example.com" />
               <Field name="username" label="Username" />
               <Field name="applicationPassword" label="Application password" type="password" />
@@ -427,9 +439,6 @@ export function ConnectCmsDialog({
 
           {cmsType === "magento" && (
             <>
-              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
-                Creates static CMS pages on your storefront (e.g. /your-slug), not blog posts.
-              </p>
               <Field name="baseUrl" label="Base URL" placeholder="https://magento.example.com" />
               <Field name="adminToken" label="Admin token" type="password" />
             </>
@@ -446,11 +455,6 @@ export function ConnectCmsDialog({
 
           {cmsType === "framer" && (
             <>
-              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
-                Framer has no endpoint we can call to list your projects or
-                collections: its Server API is a script SDK bound to one project.
-                The ids have to be pasted.
-              </p>
               <Field name="siteId" label="Site ID" />
               <Field name="collectionId" label="Collection ID" />
               <Field name="apiToken" label="Server API key" type="password" />
@@ -497,9 +501,6 @@ export function ConnectCmsDialog({
 
           {cmsType === "woocommerce" && (
             <>
-              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
-                Uses the WordPress REST API — same as WordPress but for WooCommerce stores.
-              </p>
               <Field name="siteUrl" label="Site URL" placeholder="https://shop.example.com" />
               <Field name="username" label="Username" />
               <Field name="applicationPassword" label="Application password" type="password" />
@@ -508,9 +509,6 @@ export function ConnectCmsDialog({
 
           {cmsType === "webhook" && (
             <>
-              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
-                POST article data to any URL. Optionally sign payloads with HMAC-SHA256.
-              </p>
               <Field name="url" label="Webhook URL" placeholder="https://your-api.com/publish" />
               <Field name="secret" label="Signing secret (optional)" type="password" required={false} />
             </>
@@ -518,11 +516,6 @@ export function ConnectCmsDialog({
 
           {cmsType === "git" && (
             <>
-              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
-                For sites built from a repository (Astro, Next, Hugo, Jekyll,
-                Eleventy). Articles are committed as Markdown; your host builds
-                and deploys them.
-              </p>
               <Field name="owner" label="Repo owner" placeholder="acme" />
               <Field name="repo" label="Repository" placeholder="website" />
               <Field name="branch" label="Branch" placeholder="main" />
