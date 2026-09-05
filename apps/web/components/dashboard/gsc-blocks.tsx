@@ -311,26 +311,8 @@ export function CannibalizationBlock({ items, connected, hasData, days }: { item
 // Index coverage
 // ---------------------------------------------------------------------------
 
-export const COVERAGE_LABEL: Record<CoverageBucket, string> = {
-  indexed: "Indexed",
-  not_indexed: "Not indexed",
-  unknown: "Unknown",
-};
-
-/** Indexed / Not indexed / Unknown as a small pill, same everywhere it appears. */
-export function IndexBadge({ bucket, title }: { bucket: CoverageBucket; title?: string }) {
-  const cls =
-    bucket === "indexed"
-      ? "bg-ok-soft text-ok-ink"
-      : bucket === "not_indexed"
-        ? "bg-warn-soft text-warn-ink"
-        : "border border-line text-ink-3";
-  return (
-    <span className={`inline-flex items-center px-[7px] py-px rounded-full text-[11px] font-medium whitespace-nowrap ${cls}`} title={title}>
-      {COVERAGE_LABEL[bucket]}
-    </span>
-  );
-}
+export { COVERAGE_LABEL, IndexBadge } from "@/components/dashboard/index-badge";
+import { IndexBadge } from "@/components/dashboard/index-badge";
 
 export function IndexCoverageBlock({ coverage, connected, hasData }: { coverage: IndexCoverage; connected: boolean; hasData: boolean }) {
   // Coverage is measured partly without Search Console (URL inspection

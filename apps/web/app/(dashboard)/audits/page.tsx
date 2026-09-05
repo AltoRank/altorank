@@ -108,8 +108,13 @@ export default async function AuditsPage() {
                     ))}
                     {wsAudits.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="px-3.5 py-8 text-center text-ink-3">
-                          No audits yet — run your first audit above
+                        <td colSpan={5} className="px-3.5 py-10 text-center text-ink-3">
+                          <span className="inline-block max-w-[56ch] leading-[1.6]">
+                            No audits yet. Run audit above crawls this site&rsquo;s pages and lists broken links,
+                            missing titles and descriptions, images without alt text, heading hierarchy problems and
+                            slow pages, with a PageSpeed reading when a key is configured. Results appear here as the
+                            crawl finishes.
+                          </span>
                         </td>
                       </tr>
                     )}
