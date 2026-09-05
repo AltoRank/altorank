@@ -60,11 +60,13 @@ create index if not exists idx_link_targets_pool
 alter table link_sources enable row level security;
 alter table link_targets enable row level security;
 
+drop policy if exists "Link sources by agency" on link_sources;
 create policy "Link sources by agency" on link_sources
   for all using (
     workspace_id in (select id from workspaces where agency_id in (select user_agency_ids()))
   );
 
+drop policy if exists "Link targets by agency" on link_targets;
 create policy "Link targets by agency" on link_targets
   for all using (
     workspace_id in (select id from workspaces where agency_id in (select user_agency_ids()))
