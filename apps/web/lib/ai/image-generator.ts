@@ -64,21 +64,29 @@ const CONTENT_TYPE: Record<string, string> = {
 };
 
 /**
- * What the editor adds when it regenerates one image by hand. Both optional;
- * the generator's own call passes neither.
+ * What a caller adds to the default hero prompt. Every field is optional; the
+ * generator's own featured-image call passes none.
+ *
+ *   section      an in-article image rather than the hero (lib/content/enrich/
+ *                images.ts): the prompt describes the section it sits beside.
+ *   context      the paragraph the image sits beside, when the editor
+ *                regenerates one image by hand.
+ *   instruction  the person's own words for what they want changed.
  */
-export interface ImageGuidance {
-  /** The paragraph the image sits beside, so an in-body image illustrates it. */
+export interface ImageGenerationOptions {
+  section?: { heading: string; excerpt: string };
   context?: string;
-  /** The person's own words for what they want changed. */
   instruction?: string;
 }
+
+/** The editor's name for the same options (#76). */
+export type ImageGuidance = Pick<ImageGenerationOptions, "context" | "instruction">;
 
 export async function generateImage(
   articleTitle: string,
   keyword: string,
   brandStyle?: Record<string, unknown>,
-  guidance?: ImageGuidance,
+  options: ImageGenerationOptions = {},
 ): Promise<ImageGenerationResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY not configured");
@@ -90,18 +98,28 @@ export async function generateImage(
     ? `, using brand colors: ${brandStyle.colors}`
     : "";
 
+  const subject = options.section
+    ? [
+        `Create an illustration for the section "${options.section.heading}" of a blog article about "${keyword}".`,
+        options.section.excerpt ? `The section says: "${options.section.excerpt}".` : "",
+        `The image should be clean and suit an editorial article on a professional website.`,
+      ]
+    : [
+        `Create a professional, visually striking featured image for a blog article titled "${articleTitle}".`,
+        `The article is about "${keyword}".`,
+        options.context?.trim()
+          ? `It illustrates this passage: "${options.context.trim().slice(0, 400)}".`
+          : "",
+        `The image should be clean, modern, and suitable as a hero image on a professional website.`,
+      ];
+
   const prompt = [
-    `Create a professional, visually striking featured image for a blog article titled "${articleTitle}".`,
-    `The article is about "${keyword}".`,
-    guidance?.context?.trim()
-      ? `It illustrates this passage: "${guidance.context.trim().slice(0, 400)}".`
-      : "",
-    `The image should be clean, modern, and suitable as a hero image on a professional website.`,
+    ...subject,
     `No text or watermarks in the image.`,
     styleHints,
     colorHints,
-    guidance?.instruction?.trim()
-      ? `Direction from the editor: ${guidance.instruction.trim().slice(0, 400)}.`
+    options.instruction?.trim()
+      ? `Direction from the editor: ${options.instruction.trim().slice(0, 400)}.`
       : "",
   ]
     .filter(Boolean)

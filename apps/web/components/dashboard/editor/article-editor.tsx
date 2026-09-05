@@ -9,6 +9,7 @@ import StarterKit from "@tiptap/starter-kit";
 // it on the next save, which would turn a rendering bug into data loss.
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
 import Placeholder from "@tiptap/extension-placeholder";
+import { enrichmentNodes } from "@/components/dashboard/editor/enrichment-nodes";
 import { toast } from "sonner";
 import { Icons } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
@@ -191,6 +192,9 @@ export function ArticleEditor({
       TableCell,
       ArticleImageWithTools,
       Placeholder.configure({ placeholder: "Start writing…" }),
+      // Images, video embeds, inline charts and heading ids from the enrichment
+      // pipeline. Without these Tiptap drops the whole document on load.
+      ...enrichmentNodes,
     ],
     content: initialContent,
     // Review mode first. Editor mode flips this on.

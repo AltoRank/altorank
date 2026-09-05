@@ -15,6 +15,13 @@ export interface ImageAttrs {
   src: string;
   alt: string | null;
   title: string | null;
+  /** A figcaption, when the enrichment pipeline wrote one (lib/content/enrich/images.ts). */
+  caption: string | null;
+}
+
+function captionText(element: HTMLElement): string | null {
+  const text = element.querySelector("figcaption")?.textContent?.trim();
+  return text || null;
 }
 
 declare module "@tiptap/core" {
@@ -38,15 +45,37 @@ export const ArticleImage = Node.create({
       src: { default: null },
       alt: { default: null },
       title: { default: null },
+      caption: { default: null },
     };
   },
 
+  // A bare <img>, or a <figure> holding one with its caption. The enrichment
+  // pipeline writes the figure form and lib/cms/html.ts serialises it back;
+  // one node for both means a stored document opens either way.
   parseHTML() {
-    return [{ tag: "img[src]" }];
+    return [
+      {
+        tag: "figure",
+        getAttrs: (element) => {
+          const img = (element as HTMLElement).querySelector("img");
+          if (!img) return false;
+          return {
+            src: img.getAttribute("src"),
+            alt: img.getAttribute("alt"),
+            title: img.getAttribute("title"),
+            caption: captionText(element as HTMLElement),
+          };
+        },
+      },
+      { tag: "img[src]" },
+    ];
   },
 
-  renderHTML({ HTMLAttributes }) {
-    return ["img", mergeAttributes(HTMLAttributes)];
+  renderHTML({ node, HTMLAttributes }) {
+    const { caption, ...rest } = HTMLAttributes;
+    const img: [string, Record<string, unknown>] = ["img", mergeAttributes(rest)];
+    if (!node.attrs.caption) return img;
+    return ["figure", { class: "article-image" }, img, ["figcaption", {}, String(caption)]];
   },
 
   addCommands() {

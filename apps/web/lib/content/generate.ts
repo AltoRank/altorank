@@ -537,6 +537,35 @@ export async function generateArticle(
       return verified.html;
     });
 
+    // Everything a finished article has beyond prose: heading ids, a table of
+    // contents, section images, a how-to video, charts for quoted numbers, a
+    // closing pointer to the site, FAQ schema. One call; the steps, their
+    // settings lookup and their fallbacks live in lib/content/enrich. The
+    // report rides on `research.enrichment`, which is saved below as-is.
+    // Imported here rather than at the top: the pipeline pulls in the image,
+    // video and audit modules, and the quota-gate tests import this file
+    // under a five-second budget they were already close to.
+    // Not on a rewrite, for the same reason the video embed is skipped: the
+    // brief says preserve the page, and a table of contents, section images
+    // or a closing CTA the original did not have are new blocks for the
+    // reviewer to reject one by one.
+    if (!refreshOf) await enhance("body enrichment", async (html) => {
+      const { enrichArticle } = await import("@/lib/content/enrich");
+      const enriched = await enrichArticle(html, {
+        supabase,
+        workspaceId,
+        articleId: article.id,
+        runId: job.id,
+        keyword,
+        title: articleResult.title,
+        domain: workspace.domain,
+        language: workspace.language,
+        brandStyle: workspace.brand_style as Record<string, unknown> | null,
+        research: research as unknown as Record<string, unknown>,
+      });
+      return enriched.html;
+    });
+
     setSpendReporter(null);
 
     const model = anthropicModel("content");
