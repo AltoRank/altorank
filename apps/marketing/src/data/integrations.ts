@@ -302,3 +302,13 @@ export const INTEGRATIONS: Integration[] = [
 ];
 
 export const DOCUMENTED = INTEGRATIONS.filter((i) => i.documented);
+
+// Brand marks, generated into public/logos/{CODE}.svg by
+// scripts/extract-brand-logos.mjs from the dashboard's own icon set. Inlined
+// rather than referenced as <img> so a mark with no published brand colour
+// (Magento) can take the page's ink via currentColor. Null when a connector
+// has no mark, and the caller shows the two-letter code instead.
+const LOGOS = import.meta.glob('/public/logos/*.svg', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+export function logoSvg(code: string): string | null {
+  return LOGOS[`/public/logos/${code}.svg`] ?? null;
+}
