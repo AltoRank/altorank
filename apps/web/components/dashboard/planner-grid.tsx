@@ -69,7 +69,8 @@ function longDate(iso: string): string {
 const stepBetweenDays: KeyboardCoordinateGetter = (event, { context: { active, collisionRect, droppableRects, droppableContainers } }) => {
   if (!active || !collisionRect) return;
   const dir: Record<string, [number, number]> = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] };
-  const d = dir[event.code];
+  // Some hosts deliver arrow keys with an empty `code`; `key` carries the same name.
+  const d = dir[event.code] ?? dir[event.key];
   if (!d) return;
   event.preventDefault();
 

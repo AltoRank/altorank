@@ -141,9 +141,15 @@ export async function saveKeywordPrompt(workspaceId: string, prompt: string): Pr
 export async function completeWizard(workspaceId: string, opts: { skipped?: boolean } = {}): Promise<void> {
   const { supabase } = await assertWorkspace(workspaceId);
   const now = new Date().toISOString();
+  // Finishing is the opt-in. The wizard has just promised a month of drafts
+  // and written the first one; the cron only writes for workspaces with
+  // auto_generate on and status "on", and nothing else ever set them for a
+  // site added through "Add workspace" (T2 walk, 2026-09-05) — so days two
+  // onward were never written. Skipping leaves the site in setup: no plan
+  // was made, so no promise was made.
   const { error } = await supabase
     .from("workspaces")
-    .update(opts.skipped ? { onboarding_skipped_at: now } : { onboarded_at: now })
+    .update(opts.skipped ? { onboarding_skipped_at: now } : { onboarded_at: now, status: "on", auto_generate: true })
     .eq("id", workspaceId);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");

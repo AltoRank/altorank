@@ -471,11 +471,12 @@ function IntegrationStep({ destinations }: { destinations: Destination[] }) {
 function NextUp({ weeklyLimit }: { weeklyLimit: number }) {
   return (
     <p className="mt-6 text-center text-[12.5px] leading-[1.6] text-ink-2">
-      Next: we read your site properly, find what to write about, schedule{" "}
+      Next: we read your site properly, find what to write about, schedule up to{" "}
       <strong className="font-medium text-ink">
         {weeklyLimit >= 7 ? "one article a day" : `${weeklyLimit} article${weeklyLimit === 1 ? "" : "s"} a week`}
       </strong>{" "}
-      for the next 30 days, and write the first one. Every draft waits in review.
+      for the next 30 days (only keywords that pass our checks make the plan), and write the first one. Every
+      draft waits in review.
     </p>
   );
 }
@@ -523,9 +524,10 @@ function RunScreen({ workspaceId, domain, weeklyLimit }: { workspaceId: string; 
         <div className="mb-8 text-center">
           <h1 className="mb-1.5 text-[22px] font-semibold">Creating your content plan</h1>
           <p className="mx-auto max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">
-            Reading {domain}, choosing keywords by volume, difficulty and fit, scheduling{" "}
+            Reading {domain}, choosing keywords by volume, difficulty and fit, scheduling up to{" "}
             {weeklyLimit >= 7 ? "one article a day" : `${weeklyLimit} a week`} for the next 30 days, and writing the
-            first one. A few minutes. You can leave this page; we keep working.
+            first one. Only keywords that pass our checks make the plan, so a new site may get fewer. A few
+            minutes. You can leave this page; we keep working.
           </p>
         </div>
 

@@ -186,7 +186,7 @@ export function PlannerCard({
       )}
       {keyword && (
         <div className="mt-1 font-mono text-[10px] text-ink-3">
-          Vol {num(keyword.volume)} · Diff {num(keyword.difficulty)}
+          Vol {num(keyword.volume)} · Diff {num(keyword.difficulty || null)}
         </div>
       )}
       <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1">

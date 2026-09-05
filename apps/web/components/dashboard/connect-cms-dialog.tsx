@@ -593,7 +593,7 @@ export function ConnectCmsDialog({
               />
               <span className="flex flex-col gap-0.5">
                 <span className="text-[13px] font-medium text-ink">
-                  Save as a draft on {tabLabel(cmsType)}{" "}
+                  Save as a draft{" "}
                   <span className="font-normal text-ink-3">— safe default</span>
                 </span>
                 <span className="text-[12px] text-ink-3 leading-[1.45]">

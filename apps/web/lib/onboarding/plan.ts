@@ -350,6 +350,16 @@ export async function schedulePlan(
   );
   if (error) throw new Error(error.message);
 
+  // The dashboard counts "in the content plan" from keywords.status, and only
+  // the research drawer used to set it, so a wizard plan read as 0 planned.
+  // Only rows still "new" move: a keyword already drafting keeps its state.
+  await supabase
+    .from("keywords")
+    .update({ status: "planned" })
+    .eq("workspace_id", workspaceId)
+    .eq("status", "new")
+    .in("id", plan.map((p) => p.keywordId));
+
   // Best-effort: a plan is written even if the shape or the questions fail.
   try {
     const intents = new Map(recs.map((r) => [r.keywordId, r.intent]));
@@ -452,9 +462,17 @@ export async function duePlannedKeyword(
   return { entryId: data.id as string, keywordId: (data.keyword_id as string | null) ?? null, term: data.keyword as string };
 }
 
-/** Mark a planned entry as written. */
+/** Mark a planned entry as written, and its keyword as drafting. */
 export async function fulfilPlannedEntry(supabase: SupabaseClient, entryId: string, articleId: string): Promise<void> {
-  await supabase.from("calendar_entries").update({ article_id: articleId, status: "scheduled" }).eq("id", entryId);
+  const { data } = await supabase
+    .from("calendar_entries")
+    .update({ article_id: articleId, status: "scheduled" })
+    .eq("id", entryId)
+    .select("keyword_id")
+    .maybeSingle();
+  if (data?.keyword_id) {
+    await supabase.from("keywords").update({ status: "drafting" }).eq("id", data.keyword_id);
+  }
 }
 
 // ---------------------------------------------------------------------------

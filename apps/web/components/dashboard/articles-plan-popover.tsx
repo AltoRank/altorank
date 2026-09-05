@@ -241,11 +241,9 @@ function PlanPanel({ workspaceId, onDone }: { workspaceId: string; onDone: () =>
           ))}
         </div>
         <p className="mt-2 text-[11.5px] leading-relaxed text-ink-3">
-          Articles are generated in the morning UTC and wait in review; publishing happens on the days you
-          choose.{" "}
-          {days.length === 0 && "No days chosen: approved articles are not published on a schedule."}
+          {state.schedule}
+          {days.length === 0 && " No days chosen: approved articles are not published on a schedule."}
         </p>
-        <p className="mt-1 text-[11.5px] leading-relaxed text-ink-3">{state.schedule}</p>
       </div>
 
       <div className="flex items-center justify-between gap-3 border-t border-line pt-3">

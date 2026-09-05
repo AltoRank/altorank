@@ -298,7 +298,7 @@ export function WhyPanel({
           title="On-page checks"
           checks={checks}
           scored={seoScore > 0}
-          footnote="Whether Google will rank it. Weights are in lib/seo/scoring.ts."
+          footnote="Whether Google will rank it."
         />
       )}
 
@@ -310,7 +310,7 @@ export function WhyPanel({
           title="Citation readiness"
           checks={aeoChecks}
           scored={aeoScore !== null}
-          footnote="Whether an AI answer can quote it. Weights are in lib/seo/aeo-scoring.ts."
+          footnote="Whether an AI answer can quote it."
         />
       )}
 

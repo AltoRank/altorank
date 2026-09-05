@@ -378,6 +378,8 @@ export async function analyseDomain(options: {
       const deduped = dedupePermutations(candidatesAll.map((c) => c.k));
       const keep = new Set(deduped.map((k) => k.keyword));
       const candidates = candidatesAll.filter((c) => keep.has(c.k.keyword));
+      // Overwritten below with what actually passes the quality and relevance
+      // filters; the wizard said "Found 8" while 3 rows were stored.
       keywordsFound = candidates.length;
 
       if (supabase && workspaceId && candidates.length) {
@@ -390,6 +392,7 @@ export async function analyseDomain(options: {
           .filter((c) => c.rank === 0 || !usable || c.r > 0)
           .sort((a, b) => a.rank - b.rank || b.r - a.r || b.k.volume - a.k.volume);
         const top = scored.slice(0, MAX_KEYWORDS_STORED);
+        keywordsFound = top.length;
 
         const { data: existing } = await supabase
           .from("keywords")
