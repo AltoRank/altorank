@@ -133,12 +133,83 @@ export const PLANS = [
       '400 articles / month included, at the pace you set per site',
       'Unlimited workspaces: a site or a client each',
       '€0.45 per additional article',
-      'Role-based permissions for your team',
+      // Was 'Role-based permissions for your team'. There is no role column
+      // and no permission system (apps/web/lib/auth/operators.ts says so in
+      // as many words); every member of an agency account has the same
+      // access. Selling permissions that do not exist is the class of claim
+      // this file keeps removing. Seats are genuinely unmetered, so say that.
+      'Unlimited team members, no per-seat charge',
       'Priority support, same-day',
       'Onboarding call and migration help',
     ],
     cta: 'Get started',
     href: null,
     popular: false,
+  },
+];
+
+/**
+ * The plan ladder as a comparison table, one row per thing the code actually
+ * enforces or the operator actually provides. Every figure here has a source
+ * in apps/web:
+ *   articles/month       PLAN_ARTICLE_LIMITS  (lib/stripe.ts)
+ *   per extra article    OVERAGE_CENTS        (lib/billing/quota.ts)
+ *   workspaces           PLAN_WORKSPACE_LIMITS (lib/billing/workspaces.ts)
+ *   free first article   FREE_DRAFTS          (lib/billing/quota.ts)
+ *   approval gate        needsPlanToShip      (lib/billing/quota.ts)
+ * Rows about support and onboarding restate the plan cards. There is no
+ * add-on catalogue because there are no add-ons: the only metered extra is
+ * the per-article rate, and it is a row here rather than a second table.
+ * Do not add a volume-discount ladder; none is charged.
+ */
+export const AT_A_GLANCE: { label: string; values: [string, string, string] }[] = [
+  { label: 'Price', values: ['€0', '€69 / month', '€199 / month'] },
+  { label: 'Billed yearly', values: ['—', `€${yearlyMonthly(69)} / month`, `€${yearlyMonthly(199)} / month`] },
+  { label: 'Articles included per month', values: ['Unmetered, your API bill', '100', '400'] },
+  { label: 'Each article past the included volume', values: ['—', '€0.60', '€0.45'] },
+  { label: 'Workspaces (a site or a client each)', values: ['Unlimited', '3', 'Unlimited'] },
+  { label: 'Before choosing a plan', values: ['—', '1 workspace, 1 complete article to read, no card', '1 workspace, 1 complete article to read, no card'] },
+  { label: 'Model and search-data costs', values: ['You bring the keys', 'Included', 'Included'] },
+  { label: 'Human approval before anything publishes', values: ['Yes', 'Yes', 'Yes'] },
+  { label: 'CMS integrations', values: ['All 11', 'All 11', 'All 11'] },
+  { label: 'White-label reports and multi-client', values: ['Yes', 'Yes', 'Yes'] },
+  { label: 'MCP server for Claude Code', values: ['Yes', 'Yes', 'Yes'] },
+  { label: 'Team members', values: ['Unlimited', 'Unlimited', 'Unlimited'] },
+  { label: 'Support', values: ['Community', 'Email', 'Priority, same-day, plus onboarding call'] },
+];
+
+/** Pricing FAQ. Rendered on /pricing and emitted as FAQPage schema there. */
+export const PRICING_FAQ: { question: string; answer: string }[] = [
+  {
+    question: 'Is there a free trial?',
+    answer: 'No trial, and no card up front. Instead, adding a domain gives you one workspace and one complete article with its fact check, to read before you decide. Approving or publishing that article is where a plan starts. Nothing expires and nothing is charged until you choose one.',
+  },
+  {
+    question: 'What counts as an article against the monthly volume?',
+    answer: 'Every article created in the calendar month, across all your workspaces, whether the schedule wrote it or you asked for it. Deleting a draft gives the slot back. The count resets on the first of the month.',
+  },
+  {
+    question: 'What happens when I go past the included articles?',
+    answer: 'Articles keep generating and each one past the included volume is billed at the per-article rate for your plan, €0.60 on Managed and €0.45 on Agency, as a line on your next invoice. There is no hard stop and no need to upgrade mid-month.',
+  },
+  {
+    question: 'Are there add-ons or volume discounts?',
+    answer: 'No. There is one metered extra, the per-article rate above, and yearly billing is two months free. Everything else, including white-label reports, all eleven integrations and the MCP server, is in every plan, including the free self-hosted one. For volume beyond the Agency tier, talk to us.',
+  },
+  {
+    question: 'What is the difference between Managed and self-hosting?',
+    answer: 'The software is identical; there are no feature gates. Self-hosting means your infrastructure, your Anthropic and search-data keys, your upgrades, and no article limit because the bill is yours. Managed means we run it, the model and data costs are included, and the volume is metered.',
+  },
+  {
+    question: 'How does the Agency plan price a client roster?',
+    answer: 'On articles, not on clients or seats. Unlimited workspaces, one per site or client, 400 articles a month across all of them, and €0.45 for each beyond that. Ten clients at ten articles each and one client at a hundred cost the same.',
+  },
+  {
+    question: 'How do I cancel?',
+    answer: 'From the billing page, in one click, with no call. Your articles stay readable afterwards, and anything already published on your site is yours; it was published to your CMS, not hosted by us.',
+  },
+  {
+    question: 'Which currency and who is the seller?',
+    answer: 'All prices are in euros. The seller is SUPALABS SRL, an Italian company, so EU customers receive a VAT invoice and GDPR applies to us by establishment.',
   },
 ];
