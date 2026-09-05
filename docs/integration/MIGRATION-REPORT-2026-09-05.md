@@ -306,3 +306,7 @@ throughout.
   role-switch experiment described in section 5, all rolled back.
 - Pre-flight query (runbook section 1) validated against the post-pass-1
   database: every row `t` except `045_article_images_bucket`.
+
+## Addendum 2026-09-05 — 062
+
+`062_workspace_scope_followups.sql` lands on the integration branch (#91) as a review fix: six policies from 052/054/055 move from `user_agency_ids()` to `user_workspace_ids()` (053). This resolves the consistency nit noted above. Not exercised in the fresh-DB run (it did not exist yet); it is policy-only and idempotent if written with `drop policy if exists`.

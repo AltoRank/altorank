@@ -209,6 +209,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 058_agency_attribution.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 059_publish_mode_and_retry.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 060_keyword_cpc.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 061_workspace_pause_meta.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 062_workspace_scope_followups.sql
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -318,3 +319,11 @@ for when you cannot:
   null;`. Do **not** drop `keywords.cpc` unless 050 is being rolled back too;
   050 declares the same column.
 - **061** `alter table workspaces drop column paused_meta;`
+
+## 062 — added 2026-09-05
+
+`062_workspace_scope_followups.sql` (integration branch #91, review fix): drops the six
+agency-scoped policies on `refresh_candidates`, `refresh_tasks`, `refresh_executions`,
+`keyword_research_runs`, `link_sources`, `link_targets` and recreates them "by access" on
+`user_workspace_ids()`. No data change. Requires 053 (defines `user_workspace_ids()`) and
+052/054/055 (the tables). Apply last: **final production order is 048 → 062**.
