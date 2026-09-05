@@ -3,8 +3,9 @@ import { admin, signIn, todayUtc } from "./fixtures/account";
 
 /**
  * The whole first session, on fixtures: a new account is sent to the wizard,
- * every screen persists what it shows, finishing runs the pipeline, and the
- * plan it produces is the one the calendar then shows.
+ * every screen persists what it shows, the one question about the person is
+ * asked last, finishing runs the pipeline, and the plan it produces is the one
+ * the calendar then shows.
  */
 test("a new account is walked from /dashboard to a planned first month", async ({ page, account }) => {
   const ws = account.workspaces[0];
@@ -77,7 +78,14 @@ test("a new account is walked from /dashboard to a planned first month", async (
   expect(output?.tone).toBe("friendly");
   expect(output?.internal_links).toBe(3);
 
-  await page.getByRole("button", { name: "Finish and plan my first month" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+
+  // --- Step 6: where they heard of us, asked once per account ----------------
+  await expect(page.getByRole("heading", { name: "One last thing" })).toBeVisible();
+  const finish = page.getByRole("button", { name: "Finish and plan my first month" });
+  await expect(finish).toBeDisabled();
+  await page.getByRole("radio", { name: "ChatGPT or other AI" }).click();
+  await finish.click();
 
   // --- The run ---------------------------------------------------------------
   await expect(page.getByRole("heading", { name: "Creating your content plan" })).toBeVisible();
@@ -90,6 +98,9 @@ test("a new account is walked from /dashboard to a planned first month", async (
   const { data: wsDone } = await db.from("workspaces").select("onboarded_at, onboarding_skipped_at").eq("id", ws.id).single();
   expect(wsDone?.onboarded_at).not.toBeNull();
   expect(wsDone?.onboarding_skipped_at).toBeNull();
+  const { data: agency } = await db.from("agencies").select("attribution_source, attribution_answered_at").eq("id", account.agencyId).single();
+  expect(agency?.attribution_source).toBe("ai");
+  expect(agency?.attribution_answered_at).not.toBeNull();
 
   const { data: entries } = await db
     .from("calendar_entries")
@@ -122,8 +133,10 @@ test("a new account is walked from /dashboard to a planned first month", async (
   for (const e of thisMonth) {
     await expect(page.getByText(e.keyword as string, { exact: true })).toBeVisible();
   }
-  // Day one carries the draft: on its planned day, marked scheduled, not
-  // dropped because the article is still in review.
+  // Day one carries the draft: on its planned day, and the card reads the
+  // article's state - in review, with the draft one click away - rather than
+  // the entry's (lib/plan/card-state.ts).
   const dayOne = page.locator("div.text-xs", { has: page.getByText(first.keyword as string, { exact: true }) }).first();
-  await expect(dayOne).toContainText("Scheduled");
+  await expect(dayOne).toContainText("In review");
+  await expect(dayOne.getByRole("link", { name: "Open draft" })).toHaveAttribute("href", `/content/${articles?.[0].id}`);
 });

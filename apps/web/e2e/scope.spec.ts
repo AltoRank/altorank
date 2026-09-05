@@ -37,23 +37,29 @@ test("keywords and calendar show only the scoped workspace after switching", asy
   await signIn(page, account.email, "/keywords");
   await expect(page).toHaveURL(/\/keywords$/);
 
+  // The switcher is a button naming the active site; it opens a listbox of sites.
+  const switcher = page.getByRole("button", { name: "Choose which site to view" });
+  async function switchTo(domain: string) {
+    await switcher.click();
+    await page.getByRole("listbox", { name: "Sites" }).getByRole("option", { name: domain }).click();
+  }
+
   // No cookie yet: the oldest workspace (alpha) is the scope.
-  const switcher = page.getByLabel("Choose which workspace to view");
-  await expect(switcher).toHaveValue(alpha.id);
+  await expect(switcher).toContainText(alpha.domain);
   await expect(page.getByText(alphaTerm, { exact: true })).toBeVisible();
   await expect(page.getByText(betaTerm, { exact: true })).toHaveCount(0);
 
-  await switcher.selectOption(beta.id);
+  await switchTo(beta.domain);
   await expect(page.getByText(betaTerm, { exact: true })).toBeVisible();
   await expect(page.getByText(alphaTerm, { exact: true })).toHaveCount(0);
 
   // The scope is a cookie, so it follows into the calendar.
   await page.goto("/content");
-  await expect(page.getByLabel("Choose which workspace to view")).toHaveValue(beta.id);
+  await expect(switcher).toContainText(beta.domain);
   await expect(page.getByText(betaPlan, { exact: true })).toBeVisible();
   await expect(page.getByText(alphaPlan, { exact: true })).toHaveCount(0);
 
-  await page.getByLabel("Choose which workspace to view").selectOption(alpha.id);
+  await switchTo(alpha.domain);
   await expect(page.getByText(alphaPlan, { exact: true })).toBeVisible();
   await expect(page.getByText(betaPlan, { exact: true })).toHaveCount(0);
 });

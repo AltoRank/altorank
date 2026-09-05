@@ -171,8 +171,18 @@ export async function createAccount(opts: { workspaces?: WorkspaceSpec[] } = {})
 export async function destroyAccount(account: Account): Promise<void> {
   const db = admin();
   await deleteAgency(db, account.agencyId);
-  const { error: userError } = await db.auth.admin.deleteUser(account.userId);
-  if (userError) throw new Error(`teardown user: ${userError.message}`);
+  // GoTrue's admin API answers "Processing this request timed out" under the
+  // same load that makes the cascade delete slow; like createUser above, it is
+  // a queue, not a refusal. Bounded and short, so a real failure still shows.
+  let lastError: string | undefined;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { error: userError } = await db.auth.admin.deleteUser(account.userId);
+    // "User not found" on a retry means the attempt that timed out went through.
+    if (!userError || /not found/i.test(userError.message)) return;
+    lastError = userError.message;
+    await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+  }
+  throw new Error(`teardown user: ${lastError}`);
 }
 
 /**
