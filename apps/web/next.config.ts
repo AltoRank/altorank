@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["127.0.0.1"],
   // Emits a self-contained server bundle with only the node_modules actually
   // reached, which is what makes the self-host image small enough to be worth
   // shipping. Vercel ignores this and uses its own adapter, so it is safe here.

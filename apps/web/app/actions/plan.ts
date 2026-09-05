@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { writePlannedEntryNow } from "@/lib/plan/write-now";
 import { createClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { parseStoredQuestions, type QualityQuestion } from "@/lib/keywords/questions";
@@ -350,4 +351,18 @@ export async function applyArticlesPlan(
   revalidatePath(`/workspaces/${workspaceId}`);
   revalidatePath("/dashboard");
   return { pace, days, planned: plan.length, sentence: describePlanDiff(diff) };
+}
+
+/**
+ * Write a planned keyword's article now. The behaviour is lib/plan/write-now;
+ * this is its server-action door. The planner card uses the route instead
+ * (app/api/plan/write-now), for the reason given there.
+ */
+export async function writeNow(entryId: string): Promise<{ articleId: string }> {
+  const { supabase, workspaceId } = await scoped();
+  const { data: auth } = await supabase.auth.getUser();
+  const result = await writePlannedEntryNow(supabase, workspaceId, entryId, auth.user?.email ?? undefined);
+  refresh();
+  revalidatePath("/articles");
+  return result;
 }
