@@ -429,7 +429,16 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
   // Naming the library is the whole difference. The instruction on its own
   // produced no placeholders at all, because "where relevant" is not a question
   // a model can answer without knowing what exists.
-  if (prompt.internalLinkTargets?.length) {
+  //
+  // And when the library is empty the prompt says so, in the imperative. It
+  // used to say nothing, and a writer told to produce a well-linked article
+  // with no list to link from invented same-domain paths: four on the first
+  // draft for a fresh site, all 404s. Any such link is unwrapped after generation
+  // (lib/seo/link-resolver.ts), but a link never written is cheaper than one
+  // removed, and the sentence around a removed link often still reads as if
+  // it pointed somewhere.
+  const hasLinkPool = Boolean(prompt.internalLinkTargets?.length);
+  if (hasLinkPool) {
     sections.push(
       [
         "INTERNAL LINKS — link to these, and only these:",
@@ -437,11 +446,24 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
         "draft naturally mentions one of these subjects, link to it once using",
         'the placeholder form <a href="{{internal-link:KEYWORD}}">anchor</a>,',
         "using the keyword exactly as written below. Two to four links is right",
-        "for an article of this length. Never invent a target that is not listed.",
+        "for an article of this length. Never invent a target that is not listed:",
+        "do not write any other href on this site's domain or any other relative",
+        "path. A link to a page not on this list is removed before publishing.",
         "",
-        ...prompt.internalLinkTargets
+        ...prompt.internalLinkTargets!
           .slice(0, 20)
           .map((t) => `- ${t.keyword} — "${t.title}"`),
+      ].join("\n"),
+    );
+  } else {
+    sections.push(
+      [
+        "INTERNAL LINKS — do not add any.",
+        "This site has no pages in its link pool yet, so there is nothing to",
+        "link to. Do not write an <a> to any path or URL on this site, and do",
+        'not use the {{internal-link:...}} placeholder. A link to a page that',
+        "does not exist is a 404 the reader hits; where a subject deserves a",
+        "pointer, name it in plain text. Outbound citations are unaffected.",
       ].join("\n"),
     );
   }
@@ -579,7 +601,10 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     const o = prompt.output;
     const prefs: string[] = [];
     if (o.tone && o.tone !== "informative") prefs.push(`- Overall tone: ${o.tone}.`);
-    if (typeof o.internalLinks === "number") {
+    // The wanted count only makes sense against a pool. With none, the
+    // INTERNAL LINKS section above already said "do not add any", and asking
+    // for "about 3" here would contradict it.
+    if (typeof o.internalLinks === "number" && (o.internalLinks === 0 || hasLinkPool)) {
       prefs.push(
         o.internalLinks === 0
           ? "- Do not add internal-link placeholders."

@@ -6,6 +6,7 @@ import { discoverKeywords, storedCpc } from "@/lib/seo/keywords";
 import { checkRankings } from "@/lib/seo/serp";
 import { syncBacklinks } from "@/lib/seo/backlinks";
 import { scoreArticle } from "@/lib/seo/scoring";
+import { fetchLinkTargets } from "@/lib/seo/link-resolver";
 import type { Workspace, Keyword, Article } from "@/lib/types";
 import { buildRankingRows } from "@/lib/seo/rankings";
 
@@ -210,10 +211,18 @@ export async function scoreArticleSeo(articleId: string) {
     throw new Error("Article has no target keyword set");
   }
 
+  // The pages this article may link to, so a same-domain link to a page not
+  // in the pool is not counted as an internal link. Same list the generator
+  // and the editor read.
+  const knownPages = await fetchLinkTargets(supabase, article.workspace_id, articleId, {
+    keyword: article.keyword,
+  });
+
   // Run the scoring
   const result = scoreArticle(htmlContent, article.keyword, {
     metaDescription: article.meta_description,
     siteDomain: ws?.domain ?? null,
+    knownPages,
     targetWordCount: article.research?.recommendedWordCount ?? null,
     title: article.title,
   });

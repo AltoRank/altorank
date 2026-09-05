@@ -110,3 +110,65 @@ export function hrefsIn(html: string): string[] {
 export function isCitationLink(href: string, siteDomain: string | null | undefined): boolean {
   return classifyHref(href, siteDomain) === "external";
 }
+
+// ---------------------------------------------------------------------------
+// Is this internal link a page we know?
+// ---------------------------------------------------------------------------
+//
+// "Internal" says where a link points. It does not say the page exists. The
+// writer is told which pages do (the link pool: configured targets, our own
+// live articles, the crawl) and told to link to those only, and it links to
+// `/guides/founder-equity-splits` anyway when the subject deserved a pointer
+// and nothing on the list fit. A same-domain URL nobody has observed is a
+// 404 with the customer's name on it, so every reader of a draft asks the
+// same question here: the resolver that unwraps it, the scorer that would
+// otherwise count it, the audit, and the editor panel that names it.
+
+/**
+ * One URL on this site reduced to the form two links to the same page compare
+ * equal under: host without `www.`, path without a trailing slash, no query
+ * or hash. A relative href resolves against the site domain.
+ */
+export function normaliseSiteUrl(href: string, siteDomain: string | null | undefined): string {
+  const site = normaliseDomain(siteDomain);
+  try {
+    const u = new URL(href.trim(), site ? `https://${site}` : "https://invalid.local");
+    u.hash = "";
+    u.search = "";
+    return `${u.host.replace(/^www\./, "")}${u.pathname.replace(/\/+$/, "")}`.toLowerCase();
+  } catch {
+    return href.trim().replace(/\/+$/, "").toLowerCase();
+  }
+}
+
+/** The known page `href` points at, or null when it points at none of them. */
+export function findKnownPage<T extends { url: string }>(
+  href: string,
+  siteDomain: string | null | undefined,
+  pages: readonly T[],
+): T | null {
+  const want = normaliseSiteUrl(href, siteDomain);
+  for (const p of pages) {
+    if (normaliseSiteUrl(p.url, siteDomain) === want) return p;
+  }
+  return null;
+}
+
+/** Whether `href` is the site's root: `https://example.com/`, `/`, or the bare domain. */
+export function isSiteRoot(href: string, siteDomain: string | null | undefined): boolean {
+  const site = normaliseDomain(siteDomain);
+  return Boolean(site) && normaliseSiteUrl(href, siteDomain) === site;
+}
+
+/**
+ * Whether an internal `href` points at a page we can show exists: one of
+ * `pages`, or the site's own root. The root is the one page whose existence
+ * the workspace itself asserts, and the closing call to action links to it.
+ */
+export function isKnownPage(
+  href: string,
+  siteDomain: string | null | undefined,
+  pages: readonly { url: string }[],
+): boolean {
+  return isSiteRoot(href, siteDomain) || findKnownPage(href, siteDomain, pages) !== null;
+}

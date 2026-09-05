@@ -27,7 +27,7 @@ import { findAttribution } from "@/lib/ai/fact-check";
 import { checkInlineCitations } from "@/lib/ai/inline-citations";
 import { findWeakAltText, MIN_ALT_WORDS } from "@/lib/ai/alt-text";
 import { decodeEntities } from "@/lib/audit/html-utils";
-import { extractLinks, hostOf, normaliseDomain, type LinkRef } from "./links";
+import { extractLinks, hostOf, normaliseDomain, type LinkRef, isKnownPage } from "./links";
 import type { LinkCheck } from "./link-check";
 
 // The link classifier moved to ./links so the scorers can share it without
@@ -65,6 +65,14 @@ export interface ArticleAuditInput {
    * caller does not know.
    */
   linkableArticles?: number | null;
+  /**
+   * The pages of this site a link may point at: the link pool the draft was
+   * offered (configured targets, live articles, crawled pages). Given, an
+   * internal link to any other URL is a link to a page nobody has seen, and
+   * the internal-links item fails on it. Undefined when the caller does not
+   * know what exists, in which case links are counted by domain only.
+   */
+  knownPages?: readonly { url: string }[] | null;
   /**
    * What each outbound link answered when the draft was generated, from
    * `articles.link_checks`. Turns "not verified" into a count of what was.
@@ -154,6 +162,14 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
 
   // ── Links ────────────────────────────────────────────────────────────────
 
+  // A link to this domain is not a link to a page. Given the pool, the ones
+  // that point at nothing we know are named and fail the item: the first
+  // example.com draft had four such links and this read "4 internal links,
+  // pass" while the editor panel beside it flagged every one.
+  const unknownInternal = input.knownPages
+    ? internal.filter((l) => !isKnownPage(l.href, siteDomain, input.knownPages!))
+    : [];
+
   if (input.linkableArticles === 0 && internal.length === 0) {
     push({
       id: "internal-links",
@@ -163,6 +179,18 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
       detail:
         "None, and nothing to point at yet: this site has no other live article. " +
         "Internal links arrive once there is something live to link to.",
+    });
+  } else if (unknownInternal.length) {
+    const paths = [...new Set(unknownInternal.map((l) => l.href))].slice(0, 4).join(", ");
+    push({
+      id: "internal-links",
+      group: "links",
+      status: "fail",
+      label: "Internal links",
+      detail:
+        `${unknownInternal.length} of ${internal.length} internal ${internal.length === 1 ? "link points" : "links point"} at ${unknownInternal.length === 1 ? "a page" : "pages"} not in this site's link pool (${paths}). ` +
+        "A link to a page nobody has seen publishes as a 404 on the customer's own domain. Check each exists, or unlink the words.",
+      locate: unknownInternal.map((l) => l.anchor).filter(Boolean).slice(0, 6),
     });
   } else {
     push({

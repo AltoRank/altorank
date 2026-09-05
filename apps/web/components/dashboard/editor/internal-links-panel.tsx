@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { extractLinks } from "@/lib/seo/links";
+import { extractLinks, findKnownPage, isSiteRoot } from "@/lib/seo/links";
 import type { LinkTarget } from "@/lib/seo/link-resolver";
 
 // ---------------------------------------------------------------------------
@@ -24,25 +24,22 @@ type Props = {
   wanted: number | null;
 };
 
-function normalise(href: string, siteDomain: string | null): string {
-  try {
-    const base = siteDomain ? `https://${siteDomain.replace(/^https?:\/\//, "")}` : "https://invalid.local";
-    const u = new URL(href, base);
-    u.hash = "";
-    u.search = "";
-    return `${u.host.replace(/^www\./, "")}${u.pathname.replace(/\/+$/, "")}`.toLowerCase();
-  } catch {
-    return href.trim().toLowerCase();
-  }
-}
-
 export function InternalLinksPanel({ html, siteDomain, targets, wanted }: Props) {
-  const links = useMemo(() => {
-    const byUrl = new Map(targets.map((t) => [normalise(t.url, siteDomain), t]));
-    return extractLinks(html, siteDomain)
-      .filter((l) => l.kind === "internal")
-      .map((l) => ({ ...l, target: byUrl.get(normalise(l.href, siteDomain)) ?? null }));
-  }, [html, siteDomain, targets]);
+  // "Is this a page in the pool?" is answered by lib/seo/links.ts, the same
+  // way the generator's unwrap step, the scorer and the audit answer it. This
+  // panel used to carry its own copy of the URL normalisation, which is how
+  // it came to flag four links the score beside it was counting as a pass.
+  const links = useMemo(
+    () =>
+      extractLinks(html, siteDomain)
+        .filter((l) => l.kind === "internal")
+        .map((l) => ({
+          ...l,
+          target: findKnownPage(l.href, siteDomain, targets),
+          root: isSiteRoot(l.href, siteDomain),
+        })),
+    [html, siteDomain, targets],
+  );
 
   const short = wanted !== null && links.length < wanted;
 
@@ -70,9 +67,9 @@ export function InternalLinksPanel({ html, siteDomain, targets, wanted }: Props)
                 {l.anchor || <span className="text-ink-3 italic">no anchor text</span>}
               </div>
               <div className="text-[11.5px] text-ink-3 truncate" title={l.href}>
-                {l.target ? l.target.title : l.href}
+                {l.target ? l.target.title : l.root ? "This site's home page" : l.href}
               </div>
-              {!l.target && (
+              {!l.target && !l.root && (
                 <div className="text-[11px] text-warn-ink mt-0.5">
                   Not a page in the link pool. Check it exists.
                 </div>

@@ -601,6 +601,9 @@ export function ArticleEditor({
         slug: article.slug,
         featuredImageUrl: featured,
         linkableArticles,
+        // The pool this draft was offered, so a same-domain link to a page
+        // not in it fails the item rather than counting towards a pass.
+        knownPages: linkTargets,
         linkChecks: article.link_checks,
       }),
     [
@@ -613,6 +616,7 @@ export function ArticleEditor({
       article.link_checks,
       workspace.domain,
       linkableArticles,
+      linkTargets,
     ],
   );
   const auditOpen = audit.counts.fail + audit.counts.warn;
@@ -1202,7 +1206,9 @@ function ScoreRing({
       : value >= 60
         ? "var(--warn)"
         : "var(--err)";
-  const failed = (checks ?? []).filter((c) => !c.passed);
+  // Unverified checks carry no weight, so they are not what the number is
+  // made of and do not belong in its explanation.
+  const failed = (checks ?? []).filter((c) => !c.passed && !c.unverified);
 
   return (
     <Tooltip delayDuration={150}>

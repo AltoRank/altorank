@@ -15,7 +15,7 @@ describe("CREDITS_PER_ARTICLE", () => {
   });
 });
 
-const TARGET = "https://limineer.com/venture-building";
+const TARGET = "https://example.com/venture-building";
 
 function mockPage(html: string, init?: { status?: number; headers?: Record<string, string> }) {
   vi.stubGlobal(

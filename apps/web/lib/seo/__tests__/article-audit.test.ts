@@ -334,3 +334,44 @@ describe("auditArticle — alt text that describes the image", () => {
     expect(onlyMissing.find((i) => i.id === "image-alt-descriptive")).toBeUndefined();
   });
 });
+
+describe("auditArticle — internal links against the pool", () => {
+  const html = `
+    <h1>x</h1>
+    <p>See <a href="/glossary/startup-studio">startup studios</a>,
+       <a href="https://www.example.com/guides/founder-equity-splits">equity splits</a> and
+       <a href="/blog/venture-building">venture building</a>.</p>
+  `;
+
+  it("fails the item when a same-domain link points at a page not in the pool", () => {
+    // a fresh site, 2026-09-05: four invented paths, "4 internal links, pass".
+    const pool = [{ url: "https://example.com/blog/venture-building" }];
+    const item = find(auditArticle({ ...base, html, knownPages: pool }).items, "internal-links");
+    expect(item.status).toBe("fail");
+    expect(item.detail).toContain("2 of 3 internal links point at pages not in this site's link pool");
+    expect(item.detail).toContain("/glossary/startup-studio");
+    expect(item.locate).toEqual(["startup studios", "equity splits"]);
+  });
+
+  it("fails every link on an empty pool, rather than passing the count", () => {
+    const item = find(auditArticle({ ...base, html, knownPages: [], linkableArticles: 0 }).items, "internal-links");
+    expect(item.status).toBe("fail");
+    expect(item.detail).toContain("3 of 3");
+  });
+
+  it("passes as before once every link is a page the pool knows, or the site root", () => {
+    const pool = [
+      { url: "https://example.com/glossary/startup-studio/" },
+      { url: "https://www.example.com/guides/founder-equity-splits" },
+      { url: "https://example.com/blog/venture-building" },
+    ];
+    const withRoot = html.replace("</p>", ' <a href="https://example.com/">home</a></p>');
+    const item = find(auditArticle({ ...base, html: withRoot, knownPages: pool }).items, "internal-links");
+    expect(item.status).toBe("pass");
+    expect(item.detail).toBe("4 internal links.");
+  });
+
+  it("counts by domain only when the caller does not say what exists", () => {
+    expect(find(auditArticle({ ...base, html }).items, "internal-links").status).toBe("pass");
+  });
+});

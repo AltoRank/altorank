@@ -28,7 +28,12 @@ import { anthropicModel } from "@/lib/ai/models";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
 import { generateImage } from "@/lib/ai/image-generator";
 import { uploadImageBuffer } from "@/lib/storage/images";
-import { fetchLinkTargets, resolveInternalLinks } from "@/lib/seo/link-resolver";
+import {
+  existingInternalLinks,
+  fetchLinkTargets,
+  resolveInternalLinks,
+  unwrapUnknownInternalLinks,
+} from "@/lib/seo/link-resolver";
 import { verifyOutboundLinks, type LinkCheck } from "@/lib/seo/link-check";
 import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research";
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
@@ -538,6 +543,27 @@ export async function generateArticle(
     if (!refreshOf) await enhance("video embed", (html) => embedYouTubeVideos(html, keyword));
     await enhance("internal links", async (html) => resolveInternalLinks(html, linkTargets));
 
+    // What the draft may point at on its own site: the pool it was offered
+    // and, on a rewrite, the links the page already had. Every other
+    // same-domain link is one the writer made up (four on the first
+    // draft for a fresh site, all 404s, on an empty pool), and a URL on the
+    // customer's domain that we cannot show exists is not published. The
+    // same list is handed to the scorer below so it cannot count what this
+    // step would have removed.
+    const knownPages: { url: string }[] = [
+      ...linkTargets,
+      ...existingInternalLinks(refreshOf?.existingHtml, workspace.domain),
+    ];
+    await enhance("internal link check", async (html) => {
+      const { html: cleaned, removed } = unwrapUnknownInternalLinks(html, workspace.domain, knownPages);
+      if (removed.length) {
+        console.warn(
+          `[generate] unwrapped ${removed.length} internal link(s) to pages not in the pool: ${removed.map((r) => r.href).join(", ")}`,
+        );
+      }
+      return cleaned;
+    });
+
     // Open every outbound link once. The brief asks for real URLs and a model
     // produces plausible ones; a 404 is unwrapped to its text and everything
     // else is recorded so the audit tab can say what answered. No API cost,
@@ -608,6 +634,7 @@ export async function generateArticle(
     const seo = scoreArticle(processedHtml, keyword, {
       metaDescription: articleResult.metaDescription,
       siteDomain: workspace.domain,
+      knownPages,
       // The length the prompt wrote to: the owner's band when they chose one,
       // else what the SERP asked for. A flat 1,500 punished every
       // transactional piece the research had correctly kept short.

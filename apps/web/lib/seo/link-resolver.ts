@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { stripDeadLinks } from "@/lib/ai/utils";
 import { getLinkTargetsForPrompt } from "@/lib/linking/targets";
+import { extractLinks, isKnownPage, type LinkRef } from "@/lib/seo/links";
 
 // ---------------------------------------------------------------------------
 // Internal links: one library, offered to the writer and resolved afterwards
@@ -98,6 +99,55 @@ export function resolveInternalLinks(html: string, targets: LinkTarget[]): strin
   // the link: this is the same rule extractArticleMeta applies to `#`, run
   // here because the placeholders had to survive that pass to reach us.
   return stripDeadLinks(linked, { placeholders: true });
+}
+
+/**
+ * Unwrap every link to this site whose URL is not a page we know.
+ *
+ * The prompt lists what exists and says "link to these, and only these", and
+ * the model links to `/guides/founder-equity-splits` anyway: a same-domain
+ * URL it made up because the subject deserved a link and nothing on the list
+ * fit. The first draft for a fresh site (2026-09-05) carried four of them,
+ * each a 404 waiting to be published, and the pool it was offered was empty.
+ * A link to a page on the customer's own domain that we cannot show exists is
+ * a claim the code cannot verify, so it does not ship: the words stay, the
+ * link goes. Same rule the outbound check applies to a 404, applied before
+ * anything has to be fetched.
+ *
+ * `known` is the pool the draft was offered plus, on a rewrite, the links the
+ * existing page already had (see `existingInternalLinks`). Same-domain means
+ * the workspace domain with or without `www.`, or a relative path.
+ */
+export function unwrapUnknownInternalLinks(
+  html: string,
+  siteDomain: string | null | undefined,
+  known: readonly { url: string }[],
+): { html: string; removed: LinkRef[] } {
+  const removed: LinkRef[] = [];
+  const cleaned = html.replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (full, attrs: string, inner: string) => {
+    const [ref] = extractLinks(`<a${attrs}>x</a>`, siteDomain);
+    if (!ref || ref.kind !== "internal") return full;
+    if (isKnownPage(ref.href, siteDomain, known)) return full;
+    removed.push({ ...ref, anchor: inner.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() });
+    return inner;
+  });
+  return { html: cleaned, removed };
+}
+
+/**
+ * The pages an existing page already linked to on its own site. A rewrite is
+ * told to keep every link the page had, and those were real before we
+ * arrived, so they are known pages for `unwrapUnknownInternalLinks` even
+ * when the pool has never heard of them.
+ */
+export function existingInternalLinks(
+  existingHtml: string | null | undefined,
+  siteDomain: string | null | undefined,
+): { url: string }[] {
+  if (!existingHtml) return [];
+  return extractLinks(existingHtml, siteDomain)
+    .filter((l) => l.kind === "internal")
+    .map((l) => ({ url: l.href }));
 }
 
 /** The link text to publish: the writer's, unless the pool prefers otherwise. */

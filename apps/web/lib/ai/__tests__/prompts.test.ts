@@ -69,3 +69,36 @@ describe("buildSystemPrompt — alt text", () => {
     expect(p).toContain("Do not invent <img> URLs");
   });
 });
+
+describe("buildSystemPrompt — internal links", () => {
+  it("lists the pool and forbids any other same-domain link", () => {
+    const p = buildSystemPrompt({
+      keyword: "k",
+      internalLinkTargets: [{ keyword: "venture building", title: "What venture building is" }],
+    });
+    expect(p).toContain("INTERNAL LINKS — link to these, and only these:");
+    expect(p).toContain('- venture building — "What venture building is"');
+    expect(p).toContain("removed before publishing");
+  });
+
+  it("says 'do not add any' when the pool is empty or absent", () => {
+    // The first example.com draft was written with no pool and no
+    // instruction about it; it invented four same-domain paths.
+    for (const targets of [[], undefined]) {
+      const p = buildSystemPrompt({ keyword: "k", internalLinkTargets: targets });
+      expect(p).toContain("INTERNAL LINKS — do not add any.");
+      expect(p).not.toContain("link to these, and only these");
+    }
+  });
+
+  it("does not ask for N placeholders when there is nothing to link to", () => {
+    const output = { internalLinks: 3 } as NonNullable<Parameters<typeof buildSystemPrompt>[0]["output"]>;
+    expect(buildSystemPrompt({ keyword: "k", output })).not.toContain("Aim for about 3 internal-link");
+    expect(
+      buildSystemPrompt({ keyword: "k", output, internalLinkTargets: [{ keyword: "a", title: "A" }] }),
+    ).toContain("Aim for about 3 internal-link");
+    // Zero is a preference that stands on its own.
+    const none = { internalLinks: 0 } as typeof output;
+    expect(buildSystemPrompt({ keyword: "k", output: none })).toContain("Do not add internal-link placeholders.");
+  });
+});
