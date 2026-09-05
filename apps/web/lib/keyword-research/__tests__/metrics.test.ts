@@ -25,9 +25,11 @@ describe("parseOverviewItem", () => {
     expect(r.volume).toBe(1600);
     expect(r.intent).toBe("info");
   });
-  it("keeps a genuine 0 difficulty on a small term and falls back to the lexical intent", () => {
+  it("treats a 0 difficulty as unmeasured whatever the volume, and falls back to the lexical intent", () => {
+    // A live run handed the model a 720-volume term at KD 0 and it read "easiest".
+    // DataForSEO reports 0 when it did not compute a score, so 0 is never a measurement.
     const r = parseOverviewItem({ keyword: "best crm for dentists", keyword_info: { search_volume: 90 }, keyword_properties: { keyword_difficulty: 0 } })!;
-    expect(r.difficulty).toBe(0);
+    expect(r.difficulty).toBeNull();
     expect(r.intent).toBe("commercial");
   });
   it("returns null without a keyword and null metrics when fields are missing", () => {

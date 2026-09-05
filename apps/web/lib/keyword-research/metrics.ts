@@ -67,7 +67,9 @@ export function parseOverviewItem(item: OverviewItem, languageCode = "en"): Term
   if (!term) return null;
   const volume = num(item.keyword_info?.search_volume);
   let difficulty = num(item.keyword_properties?.keyword_difficulty);
-  if (difficulty === 0 && (volume ?? 0) >= 1000) difficulty = null;
+  // A difficulty of 0 is "not computed", whatever the volume: a live run handed the
+  // model a 720-volume term at KD 0 and it read it as "easiest". Rule 5.
+  if (difficulty === 0) difficulty = null;
   return {
     term,
     volume,

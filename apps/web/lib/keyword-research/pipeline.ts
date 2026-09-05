@@ -265,7 +265,7 @@ export async function researchGenerate(
             continue;
           }
           // Difficulty 0 with real volume is "not computed" (see metrics.ts).
-          const difficulty = k.difficulty === 0 && (k.volume ?? 0) >= 1000 ? null : k.difficulty;
+          const difficulty = k.difficulty === 0 ? null : k.difficulty;
           raw.push({
             term: k.keyword,
             volume: k.volume,
@@ -319,7 +319,7 @@ export async function researchGenerate(
             raw.push({
               term: k.keyword,
               volume: k.volume > 0 ? k.volume : null,
-              difficulty: k.difficulty === 0 && k.volume >= 1000 ? null : k.difficulty,
+              difficulty: k.difficulty === 0 ? null : k.difficulty,
               cpc: k.cpc > 0 ? k.cpc : null,
               intent: k.intent,
               origin: "audience: expanded from a seed phrase",
@@ -414,7 +414,7 @@ export async function researchFind(
       .map((k) => ({
         term: k.keyword,
         volume: k.volume > 0 ? k.volume : null,
-        difficulty: k.difficulty === 0 && k.volume >= 1000 ? null : k.difficulty,
+        difficulty: k.difficulty === 0 ? null : k.difficulty,
         cpc: k.cpc > 0 ? k.cpc : null,
         intent: k.intent,
         origin: `related to "${clean}"`,
