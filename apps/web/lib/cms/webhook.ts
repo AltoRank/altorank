@@ -75,6 +75,41 @@ export class WebhookAdapter implements CMSAdapter {
     return { externalId, url };
   }
 
+  /** Same envelope as publish, with `action: "update"` and the id to replace. */
+  async update(externalId: string, article: PublishPayload): Promise<PublishResult> {
+    const body = JSON.stringify({
+      action: "update",
+      externalId,
+      article: {
+        title: article.title,
+        html: article.html,
+        slug: article.slug,
+        metaDescription: article.metaDescription,
+        tags: article.tags,
+      },
+    });
+    const signature = this.sign(body);
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...this.customHeaders,
+    };
+    if (signature) headers["X-Webhook-Signature"] = `sha256=${signature}`;
+
+    const res = await fetch(this.url, { method: "POST", headers, body });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Webhook update failed (${res.status}): ${err}`);
+    }
+    let url = "";
+    try {
+      const data = await res.json();
+      url = data.url ?? data.link ?? "";
+    } catch {
+      // Not JSON; the receiver acknowledged and that is enough.
+    }
+    return { externalId, url };
+  }
+
   async unpublish(externalId: string): Promise<void> {
     const body = JSON.stringify({
       action: "unpublish",

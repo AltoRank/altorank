@@ -26,6 +26,7 @@ const TABS = [
   { label: "Blog", href: "/settings/blog" },
   { label: "Team", href: "/settings/team" },
   { label: "Billing", href: "/settings/billing" },
+  { label: "Improvements", href: "/settings/refresh" },
   { label: "API keys", href: "/settings/api-keys" },
 ];
 

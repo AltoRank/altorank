@@ -83,6 +83,42 @@ export class GhostAdapter implements CMSAdapter {
     };
   }
 
+  /** Edit the post in place. Same PUT as unpublish, with the new body. */
+  async update(externalId: string, article: PublishPayload): Promise<PublishResult> {
+    const getRes = await fetch(
+      `${this.apiUrl}/ghost/api/admin/posts/${externalId}/`,
+      { headers: this.headers() },
+    );
+    if (!getRes.ok) throw new Error(`Ghost fetch failed (${getRes.status})`);
+    const getData = await getRes.json();
+    const updatedAt = getData.posts[0].updated_at;
+
+    const res = await fetch(
+      `${this.apiUrl}/ghost/api/admin/posts/${externalId}/?source=html`,
+      {
+        method: "PUT",
+        headers: this.headers(),
+        body: JSON.stringify({
+          posts: [
+            {
+              title: article.title,
+              html: article.html,
+              meta_description: article.metaDescription ?? "",
+              updated_at: updatedAt,
+            },
+          ],
+        }),
+      },
+    );
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Ghost update failed (${res.status}): ${err}`);
+    }
+    const data = await res.json();
+    const post = data.posts[0];
+    return { externalId: post.id, url: post.url };
+  }
+
   async unpublish(externalId: string): Promise<void> {
     // Ghost requires an updated_at for PUT — fetch current value first
     const getRes = await fetch(
