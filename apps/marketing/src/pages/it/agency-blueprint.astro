@@ -2,7 +2,7 @@
 import PSEO from '@/layouts/PSEO.astro';
 import Button from '@/components/shared/Button.astro';
 import { buildArticleSchema, buildFAQSchema } from '@/lib/schema';
-import { APP_NAME, SITE_URL, AUTHOR_NAME, AUTHOR_URL, OSS_REPO_PUBLIC, PILOT_START } from '@/constants';
+import { APP_NAME, SITE_URL, AUTHOR_NAME, AUTHOR_URL, OSS_REPO_PUBLIC } from '@/constants';
 
 // Italian mirror of /agency-blueprint. Hand-translated, following the same
 // pattern as src/pages/de/alternatives/* (no i18n runtime, full page copy).
@@ -109,14 +109,14 @@ const AGENCY_LAYER = [
   },
   {
     title: 'Il white-label non è dietro un piano, nemmeno nella build gratuita',
-    body: 'Logo, colore d’accento, dominio personalizzato e l’indirizzo da cui partono i report mensili sono impostazioni dell’account, applicate a tutto quello che il cliente vede. Non è un upsell: sotto la licenza non ci sono funzionalità bloccate, quindi la build self-hosted ha lo stesso white-label e la stessa capacità multi-cliente dei piani a pagamento. Chi ti vende il branding client-facing come piano premium ti sta facendo pagare qualcosa che noi non blocchiamo.',
+    body: 'Nome dell’agenzia, colore d’accento e l’indirizzo da cui partono i report mensili sono impostazioni dell’account, applicate a tutto quello che il cliente vede. Non è un upsell: sotto la licenza non ci sono funzionalità bloccate, quindi la build self-hosted ha lo stesso white-label e la stessa capacità multi-cliente dei piani a pagamento. Chi ti vende il branding client-facing come piano premium ti sta facendo pagare qualcosa che noi non blocchiamo.',
   },
   {
     title: 'Tre ruoli, così un copywriter non può cambiare il brand dell’account',
     body: 'Owner, admin ed editor. Gli editor scrivono, revisionano e approvano i contenuti ma non toccano fatturazione, branding o portafoglio clienti, e modificare le impostazioni white-label è riservato a owner e admin. È la separazione che conta quando un copywriter junior lavora dentro il brand di un cliente vero e non in una sandbox.',
   },
   {
-    title: 'L’approvazione sta dentro la pubblicazione, con sign-off del cliente opzionale',
+    title: 'L’approvazione sta dentro la pubblicazione',
     body: 'Il blocco fa parte dello step di pubblicazione e non è un campo di stato lì accanto, quindi job schedulati e azioni massive non possono aggirarlo, e la pubblicazione parte sempre in bozza. Aggiungi il cliente come revisore e la traccia registra chi ha approvato quale versione e quando: è esattamente il documento che ti serve quando un cliente chiede perché una pagina è andata online.',
   },
   {
@@ -161,8 +161,8 @@ const FAQS = [
     answer: 'No, ed è il caso di essere precisi perché la maggior parte dei tool di questa categoria lo blocca davvero. Branding white-label e workspace multi-cliente non sono dietro nessun piano, nemmeno nella build gratuita self-hosted. I piani a pagamento vendono hosting, costi di modelli e dati inclusi, volume, ruoli e supporto: non l’accesso al branding che vede il cliente.',
   },
   {
-    question: 'Un cliente può approvare i suoi contenuti prima che vadano online?',
-    answer: 'Sì. Il sign-off del cliente è un secondo blocco opzionale sopra la tua approvazione editoriale, e in ogni caso la pubblicazione parte in bozza. La traccia registra quale versione è stata approvata e da chi, così alla domanda "chi ha approvato questa pagina" si risponde con un registro e non con un ricordo.',
+    question: 'Chi approva i contenuti prima che vadano online?',
+    answer: 'Una persona del tuo team, con nome e cognome. L’approvazione è il blocco editoriale: niente viene pubblicato finché qualcuno con accesso a quel workspace non approva, la pubblicazione parte comunque in bozza e ogni articolo registra chi ha approvato e quando. Oggi non esiste un passaggio separato di sign-off del cliente; se un cliente deve revisionare, dagli un posto da editor sul suo workspace.',
   },
 ];
 
@@ -183,7 +183,7 @@ const structuredData = [
 ---
 
 <PSEO
-  title="Software di contenuti SEO white-label per agenzie"
+  title="Agency Blueprint: contenuti SEO su un portafoglio di clienti"
   description="Workspace multi-cliente, white-label non bloccato, approvazione prima di pubblicare. Cosa costruiamo per le agenzie, quanto costa e i dati da 1.758 siti."
   breadcrumbs={breadcrumbs}
   structuredData={structuredData}
@@ -393,7 +393,7 @@ const structuredData = [
           </li>
           <li class="flex items-start gap-2.5">
             <span class="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-ok"></span>
-            <span>Le prime collaborazioni sono in fase di avvio. I primi pilot partono a {PILOT_START.it}.</span>
+            <span>Le prime collaborazioni sono in fase di avvio.</span>
           </li>
           <li class="flex items-start gap-2.5">
             <span class="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-ok"></span>

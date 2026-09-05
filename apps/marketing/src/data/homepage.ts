@@ -205,7 +205,7 @@ export const MORE_FEATURES: { title: string; desc: string; href?: string }[] = [
   { title: 'A workspace per client', desc: 'Each site or client gets its own voice, plan, connections and report. Agencies run a roster; nothing leaks between them.', href: '/for-agencies' },
   { title: 'White-label reporting', desc: 'Client-facing reports under your brand, in the free self-hosted build, not behind a paid tier.', href: '/open-source' },
   { title: 'Nine AI-readability checks', desc: 'The technical signals that decide whether an AI assistant can read a site at all, checked and fixed, not just scored.', href: '/geo' },
-  { title: 'Drive it from Claude Code', desc: 'An MCP server exposes research, drafting and review. It exposes no publish tool, so an agent cannot route around the approval either.', href: '/docs/mcp' },
+  { title: 'Drive it from Claude Code', desc: 'An MCP server exposes the agent-readiness checks and read-only site data. It exposes no publish tool, so an agent cannot route around the approval either.', href: '/docs/mcp' },
   { title: `${LOCALE_COUNT} locales`, desc: 'Counted in the code rather than rounded up on a landing page. If you do not sell in English, the plan and the drafts follow the market you pick.' },
 ];
 
