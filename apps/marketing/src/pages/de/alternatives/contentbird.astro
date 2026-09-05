@@ -19,13 +19,13 @@ const breadcrumbs = [
 ];
 
 interface TldrRow {
-  name: string;
-  bestFor: string;
-  multiClient: string;
-  whiteLabel: string;
-  ecommerce: string;
-  price: string;
-  ours?: boolean;
+ name: string;
+ bestFor: string;
+ multiClient: string;
+ whiteLabel: string;
+ ecommerce: string;
+ price: string;
+ ours?: boolean;
 }
 
 const TLDR_ROWS: TldrRow[] = [
@@ -45,7 +45,7 @@ const ALTORANK_VS_CONTENTBIRD = [
   { feature: 'Modell pro Kunde', ours: 'Workspaces pro Kunde, Abrechnung pro Kunde', theirs: 'Projekte als kostenpflichtige Add-ons abgerechnet (je 50 €; Light limitiert auf 2)' },
   { feature: 'White-Label', ours: 'Im Agency-Tarif für 199 € enthalten', theirs: 'Kostenpflichtiges Add-on, separat zu buchen' },
   { feature: 'E-Commerce', ours: 'Nativ: Shopify/Woo, Produkt-Schema, Collection-SEO, Katalog-Sync', theirs: 'Generische KI-Produkttexte, keine Commerce-Integrationen' },
-  { feature: 'Redaktionelle Kontrolle', ours: 'Entwurf → Review → Freigabe mit Kundenfreigabe + Audit-Trail', theirs: 'Workflow-Engine + Freigaben, keine Kundenfreigabe / kein Audit-Trail' },
+  { feature: 'Redaktionelle Kontrolle', ours: 'Entwurf → Review → Freigabe, mit protokollierter Freigabe pro Artikel', theirs: 'Workflow-Engine + Freigaben' },
   { feature: 'Onboarding', ours: 'Klar geführt, Minuten bis zum ersten Entwurf', theirs: 'Breite Suite, steile Lernkurve (häufiger Kritikpunkt in Reviews)' },
   { feature: 'CMS-Plattformen', ours: '12+', theirs: 'Hauptsächlich WordPress + Contentful' },
   { feature: 'DSGVO / EU-Hosting', ours: 'EU-Datenresidenz, AVV verfügbar', theirs: 'Hosting in Frankfurt, ISO 27001, Parität, kein Unterschied' },
@@ -56,107 +56,107 @@ const ALTORANK_VS_CONTENTBIRD = [
 ];
 
 interface Tool {
-  index: string;
-  name: string;
-  ours?: boolean;
-  url?: string;
-  subtitle: string;
-  whatItIs: string;
-  bestFor: string;
-  pricing: string;
-  beatsContentbird: string;
-  beatsTheirs: string;
+ index: string;
+ name: string;
+ ours?: boolean;
+ url?: string;
+ subtitle: string;
+ whatItIs: string;
+ bestFor: string;
+ pricing: string;
+ beatsContentbird: string;
+ beatsTheirs: string;
 }
 
 const TOOLS: Tool[] = [
   {
-    index: '01',
-    name: APP_NAME,
-    ours: true,
-    subtitle: 'Beste contentbird-Alternative für E-Commerce-Agenturen',
-    whatItIs: 'Eine End-to-End-SEO-Content-Engine, eigens für Agenturen entwickelt, die Content für Shopify- und WooCommerce-Kunden betreuen. Workspaces pro Kunde, Markenstimme pro Kunde, White-Label und E-Commerce-native Funktionen in einer Pipeline, keine horizontale Suite, die nachträglich an den Handel angepasst wurde.',
-    bestFor: 'Digital-, SEO- und Content-Agenturen, deren Kunden E-Commerce-Marken sind. Optimal bei 5–25 Kunden-Stores und einem Content-Team mit 3–15 Personen.',
-    pricing: '99 €/Mon. Managed (100 Artikel, Modellkosten inklusive, alle CMS, Rank-Tracking), 199 €/Mon. Agency (400 Artikel, unbegrenzte Kunden-Workspaces, White-Label-Reports, Empfehlungs-Traffic-Austausch, Priority-Support). 14 Tage kostenlos testen.',
-    beatsContentbird: '',
-    beatsTheirs: 'Jüngere Plattform. contentbird hat 13 Jahre Erfahrung, Enterprise-Referenzen und eine breitere All-in-One-Suite (Strategie → Distribution → Analytics). Wenn Sie einen etablierten, ausgereiften Anbieter mit einer großen Case-Study-Bibliothek möchten und ein internes B2B-Content-Team statt einer E-Commerce-Agentur führen, ist contentbird heute die sicherere Wahl.',
+ index: '01',
+ name: APP_NAME,
+ ours: true,
+ subtitle: 'Beste contentbird-Alternative für E-Commerce-Agenturen',
+ whatItIs: 'Eine End-to-End-SEO-Content-Engine, eigens für Agenturen entwickelt, die Content für Shopify- und WooCommerce-Kunden betreuen. Workspaces pro Kunde, Markenstimme pro Kunde, White-Label und E-Commerce-native Funktionen in einer Pipeline, keine horizontale Suite, die nachträglich an den Handel angepasst wurde.',
+ bestFor: 'Digital-, SEO- und Content-Agenturen, deren Kunden E-Commerce-Marken sind. Optimal bei 5–25 Kunden-Stores und einem Content-Team mit 3–15 Personen.',
+ pricing: '99 €/Mon. Managed (100 Artikel, Modellkosten inklusive, alle CMS, Rank-Tracking), 199 €/Mon. Agency (400 Artikel, unbegrenzte Kunden-Workspaces, White-Label-Reports, Empfehlungs-Traffic-Austausch, Priority-Support). 14 Tage kostenlos testen.',
+ beatsContentbird: '',
+ beatsTheirs: 'Jüngere Plattform. contentbird hat 13 Jahre Erfahrung, Enterprise-Referenzen und eine breitere All-in-One-Suite (Strategie → Distribution → Analytics). Wenn Sie einen etablierten, ausgereiften Anbieter mit einer großen Case-Study-Bibliothek möchten und ein internes B2B-Content-Team statt einer E-Commerce-Agentur führen, ist contentbird heute die sicherere Wahl.',
   },
   {
-    index: '02',
-    name: 'SEOwind',
-    url: 'https://seowind.io',
-    subtitle: 'Am besten für recherchegetriebene Langformate',
-    whatItIs: 'Ein KI-Generator für Langform-Artikel mit recherchefokussiertem Workflow (SERP-Analyse, Briefings, EEAT-Fokus) und einer White-Label-Content-Produktionsoption für Agenturen.',
-    bestFor: 'Agenturen und interne Teams, deren Hauptbedarf gut recherchierte Langform-Artikel sind und die eine briefing-gesteuerte Pipeline schätzen.',
-    pricing: 'Ab 49 $/Mon., skaliert bis 199 $/Mon. Preise in USD.',
-    beatsContentbird: 'SEOwind ist speziell für die SEO-Artikelproduktion gebaut, während contentbird eine breite Content-Ops-Suite ist. Die recherchegetriebenen Briefings und die EEAT-Strukturierung liefern von Haus aus stärkere Langformate, zu einem Bruchteil der 399-€-Untergrenze von contentbird, mit White-Label-Content-Produktion für Agenturen.',
-    beatsTheirs: `SEOwind ist ein Done-for-you-Content-Workflow, kein SaaS-Workspace pro Kunde. Es gibt kein isoliertes Kunden-Dashboard, kein Rank-Tracking pro Kunde, keine E-Commerce-Anbindung (Shopify-/Woo-Produkt- und Collection-Content). ${APP_NAME} gibt jedem Kunden einen isolierten Workspace mit eigener Stimme, White-Label-Reporting und katalogbewusstem Content. SEOwind ist ein starker Autor; Agenturen mit vielen E-Commerce-Stores brauchen das Betriebssystem drumherum.`,
+ index: '02',
+ name: 'SEOwind',
+ url: 'https://seowind.io',
+ subtitle: 'Am besten für recherchegetriebene Langformate',
+ whatItIs: 'Ein KI-Generator für Langform-Artikel mit recherchefokussiertem Workflow (SERP-Analyse, Briefings, EEAT-Fokus) und einer White-Label-Content-Produktionsoption für Agenturen.',
+ bestFor: 'Agenturen und interne Teams, deren Hauptbedarf gut recherchierte Langform-Artikel sind und die eine briefing-gesteuerte Pipeline schätzen.',
+ pricing: 'Ab 49 $/Mon., skaliert bis 199 $/Mon. Preise in USD.',
+ beatsContentbird: 'SEOwind ist speziell für die SEO-Artikelproduktion gebaut, während contentbird eine breite Content-Ops-Suite ist. Die recherchegetriebenen Briefings und die EEAT-Strukturierung liefern von Haus aus stärkere Langformate, zu einem Bruchteil der 399-€-Untergrenze von contentbird, mit White-Label-Content-Produktion für Agenturen.',
+ beatsTheirs: `SEOwind ist ein Done-for-you-Content-Workflow, kein SaaS-Workspace pro Kunde. Es gibt kein isoliertes Kunden-Dashboard, kein Rank-Tracking pro Kunde, keine E-Commerce-Anbindung (Shopify-/Woo-Produkt- und Collection-Content). ${APP_NAME} gibt jedem Kunden einen isolierten Workspace mit eigener Stimme, White-Label-Reporting und katalogbewusstem Content. SEOwind ist ein starker Autor; Agenturen mit vielen E-Commerce-Stores brauchen das Betriebssystem drumherum.`,
   },
   {
-    index: '03',
-    name: 'NeuronWriter',
-    url: 'https://neuronwriter.com',
-    subtitle: 'Bester günstiger Semantik-Optimierer',
-    whatItIs: 'Ein NLP-/Semantik-Tool zur Content-Optimierung mit KI-Schreibfunktion, rund um SERP-gestützte Begriffsabdeckung gebaut. Ein polnisches (EU-)Tool zum niedrigen Preis.',
-    bestFor: 'Einzel-SEOs und kleine Teams, die eine günstige On-Page-Semantikoptimierung plus leichtes KI-Texten möchten.',
-    pricing: 'Ab 23 $/Mon. bis ~117 $/Mon.',
-    beatsContentbird: 'Bei Preis und Fokus. NeuronWriter beherrscht semantische Optimierung gut für 23–69 $/Mon., während contentbird ab 399 € berechnet. Wenn Ihr Bedarf "meinen Entwurf gegen die SERP bewerten und verbessern" lautet, ist NeuronWriter deutlich günstiger und fokussierter.',
-    beatsTheirs: `NeuronWriter ist Single-Tenant und optimizer-first, keine Workspaces pro Kunde, kein White-Label, kein Rank-Tracking, keine Publishing-Pipeline zu 11 CMS-Plattformen, keine E-Commerce-Funktionen. ${APP_NAME} optimiert UND entwirft UND veröffentlicht UND trackt, pro Kunde, mit White-Label. NeuronWriter ist ein Werkzeug innerhalb eines Workflows; Agenturen brauchen den gesamten Workflow.`,
+ index: '03',
+ name: 'NeuronWriter',
+ url: 'https://neuronwriter.com',
+ subtitle: 'Bester günstiger Semantik-Optimierer',
+ whatItIs: 'Ein NLP-/Semantik-Tool zur Content-Optimierung mit KI-Schreibfunktion, rund um SERP-gestützte Begriffsabdeckung gebaut. Ein polnisches (EU-)Tool zum niedrigen Preis.',
+ bestFor: 'Einzel-SEOs und kleine Teams, die eine günstige On-Page-Semantikoptimierung plus leichtes KI-Texten möchten.',
+ pricing: 'Ab 23 $/Mon. bis ~117 $/Mon.',
+ beatsContentbird: 'Bei Preis und Fokus. NeuronWriter beherrscht semantische Optimierung gut für 23–69 $/Mon., während contentbird ab 399 € berechnet. Wenn Ihr Bedarf "meinen Entwurf gegen die SERP bewerten und verbessern" lautet, ist NeuronWriter deutlich günstiger und fokussierter.',
+ beatsTheirs: `NeuronWriter ist Single-Tenant und optimizer-first, keine Workspaces pro Kunde, kein White-Label, kein Rank-Tracking, keine Publishing-Pipeline zu 11 CMS-Plattformen, keine E-Commerce-Funktionen. ${APP_NAME} optimiert UND entwirft UND veröffentlicht UND trackt, pro Kunde, mit White-Label. NeuronWriter ist ein Werkzeug innerhalb eines Workflows; Agenturen brauchen den gesamten Workflow.`,
   },
   {
-    index: '04',
-    name: 'Jasper',
-    url: 'https://www.jasper.ai',
-    subtitle: 'Am besten für Enterprise-Markenstimme',
-    whatItIs: 'Eine speziell entwickelte KI-Schreibplattform für Marketing-Teams mit strengen Markenrichtlinien, klar auf Enterprise ausgerichtet.',
-    bestFor: 'Mittelstands- und Enterprise-Marketing-Teams mit ein bis drei Marken und einem schriftlichen Styleguide, der durchgesetzt werden muss.',
-    pricing: '59 $/Mon. pro Platz (jährlich) oder 69 $/Mon. (monatlich).',
-    beatsContentbird: 'Markenstimmen-Konsistenz und Multi-LLM-Zugang. Jasper hält den Tonfall über Hunderte Outputs konstant und bietet eine große Vorlagenbibliothek, mehr rohe Schreibflexibilität als die Suite von contentbird.',
-    beatsTheirs: `Jasper rechnet pro Platz ab, was Agenturen bestraft, deren "Team" Teilzeit-Freelancer und Kunden-Reviewer umfasst. Die Workspaces sind nicht so stimmenisoliert, wie Agenturen es brauchen, es gibt kein White-Label, kein Rank-Tracking und keine E-Commerce-Content-Workflows. ${APP_NAME} rechnet pro Kunden-Workspace ab (nicht pro Platz) und liefert die Agentur-Operations-Schicht, die Jasper fehlt.`,
+ index: '04',
+ name: 'Jasper',
+ url: 'https://www.jasper.ai',
+ subtitle: 'Am besten für Enterprise-Markenstimme',
+ whatItIs: 'Eine speziell entwickelte KI-Schreibplattform für Marketing-Teams mit strengen Markenrichtlinien, klar auf Enterprise ausgerichtet.',
+ bestFor: 'Mittelstands- und Enterprise-Marketing-Teams mit ein bis drei Marken und einem schriftlichen Styleguide, der durchgesetzt werden muss.',
+ pricing: '59 $/Mon. pro Platz (jährlich) oder 69 $/Mon. (monatlich).',
+ beatsContentbird: 'Markenstimmen-Konsistenz und Multi-LLM-Zugang. Jasper hält den Tonfall über Hunderte Outputs konstant und bietet eine große Vorlagenbibliothek, mehr rohe Schreibflexibilität als die Suite von contentbird.',
+ beatsTheirs: `Jasper rechnet pro Platz ab, was Agenturen bestraft, deren "Team" Teilzeit-Freelancer und Kunden-Reviewer umfasst. Die Workspaces sind nicht so stimmenisoliert, wie Agenturen es brauchen, es gibt kein White-Label, kein Rank-Tracking und keine E-Commerce-Content-Workflows. ${APP_NAME} rechnet pro Kunden-Workspace ab (nicht pro Platz) und liefert die Agentur-Operations-Schicht, die Jasper fehlt.`,
   },
   {
-    index: '05',
-    name: 'Surfer SEO',
-    url: 'https://surferseo.com',
-    subtitle: 'Beste On-Page-Optimierungsschicht',
-    whatItIs: 'Ein On-Page-SEO-Tool, das bewertet und Empfehlungen gibt, aber keinen Content end-to-end generiert. Ein polnisches (EU-)Schwergewicht der Branche.',
-    bestFor: 'Agenturen, die bereits Autoren haben und nur eine Optimierungsbewertung obendrauf brauchen.',
-    pricing: 'Ab ~79 $/Mon.; White-Label nur in Enterprise (~999 $/Mon.).',
-    beatsContentbird: 'Surfer ist der Kategorieführer für On-Page-SERP-/NLP-Scoring, mit großer Nutzerbasis und tiefen Optimierungsdaten, ausgereiftere Optimierung als das integrierte Scoring von contentbird.',
-    beatsTheirs: `Surfer ist ein Optimierer, keine End-to-End-Engine, und White-Label ist hinter einem Enterprise-Tarif für ~999 $/Mon. eingesperrt. ${APP_NAME} enthält Surfer-ähnliches Scoring, entwirft den Content, veröffentlicht ihn und versieht Reports ab dem Agency-Tarif für 199 € mit White-Label, kein separates Optimierungs-Abo und keine Enterprise-Hürde für White-Label.`,
+ index: '05',
+ name: 'Surfer SEO',
+ url: 'https://surferseo.com',
+ subtitle: 'Beste On-Page-Optimierungsschicht',
+ whatItIs: 'Ein On-Page-SEO-Tool, das bewertet und Empfehlungen gibt, aber keinen Content end-to-end generiert. Ein polnisches (EU-)Schwergewicht der Branche.',
+ bestFor: 'Agenturen, die bereits Autoren haben und nur eine Optimierungsbewertung obendrauf brauchen.',
+ pricing: 'Ab ~79 $/Mon.; White-Label nur in Enterprise (~999 $/Mon.).',
+ beatsContentbird: 'Surfer ist der Kategorieführer für On-Page-SERP-/NLP-Scoring, mit großer Nutzerbasis und tiefen Optimierungsdaten, ausgereiftere Optimierung als das integrierte Scoring von contentbird.',
+ beatsTheirs: `Surfer ist ein Optimierer, keine End-to-End-Engine, und White-Label ist hinter einem Enterprise-Tarif für ~999 $/Mon. eingesperrt. ${APP_NAME} enthält Surfer-ähnliches Scoring, entwirft den Content, veröffentlicht ihn und versieht Reports ab dem Agency-Tarif für 199 € mit White-Label, kein separates Optimierungs-Abo und keine Enterprise-Hürde für White-Label.`,
   },
   {
-    index: '06',
-    name: 'Scalenut',
-    url: 'https://www.scalenut.com',
-    subtitle: 'Beste günstige All-in-One-Lösung',
-    whatItIs: 'Eine All-in-One-SEO-Content-Plattform für den Mittelstand (recherchieren, schreiben, optimieren, veröffentlichen) zum niedrigen Einstiegspreis.',
-    bestFor: 'Interne Marketing-Teams mit ein bis drei Marken, die eine günstige All-in-One-Option suchen.',
-    pricing: '39 $/Mon. Essential.',
-    beatsContentbird: 'Eine günstigere All-in-One-Lösung mit echtem Rank-Tracking und einem brauchbaren Briefing-Generator. Für eine einzelne Marke mit knappem Budget deckt Scalenut mehr vom Workflow ab als contentbird, zu einem Zehntel des Preises.',
-    beatsTheirs: `Scalenut nutzt Tonfall-Presets statt einer pro Kunde trainierten Stimme und bietet kein Agentur-White-Label, keine Workspace-Isolation pro Kunde und keine E-Commerce-Content-Funktionen. Es ist eine gute Single-Brand-All-in-One-Lösung; es reicht nicht bis zu agenturtauglichen, E-Commerce-nativen Abläufen.`,
+ index: '06',
+ name: 'Scalenut',
+ url: 'https://www.scalenut.com',
+ subtitle: 'Beste günstige All-in-One-Lösung',
+ whatItIs: 'Eine All-in-One-SEO-Content-Plattform für den Mittelstand (recherchieren, schreiben, optimieren, veröffentlichen) zum niedrigen Einstiegspreis.',
+ bestFor: 'Interne Marketing-Teams mit ein bis drei Marken, die eine günstige All-in-One-Option suchen.',
+ pricing: '39 $/Mon. Essential.',
+ beatsContentbird: 'Eine günstigere All-in-One-Lösung mit echtem Rank-Tracking und einem brauchbaren Briefing-Generator. Für eine einzelne Marke mit knappem Budget deckt Scalenut mehr vom Workflow ab als contentbird, zu einem Zehntel des Preises.',
+ beatsTheirs: `Scalenut nutzt Tonfall-Presets statt einer pro Kunde trainierten Stimme und bietet kein Agentur-White-Label, keine Workspace-Isolation pro Kunde und keine E-Commerce-Content-Funktionen. Es ist eine gute Single-Brand-All-in-One-Lösung; es reicht nicht bis zu agenturtauglichen, E-Commerce-nativen Abläufen.`,
   },
   {
-    index: '07',
-    name: 'RankYak',
-    url: 'https://rankyak.com',
-    subtitle: 'Beste EU-Autopilot-Option',
-    whatItIs: 'Ein in den Niederlanden entwickeltes Tool, das automatisch Keywords recherchiert, einen Monatsplan erstellt und täglich SEO-Artikel auf Autopilot veröffentlicht, mit White-Label-Plattform und Multi-Site-Support.',
-    bestFor: 'Einzelunternehmer und kleine Agenturen, die hands-off hochvolumigen Content wollen und mit automatischem Publishing einverstanden sind.',
-    pricing: 'Ab ~49 $/Mon. EU-basiert.',
-    beatsContentbird: 'Deutlich günstiger als contentbird und wirklich hands-off, einmal einrichten und täglich erscheinen Artikel. White-Label und Multi-Site sind standardmäßig dabei, wofür contentbird extra berechnet.',
-    beatsTheirs: `RankYak ist Autopilot/Set-and-forget, das Gegenteil von redaktioneller Freigabe by Design. KI unbeaufsichtigt auf Kunden-Sites zu veröffentlichen, ist genau das Risiko, an dem sich Agenturen bei Googles Durchgreifen gegen skalierten Content 2025 die Finger verbrannt haben. ${APP_NAME} hält ein menschliches Freigabe-Gate (mit Kundenfreigabe) zwischen Entwurf und Veröffentlichung, plus Stimme pro Kunde und E-Commerce-nativen Content. Wenn Sie Volumen ohne Review-Schritt wollen, passt RankYak; wenn Sie redaktionelles Urteilsvermögen an Kunden verkaufen, nicht.`,
+ index: '07',
+ name: 'RankYak',
+ url: 'https://rankyak.com',
+ subtitle: 'Beste EU-Autopilot-Option',
+ whatItIs: 'Ein in den Niederlanden entwickeltes Tool, das automatisch Keywords recherchiert, einen Monatsplan erstellt und täglich SEO-Artikel auf Autopilot veröffentlicht, mit White-Label-Plattform und Multi-Site-Support.',
+ bestFor: 'Einzelunternehmer und kleine Agenturen, die hands-off hochvolumigen Content wollen und mit automatischem Publishing einverstanden sind.',
+ pricing: 'Ab ~49 $/Mon. EU-basiert.',
+ beatsContentbird: 'Deutlich günstiger als contentbird und wirklich hands-off, einmal einrichten und täglich erscheinen Artikel. White-Label und Multi-Site sind standardmäßig dabei, wofür contentbird extra berechnet.',
+ beatsTheirs: `RankYak ist Autopilot/Set-and-forget, das Gegenteil von redaktioneller Freigabe by Design. KI unbeaufsichtigt auf Kunden-Sites zu veröffentlichen, ist genau das Risiko, an dem sich Agenturen bei Googles Durchgreifen gegen skalierten Content 2025 die Finger verbrannt haben. ${APP_NAME} hält ein menschliches Freigabe-Gate zwischen Entwurf und Veröffentlichung, plus Stimme pro Kunde und E-Commerce-nativen Content. Wenn Sie Volumen ohne Review-Schritt wollen, passt RankYak; wenn Sie redaktionelles Urteilsvermögen an Kunden verkaufen, nicht.`,
   },
 ];
 
 interface DecisionRow {
-  when: string;
-  pick: string;
-  rationale: string;
-  ours?: boolean;
+ when: string;
+ pick: string;
+ rationale: string;
+ ours?: boolean;
 }
 
 const DECISION_MATRIX: DecisionRow[] = [
-  { when: 'Sie führen eine Agentur, die SEO-Content für E-Commerce-Kunden (Shopify/Woo) produziert', pick: APP_NAME, rationale: 'E-Commerce-nativer Content, Workspaces pro Kunde, White-Label für 199 € und redaktionelle Freigabe mit Kundenfreigabe, die Agentur-Schicht, für die contentbird einen Aufpreis verlangt oder die es gar nicht liefert.', ours: true },
+  { when: 'Sie führen eine Agentur, die SEO-Content für E-Commerce-Kunden (Shopify/Woo) produziert', pick: APP_NAME, rationale: 'E-Commerce-nativer Content, Workspaces pro Kunde, White-Label für 199 € und redaktionelle Freigabe, die Agentur-Schicht, für die contentbird einen Aufpreis verlangt oder die es gar nicht liefert.', ours: true },
   { when: 'Sie sind ein internes B2B-Content-Team, das eine breite All-in-One-Suite möchte', pick: 'Bei contentbird bleiben', rationale: 'Die 13 Jahre alte Suite von contentbird reicht von Strategie → Planung → Erstellung → Distribution → Analytics. Wenn das Budget nicht die Hürde ist und Sie B2B sind, ist es ein ausgereifter Fit.' },
   { when: 'Sie sind eine Solo-Agentur mit einem E-Commerce-Kunden (und planen, weitere hinzuzufügen)', pick: APP_NAME + ' Managed', rationale: '99 €/Mon. mit Multi-Client-Architektur und E-Commerce-Funktionen, die bereitstehen, wenn Sie wachsen, ein Viertel der 399-€-Untergrenze von contentbird, mit kostenloser Testphase.', ours: true },
   { when: 'Ihr Hauptbedarf sind gut recherchierte Langform-Artikel', pick: 'SEOwind', rationale: 'Recherchegetriebene Briefings und EEAT-Strukturierung zu einem Bruchteil des contentbird-Preises.' },
@@ -171,38 +171,38 @@ const FAQS = [
   { question: 'Ist AltoRank günstiger als contentbird?', answer: `Ja. contentbird beginnt bei 399 €/Mon. (Light: 3 Nutzer, 2 Projekte) ohne kostenlose Testphase und rechnet zusätzliche Projekte, Nutzer und KI-Tokens extra ab. ${APP_NAME} kostet 99 €/Mon. Managed und 199 €/Mon. Agency mit 14 Tagen kostenloser Testphase. Für eine Agentur sind White-Label und Workspaces für mehrere Kunden bereits bei 199 € enthalten, ein Bruchteil des Einstiegspreises von contentbird.` },
   { question: 'Was ist die beste contentbird-Alternative für E-Commerce-Agenturen?', answer: `${APP_NAME}. contentbird wendet generischen Content auf E-Commerce an, ohne Commerce-Anbindung; ${APP_NAME} ist E-Commerce-nativ (Shopify-/WooCommerce-Integration, Produkt- und Collection-Schema, katalogbewusster Content) mit Workspaces pro Kunde und enthaltenem White-Label. Für interne B2B-Content-Teams bleibt contentbird eine starke Wahl.` },
   { question: 'Hat contentbird White-Label?', answer: 'Ja, aber als kostenpflichtiges Add-on, das Sie separat buchen, nicht in den Basistarifen enthalten. AltoRank enthält White-Label-Reports und -Dashboards bereits im Agency-Tarif für 199 €.' },
-  { question: 'Ist contentbird DSGVO-konform?', answer: `Ja, contentbird hostet in Frankfurt und besitzt ISO 27001. ${APP_NAME} ist ebenfalls EU-datenresident mit verfügbarem AVV, sodass die DSGVO zwischen beiden Parität ist, kein entscheidender Faktor. Der Unterschied liegt im E-Commerce-Fit, in der Abrechnung pro Kunde, im White-Label und in der redaktionellen Freigabe mit Kundenfreigabe.` },
+  { question: 'Ist contentbird DSGVO-konform?', answer: `Ja, contentbird hostet in Frankfurt und besitzt ISO 27001. ${APP_NAME} ist ebenfalls EU-datenresident mit verfügbarem AVV, sodass die DSGVO zwischen beiden Parität ist, kein entscheidender Faktor. Der Unterschied liegt im E-Commerce-Fit, in der Abrechnung pro Kunde, im White-Label und in der redaktionellen Freigabe.` },
   { question: 'Kann ich von contentbird zu AltoRank migrieren?', answer: `Ja. Beide veröffentlichen auf WordPress, sodass bestehender Content live bleibt. Exportieren Sie Ihre Artikel, nutzen Sie sie als Trainingsbeispiele für das Stimmprofil in ${APP_NAME}, verbinden Sie Ihr CMS (inklusive Shopify/WooCommerce) und veröffentlichen Sie weiter. Die Migration ist typischerweise eine Sache von wenigen Stunden Einrichtung.` },
 ];
 
 const structuredData = [
-  buildArticleSchema({
-    title: `${APP_NAME} vs. contentbird: 8 contentbird-Alternativen getestet (2026)`,
-    description: 'contentbird ist eine B2B-Content-Ops-Suite ab 399 €/Mon. Für E-Commerce-Content liefert AltoRank E-Commerce-nativen Content, White-Label und Workspaces pro Kunde ab 99 €/Mon. Wir haben 8 contentbird-Alternativen getestet.',
-    publishDate,
-    dateModified,
-    author: AUTHOR_NAME,
-    authorType: 'Person',
-    authorUrl: AUTHOR_URL,
-    url: pageUrl,
+ buildArticleSchema({
+ title: `${APP_NAME} vs. contentbird: 8 contentbird-Alternativen getestet (2026)`,
+ description: 'contentbird ist eine B2B-Content-Ops-Suite ab 399 €/Mon. Für E-Commerce-Content liefert AltoRank E-Commerce-nativen Content, White-Label und Workspaces pro Kunde ab 99 €/Mon. Wir haben 8 contentbird-Alternativen getestet.',
+ publishDate,
+ dateModified,
+ author: AUTHOR_NAME,
+ authorType: 'Person',
+ authorUrl: AUTHOR_URL,
+ url: pageUrl,
   }),
-  buildFAQSchema(FAQS),
-  buildItemListSchema(
-    TLDR_ROWS.map((t) => ({
-      name: t.name,
-      description: `${t.bestFor}, ab ${t.price}`,
+ buildFAQSchema(FAQS),
+ buildItemListSchema(
+ TLDR_ROWS.map((t) => ({
+ name: t.name,
+ description: `${t.bestFor}, ab ${t.price}`,
     })),
   ),
 ];
 ---
 
 <PSEO
-  title="8 contentbird-Alternativen (2026)"
-  description="contentbird ist eine B2B-Content-Ops-Suite ab 399 €/Mon. Wir haben 8 Alternativen nach Preis und White-Label getestet."
-  breadcrumbs={breadcrumbs}
-  structuredData={structuredData}
-  lang="de"
-  alternateLanguages={[
+ title="8 contentbird-Alternativen (2026)"
+ description="contentbird ist eine B2B-Content-Ops-Suite ab 399 €/Mon. Wir haben 8 Alternativen nach Preis und White-Label getestet."
+ breadcrumbs={breadcrumbs}
+ structuredData={structuredData}
+ lang="de"
+ alternateLanguages={[
     { hreflang: 'de', href: `${SITE_URL}/de/alternatives/contentbird` },
     { hreflang: 'en', href: `${SITE_URL}/alternatives/contentbird` },
     { hreflang: 'x-default', href: `${SITE_URL}/alternatives/contentbird` },
@@ -215,13 +215,13 @@ const structuredData = [
         {APP_NAME} vs. contentbird: Wir haben 8 contentbird-Alternativen getestet (2026)
       </h1>
       <p class="mb-5 max-w-[680px] text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
-        Für E-Commerce-Agenturen ist {APP_NAME} die stärkste contentbird-Alternative: E-Commerce-nativ (Shopify/Woo), White-Label bereits bei 199 € enthalten und Workspaces pro Kunde, zu einem Bruchteil der 399-€-Untergrenze von contentbird, mit integrierter redaktioneller Freigabe.
+ Für E-Commerce-Agenturen ist {APP_NAME} die stärkste contentbird-Alternative: E-Commerce-nativ (Shopify/Woo), White-Label bereits bei 199 € enthalten und Workspaces pro Kunde, zu einem Bruchteil der 399-€-Untergrenze von contentbird, mit integrierter redaktioneller Freigabe.
       </p>
       <p class="mb-5 max-w-[680px] text-lg leading-relaxed text-ink-2 [text-wrap:pretty]">
         <a href="https://contentbird.io" target="_blank" rel="noopener noreferrer" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">contentbird</a> ist eine 13 Jahre alte Berliner Content-Ops-Suite, gebaut für B2B-Marketing-Teams. Sie ist breit und leistungsfähig, aber ab 399 €/Mon. ohne kostenlose Testphase, mit White-Label als kostenpflichtigem Add-on und ohne native Commerce-Anbindung. Für eine E-Commerce-Agentur, die SEO-Content über Shopify- und WooCommerce-Kunden hinweg betreut, ist das viel Suite, die Sie nicht nutzen, zu einem Preis, der sich aufsummiert. Die 8 contentbird-Alternativen unten sind nach <strong class="font-semibold text-ink">E-Commerce-Agentur-Fit</strong> sortiert, mit ehrlichen Urteilen dazu, wann die breite Suite von contentbird tatsächlich gewinnt.
       </p>
       <p class="max-w-[680px] text-base leading-relaxed text-ink-2">
-        Wenn Sie ein internes B2B-Content-Team sind, das eine breite Suite möchte und für das das Budget nicht die Hürde ist, ist die Erfolgsbilanz von contentbird real, dieser Artikel ist nicht für Sie. Wenn Sie eine E-Commerce-Agentur sind, lesen Sie weiter.
+ Wenn Sie ein internes B2B-Content-Team sind, das eine breite Suite möchte und für das das Budget nicht die Hürde ist, ist die Erfolgsbilanz von contentbird real, dieser Artikel ist nicht für Sie. Wenn Sie eine E-Commerce-Agentur sind, lesen Sie weiter.
       </p>
       <div class="mt-8 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
         <span>Von <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
@@ -238,7 +238,7 @@ const structuredData = [
     <div class="mx-auto max-w-[1100px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          Die 8 Tools auf einen Blick
+ Die 8 Tools auf einen Blick
         </h2>
       </div>
       <div class="overflow-hidden rounded-lg border border-line bg-bg">
@@ -293,7 +293,7 @@ const structuredData = [
     <div class="mx-auto max-w-[820px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          Warum E-Commerce-Agenturen nach contentbird-Alternativen suchen
+ Warum E-Commerce-Agenturen nach contentbird-Alternativen suchen
         </h2>
       </div>
       <div class="flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
@@ -314,7 +314,7 @@ const structuredData = [
     <div class="mx-auto max-w-[820px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          Wie wir jede contentbird-Alternative bewertet haben
+ Wie wir jede contentbird-Alternative bewertet haben
         </h2>
       </div>
       <div class="flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
@@ -325,7 +325,7 @@ const structuredData = [
           <li><strong class="font-semibold text-ink">Erstellen eines White-Label-Kundenreports</strong>, an den Kunden mit dem Branding der Agentur übergeben, nicht dem des Tools.</li>
           <li><strong class="font-semibold text-ink">Produkt-/Collection-Content im Katalogmaßstab</strong>, einzigartige Texte und Product-/FAQ-Schema, kein duplizierter Herstellertext.</li>
         </ol>
-        <p>Jedes Tool wurde gegen acht Kriterien bewertet: Gesamtkosten im Agenturmaßstab, Tiefe der E-Commerce-/Commerce-Integration, Workspace-Isolation pro Kunde, Stimmtraining pro Kunde, Zugänglichkeit des White-Label-Tarifs, redaktionelle Freigabe und Kundenfreigabe, CMS-Breite und Rank-Tracking.</p>
+        <p>Jedes Tool wurde gegen acht Kriterien bewertet: Gesamtkosten im Agenturmaßstab, Tiefe der E-Commerce-/Commerce-Integration, Workspace-Isolation pro Kunde, Stimmtraining pro Kunde, Zugänglichkeit des White-Label-Tarifs, redaktionelle Freigabe, CMS-Breite und Rank-Tracking.</p>
         <p>Wir haben nicht nach roher Content-Qualität bewertet. Jedes Tool hier kann einen veröffentlichungsreifen Artikel erzeugen; die Differenzierung für eine E-Commerce-Agentur liegt im Operativen und Kommerziellen.</p>
       </div>
     </div>
@@ -385,7 +385,7 @@ const structuredData = [
               </table>
             </div>
             <p class="mt-5 text-[15px] leading-relaxed text-ink-2">
-              Der Unterschied ist keine einzelne Funktion, es ist, dass die E-Commerce-Agentur-Schicht (commerce-nativer Content, Workspaces pro Kunde, White-Label, redaktionelle Freigabe mit Kundenfreigabe) bereits ab dem Einstiegstarif ins Produkt eingebaut ist und nicht aus einer breiten B2B-Suite mit einer 399-€-Untergrenze zusammengesetzt wird.
+ Der Unterschied ist keine einzelne Funktion, es ist, dass die E-Commerce-Agentur-Schicht (commerce-nativer Content, Workspaces pro Kunde, White-Label, redaktionelle Freigabe) bereits ab dem Einstiegstarif ins Produkt eingebaut ist und nicht aus einer breiten B2B-Suite mit einer 399-€-Untergrenze zusammengesetzt wird.
             </p>
             <p class="mt-4 text-[15px] leading-relaxed text-ink-2">
               {APP_NAME} Managed kostet 99 €/Mon. mit kostenloser Testphase, und <a href="/pricing" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">Agency für 199 €/Mon.</a> schaltet 400 Artikel pro Monat, unbegrenzte Kunden-Workspaces, White-Label-Reports, Echtzeit-Rank-Tracking und den Empfehlungs-Traffic-Austausch frei, enthalten, nicht als Add-on gebucht.
@@ -406,12 +406,12 @@ const structuredData = [
             </h3>
             <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsContentbird}</p>
             <h3 class="mt-6 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
-              Wo {APP_NAME} {tool.name} schlägt
+ Wo {APP_NAME} {tool.name} schlägt
             </h3>
             <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsTheirs}</p>
             {tool.url && (
               <p class="mt-6 text-[13px] text-ink-3">
-                Besuchen Sie <a href={tool.url} target="_blank" rel="noopener noreferrer" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent hover:text-ink">{tool.name}</a> für aktuelle Preise und Funktionsdetails.
+ Besuchen Sie <a href={tool.url} target="_blank" rel="noopener noreferrer" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent hover:text-ink">{tool.name}</a> für aktuelle Preise und Funktionsdetails.
               </p>
             )}
           </>
@@ -425,7 +425,7 @@ const structuredData = [
     <div class="mx-auto max-w-[1100px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          Welche contentbird-Alternative sollten Sie wählen?
+ Welche contentbird-Alternative sollten Sie wählen?
         </h2>
         <p class="mt-3 max-w-[640px] text-base leading-relaxed text-ink-2">Nach den Tool-Detailanalysen hier die Kurzfassung.</p>
       </div>
@@ -448,7 +448,7 @@ const structuredData = [
     <div class="mx-auto max-w-[820px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          Häufig gestellte Fragen
+ Häufig gestellte Fragen
         </h2>
       </div>
       <div class="flex flex-col gap-3">

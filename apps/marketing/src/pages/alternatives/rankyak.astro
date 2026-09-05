@@ -17,20 +17,20 @@ const breadcrumbs = [
 ];
 
 interface TldrRow {
-  name: string;
-  bestFor: string;
-  editorialControl: string;
-  whiteLabel: string;
-  ecommerce: string;
-  price: string;
-  ours?: boolean;
+ name: string;
+ bestFor: string;
+ editorialControl: string;
+ whiteLabel: string;
+ ecommerce: string;
+ price: string;
+ ours?: boolean;
 }
 
 const TLDR_ROWS: TldrRow[] = [
-  { name: APP_NAME, bestFor: 'Open source, approval before publish', editorialControl: 'Approve before publish + client sign-off', whiteLabel: 'Included (Agency)', ecommerce: 'Native (Shopify/Woo)', price: 'From $0 self-host', ours: true },
+  { name: APP_NAME, bestFor: 'Open source, approval before publish', editorialControl: 'Approve before publish, approver recorded', whiteLabel: 'Included (Agency)', ecommerce: 'Native (Shopify/Woo)', price: 'From $0 self-host', ours: true },
   { name: 'RankYak', bestFor: 'Solo / hands-off volume', editorialControl: 'None, daily autopilot', whiteLabel: 'Yes', ecommerce: 'Generic', price: 'From ~$49/mo' },
   { name: 'Outrank', bestFor: 'Solo founders, one site', editorialControl: 'None, autopilot', whiteLabel: 'No', ecommerce: 'Generic blog', price: '$99/mo' },
-  { name: 'contentbird', bestFor: 'In-house B2B content teams', editorialControl: 'Approval workflow (no client sign-off)', whiteLabel: 'Paid add-on', ecommerce: 'Generic', price: 'From €399/mo' },
+  { name: 'contentbird', bestFor: 'In-house B2B content teams', editorialControl: 'Approval workflow', whiteLabel: 'Paid add-on', ecommerce: 'Generic', price: 'From €399/mo' },
   { name: 'SEOwind', bestFor: 'Research-led long-form', editorialControl: 'Manual review', whiteLabel: 'WL content service', ecommerce: 'No', price: 'From $49/mo' },
   { name: 'Scalenut', bestFor: 'Budget all-in-one', editorialControl: 'Manual', whiteLabel: 'No', ecommerce: 'No', price: 'From $39/mo' },
   { name: 'Frase', bestFor: 'Content briefs + writing', editorialControl: 'Manual', whiteLabel: 'No', ecommerce: 'No', price: 'From $45/mo' },
@@ -38,7 +38,7 @@ const TLDR_ROWS: TldrRow[] = [
 
 const ALTORANK_VS_RANKYAK = [
   { feature: 'Publishing model', ours: 'Draft → review → approve, then publish (human gate)', theirs: 'Daily autopilot, AI publishes unsupervised' },
-  { feature: 'Client sign-off', ours: 'Per-client reviewer can approve before anything goes live', theirs: 'None' },
+  { feature: 'Recorded approval', ours: 'Every article records who approved it and when', theirs: 'None' },
   { feature: 'Audit trail', ours: 'Who approved + when, recorded', theirs: 'None' },
   { feature: 'Multi-client', ours: 'Isolated per-client workspaces', theirs: 'Multi-site, but no per-client editorial isolation' },
   { feature: 'Per-client voice', ours: 'AI-trained voice profile per client', theirs: 'Generic' },
@@ -51,96 +51,96 @@ const ALTORANK_VS_RANKYAK = [
 ];
 
 interface Tool {
-  index: string;
-  name: string;
-  ours?: boolean;
-  url?: string;
-  subtitle: string;
-  whatItIs: string;
-  bestFor: string;
-  pricing: string;
-  beatsRankyak: string;
-  beatsTheirs: string;
+ index: string;
+ name: string;
+ ours?: boolean;
+ url?: string;
+ subtitle: string;
+ whatItIs: string;
+ bestFor: string;
+ pricing: string;
+ beatsRankyak: string;
+ beatsTheirs: string;
 }
 
 const TOOLS: Tool[] = [
   {
-    index: '01',
-    name: APP_NAME,
-    ours: true,
-    subtitle: 'Best RankYak Alternative for Editorial Control',
-    whatItIs: 'An approval-first AI SEO content engine for e-commerce agencies. Same research → draft → publish pipeline, but with a human editorial-approval gate (and per-client client sign-off) between draft and a client\'s live site.',
-    bestFor: 'Agencies producing SEO content for Shopify/WooCommerce clients who cannot publish unreviewed AI to a client\'s brand.',
-    pricing: '€69/mo Managed (100 articles, model costs included, all CMS, rank tracking), €199/mo Agency (400 articles, unlimited client workspaces, white-label reports, referral traffic exchange).',
-    beatsRankyak: '',
-    beatsTheirs: 'RankYak is genuinely hands-off: if you want volume with zero review and you run your own sites, its daily autopilot is cheaper and simpler. AltoRank deliberately adds a human step, so it is not the tool for someone who wants to never look at the content.',
+ index: '01',
+ name: APP_NAME,
+ ours: true,
+ subtitle: 'Best RankYak Alternative for Editorial Control',
+ whatItIs: 'An approval-first AI SEO content engine for e-commerce agencies. Same research → draft → publish pipeline, but with a human editorial-approval gate between draft and a client\'s live site.',
+ bestFor: 'Agencies producing SEO content for Shopify/WooCommerce clients who cannot publish unreviewed AI to a client\'s brand.',
+ pricing: '€69/mo Managed (100 articles, model costs included, all CMS, rank tracking), €199/mo Agency (400 articles, unlimited client workspaces, white-label reports, referral traffic exchange).',
+ beatsRankyak: '',
+ beatsTheirs: 'RankYak is genuinely hands-off: if you want volume with zero review and you run your own sites, its daily autopilot is cheaper and simpler. AltoRank deliberately adds a human step, so it is not the tool for someone who wants to never look at the content.',
   },
   {
-    index: '02',
-    name: 'RankYak',
-    url: 'https://rankyak.com',
-    subtitle: 'Reference, EU Autopilot',
-    whatItIs: 'A Netherlands-built tool that auto-researches keywords, builds a monthly plan, and publishes daily SEO articles on autopilot, with a white-label platform and multi-site support.',
-    bestFor: 'Solo operators and small teams who want hands-off, high-volume content on their own sites.',
-    pricing: 'From ~$49/mo. EU-based.',
-    beatsRankyak: 'It is the cheapest, most hands-off way to ship daily articles, white-label and multi-site included. For your own sites, the autopilot is a feature.',
-    beatsTheirs: `RankYak's autopilot is the opposite of what agencies need on client sites: no review step, no per-client editorial isolation, no client sign-off. Publishing unsupervised AI to a client's brand is precisely the behaviour Google's 2025 scaled-content enforcement penalised. ${APP_NAME} keeps the same pipeline but gates publishing behind human approval.`,
+ index: '02',
+ name: 'RankYak',
+ url: 'https://rankyak.com',
+ subtitle: 'Reference, EU Autopilot',
+ whatItIs: 'A Netherlands-built tool that auto-researches keywords, builds a monthly plan, and publishes daily SEO articles on autopilot, with a white-label platform and multi-site support.',
+ bestFor: 'Solo operators and small teams who want hands-off, high-volume content on their own sites.',
+ pricing: 'From ~$49/mo. EU-based.',
+ beatsRankyak: 'It is the cheapest, most hands-off way to ship daily articles, white-label and multi-site included. For your own sites, the autopilot is a feature.',
+ beatsTheirs: `RankYak's autopilot is the opposite of what agencies need on client sites: no review step, no per-client editorial isolation. Publishing unsupervised AI to a client's brand is precisely the behaviour Google's 2025 scaled-content enforcement penalised. ${APP_NAME} keeps the same pipeline but gates publishing behind human approval.`,
   },
   {
-    index: '03',
-    name: 'Outrank',
-    url: 'https://www.outrank.so',
-    subtitle: 'Single-Site Autopilot',
-    whatItIs: 'A $99/mo AI SEO tool that drafts and auto-publishes articles for one site, with a backlink-exchange network and 9-CMS publishing.',
-    bestFor: 'Solo founders running one blog or e-commerce site.',
-    pricing: '$99/mo per site.',
-    beatsRankyak: 'More mature ecosystem and a backlink network; better known, with more tutorials.',
-    beatsTheirs: `Like RankYak, Outrank is autopilot and single-site, no multi-client workspaces, no per-client voice, no white-label, no approval gate. ${APP_NAME} is the open-source alternative Outrank isn't. See the dedicated /alternatives/outrank breakdown.`,
+ index: '03',
+ name: 'Outrank',
+ url: 'https://www.outrank.so',
+ subtitle: 'Single-Site Autopilot',
+ whatItIs: 'A $99/mo AI SEO tool that drafts and auto-publishes articles for one site, with a backlink-exchange network and 9-CMS publishing.',
+ bestFor: 'Solo founders running one blog or e-commerce site.',
+ pricing: '$99/mo per site.',
+ beatsRankyak: 'More mature ecosystem and a backlink network; better known, with more tutorials.',
+ beatsTheirs: `Like RankYak, Outrank is autopilot and single-site, no multi-client workspaces, no per-client voice, no white-label, no approval gate. ${APP_NAME} is the open-source alternative Outrank isn't. See the dedicated /alternatives/outrank breakdown.`,
   },
   {
-    index: '04',
-    name: 'contentbird',
-    url: 'https://contentbird.io',
-    subtitle: 'B2B Content-Ops Suite',
-    whatItIs: 'A 13-year Berlin content-operations suite with a workflow/approval engine, aimed at in-house B2B content teams.',
-    bestFor: 'In-house B2B marketing teams wanting one broad all-in-one suite.',
-    pricing: 'From €399/mo (no free trial).',
-    beatsRankyak: 'A real approval workflow and a mature, broad suite, far more control than RankYak\'s autopilot.',
-    beatsTheirs: `contentbird has approval but no client-facing sign-off or audit trail, is priced from €399 with white-label as a paid add-on, and is B2B-content-generic (no Shopify/Woo plumbing). ${APP_NAME} is e-commerce-agency-native at a quarter of the entry price. See /alternatives/contentbird.`,
+ index: '04',
+ name: 'contentbird',
+ url: 'https://contentbird.io',
+ subtitle: 'B2B Content-Ops Suite',
+ whatItIs: 'A 13-year Berlin content-operations suite with a workflow/approval engine, aimed at in-house B2B content teams.',
+ bestFor: 'In-house B2B marketing teams wanting one broad all-in-one suite.',
+ pricing: 'From €399/mo (no free trial).',
+ beatsRankyak: 'A real approval workflow and a mature, broad suite, far more control than RankYak\'s autopilot.',
+ beatsTheirs: `contentbird has approval, is priced from €399 with white-label as a paid add-on, and is B2B-content-generic (no Shopify/Woo plumbing). ${APP_NAME} is e-commerce-agency-native at a quarter of the entry price. See /alternatives/contentbird.`,
   },
   {
-    index: '05',
-    name: 'SEOwind',
-    url: 'https://seowind.io',
-    subtitle: 'Research-Led Long-Form',
-    whatItIs: 'An AI long-form article generator with a research-first workflow and a white-label content-production option.',
-    bestFor: 'Agencies that mainly need well-researched long-form articles.',
-    pricing: 'From $49/mo.',
-    beatsRankyak: 'Stronger, research-led long-form than autopilot volume; EEAT-focused structure.',
-    beatsTheirs: `SEOwind is a done-for-you content workflow, not a per-client SaaS workspace, no isolated client dashboards, no per-client rank tracking, no e-commerce plumbing. ${APP_NAME} gives each client an isolated, approval-gated, catalog-aware workspace.`,
+ index: '05',
+ name: 'SEOwind',
+ url: 'https://seowind.io',
+ subtitle: 'Research-Led Long-Form',
+ whatItIs: 'An AI long-form article generator with a research-first workflow and a white-label content-production option.',
+ bestFor: 'Agencies that mainly need well-researched long-form articles.',
+ pricing: 'From $49/mo.',
+ beatsRankyak: 'Stronger, research-led long-form than autopilot volume; EEAT-focused structure.',
+ beatsTheirs: `SEOwind is a done-for-you content workflow, not a per-client SaaS workspace, no isolated client dashboards, no per-client rank tracking, no e-commerce plumbing. ${APP_NAME} gives each client an isolated, approval-gated, catalog-aware workspace.`,
   },
   {
-    index: '06',
-    name: 'Frase',
-    url: 'https://www.frase.io',
-    subtitle: 'Content Briefs + Research',
-    whatItIs: 'A content brief and research tool, strong at building the brief a writer then uses.',
-    bestFor: 'Teams that brief out to human writers.',
-    pricing: 'From $45/mo.',
-    beatsRankyak: 'Best-in-class briefs; a human writes the article, so quality control is inherent.',
-    beatsTheirs: `Frase stops at the brief, no end-to-end publishing, no multi-client workspaces, no white-label, no e-commerce features. ${APP_NAME} runs brief → approve → publish per client.`,
+ index: '06',
+ name: 'Frase',
+ url: 'https://www.frase.io',
+ subtitle: 'Content Briefs + Research',
+ whatItIs: 'A content brief and research tool, strong at building the brief a writer then uses.',
+ bestFor: 'Teams that brief out to human writers.',
+ pricing: 'From $45/mo.',
+ beatsRankyak: 'Best-in-class briefs; a human writes the article, so quality control is inherent.',
+ beatsTheirs: `Frase stops at the brief, no end-to-end publishing, no multi-client workspaces, no white-label, no e-commerce features. ${APP_NAME} runs brief → approve → publish per client.`,
   },
 ];
 
 interface DecisionRow {
-  when: string;
-  pick: string;
-  rationale: string;
-  ours?: boolean;
+ when: string;
+ pick: string;
+ rationale: string;
+ ours?: boolean;
 }
 
 const DECISION_MATRIX: DecisionRow[] = [
-  { when: 'You run an agency publishing SEO content to client e-commerce sites', pick: APP_NAME, rationale: "You cannot ship unreviewed AI to a client's brand. Editorial approval + client sign-off + per-client workspaces + e-commerce-native content are exactly what RankYak's autopilot lacks.", ours: true },
+  { when: 'You run an agency publishing SEO content to client e-commerce sites', pick: APP_NAME, rationale: "You cannot ship unreviewed AI to a client's brand. Editorial approval + per-client workspaces + e-commerce-native content are exactly what RankYak's autopilot lacks.", ours: true },
   { when: 'You run your own sites and want hands-off daily volume', pick: 'Stick with RankYak', rationale: 'If no review step is a feature for you and there is no client brand at risk, RankYak is cheap and fully automated.' },
   { when: "You're a solo agency with one e-commerce client (and plans to grow)", pick: APP_NAME + ' Managed', rationale: '€69/mo with the approval gate + multi-client architecture + e-commerce features ready as you add clients.', ours: true },
   { when: 'You want a broad in-house B2B content-ops suite', pick: 'contentbird', rationale: 'Mature approval workflow and broad suite, if budget (€399+) and B2B fit aren\'t constraints.' },
@@ -150,38 +150,38 @@ const DECISION_MATRIX: DecisionRow[] = [
 
 const FAQS = [
   { question: 'What is RankYak?', answer: "RankYak is a Netherlands-built AI SEO tool that auto-researches keywords, builds a monthly content plan, and publishes daily SEO articles on autopilot, with white-label and multi-site support. It is designed to be hands-off. There is no human review step between draft and publish." },
-  { question: "What's the best RankYak alternative for agencies?", answer: `${APP_NAME}. RankYak is built for hands-off volume on your own sites; agencies publishing to client brands need an editorial-approval gate. ${APP_NAME} keeps the same research → draft → publish pipeline but requires human approval (and offers per-client client sign-off) before anything reaches a client's live site, plus per-client workspaces, white-label, and e-commerce-native content.` },
+  { question: "What's the best RankYak alternative for agencies?", answer: `${APP_NAME}. RankYak is built for hands-off volume on your own sites; agencies publishing to client brands need an editorial-approval gate. ${APP_NAME} keeps the same research → draft → publish pipeline but requires human approval before anything reaches a client's live site, plus per-client workspaces, white-label, and e-commerce-native content.` },
   { question: 'Is autopilot AI content safe for client sites?', answer: "It carries real risk. Google's 2025 scaled-content-abuse enforcement penalised sites that published large volumes of unreviewed AI content. For an agency, that risk lands on the client's brand. An editorial-approval gate, a human reviewing before publish, is the direct mitigation, which is why AltoRank is approval-first by design." },
   { question: 'Does AltoRank publish automatically like RankYak?', answer: `No, and that's the point. ${APP_NAME} drafts and schedules, but nothing publishes to a CMS until it has been approved. You get the speed of AI drafting with a human (and optional client) sign-off before it goes live.` },
   { question: 'Can I migrate from RankYak to AltoRank?', answer: `Yes. Both publish to common CMS platforms (WordPress, Shopify), so existing content stays live. Connect your CMS, set up per-client workspaces, and resume, with an approval gate in front of every publish. Typically a few hours of setup.` },
 ];
 
 const structuredData = [
-  buildArticleSchema({
-    title: `${APP_NAME} vs. RankYak: 6 RankYak Alternatives (2026)`,
-    description: 'RankYak publishes daily on autopilot. We tested 6 alternatives on editorial control, white-label and e-commerce fit.',
-    publishDate,
-    dateModified,
-    author: AUTHOR_NAME,
-    authorType: 'Person',
-    authorUrl: AUTHOR_URL,
-    url: pageUrl,
+ buildArticleSchema({
+ title: `${APP_NAME} vs. RankYak: 6 RankYak Alternatives (2026)`,
+ description: 'RankYak publishes daily on autopilot. We tested 6 alternatives on editorial control, white-label and e-commerce fit.',
+ publishDate,
+ dateModified,
+ author: AUTHOR_NAME,
+ authorType: 'Person',
+ authorUrl: AUTHOR_URL,
+ url: pageUrl,
   }),
-  buildFAQSchema(FAQS),
-  buildItemListSchema(
-    TLDR_ROWS.map((t) => ({
-      name: t.name,
-      description: `${t.bestFor}, starting at ${t.price}`,
+ buildFAQSchema(FAQS),
+ buildItemListSchema(
+ TLDR_ROWS.map((t) => ({
+ name: t.name,
+ description: `${t.bestFor}, starting at ${t.price}`,
     })),
   ),
 ];
 ---
 
 <PSEO
-  title="RankYak Review and 6 Alternatives (2026)"
-  description="RankYak publishes daily on autopilot. We tested 6 alternatives on editorial control, white-label and e-commerce fit."
-  breadcrumbs={breadcrumbs}
-  structuredData={structuredData}
+ title="RankYak Review and 6 Alternatives (2026)"
+ description="RankYak publishes daily on autopilot. We tested 6 alternatives on editorial control, white-label and e-commerce fit."
+ breadcrumbs={breadcrumbs}
+ structuredData={structuredData}
 >
   {/* ── HERO ──────────────────────────────────────────── */}
   <header class="border-b border-line bg-[radial-gradient(600px_300px_at_88%_-10%,var(--accent-soft),transparent_70%),linear-gradient(180deg,var(--bg),var(--bg-2))] py-[72px]">
@@ -190,13 +190,13 @@ const structuredData = [
         {APP_NAME} vs. RankYak: We Tested 6 RankYak Alternatives (2026)
       </h1>
       <p class="mb-5 max-w-[680px] text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
-        For agencies publishing to client sites, {APP_NAME} is the strongest RankYak alternative: it keeps a human editorial-approval gate (with per-client client sign-off) between draft and publish, where RankYak's daily autopilot ships unreviewed AI straight to live client sites.
+ For agencies publishing to client sites, {APP_NAME} is the strongest RankYak alternative: it keeps a human editorial-approval gate between draft and publish, where RankYak's daily autopilot ships unreviewed AI straight to live client sites.
       </p>
       <p class="mb-5 max-w-[680px] text-lg leading-relaxed text-ink-2 [text-wrap:pretty]">
         <a href="https://rankyak.com" target="_blank" rel="noopener noreferrer" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">RankYak</a> is an EU-built tool that auto-researches keywords and publishes daily SEO articles on autopilot. That's great for hands-off volume on your own sites, but an agency publishing to a <em>client's</em> brand can't ship unreviewed AI, especially after Google's 2025 scaled-content enforcement. The 6 RankYak alternatives below are ranked by <strong class="font-semibold text-ink">agency editorial-control criteria</strong>, with honest verdicts on when autopilot actually wins.
       </p>
       <p class="max-w-[680px] text-base leading-relaxed text-ink-2">
-        If you run your own sites and want fully hands-off daily content, stick with RankYak, it's cheap and built for exactly that. If you publish to client brands, read on.
+ If you run your own sites and want fully hands-off daily content, stick with RankYak, it's cheap and built for exactly that. If you publish to client brands, read on.
       </p>
       <div class="mt-8 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
         <span>By <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
@@ -213,7 +213,7 @@ const structuredData = [
     <div class="mx-auto max-w-[1100px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          The 7 tools at a glance
+ The 7 tools at a glance
         </h2>
       </div>
       <div class="overflow-hidden rounded-lg border border-line bg-bg">
@@ -264,7 +264,7 @@ const structuredData = [
     <div class="mx-auto max-w-[820px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          Why agencies search for RankYak alternatives
+ Why agencies search for RankYak alternatives
         </h2>
       </div>
       <div class="flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
@@ -274,7 +274,7 @@ const structuredData = [
         <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">Unattended AI volume is now a penalty risk</h3>
         <p>Google's 2025 scaled-content-abuse enforcement penalised sites that shipped large volumes of unreviewed AI content, with 50–80% traffic drops and deindexing in the worst cases. When an agency runs autopilot on a client site, that risk lands on the client. An <span class="font-medium text-ink">approval gate</span> is the direct mitigation.</p>
         <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">No per-client isolation or e-commerce depth</h3>
-        <p>RankYak is multi-site, but not multi-<span class="font-medium text-ink">client</span> in the way agencies need: no isolated per-client voice, no client-facing sign-off, no Shopify/WooCommerce product or collection content. Agencies running e-commerce clients end up doing the commerce-specific work by hand.</p>
+        <p>RankYak is multi-site, but not multi-<span class="font-medium text-ink">client</span> in the way agencies need: no isolated per-client voice, no Shopify/WooCommerce product or collection content. Agencies running e-commerce clients end up doing the commerce-specific work by hand.</p>
         <p>None of this is a knock on RankYak for its audience. It's a structural mismatch for an agency publishing to client brands.</p>
       </div>
     </div>
@@ -285,13 +285,13 @@ const structuredData = [
     <div class="mx-auto max-w-[820px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          How we evaluated each RankYak alternative
+ How we evaluated each RankYak alternative
         </h2>
       </div>
       <div class="flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
         <p>We scored each tool against the criteria that matter when you publish to client sites, not generic content quality:</p>
         <ol class="my-2 flex flex-col gap-2 pl-5 list-decimal">
-          <li><strong class="font-semibold text-ink">Editorial control</strong>: is there a human approval gate (and client sign-off) before publish, or is it autopilot?</li>
+          <li><strong class="font-semibold text-ink">Editorial control</strong>: is there a human approval gate before publish, or is it autopilot?</li>
           <li><strong class="font-semibold text-ink">Per-client isolation</strong>: isolated voice, workspace, and reporting per client?</li>
           <li><strong class="font-semibold text-ink">White-label</strong>, can the agency hand it to a client under its own brand?</li>
           <li><strong class="font-semibold text-ink">E-commerce depth</strong>, product/collection content + schema for Shopify/WooCommerce clients?</li>
@@ -349,7 +349,7 @@ const structuredData = [
               </table>
             </div>
             <p class="mt-5 text-[15px] leading-relaxed text-ink-2">
-              The difference isn't speed, both draft fast. It's that {APP_NAME} puts a human approval gate (and an optional per-client sign-off) between the draft and a client's live site, so an agency can sell editorial judgment, not just automation.
+ The difference isn't speed, both draft fast. It's that {APP_NAME} puts a human approval gate between the draft and a client's live site, so an agency can sell editorial judgment, not just automation.
             </p>
             <p class="mt-4 text-[15px] leading-relaxed text-ink-2">
               {APP_NAME} Managed is €69/mo; <a href="/pricing" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">Agency at €199/mo</a> adds 400 articles a month, unlimited client workspaces, white-label reports, and rank tracking.
@@ -372,7 +372,7 @@ const structuredData = [
             <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsTheirs}</p>
             {tool.url && (
               <p class="mt-6 text-[13px] text-ink-3">
-                Visit <a href={tool.url} target="_blank" rel="noopener noreferrer" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent hover:text-ink">{tool.name}</a> for current pricing and feature details.
+ Visit <a href={tool.url} target="_blank" rel="noopener noreferrer" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent hover:text-ink">{tool.name}</a> for current pricing and feature details.
               </p>
             )}
           </>
@@ -386,7 +386,7 @@ const structuredData = [
     <div class="mx-auto max-w-[1100px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          Which RankYak alternative should you choose?
+ Which RankYak alternative should you choose?
         </h2>
         <p class="mt-3 max-w-[640px] text-base leading-relaxed text-ink-2">After the tool deep-dives, here's the short version.</p>
       </div>
@@ -409,7 +409,7 @@ const structuredData = [
     <div class="mx-auto max-w-[820px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          Frequently asked questions
+ Frequently asked questions
         </h2>
       </div>
       <div class="flex flex-col gap-3">

@@ -19,7 +19,7 @@ const breadcrumbs = [
 const STEPS = [
   { name: 'Draft is generated to a per-client brief', text: 'AI produces a draft against the client’s brief and voice profile: answer-shaped sections, internal links, and the right schema. It enters the system as a draft, never as a live page. Generation and publishing are deliberately separate steps.' },
   { name: 'Internal editorial review', text: 'An editor reviews the draft for factual accuracy, brand voice, and SEO/GEO quality, then approves it or requests changes. Nothing can publish from this state. The review is a required gate, not an optional suggestion box.' },
-  { name: 'Optional client sign-off', text: 'The client approves or comments through a scoped review link: approve and comment only, never edit, and scoped to their own workspace so they never see another client’s work. Their approval is recorded as a timestamped sign-off.' },
+  { name: 'A client who wants to review gets a seat', text: 'Give them an editor seat on their own workspace and they approve there, on the same record. There is no separate client review link today.' },
   { name: 'The approval gate', text: 'Only an approved (or scheduled) article can publish. The gate lives in the publish step itself, so automated jobs, bulk actions, and scheduled runs cannot bypass it. There is no path to a live page that skips human review.' },
   { name: 'Schedule or publish', text: 'Once approved, the page publishes to the CMS or schedules for later, with Product/FAQ schema and resolved internal links injected at publish time. The agency controls timing; the client controls approval.' },
   { name: 'Immutable audit trail', text: 'Every transition (who submitted, who reviewed, what changed, and the client’s sign-off with a timestamp) is recorded in an append-only log. That trail is the legal and trust record agencies need when content goes out under a client’s brand.' },
@@ -37,45 +37,45 @@ const VS_ROWS = [
 const FAQS = [
   { question: 'What is approval-first SEO content?', answer: 'Approval-first SEO content is a workflow where every AI-generated page is reviewed and approved by a human, and optionally signed off by the client, before it publishes to a brand. The publish step is gated, so nothing goes live unreviewed. It is the opposite of autopilot tools that self-publish AI content on a schedule.' },
   { question: 'Why does editorial approval matter for AI SEO content?', answer: 'Because unreviewed AI content is now a liability. Google’s 2025 scaled-content-abuse enforcement penalised high-volume unreviewed AI, and for an agency, publishing unchecked AI to a client’s brand is an accuracy, reputation, and legal risk. A human approval gate is the trust signal both search engines and clients look for.' },
-  { question: 'What is the difference between approval-first and autopilot SEO tools?', answer: 'Autopilot tools generate and publish AI content automatically on a schedule. Approval-first tools gate the publish step behind human review (and optional client sign-off), so a page only goes live once a person has approved it. The two have very different risk profiles: autopilot optimises for volume, approval-first optimises for safety on client brands.' },
+  { question: 'What is the difference between approval-first and autopilot SEO tools?', answer: 'Autopilot tools generate and publish AI content automatically on a schedule. Approval-first tools gate the publish step behind human review, so a page only goes live once a person has approved it. The two have very different risk profiles: autopilot optimises for volume, approval-first optimises for safety on client brands.' },
   { question: 'Can clients approve content themselves?', answer: `Yes. With ${APP_NAME}, a client can approve or comment through a scoped review link (approve and comment only, never edit) limited to their own workspace so they never see another client’s content. Each approval is logged as a timestamped sign-off, giving the agency an audit trail of who approved what and when.` },
   { question: 'Does an approval workflow slow agencies down?', answer: 'It adds a review step, but it removes the larger costs: cleaning up published mistakes, rebuilding client trust, and penalty risk from unreviewed AI. The workflow is built around a fast review queue and change requests rather than bureaucracy, so the gate protects the brand without becoming the bottleneck.' },
 ];
 
 const structuredData = [
-  buildArticleSchema({
-    title: 'Approval-First AI SEO Content: The Editorial Workflow (2026)',
-    description: 'Approval-first SEO content gates every AI-generated page behind human (and optional client) review before it publishes. Why it matters after Google’s scaled-content enforcement, and how the workflow works.',
-    publishDate,
-    dateModified,
-    author: AUTHOR_NAME,
-    authorType: 'Person',
-    authorUrl: AUTHOR_URL,
-    url: pageUrl,
+ buildArticleSchema({
+ title: 'Approval-First AI SEO Content: The Editorial Workflow (2026)',
+ description: 'Approval-first SEO content gates every AI-generated page behind human (and optional client) review before it publishes. Why it matters after Google’s scaled-content enforcement, and how the workflow works.',
+ publishDate,
+ dateModified,
+ author: AUTHOR_NAME,
+ authorType: 'Person',
+ authorUrl: AUTHOR_URL,
+ url: pageUrl,
   }),
-  buildHowToSchema({
-    name: 'How an approval-first SEO content workflow works',
-    description: 'The six stages of an editorial approval workflow for AI SEO content, from draft to published with an immutable audit trail.',
-    steps: STEPS,
+ buildHowToSchema({
+ name: 'How an approval-first SEO content workflow works',
+ description: 'The six stages of an editorial approval workflow for AI SEO content, from draft to published with an immutable audit trail.',
+ steps: STEPS,
   }),
-  buildFAQSchema(FAQS),
+ buildFAQSchema(FAQS),
 ];
 ---
 
 <PSEO
-  title="Approval-First AI SEO Content: The Editorial Workflow"
-  description="Every AI page gated behind human review before it publishes. Why it matters, and how the workflow works."
-  breadcrumbs={breadcrumbs}
-  structuredData={structuredData}
+ title="Approval-First AI SEO Content: The Editorial Workflow"
+ description="Every AI page gated behind human review before it publishes. Why it matters, and how the workflow works."
+ breadcrumbs={breadcrumbs}
+ structuredData={structuredData}
 >
   {/* ── HERO ──────────────────────────────────────────── */}
   <header class="border-b border-line bg-[radial-gradient(600px_300px_at_88%_-10%,var(--accent-soft),transparent_70%),linear-gradient(180deg,var(--bg),var(--bg-2))] py-[72px]">
     <div class="mx-auto max-w-[760px] px-8">
       <h1 class="mb-6 text-[clamp(34px,5vw,48px)] font-semibold leading-[1.05] tracking-[-0.025em] text-ink [text-wrap:balance]">
-        Approval-first AI SEO content
+ Approval-first AI SEO content
       </h1>
       <p class="mb-5 text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
-        Approval-first means every AI-generated page is reviewed and approved by a human, and optionally signed off by the client, <em>before</em> it publishes to a brand. The publish step is gated, so nothing goes live unreviewed. After Google's 2025 scaled-content enforcement, that human gate is the trust signal both search engines and clients look for, and it's the opposite of autopilot tools that self-publish.
+ Approval-first means every AI-generated page is reviewed and approved by a human, and optionally signed off by the client, <em>before</em> it publishes to a brand. The publish step is gated, so nothing goes live unreviewed. After Google's 2025 scaled-content enforcement, that human gate is the trust signal both search engines and clients look for, and it's the opposite of autopilot tools that self-publish.
       </p>
       <div class="mt-7 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
         <span>By <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
@@ -177,10 +177,10 @@ const structuredData = [
   <section class="border-b border-line py-[72px]">
     <div class="mx-auto max-w-[760px] px-8 text-center">
       <h2 class="mb-3 text-[clamp(22px,3vw,28px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
-        AI SEO content your clients sign off on, before it ships
+ AI SEO content your clients sign off on, before it ships
       </h2>
       <p class="mb-7 mx-auto max-w-[520px] text-[15px] leading-relaxed text-ink-2">
-        {APP_NAME} generates SEO content for every client store, then gates it behind editorial approval and optional client sign-off, with an audit trail of who approved what.
+        {APP_NAME} generates SEO content for every client store, then gates it behind editorial approval with a record of who approved what.
       </p>
       <Button href={SIGNUP_URL} size="lg">
   {PRIMARY_CTA.label}
