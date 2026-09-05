@@ -4,9 +4,11 @@ import Button from '@/components/shared/Button.astro';
 import CTABanner from '@/components/shared/CTABanner.astro';
 import GrowthPlanScript from '@/components/shared/GrowthPlanScript.astro';
 import AppShot from '@/components/shared/AppShot.astro';
+import StepArt from '@/components/home/StepArt.astro';
+import BrandLogo from '@/components/shared/BrandLogo.astro';
 import { APP_NAME, PRIMARY_CTA, APP_URL, SIGNUP_URL } from '@/constants';
 import { buildProductSchema, buildFAQSchema } from '@/lib/schema';
-import { STEPS, COMPARISON, COMPARISON_THEM, CMS_LIST, READINESS_SCAN, STATS, REPLACES, MORE_FEATURES, CMS_BLURB, HOME_FAQ } from '@/data/homepage';
+import { STEPS, COMPARISON, COMPARISON_THEM, CMS_LIST, READINESS_SCAN, STATS, REPLACES, MORE_FEATURES, CMS_BLURB, HOME_FAQ, cmsHref } from '@/data/homepage';
 import { PLANS } from '@/data/pricing';
 
 // Base.astro already auto-injects Organization + WebSite + WebPage on every
@@ -26,13 +28,16 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
       pill above the h1, ran two CTAs plus a caveat, and put a drawn dashboard
       beside the copy; this one puts the product under the fold line so the
       page reads as a window into something real rather than an illustration.  */}
-  <header class="relative overflow-hidden border-b border-line bg-[radial-gradient(760px_400px_at_50%_-14%,oklch(0.46_0.17_275/0.85),transparent_68%),linear-gradient(178deg,oklch(0.24_0.09_275),oklch(0.155_0.02_275)_62%)] -mt-14 px-5 pt-[112px] text-center sm:px-6 lg:-mt-16 lg:pt-[148px]">
+  {/* Flat surface, left-aligned, like every section below it. The radial glow
+      it used to carry was decoration, and the copy was the only centred text
+      on the page. */}
+  <header class="relative overflow-hidden border-b border-line bg-[oklch(0.175_0.03_275)] -mt-14 px-5 pt-[112px] sm:px-6 lg:-mt-16 lg:pt-[148px]">
     <div class="mx-auto max-w-[1240px]">
-      <h1 class="mx-auto mb-4 max-w-[19ch] text-[clamp(30px,7vw,52px)] font-medium leading-[1.12] tracking-[-0.028em] text-white [text-wrap:balance] sm:mb-5">
+      <h1 class="mb-4 max-w-[19ch] text-[clamp(30px,7vw,52px)] font-medium leading-[1.12] tracking-[-0.028em] text-white [text-wrap:balance] sm:mb-5">
         Articles that rank, published to your site every week.
       </h1>
 
-      <p class="mx-auto mb-7 max-w-[52ch] text-[15.5px] leading-relaxed text-[oklch(0.82_0.03_275)] [text-wrap:pretty] sm:text-[17px] md:mb-8">
+      <p class="mb-7 max-w-[52ch] text-[15.5px] leading-relaxed text-[oklch(0.82_0.03_275)] [text-wrap:pretty] sm:text-[17px] md:mb-8">
         Point it at a domain Monday. First article live by Friday. Keyword
         research, drafts in your voice, publishing to eleven CMSs. Open source,
         self-host it free.
@@ -47,7 +52,7 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
           gated result is a promise and a visible one is an outcome. */}
       <form
         id="growth-plan-form"
-        class="mx-auto flex max-w-[560px] flex-col gap-2.5 sm:flex-row"
+        class="flex max-w-[560px] flex-col gap-2.5 sm:flex-row"
         data-api={`${APP_URL}/api/growth-plan`}
         data-lead={`${APP_URL}/api/growth-plan/lead`}
         data-signup={SIGNUP_URL}
@@ -63,14 +68,12 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
           spellcheck="false"
           required
           placeholder="yourdomain.com"
-          class="h-12 flex-1 rounded-[9px] border border-white/15 bg-white/[0.07] px-4 text-[15px] text-white placeholder:text-[oklch(0.68_0.03_275)] focus:border-white/40 focus:outline-none focus:ring-[3px] focus:ring-white/10"
+          class="h-10 flex-1 rounded-[var(--radius)] border border-white/15 bg-white/[0.07] px-3 text-[13.5px] text-white placeholder:text-[oklch(0.68_0.03_275)] focus:border-white/40 focus:outline-none focus:ring-[3px] focus:ring-white/10 sm:h-7"
         />
-        <button
-          type="submit"
-          class="inline-flex h-12 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-[9px] bg-white px-5 text-[15px] font-medium text-[oklch(0.2_0.06_275)] transition-colors hover:bg-[oklch(0.94_0.01_275)] disabled:cursor-wait disabled:opacity-70"
-        >
+        {/* GrowthPlanScript finds this by button[type=submit] and [data-label]. */}
+        <Button type="submit" variant="light" block class="shrink-0 cursor-pointer disabled:cursor-wait disabled:opacity-70">
           <span data-label>Get my growth plan</span>
-        </button>
+        </Button>
       </form>
 
       <p class="mb-9 mt-4 text-[12.5px] text-[oklch(0.68_0.03_275)] sm:text-[13px] md:mb-12">
@@ -78,7 +81,7 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
       </p>
       {/* The category puts avatars, five stars and "750m+ views" here. We put
           the one number we can defend, and the licence. */}
-      <p class="-mt-6 mb-10 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[12.5px] text-[oklch(0.78_0.03_275)] md:mb-12">
+      <p class="-mt-6 mb-10 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-[oklch(0.78_0.03_275)] md:mb-12">
         <span>{READINESS_SCAN.sites} sites scanned</span>
         <span aria-hidden="true" class="text-[oklch(0.5_0.03_275)]">&middot;</span>
         <span>{READINESS_SCAN.failedEverything} unreadable by AI</span>
@@ -92,7 +95,7 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
         id="growth-plan"
         hidden
         aria-live="polite"
-        class="mx-auto mb-10 max-w-[1040px] text-left md:mb-14"
+        class="mb-10 max-w-[1040px] text-left md:mb-14"
       ></section>
 
       <AppShot />
@@ -121,7 +124,7 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
         product is built to close, and it is the only statistic on this page, because it is the only
         one we have earned.
       </p>
-      <div class="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4 md:gap-4">
         {STATS.map((s) => (
           <div class="rounded-lg border border-line bg-panel p-5">
             <div class="text-[clamp(30px,4.5vw,44px)] font-semibold leading-none tracking-[-0.03em] text-ink">{s.value}</div>
@@ -166,8 +169,8 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {STEPS.map((step) => (
           <div class={`rounded-lg border p-5 sm:p-6 ${step.n === 3 ? 'border-accent bg-accent-soft/40' : 'border-line bg-bg'}`}>
-            <div class="mb-3 font-mono text-[12px] text-accent-ink">0{step.n}</div>
-            <h3 class="mb-2.5 text-[17px] font-semibold tracking-[-0.015em]">{step.title}</h3>
+            <StepArt step={step.n as 1 | 2 | 3 | 4} />
+            <h3 class="mb-2.5 text-[17px] font-semibold tracking-[-0.015em]">{step.n}. {step.title}</h3>
             <p class="text-sm leading-relaxed text-ink-2">{step.desc}</p>
           </div>
         ))}
@@ -197,7 +200,7 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
           </div>
         ))}
       </div>
-      <div class="hidden overflow-hidden rounded-lg border border-line bg-bg md:block">
+      <div class="hidden overflow-x-auto rounded-lg border border-line bg-bg md:block">
         <table class="w-full text-left text-sm">
           <thead class="border-b border-line bg-panel text-ink-2">
             <tr>
@@ -323,19 +326,19 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
         A connection is a destination, not a permission. Each one uses a credential you create and can
         revoke yourself, and nothing publishes to it until you approve the draft.
       </p>
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {CMS_LIST.map((cms) => (
           <a
-            href={cms.soon ? '/integrations' : `/integrations`}
+            href={cmsHref(cms.code)}
             class:list={[
               'group flex items-center gap-3 rounded-lg border p-4 transition-colors',
               cms.soon ? 'border-dashed border-line bg-transparent' : 'border-line bg-bg hover:border-accent',
             ]}
           >
-            <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-line bg-panel font-mono text-[11px] font-medium text-ink-2">{cms.code}</span>
+            <BrandLogo code={cms.code} size={36} />
             <span class="min-w-0">
               <span class="block truncate text-[14.5px] font-semibold text-ink group-hover:text-accent-ink">
-                {cms.name}{cms.soon && <span class="ml-1.5 font-mono text-[10px] uppercase tracking-[0.04em] text-ink-3">Soon</span>}
+                {cms.name}{cms.soon && <span class="ml-1.5 text-[12.5px] font-normal text-ink-3">soon</span>}
               </span>
               <span class="block truncate text-[12.5px] text-ink-3">{CMS_BLURB[cms.code]}</span>
             </span>
@@ -373,15 +376,15 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
 
   {/* ── EXAMPLES ─────────────────────────────────────────────────────────  */}
   <section id="examples" class="border-b border-line py-14 md:py-20 lg:py-[88px]">
-    <div class="mx-auto max-w-[1240px] px-5 text-center sm:px-6 lg:px-8">
-      <h2 class="mx-auto mb-4 max-w-[22ch] text-[clamp(25px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.026em] text-ink [text-wrap:balance]">
+    <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-4 max-w-[22ch] text-[clamp(25px,5vw,40px)] font-semibold leading-[1.08] tracking-[-0.026em] text-ink [text-wrap:balance]">
         Read what it writes <span class="text-accent-ink">before you trust it</span>.
       </h2>
-      <p class="mx-auto mb-7 max-w-[56ch] text-[15.5px] leading-relaxed text-ink-2 sm:text-[16.5px] [text-wrap:pretty]">
+      <p class="mb-7 max-w-[56ch] text-[15.5px] leading-relaxed text-ink-2 sm:text-[16.5px] [text-wrap:pretty]">
         Our own blog is produced by the product, approved by a person, and published through the same
         gate every customer gets. Every claim in it cites a source that resolves.
       </p>
-      <Button href="/blog" variant="secondary" size="lg" arrow>Visit the blog</Button>
+      <Button href="/blog" variant="secondary" arrow>Visit the blog</Button>
     </div>
   </section>
 
@@ -443,10 +446,26 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
             </ul>
             <div class="mt-auto">
               <Button href="/pricing" variant="secondary" block>See the full plan</Button>
+              {/* pricing.ts carries this for the plan with a free first article.
+                  It was only rendered on /pricing, so the one free thing on the
+                  cloud side was invisible from the page most visitors see. */}
+              {'ctaNote' in plan && plan.ctaNote && (
+                <p class="mt-3 text-[12.5px] leading-snug text-ink-3">{plan.ctaNote}</p>
+              )}
             </div>
           </div>
         ))}
       </div>
+      {/* The category ends its pricing card with a mailto for agencies past a
+          site count. Ours is metered on articles, not sites, so the honest line
+          is where the roster page is and where a person answers. */}
+      <p class="mt-6 max-w-[64ch] text-[14px] leading-relaxed text-ink-3">
+        Running a client roster? Plans meter articles, not seats or workspaces, so each client is a
+        workspace rather than a line item. Details on{' '}
+        <a href="/for-agencies" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">the agency page</a>,
+        or{' '}
+        <a href="mailto:hello@altorank.co?subject=AltoRank%20agency%20enquiry" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">write to a person</a>.
+      </p>
     </div>
   </section>
 

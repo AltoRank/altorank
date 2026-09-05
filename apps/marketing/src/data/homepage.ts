@@ -1,3 +1,5 @@
+import { INTEGRATIONS } from '@/data/integrations';
+
 export const STEPS = [
   {
     n: 1,
@@ -131,6 +133,19 @@ export const CMS_LIST: { code: string; name: string; soon?: boolean }[] = [
   { code: 'GT', name: 'Git', soon: true },
 ];
 
+/** Where a homepage integration tile lands.
+ *
+ *  Every tile pointed at /integrations, so eleven links went to one page and
+ *  the reader had to find their platform a second time. Each documented
+ *  connector has its own setup guide at /docs/{slug} (data/integrations.ts is
+ *  the source of truth for which ones do), so the tile goes straight there.
+ *  Anything undocumented, and Git while it is `soon`, still lands on the
+ *  overview. */
+export function cmsHref(code: string): string {
+  const i = INTEGRATIONS.find((x) => x.code === code);
+  return i && i.documented && !i.soon ? `/docs/${i.slug}` : '/integrations';
+}
+
 // The locale count the product actually supports. apps/web/lib/seo/locales.ts
 // defines 35 entries (lines 13-47).
 //
@@ -187,10 +202,10 @@ export const MORE_FEATURES: { title: string; desc: string; href?: string }[] = [
   { title: 'Written in your voice', desc: 'Three to five published pieces become a voice profile: tone, cadence, vocabulary and the phrases you refuse to use. One profile per workspace.' },
   { title: 'Search Console, read-only', desc: 'Connect it and the plan starts from your own clicks, impressions and positions rather than an estimate. It never writes to your property.' },
   { title: 'Rank and AI-citation tracking', desc: 'Positions per keyword, and snapshots of whether ChatGPT, Perplexity and AI Overviews cite your pages, per workspace.', href: '/geo/track-ai-citations-for-clients' },
-  { title: 'A workspace per client', desc: 'Each site or client gets its own voice, plan, connections and report. Agencies run a roster; nothing leaks between them.' },
+  { title: 'A workspace per client', desc: 'Each site or client gets its own voice, plan, connections and report. Agencies run a roster; nothing leaks between them.', href: '/for-agencies' },
   { title: 'White-label reporting', desc: 'Client-facing reports under your brand, in the free self-hosted build, not behind a paid tier.', href: '/open-source' },
   { title: 'Nine AI-readability checks', desc: 'The technical signals that decide whether an AI assistant can read a site at all, checked and fixed, not just scored.', href: '/geo' },
-  { title: 'Drive it from Claude Code', desc: 'An MCP server exposes research, drafting and review. It exposes no publish tool, so an agent cannot route around the approval either.' },
+  { title: 'Drive it from Claude Code', desc: 'An MCP server exposes research, drafting and review. It exposes no publish tool, so an agent cannot route around the approval either.', href: '/docs/mcp' },
   { title: `${LOCALE_COUNT} locales`, desc: 'Counted in the code rather than rounded up on a landing page. If you do not sell in English, the plan and the drafts follow the market you pick.' },
 ];
 

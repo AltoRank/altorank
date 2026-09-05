@@ -15,7 +15,13 @@ interface Props {
   /** Renders an <a> when set, a <button> otherwise. */
   href?: string;
   variant?: 'primary' | 'secondary' | 'light' | 'ghost-dark';
-  size?: 'sm' | 'md' | 'lg';
+  /**
+   * `sm` is the default and the site standard: the 28px geometry the nav bar
+   * uses, everywhere. The old 32px middle size had no explicit callers once
+   * the default moved, so it is gone; `lg` stays only for the closing CTA
+   * banner and the pages that still pass it.
+   */
+  size?: 'sm' | 'lg';
   /** Full width and a taller tap target below sm. */
   block?: boolean;
   /** Trailing chevron. Was hand-pasted at 11 call sites. */
@@ -29,7 +35,7 @@ interface Props {
 const {
   href,
   variant = 'primary',
-  size = 'md',
+  size = 'sm',
   block = false,
   arrow = false,
   type = 'button',
@@ -41,7 +47,7 @@ const {
 const classes = [
   'btn',
   `btn-${variant}`,
-  size !== 'md' && `btn-${size}`,
+  `btn-${size}`,
   block && 'btn-block',
   className,
 ]
