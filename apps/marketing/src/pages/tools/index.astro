@@ -1,51 +1,141 @@
 ---
 import Marketing from '@/layouts/Marketing.astro';
+import Button from '@/components/shared/Button.astro';
 import { getCollection } from 'astro:content';
+import { buildBreadcrumbSchema, buildFAQSchema, buildItemListSchema } from '@/lib/schema';
+import { APP_NAME, SITE_URL, PRIMARY_CTA } from '@/constants';
 
-// Show only published guides; drafts stay hidden until their content is useful.
+// Show only published tools; drafts stay hidden until their content is useful.
 const tools = (await getCollection('tools'))
   .filter((tool) => tool.data.published)
   .sort((a, b) => a.data.title.localeCompare(b.data.title));
 
-// Keep the hub noindex'd until it lists a real directory of guides, not a thin
-// one- or two-item page. Must match the sitemap threshold in astro.config.ts.
+// Keep the hub noindex'd until it lists a real directory, not a thin one- or
+// two-item page. Must match the sitemap threshold in astro.config.ts.
 const TOOLS_HUB_MIN = 3;
 const indexable = tools.length >= TOOLS_HUB_MIN;
+
+const withWidget = tools.filter((t) => t.data.widget).length;
+
+// Grouped by the content category, in a fixed order, so the page reads as a
+// directory rather than an alphabetical dump.
+const CATEGORIES: { key: (typeof tools)[number]['data']['category']; label: string; blurb: string }[] = [
+  { key: 'keyword', label: 'Keyword tools', blurb: 'From a raw list to a plan: cluster, compare, check.' },
+  { key: 'content', label: 'Content tools', blurb: 'Briefs, snippets and drafts, measured before they publish.' },
+  { key: 'technical', label: 'Technical SEO tools', blurb: 'The files and markup a crawler reads before it reads your copy.' },
+  { key: 'analytics', label: 'Analysis guides', blurb: 'How to read what the SERP is already telling you.' },
+];
+const grouped = CATEGORIES
+  .map((c) => ({ ...c, items: tools.filter((t) => t.data.category === c.key) }))
+  .filter((c) => c.items.length);
+
+const FAQ = [
+  { question: 'Are these SEO tools really free?', answer: `Yes. No signup, no email gate, no daily quota and no watermark on the output. Every interactive tool on this page runs in your browser; the text you paste is never sent to a server, ours or anyone else's.` },
+  { question: 'Why does a paid product give these away?', answer: `Because they are the small, repeatable checks, and the product is the recurring work around them: researching, drafting, checking and publishing articles for many sites at once, with a person approving each one. If a free tool solves your problem, take it. If you want the work done every week, that is ${APP_NAME}.` },
+  { question: 'Can I use them for client work?', answer: 'Yes, without attribution and without limit. Agencies run them on prospects as often as on clients.' },
+  { question: 'Do the tools use live search data?', answer: `No. Anything that needs live rankings or search volume is deliberately not on this page, because a tool that quietly calls an API is not free for long. The one exception is the growth plan, which does fetch live SERP data for a domain and says so.` },
+  { question: 'Which of these are guides rather than tools?', answer: `${tools.length - withWidget} of the ${tools.length} pages are written methods with a copyable template rather than an interactive widget. Each is labelled on this page, so you know before you click.` },
+];
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Free tools', href: '/tools' },
+];
+const structuredData = [
+  buildBreadcrumbSchema(breadcrumbs),
+  buildItemListSchema(tools.map((t) => ({ name: t.data.title, url: `${SITE_URL}/tools/${t.data.slug}`, description: t.data.description }))),
+  buildFAQSchema(FAQ),
+];
 ---
 
 <Marketing
-  title="Free SEO Guides and Templates | AltoRank"
-  description="Practical SEO guides and copy-paste templates: keyword clustering, content briefs, SERP analysis, and more."
+  title={`Free SEO Tools: ${withWidget} Browser-Based Checkers and Generators | ${APP_NAME}`}
+  description={`${withWidget} free SEO tools that run in your browser: keyword clustering, keyword gap, internal link checker, FAQ schema, robots.txt, slugs, SERP preview. No signup, no quota.`}
+  structuredData={structuredData}
   noindex={!indexable}
 >
-  <section class="border-b border-line py-[88px]">
-    <div class="mx-auto max-w-[1240px] px-8">
-      <div class="mx-auto mb-14 max-w-[720px] text-center">
-        <h1 class="mb-3 text-[42px] font-semibold leading-[1.08] tracking-[-0.025em]">
-          Free SEO guides and templates
+  <section class="border-b border-line py-12 md:py-16 lg:py-[72px]">
+    <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
+      <nav class="mb-8 flex items-center gap-2 text-xs text-ink-3">
+        <a href="/" class="transition-colors hover:text-ink">Home</a><span>/</span><span class="text-ink-2">Free tools</span>
+      </nav>
+      <div class="max-w-[760px]">
+        <h1 class="mb-4 text-[clamp(28px,5vw,42px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+          Free SEO tools that run in your browser
         </h1>
-        <p class="text-base text-ink-2">
-          Practical methods and copy-paste templates for keyword research, content planning, and SEO analysis, written for agencies running many client brands.
+        <p class="mb-5 text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+          {withWidget} working tools and {tools.length - withWidget} written methods for keyword research, content
+          planning and technical checks. No signup, no email gate, no quota, and nothing you paste leaves your
+          machine. Written for people running SEO across more than one site.
+        </p>
+        <div class="flex flex-wrap gap-2.5">
+          <Button href="/growth-plan" size="sm" arrow>Run the free growth plan on a domain</Button>
+          <Button href={PRIMARY_CTA.href} variant="secondary" size="sm">{PRIMARY_CTA.label}</Button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {grouped.map((c) => (
+    <section class="border-b border-line py-12 md:py-16">
+      <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
+        <div class="mb-6 max-w-[640px]">
+          <h2 class="mb-1.5 text-2xl font-semibold tracking-[-0.015em]">{c.label}</h2>
+          <p class="text-[15px] text-ink-2">{c.blurb}</p>
+        </div>
+        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {c.items.map((tool) => (
+            <a
+              href={`/tools/${tool.data.slug}/`}
+              class="group flex flex-col rounded-xl border border-line bg-bg p-5 transition-colors hover:border-accent"
+            >
+              <h3 class="mb-2 text-[17px] font-semibold leading-snug tracking-[-0.015em] transition-colors group-hover:text-accent-ink">
+                {tool.data.title}
+              </h3>
+              <p class="mb-3 text-sm leading-relaxed text-ink-2">
+                {tool.data.description}
+              </p>
+              <p class="mt-auto text-[12.5px] text-ink-3">
+                {tool.data.widget ? 'Interactive tool, runs in your browser' : 'Written method with a copyable template'}
+              </p>
+            </a>
+          ))}
+        </div>
+      </div>
+    </section>
+  ))}
+
+  <section class="border-b border-line bg-panel py-12 md:py-16">
+    <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
+      <div class="max-w-[760px]">
+        <h2 class="mb-3 text-2xl font-semibold tracking-[-0.015em]">Why nothing here asks for an email</h2>
+        <p class="mb-3 text-[15.5px] leading-relaxed text-ink-2">
+          A free tool that gates its result behind a form is a lead form with a longer introduction. Every
+          interactive tool on this page does its work in your browser, so there is no server cost to recover
+          and no reason to ask who you are. The one that does real fetching, the growth plan, still shows its
+          result before asking anything.
+        </p>
+        <p class="text-[15.5px] leading-relaxed text-ink-2">
+          The trade is straightforward. These solve the small, repeated problems. {APP_NAME} is for when you
+          want the whole loop run every week, across every site you look after, with a person approving each
+          article before it publishes. The engine is <a href="/open-source" class="underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">open source</a> if you would rather run it than buy it.
         </p>
       </div>
+    </div>
+  </section>
 
-      <div class="grid gap-6 md:grid-cols-2">
-        {tools.map((tool) => (
-          <a
-            href={`/tools/${tool.data.slug}/`}
-            class="group flex flex-col rounded-xl border border-line bg-bg p-6 transition-colors hover:border-accent-soft"
-          >
-            <span class="mb-3 w-fit rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-wider text-accent-ink">
-              {tool.data.category}
-            </span>
-            <h2 class="mb-2 text-xl font-semibold tracking-[-0.015em] group-hover:text-accent-ink transition-colors">
-              {tool.data.title}
-            </h2>
-            <p class="text-sm text-ink-2 leading-relaxed">
-              {tool.data.description}
-            </p>
-          </a>
-        ))}
+  <section class="border-b border-line py-12 md:py-16">
+    <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
+      <div class="max-w-[820px]">
+        <h2 class="mb-6 text-2xl font-semibold tracking-[-0.015em]">Common questions</h2>
+        <div class="flex flex-col gap-2">
+          {FAQ.map((item) => (
+            <details class="group rounded-lg border border-line bg-bg">
+              <summary class="cursor-pointer list-none px-5 py-4 text-[15px] font-medium text-ink [&::-webkit-details-marker]:hidden">{item.question}</summary>
+              <p class="border-t border-line-soft px-5 py-4 text-[14.5px] leading-relaxed text-ink-2">{item.answer}</p>
+            </details>
+          ))}
+        </div>
       </div>
     </div>
   </section>
