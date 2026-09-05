@@ -52,8 +52,20 @@ export function decrypt(encoded: string): string {
 
 // ─── Config-level encryption helpers ──────────────────────────────────────────
 
-/** Fields that contain secrets and should be encrypted at rest. */
-const SENSITIVE_CONFIG_FIELDS = new Set([
+/**
+ * Fields that contain secrets and should be encrypted at rest.
+ *
+ * Versioned, because the set is part of the stored format: `decryptConfig`
+ * decrypts every listed field it finds, so a field added to the list is
+ * decrypted on rows written before it was there - and those hold plaintext,
+ * which GCM rejects. Rows record the version they were written with
+ * (`__encrypted: true` is version 1) and are read with that version's list.
+ *
+ *   v1  the original set. `token` was missing, so the git adapter's GitHub
+ *       token sat in the clear in workspace_integrations.config.
+ *   v2  adds `token` (git, wordpress-plugin).
+ */
+const SENSITIVE_CONFIG_FIELDS_V1 = new Set([
   "applicationPassword",
   "accessToken",
   "adminToken",
@@ -64,25 +76,32 @@ const SENSITIVE_CONFIG_FIELDS = new Set([
   "secret",
   "username",
 ]);
+const SENSITIVE_CONFIG_FIELDS_V2 = new Set([...SENSITIVE_CONFIG_FIELDS_V1, "token"]);
+const CURRENT_VERSION = 2;
+
+function fieldsForVersion(version: unknown): Set<string> {
+  return version === 2 ? SENSITIVE_CONFIG_FIELDS_V2 : SENSITIVE_CONFIG_FIELDS_V1;
+}
 
 /** Encrypt sensitive fields in a config object before storage. */
 export function encryptConfig(config: Record<string, unknown>): Record<string, unknown> {
   const result = { ...config };
   for (const key of Object.keys(result)) {
-    if (SENSITIVE_CONFIG_FIELDS.has(key) && typeof result[key] === "string") {
+    if (SENSITIVE_CONFIG_FIELDS_V2.has(key) && typeof result[key] === "string") {
       result[key] = encrypt(result[key] as string);
     }
   }
-  result.__encrypted = true;
+  result.__encrypted = CURRENT_VERSION;
   return result;
 }
 
 /** Decrypt sensitive fields in a stored config object. */
 export function decryptConfig(config: Record<string, unknown>): Record<string, unknown> {
   if (!config.__encrypted) return config;
+  const fields = fieldsForVersion(config.__encrypted);
   const result = { ...config };
   for (const key of Object.keys(result)) {
-    if (SENSITIVE_CONFIG_FIELDS.has(key) && typeof result[key] === "string") {
+    if (fields.has(key) && typeof result[key] === "string") {
       result[key] = decrypt(result[key] as string);
     }
   }
