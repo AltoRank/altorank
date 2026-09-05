@@ -41,6 +41,9 @@ function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Sunday is 0, as in `publishing_cadences.days_of_week` and `Date#getUTCDay`. */
+export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
 /** How many entries a month at `weeklyLimit` should hold. */
 export function monthlyTarget(weeklyLimit: number): number {
   const weekly = Math.max(0, Math.min(7, Math.floor(weeklyLimit)));
@@ -52,15 +55,28 @@ export function monthlyTarget(weeklyLimit: number): number {
  *
  * 7 a week is one a day; 1 a week is every seventh day; anything in between
  * spaces entries evenly rather than front-loading the week. Weekends are not
- * skipped: a blog that publishes daily publishes on Saturday too, and the
- * cadence table already exists for people who want specific days.
+ * skipped by default: a blog that publishes daily publishes on Saturday too.
  *
  * `maxEntries` lets a caller that already holds some of the 60 ask only for
  * the room that is left.
+ *
+ * `daysOfWeek` is the cadence table's choice of days. When it is given and not
+ * empty, every entry lands on one of those weekdays: each seven-day window
+ * from `from` gets its `weeklyLimit` entries spread over the allowed days in
+ * that window, evenly when there are more days than entries and round-robin
+ * (two on a Monday) when there are more entries than days. A pace higher than
+ * the number of chosen days is not an error - generation still runs at that
+ * pace and the extra drafts wait in review - it just means some days carry
+ * two.
+ *
+ * The calendar plans at most one a day when no days are chosen: above 7 a
+ * week the live queue supplies the rest (cron/generate falls back to it when
+ * nothing planned is due), so the horizon shows what the schedule promises
+ * rather than two chips on every square.
  */
 export function buildPlan(
   recommendations: Pick<KeywordRecommendation, "keywordId" | "term" | "action" | "quality">[],
-  opts: { weeklyLimit: number; from?: Date; horizonDays?: number; maxEntries?: number },
+  opts: { weeklyLimit: number; from?: Date; horizonDays?: number; maxEntries?: number; daysOfWeek?: readonly number[] },
 ): PlannedEntry[] {
   const weekly = Math.max(0, Math.min(7, Math.floor(opts.weeklyLimit)));
   if (weekly === 0) return [];
@@ -69,25 +85,125 @@ export function buildPlan(
   const start = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
   const cap = Math.max(0, Math.min(PLAN_MAX_ENTRIES, opts.maxEntries ?? PLAN_MAX_ENTRIES));
   const count = Math.min(cap, Math.ceil((weekly * horizon) / 7));
-  const step = 7 / weekly;
 
   const usable = recommendations.filter((r) => r.action === "write" && r.quality === "ok" && r.keywordId);
+  const offsets = planOffsets(weekly, horizon, count, normaliseDays(opts.daysOfWeek), new Date(start).getUTCDay());
   const out: PlannedEntry[] = [];
-  for (let i = 0; i < Math.min(count, usable.length); i++) {
-    const offset = Math.round(i * step);
-    if (offset >= horizon) break;
-    out.push({ keywordId: usable[i].keywordId, term: usable[i].term, date: isoDate(new Date(start + offset * DAY_MS)) });
+  for (let i = 0; i < Math.min(offsets.length, usable.length); i++) {
+    out.push({ keywordId: usable[i].keywordId, term: usable[i].term, date: isoDate(new Date(start + offsets[i] * DAY_MS)) });
   }
   return out;
 }
 
-type ExistingEntry = { keyword_id: string | null; keyword: string | null; scheduled_date: string; article_id: string | null };
+/** Distinct, in range, sorted; undefined when nothing usable was given. */
+function normaliseDays(days: readonly number[] | undefined): Weekday[] | undefined {
+  if (!days) return undefined;
+  const set = new Set<number>();
+  for (const d of days) if (Number.isInteger(d) && d >= 0 && d <= 6) set.add(d);
+  if (set.size === 0) return undefined;
+  return [...set].sort((a, b) => a - b) as Weekday[];
+}
+
+/**
+ * Day offsets from the start, one per planned entry, ascending.
+ *
+ * Without chosen days this is the even spacing the plan has always used.
+ * With them, each seven-day window is filled from the allowed dates it holds.
+ */
+function planOffsets(
+  weekly: number,
+  horizon: number,
+  count: number,
+  days: Weekday[] | undefined,
+  startWeekday: number,
+): number[] {
+  if (!days) {
+    const step = 7 / weekly;
+    const out: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const offset = Math.round(i * step);
+      if (offset >= horizon) break;
+      out.push(offset);
+    }
+    return out;
+  }
+
+  const out: number[] = [];
+  for (let weekStart = 0; weekStart < horizon && out.length < count; weekStart += 7) {
+    const allowed: number[] = [];
+    for (let d = weekStart; d < weekStart + 7 && d < horizon; d++) {
+      if (days.includes(((startWeekday + d) % 7) as Weekday)) allowed.push(d);
+    }
+    if (allowed.length === 0) continue;
+    const n = Math.min(weekly, count - out.length);
+    for (let i = 0; i < n; i++) {
+      const idx = allowed.length >= n ? Math.floor((i * allowed.length) / n) : i % allowed.length;
+      out.push(allowed[idx]);
+    }
+  }
+  return out.sort((a, b) => a - b);
+}
+
+/** What a re-plan changes, for saying so before it happens. */
+export interface PlanDiff {
+  /** Entries that keep both their keyword and their day. */
+  unchanged: number;
+  /** Planned keywords that stay planned but land on a different day. */
+  moved: number;
+  /** Keywords newly planned. */
+  added: number;
+  /** Planned keywords that leave the plan (they stay in the queue, unwritten). */
+  removed: number;
+}
+
+/**
+ * Compare the unfulfilled plan with what a re-plan would write. Pure, so the
+ * confirmation copy can be tested; keyed by keyword id, because the term is
+ * what the person sees but the id is what the row points at.
+ */
+export function diffPlan(
+  existing: readonly Pick<PlannedEntry, "keywordId" | "date">[],
+  next: readonly Pick<PlannedEntry, "keywordId" | "date">[],
+): PlanDiff {
+  const before = new Map(existing.map((e) => [e.keywordId, e.date]));
+  const after = new Map(next.map((e) => [e.keywordId, e.date]));
+  let unchanged = 0;
+  let moved = 0;
+  let added = 0;
+  for (const [id, date] of after) {
+    if (!before.has(id)) added++;
+    else if (before.get(id) === date) unchanged++;
+    else moved++;
+  }
+  let removed = 0;
+  for (const id of before.keys()) if (!after.has(id)) removed++;
+  return { unchanged, moved, added, removed };
+}
+
+/** The plan sentence: "This moves 6 planned articles; nothing already written changes." */
+export function describePlanDiff(d: PlanDiff): string {
+  const parts: string[] = [];
+  if (d.moved) parts.push(`moves ${d.moved} planned ${d.moved === 1 ? "article" : "articles"}`);
+  if (d.added) parts.push(`adds ${d.added}`);
+  if (d.removed) parts.push(`unplans ${d.removed}`);
+  if (parts.length === 0) return "Nothing on the calendar changes; nothing already written changes.";
+  return `This ${parts.join(", ")}; nothing already written changes.`;
+}
+
+
+type ExistingEntry = {
+  keyword_id: string | null;
+  keyword: string | null;
+  scheduled_date: string;
+  article_id: string | null;
+  status: "queue" | "scheduled";
+};
 
 /** Everything on the calendar that still counts against the cap. */
 async function scheduledEntries(supabase: SupabaseClient, workspaceId: string): Promise<ExistingEntry[]> {
   const { data } = await supabase
     .from("calendar_entries")
-    .select("keyword_id, keyword, scheduled_date, article_id")
+    .select("keyword_id, keyword, scheduled_date, article_id, status")
     .eq("workspace_id", workspaceId)
     .in("status", ["queue", "scheduled"]);
   return (data ?? []) as ExistingEntry[];
@@ -98,38 +214,56 @@ export async function countScheduled(supabase: SupabaseClient, workspaceId: stri
   return (await scheduledEntries(supabase, workspaceId)).length;
 }
 
+/** The unfulfilled plan: queued entries with no article yet. */
+export async function readPlannedEntries(
+  supabase: SupabaseClient,
+  workspaceId: string,
+): Promise<PlannedEntry[]> {
+  const { data } = await supabase
+    .from("calendar_entries")
+    .select("keyword_id, keyword, scheduled_date")
+    .eq("workspace_id", workspaceId)
+    .eq("status", "queue")
+    .is("article_id", null)
+    .order("scheduled_date", { ascending: true });
+  return (data ?? [])
+    .filter((r) => r.keyword_id)
+    .map((r) => ({ keywordId: r.keyword_id as string, term: r.keyword as string, date: r.scheduled_date as string }));
+}
+
+export interface PlanOptions {
+  from?: Date;
+  /** Weekdays the site publishes on, from its cadence. Absent = any day. */
+  daysOfWeek?: readonly number[];
+  /**
+   * `replace` (the default, what onboarding does) drops queued entries that
+   * never became an article and lays the month out again. `top-up` keeps every
+   * existing entry - including ones a person moved - and only appends, from the
+   * day after the last one, until the month holds what the pace promises. The
+   * cron uses `top-up`; a plan someone has edited must not be rewritten under
+   * them.
+   */
+  mode?: "replace" | "top-up";
+}
+
 /**
- * Write the plan for a workspace.
- *
- * `replace` (the default, what onboarding does) drops queued entries that
- * never became an article and lays the month out again. `top-up` keeps every
- * existing entry - including ones a person moved - and only appends, from the
- * day after the last one, until the month holds what the pace promises. The
- * cron uses `top-up`; a plan someone has edited must not be rewritten under
- * them.
- *
- * Keywords a person removed from the planner are skipped in both modes.
+ * The plan `schedulePlan` would write, computed without writing it. One
+ * function so the preview and the write cannot disagree about the room left,
+ * the keywords a person removed from the planner, or the entries already taken.
  */
-export async function schedulePlan(
+async function planFor(
   supabase: SupabaseClient,
   workspaceId: string,
   weeklyLimit: number,
-  from: Date = new Date(),
-  opts: { mode?: "replace" | "top-up" } = {},
-): Promise<PlannedEntry[]> {
+  opts: PlanOptions,
+): Promise<{ plan: PlannedEntry[]; recs: KeywordRecommendation[] }> {
   const mode = opts.mode ?? "replace";
-  if (mode === "replace") {
-    await supabase
-      .from("calendar_entries")
-      .delete()
-      .eq("workspace_id", workspaceId)
-      .eq("status", "queue")
-      .is("article_id", null);
-  }
-
-  const existing = await scheduledEntries(supabase, workspaceId);
+  const all = await scheduledEntries(supabase, workspaceId);
+  // In replace mode the unfulfilled queue is about to be dropped, so it does
+  // not count against the cap and its keywords are free to be planned again.
+  const existing = mode === "replace" ? all.filter((e) => e.status !== "queue" || e.article_id) : all;
   const room = PLAN_MAX_ENTRIES - existing.length;
-  if (room <= 0) return [];
+  if (room <= 0) return { plan: [], recs: [] };
 
   const { data: excludedRows } = await supabase
     .from("keywords")
@@ -144,12 +278,12 @@ export async function schedulePlan(
     (r) => !excluded.has(r.keywordId) && !takenIds.has(r.keywordId) && !takenTerms.has(r.term.toLowerCase()),
   );
 
-  let start = from;
+  let start = opts.from ?? new Date();
   let maxEntries = room;
   if (mode === "top-up") {
     const unwritten = existing.filter((e) => !e.article_id).length;
     maxEntries = Math.min(room, Math.max(0, monthlyTarget(weeklyLimit) - unwritten));
-    if (maxEntries === 0) return [];
+    if (maxEntries === 0) return { plan: [], recs };
     const last = existing.map((e) => e.scheduled_date).sort().at(-1);
     if (last) {
       const next = new Date(new Date(`${last}T00:00:00Z`).getTime() + DAY_MS);
@@ -157,7 +291,48 @@ export async function schedulePlan(
     }
   }
 
-  const plan = buildPlan(recs, { weeklyLimit, from: start, maxEntries });
+  const plan = buildPlan(recs, { weeklyLimit, from: start, maxEntries, daysOfWeek: opts.daysOfWeek });
+  return { plan, recs };
+}
+
+/**
+ * What `schedulePlan` would write at this pace and these days, and how that
+ * differs from the plan as it stands. Reads only.
+ */
+export async function previewPlan(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  weeklyLimit: number,
+  opts: PlanOptions = {},
+): Promise<{ next: PlannedEntry[]; diff: PlanDiff }> {
+  const [{ plan: next }, existing] = await Promise.all([
+    planFor(supabase, workspaceId, weeklyLimit, opts),
+    readPlannedEntries(supabase, workspaceId),
+  ]);
+  return { next, diff: diffPlan(existing, next) };
+}
+
+/**
+ * Write the plan for a workspace. See `PlanOptions.mode` for what is kept.
+ *
+ * Keywords a person removed from the planner are skipped in both modes.
+ */
+export async function schedulePlan(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  weeklyLimit: number,
+  opts: PlanOptions = {},
+): Promise<PlannedEntry[]> {
+  const mode = opts.mode ?? "replace";
+  const { plan, recs } = await planFor(supabase, workspaceId, weeklyLimit, opts);
+  if (mode === "replace") {
+    await supabase
+      .from("calendar_entries")
+      .delete()
+      .eq("workspace_id", workspaceId)
+      .eq("status", "queue")
+      .is("article_id", null);
+  }
   if (plan.length === 0) return plan;
   const { error } = await supabase.from("calendar_entries").insert(
     plan.map((p) => ({

@@ -195,7 +195,7 @@ async function topUpPlans(supabase: ReturnType<typeof createServiceClient>): Pro
       continue;
     }
     try {
-      const added = await schedulePlan(supabase, workspaceId, pace, new Date(), { mode: "top-up" });
+      const added = await schedulePlan(supabase, workspaceId, pace, { mode: "top-up" });
       out.push({ workspaceId, queued, target, added: added.length });
     } catch (err) {
       out.push({ workspaceId, queued, target, added: 0, error: err instanceof Error ? err.message : "unknown error" });

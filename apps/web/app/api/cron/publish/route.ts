@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { cronSecretFrom } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { publishArticleCore } from "@/lib/publishing/core";
-import { isCadenceDue, cadenceLocalDate } from "@/lib/publishing/cadence";
+import { isCadenceDue, cadenceLocalDate, withoutPaused } from "@/lib/publishing/cadence";
 import type { PublishingCadence } from "@/lib/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { urlIsLive, deriveBlogBaseUrl } from "@/lib/cms/blog-url";
@@ -27,6 +27,21 @@ export async function GET(request: Request) {
   const now = new Date();
   const results: Result[] = [];
 
+  // A paused site publishes nothing, however it was paused (by hand from the
+  // switcher, or account-wide from Billing). The other crons filter on the
+  // workspace row; here the queue is articles and cadences, so the paused set
+  // is read once and both phases skip it. A read failure is a failure: an
+  // empty set would mean "nothing is paused", and publishing to a paused
+  // client's site is exactly the mistake this exists to prevent.
+  const { data: pausedRows, error: pausedError } = await supabase
+    .from("workspaces")
+    .select("id")
+    .eq("status", "paused");
+  if (pausedError) {
+    return NextResponse.json({ error: pausedError.message }, { status: 500 });
+  }
+  const pausedWorkspaceIds = new Set((pausedRows ?? []).map((w) => w.id as string));
+
   // ── Phase 1: per-article overrides (scheduled_at <= now) ──
   const { data: overrideArticles, error: overrideError } = await supabase
     .from("articles")
@@ -44,7 +59,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: overrideError.message }, { status: 500 });
   }
 
-  for (const article of overrideArticles ?? []) {
+  for (const article of withoutPaused(overrideArticles ?? [], pausedWorkspaceIds)) {
     try {
       await publishArticleCore(supabase, article.id);
       await supabase.from("publish_log").insert({
@@ -90,7 +105,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: cadenceError.message }, { status: 500 });
   }
 
-  for (const cadence of (cadences ?? []) as PublishingCadence[]) {
+  for (const cadence of withoutPaused((cadences ?? []) as PublishingCadence[], pausedWorkspaceIds)) {
     // "Already published today" is what keeps this idempotent now that the
     // window is gone. Without it a cron running more than once a day would
     // publish the whole queue in a single day. publish_log already records

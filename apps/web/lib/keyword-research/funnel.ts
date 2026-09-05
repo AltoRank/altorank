@@ -9,6 +9,7 @@
 
 import { normalizeTarget } from "@/lib/seo/recommendations";
 import { PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
+import { computeCapacity } from "@/lib/plan/capacity";
 import type { PlanCapacity, ResearchCandidate, ResearchFunnel } from "./types";
 
 /** Below this the term is real but not worth an article slot. */
@@ -31,8 +32,10 @@ export function isEasyWin(c: Pick<ResearchCandidate, "volume" | "difficulty">): 
 
 /** "N of 60 scheduled · M slots available" comes from here and nowhere else. */
 export function planCapacity(scheduled: number, cap = PLAN_MAX_ENTRIES): PlanCapacity {
-  const clamped = Math.max(0, Math.floor(scheduled));
-  return { scheduled: clamped, cap, slots: Math.max(0, cap - clamped) };
+  // The arithmetic lives in lib/plan/capacity so the Articles-plan popover and
+  // the research drawer cannot quote different room; this keeps the drawer's shape.
+  const c = computeCapacity({ scheduled, weeklyLimit: null, cap });
+  return { scheduled: c.scheduled, cap: c.cap, slots: c.available };
 }
 
 export function capacityLine(c: PlanCapacity): string {
