@@ -111,7 +111,9 @@ export class WordPressAdapter implements CMSAdapter {
     const res = await fetch(`${this.baseUrl}/wp-json/wp/v2/posts`, {
       method: "POST",
       headers: this.jsonHeaders(),
-      body: JSON.stringify(await this.postBody(article, "publish")),
+      // A draft connection saves the post for someone to publish from the
+      // admin; the REST field is the same one unpublish() writes.
+      body: JSON.stringify(await this.postBody(article, article.publishMode === "draft" ? "draft" : "publish")),
     });
 
     if (!res.ok) {
@@ -130,7 +132,9 @@ export class WordPressAdapter implements CMSAdapter {
     const res = await fetch(`${this.baseUrl}/wp-json/wp/v2/posts/${externalId}`, {
       method: "PUT",
       headers: this.jsonHeaders(),
-      body: JSON.stringify(await this.postBody(article, "publish")),
+      // A draft connection saves the post for someone to publish from the
+      // admin; the REST field is the same one unpublish() writes.
+      body: JSON.stringify(await this.postBody(article, article.publishMode === "draft" ? "draft" : "publish")),
     });
 
     if (!res.ok) {

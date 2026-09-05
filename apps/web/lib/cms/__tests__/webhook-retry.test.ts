@@ -113,6 +113,9 @@ describe("WebhookAdapter contract", () => {
     expect(opts.headers["X-Webhook-Signature"]).toMatch(/^sha256=[0-9a-f]{64}$/);
     expect(JSON.parse(opts.body)).toEqual({
       event: "publish_articles",
+      // The connection's publishing behaviour rides in the envelope (#83);
+      // a payload that does not say defaults to a live publish.
+      publishMode: "publish",
       articles: [
         {
           id: "a1",

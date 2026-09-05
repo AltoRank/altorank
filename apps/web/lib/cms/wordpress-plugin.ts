@@ -88,9 +88,10 @@ export class WordPressPluginAdapter implements CMSAdapter {
       tags: article.tags ?? [],
       created_at: article.createdAt,
       // The dashboard's approval gate has already passed by the time this runs.
-      // The plugin's own "post as draft" setting may still hold it, and says so
-      // in the response.
-      status: "publish",
+      // A draft connection asks the plugin for a draft; the plugin's own "post
+      // as draft" setting may hold a live request too, and says so in the
+      // response.
+      status: article.publishMode === "draft" ? "draft" : "publish",
     };
   }
 

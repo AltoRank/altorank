@@ -7,6 +7,7 @@ import { resolveCMSAdapter } from "@/lib/cms/adapter";
 import { encryptConfig, decryptConfig } from "@/lib/crypto";
 import type { CMSConfig } from "@/lib/types";
 import { deriveBlogBaseUrl } from "@/lib/cms/blog-url";
+import { assertPublishMode, DEFAULT_PUBLISH_MODE, type PublishMode } from "@/lib/cms/publish-mode";
 import { z } from "zod";
 
 const wordpressSchema = z.object({
@@ -72,6 +73,12 @@ const notionSchema = z.object({
   type: z.literal("notion"),
   databaseId: z.string().min(1),
   integrationToken: z.string().min(1),
+  // The draft story for Notion: a Status property to set. Optional, because a
+  // connection that publishes live needs none; required in effect for a draft
+  // connection, which assertPublishMode enforces below.
+  statusProperty: z.string().optional(),
+  draftStatus: z.string().optional(),
+  publishedStatus: z.string().optional(),
 });
 
 const hubspotSchema = z.object({
@@ -151,15 +158,26 @@ export async function deriveBlogUrl(siteUrl: string) {
   return deriveBlogBaseUrl(siteUrl);
 }
 
+const publishModeSchema = z.enum(["publish", "draft"]);
+
 export async function connectIntegration(
   workspaceId: string,
   integrationId: string,
-  config: CMSConfig
+  config: CMSConfig,
+  /**
+   * Drafts unless the person chose otherwise. Refused outright when the
+   * platform cannot save a draft, before the connection test and before
+   * anything is stored: a connection that says "draft" and publishes live
+   * is the one outcome this must never produce.
+   */
+  publishMode: PublishMode = DEFAULT_PUBLISH_MODE,
 ) {
   await requireAuth();
 
   // Validate config
   const parsed = configSchema.parse(config);
+  const mode = publishModeSchema.parse(publishMode);
+  assertPublishMode(parsed, mode);
 
   // Test connection before saving (uses plaintext credentials)
   const adapter = resolveCMSAdapter(parsed);
@@ -180,6 +198,7 @@ export async function connectIntegration(
       workspace_id: workspaceId,
       integration_id: integrationId,
       config: encryptedConfig,
+      publish_mode: mode,
       connected_at: new Date().toISOString(),
     }, {
       onConflict: "workspace_id,integration_id",

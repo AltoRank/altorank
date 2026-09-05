@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { cronSecretFrom } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
-import { publishArticleCore } from "@/lib/publishing/core";
+import { publishArticleCore, PublishError } from "@/lib/publishing/core";
+import { recordPublish } from "@/lib/publishing/log";
 import { isCadenceDue, cadenceLocalDate, withoutPaused } from "@/lib/publishing/cadence";
 import type { PublishingCadence } from "@/lib/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -61,12 +62,14 @@ export async function GET(request: Request) {
 
   for (const article of withoutPaused(overrideArticles ?? [], pausedWorkspaceIds)) {
     try {
-      await publishArticleCore(supabase, article.id);
-      await supabase.from("publish_log").insert({
-        article_id: article.id,
-        workspace_id: article.workspace_id,
+      const result = await publishArticleCore(supabase, article.id);
+      await recordPublish(supabase, {
+        articleId: article.id,
+        workspaceId: article.workspace_id,
         status: "success",
-        triggered_by: "cron",
+        triggeredBy: "cron",
+        destinationId: result.destinationId,
+        publishMode: result.publishMode,
       });
       results.push({
         articleId: article.id,
@@ -75,16 +78,20 @@ export async function GET(request: Request) {
       });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
+      // Which connection it was going through, so a retry can use the same one.
+      const context = err instanceof PublishError ? err.context : null;
       await supabase
         .from("articles")
         .update({ status: "error", updated_at: now.toISOString() })
         .eq("id", article.id);
-      await supabase.from("publish_log").insert({
-        article_id: article.id,
-        workspace_id: article.workspace_id,
+      await recordPublish(supabase, {
+        articleId: article.id,
+        workspaceId: article.workspace_id,
         status: "error",
         error: errorMsg,
-        triggered_by: "cron",
+        triggeredBy: "cron",
+        destinationId: context?.destinationId,
+        publishMode: context?.publishMode,
       });
       results.push({
         articleId: article.id,
@@ -150,12 +157,14 @@ export async function GET(request: Request) {
     if (!article) continue;
 
     try {
-      await publishArticleCore(supabase, article.id);
-      await supabase.from("publish_log").insert({
-        article_id: article.id,
-        workspace_id: article.workspace_id,
+      const result = await publishArticleCore(supabase, article.id);
+      await recordPublish(supabase, {
+        articleId: article.id,
+        workspaceId: article.workspace_id,
         status: "success",
-        triggered_by: "cron",
+        triggeredBy: "cron",
+        destinationId: result.destinationId,
+        publishMode: result.publishMode,
       });
       results.push({
         articleId: article.id,
@@ -164,16 +173,20 @@ export async function GET(request: Request) {
       });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
+      // Which connection it was going through, so a retry can use the same one.
+      const context = err instanceof PublishError ? err.context : null;
       await supabase
         .from("articles")
         .update({ status: "error", updated_at: now.toISOString() })
         .eq("id", article.id);
-      await supabase.from("publish_log").insert({
-        article_id: article.id,
-        workspace_id: article.workspace_id,
+      await recordPublish(supabase, {
+        articleId: article.id,
+        workspaceId: article.workspace_id,
         status: "error",
         error: errorMsg,
-        triggered_by: "cron",
+        triggeredBy: "cron",
+        destinationId: context?.destinationId,
+        publishMode: context?.publishMode,
       });
       results.push({
         articleId: article.id,

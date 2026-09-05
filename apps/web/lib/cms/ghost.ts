@@ -61,7 +61,7 @@ export class GhostAdapter implements CMSAdapter {
               title: article.title,
               slug: article.slug,
               html: article.html,
-              status: "published",
+              status: article.publishMode === "draft" ? "draft" : "published",
               meta_description: article.metaDescription ?? "",
               tags: article.tags?.map((t) => ({ name: t })) ?? [],
             },

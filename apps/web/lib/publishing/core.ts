@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";
+import type { CMSAdapter, PublishMode, PublishPayload, PublishResult } from "@/lib/cms/types";
 import { tiptapToHtml } from "@/lib/cms/html";
 import { fetchLinkTargets, resolveInternalLinks } from "@/lib/seo/link-resolver";
 import { submitForIndexing, type IndexingResult } from "@/lib/seo/indexing";
@@ -13,12 +14,64 @@ import { settleExchangeForArticle } from "@/lib/seo/exchange";
 import { createServiceClient } from "@/lib/supabase/server";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
 
+/** Which connection an attempt went through, and how. Written to publish_log. */
+export type PublishContext = {
+  destinationId: string;
+  publishMode: PublishMode;
+};
+
+/**
+ * A publish that failed after its destination was resolved.
+ *
+ * The message is whatever the adapter or the database said - callers and
+ * tests match on those - and the context is what the log needs to make the
+ * failure retryable: a retry must go back through the same connection, and a
+ * workspace with two CMSs cannot otherwise tell which one that was.
+ */
+export class PublishError extends Error {
+  constructor(
+    message: string,
+    public readonly context: PublishContext,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = "PublishError";
+  }
+
+  static wrap(err: unknown, context: PublishContext): PublishError {
+    if (err instanceof PublishError) return err;
+    const message = err instanceof Error ? err.message : String(err);
+    return new PublishError(message, context, { cause: err });
+  }
+}
+
+/**
+ * An adapter that can edit a post it already created. Read off the instance
+ * rather than the interface because not every adapter has one yet; the
+ * signature matches the optional `update` the refresh engine adds, so an
+ * adapter gaining it is picked up here with no further change.
+ */
+function updater(
+  adapter: CMSAdapter,
+): ((externalId: string, article: PublishPayload) => Promise<PublishResult>) | null {
+  const candidate = (adapter as { update?: unknown }).update;
+  return typeof candidate === "function"
+    ? (candidate as (externalId: string, article: PublishPayload) => Promise<PublishResult>).bind(adapter)
+    : null;
+}
+
 /**
  * Publish a single article to its connected CMS.
  * Accepts a SupabaseClient so both server actions (user context)
  * and cron jobs (service role) can reuse the same logic.
  *
  * Does NOT call revalidatePath — callers handle cache invalidation.
+ *
+ * Resolves with the adapter's result plus the connection and mode it used, so
+ * the caller can log them. Rejects with a PublishError carrying the same
+ * context once a destination has been chosen; before that (article missing,
+ * not approved, nothing connected) with a plain Error, since there is nothing
+ * to retry through.
  */
 export async function publishArticleCore(
   supabase: SupabaseClient,
@@ -30,7 +83,7 @@ export async function publishArticleCore(
    * the first connection.
    */
   opts: { destinationId?: string | null } = {},
-) {
+): Promise<PublishResult & PublishContext> {
   const { data: article, error: articleErr } = await supabase
     .from("articles")
     .select("*")
@@ -66,7 +119,44 @@ export async function publishArticleCore(
     opts.destinationId,
   );
   const cmsIntegration = (wsIntegrations ?? []).find((wi) => wi.id === destination.id)!;
+  const context: PublishContext = {
+    destinationId: destination.id,
+    publishMode: destination.publishMode,
+  };
 
+  try {
+    const result = await pushToDestination(supabase, article as ArticleRow, articleId, cmsIntegration, context);
+    return { ...result, ...context };
+  } catch (err) {
+    throw PublishError.wrap(err, context);
+  }
+}
+
+/** The columns of the articles row this module reads. Selected with `*`. */
+type ArticleRow = {
+  workspace_id: string;
+  title: string;
+  slug: string;
+  content: unknown;
+  meta_description: string | null;
+  featured_image_url: string | null;
+  external_id: string | null;
+  published_url: string | null;
+  /** Read by the webhook contract's Markdown rendering and SEO meta. */
+  keyword: string | null;
+  created_at: string;
+  published_at: string | null;
+};
+
+/** Everything after the destination is known; failures here are retryable. */
+async function pushToDestination(
+  supabase: SupabaseClient,
+  article: ArticleRow,
+  articleId: string,
+  cmsIntegration: { config: unknown },
+  context: PublishContext,
+): Promise<PublishResult> {
+  const { publishMode } = context;
   const config = decryptConfig(cmsIntegration.config as Record<string, unknown>) as CMSConfig;
   const adapter = resolveCMSAdapter(config, {
     /**
@@ -136,7 +226,7 @@ export async function publishArticleCore(
     // Branding is never worth failing a publish over.
   }
 
-  const result = await adapter.publish({
+  const payload: PublishPayload = {
     id: articleId,
     title: article.title,
     html,
@@ -162,7 +252,32 @@ export async function publishArticleCore(
     focusKeyword: article.keyword ?? undefined,
     createdAt: article.created_at ?? undefined,
     featuredImageUrl: article.featured_image_url ?? undefined,
-  });
+    publishMode,
+  };
+
+  /**
+   * Never a second copy. An article that already has an external id has a
+   * post on this CMS - typically a retry after the first attempt got as far
+   * as creating it, or a git publish whose URL never confirmed - and a fresh
+   * create would leave two. Adapters that can edit in place do; git's publish
+   * is already an upsert keyed on the file path. Anything else is refused,
+   * because the person can resolve a duplicate-or-not question and this code
+   * cannot.
+   */
+  const existingId: string | null = article.external_id ?? null;
+  const update = updater(adapter);
+  let result: PublishResult;
+  if (existingId && update) {
+    result = await update(existingId, payload);
+  } else if (existingId && config.type !== "git") {
+    throw new Error(
+      `This article already exists on ${config.type}${
+        article.published_url ? ` (${article.published_url})` : ""
+      } and that destination cannot be updated in place from here. Unpublish it first, or edit it on the CMS.`,
+    );
+  } else {
+    result = await adapter.publish(payload);
+  }
 
   const { error: updateErr } = await supabase
     .from("articles")
@@ -172,13 +287,22 @@ export async function publishArticleCore(
       // republish or an unpublish reads this to reach the same system.
       cms: config.type,
       external_id: result.externalId,
-      published_url: result.url,
+      // A draft may have no public address yet (Wix returns none); null says
+      // so, where "" would render as a link to nowhere.
+      published_url: result.url || null,
       published_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
     .eq("id", articleId);
 
   if (updateErr) throw new Error(updateErr.message);
+
+  /**
+   * A draft is not on the web. Telling IndexNow or Search Console about a
+   * URL the CMS is still holding back would submit a 404 under the client's
+   * domain, and the exchange settles on a publish, which this is not yet.
+   */
+  if (publishMode === "draft") return result;
 
   /**
    * If this article was written for somebody else's exchange request, the

@@ -14,12 +14,14 @@
 //
 // and one of these bodies, discriminated by `event`:
 //
-//   { "event": "publish_articles", "articles": [ Article, ... ] }
+//   { "event": "publish_articles", "publishMode": "draft" | "publish", "articles": [ Article, ... ] }
 //       New articles to publish. Always an array, even for one article, so a
 //       consumer written for the batch case needs no second code path.
-//   { "event": "update_article", "article": Article }
-//       An article that already went out and has changed (a refresh). Match it
-//       on `id`, or on `slug` if you did not keep ids.
+//       `publishMode` is what the connection asked for; your endpoint decides
+//       what a draft looks like on its side.
+//   { "event": "update_article", "publishMode": "draft" | "publish", "article": Article }
+//       An article that already went out and has changed (a refresh, or a
+//       retry). Match it on `id`, or on `slug` if you did not keep ids.
 //   { "event": "unpublish_article", "article": { "id": "<id>" } }
 //       Take it down. `id` is whatever your endpoint returned as `id` when it
 //       accepted the article, or our article id if it returned nothing.
@@ -175,7 +177,9 @@ export class WebhookAdapter implements CMSAdapter {
 
   async publish(article: PublishPayload): Promise<PublishResult> {
     const result = await this.send(
-      { event: "publish_articles", articles: [webhookArticle(article)] },
+      // What the connection asked for. The receiver is the CMS here, so it is
+      // the receiver that decides what a draft looks like on its side.
+      { event: "publish_articles", publishMode: article.publishMode ?? "publish", articles: [webhookArticle(article)] },
       "publish",
     );
     // An endpoint that returns no id gets ours, so an update can name it.
@@ -184,7 +188,7 @@ export class WebhookAdapter implements CMSAdapter {
 
   async update(externalId: string, article: PublishPayload): Promise<PublishResult> {
     const result = await this.send(
-      { event: "update_article", article: { ...webhookArticle(article), id: article.id ?? externalId } },
+      { event: "update_article", publishMode: article.publishMode ?? "publish", article: { ...webhookArticle(article), id: article.id ?? externalId } },
       "update",
     );
     return { ...result, externalId: result.externalId || externalId };
