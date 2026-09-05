@@ -50,6 +50,24 @@ export interface ArticlePrompt {
    * prompt switch; none of them touches what publishes.
    */
   output?: OutputPrefs;
+  /**
+   * What the site owner said about this keyword in particular: the shape the
+   * article should take, how long it should run, standing instructions, and
+   * their answers to the first-hand-experience questions. Rendered as its own
+   * section, quoted rather than paraphrased, and never extended: the model may
+   * use exactly what is here as the owner's experience and nothing more.
+   */
+  brief?: ArticleBrief;
+}
+
+export interface ArticleBrief {
+  instructions?: string | null;
+  /** Only answered questions belong here; an unanswered one is not a fact. */
+  answers: Array<{ question: string; answer: string }>;
+  articleType?: string | null;
+  articleSubtype?: string | null;
+  /** One of the length bands, or "auto" to defer to the research. */
+  expectedLength?: string | null;
 }
 
 export interface OutputPrefs {

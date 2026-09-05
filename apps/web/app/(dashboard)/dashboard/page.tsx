@@ -3,12 +3,16 @@ import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getRecentArticles, getArticles } from "@/lib/queries/articles";
-import { getKeywords } from "@/lib/queries/keywords";
+import { getKeywords, getKeywordSourceYields } from "@/lib/queries/keywords";
 import { getTrafficSeries, type TrafficSeries } from "@/lib/queries/traffic";
 import { getBingSummary } from "@/lib/queries/bing";
 import { PageHead, DotSep, StatusPill, Avatar, Icons, Button, Chip, Card, StatStrip, ConnectPrompt } from "@/components/ui";
 import { ClientActions } from "@/components/dashboard/client-actions";
 import { WorkspaceGrid } from "@/components/dashboard/workspace-grid";
+import { RecommendedActionsStrip } from "@/components/dashboard/recommended-actions-strip";
+import { recommendedActions } from "@/lib/dashboard/recommended-actions";
+import { yieldsForInputs, type KeywordSourceYields } from "@/lib/keywords/yields";
+import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
@@ -52,13 +56,15 @@ function TrafficChart({ series, connected = false }: { series: TrafficSeries; co
         </div>
       );
     }
+    // Locked, and said plainly. An empty axis under a heading looks like a
+    // measurement of nothing; this is a block we cannot fill yet.
     return (
       <div className="h-[220px] grid place-items-center">
         <ConnectPrompt
           icon="trend"
           service="Google Search Console"
-          title="No traffic data yet"
-          body="Connect Search Console and the daily sync fills this in. Nothing here is estimated, so the chart stays empty until there are real clicks to plot."
+          title="Without Search Console we cannot show real search data here"
+          body="Nothing on this chart is estimated. Connect Search Console and the daily sync plots the clicks Google actually reports."
           href="/connect"
           cta="Connect Search Console"
         />
@@ -144,7 +150,21 @@ export default async function DashboardPage() {
     .eq("integration_id", "gsc");
   if (scopeId) gscQuery = gscQuery.eq("workspace_id", scopeId);
 
-  const [workspaces, allArticles, recent, traffic, keywords, { count: gscCount }, bing] =
+  // A CMS on this workspace: the difference between "approved" meaning
+  // "published" and meaning "a draft with a green label".
+  let cmsQuery = gscSupabase
+    .from("workspace_integrations")
+    .select("id, integration:integrations(tag)");
+  if (scopeId) cmsQuery = cmsQuery.eq("workspace_id", scopeId);
+
+  let plannedQuery = gscSupabase
+    .from("calendar_entries")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "queue")
+    .is("article_id", null);
+  if (scopeId) plannedQuery = plannedQuery.eq("workspace_id", scopeId);
+
+  const [workspaces, allArticles, recent, traffic, keywords, { count: gscCount }, bing, cmsRes, { count: plannedEntries }, yields, profileRes] =
     await Promise.all([
       getWorkspaces(),
       getArticles(scopeId ?? undefined),
@@ -155,8 +175,19 @@ export default async function DashboardPage() {
       // Bing, kept beside the chart rather than in it: two engines summed into
       // one line would be a number that describes neither.
       getBingSummary(scopeId ?? undefined),
+      cmsQuery,
+      plannedQuery,
+      scopeId ? getKeywordSourceYields(scopeId) : Promise.resolve<KeywordSourceYields | null>(null),
+      scopeId
+        ? gscSupabase.from("workspaces").select("business_profile").eq("id", scopeId).maybeSingle()
+        : Promise.resolve({ data: null }),
     ]);
   const gscConnected = (gscCount ?? 0) > 0;
+  // Same test the Articles page applies: any connected integration tagged CMS.
+  const cmsConnected = (cmsRes.data ?? []).some(
+    (r) => ((r as { integration?: { tag?: string } | null }).integration?.tag ?? null) === "CMS",
+  );
+  const profile = (profileRes.data?.business_profile as BusinessProfile | null) ?? null;
 
   // The header pill used to be a hardcoded "All systems healthy" while the
   // Health card below it computed the same thing from real rows, so a run of
@@ -189,6 +220,15 @@ export default async function DashboardPage() {
 
   // Map workspace lookup
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));
+
+  const actions = recommendedActions({
+    cmsConnected,
+    gscConnected,
+    pendingReviews,
+    scheduledCount: plannedEntries ?? 0,
+  });
+  const competitorYields = yields ? yieldsForInputs(profile?.competitors ?? [], "competitor", yields) : [];
+  const audienceYields = yields ? yieldsForInputs(profile?.audiences ?? [], "audience", yields) : [];
 
   return (
     <>
@@ -264,6 +304,7 @@ export default async function DashboardPage() {
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
+        <RecommendedActionsStrip actions={actions} />
         <div className="grid grid-cols-12 gap-4">
           {/* Traffic chart */}
           <Card title="Organic traffic · last 30 days" meta={<Chip label={scopeId ? (workspaces.find((w) => w.id === scopeId)?.name ?? "This workspace") : "All workspaces"} soft />} className="col-span-8">
@@ -309,6 +350,60 @@ export default async function DashboardPage() {
               )}
             </div>
           </Card>
+
+          {/* Where the keywords came from and what each source produced.
+              Counts only: a zero beside a competitor is a real finding (that
+              rival shares no keywords with this site), and there is no metric
+              here that could be mistaken for one. */}
+          {yields && (
+            <Card title="Keyword sources" meta={<Link href="/keywords"><Button size="sm">Keywords</Button></Link>} className="col-span-12" flush>
+              <StatStrip
+                compact
+                stats={[
+                  { label: "Total", value: yields.total.toLocaleString() },
+                  { label: "Scheduled", value: yields.scheduled.toLocaleString(), delta: "planned, not yet written" },
+                  { label: "Written", value: yields.written.toLocaleString(), delta: "with at least one article" },
+                  { label: "Stored", value: yields.stored.toLocaleString(), delta: "tracked, not on the plan" },
+                ]}
+              />
+              <div className="grid grid-cols-2 gap-x-8 px-6 py-4 text-[13px]">
+                <div>
+                  <div className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3 mb-2">Competitor effectiveness</div>
+                  {competitorYields.length === 0 ? (
+                    <div className="text-ink-3">No competitors named in the business profile, and no keyword came from one.</div>
+                  ) : (
+                    <ul className="space-y-1">
+                      {competitorYields.map((c) => (
+                        <li key={c.input} className="flex items-baseline justify-between gap-3">
+                          <span className="font-mono text-[12px] text-ink-2 truncate">{c.input}</span>
+                          <span className={`shrink-0 font-mono text-[12px] ${c.keywords === 0 ? "text-ink-3" : "text-ink"}`}>
+                            {plural(c.keywords, "keyword")}{c.articles > 0 ? ` · ${plural(c.articles, "article")}` : ""}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <div className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3 mb-2">Audience effectiveness</div>
+                  {audienceYields.length === 0 ? (
+                    <div className="text-ink-3">No audiences named in the business profile, and no keyword came from one.</div>
+                  ) : (
+                    <ul className="space-y-1">
+                      {audienceYields.map((a) => (
+                        <li key={a.input} className="flex items-baseline justify-between gap-3">
+                          <span className="text-ink-2 truncate">{a.input}</span>
+                          <span className={`shrink-0 font-mono text-[12px] ${a.keywords === 0 ? "text-ink-3" : "text-ink"}`}>
+                            {plural(a.keywords, "keyword")}{a.articles > 0 ? ` · ${plural(a.articles, "article")}` : ""}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </Card>
+          )}
 
           {/* The roster belongs to the all-workspaces view. Scoped to one
               site, a grid of every other site is noise on the page that is
