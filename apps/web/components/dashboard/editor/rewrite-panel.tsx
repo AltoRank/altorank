@@ -185,7 +185,13 @@ export function RewritePanel({
 
   const scrollTo = useCallback((id: string) => {
     setFocusedId(id);
-    listRef.current?.querySelector(`[data-hunk-id="${id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    // Scroll the panel's own list, not the page: scrollIntoView walks every
+    // ancestor and drags the editor document along with it.
+    const list = listRef.current;
+    const el = list?.querySelector<HTMLElement>(`[data-hunk-id="${id}"]`);
+    if (!list || !el) return;
+    const delta = el.getBoundingClientRect().top - list.getBoundingClientRect().top;
+    list.scrollTop += delta - (list.clientHeight - el.clientHeight) / 2;
   }, []);
 
   const step = useCallback(
