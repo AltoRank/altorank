@@ -48,3 +48,31 @@ export interface SiteDetails {
   blogRootUrl: string;
   exampleArticleUrls: string[];
 }
+
+/** The row as `workspace_output_settings` stores it. */
+export interface OutputSettingsRow {
+  tone: string;
+  internal_links: number;
+  table_of_contents: boolean;
+  call_to_action: boolean;
+  first_person: boolean;
+  mention_similar_products: boolean;
+  global_article_prompt: string | null;
+}
+
+/**
+ * Row to settings. Null row means the site has never saved any, so the
+ * defaults apply - the same defaults the database would insert.
+ */
+export function outputFromRow(row: OutputSettingsRow | null | undefined): OutputSettings {
+  if (!row) return DEFAULT_OUTPUT_SETTINGS;
+  return {
+    tone: (TONES as readonly string[]).includes(row.tone) ? (row.tone as Tone) : DEFAULT_OUTPUT_SETTINGS.tone,
+    internalLinks: row.internal_links,
+    tableOfContents: row.table_of_contents,
+    callToAction: row.call_to_action,
+    firstPerson: row.first_person,
+    mentionSimilarProducts: row.mention_similar_products,
+    globalArticlePrompt: row.global_article_prompt ?? "",
+  };
+}

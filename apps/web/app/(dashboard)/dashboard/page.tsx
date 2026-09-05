@@ -26,6 +26,9 @@ import {
 import { getBingSummary } from "@/lib/queries/bing";
 import { PageHead, DotSep, StatusPill, Avatar, Icons, Button, Chip, Card, StatStrip, ConnectPrompt } from "@/components/ui";
 import { ClientActions } from "@/components/dashboard/client-actions";
+import { ShareResults } from "@/components/dashboard/share-results";
+import { getShareCardFacts } from "@/lib/queries/share";
+import { buildShareCard } from "@/lib/share/card";
 import { WorkspaceGrid } from "@/components/dashboard/workspace-grid";
 import { RecommendedActionsStrip } from "@/components/dashboard/recommended-actions-strip";
 import { recommendedActions } from "@/lib/dashboard/recommended-actions";
@@ -75,7 +78,7 @@ export default async function DashboardPage() {
   if (scopeId) plannedQuery = plannedQuery.eq("workspace_id", scopeId);
 
   const now = new Date();
-  const [workspaces, allArticles, recent, gscRows, keywords, { count: gscCount }, bing, cmsRes, { count: plannedEntries }, yields, profileRes, health, knownPages] =
+  const [workspaces, allArticles, recent, gscRows, keywords, { count: gscCount }, bing, cmsRes, { count: plannedEntries }, yields, profileRes, health, knownPages, shareFacts] =
     await Promise.all([
       getWorkspaces(),
       getArticles(scopeId ?? undefined),
@@ -98,6 +101,8 @@ export default async function DashboardPage() {
       // sites would be two numbers describing none of them.
       scopeId ? syncHealthFor(scopeId) : Promise.resolve<SyncHealth | null>(null),
       scopeId ? knownPagesFor(scopeId) : Promise.resolve(null),
+      // The share card: measured facts for this site, or nothing to share.
+      scopeId ? getShareCardFacts(scopeId) : Promise.resolve(null),
     ]);
   const traffic = searchPerformance(gscRows, now);
   const bestPages = scopeId ? topPages(gscRows, now) : [];
@@ -174,6 +179,9 @@ export default async function DashboardPage() {
         }
         actions={
           <>
+            {shareFacts && scopeId && (
+              <ShareResults card={buildShareCard(shareFacts)} ogPath={`/api/og/workspace/${scopeId}`} />
+            )}
             <ClientActions />
           </>
         }
@@ -236,9 +244,13 @@ export default async function DashboardPage() {
               <span className="flex items-center gap-1.5">
                 <i className="inline-block w-2.5 h-2.5 rounded-sm bg-accent" />Current {traffic.days}d
               </span>
-              <span className="flex items-center gap-1.5">
-                <i className="inline-block w-2.5 h-0.5 rounded-sm bg-ink-4 mt-[1px]" />Previous {traffic.days}d
-              </span>
+              {traffic.previousMeasured ? (
+                <span className="flex items-center gap-1.5">
+                  <i className="inline-block w-2.5 h-0.5 rounded-sm bg-ink-4 mt-[1px]" />Previous {traffic.days}d
+                </span>
+              ) : traffic.hasData ? (
+                <span className="text-ink-4">Previous period not synced yet</span>
+              ) : null}
               {traffic.hasData && traffic.previousMeasured && (
                 <span className="text-ink-3">
                   impressions {describeChange(traffic.impressions, traffic.days, "impressions")}
