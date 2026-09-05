@@ -56,8 +56,17 @@ export interface OnPageFacts {
   /** Clicks from the homepage. High numbers are pages Google rarely reaches. */
   clickDepth: number | null;
   cumulativeLayoutShift: number | null;
-  /** The named checks this page fails, e.g. "no_image_alt", "low_content_rate". */
-  failing: string[];
+  /**
+   * Every check whose boolean came back true, raw.
+   *
+   * NOT the failures. A check's polarity is part of its name and the two
+   * kinds are mixed: `is_https` true means the page IS served over HTTPS,
+   * `no_image_alt` true means images ARE missing alt text. A page in good
+   * health has a long list here. Use `faults`.
+   */
+  checksTrue: string[];
+  /** The subset of `checksTrue` that are actually problems. */
+  faults: string[];
   /** Whether a browser was used, which is what the extra cost bought. */
   rendered: boolean;
 }
@@ -113,6 +122,10 @@ export async function fetchInstantPage(
 
   const meta = item.meta ?? {};
   const htags = meta.htags ?? {};
+  const trueChecks = Object.entries(item.checks ?? {})
+    .filter(([, value]) => value)
+    .map(([name]) => name)
+    .sort();
 
   return {
     url: item.url ?? url,
@@ -136,12 +149,8 @@ export async function fetchInstantPage(
     duplicateContent: Boolean(item.duplicate_content),
     clickDepth: num(item.click_depth),
     cumulativeLayoutShift: num(meta.cumulative_layout_shift),
-    // `checks` is a map of name to boolean, and the booleans are TRUE when the
-    // problem is present. Reading them as "passed" inverts every finding.
-    failing: Object.entries(item.checks ?? {})
-      .filter(([, present]) => present)
-      .map(([name]) => name)
-      .sort(),
+    checksTrue: trueChecks,
+    faults: trueChecks.filter((name) => FAULTS.has(name)),
     rendered: javascript,
   };
 }
@@ -150,6 +159,37 @@ export async function fetchInstantPage(
 function num(v: number | undefined): number | null {
   return typeof v === "number" ? v : null;
 }
+
+/**
+ * The checks that describe a problem when true.
+ *
+ * DataForSEO mixes two kinds under one key and the polarity lives only in the
+ * name: `is_https`, `canonical`, `has_html_doctype` and the four
+ * `seo_friendly_url` checks are true when the page is HEALTHY, while
+ * `no_image_alt` and `low_content_rate` are true when it is not. Observed on
+ * fitsuite.co: 50 of 50 pages reported `is_https` true and 49 reported
+ * `canonical` true, which read as a site where everything is broken if the
+ * set is taken at face value.
+ *
+ * An allowlist rather than a rule over names. "is_broken" and "is_https" are
+ * both `is_`, and guessing wrong in either direction produces confident
+ * nonsense - either a healthy site described as failing, or a real fault
+ * silently dropped.
+ */
+const FAULTS = new Set<string>([
+  "no_h1_tag", "no_title", "no_description", "no_favicon", "no_image_alt",
+  "no_image_title", "no_content_encoding", "no_doctype",
+  "title_too_long", "title_too_short", "title_too_short_or_long",
+  "duplicate_title_tag", "duplicate_description_tag", "duplicate_content",
+  "low_content_rate", "low_readability_rate", "low_character_count",
+  "small_page_size", "large_page_size", "high_loading_time",
+  "has_render_blocking_resources", "deprecated_html_tags",
+  "redirect_chain", "canonical_to_redirect", "canonical_chain",
+  "is_broken", "is_4xx_code", "is_5xx_code", "is_orphan_page",
+  "irrelevant_description", "irrelevant_title", "irrelevant_meta_keywords",
+  "broken_links", "broken_resources", "lorem_ipsum",
+  "no_favicon_touch_icon", "recursive_canonical", "https_to_http_links",
+]);
 
 /**
  * The checks worth showing a human, in the words they would use.
@@ -194,9 +234,14 @@ export const CHECK_LABEL: Record<string, string> = {
   broken_resources: "An image, script or stylesheet is missing",
 };
 
-/** Only the failures we have words for, so nothing surfaces a raw identifier. */
+/** Only the faults we have words for, so nothing surfaces a raw identifier. */
 export function describeFailing(facts: OnPageFacts): Array<{ id: string; label: string }> {
-  return facts.failing
+  return facts.faults
     .filter((id) => CHECK_LABEL[id])
     .map((id) => ({ id, label: CHECK_LABEL[id] }));
+}
+
+/** Whether a named check describes a problem when true. Exported for the crawl. */
+export function isFault(check: string): boolean {
+  return FAULTS.has(check);
 }
