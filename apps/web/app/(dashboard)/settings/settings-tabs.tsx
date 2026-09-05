@@ -17,6 +17,7 @@ const TABS = [
   { label: "General", href: "/settings" },
   { label: "Team", href: "/settings/team" },
   { label: "Billing", href: "/settings/billing" },
+  { label: "Improvements", href: "/settings/refresh" },
 ];
 
 export function SettingsTabs() {

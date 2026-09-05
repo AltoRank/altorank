@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { buildSystemPrompt } from "./prompts";
+import { buildSystemPrompt, buildUserMessage } from "./prompts";
 import type { AIProvider, ArticlePrompt, ArticleResult } from "./types";
 import { extractArticleMeta, countWords } from "./utils";
 import { openaiModel } from "./models";
@@ -32,7 +32,7 @@ export class OpenAIProvider implements AIProvider {
         { role: "system", content: systemPrompt },
         {
           role: "user",
-          content: `Write the article now for the keyword: "${prompt.keyword}"`,
+          content: buildUserMessage(prompt),
         },
       ],
     });

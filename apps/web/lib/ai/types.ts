@@ -45,6 +45,26 @@ export interface ArticlePrompt {
    * to a library it has not been shown.
    */
   internalLinkTargets?: Array<{ title: string; keyword: string }>;
+  /**
+   * Rewrite an existing page rather than write a new one.
+   *
+   * The prompt gets the current body and a brief, and is told to preserve
+   * structure, links and images while strengthening what the brief names.
+   * Everything downstream (typography, link checks, scoring) is the same
+   * pipeline a fresh draft goes through.
+   */
+  refreshOf?: RefreshContext;
+}
+
+export interface RefreshContext {
+  /** The page's current body, as HTML. */
+  existingHtml: string;
+  /** What to strengthen, which questions to add, what to keep. Human-editable. */
+  brief: string;
+  /** Where the page lives, for the model's orientation only. */
+  url?: string | null;
+  title?: string | null;
+  metaDescription?: string | null;
 }
 
 export interface ArticleResult {
