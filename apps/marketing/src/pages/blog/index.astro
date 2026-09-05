@@ -2,16 +2,15 @@
 import Marketing from '@/layouts/Marketing.astro';
 import { getCollection } from 'astro:content';
 
+// Most recently touched first: a revised post surfaces above an untouched one
+// published the same day, which is also the order the sitemap's lastmod
+// reports. Most posts still share one publishDate, so the id tiebreak keeps
+// the output deterministic across builds.
+const lastTouched = (p: { data: { publishDate: Date; dateModified?: Date } }) =>
+  (p.data.dateModified ?? p.data.publishDate).valueOf();
 const posts = (await getCollection('blog', ({ data }) => !data.draft))
-// Every post currently carries the same publishDate, so this comparison returns
-// 0 for every pair and the resulting order is whatever getCollection happens to
-// hand back: incidental, and it changes when the framework's internal ordering
-// does. The id tiebreak makes the output deterministic. It does NOT fix the
-// underlying problem, which is that the posts need real publish dates before
-// "newest first" means anything.
-  .sort((a, b) =>
-    b.data.publishDate.valueOf() - a.data.publishDate.valueOf() || a.id.localeCompare(b.id),
-  );
+  .sort((a, b) => lastTouched(b) - lastTouched(a) || a.id.localeCompare(b.id));
+const shortDate = (d: Date) => d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 ---
 
 <Marketing
@@ -20,7 +19,7 @@ const posts = (await getCollection('blog', ({ data }) => !data.draft))
 >
   <section class="border-b border-line py-[88px]">
     <div class="mx-auto max-w-[1240px] px-8">
-      <div class="mx-auto mb-14 max-w-[720px] text-center">
+      <div class="mb-14 max-w-[720px]">
         <h1 class="mb-3 text-[42px] font-semibold leading-[1.08] tracking-[-0.025em]">
           Insights for SEO teams
         </h1>
@@ -45,10 +44,12 @@ const posts = (await getCollection('blog', ({ data }) => !data.draft))
               {post.data.description}
             </p>
             <div class="mt-auto flex items-center gap-2 text-xs text-ink-3">
-              <time datetime={post.data.publishDate.toISOString()}>
-                {post.data.publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
-              </time>
-              <span>&middot;</span>
+              {post.data.dateModified ? (
+                <span>Updated <time datetime={post.data.dateModified.toISOString()}>{shortDate(post.data.dateModified)}</time></span>
+              ) : (
+                <time datetime={post.data.publishDate.toISOString()}>{shortDate(post.data.publishDate)}</time>
+              )}
+              <span aria-hidden="true">&middot;</span>
               <span>{post.data.author}</span>
             </div>
           </a>
