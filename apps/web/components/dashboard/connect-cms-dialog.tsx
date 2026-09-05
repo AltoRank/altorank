@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button, Dialog } from "@/components/ui";
 import { useOnboarding } from "@/components/onboarding/use-onboarding";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
-import { connectIntegration, deriveBlogUrl } from "@/app/actions/integrations";
+import { connectIntegration, deriveBlogUrl, testIntegrationConfig } from "@/app/actions/integrations";
 import {
   DEFAULT_PUBLISH_MODE,
   DRAFT_BEHAVIOUR,
@@ -130,7 +130,15 @@ export function ConnectCmsDialog({
 }: ConnectCmsDialogProps) {
   const initial = isCmsType(initialCmsType) ? initialCmsType : null;
   const [pending, setPending] = useState(false);
-  const [cmsType, setCmsType] = useState<CMSType>(initial ?? "wordpress");
+  const [cmsType, setCmsTypeRaw] = useState<CMSType>(initial ?? "wordpress");
+  // "Send test" runs the live check on the values as typed, without saving.
+  // Its verdict belongs to one platform's form, so switching tabs clears it.
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const setCmsType = (t: CMSType) => {
+    setCmsTypeRaw(t);
+    setTestResult(null);
+  };
   const [detecting, setDetecting] = useState(false);
   const [derivation, setDerivation] = useState<BlogUrlDerivation | null>(null);
   // Draft by default. The option is per connection and travels with the
@@ -230,6 +238,44 @@ export function ConnectCmsDialog({
       toast.error(err instanceof Error ? err.message : "Failed to connect CMS");
     } finally {
       setPending(false);
+    }
+  }
+
+  /**
+   * The live test, before Save.
+   *
+   * connectIntegration already refuses to store a connection that fails its
+   * test - but the only way to find out was to press Connect, and the answer
+   * came back as a toast that vanished. This runs the same test on the same
+   * built config and leaves the vendor's exact words on screen. Nothing is
+   * persisted; a passing test still needs Connect.
+   */
+  async function handleSendTest() {
+    const form = document.getElementById("cms-connect-form") as HTMLFormElement | null;
+    if (!form) return;
+    // Empty required fields are a browser message, not a vendor round trip.
+    if (!form.reportValidity()) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const config = buildConfig(cmsType, new FormData(form));
+      if (publishMode === "draft") {
+        const support = draftSupport(config);
+        if (!support.ok) {
+          setTestResult({ ok: false, message: support.reason });
+          return;
+        }
+      }
+      const r = await testIntegrationConfig(config, publishMode);
+      setTestResult(
+        r.ok
+          ? { ok: true, message: `${tabLabel(cmsType)} answered. Press Connect to save.` }
+          : { ok: false, message: r.error },
+      );
+    } catch (err) {
+      setTestResult({ ok: false, message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -625,9 +671,31 @@ export function ConnectCmsDialog({
             )}
           </fieldset>
 
+          {testResult && (
+            <p
+              role={testResult.ok ? "status" : "alert"}
+              className={`text-[12px] leading-[1.45] whitespace-pre-wrap break-words rounded-lg border px-3 py-2 ${
+                testResult.ok
+                  ? "border-line text-ink-2 bg-panel"
+                  : "border-[var(--err)] text-[var(--err)]"
+              }`}
+            >
+              {testResult.ok ? "Test passed. " : "Test failed: "}
+              {testResult.message}
+            </p>
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" onClick={() => onOpenChange(false)}>
               Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={testing || pending || !draftCheck.ok}
+              onClick={handleSendTest}
+              title="Run the live connection test with these values. Nothing is saved."
+            >
+              {testing ? "Testing…" : "Send test"}
             </Button>
             <Button type="submit" variant="accent" disabled={pending || !draftCheck.ok}>
               {pending
