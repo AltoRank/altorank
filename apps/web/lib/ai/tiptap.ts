@@ -39,11 +39,21 @@ export interface TiptapOptions {
    * telling crawlers not to follow links to its own pages.
    */
   siteDomain?: string | null;
+  /** Internal: SVG sources lifted out before tokenizing, by placeholder index. */
+  svgs?: string[];
 }
 
 export function htmlToTiptapJson(html: string, opts: TiptapOptions = {}): TiptapDoc {
-  const tokens = tokenize(html);
-  const content = parseTokens(tokens, opts);
+  // Inline SVG is kept as source, not walked: its elements are not prose and
+  // the tokenizer would turn a chart's labels into a paragraph of numbers. Each
+  // block is lifted out here and referenced by index from a placeholder tag.
+  const svgs: string[] = [];
+  const withPlaceholders = html.replace(/<svg\b[\s\S]*?<\/svg>/gi, (svg) => {
+    svgs.push(svg);
+    return `<svg-raw data-i="${svgs.length - 1}"></svg-raw>`;
+  });
+  const tokens = tokenize(withPlaceholders);
+  const content = parseTokens(tokens, { ...opts, svgs });
 
   return {
     type: "doc",
@@ -111,9 +121,15 @@ function decodeEntities(text: string): string {
 const HEADING_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
 const LIST_TAGS = new Set(["ul", "ol"]);
 const TABLE_TAGS = ["table", "thead", "tbody", "tr", "th", "td"] as const;
+/**
+ * Containers with no node of their own: the enrichment writes a TOC as
+ * `<nav>` and a call to action as `<section>`, and a model sometimes wraps
+ * the whole body in `<article>` or `<div>`. Their children are parsed in place.
+ */
+const TRANSPARENT_TAGS = new Set(["nav", "section", "div", "article", "aside", "header", "footer", "main"]);
 const BLOCK_TAGS = new Set([
-  "p", "blockquote", "li", "hr", "br", "iframe", "figure",
-  ...HEADING_TAGS, ...LIST_TAGS, ...TABLE_TAGS,
+  "p", "blockquote", "li", "hr", "br", "iframe", "figure", "img", "svg-raw", "figcaption",
+  ...HEADING_TAGS, ...LIST_TAGS, ...TABLE_TAGS, ...TRANSPARENT_TAGS,
 ]);
 const INLINE_MARK_MAP: Record<string, string> = {
   strong: "bold",
@@ -157,7 +173,10 @@ function parseTokens(tokens: Token[], opts: TiptapOptions = {}): TiptapNode[] {
       const { nodes: inline, endPos } = collectInline(tokens, pos + 1, tag, opts);
       result.push({
         type: "heading",
-        attrs: { level },
+        // The id is the anchor a table of contents links to and the jump link
+        // a search result shows. Kept when present; the editor extension and
+        // the serialiser both carry it through.
+        attrs: attrs.id ? { level, id: attrs.id } : { level },
         content: inline.length > 0 ? inline : undefined,
       });
       pos = endPos;
@@ -225,11 +244,57 @@ function parseTokens(tokens: Token[], opts: TiptapOptions = {}): TiptapNode[] {
     }
 
     if (tag === "figure") {
-      // Parse figure contents (may contain iframe or img)
+      // A figure is one node - image, video or chart - with its caption as an
+      // attribute. Parsed as a block it used to unwrap to its children, and
+      // since neither `img` nor `figcaption` had a node, an image figure
+      // arrived in the editor as nothing at all.
       const { nodes: inner, endPos } = collectBlock(tokens, pos + 1, tag, opts);
-      if (inner.length > 0) {
-        result.push(...inner);
+      const caption = inner.find((n) => n.type === "figcaption");
+      const captionText = caption ? inlineText(caption) : null;
+      const media = inner.find((n) => n.type === "image" || n.type === "iframe" || n.type === "svgFigure");
+      if (media) {
+        if (captionText) media.attrs = { ...media.attrs, caption: captionText };
+        result.push(media);
+      } else {
+        result.push(...inner.filter((n) => n.type !== "figcaption"));
       }
+      pos = endPos;
+      continue;
+    }
+
+    if (tag === "figcaption") {
+      // Only meaningful inside a figure, where the figure branch above reads
+      // it back. Carried as a transient node so it can be found there.
+      const { nodes: inline, endPos } = collectInline(tokens, pos + 1, tag, opts);
+      result.push({ type: "figcaption", content: inline });
+      pos = endPos;
+      continue;
+    }
+
+    if (tag === "img") {
+      if (attrs.src) {
+        result.push({
+          type: "image",
+          attrs: { src: attrs.src, alt: attrs.alt ?? "", title: attrs.title ?? null },
+        });
+      }
+      pos++;
+      // A non-void `<img></img>` from a sloppy writer.
+      pos = skipClose(tokens, pos, "img");
+      continue;
+    }
+
+    if (tag === "svg-raw") {
+      const svg = opts.svgs?.[Number(attrs["data-i"])];
+      if (svg) result.push({ type: "svgFigure", attrs: { svg } });
+      pos++;
+      pos = skipClose(tokens, pos, "svg-raw");
+      continue;
+    }
+
+    if (TRANSPARENT_TAGS.has(tag)) {
+      const { nodes: inner, endPos } = collectBlock(tokens, pos + 1, tag, opts);
+      result.push(...inner);
       pos = endPos;
       continue;
     }
@@ -295,8 +360,10 @@ function collectInline(
     }
 
     if (token.kind === "close") {
-      // Closing an inline mark
-      const markType = INLINE_MARK_MAP[token.tag];
+      // Closing an inline mark. `</a>` closes the link mark; without this the
+      // link ran to the end of the paragraph, so "Visit <a>site</a>." stored
+      // the full stop as a second link (seen in a generated CTA, 2026-09-04).
+      const markType = token.tag === "a" ? "link" : INLINE_MARK_MAP[token.tag];
       if (markType) {
         const idx = marks.findLastIndex((m) => m.type === markType);
         if (idx !== -1) marks.splice(idx, 1);
@@ -439,6 +506,21 @@ function linkAttrs(href: string, opts: TiptapOptions): Record<string, unknown> {
     return { href, target: null, rel: null };
   }
   return { href, target: "_blank", rel: "noopener noreferrer nofollow" };
+}
+
+/** Step over a closing tag for `tag` when it is the next token. */
+function skipClose(tokens: Token[], pos: number, tag: string): number {
+  const next = tokens[pos];
+  return next && next.kind === "close" && next.tag === tag ? pos + 1 : pos;
+}
+
+/** The plain text of a node's inline content, for a caption attribute. */
+function inlineText(node: TiptapNode): string {
+  return (node.content ?? [])
+    .map((n) => (n.type === "text" ? n.text ?? "" : n.type === "hardBreak" ? " " : inlineText(n)))
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function createParagraph(content: TiptapNode[]): TiptapNode {

@@ -2,6 +2,14 @@
  * Convert Tiptap ProseMirror JSON to clean HTML for CMS publishing.
  */
 
+import { isSafeSvg } from "@/lib/content/enrich/svg";
+
+/**
+ * Hosts an embedded player may come from. Only YouTube, and preferably its
+ * privacy-enhanced host; an iframe pointing anywhere else is not published.
+ */
+const EMBED_HOSTS = /^https:\/\/(www\.)?(youtube-nocookie\.com|youtube\.com)\/embed\//i;
+
 type TiptapNode = {
   type: string;
   content?: TiptapNode[];
@@ -53,7 +61,8 @@ function renderNode(node: TiptapNode): string {
       return `<p>${children}</p>\n`;
     case "heading": {
       const level = node.attrs?.level ?? 2;
-      return `<h${level}>${children}</h${level}>\n`;
+      const id = node.attrs?.id ? ` id="${escapeAttr(String(node.attrs.id))}"` : "";
+      return `<h${level}${id}>${children}</h${level}>\n`;
     }
     case "bulletList":
       return `<ul>\n${children}</ul>\n`;
@@ -69,7 +78,28 @@ function renderNode(node: TiptapNode): string {
       const src = escapeAttr(String(node.attrs?.src ?? ""));
       const alt = escapeAttr(String(node.attrs?.alt ?? ""));
       const title = node.attrs?.title ? ` title="${escapeAttr(String(node.attrs.title))}"` : "";
-      return `<img src="${src}" alt="${alt}"${title} />\n`;
+      const caption = captionOf(node);
+      return caption
+        ? `<figure class="article-image"><img src="${src}" alt="${alt}"${title} loading="lazy" /><figcaption>${caption}</figcaption></figure>\n`
+        : `<img src="${src}" alt="${alt}"${title} />\n`;
+    }
+    case "iframe": {
+      const src = String(node.attrs?.src ?? "");
+      if (!EMBED_HOSTS.test(src)) return "";
+      const title = escapeAttr(String(node.attrs?.title ?? ""));
+      const caption = captionOf(node);
+      return (
+        `<figure class="video-embed"><iframe src="${escapeAttr(src)}" title="${title}" loading="lazy" ` +
+        `allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" ` +
+        `referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>` +
+        `${caption ? `<figcaption>${caption}</figcaption>` : ""}</figure>\n`
+      );
+    }
+    case "svgFigure": {
+      const svg = node.attrs?.svg;
+      if (!isSafeSvg(typeof svg === "string" ? svg : null)) return "";
+      const caption = captionOf(node);
+      return `<figure class="infographic">${svg}${caption ? `<figcaption>${caption}</figcaption>` : ""}</figure>\n`;
     }
     case "table":
       return `<table>\n${children}</table>\n`;
@@ -86,6 +116,11 @@ function renderNode(node: TiptapNode): string {
     default:
       return children;
   }
+}
+
+function captionOf(node: TiptapNode): string {
+  const caption = node.attrs?.caption;
+  return typeof caption === "string" && caption.trim() ? escapeHtml(caption.trim()) : "";
 }
 
 function escapeHtml(text: string): string {

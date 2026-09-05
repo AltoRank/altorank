@@ -63,10 +63,20 @@ const CONTENT_TYPE: Record<string, string> = {
   jpeg: "image/jpeg",
 };
 
+export interface ImageGenerationOptions {
+  /**
+   * An in-article image rather than the hero: the prompt then describes the
+   * section it sits beside instead of the article as a whole. Used by
+   * lib/content/enrich/images.ts; the featured image passes nothing.
+   */
+  section?: { heading: string; excerpt: string };
+}
+
 export async function generateImage(
   articleTitle: string,
   keyword: string,
   brandStyle?: Record<string, unknown>,
+  options: ImageGenerationOptions = {},
 ): Promise<ImageGenerationResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY not configured");
@@ -78,10 +88,20 @@ export async function generateImage(
     ? `, using brand colors: ${brandStyle.colors}`
     : "";
 
+  const subject = options.section
+    ? [
+        `Create an illustration for the section "${options.section.heading}" of a blog article about "${keyword}".`,
+        options.section.excerpt ? `The section says: "${options.section.excerpt}".` : "",
+        `The image should be clean and suit an editorial article on a professional website.`,
+      ]
+    : [
+        `Create a professional, visually striking featured image for a blog article titled "${articleTitle}".`,
+        `The article is about "${keyword}".`,
+        `The image should be clean, modern, and suitable as a hero image on a professional website.`,
+      ];
+
   const prompt = [
-    `Create a professional, visually striking featured image for a blog article titled "${articleTitle}".`,
-    `The article is about "${keyword}".`,
-    `The image should be clean, modern, and suitable as a hero image on a professional website.`,
+    ...subject,
     `No text or watermarks in the image.`,
     styleHints,
     colorHints,
