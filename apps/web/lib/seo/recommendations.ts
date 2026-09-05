@@ -208,6 +208,17 @@ export function normalizeTarget(term: string): string {
             ? t.slice(0, -1)
             : t,
     )
+    // Agent and verbal-noun endings, after the plural fold so "writers" has
+    // already become "writer": "content writing" and "content writer" are one
+    // results page, and the queue planned both (2026-09-04). The stem must
+    // keep at least four letters, or "user" is "us" and "thing" is "th".
+    .map((t) =>
+      t.endsWith("ing") && t.length > 6
+        ? t.slice(0, -3)
+        : t.endsWith("er") && t.length > 5
+          ? t.slice(0, -2)
+          : t,
+    )
     .sort()
     .join(" ");
 }
