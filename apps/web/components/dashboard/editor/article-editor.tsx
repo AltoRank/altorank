@@ -30,6 +30,8 @@ import { TabRow } from "@/components/ui/tab-row";
 import { auditArticle } from "@/lib/seo/article-audit";
 import type { Article, Workspace, PublishingCadence, Integration } from "@/lib/types";
 import type { ScoringCheck } from "@/lib/seo/scoring";
+import type { TrafficValue } from "@/lib/queries/value";
+import { describeOrganicValue, formatOrganicValue } from "@/lib/analytics/value";
 
 type Props = {
   article: Article;
@@ -57,6 +59,13 @@ type Props = {
    * yet". Undefined when the page did not count.
    */
   linkableArticles?: number | null;
+  /**
+   * What this article's clicks would have cost as ads, priced at its target
+   * keyword. Null for anything not live: the page only asks for live
+   * articles, because a draft has no clicks and a dash over it would read
+   * as a verdict.
+   */
+  value?: TrafficValue | null;
 };
 
 export function ArticleEditor({
@@ -67,6 +76,7 @@ export function ArticleEditor({
   destinations = [],
   integrations = [],
   linkableArticles,
+  value = null,
 }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -561,6 +571,41 @@ export function ArticleEditor({
             }
           >
             <FactCheckPanel report={article.fact_checks} onLocate={locateInEditor} />
+          </SidebarSection>
+        )}
+
+        {/* What it is worth. Live articles only: the number is the article's
+            Search Console clicks × the cost-per-click of its keyword, which is
+            an estimate of what the same visits would have cost as ads, and
+            the caption says exactly that. Null renders as an em dash, never
+            $0: no synced rows or no CPC on file is "not measured", and only a
+            priced keyword with zero clicks earns a zero. */}
+        {article.status === "live" && value && (
+          <SidebarSection title="What this article is worth">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="cursor-help">
+                    <div className="text-[22px] font-semibold tracking-tight text-ink">
+                      {formatOrganicValue(value.value, workspace.language)}
+                    </div>
+                    <div className="text-[11.5px] font-mono text-ink-3 mt-1">
+                      {value.value === null
+                        ? value.clicks > 0
+                          ? `${value.clicks.toLocaleString()} clicks, no cost-per-click on file for "${article.keyword}"`
+                          : `no Search Console clicks in the last ${value.days} days`
+                        : `${value.clicks.toLocaleString()} clicks × CPC of "${article.keyword}", ${value.days}d · estimate`}
+                    </div>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[300px] font-normal">
+                  {describeOrganicValue(value, value.days)} Clicks are the
+                  article&apos;s own, from Search Console; the price is the
+                  keyword it was written for, so it undercounts an article that
+                  ranks for more than that.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </SidebarSection>
         )}
 

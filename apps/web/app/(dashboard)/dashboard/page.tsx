@@ -5,6 +5,8 @@ import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getRecentArticles, getArticles } from "@/lib/queries/articles";
 import { getKeywords } from "@/lib/queries/keywords";
 import { getTrafficSeries, type TrafficSeries } from "@/lib/queries/traffic";
+import { getTrafficValue } from "@/lib/queries/value";
+import { describeOrganicValue, formatOrganicValue } from "@/lib/analytics/value";
 import { getBingSummary } from "@/lib/queries/bing";
 import { PageHead, DotSep, StatusPill, Avatar, Icons, Button, Chip, Card, StatStrip, ConnectPrompt } from "@/components/ui";
 import { ClientActions } from "@/components/dashboard/client-actions";
@@ -144,7 +146,7 @@ export default async function DashboardPage() {
     .eq("integration_id", "gsc");
   if (scopeId) gscQuery = gscQuery.eq("workspace_id", scopeId);
 
-  const [workspaces, allArticles, recent, traffic, keywords, { count: gscCount }, bing] =
+  const [workspaces, allArticles, recent, traffic, keywords, { count: gscCount }, bing, value] =
     await Promise.all([
       getWorkspaces(),
       getArticles(scopeId ?? undefined),
@@ -155,6 +157,9 @@ export default async function DashboardPage() {
       // Bing, kept beside the chart rather than in it: two engines summed into
       // one line would be a number that describes neither.
       getBingSummary(scopeId ?? undefined),
+      // The same clicks as the chart, priced. The one figure on this page
+      // that is an estimate, and its label and tooltip say so.
+      getTrafficValue(scopeId ?? undefined),
     ]);
   const gscConnected = (gscCount ?? 0) > 0;
 
@@ -246,6 +251,25 @@ export default async function DashboardPage() {
                   />
                 ),
             deltaType: traffic.changePct != null && traffic.changePct > 0 ? "pos" : undefined,
+          },
+          {
+            label: "Est. traffic value",
+            // Dollars written the way the scoped site's locale writes them;
+            // the all-sites view has no single locale and uses English.
+            value: formatOrganicValue(value.value, scopeId ? wsMap.get(scopeId)?.language : "en"),
+            hint: describeOrganicValue(value, value.days),
+            // What the number leaves out, in the same breath. An estimate
+            // that covers a fifth of the clicks must not be read as the whole.
+            delta:
+              value.value === null
+                ? value.clicks > 0
+                  ? "no cost-per-click on file yet"
+                  : traffic.hasData
+                    ? "no priced clicks yet"
+                    : "needs Search Console"
+                : value.coverage === null
+                  ? "priced, no clicks yet"
+                  : `covers ${Math.round(value.coverage * 100)}% of ${value.clicks.toLocaleString()} clicks`,
           },
           {
             label: "Keywords tracked",

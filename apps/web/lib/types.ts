@@ -140,6 +140,9 @@ export type Keyword = {
   volume: number;
   /** 0-100, or null when no provider supplied one. Never defaulted to 0. */
   difficulty: number | null;
+  /** Google Ads cost-per-click in USD. null when no advertiser data, or
+   *  stored before migration 060: unmeasured, not free. */
+  cpc: number | null;
   intent: KeywordIntent;
   status: KeywordStatus;
   created_at: string;

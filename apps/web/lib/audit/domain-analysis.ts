@@ -21,7 +21,7 @@ import { runAgentReadiness, type ReadinessResult } from "./agent-readiness";
 import { crawlSite, usablePages } from "./crawler";
 import { runAuditChecks, calculateAuditScore } from "./checks";
 import { fetchPageSpeedDetailed } from "./pagespeed";
-import { discoverKeywords, discoverKeywordsFromSeeds, type DiscoveredKeyword } from "@/lib/seo/keywords";
+import { discoverKeywords, discoverKeywordsFromSeeds, type DiscoveredKeyword, storedCpc } from "@/lib/seo/keywords";
 import { profileIsUsable, seedPhrasesFromPages, scoreRelevance } from "@/lib/seo/topical-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
@@ -396,6 +396,7 @@ export async function analyseDomain(options: {
             term: c.k.keyword,
             volume: c.k.volume,
             difficulty: c.k.difficulty,
+            cpc: storedCpc(c.k.cpc),
             intent: c.k.intent ?? classifyIntent(c.k.keyword, options.locale ?? "en").intent,
             status: "new",
             // The rank is already the provenance: 0 is ranked_keywords, 1 the

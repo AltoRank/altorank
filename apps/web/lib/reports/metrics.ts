@@ -1,4 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  cpcIndex,
+  describeOrganicValue,
+  estimateOrganicValue,
+  formatOrganicValue,
+  type OrganicValue,
+} from "@/lib/analytics/value";
 
 export interface ReportData {
   period: string;
@@ -23,6 +30,18 @@ export interface ReportData {
   }>;
   ga4Summary: { pageviews: number; sessions: number } | null;
   gscSummary: { clicks: number; impressions: number; ctr: number } | null;
+  /**
+   * What the period's organic clicks would have cost as ads, from
+   * lib/analytics/value.ts - the same function the dashboard and the editor
+   * use, so the report never disagrees with the screen.
+   *
+   * Null when Search Console reported nothing for the period. When it did but
+   * no term could be priced, `value` inside is null and `formatted` is an em
+   * dash, so the line prints "—" beside an explanation rather than "$0": the
+   * client report is exactly the place where an unmeasured figure must not
+   * look like a measured one.
+   */
+  organicValue: (OrganicValue & { formatted: string; note: string }) | null;
   /**
    * AI visibility from the most recent GEO sweep, or null when this workspace
    * has never been measured.
@@ -63,7 +82,7 @@ export async function aggregateReportData(
   // Fetch workspace + agency
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("name, domain, agency_id")
+    .select("name, domain, agency_id, language")
     .eq("id", workspaceId)
     .single();
 
@@ -187,6 +206,40 @@ export async function aggregateReportData(
       }
     : null;
 
+  // --- Organic value ---------------------------------------------------------
+  // Query-level rows only: the page-level rows carry article_id and would
+  // double every click. Priced with this workspace's own research.
+  let organicValue: ReportData["organicValue"] = null;
+  if (gscSummary) {
+    const [{ data: valueRows }, { data: pricedKeywords }] = await Promise.all([
+      supabase
+        .from("analytics_metrics")
+        .select("query, clicks")
+        .eq("workspace_id", workspaceId)
+        .eq("source", "gsc")
+        .not("query", "is", null)
+        .gte("metric_date", startDate)
+        .lte("metric_date", endDate),
+      supabase
+        .from("keywords")
+        .select("term, cpc")
+        .eq("workspace_id", workspaceId)
+        .not("cpc", "is", null),
+    ]);
+    const estimate = estimateOrganicValue(
+      ((valueRows ?? []) as Array<{ query: string | null; clicks: number | null }>).map((r) => ({
+        term: r.query,
+        clicks: r.clicks,
+      })),
+      cpcIndex((pricedKeywords ?? []) as Array<{ term: string; cpc: number | string | null }>),
+    );
+    organicValue = {
+      ...estimate,
+      formatted: formatOrganicValue(estimate.value, workspace.language as string | null),
+      note: describeOrganicValue(estimate, `${startDate} to ${endDate}`),
+    };
+  }
+
   // --- AI visibility -------------------------------------------------------
   // Scoped to the latest sweep rather than the report period: a GEO run is a
   // snapshot of what the engines answer today, so averaging several sweeps
@@ -258,6 +311,7 @@ export async function aggregateReportData(
     keywordMovers: keywordMovers.slice(0, 10),
     ga4Summary,
     gscSummary,
+    organicValue,
     geoSummary,
   };
 }
