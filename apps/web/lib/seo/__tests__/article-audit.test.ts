@@ -48,6 +48,20 @@ describe("extractLinks", () => {
       { href: "https://a.com/r&d", anchor: "R&D report", kind: "external" },
     ]);
   });
+
+  it("counts an anchor opened inside another anchor", () => {
+    // Found by the linking track: a draft with three internal hrefs counted
+    // two. The lazy `<a>…</a>` match swallowed the nested tag as body text, so
+    // the second link never existed and the third's closing tag was orphaned.
+    // A browser closes the outer anchor where the inner one opens; so do we.
+    const html =
+      '<p><a href="/alpha">Alpha <a href="/beta">Beta</a> tail</a> and <a href="/gamma">Gamma</a></p>';
+    expect(extractLinks(html, "example.com")).toEqual([
+      { href: "/alpha", anchor: "Alpha", kind: "internal" },
+      { href: "/beta", anchor: "Beta", kind: "internal" },
+      { href: "/gamma", anchor: "Gamma", kind: "internal" },
+    ]);
+  });
 });
 
 describe("auditArticle", () => {

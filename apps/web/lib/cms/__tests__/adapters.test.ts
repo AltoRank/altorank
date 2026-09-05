@@ -327,7 +327,7 @@ describe("resolveCMSAdapter", () => {
     const adapter = resolveCMSAdapter({
       type: "notion",
       integrationToken: "t",
-      parentPageId: "p1",
+      databaseId: "d1",
     });
     expect(adapter).toBeInstanceOf(NotionAdapter);
   });
