@@ -32,13 +32,13 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
       (#95) to match the sections below; the first heading on the page reads
       as the one place a visitor is addressed directly, and centred is how
       every landing page in the category does that. Reverted the same day. */}
-  <header class="relative overflow-hidden border-b border-line bg-[oklch(0.175_0.03_275)] -mt-14 px-5 pt-[112px] text-center sm:px-6 lg:-mt-16 lg:pt-[148px]">
+  <header class="relative overflow-hidden border-b border-line bg-[oklch(0.175_0.03_275)] -mt-14 px-5 pt-[112px] sm:px-6 lg:-mt-16 lg:pt-[148px]">
     <div class="mx-auto max-w-[1240px]">
-      <h1 class="mx-auto mb-4 max-w-[19ch] text-[clamp(30px,7vw,52px)] font-medium leading-[1.12] tracking-[-0.028em] text-white [text-wrap:balance] sm:mb-5">
+      <h1 class="mb-4 max-w-[19ch] text-[clamp(30px,7vw,52px)] font-medium leading-[1.12] tracking-[-0.028em] text-white [text-wrap:balance] sm:mb-5">
         Articles that rank, published to your site every week.
       </h1>
 
-      <p class="mx-auto mb-7 max-w-[52ch] text-[15.5px] leading-relaxed text-[oklch(0.82_0.03_275)] [text-wrap:pretty] sm:text-[17px] md:mb-8">
+      <p class="mb-7 max-w-[52ch] text-[15.5px] leading-relaxed text-[oklch(0.82_0.03_275)] [text-wrap:pretty] sm:text-[17px] md:mb-8">
         Point it at a domain Monday. First article live by Friday. Keyword
         research, drafts in your voice, publishing to eleven CMSs. Open source,
         self-host it free.
@@ -53,7 +53,7 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
           gated result is a promise and a visible one is an outcome. */}
       <form
         id="growth-plan-form"
-        class="mx-auto flex max-w-[560px] flex-col gap-2.5 sm:flex-row"
+        class="flex max-w-[560px] flex-col gap-2.5 sm:flex-row"
         data-api={`${APP_URL}/api/growth-plan`}
         data-lead={`${APP_URL}/api/growth-plan/lead`}
         data-signup={SIGNUP_URL}

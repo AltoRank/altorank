@@ -335,7 +335,7 @@ const structuredData = [
   {TOOLS.map((tool) => (
     <section class={`border-b border-line py-[72px] ${tool.ours ? 'bg-accent-soft/15' : ''}`}>
       <div class="mx-auto max-w-[820px] px-8">
-        <div class="mb-2 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">
+        <div class="mb-2 flex items-center gap-2 font-mono text-[11px] text-ink-3">
           <span>Tool {tool.index}</span>
           {tool.ours && (
             <span class="rounded-full bg-accent px-1.5 py-[1px] font-mono text-[9.5px] tracking-[0.08em] text-white">UNSER</span>
@@ -347,22 +347,22 @@ const structuredData = [
         <p class="mb-7 text-base font-medium text-accent-ink">{tool.subtitle}</p>
         <div class="mb-5 grid gap-3 rounded-lg border border-line bg-bg p-5 sm:grid-cols-3">
           <div>
-            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Was es ist</div>
+            <div class="mb-1.5 font-mono text-[10.5px] text-ink-3">Was es ist</div>
             <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.whatItIs}</div>
           </div>
           <div>
-            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Am besten für</div>
+            <div class="mb-1.5 font-mono text-[10.5px] text-ink-3">Am besten für</div>
             <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.bestFor}</div>
           </div>
           <div>
-            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Preise</div>
+            <div class="mb-1.5 font-mono text-[10.5px] text-ink-3">Preise</div>
             <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.pricing}</div>
           </div>
         </div>
 
         {tool.ours ? (
           <>
-            <h3 class="mt-7 mb-4 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Wie {APP_NAME} sich von contentbird unterscheidet</h3>
+            <h3 class="mt-7 mb-4 font-mono text-[11px] text-ink-3">Wie {APP_NAME} sich von contentbird unterscheidet</h3>
             <div class="overflow-hidden rounded-lg border border-line bg-bg">
               <table class="w-full text-sm">
                 <caption class="sr-only">{APP_NAME} gegenüber contentbird, Funktion-für-Funktion-Vergleich.</caption>
@@ -390,7 +390,7 @@ const structuredData = [
             <p class="mt-4 text-[15px] leading-relaxed text-ink-2">
               {APP_NAME} Managed kostet 99 €/Mon. mit kostenloser Testphase, und <a href="/pricing" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">Agency für 199 €/Mon.</a> schaltet 400 Artikel pro Monat, unbegrenzte Kunden-Workspaces, White-Label-Reports, Echtzeit-Rank-Tracking und den Empfehlungs-Traffic-Austausch frei, enthalten, nicht als Add-on gebucht.
             </p>
-            <h3 class="mt-7 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Wo {APP_NAME} verliert</h3>
+            <h3 class="mt-7 mb-3 font-mono text-[11px] text-ink-3">Wo {APP_NAME} verliert</h3>
             <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsTheirs}</p>
             <div class="mt-7">
               <Button href={SIGNUP_URL}>
@@ -401,11 +401,11 @@ const structuredData = [
           </>
         ) : (
           <>
-            <h3 class="mt-6 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+            <h3 class="mt-6 mb-3 font-mono text-[11px] text-ink-3">
               {tool.name === 'Surfer SEO' || tool.name === 'NeuronWriter' ? `Wie ${tool.name} sich von contentbird unterscheidet` : `Wo ${tool.name} contentbird schlägt`}
             </h3>
             <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsContentbird}</p>
-            <h3 class="mt-6 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+            <h3 class="mt-6 mb-3 font-mono text-[11px] text-ink-3">
  Wo {APP_NAME} {tool.name} schlägt
             </h3>
             <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsTheirs}</p>
@@ -432,9 +432,9 @@ const structuredData = [
       <div class="grid gap-3 md:grid-cols-2">
         {DECISION_MATRIX.map((row) => (
           <div class={`rounded-xl border p-5 ${row.ours ? 'border-accent bg-accent-soft/40' : 'border-line bg-bg'}`}>
-            <div class="mb-2 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Wenn</div>
+            <div class="mb-2 font-mono text-[11px] text-ink-3">Wenn</div>
             <div class="mb-3 text-[15px] font-medium text-ink">{row.when}</div>
-            <div class="mb-1 font-mono text-[11px] uppercase tracking-[0.08em] text-accent-ink">Dann</div>
+            <div class="mb-1 font-mono text-[11px] text-accent-ink">Dann</div>
             <div class="mb-2 text-lg font-semibold tracking-[-0.01em] text-ink">→ {row.pick}</div>
             <p class="text-sm leading-relaxed text-ink-2">{row.rationale}</p>
           </div>
