@@ -62,8 +62,19 @@ const SENSITIVE_CONFIG_FIELDS = new Set([
   "apiKey",
   "integrationToken",
   "secret",
+  "token",
   "username",
 ]);
+
+/**
+ * Fields added to SENSITIVE_CONFIG_FIELDS after rows already held them in
+ * plaintext (inside a config flagged __encrypted). Decrypting those raw values
+ * fails; for these fields only, a failure means "stored before encryption" and
+ * the value is returned as-is. It is encrypted the next time the integration is
+ * saved. Every other field still fails loudly, so a wrong ENCRYPTION_KEY is not
+ * masked.
+ */
+const LEGACY_PLAINTEXT_FIELDS = new Set(["token"]);
 
 /** Encrypt sensitive fields in a config object before storage. */
 export function encryptConfig(config: Record<string, unknown>): Record<string, unknown> {
@@ -83,7 +94,11 @@ export function decryptConfig(config: Record<string, unknown>): Record<string, u
   const result = { ...config };
   for (const key of Object.keys(result)) {
     if (SENSITIVE_CONFIG_FIELDS.has(key) && typeof result[key] === "string") {
-      result[key] = decrypt(result[key] as string);
+      try {
+        result[key] = decrypt(result[key] as string);
+      } catch (err) {
+        if (!LEGACY_PLAINTEXT_FIELDS.has(key)) throw err;
+      }
     }
   }
   delete result.__encrypted;
