@@ -12,7 +12,7 @@ import { decryptConfig } from "@/lib/crypto";
 import { publishArticleCore, PublishError, type PublishContext } from "@/lib/publishing/core";
 import { chooseDestination, toDestinations, type IntegrationRow } from "@/lib/publishing/destinations";
 import { recordPublish } from "@/lib/publishing/log";
-import { prepareRetry } from "@/lib/publishing/retry";
+import { retryPublishCore } from "@/lib/publishing/retry";
 import type { PublishResult } from "@/lib/cms/types";
 import { submitForIndexing } from "@/lib/seo/indexing";
 import type { CMSConfig } from "@/lib/types";
@@ -54,7 +54,6 @@ async function runAndLog(
   articleId: string,
   workspaceId: string | null,
   attempt: () => Promise<PublishResult & PublishContext>,
-  retryOf: string | null = null,
 ) {
   try {
     const result = await attempt();
@@ -66,7 +65,6 @@ async function runAndLog(
         triggeredBy: "manual",
         destinationId: result.destinationId,
         publishMode: result.publishMode,
-        retryOf,
       });
     }
     revalidatePath("/articles");
@@ -83,7 +81,6 @@ async function runAndLog(
         triggeredBy: "manual",
         destinationId: context?.destinationId,
         publishMode: context?.publishMode,
-        retryOf,
       });
     }
     throw err;
@@ -285,14 +282,10 @@ export async function retryPublish(articleId: string) {
   const supabase = await createClient();
   if (await needsPlanToShip(supabase, agencyId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
 
-  const { workspaceId, last } = await prepareRetry(supabase, articleId);
-  return runAndLog(
-    supabase,
-    articleId,
-    workspaceId,
-    () => publishArticleCore(supabase, articleId, { destinationId: last.destination_id }),
-    last.id,
-  );
+  const result = await retryPublishCore(supabase, articleId, "manual");
+  revalidatePath("/articles");
+  revalidatePath(`/content/${articleId}`);
+  return result;
 }
 
 /**

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
-import { DEFAULT_SCOPES, expiryFromDays, generateApiKey } from "@/lib/agent/api-keys";
+import { DEFAULT_SCOPES, expiryFromDays, generateApiKey, type ApiKeyScope } from "@/lib/agent/api-keys";
 
 // ---------------------------------------------------------------------------
 // API keys for the agent surface: create once, revoke forever
@@ -16,6 +16,8 @@ import { DEFAULT_SCOPES, expiryFromDays, generateApiKey } from "@/lib/agent/api-
 const createSchema = z.object({
   name: z.string().trim().min(1, "Give the key a name.").max(80),
   expires_in_days: z.union([z.literal("never"), z.coerce.number().int().positive().max(3650)]),
+  /** The "write" scope is opt-in: a key that can move the plan or edit drafts is a different thing to hand out. */
+  allow_write: z.boolean().default(false),
 });
 
 export type CreatedApiKey = {
@@ -25,6 +27,7 @@ export type CreatedApiKey = {
   key: string;
   prefix: string;
   expires_at: string | null;
+  scopes: string[];
 };
 
 export async function createApiKey(formData: FormData): Promise<CreatedApiKey> {
@@ -32,7 +35,9 @@ export async function createApiKey(formData: FormData): Promise<CreatedApiKey> {
   const parsed = createSchema.parse({
     name: formData.get("name"),
     expires_in_days: formData.get("expires_in_days") ?? "never",
+    allow_write: formData.get("allow_write") === "on",
   });
+  const scopes: ApiKeyScope[] = parsed.allow_write ? [...DEFAULT_SCOPES, "write"] : [...DEFAULT_SCOPES];
 
   const generated = generateApiKey();
   const expiresAt = expiryFromDays(parsed.expires_in_days === "never" ? null : parsed.expires_in_days);
@@ -45,7 +50,7 @@ export async function createApiKey(formData: FormData): Promise<CreatedApiKey> {
       name: parsed.name,
       key_hash: generated.hash,
       prefix: generated.prefix,
-      scopes: [...DEFAULT_SCOPES],
+      scopes,
       expires_at: expiresAt,
       created_by: user.id,
     })
@@ -55,7 +60,7 @@ export async function createApiKey(formData: FormData): Promise<CreatedApiKey> {
   if (error || !data) throw new Error(error?.message ?? "Could not create the API key");
   revalidatePath("/settings/api-keys");
 
-  return { id: data.id, name: parsed.name, key: generated.key, prefix: generated.prefix, expires_at: expiresAt };
+  return { id: data.id, name: parsed.name, key: generated.key, prefix: generated.prefix, expires_at: expiresAt, scopes };
 }
 
 export async function revokeApiKey(id: string): Promise<void> {
