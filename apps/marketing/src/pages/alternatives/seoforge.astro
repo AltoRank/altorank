@@ -86,7 +86,7 @@ const structuredData = [
 ---
 
 <PSEO
-  title="SEOForge Review and Alternative: Open Source, Approval-First"
+  title="SEOForge Review & Alternative: Open Source, Approval-First"
   description="SEOForge publishes on autopilot with undisclosed backlinks. AltoRank ships nothing until you approve it."
   breadcrumbs={breadcrumbs}
   structuredData={structuredData}
@@ -124,12 +124,9 @@ const structuredData = [
           </thead>
           <tbody>
             {TLDR_ROWS.map((row, i) => (
-              <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+              <tr class={`${i > 0 ? 'border-t border-line-soft' : ''} ${row.ours ? 'bg-accent-soft/30 font-semibold text-ink' : ''}`}>
                 <td class="px-5 py-4 font-medium">
                   {row.name}
-                  {row.ours && (
-                    <span class="ml-2 rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-accent-ink">ours</span>
-                  )}
                 </td>
                 <td class="px-5 py-4 text-ink-2">{row.bestFor}</td>
                 <td class="px-5 py-4 text-ink-2">{row.publishing}</td>
@@ -197,11 +194,11 @@ const structuredData = [
       </p>
       <div class="mb-6 grid gap-3 sm:grid-cols-2">
         <div class="rounded-lg border border-line bg-panel p-5">
-          <div class="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Trustpilot</div>
+          <div class="text-[12.5px] font-medium text-ink-3">Trustpilot</div>
           <div class="mt-1 text-[15px] font-medium text-ink">No Trustpilot page exists. Zero reviews on G2 and SourceForge; one directory shows 3.6 out of 5 from five ratings with no text. The 58 &ldquo;reviews&rdquo; on another directory repeat the same sentences under different names.</div>
         </div>
         <div class="rounded-lg border border-line bg-panel p-5">
-          <div class="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Independent tests</div>
+          <div class="text-[12.5px] font-medium text-ink-3">Independent tests</div>
           <div class="mt-1 text-[15px] font-medium text-ink">None. No independent 30-, 60- or 90-day test of SEOForge has been published that we could find, so the edit rates and link velocity the rest of the category is measured on are unknown here.</div>
         </div>
       </div>
@@ -235,8 +232,8 @@ const structuredData = [
       </div>
 
       <div class="mt-10 flex flex-wrap gap-2.5">
-        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
-        <Button href="/open-source" variant="secondary" size="lg">Read the licence</Button>
+        <Button href={PRIMARY_CTA.href} arrow size="sm">{PRIMARY_CTA.label}</Button>
+        <Button href="/open-source" variant="secondary" size="sm">Read the licence</Button>
       </div>
     </div>
   </section>
