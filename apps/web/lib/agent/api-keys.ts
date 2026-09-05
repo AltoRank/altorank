@@ -87,6 +87,24 @@ export function expiryFromDays(days: number | null, now: Date = new Date()): str
   return new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
-/** What a freshly created key may do. Every scope a v1 endpoint checks. */
-export const DEFAULT_SCOPES = ["read", "generate"] as const;
-export type ApiKeyScope = (typeof DEFAULT_SCOPES)[number];
+/**
+ * Every scope a v1 endpoint checks.
+ *
+ *   read      GET anything in the account; keyword suggestions (research spend)
+ *   generate  POST /articles/generate - drafts into the review queue
+ *   write     mutations: reschedule/remove planned keywords, find-and-replace
+ *             in a draft, retry a failed publish, pause/resume a site
+ *
+ * None of them approves or publishes a draft; there is no scope for that.
+ */
+export const ALL_SCOPES = ["read", "generate", "write"] as const;
+export type ApiKeyScope = (typeof ALL_SCOPES)[number];
+
+/** What a freshly created key may do unless the human ticks "write". */
+export const DEFAULT_SCOPES: readonly ApiKeyScope[] = ["read", "generate"];
+
+export const SCOPE_LABELS: Record<ApiKeyScope, string> = {
+  read: "Read",
+  generate: "Generate drafts",
+  write: "Edit plan, drafts and site status",
+};

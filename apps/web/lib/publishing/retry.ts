@@ -10,7 +10,9 @@
 // so they are testable without the server-action wrapper.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getLastPublish, type LastPublish } from "./log";
+import type { PublishResult } from "@/lib/cms/types";
+import { publishArticleCore, PublishError, type PublishContext } from "./core";
+import { getLastPublish, recordPublish, type LastPublish } from "./log";
 
 export type RetryPlan = {
   workspaceId: string;
@@ -61,4 +63,51 @@ export async function prepareRetry(supabase: SupabaseClient, articleId: string):
   }
 
   return { workspaceId: article.workspace_id, last };
+}
+
+/**
+ * Retry the last failed publish and write its publish_log row either way.
+ *
+ * Same article, same connection the failed attempt used, one more log row
+ * pointing back at the failed one (`retry_of`). Never creates a second post:
+ * the core edits in place when the article already has an external id. The
+ * one implementation behind the editor's Retry button (app/actions/publish.ts)
+ * and the agent API's POST /articles/{id}/retry-publish; the doors add their
+ * own plan gate and, for the action, cache revalidation.
+ *
+ * A failure before a destination is known (not approved, nothing connected) is
+ * logged with neither destination nor mode, and is not something a retry fixes.
+ */
+export async function retryPublishCore(
+  supabase: SupabaseClient,
+  articleId: string,
+  triggeredBy: "manual" | "cron" = "manual",
+): Promise<PublishResult & PublishContext> {
+  const { workspaceId, last } = await prepareRetry(supabase, articleId);
+  try {
+    const result = await publishArticleCore(supabase, articleId, { destinationId: last.destination_id });
+    await recordPublish(supabase, {
+      articleId,
+      workspaceId,
+      status: "success",
+      triggeredBy,
+      destinationId: result.destinationId,
+      publishMode: result.publishMode,
+      retryOf: last.id,
+    });
+    return result;
+  } catch (err) {
+    const context = err instanceof PublishError ? err.context : null;
+    await recordPublish(supabase, {
+      articleId,
+      workspaceId,
+      status: "error",
+      error: err instanceof Error ? err.message : String(err),
+      triggeredBy,
+      destinationId: context?.destinationId,
+      publishMode: context?.publishMode,
+      retryOf: last.id,
+    });
+    throw err;
+  }
 }

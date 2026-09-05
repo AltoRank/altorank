@@ -49,6 +49,26 @@ export async function listKeywords(
   return (data ?? []) as Keyword[];
 }
 
+/**
+ * The planned day for every unwritten keyword on the workspace's calendar,
+ * keyed by keyword id. What `planned_for` on a keyword record reads.
+ */
+export async function plannedDatesFor(supabase: SupabaseClient, workspaceId: string): Promise<Map<string, string>> {
+  const { data, error } = await supabase
+    .from("calendar_entries")
+    .select("keyword_id, scheduled_date")
+    .eq("workspace_id", workspaceId)
+    .eq("status", "queue")
+    .is("article_id", null)
+    .order("scheduled_date", { ascending: true });
+  if (error) throw new Error(error.message);
+  const out = new Map<string, string>();
+  for (const r of (data ?? []) as { keyword_id: string | null; scheduled_date: string }[]) {
+    if (r.keyword_id && !out.has(r.keyword_id)) out.set(r.keyword_id, r.scheduled_date);
+  }
+  return out;
+}
+
 export async function listArticles(
   supabase: SupabaseClient,
   workspaceId: string,

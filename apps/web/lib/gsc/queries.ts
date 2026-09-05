@@ -11,6 +11,7 @@
 // the old traffic query read the first thousand and charted them as the
 // whole month.
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { inspectionFrom, type UrlInspection } from "@/lib/google/inspection";
 import { WINDOW_DAYS, windows, type GscRow, type KnownPage } from "./analysis";
@@ -36,7 +37,21 @@ async function fetchAll<T>(make: (from: number, to: number) => Page<T>): Promise
  * the account; every page passes one.
  */
 export async function loadGscRows(workspaceId?: string, today: Date = new Date(), days = WINDOW_DAYS): Promise<GscRow[]> {
-  const supabase = await createClient();
+  return loadGscRowsFrom(await createClient(), workspaceId, today, days);
+}
+
+/**
+ * The same read on a client the caller already holds. The agent API passes
+ * its service-role client here, which is why `workspaceId` is not optional on
+ * this variant: with no RLS behind the query, an unscoped read would return
+ * every account's rows, not just this one's.
+ */
+export async function loadGscRowsFrom(
+  supabase: SupabaseClient,
+  workspaceId: string | undefined,
+  today: Date = new Date(),
+  days = WINDOW_DAYS,
+): Promise<GscRow[]> {
   const { since } = windows(today, days);
   return fetchAll<GscRow>((from, to) => {
     let q = supabase
@@ -65,7 +80,10 @@ export type SyncHealth = {
 };
 
 export async function syncHealthFor(workspaceId: string): Promise<SyncHealth> {
-  const supabase = await createClient();
+  return syncHealthFrom(await createClient(), workspaceId);
+}
+
+export async function syncHealthFrom(supabase: SupabaseClient, workspaceId: string): Promise<SyncHealth> {
   const [conn, newest, latestDay] = await Promise.all([
     supabase
       .from("workspace_integrations")
@@ -110,7 +128,10 @@ export type KnownPageRow = KnownPage & {
  * posts is not a page anyone asks Google to rank.
  */
 export async function knownPagesFor(workspaceId: string): Promise<KnownPageRow[]> {
-  const supabase = await createClient();
+  return knownPagesFrom(await createClient(), workspaceId);
+}
+
+export async function knownPagesFrom(supabase: SupabaseClient, workspaceId: string): Promise<KnownPageRow[]> {
   const [articles, pages] = await Promise.all([
     supabase
       .from("articles")
