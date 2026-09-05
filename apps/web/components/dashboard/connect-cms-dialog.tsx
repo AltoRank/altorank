@@ -14,9 +14,11 @@ import {
 } from "@/lib/cms/publish-mode";
 import type { Workspace, Integration, CMSConfig } from "@/lib/types";
 import type { BlogUrlDerivation } from "@/lib/cms/blog-url";
+import { pluginInstallUrl } from "@/lib/cms/wordpress-plugin";
 
 type CMSType =
   | "wordpress"
+  | "wordpress-plugin"
   | "shopify"
   | "magento"
   | "webflow"
@@ -48,7 +50,7 @@ export interface ConnectCmsDialogProps {
 }
 
 const CMS_TYPES: CMSType[] = [
-  "wordpress", "shopify", "magento", "webflow", "ghost", "framer",
+  "wordpress", "wordpress-plugin", "shopify", "magento", "webflow", "ghost", "framer",
   "wix", "notion", "hubspot", "woocommerce", "webhook", "git",
 ];
 
@@ -58,6 +60,26 @@ export function isCmsType(value: unknown): value is CMSType {
 
 const inputClass =
   "px-3 py-2 rounded-lg border border-line bg-panel text-[13px] text-ink placeholder:text-ink-3 outline-none focus:border-accent transition-colors";
+
+/**
+ * The plugin's integration token: 32 random bytes as hex. Made in the browser
+ * with the Web Crypto CSPRNG, shown once, and stored encrypted by the server
+ * only after the plugin has answered a test call with it.
+ */
+export function generateIntegrationToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function siteHost(url: string): string | null {
+  try {
+    const u = new URL(url.trim());
+    return u.protocol === "https:" || u.protocol === "http:" ? u.host : null;
+  } catch {
+    return null;
+  }
+}
 
 function Field({
   name,
@@ -115,6 +137,23 @@ export function ConnectCmsDialog({
   // to update as they type rather than only on submit.
   const [notionStatusProperty, setNotionStatusProperty] = useState("");
   const onboarding = useOnboarding();
+
+  // The plugin tab is the one form here with state of its own: the site URL
+  // is read as it is typed (the install link points into that site's admin),
+  // and the token is generated here rather than typed. A fresh token per
+  // opening, so connecting a second site never reuses the first site's.
+  const [pluginSiteUrl, setPluginSiteUrl] = useState("");
+  const [pluginToken, setPluginToken] = useState(generateIntegrationToken);
+  const [tokenCopied, setTokenCopied] = useState(false);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setPluginToken(generateIntegrationToken());
+      setPluginSiteUrl("");
+      setTokenCopied(false);
+    }
+  }
 
   // The dialog stays mounted while closed, so the opening tab has to follow
   // `initialCmsType` rather than only the first render: a caller that opens it
@@ -192,7 +231,8 @@ export function ConnectCmsDialog({
   }
 
   const tabs: { value: CMSType; label: string }[] = [
-    { value: "wordpress", label: "WordPress" },
+    { value: "wordpress-plugin", label: "WordPress plugin" },
+    { value: "wordpress", label: "WordPress (app password)" },
     { value: "shopify", label: "Shopify" },
     { value: "magento", label: "Magento" },
     { value: "webflow", label: "Webflow" },
@@ -248,8 +288,81 @@ export function ConnectCmsDialog({
             </div>
           </label>
 
+          {cmsType === "wordpress-plugin" && (
+            <>
+              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
+                Recommended. No WordPress login is shared: the plugin holds one
+                token for this site. Images are imported into the media library
+                and Rank Math, Yoast, SEOPress and AIOSEO fields are filled in.
+                Posts arrive as drafts unless you change that in the plugin.
+              </p>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[12.5px] font-medium text-ink-2">Site URL</span>
+                <input
+                  name="siteUrl"
+                  type="url"
+                  required
+                  placeholder="https://example.com"
+                  value={pluginSiteUrl}
+                  onChange={(e) => setPluginSiteUrl(e.target.value)}
+                  className={inputClass}
+                />
+              </label>
+              <input type="hidden" name="token" value={pluginToken} />
+
+              <ol className="flex flex-col gap-3 text-[13px] text-ink-2 list-decimal pl-5">
+                <li>
+                  {siteHost(pluginSiteUrl) ? (
+                    <a
+                      href={pluginInstallUrl(pluginSiteUrl.trim())}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-accent-ink underline decoration-line underline-offset-[3px]"
+                    >
+                      Install the AltoRank plugin
+                    </a>
+                  ) : (
+                    <span className="text-ink-3">Install the AltoRank plugin (enter the site URL first)</span>
+                  )}
+                  <span className="text-ink-3"> on {siteHost(pluginSiteUrl) ?? "your site"} and activate it.</span>
+                </li>
+                <li>
+                  <div className="flex flex-col gap-1.5">
+                    <span>Paste this into Settings → AltoRank:</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        readOnly
+                        value={pluginToken}
+                        aria-label="Integration token"
+                        onFocus={(e) => e.currentTarget.select()}
+                        className={`${inputClass} flex-1 font-mono text-[12px]`}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(pluginToken);
+                          setTokenCopied(true);
+                          setTimeout(() => setTokenCopied(false), 2000);
+                        }}
+                      >
+                        {tokenCopied ? "Copied" : "Copy"}
+                      </Button>
+                    </div>
+                  </div>
+                </li>
+                <li>Save the plugin settings, then press Test connection &amp; save below.</li>
+              </ol>
+            </>
+          )}
+
           {cmsType === "wordpress" && (
             <>
+              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
+                Uses a WordPress application password over the REST API. Works
+                without a plugin; SEOPress and AIOSEO fields cannot be written
+                this way.
+              </p>
               <Field name="siteUrl" label="Site URL" placeholder="https://example.com" />
               <Field name="username" label="Username" />
               <Field name="applicationPassword" label="Application password" type="password" />
@@ -521,7 +634,9 @@ export function ConnectCmsDialog({
               Cancel
             </Button>
             <Button type="submit" variant="accent" disabled={pending || !draftCheck.ok}>
-              {pending ? "Connecting..." : "Connect"}
+              {pending
+                ? cmsType === "wordpress-plugin" ? "Testing..." : "Connecting..."
+                : cmsType === "wordpress-plugin" ? "Test connection & save" : "Connect"}
             </Button>
           </div>
         </form>
@@ -541,6 +656,12 @@ function buildConfig(type: CMSType, fd: FormData): CMSConfig {
         siteUrl: fd.get("siteUrl") as string,
         username: fd.get("username") as string,
         applicationPassword: fd.get("applicationPassword") as string,
+      };
+    case "wordpress-plugin":
+      return {
+        type: "wordpress-plugin",
+        siteUrl: (fd.get("siteUrl") as string).trim(),
+        token: fd.get("token") as string,
       };
     case "shopify":
       return {

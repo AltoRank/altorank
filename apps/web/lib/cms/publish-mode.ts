@@ -35,6 +35,7 @@ export function isPublishMode(value: unknown): value is PublishMode {
  */
 export const DRAFT_BEHAVIOUR: Record<CMSConfig["type"], string> = {
   wordpress: "Saved as a draft post. Publish it from the WordPress admin.",
+  "wordpress-plugin": "Saved as a draft post. Publish it from the WordPress admin.",
   woocommerce: "Saved as a draft post. Publish it from the WordPress admin.",
   ghost: "Saved as a draft. Publish it from the Ghost admin.",
   webflow:
@@ -47,7 +48,7 @@ export const DRAFT_BEHAVIOUR: Record<CMSConfig["type"], string> = {
   framer: "Saved as a draft collection item.",
   magento: "Saved as a disabled CMS page.",
   webhook:
-    'The payload carries publishMode: "draft". Your endpoint decides what that means.',
+    'The payload carries publish_mode: "draft". Your endpoint decides what that means.',
   git:
     "Committed with draft: true in the front matter. Your site's build has to honour that field.",
 };

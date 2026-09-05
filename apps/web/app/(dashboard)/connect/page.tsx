@@ -25,7 +25,7 @@ const GOOGLE_INTEGRATIONS = new Set(["gsc", "ga4"]);
 // disabled button, because a button that silently does nothing is worse than
 // one that says it is unavailable.
 const CONNECTABLE_CMS = new Set([
-  "wordpress", "shopify", "magento", "webflow", "ghost", "framer",
+  "wordpress", "wordpress-plugin", "shopify", "magento", "webflow", "ghost", "framer",
   "wix", "notion", "hubspot", "woocommerce", "webhook", "git",
 ]);
 

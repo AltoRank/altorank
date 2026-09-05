@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";
-import type { CMSAdapter, PublishMode, PublishPayload, PublishResult } from "@/lib/cms/types";
+import { canUpdate, type PublishMode, type PublishPayload, type PublishResult } from "@/lib/cms/types";
 import { tiptapToHtml } from "@/lib/cms/html";
 import { fetchLinkTargets, resolveInternalLinks } from "@/lib/seo/link-resolver";
 import { submitForIndexing, type IndexingResult } from "@/lib/seo/indexing";
@@ -12,6 +12,8 @@ import { appendAttribution, isOperatorAgency, shouldAttribute } from "@/lib/publ
 import { chooseDestination, toDestinations, type IntegrationRow } from "@/lib/publishing/destinations";
 import { settleExchangeForArticle } from "@/lib/seo/exchange";
 import { createServiceClient } from "@/lib/supabase/server";
+import { renderArticleMarkdown } from "@/lib/publishing/export";
+import { recordPublish } from "@/lib/publishing/log";
 
 /** Which connection an attempt went through, and how. Written to publish_log. */
 export type PublishContext = {
@@ -42,21 +44,6 @@ export class PublishError extends Error {
     const message = err instanceof Error ? err.message : String(err);
     return new PublishError(message, context, { cause: err });
   }
-}
-
-/**
- * An adapter that can edit a post it already created. Read off the instance
- * rather than the interface because not every adapter has one yet; the
- * signature matches the optional `update` the refresh engine adds, so an
- * adapter gaining it is picked up here with no further change.
- */
-function updater(
-  adapter: CMSAdapter,
-): ((externalId: string, article: PublishPayload) => Promise<PublishResult>) | null {
-  const candidate = (adapter as { update?: unknown }).update;
-  return typeof candidate === "function"
-    ? (candidate as (externalId: string, article: PublishPayload) => Promise<PublishResult>).bind(adapter)
-    : null;
 }
 
 /**
@@ -141,6 +128,9 @@ type ArticleRow = {
   featured_image_url: string | null;
   external_id: string | null;
   published_url: string | null;
+  keyword: string | null;
+  created_at: string | null;
+  published_at: string | null;
 };
 
 /** Everything after the destination is known; failures here are retryable. */
@@ -153,7 +143,29 @@ async function pushToDestination(
 ): Promise<PublishResult> {
   const { publishMode } = context;
   const config = decryptConfig(cmsIntegration.config as Record<string, unknown>) as CMSConfig;
-  const adapter = resolveCMSAdapter(config);
+  const adapter = resolveCMSAdapter(config, {
+    /**
+     * Adapters that retry over HTTP (webhook, WordPress plugin) report each
+     * try. One publish_log row per attempt, marked `webhook` and carrying the
+     * connection it went through, so the log shows an endpoint that failed
+     * twice before accepting - the caller still writes its own success/error
+     * row for the publish as a whole.
+     */
+    onDelivery: (attempt) => {
+      const where = attempt.status ? ` HTTP ${attempt.status}` : "";
+      return recordPublish(supabase, {
+        articleId,
+        workspaceId: article.workspace_id,
+        status: attempt.ok ? "success" : "error",
+        error: attempt.ok
+          ? null
+          : `delivery attempt ${attempt.attempt}/${attempt.maxAttempts}${where}: ${attempt.error ?? "no response"}`,
+        triggeredBy: "webhook",
+        destinationId: context.destinationId,
+        publishMode: context.publishMode,
+      });
+    },
+  });
 
   let html = tiptapToHtml(article.content as Record<string, unknown>);
 
@@ -177,12 +189,14 @@ async function pushToDestination(
    * behind a feature flag. Never blocks a publish: if we cannot tell what
    * plan someone is on, we do not brand their article.
    */
+  let siteUrl = "https://example.com";
   try {
     const { data: ws } = await supabase
       .from("workspaces")
-      .select("agency_id, agency:agencies(remove_branding)")
+      .select("agency_id, domain, agency:agencies(remove_branding)")
       .eq("id", article.workspace_id)
       .single();
+    if (ws?.domain) siteUrl = `https://${String(ws.domain).replace(/^https?:\/\//, "")}`;
     if (ws?.agency_id) {
       const quota = await getQuota(supabase, ws.agency_id);
       const removeBranding =
@@ -200,10 +214,30 @@ async function pushToDestination(
   }
 
   const payload: PublishPayload = {
+    id: articleId,
     title: article.title,
     html,
+    // Only the webhook contract carries Markdown; rendering it for a CMS that
+    // takes HTML would be work nobody reads.
+    markdown:
+      config.type === "webhook"
+        ? renderArticleMarkdown(
+            {
+              title: article.title,
+              slug: article.slug,
+              html,
+              metaDescription: article.meta_description,
+              keyword: article.keyword,
+              featuredImageUrl: article.featured_image_url,
+              publishedAt: article.published_at,
+            },
+            siteUrl,
+          )
+        : undefined,
     slug: article.slug,
     metaDescription: article.meta_description ?? undefined,
+    focusKeyword: article.keyword ?? undefined,
+    createdAt: article.created_at ?? undefined,
     featuredImageUrl: article.featured_image_url ?? undefined,
     publishMode,
   };
@@ -218,10 +252,9 @@ async function pushToDestination(
    * cannot.
    */
   const existingId: string | null = article.external_id ?? null;
-  const update = updater(adapter);
   let result: PublishResult;
-  if (existingId && update) {
-    result = await update(existingId, payload);
+  if (existingId && canUpdate(adapter)) {
+    result = await adapter.update(existingId, payload);
   } else if (existingId && config.type !== "git") {
     throw new Error(
       `This article already exists on ${config.type}${
@@ -251,11 +284,22 @@ async function pushToDestination(
   if (updateErr) throw new Error(updateErr.message);
 
   /**
-   * A draft is not on the web. Telling IndexNow or Search Console about a
-   * URL the CMS is still holding back would submit a 404 under the client's
-   * domain, and the exchange settles on a publish, which this is not yet.
+   * A draft is not on the web. Whether the connection asked for one
+   * (publish_mode) or the far side held it (the WordPress plugin's own "post
+   * as draft" setting, reported as result.status), telling IndexNow or Search
+   * Console about a URL the CMS is still holding back would submit a 404 under
+   * the client's domain, and the exchange settles on a publish, which this is
+   * not yet. The indexing status says where the article is waiting.
    */
-  if (publishMode === "draft") return result;
+  if (publishMode === "draft" || result.status === "draft") {
+    await supabase
+      .from("articles")
+      .update({
+        indexing_status: { indexnow: "held-in-cms", google: "held-in-cms" } satisfies IndexingResult,
+      })
+      .eq("id", articleId);
+    return result;
+  }
 
   /**
    * If this article was written for somebody else's exchange request, the

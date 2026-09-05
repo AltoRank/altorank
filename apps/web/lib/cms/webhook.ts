@@ -1,68 +1,117 @@
-import type { CMSAdapter, PublishPayload, PublishResult } from "./types";
+// ---------------------------------------------------------------------------
+// Generic webhook: POST the article to a URL the customer controls
+// ---------------------------------------------------------------------------
+//
+// PAYLOAD CONTRACT
+//
+// Every request is a JSON POST to the configured URL with these headers:
+//
+//   Content-Type:        application/json
+//   Authorization:       Bearer <secret>          when a secret is configured
+//   X-Webhook-Signature: sha256=<hex HMAC-SHA256 of the raw body, keyed by
+//                        the secret>              when a secret is configured
+//   plus any custom headers from the connection
+//
+// and one of these bodies, discriminated by `event`:
+//
+//   { "event": "publish_articles", "publish_mode": "draft" | "publish",
+//     "articles": [ Article, ... ] }
+//       New articles to publish. Always an array, even for one article, so a
+//       consumer written for the batch case needs no second code path.
+//       `publish_mode` is what the connection asked for; the receiver is the
+//       CMS here, so it decides what a draft looks like on its side.
+//   { "event": "update_article", "article": Article }
+//       An article that already went out and has changed (a refresh). Match it
+//       on `id`, or on `slug` if you did not keep ids.
+//   { "event": "unpublish_article", "article": { "id": "<id>" } }
+//       Take it down. `id` is whatever your endpoint returned as `id` when it
+//       accepted the article, or our article id if it returned nothing.
+//   { "event": "test" }
+//       Sent when the connection is saved. Reply 2xx and do nothing.
+//
+// Article:
+//   {
+//     "id":               "<our article id>",
+//     "title":            "...",
+//     "content_markdown": "...",      Markdown with front matter
+//     "content_html":     "<p>...",
+//     "meta_description": "..." | null,
+//     "created_at":       "2026-09-04T10:00:00.000Z",
+//     "image_url":        "https://..." | null,   featured image
+//     "slug":             "kebab-case",
+//     "tags":             ["..."]
+//   }
+//
+// Response: any 2xx. If the body is JSON with `id` and/or `url`, they are
+// stored as the article's external id and public URL.
+//
+// DELIVERY
+//
+// lib/cms/delivery.ts: three attempts with backoff (0.5s, 2s) on network
+// errors, 429 and 5xx; a 4xx other than 429 is the endpoint saying no and is
+// not retried. Each attempt is reported through `AdapterContext.onDelivery`,
+// which the publish core turns into a publish_log row.
+
+import type { AdapterContext, CMSAdapter, PublishPayload, PublishResult } from "./types";
 import type { WebhookConfig } from "@/lib/types";
 import crypto from "node:crypto";
+import { deliverWithRetry, MAX_ATTEMPTS, RETRY_DELAYS_MS } from "./delivery";
 
-/**
- * Generic webhook adapter — POSTs article data to a user-defined URL.
- * Supports optional HMAC-SHA256 signing for payload verification
- * and custom headers for auth.
- */
+export { MAX_ATTEMPTS, RETRY_DELAYS_MS };
+
+/** The article as the contract above describes it. */
+export function webhookArticle(article: PublishPayload) {
+  return {
+    id: article.id ?? null,
+    title: article.title,
+    content_markdown: article.markdown ?? "",
+    content_html: article.html,
+    meta_description: article.metaDescription ?? null,
+    created_at: article.createdAt ?? article.publishedAt ?? new Date().toISOString(),
+    image_url: article.featuredImageUrl ?? null,
+    slug: article.slug,
+    tags: article.tags ?? [],
+  };
+}
+
 export class WebhookAdapter implements CMSAdapter {
   private url: string;
   private secret: string | undefined;
   private customHeaders: Record<string, string>;
+  private onDelivery?: AdapterContext["onDelivery"];
 
-  constructor(config: WebhookConfig) {
+  constructor(config: WebhookConfig, context: AdapterContext = {}) {
     this.url = config.url;
     this.secret = config.secret;
     this.customHeaders = config.headers ?? {};
+    this.onDelivery = context.onDelivery;
   }
 
-  private sign(payload: string): string | undefined {
-    if (!this.secret) return undefined;
-    return crypto
-      .createHmac("sha256", this.secret)
-      .update(payload)
-      .digest("hex");
-  }
-
-  async publish(article: PublishPayload): Promise<PublishResult> {
-    const body = JSON.stringify({
-      action: "publish",
-      // What the connection asked for. The receiver is the CMS here, so it is
-      // the receiver that decides what a draft looks like on its side.
-      publishMode: article.publishMode ?? "publish",
-      article: {
-        title: article.title,
-        html: article.html,
-        slug: article.slug,
-        metaDescription: article.metaDescription,
-        tags: article.tags,
-        publishedAt: article.publishedAt ?? new Date().toISOString(),
-      },
-    });
-
-    const signature = this.sign(body);
-
+  private headersFor(body: string): Record<string, string> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       ...this.customHeaders,
     };
-
-    if (signature) {
-      headers["X-Webhook-Signature"] = `sha256=${signature}`;
+    if (this.secret) {
+      headers["Authorization"] = `Bearer ${this.secret}`;
+      headers["X-Webhook-Signature"] =
+        `sha256=${crypto.createHmac("sha256", this.secret).update(body).digest("hex")}`;
     }
+    return headers;
+  }
 
-    const res = await fetch(this.url, {
-      method: "POST",
-      headers,
-      body,
+  /** POST with retries (lib/cms/delivery.ts). */
+  private deliver(body: string, what: string): Promise<Response> {
+    return deliverWithRetry({
+      send: () => fetch(this.url, { method: "POST", headers: this.headersFor(body), body }),
+      what: `Webhook ${what}`,
+      onDelivery: this.onDelivery,
     });
+  }
 
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`Webhook publish failed (${res.status}): ${err}`);
-    }
+  private async send(payload: unknown, what: string): Promise<PublishResult> {
+    const body = JSON.stringify(payload);
+    const res = await this.deliver(body, what);
 
     // Try to extract id/url from response, but don't require it
     let externalId = "";
@@ -74,92 +123,38 @@ export class WebhookAdapter implements CMSAdapter {
     } catch {
       // Response may not be JSON — that's fine
     }
-
     return { externalId, url };
   }
 
-  /** Same envelope as publish, with `action: "update"` and the id to replace. */
-  async update(externalId: string, article: PublishPayload): Promise<PublishResult> {
-    const body = JSON.stringify({
-      action: "update",
-      externalId,
-      article: {
-        title: article.title,
-        html: article.html,
-        slug: article.slug,
-        metaDescription: article.metaDescription,
-        tags: article.tags,
-      },
-    });
-    const signature = this.sign(body);
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...this.customHeaders,
-    };
-    if (signature) headers["X-Webhook-Signature"] = `sha256=${signature}`;
+  async publish(article: PublishPayload): Promise<PublishResult> {
+    const result = await this.send(
+      { event: "publish_articles", publish_mode: article.publishMode ?? "publish", articles: [webhookArticle(article)] },
+      "publish",
+    );
+    // An endpoint that returns no id gets ours, so an update can name it.
+    return { ...result, externalId: result.externalId || article.id || "" };
+  }
 
-    const res = await fetch(this.url, { method: "POST", headers, body });
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`Webhook update failed (${res.status}): ${err}`);
-    }
-    let url = "";
-    try {
-      const data = await res.json();
-      url = data.url ?? data.link ?? "";
-    } catch {
-      // Not JSON; the receiver acknowledged and that is enough.
-    }
-    return { externalId, url };
+  async update(externalId: string, article: PublishPayload): Promise<PublishResult> {
+    const result = await this.send(
+      { event: "update_article", article: { ...webhookArticle(article), id: article.id ?? externalId } },
+      "update",
+    );
+    return { ...result, externalId: result.externalId || externalId };
   }
 
   async unpublish(externalId: string): Promise<void> {
-    const body = JSON.stringify({
-      action: "unpublish",
-      externalId,
-    });
-
-    const signature = this.sign(body);
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...this.customHeaders,
-    };
-
-    if (signature) {
-      headers["X-Webhook-Signature"] = `sha256=${signature}`;
-    }
-
-    const res = await fetch(this.url, {
-      method: "POST",
-      headers,
-      body,
-    });
-
-    if (!res.ok)
-      throw new Error(`Webhook unpublish failed (${res.status})`);
+    await this.deliver(
+      JSON.stringify({ event: "unpublish_article", article: { id: externalId } }),
+      "unpublish",
+    );
   }
 
+  /** One attempt, no retries: a connection test should answer quickly. */
   async testConnection(): Promise<{ ok: boolean; error?: string }> {
     try {
-      const body = JSON.stringify({ action: "test" });
-      const signature = this.sign(body);
-
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        ...this.customHeaders,
-      };
-
-      if (signature) {
-        headers["X-Webhook-Signature"] = `sha256=${signature}`;
-      }
-
-      const res = await fetch(this.url, {
-        method: "POST",
-        headers,
-        body,
-      });
-
+      const body = JSON.stringify({ event: "test" });
+      const res = await fetch(this.url, { method: "POST", headers: this.headersFor(body), body });
       if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
       return { ok: true };
     } catch (e) {

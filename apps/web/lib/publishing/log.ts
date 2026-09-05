@@ -16,7 +16,8 @@ export type PublishLogWrite = {
   workspaceId: string;
   status: "success" | "error";
   error?: string | null;
-  triggeredBy: "cron" | "manual";
+  /** `webhook`: one row per HTTP delivery attempt (lib/cms/delivery.ts), not a publish of its own. */
+  triggeredBy: "cron" | "manual" | "webhook";
   /** The workspace_integrations row the attempt used, once one was chosen. */
   destinationId?: string | null;
   publishMode?: PublishMode | null;

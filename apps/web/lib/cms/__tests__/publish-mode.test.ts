@@ -192,12 +192,12 @@ describe("HubSpot, Framer, Magento", () => {
 describe("Webhook", () => {
   const webhook = new WebhookAdapter({ type: "webhook", url: "https://hook.test/publish" });
 
-  it("passes publishMode in the envelope, defaulting to publish", async () => {
+  it("passes publish_mode in the envelope, defaulting to publish", async () => {
     mockFetch.mockResolvedValue({ ok: true, json: async () => ({ id: "1", url: "https://hook.test/1" }) });
     await webhook.publish(draft);
     await webhook.publish(unspecified);
-    expect(body(0).publishMode).toBe("draft");
-    expect(body(1).publishMode).toBe("publish");
+    expect(body(0).publish_mode).toBe("draft");
+    expect(body(1).publish_mode).toBe("publish");
   });
 });
 

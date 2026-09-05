@@ -17,6 +17,17 @@ const wordpressSchema = z.object({
   applicationPassword: z.string().min(1),
 });
 
+/**
+ * The plugin path. The token is what the connect dialog generated - 32 random
+ * bytes as hex - and the plugin compares it with hash_equals, so its shape is
+ * checked here too: anything else was typed by hand and will never match.
+ */
+const wordpressPluginSchema = z.object({
+  type: z.literal("wordpress-plugin"),
+  siteUrl: z.string().url(),
+  token: z.string().regex(/^[0-9a-f]{64}$/, "Integration token must be 64 hex characters"),
+});
+
 const shopifySchema = z.object({
   type: z.literal("shopify"),
   storeUrl: z.string().url(),
@@ -120,6 +131,7 @@ const gitSchema = z.object({
 
 const configSchema = z.discriminatedUnion("type", [
   wordpressSchema,
+  wordpressPluginSchema,
   shopifySchema,
   magentoSchema,
   webflowSchema,
