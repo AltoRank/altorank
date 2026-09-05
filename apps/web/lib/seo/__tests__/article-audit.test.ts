@@ -259,3 +259,64 @@ describe("auditArticle — a guessed keyword", () => {
     expect(items.find((i) => i.id === "keyword-placement")).toBeUndefined();
   });
 });
+
+describe("auditArticle — sources linked at the claim", () => {
+  const cited = `
+    <h1>The Best Email Marketing Software for Small Teams</h1>
+    <p>Around <a href="https://www.litmus.com/report/">42% of teams</a> switch tools within a year.</p>
+    <h2>Why does deliverability matter?</h2>
+    <p>Google's <a href="https://developers.google.com/gmail/sender">sender guidelines</a> set the floor.</p>
+  `;
+
+  it("fails a Sources footer whose URLs are linked nowhere else, and points at them", () => {
+    const html = `${cited}<h2>Sources</h2><ul>
+      <li><a href="https://hbr.org/2024/01/email">HBR on email fatigue</a></li>
+      <li><a href="http://litmus.com/report?utm_source=x">Litmus</a></li>
+    </ul>`;
+    const item = find(auditArticle({ ...base, html }).items, "inline-citations");
+    expect(item.status).toBe("fail");
+    expect(item.detail).toContain('1 of 2 URLs in the "sources" list is linked nowhere else');
+    expect(item.locate).toEqual(["HBR on email fatigue"]);
+  });
+
+  it("passes when the footer repeats links the body already carries, or when there is no footer", () => {
+    const withFooter = `${cited}<h2>References</h2><ul><li><a href="https://litmus.com/report">Litmus</a></li></ul>`;
+    expect(find(auditArticle({ ...base, html: withFooter }).items, "inline-citations").status).toBe("pass");
+    const none = find(auditArticle({ ...base, html: cited }).items, "inline-citations");
+    expect(none.status).toBe("pass");
+    expect(none.detail).toContain("no citation list at the end");
+  });
+
+  it("says nothing about citation placement when there are no citations at all", () => {
+    const html = "<h1>x</h1><p>Email marketing software sends campaigns.</p>";
+    expect(auditArticle({ ...base, html }).items.find((i) => i.id === "inline-citations")).toBeUndefined();
+  });
+});
+
+describe("auditArticle — alt text that describes the image", () => {
+  it("warns on the keyword alone and on a bare label, separately from missing alt", () => {
+    const html = [
+      "<h1>x</h1>",
+      '<img src="a.png" alt="Bar chart comparing the monthly price of five email tools">',
+      '<img src="b.png" alt="email marketing software">',
+      '<img src="c.png" alt="A chart">',
+      '<img src="d.png">',
+    ].join("");
+    const items = auditArticle({ ...base, html }).items;
+    // The existing check still owns the missing one.
+    expect(find(items, "image-alt").status).toBe("fail");
+    const item = find(items, "image-alt-descriptive");
+    expect(item.status).toBe("warn");
+    expect(item.detail).toContain("2 of 3 alt texts do not describe the image");
+    expect(item.detail).toContain("1 repeats the keyword and nothing else");
+    expect(item.detail).toContain("1 is under 6 words");
+    expect(item.locate).toEqual(["email marketing software", "A chart"]);
+  });
+
+  it("passes descriptive sentences and stays quiet when no image has alt text to judge", () => {
+    const good = '<h1>x</h1><img src="a.png" alt="Screenshot of a campaign dashboard showing open rates by month">';
+    expect(find(auditArticle({ ...base, html: good }).items, "image-alt-descriptive").status).toBe("pass");
+    const onlyMissing = auditArticle({ ...base, html: '<h1>x</h1><img src="a.png">' }).items;
+    expect(onlyMissing.find((i) => i.id === "image-alt-descriptive")).toBeUndefined();
+  });
+});
