@@ -77,12 +77,19 @@ export function classifyHref(href: string, siteDomain: string | null | undefined
 /** Every `<a>` in `html`, with its decoded href and visible text. */
 export function extractLinks(html: string, siteDomain: string | null | undefined): LinkRef[] {
   const out: LinkRef[] = [];
-  for (const m of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
+  for (const m of html.matchAll(/<a\b([^>]*)>/gi)) {
+    // The anchor's text runs to its closing tag or to the next `<a`, whichever
+    // comes first. A browser closes an anchor where another opens inside it;
+    // matching `<a>…</a>` lazily instead swallowed the nested tag as body text,
+    // so a draft with three links counted two (linking track, 2026-09-04).
+    const rest = html.slice((m.index ?? 0) + m[0].length);
+    const end = rest.search(/<\/a\s*>|<a\b/i);
+    const body = end === -1 ? rest : rest.slice(0, end);
     const hrefMatch = m[1].match(/\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
     // The editor escapes `&` as `&amp;` inside attributes too, so decode
     // before classifying or the URL that opens is not the one the text held.
     const href = decodeEntities(hrefMatch?.[1] ?? hrefMatch?.[2] ?? "").trim();
-    const anchor = decodeEntities(m[2].replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+    const anchor = decodeEntities(body.replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
     out.push({ href, anchor, kind: classifyHref(href, siteDomain) });
   }
   return out;
