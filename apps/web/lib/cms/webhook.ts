@@ -29,6 +29,9 @@ export class WebhookAdapter implements CMSAdapter {
   async publish(article: PublishPayload): Promise<PublishResult> {
     const body = JSON.stringify({
       action: "publish",
+      // What the connection asked for. The receiver is the CMS here, so it is
+      // the receiver that decides what a draft looks like on its side.
+      publishMode: article.publishMode ?? "publish",
       article: {
         title: article.title,
         html: article.html,

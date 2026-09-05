@@ -28,7 +28,9 @@ export class MagentoAdapter implements CMSAdapter {
           title: article.title,
           identifier: article.slug,
           content: article.html,
-          active: true,
+          // Magento CMS pages have no draft: disabled is the state a page sits
+          // in until someone enables it from the admin.
+          active: article.publishMode !== "draft",
           meta_description: article.metaDescription ?? "",
         },
       }),

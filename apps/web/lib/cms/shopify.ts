@@ -40,6 +40,7 @@ export class ShopifyAdapter implements CMSAdapter {
 
   async publish(article: PublishPayload): Promise<PublishResult> {
     const blogId = await this.resolveBlogId();
+    const draft = article.publishMode === "draft";
 
     const res = await fetch(`${this.storeUrl}/admin/api/${SHOPIFY_API_VERSION}/blogs/${blogId}/articles.json`, {
       method: "POST",
@@ -49,8 +50,10 @@ export class ShopifyAdapter implements CMSAdapter {
           title: article.title,
           body_html: article.html,
           tags: article.tags?.join(", ") ?? "",
-          published: true,
-          published_at: article.publishedAt ?? new Date().toISOString(),
+          // An unpublished article is Shopify's draft: it exists in the admin
+          // and is hidden from the storefront until someone sets it visible.
+          published: !draft,
+          ...(draft ? {} : { published_at: article.publishedAt ?? new Date().toISOString() }),
           summary_html: article.metaDescription ? `<p>${article.metaDescription}</p>` : undefined,
         },
       }),

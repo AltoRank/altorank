@@ -7,10 +7,31 @@ const NOTION_VERSION = "2022-06-28";
 export class NotionAdapter implements CMSAdapter {
   private databaseId: string;
   private token: string;
+  private statusProperty: string | undefined;
+  private draftStatus: string;
+  private publishedStatus: string;
 
   constructor(config: NotionConfig) {
     this.databaseId = config.databaseId;
     this.token = config.integrationToken;
+    this.statusProperty = config.statusProperty?.trim() || undefined;
+    this.draftStatus = config.draftStatus?.trim() || "Draft";
+    this.publishedStatus = config.publishedStatus?.trim() || "Published";
+  }
+
+  /**
+   * A Notion page has no publish state, so draft-vs-live only exists when the
+   * database has a Status property and the connection named it. Without one
+   * nothing is written and lib/cms/publish-mode.ts has already refused to
+   * connect in draft mode - this must not silently pretend.
+   */
+  private statusProperties(mode: PublishPayload["publishMode"]): Record<string, unknown> {
+    if (!this.statusProperty) return {};
+    return {
+      [this.statusProperty]: {
+        status: { name: mode === "draft" ? this.draftStatus : this.publishedStatus },
+      },
+    };
   }
 
   private headers() {
@@ -79,6 +100,7 @@ export class NotionAdapter implements CMSAdapter {
           Slug: {
             rich_text: [{ text: { content: article.slug } }],
           },
+          ...this.statusProperties(article.publishMode),
         },
         children: this.htmlToBlocks(article.html),
       }),

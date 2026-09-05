@@ -67,10 +67,17 @@ export default async function IntegrationsPage({
   const { data: connectedRows } = wsIds.length > 0
     ? await supabase
         .from("workspace_integrations")
-        .select("integration_id")
+        .select("integration_id, publish_mode")
         .in("workspace_id", wsIds)
     : { data: [] };
   const connectedIds = new Set((connectedRows ?? []).map((r) => r.integration_id as string));
+  // Which connections save drafts, so the tile says what pressing Publish
+  // does through it rather than a bare "Connected".
+  const draftIds = new Set(
+    (connectedRows ?? [])
+      .filter((r) => r.publish_mode === "draft")
+      .map((r) => r.integration_id as string),
+  );
 
   return (
     <>
@@ -112,7 +119,11 @@ export default async function IntegrationsPage({
                       </div>
                       <StatusPill
                         status={connectedIds.has(i.id) ? "on" : "setup"}
-                        label={connectedIds.has(i.id) ? "Connected" : "Not connected"}
+                        label={
+                          connectedIds.has(i.id)
+                            ? draftIds.has(i.id) ? "Connected · drafts" : "Connected"
+                            : "Not connected"
+                        }
                       />
                     </div>
                     <p className="text-[12.5px] text-ink-2 my-2.5 leading-[1.5]">{i.description}</p>
