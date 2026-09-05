@@ -38,6 +38,7 @@ import { buildTopicalProfile, type TopicalProfile } from "@/lib/seo/topical-prof
 import { detectPlatform, type Detection } from "@/lib/cms/detect";
 import { syncBacklinks } from "@/lib/seo/backlinks";
 import { fetchDomainMetrics } from "@/lib/seo/domain-metrics";
+import { e2eStubsEnabled, stubAnalyseDomain } from "@/lib/e2e/stubs";
 
 export interface AnalysisLayer {
   id: "readiness" | "crawl" | "pagespeed" | "platform" | "keywords" | "ranked_keywords" | "backlinks" | "authority";
@@ -111,6 +112,8 @@ export async function analyseDomain(options: {
   /** The workspace's search market, e.g. 2380 for Italy. Paired with `locale`. */
   locationCode?: number;
 }): Promise<DomainAnalysis> {
+  // E2E_STUBS: fixture keywords, no crawl, no provider, nothing measured (lib/e2e/stubs.ts).
+  if (e2eStubsEnabled()) return stubAnalyseDomain(options);
   const domain = normalizeDomain(options.domain);
   const { supabase, workspaceId } = options;
   const depth = options.depth ?? "full";

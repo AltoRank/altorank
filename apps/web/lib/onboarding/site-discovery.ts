@@ -10,6 +10,7 @@
 // comes up empty so the screen can ask instead of assert.
 
 import { fetchSite } from "@/lib/audit/lenient-fetch";
+import { e2eStubsEnabled, stubDiscoverSite } from "@/lib/e2e/stubs";
 
 export interface SiteDiscovery {
   sitemapUrl: string | null;
@@ -90,6 +91,8 @@ export function articleUrlsFromSitemap(body: string, limit = 3): string[] {
 }
 
 export async function discoverSite(domain: string): Promise<SiteDiscovery> {
+  // E2E_STUBS: a fixture sitemap and blog, no fetch (lib/e2e/stubs.ts).
+  if (e2eStubsEnabled()) return stubDiscoverSite(domain);
   const origin = domain.startsWith("http") ? domain.replace(/\/+$/, "") : `https://${domain.replace(/\/+$/, "")}`;
   const result: SiteDiscovery = { sitemapUrl: null, blogRootUrl: null, exampleArticleUrls: [], found: false };
 

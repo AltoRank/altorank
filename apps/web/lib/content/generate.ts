@@ -36,6 +36,7 @@ import { getLocale } from "@/lib/seo/locales";
 import type { ArticleBrief, VoiceRules } from "@/lib/ai/types";
 import { classifyKeyword, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { parseStoredQuestions } from "@/lib/keywords/questions";
+import { e2eStubsEnabled, stubGenerateArticle } from "@/lib/e2e/stubs";
 
 export interface GenerateArticleOptions {
   supabase: SupabaseClient;
@@ -122,6 +123,8 @@ export interface GenerateArticleResult {
 export async function generateArticle(
   options: GenerateArticleOptions,
 ): Promise<GenerateArticleResult> {
+  // E2E_STUBS: a fixture draft through the same rows and the same review gate (lib/e2e/stubs.ts).
+  if (e2eStubsEnabled()) return stubGenerateArticle(options);
   const { supabase, workspaceId, keyword, keywordId, title, autonomous, onChunk, onResearch,
     selection, articleId, billToAgencyId, callerEmail,
   } = options;
