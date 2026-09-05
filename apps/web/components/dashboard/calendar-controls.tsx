@@ -47,8 +47,10 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
         </IconButton>
       </div>
       <div className="flex-1" />
+      {/* Was "All workspaces", which named the wrong axis: the calendar is
+          scoped to one site, and this chip filters entry kind, not workspace. */}
       <Chip
-        label="All workspaces"
+        label="All"
         active={clientFilter === "all"}
         onClick={() => setClientFilter("all")}
       />
