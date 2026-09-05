@@ -99,5 +99,38 @@ export async function getCalendarEntries(
     });
   }
 
+  // Planned keywords with no article yet. The plan is the product's promise
+  // for the month; a calendar that only showed what had already been written
+  // was a history, not a plan.
+  //
+  // A planned entry whose article has been written stays on its planned day
+  // too, unless the article already placed itself (scheduled, drafting,
+  // approved, live): a draft sitting in review is otherwise invisible on the
+  // very day the plan promised it.
+  let planned = supabase
+    .from("calendar_entries")
+    .select("id, workspace_id, keyword, scheduled_date, status, created_at, article_id")
+    .in("status", ["queue", "scheduled"]);
+  if (workspaceId) planned = planned.eq("workspace_id", workspaceId);
+  const { data: plannedRows } = await planned;
+  const placedArticles = new Set(entries.map((e) => e.article_id));
+  type PlannedRow = { id: string; workspace_id: string; keyword: string | null; scheduled_date: string; created_at: string; article_id: string | null };
+  for (const p of (plannedRows ?? []) as PlannedRow[]) {
+    if (p.article_id && placedArticles.has(p.article_id)) continue;
+    if (start !== null && end !== null) {
+      const t = new Date(p.scheduled_date).getTime();
+      if (Number.isNaN(t) || t < start || t >= end) continue;
+    }
+    entries.push({
+      id: p.id,
+      workspace_id: p.workspace_id,
+      article_id: p.article_id,
+      keyword: p.keyword || "Planned",
+      scheduled_date: p.scheduled_date,
+      status: p.article_id ? "scheduled" : "queue",
+      created_at: p.created_at,
+    });
+  }
+
   return entries.sort((x, y) => x.scheduled_date.localeCompare(y.scheduled_date));
 }
