@@ -108,9 +108,9 @@ pre-<nnn>.sql` or `pg_dump`). There are no down migrations.
 ## Environment variables
 
 Everything `apps/web` reads, grouped by what stops working without it. The
-authoritative example file with commentary is
-[`docker/.env.example`](../docker/.env.example); this is the same list with
-consequences attached.
+example file with commentary is [`docker/.env.example`](../docker/.env.example);
+this is the same list with consequences attached. `docker/compose.yml` forwards
+every variable in it to the container.
 
 `NEXT_PUBLIC_*` values are inlined into the client bundle at **build time**.
 On Vercel that means they must be set before the build runs; in Docker they are
@@ -209,6 +209,10 @@ gets them once a day: the container has no such rule.
 `/api/cron/site-pages` exists and is authenticated like the others but is on
 **no schedule anywhere** (not in `vercel.json`, not in `docker/crontab`). It
 runs when someone calls it.
+
+Cloudflare Cron Triggers have no once-a-day rule; if the Hobby limitation is
+the reason to move, [deploy-cloudflare.md](deploy-cloudflare.md#crons-the-hobby-problem-goes-away)
+maps the nine schedules onto them.
 
 ### The GitHub Actions cron fallback
 
@@ -394,10 +398,10 @@ least once.
 8. **Supabase Auth URL configuration** (Site URL, redirect allow-list) and a
    verified Resend sender domain.
 9. **The `site-pages` cron** has no schedule at all.
-10. **Keeping `docker/crontab` and `vercel.json` in step.** They are meant to
-    be identical lists. Today `vercel.json` has nine entries and the crontab
-    eight (it predates `serp-collect`), and the two intervals that Hobby
-    forbids differ on purpose. Change one, look at the other.
+10. **Keeping `docker/crontab`, `vercel.json` and `apps/web/wrangler.jsonc`
+    in step.** They are meant to be the same nine jobs. The two intervals that
+    Hobby forbids (`publish`, `analyze`) differ on purpose between the crontab
+    and `vercel.json`. Change one, look at the others.
 
 ## Checklist for a fresh production deployment
 
