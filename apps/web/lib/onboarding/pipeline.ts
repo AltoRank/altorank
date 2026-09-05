@@ -183,6 +183,7 @@ export async function runOnboarding(
             supabase,
             workspaceId: workspace.id,
             keyword: next.term,
+            keywordId: next.keywordId,
             autonomous: true,
             selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
             // The one boundary inside the draft: research is done, the model

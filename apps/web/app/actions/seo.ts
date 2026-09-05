@@ -43,7 +43,14 @@ export async function runKeywordResearch(workspaceId: string) {
     withDifficulty: true,
   });
 
-  // Upsert into keywords table
+  // Upsert into keywords table. Provenance is stamped on new rows only: a
+  // re-run refreshes volume and difficulty on rows that exist but must not
+  // relabel a competitor's keyword as an ads one.
+  const { data: known } = await supabase
+    .from("keywords")
+    .select("term")
+    .eq("workspace_id", workspaceId);
+  const knownTerms = new Set((known ?? []).map((k) => (k.term as string).toLowerCase()));
   const rows = keywords.map((kw) => ({
     workspace_id: workspaceId,
     term: kw.keyword,
@@ -51,6 +58,8 @@ export async function runKeywordResearch(workspaceId: string) {
     difficulty: kw.difficulty,
     intent: kw.intent,
     status: "new" as const,
+    // keywords_for_site is the ads endpoint; say so, so the rollup can.
+    ...(knownTerms.has(kw.keyword.toLowerCase()) ? {} : { source_type: "ads" as const }),
   }));
 
   if (rows.length > 0) {

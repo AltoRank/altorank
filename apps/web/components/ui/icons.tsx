@@ -71,6 +71,10 @@ export const Icons = {
   italic: (p: IconProps = {}) => <Icon {...p}><path d="M19 4h-9M14 20H5M15 4 9 20"/></Icon>,
   h1: (p: IconProps = {}) => <Icon {...p}><path d="M4 6v12M14 6v12M4 12h10M20 18V7l-3 3"/></Icon>,
   list: (p: IconProps = {}) => <Icon {...p}><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></Icon>,
+  // Planner card actions: brief, questions, remove.
+  lightbulb: (p: IconProps = {}) => <Icon {...p}><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.3 1 2.1h5c0-.8.4-1.6 1-2.1A6 6 0 0 0 12 3Z"/></Icon>,
+  question: (p: IconProps = {}) => <Icon {...p}><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M10.5 9a1.5 1.5 0 0 1 3 0c0 1.2-1.5 1.2-1.5 2.4M12 14h.01"/></Icon>,
+  trash: (p: IconProps = {}) => <Icon {...p}><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></Icon>,
 };
 
 export type IconName = keyof typeof Icons;

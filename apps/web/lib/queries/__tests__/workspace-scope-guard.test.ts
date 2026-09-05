@@ -188,6 +188,8 @@ const SCOPED_HELPERS: Record<string, number> = {
   getArticles: 0,
   getRecentArticles: 1,
   getKeywords: 0,
+  getPlannerKeywords: 0,
+  getKeywordSourceYields: 0,
   getBacklinks: 0,
   getReports: 0,
   getGeoPrompts: 0,
