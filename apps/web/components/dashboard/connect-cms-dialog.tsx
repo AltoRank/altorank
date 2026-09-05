@@ -223,6 +223,7 @@ export function ConnectCmsDialog({
       const integrationId = match.id;
 
       const config = buildConfig(cmsType, fd);
+      assertPickersDone(config);
 
       // The same check the server runs, here so the refusal is a sentence in
       // the dialog rather than a toast after a round trip - and so a platform
@@ -261,6 +262,7 @@ export function ConnectCmsDialog({
     setTestResult(null);
     try {
       const config = buildConfig(cmsType, new FormData(form));
+      assertPickersDone(config);
       if (publishMode === "draft") {
         const support = draftSupport(config);
         if (!support.ok) {
@@ -695,6 +697,18 @@ export function ConnectCmsDialog({
         </form>
     </Dialog>
   );
+}
+
+/**
+ * The Webflow picker posts its ids through hidden inputs, which the browser's
+ * required-field check never sees. Pressing Connect before loading the sites
+ * would otherwise reach the server as an empty id and come back as a schema
+ * error nobody typed; say what to do instead.
+ */
+function assertPickersDone(config: CMSConfig): void {
+  if (config.type === "webflow" && (!config.siteId || !config.collectionId)) {
+    throw new Error("Load your Webflow sites and choose a collection first, or enter the ids by hand.");
+  }
 }
 
 // ---------------------------------------------------------------------------

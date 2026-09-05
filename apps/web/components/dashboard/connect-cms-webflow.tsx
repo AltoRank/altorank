@@ -145,7 +145,6 @@ export function WebflowPicker() {
 
       {manual || (error && !sites) ? (
         <>
-          <input type="hidden" name="webflowManual" value="true" />
           <label className="flex flex-col gap-1.5">
             <span className="text-[12.5px] font-medium text-ink-2">Site ID</span>
             <input name="siteId" required placeholder="e.g. 6287ec36a..." className={inputClass} />
