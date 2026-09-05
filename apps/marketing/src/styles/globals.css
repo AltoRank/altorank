@@ -143,7 +143,6 @@
 .btn-ghost-dark:hover { background: oklch(1 0 0 / 0.08); border-color: oklch(1 0 0 / 0.34); }
 
 /* Hero and closing CTA only. Still well short of the old default. */
-.btn-lg { height: 36px; padding: 0 16px; font-size: 14px; }
 
 /* Nav bar, where anything taller crowds a 56px bar. */
 .btn-sm { height: 28px; padding: 0 10px; font-size: 12.5px; }
