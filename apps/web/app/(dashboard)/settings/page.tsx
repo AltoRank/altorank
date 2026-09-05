@@ -5,6 +5,7 @@ import { SettingsForm } from "@/components/dashboard/settings-form";
 import { PasswordForm } from "@/components/dashboard/password-form";
 import { BusinessForm } from "@/components/settings/business-form";
 import { SettingsShell, NoWorkspaceCard } from "./settings-shell";
+import { AttributionCard } from "@/components/dashboard/attribution-card";
 import { createClient } from "@/lib/supabase/server";
 import { getQuota } from "@/lib/billing/quota";
 import { getWorkspaceSettings } from "@/lib/settings/workspace-settings";
@@ -35,6 +36,10 @@ export default async function SettingsPage() {
       {ws ? <BusinessForm workspaceId={ws.id} domain={ws.domain} initial={ws.profile} /> : <NoWorkspaceCard />}
 
       <SettingsForm agency={agency} quotaReason={quota.reason} />
+
+      {/* Where the account heard of us (#79): answered once at the end of the
+          wizard, changeable here. */}
+      <AttributionCard source={agency.attribution_source ?? null} note={agency.attribution_note ?? null} />
 
       <Card title="Password">
         <PasswordForm />

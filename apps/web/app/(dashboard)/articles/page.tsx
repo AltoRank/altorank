@@ -38,22 +38,24 @@ export default async function ArticlesPage({ searchParams }: Props) {
 
   const supabase = await createClient();
   const since = daysAgo(30);
+  // What each live article actually earned: Search Console clicks over the
+  // last 30 days, attributed per article by the analytics cron. Dash when
+  // nothing is attributed, because "0 clicks" and "nobody measured" are
+  // different facts. Scoped like every other read on the page (AGENTS.md).
+  let metricsQuery = supabase
+    .from("analytics_metrics")
+    .select("article_id, clicks, impressions")
+    .not("article_id", "is", null)
+    // Page rows only. The sync also stores (query, page) rows that carry
+    // the article id, and summing both shapes counts every click twice
+    // (lib/gsc/analysis.ts).
+    .is("query", null)
+    .gte("metric_date", since);
+  if (scopeId) metricsQuery = metricsQuery.eq("workspace_id", scopeId);
   const [workspaces, allArticles, { data: metricRows }] = await Promise.all([
     getWorkspaces(),
     getArticles(scopeId ?? undefined),
-    // What each live article actually earned: Search Console clicks over the
-    // last 30 days, attributed per article by the analytics cron. Dash when
-    // nothing is attributed, because "0 clicks" and "nobody measured" are
-    // different facts.
-    supabase
-      .from("analytics_metrics")
-      .select("article_id, clicks, impressions")
-      .not("article_id", "is", null)
-      // Page rows only. The sync also stores (query, page) rows that carry
-      // the article id, and summing both shapes counts every click twice
-      // (lib/gsc/analysis.ts).
-      .is("query", null)
-      .gte("metric_date", since),
+    metricsQuery,
   ]);
   const clicksByArticle = new Map<string, number>();
   // Served in search at least once: the page is in Google's index, whatever

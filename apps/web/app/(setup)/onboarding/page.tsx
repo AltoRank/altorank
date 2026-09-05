@@ -28,7 +28,10 @@ export default async function OnboardingPage() {
   const [{ data: workspace }, { data: destinations }, { data: output }] = await Promise.all([
     supabase
       .from("workspaces")
-      .select("id, domain, business_profile, sitemap_url, blog_root_url, example_article_urls, auto_generate_weekly_limit")
+      // The account's answer rides along on the workspace's own account row,
+      // so the question is asked of the account that owns this site, once, and
+      // not again for its second site.
+      .select("id, domain, business_profile, sitemap_url, blog_root_url, example_article_urls, auto_generate_weekly_limit, agencies(attribution_source)")
       .eq("id", scopeId)
       .single(),
     supabase.from("integrations").select("id, name, description").eq("tag", "CMS").order("name"),
@@ -39,6 +42,11 @@ export default async function OnboardingPage() {
       .maybeSingle(),
   ]);
   if (!workspace) redirect("/workspaces");
+
+  // A many-to-one embed comes back as one object; the untyped client can only
+  // promise an array, so both shapes are read rather than one asserted.
+  const account = workspace.agencies as { attribution_source: string | null } | { attribution_source: string | null }[] | null;
+  const answered = Boolean((Array.isArray(account) ? account[0] : account)?.attribution_source);
 
   const initialOutput = outputFromRow(output);
 
@@ -55,6 +63,7 @@ export default async function OnboardingPage() {
       }}
       initialOutput={initialOutput}
       destinations={destinations ?? []}
+      askAttribution={!answered}
     />
   );
 }

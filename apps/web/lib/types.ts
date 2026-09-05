@@ -6,6 +6,7 @@ import type { GitConfig } from "./cms/git";
 import type { SearchIntent } from "./seo/intent";
 import type { ArticleResearch } from "./seo/research";
 import type { FactCheckReport } from "./ai/fact-check";
+import type { AttributionSource } from "./attribution";
 
 // === Account (stored as `agencies`) ===
 //
@@ -29,6 +30,10 @@ export type Agency = {
   stripe_subscription_id: string | null;
   /** Period end at which the subscription stops, when cancel-at-period-end is set. null = renewing. */
   cancels_at?: string | null;
+  /** Self-reported at the end of onboarding; null until answered. See lib/attribution.ts. */
+  attribution_source: AttributionSource | null;
+  attribution_note: string | null;
+  attribution_answered_at: string | null;
   created_at: string;
 };
 
