@@ -42,6 +42,7 @@ export const DASHBOARD_NAV: NavGroup[] = [
       { id: "calendar", label: "Calendar", href: "/content", icon: "calendar" },
       { id: "keywords", label: "Keywords", href: "/keywords", icon: "keywords" },
       { id: "voice", label: "Brand Voice", href: "/voice", icon: "voice" },
+      { id: "linking", label: "Linking", href: "/linking", icon: "link" },
       // Under "Agency" until 2026-08-30, which is exactly backwards:
       // connecting a CMS is onboarding step 4 for a solo founder, the least
       // agency-specific job in the product.
