@@ -1,0 +1,352 @@
+---
+import PSEO from '@/layouts/PSEO.astro';
+import { buildFAQSchema } from '@/lib/schema';
+import { APP_NAME, APP_URL, SIGNUP_URL, OSS_REPO_PUBLIC, OSS_REPO_URL } from '@/constants';
+
+// The free check: can an AI agent read this site? One URL in, nine checks
+// out, no signup. It is the one question the autopilot tools' pages do not
+// answer about the visitor's own site, and every line it returns is something
+// the visitor can verify by opening robots.txt themselves.
+//
+// The API lives in apps/web (POST /api/public/readiness) and answers
+// cross-origin to this host. The result renders here; the shareable copy is
+// app.altorank.co/check/<domain>, which the same call returns as share_url.
+//
+// Copy rules (POSITIONING.md): no number nobody measured, no "X% of sites",
+// no trial. "Nine checks" is the count in lib/audit/agent-readiness.ts.
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'AI-readiness check', href: '/check' },
+];
+
+// Static list so the page says what it checks before anyone types a domain,
+// and so the rows can be shown in a pending state while the API runs. Ids and
+// order match CHECK_ORDER in apps/web/lib/public-check/shape.ts.
+const CHECKS = [
+  { id: 'robots_reachable', label: 'robots.txt reachable', why: 'Without one, crawlers get no guidance at all.' },
+  { id: 'ai_crawlers_allowed', label: 'AI crawlers allowed', why: 'GPTBot, ClaudeBot, PerplexityBot and five others, checked one by one.' },
+  { id: 'sitemap', label: 'Sitemap declared', why: 'Declared in robots.txt or reachable at /sitemap.xml.' },
+  { id: 'structured_data', label: 'Structured data on the homepage', why: 'Any JSON-LD, however deeply nested.' },
+  { id: 'entity_schema', label: 'Organization schema', why: 'What makes the site a resolvable entity, not just a document.' },
+  { id: 'machine_readable', label: 'Machine-readable copy', why: 'A plain-text /llms.txt or a markdown version of the page.' },
+  { id: 'title_meta', label: 'Title and meta description', why: 'Both present on the homepage.' },
+  { id: 'single_h1', label: 'Single h1', why: 'Exactly one, in the HTML the server sends.' },
+  { id: 'content_signals', label: 'Content signals', why: 'Optional and emerging: a Content-Signal line in robots.txt.' },
+];
+
+const FAQS = [
+  {
+    question: 'What does the check read?',
+    answer:
+      'Four URLs on the domain you give it: the homepage, /robots.txt, /sitemap.xml and /llms.txt. It reads public configuration only and never goes deeper than the homepage.',
+  },
+  {
+    question: 'What does unknown mean?',
+    answer:
+      'The server did not give a clear answer, for example a 503 on robots.txt, or the site was slow and that check did not run before the 25 second deadline. Unknown is not a fail and does not lower the score.',
+  },
+  {
+    question: 'How is the score calculated?',
+    answer:
+      'Each of the nine checks has a weight: high for crawler access and structured data, medium for robots.txt, sitemap and a machine-readable copy, low for title, h1 and content signals. The score is the share of weight earned by the checks that completed, from 0 to 100.',
+  },
+  {
+    question: 'Do I need an account?',
+    answer:
+      `No. Type a domain and the result appears here, with a link you can share. An email address is optional and only used to send you that result. Adding the domain to ${APP_NAME} is a separate step, and self-hosting is free.`,
+  },
+];
+
+const structuredData = [buildFAQSchema(FAQS)];
+---
+
+<PSEO
+  title="Can an AI agent read your site? Free AI-readiness check"
+  description="Nine checks on any domain's public configuration: crawler rules, structured data, sitemap, a machine-readable copy. Free, no signup, results in seconds with a shareable link."
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
+>
+  <section class="border-b border-line py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
+      <div class="mx-auto max-w-[720px] text-center">
+        <h1 class="mb-4 text-[clamp(30px,5.6vw,42px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+          Can an AI agent read your site?
+        </h1>
+        <p class="mx-auto mb-7 max-w-[54ch] text-[15.5px] leading-relaxed text-ink-2 sm:text-[17px] [text-wrap:pretty]">
+          Nine checks on the public configuration of any domain: crawler rules, structured data, sitemap, a machine-readable copy. Free, no signup, a shareable link at the end.
+        </p>
+
+        <form
+          id="check-form"
+          class="mx-auto flex max-w-[560px] flex-col gap-2.5 sm:flex-row"
+          data-api={`${APP_URL}/api/public/readiness`}
+          data-signup={SIGNUP_URL}
+          data-repo={OSS_REPO_PUBLIC ? OSS_REPO_URL : ''}
+          novalidate
+        >
+          <label for="check-domain" class="sr-only">Your domain</label>
+          <input
+            id="check-domain"
+            name="domain"
+            type="text"
+            inputmode="url"
+            autocomplete="url"
+            spellcheck="false"
+            required
+            placeholder="yourdomain.com"
+            class="h-12 flex-1 rounded-[9px] border border-line bg-bg px-4 text-[15px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft"
+          />
+          <button
+            type="submit"
+            class="btn btn-primary btn-lg h-12 shrink-0 px-5 text-[15px] disabled:cursor-wait disabled:opacity-70"
+          >
+            <span data-label>Check my site</span>
+          </button>
+        </form>
+
+        <p class="mt-4 text-[12.5px] text-ink-3 sm:text-[13px]">
+          Reads the homepage, robots.txt, sitemap.xml and llms.txt. Nothing else, and nothing is stored about you.
+        </p>
+      </div>
+
+      {/* Results land here. Hidden until there is something to show. */}
+      <section
+        id="check-result"
+        hidden
+        aria-live="polite"
+        class="mx-auto mt-10 max-w-[760px] text-left"
+      ></section>
+
+      {/* The nine rows, rendered once as the template. The script clones this
+          into the result while the API runs (pending state) and fills each
+          row in when the answer arrives. */}
+      <template id="check-rows">
+        <ul class="m-0 list-none divide-y divide-line-soft p-0">
+          {CHECKS.map((c) => (
+            <li data-check={c.id} class="flex gap-4 px-5 py-3.5">
+              <span data-status class="mt-0.5 inline-flex h-6 shrink-0 items-center rounded-full bg-panel-2 px-2.5 font-mono text-[11px] font-medium text-ink-3">Checking</span>
+              <div class="min-w-0">
+                <p class="m-0 text-[14.5px] font-semibold text-ink">{c.label}</p>
+                <p data-evidence class="mt-0.5 mb-0 text-[13px] text-ink-2">{c.why}</p>
+                <p data-fix class="mt-1 mb-0 hidden text-[13px] text-ink"></p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </template>
+    </div>
+  </section>
+
+  <section class="border-b border-line py-14 md:py-16">
+    <div class="mx-auto max-w-[720px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-3 text-2xl font-semibold tracking-[-0.015em]">What the nine checks are</h2>
+      <p class="mb-6 text-[15px] leading-relaxed text-ink-2">
+        AI assistants read a site the way a crawler does. They need permission in robots.txt, a map of the pages, structured data that says what the organisation is, and ideally a plain-text copy of the content. Each check is one of those requirements, tested against what the site actually serves.
+      </p>
+      <ol class="flex flex-col gap-4">
+        {CHECKS.map((c, i) => (
+          <li class="flex items-start gap-4">
+            <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-soft font-mono text-[13px] font-medium text-accent-ink">{i + 1}</span>
+            <div>
+              <h3 class="mb-0.5 font-semibold">{c.label}</h3>
+              <p class="text-sm leading-relaxed text-ink-2">{c.why}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  </section>
+
+  <section class="border-b border-line py-14 md:py-16">
+    <div class="mx-auto max-w-[720px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-3 text-2xl font-semibold tracking-[-0.015em]">What this means</h2>
+      <p class="mb-4 text-[15px] leading-relaxed text-ink-2">
+        A fail is something the site owner can change today: a line in robots.txt, a block of JSON-LD in the head, a text file at the root. An unknown means the server did not give a clear answer and the check claims nothing about it. The score weights crawler access and structured data above titles and headings, because a blocked crawler reads nothing at all.
+      </p>
+      <p class="text-[15px] leading-relaxed text-ink-2">
+        {APP_NAME} runs the same nine checks on every site you add and generates the schema and llms.txt for you to review before anything is published. The checker is part of the
+        {OSS_REPO_PUBLIC ? (
+          <a href={OSS_REPO_URL} target="_blank" rel="noopener noreferrer" class="underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">open-source repository</a>
+        ) : (
+          <span>open-source release</span>
+        )}, so the scoring can be read rather than trusted.
+      </p>
+    </div>
+  </section>
+
+  <section class="border-b border-line py-14 md:py-16">
+    <div class="mx-auto max-w-[720px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-6 text-2xl font-semibold tracking-[-0.015em]">Frequently asked questions</h2>
+      <div class="flex flex-col gap-4">
+        {FAQS.map((item) => (
+          <div class="rounded-lg border border-line bg-panel p-5">
+            <h3 class="mb-2 font-semibold">{item.question}</h3>
+            <p class="text-sm leading-relaxed text-ink-2">{item.answer}</p>
+          </div>
+        ))}
+      </div>
+      <p class="mt-6 text-sm text-ink-2">
+        Looking for the other free guides? They are under <a href="/tools" class="underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">free tools</a>.
+      </p>
+    </div>
+  </section>
+</PSEO>
+
+<script>
+  // Bound on astro:page-load because the site uses ClientRouter: a plain
+  // DOMContentLoaded would fire once and never again after a soft navigation.
+  //
+  // Everything interpolated into markup below goes through esc() or is a
+  // number the API returned; the nine rows are filled with textContent.
+  document.addEventListener('astro:page-load', () => {
+    const form = document.getElementById('check-form') as HTMLFormElement | null;
+    const out = document.getElementById('check-result');
+    const tpl = document.getElementById('check-rows') as HTMLTemplateElement | null;
+    if (!form || !out || !tpl) return;
+
+    const input = form.querySelector<HTMLInputElement>('input[name=domain]')!;
+    const button = form.querySelector<HTMLButtonElement>('button[type=submit]')!;
+    const label = button.querySelector<HTMLElement>('[data-label]')!;
+    const endpoints = () => ({ api: form.dataset.api!, signup: form.dataset.signup!, repo: form.dataset.repo ?? '' });
+
+    const esc = (s: unknown) =>
+      String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+    const clean = (d: string) =>
+      d.trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, '').replace(/^[^/?#@]*@/, '').replace(/^www\./, '').replace(/[/?#].*$/, '').replace(/:\d+$/, '').replace(/\.+$/, '');
+    const DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/;
+
+    const STATUS: Record<string, { text: string; cls: string }> = {
+      pass: { text: 'Pass', cls: 'bg-ok-soft text-ok-ink' },
+      fail: { text: 'Fail', cls: 'bg-err-soft text-err-ink' },
+      unknown: { text: 'Unknown', cls: 'bg-panel-2 text-ink-3' },
+      pending: { text: 'Checking', cls: 'bg-panel-2 text-ink-3 animate-pulse' },
+    };
+
+    const note = (msg: string) => `<p class="text-[14px] text-ink-2">${msg}</p>`;
+    // Same format as the app's share page and badge ("4 Sep 2026"), so the
+    // three surfaces never disagree about the date of one result.
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const shortDate = (iso: string) => {
+      const d = new Date(iso);
+      return Number.isNaN(d.getTime()) ? '' : `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+    };
+
+    const shell = (domain: string, head: string, foot: string) => `
+      <div class="rounded-xl border border-line bg-bg">
+        <div class="border-b border-line px-5 py-4">
+          <p class="m-0 text-[13px] text-ink-3">Can an AI agent read this site?</p>
+          <p class="m-0 mt-0.5 text-[20px] font-semibold tracking-[-0.02em] break-all">${esc(domain)}</p>
+          <div data-head class="mt-3">${head}</div>
+        </div>
+        <div data-rows></div>
+        <div data-foot class="border-t border-line px-5 py-4">${foot}</div>
+      </div>`;
+
+    const renderRows = (checks: any[] | null) => {
+      const rows = tpl.content.cloneNode(true) as DocumentFragment;
+      for (const li of rows.querySelectorAll<HTMLElement>('li[data-check]')) {
+        const c = checks?.find((x) => x.id === li.dataset.check);
+        const s = STATUS[c?.status ?? 'pending'];
+        const pill = li.querySelector<HTMLElement>('[data-status]')!;
+        pill.textContent = s.text;
+        pill.className = `mt-0.5 inline-flex h-6 shrink-0 items-center rounded-full px-2.5 font-mono text-[11px] font-medium ${s.cls}`;
+        if (c) {
+          const ev = li.querySelector<HTMLElement>('[data-evidence]')!;
+          ev.textContent = c.evidence || (c.status === 'unknown' ? 'Not checked: the run stopped before this one.' : '');
+          ev.hidden = !ev.textContent;
+          const fix = li.querySelector<HTMLElement>('[data-fix]')!;
+          if (c.fix_summary) { fix.textContent = `Fix: ${c.fix_summary}`; fix.classList.remove('hidden'); }
+        }
+      }
+      return rows;
+    };
+
+    const render = (domain: string, data: any, cached: boolean) => {
+      const { api, signup, repo } = endpoints();
+      const unknown = (data.checks ?? []).filter((c: any) => c.status === 'unknown').length;
+      const failing = (data.checks ?? []).filter((c: any) => c.status === 'fail').length;
+      const score = data.score === null ? '?' : Number(data.score);
+
+      const head = data.error
+        ? note(`The site could not be checked: ${esc(data.error)}. Nothing below was measured.`)
+        : `<div class="flex items-baseline gap-2">
+             <span class="text-[40px] font-semibold leading-none tracking-[-0.03em]">${score}</span>
+             <span class="text-[14px] text-ink-3">/100</span>
+           </div>
+           <p class="m-0 mt-2 text-[13.5px] text-ink-2">
+             ${Number(data.passed)} of ${Number(data.known)} completed checks pass${unknown ? `, ${unknown} could not be decided` : ''}.
+             Checked ${esc(shortDate(data.checked_at))}${cached ? ', served from the six-hour cache' : ''}.${data.partial ? ' The site was slow to answer; checks that did not finish are marked unknown.' : ''}
+           </p>`;
+
+      const share = esc(data.share_url);
+      const foot = `
+        <div class="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
+          <a href="${share}" class="btn btn-secondary">Get the shareable link</a>
+          <a href="${esc(signup)}?domain=${encodeURIComponent(domain)}" class="btn btn-primary">${failing ? `Fix ${failing === 1 ? 'this' : 'these'} with AltoRank` : 'Keep it this way with AltoRank'}</a>
+          ${repo ? `<a href="${esc(repo)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Self-host it</a>` : ''}
+        </div>
+        <form data-lead class="mt-4 flex flex-col gap-2 sm:flex-row">
+          <label class="sr-only" for="check-email">Email</label>
+          <input id="check-email" name="email" type="email" required placeholder="you@company.com" class="h-10 min-w-0 flex-1 rounded-[8px] border border-line bg-bg px-3.5 text-[14px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none" />
+          <button type="submit" class="btn btn-secondary h-10 shrink-0">Email me this result</button>
+        </form>
+        <p data-lead-status class="mt-2 min-h-[1.2em] text-[12.5px] text-ink-3">Optional. Your address is stored with this result and used to send it once. There is no list.</p>`;
+
+      out.innerHTML = shell(domain, head, foot);
+      out.querySelector('[data-rows]')!.appendChild(renderRows(data.checks ?? []));
+
+      const lead = out.querySelector<HTMLFormElement>('form[data-lead]')!;
+      const status = out.querySelector<HTMLElement>('[data-lead-status]')!;
+      lead.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = lead.querySelector<HTMLInputElement>('input[name=email]')!.value.trim();
+        status.textContent = 'Sending…';
+        try {
+          const res = await fetch(api, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ domain, email }) });
+          const body = await res.json();
+          status.textContent = !res.ok || !body.ok
+            ? body.error ?? 'Could not save that.'
+            : body.lead?.emailed
+              ? 'Sent. The result is in your inbox.'
+              : body.lead?.saved
+                ? 'Saved. Email is not configured right now, so use the shareable link above.'
+                : 'Could not save that. Try again later.';
+        } catch {
+          status.textContent = 'Could not reach the server. Try again.';
+        }
+      });
+    };
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const domain = clean(input.value);
+      if (!DOMAIN.test(domain)) {
+        out.innerHTML = note('That does not look like a domain. Try example.com.');
+        out.hidden = false;
+        input.focus();
+        return;
+      }
+      const { api } = endpoints();
+      button.disabled = true;
+      label.textContent = 'Reading the site…';
+      out.innerHTML = shell(domain, note('Reading the homepage, robots.txt, sitemap.xml and llms.txt. Usually a few seconds, 25 at most.'), '');
+      out.querySelector('[data-rows]')!.appendChild(renderRows(null));
+      out.hidden = false;
+      try {
+        const res = await fetch(api, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ domain }) });
+        const body = await res.json();
+        if (!res.ok || !body.ok) {
+          out.innerHTML = note(esc(body.error ?? 'Could not check that domain right now.'));
+          return;
+        }
+        render(body.data.domain ?? domain, body.data, Boolean(body.cached));
+      } catch {
+        out.innerHTML = note('Could not reach the server. Try again in a moment.');
+      } finally {
+        button.disabled = false;
+        label.textContent = 'Check my site';
+      }
+    });
+  });
+</script>
