@@ -9,6 +9,7 @@ import { MemberActions, RevokeInviteButton } from "@/components/settings/member-
 import { SettingsShell } from "../settings-shell";
 import { plural } from "@/lib/utils";
 import { accessLabel, canEditMember, canManageMembers, EDITOR_LIMITS_COPY, ROLE_LABEL, type Role } from "@/lib/team/access";
+import { memberDisplayName, memberInitials } from "@/lib/team/display";
 
 export const metadata: Metadata = { title: "Team" };
 
@@ -60,8 +61,8 @@ export default async function TeamPage() {
           </thead>
           <tbody>
             {members.map((m) => {
-              const name = (m.user?.raw_user_meta_data?.full_name as string) ?? m.user?.email ?? "Member";
-              const initials = name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase();
+              const name = memberDisplayName(m.user);
+              const initials = memberInitials(m.user);
               const editable = canEditMember({ userId: user.id, role }, { userId: m.user_id, role: m.role });
               return (
                 <tr key={m.id} className="hover:[&>td]:bg-panel">

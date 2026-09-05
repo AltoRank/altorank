@@ -22,6 +22,7 @@ import { scoreCitationReadiness } from "@/lib/seo/aeo-scoring";
 import { recordSpend, anthropicCost } from "@/lib/billing/spend";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recordOverageArticle } from "@/lib/billing/overage";
+import { spendClient } from "@/lib/billing/default-spend";
 import { setSpendReporter } from "@/lib/seo/client";
 import { anthropicModel } from "@/lib/ai/models";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
@@ -356,11 +357,21 @@ export async function generateArticle(
   try {
     const locale = getLocale(workspace.language ?? "en");
 
+    // Spend is written with the service role, whatever client the caller
+    // holds. provider_spend is select-only under RLS, so a user-session client
+    // (onboarding, the "New article" modal) had every insert refused and
+    // recordSpend, which never throws, dropped the row without a trace: the
+    // first draft of every onboarding run cost real money and recorded none.
+    // The cron already passes a service client, so for it this is the same
+    // client either way. Only without a service key (tests, scripts) does the
+    // caller's client stand in.
+    const spendDb = spendClient() ?? supabase;
+
     // Attribute every DataForSEO call this run makes to this article, then
     // detach: the reporter is module-level, so leaving it set would bill a
     // later run's calls to this article.
     setSpendReporter(({ operation, costUsd }) => {
-      void recordSpend(supabase, {
+      void recordSpend(spendDb, {
         provider: "dataforseo",
         operation,
         costUsd,
@@ -567,7 +578,7 @@ export async function generateArticle(
     setSpendReporter(null);
 
     const model = anthropicModel("content");
-    await recordSpend(supabase, {
+    await recordSpend(spendDb, {
       provider: "anthropic",
       operation: model,
       costUsd: anthropicCost(

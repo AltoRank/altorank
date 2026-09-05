@@ -28,7 +28,8 @@ import { analyseDomain } from "@/lib/audit/domain-analysis";
 import { generateArticle } from "@/lib/content/generate";
 import { getQuota } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
-import { hasDataForSEOCredentials } from "@/lib/seo/client";
+import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
+import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import type { OnboardingEvent } from "./events";
 import { schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
@@ -66,8 +67,33 @@ export async function runOnboarding(
    */
   signal?: AbortSignal,
 ): Promise<void> {
-  const domain = workspace.domain;
   const gone = () => signal?.aborted === true;
+
+  // Every DataForSEO call this run makes belongs to this workspace. With no
+  // reporter armed the client falls back to the unattributed default, and one
+  // onboarding on 2026-09-05 left fourteen rows with no workspace_id - the
+  // discovery that costs the most per site, and the one the per-site margin
+  // cannot see. Written through the service role: the client handed to this
+  // pipeline is the signed-in user's, and provider_spend refuses its inserts.
+  // generateArticle arms its own, finer reporter (article and run) for the
+  // draft and clears it after; the finally clears ours however the run ends.
+  setSpendReporter(({ operation, costUsd }) => {
+    recordSpendByDefault({ provider: "dataforseo", operation, costUsd, workspaceId: workspace.id });
+  });
+  try {
+    await runPhases(supabase, workspace, emit, gone);
+  } finally {
+    setSpendReporter(null);
+  }
+}
+
+async function runPhases(
+  supabase: SupabaseClient,
+  workspace: Workspace,
+  emit: Emit,
+  gone: () => boolean,
+): Promise<void> {
+  const domain = workspace.domain;
 
   // --- Phase 1: read the site, learn its voice ----------------------------
   emit({ phase: "scanning", status: "active" });
