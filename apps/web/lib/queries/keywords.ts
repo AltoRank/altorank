@@ -79,3 +79,60 @@ export async function getKeywordSourceYields(workspaceId: string): Promise<Keywo
     ((cal.data ?? []) as Array<{ keyword_id: string | null }>).map((c) => c.keyword_id),
   );
 }
+
+export type LatestRanking = Pick<KeywordRanking, "position" | "url" | "checked_at">;
+
+/**
+ * The newest tracked position for each keyword, from the rank cron's history.
+ *
+ * `keyword_rankings` has no workspace column: it hangs off the keyword, so the
+ * ids come from a list that was already scoped and this only narrows further.
+ * Read newest-first in pages and stop as soon as every keyword has answered,
+ * because a site tracking two hundred terms for three months holds eighteen
+ * thousand rows here and PostgREST hands back the first thousand without a
+ * word about the rest.
+ */
+export async function getLatestRankings(keywordIds: string[]): Promise<Map<string, LatestRanking>> {
+  const ids = [...new Set(keywordIds.filter(Boolean))];
+  const out = new Map<string, LatestRanking>();
+  if (ids.length === 0) return out;
+  const supabase = await createClient();
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("keyword_rankings")
+      .select("keyword_id, position, url, checked_at")
+      .in("keyword_id", ids)
+      .order("checked_at", { ascending: false })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    for (const r of (data ?? []) as Array<{ keyword_id: string; position: number | null; url: string | null; checked_at: string }>) {
+      if (!out.has(r.keyword_id)) out.set(r.keyword_id, { position: r.position, url: r.url, checked_at: r.checked_at });
+    }
+    if ((data ?? []).length < PAGE || out.size >= ids.length) return out;
+  }
+}
+
+export type KeywordRationale = { articleId: string; reasons: string[] };
+
+/**
+ * Why the queue wrote about each keyword, from the article it produced.
+ * `selection_reasons` is captured at selection time (migration 022) and never
+ * recomputed, so this is the reasoning as it was, not as it would be now.
+ */
+export async function getSelectionReasonsByKeyword(workspaceId: string): Promise<Map<string, KeywordRationale>> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("articles")
+    .select("id, keyword_id, selection_reasons")
+    .eq("workspace_id", workspaceId)
+    .not("keyword_id", "is", null)
+    .not("selection_reasons", "is", null);
+  if (error) throw new Error(error.message);
+  const out = new Map<string, KeywordRationale>();
+  for (const a of (data ?? []) as Array<{ id: string; keyword_id: string; selection_reasons: unknown }>) {
+    const reasons = Array.isArray(a.selection_reasons) ? a.selection_reasons.filter((r): r is string => typeof r === "string") : [];
+    if (reasons.length && !out.has(a.keyword_id)) out.set(a.keyword_id, { articleId: a.id, reasons });
+  }
+  return out;
+}

@@ -9,7 +9,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getValidAccessToken } from "@/lib/google/oauth";
 import { fetchGA4Metrics } from "@/lib/google/ga4";
-import { fetchGSCQueryMetrics, fetchGSCPageMetrics, listGSCSites, matchGSCSite } from "@/lib/google/gsc";
+import {
+  fetchGSCDailyTotals,
+  fetchGSCPageMetrics,
+  fetchGSCQueryMetrics,
+  fetchGSCQueryPageMetrics,
+  listGSCSites,
+  matchGSCSite,
+} from "@/lib/google/gsc";
+import { articleIndex, gscRowsForDay } from "@/lib/gsc/rows";
 
 export type SyncableIntegration = {
   id: string;
@@ -20,14 +28,37 @@ export type SyncableIntegration = {
 
 export type SyncResult = { workspaceId: string; ga4: number; gsc: number; error?: string };
 
-const norm = (u: string) => {
-  try {
-    const url = new URL(u);
-    return (url.host + url.pathname).replace(/\/+$/, "").toLowerCase();
-  } catch {
-    return u.toLowerCase();
+/**
+ * The Search Console property this integration reads, resolved once and
+ * stored on the integration's config.
+ *
+ * The account may own a domain property, a URL-prefix property, or none at
+ * all, and guessing `sc-domain:<domain>` produced a 403 on every run for
+ * altorank.co (2026-09-02). Shared by the nightly sync and the URL inspection
+ * action, so both ask the same question and store the same answer.
+ */
+export async function resolveGscSiteUrl(
+  supabase: SupabaseClient,
+  integration: Pick<SyncableIntegration, "id" | "config">,
+  domain: string,
+  accessToken: string,
+): Promise<string> {
+  const stored = integration.config?.gscSiteUrl;
+  if (stored) return stored;
+  const sites = await listGSCSites(accessToken);
+  const match = matchGSCSite(sites, domain);
+  if (!match) {
+    const owned = sites.map((s) => s.siteUrl).slice(0, 5).join(", ") || "none";
+    throw new Error(
+      `This Google account has no Search Console property for ${domain}. It can see: ${owned}. Add the property in Search Console, or reconnect with the account that owns it.`,
+    );
   }
-};
+  await supabase
+    .from("workspace_integrations")
+    .update({ config: { ...(integration.config ?? {}), gscSiteUrl: match.siteUrl } })
+    .eq("id", integration.id);
+  return match.siteUrl;
+}
 
 /** Sync one day of GA4 and Search Console data for one integration. */
 export async function syncWorkspaceAnalytics(
@@ -59,48 +90,35 @@ export async function syncWorkspaceAnalytics(
     }
 
     if (ws.domain) {
-      // Resolved once and stored: the account may own a domain property, a
-      // URL-prefix property, or none at all, and guessing produced a 403 on
-      // every run for altorank.co (2026-09-02).
-      let siteUrl = integration.config?.gscSiteUrl;
-      if (!siteUrl) {
-        const sites = await listGSCSites(accessToken);
-        const match = matchGSCSite(sites, ws.domain);
-        if (!match) {
-          const owned = sites.map((s) => s.siteUrl).slice(0, 5).join(", ") || "none";
-          throw new Error(
-            `This Google account has no Search Console property for ${ws.domain}. It can see: ${owned}. Add the property in Search Console, or reconnect with the account that owns it.`,
-          );
-        }
-        siteUrl = match.siteUrl;
-        await supabase
-          .from("workspace_integrations")
-          .update({ config: { ...(integration.config ?? {}), gscSiteUrl: siteUrl } })
-          .eq("id", integration.id);
-      }
-      const queries = await fetchGSCQueryMetrics(accessToken, siteUrl, dateStr, dateStr);
-      const rows = queries.map((q) => ({ workspace_id: ws.id, source: "gsc" as const, metric_date: dateStr, clicks: q.clicks, impressions: q.impressions, ctr: q.ctr, avg_position: q.position, query: q.query }));
-      await supabase.from("analytics_metrics").delete().eq("workspace_id", ws.id).eq("source", "gsc").eq("metric_date", dateStr);
-      if (rows.length) { await supabase.from("analytics_metrics").insert(rows); gscCount = rows.length; }
+      const siteUrl = await resolveGscSiteUrl(supabase, integration, ws.domain, accessToken);
 
+      // Four reports, four row shapes, one delete. lib/gsc/analysis.ts says
+      // which shape answers which question and why they are never summed
+      // together; lib/gsc/rows.ts is the mapping from report to row.
       const { data: liveArticles } = await supabase
         .from("articles")
         .select("id, published_url")
         .eq("workspace_id", ws.id)
         .eq("status", "live")
         .not("published_url", "is", null);
-      if (liveArticles?.length) {
-        const byPath = new Map(liveArticles.map((a) => [norm(a.published_url as string), a.id as string]));
-        const pages = await fetchGSCPageMetrics(accessToken, siteUrl, dateStr, dateStr);
-        const pageRows = pages
-          .map((pg) => {
-            const articleId = byPath.get(norm(pg.pageUrl));
-            if (!articleId) return null;
-            return { workspace_id: ws.id, article_id: articleId, source: "gsc" as const, metric_date: dateStr, clicks: pg.clicks, impressions: pg.impressions, ctr: pg.ctr, avg_position: pg.position, page_url: pg.pageUrl };
-          })
-          .filter((r): r is NonNullable<typeof r> => r !== null);
-        if (pageRows.length) { await supabase.from("analytics_metrics").insert(pageRows); gscCount += pageRows.length; }
-      }
+
+      const [totals, queries, pages, queryPages] = await Promise.all([
+        fetchGSCDailyTotals(accessToken, siteUrl, dateStr),
+        fetchGSCQueryMetrics(accessToken, siteUrl, dateStr, dateStr),
+        fetchGSCPageMetrics(accessToken, siteUrl, dateStr, dateStr),
+        fetchGSCQueryPageMetrics(accessToken, siteUrl, dateStr, dateStr),
+      ]);
+      const rows = gscRowsForDay({
+        workspaceId: ws.id,
+        date: dateStr,
+        totals,
+        queries,
+        pages,
+        queryPages,
+        articleIdByUrl: articleIndex((liveArticles ?? []) as Array<{ id: string; published_url: string | null }>),
+      });
+      await supabase.from("analytics_metrics").delete().eq("workspace_id", ws.id).eq("source", "gsc").eq("metric_date", dateStr);
+      if (rows.length) { await supabase.from("analytics_metrics").insert(rows); gscCount = rows.length; }
     }
 
     return { workspaceId: ws.id, ga4: ga4Count, gsc: gscCount };

@@ -136,6 +136,9 @@ export type Article = {
   /** What each outbound link answered when the draft was generated. Null for
    *  drafts predating migration 043 or written by hand. */
   link_checks: LinkCheck[] | null;
+  /** What each engine said about the published URL (lib/seo/indexing.ts), plus
+   *  `inspection` from the URL Inspection API (lib/google/inspection.ts). */
+  indexing_status?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 };
