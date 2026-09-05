@@ -5,6 +5,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { rewriteField, type MicroAction, type MicroField } from "@/lib/ai/micro";
 import { generateImage } from "@/lib/ai/image-generator";
+import { outputFromRow, resolveFeaturedImage, type OutputSettingsRow } from "@/lib/onboarding/output-settings";
 import { uploadImageBuffer } from "@/lib/storage/images";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
 
@@ -49,7 +50,7 @@ async function loadArticle(articleId: string) {
     .eq("id", article.workspace_id)
     .single();
   if (!workspace) throw new Error("Workspace not found");
-  return { article, workspace };
+  return { article, workspace, supabase };
 }
 
 export async function rewriteFieldAction(input: {
@@ -107,15 +108,30 @@ export async function regenerateImageAction(input: {
   try {
     await requireAuth();
     const parsed = regenerateSchema.parse(input);
-    const { article, workspace } = await loadArticle(parsed.articleId);
+    const { article, workspace, supabase } = await loadArticle(parsed.articleId);
+
+    // The same presets generation used, so a regenerated image matches its
+    // neighbours: the body preset beside a paragraph, the featured preset for
+    // the cover.
+    const { data: outputRow } = await supabase
+      .from("workspace_output_settings")
+      .select("*")
+      .eq("workspace_id", workspace.id)
+      .maybeSingle();
+    const settings = outputFromRow(outputRow as OutputSettingsRow | null);
+    const isBody = Boolean(parsed.context?.trim());
+    const featured = resolveFeaturedImage(settings);
 
     const image = await generateImage(
       article.title,
       article.keyword,
       (workspace.brand_style ?? undefined) as Record<string, unknown> | undefined,
       {
-        section: parsed.context?.trim() ? { excerpt: parsed.context } : undefined,
+        section: isBody ? { excerpt: parsed.context! } : undefined,
         instruction: parsed.instruction,
+        style: isBody ? settings.imageStyle : featured.style,
+        titleCover: isBody ? false : featured.titleCover,
+        brandColor: settings.brandColor,
       },
     );
     const path = proposalPath(workspace.id, article.id, image.extension);

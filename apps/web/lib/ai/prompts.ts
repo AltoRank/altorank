@@ -617,6 +617,8 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     if (o.firstPerson === true) prefs.push("- First person (\"we\", \"our\") is fine where it reads naturally.");
     if (o.mentionSimilarProducts === false) prefs.push("- Do not name or compare competing products.");
     if (o.mentionSimilarProducts === true) prefs.push("- Where relevant, name and fairly compare similar products or tools.");
+    if (o.emojis === false) prefs.push("- No emojis anywhere in the article.");
+    if (o.emojis === true) prefs.push("- Emojis are welcome in headings and list items where they add warmth: at most one per heading, none in body sentences.");
     if (o.customInstructions?.trim()) prefs.push(`- Site owner's standing instructions: ${o.customInstructions.trim()}`);
     if (prefs.length) sections.push("", "SITE PREFERENCES:", ...prefs);
   }

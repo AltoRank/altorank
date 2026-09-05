@@ -21,7 +21,13 @@ import {
 } from "@/lib/onboarding/business-profile";
 import { resolveLocale } from "@/lib/onboarding/locale";
 import { discoverSite, type SiteDiscovery } from "@/lib/onboarding/site-discovery";
-import { TONES, type Tone, type OutputSettings, type SiteDetails } from "@/lib/onboarding/output-settings";
+import {
+  outputToRow,
+  parseBrandColor,
+  parseYouTubeChannel,
+  type OutputSettings,
+  type SiteDetails,
+} from "@/lib/onboarding/output-settings";
 
 async function assertWorkspace(workspaceId: string) {
   const supabase = await createClient();
@@ -95,19 +101,14 @@ export async function saveSiteDetails(workspaceId: string, details: SiteDetails)
 
 export async function saveOutputSettings(workspaceId: string, s: OutputSettings): Promise<void> {
   const { supabase } = await assertWorkspace(workspaceId);
-  const tone: Tone = (TONES as readonly string[]).includes(s.tone) ? s.tone : "informative";
+  // A colour or channel that does not parse is refused, not silently nulled:
+  // the form validates the same way, so this only fires on a bypassed client.
+  if (s.brandColor?.trim() && !parseBrandColor(s.brandColor)) throw new Error("Brand colour must be a hex value like #1a1815.");
+  if (s.youtubeChannel?.trim() && !parseYouTubeChannel(s.youtubeChannel)) {
+    throw new Error("YouTube channel must be a channel id (UC…), a handle (@name) or the channel URL.");
+  }
   const { error } = await supabase.from("workspace_output_settings").upsert(
-    {
-      workspace_id: workspaceId,
-      tone,
-      internal_links: Math.max(0, Math.min(10, Math.round(Number(s.internalLinks) || 3))),
-      table_of_contents: Boolean(s.tableOfContents),
-      call_to_action: Boolean(s.callToAction),
-      first_person: Boolean(s.firstPerson),
-      mention_similar_products: Boolean(s.mentionSimilarProducts),
-      global_article_prompt: s.globalArticlePrompt.trim() || null,
-      updated_at: new Date().toISOString(),
-    },
+    { workspace_id: workspaceId, ...outputToRow(s), updated_at: new Date().toISOString() },
     { onConflict: "workspace_id" },
   );
   if (error) throw new Error(error.message);

@@ -17,18 +17,22 @@
 // Every step is wrapped: a throw, an empty result or a result half the length
 // of its input keeps the previous HTML and records a warning. The body is the
 // product; no decoration is allowed to lose it.
+//
+// Every step with a switch in `workspace_output_settings` reads it here and
+// does nothing when it is off; the prompt in lib/ai/prompts.ts is told the
+// same so the model does not write what this would then have to remove.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { YouTubeVideo } from "@/lib/youtube/search";
+import {
+  DEFAULT_OUTPUT_SETTINGS,
+  outputFromRow,
+  type OutputSettings,
+  type OutputSettingsRow,
+} from "@/lib/onboarding/output-settings";
 import { applyFormat, type FormatFindings } from "./format";
 import { addTableOfContents } from "./toc";
-import {
-  addSectionImages,
-  resolveImageStyle,
-  storageImageProducer,
-  DEFAULT_MAX_IMAGES,
-  type ImageProducer,
-} from "./images";
+import { addSectionImages, storageImageProducer, DEFAULT_MAX_IMAGES, type ImageProducer } from "./images";
 import { addHowToVideo } from "./video";
 import { addInfographics } from "./infographic";
 import { addCallToAction } from "./cta";
@@ -38,19 +42,30 @@ import type { ImageStyle } from "./labels";
 export type { FormatFindings, FaqSchema, ImageStyle };
 
 /**
- * The columns of `workspace_output_settings` this pipeline reads. The table
- * arrives with the onboarding wizard (migration 049); an install without it
- * gets these defaults, which are also the table's own defaults.
+ * The switches this pipeline reads, a subset of `workspace_output_settings`.
+ * The table arrives with the onboarding wizard (049) and these columns with
+ * 064; an install without either gets the defaults, which are also the
+ * table's own. Parsed by the one parser every reader of the table uses.
  */
-export interface EnrichmentSettings {
-  tableOfContents: boolean;
-  callToAction: boolean;
-}
+export type EnrichmentSettings = Pick<
+  OutputSettings,
+  "tableOfContents" | "callToAction" | "infographics" | "video" | "faqSchema" | "imageStyle" | "brandColor" | "youtubeChannel"
+>;
 
-export const DEFAULT_SETTINGS: EnrichmentSettings = {
-  tableOfContents: true,
-  callToAction: true,
-};
+export const DEFAULT_SETTINGS: EnrichmentSettings = pickEnrichment(DEFAULT_OUTPUT_SETTINGS);
+
+function pickEnrichment(o: OutputSettings): EnrichmentSettings {
+  return {
+    tableOfContents: o.tableOfContents,
+    callToAction: o.callToAction,
+    infographics: o.infographics,
+    video: o.video,
+    faqSchema: o.faqSchema,
+    imageStyle: o.imageStyle,
+    brandColor: o.brandColor,
+    youtubeChannel: o.youtubeChannel,
+  };
+}
 
 export interface EnrichmentReport {
   toc: boolean;
@@ -81,6 +96,7 @@ export interface EnrichContext {
   language?: string | null;
   /** Loaded from `workspace_output_settings` when omitted and a client is given. */
   settings?: Partial<EnrichmentSettings> | null;
+  /** Free-text `workspaces.brand_style`; the image prompt still reads its `style` and `colors` hints. */
   brandStyle?: Record<string, unknown> | null;
   /** `business_profile.name`; looked up when omitted and a client is given. */
   businessName?: string | null;
@@ -108,7 +124,8 @@ export interface EnrichResult {
 /**
  * `workspace_output_settings` for one site, or the defaults when the row or
  * the table is missing. A missing table is a PostgREST error, not a throw, so
- * `data` is null either way and the fallback is the same.
+ * `data` is null either way and the fallback is the same. `select("*")` so a
+ * row from before 064 still parses; the parser defaults the columns it lacks.
  */
 export async function loadEnrichmentSettings(
   supabase: SupabaseClient,
@@ -117,14 +134,11 @@ export async function loadEnrichmentSettings(
   try {
     const { data } = await supabase
       .from("workspace_output_settings")
-      .select("table_of_contents, call_to_action")
+      .select("*")
       .eq("workspace_id", workspaceId)
       .maybeSingle();
     if (!data) return DEFAULT_SETTINGS;
-    return {
-      tableOfContents: data.table_of_contents ?? DEFAULT_SETTINGS.tableOfContents,
-      callToAction: data.call_to_action ?? DEFAULT_SETTINGS.callToAction,
-    };
+    return pickEnrichment(outputFromRow(data as OutputSettingsRow));
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -142,23 +156,6 @@ async function loadBusinessName(supabase: SupabaseClient, workspaceId: string): 
     return typeof name === "string" && name.trim() ? name.trim() : null;
   } catch {
     return null;
-  }
-}
-
-/** Write the chosen preset back so the next article's images match this one's. */
-async function persistImageStyle(
-  supabase: SupabaseClient,
-  workspaceId: string,
-  brandStyle: Record<string, unknown> | null | undefined,
-  style: ImageStyle,
-): Promise<void> {
-  try {
-    await supabase
-      .from("workspaces")
-      .update({ brand_style: { ...(brandStyle ?? {}), image_style: style } })
-      .eq("id", workspaceId);
-  } catch {
-    // The preset is a convenience; losing it costs consistency, not content.
   }
 }
 
@@ -218,11 +215,11 @@ export async function enrichArticle(html: string, ctx: EnrichContext): Promise<E
     { added: false },
   );
 
-  // 3. Images. The producer is the paid part; without a key, a client or an
-  //    article id there is nothing to call and nowhere to store, so skip.
+  // 3. Images, in the site's preset. The producer is the paid part; without a
+  //    key, a client or an article id there is nothing to call and nowhere to
+  //    store, so skip.
   let imageStyle: ImageStyle | null = null;
   let images: { added: number } = { added: 0 };
-  const chosen = resolveImageStyle(ctx.brandStyle);
   const producer =
     ctx.imageProducer !== undefined
       ? ctx.imageProducer
@@ -233,40 +230,44 @@ export async function enrichArticle(html: string, ctx: EnrichContext): Promise<E
             articleId: ctx.articleId,
             keyword: ctx.keyword,
             brandStyle: ctx.brandStyle,
+            brandColor: settings.brandColor,
             runId: ctx.runId,
           })
         : null;
   if (producer) {
-    imageStyle = chosen.style;
+    imageStyle = settings.imageStyle;
     const result = await step(
       "images",
       (h) =>
         addSectionImages(h, {
           produce: producer,
           max: ctx.maxImages ?? DEFAULT_MAX_IMAGES,
-          style: chosen.style,
+          style: settings.imageStyle,
           language: ctx.language,
         }),
       { added: 0, warnings: [] as string[] },
     );
     images = result;
     warnings.push(...result.warnings);
-    if (result.added > 0 && chosen.persist && supabase) {
-      await persistImageStyle(supabase, ctx.workspaceId, ctx.brandStyle, chosen.style);
-    }
   }
 
-  // 4. Video, for a how-to section.
+  // 4. Video, for a how-to section; from the site's own channel when one is set.
   const video = await step(
     "video",
-    (h) => addHowToVideo(h, { search: ctx.videoSearch, language: ctx.language }),
+    (h) =>
+      addHowToVideo(h, {
+        enabled: settings.video,
+        search: ctx.videoSearch,
+        channel: settings.youtubeChannel,
+        language: ctx.language,
+      }),
     { added: false },
   );
 
   // 5. Infographics, for numbers already in the text.
   const infographics = await step(
     "infographic",
-    (h) => addInfographics(h, { language: ctx.language }),
+    (h) => addInfographics(h, { enabled: settings.infographics, language: ctx.language, brandColor: settings.brandColor }),
     { added: 0 },
   );
 
@@ -283,10 +284,11 @@ export async function enrichArticle(html: string, ctx: EnrichContext): Promise<E
     { added: false },
   );
 
-  // 7. FAQ schema, read from the final text.
+  // 7. FAQ schema, read from the final text. Off leaves the FAQ prose alone
+  //    and hands the publisher nothing to inject.
   let faq: { schema: FaqSchema | null; count: number } = { schema: null, count: 0 };
   try {
-    faq = buildFaqSchema(current);
+    if (settings.faqSchema) faq = buildFaqSchema(current);
   } catch (err) {
     warnings.push(`faq: ${err instanceof Error ? err.message : String(err)}`);
   }

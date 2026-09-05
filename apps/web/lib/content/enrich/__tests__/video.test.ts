@@ -26,6 +26,12 @@ describe("video", () => {
     expect(at).toBeLessThan(html.indexOf("What the tools cost"));
   });
 
+  it("does nothing when the site has turned video off", async () => {
+    const search = vi.fn(async () => [VIDEO]);
+    expect((await addHowToVideo(ARTICLE, { enabled: false, search })).added).toBe(false);
+    expect(search).not.toHaveBeenCalled();
+  });
+
   it("skips silently with no results, no how-to section, or an existing embed", async () => {
     expect((await addHowToVideo(ARTICLE, { search: async () => [] })).added).toBe(false);
     expect((await addHowToVideo(SECTION("Pricing", "x"), { search: async () => [VIDEO] })).added).toBe(false);

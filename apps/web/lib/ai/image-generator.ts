@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { openaiImageModel } from "./models";
+import type { ImageStyle } from "@/lib/onboarding/output-settings";
 
 // ---------------------------------------------------------------------------
 // Featured images
@@ -63,9 +64,18 @@ const CONTENT_TYPE: Record<string, string> = {
   jpeg: "image/jpeg",
 };
 
+/** How each preset is described to the generator. One wording per preset, used by every caller. */
+export const STYLE_PROMPT: Record<ImageStyle, string> = {
+  sketch: "hand-drawn pencil sketch, monochrome line art on a white background",
+  watercolor: "soft watercolour painting with visible brush texture and paper grain",
+  realistic: "photorealistic editorial photograph, natural light, shallow depth of field",
+  illustration: "flat vector illustration, clean geometric shapes, limited palette",
+  "brand-text": "bold minimal graphic composition built from the brand colours and abstract letterforms, no legible words",
+};
+
 /**
- * What a caller adds beyond the article. All optional; the featured-image call
- * in lib/content/generate.ts passes nothing.
+ * What a caller adds beyond the article. All optional; without a style the
+ * free-text `brand_style.style` is the only steer, as before 064.
  */
 export interface ImageGenerationOptions {
   /**
@@ -77,6 +87,16 @@ export interface ImageGenerationOptions {
   section?: { heading?: string; excerpt: string };
   /** The person's own words for what they want changed (editor regenerate). */
   instruction?: string;
+  /** `workspace_output_settings.image_style` (or the featured preset). Replaces the free-text style hint. */
+  style?: ImageStyle | null;
+  /**
+   * The cover as a title card: the article title set in type on a plain
+   * ground. The one image that may carry text, so the no-text rule is lifted
+   * for it and the title is the subject rather than a scene about it.
+   */
+  titleCover?: boolean;
+  /** `workspace_output_settings.brand_color`; named as the accent. Wins over `brand_style.colors`. */
+  brandColor?: string | null;
 }
 
 export async function generateImage(
@@ -90,10 +110,16 @@ export async function generateImage(
 
   const client = new OpenAI({ apiKey });
 
-  const styleHints = brandStyle?.style ? `, style: ${brandStyle.style}` : "";
-  const colorHints = brandStyle?.colors
-    ? `, using brand colors: ${brandStyle.colors}`
-    : "";
+  const styleHints = options.style
+    ? `Style: ${STYLE_PROMPT[options.style]}.`
+    : brandStyle?.style
+      ? `, style: ${brandStyle.style}`
+      : "";
+  const colorHints = options.brandColor
+    ? `Use the brand colour ${options.brandColor} as the dominant accent.`
+    : brandStyle?.colors
+      ? `, using brand colors: ${brandStyle.colors}`
+      : "";
 
   const subject = options.section
     ? [
@@ -103,15 +129,22 @@ export async function generateImage(
         options.section.excerpt ? `The passage says: "${options.section.excerpt.trim().slice(0, 400)}".` : "",
         `The image should be clean and suit an editorial article on a professional website.`,
       ]
-    : [
-        `Create a professional, visually striking featured image for a blog article titled "${articleTitle}".`,
-        `The article is about "${keyword}".`,
-        `The image should be clean, modern, and suitable as a hero image on a professional website.`,
-      ];
+    : options.titleCover
+      ? [
+          `Create a cover image for a blog article titled "${articleTitle}".`,
+          `The title text "${articleTitle}" is the subject: set it in large, clear, legible type, spelled exactly as given, ` +
+            `centred on a plain, uncluttered background${options.brandColor ? ` in the brand colour ${options.brandColor}` : ""}.`,
+          `No other words, no scene, no decoration beyond the type and the background.`,
+        ]
+      : [
+          `Create a professional, visually striking featured image for a blog article titled "${articleTitle}".`,
+          `The article is about "${keyword}".`,
+          `The image should be clean, modern, and suitable as a hero image on a professional website.`,
+        ];
 
   const prompt = [
     ...subject,
-    `No text or watermarks in the image.`,
+    options.titleCover ? `No watermarks.` : `No text or watermarks in the image.`,
     styleHints,
     colorHints,
     options.instruction?.trim()

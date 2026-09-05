@@ -86,6 +86,8 @@ export interface OutputPrefs {
   callToAction?: boolean;
   firstPerson?: boolean;
   mentionSimilarProducts?: boolean;
+  /** Emojis in headings and lists. False is an explicit ban, not silence. */
+  emojis?: boolean;
   /** Free-text rules the site owner wrote; they outrank everything but safety. */
   customInstructions?: string | null;
 }

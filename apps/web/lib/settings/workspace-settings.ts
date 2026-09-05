@@ -2,7 +2,12 @@ import { createClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { EMPTY_PROFILE } from "@/lib/onboarding/business-profile";
-import { outputFromRow, type OutputSettings, type SiteDetails } from "@/lib/onboarding/output-settings";
+import {
+  outputFromRow,
+  type OutputSettings,
+  type OutputSettingsRow,
+  type SiteDetails,
+} from "@/lib/onboarding/output-settings";
 
 /**
  * Everything the workspace-scoped Settings tabs read, in one query per table.
@@ -36,13 +41,8 @@ export async function getWorkspaceSettings(): Promise<WorkspaceSettings | null> 
       .select("id, name, domain, business_profile, sitemap_url, blog_root_url, example_article_urls")
       .eq("id", scopeId)
       .maybeSingle(),
-    supabase
-      .from("workspace_output_settings")
-      .select(
-        "tone, internal_links, table_of_contents, call_to_action, first_person, mention_similar_products, global_article_prompt, global_keyword_prompt",
-      )
-      .eq("workspace_id", scopeId)
-      .maybeSingle(),
+    // Every column: the parser defaults whatever a pre-064 row lacks.
+    supabase.from("workspace_output_settings").select("*").eq("workspace_id", scopeId).maybeSingle(),
     supabase
       .from("workspace_integrations")
       .select("id", { count: "exact", head: true })
@@ -78,8 +78,8 @@ export async function getWorkspaceSettings(): Promise<WorkspaceSettings | null> 
       blogRootUrl: ws.blog_root_url ?? "",
       exampleArticleUrls: (ws.example_article_urls as string[] | null) ?? [],
     },
-    output: outputFromRow(output),
-    keywordPrompt: output?.global_keyword_prompt ?? "",
+    output: outputFromRow(output as OutputSettingsRow | null),
+    keywordPrompt: (output as { global_keyword_prompt?: string | null } | null)?.global_keyword_prompt ?? "",
     gscConnected: (gscCount ?? 0) > 0,
     gscLastDate: (latest?.metric_date as string | undefined) ?? null,
   };

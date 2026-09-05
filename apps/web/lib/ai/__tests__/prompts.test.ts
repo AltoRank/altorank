@@ -100,5 +100,10 @@ describe("buildSystemPrompt — internal links", () => {
     // Zero is a preference that stands on its own.
     const none = { internalLinks: 0 } as typeof output;
     expect(buildSystemPrompt({ keyword: "k", output: none })).toContain("Do not add internal-link placeholders.");
+
+    // Emojis: off is an explicit ban, on is a bounded allowance, unset says nothing.
+    expect(buildSystemPrompt({ keyword: "k", output: { emojis: false } as typeof output })).toContain("No emojis anywhere");
+    expect(buildSystemPrompt({ keyword: "k", output: { emojis: true } as typeof output })).toContain("Emojis are welcome in headings");
+    expect(buildSystemPrompt({ keyword: "k", output })).not.toMatch(/emoji/i);
   });
 });

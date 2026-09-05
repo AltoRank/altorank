@@ -9,15 +9,21 @@
 // keyword, and embed the top result from the privacy-enhanced host.
 //
 // `lib/youtube/search` returns nothing when no key is configured, and this
-// step does the same: no key, no video, no warning.
+// step does the same: no key, no video, no warning. With a channel set, the
+// search is restricted to it, and a channel with nothing on the topic means
+// no video rather than someone else's.
 
 import { searchYouTubeVideos, type YouTubeVideo } from "@/lib/youtube/search";
 import { labelsFor } from "./labels";
 import { splitSections, firstParagraph, hasVideoEmbed, escapeAttr, escapeHtml } from "./html";
 
 export interface VideoOptions {
+  /** `workspace_output_settings.video`; defaults on. */
+  enabled?: boolean;
   search?: (query: string) => Promise<YouTubeVideo[]>;
   language?: string | null;
+  /** `workspace_output_settings.youtube_channel`: search only this channel. Ignored when `search` is injected. */
+  channel?: string | null;
 }
 
 const HOW_TO_HEADING =
@@ -51,12 +57,13 @@ export async function addHowToVideo(
   html: string,
   opts: VideoOptions = {},
 ): Promise<{ html: string; added: boolean }> {
+  if (opts.enabled === false) return { html, added: false };
   if (hasVideoEmbed(html)) return { html, added: false };
   const { intro, sections } = splitSections(html);
   const target = sections.find((s) => isHowToSection(s.headingText, s.body));
   if (!target) return { html, added: false };
 
-  const search = opts.search ?? ((q: string) => searchYouTubeVideos(q, 1));
+  const search = opts.search ?? ((q: string) => searchYouTubeVideos(q, 1, { channel: opts.channel }));
   const results = await search(target.headingText);
   const video = results[0];
   if (!video?.videoId) return { html, added: false };
