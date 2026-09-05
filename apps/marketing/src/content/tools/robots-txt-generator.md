@@ -1,9 +1,9 @@
 ---
-title: "robots.txt for AI Crawlers: Who to Allow and What It Costs"
+title: "Free robots.txt Generator With AI Crawler Rules"
 slug: "robots-txt-generator"
 description: "Build a robots.txt with AI crawler rules. Which bots train models, which answer questions, and why it matters."
 category: "technical"
-heroHeadline: "Decide which AI crawlers can read you."
+heroHeadline: "robots.txt generator: decide which AI crawlers can read you."
 heroSubhead: "A robots.txt builder that separates the crawlers fetching to train a model from the ones fetching to answer a question — because blocking the second group is what removes you from the answers."
 widget: "robots-txt"
 useCases:

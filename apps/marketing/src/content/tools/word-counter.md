@@ -1,9 +1,9 @@
 ---
-title: "Word Count and Readability: What the Numbers Tell You"
+title: "Free Word Counter and Readability Checker"
 slug: "word-counter"
 description: "Words, sentences, reading time and a Flesch grade. Plus why word count is a symptom, not a target."
 category: "content"
-heroHeadline: "Count the words. Then ignore the count."
+heroHeadline: "Word counter and readability checker."
 heroSubhead: "Word count, reading time and a readability grade for any draft. The useful part is not the total — it is the average sentence length hiding underneath it."
 widget: "word-counter"
 useCases:
