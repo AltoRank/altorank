@@ -4,6 +4,7 @@ import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { Avatar, Icons } from "@/components/ui";
+import { PauseSiteControl } from "@/components/dashboard/paused-banner";
 
 /**
  * The scope control. Sits above the navigation because it changes what every
@@ -52,6 +53,16 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
       </div>
       {active?.domain && (
         <div className="mt-1 truncate font-mono text-[10.5px] text-ink-3">{active.domain}</div>
+      )}
+      {/* The site's on/off switch lives with its name: pausing is about the
+          scope, not about any one page below it. */}
+      {active && (
+        <div className="mt-1 flex items-center gap-2">
+          {active.status === "paused" && (
+            <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-3">Paused</span>
+          )}
+          <PauseSiteControl workspaceId={active.id} name={active.name} status={active.status} />
+        </div>
       )}
     </div>
   );

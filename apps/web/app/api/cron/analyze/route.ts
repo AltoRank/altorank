@@ -11,7 +11,7 @@ import {
   type ProfileCandidate,
   type RefreshOutcome,
 } from "@/lib/audit/profile-refresh";
-import { monthlyTarget, schedulePlan } from "@/lib/onboarding/plan";
+import { monthlyTarget, schedulePlan, cadenceDays } from "@/lib/onboarding/plan";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
 
 /**
@@ -195,7 +195,11 @@ async function topUpPlans(supabase: ReturnType<typeof createServiceClient>): Pro
       continue;
     }
     try {
-      const added = await schedulePlan(supabase, workspaceId, pace, new Date(), { mode: "top-up" });
+      const added = await schedulePlan(supabase, workspaceId, pace, {
+        from: new Date(),
+        mode: "top-up",
+        daysOfWeek: await cadenceDays(supabase, workspaceId),
+      });
       out.push({ workspaceId, queued, target, added: added.length });
     } catch (err) {
       out.push({ workspaceId, queued, target, added: 0, error: err instanceof Error ? err.message : "unknown error" });

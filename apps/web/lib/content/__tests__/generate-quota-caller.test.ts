@@ -48,7 +48,10 @@ beforeEach(() => {
   getQuota.mockResolvedValue(EXHAUSTED);
 });
 
-describe("generateArticle quota gate", () => {
+// generate.ts now pulls in taxonomy, questions, linking, enrichment and the
+// e2e stubs; the first test pays that import under the full parallel run and
+// was timing out at the 5 s default while passing alone in ~1 s.
+describe("generateArticle quota gate", { timeout: 20_000 }, () => {
   it("forwards an explicit null, so a cron is judged sessionless", async () => {
     const { generateArticle } = await import("../generate");
     await expect(

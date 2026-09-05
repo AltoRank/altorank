@@ -48,6 +48,13 @@ export type AgencyMember = {
 // one per project of their own; "client" was only ever true for the first.
 export type AIProviderType = "claude" | "openai";
 
+/** Why a site reads "Paused since …" and what Resume puts back. */
+export type PausedMeta = {
+  since: string;
+  previous_status: "on" | "review" | "setup";
+  by: string | null;
+};
+
 export type Workspace = {
   /** Cron writes drafts for this workspace (opt-in; set by activation and by the signup flow). */
   auto_generate?: boolean;
@@ -60,6 +67,8 @@ export type Workspace = {
   color: AvatarColor;
   plan: string;
   status: "on" | "review" | "paused" | "setup";
+  /** Set while paused by hand (migration 059); null otherwise. */
+  paused_meta?: PausedMeta | null;
   /** Domain rating 0-100. null when nobody has measured it: render as —, never 0. */
   dr: number | null;
   /** Publishing platform observed during analysis. null when undetermined. */
