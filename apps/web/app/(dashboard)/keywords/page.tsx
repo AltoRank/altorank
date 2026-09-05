@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getKeywords } from "@/lib/queries/keywords";
-import { PageHead, StatusPill, Avatar, Chip, Card, StatStrip } from "@/components/ui";
+import { PageHead, StatusPill, Avatar, Chip, Card, StatStrip, DotSep } from "@/components/ui";
 import { KeywordActions } from "@/components/dashboard/keyword-actions";
 import { KeywordFilters } from "@/components/dashboard/keyword-filters";
 import { KeywordPlanButton } from "@/components/dashboard/keyword-plan-button";
 import type { Workspace } from "@/lib/types";
+import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "Keywords" };
@@ -48,7 +49,20 @@ export default async function KeywordsPage({ searchParams }: Props) {
     <>
       <PageHead
         title="Keywords"
-        subtitle={<span>Across all workspaces</span>}
+        // Said "Across all workspaces" long after the query stopped being
+        // across all workspaces. The list is scoped to the switcher, so the
+        // subtitle now names the site it is actually showing, like Articles.
+        subtitle={
+          <>
+            <span>{plural(shown.length, "keyword")}</span>
+            {wsMap.get(scopeId ?? "")?.domain ? (
+              <>
+                <DotSep />
+                <span className="font-mono text-[11.5px]">{wsMap.get(scopeId ?? "")?.domain}</span>
+              </>
+            ) : null}
+          </>
+        }
         actions={<KeywordActions workspaces={workspaces} keywords={keywords} />}
       />
 
