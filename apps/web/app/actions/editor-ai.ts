@@ -113,7 +113,10 @@ export async function regenerateImageAction(input: {
       article.title,
       article.keyword,
       (workspace.brand_style ?? undefined) as Record<string, unknown> | undefined,
-      { context: parsed.context, instruction: parsed.instruction },
+      {
+        section: parsed.context?.trim() ? { excerpt: parsed.context } : undefined,
+        instruction: parsed.instruction,
+      },
     );
     const path = proposalPath(workspace.id, article.id, image.extension);
     // The bucket only has a public-read policy; writes go through the service
