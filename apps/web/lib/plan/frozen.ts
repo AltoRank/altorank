@@ -80,19 +80,18 @@ export type FrozenState = {
   reason: string | null;
 };
 
-/**
- * The frozen entries of one workspace. Pass the caller's client so RLS
- * applies, and the quota already computed for that caller: the cron's quota
- * (`getQuota(service, agencyId, null)`) and a signed-in operator's differ on
- * purpose, and this must not reach a different verdict from the gate that
- * writes.
- */
-export async function readFrozenEntries(
-  supabase: SupabaseClient,
-  workspaceId: string,
-  quota: Allowance | null,
-): Promise<FrozenState> {
+/** The frozen state from rows already read: the derivation the calendar and the crons share. */
+export function deriveFrozen(entries: readonly FrozenCandidate[], quota: Allowance | null): FrozenState {
   if (!quota || quota.remaining === null) return { ids: new Set(), reason: null };
+  return { ids: frozenEntryIds(entries, quota), reason: frozenReason(quota) };
+}
+
+/**
+ * Every unwritten planned entry of one workspace, across all months: the
+ * ordering runs over the whole plan, not the month on screen. Pass the
+ * caller's client so RLS applies.
+ */
+export async function readUnwrittenEntries(supabase: SupabaseClient, workspaceId: string): Promise<FrozenCandidate[]> {
   const { data, error } = await supabase
     .from("calendar_entries")
     .select("id, scheduled_date, created_at")
@@ -100,8 +99,20 @@ export async function readFrozenEntries(
     .eq("status", "queue")
     .is("article_id", null);
   if (error) throw new Error(error.message);
-  return {
-    ids: frozenEntryIds((data ?? []) as FrozenCandidate[], quota),
-    reason: frozenReason(quota),
-  };
+  return (data ?? []) as FrozenCandidate[];
+}
+
+/**
+ * The frozen entries of one workspace. Pass the quota already computed for
+ * this caller: the cron's quota (`getQuota(service, agencyId, null)`) and a
+ * signed-in operator's differ on purpose, and this must not reach a different
+ * verdict from the gate that writes. Reads nothing for an unmetered account.
+ */
+export async function readFrozenEntries(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  quota: Allowance | null,
+): Promise<FrozenState> {
+  if (!quota || quota.remaining === null) return { ids: new Set(), reason: null };
+  return deriveFrozen(await readUnwrittenEntries(supabase, workspaceId), quota);
 }

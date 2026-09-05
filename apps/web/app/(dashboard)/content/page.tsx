@@ -7,7 +7,7 @@ import { getPlannerArticleStates, getDraftsInFlight, inFlightFor } from "@/lib/q
 import { getPlannerImprovements } from "@/lib/queries/improvements";
 import { buildMonthCells } from "@/lib/plan/day-groups";
 import { describeSlots, getPlanCapacity } from "@/lib/plan/capacity";
-import { readFrozenEntries } from "@/lib/plan/frozen";
+import { deriveFrozen, readUnwrittenEntries } from "@/lib/plan/frozen";
 import { quotaExceededMessage } from "@/lib/billing/quota";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { PageHead, DotSep, StatusPill } from "@/components/ui";
@@ -43,7 +43,7 @@ export default async function CalendarPage({ searchParams }: Props) {
   // critical path, and this page (with the layout around it) had enough of
   // them in a row to take seconds on a calendar of three entries.
   const supabase = await createClient();
-  const [workspaces, entries, capacity, drafts, improvements, { data: auth }] = await Promise.all([
+  const [workspaces, entries, capacity, drafts, improvements, unwritten, { data: auth }] = await Promise.all([
     getWorkspaces(),
     getCalendarEntries(scopeId ?? undefined, month),
     // The same numbers the Articles-plan control quotes: slots held by planned
@@ -53,6 +53,9 @@ export default async function CalendarPage({ searchParams }: Props) {
     // Rewrites scheduled this month. They sit on their day like an article
     // and spend one of the week's slots, so the trade-off is on the calendar.
     scopeId ? getPlannerImprovements(scopeId, month) : Promise.resolve([]),
+    // The whole unwritten plan, for the frozen boundary below; the quota it
+    // needs arrives in the second wave.
+    scopeId ? readUnwrittenEntries(supabase, scopeId) : Promise.resolve([]),
     supabase.auth.getUser(),
   ]);
 
@@ -82,7 +85,7 @@ export default async function CalendarPage({ searchParams }: Props) {
   // Planned keywords beyond what the plan still includes this month, in
   // scheduled order. Derived, never stored: an upgrade or a new month thaws
   // them with no write. Unmetered accounts have nothing frozen.
-  const frozen = scopeId ? await readFrozenEntries(supabase, scopeId, quota) : { ids: new Set<string>(), reason: null };
+  const frozen = deriveFrozen(unwritten, quota);
 
   // Apply client filter
   const clientFilter = params.clients;
