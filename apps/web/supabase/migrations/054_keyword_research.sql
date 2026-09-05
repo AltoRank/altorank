@@ -43,6 +43,7 @@ create index if not exists idx_keyword_research_runs_workspace
 
 alter table keyword_research_runs enable row level security;
 
+drop policy if exists "Research runs by agency" on keyword_research_runs;
 create policy "Research runs by agency" on keyword_research_runs
   for all using (
     workspace_id in (select id from workspaces where agency_id in (select user_agency_ids()))
