@@ -7,6 +7,10 @@
 // button is the single write. These helpers are the arithmetic of that.
 
 import { FIELD_LIMITS } from "@/lib/ai/micro";
+import { applyDecisions, diffBlocks, summarizeDecisions } from "@/lib/refresh/hunks";
+import type { Hunk, HunkDecision } from "@/lib/refresh/types";
+
+export type { Hunk, HunkDecision };
 
 export interface FieldCounter {
   count: number;
@@ -50,20 +54,43 @@ export function pendingLabel(p: PendingChanges): string {
   return n === 1 ? "1 proposed change" : `${n} proposed changes`;
 }
 
+// ── Hunk-level review of a rewrite ──────────────────────────────────────────
+//
+// The refresh engine's block diff (`lib/refresh/hunks.ts`) is the one hunk
+// model in the repo; the editor's rewrite proposal is reviewed with it rather
+// than with a diff of its own. Two diff libraries would disagree about what a
+// hunk is, and a reviewer who learned Keep/Reject in Improvements should meet
+// the same blocks here.
+
+/** The blocks a rewrite touched, paired with what they replace. */
+export function proposeHunks(before: string, after: string): Hunk[] {
+  return diffBlocks(before, after);
+}
+
+/** The hunks a person decides on; `unchanged` blocks are context. */
+export function reviewableHunks(hunks: readonly Hunk[]): Hunk[] {
+  return hunks.filter((h) => h.kind !== "unchanged");
+}
+
+/** Every reviewable hunk decided the same way: the panel opens on "N / N kept". */
+export function decideAll(hunks: readonly Hunk[], decision: HunkDecision): Record<string, HunkDecision> {
+  return Object.fromEntries(reviewableHunks(hunks).map((h) => [h.id, decision]));
+}
+
 /**
- * Where hunk-level review plugs in.
- *
- * EXTENSION POINT for the refresh track's `lib/refresh/hunks.ts`. That module
- * will split `before` and `after` into hunks the reviewer can keep or reject
- * one at a time; once it lands, this should build the accepted document from
- * the kept hunks instead of returning `after` whole. Until then a whole-article
- * proposal is all-or-nothing, which is what the "Replace article" button says.
- * Deliberately not a diff of its own: two diff libraries in one repo would
- * disagree about what a hunk is.
+ * The article the kept hunks produce. A rejected or undecided hunk keeps the
+ * original block, an added block appears only when kept, a removed block
+ * disappears only when kept. Delegates to the refresh engine's
+ * `applyDecisions`, so the editor and Improvements cannot drift apart on what
+ * "kept" means.
  */
-export function applyHunks(before: string, after: string): string {
-  void before;
-  return after;
+export function applyHunks(hunks: readonly Hunk[], decisions: Record<string, HunkDecision>): string {
+  return applyDecisions(hunks, decisions);
+}
+
+/** "N / M kept" for the header line. */
+export function keptSummary(hunks: readonly Hunk[], decisions: Record<string, HunkDecision>) {
+  return summarizeDecisions(hunks, decisions);
 }
 
 /**
