@@ -19,13 +19,6 @@ import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "Calendar" };
 
-/**
- * "Write now" runs a full generation inside a server action. Vercel's default
- * would cut it off long before the model finished; this is the same ceiling
- * the cron and the onboarding stream use.
- */
-export const maxDuration = 300;
-
 type Props = {
   searchParams: Promise<{ month?: string; clients?: string }>;
 };

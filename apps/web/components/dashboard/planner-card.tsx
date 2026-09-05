@@ -32,7 +32,6 @@ import {
   reschedulePlannedEntry,
   saveKeywordAnswers,
   saveKeywordBrief,
-  writeNow,
 } from "@/app/actions/plan";
 
 /** Whether "Write now" may run, and if not, why. Decided by the page from the quota. */
@@ -141,12 +140,23 @@ export function PlannerCard({
     }
   }
 
+  // A fetch, not the `writeNow` server action: a server action that runs for
+  // minutes holds the router's action queue, and with it the router.refresh()
+  // above that shows progress. Same behaviour behind both doors.
   async function startWriting() {
     if (!writeGate.ok) return;
     setError(null);
     setStarting(true);
     try {
-      await writeNow(entry.id);
+      const res = await fetch("/api/plan/write-now", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entryId: entry.id }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? "Could not start the draft.");
+      }
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start the draft.");
