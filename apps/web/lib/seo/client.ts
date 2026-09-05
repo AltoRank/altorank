@@ -2,6 +2,8 @@
 // DataForSEO HTTP client
 // ---------------------------------------------------------------------------
 
+import { e2eStubsEnabled } from "@/lib/e2e/stubs";
+
 const BASE_URL = "https://api.dataforseo.com/v3";
 
 /** Standard envelope returned by every DataForSEO endpoint. */
@@ -46,6 +48,9 @@ export class DataForSEOError extends Error {
  * authenticated fine. One source of truth, next to the header it gates.
  */
 export function hasDataForSEOCredentials(): boolean {
+  // E2E_STUBS: the keyword phase must run, and `post`/`get` below refuse to
+  // send anything, so a call that escapes the stubs fails loudly (lib/e2e/stubs.ts).
+  if (e2eStubsEnabled()) return true;
   return Boolean(
     process.env.DATAFORSEO_API_KEY ||
       (process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD),
@@ -212,6 +217,7 @@ export async function post<T = unknown>(
   endpoint: string,
   body: unknown[],
 ): Promise<DataForSEOResponse<T>> {
+  if (e2eStubsEnabled()) throw new DataForSEOError(`E2E_STUBS: refused to call DataForSEO ${endpoint}`, 0);
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -259,6 +265,7 @@ export async function post<T = unknown>(
 export async function get<T = unknown>(
   endpoint: string,
 ): Promise<DataForSEOResponse<T>> {
+  if (e2eStubsEnabled()) throw new DataForSEOError(`E2E_STUBS: refused to call DataForSEO ${endpoint}`, 0);
   const res = await fetch(`${BASE_URL}${endpoint}`, {
     method: "GET",
     headers: {

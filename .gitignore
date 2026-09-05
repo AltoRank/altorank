@@ -64,6 +64,12 @@ coverage/
 .idea/
 .vscode/
 
+# Playwright output (apps/web/e2e)
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+
 # Astro build cache
 .astro/
 apps/marketing/.astro/
