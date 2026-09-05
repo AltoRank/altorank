@@ -3,6 +3,51 @@ import type { WixConfig } from "@/lib/types";
 
 const WIX_API = "https://www.wixapis.com";
 
+// ---------------------------------------------------------------------------
+// Discovery: the sites an account-level API key can see.
+//   POST /site-list/v2/sites/query   scope SCOPE.ACC-DC-OS.READ-SITE
+// Account-level, so the request carries `wix-account-id` and no site id.
+// https://dev.wix.com/docs/api-reference/account-level/sites/sites/query-sites
+// https://dev.wix.com/docs/go-headless/authentication/admin/make-rest-api-calls-with-an-api-key
+// ---------------------------------------------------------------------------
+
+export interface WixSite {
+  id: string;
+  displayName: string;
+  viewUrl: string;
+  published: boolean;
+}
+
+export async function listWixSites(apiKey: string, accountId: string): Promise<WixSite[]> {
+  const res = await fetch(`${WIX_API}/site-list/v2/sites/query`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: apiKey,
+      "wix-account-id": accountId,
+    },
+    body: JSON.stringify({
+      query: {
+        cursorPaging: { limit: 100 },
+        sort: [{ fieldName: "displayName", order: "ASC" }],
+      },
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Wix ${res.status}${err ? `: ${err}` : ""}`);
+  }
+  const data = (await res.json()) as {
+    sites?: Array<{ id: string; displayName?: string; name?: string; viewUrl?: string; published?: boolean }>;
+  };
+  return (data.sites ?? []).map((s) => ({
+    id: s.id,
+    displayName: s.displayName ?? s.name ?? s.id,
+    viewUrl: s.viewUrl ?? "",
+    published: s.published ?? false,
+  }));
+}
+
 export class WixAdapter implements CMSAdapter {
   private accountId: string;
   private siteId: string;

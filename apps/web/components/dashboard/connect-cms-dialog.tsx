@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button, Dialog } from "@/components/ui";
 import { useOnboarding } from "@/components/onboarding/use-onboarding";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
-import { connectIntegration, deriveBlogUrl } from "@/app/actions/integrations";
+import { connectIntegration, deriveBlogUrl, testIntegrationConfig } from "@/app/actions/integrations";
 import {
   DEFAULT_PUBLISH_MODE,
   DRAFT_BEHAVIOUR,
@@ -15,6 +15,11 @@ import {
 import type { Workspace, Integration, CMSConfig } from "@/lib/types";
 import type { BlogUrlDerivation } from "@/lib/cms/blog-url";
 import { pluginInstallUrl } from "@/lib/cms/wordpress-plugin";
+import { parseWebflowFieldMap } from "@/lib/cms/webflow-fields";
+import { CONNECTOR_NOTES } from "@/lib/cms/connector-notes";
+import { WebflowPicker } from "./connect-cms-webflow";
+import { WixPicker } from "./connect-cms-wix";
+import { ShopifyGuide } from "./connect-cms-shopify";
 
 type CMSType =
   | "wordpress"
@@ -127,7 +132,15 @@ export function ConnectCmsDialog({
 }: ConnectCmsDialogProps) {
   const initial = isCmsType(initialCmsType) ? initialCmsType : null;
   const [pending, setPending] = useState(false);
-  const [cmsType, setCmsType] = useState<CMSType>(initial ?? "wordpress");
+  const [cmsType, setCmsTypeRaw] = useState<CMSType>(initial ?? "wordpress");
+  // "Send test" runs the live check on the values as typed, without saving.
+  // Its verdict belongs to one platform's form, so switching tabs clears it.
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const setCmsType = (t: CMSType) => {
+    setCmsTypeRaw(t);
+    setTestResult(null);
+  };
   const [detecting, setDetecting] = useState(false);
   const [derivation, setDerivation] = useState<BlogUrlDerivation | null>(null);
   // Draft by default. The option is per connection and travels with the
@@ -210,6 +223,7 @@ export function ConnectCmsDialog({
       const integrationId = match.id;
 
       const config = buildConfig(cmsType, fd);
+      assertPickersDone(config);
 
       // The same check the server runs, here so the refusal is a sentence in
       // the dialog rather than a toast after a round trip - and so a platform
@@ -227,6 +241,45 @@ export function ConnectCmsDialog({
       toast.error(err instanceof Error ? err.message : "Failed to connect CMS");
     } finally {
       setPending(false);
+    }
+  }
+
+  /**
+   * The live test, before Save.
+   *
+   * connectIntegration already refuses to store a connection that fails its
+   * test - but the only way to find out was to press Connect, and the answer
+   * came back as a toast that vanished. This runs the same test on the same
+   * built config and leaves the vendor's exact words on screen. Nothing is
+   * persisted; a passing test still needs Connect.
+   */
+  async function handleSendTest() {
+    const form = document.getElementById("cms-connect-form") as HTMLFormElement | null;
+    if (!form) return;
+    // Empty required fields are a browser message, not a vendor round trip.
+    if (!form.reportValidity()) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const config = buildConfig(cmsType, new FormData(form));
+      assertPickersDone(config);
+      if (publishMode === "draft") {
+        const support = draftSupport(config);
+        if (!support.ok) {
+          setTestResult({ ok: false, message: support.reason });
+          return;
+        }
+      }
+      const r = await testIntegrationConfig(config, publishMode);
+      setTestResult(
+        r.ok
+          ? { ok: true, message: `${tabLabel(cmsType)} answered. Press Connect to save.` }
+          : { ok: false, message: r.error },
+      );
+    } catch (err) {
+      setTestResult({ ok: false, message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -288,14 +341,30 @@ export function ConnectCmsDialog({
             </div>
           </label>
 
+          {/*
+            Limits before effort. What this platform needs and cannot do, from
+            its own documentation or our adapter, stated before the person goes
+            looking for a token. lib/cms/connector-notes.ts is the one source.
+          */}
+          <p className="text-[12px] text-ink-3 leading-[1.5] -mt-1 mb-1">
+            {CONNECTOR_NOTES[cmsType].text}
+            {CONNECTOR_NOTES[cmsType].docUrl && (
+              <>
+                {" "}
+                <a
+                  href={CONNECTOR_NOTES[cmsType].docUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent-ink underline decoration-line underline-offset-[3px]"
+                >
+                  {CONNECTOR_NOTES[cmsType].docLabel ?? "Vendor documentation"}
+                </a>
+              </>
+            )}
+          </p>
+
           {cmsType === "wordpress-plugin" && (
             <>
-              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
-                Recommended. No WordPress login is shared: the plugin holds one
-                token for this site. Images are imported into the media library
-                and Rank Math, Yoast, SEOPress and AIOSEO fields are filled in.
-                Posts arrive as drafts unless you change that in the plugin.
-              </p>
               <label className="flex flex-col gap-1.5">
                 <span className="text-[12.5px] font-medium text-ink-2">Site URL</span>
                 <input
@@ -358,41 +427,22 @@ export function ConnectCmsDialog({
 
           {cmsType === "wordpress" && (
             <>
-              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
-                Uses a WordPress application password over the REST API. Works
-                without a plugin; SEOPress and AIOSEO fields cannot be written
-                this way.
-              </p>
               <Field name="siteUrl" label="Site URL" placeholder="https://example.com" />
               <Field name="username" label="Username" />
               <Field name="applicationPassword" label="Application password" type="password" />
             </>
           )}
 
-          {cmsType === "shopify" && (
-            <>
-              <Field name="storeUrl" label="Store URL" placeholder="https://store.myshopify.com" />
-              <Field name="accessToken" label="Access token" type="password" />
-            </>
-          )}
+          {cmsType === "shopify" && <ShopifyGuide />}
 
           {cmsType === "magento" && (
             <>
-              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
-                Creates static CMS pages on your storefront (e.g. /your-slug), not blog posts.
-              </p>
               <Field name="baseUrl" label="Base URL" placeholder="https://magento.example.com" />
               <Field name="adminToken" label="Admin token" type="password" />
             </>
           )}
 
-          {cmsType === "webflow" && (
-            <>
-              <Field name="siteId" label="Site ID" placeholder="e.g. 6287ec36a..." />
-              <Field name="collectionId" label="Collection ID" placeholder="e.g. 6287ec36b..." />
-              <Field name="apiToken" label="API token" type="password" />
-            </>
-          )}
+          {cmsType === "webflow" && <WebflowPicker />}
 
           {cmsType === "ghost" && (
             <>
@@ -405,17 +455,11 @@ export function ConnectCmsDialog({
             <>
               <Field name="siteId" label="Site ID" />
               <Field name="collectionId" label="Collection ID" />
-              <Field name="apiToken" label="API token" type="password" />
+              <Field name="apiToken" label="Server API key" type="password" />
             </>
           )}
 
-          {cmsType === "wix" && (
-            <>
-              <Field name="accountId" label="Account ID" />
-              <Field name="siteId" label="Site ID" />
-              <Field name="apiKey" label="API key" type="password" />
-            </>
-          )}
+          {cmsType === "wix" && <WixPicker />}
 
           {cmsType === "notion" && (
             <>
@@ -455,9 +499,6 @@ export function ConnectCmsDialog({
 
           {cmsType === "woocommerce" && (
             <>
-              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
-                Uses the WordPress REST API — same as WordPress but for WooCommerce stores.
-              </p>
               <Field name="siteUrl" label="Site URL" placeholder="https://shop.example.com" />
               <Field name="username" label="Username" />
               <Field name="applicationPassword" label="Application password" type="password" />
@@ -466,9 +507,6 @@ export function ConnectCmsDialog({
 
           {cmsType === "webhook" && (
             <>
-              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
-                POST article data to any URL. Optionally sign payloads with HMAC-SHA256.
-              </p>
               <Field name="url" label="Webhook URL" placeholder="https://your-api.com/publish" />
               <Field name="secret" label="Signing secret (optional)" type="password" required={false} />
             </>
@@ -476,11 +514,6 @@ export function ConnectCmsDialog({
 
           {cmsType === "git" && (
             <>
-              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
-                For sites built from a repository (Astro, Next, Hugo, Jekyll,
-                Eleventy). Articles are committed as Markdown; your host builds
-                and deploys them.
-              </p>
               <Field name="owner" label="Repo owner" placeholder="acme" />
               <Field name="repo" label="Repository" placeholder="website" />
               <Field name="branch" label="Branch" placeholder="main" />
@@ -629,9 +662,31 @@ export function ConnectCmsDialog({
             )}
           </fieldset>
 
+          {testResult && (
+            <p
+              role={testResult.ok ? "status" : "alert"}
+              className={`text-[12px] leading-[1.45] whitespace-pre-wrap break-words rounded-lg border px-3 py-2 ${
+                testResult.ok
+                  ? "border-line text-ink-2 bg-panel"
+                  : "border-[var(--err)] text-[var(--err)]"
+              }`}
+            >
+              {testResult.ok ? "Test passed. " : "Test failed: "}
+              {testResult.message}
+            </p>
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" onClick={() => onOpenChange(false)}>
               Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={testing || pending || !draftCheck.ok}
+              onClick={handleSendTest}
+              title="Run the live connection test with these values. Nothing is saved."
+            >
+              {testing ? "Testing…" : "Send test"}
             </Button>
             <Button type="submit" variant="accent" disabled={pending || !draftCheck.ok}>
               {pending
@@ -642,6 +697,18 @@ export function ConnectCmsDialog({
         </form>
     </Dialog>
   );
+}
+
+/**
+ * The Webflow picker posts its ids through hidden inputs, which the browser's
+ * required-field check never sees. Pressing Connect before loading the sites
+ * would otherwise reach the server as an empty id and come back as a schema
+ * error nobody typed; say what to do instead.
+ */
+function assertPickersDone(config: CMSConfig): void {
+  if (config.type === "webflow" && (!config.siteId || !config.collectionId)) {
+    throw new Error("Load your Webflow sites and choose a collection first, or enter the ids by hand.");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -663,25 +730,43 @@ function buildConfig(type: CMSType, fd: FormData): CMSConfig {
         siteUrl: (fd.get("siteUrl") as string).trim(),
         token: fd.get("token") as string,
       };
-    case "shopify":
+    case "shopify": {
+      // Chosen from the store's own list in the guide; absent means the
+      // adapter's default, the first blog, as every connection did before.
+      const blogId = (fd.get("blogId") as string | null)?.trim();
       return {
         type: "shopify",
-        storeUrl: fd.get("storeUrl") as string,
+        storeUrl: (fd.get("storeUrl") as string).trim(),
         accessToken: fd.get("accessToken") as string,
+        ...(blogId ? { blogId } : {}),
       };
+    }
     case "magento":
       return {
         type: "magento",
         baseUrl: fd.get("baseUrl") as string,
         adminToken: fd.get("adminToken") as string,
       };
-    case "webflow":
+    case "webflow": {
+      // The picker posts its map as JSON; a hand-entered connection posts
+      // none and keeps the adapter's template slugs.
+      let fieldMap: ReturnType<typeof parseWebflowFieldMap> = null;
+      const raw = fd.get("fieldMap");
+      if (typeof raw === "string" && raw) {
+        try {
+          fieldMap = parseWebflowFieldMap(JSON.parse(raw));
+        } catch {
+          fieldMap = null;
+        }
+      }
       return {
         type: "webflow",
-        siteId: fd.get("siteId") as string,
-        collectionId: fd.get("collectionId") as string,
+        siteId: (fd.get("siteId") as string).trim(),
+        collectionId: (fd.get("collectionId") as string).trim(),
         apiToken: fd.get("apiToken") as string,
+        ...(fieldMap ? { fieldMap } : {}),
       };
+    }
     case "ghost":
       return {
         type: "ghost",
