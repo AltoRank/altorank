@@ -330,6 +330,18 @@ export type WordPressConfig = {
   applicationPassword: string;
 };
 
+/**
+ * WordPress through our own plugin (packages/wordpress-plugin) rather than an
+ * application password. The token is the plugin's only credential: 32 random
+ * bytes as hex, generated in the connect dialog and pasted into the site's
+ * Settings -> AltoRank page.
+ */
+export type WordPressPluginConfig = {
+  type: "wordpress-plugin";
+  siteUrl: string;
+  token: string;
+};
+
 export type ShopifyConfig = {
   type: "shopify";
   storeUrl: string;
@@ -399,6 +411,7 @@ export type WebhookConfig = {
 
 export type CMSConfig =
   | WordPressConfig
+  | WordPressPluginConfig
   | ShopifyConfig
   | MagentoConfig
   | WebflowConfig
@@ -431,7 +444,8 @@ export type PublishLogEntry = {
   workspace_id: string;
   status: "success" | "error";
   error: string | null;
-  triggered_by: "cron" | "manual";
+  /** `webhook` rows are per-attempt delivery records; see lib/cms/webhook.ts. */
+  triggered_by: "cron" | "manual" | "webhook";
   created_at: string;
 };
 

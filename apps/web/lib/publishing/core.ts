@@ -11,6 +11,7 @@ import { appendAttribution, isOperatorAgency, shouldAttribute } from "@/lib/publ
 import { chooseDestination, toDestinations, type IntegrationRow } from "@/lib/publishing/destinations";
 import { settleExchangeForArticle } from "@/lib/seo/exchange";
 import { createServiceClient } from "@/lib/supabase/server";
+import { renderArticleMarkdown } from "@/lib/publishing/export";
 
 /**
  * Publish a single article to its connected CMS.
@@ -67,7 +68,27 @@ export async function publishArticleCore(
   const cmsIntegration = (wsIntegrations ?? []).find((wi) => wi.id === destination.id)!;
 
   const config = decryptConfig(cmsIntegration.config as Record<string, unknown>) as CMSConfig;
-  const adapter = resolveCMSAdapter(config);
+  const adapter = resolveCMSAdapter(config, {
+    /**
+     * The webhook adapter retries and reports each try. One publish_log row
+     * per attempt, marked `webhook`, so the log shows an endpoint that failed
+     * twice before accepting - the caller still writes its own success/error
+     * row for the publish as a whole.
+     */
+    onDelivery: async (attempt) => {
+      const where = attempt.status ? ` HTTP ${attempt.status}` : "";
+      const { error } = await supabase.from("publish_log").insert({
+        article_id: articleId,
+        workspace_id: article.workspace_id,
+        status: attempt.ok ? "success" : "error",
+        error: attempt.ok
+          ? null
+          : `webhook attempt ${attempt.attempt}/${attempt.maxAttempts}${where}: ${attempt.error ?? "no response"}`,
+        triggered_by: "webhook",
+      });
+      if (error) console.error("publish_log insert failed:", error.message);
+    },
+  });
 
   let html = tiptapToHtml(article.content as Record<string, unknown>);
 
@@ -91,12 +112,14 @@ export async function publishArticleCore(
    * behind a feature flag. Never blocks a publish: if we cannot tell what
    * plan someone is on, we do not brand their article.
    */
+  let siteUrl = "https://example.com";
   try {
     const { data: ws } = await supabase
       .from("workspaces")
-      .select("agency_id, agency:agencies(remove_branding)")
+      .select("agency_id, domain, agency:agencies(remove_branding)")
       .eq("id", article.workspace_id)
       .single();
+    if (ws?.domain) siteUrl = `https://${String(ws.domain).replace(/^https?:\/\//, "")}`;
     if (ws?.agency_id) {
       const quota = await getQuota(supabase, ws.agency_id);
       const removeBranding =
@@ -114,10 +137,30 @@ export async function publishArticleCore(
   }
 
   const result = await adapter.publish({
+    id: articleId,
     title: article.title,
     html,
+    // Only the webhook contract carries Markdown; rendering it for a CMS that
+    // takes HTML would be work nobody reads.
+    markdown:
+      config.type === "webhook"
+        ? renderArticleMarkdown(
+            {
+              title: article.title,
+              slug: article.slug,
+              html,
+              metaDescription: article.meta_description,
+              keyword: article.keyword,
+              featuredImageUrl: article.featured_image_url,
+              publishedAt: article.published_at,
+            },
+            siteUrl,
+          )
+        : undefined,
     slug: article.slug,
     metaDescription: article.meta_description ?? undefined,
+    focusKeyword: article.keyword ?? undefined,
+    createdAt: article.created_at ?? undefined,
     featuredImageUrl: article.featured_image_url ?? undefined,
   });
 
@@ -199,6 +242,25 @@ export async function publishArticleCore(
             google: "awaiting-build",
             urlVerified: "pending",
             attempts: 0,
+          } satisfies IndexingResult,
+        })
+        .eq("id", articleId);
+      return result;
+    }
+
+    /**
+     * The WordPress plugin defaults to "post as draft": the article is on the
+     * customer's site, but only their editors can see it until one of them
+     * presses Publish there. Its URL is a preview link, and telling IndexNow
+     * about a preview link reports a 404 under the client's domain.
+     */
+    if (result.status === "draft") {
+      await supabase
+        .from("articles")
+        .update({
+          indexing_status: {
+            indexnow: "held-in-cms",
+            google: "held-in-cms",
           } satisfies IndexingResult,
         })
         .eq("id", articleId);
