@@ -1,9 +1,9 @@
 ---
-title: "URL Slugs: Short, Stable, and Left Alone"
+title: "Free Slug Generator: Clean URL Slugs From Any Title"
 slug: "slug-generator"
 description: "Clean URL slugs in bulk, with proper accent transliteration. Plus why renaming a ranking URL is the wrong call."
 category: "technical"
-heroHeadline: "Clean slugs, in bulk."
+heroHeadline: "Slug generator: clean URL slugs, in bulk."
 heroSubhead: "Paste a list of titles and get URL slugs with accents transliterated rather than stripped. The harder question is whether to change a slug at all once a page ranks."
 widget: "slug-generator"
 useCases:

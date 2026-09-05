@@ -1,9 +1,9 @@
 ---
-title: "Meta Descriptions: How to Write Ones That Earn Clicks"
+title: "Free Meta Description Generator With SERP Preview"
 slug: "meta-description-generator"
 description: "Meta descriptions that survive Google's rewriting: the length that displays, and five patterns that work."
 category: "content"
-heroHeadline: "Meta descriptions that earn clicks, not just impressions."
+heroHeadline: "Meta description generator with a live SERP preview."
 heroSubhead: "Google rewrites most meta descriptions. Here is how to write the ones it keeps, why length is not the real constraint, and five patterns you can apply to any page."
 useCases:
   - "Write descriptions Google is less likely to rewrite"
