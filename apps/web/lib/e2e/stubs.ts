@@ -277,5 +277,20 @@ export async function stubGenerateArticle(options: GenerateArticleOptions): Prom
     .update({ status: "completed", tokens_used: 0, result: { wordCount, title }, completed_at: new Date().toISOString() })
     .eq("id", job.id);
 
-  return { articleId, jobId: job.id as string, title, wordCount, tokensUsed: 0, research, factCheck };
+  // The fields #73 added for refresh callers. A fixture has no meta description,
+  // no link checks and no scored audit; zeros and nulls say so rather than pretend.
+  return {
+    articleId,
+    jobId: job.id as string,
+    title,
+    wordCount,
+    tokensUsed: 0,
+    research,
+    factCheck,
+    html,
+    metaDescription: "",
+    linkChecks: null,
+    seoScore: 0,
+    aeoScore: 0,
+  };
 }
