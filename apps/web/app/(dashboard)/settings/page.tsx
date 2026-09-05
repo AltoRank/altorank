@@ -3,6 +3,7 @@ import { PageHead, Card } from "@/components/ui";
 import { getAgency } from "@/lib/queries/agency";
 import { SettingsForm } from "@/components/dashboard/settings-form";
 import { PasswordForm } from "@/components/dashboard/password-form";
+import { AttributionCard } from "@/components/dashboard/attribution-card";
 import { SettingsTabs } from "./settings-tabs";
 import { createClient } from "@/lib/supabase/server";
 import { getQuota } from "@/lib/billing/quota";
@@ -34,6 +35,10 @@ export default async function SettingsPage() {
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
         <div className="max-w-[1140px]">
           <SettingsForm agency={agency} quotaReason={quota.reason} />
+
+          <div className="mt-5">
+            <AttributionCard source={agency.attribution_source ?? null} note={agency.attribution_note ?? null} />
+          </div>
 
           <div className="mt-5">
             <Card title="Password">
