@@ -1,9 +1,9 @@
 ---
-title: "Keyword Density: A Diagnostic, Not a Target"
+title: "Free Keyword Density Checker: A Diagnostic, Not a Target"
 slug: "keyword-density-analyzer"
 description: "See which words and phrases a page repeats, with counts. Plus why an ideal density figure does not exist."
 category: "keyword"
-heroHeadline: "See what your page is actually about."
+heroHeadline: "Keyword density checker: see what your page is actually about."
 heroSubhead: "Term and phrase frequency for any text. There is no correct density number — but there is a page that never names its own subject, and a page that names it forty times."
 widget: "keyword-density"
 useCases:

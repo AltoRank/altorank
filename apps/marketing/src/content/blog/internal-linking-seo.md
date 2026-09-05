@@ -1,5 +1,5 @@
 ---
-title: "Internal Linking Automation for Agencies"
+title: "Internal Linking Tool for Agencies: Propose, Don't Insert"
 description: "The best internal linking tools propose links rather than insert them. The criteria, and the pattern that scales."
 publishDate: 2026-05-24
 dateModified: 2026-08-22

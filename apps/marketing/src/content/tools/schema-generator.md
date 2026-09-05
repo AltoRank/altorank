@@ -1,9 +1,9 @@
 ---
-title: "JSON-LD Schema: Describe the Page, Do Not Dress It Up"
+title: "Free FAQ Schema Generator (JSON-LD, Article, Breadcrumb)"
 slug: "schema-generator"
 description: "Generate valid Article, FAQPage and BreadcrumbList JSON-LD, and the one rule that keeps it from backfiring."
 category: "technical"
-heroHeadline: "Structured data, generated and valid."
+heroHeadline: "FAQ schema generator: structured data, valid by construction."
 heroSubhead: "Article, FAQPage and BreadcrumbList JSON-LD you can paste straight into your head. Schema describes what a page already says — the moment it describes something else, it is a liability."
 widget: "schema-generator"
 useCases:
