@@ -33,11 +33,20 @@ export function OnboardingProgress({
   workspaceId,
   domain,
   onDone,
+  nextHref,
+  autoNavigate = true,
+  onState,
 }: {
   workspaceId: string;
   domain: string;
   /** Called once, right before navigation, so a dialog can close itself. */
   onDone?: () => void;
+  /** Where to go when the run is over. Defaults to the workspace page. */
+  nextHref?: string;
+  /** False lets a parent own the hand-off (the wizard shows a button instead). */
+  autoNavigate?: boolean;
+  /** Every state change, for a parent that renders around this. */
+  onState?: (state: OnboardingState) => void;
 }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState>(initialOnboardingState);
@@ -118,17 +127,19 @@ export function OnboardingProgress({
   // dashboard is the right place to be: it polls a draft still in flight
   // (first-draft-live) and shows whatever did complete.
   const finished = isTerminal(state) || closed;
+  const onStateRef = useRef(onState);
+  onStateRef.current = onState;
+  useEffect(() => {
+    onStateRef.current?.(state);
+  }, [state]);
   useEffect(() => {
     if (!finished) return;
-    // Re-runnable, like the effect above. A cleared timer is rescheduled by
-    // the next run; a `handedOff` ref here once made the re-run return early
-    // instead, and the dialog sat open for good with every step still pending.
     const t = setTimeout(() => {
       onDoneRef.current?.();
-      router.push(`/workspaces/${workspaceId}`);
+      if (autoNavigate) router.push(nextHref ?? `/workspaces/${workspaceId}`);
     }, HANDOFF_MS);
     return () => clearTimeout(t);
-  }, [finished, router, workspaceId]);
+  }, [finished, router, workspaceId, nextHref, autoNavigate]);
 
   const drafting = state.steps.find((s) => s.phase === "drafting");
 
@@ -140,7 +151,9 @@ export function OnboardingProgress({
           {state.error
             ? state.error
             : state.ready
-              ? "Done. Taking you to the dashboard."
+              ? autoNavigate
+                ? "Done. Taking you to your plan."
+                : "Done. Your first month is on the calendar."
               : "This takes about a minute. Nothing publishes without your approval."}
         </p>
       </div>
