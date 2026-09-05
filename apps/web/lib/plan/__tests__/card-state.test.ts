@@ -29,6 +29,25 @@ describe("plannerCardState", () => {
     expect(plannerCardState(derived, { status: "drafting" })).toBe("writing");
   });
 
+  it("a planned keyword the plan cannot pay for is frozen; anything with a draft is not", () => {
+    expect(plannerCardState(planned, null, false, { frozen: true })).toBe("frozen");
+    // The writer already started: the allowance was spent, the card says so.
+    expect(plannerCardState(planned, null, true, { frozen: true })).toBe("writing");
+    expect(plannerCardState(linked, { status: "review" }, false, { frozen: true })).toBe("in_review");
+    expect(plannerCardState(derived, { status: "live" }, false, { frozen: true })).toBe("live");
+  });
+
+  it("an improvement follows its task, whatever the stand-in entry says", () => {
+    const standIn = { article_id: null, planned: false };
+    expect(plannerCardState(standIn, null, false, { improvement: { status: "scheduled" } })).toBe("improvement");
+    expect(plannerCardState(standIn, null, false, { improvement: { status: "running" } })).toBe("improving");
+    expect(plannerCardState(standIn, null, false, { improvement: { status: "done" } })).toBe("improved");
+    expect(plannerCardState(standIn, null, false, { improvement: { status: "failed" } })).toBe("improvement_failed");
+    expect(plannerCardState(standIn, null, false, { improvement: { status: "cancelled" } })).toBe("unknown");
+    // Frozen never applies to a rewrite: it spends the pace, not the quota.
+    expect(plannerCardState(standIn, null, false, { improvement: { status: "scheduled" }, frozen: true })).toBe("improvement");
+  });
+
   it("is unknown, not a guess, when the article could not be read or has a status it does not know", () => {
     expect(plannerCardState(linked, null)).toBe("unknown");
     expect(plannerCardState(linked, { status: "archived" })).toBe("unknown");
@@ -41,7 +60,7 @@ describe("cardActions", () => {
   it("a planned keyword offers the five planning actions and nothing about an article", () => {
     expect(cardActions("planned")).toEqual({
       writeNow: true, move: true, instructions: true, questions: true, remove: true,
-      openDraft: false, openLive: false,
+      openDraft: false, openLive: false, openImprovement: false,
     });
   });
 
@@ -63,6 +82,19 @@ describe("cardActions", () => {
   it("unknown offers nothing", () => {
     expect(Object.values(cardActions("unknown")).some(Boolean)).toBe(false);
   });
+
+  it("a frozen keyword can only be removed", () => {
+    expect(cardActions("frozen")).toEqual({ ...cardActions("unknown"), remove: true });
+  });
+
+  it("a scheduled improvement moves, unschedules and opens Improvements; a running or finished one only opens", () => {
+    for (const s of ["improvement", "improvement_failed"] as const) {
+      expect(cardActions(s)).toMatchObject({ move: true, remove: true, openImprovement: true, writeNow: false, instructions: false });
+    }
+    for (const s of ["improving", "improved"] as const) {
+      expect(cardActions(s)).toEqual({ ...cardActions("unknown"), openImprovement: true });
+    }
+  });
 });
 
 describe("cardStatusPill", () => {
@@ -75,16 +107,21 @@ describe("cardStatusPill", () => {
     expect(cardStatusPill("writing").label).toBe("Writing…");
     expect(cardStatusPill("in_review").label).toBe("In review");
     expect(cardStatusPill("live")).toEqual({ status: "live", label: "Live" });
+    expect(cardStatusPill("frozen").label).toBe("Inactive");
+    expect(cardStatusPill("improvement").label).toBe("Improvement");
+    expect(cardStatusPill("improved").label).toBe("Rewrite ready");
   });
 });
 
 describe("dragBlockReason", () => {
-  it("only a planned keyword moves", () => {
+  it("only a planned keyword moves, and an improvement that has not run", () => {
     expect(dragBlockReason("planned")).toBeNull();
+    expect(dragBlockReason("improvement")).toBeNull();
+    expect(dragBlockReason("improvement_failed")).toBeNull();
   });
 
   it("says why every other state stays put", () => {
-    for (const s of ["writing", "in_review", "approved", "scheduled", "live", "failed", "unknown"] as const) {
+    for (const s of ["frozen", "writing", "in_review", "approved", "scheduled", "live", "failed", "improving", "improved", "unknown"] as const) {
       expect(dragBlockReason(s)).toEqual(expect.any(String));
     }
   });

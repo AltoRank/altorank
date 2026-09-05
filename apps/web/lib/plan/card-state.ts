@@ -11,18 +11,35 @@
 //
 //   planned   →  writing  →  in review  →  approved / scheduled  →  live
 //
+// Two more kinds of square share the grid and the same machine:
+//
+//   frozen        a planned keyword beyond what the account's plan allows
+//                 (lib/plan/frozen.ts decides which). Greyed, says why, offers
+//                 only Remove; it thaws on its own when the allowance grows.
+//   improvement   a scheduled rewrite of a page that already ranks
+//                 (`refresh_tasks`). It sits on its day like an article and
+//                 spends one slot of the same pace, so the trade-off is on the
+//                 calendar rather than in a settings tab:
+//
+//   improvement  →  improving  →  improved (awaiting review)
+//
 // `unknown` is the honest answer when the entry points at an article the page
 // could not load, or one in a status this file does not know. It renders "—",
 // never a guess (rule 5).
 
 export type PlannerCardState =
   | "planned"
+  | "frozen"
   | "writing"
   | "in_review"
   | "approved"
   | "scheduled"
   | "live"
   | "failed"
+  | "improvement"
+  | "improving"
+  | "improved"
+  | "improvement_failed"
   | "unknown";
 
 /** The slice of a calendar entry the mapping reads. */
@@ -38,6 +55,18 @@ export type ArticleFacts = {
   published_url?: string | null;
 } | null;
 
+/** The slice of a `refresh_tasks` row the mapping reads, for an improvement square. */
+export type ImprovementFacts = {
+  status: "scheduled" | "running" | "done" | "failed" | "cancelled" | string;
+} | null;
+
+export type CardContext = {
+  /** True when lib/plan/frozen.ts put this entry beyond the plan's allowance. */
+  frozen?: boolean;
+  /** Present when the square is a scheduled rewrite rather than a keyword. */
+  improvement?: ImprovementFacts;
+};
+
 /**
  * Map an entry and its article to a card state.
  *
@@ -45,11 +74,35 @@ export type ArticleFacts = {
  * but has not yet been linked to the entry: `writeNow` links the article only
  * when generation succeeds, so while the writer works the entry still has no
  * `article_id` and the page finds the draft by keyword instead.
+ *
+ * An improvement is decided from its task alone. Frozen applies only to a
+ * keyword that is still planned: once a draft exists the plan limit has
+ * already been paid, and a rewrite spends the pace, not the monthly quota.
  */
-export function plannerCardState(entry: EntryFacts, article: ArticleFacts, inFlight = false): PlannerCardState {
+export function plannerCardState(
+  entry: EntryFacts,
+  article: ArticleFacts,
+  inFlight = false,
+  ctx: CardContext = {},
+): PlannerCardState {
+  if (ctx.improvement) {
+    switch (ctx.improvement.status) {
+      case "scheduled":
+        return "improvement";
+      case "running":
+        return "improving";
+      case "done":
+        return "improved";
+      case "failed":
+        return "improvement_failed";
+      default:
+        return "unknown";
+    }
+  }
   if (!entry.article_id) {
     if (inFlight) return "writing";
-    return entry.planned ? "planned" : "unknown";
+    if (!entry.planned) return "unknown";
+    return ctx.frozen ? "frozen" : "planned";
   }
   if (!article) return "unknown";
   switch (article.status) {
@@ -79,6 +132,8 @@ export type CardActions = {
   remove: boolean;
   openDraft: boolean;
   openLive: boolean;
+  /** Open the Improvements page (or the rewrite's review, once it exists). */
+  openImprovement: boolean;
 };
 
 const NONE: CardActions = {
@@ -89,18 +144,30 @@ const NONE: CardActions = {
   remove: false,
   openDraft: false,
   openLive: false,
+  openImprovement: false,
 };
 
 /**
  * What the card offers in each state. A planned keyword can be briefed,
  * questioned, written, moved or removed; once the writer starts, nothing is
  * offered until it is done; once an article exists, the article is the record
- * and the card only opens it.
+ * and the card only opens it. A frozen keyword can only be taken off the
+ * plan - writing or moving it would pretend the limit is not there. A
+ * scheduled improvement moves and unschedules like a planned keyword, and
+ * always opens the Improvements page, where the brief and the review live.
  */
 export function cardActions(state: PlannerCardState): CardActions {
   switch (state) {
     case "planned":
       return { ...NONE, writeNow: true, move: true, instructions: true, questions: true, remove: true };
+    case "frozen":
+      return { ...NONE, remove: true };
+    case "improvement":
+    case "improvement_failed":
+      return { ...NONE, move: true, remove: true, openImprovement: true };
+    case "improving":
+    case "improved":
+      return { ...NONE, openImprovement: true };
     case "in_review":
     case "approved":
     case "scheduled":
@@ -120,6 +187,16 @@ export function cardStatusPill(state: PlannerCardState): { status: string; label
   switch (state) {
     case "planned":
       return { status: "queue", label: "Planned" };
+    case "frozen":
+      return { status: "paused", label: "Inactive" };
+    case "improvement":
+      return { status: "planned", label: "Improvement" };
+    case "improving":
+      return { status: "run", label: "Rewriting…" };
+    case "improved":
+      return { status: "review", label: "Rewrite ready" };
+    case "improvement_failed":
+      return { status: "error", label: "Rewrite failed" };
     case "writing":
       return { status: "drafting", label: "Writing…" };
     case "in_review":
@@ -139,15 +216,24 @@ export function cardStatusPill(state: PlannerCardState): { status: string; label
 }
 
 /**
- * Only a planned keyword with no article moves. The reason is returned rather
- * than a bare false so the card can say it on hover.
+ * Only a planned keyword with no article moves, and an improvement that has
+ * not run yet. The reason is returned rather than a bare false so the card
+ * can say it on hover.
  */
 export function dragBlockReason(state: PlannerCardState): string | null {
   switch (state) {
     case "planned":
+    case "improvement":
+    case "improvement_failed":
       return null;
+    case "frozen":
+      return "Inactive under the current plan; it moves again once the allowance grows.";
     case "writing":
       return "Being written now; it can move once the draft lands.";
+    case "improving":
+      return "Being rewritten now.";
+    case "improved":
+      return "Already rewritten; review it from Improvements.";
     case "unknown":
       return "This entry cannot be moved.";
     default:

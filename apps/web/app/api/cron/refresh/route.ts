@@ -3,6 +3,7 @@ import { cronSecretFrom } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { analyzeWorkspace } from "@/lib/refresh/detect";
 import { runRefreshTask } from "@/lib/refresh/rewrite";
+import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
 
 /**
  * The content refresh schedule.
@@ -31,6 +32,12 @@ import { runRefreshTask } from "@/lib/refresh/rewrite";
  * Bounded like cron/generate: two rewrites per invocation across all
  * workspaces, stalest first, and no rewrite is started past the point where
  * it could not finish inside the function's budget.
+ *
+ * A rewrite spends one slot of the site's weekly article pace - the settings
+ * copy has said so since the feature shipped, and lib/plan/pace-budget.ts is
+ * what makes it true. The same budget cron/generate reads; a week whose
+ * articles are all written has no slot left for an improvement, and the task
+ * waits for the next enabled day with room.
  */
 
 export const maxDuration = 300;
@@ -65,7 +72,7 @@ export async function GET(request: Request) {
 
   const { data: workspaces, error } = await supabase
     .from("workspaces")
-    .select("id, domain, refresh_days, refresh_last_analyzed_at")
+    .select("id, domain, refresh_days, refresh_last_analyzed_at, auto_generate_weekly_limit")
     .eq("refresh_enabled", true)
     .neq("status", "paused")
     // Least recently analysed first, so a capped run rotates.
@@ -91,8 +98,18 @@ export async function GET(request: Request) {
       }
 
       const days = (ws.refresh_days as number[] | null) ?? [];
+      const budget = days.includes(weekday)
+        ? await readPaceBudget(supabase, workspaceId, {
+            weeklyLimit: ws.auto_generate_weekly_limit as number | null,
+            refreshEnabled: true,
+            refreshDays: days,
+            now,
+          })
+        : null;
       if (!days.includes(weekday)) {
         out.rewrite = "not a scheduled day";
+      } else if (budget && budget.improvementsLeft <= 0) {
+        out.rewrite = `weekly pace used: ${describePaceBudget(budget)}; the task waits for a day with room`;
       } else if (rewrites >= MAX_REWRITES_PER_RUN) {
         out.rewrite = `run limit reached (${MAX_REWRITES_PER_RUN}); the next run starts here`;
         out.status = "skipped";
