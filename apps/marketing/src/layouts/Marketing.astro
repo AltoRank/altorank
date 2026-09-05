@@ -13,6 +13,8 @@ interface Props {
   noindex?: boolean;
   lang?: string;
   alternateLanguages?: { hreflang: string; href: string }[];
+  ogImageAlt?: string;
+  article?: { publishedTime: string; modifiedTime: string; author?: string; tags?: string[] };
   /** Header starts transparent over a dark first section. See Header.astro. */
   headerOverlay?: boolean;
 }

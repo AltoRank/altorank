@@ -1,7 +1,8 @@
 ---
 import '@/styles/globals.css';
 import { ClientRouter } from 'astro:transitions';
-import { buildOrganizationSchema } from '@/lib/schema';
+import { buildOrganizationSchema, buildBreadcrumbSchema } from '@/lib/schema';
+import { imageDimensions, ogLocale, breadcrumbsFromPath } from '@/lib/seo';
 import { SITE_URL, APP_NAME } from '@/constants';
 
 interface Props {
@@ -14,6 +15,13 @@ interface Props {
   noindex?: boolean;
   lang?: string;
   alternateLanguages?: { hreflang: string; href: string }[];
+  /** Alt text for the social card. Defaults to the page title. */
+  ogImageAlt?: string;
+  /**
+   * Emitted as article:* Open Graph tags when ogType is "article". Dates are
+   * ISO strings; the layout that knows the post supplies them.
+   */
+  article?: { publishedTime: string; modifiedTime: string; author?: string; tags?: string[] };
 }
 
 const {
@@ -26,7 +34,22 @@ const {
   noindex = false,
   lang = 'en',
   alternateLanguages,
+  ogImageAlt,
+  article,
 } = Astro.props;
+
+const ogImageUrl = new URL(ogImage, Astro.site).href;
+// Real pixel size read from the file in public/, so the tags are never a guess.
+// Undefined for a remote or unreadable image, in which case they are omitted.
+const ogSize = imageDimensions(ogImage);
+const locale = ogLocale(lang);
+// og:locale:alternate lists the OTHER languages this page exists in. x-default
+// is a search-engine hint, not a locale, and the page's own language is the
+// og:locale itself, so both are skipped.
+const localeAlternates = (alternateLanguages ?? [])
+  .map((a) => a.hreflang)
+  .filter((l) => l !== 'x-default' && l !== lang)
+  .map(ogLocale);
 
 // hreflang must resolve to the SAME URL as the canonical, or the annotation
 // points at a redirect and the pair is weaker than it looks. Canonicals here
@@ -92,7 +115,21 @@ const pageSchemas = Array.isArray(structuredData)
   : structuredData
     ? [structuredData]
     : [];
-const allSchemas = [...sitewideSchemas, ...pageSchemas];
+
+// Every page below the root gets a BreadcrumbList. Templated pages author
+// theirs; the hub pages (/about, /pricing, /blog, ...) never did, so nine
+// routes shipped without one. Derive it from the URL when absent, with the
+// page's own title (minus the " | AltoRank" suffix) as the last crumb. The
+// 404 page is skipped: it has no stable URL to describe.
+const hasBreadcrumbs = pageSchemas.some((s) => (s as { '@type'?: string })['@type'] === 'BreadcrumbList');
+const pathname = Astro.url.pathname;
+const is404 = /^\/404\/?$/.test(pathname);
+const fallbackBreadcrumbs =
+  !hasBreadcrumbs && pathname !== '/' && !is404
+    ? [buildBreadcrumbSchema(breadcrumbsFromPath(pathname, title.replace(/\s*\|\s*AltoRank$/, '')))]
+    : [];
+
+const allSchemas = [...sitewideSchemas, ...pageSchemas, ...fallbackBreadcrumbs];
 ---
 
 <!doctype html>
@@ -142,13 +179,27 @@ const allSchemas = [...sitewideSchemas, ...pageSchemas];
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:site_name" content={siteName} />
-    <meta property="og:image" content={new URL(ogImage, Astro.site).href} />
+    <meta property="og:locale" content={locale} />
+    {localeAlternates.map((l) => <meta property="og:locale:alternate" content={l} />)}
+    <meta property="og:image" content={ogImageUrl} />
+    {ogSize && <meta property="og:image:width" content={String(ogSize.width)} />}
+    {ogSize && <meta property="og:image:height" content={String(ogSize.height)} />}
+    <meta property="og:image:alt" content={ogImageAlt ?? title} />
+    {article && (
+      <>
+        <meta property="article:published_time" content={article.publishedTime} />
+        <meta property="article:modified_time" content={article.modifiedTime} />
+        {article.author && <meta property="article:author" content={article.author} />}
+        {article.tags?.map((t) => <meta property="article:tag" content={t} />)}
+      </>
+    )}
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
-    <meta name="twitter:image" content={new URL(ogImage, Astro.site).href} />
+    <meta name="twitter:image" content={ogImageUrl} />
+    <meta name="twitter:image:alt" content={ogImageAlt ?? title} />
 
     <!-- RSS -->
     <link
