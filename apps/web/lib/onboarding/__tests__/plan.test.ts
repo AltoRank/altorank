@@ -50,6 +50,21 @@ describe("buildPlan", () => {
   });
 });
 
+describe("buildPlan with occupied days", () => {
+  const recs = Array.from({ length: 6 }, (_, i) => ({ keywordId: `k${i}`, term: `term ${i}`, action: "write" as const, quality: "ok" as const }));
+  it("does not stack a new entry on a day that already holds one", () => {
+    const from = new Date("2026-09-05T10:00:00Z");
+    const plan = buildPlan(recs, { weeklyLimit: 3, from, occupied: ["2026-09-05"] });
+    expect(plan.map((p) => p.date)).not.toContain("2026-09-05");
+    expect(plan[0].date > "2026-09-05").toBe(true);
+    expect(plan[0].keywordId).toBe("k0");
+  });
+  it("is unchanged when nothing is occupied", () => {
+    const from = new Date("2026-09-05T10:00:00Z");
+    expect(buildPlan(recs, { weeklyLimit: 3, from })[0].date).toBe("2026-09-05");
+  });
+});
+
 describe("monthlyTarget", () => {
   it("is what a month at the pace should hold, capped", () => {
     expect(monthlyTarget(7)).toBe(30);

@@ -81,7 +81,19 @@ export function monthlyTarget(weeklyLimit: number): number {
  */
 export function buildPlan(
   recommendations: Pick<KeywordRecommendation, "keywordId" | "term" | "action" | "quality">[],
-  opts: { weeklyLimit: number; from?: Date; horizonDays?: number; maxEntries?: number; daysOfWeek?: readonly number[] },
+  opts: {
+    weeklyLimit: number;
+    from?: Date;
+    horizonDays?: number;
+    maxEntries?: number;
+    daysOfWeek?: readonly number[];
+    /**
+     * Dates already carrying an entry that survives this plan (written or
+     * scheduled). Each one uses up a grid slot on its day, so a re-plan at
+     * 3/week does not stack a new entry on the day the first draft occupies.
+     */
+    occupied?: readonly string[];
+  },
 ): PlannedEntry[] {
   const weekly = Math.max(0, Math.min(MAX_PACE, Math.floor(opts.weeklyLimit)));
   if (weekly === 0) return [];
@@ -93,9 +105,20 @@ export function buildPlan(
 
   const usable = recommendations.filter((r) => r.action === "write" && r.quality === "ok" && r.keywordId);
   const offsets = planOffsets(weekly, horizon, count, normaliseDays(opts.daysOfWeek), new Date(start).getUTCDay());
+  const taken = new Map<string, number>();
+  for (const d of opts.occupied ?? []) taken.set(d, (taken.get(d) ?? 0) + 1);
   const out: PlannedEntry[] = [];
-  for (let i = 0; i < Math.min(offsets.length, usable.length); i++) {
-    out.push({ keywordId: usable[i].keywordId, term: usable[i].term, date: isoDate(new Date(start + offsets[i] * DAY_MS)) });
+  let k = 0;
+  for (const offset of offsets) {
+    if (k >= usable.length) break;
+    const date = isoDate(new Date(start + offset * DAY_MS));
+    const left = taken.get(date) ?? 0;
+    if (left > 0) {
+      taken.set(date, left - 1);
+      continue;
+    }
+    out.push({ keywordId: usable[k].keywordId, term: usable[k].term, date });
+    k++;
   }
   return out;
 }
@@ -296,7 +319,13 @@ async function planFor(
     }
   }
 
-  const plan = buildPlan(recs, { weeklyLimit, from: start, maxEntries, daysOfWeek: opts.daysOfWeek });
+  const plan = buildPlan(recs, {
+    weeklyLimit,
+    from: start,
+    maxEntries,
+    daysOfWeek: opts.daysOfWeek,
+    occupied: existing.map((e) => e.scheduled_date).filter(Boolean) as string[],
+  });
   return { plan, recs };
 }
 
