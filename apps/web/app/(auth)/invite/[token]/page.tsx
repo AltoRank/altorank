@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Accept Invitation" };
@@ -8,90 +8,78 @@ interface InvitePageProps {
   params: Promise<{ token: string }>;
 }
 
+function Notice({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen p-8">
+      <h1 className="text-xl font-semibold mb-2">{title}</h1>
+      <p className="text-ink-3">{children}</p>
+    </div>
+  );
+}
+
+/**
+ * Accepting an invite.
+ *
+ * The invitee is, by definition, not yet a member, so no member-scoped policy
+ * can show them the invite row or let them insert their own membership. The
+ * first version read and wrote through the cookie client and therefore
+ * failed at the first select for every genuinely new user. This one reads
+ * the invite with the service role, checks the signed-in email against it
+ * ourselves, and writes the membership - with the invite's role and workspace
+ * access - with the service role too. The token is the credential; the email
+ * match is the check.
+ */
 export default async function InvitePage({ params }: InvitePageProps) {
   const { token } = await params;
   const supabase = await createClient();
+  const admin = createServiceClient();
 
-  // Look up the invite
-  const { data: invite, error } = await supabase
+  const { data: invite } = await admin
     .from("invites")
-    .select("*")
+    .select("id, agency_id, email, role, workspace_ids, expires_at")
     .eq("token", token)
     .is("accepted_at", null)
-    .single();
+    .maybeSingle();
 
-  if (error || !invite) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-8">
-        <h1 className="text-xl font-semibold mb-2">Invalid or expired invitation</h1>
-        <p className="text-ink-3">This invite link is no longer valid.</p>
-      </div>
-    );
+  if (!invite) {
+    return <Notice title="Invalid or expired invitation">This invite link is no longer valid.</Notice>;
   }
 
-  // Check if expired
   if (new Date(invite.expires_at) < new Date()) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-8">
-        <h1 className="text-xl font-semibold mb-2">Invitation expired</h1>
-        <p className="text-ink-3">This invitation has expired. Ask your team admin for a new one.</p>
-      </div>
-    );
+    return <Notice title="Invitation expired">This invitation has expired. Ask your team admin for a new one.</Notice>;
   }
 
-  // Check if user is logged in
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   if (!user) {
-    // Redirect to sign in with return URL
     redirect(`/signin?redirect=/invite/${token}`);
   }
 
-  // Verify the logged-in user's email matches the invite
   if (user.email?.toLowerCase() !== invite.email.toLowerCase()) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-8">
-        <h1 className="text-xl font-semibold mb-2">Email mismatch</h1>
-        <p className="text-ink-3">
-          This invitation was sent to <strong>{invite.email}</strong>.
-          Please sign in with that email address to accept it.
-        </p>
-      </div>
+      <Notice title="Email mismatch">
+        This invitation was sent to <strong>{invite.email}</strong>. Please sign in with that email address to
+        accept it.
+      </Notice>
     );
   }
 
-  // Accept the invite
-  const { error: memberError } = await supabase.from("agency_members").insert({
+  const { error: memberError } = await admin.from("agency_members").insert({
     agency_id: invite.agency_id,
     user_id: user.id,
     role: invite.role,
+    workspace_ids: invite.workspace_ids,
   });
 
-  if (memberError) {
-    // Might already be a member
-    if (memberError.code === "23505") {
-      // Unique violation — already a member
-      await supabase
-        .from("invites")
-        .update({ accepted_at: new Date().toISOString() })
-        .eq("id", invite.id);
-
-      redirect("/");
-    }
-
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-8">
-        <h1 className="text-xl font-semibold mb-2">Something went wrong</h1>
-        <p className="text-ink-3">{memberError.message}</p>
-      </div>
-    );
+  // 23505 is the unique (agency_id, user_id): already a member. The invite is
+  // still consumed so the link cannot be replayed.
+  if (memberError && memberError.code !== "23505") {
+    return <Notice title="Something went wrong">{memberError.message}</Notice>;
   }
 
-  // Mark invite as accepted
-  await supabase
-    .from("invites")
-    .update({ accepted_at: new Date().toISOString() })
-    .eq("id", invite.id);
+  await admin.from("invites").update({ accepted_at: new Date().toISOString() }).eq("id", invite.id);
 
   redirect("/");
 }

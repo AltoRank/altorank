@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { OnboardingWizard } from "@/components/onboarding/wizard";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
-import { DEFAULT_OUTPUT_SETTINGS, type OutputSettings, type Tone } from "@/lib/onboarding/output-settings";
+import { outputFromRow } from "@/lib/onboarding/output-settings";
 
 export const metadata: Metadata = { title: "Set up your site" };
 
@@ -40,17 +40,7 @@ export default async function OnboardingPage() {
   ]);
   if (!workspace) redirect("/workspaces");
 
-  const initialOutput: OutputSettings = output
-    ? {
-        tone: output.tone as Tone,
-        internalLinks: output.internal_links,
-        tableOfContents: output.table_of_contents,
-        callToAction: output.call_to_action,
-        firstPerson: output.first_person,
-        mentionSimilarProducts: output.mention_similar_products,
-        globalArticlePrompt: output.global_article_prompt ?? "",
-      }
-    : DEFAULT_OUTPUT_SETTINGS;
+  const initialOutput = outputFromRow(output);
 
   return (
     <OnboardingWizard

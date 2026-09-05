@@ -63,6 +63,7 @@ export async function saveProfile(workspaceId: string, profile: BusinessProfile)
     .eq("id", workspaceId);
   if (error) throw new Error(error.message);
   revalidatePath("/onboarding");
+  revalidatePath("/settings", "layout");
 }
 
 /** Look for the sitemap and blog. Returns what was verified live, and nothing else. */
@@ -86,6 +87,7 @@ export async function saveSiteDetails(workspaceId: string, details: SiteDetails)
     })
     .eq("id", workspaceId);
   if (error) throw new Error(error.message);
+  revalidatePath("/settings", "layout");
 }
 
 export async function saveOutputSettings(workspaceId: string, s: OutputSettings): Promise<void> {
@@ -106,6 +108,26 @@ export async function saveOutputSettings(workspaceId: string, s: OutputSettings)
     { onConflict: "workspace_id" },
   );
   if (error) throw new Error(error.message);
+  revalidatePath("/settings", "layout");
+}
+
+/**
+ * The standing instruction for keyword research, on its own because it lives
+ * on the Keywords tab and is saved on its own. Upsert so a site that never
+ * finished the wizard still gets a row; the other columns take their defaults.
+ */
+export async function saveKeywordPrompt(workspaceId: string, prompt: string): Promise<void> {
+  const { supabase } = await assertWorkspace(workspaceId);
+  const { error } = await supabase.from("workspace_output_settings").upsert(
+    {
+      workspace_id: workspaceId,
+      global_keyword_prompt: prompt.trim().slice(0, 2000) || null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "workspace_id" },
+  );
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings", "layout");
 }
 
 /**

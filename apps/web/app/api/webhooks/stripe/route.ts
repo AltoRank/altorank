@@ -114,6 +114,15 @@ export async function POST(request: Request) {
           event.type === "customer.subscription.deleted" ? "canceled" : mapStatus(sub.status),
         ...(periodEnd ? { current_period_end: new Date(periodEnd * 1000).toISOString() } : {}),
         ...(plan ? { plan } : {}),
+        // Cancel-at-period-end set from the Billing page or from the portal
+        // both land here; the page reads this column to say when the plan
+        // ends. Cleared when the cancellation is undone.
+        cancels_at:
+          event.type === "customer.subscription.deleted"
+            ? null
+            : sub.cancel_at_period_end && sub.cancel_at
+              ? new Date(sub.cancel_at * 1000).toISOString()
+              : null,
       };
 
       const agencyId = sub.metadata?.agency_id;

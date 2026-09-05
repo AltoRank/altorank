@@ -8,6 +8,9 @@ import { getTrafficSeries, type TrafficSeries } from "@/lib/queries/traffic";
 import { getBingSummary } from "@/lib/queries/bing";
 import { PageHead, DotSep, StatusPill, Avatar, Icons, Button, Chip, Card, StatStrip, ConnectPrompt } from "@/components/ui";
 import { ClientActions } from "@/components/dashboard/client-actions";
+import { ShareResults } from "@/components/dashboard/share-results";
+import { getShareCardFacts } from "@/lib/queries/share";
+import { buildShareCard } from "@/lib/share/card";
 import { WorkspaceGrid } from "@/components/dashboard/workspace-grid";
 import { RecommendedActionsStrip } from "@/components/dashboard/recommended-actions-strip";
 import { recommendedActions } from "@/lib/dashboard/recommended-actions";
@@ -125,7 +128,11 @@ function TrafficChart({ series, connected = false }: { series: TrafficSeries; co
         <line key={f} x1={pad} x2={W - pad} y1={pad + f * (H - pad * 2)} y2={pad + f * (H - pad * 2)} stroke="var(--line-soft)" strokeWidth="1" />
       ))}
       <path d={area} fill="url(#g1)" />
-      <path d={path(prev)} fill="none" stroke="var(--ink-4)" strokeWidth="1.5" strokeDasharray="4 4" />
+      {/* Only when that window was synced. A dashed flat zero for a month
+          that was never measured reads as "no traffic last month". */}
+      {series.previousMeasured && (
+        <path d={path(prev)} fill="none" stroke="var(--ink-4)" strokeWidth="1.5" strokeDasharray="4 4" />
+      )}
       <path d={path(data)} fill="none" stroke="var(--accent)" strokeWidth="2" />
       {data.map((v, i) => i % 3 === 0 ? (
         <circle key={i} cx={x(i)} cy={y(v)} r="2.5" fill="var(--bg)" stroke="var(--accent)" strokeWidth="1.5" />
@@ -164,7 +171,7 @@ export default async function DashboardPage() {
     .is("article_id", null);
   if (scopeId) plannedQuery = plannedQuery.eq("workspace_id", scopeId);
 
-  const [workspaces, allArticles, recent, traffic, keywords, { count: gscCount }, bing, cmsRes, { count: plannedEntries }, yields, profileRes] =
+  const [workspaces, allArticles, recent, traffic, keywords, { count: gscCount }, bing, cmsRes, { count: plannedEntries }, yields, profileRes, shareFacts] =
     await Promise.all([
       getWorkspaces(),
       getArticles(scopeId ?? undefined),
@@ -181,6 +188,8 @@ export default async function DashboardPage() {
       scopeId
         ? gscSupabase.from("workspaces").select("business_profile").eq("id", scopeId).maybeSingle()
         : Promise.resolve({ data: null }),
+      // The share card: measured facts for this site, or nothing to share.
+      scopeId ? getShareCardFacts(scopeId) : Promise.resolve(null),
     ]);
   const gscConnected = (gscCount ?? 0) > 0;
   // Same test the Articles page applies: any connected integration tagged CMS.
@@ -252,6 +261,9 @@ export default async function DashboardPage() {
         }
         actions={
           <>
+            {shareFacts && scopeId && (
+              <ShareResults card={buildShareCard(shareFacts)} ogPath={`/api/og/workspace/${scopeId}`} />
+            )}
             <ClientActions />
           </>
         }
@@ -313,9 +325,13 @@ export default async function DashboardPage() {
               <span className="flex items-center gap-1.5">
                 <i className="inline-block w-2.5 h-2.5 rounded-sm bg-accent" />Traffic
               </span>
-              <span className="flex items-center gap-1.5">
-                <i className="inline-block w-2.5 h-0.5 rounded-sm bg-ink-4 mt-[1px]" />Prev period
-              </span>
+              {traffic.previousMeasured ? (
+                <span className="flex items-center gap-1.5">
+                  <i className="inline-block w-2.5 h-0.5 rounded-sm bg-ink-4 mt-[1px]" />Prev period
+                </span>
+              ) : traffic.hasData ? (
+                <span className="text-ink-4">Previous period not synced yet</span>
+              ) : null}
               {bing.connected && (
                 <span className="ml-auto text-ink-3">
                   {bing.hasData

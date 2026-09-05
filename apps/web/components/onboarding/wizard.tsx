@@ -34,10 +34,15 @@ import {
   saveOutputSettings,
   completeWizard,
 } from "@/app/actions/onboarding-wizard";
-import { TONES, TONE_LABELS, type OutputSettings, type SiteDetails } from "@/lib/onboarding/output-settings";
-import type { BusinessProfile, InferenceReason } from "@/lib/onboarding/business-profile";
+import type { OutputSettings, SiteDetails } from "@/lib/onboarding/output-settings";
+import { EMPTY_PROFILE, type BusinessProfile, type InferenceReason } from "@/lib/onboarding/business-profile";
 import type { SiteDiscovery } from "@/lib/onboarding/site-discovery";
-import { LANGUAGE_OPTIONS, MARKET_OPTIONS, GLOBAL_MARKET } from "@/lib/onboarding/locale";
+// The forms themselves live in components/settings: every wizard screen is
+// also a permanent Settings tab, and one copy of each form keeps them in step.
+import { BusinessFields } from "@/components/settings/business-fields";
+import { AudienceList, CompetitorList } from "@/components/settings/audience-fields";
+import { SiteFields } from "@/components/settings/site-fields";
+import { ApprovalGateCard, OutputFields } from "@/components/settings/output-fields";
 import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
 import type { OnboardingState } from "@/lib/onboarding/events";
@@ -46,16 +51,6 @@ const STEPS = ["Business", "Audience & Competitors", "Blog", "Articles", "Integr
 type StepIndex = 0 | 1 | 2 | 3 | 4;
 
 export type Destination = { id: string; name: string; description: string | null };
-
-const EMPTY_PROFILE: BusinessProfile = {
-  name: "",
-  language: "English",
-  country: GLOBAL_MARKET,
-  description: "",
-  audiences: [],
-  competitors: [],
-};
-
 
 export function OnboardingWizard({
   workspaceId,
@@ -279,31 +274,6 @@ function Head({ title, sub }: { title: string; sub: React.ReactNode }) {
   );
 }
 
-const inputClass =
-  "w-full rounded-lg border border-line bg-panel px-3 py-2 text-[13px] text-ink outline-none focus:border-accent transition-colors";
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-[12.5px] font-medium text-ink-2">{label}</span>
-      {children}
-      {hint && <span className="text-[11.5px] text-ink-3">{hint}</span>}
-    </label>
-  );
-}
-
-function Toggle({ label, hint, checked, onChange }: { label: string; hint: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="flex cursor-pointer items-start justify-between gap-6 rounded-[8px] border border-line bg-bg px-4 py-3">
-      <span>
-        <span className="block text-[13px] font-medium">{label}</span>
-        <span className="mt-0.5 block text-[12px] leading-[1.5] text-ink-3">{hint}</span>
-      </span>
-      <input type="checkbox" className="mt-1 h-4 w-4 accent-[var(--accent)]" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-    </label>
-  );
-}
-
 const FAILURE_COPY: Record<InferenceReason, string> = {
   ok: "",
   no_model: "No model is configured on this install, so nothing could be proposed. Fill this in by hand.",
@@ -325,7 +295,6 @@ function BusinessStep({
   failure: InferenceReason | null;
   onRetry: () => void;
 }) {
-  const market = MARKET_OPTIONS.find((m) => m.label === profile.country);
   return (
     <>
       <Head
@@ -346,106 +315,10 @@ function BusinessStep({
           )}
         </div>
       )}
-      <div className="flex flex-col gap-4 rounded-[10px] border border-line bg-panel p-5">
-        <Field label="Business name">
-          <input className={inputClass} value={profile.name} onChange={(e) => patch({ name: e.target.value })} placeholder="Acme" />
-        </Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Language">
-            <select
-              className={inputClass}
-              value={LANGUAGE_OPTIONS.find((o) => o.label.toLowerCase() === profile.language.toLowerCase())?.label ?? profile.language}
-              onChange={(e) => patch({ language: e.target.value })}
-            >
-              {!LANGUAGE_OPTIONS.some((o) => o.label.toLowerCase() === profile.language.toLowerCase()) && (
-                <option value={profile.language}>{profile.language}</option>
-              )}
-              {LANGUAGE_OPTIONS.map((o) => (
-                <option key={o.code} value={o.label}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Market" hint={market?.hint ?? "Where your search demand is. Keyword data comes from this country."}>
-            <select className={inputClass} value={market ? market.label : GLOBAL_MARKET} onChange={(e) => patch({ country: e.target.value })}>
-              {MARKET_OPTIONS.map((m) => (
-                <option key={m.label} value={m.label}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-        <Field label="Description" hint="Used to keep drafts about your actual business rather than the category.">
-          <textarea
-            rows={7}
-            className={`${inputClass} resize-none leading-[1.6]`}
-            value={profile.description}
-            onChange={(e) => patch({ description: e.target.value })}
-            placeholder="What you sell, to whom, and what sets it apart."
-          />
-        </Field>
+      <div className="rounded-[10px] border border-line bg-panel p-5">
+        <BusinessFields profile={profile} patch={patch} />
       </div>
     </>
-  );
-}
-
-/** Removable chips with an add box. Deleting is the main verb here. */
-function ChipList({
-  items,
-  onChange,
-  placeholder,
-  max,
-}: {
-  items: string[];
-  onChange: (next: string[]) => void;
-  placeholder: string;
-  max: number;
-}) {
-  const [draft, setDraft] = useState("");
-  function add() {
-    const v = draft.trim();
-    if (!v || items.includes(v) || items.length >= max) return;
-    onChange([...items, v]);
-    setDraft("");
-  }
-  return (
-    <div className="flex flex-col gap-2.5">
-      <div className="flex gap-2">
-        <input
-          className={inputClass}
-          placeholder={placeholder}
-          value={draft}
-          disabled={items.length >= max}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              add();
-            }
-          }}
-        />
-        <Button onClick={add} disabled={items.length >= max}>
-          Add
-        </Button>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        {items.map((item) => (
-          <div key={item} className="flex items-start gap-2 rounded-[8px] border border-line bg-bg px-3 py-2">
-            <span className="flex-1 text-[12.5px] leading-[1.5]">{item}</span>
-            <button
-              type="button"
-              aria-label={`Remove ${item}`}
-              className="mt-0.5 cursor-pointer text-ink-3 hover:text-ink"
-              onClick={() => onChange(items.filter((i) => i !== item))}
-            >
-              ×
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -457,29 +330,10 @@ function AudienceStep({ profile, patch }: { profile: BusinessProfile; patch: (p:
         sub="These steer which keywords are worth writing for, and every keyword remembers which of them it came from. Remove anything that is not you."
       />
       <div className="mb-4 rounded-[10px] border border-line bg-panel p-5">
-        <div className="mb-2 flex items-baseline justify-between">
-          <h2 className="text-[14px] font-semibold">Target audiences</h2>
-          <span className="font-mono text-[11px] text-ink-3">{profile.audiences.length}/7</span>
-        </div>
-        <ChipList
-          items={profile.audiences}
-          onChange={(audiences) => patch({ audiences })}
-          placeholder="e.g. Content managers at B2B SaaS companies"
-          max={7}
-        />
+        <AudienceList profile={profile} patch={patch} />
       </div>
       <div className="rounded-[10px] border border-line bg-panel p-5">
-        <div className="mb-2 flex items-baseline justify-between">
-          <h2 className="text-[14px] font-semibold">Competitors</h2>
-          <span className="font-mono text-[11px] text-ink-3">{profile.competitors.length}/7</span>
-        </div>
-        <ChipList
-          items={profile.competitors}
-          onChange={(competitors) => patch({ competitors: competitors.map((c) => c.replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase()) })}
-          placeholder="e.g. competitor.com"
-          max={7}
-        />
-        <p className="mt-2 text-[11.5px] text-ink-3">Domains, not names. Bigger competitors give more keyword ideas.</p>
+        <CompetitorList profile={profile} patch={patch} />
       </div>
     </>
   );
@@ -503,44 +357,11 @@ function BlogStep({
     : found
       ? "We found these on your site. Correct them if they are wrong."
       : `We could not find a sitemap or a blog on ${domain}. Add them if you have them; both are optional.`;
-  const examples = [0, 1, 2].map((i) => site.exampleArticleUrls[i] ?? "");
   return (
     <>
       <Head title="Where your content lives" sub={sub} />
       <div className="flex flex-col gap-4 rounded-[10px] border border-line bg-panel p-5">
-        <Field label="Sitemap" hint="Used to find your existing pages for internal links.">
-          <input
-            className={inputClass}
-            value={site.sitemapUrl}
-            placeholder={`https://${domain}/sitemap.xml`}
-            onChange={(e) => setSite({ ...site, sitemapUrl: e.target.value })}
-          />
-        </Field>
-        <Field label="Blog address" hint="Where published articles will appear.">
-          <input
-            className={inputClass}
-            value={site.blogRootUrl}
-            placeholder={`https://${domain}/blog/`}
-            onChange={(e) => setSite({ ...site, blogRootUrl: e.target.value })}
-          />
-        </Field>
-        <Field label="Your best writing" hint="Up to three articles you are proud of. Drafts learn their voice from these before anything else.">
-          <div className="flex flex-col gap-2">
-            {examples.map((v, i) => (
-              <input
-                key={i}
-                className={inputClass}
-                value={v}
-                placeholder={i === 0 ? `https://${domain}/blog/an-article-you-like` : "https://…"}
-                onChange={(e) => {
-                  const next = [...examples];
-                  next[i] = e.target.value;
-                  setSite({ ...site, exampleArticleUrls: next.filter(Boolean) });
-                }}
-              />
-            ))}
-          </div>
-        </Field>
+        <SiteFields site={site} setSite={setSite} domain={domain} />
         <div className="flex items-center justify-between rounded-[8px] border border-line bg-bg px-4 py-3">
           <div>
             <div className="text-[13px] font-medium">Connect Search Console</div>
@@ -556,79 +377,12 @@ function BlogStep({
 }
 
 function ArticlesStep({ output, setOutput }: { output: OutputSettings; setOutput: (o: OutputSettings) => void }) {
-  const set = (p: Partial<OutputSettings>) => setOutput({ ...output, ...p });
   return (
     <>
       <Head title="How your articles should read" sub="Set once. Every draft follows these until you change them in Settings." />
       <div className="flex flex-col gap-4 rounded-[10px] border border-line bg-panel p-5">
-        <div className="flex items-start justify-between gap-6 rounded-[8px] border border-line bg-bg px-4 py-3">
-          <div>
-            <div className="text-[13px] font-medium">Every draft waits for your yes</div>
-            <div className="mt-0.5 text-[12px] leading-[1.5] text-ink-3">
-              Articles land in review and publish only when you approve them. This is not a setting you can turn
-              off, and it is the difference between a tool and a firehose.
-            </div>
-          </div>
-          <span className="mt-0.5 shrink-0 rounded-full border border-line px-2 py-0.5 font-mono text-[10px] text-ink-2">
-            ALWAYS ON
-          </span>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Tone" hint="The default voice. Brand voice learned from your writing refines it.">
-            <select className={inputClass} value={output.tone} onChange={(e) => set({ tone: e.target.value as OutputSettings["tone"] })}>
-              {TONES.map((t) => (
-                <option key={t} value={t}>
-                  {TONE_LABELS[t]}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Internal links per article">
-            <select className={inputClass} value={String(output.internalLinks)} onChange={(e) => set({ internalLinks: Number(e.target.value) })}>
-              {[0, 2, 3, 5, 8].map((n) => (
-                <option key={n} value={n}>
-                  {n === 0 ? "None" : `${n} links`}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-        <Toggle
-          label="Table of contents"
-          hint="Added from the heading structure of each article."
-          checked={output.tableOfContents}
-          onChange={(v) => set({ tableOfContents: v })}
-        />
-        <Toggle
-          label="Call to action"
-          hint="A closing section that points readers at your site."
-          checked={output.callToAction}
-          onChange={(v) => set({ callToAction: v })}
-        />
-        <Toggle
-          label="First-person writing"
-          hint='Allows "we" and "our" when it reads naturally. Off means third person only.'
-          checked={output.firstPerson}
-          onChange={(v) => set({ firstPerson: v })}
-        />
-        <Toggle
-          label="Mention similar products"
-          hint="Compare and reference alternatives where relevant. Off keeps articles to your own category."
-          checked={output.mentionSimilarProducts}
-          onChange={(v) => set({ mentionSimilarProducts: v })}
-        />
-        <Field
-          label="Anything drafts should always do"
-          hint="Optional. Brand voice is learned from your published writing; this is for rules that writing cannot show. Most sites leave it empty."
-        >
-          <textarea
-            rows={3}
-            className={`${inputClass} resize-none`}
-            placeholder="e.g. never claim we are the cheapest; always mention the free tier"
-            value={output.globalArticlePrompt}
-            onChange={(e) => set({ globalArticlePrompt: e.target.value })}
-          />
-        </Field>
+        <ApprovalGateCard />
+        <OutputFields output={output} setOutput={setOutput} />
       </div>
     </>
   );

@@ -37,6 +37,8 @@ export function PlanCards({
   isActive,
   hasCustomer,
   returnTo,
+  canManage,
+  cancelHandledBelow = false,
 }: {
   plans: PlanCard[];
   /** The tier actually being paid for, or null when nothing is. */
@@ -50,8 +52,21 @@ export function PlanCards({
    * user to billing and makes them find their way back.
    */
   returnTo?: string;
+  /**
+   * Owner only. Editors and admins see the ladder and the current plan but
+   * every button is inert with a reason; the actions refuse them anyway.
+   */
+  canManage?: boolean;
+  /**
+   * The Billing page renders the pause-or-cancel card below the ladder when
+   * there is a subscription to end. The card owns cancelling then - survey,
+   * then confirmation - so this button and its sentence step aside rather
+   * than offering a second, shorter door to the same place.
+   */
+  cancelHandledBelow?: boolean;
 }) {
   const [pending, start] = useTransition();
+  const locked = canManage === false;
   const [interval, setInterval] = useState<BillingInterval>("month");
 
   function subscribe(plan: SelfServePlan) {
@@ -148,7 +163,11 @@ export function PlanCards({
               {/* Pushed to the bottom so the buttons line up across cards whose
                   feature lists are different lengths. */}
               <div className="mt-auto pt-4">
-                {current ? (
+                {locked ? (
+                  <div className="text-center text-[12px] leading-relaxed text-ink-3">
+                    {current ? "Your plan." : ""} Only the account owner can change the plan or billing.
+                  </div>
+                ) : current ? (
                   <div className="flex flex-col gap-2">
                     <Button onClick={() => portal("manage")} disabled={pending} className="w-full justify-center">
                       {pending ? "Opening…" : "Invoices and billing"}
@@ -157,9 +176,11 @@ export function PlanCards({
                       <Button onClick={() => portal("payment_method")} disabled={pending} className="flex-1 justify-center">
                         Update card
                       </Button>
-                      <Button onClick={() => portal("cancel")} disabled={pending} className="flex-1 justify-center">
-                        Cancel
-                      </Button>
+                      {!cancelHandledBelow && (
+                        <Button onClick={() => portal("cancel")} disabled={pending} className="flex-1 justify-center">
+                          Cancel
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ) : sales ? (
@@ -184,10 +205,17 @@ export function PlanCards({
 
       <p className="m-0 max-w-[76ch] text-[12px] leading-relaxed text-ink-3">
         {hasCustomer ? (
-          <>
-            Cancelling takes one confirmation and ends the plan at the period
-            end. Your workspaces, articles and history stay readable afterwards.
-          </>
+          cancelHandledBelow ? (
+            <>
+              Pausing and cancelling are below. Either way your workspaces,
+              articles and history stay readable afterwards.
+            </>
+          ) : (
+            <>
+              Cancelling takes one confirmation and ends the plan at the period
+              end. Your workspaces, articles and history stay readable afterwards.
+            </>
+          )
         ) : (
           <>
             No trial. Nothing is charged until you choose a plan here, and you
