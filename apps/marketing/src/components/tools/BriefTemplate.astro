@@ -1,0 +1,104 @@
+---
+import ToolShell from './ToolShell.astro';
+import Button from '@/components/shared/Button.astro';
+
+// The eleven fields from the template in the guide below, as a form. The
+// output is Markdown so it pastes into a doc, a ticket or a CMS unchanged.
+const FIELDS = [
+  { id: 'primary', label: 'Primary keyword', type: 'input', value: 'project brief template' },
+  { id: 'supporting', label: 'Supporting keywords (one per line)', type: 'textarea', rows: 3, value: 'project brief example\nwhat is a project brief\nproject brief vs project charter' },
+  { id: 'pagetype', label: 'Page type', type: 'select', options: ['Supporting blog post', 'Pillar page', 'Comparison or listicle', 'Product or collection page', 'Landing page', 'Tool page'] },
+  { id: 'intent', label: 'Intent, in one sentence', type: 'input', value: 'A project manager needs a brief they can fill in today, and wants to know what belongs in it.' },
+  { id: 'format', label: 'Format the SERP rewards', type: 'select', options: ['Template with a downloadable or copyable asset', 'Step-by-step guide', 'Listicle', 'Comparison table', 'Definition then detail', 'Product page', 'Mixed, no dominant format'] },
+  { id: 'angle', label: 'The angle: what this page has that page one does not', type: 'textarea', rows: 3, value: '' },
+  { id: 'linksout', label: 'Must link to (one per line)', type: 'textarea', rows: 2, value: '/blog/what-is-a-project-brief\n/tools/brief-template' },
+  { id: 'linksin', label: 'Should be linked from (one per line)', type: 'textarea', rows: 2, value: '/blog/project-management-guide' },
+  { id: 'faq', label: 'FAQ questions, exact wording (one per line)', type: 'textarea', rows: 3, value: 'What should a project brief include?\nHow long should a project brief be?' },
+  { id: 'words', label: 'Word target (optional)', type: 'input', value: '' },
+] as const;
+---
+<ToolShell label="Content brief generator">
+  <div class="grid gap-4 md:grid-cols-[1fr_1.1fr]">
+    <div class="flex flex-col gap-3">
+      {FIELDS.map((f) => (
+        <div>
+          <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for={`bt-${f.id}`}>{f.label}</label>
+          {f.type === 'input' && <input id={`bt-${f.id}`} class="min-h-11 w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft" value={f.value} />}
+          {f.type === 'textarea' && <textarea id={`bt-${f.id}`} rows={f.rows} class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft">{f.value}</textarea>}
+          {f.type === 'select' && <select id={`bt-${f.id}`} class="min-h-11 w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft">{f.options.map((o) => <option value={o}>{o}</option>)}</select>}
+        </div>
+      ))}
+    </div>
+    <div>
+      <div class="mb-2 flex items-center justify-between gap-3">
+        <p class="text-[13px] font-medium text-ink-2">The brief, as Markdown</p>
+        <Button variant="secondary" size="sm" data-bt="copy">Copy</Button>
+      </div>
+      <p class="mb-2 hidden rounded-md border border-[oklch(0.85_0.08_75)] bg-[oklch(0.97_0.03_75)] px-3 py-2 text-[12.5px] text-[oklch(0.4_0.1_75)]" data-bt="warn"></p>
+      <pre class="max-h-[560px] overflow-auto rounded-lg border border-line bg-bg p-4 font-mono text-[12.5px] leading-relaxed text-ink whitespace-pre-wrap" data-bt="out"></pre>
+    </div>
+  </div>
+  <p class="mt-3 text-[12.5px] leading-relaxed text-ink-3">
+    Word target is last on purpose. It is the field most briefs lead with and the one least likely to
+    change what comes back. The angle is the field that does.
+  </p>
+</ToolShell>
+
+<script>
+  function initBriefTemplate() {
+    const out = document.querySelector('[data-bt="out"]');
+    const warn = document.querySelector('[data-bt="warn"]') as HTMLElement | null;
+    if (!out || !warn) return;
+    const val = (id: string) => (document.getElementById(`bt-${id}`) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null)?.value?.trim() ?? '';
+    const lines = (id: string) => val(id).split('\n').map((s) => s.trim()).filter(Boolean);
+    const bullets = (items: string[], empty: string) => items.length ? items.map((s) => `- ${s}`).join('\n') : `- _${empty}_`;
+    const render = () => {
+      const primary = val('primary') || 'untitled';
+      const angle = val('angle');
+      const words = val('words');
+      const md = [
+        `# Brief: ${primary}`,
+        '',
+        `**Page type:** ${val('pagetype')}`,
+        `**Primary keyword:** ${primary}`,
+        '**Supporting keywords:**',
+        bullets(lines('supporting'), 'none listed'),
+        '',
+        '## Intent',
+        val('intent') || '_Not stated. Say what the reader is trying to do._',
+        '',
+        '## Angle',
+        angle || '_Not stated. What will this page contain that the current top ten does not?_',
+        '',
+        `## Format the SERP rewards`,
+        val('format'),
+        '',
+        '## Internal links',
+        '**Link to:**',
+        bullets(lines('linksout'), 'none'),
+        '**Link from:**',
+        bullets(lines('linksin'), 'none'),
+        '',
+        '## FAQ questions to answer, in this wording',
+        bullets(lines('faq'), 'none'),
+        '',
+        ...(words ? ['## Length', `Around ${words} words. Treat as a ceiling, not a target.`] : []),
+      ].join('\n').replace(/\n{3,}/g, '\n\n');
+      out.textContent = md;
+      const missing: string[] = [];
+      if (!angle) missing.push('the angle');
+      if (!val('intent')) missing.push('the intent');
+      if (!lines('linksout').length) missing.push('links out');
+      warn.textContent = missing.length ? `Missing ${missing.join(', ')}. A brief without ${missing[0]} asks for a well-written copy of page one.` : '';
+      warn.classList.toggle('hidden', !missing.length);
+    };
+    document.querySelectorAll('[id^="bt-"]').forEach((el) => { el.addEventListener('input', render); el.addEventListener('change', render); });
+    const copy = document.querySelector('[data-bt="copy"]') as HTMLButtonElement | null;
+    copy?.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(out.textContent ?? ''); copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy'; }, 1400); } catch { copy.textContent = 'Select and copy'; }
+    });
+    render();
+  }
+  initBriefTemplate();
+  document.addEventListener('astro:page-load', initBriefTemplate);
+</script>

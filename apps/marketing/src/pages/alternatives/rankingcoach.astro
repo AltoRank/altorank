@@ -125,9 +125,9 @@ const structuredData = [
           </thead>
           <tbody>
             {TLDR_ROWS.map((row, i) => (
-              <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+              <tr class={`${i > 0 ? 'border-t border-line-soft' : ''} ${row.ours ? 'bg-accent-soft/30 font-semibold text-ink' : ''}`}>
                 <td class="px-5 py-4 font-medium">
-                  {row.name}{row.ours && <span class="ml-2 rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-accent-ink">ours</span>}
+                  {row.name}
                 </td>
                 <td class="px-5 py-4 text-ink-2">{row.bestFor}</td>
                 <td class="px-5 py-4 text-ink-2">{row.multiClient}</td>
@@ -255,10 +255,8 @@ const structuredData = [
         ))}
       </div>
 
-      <div class="mt-10 text-center">
-        <Button href={SIGNUP_URL} size="lg" arrow>
-  Start with {APP_NAME}
-</Button>
+      <div class="mt-10">
+        <Button href={SIGNUP_URL} arrow size="sm">Start with {APP_NAME}</Button>
       </div>
     </div>
   </section>

@@ -27,10 +27,10 @@ const structuredData = [buildOrganizationSchema()];
     <div class="mx-auto max-w-[760px] px-8 flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
       <h2 class="mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">Why we built it</h2>
       <p>For two years the AI-content pitch was volume: generate hundreds of articles, publish them automatically. Then Google's 2025 scaled-content-abuse enforcement changed the maths, unreviewed AI volume became a penalty risk, not a growth hack. For an agency, publishing unchecked AI to a <em>client's</em> brand was always the bigger risk: a hallucinated product spec, an off-brand voice, a claim no one signed off on.</p>
-      <p>{APP_NAME} was built for anyone who can't take that risk. The stakes are sharpest for an agency publishing to a client's brand, but they are the same stakes on your own site. It keeps the speed of AI generation but adds the thing autopilot tools removed, <a href="/approval-first-seo-content" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">a human editorial gate</a>, with optional client sign-off and an audit trail, before anything goes live.</p>
+      <p>{APP_NAME} was built for anyone who can't take that risk. The stakes are sharpest for an agency publishing to a client's brand, but they are the same stakes on your own site. It keeps the speed of AI generation but adds the thing autopilot tools removed, <a href="/approval-first-seo-content" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">a human editorial gate</a>, with the approver recorded on every article, before anything goes live.</p>
 
       <h2 class="mt-8 mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink">Who it's for</h2>
-      <p>Anyone who owns a site and wants AI-assisted SEO content without handing over the publish button. The engine is open source, so you can run it on your own infrastructure, read the scoring, and change it.</p>
+      <p>Agencies running SEO content across a roster of client sites, each in its own workspace, and anyone else who wants AI-assisted SEO content without handing over the publish button. The engine is open source, so you can run it on your own infrastructure, read the scoring, and change it.</p>
 
       <p>Agencies get a tier of their own: per-client workspaces, isolated voice profiles and white-label reporting, for firms running this across several brands at once. That is a plan, not the whole product.</p>
 
@@ -40,14 +40,14 @@ const structuredData = [buildOrganizationSchema()];
   </section>
 
   <section class="border-b border-line py-[72px]">
-    <div class="mx-auto max-w-[760px] px-8 text-center">
+    <div class="mx-auto max-w-[760px] px-8">
       <h2 class="mb-3 text-[clamp(22px,3vw,28px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
         See approval-first content in your own workflow
       </h2>
       <p class="mb-7 mx-auto max-w-[520px] text-[15px] leading-relaxed text-ink-2">
         Run SEO and AI-search content across every client store, reviewed before it ships. Free to self-host, €69/mo managed.
       </p>
-      <Button href={SIGNUP_URL} size="lg">
+      <Button href={SIGNUP_URL}>
   {PRIMARY_CTA.label}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
 </Button>

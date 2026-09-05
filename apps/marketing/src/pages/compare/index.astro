@@ -54,7 +54,7 @@ const structuredData = [
 
 <PSEO
   title={`${APP_NAME} Head-to-Heads: Where Each Tool Wins`}
-  description={`Twelve head-to-heads on publishing model, backlinks, integrations and price. Each names where the other tool wins.`}
+  description={`Twelve head-to-heads on publishing model, backlinks, integrations and price. Each names where the other tool wins. Checked ${verified}.`}
   breadcrumbs={breadcrumbs}
   structuredData={structuredData}
 >
@@ -80,7 +80,7 @@ const structuredData = [
               <div class="text-[15px] font-semibold text-ink group-hover:text-accent-ink">
                 {APP_NAME} vs {c.name}
               </div>
-              <div class="mt-0.5 font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">
+              <div class="mt-0.5 text-[12.5px] text-ink-3">
                 {c.theirCategory}
               </div>
             </div>
@@ -122,8 +122,8 @@ const structuredData = [
         ))}
       </div>
       <div class="mt-10 flex flex-wrap gap-2.5">
-        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
-        <Button href="/open-source" variant="secondary" size="lg">Read the licence</Button>
+        <Button href={PRIMARY_CTA.href} arrow size="sm">{PRIMARY_CTA.label}</Button>
+        <Button href="/open-source" variant="secondary" size="sm">Read the licence</Button>
       </div>
     </div>
   </section>

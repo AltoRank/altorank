@@ -27,9 +27,9 @@ const NOINDEX = true;
   noindex={NOINDEX}
 >
   <section class="border-b border-line py-[88px]">
-    <div class="mx-auto max-w-[1240px] px-8">
-      <div class="mx-auto mb-14 max-w-[720px] text-center">
-        <h1 class="mb-3 text-[42px] font-semibold leading-[1.08] tracking-[-0.025em]">
+    <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
+      <div class="mb-14 max-w-[720px]">
+        <h1 class="mb-3 text-[clamp(28px,5vw,42px)] font-semibold leading-[1.08] tracking-[-0.025em]">
           Real results from real teams
         </h1>
         <p class="text-base text-ink-2">
@@ -38,19 +38,14 @@ const NOINDEX = true;
       </div>
 
       {stories.length === 0 ? (
-        <div class="mx-auto max-w-[640px] rounded-xl border border-dashed border-line bg-panel/40 p-10 text-center">
+        <div class="max-w-[640px] rounded-xl border border-dashed border-line bg-panel/40 p-8 sm:p-10">
           <h2 class="mb-3 text-2xl font-semibold tracking-[-0.015em] text-ink">
             We're onboarding the first cohort now.
           </h2>
           <p class="mb-6 text-base leading-relaxed text-ink-2">
             Real case studies land here once those customers have shipped content for long enough to measure. Until then, the honest answer is: it's day one. The pilot cohort is agencies, because that is who we approached first, not because the product needs one.
           </p>
-          <Button href="/pricing">
-  See pricing
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16">
-              <path d="M5 12h14m0 0-6-6m6 6-6 6" />
-            </svg>
-</Button>
+          <Button href="/pricing" size="sm" arrow>See pricing</Button>
         </div>
       ) : (
         <div class="grid gap-6 md:grid-cols-2">
@@ -74,11 +69,11 @@ const NOINDEX = true;
                 {story.data.description}
               </p>
               <div class="mt-auto grid grid-cols-2 gap-3">
-                <div class="rounded-md border border-line bg-panel p-3 text-center">
+                <div class="rounded-md border border-line bg-panel p-3">
                   <div class="text-xl font-semibold text-ok-ink">{story.data.results.trafficGrowth}</div>
                   <div class="text-[11px] text-ink-3">Traffic growth</div>
                 </div>
-                <div class="rounded-md border border-line bg-panel p-3 text-center">
+                <div class="rounded-md border border-line bg-panel p-3">
                   <div class="text-xl font-semibold text-accent-ink">{story.data.results.timeToFirstRank}</div>
                   <div class="text-[11px] text-ink-3">Time to first rank</div>
                 </div>

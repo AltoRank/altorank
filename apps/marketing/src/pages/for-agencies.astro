@@ -33,7 +33,7 @@ const FAQ = [
   { question: 'How does pricing work across a client roster?', answer: `Plans are metered on articles per month rather than seats or workspaces, so the Agency plan is ${PLANS[2].price}/mo with unlimited workspaces - one per site or client - and a per-article rate beyond the included volume. Self-hosting is €0 and unlimited.` },
   { question: 'Does each client need their own CMS connection?', answer: 'Yes, and that is the point: the connection belongs to that client\'s workspace, uses a credential they can revoke, and cannot publish to any other client\'s site. Eleven destinations are supported today.' },
   { question: 'What stops the AI publishing something embarrassing to a client site?', answer: 'An architectural gate rather than a policy. The publish path requires a human approval on the specific draft, and the MCP server exposes no publish tool, so an agent driving the product cannot route around it either. Every draft arrives with an SEO score and a fact-check verdict.' },
-  { question: 'Can my team have different permission levels?', answer: 'Role-based permissions are on the Agency plan, so a contractor can draft and review without touching billing or client connections.' },
+  { question: 'Can my team have different permission levels?', answer: 'Not yet. Today every member of an agency account has the same access, so invite only people who should be able to approve and publish. Per-workspace roles are in progress and will land in the open-source build like everything else.' },
   { question: `Who is ${APP_NAME} built by?`, answer: `${APP_NAME} is built and operated by ${LEGAL_ENTITY.name} (VAT ${LEGAL_ENTITY.vat}), a company in ${LEGAL_ENTITY.country}. GDPR applies to us as a matter of establishment, which matters if your clients ask where their data sits.` },
 ];
 
@@ -57,8 +57,8 @@ const structuredData = [buildBreadcrumbSchema(breadcrumbs), buildFAQSchema(FAQ)]
         Open source, so you can run the whole thing yourself and keep the margin.
       </p>
       <div class="flex flex-wrap gap-2.5">
-        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
-        <Button href="/agency-blueprint" variant="secondary" size="lg">Read the agency blueprint</Button>
+        <Button href={PRIMARY_CTA.href} size="sm" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/agency-blueprint" variant="secondary" size="sm">Read the agency blueprint</Button>
       </div>
     </div>
   </section>
@@ -108,8 +108,8 @@ const structuredData = [buildBreadcrumbSchema(breadcrumbs), buildFAQSchema(FAQ)]
         ))}
       </div>
       <div class="mt-10 flex flex-wrap gap-2.5">
-        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
-        <Button href="/pricing" variant="secondary" size="lg">See pricing</Button>
+        <Button href={PRIMARY_CTA.href} size="sm" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/pricing" variant="secondary" size="sm">See pricing</Button>
       </div>
     </div>
   </section>

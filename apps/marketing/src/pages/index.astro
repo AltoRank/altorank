@@ -28,9 +28,10 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
       pill above the h1, ran two CTAs plus a caveat, and put a drawn dashboard
       beside the copy; this one puts the product under the fold line so the
       page reads as a window into something real rather than an illustration.  */}
-  {/* Flat surface, left-aligned, like every section below it. The radial glow
-      it used to carry was decoration, and the copy was the only centred text
-      on the page. */}
+  {/* Flat surface, centred copy. Left alignment was tried on 2026-09-05
+      (#95) to match the sections below; the first heading on the page reads
+      as the one place a visitor is addressed directly, and centred is how
+      every landing page in the category does that. Reverted the same day. */}
   <header class="relative overflow-hidden border-b border-line bg-[oklch(0.175_0.03_275)] -mt-14 px-5 pt-[112px] sm:px-6 lg:-mt-16 lg:pt-[148px]">
     <div class="mx-auto max-w-[1240px]">
       <h1 class="mb-4 max-w-[19ch] text-[clamp(30px,7vw,52px)] font-medium leading-[1.12] tracking-[-0.028em] text-white [text-wrap:balance] sm:mb-5">
@@ -81,7 +82,7 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
       </p>
       {/* The category puts avatars, five stars and "750m+ views" here. We put
           the one number we can defend, and the licence. */}
-      <p class="-mt-6 mb-10 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-[oklch(0.78_0.03_275)] md:mb-12">
+      <p class="-mt-6 mb-10 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[12.5px] text-[oklch(0.78_0.03_275)] md:mb-12">
         <span>{READINESS_SCAN.sites} sites scanned</span>
         <span aria-hidden="true" class="text-[oklch(0.5_0.03_275)]">&middot;</span>
         <span>{READINESS_SCAN.failedEverything} unreadable by AI</span>
@@ -95,7 +96,7 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
         id="growth-plan"
         hidden
         aria-live="polite"
-        class="mb-10 max-w-[1040px] text-left md:mb-14"
+        class="mx-auto mb-10 max-w-[1040px] text-left md:mb-14"
       ></section>
 
       <AppShot />
@@ -232,7 +233,7 @@ const structuredData = [buildProductSchema(), buildFAQSchema(HOME_FAQ)];
             Run it yourself, put your brand on it, keep the margin.
           </h2>
           <p class="mb-6 max-w-[56ch] md:mb-7 text-[15.5px] leading-relaxed text-ink-2 sm:text-[16.5px] [text-wrap:pretty]">
-            {APP_NAME} is going open source with the whole product in the open:
+            {APP_NAME} is open source, the whole product in the open:
             multi-client workspaces, white-label reporting and the approval gate
             all sit in the free self-hosted build, not behind a paid tier.
             You get the whole execution layer without a licence conversation. We

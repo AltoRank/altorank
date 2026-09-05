@@ -1,170 +1,83 @@
 ---
-import Marketing from '@/layouts/Marketing.astro';
+import PSEO from '@/layouts/PSEO.astro';
 import Button from '@/components/shared/Button.astro';
-import { APP_NAME, SIGNUP_URL } from '@/constants';
+import { COMPETITORS } from '@/data/competitors';
+import { buildItemListSchema } from '@/lib/schema';
+import { APP_NAME, SITE_URL, PRIMARY_CTA } from '@/constants';
 
-interface AlternativePage {
-  slug: string;
-  competitor: string;
-  bestFor: string;
-  toolCount: number;
-}
+// The directory of head-to-heads. Renders from src/data/competitors.ts, the
+// same array /compare and /alternatives/altorank use, so the three cannot
+// disagree about who is on the list or what decides each comparison. It used
+// to carry its own copy of the list, and two entries had already drifted.
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Alternatives', href: '/alternatives' },
+];
 
-// Pages that exist under /alternatives/*. Add a new entry when a new comparison ships.
-const ALTERNATIVES: AlternativePage[] = [
-  {
-    // Head-to-head. Distribb and BabyLoveGrowth are the two closest competitors
-    // by positioning: both open with "autopilot", both run a link exchange.
-    // A "best N alternatives" roundup would be padding.
-    slug: 'distribb',
-    competitor: 'Distribb',
-    bestFor: 'Anyone who wants the publishing decision back',
-    toolCount: 0,
-  },
-  {
-    slug: 'babylovegrowth',
-    competitor: 'BabyLoveGrowth',
-    bestFor: 'Anyone weighing an automated link network',
-    toolCount: 0,
-  },
-  {
-    slug: 'rankpill',
-    competitor: 'RankPill',
-    bestFor: 'Anyone burned by a $1 trial that converted',
-    toolCount: 0,
-  },
-  {
-    slug: 'seoforge',
-    competitor: 'SEOForge',
-    bestFor: 'Anyone who wants to know where the backlinks come from',
-    toolCount: 0,
-  },
-  {
-    slug: 'outrank',
-    competitor: 'Outrank',
-    bestFor: 'Agencies hitting Outrank\'s single-site limits',
-    toolCount: 8,
-  },
-  {
-    // Head-to-head rather than a roundup: rankingCoach is a small-business
-    // breadth tool, so a "best 8 alternatives" framing would be dishonest.
-    slug: 'rankingcoach',
-    competitor: 'rankingCoach',
-    bestFor: 'Agencies who need content depth, not a local-presence bundle',
-    toolCount: 2,
-  },
-  {
-    slug: 'search-atlas',
-    competitor: 'Search Atlas',
-    bestFor: 'Anyone tired of broad-stack bloat who mainly ships content',
-    toolCount: 9,
-  },
-  {
-    slug: 'contentbird',
-    competitor: 'contentbird',
-    bestFor: 'Stores and their agencies priced out of contentbird\'s €399 floor',
-    toolCount: 8,
-  },
-  {
-    slug: 'rankyak',
-    competitor: 'RankYak',
-    bestFor: 'Agencies who can\'t publish unreviewed AI to client sites',
-    toolCount: 6,
-  },
-  {
-    slug: 'shopify-magic',
-    competitor: 'Shopify Magic',
-    bestFor: 'Shopify stores that need more than in-admin product copy',
-    toolCount: 6,
-  },
-  {
-    slug: 'describely',
-    competitor: 'Describely',
-    bestFor: 'Agencies who need more than a single-catalog product-copy tool',
-    toolCount: 6,
-  },
-  {
-    slug: 'seowind',
-    competitor: 'SEOwind',
-    bestFor: 'Stores that need publishing, not just briefs',
-    toolCount: 6,
-  },
+const structuredData = [
+  buildItemListSchema(
+    COMPETITORS.map((c) => ({
+      name: `${c.name} alternative`,
+      url: `${SITE_URL}/alternatives/${c.slug}`,
+      description: c.bestFor,
+    })),
+  ),
 ];
 ---
 
-<Marketing
-  title={`Alternatives | ${APP_NAME}`}
+<PSEO
+  title="Alternatives"
   description={`Honest comparisons of ${APP_NAME} against the SEO content tools people actually evaluate. Picked by use case, not marketing copy.`}
+  breadcrumbs={breadcrumbs}
+  structuredData={structuredData}
 >
-  <section class="border-b border-line py-[88px]">
-    <div class="mx-auto max-w-[1100px] px-8">
-      <div class="mb-12 max-w-[720px]">
-        <h1 class="text-[clamp(36px,5vw,52px)] font-semibold leading-[1.04] tracking-[-0.025em] text-ink [text-wrap:balance]">
+  <section class="border-b border-line py-14 md:py-20">
+    <div class="mx-auto max-w-[1100px] px-5 sm:px-6 lg:px-8">
+      <div class="mb-10 max-w-[720px]">
+        <h1 class="text-[clamp(28px,5vw,44px)] font-semibold leading-[1.06] tracking-[-0.025em] text-ink [text-wrap:balance]">
           Tool alternatives, evaluated by what you actually ship
         </h1>
-        <p class="mt-5 text-lg leading-relaxed text-ink-2">
-          Every SEO content tool is sold as "all-in-one." These comparisons separate the ones that hold up across several sites from the ones built for solo operators with marketing copy that says otherwise.
+        <p class="mt-5 text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+          Every SEO content tool is sold as &ldquo;all-in-one&rdquo;. These comparisons separate the ones that hold
+          up across several sites from the ones built for solo operators, and each says plainly where the other
+          tool is the better pick.
+        </p>
+        <p class="mt-4 text-[15px] leading-relaxed text-ink-2">
+          Weighing {APP_NAME} itself?{' '}
+          <a href="/alternatives/altorank" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">{APP_NAME} alternatives</a>{' '}
+          is our own roundup, including the cases where we are the wrong choice. Prefer one table per tool?{' '}
+          <a href="/compare" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">The compare hub</a>{' '}
+          indexes every head-to-head by the axis that decides it.
         </p>
       </div>
 
       <div class="grid gap-4 sm:grid-cols-2">
-        {ALTERNATIVES.map((alt) => (
+        {COMPETITORS.map((c) => (
           <a
-            href={`/alternatives/${alt.slug}`}
+            href={`/alternatives/${c.slug}`}
             class="group flex flex-col gap-3 rounded-xl border border-line bg-bg p-6 transition-colors hover:border-accent hover:bg-accent-soft/15"
           >
-            <div class="flex items-center justify-between">
-              <span class="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
-                {APP_NAME} vs. {alt.competitor}
-              </span>
-              {/* Head-to-head pages carry 0 here; "0 tools tested" is worse
-                  than no badge. */}
-              <span class="rounded-full bg-panel px-2 py-[2px] font-mono text-[10.5px] text-ink-2">
-                {alt.toolCount > 0 ? `${alt.toolCount} tools tested` : 'Head to head'}
-              </span>
-            </div>
             <h2 class="text-2xl font-semibold tracking-[-0.015em] text-ink">
-              {alt.competitor} alternative
+              {c.name} alternative
             </h2>
-            <p class="text-sm leading-relaxed text-ink-2">{alt.bestFor}</p>
-            <span class="mt-auto inline-flex items-center gap-1.5 pt-2 font-mono text-[12px] text-accent-ink">
+            <p class="text-sm leading-relaxed text-ink-2">{c.bestFor}</p>
+            <p class="text-[13px] leading-relaxed text-ink-3">
+              Decided by: {c.axis.toLowerCase()}.
+              {c.toolsTested ? ` ${c.toolsTested} tools tested.` : ' Head to head.'}
+            </p>
+            <span class="mt-auto inline-flex min-h-[44px] items-center gap-1.5 pt-2 text-[13px] font-medium text-accent-ink sm:min-h-0">
               Read the comparison
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="14" height="14" class="transition-transform group-hover:translate-x-0.5">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="14" height="14" class="transition-transform group-hover:translate-x-0.5" aria-hidden="true">
                 <path d="M5 12h14m0 0-6-6m6 6-6 6" />
               </svg>
             </span>
           </a>
         ))}
-
-        {/* Coming soon, agencies search for these too */}
-        {['Jasper', 'SurferSEO', 'Semrush', 'Scalenut'].map((name) => (
-          <div class="flex flex-col gap-3 rounded-xl border border-dashed border-line bg-panel/40 p-6 opacity-70">
-            <div class="flex items-center justify-between">
-              <span class="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
-                {APP_NAME} vs. {name}
-              </span>
-              <span class="rounded-full bg-panel px-2 py-[2px] font-mono text-[10.5px] text-ink-3">
-                Coming soon
-              </span>
-            </div>
-            <h2 class="text-2xl font-semibold tracking-[-0.015em] text-ink-2">
-              {name} alternative
-            </h2>
-            <p class="text-sm leading-relaxed text-ink-3">
-              In the pipeline. We're working through one comparison at a time.
-            </p>
-          </div>
-        ))}
       </div>
 
-      <div class="mt-14 text-center">
-        <Button href={SIGNUP_URL}>
-  Skip the comparison, start free
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16">
-            <path d="M5 12h14m0 0-6-6m6 6-6 6" />
-          </svg>
-</Button>
+      <div class="mt-12">
+        <Button href={PRIMARY_CTA.href} size="sm" arrow>{PRIMARY_CTA.label}</Button>
       </div>
     </div>
   </section>
-</Marketing>
+</PSEO>
