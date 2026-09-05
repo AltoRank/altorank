@@ -3,11 +3,15 @@ import { createClient } from "@/lib/supabase/server";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getCalendarEntries } from "@/lib/queries/calendar";
 import { getPlannerKeywords, type PlannerKeyword } from "@/lib/queries/keywords";
+import { getPlannerArticleStates, getDraftsInFlight, inFlightFor } from "@/lib/queries/planner-state";
 import { countScheduled, PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
+import { buildMonthCells } from "@/lib/plan/day-groups";
+import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { PageHead, DotSep, StatusPill } from "@/components/ui";
 import { Card } from "@/components/ui/card";
 import { CalendarControls } from "@/components/dashboard/calendar-controls";
-import { PlannerCard } from "@/components/dashboard/planner-card";
+import { PlannerGrid, type PlannerCell, type PlannerItem } from "@/components/dashboard/planner-grid";
+import type { WriteGate } from "@/components/dashboard/planner-card";
 import { PlanMonthButton } from "@/components/dashboard/plan-month-button";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
@@ -15,9 +19,12 @@ import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "Calendar" };
 
-const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-/** Cards shown per square before the rest collapse into "+N more". */
-const PER_DAY = 3;
+/**
+ * "Write now" runs a full generation inside a server action. Vercel's default
+ * would cut it off long before the model finished; this is the same ceiling
+ * the cron and the onboarding stream use.
+ */
+export const maxDuration = 300;
 
 type Props = {
   searchParams: Promise<{ month?: string; clients?: string }>;
@@ -35,19 +42,36 @@ export default async function CalendarPage({ searchParams }: Props) {
   const monthLabel = monthDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
   const supabase = await createClient();
-  const [workspaces, entries, scheduled] = await Promise.all([
+  const [workspaces, entries, scheduled, drafts] = await Promise.all([
     getWorkspaces(),
     getCalendarEntries(scopeId ?? undefined, month),
     scopeId ? countScheduled(supabase, scopeId) : Promise.resolve(0),
+    scopeId ? getDraftsInFlight(scopeId) : Promise.resolve([]),
   ]);
 
-  // The keyword objects behind the squares: shape, volume, difficulty, brief.
-  const keywordRows = scopeId
-    ? await getPlannerKeywords(scopeId, entries.map((e) => e.keyword_id).filter((id): id is string => Boolean(id)))
-    : [];
+  // The keyword objects behind the squares (shape, volume, difficulty, brief)
+  // and the articles they became (status, live URL).
+  const [keywordRows, articleStates] = scopeId
+    ? await Promise.all([
+        getPlannerKeywords(scopeId, entries.map((e) => e.keyword_id).filter((id): id is string => Boolean(id))),
+        getPlannerArticleStates(scopeId, entries.map((e) => e.article_id).filter((id): id is string => Boolean(id))),
+      ])
+    : [[], new Map()];
   const kwById = new Map<string, PlannerKeyword>(keywordRows.map((k) => [k.id, k]));
 
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));
+
+  // Whether "Write now" can run at all. Only the free draft's exhaustion is a
+  // refusal; a paid plan at its limit writes as overage, like any generation.
+  let writeGate: WriteGate = { ok: true };
+  const scopedWs = scopeId ? wsMap.get(scopeId) : undefined;
+  if (scopedWs) {
+    const { data: auth } = await supabase.auth.getUser();
+    const quota = await getQuota(supabase, scopedWs.agency_id, auth.user?.email ?? null);
+    if (quota.reason === "no-plan" && quota.limit !== null && (quota.remaining ?? 0) <= 0) {
+      writeGate = { ok: false, reason: quotaExceededMessage(quota) };
+    }
+  }
 
   // Apply client filter
   const clientFilter = params.clients;
@@ -58,22 +82,33 @@ export default async function CalendarPage({ searchParams }: Props) {
       })
     : entries;
 
-  // Build calendar grid
-  const daysInMonth = new Date(yearNum, monthNum, 0).getDate();
-  const firstDayOfWeek = (new Date(yearNum, monthNum - 1, 1).getDay() + 6) % 7;
-  const totalCells = Math.ceil((daysInMonth + firstDayOfWeek) / 7) * 7;
+  // A draft being written for a planned keyword shows on the planned day, as
+  // "writing". The same article also arrives from `getCalendarEntries` as a
+  // derived "run" entry on today's square - the link between the two is only
+  // written when the run succeeds - so that copy is dropped here.
+  const claimed = new Set<string>();
+  const withFlight = filteredEntries.map((entry) => {
+    const inFlight = entry.article_id ? null : inFlightFor(drafts, entry);
+    if (inFlight) claimed.add(inFlight.articleId);
+    return { entry, inFlight };
+  });
+  const items: PlannerItem[] = withFlight
+    .filter(({ entry }) => entry.planned || !entry.article_id || !claimed.has(entry.article_id))
+    .map(({ entry, inFlight }) => {
+      const w = wsMap.get(entry.workspace_id);
+      return {
+        entry,
+        keyword: entry.keyword_id ? kwById.get(entry.keyword_id) ?? null : null,
+        workspace: w ? { initials: w.initials, color: w.color, domain: w.domain } : null,
+        article: entry.article_id ? articleStates.get(entry.article_id) ?? null : null,
+        inFlight: inFlight ? { createdAt: inFlight.createdAt, phase: inFlight.phase } : null,
+      };
+    });
+  const cells: PlannerCell[] = buildMonthCells(items, yearNum, monthNum, (it) => it.entry.scheduled_date);
 
-  const dayEntries = new Map<number, typeof filteredEntries>();
-  for (const e of filteredEntries) {
-    const day = new Date(e.scheduled_date).getDate();
-    const arr = dayEntries.get(day) ?? [];
-    arr.push(e);
-    dayEntries.set(day, arr);
-  }
-
-  const doneCount = filteredEntries.filter((e) => e.status === "done").length;
-  const runningCount = filteredEntries.filter((e) => e.status === "run").length;
-  const queuedCount = filteredEntries.filter((e) => e.status === "queue").length;
+  const doneCount = items.filter((it) => it.entry.status === "done").length;
+  const runningCount = items.filter((it) => it.entry.status === "run" || it.inFlight !== null).length;
+  const queuedCount = items.filter((it) => it.entry.status === "queue").length;
   const slots = Math.max(0, PLAN_MAX_ENTRIES - scheduled);
 
   return (
@@ -83,7 +118,7 @@ export default async function CalendarPage({ searchParams }: Props) {
         subtitle={
           <>
             {runningCount > 0 && <StatusPill status="run" label={`${runningCount} running now`} />}
-            <span>{plural(filteredEntries.length, "article")} this month</span>
+            <span>{plural(items.length, "article")} this month</span>
             <DotSep />
             <span>{doneCount} published · {queuedCount} queued</span>
             {scopeId && (
@@ -103,57 +138,7 @@ export default async function CalendarPage({ searchParams }: Props) {
         <CalendarControls currentMonth={month} monthLabel={monthLabel} />
 
         <Card flush>
-          {/* Day headers */}
-          <div className="grid grid-cols-7 bg-panel border-b border-line">
-            {DAY_NAMES.map((d) => (
-              <div key={d} className="px-3.5 py-2.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3 border-r border-line last:border-r-0">
-                {d}
-              </div>
-            ))}
-          </div>
-          {/* Calendar grid */}
-          <div className="grid grid-cols-7">
-            {Array.from({ length: totalCells }).map((_, i) => {
-              const dayNum = i - firstDayOfWeek + 1;
-              const isValidDay = dayNum >= 1 && dayNum <= daysInMonth;
-              const dayItems = isValidDay ? dayEntries.get(dayNum) ?? [] : [];
-              const running = dayItems.some((e) => e.status === "run");
-              const shown = dayItems.slice(0, PER_DAY);
-
-              return (
-                <div
-                  key={i}
-                  className={`min-h-[130px] p-2 px-2.5 border-r border-line-soft border-b border-b-line-soft [&:nth-child(7n)]:border-r-0 ${
-                    running ? "bg-accent-soft" : !isValidDay ? "bg-[oklch(0.99_0_0)]" : ""
-                  }`}
-                >
-                  {isValidDay && (
-                    <>
-                      <div className={`font-mono text-[11px] mb-1.5 ${running ? "text-accent-ink font-semibold" : "text-ink-3"}`}>
-                        {dayNum}
-                      </div>
-                      <div className="space-y-2.5">
-                        {shown.map((item) => {
-                          const w = wsMap.get(item.workspace_id);
-                          return (
-                            <PlannerCard
-                              key={item.id}
-                              entry={item}
-                              keyword={item.keyword_id ? kwById.get(item.keyword_id) ?? null : null}
-                              workspace={w ? { initials: w.initials, color: w.color, domain: w.domain } : null}
-                            />
-                          );
-                        })}
-                        {dayItems.length > PER_DAY && (
-                          <div className="font-mono text-[10px] text-ink-3">+{dayItems.length - PER_DAY} more</div>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <PlannerGrid cells={cells} now={now.getTime()} writeGate={writeGate} />
         </Card>
       </div>
     </>

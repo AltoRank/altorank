@@ -25,7 +25,7 @@ import type { Article } from "@/lib/types";
  * chosen. Both were being thrown away by the UI.
  */
 
-const POLL_MS = 3_000;
+export const POLL_MS = 3_000;
 
 /**
  * Ten minutes, then stop and say so. A generation that dies between its two
@@ -34,7 +34,7 @@ const POLL_MS = 3_000;
  * article-save path, so the job row never leaves 'running' either. Without a
  * ceiling this component would poll a dead draft until the tab closed.
  */
-const GIVE_UP_MS = 10 * 60_000;
+export const GIVE_UP_MS = 10 * 60_000;
 
 export function FirstDraftLive({
   articles,
