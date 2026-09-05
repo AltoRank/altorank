@@ -132,7 +132,7 @@ async function bodyOf(url: string, timeoutMs: number): Promise<string | null> {
   }
 }
 
-function locsIn(xml: string): string[] {
+export function locsIn(xml: string): string[] {
   return [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) =>
     decodeEntities(m[1]),
   );

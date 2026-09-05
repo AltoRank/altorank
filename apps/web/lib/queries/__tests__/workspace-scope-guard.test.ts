@@ -30,6 +30,8 @@ const SCOPED_TABLES = new Set([
   "geo_prompts",
   "geo_results",
   "keywords",
+  "link_sources",
+  "link_targets",
   "provider_spend",
   "publish_log",
   "publishing_cadences",

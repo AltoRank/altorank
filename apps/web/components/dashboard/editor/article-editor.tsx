@@ -26,10 +26,12 @@ import { SchedulePicker } from "@/components/dashboard/editor/schedule-picker";
 import { ResearchPanel, FactCheckPanel } from "@/components/dashboard/editor/research-panel";
 import { WhyPanel } from "@/components/dashboard/editor/why-panel";
 import { AuditPanel } from "@/components/dashboard/editor/audit-panel";
+import { InternalLinksPanel } from "@/components/dashboard/editor/internal-links-panel";
 import { TabRow } from "@/components/ui/tab-row";
 import { auditArticle } from "@/lib/seo/article-audit";
 import type { Article, Workspace, PublishingCadence, Integration } from "@/lib/types";
 import type { ScoringCheck } from "@/lib/seo/scoring";
+import type { LinkTarget } from "@/lib/seo/link-resolver";
 
 type Props = {
   article: Article;
@@ -57,6 +59,10 @@ type Props = {
    * yet". Undefined when the page did not count.
    */
   linkableArticles?: number | null;
+  /** The pages the draft was offered, so the sidebar can name where each link goes. */
+  linkTargets?: LinkTarget[];
+  /** Internal links per article the site asked for in its output settings. */
+  internalLinksWanted?: number | null;
 };
 
 export function ArticleEditor({
@@ -67,6 +73,8 @@ export function ArticleEditor({
   destinations = [],
   integrations = [],
   linkableArticles,
+  linkTargets = [],
+  internalLinksWanted = null,
 }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -563,6 +571,16 @@ export function ArticleEditor({
             <FactCheckPanel report={article.fact_checks} onLocate={locateInEditor} />
           </SidebarSection>
         )}
+
+        {/* Internal links: which words link where, against the configured count */}
+        <SidebarSection title="Internal links">
+          <InternalLinksPanel
+            html={docHtml}
+            siteDomain={workspace.domain}
+            targets={linkTargets}
+            wanted={internalLinksWanted}
+          />
+        </SidebarSection>
 
         {/* Target keywords */}
         <SidebarSection title="Target keywords">

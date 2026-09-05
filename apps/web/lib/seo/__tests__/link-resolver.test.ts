@@ -70,3 +70,50 @@ describe("resolveInternalLinks", () => {
     expect(resolveInternalLinks(html, targets)).toBe(html);
   });
 });
+
+describe("resolveInternalLinks with preferred anchors", () => {
+  // A row of the link pool can carry the anchor texts its owner wants. The
+  // resolver honours them; a target without any keeps the writer's words.
+  const withAnchors: LinkTarget[] = [
+    {
+      keyword: "personal trainer app",
+      title: "The App for Personal Trainers",
+      url: "https://www.example.com/app",
+      anchors: ["personal trainer app", "our coaching app"],
+    },
+    ...targets,
+  ];
+
+  it("keeps the writer's anchor when it is one of the preferred ones", () => {
+    const html = '<p>Try the <a href="{{internal-link:personal trainer app}}">our coaching app</a>.</p>';
+    expect(resolveInternalLinks(html, withAnchors)).toBe(
+      '<p>Try the <a href="https://www.example.com/app">our coaching app</a>.</p>',
+    );
+  });
+
+  it("swaps in the first preferred anchor when the writer's is not on the list", () => {
+    const html = '<p>Try <a href="{{internal-link:personal trainer app}}">this tool</a>.</p>';
+    expect(resolveInternalLinks(html, withAnchors)).toBe(
+      '<p>Try <a href="https://www.example.com/app">personal trainer app</a>.</p>',
+    );
+  });
+
+  it("leaves the writer's anchor alone on a target with no preferred anchors", () => {
+    const html = '<a href="{{internal-link:crm software}}">our CRM guide</a>';
+    expect(resolveInternalLinks(html, withAnchors)).toBe(
+      '<a href="https://www.example.com/blog/best-crm-software">our CRM guide</a>',
+    );
+  });
+
+  it("matches a topic written as a preferred anchor, not only as the keyword", () => {
+    const html = '<a href="{{internal-link:our coaching app}}">x</a>';
+    expect(resolveInternalLinks(html, withAnchors)).toContain("https://www.example.com/app");
+  });
+
+  it("keeps other attributes on the anchor tag", () => {
+    const html = '<a class="c" href="{{internal-link:crm software}}" title="t">CRM</a>';
+    expect(resolveInternalLinks(html, withAnchors)).toBe(
+      '<a class="c" href="https://www.example.com/blog/best-crm-software" title="t">CRM</a>',
+    );
+  });
+});
