@@ -19,6 +19,7 @@ import { parseWebflowFieldMap } from "@/lib/cms/webflow-fields";
 import { CONNECTOR_NOTES } from "@/lib/cms/connector-notes";
 import { WebflowPicker } from "./connect-cms-webflow";
 import { WixPicker } from "./connect-cms-wix";
+import { ShopifyGuide } from "./connect-cms-shopify";
 
 type CMSType =
   | "wordpress"
@@ -430,12 +431,7 @@ export function ConnectCmsDialog({
             </>
           )}
 
-          {cmsType === "shopify" && (
-            <>
-              <Field name="storeUrl" label="Store URL" placeholder="https://store.myshopify.com" />
-              <Field name="accessToken" label="Access token" type="password" />
-            </>
-          )}
+          {cmsType === "shopify" && <ShopifyGuide />}
 
           {cmsType === "magento" && (
             <>
@@ -720,12 +716,17 @@ function buildConfig(type: CMSType, fd: FormData): CMSConfig {
         siteUrl: (fd.get("siteUrl") as string).trim(),
         token: fd.get("token") as string,
       };
-    case "shopify":
+    case "shopify": {
+      // Chosen from the store's own list in the guide; absent means the
+      // adapter's default, the first blog, as every connection did before.
+      const blogId = (fd.get("blogId") as string | null)?.trim();
       return {
         type: "shopify",
-        storeUrl: fd.get("storeUrl") as string,
+        storeUrl: (fd.get("storeUrl") as string).trim(),
         accessToken: fd.get("accessToken") as string,
+        ...(blogId ? { blogId } : {}),
       };
+    }
     case "magento":
       return {
         type: "magento",
