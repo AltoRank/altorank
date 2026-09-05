@@ -31,8 +31,11 @@ async function assertWorkspace(workspaceId: string) {
     .eq("id", workspaceId)
     .single();
   // RLS already scopes to the agency; this turns a foreign id into an error
-  // rather than a silent no-op that looks like a save.
-  if (error || !data) throw new Error("That site is not on this account.");
+  // rather than a silent no-op that looks like a save. Only "no rows"
+  // (PGRST116) means that, though: a timeout or pool restart is reported as
+  // what it is, not as an ownership problem.
+  if (error && error.code !== "PGRST116") throw new Error(`Could not read the site: ${error.message}`);
+  if (!data) throw new Error("That site is not on this account.");
   return { supabase, workspace: data };
 }
 

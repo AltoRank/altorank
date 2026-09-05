@@ -34,12 +34,18 @@ export async function requireAuth(
   // and accepting a second invitation locked that person out of every server
   // action (settings track, 2026-09-04). Oldest first, so the fallback below
   // is the same agency on every request rather than whichever row came back.
-  const { data: members } = await supabase
+  const { data: members, error: membersError } = await supabase
     .from("agency_members")
     .select("agency_id, role")
     .eq("user_id", user.id)
     .order("created_at", { ascending: true });
 
+  // A failed read is not an absent membership. Under load the pooled
+  // connection times out, and reporting that as "no membership" sent people
+  // to the wrong fix (re-invite) for a transient database error.
+  if (membersError) {
+    throw new Error(`Could not read your account membership: ${membersError.message}`);
+  }
   if (!members?.length) {
     throw new Error("No agency membership found");
   }
