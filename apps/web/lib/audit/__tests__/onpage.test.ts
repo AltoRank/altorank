@@ -18,10 +18,16 @@ const item = {
   broken_links: 1,
   duplicate_title: true,
   checks: {
-    no_h1_tag: false,
+    // Healthy: true means the good property holds.
+    is_https: true,
+    canonical: true,
+    has_html_doctype: true,
+    seo_friendly_url: true,
+    // Faults: true means the problem is present.
     no_image_alt: true,
     low_readability_rate: true,
-    some_future_check_we_have_no_words_for: true,
+    // False, so neither.
+    no_h1_tag: false,
   },
   meta: {
     title: "  A Title  ",
@@ -40,15 +46,21 @@ const respond = (i: unknown) => post.mockResolvedValue({ tasks: [{ result: [{ it
 beforeEach(() => post.mockReset());
 
 describe("fetchInstantPage", () => {
-  it("reports the checks that are FAILING, not the ones present in the map", async () => {
+  it("separates the checks that are true from the ones that are problems", async () => {
+    // The trap: polarity lives in the name and the two kinds are mixed.
+    // `is_https` true means the page IS secure; `no_image_alt` true means it
+    // is NOT fine. Observed on fitsuite.co: 50 of 50 pages reported is_https
+    // and 49 reported canonical, which reads as a wholly broken site if the
+    // true-set is taken as the failure list.
     respond(item);
     const f = (await fetchInstantPage("https://x.co/a"))!;
-    expect(f.failing).toEqual([
-      "low_readability_rate",
-      "no_image_alt",
-      "some_future_check_we_have_no_words_for",
-    ]);
-    expect(f.failing).not.toContain("no_h1_tag");
+    expect(f.checksTrue).toContain("is_https");
+    expect(f.checksTrue).toContain("canonical");
+    expect(f.faults).toEqual(["low_readability_rate", "no_image_alt"]);
+    expect(f.faults).not.toContain("is_https");
+    expect(f.faults).not.toContain("canonical");
+    // A check that is false is neither.
+    expect(f.checksTrue).not.toContain("no_h1_tag");
   });
 
   it("does not pay for a browser unless asked", async () => {
@@ -103,7 +115,7 @@ describe("describeFailing", () => {
     const f = (await fetchInstantPage("https://x.co/a"))!;
     const described = describeFailing(f);
     expect(described.map((d) => d.label)).toEqual(["Hard to read", "Images without alt text"]);
-    // A provider identifier must never reach the interface.
-    expect(described.some((d) => d.id.startsWith("some_future"))).toBe(false);
+    // Neither a healthy check nor a raw identifier may reach the interface.
+    expect(described.some((d) => d.id === "is_https")).toBe(false);
   });
 });
