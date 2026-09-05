@@ -1,0 +1,34 @@
+// Cloudflare Workers deployment of apps/web, via @opennextjs/cloudflare.
+// Opt-in: nothing on Vercel or in docker/ reads this file. See
+// docs/deploy-cloudflare.md for what works, what does not, and how to run it.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "altorank-web",
+  "main": "cloudflare/worker.mjs",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  // Lets the scheduled handler call the app's own /api/cron/* routes.
+  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "altorank-web" }],
+  // The generate cron and the onboarding stream declare maxDuration = 300 on
+  // Vercel. Workers Paid allows up to 300000 ms of CPU per request; the
+  // default is 30000. Wall time is unlimited while the client stays connected.
+  "limits": { "cpu_ms": 300000 },
+  // The nine vercel.json schedules, verbatim. cloudflare/worker.mjs maps each
+  // expression back to its route. Cron Triggers have no once-a-day rule, so
+  // "*/15 * * * *" for publish (what docker/crontab runs) is legal here.
+  "triggers": {
+    "crons": [
+      "0 2 * * *",
+      "0 3 * * *",
+      "20 3 * * *",
+      "0 4 * * *",
+      "0 5 * * *",
+      "0 6 1 * *",
+      "0 7 * * *",
+      "0 8 * * 1",
+      "0 9 * * *"
+    ]
+  },
+  "observability": { "enabled": true }
+}

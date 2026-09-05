@@ -1,6 +1,6 @@
 # Scheduled jobs for the self-hosted deployment.
 #
-# These are the same eight jobs, on the same schedules, that apps/web/vercel.json
+# These are the same nine jobs, on the same schedules, that apps/web/vercel.json
 # registers for the hosted deployment. Kept deliberately in lockstep: if the two
 # drift, a self-hoster gets a quietly different product from the one documented,
 # which is worse than having no scheduler at all. Change one, change the other.
@@ -16,6 +16,7 @@
 */15 * * * *  altorank-cron publish
 */10 * * * *  altorank-cron analyze
 0 3 * * *     altorank-cron serp
+20 3 * * *    altorank-cron serp-collect
 0 4 * * *     altorank-cron analytics
 0 5 * * *     altorank-cron exchange
 0 7 * * *     altorank-cron generate
