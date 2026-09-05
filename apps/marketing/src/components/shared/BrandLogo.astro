@@ -1,0 +1,46 @@
+---
+/**
+ * The brand mark for a publishing destination, by its two-letter code.
+ *
+ * Reads public/logos/{code}.svg at build time and inlines it, so a mark whose
+ * fill is currentColor (Magento, which publishes no brand hex) takes the
+ * surrounding text colour instead of rendering black inside an <img>. The
+ * files come from scripts/extract-brand-logos.mjs, which copies them out of
+ * the dashboard's own icon set; run it when apps/web/lib/brand-icons.ts
+ * changes.
+ *
+ * Destinations with no mark (Webhook, Git) fall back to the code in mono,
+ * which is what the tile showed for everything before the logos existed. An
+ * empty square would read as a loading state.
+ */
+interface Props {
+  code: string;
+  /** Rendered box size in px; the mark is drawn at 55% of it, as in the app. */
+  size?: number;
+  class?: string;
+}
+
+const { code, size = 36, class: className = '' } = Astro.props;
+
+// Bundled at build time through Vite, not read off disk at render time: a
+// filesystem path resolved from import.meta.url points somewhere else once the
+// component is bundled, and in the first cut every tile silently fell back to
+// its monogram in the production build while the dev server showed logos.
+const LOGOS = import.meta.glob<string>('/public/logos/*.svg', { query: '?raw', import: 'default', eager: true });
+
+const raw = LOGOS[`/public/logos/${code}.svg`];
+const px = Math.round(size * 0.55);
+const svg = raw ? raw.trim().replace('<svg ', `<svg width="${px}" height="${px}" aria-hidden="true" `) : null;
+---
+
+<span
+  aria-hidden="true"
+  class:list={['inline-flex shrink-0 items-center justify-center rounded border border-line bg-panel text-ink', className]}
+  style={`width:${size}px;height:${size}px`}
+>
+  {svg ? (
+    <Fragment set:html={svg} />
+  ) : (
+    <span class="font-mono text-[11px] font-medium text-ink-2">{code}</span>
+  )}
+</span>
