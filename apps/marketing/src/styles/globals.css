@@ -91,8 +91,8 @@
 
    Geometry is deliberately compact: 32px tall with 12px padding, against the
    44px-tall, 20px-padded buttons this replaces. Weight comes from the fill and
-   a 1px shadow, not from size. Below sm, .btn-block gives a 40px full-width
-   target, which is comfortable to hit without the button dominating the screen.
+   a 1px shadow, not from size. Below sm, .btn-block only goes full-width; the
+   height stays the nav-bar 28px so every button on the site shares one geometry.
 
    Retune the whole site here. Markup lives in components/shared/Button.astro. */
 .btn {
@@ -152,7 +152,7 @@
 
 /* Stacked on a phone: full width, and tall enough to be a comfortable target. */
 @media (max-width: 639px) {
-  .btn-block { width: 100%; height: 40px; font-size: 14px; }
+  .btn-block { width: 100%; }
 }
 
 /* === Header overlay ===
