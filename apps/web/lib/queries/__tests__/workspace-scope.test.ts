@@ -83,6 +83,12 @@ const scopedReads: { name: string; run: () => Promise<unknown[]> }[] = [
     run: async () => (await import("../keywords")).getKeywords(WORKSPACE_A),
   },
   {
+    name: "getPlannerKeywords",
+    // Ids from both workspaces on purpose: the id list must not widen the read.
+    run: async () =>
+      (await import("../keywords")).getPlannerKeywords(WORKSPACE_A, ["keywords-aaaa-0", "keywords-bbbb-0"]),
+  },
+  {
     name: "getBacklinks",
     run: async () => (await import("../backlinks")).getBacklinks(WORKSPACE_A),
   },

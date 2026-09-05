@@ -1,9 +1,14 @@
 import type { Metadata } from "next";
+import { createClient } from "@/lib/supabase/server";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getCalendarEntries } from "@/lib/queries/calendar";
-import { PageHead, DotSep, StatusPill, Avatar, Icons, Button } from "@/components/ui";
+import { getPlannerKeywords, type PlannerKeyword } from "@/lib/queries/keywords";
+import { countScheduled, PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
+import { PageHead, DotSep, StatusPill } from "@/components/ui";
 import { Card } from "@/components/ui/card";
 import { CalendarControls } from "@/components/dashboard/calendar-controls";
+import { PlannerCard } from "@/components/dashboard/planner-card";
+import { PlanMonthButton } from "@/components/dashboard/plan-month-button";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
@@ -11,7 +16,8 @@ import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 export const metadata: Metadata = { title: "Calendar" };
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const stLabel: Record<string, string> = { done: "Published", run: "Drafting", scheduled: "Scheduled", queue: "Queued" };
+/** Cards shown per square before the rest collapse into "+N more". */
+const PER_DAY = 3;
 
 type Props = {
   searchParams: Promise<{ month?: string; clients?: string }>;
@@ -28,10 +34,18 @@ export default async function CalendarPage({ searchParams }: Props) {
   const monthDate = new Date(yearNum, monthNum - 1, 1);
   const monthLabel = monthDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
-  const [workspaces, entries] = await Promise.all([
+  const supabase = await createClient();
+  const [workspaces, entries, scheduled] = await Promise.all([
     getWorkspaces(),
     getCalendarEntries(scopeId ?? undefined, month),
+    scopeId ? countScheduled(supabase, scopeId) : Promise.resolve(0),
   ]);
+
+  // The keyword objects behind the squares: shape, volume, difficulty, brief.
+  const keywordRows = scopeId
+    ? await getPlannerKeywords(scopeId, entries.map((e) => e.keyword_id).filter((id): id is string => Boolean(id)))
+    : [];
+  const kwById = new Map<string, PlannerKeyword>(keywordRows.map((k) => [k.id, k]));
 
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));
 
@@ -60,16 +74,35 @@ export default async function CalendarPage({ searchParams }: Props) {
   const doneCount = filteredEntries.filter((e) => e.status === "done").length;
   const runningCount = filteredEntries.filter((e) => e.status === "run").length;
   const queuedCount = filteredEntries.filter((e) => e.status === "queue").length;
+  const slots = Math.max(0, PLAN_MAX_ENTRIES - scheduled);
 
   return (
     <>
       <PageHead
         title={`${monthLabel} plan`}
-        subtitle={<>{runningCount > 0 && <StatusPill status="run" label={`${runningCount} running now`} />}<span>{plural(filteredEntries.length, "article")}</span>{wsMap.get(scopeId ?? "")?.domain ? (<><DotSep /><span className="font-mono text-[11.5px]">{wsMap.get(scopeId ?? "")?.domain}</span></>) : null}<DotSep /><span>{doneCount} published · {queuedCount} queued</span></>}
-        actions={
+        subtitle={
           <>
+            {runningCount > 0 && <StatusPill status="run" label={`${runningCount} running now`} />}
+            <span>{plural(filteredEntries.length, "article")} this month</span>
+            {wsMap.get(scopeId ?? "")?.domain ? (
+              <>
+                <DotSep />
+                <span className="font-mono text-[11.5px]">{wsMap.get(scopeId ?? "")?.domain}</span>
+              </>
+            ) : null}
+            <DotSep />
+            <span>{doneCount} published · {queuedCount} queued</span>
+            {scopeId && (
+              <>
+                <DotSep />
+                {/* The cap, stated as a count: "N of 60" is a fact about the
+                    calendar, and the room left is what the Plan button fills. */}
+                <span>{scheduled} of {PLAN_MAX_ENTRIES} scheduled · {plural(slots, "slot")} available</span>
+              </>
+            )}
           </>
         }
+        actions={<>{scopeId && slots > 0 && <PlanMonthButton label={scheduled === 0 ? "Plan the month" : "Top up the plan"} />}</>}
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
@@ -90,33 +123,37 @@ export default async function CalendarPage({ searchParams }: Props) {
               const dayNum = i - firstDayOfWeek + 1;
               const isValidDay = dayNum >= 1 && dayNum <= daysInMonth;
               const dayItems = isValidDay ? dayEntries.get(dayNum) ?? [] : [];
-              const item = dayItems[0];
-              const w = item ? wsMap.get(item.workspace_id) : null;
+              const running = dayItems.some((e) => e.status === "run");
+              const shown = dayItems.slice(0, PER_DAY);
 
               return (
                 <div
                   key={i}
                   className={`min-h-[130px] p-2 px-2.5 border-r border-line-soft border-b border-b-line-soft [&:nth-child(7n)]:border-r-0 ${
-                    item?.status === "run" ? "bg-accent-soft" : !isValidDay ? "bg-[oklch(0.99_0_0)]" : ""
+                    running ? "bg-accent-soft" : !isValidDay ? "bg-[oklch(0.99_0_0)]" : ""
                   }`}
                 >
                   {isValidDay && (
                     <>
-                      <div className={`font-mono text-[11px] mb-1.5 ${item?.status === "run" ? "text-accent-ink font-semibold" : "text-ink-3"}`}>
+                      <div className={`font-mono text-[11px] mb-1.5 ${running ? "text-accent-ink font-semibold" : "text-ink-3"}`}>
                         {dayNum}
                       </div>
-                      {item && w && (
-                        <div className="text-xs">
-                          <div className="flex items-center gap-1.5 mb-1.5">
-                            <Avatar initials={w.initials} color={w.color} size="sm" className="w-4 h-4 text-[8px] rounded" />
-                            <span className="font-mono text-[10px] text-ink-3">{w.domain}</span>
-                          </div>
-                          <div className="text-xs text-ink leading-[1.35] line-clamp-2">{item.keyword}</div>
-                          <div className="mt-1.5">
-                            <StatusPill status={item.status} label={stLabel[item.status]} />
-                          </div>
-                        </div>
-                      )}
+                      <div className="space-y-2.5">
+                        {shown.map((item) => {
+                          const w = wsMap.get(item.workspace_id);
+                          return (
+                            <PlannerCard
+                              key={item.id}
+                              entry={item}
+                              keyword={item.keyword_id ? kwById.get(item.keyword_id) ?? null : null}
+                              workspace={w ? { initials: w.initials, color: w.color, domain: w.domain } : null}
+                            />
+                          );
+                        })}
+                        {dayItems.length > PER_DAY && (
+                          <div className="font-mono text-[10px] text-ink-3">+{dayItems.length - PER_DAY} more</div>
+                        )}
+                      </div>
                     </>
                   )}
                 </div>

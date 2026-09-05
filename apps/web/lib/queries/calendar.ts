@@ -23,6 +23,7 @@ type ArticleRow = {
   id: string;
   workspace_id: string;
   keyword: string | null;
+  keyword_id: string | null;
   title: string | null;
   status: string;
   scheduled_at: string | null;
@@ -60,7 +61,7 @@ export async function getCalendarEntries(
 
   let query = supabase
     .from("articles")
-    .select("id, workspace_id, keyword, title, status, scheduled_at, published_at, created_at");
+    .select("id, workspace_id, keyword, keyword_id, title, status, scheduled_at, published_at, created_at");
 
   if (workspaceId) query = query.eq("workspace_id", workspaceId);
 
@@ -90,12 +91,14 @@ export async function getCalendarEntries(
       id: a.id,
       workspace_id: a.workspace_id,
       article_id: a.id,
+      keyword_id: a.keyword_id ?? null,
       // The grid labels each square with the keyword; fall back to the title
       // so a hand-written article is not a blank chip.
       keyword: a.keyword || a.title || "Untitled",
       scheduled_date: placed.date,
       status: placed.status,
       created_at: a.created_at,
+      planned: false,
     });
   }
 
@@ -109,12 +112,12 @@ export async function getCalendarEntries(
   // very day the plan promised it.
   let planned = supabase
     .from("calendar_entries")
-    .select("id, workspace_id, keyword, scheduled_date, status, created_at, article_id")
+    .select("id, workspace_id, keyword, keyword_id, scheduled_date, status, created_at, article_id")
     .in("status", ["queue", "scheduled"]);
   if (workspaceId) planned = planned.eq("workspace_id", workspaceId);
   const { data: plannedRows } = await planned;
   const placedArticles = new Set(entries.map((e) => e.article_id));
-  type PlannedRow = { id: string; workspace_id: string; keyword: string | null; scheduled_date: string; created_at: string; article_id: string | null };
+  type PlannedRow = { id: string; workspace_id: string; keyword: string | null; keyword_id: string | null; scheduled_date: string; created_at: string; article_id: string | null };
   for (const p of (plannedRows ?? []) as PlannedRow[]) {
     if (p.article_id && placedArticles.has(p.article_id)) continue;
     if (start !== null && end !== null) {
@@ -125,10 +128,12 @@ export async function getCalendarEntries(
       id: p.id,
       workspace_id: p.workspace_id,
       article_id: p.article_id,
+      keyword_id: p.keyword_id ?? null,
       keyword: p.keyword || "Planned",
       scheduled_date: p.scheduled_date,
       status: p.article_id ? "scheduled" : "queue",
       created_at: p.created_at,
+      planned: true,
     });
   }
 

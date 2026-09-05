@@ -22,7 +22,9 @@ export async function createKeyword(formData: FormData) {
     intent: formData.get("intent"),
   });
 
-  const { error } = await supabase.from("keywords").insert(parsed);
+  // Typed in by hand: the provenance says so, so the sources rollup can tell
+  // "we found it" from "you told us".
+  const { error } = await supabase.from("keywords").insert({ ...parsed, source_type: "manual" });
   if (error) throw new Error(error.message);
   revalidatePath("/keywords");
 }

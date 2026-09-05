@@ -33,12 +33,20 @@ import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research"
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { getLocale } from "@/lib/seo/locales";
-import type { VoiceRules } from "@/lib/ai/types";
+import type { ArticleBrief, VoiceRules } from "@/lib/ai/types";
+import { classifyKeyword, targetWordCountFor } from "@/lib/keywords/taxonomy";
+import { parseStoredQuestions } from "@/lib/keywords/questions";
 
 export interface GenerateArticleOptions {
   supabase: SupabaseClient;
   workspaceId: string;
   keyword: string;
+  /**
+   * The keyword row this draft is for, when the caller knows it (a planned
+   * calendar entry does). Without it the row is looked up by term, which is
+   * right in every case but a workspace tracking the same term twice.
+   */
+  keywordId?: string;
   title?: string;
   /** Marks the draft as machine-chosen, so a reviewer can tell. */
   autonomous?: boolean;
@@ -114,7 +122,7 @@ export interface GenerateArticleResult {
 export async function generateArticle(
   options: GenerateArticleOptions,
 ): Promise<GenerateArticleResult> {
-  const { supabase, workspaceId, keyword, title, autonomous, onChunk, onResearch,
+  const { supabase, workspaceId, keyword, keywordId, title, autonomous, onChunk, onResearch,
     selection, articleId, billToAgencyId, callerEmail,
   } = options;
 
@@ -177,6 +185,30 @@ export async function generateArticle(
       }
     : undefined;
 
+  // The keyword as an object: what the owner said about this article in
+  // particular. By id when the plan supplies one, else by term within the
+  // workspace. Absent for a term typed straight into the modal, which is fine:
+  // the draft then carries no brief rather than a guessed one.
+  type KeywordRow = {
+    id: string;
+    term: string;
+    instructions: string | null;
+    quality_questions: unknown;
+    article_type: string | null;
+    article_subtype: string | null;
+    expected_length: string | null;
+  };
+  let keywordRow: KeywordRow | null = null;
+  {
+    let q = supabase
+      .from("keywords")
+      .select("id, term, instructions, quality_questions, article_type, article_subtype, expected_length")
+      .eq("workspace_id", workspaceId);
+    q = keywordId ? q.eq("id", keywordId) : q.ilike("term", keyword.replace(/[\\%_]/g, (c) => `\\${c}`));
+    const { data } = await q.limit(1).maybeSingle();
+    keywordRow = (data as KeywordRow | null) ?? null;
+  }
+
   const slug = (title || keyword)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -223,6 +255,7 @@ export async function generateArticle(
         title: title || keyword,
         slug,
         keyword,
+        keyword_id: keywordRow?.id ?? null,
         status: "drafting",
         ai_provider: workspace.ai_provider || "claude",
         generated_autonomously: autonomous ?? false,
@@ -325,6 +358,9 @@ export async function generateArticle(
             difficulty: facts.difficulty,
             intent: research.intent.intent,
             status: "planned",
+            // Provenance only for a row this call creates. An existing row
+            // already knows where it came from and must keep saying so.
+            ...(keywordRow ? {} : { source_type: "manual" }),
           },
           { onConflict: "workspace_id,term" },
         );
@@ -341,6 +377,27 @@ export async function generateArticle(
     // back unresolved. One list, two readers, no disagreement.
     const linkTargets = await fetchLinkTargets(supabase, workspaceId, article.id);
 
+    // The brief: shape, length, instructions and answered questions. Shape
+    // falls back to the rule-based classification so every draft carries one,
+    // and only answered questions are passed; an unanswered question is not a
+    // fact about the business.
+    const shape =
+      keywordRow?.article_type && keywordRow.article_subtype
+        ? { article_type: keywordRow.article_type, article_subtype: keywordRow.article_subtype }
+        : classifyKeyword(keyword, research.intent.intent);
+    const answers = parseStoredQuestions(keywordRow?.quality_questions)
+      .filter((q): q is typeof q & { answer: string } => Boolean(q.answer))
+      .map((q) => ({ question: q.question, answer: q.answer }));
+    const expectedLength = keywordRow?.expected_length ?? "auto";
+    const brief: ArticleBrief = {
+      instructions: keywordRow?.instructions ?? null,
+      answers,
+      articleType: shape.article_type,
+      articleSubtype: shape.article_subtype,
+      expectedLength,
+    };
+    const targetWordCount = targetWordCountFor(expectedLength, research.recommendedWordCount);
+
     const generator = provider.streamArticle({
       keyword,
       title,
@@ -351,6 +408,7 @@ export async function generateArticle(
         .slice(0, 20)
         .map((t) => ({ title: t.title, keyword: t.keyword })),
       output,
+      brief,
     });
 
     let articleResult;
@@ -449,10 +507,10 @@ export async function generateArticle(
     const seo = scoreArticle(processedHtml, keyword, {
       metaDescription: articleResult.metaDescription,
       siteDomain: workspace.domain,
-      // The length the SERP asked for, which is what the prompt wrote to. A
-      // flat 1,500 punished every transactional piece the research had
-      // correctly kept short.
-      targetWordCount: research.recommendedWordCount,
+      // The length the prompt wrote to: the owner's band when they chose one,
+      // else what the SERP asked for. A flat 1,500 punished every
+      // transactional piece the research had correctly kept short.
+      targetWordCount,
       title: articleResult.title,
     });
     // The half that matches what this product actually claims: not "will it
@@ -517,6 +575,18 @@ export async function generateArticle(
         // rather than a fabricated rationale.
         selection_reasons: selection?.reasons ?? null,
         selection_score: selection?.score ?? null,
+        // What the writer was told, frozen. Editing the keyword later must
+        // not rewrite what this draft was written from.
+        keyword_id: keywordRow?.id ?? null,
+        article_type: shape.article_type,
+        article_subtype: shape.article_subtype,
+        expected_length: expectedLength,
+        instructions_snapshot: {
+          instructions: brief.instructions,
+          answers: brief.answers,
+          targetWordCount: targetWordCount ?? null,
+          capturedAt: new Date().toISOString(),
+        },
         // Deliberately not `?? 0`. Unmeasured difficulty is not zero difficulty.
         keyword_difficulty: facts.difficulty,
         // Same reasoning, and the same column the picker already knew: this
