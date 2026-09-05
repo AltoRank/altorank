@@ -5,6 +5,7 @@ import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { PageHead, StatusPill, Button, Icons, DotSep } from "@/components/ui";
 import { ConnectActions } from "@/components/dashboard/connect-actions";
+import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { GoogleConnectButton } from "@/components/dashboard/google-connect-button";
 import { BingConnectButton } from "@/components/dashboard/bing-connect-button";
 import type { PublishingCadence } from "@/lib/types";
@@ -104,9 +105,7 @@ export default async function IntegrationsPage({
                 {groupIntegrations.map((i) => (
                   <div key={i.id} className="border border-line rounded-[10px] p-4 bg-bg">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-[7px] bg-ink text-bg grid place-items-center font-mono text-[11px] font-semibold">
-                        {i.name.slice(0, 2).toUpperCase()}
-                      </div>
+                      <IntegrationIcon id={i.id} name={i.name} />
                       <div className="flex-1">
                         <div className="font-semibold text-sm">{i.name}</div>
                         <div className="font-mono text-[11px] text-ink-3">{i.tag}</div>
