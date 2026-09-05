@@ -197,7 +197,9 @@ const SCOPED_HELPERS: Record<string, number> = {
   getReports: 0,
   getGeoPrompts: 0,
   getLatestGeoResults: 0,
-  getTrafficSeries: 0,
+  loadGscRows: 0,
+  syncHealthFor: 0,
+  knownPagesFor: 0,
   getBingSummary: 0,
   getCalendarEntries: 0,
 };
