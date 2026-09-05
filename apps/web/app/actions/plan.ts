@@ -10,6 +10,7 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { getQuota } from "@/lib/billing/quota";
 import { FREE_TIER_PACE, MAX_PACE, monthlyFromPace, normalisePace } from "@/lib/content/pace";
 import { getPlanCapacity, type PlanCapacity } from "@/lib/plan/capacity";
+import { readFrozenEntries } from "@/lib/plan/frozen";
 import { paceAllowed, paceOptions, planNeededFor, type PaceOption } from "@/lib/plan/pace-options";
 import { scheduleSentence } from "@/lib/plan/schedule-times";
 import { PLAN_LABELS } from "@/lib/stripe";
@@ -147,20 +148,60 @@ export async function removePlannedEntry(entryId: string): Promise<void> {
   if (!entry) throw new Error("This entry is not on the plan.");
   if (entry.article_id) throw new Error("This article has already been written; manage it from Articles.");
 
+  await removeEntries(supabase, workspaceId, [{ id: entry.id as string, keyword_id: (entry.keyword_id as string | null) ?? null }]);
+  refresh();
+}
+
+/**
+ * Take every inactive keyword off the plan at once - the wreckage of a
+ * downgrade, in one confirm rather than one dialog per square. Which entries
+ * are inactive is decided here, from the same derivation the calendar drew
+ * them with (lib/plan/frozen.ts), never from a list the client sends. Same
+ * semantics as Remove: the entries go, the keywords stay tracked and are
+ * stamped so the planner does not put them straight back.
+ */
+export async function removeInactiveEntries(): Promise<{ removed: number }> {
+  const { supabase, workspaceId } = await scoped();
+  const { data: ws } = await supabase.from("workspaces").select("agency_id").eq("id", workspaceId).maybeSingle();
+  if (!ws) throw new Error("That site is not in your account.");
+  const quota = await getQuota(supabase, ws.agency_id as string);
+  const frozen = await readFrozenEntries(supabase, workspaceId, quota);
+  if (frozen.ids.size === 0) return { removed: 0 };
+
+  const { data: rows, error } = await supabase
+    .from("calendar_entries")
+    .select("id, keyword_id")
+    .eq("workspace_id", workspaceId)
+    .in("id", [...frozen.ids])
+    .is("article_id", null);
+  if (error) throw new Error(error.message);
+  const entries = (rows ?? []).map((r) => ({ id: r.id as string, keyword_id: (r.keyword_id as string | null) ?? null }));
+  await removeEntries(supabase, workspaceId, entries);
+  refresh();
+  return { removed: entries.length };
+}
+
+/** The one way an entry leaves the plan. Callers have already checked it has no article. */
+async function removeEntries(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  workspaceId: string,
+  entries: Array<{ id: string; keyword_id: string | null }>,
+): Promise<void> {
+  if (entries.length === 0) return;
   const { error } = await supabase
     .from("calendar_entries")
     .delete()
-    .eq("id", entryId)
-    .eq("workspace_id", workspaceId);
+    .eq("workspace_id", workspaceId)
+    .in("id", entries.map((e) => e.id));
   if (error) throw new Error(error.message);
-  if (entry.keyword_id) {
+  const keywordIds = entries.map((e) => e.keyword_id).filter((id): id is string => Boolean(id));
+  if (keywordIds.length) {
     await supabase
       .from("keywords")
       .update({ plan_excluded_at: new Date().toISOString() })
-      .eq("id", entry.keyword_id as string)
-      .eq("workspace_id", workspaceId);
+      .eq("workspace_id", workspaceId)
+      .in("id", keywordIds);
   }
-  refresh();
 }
 
 /** Move a planned entry to another day. */

@@ -10,10 +10,13 @@
 // entry, two ways to ask for it - and shows the move at once, reverting with
 // the server's words if it is refused.
 //
-// Only a planned keyword with no article moves; a card that is being written
-// or already written keeps its handle greyed and says why on hover. Keyboard:
-// focus the handle, Space to lift, arrows to step between days, Space to drop,
-// Escape to cancel. The date-picker Move stays as the fallback for everyone.
+// Only a planned keyword with no article moves, and a scheduled improvement
+// that has not run; a card that is being written or already written keeps its
+// handle greyed and says why on hover. An improvement's drop goes through the
+// Improvements page's own `scheduleCandidate`, so the calendar and that page
+// cannot disagree about where a rewrite is. Keyboard: focus the handle, Space
+// to lift, arrows to step between days, Space to drop, Escape to cancel. The
+// date-picker Move stays as the fallback for everyone.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -37,11 +40,13 @@ import {
 } from "@dnd-kit/core";
 import type { CalendarEntry } from "@/lib/types";
 import type { PlannerKeyword } from "@/lib/queries/keywords";
-import type { ArticleFacts } from "@/lib/plan/card-state";
+import type { ArticleFacts, CardContext, PlannerCardState } from "@/lib/plan/card-state";
 import { plannerCardState, dragBlockReason } from "@/lib/plan/card-state";
 import { splitVisible, type DayCell } from "@/lib/plan/day-groups";
+import { describeSlots } from "@/lib/plan/capacity";
+import type { PlannerImprovement } from "@/lib/queries/improvements";
 import { reschedulePlannedEntry } from "@/app/actions/plan";
-import { plural } from "@/lib/utils";
+import { scheduleCandidate } from "@/app/actions/refresh";
 import { PlannerCard, type WriteGate } from "./planner-card";
 
 export type PlannerItem = {
@@ -51,7 +56,20 @@ export type PlannerItem = {
   article: ArticleFacts;
   /** A draft for this keyword being written now, before the entry links to it. */
   inFlight: { createdAt: string; phase: "research" | "drafting" } | null;
+  /** Why this planned keyword is inactive under the plan; null when it is not. */
+  frozen: string | null;
+  /** Present when the square is a scheduled rewrite; `entry` is then a stand-in whose id is the task's. */
+  improvement: PlannerImprovement | null;
 };
+
+/** The card's context for the state machine, from what the page put on the item. */
+function contextOf(item: PlannerItem): CardContext {
+  return { frozen: item.frozen !== null, improvement: item.improvement ? { status: item.improvement.status } : undefined };
+}
+
+function stateOf(item: PlannerItem): PlannerCardState {
+  return plannerCardState(item.entry, item.article, item.inFlight !== null, contextOf(item));
+}
 
 export type PlannerCell = DayCell<PlannerItem> | null;
 
@@ -101,7 +119,18 @@ const dayUnderPointer: CollisionDetection = (args) => {
   return under.length > 0 ? under : closestCenter(args);
 };
 
-export function PlannerGrid({ cells: serverCells, now, writeGate }: { cells: PlannerCell[]; now: number; writeGate: WriteGate }) {
+export function PlannerGrid({
+  cells: serverCells,
+  now,
+  writeGate,
+  frozenCount = 0,
+}: {
+  cells: PlannerCell[];
+  now: number;
+  writeGate: WriteGate;
+  /** How many keywords on this site are inactive, for the Remove dialog's "all N". */
+  frozenCount?: number;
+}) {
   const router = useRouter();
   const [cells, setCells] = useState(serverCells);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -148,7 +177,8 @@ export function PlannerGrid({ cells: serverCells, now, writeGate }: { cells: Pla
         }),
       );
       pendingMove.current = true;
-      reschedulePlannedEntry(entryId, to)
+      const move = item.improvement ? scheduleCandidate(item.improvement.candidateId, to) : reschedulePlannedEntry(entryId, to);
+      move
         .then(() => { pendingMove.current = false; router.refresh(); })
         .catch((err: unknown) => {
           pendingMove.current = false;
@@ -189,7 +219,7 @@ export function PlannerGrid({ cells: serverCells, now, writeGate }: { cells: Pla
       <div className="grid grid-cols-7">
         {cells.map((cell, i) =>
           cell ? (
-            <DayCellView key={cell.date} cell={cell} now={now} writeGate={writeGate} dragging={activeId !== null} />
+            <DayCellView key={cell.date} cell={cell} now={now} writeGate={writeGate} frozenCount={frozenCount} dragging={activeId !== null} />
           ) : (
             <div key={`pad-${i}`} className="min-h-[130px] border-r border-line-soft border-b border-b-line-soft [&:nth-child(7n)]:border-r-0 bg-[oklch(0.99_0_0)]" />
           ),
@@ -206,10 +236,26 @@ export function PlannerGrid({ cells: serverCells, now, writeGate }: { cells: Pla
   );
 }
 
-function DayCellView({ cell, now, writeGate, dragging }: { cell: DayCell<PlannerItem>; now: number; writeGate: WriteGate; dragging: boolean }) {
+function DayCellView({
+  cell,
+  now,
+  writeGate,
+  frozenCount,
+  dragging,
+}: {
+  cell: DayCell<PlannerItem>;
+  now: number;
+  writeGate: WriteGate;
+  frozenCount: number;
+  dragging: boolean;
+}) {
   const { setNodeRef, isOver } = useDroppable({ id: cell.date });
   const { shown, hidden } = splitVisible(cell.items);
-  const running = cell.items.some((it) => plannerCardState(it.entry, it.article, it.inFlight !== null) === "writing");
+  const running = cell.items.some((it) => {
+    const s = stateOf(it);
+    return s === "writing" || s === "improving";
+  });
+  const improvements = cell.items.filter((it) => it.improvement).length;
 
   return (
     <div
@@ -221,14 +267,14 @@ function DayCellView({ cell, now, writeGate, dragging }: { cell: DayCell<Planner
       <div className={`mb-1.5 flex items-baseline justify-between font-mono text-[11px] ${running ? "text-accent-ink font-semibold" : "text-ink-3"}`}>
         <span>{cell.dayNum}</span>
         {cell.items.length > 1 && (
-          <span className="text-[10px] text-ink-3" title={plural(cell.items.length, "article")}>
+          <span className="text-[10px] text-ink-3" title={describeSlots(cell.items.length - improvements, improvements)}>
             {cell.items.length}
           </span>
         )}
       </div>
       <div className="space-y-2.5">
         {shown.map((item) => (
-          <DraggableCard key={item.entry.id} item={item} now={now} writeGate={writeGate} />
+          <DraggableCard key={item.entry.id} item={item} now={now} writeGate={writeGate} frozenCount={frozenCount} />
         ))}
         {hidden > 0 && <div className="font-mono text-[10px] text-ink-3">+{hidden} more</div>}
         {cell.items.length === 0 && (
@@ -249,8 +295,8 @@ function DayCellView({ cell, now, writeGate, dragging }: { cell: DayCell<Planner
   );
 }
 
-function DraggableCard({ item, now, writeGate }: { item: PlannerItem; now: number; writeGate: WriteGate }) {
-  const state = plannerCardState(item.entry, item.article, item.inFlight !== null);
+function DraggableCard({ item, now, writeGate, frozenCount }: { item: PlannerItem; now: number; writeGate: WriteGate; frozenCount: number }) {
+  const state = stateOf(item);
   const blocked = dragBlockReason(state);
   const { setNodeRef, setActivatorNodeRef, listeners, attributes, isDragging } = useDraggable({
     id: item.entry.id,
@@ -266,6 +312,9 @@ function DraggableCard({ item, now, writeGate }: { item: PlannerItem; now: numbe
         workspace={item.workspace}
         article={item.article}
         inFlight={item.inFlight}
+        frozen={item.frozen}
+        frozenCount={frozenCount}
+        improvement={item.improvement}
         now={now}
         writeGate={writeGate}
         drag={{ blocked, handleRef: setActivatorNodeRef, handleProps: { ...listeners, ...attributes } }}

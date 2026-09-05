@@ -4,8 +4,10 @@ import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getCalendarEntries } from "@/lib/queries/calendar";
 import { getPlannerKeywords, type PlannerKeyword } from "@/lib/queries/keywords";
 import { getPlannerArticleStates, getDraftsInFlight, inFlightFor } from "@/lib/queries/planner-state";
-import { countScheduled, PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
+import { getPlannerImprovements } from "@/lib/queries/improvements";
 import { buildMonthCells } from "@/lib/plan/day-groups";
+import { describeSlots, getPlanCapacity } from "@/lib/plan/capacity";
+import { deriveFrozen, readUnwrittenEntries } from "@/lib/plan/frozen";
 import { quotaExceededMessage } from "@/lib/billing/quota";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { PageHead, DotSep, StatusPill } from "@/components/ui";
@@ -41,11 +43,19 @@ export default async function CalendarPage({ searchParams }: Props) {
   // critical path, and this page (with the layout around it) had enough of
   // them in a row to take seconds on a calendar of three entries.
   const supabase = await createClient();
-  const [workspaces, entries, scheduled, drafts, { data: auth }] = await Promise.all([
+  const [workspaces, entries, capacity, drafts, improvements, unwritten, { data: auth }] = await Promise.all([
     getWorkspaces(),
     getCalendarEntries(scopeId ?? undefined, month),
-    scopeId ? countScheduled(supabase, scopeId) : Promise.resolve(0),
+    // The same numbers the Articles-plan control quotes: slots held by planned
+    // keywords and by scheduled improvements, against the cap.
+    scopeId ? getPlanCapacity(supabase, scopeId) : Promise.resolve(null),
     scopeId ? getDraftsInFlight(scopeId) : Promise.resolve([]),
+    // Rewrites scheduled this month. They sit on their day like an article
+    // and spend one of the week's slots, so the trade-off is on the calendar.
+    scopeId ? getPlannerImprovements(scopeId, month) : Promise.resolve([]),
+    // The whole unwritten plan, for the frozen boundary below; the quota it
+    // needs arrives in the second wave.
+    scopeId ? readUnwrittenEntries(supabase, scopeId) : Promise.resolve([]),
     supabase.auth.getUser(),
   ]);
 
@@ -72,6 +82,11 @@ export default async function CalendarPage({ searchParams }: Props) {
     writeGate = { ok: false, reason: quotaExceededMessage(quota) };
   }
 
+  // Planned keywords beyond what the plan still includes this month, in
+  // scheduled order. Derived, never stored: an upgrade or a new month thaws
+  // them with no write. Unmetered accounts have nothing frozen.
+  const frozen = deriveFrozen(unwritten, quota);
+
   // Apply client filter
   const clientFilter = params.clients;
   const filteredEntries = clientFilter === "publishing"
@@ -91,7 +106,7 @@ export default async function CalendarPage({ searchParams }: Props) {
     if (inFlight) claimed.add(inFlight.articleId);
     return { entry, inFlight };
   });
-  const items: PlannerItem[] = withFlight
+  const articleItems: PlannerItem[] = withFlight
     .filter(({ entry }) => entry.planned || !entry.article_id || !claimed.has(entry.article_id))
     .map(({ entry, inFlight }) => {
       const w = wsMap.get(entry.workspace_id);
@@ -101,14 +116,43 @@ export default async function CalendarPage({ searchParams }: Props) {
         workspace: w ? { initials: w.initials, color: w.color, domain: w.domain } : null,
         article: entry.article_id ? articleStates.get(entry.article_id) ?? null : null,
         inFlight: inFlight ? { createdAt: inFlight.createdAt, phase: inFlight.phase } : null,
+        frozen: frozen.ids.has(entry.id) ? frozen.reason : null,
+        improvement: null,
       };
     });
+  // An improvement's square stands in for a calendar entry: the task's id and
+  // date, the page's title where the keyword goes. The state machine reads
+  // the task, not these fields (lib/plan/card-state.ts).
+  const improvementItems: PlannerItem[] = improvements.map((imp) => {
+    const w = wsMap.get(imp.workspaceId);
+    return {
+      entry: {
+        id: imp.taskId,
+        workspace_id: imp.workspaceId,
+        article_id: null,
+        keyword_id: null,
+        keyword: imp.title,
+        scheduled_date: imp.scheduledFor,
+        status: imp.status === "running" ? "run" : imp.status === "done" ? "done" : "queue",
+        created_at: imp.createdAt,
+        planned: false,
+      },
+      keyword: null,
+      workspace: w ? { initials: w.initials, color: w.color, domain: w.domain } : null,
+      article: null,
+      inFlight: null,
+      frozen: null,
+      improvement: imp,
+    };
+  });
+  const items = [...articleItems, ...improvementItems];
   const cells: PlannerCell[] = buildMonthCells(items, yearNum, monthNum, (it) => it.entry.scheduled_date);
 
-  const doneCount = items.filter((it) => it.entry.status === "done").length;
+  const doneCount = articleItems.filter((it) => it.entry.status === "done").length;
   const runningCount = items.filter((it) => it.entry.status === "run" || it.inFlight !== null).length;
-  const queuedCount = items.filter((it) => it.entry.status === "queue").length;
-  const slots = Math.max(0, PLAN_MAX_ENTRIES - scheduled);
+  const queuedCount = articleItems.filter((it) => it.entry.status === "queue" && it.frozen === null).length;
+  const frozenCount = articleItems.filter((it) => it.frozen !== null).length;
+  const slots = capacity?.available ?? 0;
 
   return (
     <>
@@ -117,7 +161,7 @@ export default async function CalendarPage({ searchParams }: Props) {
         subtitle={
           <>
             {runningCount > 0 && <StatusPill status="run" label={`${runningCount} running now`} />}
-            <span>{plural(items.length, "article")} this month</span>
+            <span>{describeSlots(articleItems.length, improvementItems.length)} this month</span>
             {wsMap.get(scopeId ?? "")?.domain ? (
               <>
                 <DotSep />
@@ -125,25 +169,39 @@ export default async function CalendarPage({ searchParams }: Props) {
               </>
             ) : null}
             <DotSep />
-            <span>{doneCount} published · {queuedCount} queued</span>
-            {scopeId && (
+            <span>
+              {doneCount} published · {queuedCount} queued
+              {frozenCount > 0 && (
+                <>
+                  {" · "}
+                  <span title={frozen.reason ?? undefined}>{frozenCount} inactive</span>
+                </>
+              )}
+            </span>
+            {capacity && (
               <>
                 <DotSep />
                 {/* The cap, stated as a count: "N of 60" is a fact about the
-                    calendar, and the room left is what the Plan button fills. */}
-                <span>{scheduled} of {PLAN_MAX_ENTRIES} scheduled · {plural(slots, "slot")} available</span>
+                    calendar, and the room left is what the Plan button fills.
+                    Both kinds of slot are named when both are held. */}
+                <span>
+                  {capacity.scheduled} of {capacity.cap} scheduled
+                  {capacity.improvements > 0 && ` (${describeSlots(capacity.articles, capacity.improvements)})`}
+                  {" · "}
+                  {plural(slots, "slot")} available
+                </span>
               </>
             )}
           </>
         }
-        actions={<>{scopeId && slots > 0 && <PlanMonthButton label={scheduled === 0 ? "Plan the month" : "Top up the plan"} />}</>}
+        actions={<>{scopeId && slots > 0 && <PlanMonthButton label={(capacity?.articles ?? 0) === 0 ? "Plan the month" : "Top up the plan"} />}</>}
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
         <CalendarControls currentMonth={month} monthLabel={monthLabel} />
 
         <Card flush>
-          <PlannerGrid cells={cells} now={now.getTime()} writeGate={writeGate} />
+          <PlannerGrid cells={cells} now={now.getTime()} writeGate={writeGate} frozenCount={frozenCount} />
         </Card>
       </div>
     </>

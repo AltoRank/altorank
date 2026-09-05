@@ -11,6 +11,7 @@ import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { PausedBanner } from "@/components/dashboard/paused-banner";
 import { applyArticlesPlan, getArticlesPlanState, previewArticlesPlan, type ArticlesPlanState } from "@/app/actions/plan";
 import { describePace } from "@/lib/plan/pace-options";
+import { describeSlots } from "@/lib/plan/capacity";
 
 /** Monday first, as the calendar grid is; values are `Date#getUTCDay`. */
 const WEEKDAYS: { day: number; label: string }[] = [
@@ -186,8 +187,9 @@ function PlanPanel({ workspaceId, onDone }: { workspaceId: string; onDone: () =>
       <div>
         <div className="mb-2 flex items-baseline justify-between">
           <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Current plan</span>
-          <span className="text-[12px] text-ink-3">
+          <span className="text-[12px] text-ink-3" title={describeSlots(state.capacity.articles, state.capacity.improvements)}>
             {state.pace === 0 ? "off" : describePace(state.pace)} · {state.capacity.scheduled} of {state.capacity.cap} planned
+            {state.capacity.improvements > 0 && ` (${describeSlots(state.capacity.articles, state.capacity.improvements)})`}
           </span>
         </div>
         <ul className="divide-y divide-line-soft rounded-[8px] border border-line">

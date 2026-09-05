@@ -11,6 +11,13 @@
 //
 //   planned → writing → in review → approved / scheduled → live
 //
+// Two other squares share this component and the same machine. An
+// improvement - a scheduled rewrite of a page that already ranks - shows the
+// page and the reason, and opens Improvements; it moves and unschedules
+// through the same actions the Improvements page uses. A frozen keyword -
+// beyond what the plan allows - is greyed with the reason on it and offers
+// only Remove, singly or with every other inactive keyword at once.
+//
 // Actions live in a hover row so the grid stays a calendar rather than a
 // toolbar. "—" wherever a number or a state is unknown: volume 0 from a
 // provider is a measurement; a null difficulty is not, and rendering it as 0
@@ -25,14 +32,18 @@ import type { PlannerKeyword } from "@/lib/queries/keywords";
 import { taxonomyLabel, EXPECTED_LENGTHS, LENGTH_LABELS } from "@/lib/keywords/taxonomy";
 import { parseStoredQuestions, unansweredCount, type QualityQuestion } from "@/lib/keywords/questions";
 import { plannerCardState, cardActions, cardStatusPill, type ArticleFacts } from "@/lib/plan/card-state";
+import { OPPORTUNITY_LABELS } from "@/lib/refresh/types";
+import type { PlannerImprovement } from "@/lib/queries/improvements";
 import { POLL_MS, GIVE_UP_MS } from "@/components/dashboard/first-draft-live";
 import {
   ensureKeywordQuestions,
+  removeInactiveEntries,
   removePlannedEntry,
   reschedulePlannedEntry,
   saveKeywordAnswers,
   saveKeywordBrief,
 } from "@/app/actions/plan";
+import { cancelTask, scheduleCandidate } from "@/app/actions/refresh";
 
 /** Whether "Write now" may run, and if not, why. Decided by the page from the quota. */
 export type WriteGate = { ok: true } | { ok: false; reason: string };
@@ -51,6 +62,9 @@ export function PlannerCard({
   workspace,
   article,
   inFlight,
+  frozen = null,
+  frozenCount = 0,
+  improvement = null,
   now,
   writeGate,
   drag,
@@ -60,6 +74,12 @@ export function PlannerCard({
   workspace: { initials: string; color: string; domain: string | null } | null;
   article: ArticleFacts;
   inFlight: { createdAt: string; phase: "research" | "drafting" } | null;
+  /** Why this planned keyword is inactive under the plan; null when it is not. */
+  frozen?: string | null;
+  /** How many keywords on this site are inactive, so Remove can offer all of them. */
+  frozenCount?: number;
+  /** Present when the square is a scheduled rewrite; `entry` is then a stand-in whose id is the task's. */
+  improvement?: PlannerImprovement | null;
   /** Server clock at render, so a stalled draft reads as stalled after a reload too. */
   now: number;
   writeGate: WriteGate;
@@ -84,8 +104,13 @@ export function PlannerCard({
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
   const [date, setDate] = useState(entry.scheduled_date.slice(0, 10));
+  // "Remove" on a frozen card: this one, or every inactive keyword.
+  const [removeScope, setRemoveScope] = useState<"one" | "all">("one");
 
-  const serverState = plannerCardState(entry, article, inFlight !== null);
+  const serverState = plannerCardState(entry, article, inFlight !== null, {
+    frozen: frozen !== null,
+    improvement: improvement ? { status: improvement.status } : undefined,
+  });
   const state = starting && serverState === "planned" ? "writing" : serverState;
   const actions = cardActions(state);
   const pill = cardStatusPill(state);
@@ -95,6 +120,22 @@ export function PlannerCard({
   const unanswered = unansweredCount(questions);
   const hasInstructions = Boolean(keyword?.instructions?.trim());
   const draftHref = entry.article_id ? `/content/${entry.article_id}` : null;
+  const improvementHref = improvement
+    ? improvement.executionId && state === "improved"
+      ? `/improvements/${improvement.executionId}`
+      : "/improvements"
+    : null;
+
+  // Move and Remove go through whichever door owns the row: the plan's
+  // actions for a keyword, the Improvements page's for a rewrite. Same
+  // behaviour as those screens, because it is the same code.
+  const move = (to: string) => (improvement ? scheduleCandidate(improvement.candidateId, to) : reschedulePlannedEntry(entry.id, to));
+  const remove = () =>
+    improvement
+      ? cancelTask(improvement.taskId)
+      : state === "frozen" && removeScope === "all"
+        ? removeInactiveEntries()
+        : removePlannedEntry(entry.id);
 
   // While a draft is in flight, ask the server again every few seconds, the
   // way the overview does for the first draft. Stops on its own once the run
@@ -171,26 +212,53 @@ export function PlannerCard({
   };
 
   return (
-    <div className="group text-xs relative">
+    <div
+      className={`group text-xs relative ${
+        improvement ? "border-l-2 border-accent pl-2 -ml-0.5" : ""
+      } ${state === "frozen" ? "opacity-60" : ""}`}
+      data-state={state}
+    >
       {workspace && (
         <div className="flex items-center gap-1.5 mb-1.5">
           <Avatar initials={workspace.initials} color={workspace.color} size="sm" className="w-4 h-4 text-[8px] rounded" />
           <span className="font-mono text-[10px] text-ink-3 truncate">{workspace.domain}</span>
         </div>
       )}
-      <div className="text-xs text-ink leading-[1.35] line-clamp-2">{entry.keyword}</div>
-      {label && (
-        <div className="mt-1 inline-flex items-center rounded-[5px] border border-line bg-panel px-1.5 py-[1px] font-mono text-[9.5px] uppercase tracking-[0.04em] text-ink-2">
-          {label}
-        </div>
-      )}
-      {keyword && (
-        <div className="mt-1 font-mono text-[10px] text-ink-3">
-          Vol {num(keyword.volume)} · Diff {num(keyword.difficulty || null)}
-        </div>
+      {improvement ? (
+        <>
+          <div className="flex items-center gap-1 text-xs text-ink leading-[1.35]">
+            <Icons.refresh size={11} className="shrink-0 text-accent-ink" />
+            <span className="line-clamp-2">{improvement.title}</span>
+          </div>
+          <div className="mt-1 inline-flex items-center rounded-[5px] border border-line bg-panel px-1.5 py-[1px] font-mono text-[9.5px] uppercase tracking-[0.04em] text-ink-2">
+            {OPPORTUNITY_LABELS[improvement.opportunity] ?? improvement.opportunity}
+          </div>
+          <div className="mt-1 font-mono text-[10px] text-ink-3 truncate" title={improvement.url}>
+            {improvement.url.replace(/^https?:\/\/[^/]+/, "") || improvement.url}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="text-xs text-ink leading-[1.35] line-clamp-2">{entry.keyword}</div>
+          {label && (
+            <div className="mt-1 inline-flex items-center rounded-[5px] border border-line bg-panel px-1.5 py-[1px] font-mono text-[9.5px] uppercase tracking-[0.04em] text-ink-2">
+              {label}
+            </div>
+          )}
+          {keyword && (
+            <div className="mt-1 font-mono text-[10px] text-ink-3">
+              Vol {num(keyword.volume)} · Diff {num(keyword.difficulty || null)}
+            </div>
+          )}
+        </>
       )}
       <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1">
         <StatusPill status={pill.status} label={pill.label} />
+        {actions.openImprovement && improvementHref && (
+          <Link href={improvementHref} className="text-[11px] text-accent-ink underline decoration-line underline-offset-[3px]">
+            {state === "improved" ? "Review rewrite" : "Open"}
+          </Link>
+        )}
         {state === "writing" && (
           stalled ? (
             <span className="font-mono text-[10px] text-ink-3" title="Ten minutes with no result; nothing was charged for a draft that never arrived.">
@@ -215,9 +283,14 @@ export function PlannerCard({
           </Link>
         )}
       </div>
+      {state === "frozen" && frozen && (
+        <p className="m-0 mt-1 text-[10.5px] leading-snug text-ink-3" title={frozen}>
+          {frozen}
+        </p>
+      )}
       {error && !dlg && <div className="mt-1 text-[11px] leading-snug text-err-ink">{error}</div>}
 
-      {(keyword || drag) && state !== "writing" && (
+      {(keyword || drag || improvement) && state !== "writing" && (
         <div className="absolute -top-1 right-0 flex items-center gap-0.5 rounded-[7px] border border-line bg-bg p-0.5 shadow-sm opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto">
           {actions.writeNow && (
             <button
@@ -257,7 +330,12 @@ export function PlannerCard({
             </button>
           )}
           {actions.remove && (
-            <button type="button" title="Remove from plan" onClick={() => openDlg("remove")} className={`${toolBtn} hover:bg-err-soft hover:text-err-ink`}>
+            <button
+              type="button"
+              title={improvement ? "Unschedule this improvement" : "Remove from plan"}
+              onClick={() => { setRemoveScope("one"); openDlg("remove"); }}
+              className={`${toolBtn} hover:bg-err-soft hover:text-err-ink`}
+            >
               <Icons.trash size={13} />
             </button>
           )}
@@ -364,8 +442,17 @@ export function PlannerCard({
       )}
 
       {actions.move && (
-        <Dialog open={dlg === "move"} onOpenChange={(o) => !o && setDlg(null)} title="Move to another day" description={`"${entry.keyword}" is planned for ${entry.scheduled_date.slice(0, 10)}.`}>
-          <form onSubmit={(e) => { e.preventDefault(); void act(() => reschedulePlannedEntry(entry.id, date)); }} className="space-y-3">
+        <Dialog
+          open={dlg === "move"}
+          onOpenChange={(o) => !o && setDlg(null)}
+          title="Move to another day"
+          description={
+            improvement
+              ? `The rewrite of "${improvement.title}" is scheduled for ${entry.scheduled_date.slice(0, 10)}; it runs on the first improvement day on or after the date you pick.`
+              : `"${entry.keyword}" is planned for ${entry.scheduled_date.slice(0, 10)}.`
+          }
+        >
+          <form onSubmit={(e) => { e.preventDefault(); void act(() => move(date)); }} className="space-y-3">
             <input
               type="date"
               value={date}
@@ -382,16 +469,42 @@ export function PlannerCard({
       )}
 
       {actions.remove && (
-        <Dialog open={dlg === "remove"} onOpenChange={(o) => !o && setDlg(null)} title="Remove from plan">
-          <p className="text-[13px] text-ink-2">
-            Are you sure you want to remove the keyword &ldquo;{entry.keyword}&rdquo;? It comes off the calendar and the
-            planner will not put it back; the keyword itself stays tracked.
-          </p>
+        <Dialog
+          open={dlg === "remove"}
+          onOpenChange={(o) => !o && setDlg(null)}
+          title={improvement ? "Unschedule this improvement" : state === "frozen" ? "Remove inactive keyword?" : "Remove from plan"}
+        >
+          {improvement ? (
+            <p className="text-[13px] text-ink-2">
+              The rewrite of &ldquo;{improvement.title}&rdquo; comes off the calendar. The page stays listed under
+              Improvements, where it can be scheduled again; nothing on your site changes.
+            </p>
+          ) : state === "frozen" && frozenCount > 1 ? (
+            <fieldset className="space-y-2 text-[13px] text-ink-2">
+              <legend className="mb-2">
+                &ldquo;{entry.keyword}&rdquo; is inactive under the current plan. Removed keywords come off the calendar and
+                stay tracked; the planner will not put them back.
+              </legend>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input type="radio" name="remove-scope" className="mt-0.5" checked={removeScope === "one"} onChange={() => setRemoveScope("one")} />
+                <span>Remove only &ldquo;{entry.keyword}&rdquo;</span>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input type="radio" name="remove-scope" className="mt-0.5" checked={removeScope === "all"} onChange={() => setRemoveScope("all")} />
+                <span>Remove all {frozenCount} inactive keywords</span>
+              </label>
+            </fieldset>
+          ) : (
+            <p className="text-[13px] text-ink-2">
+              Are you sure you want to remove the keyword &ldquo;{entry.keyword}&rdquo;? It comes off the calendar and the
+              planner will not put it back; the keyword itself stays tracked.
+            </p>
+          )}
           {error && <div className="mt-2 text-[12px] text-err-ink">{error}</div>}
           <div className="mt-4 flex justify-end gap-2">
             <Button size="sm" variant="ghost" onClick={() => setDlg(null)}>Cancel</Button>
-            <Button size="sm" variant="primary" disabled={pending} onClick={() => void act(() => removePlannedEntry(entry.id))}>
-              {pending ? "Removing…" : "Remove"}
+            <Button size="sm" variant="primary" disabled={pending} onClick={() => void act(remove)}>
+              {pending ? "Removing…" : improvement ? "Unschedule" : state === "frozen" && removeScope === "all" ? `Remove ${frozenCount} inactive` : "Remove"}
             </Button>
           </div>
         </Dialog>

@@ -10,9 +10,11 @@
 // the card as writing.
 //
 // Refused when the entry already has an article, when a draft for the keyword
-// is already being written, and - inside `generateArticle` - when the free
-// draft is used. A paid plan at its limit is billed as overage, exactly as a
-// manual generation is.
+// is already being written, when the entry is inactive under the plan
+// (lib/plan/frozen.ts - the card does not offer the button, but the route is
+// a door of its own), and - inside `generateArticle` - when the free draft is
+// used. A paid plan at its limit is billed as overage, exactly as a manual
+// generation is.
 //
 // One implementation, two doors: the `writeNow` server action and the
 // POST /api/plan/write-now route. The card uses the route, because a server
@@ -22,6 +24,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateArticle } from "@/lib/content/generate";
 import { fulfilPlannedEntry } from "@/lib/onboarding/plan";
+import { getQuota } from "@/lib/billing/quota";
+import { readFrozenEntries } from "@/lib/plan/frozen";
 
 export async function writePlannedEntryNow(
   supabase: SupabaseClient,
@@ -46,6 +50,15 @@ export async function writePlannedEntryNow(
   // still writing would spend the quota twice for the same article.
   if (await draftingArticleFor(supabase, workspaceId, keywordId, term)) {
     throw new Error("This article is already being written.");
+  }
+
+  // Beyond the plan's allowance, in scheduled order? Then it is inactive and
+  // the calendar says so; the same quota the writer's gate will consult.
+  const { data: ws } = await supabase.from("workspaces").select("agency_id").eq("id", workspaceId).maybeSingle();
+  if (ws?.agency_id) {
+    const quota = await getQuota(supabase, ws.agency_id as string, callerEmail);
+    const frozen = await readFrozenEntries(supabase, workspaceId, quota);
+    if (frozen.ids.has(entry.id as string)) throw new Error(frozen.reason ?? "This keyword is inactive under the current plan.");
   }
 
   const result = await generateArticle({
