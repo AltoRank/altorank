@@ -1,7 +1,7 @@
 ---
 import Article from '@/layouts/Article.astro';
 import { getCollection, render } from 'astro:content';
-import { buildFAQSchema } from '@/lib/schema';
+import { relatedPosts } from '@/lib/seo';
 
 export async function getStaticPaths() {
   const posts = await getCollection('blog', ({ data }) => !data.draft);
@@ -19,6 +19,17 @@ const { Content } = await render(post);
 // looking identical. `scripts/generate-og-posts.mjs` writes one card per post
 // at these paths; frontmatter still wins if a post supplies its own.
 const ogImage = post.data.ogImage ?? `/og/${post.id}.png`;
+
+// Related posts by shared tag. In-body links were the only post-to-post
+// navigation, which leaves any post nobody happened to link to unreachable
+// except through the index. Three siblings that share a tag is the smallest
+// block that fixes that without inventing relevance.
+const published = await getCollection('blog', ({ data }) => !data.draft);
+const related = relatedPosts(published, post).map((p) => ({
+  title: p.data.title,
+  description: p.data.description,
+  href: `/blog/${p.id}/`,
+}));
 ---
 
 <Article
@@ -28,22 +39,11 @@ const ogImage = post.data.ogImage ?? `/og/${post.id}.png`;
   dateModified={post.data.dateModified}
   author={post.data.author}
   category={post.data.category}
+  tags={post.data.tags}
   ogImage={ogImage}
+  schemaType="BlogPosting"
+  faq={post.data.faq}
+  related={related}
 >
   <Content />
-
-  {post.data.faq && post.data.faq.length > 0 && (
-    <section class="mt-12 border-t border-line pt-10">
-      <h2 class="mb-6 text-2xl font-semibold tracking-[-0.015em]">FAQ</h2>
-      <div class="flex flex-col gap-4">
-        {post.data.faq.map((item) => (
-          <div class="rounded-lg border border-line bg-panel p-5">
-            <h3 class="mb-2 font-semibold">{item.question}</h3>
-            <p class="text-sm text-ink-2 leading-relaxed">{item.answer}</p>
-          </div>
-        ))}
-      </div>
-      <script type="application/ld+json" set:html={JSON.stringify(buildFAQSchema(post.data.faq))} />
-    </section>
-  )}
 </Article>

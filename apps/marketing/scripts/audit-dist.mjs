@@ -214,11 +214,16 @@ check('h1', 'exactly one <h1>', ({ body }) => {
 
 check('jsonld', 'JSON-LD parses', ({ jsonld }) => (jsonld.errors.length ? jsonld.errors.join('; ') : null));
 
-check('schema-sitewide', 'Organization (with sameAs) + WebSite', ({ jsonld }) => {
+check('schema-sitewide', 'Organization (sameAs, logo resolves) + WebSite', ({ jsonld }) => {
   const org = jsonld.types.get('Organization');
   const missing = [];
   if (!org) missing.push('Organization');
-  else if (!Array.isArray(org.sameAs) || org.sameAs.length === 0) missing.push('Organization.sameAs empty');
+  else {
+    if (!Array.isArray(org.sameAs) || org.sameAs.length === 0) missing.push('Organization.sameAs empty');
+    const logo = typeof org.logo === 'string' ? org.logo : org.logo?.url;
+    if (!logo) missing.push('Organization.logo');
+    else if (logo.startsWith(SITE) && !resolvesInDist(new URL(logo).pathname)) missing.push(`Organization.logo 404 (${new URL(logo).pathname})`);
+  }
   if (!jsonld.types.has('WebSite')) missing.push('WebSite');
   return missing.length ? missing.join(', ') : null;
 });
