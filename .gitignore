@@ -61,7 +61,10 @@ npm-debug.log*
 .claude/
 .conductor/
 .playwright-mcp/
-coverage/
+# Test coverage output only; anchored so a route directory named
+# coverage/ (app/api/agent/v1/gsc/coverage) is not swallowed.
+/coverage/
+/apps/*/coverage/
 .idea/
 .vscode/
 
