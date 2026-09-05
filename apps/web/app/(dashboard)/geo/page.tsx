@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getGeoPrompts, getLatestGeoResults, summariseRows } from "@/lib/queries/geo";
 import { deriveGeoActions } from "@/lib/geo/actions";
+import { HowItWorks } from "@/components/dashboard/how-it-works";
+import { geoExplainer } from "@/lib/explainers";
 import { PageHead, StatusPill, Card, StatStrip, Chip, DotSep } from "@/components/ui";
 import type { AiEngine } from "@/lib/geo/ai-visibility";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
@@ -78,6 +80,7 @@ export default async function GeoPage() {
             )}
           </>
         }
+        actions={<HowItWorks explainer={geoExplainer} />}
       />
 
       <StatStrip

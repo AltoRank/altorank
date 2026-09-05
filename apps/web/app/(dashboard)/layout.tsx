@@ -14,6 +14,7 @@ import { getImpersonation } from "@/lib/auth/impersonation";
 import { ImpersonationBanner } from "@/components/dashboard/impersonation-banner";
 import { getCompletedOnboardingSteps } from "@/lib/queries/onboarding";
 import { getQuota } from "@/lib/billing/quota";
+import { siteAllowanceFrom } from "@/lib/workspaces/allowance";
 import { FeedbackWidget } from "@/components/dashboard/feedback-widget";
 import { DevToolbar } from "@/components/dashboard/dev-toolbar";
 import { getSimulation } from "@/lib/dev/simulation";
@@ -94,6 +95,10 @@ export default async function DashboardLayout({
   // Metered usage for the sidebar bar. Null limit renders nothing: unmetered
   // is not a number to fill a bar with.
   const quota = agencyId ? await getQuota(supabase, agencyId, user?.email ?? null) : null;
+  // Sites the plan allows, for the switcher's "+ Add site" row. Derived from
+  // the quota above and the list already loaded rather than queried again;
+  // `workspaces` is RLS-scoped to this agency, so its length is the count.
+  const siteAllowance = siteAllowanceFrom(quota, workspaces.length);
 
   const userName = (meta.name as string) || user?.email || "Account";
   const userInitials = (userName.match(/[A-Za-z0-9]/)?.[0] ?? "A").toUpperCase();
@@ -181,6 +186,7 @@ export default async function DashboardLayout({
           memberCount={memberCount ?? undefined}
           role={role}
           quota={quota && quota.limit !== null ? { used: quota.used, limit: quota.limit, noPlan: quota.reason === "no-plan" } : null}
+          siteAllowance={siteAllowance}
         />
         {/* No topbar. It held a breadcrumb that restated the h1 immediately
             below it, and its two live controls moved into the sidebar, where
