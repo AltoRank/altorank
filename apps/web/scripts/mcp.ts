@@ -30,7 +30,10 @@
  * Scope, honestly: this does NOT expose publishing, approval or deletion. The
  * CMS adapters need per-workspace credentials out of Supabase plus the
  * approval gate, and an agent-triggered publish that bypasses a human
- * approving it is precisely what the approval gate exists to prevent.
+ * approving it is precisely what the approval gate exists to prevent. The
+ * mutations that are here (move/remove planned keywords, find-and-replace in
+ * a draft, retry a publish a human already approved, pause/resume a site)
+ * need a key with the "write" scope and mirror the routes one-to-one.
  * scripts/SKILL.md is the agent-facing statement of the same rules.
  *
  * stdio discipline: stdout carries JSON-RPC frames and nothing else. Anything
@@ -96,14 +99,16 @@ async function fetchHomepage(domain: string): Promise<{ url: string; html: strin
 }
 
 const server = new McpServer(
-  { name: "altorank", version: "0.2.0" },
+  { name: "altorank", version: "0.3.0" },
   {
     instructions:
       "AltoRank audits sites for AI-search readiness and writes SEO drafts into a human's review queue. " +
       "Read apps/web/scripts/SKILL.md before using the account tools: preflight with altorank_whoami, pick a " +
       "workspace, check readiness, then suggest keywords and generate a draft. Every result is an envelope " +
       "{ ok, data | error, agent_guidance }; read agent_guidance first. Nothing here publishes, approves or " +
-      "deletes, and you must not try to. Account tools need ALTORANK_API_KEY (create one at /settings/api-keys).",
+      "deletes, and you must not try to; the mutation tools (reschedule/remove planned keywords, find-and-replace " +
+      "in drafts, retry a failed publish, pause/resume) need a key with the write scope and propose before they write. " +
+      "Account tools need ALTORANK_API_KEY (create one at /settings/api-keys).",
   },
 );
 
@@ -362,6 +367,172 @@ server.registerTool(
     inputSchema: {},
   },
   async () => asEnvelope(await agentRequest("/usage")),
+);
+
+// ---------------------------------------------------------------------------
+// Search Console reads: stored rows, never a Google call. ok:false when the
+// workspace has no connection, so "not connected" is never read as zero.
+// ---------------------------------------------------------------------------
+
+const daysArg = { days: z.number().int().min(7).max(90).optional().describe("Window in days, default 28.") };
+
+server.registerTool(
+  "altorank_gsc_performance",
+  {
+    title: "Search Console performance",
+    description:
+      "Clicks and impressions over the window vs the window before, daily series, top pages and queries in positions 4-15 " +
+      "(opportunities). From the stored nightly sync. Returns ok:false when Search Console is not connected - that is no data, not zero.",
+    inputSchema: { ...workspaceArg, ...daysArg },
+  },
+  async ({ workspace_id, days }) => asEnvelope(await agentRequest("/gsc/performance", { query: { workspace_id, days } })),
+);
+
+server.registerTool(
+  "altorank_gsc_cannibalization",
+  {
+    title: "Search Console cannibalisation",
+    description: "Queries where two or more of the site's pages compete, with the page Google prefers and a merge/differentiate suggestion per loser.",
+    inputSchema: {
+      ...workspaceArg,
+      ...daysArg,
+      min_impressions: z.number().int().min(1).optional().describe("Ignore queries below this many impressions; default 10."),
+      limit: z.number().int().min(1).max(50).optional(),
+    },
+  },
+  async ({ workspace_id, days, min_impressions, limit }) =>
+    asEnvelope(await agentRequest("/gsc/cannibalization", { query: { workspace_id, days, min_impressions, limit } })),
+);
+
+server.registerTool(
+  "altorank_gsc_coverage",
+  {
+    title: "Index coverage",
+    description:
+      "Every known page bucketed indexed / not_indexed / unknown from stored URL Inspection verdicts and search impressions. " +
+      "\"unknown\" is a real bucket, not \"not indexed\".",
+    inputSchema: { ...workspaceArg, ...daysArg, bucket: z.enum(["indexed", "not_indexed", "unknown"]).optional() },
+  },
+  async ({ workspace_id, days, bucket }) => asEnvelope(await agentRequest("/gsc/coverage", { query: { workspace_id, days, bucket } })),
+);
+
+server.registerTool(
+  "altorank_gsc_url_inspection",
+  {
+    title: "URL inspection (stored)",
+    description:
+      "Google's last stored verdict for one URL on the site, plus whether it was served in search. Does not call Google; " +
+      "a fresh inspection is the human's click in the editor.",
+    inputSchema: { ...workspaceArg, url: z.string().url().describe("Full https URL of a page on this site."), ...daysArg },
+  },
+  async ({ workspace_id, url, days }) => asEnvelope(await agentRequest("/gsc/url-inspection", { query: { workspace_id, url, days } })),
+);
+
+// ---------------------------------------------------------------------------
+// Mutations: need the "write" scope. Each mirrors one POST route.
+// ---------------------------------------------------------------------------
+
+server.registerTool(
+  "altorank_export_keywords",
+  {
+    title: "Export keywords",
+    description: "Every tracked keyword with volume, difficulty, cpc, status and planned_for as rows (JSON). Empty numbers are unmeasured, not 0.",
+    inputSchema: { ...workspaceArg, status: z.string().optional() },
+  },
+  async ({ workspace_id, status }) => asEnvelope(await agentRequest("/keywords/export", { query: { workspace_id, status, format: "json" } })),
+);
+
+server.registerTool(
+  "altorank_reschedule_keywords",
+  {
+    title: "Reschedule planned keywords",
+    description:
+      "Move planned (unwritten) keywords to other days: either items [{keyword_id, date}] or keyword_ids + shift_days. " +
+      "Same write as dragging on the planner. Skips keywords that are not on the plan or already written, with the reason. Needs write scope.",
+    inputSchema: {
+      ...workspaceArg,
+      items: z.array(z.object({ keyword_id: z.string().uuid(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).min(1).max(60).optional(),
+      keyword_ids: z.array(z.string().uuid()).min(1).max(60).optional(),
+      shift_days: z.number().int().min(-365).max(365).optional(),
+    },
+  },
+  async (input) => asEnvelope(await agentRequest("/keywords/bulk-reschedule", { method: "POST", body: input })),
+);
+
+server.registerTool(
+  "altorank_remove_keywords_from_plan",
+  {
+    title: "Remove keywords from the plan",
+    description:
+      "Take planned keywords off the calendar. The keywords stay tracked (marked excluded so the planner does not re-add them); " +
+      "nothing is deleted. Same as the planner's Remove. Needs write scope.",
+    inputSchema: { ...workspaceArg, keyword_ids: z.array(z.string().uuid()).min(1).max(60) },
+  },
+  async (input) => asEnvelope(await agentRequest("/keywords/bulk-remove", { method: "POST", body: input })),
+);
+
+const replaceArgs = {
+  find: z.string().min(1).max(500),
+  replace: z.string().max(2000),
+  match_case: z.boolean().optional(),
+  whole_word: z.boolean().optional(),
+  preview_only: z.boolean().optional().describe("Default true: returns the proposal and changes nothing. Send false only after the human agreed."),
+};
+
+server.registerTool(
+  "altorank_replace_in_article",
+  {
+    title: "Find and replace in a draft",
+    description:
+      "Find-and-replace in one draft's title and body. Preview by default (hits with before → after excerpts); preview_only:false writes. " +
+      "Never changes status: refused on approved, scheduled or live articles. Needs write scope.",
+    inputSchema: { article_id: z.string().uuid(), ...replaceArgs },
+  },
+  async ({ article_id, ...body }) => asEnvelope(await agentRequest(`/articles/${article_id}/replace`, { method: "POST", body })),
+);
+
+server.registerTool(
+  "altorank_bulk_replace_in_articles",
+  {
+    title: "Find and replace across drafts",
+    description:
+      "The same find-and-replace across up to 10 editable drafts in a workspace (or the given article_ids). Preview by default. " +
+      "Approved, scheduled and live articles are skipped with the reason. Needs write scope.",
+    inputSchema: { ...workspaceArg, article_ids: z.array(z.string().uuid()).min(1).max(10).optional(), ...replaceArgs },
+  },
+  async (input) => asEnvelope(await agentRequest("/articles/bulk-replace", { method: "POST", body: input })),
+);
+
+server.registerTool(
+  "altorank_retry_publish",
+  {
+    title: "Retry a failed publish",
+    description:
+      "Re-run the last FAILED publish of an article a human already approved, through the same connection. Refused unless the last " +
+      "attempt failed and the article is still approved; this is not a publish call and cannot publish a draft. Needs write scope.",
+    inputSchema: { article_id: z.string().uuid() },
+  },
+  async ({ article_id }) => asEnvelope(await agentRequest(`/articles/${article_id}/retry-publish`, { method: "POST" })),
+);
+
+server.registerTool(
+  "altorank_pause_workspace",
+  {
+    title: "Pause a site",
+    description: "Stop drafting and publishing for one site until resumed. Drafts, plan and pace are untouched. Needs write scope.",
+    inputSchema: workspaceArg,
+  },
+  async ({ workspace_id }) => asEnvelope(await agentRequest(`/workspaces/${workspace_id}/pause`, { method: "POST" })),
+);
+
+server.registerTool(
+  "altorank_resume_workspace",
+  {
+    title: "Resume a site",
+    description: "Put a hand-paused site back and re-plan its calendar from today. Cannot lift the account-wide billing pause. Needs write scope.",
+    inputSchema: workspaceArg,
+  },
+  async ({ workspace_id }) => asEnvelope(await agentRequest(`/workspaces/${workspace_id}/resume`, { method: "POST" })),
 );
 
 // No top-level await: apps/web is CJS (no "type": "module"), and tsx compiles
