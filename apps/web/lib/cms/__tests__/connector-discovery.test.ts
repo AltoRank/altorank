@@ -291,7 +291,7 @@ describe("Shopify discovery", () => {
 
   it("lists blogs with the access-token header", async () => {
     mockFetch.mockResolvedValueOnce(okJson({ blogs: [{ id: 1, title: "News", handle: "news" }] }));
-    const blogs = await listShopifyBlogs("https://s.myshopify.com/", "tok");
+    const blogs = await listShopifyBlogs("https://s.myshopify.com/", { accessToken: "tok" });
     const [url, opts] = mockFetch.mock.calls[0];
     expect(url).toBe("https://s.myshopify.com/admin/api/2025-01/blogs.json");
     expect(opts.headers["X-Shopify-Access-Token"]).toBe("tok");

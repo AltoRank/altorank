@@ -351,12 +351,29 @@ export type WordPressPluginConfig = {
   token: string;
 };
 
+/**
+ * How the connector authenticates to one store. Exactly one of the two:
+ *
+ *  - `accessToken`: the Admin API access token of a legacy custom app, shown
+ *    once in the Shopify admin. Never expires.
+ *  - `clientId` + `clientSecret`: a custom app created in the Dev Dashboard
+ *    (every new one since 1 January 2026). No token is shown; the connector
+ *    exchanges these for a 24-hour token through the client-credentials
+ *    grant and refreshes it itself.
+ *    https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens/client-credentials-grant
+ *
+ * The union makes "both" or "neither" unrepresentable in code;
+ * `shopifyCredential` in lib/cms/shopify.ts enforces the same at the edge.
+ */
+export type ShopifyCredentials =
+  | { accessToken: string; clientId?: undefined; clientSecret?: undefined }
+  | { clientId: string; clientSecret: string; accessToken?: undefined };
+
 export type ShopifyConfig = {
   type: "shopify";
   storeUrl: string;
-  accessToken: string;
   blogId?: string;
-};
+} & ShopifyCredentials;
 
 export type MagentoConfig = {
   type: "magento";

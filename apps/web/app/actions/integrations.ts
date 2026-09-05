@@ -10,7 +10,8 @@ import { deriveBlogBaseUrl } from "@/lib/cms/blog-url";
 import { assertPublishMode, DEFAULT_PUBLISH_MODE, type PublishMode } from "@/lib/cms/publish-mode";
 import { listWebflowSites, listWebflowCollections, listWebflowFields } from "@/lib/cms/webflow";
 import { listWixSites } from "@/lib/cms/wix";
-import { listShopifyBlogs } from "@/lib/cms/shopify";
+import { listShopifyBlogs, shopifyCredential, shopifyCredentialsOf } from "@/lib/cms/shopify";
+import type { ShopifyCredentials } from "@/lib/types";
 import { z } from "zod";
 
 const wordpressSchema = z.object({
@@ -31,12 +32,29 @@ const wordpressPluginSchema = z.object({
   token: z.string().regex(/^[0-9a-f]{64}$/, "Integration token must be 64 hex characters"),
 });
 
-const shopifySchema = z.object({
-  type: z.literal("shopify"),
-  storeUrl: z.string().url(),
-  accessToken: z.string().min(1),
-  blogId: z.string().optional(),
-});
+/**
+ * Two credentials, one required: a legacy custom app's Admin API token, or a
+ * Dev Dashboard app's Client ID + secret (the connector exchanges those for
+ * a 24-hour token itself). Which one, and that it is exactly one, is decided
+ * by `shopifyCredential` in lib/cms/shopify.ts - the same call the adapter
+ * makes - so the form and the publisher agree on what a valid config is.
+ */
+const shopifySchema = z
+  .object({
+    type: z.literal("shopify"),
+    storeUrl: z.string().url(),
+    accessToken: z.string().optional(),
+    clientId: z.string().optional(),
+    clientSecret: z.string().optional(),
+    blogId: z.string().optional(),
+  })
+  .superRefine((cfg, ctx) => {
+    try {
+      shopifyCredential(cfg);
+    } catch (e) {
+      ctx.addIssue({ code: "custom", message: e instanceof Error ? e.message : String(e) });
+    }
+  });
 
 const magentoSchema = z.object({
   type: z.literal("magento"),
@@ -161,6 +179,22 @@ const configSchema = z.discriminatedUnion("type", [
 ]);
 
 /**
+ * The parsed config, in the shape the adapters take.
+ *
+ * zod's view of the Shopify object has three optional credential fields; the
+ * refinement above guarantees exactly one credential is present, and this is
+ * where that guarantee becomes the `ShopifyCredentials` union: the chosen
+ * credential is kept, the other's blank fields are dropped, so a stored row
+ * never carries an empty `accessToken: ""` next to a real client secret.
+ */
+function parseConfig(config: CMSConfig): CMSConfig {
+  const parsed = configSchema.parse(config);
+  if (parsed.type !== "shopify") return parsed;
+  const { type, storeUrl, blogId } = parsed;
+  return { type, storeUrl, ...(blogId ? { blogId } : {}), ...shopifyCredentialsOf(shopifyCredential(parsed)) };
+}
+
+/**
  * Read a site's post directory off its own sitemap, for the git connect form.
  *
  * A server action because the derivation fetches the customer's site
@@ -215,9 +249,9 @@ export async function listWixSitesAction(apiKey: string, accountId: string) {
   return attempt(() => listWixSites(apiKey, accountId));
 }
 
-export async function listShopifyBlogsAction(storeUrl: string, accessToken: string) {
+export async function listShopifyBlogsAction(storeUrl: string, credentials: ShopifyCredentials) {
   await requireAuth();
-  return attempt(() => listShopifyBlogs(storeUrl, accessToken));
+  return attempt(() => listShopifyBlogs(storeUrl, credentials));
 }
 
 /**
@@ -234,7 +268,7 @@ export async function testIntegrationConfig(
 ): Promise<ListResult<true>> {
   await requireAuth();
   return attempt(async () => {
-    const parsed = configSchema.parse(config);
+    const parsed = parseConfig(config);
     const mode = publishModeSchema.parse(publishMode);
     assertPublishMode(parsed, mode);
     const test = await resolveCMSAdapter(parsed).testConnection();
@@ -258,7 +292,7 @@ export async function connectIntegration(
   await requireAuth();
 
   // Validate config
-  const parsed = configSchema.parse(config);
+  const parsed = parseConfig(config);
   const mode = publishModeSchema.parse(publishMode);
   assertPublishMode(parsed, mode);
 

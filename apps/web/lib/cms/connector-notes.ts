@@ -35,7 +35,7 @@ export const CONNECTOR_NOTES: Record<CMSConfig["type"], ConnectorNote> = {
     docLabel: "WordPress: application passwords",
   },
   shopify: {
-    text: `You must be the store owner, or staff with the "App development" permission; collaborator accounts cannot create custom apps. The store needs at least one blog, or there is nowhere to publish. The app needs only ${SHOPIFY_REQUIRED_SCOPES.join(" and ")}. Custom apps created in Shopify's Dev Dashboard (all new ones since 1 January 2026) do not show an Admin API token in the admin; they issue 24-hour tokens through a client-credentials exchange, which this connector does not perform yet. Legacy custom apps show their token once.`,
+    text: `You must be the store owner, or staff with the "App development" permission; collaborator accounts cannot create custom apps. The store needs at least one blog, or there is nowhere to publish. The app needs only ${SHOPIFY_REQUIRED_SCOPES.join(" and ")}. Custom apps created in Shopify's Dev Dashboard (all new ones since 1 January 2026) show a Client ID and Client secret rather than a token; paste those and the connector performs the client-credentials exchange itself, refreshing the 24-hour token as needed. Legacy custom apps show an Admin API access token once, which also works.`,
     docUrl: "https://help.shopify.com/en/manual/apps/app-types/custom-apps",
     docLabel: "Shopify: custom apps",
   },

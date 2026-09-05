@@ -138,7 +138,7 @@ export const PLATFORM_LABEL: Record<DetectedPlatform, string> = {
 export const PLATFORM_HINT: Record<DetectedPlatform, string> = {
   wordpress: "Publishes over the WordPress REST API. Needs an application password.",
   woocommerce: "Publishes over the WordPress REST API. Needs an application password.",
-  shopify: "Publishes to Shopify blogs. Needs an Admin API access token.",
+  shopify: "Publishes to Shopify blogs. Needs a custom app's Client ID and secret, or a legacy Admin API access token.",
   webflow: "Publishes to a Webflow CMS collection. Needs an API token and collection id.",
   ghost: "Publishes over the Ghost Admin API. Needs an Admin API key.",
   framer: "Publishes to a Framer CMS collection.",
