@@ -1,7 +1,7 @@
 ---
 import PSEO from '@/layouts/PSEO.astro';
 import Button from '@/components/shared/Button.astro';
-import { INTEGRATIONS, DOCUMENTED } from '@/data/integrations';
+import { INTEGRATIONS, DOCUMENTED, logoSvg } from '@/data/integrations';
 import { buildItemListSchema, buildBreadcrumbSchema } from '@/lib/schema';
 import { APP_NAME, SITE_URL, PRIMARY_CTA, OSS_REPO_URL } from '@/constants';
 
@@ -26,7 +26,7 @@ const structuredData = [
 
 <PSEO
   title={`Docs: Setup Guides for Every Connector`}
-  description={`Setup guides for ${APP_NAME} publishing destinations: what each connector asks for, what it never asks for, and how to revoke it.`}
+  description={`Setup guides for ${APP_NAME} publishing destinations: what each connector asks for, what approving does on that platform, and how to revoke it.`}
   breadcrumbs={breadcrumbs}
   structuredData={structuredData}
 >
@@ -37,45 +37,62 @@ const structuredData = [
       </h1>
       <p class="mb-8 text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
         Setup guides for the publishing destinations. Each one lists the exact fields the connector
-        asks for, taken from the code rather than written from memory, and says what it never asks for.
-        The product itself is open source, so the definitive answer to any &ldquo;what does it actually
-        do&rdquo; question is{' '}
+        asks for, taken from the code rather than written from memory, what approving and unpublishing
+        do on that platform, and what it never asks for. The product itself is open source, so the
+        definitive answer to any &ldquo;what does it actually do&rdquo; question is{' '}
         <a href={OSS_REPO_URL} target="_blank" rel="noopener noreferrer" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
           the repository
         </a>.
       </p>
 
       <div class="mb-8 overflow-hidden rounded-lg border border-line">
-        {DOCUMENTED.map((i, idx) => (
-          <a href={`/docs/${i.slug}`} class={`group grid gap-1 p-5 sm:grid-cols-[1fr_1.3fr] sm:items-center sm:gap-5 hover:bg-panel ${idx > 0 ? 'border-t border-line-soft' : ''}`}>
-            <div class="flex items-center gap-3">
-              <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-line bg-panel font-mono text-[11px] font-medium text-ink-2">
-                {i.code}
-              </span>
-              <span class="text-[15px] font-semibold text-ink group-hover:text-accent-ink">{i.name}</span>
-            </div>
-            <div class="text-[14px] text-ink-2">{i.auth}</div>
-          </a>
-        ))}
+        {DOCUMENTED.map((i, idx) => {
+          const logo = logoSvg(i.code);
+          return (
+            <a href={`/docs/${i.slug}`} class={`group grid gap-1 p-5 sm:grid-cols-[1fr_1.3fr] sm:items-center sm:gap-5 hover:bg-panel ${idx > 0 ? 'border-t border-line-soft' : ''}`}>
+              <div class="flex items-center gap-3">
+                <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-line bg-panel text-ink" aria-hidden="true">
+                  {logo ? (
+                    <span class="inline-flex h-[18px] w-[18px] [&>svg]:h-full [&>svg]:w-full" set:html={logo} />
+                  ) : (
+                    <span class="font-mono text-[11px] font-medium text-ink-2">{i.code}</span>
+                  )}
+                </span>
+                <span class="text-[15px] font-semibold text-ink group-hover:text-accent-ink">{i.name}</span>
+              </div>
+              <div class="text-[14px] text-ink-2">{i.auth}</div>
+            </a>
+          );
+        })}
       </div>
 
-      <div class="mb-8 rounded-lg border border-accent bg-accent-soft/40 p-5">
+      <div class="mb-4 rounded-lg border border-accent bg-accent-soft/40 p-5">
         <a href="/docs/mcp" class="text-[15.5px] font-semibold text-ink hover:text-accent-ink">MCP server: drive it from an AI agent &rarr;</a>
         <p class="mt-1.5 text-[14px] leading-relaxed text-ink-2">
-          Four tools for auditing AI readability across a roster, and no publish tool. The autopilot
-          tools ship a CLI at best.
+          Four tools for auditing AI readability across a roster, and no publish tool.
         </p>
       </div>
 
-      <p class="text-[14.5px] leading-relaxed text-ink-3">
-        Every connector we ship has a guide. {soon.map((i) => i.name).join(', ')} {soon.length === 1 ? 'is' : 'are'} shipping
-        next and {soon.length === 1 ? 'gets a guide' : 'get guides'} when {soon.length === 1 ? 'it lands' : 'they land'} &mdash;
-        see <a href="/integrations" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">the integrations page</a> for the full list.
-      </p>
+      <div class="mb-8 rounded-lg border border-line bg-panel p-5">
+        <p class="text-[15.5px] font-semibold text-ink">Command line</p>
+        <p class="mt-1.5 text-[14px] leading-relaxed text-ink-2">
+          The same readiness check runs from a terminal, from <code class="font-mono text-[13px]">apps/web</code> in the repository:
+        </p>
+        <code class="mt-2 block overflow-x-auto whitespace-pre font-mono text-[13px] text-ink">npm run readiness -- example.com</code>
+        <p class="mt-2 text-[13.5px] leading-relaxed text-ink-3">
+          It checks the site, writes the missing artifacts and says where each one goes. It does not publish anything.
+        </p>
+      </div>
+
+      {soon.length > 0 && (
+        <p class="text-[14.5px] leading-relaxed text-ink-3">
+          Shipping next: {soon.map((i) => i.name).join(', ')}. Each gets a guide when it lands.
+        </p>
+      )}
 
       <div class="mt-10 flex flex-wrap gap-2.5">
-        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
-        <Button href="/integrations" variant="secondary" size="lg">All destinations</Button>
+        <Button href={PRIMARY_CTA.href} size="sm" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/integrations" variant="secondary" size="sm">All destinations</Button>
       </div>
     </div>
   </section>

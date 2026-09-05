@@ -2,8 +2,11 @@
 import Logo from '@/components/shared/Logo.astro';
 import { APP_NAME, LEGAL_ENTITY, OSS_REPO_URL } from '@/constants';
 import { chrome, linkLabel } from '@/lib/i18n';
+import { logoSvg } from '@/data/integrations';
 
-const footerLinks = {
+// Connector links carry the two-letter code of their brand mark; the mark is
+// generated from the dashboard's icon set by scripts/extract-brand-logos.mjs.
+const footerLinks: Record<string, { label: string; href: string; logo?: string }[]> = {
   Product: [
     { label: 'How it works', href: '/#how-it-works' },
     { label: 'Features', href: '/#features' },
@@ -17,11 +20,12 @@ const footerLinks = {
   Documentation: [
     { label: 'Setup guides', href: '/docs' },
     { label: 'MCP server', href: '/docs/mcp' },
-    { label: 'WordPress', href: '/docs/wordpress' },
-    { label: 'Shopify', href: '/docs/shopify' },
-    { label: 'Webflow', href: '/docs/webflow' },
-    { label: 'Ghost', href: '/docs/ghost' },
+    { label: 'WordPress', href: '/docs/wordpress', logo: 'WP' },
+    { label: 'Shopify', href: '/docs/shopify', logo: 'SH' },
+    { label: 'Webflow', href: '/docs/webflow', logo: 'WF' },
+    { label: 'Ghost', href: '/docs/ghost', logo: 'GH' },
     { label: 'Webhook', href: '/docs/webhook' },
+    { label: 'Git / static sites', href: '/docs/git' },
     { label: 'Source code', href: OSS_REPO_URL },
   ],
   Compare: [
@@ -77,8 +81,11 @@ const year = new Date().getFullYear();
               <li>
                 <a
                   href={link.href}
-                  class="inline-flex min-h-[32px] items-center text-[14px] text-ink-2 transition-colors hover:text-ink md:min-h-0 md:text-[13px]"
+                  class="inline-flex min-h-[44px] items-center gap-2 text-[14px] text-ink-2 transition-colors hover:text-ink md:min-h-0 md:text-[13px]"
                 >
+                  {link.logo && logoSvg(link.logo) && (
+                    <span class="inline-flex h-3.5 w-3.5 shrink-0 text-ink [&>svg]:h-full [&>svg]:w-full" aria-hidden="true" set:html={logoSvg(link.logo)} />
+                  )}
                   {linkLabel(t, link.href, link.label)}
                 </a>
               </li>
@@ -102,7 +109,7 @@ const year = new Date().getFullYear();
         It also has to appear in the HTML the server returns. It does: Astro
         renders this footer at build time and the site is static, so the anchor
         is in the response body rather than added by script afterwards. */}
-    <div class="mt-10 flex flex-col items-center gap-3 border-t border-line pt-6 text-center text-xs text-ink-3 sm:flex-row sm:justify-between sm:text-left">
+    <div class="mt-10 flex flex-col items-start gap-3 border-t border-line pt-6 text-xs text-ink-3 sm:flex-row sm:items-center sm:justify-between">
       <p>&copy; {year} {APP_NAME}. {t.rights}</p>
       <p>
         {t.productOf}{' '}
