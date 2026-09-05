@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { z } from "zod";
+import { assertEditorialStatus } from "@/lib/articles/editorial-status";
 
 const createArticleSchema = z.object({
   workspace_id: z.string().uuid(),
@@ -62,6 +63,10 @@ export async function updateArticle(
   },
 ) {
   await requireAuth();
+  // The editor and the row menu may move an article between editorial states
+  // only. Approval, scheduling and publishing have their own actions and the
+  // gate in lib/publishing/core.ts trusts status = "approved".
+  if (data.status !== undefined) assertEditorialStatus(data.status);
   const supabase = await createClient();
   const { error } = await supabase
     .from("articles")
