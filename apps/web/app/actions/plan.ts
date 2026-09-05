@@ -10,12 +10,13 @@
 // well as the row id: the id alone is enough for RLS (agency scope) and not
 // enough for the page (workspace scope). See AGENTS.md.
 //
-// Nothing here publishes or approves anything.
+// Nothing here publishes or approves anything. `writeNow` writes, into review.
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
-import { countScheduled, ensureQuestionsFor, schedulePlan, PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
+import { countScheduled, ensureQuestionsFor, fulfilPlannedEntry, schedulePlan, PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
+import { generateArticle } from "@/lib/content/generate";
 import { parseStoredQuestions, type QualityQuestion } from "@/lib/keywords/questions";
 import { isExpectedLength } from "@/lib/keywords/taxonomy";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
@@ -180,4 +181,99 @@ export async function planMonth(): Promise<{ planned: number; scheduled: number;
   const planned = await schedulePlan(supabase, workspaceId, pace, new Date(), { mode: "top-up" });
   refresh();
   return { planned: planned.length, scheduled: await countScheduled(supabase, workspaceId), max: PLAN_MAX_ENTRIES };
+}
+
+/**
+ * Write a planned keyword's article now rather than on its day.
+ *
+ * Same path as the cron and the "New article" modal - `generateArticle`, with
+ * its quota gate - and the same destination: the draft lands in review, never
+ * anywhere else. The entry is linked to the article only once generation
+ * succeeds, so a failed run leaves the keyword planned and the button live;
+ * while the writer works, the page finds the draft by keyword and shows the
+ * card as writing.
+ *
+ * Refused when the entry already has an article, when a draft for the keyword
+ * is already being written, and - inside `generateArticle` - when the free
+ * draft is used. A paid plan at its limit is billed as overage, exactly as a
+ * manual generation is.
+ */
+export async function writeNow(entryId: string): Promise<{ articleId: string }> {
+  const { supabase, workspaceId } = await scoped();
+  const { data: entry } = await supabase
+    .from("calendar_entries")
+    .select("id, keyword_id, keyword, article_id")
+    .eq("id", entryId)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  if (!entry) throw new Error("This entry is not on the plan.");
+  if (entry.article_id) throw new Error("This article has already been written; open it from the card.");
+  const term = (entry.keyword as string | null)?.trim();
+  if (!term) throw new Error("This entry has no keyword to write.");
+  const keywordId = (entry.keyword_id as string | null) ?? undefined;
+
+  // One draft at a time per keyword: a second click while the first run is
+  // still writing would spend the quota twice for the same article.
+  const inFlight = await draftingArticleFor(supabase, workspaceId, keywordId, term);
+  if (inFlight) throw new Error("This article is already being written.");
+
+  const { data: auth } = await supabase.auth.getUser();
+  const callerEmail = auth.user?.email ?? undefined;
+
+  const result = await generateArticle({
+    supabase,
+    workspaceId,
+    keyword: term,
+    keywordId,
+    // A person asked for it, from a screen. Not machine-chosen, and not
+    // sessionless: the quota gate sees the caller, so an operator writing
+    // from the planner is not metered as a customer would be.
+    autonomous: false,
+    callerEmail,
+    // Research is over, the model is writing. Stamp the phase on the running
+    // job so the card can say which half of the wait this is.
+    onResearch: () => {
+      void markDraftingPhase(supabase, workspaceId, keywordId, term);
+    },
+  });
+
+  await fulfilPlannedEntry(supabase, entry.id as string, result.articleId);
+  refresh();
+  revalidatePath("/articles");
+  return { articleId: result.articleId };
+}
+
+/** The draft being written for a keyword in this workspace, if any. */
+async function draftingArticleFor(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  workspaceId: string,
+  keywordId: string | undefined,
+  term: string,
+): Promise<string | null> {
+  let q = supabase
+    .from("articles")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("status", "drafting")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  q = keywordId ? q.eq("keyword_id", keywordId) : q.ilike("keyword", term.replace(/[\\%_]/g, (c) => `\\${c}`));
+  const { data } = await q.maybeSingle();
+  return (data?.id as string | undefined) ?? null;
+}
+
+async function markDraftingPhase(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  workspaceId: string,
+  keywordId: string | undefined,
+  term: string,
+): Promise<void> {
+  const articleId = await draftingArticleFor(supabase, workspaceId, keywordId, term);
+  if (!articleId) return;
+  await supabase
+    .from("generation_jobs")
+    .update({ result: { phase: "drafting" } })
+    .eq("workspace_id", workspaceId)
+    .eq("article_id", articleId)
+    .eq("status", "running");
 }
