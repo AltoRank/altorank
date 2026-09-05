@@ -23,6 +23,8 @@ import {
   SearchPerformanceBlock,
   describeChange,
 } from "@/components/dashboard/gsc-blocks";
+import { getTrafficValue } from "@/lib/queries/value";
+import { describeOrganicValue, formatOrganicValue } from "@/lib/analytics/value";
 import { getBingSummary } from "@/lib/queries/bing";
 import { PageHead, DotSep, StatusPill, Avatar, Icons, Button, Chip, Card, StatStrip, ConnectPrompt } from "@/components/ui";
 import { ClientActions } from "@/components/dashboard/client-actions";
@@ -78,7 +80,7 @@ export default async function DashboardPage() {
   if (scopeId) plannedQuery = plannedQuery.eq("workspace_id", scopeId);
 
   const now = new Date();
-  const [workspaces, allArticles, recent, gscRows, keywords, { count: gscCount }, bing, cmsRes, { count: plannedEntries }, yields, profileRes, health, knownPages, shareFacts] =
+  const [workspaces, allArticles, recent, gscRows, keywords, { count: gscCount }, bing, cmsRes, { count: plannedEntries }, yields, profileRes, health, knownPages, shareFacts, value] =
     await Promise.all([
       getWorkspaces(),
       getArticles(scopeId ?? undefined),
@@ -103,6 +105,9 @@ export default async function DashboardPage() {
       scopeId ? knownPagesFor(scopeId) : Promise.resolve(null),
       // The share card: measured facts for this site, or nothing to share.
       scopeId ? getShareCardFacts(scopeId) : Promise.resolve(null),
+      // The same clicks as the chart, priced. The one figure on this page
+      // that is an estimate, and its label and tooltip say so.
+      getTrafficValue(scopeId ?? undefined),
     ]);
   const traffic = searchPerformance(gscRows, now);
   const bestPages = scopeId ? topPages(gscRows, now) : [];
@@ -217,6 +222,25 @@ export default async function DashboardPage() {
                   />
                 ),
             deltaType: traffic.clicks.changePct != null && traffic.clicks.changePct > 0 ? "pos" : undefined,
+          },
+          {
+            label: "Est. traffic value",
+            // Dollars written the way the scoped site's locale writes them;
+            // the all-sites view has no single locale and uses English.
+            value: formatOrganicValue(value.value, scopeId ? wsMap.get(scopeId)?.language : "en"),
+            hint: describeOrganicValue(value, value.days),
+            // What the number leaves out, in the same breath. An estimate
+            // that covers a fifth of the clicks must not be read as the whole.
+            delta:
+              value.value === null
+                ? value.clicks > 0
+                  ? "no cost-per-click on file yet"
+                  : traffic.hasData
+                    ? "no priced clicks yet"
+                    : "needs Search Console"
+                : value.coverage === null
+                  ? "priced, no clicks yet"
+                  : `covers ${Math.round(value.coverage * 100)}% of ${value.clicks.toLocaleString()} clicks`,
           },
           {
             label: "Keywords tracked",

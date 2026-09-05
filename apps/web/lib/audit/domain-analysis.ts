@@ -21,7 +21,7 @@ import { runAgentReadiness, type ReadinessResult } from "./agent-readiness";
 import { crawlSite, usablePages } from "./crawler";
 import { runAuditChecks, calculateAuditScore } from "./checks";
 import { fetchPageSpeedDetailed } from "./pagespeed";
-import { discoverKeywords, discoverKeywordsFromSeeds, type DiscoveredKeyword } from "@/lib/seo/keywords";
+import { discoverKeywords, discoverKeywordsFromSeeds, type DiscoveredKeyword, storedCpc } from "@/lib/seo/keywords";
 import { profileIsUsable, seedPhrasesFromPages, scoreRelevance } from "@/lib/seo/topical-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
@@ -406,6 +406,7 @@ export async function analyseDomain(options: {
             term: c.k.keyword,
             volume: c.k.volume,
             difficulty: c.k.difficulty,
+            cpc: storedCpc(c.k.cpc),
             intent: c.k.intent ?? classifyIntent(c.k.keyword, options.locale ?? "en").intent,
             status: "new",
             // The rank is already the provenance: 0 is ranked_keywords, 1 the
@@ -420,7 +421,6 @@ export async function analyseDomain(options: {
             source_type:
               c.rank === 0 ? "ranked" : c.rank === 1 ? "competitor" : c.rank === 2 ? "profile" : "ads",
             source_ref: c.rank === 1 ? c.k.competitor ?? null : c.rank === 2 ? "profile" : null,
-            cpc: typeof c.k.cpc === "number" && Number.isFinite(c.k.cpc) ? c.k.cpc : null,
           }));
         if (rows.length) {
           const { data: inserted } = await supabase.from("keywords").insert(rows).select("id, term");

@@ -391,9 +391,10 @@ export async function generateArticle(
      * Best-effort on purpose: enrichment must never take the draft down with
      * it, and null remains the honest value when the lookup fails.
      */
-    let facts: { volume: number | null; difficulty: number | null } = {
+    let facts: { volume: number | null; difficulty: number | null; cpc: number | null } = {
       volume: selection?.volume ?? null,
       difficulty: selection?.difficulty ?? null,
+      cpc: null,
     };
     if (facts.volume === null && facts.difficulty === null && hasDataForSEOCredentials()) {
       try {
@@ -408,6 +409,7 @@ export async function generateArticle(
             term: keyword,
             volume: facts.volume,
             difficulty: facts.difficulty,
+            cpc: facts.cpc,
             intent: research.intent.intent,
             status: "planned",
             // Provenance only for a row this call creates. An existing row
