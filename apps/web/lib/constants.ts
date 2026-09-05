@@ -24,6 +24,14 @@ export type NavItem = {
   tagNew?: boolean;
   /** Built but not ready to be relied on: shown, labelled, not clickable. */
   soon?: boolean;
+  /** Active only on this exact path, not on paths beneath it. */
+  exact?: boolean;
+  /**
+   * Sub-items rendered indented under this one, expanded by default and
+   * collapsible (the shape Outrank uses for its Articles group). The parent
+   * row toggles; its href is where the collapsed rail sends a click.
+   */
+  children?: readonly NavItem[];
 };
 
 export const DASHBOARD_NAV: NavGroup[] = [
@@ -36,19 +44,36 @@ export const DASHBOARD_NAV: NavGroup[] = [
   {
     group: "Content",
     items: [
-      // Review is the first thing that wants attention, so it is a state of
-      // Articles rather than a section beside it (2026-09-02).
-      { id: "articles", label: "Articles", href: "/articles", icon: "articles" },
-      { id: "calendar", label: "Calendar", href: "/content", icon: "calendar" },
-      // Rewrites of pages that already rank, each waiting for a yes.
-      { id: "improvements", label: "Improvements", href: "/improvements", icon: "refresh" },
-      { id: "keywords", label: "Keywords", href: "/keywords", icon: "keywords" },
-      { id: "voice", label: "Brand Voice", href: "/voice", icon: "voice" },
-      { id: "linking", label: "Linking", href: "/linking", icon: "link" },
-      // Under "Agency" until 2026-08-30, which is exactly backwards:
-      // connecting a CMS is onboarding step 4 for a solo founder, the least
-      // agency-specific job in the product.
-      { id: "integrations", label: "Integrations", href: "/connect", icon: "integrations" },
+      // One expandable "Articles" entry with the pipeline under it, in the
+      // order the work happens: plan, improve, see what was written, then the
+      // inputs (keywords, voice, links, CMS) and the settings that shape it.
+      // Re-assessed against Outrank's sidebar on 2026-09-05: its Articles
+      // group nests Content Planner, Improvements, Content History, Articles
+      // Settings, Integrations and Linking Configuration; a flat list of eight
+      // siblings hid that these are one workflow.
+      {
+        id: "articles-group",
+        label: "Articles",
+        href: "/content",
+        icon: "articles",
+        children: [
+          { id: "calendar", label: "Content planner", href: "/content", icon: "calendar" },
+          // Rewrites of pages that already rank, each waiting for a yes.
+          { id: "improvements", label: "Improvements", href: "/improvements", icon: "refresh" },
+          // Review is the first thing that wants attention, so it is a state of
+          // Articles rather than a section beside it (2026-09-02).
+          { id: "articles", label: "Content history", href: "/articles", icon: "articles" },
+          { id: "keywords", label: "Keywords", href: "/keywords", icon: "keywords" },
+          { id: "voice", label: "Brand voice", href: "/voice", icon: "voice" },
+          { id: "linking", label: "Linking", href: "/linking", icon: "link" },
+          // Under "Agency" until 2026-08-30, which is exactly backwards:
+          // connecting a CMS is onboarding step 4 for a solo founder, the least
+          // agency-specific job in the product.
+          { id: "integrations", label: "Integrations", href: "/connect", icon: "integrations" },
+          // The wizard's step-4 screen, permanently: nothing is onboarding-only.
+          { id: "article-settings", label: "Article settings", href: "/settings/articles", icon: "settings" },
+        ],
+      },
     ],
   },
   {
@@ -75,7 +100,10 @@ export const DASHBOARD_NAV: NavGroup[] = [
       // The roster is account management, not a daily section: the sidebar
       // switcher is where a workspace is chosen (2026-09-02).
       { id: "workspaces", label: "Your sites", href: "/workspaces", icon: "clients" },
-      { id: "settings", label: "Settings", href: "/settings", icon: "settings" },
+      // General settings. The article-shaped tabs are reached from the
+      // Articles group above, so this entry stays exact: it must not light up
+      // while someone is on Article settings under Articles.
+      { id: "settings", label: "Settings", href: "/settings", icon: "settings", exact: true },
     ],
   },
   // Its own group, so an operator can see at a glance that this is staff
