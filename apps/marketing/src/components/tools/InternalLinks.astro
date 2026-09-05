@@ -1,0 +1,127 @@
+---
+import ToolShell from './ToolShell.astro';
+import Button from '@/components/shared/Button.astro';
+---
+<ToolShell label="Internal link checker">
+  <div class="grid gap-4 md:grid-cols-[1fr_1.2fr]">
+    <div class="flex flex-col gap-3">
+      <div>
+        <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="il-url">Page URL</label>
+        <input id="il-url" class="min-h-11 w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft" value="https://example.com/blog/project-brief-template" />
+        <p class="mt-1 text-[12px] text-ink-3">Used to resolve relative links and decide what counts as internal.</p>
+      </div>
+      <div>
+        <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="il-html">Page HTML</label>
+        <textarea id="il-html" rows="9" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 font-mono text-[12.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft" placeholder="View the page source, select all, paste."><article>
+<p>Start with our <a href="/blog/what-is-a-project-brief">guide to project briefs</a>, then use the <a href="/tools/brief-template">brief template</a>.</p>
+<p>For the full method, <a href="/blog/what-is-a-project-brief">click here</a>. You can also <a href="/blog/project-charter">read more</a> about charters.</p>
+<p>Compare tools on <a href="https://example.org/reviews" rel="nofollow">this external review site</a> or <a href="/pricing">see pricing</a>.</p>
+<p><a href="/blog/project-brief-template">Project brief template</a> is the page you are on. <a href="#faq">Jump to FAQ</a>.</p>
+<a href="/contact"><img src="/cta.png"></a>
+</article></textarea>
+      </div>
+    </div>
+    <div>
+      <div class="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {[['total','Links'],['internal','Internal'],['external','External'],['generic','Generic anchors'],['dup','Repeated targets'],['flags','Other flags']].map(([k,label]) => (
+          <div class="rounded-lg border border-line bg-bg p-3">
+            <div class="text-[20px] font-semibold leading-none tracking-[-0.02em] text-ink" data-il={`n-${k}`}>0</div>
+            <div class="mt-1.5 text-[12px] text-ink-3">{label}</div>
+          </div>
+        ))}
+      </div>
+      <div class="mb-2 flex items-center justify-between gap-3">
+        <p class="text-[13px] font-medium text-ink-2">Internal links, in page order</p>
+        <Button variant="secondary" size="sm" data-il="copy">Copy as CSV</Button>
+      </div>
+      <div class="max-h-[420px] overflow-auto rounded-lg border border-line bg-bg" data-il="out"></div>
+    </div>
+  </div>
+  <p class="mt-3 text-[12.5px] leading-relaxed text-ink-3">
+    An anchor is the one sentence a crawler and a reader both get about the page behind it. &ldquo;Click
+    here&rdquo; wastes it. Two different anchors pointing at the same page is usually fine; the same
+    anchor pointing at two different pages is the one that confuses everyone.
+  </p>
+</ToolShell>
+
+<script>
+  // DOMParser does the parsing, so the pasted HTML is never executed. What is
+  // flagged: generic anchors, image links with no alt, links to the page itself,
+  // fragment-only links, targets linked more than once, and one anchor text
+  // used for two different targets. Internal means same host as the page URL.
+  function initInternalLinks() {
+    const urlIn = document.getElementById('il-url') as HTMLInputElement | null;
+    const htmlIn = document.getElementById('il-html') as HTMLTextAreaElement | null;
+    const out = document.querySelector('[data-il="out"]');
+    if (!urlIn || !htmlIn || !out) return;
+    const set = (k: string, v: string) => { const el = document.querySelector(`[data-il="n-${k}"]`); if (el) el.textContent = v; };
+    const esc = (x: string) => x.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
+    const GENERIC = new Set(['click here', 'here', 'read more', 'learn more', 'more', 'this', 'this page', 'this article', 'link', 'this link', 'website', 'continue reading', 'see more', 'find out more', 'check it out']);
+    let csv = '';
+    const render = () => {
+      let base: URL | null = null;
+      try { base = new URL(urlIn.value.trim()); } catch { base = null; }
+      const doc = new DOMParser().parseFromString(htmlIn.value, 'text/html');
+      const anchors = [...doc.querySelectorAll('a[href]')];
+      type Row = { anchor: string; href: string; path: string; internal: boolean; flags: string[] };
+      const rows: Row[] = [];
+      let external = 0;
+      for (const a of anchors) {
+        const rawHref = (a.getAttribute('href') ?? '').trim();
+        if (!rawHref || /^(mailto|tel|javascript):/i.test(rawHref)) continue;
+        const text = (a.textContent ?? '').replace(/\s+/g, ' ').trim();
+        const img = a.querySelector('img');
+        const anchor = text || (img ? (img.getAttribute('alt')?.trim() ? `[image: ${img.getAttribute('alt')!.trim()}]` : '') : '');
+        const flags: string[] = [];
+        let resolved: URL | null = null;
+        try { resolved = base ? new URL(rawHref, base) : new URL(rawHref); } catch { resolved = null; }
+        const internal = !!resolved && !!base && resolved.host === base.host;
+        if (resolved && !internal) { external++; continue; }
+        if (rawHref.startsWith('#')) flags.push('fragment only');
+        if (!anchor) flags.push(img ? 'image link, no alt' : 'empty anchor');
+        else if (GENERIC.has(anchor.toLowerCase().replace(/[.!»›→]+$/g, '').trim())) flags.push('generic anchor');
+        if (base && resolved && !rawHref.startsWith('#') && resolved.pathname.replace(/\/$/, '') === base.pathname.replace(/\/$/, '')) flags.push('links to itself');
+        if ((a.getAttribute('rel') ?? '').includes('nofollow')) flags.push('nofollow');
+        const path = resolved ? resolved.pathname + resolved.search + resolved.hash : rawHref;
+        rows.push({ anchor, href: rawHref, path, internal, flags });
+      }
+      // Repeated targets, and one anchor for two targets.
+      const byTarget = new Map<string, number>();
+      const byAnchor = new Map<string, Set<string>>();
+      rows.forEach((r) => {
+        const key = r.path.replace(/#.*$/, '').replace(/\/$/, '') || '/';
+        if (!r.flags.includes('fragment only')) byTarget.set(key, (byTarget.get(key) ?? 0) + 1);
+        if (r.anchor) { const k = r.anchor.toLowerCase(); if (!byAnchor.has(k)) byAnchor.set(k, new Set()); byAnchor.get(k)!.add(key); }
+      });
+      let dup = 0;
+      rows.forEach((r) => {
+        const key = r.path.replace(/#.*$/, '').replace(/\/$/, '') || '/';
+        if ((byTarget.get(key) ?? 0) > 1 && !r.flags.includes('fragment only')) { r.flags.push('target linked ' + byTarget.get(key) + '×'); }
+        if (r.anchor && (byAnchor.get(r.anchor.toLowerCase())?.size ?? 0) > 1) r.flags.push('same anchor, different target');
+      });
+      dup = [...byTarget.values()].filter((n) => n > 1).length;
+      const generic = rows.filter((r) => r.flags.includes('generic anchor')).length;
+      const other = rows.filter((r) => r.flags.some((f) => !['generic anchor', 'nofollow'].includes(f) && !f.startsWith('target linked'))).length;
+      set('total', String(rows.length + external)); set('internal', String(rows.length)); set('external', String(external));
+      set('generic', String(generic)); set('dup', String(dup)); set('flags', String(other));
+      if (!anchors.length) { out.innerHTML = '<p class="p-5 text-[13.5px] text-ink-3">Paste the HTML of a page to list its links.</p>'; csv = ''; return; }
+      if (!rows.length) { out.innerHTML = '<p class="p-5 text-[13.5px] text-ink-3">No internal links found. Check that the page URL host matches the links.</p>'; csv = ''; return; }
+      out.innerHTML = rows.map((r, i) => `<div class="${i ? 'border-t border-line-soft' : ''} p-3">
+        <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <span class="text-[13.5px] font-medium text-ink">${r.anchor ? esc(r.anchor) : '<span class="italic text-ink-3">no anchor text</span>'}</span>
+          <code class="font-mono text-[11.5px] text-ink-3 break-all">${esc(r.path)}</code>
+        </div>
+        ${r.flags.length ? `<div class="mt-1.5 flex flex-wrap gap-1.5">${r.flags.map((f) => `<span class="rounded-md border ${f === 'nofollow' || f.startsWith('target linked') ? 'border-line text-ink-3' : 'border-[oklch(0.85_0.08_75)] bg-[oklch(0.97_0.03_75)] text-[oklch(0.45_0.1_75)]'} px-1.5 py-0.5 text-[11px]">${esc(f)}</span>`).join('')}</div>` : ''}
+      </div>`).join('');
+      csv = ['anchor,path,flags', ...rows.map((r) => `"${r.anchor.replace(/"/g, '""')}","${r.path.replace(/"/g, '""')}","${r.flags.join('; ')}"`)].join('\n');
+    };
+    [urlIn, htmlIn].forEach((el) => el.addEventListener('input', render));
+    const copy = document.querySelector('[data-il="copy"]') as HTMLButtonElement | null;
+    copy?.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(csv); copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy as CSV'; }, 1400); } catch { copy.textContent = 'Select and copy'; }
+    });
+    render();
+  }
+  initInternalLinks();
+  document.addEventListener('astro:page-load', initInternalLinks);
+</script>
