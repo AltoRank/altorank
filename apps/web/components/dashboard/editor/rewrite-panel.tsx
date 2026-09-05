@@ -1,24 +1,29 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Icons } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import { applyHunks } from "@/lib/editor/proposals";
-import { HtmlPreview } from "./html-preview";
+import { cn, plural } from "@/lib/utils";
+import { applyHunks, decideAll, keptSummary, proposeHunks, reviewableHunks } from "@/lib/editor/proposals";
+import { changeReport, followUpChips, reportHeadline, type ChangeReport } from "@/lib/editor/rewrite-report";
+import { normalizeBlock } from "@/lib/refresh/hunks";
+import type { Hunk, HunkDecision } from "@/lib/refresh/types";
+import { DecideAllButtons, KeptCounter } from "@/components/dashboard/review/hunk-controls";
+import { RewriteHunkList } from "./rewrite-review";
 
 // ---------------------------------------------------------------------------
 // "Rewrite this article": the chat panel on the left
 // ---------------------------------------------------------------------------
 //
-// One instruction in, the whole article back as a proposal. The stream shows
-// the plan line and then progress as text arrives; when it completes the
-// panel offers "Replace article" and "Discard" with the model's own
-// three-line account of what changed. Nothing is written: Replace hands the
-// HTML to the editor through `applyHunks` (the hook for hunk-level
-// Keep/Reject, see lib/editor/proposals.ts), and Save is still the only
-// commit.
+// One instruction in, the whole article back as a proposal, reviewed one
+// block at a time. The stream shows the plan line and then progress as text
+// arrives; when it completes the panel diffs the proposal against the article
+// as sent (the refresh engine's block hunks) and opens on "N / N kept".
+// Keep and Reject work per block or all at once; ∧ ∨ walk the changed
+// blocks. Apply hands the editor only the kept hunks, staged: Save is still
+// the only write. Then the panel reports what changed, built from the kept
+// hunks, and offers the next instruction as chips.
 
 export const REWRITE_CHIPS = [
   "Make the intro punchier and more engaging",
@@ -27,12 +32,21 @@ export const REWRITE_CHIPS = [
   "Tighten the whole article and cut fluff",
 ] as const;
 
-type Phase = "idle" | "planning" | "writing" | "done";
+type Phase = "idle" | "planning" | "writing" | "review" | "applied";
+
+interface Proposal {
+  html: string;
+  changes: string[];
+  instruction: string;
+  /** The article as sent, which the hunks are against. */
+  before: string;
+}
 
 export function RewritePanel({
   articleId,
   getHtml,
   onReplace,
+  onReviewingChange,
   className,
 }: {
   articleId: string;
@@ -40,15 +54,40 @@ export function RewritePanel({
   getHtml: () => string;
   /** The editor swaps the body for this HTML (staged, not saved). */
   onReplace: (html: string) => void;
+  /** A review is open: the editor may give the panel more room. */
+  onReviewingChange?: (reviewing: boolean) => void;
   className?: string;
 }) {
   const [prompt, setPrompt] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [plan, setPlan] = useState<string | null>(null);
   const [streamedWords, setStreamedWords] = useState(0);
-  const [proposal, setProposal] = useState<{ html: string; changes: string[]; instruction: string } | null>(null);
-  const [showPreview, setShowPreview] = useState(false);
+  const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [hunks, setHunks] = useState<Hunk[]>([]);
+  const [decisions, setDecisions] = useState<Record<string, HunkDecision>>({});
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [compareId, setCompareId] = useState<string | null>(null);
+  const [report, setReport] = useState<ChangeReport | null>(null);
+  const [chips, setChips] = useState<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const reviewing = phase === "review";
+  useEffect(() => {
+    onReviewingChange?.(reviewing);
+  }, [reviewing, onReviewingChange]);
+
+  const reviewable = useMemo(() => reviewableHunks(hunks), [hunks]);
+  const summary = useMemo(() => keptSummary(hunks, decisions), [hunks, decisions]);
+
+  const reset = useCallback(() => {
+    setProposal(null);
+    setHunks([]);
+    setDecisions({});
+    setFocusedId(null);
+    setCompareId(null);
+    setPhase("idle");
+  }, []);
 
   const send = useCallback(
     async (instruction: string) => {
@@ -63,9 +102,14 @@ export function RewritePanel({
       const controller = new AbortController();
       abortRef.current = controller;
       setProposal(null);
+      setHunks([]);
+      setDecisions({});
+      setFocusedId(null);
+      setCompareId(null);
+      setReport(null);
+      setChips([]);
       setStreamedWords(0);
       setPlan(null);
-      setShowPreview(false);
       setPhase("planning");
       setPrompt("");
 
@@ -107,8 +151,15 @@ export function RewritePanel({
               acc += data.text ?? "";
               setStreamedWords(acc.replace(/<[^>]+>/g, " ").split(/\s+/).filter(Boolean).length);
             } else if (data.type === "complete") {
-              setProposal({ html: data.html ?? "", changes: data.changes ?? [], instruction: text });
-              setPhase("done");
+              const proposed = data.html ?? "";
+              const next = proposeHunks(html, proposed);
+              const open = reviewableHunks(next);
+              setProposal({ html: proposed, changes: data.changes ?? [], instruction: text, before: html });
+              setHunks(next);
+              // Opens on "N / N kept", as the reviewer asked for the rewrite.
+              setDecisions(decideAll(next, "accepted"));
+              setFocusedId(open[0]?.id ?? null);
+              setPhase("review");
               finished = true;
             } else if (data.type === "error") {
               throw new Error(data.error ?? "Rewrite failed");
@@ -128,7 +179,49 @@ export function RewritePanel({
     [articleId, getHtml],
   );
 
+  const decide = useCallback((id: string, d: HunkDecision) => {
+    setDecisions((prev) => ({ ...prev, [id]: d }));
+  }, []);
+
+  const scrollTo = useCallback((id: string) => {
+    setFocusedId(id);
+    listRef.current?.querySelector(`[data-hunk-id="${id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, []);
+
+  const step = useCallback(
+    (dir: 1 | -1) => {
+      if (reviewable.length === 0) return;
+      const at = reviewable.findIndex((h) => h.id === focusedId);
+      const next = at < 0 ? 0 : (at + dir + reviewable.length) % reviewable.length;
+      scrollTo(reviewable[next].id);
+    },
+    [reviewable, focusedId, scrollTo],
+  );
+
+  const apply = useCallback(() => {
+    if (!proposal) return;
+    // The hunks are against the article as sent. If it changed since, applying
+    // them would overwrite whatever was typed in between.
+    if (normalizeBlock(getHtml()) !== normalizeBlock(proposal.before)) {
+      toast.error("The article changed while this rewrite was open. Discard it and ask again.");
+      return;
+    }
+    const r = changeReport(hunks, decisions, proposal.changes, proposal.before);
+    if (r.kept > 0) {
+      onReplace(applyHunks(hunks, decisions));
+      toast.success(`Applied ${r.kept} of ${plural(r.total, "change")}. Save to keep it.`);
+    }
+    setReport(r);
+    setChips(followUpChips(hunks, decisions));
+    setHunks([]);
+    setDecisions({});
+    setFocusedId(null);
+    setCompareId(null);
+    setPhase("applied");
+  }, [proposal, hunks, decisions, getHtml, onReplace]);
+
   const busy = phase === "planning" || phase === "writing";
+  const focusedIndex = reviewable.findIndex((h) => h.id === focusedId);
 
   return (
     <aside className={cn("flex min-h-0 flex-col bg-panel", className)}>
@@ -142,18 +235,34 @@ export function RewritePanel({
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto scroll px-4 py-3">
-        {phase === "idle" && !proposal && (
+      {/* Decision bar: the one number a review is about, and the bulk moves. */}
+      {reviewing && (
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-line bg-bg px-3 py-2 text-[12px]">
+          <KeptCounter kept={summary.kept} total={summary.total} className="font-mono tabular-nums font-medium text-[12.5px]" />
+          <div className="ml-auto flex items-center gap-0.5">
+            <DecideAllButtons onDecideAll={(d) => setDecisions(decideAll(hunks, d))} disabled={reviewable.length === 0} />
+            <Button size="sm" variant="ghost" onClick={() => step(-1)} disabled={reviewable.length === 0} aria-label="Previous change" title="Previous change">
+              <Icons.caretDown size={12} className="rotate-180" />
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => step(1)} disabled={reviewable.length === 0} aria-label="Next change" title="Next change">
+              <Icons.caretDown size={12} />
+            </Button>
+          </div>
+          {reviewable.length > 0 && focusedIndex >= 0 && (
+            <span className="w-full font-mono text-[10.5px] text-ink-4">
+              change {focusedIndex + 1} of {reviewable.length}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div ref={listRef} className="flex-1 overflow-y-auto scroll px-4 py-3">
+        {phase === "idle" && (
           <div className="flex flex-col gap-1.5">
             {REWRITE_CHIPS.map((chip) => (
-              <button
-                key={chip}
-                type="button"
-                onClick={() => send(chip)}
-                className="rounded-[8px] border border-line bg-bg px-3 py-2 text-left text-[12.5px] text-ink-2 hover:border-accent-soft hover:bg-accent-soft/40 hover:text-ink"
-              >
+              <Chip key={chip} onClick={() => send(chip)}>
                 {chip}
-              </button>
+              </Chip>
             ))}
           </div>
         )}
@@ -165,7 +274,7 @@ export function RewritePanel({
                 {proposal.instruction}
               </div>
             )}
-            {plan && (
+            {plan && phase !== "applied" && (
               <div className="flex items-start gap-1.5 text-[12px] text-ink-3">
                 <Icons.sparkle size={12} className={cn("mt-0.5 shrink-0 text-accent-ink", busy && "animate-pulse")} />
                 <span className="italic">{plan}</span>
@@ -179,56 +288,85 @@ export function RewritePanel({
                 </div>
               </div>
             )}
-            {proposal && (
+
+            {reviewing && proposal && (
+              <>
+                {reviewable.length === 0 ? (
+                  <div className="rounded-[8px] border border-line bg-bg p-2.5 text-[12.5px] text-ink-3">
+                    The rewrite came back the same as the article, block for block. Nothing to keep or reject.
+                  </div>
+                ) : (
+                  <p className="text-[11.5px] leading-snug text-ink-3">
+                    {plural(reviewable.length, "block")} changed. Each shows what Apply would put in the article; reject one to keep the
+                    original there.
+                  </p>
+                )}
+                <RewriteHunkList
+                  hunks={hunks}
+                  decisions={decisions}
+                  focusedId={focusedId}
+                  compareId={compareId}
+                  onDecide={decide}
+                  onFocus={setFocusedId}
+                  onCompare={setCompareId}
+                />
+              </>
+            )}
+
+            {phase === "applied" && report && (
               <div className="rounded-[8px] border border-accent-soft bg-bg p-2.5">
                 <div className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-accent-ink">What changed</div>
-                {proposal.changes.length ? (
-                  <ul className="mb-2 flex flex-col gap-1 text-[12.5px] text-ink-2">
-                    {proposal.changes.map((c, i) => (
+                <p className="mb-1.5 text-[12.5px] text-ink">{reportHeadline(report)}</p>
+                {report.facts.length > 0 && (
+                  <p className="mb-1.5 text-[12px] text-ink-2">{report.facts.join(" · ")}.</p>
+                )}
+                {report.sections.length > 0 && report.kept > 0 && (
+                  <ul className="mb-1.5 flex flex-col gap-0.5 text-[12px] text-ink-2">
+                    {report.sections.map((s, i) => (
+                      <li key={i} className="flex gap-1.5">
+                        <span className="text-ink-4">•</span>
+                        <span>
+                          <span className="text-ink-3">{s.heading ?? "Intro"}:</span> {s.kept} of {plural(s.total, "change")} kept
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {report.notes.length > 0 && (
+                  <ul className="mb-1.5 flex flex-col gap-1 border-t border-line-soft pt-1.5 text-[12.5px] text-ink-2">
+                    {report.notes.map((c, i) => (
                       <li key={i} className="flex gap-1.5">
                         <span className="text-ink-4">•</span>
                         <span>{c}</span>
                       </li>
                     ))}
                   </ul>
-                ) : (
-                  <p className="mb-2 text-[12.5px] text-ink-3">The model did not say. Read it before replacing.</p>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setShowPreview((v) => !v)}
-                  className="mb-2 inline-flex items-center gap-1 text-[12px] text-accent-ink hover:underline"
-                >
-                  <Icons.eye size={11} />
-                  {showPreview ? "Hide the proposed article" : "Read the proposed article"}
-                </button>
-                {showPreview && (
-                  <HtmlPreview html={proposal.html} className="mb-2 max-h-[40vh] overflow-y-auto rounded-[6px] border border-line p-2.5" />
+                {report.droppedNotes > 0 && report.kept > 0 && (
+                  <p className="mb-1.5 text-[11.5px] text-ink-4">
+                    {plural(report.droppedNotes, "note")} from the model left out: not backed by a change you kept.
+                  </p>
                 )}
-                <div className="flex justify-end gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setProposal(null);
-                      setPhase("idle");
-                    }}
-                  >
-                    Discard
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="accent"
-                    onClick={() => {
-                      // All-or-nothing until the hunk library lands; see applyHunks.
-                      onReplace(applyHunks(getHtml(), proposal.html));
-                      setProposal(null);
-                      setPhase("idle");
-                      toast.success("Replaced in the editor. Save to keep it.");
-                    }}
-                  >
-                    <Icons.check size={12} />
-                    Replace article
+                {report.kept > 0 && (
+                  <p className={cn("text-[12px]", report.assetsIntact ? "text-ink-3" : "text-err-ink")}>
+                    {report.assetsIntact
+                      ? "Every link and image is still in place."
+                      : `${plural(report.missingAssets.length, "link or image", "links or images")} missing from the mix you kept. Check before saving.`}
+                  </p>
+                )}
+                {chips.length > 0 && (
+                  <div className="mt-2 flex flex-col gap-1.5 border-t border-line-soft pt-2">
+                    <div className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-4">Next</div>
+                    {chips.map((chip) => (
+                      <Chip key={chip} onClick={() => send(chip)}>
+                        {chip}
+                      </Chip>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-2 flex justify-end">
+                  <Button size="sm" variant="ghost" onClick={reset}>
+                    Done
                   </Button>
                 </div>
               </div>
@@ -236,6 +374,18 @@ export function RewritePanel({
           </div>
         )}
       </div>
+
+      {reviewing && (
+        <div className="flex justify-end gap-1.5 border-t border-line bg-bg px-3 py-2">
+          <Button size="sm" variant="ghost" onClick={reset}>
+            Discard
+          </Button>
+          <Button size="sm" variant="accent" onClick={apply} disabled={reviewable.length === 0}>
+            <Icons.check size={12} />
+            {summary.kept === 0 ? "Keep the original" : `Apply ${summary.kept} of ${summary.total}`}
+          </Button>
+        </div>
+      )}
 
       <div className="border-t border-line p-3">
         <div className="flex items-end gap-1.5 rounded-[8px] border border-line bg-bg p-1.5 focus-within:border-accent">
@@ -249,8 +399,8 @@ export function RewritePanel({
               }
             }}
             rows={2}
-            disabled={busy}
-            placeholder="How should the article change?"
+            disabled={busy || reviewing}
+            placeholder={reviewing ? "Finish the review first" : "How should the article change?"}
             aria-label="Rewrite instruction"
             className="flex-1 resize-none bg-transparent px-1.5 py-1 text-[12.5px] focus:outline-0 disabled:opacity-60"
           />
@@ -259,7 +409,7 @@ export function RewritePanel({
               <Icons.x size={12} />
             </Button>
           ) : (
-            <Button size="sm" variant="accent" onClick={() => send(prompt)} disabled={!prompt.trim()} aria-label="Send">
+            <Button size="sm" variant="accent" onClick={() => send(prompt)} disabled={!prompt.trim() || reviewing} aria-label="Send">
               <Icons.arrow size={12} />
             </Button>
           )}
@@ -267,5 +417,17 @@ export function RewritePanel({
         <p className="mt-1.5 text-[11px] text-ink-4">The rewrite is a proposal. Save is what writes.</p>
       </div>
     </aside>
+  );
+}
+
+function Chip({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-[8px] border border-line bg-bg px-3 py-2 text-left text-[12.5px] text-ink-2 hover:border-accent-soft hover:bg-accent-soft/40 hover:text-ink"
+    >
+      {children}
+    </button>
   );
 }

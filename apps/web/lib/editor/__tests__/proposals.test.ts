@@ -5,9 +5,14 @@ import {
   pendingLabel,
   NO_CHANGES,
   applyHunks,
+  decideAll,
+  keptSummary,
+  proposeHunks,
+  reviewableHunks,
   surroundingParagraph,
   outlineOf,
 } from "../proposals";
+import { splitBlocks } from "@/lib/refresh/hunks";
 
 describe("fieldCounter", () => {
   it("counts a title against 60", () => {
@@ -34,9 +39,42 @@ describe("pending changes", () => {
   });
 });
 
-describe("applyHunks", () => {
-  it("is all-or-nothing until the hunk library lands", () => {
-    expect(applyHunks("<p>a</p>", "<p>b</p>")).toBe("<p>b</p>");
+describe("hunk review", () => {
+  const before = "<h2>Intro</h2><p>old one</p><p>same</p><p>old two</p>";
+  const after = "<h2>Intro</h2><p>new one</p><p>same</p><p>new two</p><ul><li>extra</li></ul>";
+  const hunks = proposeHunks(before, after);
+  const open = reviewableHunks(hunks);
+
+  it("diffs with the refresh engine's blocks: two rewritten, one added", () => {
+    expect(open.map((h) => h.kind)).toEqual(["changed", "changed", "added"]);
+  });
+
+  it("keeps a mix: kept hunks take the rewrite, rejected ones the original", () => {
+    const out = applyHunks(hunks, { [open[0].id]: "accepted", [open[1].id]: "rejected", [open[2].id]: "accepted" });
+    expect(out).toBe("<h2>Intro</h2>\n<p>new one</p>\n<p>same</p>\n<p>old two</p>\n<ul><li>extra</li></ul>");
+  });
+
+  it("rejecting everything returns the original, block for block", () => {
+    expect(splitBlocks(applyHunks(hunks, decideAll(hunks, "rejected")))).toEqual(splitBlocks(before));
+  });
+
+  it("keeping everything returns the proposal, block for block", () => {
+    expect(splitBlocks(applyHunks(hunks, decideAll(hunks, "accepted")))).toEqual(splitBlocks(after));
+  });
+
+  it("an undecided hunk keeps the original", () => {
+    expect(applyHunks(hunks, {})).toBe(splitBlocks(before).join("\n"));
+  });
+
+  it("a no-op rewrite has nothing to review and applies to the same article", () => {
+    const same = proposeHunks(before, before.replace("<p>same</p>", "<p>\n  same\n</p>"));
+    expect(reviewableHunks(same)).toEqual([]);
+    expect(splitBlocks(applyHunks(same, decideAll(same, "accepted")))).toEqual(splitBlocks(before));
+  });
+
+  it("counts kept out of reviewable", () => {
+    expect(keptSummary(hunks, decideAll(hunks, "accepted"))).toEqual({ kept: 3, total: 3, undecided: 0 });
+    expect(keptSummary(hunks, { [open[0].id]: "accepted" })).toEqual({ kept: 1, total: 3, undecided: 2 });
   });
 });
 

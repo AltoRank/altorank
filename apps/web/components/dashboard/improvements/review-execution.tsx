@@ -8,6 +8,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Icons } from "@/components/ui/icons";
 import { cn, plural } from "@/lib/utils";
 import { summarizeDecisions } from "@/lib/refresh/hunks";
+import { DecideAllButtons, KeepRejectButtons, KeptCounter, sanitizeHunkHtml } from "@/components/dashboard/review/hunk-controls";
 import { describeEvidence } from "@/lib/refresh/brief";
 import {
   exportExecutionAction,
@@ -39,19 +40,6 @@ type Props = {
   brief: string | null;
   evidence: Evidence;
 };
-
-/**
- * Model output is rendered as HTML so the reviewer sees the page, not the
- * markup. It is also model output, so anything executable is stripped first:
- * scripts, inline handlers, javascript: URLs, and embeds.
- */
-function sanitize(html: string): string {
-  return html
-    .replace(/<(script|style|iframe|object|embed|svg)\b[\s\S]*?<\/\1>/gi, "")
-    .replace(/<(script|iframe|object|embed)\b[^>]*\/?>/gi, "")
-    .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/(href|src)\s*=\s*(["']?)\s*javascript:[^"'\s>]*\2/gi, '$1="#"');
-}
 
 export function ReviewExecution({
   executionId,
@@ -164,9 +152,7 @@ export function ReviewExecution({
     <>
       {/* Decision bar */}
       <div className="px-8 py-2.5 border-b border-line bg-bg flex items-center gap-3 text-[13px]">
-        <span className="font-mono tabular-nums font-medium">
-          {summary.kept} / {summary.total} kept
-        </span>
+        <KeptCounter kept={summary.kept} total={summary.total} />
         {summary.undecided > 0 && editable && (
           <span className="text-ink-3">{plural(summary.undecided, "block")} undecided (kept as original)</span>
         )}
@@ -176,12 +162,7 @@ export function ReviewExecution({
           </span>
         )}
         <div className="ml-auto flex items-center gap-1.5">
-          {editable && (
-            <>
-              <Button size="sm" variant="ghost" onClick={() => decideAll("accepted")}>Keep all</Button>
-              <Button size="sm" variant="ghost" onClick={() => decideAll("rejected")}>Reject all</Button>
-            </>
-          )}
+          {editable && <DecideAllButtons onDecideAll={decideAll} />}
           <Button size="sm" variant="ghost" onClick={() => exportAs("html")} disabled={pending}>
             Copy HTML
           </Button>
@@ -304,12 +285,7 @@ export function ReviewExecution({
                   {d && <span className={d === "accepted" ? "text-ok-ink" : "text-ink-3"}>{d === "accepted" ? "kept" : "rejected"}</span>}
                   {editable && h.kind !== "unchanged" && (
                     <div className="ml-auto flex gap-1">
-                      <Button size="sm" variant={d === "accepted" ? "primary" : "ghost"} onClick={() => decide(h.id, "accepted")}>
-                        <Icons.check size={12} /> Keep
-                      </Button>
-                      <Button size="sm" variant={d === "rejected" ? "primary" : "ghost"} onClick={() => decide(h.id, "rejected")}>
-                        <Icons.x size={12} /> Reject
-                      </Button>
+                      <KeepRejectButtons decision={d} onDecide={(dec) => decide(h.id, dec)} />
                       <Button size="sm" variant="ghost" onClick={() => setEditing(editing === h.id ? null : h.id)}>
                         <Icons.edit size={12} /> Edit
                       </Button>
@@ -350,13 +326,13 @@ export function ReviewExecution({
                     {h.kind !== "added" && (
                       <div className={cn("p-3 prose-block text-[13.5px] leading-relaxed", h.kind === "changed" && "md:border-r border-line-soft", h.kind === "removed" && "bg-err-soft/40")}>
                         {h.kind === "changed" && <div className="text-[10.5px] uppercase tracking-[0.06em] text-ink-4 mb-1">Before</div>}
-                        <div dangerouslySetInnerHTML={{ __html: sanitize(h.before ?? "") }} />
+                        <div dangerouslySetInnerHTML={{ __html: sanitizeHunkHtml(h.before ?? "") }} />
                       </div>
                     )}
                     {h.kind !== "removed" && h.kind !== "unchanged" && (
                       <div className={cn("p-3 prose-block text-[13.5px] leading-relaxed", h.kind === "added" && "bg-ok-soft/40")}>
                         {h.kind === "changed" && <div className="text-[10.5px] uppercase tracking-[0.06em] text-ink-4 mb-1">After</div>}
-                        <div dangerouslySetInnerHTML={{ __html: sanitize(isEdited ? edited[h.id] : h.after ?? "") }} />
+                        <div dangerouslySetInnerHTML={{ __html: sanitizeHunkHtml(isEdited ? edited[h.id] : h.after ?? "") }} />
                       </div>
                     )}
                   </div>

@@ -152,6 +152,7 @@ export function ArticleEditor({
   // Review is read-only with the AI actions; Editor is direct editing. Both
   // stage changes; neither writes. Save is the one commit, below.
   const [mode, setMode] = useState<EditorMode>("review");
+  const [reviewingRewrite, setReviewingRewrite] = useState(false);
   // The staged values of the fields outside the document. They start as what
   // was loaded and diverge as proposals are accepted or, in Editor mode, typed.
   const [title, setTitle] = useState(article.title);
@@ -628,12 +629,14 @@ export function ArticleEditor({
 
   return (
     <EditorAiContext.Provider value={aiContext}>
-    <div className="flex-1 grid min-h-0" style={{ gridTemplateColumns: "280px 1fr 340px" }}>
-      {/* Rewrite panel: the whole-article proposal path. */}
+    <div className="flex-1 grid min-h-0" style={{ gridTemplateColumns: `${reviewingRewrite ? 440 : 280}px 1fr 340px` }}>
+      {/* Rewrite panel: the whole-article proposal, reviewed hunk by hunk.
+          It gets more room while a review is open so blocks read as prose. */}
       <RewritePanel
         articleId={article.id}
         getHtml={getHtml}
         onReplace={replaceBody}
+        onReviewingChange={setReviewingRewrite}
         className="border-r border-line"
       />
 
