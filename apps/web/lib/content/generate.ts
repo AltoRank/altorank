@@ -829,5 +829,10 @@ export async function generateArticle(
       .eq("id", job.id);
 
     throw err;
+  } finally {
+    // The reporter is module-level. Detached on success above, but a throw
+    // between arming and that line left it pointing at this article, so the
+    // next run's DataForSEO calls were billed here. Always detach.
+    setSpendReporter(null);
   }
 }
