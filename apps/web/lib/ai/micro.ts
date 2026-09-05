@@ -193,17 +193,40 @@ export async function rewriteField(
     .map((block) => block.text)
     .join("");
 
-  const text = parseMicroResponse(raw, input.field);
+  let text = parseMicroResponse(raw, input.field);
   if (!text) throw new Error("The model returned nothing usable");
   if (input.field === "selection" && !keepsAssets(input.text, text)) {
     throw new Error("The rewrite dropped a link or image, so it was not proposed. Try again or select less.");
   }
+  let inputTokens = message.usage?.input_tokens ?? 0;
+  let outputTokens = message.usage?.output_tokens ?? 0;
 
-  return {
-    text,
-    inputTokens: message.usage?.input_tokens ?? 0,
-    outputTokens: message.usage?.output_tokens ?? 0,
-  };
+  // The prompt states the limit; the model ignores it about half the time on
+  // "shorten" (live: 178 and 173 characters against a 160 limit). One retry
+  // that quotes the overshoot brings it under; a second miss is shown as-is,
+  // over, so the counter tells the truth rather than a loop burning tokens.
+  const limit = input.field === "selection" ? null : FIELD_LIMITS[input.field];
+  if (limit && text.length > limit) {
+    const retry = await client.messages.create({
+      model: anthropicModel("structured"),
+      max_tokens: 400,
+      system,
+      messages: [
+        { role: "user", content: user },
+        { role: "assistant", content: text },
+        { role: "user", content: `That is ${text.length} characters; the limit is ${limit}. Return the same idea in at most ${limit} characters, plain text only.` },
+      ],
+    });
+    const retried = parseMicroResponse(
+      retry.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join(""),
+      input.field,
+    );
+    if (retried && retried.length < text.length) text = retried;
+    inputTokens += retry.usage?.input_tokens ?? 0;
+    outputTokens += retry.usage?.output_tokens ?? 0;
+  }
+
+  return { text, inputTokens, outputTokens };
 }
 
 // ---------------------------------------------------------------------------
