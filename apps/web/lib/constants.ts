@@ -103,6 +103,7 @@ export const STATUS_META: Record<string, { label: string; cls: string }> = {
   negotiating: { label: "Negotiating", cls: "s-run" },
   lost: { label: "Lost", cls: "s-err" },
   new: { label: "New", cls: "s-idle" },
+  stored: { label: "Stored", cls: "s-draft" },
   planned: { label: "Planned", cls: "s-idle" },
   shipped: { label: "Shipped", cls: "s-ok" },
 };

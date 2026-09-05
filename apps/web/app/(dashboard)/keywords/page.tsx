@@ -122,7 +122,8 @@ export default async function KeywordsPage({ searchParams }: Props) {
                       <Chip label={k.intent} soft />
                     </td>
                     <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">
-                      {k.volume.toLocaleString()}
+                      {/* null = the provider had no data (research writes it that way); 0 is the pre-054 default. Neither is a measurement. */}
+                      {typeof k.volume === "number" && k.volume > 0 ? k.volume.toLocaleString() : <span className="text-ink-4" title="No search volume data">—</span>}
                     </td>
                     <td className="px-3.5 py-3 border-b border-line-soft">
                       <div className="flex items-center gap-2 justify-end">
@@ -148,7 +149,7 @@ export default async function KeywordsPage({ searchParams }: Props) {
               })}
               {shown.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3.5 py-8 text-center text-ink-3">No keywords yet. Click &quot;Find new keywords&quot; to get started.</td>
+                  <td colSpan={7} className="px-3.5 py-8 text-center text-ink-3">No keywords yet. Click &quot;Research keywords&quot; to get started.</td>
                 </tr>
               )}
             </tbody>
