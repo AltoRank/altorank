@@ -119,8 +119,12 @@ export function SettingsForm({ agency, quotaReason }: SettingsFormProps) {
 
         {/* API access */}
         <div className="bg-bg border border-line rounded-lg p-5 col-span-2">
-          <h3 className="text-sm font-semibold mb-1">API access</h3>
-          <p className="text-[12.5px] text-ink-3 mb-4">Build internal tools on top of AltoRank.</p>
+          <h3 className="text-sm font-semibold mb-1">Legacy API key</h3>
+          <p className="text-[12.5px] text-ink-3 mb-4">
+            Deprecated. Agents and scripts should use a scoped key from the{" "}
+            <a href="/settings/api-keys" className="underline underline-offset-2 hover:text-ink">API keys</a> tab;
+            those can expire and be revoked one at a time.
+          </p>
           <div className="flex gap-2.5 items-center px-3 py-2.5 bg-panel border border-line rounded-lg">
             <span className="font-mono text-xs flex-1 select-all">{apiKey}</span>
             <Button type="button" size="sm" onClick={handleRotate} disabled={rotating}>
