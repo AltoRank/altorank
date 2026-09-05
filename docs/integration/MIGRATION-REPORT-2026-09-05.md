@@ -310,3 +310,7 @@ throughout.
 ## Addendum 2026-09-05 — 062
 
 `062_workspace_scope_followups.sql` lands on the integration branch (#91) as a review fix: six policies from 052/054/055 move from `user_agency_ids()` to `user_workspace_ids()` (053). This resolves the consistency nit noted above. Not exercised in the fresh-DB run (it did not exist yet); it is policy-only and idempotent if written with `drop policy if exists`.
+
+## Addendum — 063
+
+`063_onboarded_backfill.sql` (PR #94) backfills `onboarded_at` for pre-existing workspaces. Without it the dashboard gate at `layout.tsx:107` sends every existing production workspace to /onboarding on first load. Idempotent; verified locally (UPDATE 2, then 0).

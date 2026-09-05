@@ -210,6 +210,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 059_publish_mode_and_retry.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 060_keyword_cpc.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 061_workspace_pause_meta.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 062_workspace_scope_followups.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 063_onboarded_backfill.sql
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -327,3 +328,7 @@ agency-scoped policies on `refresh_candidates`, `refresh_tasks`, `refresh_execut
 `keyword_research_runs`, `link_sources`, `link_targets` and recreates them "by access" on
 `user_workspace_ids()`. No data change. Requires 053 (defines `user_workspace_ids()`) and
 052/054/055 (the tables). Apply last: **final production order is 048 → 062**.
+
+## 063 — added 2026-09-05
+
+`063_onboarded_backfill.sql` (PR #94): `onboarded_at = created_at` for workspaces created before the wizard, so existing customers are not redirected to /onboarding after deploy. Idempotent; no schema change. **Apply last: final production order is 048 → 063.**
