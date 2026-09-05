@@ -39,6 +39,30 @@ export class WordPressAdapter implements CMSAdapter {
     };
   }
 
+  /** Edit the post in place. WordPress takes a POST to the post's own URL. */
+  async update(externalId: string, article: PublishPayload): Promise<PublishResult> {
+    const res = await fetch(`${this.baseUrl}/wp-json/wp/v2/posts/${externalId}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${this.auth}`,
+      },
+      body: JSON.stringify({
+        title: article.title,
+        content: article.html,
+        excerpt: article.metaDescription ?? "",
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`WordPress update failed (${res.status}): ${err}`);
+    }
+
+    const data = await res.json();
+    return { externalId: String(data.id), url: data.link };
+  }
+
   async unpublish(externalId: string): Promise<void> {
     const res = await fetch(`${this.baseUrl}/wp-json/wp/v2/posts/${externalId}`, {
       method: "PUT",

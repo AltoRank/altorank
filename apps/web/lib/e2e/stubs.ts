@@ -277,5 +277,20 @@ export async function stubGenerateArticle(options: GenerateArticleOptions): Prom
     .update({ status: "completed", tokens_used: 0, result: { wordCount, title }, completed_at: new Date().toISOString() })
     .eq("id", job.id);
 
-  return { articleId, jobId: job.id as string, title, wordCount, tokensUsed: 0, research, factCheck };
+  // The refresh engine (#73) widened the result with the processed body and
+  // its scores; the fixture reports what it wrote and measured nothing.
+  return {
+    articleId,
+    jobId: job.id as string,
+    title,
+    wordCount,
+    tokensUsed: 0,
+    research,
+    factCheck,
+    html,
+    metaDescription: "",
+    linkChecks: null,
+    seoScore: 0,
+    aeoScore: 0,
+  };
 }

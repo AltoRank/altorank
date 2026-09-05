@@ -27,6 +27,7 @@ const TABS = [
   { label: "Team", href: "/settings/team" },
   { label: "Billing", href: "/settings/billing" },
   { label: "API keys", href: "/settings/api-keys" },
+  { label: "Improvements", href: "/settings/refresh" },
 ];
 
 export function SettingsTabs() {

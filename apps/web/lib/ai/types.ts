@@ -58,6 +58,15 @@ export interface ArticlePrompt {
    * use exactly what is here as the owner's experience and nothing more.
    */
   brief?: ArticleBrief;
+  /**
+   * Rewrite an existing page rather than write a new one.
+   *
+   * The prompt gets the current body and a brief, and is told to preserve
+   * structure, links and images while strengthening what the brief names.
+   * Everything downstream (typography, link checks, scoring) is the same
+   * pipeline a fresh draft goes through.
+   */
+  refreshOf?: RefreshContext;
 }
 
 export interface ArticleBrief {
@@ -79,6 +88,17 @@ export interface OutputPrefs {
   mentionSimilarProducts?: boolean;
   /** Free-text rules the site owner wrote; they outrank everything but safety. */
   customInstructions?: string | null;
+}
+
+export interface RefreshContext {
+  /** The page's current body, as HTML. */
+  existingHtml: string;
+  /** What to strengthen, which questions to add, what to keep. Human-editable. */
+  brief: string;
+  /** Where the page lives, for the model's orientation only. */
+  url?: string | null;
+  title?: string | null;
+  metaDescription?: string | null;
 }
 
 export interface ArticleResult {
