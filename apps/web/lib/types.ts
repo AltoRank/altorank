@@ -365,11 +365,25 @@ export type MagentoConfig = {
   storeCode?: string;
 };
 
+/**
+ * Which collection field takes which part of an article, by field slug.
+ * Chosen in the connect dialog from the collection's own fields; absent on
+ * connections made before the picker existed, which keep the template slugs.
+ */
+export type WebflowFieldMap = {
+  title: string;
+  slug: string;
+  body: string;
+  summary?: string;
+  image?: string;
+};
+
 export type WebflowConfig = {
   type: "webflow";
   siteId: string;
   collectionId: string;
   apiToken: string;
+  fieldMap?: WebflowFieldMap;
 };
 
 export type GhostConfig = {

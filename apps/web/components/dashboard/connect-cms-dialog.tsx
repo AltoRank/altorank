@@ -15,6 +15,9 @@ import {
 import type { Workspace, Integration, CMSConfig } from "@/lib/types";
 import type { BlogUrlDerivation } from "@/lib/cms/blog-url";
 import { pluginInstallUrl } from "@/lib/cms/wordpress-plugin";
+import { parseWebflowFieldMap } from "@/lib/cms/webflow-fields";
+import { WebflowPicker } from "./connect-cms-webflow";
+import { WixPicker } from "./connect-cms-wix";
 
 type CMSType =
   | "wordpress"
@@ -386,13 +389,7 @@ export function ConnectCmsDialog({
             </>
           )}
 
-          {cmsType === "webflow" && (
-            <>
-              <Field name="siteId" label="Site ID" placeholder="e.g. 6287ec36a..." />
-              <Field name="collectionId" label="Collection ID" placeholder="e.g. 6287ec36b..." />
-              <Field name="apiToken" label="API token" type="password" />
-            </>
-          )}
+          {cmsType === "webflow" && <WebflowPicker />}
 
           {cmsType === "ghost" && (
             <>
@@ -403,19 +400,18 @@ export function ConnectCmsDialog({
 
           {cmsType === "framer" && (
             <>
+              <p className="text-[12px] text-ink-3 -mt-1 mb-1">
+                Framer has no endpoint we can call to list your projects or
+                collections: its Server API is a script SDK bound to one project.
+                The ids have to be pasted.
+              </p>
               <Field name="siteId" label="Site ID" />
               <Field name="collectionId" label="Collection ID" />
-              <Field name="apiToken" label="API token" type="password" />
+              <Field name="apiToken" label="Server API key" type="password" />
             </>
           )}
 
-          {cmsType === "wix" && (
-            <>
-              <Field name="accountId" label="Account ID" />
-              <Field name="siteId" label="Site ID" />
-              <Field name="apiKey" label="API key" type="password" />
-            </>
-          )}
+          {cmsType === "wix" && <WixPicker />}
 
           {cmsType === "notion" && (
             <>
@@ -675,13 +671,26 @@ function buildConfig(type: CMSType, fd: FormData): CMSConfig {
         baseUrl: fd.get("baseUrl") as string,
         adminToken: fd.get("adminToken") as string,
       };
-    case "webflow":
+    case "webflow": {
+      // The picker posts its map as JSON; a hand-entered connection posts
+      // none and keeps the adapter's template slugs.
+      let fieldMap: ReturnType<typeof parseWebflowFieldMap> = null;
+      const raw = fd.get("fieldMap");
+      if (typeof raw === "string" && raw) {
+        try {
+          fieldMap = parseWebflowFieldMap(JSON.parse(raw));
+        } catch {
+          fieldMap = null;
+        }
+      }
       return {
         type: "webflow",
-        siteId: fd.get("siteId") as string,
-        collectionId: fd.get("collectionId") as string,
+        siteId: (fd.get("siteId") as string).trim(),
+        collectionId: (fd.get("collectionId") as string).trim(),
         apiToken: fd.get("apiToken") as string,
+        ...(fieldMap ? { fieldMap } : {}),
       };
+    }
     case "ghost":
       return {
         type: "ghost",
