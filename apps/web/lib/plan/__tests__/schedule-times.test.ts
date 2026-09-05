@@ -29,10 +29,10 @@ describe("schedule times", () => {
   });
   it("says so plainly, and falls back to the fact when a time is unknown", () => {
     expect(scheduleSentence({ generate: "07:00", publish: "09:00" })).toBe(
-      "Articles are generated around 07:00 UTC and published on your chosen days at 09:00 UTC.",
+      "Articles are generated around 07:00 UTC and land in Review; approved articles publish on your chosen days within the hour after your publish time.",
     );
     expect(scheduleSentence({ generate: null, publish: null })).toBe(
-      "Articles are generated each morning UTC and published on your chosen days once a day.",
+      "Articles are generated each morning UTC and land in Review; approved articles publish on your chosen days within the hour after your publish time.",
     );
   });
 });

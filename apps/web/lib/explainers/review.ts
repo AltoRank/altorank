@@ -34,7 +34,7 @@ export const reviewExplainer: Explainer = {
       bullets: [
         "It publishes through the site's connection, or the one you pick when several are connected, sets the article Live and stores the URL and external id it came back with.",
         "Schedule needs Approved first. A scheduled article publishes when its date passes, or, without a date, on the site's cadence days at or after the set time, one per day.",
-        "The publish cron runs at 09:00 UTC and only touches articles that are Approved, or Scheduled with a recorded approval. Rows scheduled before approval existed are refused.",
+        "The publish cron runs every hour (Vercel at 09:00 UTC, GitHub Actions the other hours) and only touches articles that are Approved, or Scheduled with a recorded approval. Rows scheduled before approval existed are refused.",
         "After publishing, the URL is submitted to IndexNow and, when Search Console is connected, to Google. A git-based publish waits until the built page is live before telling anyone.",
         "Every attempt, manual or cron, success or failure, is written to the publish log.",
       ],

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isCadenceDue, cadenceLocalDate, withoutPaused } from "../cadence";
+import { isCadenceDue, cadenceDueState, cadenceLocalDate, withoutPaused } from "../cadence";
 
 // These tests replace the isCadenceSlotNow suite. That function matched a
 // 15-minute window starting at publish_time, which required a cron every 15
@@ -85,6 +85,22 @@ describe("isCadenceDue", () => {
     const midnight = { ...baseCadence, publish_time: "00:00" };
     const justAfter = new Date("2026-04-28T22:30:00Z"); // 00:30 CET Wednesday
     expect(isCadenceDue(midnight, justAfter, null)).toBe(true);
+  });
+});
+
+describe("cadenceDueState", () => {
+  const wednesday1005CET = new Date("2026-04-29T08:05:00Z");
+  const cadence = { timezone: "Europe/Rome", days_of_week: [1, 3, 5], publish_time: "10:00" };
+
+  it("names why a cadence is skipped, so an empty run is not mistaken for no cadences", () => {
+    expect(cadenceDueState(cadence, new Date("2026-04-30T08:05:00Z"), null)).toEqual({ due: false, reason: "not a publishing day" });
+    expect(cadenceDueState(cadence, new Date("2026-04-29T07:00:00Z"), null)).toEqual({ due: false, reason: "before publish time" });
+    const today = cadenceLocalDate(cadence.timezone, wednesday1005CET);
+    expect(cadenceDueState(cadence, wednesday1005CET, today)).toEqual({ due: false, reason: "already published today" });
+    expect(cadenceDueState(cadence, wednesday1005CET, null)).toEqual({ due: true, reason: null });
+  });
+  it("is the single source isCadenceDue reads from", () => {
+    expect(isCadenceDue(cadence, wednesday1005CET, null)).toBe(cadenceDueState(cadence, wednesday1005CET, null).due);
   });
 });
 

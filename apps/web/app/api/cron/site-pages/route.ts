@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cronSecretFrom } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
-import { syncSitePages } from "@/lib/seo/site-crawl";
+import { syncSitePages, SitePagesWriteError } from "@/lib/seo/site-crawl";
 import { detectLinks } from "@/lib/linking/detect";
 
 /**
@@ -90,6 +90,18 @@ export async function GET(request: Request) {
         links,
       });
     } catch (err) {
+      if (err instanceof SitePagesWriteError) {
+        // The site was read but not stored. Stamping "now" would hide it for a
+        // week with zero pages; leaving null would keep it at the head of the
+        // queue ahead of never-crawled sites. Back-date the stamp so it is
+        // eligible again on the next run, behind the genuinely new ones.
+        await supabase
+          .from("workspaces")
+          .update({ last_pages_crawl_at: new Date(Date.now() - (STALE_AFTER_DAYS - 1) * 86_400_000).toISOString() })
+          .eq("id", workspaceId);
+        results.push({ workspaceId, domain, status: "error", detail: err.message, retry: "next run" });
+        continue;
+      }
       await stamp();
       results.push({
         workspaceId, domain, status: "error",

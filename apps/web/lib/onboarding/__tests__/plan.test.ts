@@ -57,8 +57,9 @@ describe("monthlyTarget", () => {
     expect(monthlyTarget(1)).toBe(4);
     expect(monthlyTarget(3)).toBe(13);
     expect(monthlyTarget(0)).toBe(0);
-    // A pace above 7 is clamped like buildPlan clamps it.
-    expect(monthlyTarget(25)).toBe(30);
+    // Above one a day the month fills up to the calendar cap, not to 30.
+    expect(monthlyTarget(14)).toBe(60);
+    expect(monthlyTarget(25)).toBe(60);
   });
 });
 
@@ -73,6 +74,10 @@ describe("nextOpenDates", () => {
   it("never returns a date twice, even when asked for more than one at once", () => {
     const dates = nextOpenDates([], 3, 10, from);
     expect(new Set(dates).size).toBe(10);
+  });
+  it("places two a day at 14/week and counts occupancy per day, not per date", () => {
+    expect(nextOpenDates([], 14, 4, from)).toEqual(["2026-09-04", "2026-09-04", "2026-09-05", "2026-09-05"]);
+    expect(nextOpenDates(["2026-09-04"], 14, 3, from)).toEqual(["2026-09-04", "2026-09-05", "2026-09-05"]);
   });
   it("returns nothing for a paused pace or a zero count", () => {
     expect(nextOpenDates([], 0, 5, from)).toEqual([]);

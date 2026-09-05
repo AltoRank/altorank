@@ -47,6 +47,8 @@ export const SCHEDULE_TIMES = {
  */
 export function scheduleSentence(times: { generate: string | null; publish: string | null } = SCHEDULE_TIMES): string {
   const written = times.generate ? `around ${times.generate} UTC` : "each morning UTC";
-  const published = times.publish ? `at ${times.publish} UTC` : "once a day";
-  return `Articles are generated ${written} and published on your chosen days ${published}.`;
+  // Publishing is gated by each site's own publish time and checked every
+  // hour (Vercel once a day plus the GitHub Actions workflow), so the honest
+  // promise is "within the hour after your publish time", not one UTC clock.
+  return `Articles are generated ${written} and land in Review; approved articles publish on your chosen days within the hour after your publish time.`;
 }

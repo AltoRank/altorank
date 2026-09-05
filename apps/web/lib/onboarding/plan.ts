@@ -14,7 +14,7 @@
 // entry and still lands it in review.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { monthlyFromPace } from "@/lib/content/pace";
+import { MAX_PACE, monthlyFromPace } from "@/lib/content/pace";
 import { recommendKeywords, type KeywordRecommendation } from "@/lib/seo/recommendations";
 import { classifyKeyword } from "@/lib/keywords/taxonomy";
 import { generateQualityQuestionsBatch, parseStoredQuestions, toQualityQuestions } from "@/lib/keywords/questions";
@@ -47,9 +47,11 @@ export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 /** How many entries a month at `weeklyLimit` should hold. */
 export function monthlyTarget(weeklyLimit: number): number {
-  const weekly = Math.max(0, Math.min(7, Math.floor(weeklyLimit)));
+  const weekly = Math.max(0, Math.min(MAX_PACE, Math.floor(weeklyLimit)));
   // The same arithmetic the plan copy quotes ("about N a month"), so the
-  // top-up floor never promises more than the pricing page did.
+  // top-up floor never promises more than the pricing page did. Paces above
+  // one a day ("two a day", 14) are real since multi-per-day scheduling; the
+  // calendar cap is the only ceiling.
   return Math.min(PLAN_MAX_ENTRIES, monthlyFromPace(weekly));
 }
 
@@ -81,7 +83,7 @@ export function buildPlan(
   recommendations: Pick<KeywordRecommendation, "keywordId" | "term" | "action" | "quality">[],
   opts: { weeklyLimit: number; from?: Date; horizonDays?: number; maxEntries?: number; daysOfWeek?: readonly number[] },
 ): PlannedEntry[] {
-  const weekly = Math.max(0, Math.min(7, Math.floor(opts.weeklyLimit)));
+  const weekly = Math.max(0, Math.min(MAX_PACE, Math.floor(opts.weeklyLimit)));
   if (weekly === 0) return [];
   const horizon = opts.horizonDays ?? PLAN_HORIZON_DAYS;
   const from = opts.from ?? new Date();
@@ -478,18 +480,25 @@ export function nextOpenDates(
   count: number,
   from: Date = new Date(),
 ): string[] {
-  const weekly = Math.max(0, Math.min(7, Math.floor(weeklyLimit)));
+  const weekly = Math.max(0, Math.min(MAX_PACE, Math.floor(weeklyLimit)));
   if (weekly === 0 || count <= 0) return [];
   const start = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
   const step = 7 / weekly;
-  const taken = new Set(occupied);
+  // Above 7/week the grid lands more than one slot on a day, so occupancy is
+  // a count per date, not a set: a day is open while it has fewer entries
+  // than the grid gives it.
+  const taken = new Map<string, number>();
+  for (const d of occupied) taken.set(d, (taken.get(d) ?? 0) + 1);
   const out: string[] = [];
-  // Walk the pace grid forward until enough open days are found. Bounded so
+  // Walk the pace grid forward until enough open slots are found. Bounded so
   // a fully booked year cannot spin: past a year out, the answer is "no".
   for (let i = 0; out.length < count && i < 366 * weekly; i++) {
-    const date = isoDate(new Date(start + Math.round(i * step) * DAY_MS));
-    if (taken.has(date)) continue;
-    taken.add(date);
+    const date = isoDate(new Date(start + Math.floor(i * step) * DAY_MS));
+    const left = taken.get(date) ?? 0;
+    if (left > 0) {
+      taken.set(date, left - 1);
+      continue;
+    }
     out.push(date);
   }
   return out;
