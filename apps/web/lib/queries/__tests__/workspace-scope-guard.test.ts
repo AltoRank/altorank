@@ -199,6 +199,8 @@ const SCOPED_HELPERS: Record<string, number> = {
   loadGscRows: 0,
   syncHealthFor: 0,
   knownPagesFor: 0,
+  getTrafficValue: 0,
+  getArticleValue: 1,
   getBingSummary: 0,
   getCalendarEntries: 0,
 };
