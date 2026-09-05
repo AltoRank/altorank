@@ -10,7 +10,7 @@
 -- panel still shows. It is DEPRECATED in favour of this table and will be
 -- dropped once nothing reads it; the agent API never accepts it.
 
-create table api_keys (
+create table if not exists api_keys (
   id uuid primary key default gen_random_uuid(),
   agency_id uuid not null references agencies(id) on delete cascade,
   name text not null,
@@ -30,7 +30,7 @@ create table api_keys (
 comment on column agencies.api_key is
   'DEPRECATED: single plaintext key kept for the legacy General settings panel. Use api_keys.';
 
-create index api_keys_agency on api_keys (agency_id, created_at desc);
+create index if not exists api_keys_agency on api_keys (agency_id, created_at desc);
 
 -- === RLS ===
 alter table api_keys enable row level security;
@@ -39,6 +39,7 @@ alter table api_keys enable row level security;
 -- enforced in the server actions, matching how agency_members is handled.
 -- The agent API itself authenticates with the service role and looks a key up
 -- by hash, so no policy is needed for that path.
+drop policy if exists "API keys by agency" on api_keys;
 create policy "API keys by agency" on api_keys
   for all using (agency_id in (select user_agency_ids()))
   with check (agency_id in (select user_agency_ids()));

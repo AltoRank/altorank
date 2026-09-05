@@ -41,6 +41,7 @@ create table if not exists workspace_output_settings (
 
 alter table workspace_output_settings enable row level security;
 
+drop policy if exists "Output settings by agency" on workspace_output_settings;
 create policy "Output settings by agency" on workspace_output_settings
   for all using (
     workspace_id in (select id from workspaces where agency_id in (select user_agency_ids()))

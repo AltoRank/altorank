@@ -117,16 +117,19 @@ alter table refresh_candidates enable row level security;
 alter table refresh_tasks enable row level security;
 alter table refresh_executions enable row level security;
 
+drop policy if exists "Refresh candidates by agency" on refresh_candidates;
 create policy "Refresh candidates by agency" on refresh_candidates
   for all using (
     workspace_id in (select id from workspaces where agency_id in (select user_agency_ids()))
   );
 
+drop policy if exists "Refresh tasks by agency" on refresh_tasks;
 create policy "Refresh tasks by agency" on refresh_tasks
   for all using (
     workspace_id in (select id from workspaces where agency_id in (select user_agency_ids()))
   );
 
+drop policy if exists "Refresh executions by agency" on refresh_executions;
 create policy "Refresh executions by agency" on refresh_executions
   for all using (
     workspace_id in (select id from workspaces where agency_id in (select user_agency_ids()))
