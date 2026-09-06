@@ -4,6 +4,8 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { analyzeWorkspace } from "@/lib/refresh/detect";
 import { runRefreshTask } from "@/lib/refresh/rewrite";
 import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
+import { notifyRefreshReady } from "@/lib/email/lifecycle";
+import { describeSendOutcome } from "@/lib/email/send-once";
 
 /**
  * The content refresh schedule.
@@ -72,7 +74,7 @@ export async function GET(request: Request) {
 
   const { data: workspaces, error } = await supabase
     .from("workspaces")
-    .select("id, domain, refresh_days, refresh_last_analyzed_at, auto_generate_weekly_limit")
+    .select("id, domain, agency_id, refresh_days, refresh_last_analyzed_at, auto_generate_weekly_limit")
     .eq("refresh_enabled", true)
     .neq("status", "paused")
     // Least recently analysed first, so a capped run rotates.
@@ -142,6 +144,29 @@ export async function GET(request: Request) {
             rewrites += 1;
             if (r.ok) {
               out.rewrite = `execution ${r.result.executionId}: ${r.result.changed} of ${r.result.hunks} blocks changed, ${r.result.issues} checks flagged, awaiting review`;
+              // A proposal nobody is told about is the same failure the
+              // draft-ready email exists for: work done into a queue that
+              // only shows itself to somebody who opens the dashboard.
+              // Nothing here reaches the CMS, so the email says "proposed".
+              // After the execution row is written, and never fatal.
+              try {
+                const sent = await notifyRefreshReady(
+                  supabase,
+                  { agencyId: ws.agency_id as string, workspaceId },
+                  {
+                    domain,
+                    pageTitle: r.result.pageTitle ?? r.result.pageUrl,
+                    pageUrl: r.result.pageUrl,
+                    executionId: r.result.executionId,
+                    changed: r.result.changed,
+                    hunks: r.result.hunks,
+                    issues: r.result.issues,
+                  },
+                );
+                out.rewrite += `, ${describeSendOutcome(sent)}`;
+              } catch (err) {
+                out.rewrite += `, email failed (${err instanceof Error ? err.message : "unknown"})`;
+              }
             } else {
               out.rewrite = `failed: ${r.error}`;
               out.status = "error";

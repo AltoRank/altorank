@@ -8,6 +8,7 @@ import type { PublishingCadence } from "@/lib/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { urlIsLive, deriveBlogBaseUrl } from "@/lib/cms/blog-url";
 import { submitForIndexing, type IndexingResult } from "@/lib/seo/indexing";
+import { announceArticlePublished, announcePublishFailed } from "@/lib/email/article-events";
 
 export const maxDuration = 60;
 
@@ -18,7 +19,23 @@ type Result = {
   error?: string;
   /** Why a cadence was passed over ("before publish time", "workspace paused", …). */
   detail?: string;
+  /** What the notification did, so a run says whom it told. */
+  emailed?: string;
 };
+
+/**
+ * Publishing is the one thing this product does to somebody else's website,
+ * and the cron does it while nobody is watching. Until now both outcomes were
+ * silent: a success appeared as a row in the dashboard, and a failure appeared
+ * as an article quietly back in review and a gap in the calendar.
+ *
+ * Both are announced here, after the article row and the publish_log row are
+ * already written, and neither can fail the run - `announce*` swallow their own
+ * errors and return a line for this JSON.
+ */
+async function announceSuccess(supabase: SupabaseClient, articleId: string): Promise<string> {
+  return announceArticlePublished(supabase, articleId);
+}
 
 export async function GET(request: Request) {
   const cronSecret = cronSecretFrom(request);
@@ -77,6 +94,7 @@ export async function GET(request: Request) {
         articleId: article.id,
         workspaceId: article.workspace_id,
         status: "success",
+        emailed: await announceSuccess(supabase, article.id),
       });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
@@ -100,6 +118,14 @@ export async function GET(request: Request) {
         workspaceId: article.workspace_id,
         status: "error",
         error: errorMsg,
+        emailed: await announcePublishFailed(supabase, {
+          articleId: article.id,
+          workspaceId: article.workspace_id,
+          reason: errorMsg,
+          // One email per failure, not per article: the same article failing
+          // again after somebody fixed the connection is news.
+          attemptKey: now.toISOString(),
+        }),
       });
     }
   }
@@ -181,6 +207,7 @@ export async function GET(request: Request) {
         articleId: article.id,
         workspaceId: article.workspace_id,
         status: "success",
+        emailed: await announceSuccess(supabase, article.id),
       });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
@@ -204,6 +231,12 @@ export async function GET(request: Request) {
         workspaceId: article.workspace_id,
         status: "error",
         error: errorMsg,
+        emailed: await announcePublishFailed(supabase, {
+          articleId: article.id,
+          workspaceId: article.workspace_id,
+          reason: errorMsg,
+          attemptKey: now.toISOString(),
+        }),
       });
     }
   }
@@ -314,6 +347,11 @@ async function verifyPendingPublishes(
         })
         .eq("id", article.id);
       out.confirmed++;
+      // Held back until now on purpose: the URL a git publish returns is a
+      // prediction until a build resolves it, and an email carrying a link
+      // that 404s is worse than no email. This is the first moment there is
+      // an address we have actually fetched.
+      await announceArticlePublished(supabase, article.id);
       continue;
     }
 
@@ -339,14 +377,26 @@ async function verifyPendingPublishes(
         })
         .eq("id", article.id);
 
+      const reason =
+        "Committed to the repo, but the published URL never resolved. " +
+        "Check the site built, and that the blog URL on the connection is right.";
       await supabase.from("publish_log").insert({
         article_id: article.id,
         workspace_id: article.workspace_id,
         status: "error",
-        error:
-          "Committed to the repo, but the published URL never resolved. " +
-          "Check the site built, and that the blog URL on the connection is right.",
+        error: reason,
         triggered_by: "cron",
+      });
+      // The article has just gone back to review with its URL cleared, after
+      // up to two hours of quiet retrying. Nobody watching a dashboard would
+      // see that happen.
+      await announcePublishFailed(supabase, {
+        articleId: article.id,
+        workspaceId: article.workspace_id,
+        reason,
+        destination: "git",
+        committed: true,
+        attemptKey: `unconfirmed:${attempts}`,
       });
       out.unconfirmed++;
       continue;
