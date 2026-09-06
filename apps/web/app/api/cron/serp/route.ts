@@ -10,9 +10,17 @@ import type { Workspace, Keyword } from "@/lib/types";
 
 /**
  * One DataForSEO round trip per workspace, and the workspace list is not
- * capped, so the 60-second default was the first thing this ran out of on an
- * account with more than a handful of sites - silently, half way through the
- * list, reporting nothing.
+ * capped, so the time limit is the first thing this runs out of on an account
+ * with more than a handful of sites - silently, half way through the list,
+ * reporting nothing.
+ *
+ * This declares the same 300 as analyze, generate, refresh, geo and site-pages.
+ * Be clear about what that buys today: the project is on the Vercel **Hobby**
+ * plan (verified 2026-09-06 against the deployment serving the crons), which
+ * caps a function at 60s and ignores this value. It states the requirement so
+ * the job gets its budget the moment the plan changes, and so the gap between
+ * what the job needs and what it gets is written down rather than guessed at.
+ * The real fix is a resume marker, not a bigger number - see the wiring map.
  */
 export const maxDuration = 300;
 

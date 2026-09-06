@@ -8,9 +8,13 @@ import { sendReportEmail } from "@/lib/email/resend";
  * Monthly cron (1st of month): auto-generate reports for all workspaces.
  *
  * Every workspace, one PDF render and one upload each, in a single invocation.
- * At the 60-second default that stops part way through the list with no marker
- * saying where, so the sites at the end of it would never get a report at all.
- * The row upserts on (workspace_id, period), so a re-run is safe.
+ * When it runs out of time it stops part way through the list with no marker
+ * saying where, so the sites at the end of it never get a report at all. The
+ * row upserts on (workspace_id, period), so a re-run is safe.
+ *
+ * The declared 300 matches the other long jobs, but on the Vercel **Hobby**
+ * plan this project is on (verified 2026-09-06) the cap is 60s and this value
+ * is ignored. It records the requirement; it does not currently grant it.
  */
 export const maxDuration = 300;
 
