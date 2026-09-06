@@ -603,6 +603,12 @@ export function ConnectCmsDialog({
                   {derivation.evidence}. Example: {derivation.samples[0]}
                 </p>
               )}
+
+              <p className="text-[11.5px] text-ink-3 leading-[1.5] -mt-1">
+                Optional. Left empty, a published article carries no link at all: a
+                commit tells us the file&apos;s path in your repository, not the address
+                your site serves it at.
+              </p>
             </>
           )}
 

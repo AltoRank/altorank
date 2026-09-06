@@ -1,5 +1,9 @@
-import { describe, it, expect } from "vitest";
-import { resolveContentPath, buildFrontmatter } from "../git";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { GitAdapter, resolveContentPath, buildFrontmatter } from "../git";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 // A representative contentPath. Nothing reads this directory; the tests only
 // check how resolveContentPath joins and sanitises a path.
@@ -80,5 +84,109 @@ describe("buildFrontmatter", () => {
   it("omits undefined fields rather than emitting empty keys", () => {
     const fm = buildFrontmatter({ title: "X", ogImage: undefined });
     expect(fm).not.toContain("ogImage");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The published URL (P0-C9) and what the connection test proves (P0-C4)
+// ---------------------------------------------------------------------------
+
+describe("GitAdapter published URL", () => {
+  const base = {
+    type: "git" as const,
+    provider: "github" as const,
+    token: "tok",
+    owner: "acme",
+    repo: "site",
+    branch: "main",
+    contentPath: "src/content/blog",
+  };
+  const article = { title: "Hello", html: "<p>x</p>", slug: "hello-world" };
+
+  function commitOk() {
+    return {
+      ok: true,
+      json: async () => ({ content: { path: "src/content/blog/hello-world.md", sha: "s" } }),
+    };
+  }
+
+  it("claims no URL when the connection stored no public base", async () => {
+    // It used to store the commit path, so the article was marked live with
+    // href="src/content/blog/hello-world.md" - a dashboard-relative link.
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: false, status: 404 }).mockResolvedValueOnce(commitOk());
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new GitAdapter(base);
+
+    const result = await adapter.publish(article);
+    expect(result.externalId).toBe("src/content/blog/hello-world.md");
+    expect(result.url).toBe("");
+  });
+
+  it("uses the stored public base, with the site's own trailing slash", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: false, status: 404 }).mockResolvedValueOnce(commitOk());
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new GitAdapter({
+      ...base,
+      publicBaseUrl: "https://acme.com/blog/",
+      trailingSlash: true,
+    });
+
+    const result = await adapter.publish(article);
+    expect(result.url).toBe("https://acme.com/blog/hello-world/");
+  });
+});
+
+describe("GitAdapter testConnection", () => {
+  const base = {
+    type: "git" as const,
+    provider: "github" as const,
+    token: "tok",
+    owner: "acme",
+    repo: "site",
+    branch: "main",
+    contentPath: "src/content/blog",
+  };
+
+  it("refuses a token GitHub says cannot write to the repo", async () => {
+    // The branch read passes for a read-only token, while the field is
+    // labelled "GitHub token (contents:write)".
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ name: "main" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ permissions: { push: false, pull: true } }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await new GitAdapter(base).testConnection();
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/not write to it/);
+  });
+
+  it("passes when GitHub reports push access", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ name: "main" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ permissions: { push: true } }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await new GitAdapter(base).testConnection()).toEqual({ ok: true });
+  });
+
+  it("does not reject a connection GitHub says nothing about", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ name: "main" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await new GitAdapter(base).testConnection()).toEqual({ ok: true });
+  });
+
+  it("refuses a blank token outright", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ name: "main" }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await new GitAdapter({ ...base, token: "  " }).testConnection();
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/token is required/);
   });
 });
