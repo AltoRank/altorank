@@ -41,8 +41,14 @@ export async function createCheckoutSession(
     client_reference_id: agencyId,
     // metadata on both the session and the subscription so the webhook can map
     // any subscription event back to the agency regardless of which fires first.
-    metadata: { agency_id: agencyId },
-    subscription_data: { metadata: { agency_id: agencyId } },
+    //
+    // `plan` rides along as the webhook's fallback for the tier. The price on
+    // the subscription is authoritative and the webhook prefers it; this is
+    // what it falls back to when the subscription read fails, so a checkout
+    // can never leave the account on the `starter` column default while the
+    // customer is paying for Agency (2026-09-06).
+    metadata: { agency_id: agencyId, plan, interval },
+    subscription_data: { metadata: { agency_id: agencyId, plan, interval } },
     success_url:
       returnTo && /^\/[a-zA-Z0-9/_?=&%-]*$/.test(returnTo)
         ? `${APP_URL}${returnTo}${returnTo.includes("?") ? "&" : "?"}upgraded=1`
