@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { Button, Icons, Dialog } from "@/components/ui";
 import { useOnboarding } from "@/components/onboarding/use-onboarding";
 import { createWorkspace } from "@/app/actions/workspaces";
-import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
 
 type OnboardStep = "idle" | "creating";
 
@@ -18,13 +17,10 @@ export function ClientActions({ allowance }: { allowance?: { limit: number | nul
   // so the workspace limit, a duplicate domain and a malformed domain all
   // looked identical from the dialog: the spinner stopped and nothing moved.
   const [error, setError] = useState<string | null>(null);
-  // Set once a workspace with a domain exists: the dialog then shows the real
-  // pipeline running instead of the form, and hands off to the dashboard.
-  const [live, setLive] = useState<{ id: string; domain: string } | null>(null);
   const onboarding = useOnboarding();
   const router = useRouter();
 
-  const pending = step !== "idle" || live !== null;
+  const pending = step !== "idle";
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -41,12 +37,26 @@ export function ClientActions({ allowance }: { allowance?: { limit: number | nul
 
       onboarding?.completeStep("add-workspace");
 
-      // The dialog becomes the progress screen. What used to be here was
-      // three labels on fixed timers running alongside a server action of
-      // unknown length; the screen now shows the pipeline's own events and
-      // navigates when the pipeline says it is done.
+      // Hand the new site to the wizard rather than running the pipeline from
+      // inside this dialog.
+      //
+      // Running it here produced the work twice. createWorkspace writes no
+      // business_profile and no onboarded_at, and (dashboard)/layout bounces
+      // any scoped workspace in that state to /onboarding - so the moment the
+      // person switched to the site they had just watched being set up, they
+      // were put through the wizard, whose finish runs the same pipeline
+      // again: a second crawl, a second keyword lookup, and a drafting phase
+      // that could only report "This workspace already has a draft."
+      //
+      // The wizard is also the better version of this screen: it reads the
+      // site, shows what it found for checking, and ends on the same live run.
+      // Same scope cookie the switcher writes, so it opens on the new site.
+      // The literal, not lib/workspace-scope's SCOPE_COOKIE: that module is
+      // server-only (next/headers). workspace-context.tsx writes it the same way.
+      document.cookie = `active_workspace=${result.workspaceId};path=/;max-age=${60 * 60 * 24 * 365};samesite=lax`;
+      setOpen(false);
       setStep("idle");
-      setLive({ id: result.workspaceId, domain: result.domain });
+      router.push("/onboarding");
     } catch (err) {
       // Anything left is a genuine transport or runtime failure, and it has to
       // say so in the dialog rather than only in the console.
@@ -84,19 +94,9 @@ export function ClientActions({ allowance }: { allowance?: { limit: number | nul
       <Dialog
         open={open}
         onOpenChange={(v) => { if (!pending) { setOpen(v); setError(null); } }}
-        title={live ? "Setting up your workspace" : "Add workspace"}
-        description={live ? undefined : "One site or one client. Add the domain and the first analysis starts on its own."}
+        title="Add workspace"
+        description="One site or one client. Add the domain and setup opens for it."
       >
-        {live ? (
-          <OnboardingProgress
-            workspaceId={live.id}
-            domain={live.domain}
-            onDone={() => {
-              setOpen(false);
-              setLive(null);
-            }}
-          />
-        ) : (
         <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
           <label className="flex flex-col gap-1.5">
             <span className="text-[12.5px] font-medium text-ink-2">Name</span>
@@ -138,7 +138,6 @@ export function ClientActions({ allowance }: { allowance?: { limit: number | nul
             </Button>
           </div>
         </form>
-        )}
       </Dialog>
     </>
   );
