@@ -766,12 +766,17 @@ function buildConfig(type: CMSType, fd: FormData): CMSConfig {
           fieldMap = null;
         }
       }
+      // Where items come out on the live site. Webflow answers with no URL of
+      // its own, so this is the only thing that can make a published link
+      // resolve; absent, the connection claims no URL at all.
+      const publicBaseUrl = (fd.get("publicBaseUrl") as string | null)?.trim();
       return {
         type: "webflow",
         siteId: (fd.get("siteId") as string).trim(),
         collectionId: (fd.get("collectionId") as string).trim(),
         apiToken: fd.get("apiToken") as string,
         ...(fieldMap ? { fieldMap } : {}),
+        ...(publicBaseUrl ? { publicBaseUrl } : {}),
       };
     }
     case "ghost":

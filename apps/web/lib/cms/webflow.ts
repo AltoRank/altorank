@@ -118,6 +118,27 @@ export async function listWebflowFields(
 }
 
 /**
+ * Where an item comes out on the live site.
+ *
+ * Not derived from the site id any more. `https://${siteId}.webflow.io/${slug}`
+ * could not resolve: siteId is Webflow's 24-hex ObjectId, the staging host is
+ * `{shortName}.webflow.io`, and an item lives under its collection page's
+ * path - which only the person who built the site knows, because they can
+ * change it. So the connect dialog captures it (prefilled from the site's own
+ * custom domain or short name plus the collection slug, and editable), and
+ * this joins it to the slug.
+ *
+ * With no stored prefix there is no URL: "" leaves published_url null, so no
+ * "View live" link renders and nothing is submitted to IndexNow. A missing
+ * link beats a 404 the product called a published article.
+ */
+export function webflowItemUrl(publicBaseUrl: string | undefined, slug: string): string {
+  const base = publicBaseUrl?.trim().replace(/\/+$/, "");
+  if (!base) return "";
+  return `${base}/${slug.replace(/^\/+/, "")}`;
+}
+
+/**
  * The item body for a collection, from the connection's field map.
  *
  * Exported so the shape is tested once: a wrong slug here is an item Webflow
@@ -147,11 +168,13 @@ export class WebflowAdapter implements CMSAdapter {
   private collectionId: string;
   private apiToken: string;
   private fieldMap: WebflowFieldMap;
+  private publicBaseUrl: string | undefined;
 
   constructor(config: WebflowConfig) {
     this.siteId = config.siteId;
     this.collectionId = config.collectionId;
     this.apiToken = config.apiToken;
+    this.publicBaseUrl = config.publicBaseUrl;
     // Connections saved before the picker existed carry no map and keep the
     // slugs the adapter always used.
     this.fieldMap = config.fieldMap ?? DEFAULT_WEBFLOW_FIELD_MAP;
@@ -159,6 +182,28 @@ export class WebflowAdapter implements CMSAdapter {
 
   private headers() {
     return headers(this.apiToken);
+  }
+
+  /**
+   * Push the item to the live site, and check that it went.
+   *
+   * This call used to be fired and dropped: no res.ok, no throw, unlike the
+   * create ten lines above. A 402 (the site is out of CMS items), a 403 (a
+   * token without cms:write) or a 429 left the item staged in the collection
+   * while the product reported a live publish, marked the row live and told
+   * IndexNow and Search Console about the URL.
+   */
+  private async publishItem(itemId: string): Promise<void> {
+    const res = await fetch(
+      `${WEBFLOW_API}/collections/${this.collectionId}/items/${itemId}/publish`,
+      { method: "POST", headers: this.headers() },
+    );
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(
+        `Webflow took the item but would not publish it (${res.status}): ${err}. It is staged in the collection, unpublished.`,
+      );
+    }
   }
 
   async publish(article: PublishPayload): Promise<PublishResult> {
@@ -187,16 +232,12 @@ export class WebflowAdapter implements CMSAdapter {
 
     // Publish the item live - unless the connection asked for a draft, in
     // which case staging it is the whole job.
-    if (!draft) {
-      await fetch(
-        `${WEBFLOW_API}/collections/${this.collectionId}/items/${itemId}/publish`,
-        { method: "POST", headers: this.headers() },
-      );
-    }
+    if (!draft) await this.publishItem(String(itemId));
 
     return {
       externalId: String(itemId),
-      url: `https://${this.siteId}.webflow.io/${article.slug}`,
+      // A draft is not on the web, so it claims no address either.
+      url: draft ? "" : webflowItemUrl(this.publicBaseUrl, article.slug),
     };
   }
 
@@ -216,13 +257,10 @@ export class WebflowAdapter implements CMSAdapter {
       const err = await res.text();
       throw new Error(`Webflow update failed (${res.status}): ${err}`);
     }
-    await fetch(
-      `${WEBFLOW_API}/collections/${this.collectionId}/items/${externalId}/publish`,
-      { method: "POST", headers: this.headers() },
-    );
+    await this.publishItem(externalId);
     return {
       externalId,
-      url: `https://${this.siteId}.webflow.io/${article.slug}`,
+      url: webflowItemUrl(this.publicBaseUrl, article.slug),
     };
   }
 

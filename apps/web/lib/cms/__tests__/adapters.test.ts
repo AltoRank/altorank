@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { WordPressAdapter } from "../wordpress";
 import { ShopifyAdapter } from "../shopify";
 import { MagentoAdapter } from "../magento";
-import { WebflowAdapter } from "../webflow";
+import { WebflowAdapter, webflowItemUrl } from "../webflow";
 import { GhostAdapter } from "../ghost";
 import { FramerAdapter } from "../framer";
 import { WixAdapter } from "../wix";
@@ -619,6 +619,87 @@ describe("WebflowAdapter", () => {
 
     const headers = mockFetch.mock.calls[0][1].headers;
     expect(headers.Authorization).toBe("Bearer wf_token");
+  });
+
+  // P0-C3: the /publish call used to be fired and never checked, so a 402 or
+  // a 403 left the item staged while the product reported a live publish.
+  it("publish() throws when Webflow refuses to make the item live", async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "item_1" }) })
+      .mockResolvedValueOnce({ ok: false, status: 402, text: async () => "CMS item limit reached" });
+
+    await expect(
+      adapter.publish({ title: "Hello", html: "<p>world</p>", slug: "hello" }),
+    ).rejects.toThrow(/would not publish it \(402\).*staged in the collection/s);
+  });
+
+  it("update() throws when the republish is refused", async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "item_1" }) })
+      .mockResolvedValueOnce({ ok: false, status: 429, text: async () => "rate limited" });
+
+    await expect(
+      adapter.update("item_1", { title: "Hello", html: "<p>world</p>", slug: "hello" }),
+    ).rejects.toThrow(/429/);
+  });
+
+  // P0-C2: siteId is an ObjectId, so `${siteId}.webflow.io/${slug}` was a 404
+  // that the product called a published article and sent to IndexNow.
+  it("publish() claims no URL when the connection stored no public base", async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "item_1" }) })
+      .mockResolvedValueOnce({ ok: true });
+
+    const result = await adapter.publish({ title: "Hello", html: "<p>w</p>", slug: "hello" });
+    expect(result.url).toBe("");
+  });
+
+  it("publish() uses the stored public base for the live URL", async () => {
+    const withBase = new WebflowAdapter({
+      type: "webflow",
+      siteId: "site_abc",
+      collectionId: "col_abc",
+      apiToken: "wf_token",
+      publicBaseUrl: "https://acme.com/blog/",
+    });
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "item_1" }) })
+      .mockResolvedValueOnce({ ok: true });
+
+    const result = await withBase.publish({ title: "Hello", html: "<p>w</p>", slug: "hello" });
+    expect(result.url).toBe("https://acme.com/blog/hello");
+  });
+
+  it("a draft item claims no URL, because it is not on the web", async () => {
+    const withBase = new WebflowAdapter({
+      type: "webflow",
+      siteId: "site_abc",
+      collectionId: "col_abc",
+      apiToken: "wf_token",
+      publicBaseUrl: "https://acme.com/blog",
+    });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: "item_1" }) });
+
+    const result = await withBase.publish({
+      title: "Hello",
+      html: "<p>w</p>",
+      slug: "hello",
+      publishMode: "draft",
+    });
+    expect(result).toEqual({ externalId: "item_1", url: "" });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("webflowItemUrl", () => {
+  it("joins a stored base to the slug and tolerates a trailing slash", () => {
+    expect(webflowItemUrl("https://acme.com/blog", "post")).toBe("https://acme.com/blog/post");
+    expect(webflowItemUrl("https://acme.com/blog/", "post")).toBe("https://acme.com/blog/post");
+  });
+
+  it("is empty without a base, so nothing links anywhere", () => {
+    expect(webflowItemUrl(undefined, "post")).toBe("");
+    expect(webflowItemUrl("  ", "post")).toBe("");
   });
 });
 

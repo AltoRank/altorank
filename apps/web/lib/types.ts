@@ -401,6 +401,14 @@ export type WebflowConfig = {
   collectionId: string;
   apiToken: string;
   fieldMap?: WebflowFieldMap;
+  /**
+   * Where the collection's items come out on the live site, e.g.
+   * "https://acme.com/blog". Captured in the connect dialog because Webflow's
+   * API cannot say: the item response carries no URL and the collection
+   * page's path is the site designer's choice. Absent means no published URL
+   * is claimed at all - see webflowItemUrl.
+   */
+  publicBaseUrl?: string;
 };
 
 export type GhostConfig = {

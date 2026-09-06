@@ -44,6 +44,12 @@ export function WebflowPicker() {
   const [fields, setFields] = useState<WebflowField[] | null>(null);
   const [map, setMap] = useState<Partial<Record<WebflowMapRole, string>>>({});
   const [manual, setManual] = useState(false);
+  // Where the collection's items come out on the live site. Webflow's API
+  // cannot say - the item response has no URL and the collection page's path
+  // is the designer's choice - so it is prefilled from the site's own domain
+  // and the collection slug, and the person can correct it. Left empty, the
+  // connection claims no published URL rather than guessing one.
+  const [publicBaseUrl, setPublicBaseUrl] = useState("");
 
   async function loadSites() {
     setError(null);
@@ -64,11 +70,20 @@ export function WebflowPicker() {
     if (r.data.length === 1) await chooseSite(r.data[0].id);
   }
 
+  /** `https://acme.com` for a site with a custom domain, else its staging host. */
+  function siteOrigin(site: WebflowSite | undefined): string {
+    if (!site) return "";
+    const domain = site.customDomains[0];
+    if (domain) return `https://${domain.replace(/^https?:\/\//, "").replace(/\/+$/, "")}`;
+    return site.shortName ? `https://${site.shortName}.webflow.io` : "";
+  }
+
   async function chooseSite(id: string) {
     setSiteId(id);
     setCollections(null);
     setFields(null);
     setCollectionId("");
+    setPublicBaseUrl("");
     if (!id) return;
     setLoading("collections");
     const r = await listWebflowCollectionsAction(token.trim(), id);
@@ -91,6 +106,9 @@ export function WebflowPicker() {
     setFields(null);
     setMap({});
     if (!id) return;
+    const origin = siteOrigin(sites?.find((s) => s.id === siteId));
+    const slug = collections?.find((c) => c.id === id)?.slug ?? "";
+    setPublicBaseUrl(origin ? `${origin}${slug ? `/${slug}` : ""}` : "");
     setLoading("fields");
     const r = await listWebflowFieldsAction(token.trim(), id);
     setLoading(null);
@@ -152,6 +170,12 @@ export function WebflowPicker() {
           <label className="flex flex-col gap-1.5">
             <span className="text-[12.5px] font-medium text-ink-2">Collection ID</span>
             <input name="collectionId" required placeholder="e.g. 6287ec36b..." className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[12.5px] font-medium text-ink-2">
+              Public URL of these posts <span className="text-ink-3">(optional)</span>
+            </span>
+            <input name="publicBaseUrl" placeholder="https://acme.com/blog" className={inputClass} />
           </label>
           <p className="text-[11.5px] text-ink-3">
             Without the field list the adapter assumes Webflow&apos;s blog template slugs
@@ -250,6 +274,27 @@ export function WebflowPicker() {
                 <p className="text-[11.5px] text-[var(--err)]">Title, slug and body must each have a field.</p>
               )}
             </fieldset>
+          )}
+
+          {collectionId && (
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[12.5px] font-medium text-ink-2">
+                Public URL of these posts <span className="text-ink-3">(optional)</span>
+              </span>
+              <input
+                name="publicBaseUrl"
+                value={publicBaseUrl}
+                onChange={(e) => setPublicBaseUrl(e.target.value)}
+                placeholder="https://acme.com/blog"
+                className={inputClass}
+              />
+              <span className="text-[11.5px] text-ink-3 leading-[1.5]">
+                Webflow&apos;s API does not report where an item comes out, so this is
+                where the link on a published article points. Open a post on your site
+                and copy everything before its own slug. Left empty, published articles
+                carry no link rather than a guessed one.
+              </span>
+            </label>
           )}
 
           {sites && (
