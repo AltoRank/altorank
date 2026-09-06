@@ -47,8 +47,43 @@ export class FramerAdapter implements CMSAdapter {
     const data = await res.json();
     return {
       externalId: String(data.id),
-      url: data.url ?? `https://${this.siteId}.framer.website/${article.slug}`,
+      // Framer's own address, or none. `${siteId}.framer.website` was the same
+      // fabrication as Webflow's and Wix's: siteId is an identifier, not a
+      // hostname, so the link 404'd and the URL still went to IndexNow.
+      url: typeof data.url === "string" ? data.url : "",
     };
+  }
+
+  /**
+   * Rewrite the item in place, the same PATCH unpublish() uses. Without it a
+   * Framer article was stranded after its first publish by core.ts's
+   * "cannot be updated in place from here".
+   */
+  async update(externalId: string, article: PublishPayload): Promise<PublishResult> {
+    const res = await fetch(
+      `${FRAMER_API}/sites/${this.siteId}/collections/${this.collectionId}/items/${externalId}`,
+      {
+        method: "PATCH",
+        headers: this.headers(),
+        body: JSON.stringify({
+          fieldData: {
+            name: article.title,
+            slug: article.slug,
+            content: article.html,
+            description: article.metaDescription ?? "",
+          },
+          isDraft: article.publishMode === "draft",
+        }),
+      },
+    );
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Framer update failed (${res.status}): ${err}`);
+    }
+
+    const data = await res.json();
+    return { externalId, url: typeof data.url === "string" ? data.url : "" };
   }
 
   async unpublish(externalId: string): Promise<void> {

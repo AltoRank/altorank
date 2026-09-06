@@ -1,80 +1,30 @@
-import type { CMSAdapter, PublishPayload, PublishResult } from "./types";
+import { WordPressAdapter } from "./wordpress";
 import type { WooCommerceConfig } from "@/lib/types";
 
 /**
- * WooCommerce adapter — extends the WordPress REST API pattern.
- * WooCommerce sites are WordPress sites, so blog posts use the
- * same /wp-json/wp/v2/posts endpoint with Basic auth.
+ * WooCommerce stores are WordPress sites.
+ *
+ * The note beside this connector says "same as WordPress", and it used not to
+ * be: this file held its own thinner copy of the WordPress adapter, sending
+ * title, content, slug, status and excerpt and nothing else. So a WooCommerce
+ * connection quietly lost the media-library import (every image kept pointing
+ * at our storage) and the SEO plugin fields, and - because it had no update()
+ * - every published WooCommerce article hit lib/publishing/core.ts's "cannot
+ * be updated in place from here" on the second press of Publish.
+ *
+ * The endpoints are identical (wp-json/wp/v2/posts and /media with an
+ * application password), so it extends the WordPress adapter and changes only
+ * the name it fails under. The note is now true rather than aspirational.
  */
-export class WooCommerceAdapter implements CMSAdapter {
-  private baseUrl: string;
-  private auth: string;
+export class WooCommerceAdapter extends WordPressAdapter {
+  protected readonly platform: string = "WooCommerce";
 
   constructor(config: WooCommerceConfig) {
-    this.baseUrl = config.siteUrl.replace(/\/+$/, "");
-    this.auth = Buffer.from(
-      `${config.username}:${config.applicationPassword}`,
-    ).toString("base64");
-  }
-
-  async publish(article: PublishPayload): Promise<PublishResult> {
-    const res = await fetch(`${this.baseUrl}/wp-json/wp/v2/posts`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Basic ${this.auth}`,
-      },
-      body: JSON.stringify({
-        title: article.title,
-        content: article.html,
-        slug: article.slug,
-        // A draft connection saves the post for someone to publish from the
-        // admin; the REST field is the same one unpublish() writes.
-        status: article.publishMode === "draft" ? "draft" : "publish",
-        excerpt: article.metaDescription ?? "",
-        ...(article.tags?.length && { tags: article.tags }),
-      }),
+    super({
+      type: "wordpress",
+      siteUrl: config.siteUrl,
+      username: config.username,
+      applicationPassword: config.applicationPassword,
     });
-
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`WooCommerce publish failed (${res.status}): ${err}`);
-    }
-
-    const data = await res.json();
-    return {
-      externalId: String(data.id),
-      url: data.link,
-    };
-  }
-
-  async unpublish(externalId: string): Promise<void> {
-    const res = await fetch(
-      `${this.baseUrl}/wp-json/wp/v2/posts/${externalId}`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Basic ${this.auth}`,
-        },
-        body: JSON.stringify({ status: "draft" }),
-      },
-    );
-
-    if (!res.ok)
-      throw new Error(`WooCommerce unpublish failed (${res.status})`);
-  }
-
-  async testConnection(): Promise<{ ok: boolean; error?: string }> {
-    try {
-      const res = await fetch(
-        `${this.baseUrl}/wp-json/wp/v2/posts?per_page=1`,
-        { headers: { Authorization: `Basic ${this.auth}` } },
-      );
-      if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: (e as Error).message };
-    }
   }
 }

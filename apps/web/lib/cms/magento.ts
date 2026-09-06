@@ -48,6 +48,36 @@ export class MagentoAdapter implements CMSAdapter {
     };
   }
 
+  /**
+   * Rewrite the CMS page in place. The REST resource has a PUT keyed on the
+   * page id, so the "cannot be updated in place from here" refusal a second
+   * publish used to hit was ours, not Magento's.
+   */
+  async update(externalId: string, article: PublishPayload): Promise<PublishResult> {
+    const res = await fetch(`${this.baseUrl}/rest/${this.storeCode}/V1/cmsPage/${externalId}`, {
+      method: "PUT",
+      headers: this.headers(),
+      body: JSON.stringify({
+        page: {
+          id: Number(externalId),
+          title: article.title,
+          identifier: article.slug,
+          content: article.html,
+          active: article.publishMode !== "draft",
+          meta_description: article.metaDescription ?? "",
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Magento update failed (${res.status}): ${err}`);
+    }
+
+    const data = await res.json();
+    return { externalId: String(data.id ?? externalId), url: `${this.baseUrl}/${article.slug}` };
+  }
+
   async unpublish(externalId: string): Promise<void> {
     const res = await fetch(`${this.baseUrl}/rest/${this.storeCode}/V1/cmsPage/${externalId}`, {
       method: "DELETE",

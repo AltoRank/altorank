@@ -67,6 +67,38 @@ export class HubSpotAdapter implements CMSAdapter {
     };
   }
 
+  /**
+   * Rewrite the post in place.
+   *
+   * Without this a HubSpot connection - draft by default - hit core.ts's
+   * "cannot be updated in place from here" on the second press of Publish,
+   * with nothing else offered. The blog-post resource has a PATCH.
+   */
+  async update(externalId: string, article: PublishPayload): Promise<PublishResult> {
+    const res = await fetch(`${HUBSPOT_API}/cms/v3/blogs/posts/${externalId}`, {
+      method: "PATCH",
+      headers: this.headers(),
+      body: JSON.stringify({
+        name: article.title,
+        slug: article.slug,
+        postBody: article.html,
+        metaDescription: article.metaDescription ?? "",
+        currentState: article.publishMode === "draft" ? "DRAFT" : "PUBLISHED",
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`HubSpot update failed (${res.status}): ${err}`);
+    }
+
+    const data = await res.json();
+    return {
+      externalId: String(data.id ?? externalId),
+      url: data.url ?? data.absoluteUrl ?? "",
+    };
+  }
+
   async unpublish(externalId: string): Promise<void> {
     const res = await fetch(
       `${HUBSPOT_API}/cms/v3/blogs/posts/${externalId}`,

@@ -11,6 +11,7 @@ import { HubSpotAdapter } from "../hubspot";
 import { WooCommerceAdapter } from "../woocommerce";
 import { WebhookAdapter } from "../webhook";
 import { resolveCMSAdapter } from "../adapter";
+import { canUpdate } from "../types";
 import { tiptapToHtml } from "../html";
 
 // Mock global fetch
@@ -845,6 +846,7 @@ describe("FramerAdapter", () => {
     const result = await adapter.testConnection();
     expect(result).toEqual({ ok: true });
   });
+
 });
 
 // ---------------------------------------------------------------------------
@@ -894,6 +896,81 @@ describe("HubSpotAdapter", () => {
 
     const headers = mockFetch.mock.calls[0][1].headers;
     expect(headers.Authorization).toBe("Bearer hs_token");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Editing in place (P0-C7): every adapter whose vendor has an edit endpoint
+// ---------------------------------------------------------------------------
+//
+// Without update(), lib/publishing/core.ts refuses the second press of Publish
+// with "cannot be updated in place from here" - and draft is the default mode,
+// so that is the common path, not the rare one.
+describe("update() coverage", () => {
+  it("HubSpot PATCHes the post and keeps its id", async () => {
+    const hubspot = new HubSpotAdapter({ type: "hubspot", accessToken: "t", blogId: "b" });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ id: 5, url: "https://h.test/p" }),
+    });
+
+    const result = await hubspot.update("5", { title: "New", html: "<p>x</p>", slug: "p" });
+
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("https://api.hubapi.com/cms/v3/blogs/posts/5");
+    expect(opts.method).toBe("PATCH");
+    expect(JSON.parse(opts.body)).toMatchObject({ name: "New", currentState: "PUBLISHED" });
+    expect(result).toEqual({ externalId: "5", url: "https://h.test/p" });
+  });
+
+  it("Framer PATCHes the item", async () => {
+    const framer = new FramerAdapter({ type: "framer", siteId: "s", collectionId: "c", apiToken: "t" });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: "i1", url: "https://f.test/p" }) });
+
+    const result = await framer.update("i1", { title: "New", html: "<p>x</p>", slug: "p" });
+
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toContain("/sites/s/collections/c/items/i1");
+    expect(opts.method).toBe("PATCH");
+    expect(result).toEqual({ externalId: "i1", url: "https://f.test/p" });
+  });
+
+  it("Framer claims no URL when the API reports none", async () => {
+    const framer = new FramerAdapter({ type: "framer", siteId: "s", collectionId: "c", apiToken: "t" });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: "i1" }) });
+
+    const result = await framer.publish({ title: "T", html: "<p>x</p>", slug: "p" });
+    expect(result).toEqual({ externalId: "i1", url: "" });
+  });
+
+  it("Magento PUTs the CMS page", async () => {
+    const magento = new MagentoAdapter({
+      type: "magento",
+      baseUrl: "https://m.test",
+      adminToken: "t",
+    });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 12 }) });
+
+    const result = await magento.update("12", { title: "New", html: "<p>x</p>", slug: "p" });
+
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("https://m.test/rest/default/V1/cmsPage/12");
+    expect(opts.method).toBe("PUT");
+    expect(JSON.parse(opts.body).page).toMatchObject({ id: 12, title: "New" });
+    expect(result).toEqual({ externalId: "12", url: "https://m.test/p" });
+  });
+
+  it("every adapter with a vendor edit endpoint reports canUpdate", () => {
+    const updatable = [
+      new WordPressAdapter({ type: "wordpress", siteUrl: "https://x.test", username: "u", applicationPassword: "p" }),
+      new WooCommerceAdapter({ type: "woocommerce", siteUrl: "https://x.test", username: "u", applicationPassword: "p" }),
+      new ShopifyAdapter({ type: "shopify", storeUrl: "https://x.myshopify.com", accessToken: "t" }),
+      new WebflowAdapter({ type: "webflow", siteId: "s", collectionId: "c", apiToken: "t" }),
+      new HubSpotAdapter({ type: "hubspot", accessToken: "t" }),
+      new FramerAdapter({ type: "framer", siteId: "s", collectionId: "c", apiToken: "t" }),
+      new MagentoAdapter({ type: "magento", baseUrl: "https://m.test", adminToken: "t" }),
+    ];
+    for (const adapter of updatable) expect(canUpdate(adapter)).toBe(true);
   });
 });
 
@@ -954,6 +1031,29 @@ describe("WooCommerceAdapter", () => {
     mockFetch.mockResolvedValueOnce({ ok: true });
     const result = await adapter.testConnection();
     expect(result).toEqual({ ok: true });
+  });
+
+  // P1-C5: the note says "same as WordPress" and now it is - the adapter is
+  // the WordPress one, so images, SEO meta and update() come with it.
+  it("is the WordPress adapter, so it sends the SEO meta and imports images", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 1, link: "https://woo.example.com/p" }) });
+    await adapter.publish({
+      title: "T",
+      html: "<p>h</p>",
+      slug: "t",
+      metaDescription: "d",
+      focusKeyword: "k",
+    });
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.meta).toBeTruthy();
+    expect(Object.values(body.meta)).toContain("d");
+  });
+
+  it("fails under its own name, not WordPress's", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 401, text: async () => "no" });
+    await expect(adapter.publish({ title: "T", html: "<p>h</p>", slug: "t" })).rejects.toThrow(
+      /WooCommerce publish failed \(401\)/,
+    );
   });
 });
 

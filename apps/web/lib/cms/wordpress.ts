@@ -31,8 +31,14 @@ function statusFor(article: PublishPayload): "publish" | "draft" {
 }
 
 export class WordPressAdapter implements CMSAdapter {
-  private baseUrl: string;
-  private auth: string;
+  protected baseUrl: string;
+  protected auth: string;
+  /**
+   * What to call this connection in an error. WooCommerce stores are
+   * WordPress sites and share every endpoint here, so WooCommerceAdapter
+   * extends this class and only changes the name it fails under.
+   */
+  protected readonly platform: string = "WordPress";
 
   constructor(config: WordPressConfig) {
     this.baseUrl = config.siteUrl.replace(/\/+$/, "");
@@ -123,7 +129,7 @@ export class WordPressAdapter implements CMSAdapter {
 
     if (!res.ok) {
       const err = await res.text();
-      throw new Error(`WordPress publish failed (${res.status}): ${err}`);
+      throw new Error(`${this.platform} publish failed (${res.status}): ${err}`);
     }
 
     const data = await res.json();
@@ -143,7 +149,7 @@ export class WordPressAdapter implements CMSAdapter {
 
     if (!res.ok) {
       const err = await res.text();
-      throw new Error(`WordPress update failed (${res.status}): ${err}`);
+      throw new Error(`${this.platform} update failed (${res.status}): ${err}`);
     }
 
     const data = await res.json();
@@ -158,7 +164,7 @@ export class WordPressAdapter implements CMSAdapter {
     });
 
     if (!res.ok) {
-      throw new Error(`WordPress unpublish failed (${res.status})`);
+      throw new Error(`${this.platform} unpublish failed (${res.status})`);
     }
   }
 
