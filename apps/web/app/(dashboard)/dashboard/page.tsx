@@ -218,7 +218,7 @@ export default async function DashboardPage() {
               />
             )}
             <ClientActions
-              allowance={{ limit: allowance.limit, remaining: allowance.remaining, noPlan: allowance.reason === "no-plan" }}
+              allowance={{ limit: allowance.limit, remaining: allowance.remaining, used: allowance.used, noPlan: allowance.reason === "no-plan" }}
             />
           </>
         }

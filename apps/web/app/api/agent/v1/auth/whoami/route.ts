@@ -14,7 +14,7 @@ import { getQuota } from "@/lib/billing/quota";
 export const GET = withAgent(async (request, ctx) => {
   const base = appBaseUrl(request);
   const [{ data: agency }, workspaces, quota] = await Promise.all([
-    ctx.supabase.from("agencies").select("id, name, plan").eq("id", ctx.agencyId).single(),
+    ctx.supabase.from("agencies").select("id, name").eq("id", ctx.agencyId).single(),
     agencyWorkspaces(ctx),
     // null caller: an API key is nobody's session. Same contract as the crons.
     getQuota(ctx.supabase, ctx.agencyId, null),
@@ -22,7 +22,13 @@ export const GET = withAgent(async (request, ctx) => {
 
   const data = {
     key: ctx.key,
-    account: agency ? { id: agency.id, name: agency.name, plan: agency.plan } : null,
+    // The tier being paid for, not the column. `agencies.plan` defaults to
+    // "starter" and is never cleared, so an account that has bought nothing
+    // answered `plan: "starter"` here beside `quota.reason: "no-plan"` - two
+    // contradictory answers in one envelope, and an agent that reads the
+    // first tells the human they are on Managed. `quota.plan` is null unless
+    // the tier is actually entitled (lib/billing/quota.ts).
+    account: agency ? { id: agency.id, name: agency.name, plan: quota.plan } : null,
     workspaces: workspaces.map((w) => toAgentWorkspace(w, base)),
     quota: {
       limit: quota.limit,

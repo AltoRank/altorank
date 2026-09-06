@@ -98,10 +98,23 @@ export function usageLine(quota: Quota, now: Date = new Date()): UsageLine {
     };
   }
 
+  // A downgrade keeps the month's real count while the included volume drops,
+  // so `used` can be well past `limit` on a paid tier too - "150 / 100" is the
+  // same unreadable arithmetic the free branch above already refuses to print,
+  // and it arrives with no explanation of why the number moved.
+  if (used > limit) {
+    return {
+      figure: String(used),
+      sentence: `articles generated this month, on a plan that includes ${limit}. The ones already written stay; scheduled writing waits for ${formatReset(now)}, and an article written by hand bills at the published overage rate.`,
+      fraction: 1,
+      exhausted: true,
+    };
+  }
+
   return {
     figure: `${used} / ${limit}`,
     sentence: exhausted
-      ? "included articles used. Additional articles bill at the published overage rate."
+      ? "included articles used. Scheduled writing stops here; an article written by hand bills at the published overage rate."
       : "included articles used.",
     fraction,
     exhausted,

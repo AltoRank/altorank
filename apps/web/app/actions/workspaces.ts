@@ -7,7 +7,10 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { z } from "zod";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
 import { getWorkspaceAllowance, workspaceLimitMessage } from "@/lib/billing/workspaces";
-import { MAX_PACE, normalisePace, PAID_DEFAULT_PACE } from "@/lib/content/pace";
+import { MAX_PACE, monthlyFromPace, normalisePace, PAID_DEFAULT_PACE } from "@/lib/content/pace";
+import { getQuota } from "@/lib/billing/quota";
+import { paceAllowed, planNeededFor } from "@/lib/plan/pace-options";
+import { PLAN_LABELS } from "@/lib/stripe";
 import { pauseWorkspace as pauseWorkspaceCore, resumeWorkspace as resumeWorkspaceCore } from "@/lib/workspaces/pause";
 import type { PausedMeta } from "@/lib/types";
 
@@ -121,13 +124,29 @@ export async function updateWorkspace(id: string, formData: FormData) {
  * "not now" and "never" visible in the row.
  */
 export async function setGenerationPace(workspaceId: string, requested: unknown) {
-  const { agencyId } = await requireAuth();
+  const { agencyId, user } = await requireAuth();
   const pace = normalisePace(requested);
   if (pace === null) {
     throw new Error(`Pick a number of articles a week between 0 and ${MAX_PACE}.`);
   }
 
   const supabase = await createClient();
+
+  // The same rule the Articles-plan control enforces (app/actions/plan.ts's
+  // `applyArticlesPlan`). This door had neither half of it: the slider ran to
+  // MAX_PACE on every tier and the action wrote whatever arrived, so a free
+  // account could set 25 a week - about 108 a month against seven drafts -
+  // and the popover next door refused the same number with "Needs the
+  // Managed plan". One setting, two answers, and the honest one only on the
+  // screen that happened to check.
+  const quota = await getQuota(supabase, agencyId, user.email ?? null);
+  if (!paceAllowed(pace, quota)) {
+    const needs = PLAN_LABELS[planNeededFor(monthlyFromPace(pace))];
+    throw new Error(
+      `${pace} a week is about ${monthlyFromPace(pace)} a month, which needs the ${needs} plan. Choose one on the Billing page.`,
+    );
+  }
+
   const { error } = await supabase
     .from("workspaces")
     .update({ auto_generate_weekly_limit: pace })

@@ -139,6 +139,14 @@ function CancelDialog({
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
+  // "Cancel plan — writing stops December 1" when the period end is known,
+  // and the honest shorter version when it is not: the date comes from
+  // Stripe and inventing one on the cancellation screen is the worst place
+  // to guess.
+  const endLabel = periodEnd
+    ? `Cancel plan — writing stops ${new Date(periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" })}`
+    : "Cancel plan — writing stops at the period end";
+
   function next() {
     const v = validateCancellation({ reason, detail });
     if (!v.ok) {
@@ -229,8 +237,11 @@ function CancelDialog({
             <Button type="button" onClick={() => setStep("why")} disabled={pending}>
               Back
             </Button>
+            {/* The consequence in the label, not only in the paragraph above
+                it (outrank-teardown/13-, stage 1). "Confirm cancellation"
+                confirms a word; this one says what the click does and when. */}
             <Button variant="primary" onClick={confirm} disabled={pending}>
-              {pending ? "Cancelling…" : "Confirm cancellation"}
+              {pending ? "Cancelling…" : endLabel}
             </Button>
           </div>
         </div>

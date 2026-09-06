@@ -74,6 +74,21 @@ export function paceAllowed(pace: number, quota: Pick<Quota, "limit" | "reason">
 }
 
 /**
+ * The highest pace this account may set, for a control that offers a range
+ * rather than a list.
+ *
+ * The workspace-settings slider ran to MAX_PACE on every tier while the
+ * calendar's popover next door refused the same number, and the action behind
+ * the slider wrote whatever arrived. Same rule, expressed as a ceiling.
+ */
+export function maxAllowedPace(quota: Pick<Quota, "limit" | "reason">): number {
+  for (let pace = MAX_PACE; pace > 0; pace--) {
+    if (paceAllowed(pace, quota)) return pace;
+  }
+  return 0;
+}
+
+/**
  * What picking this pace actually gets you, in a phrase.
  *
  * `about ${monthly} articles a month` is arithmetic on the pace and nothing

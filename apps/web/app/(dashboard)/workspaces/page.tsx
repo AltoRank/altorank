@@ -57,7 +57,7 @@ export default async function ClientsPage({ searchParams }: Props) {
       <PageHead
         title="Workspaces"
         subtitle={<><StatusPill status="on" label={plural(workspaces.length, "workspace")} /><span>{plural(totalLive, "article")} published</span></>}
-        actions={<ClientActions allowance={{ limit: allowance.limit, remaining: allowance.remaining, noPlan: allowance.reason === "no-plan" }} />}
+        actions={<ClientActions allowance={{ limit: allowance.limit, remaining: allowance.remaining, used: allowance.used, noPlan: allowance.reason === "no-plan" }} />}
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">

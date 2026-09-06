@@ -227,7 +227,15 @@ export function PlanCards({
       </div>
 
       <p className="m-0 max-w-[76ch] text-[12px] leading-relaxed text-ink-3">
-        {hasCustomer ? (
+        {/* An editor or admin has no pause or cancel control on this page, so
+            telling them what cancelling takes describes a button they cannot
+            see. What is true for them is what happens to the work. */}
+        {locked ? (
+          <>
+            Only the account owner can change or end the plan. Whatever they
+            choose, your workspaces, articles and history stay readable.
+          </>
+        ) : hasCustomer ? (
           cancelHandledBelow ? (
             <>
               Pausing and cancelling are below. Either way your workspaces,
