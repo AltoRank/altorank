@@ -12,7 +12,10 @@ export function RecommendedActionsStrip({ actions }: { actions: RecommendedActio
   return (
     <section aria-label="Recommended actions" className="mb-4">
       <div className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3 mb-2">Recommended actions</div>
-      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(actions.length, 4)}, minmax(0, 1fr))` }}>
+      <div
+        className="grid gap-3 grid-cols-1 sm:grid-cols-[repeat(var(--cols),minmax(0,1fr))]"
+        style={{ "--cols": Math.min(actions.length, 4) } as React.CSSProperties}
+      >
         {actions.map((a) => (
           <div key={a.id} className="rounded-[10px] border border-line bg-bg px-4 py-3.5 flex flex-col gap-2">
             <div className="text-[13.5px] font-medium text-ink">{a.title}</div>

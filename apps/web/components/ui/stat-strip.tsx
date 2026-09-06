@@ -25,8 +25,10 @@ export function StatStrip({ stats, cols, compact = false }: { stats: Stat[]; col
   const columns = cols ?? stats.length;
   return (
     <div
-      className="grid gap-px bg-line border-b border-line"
-      style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+      // Two up on a phone, with an odd last stat spanning the row so the
+      // grid's line-coloured background never shows through an empty cell.
+      className="grid gap-px bg-line border-b border-line grid-cols-2 [&>*:last-child:nth-child(odd)]:col-span-2 sm:grid-cols-[repeat(var(--cols),minmax(0,1fr))] sm:[&>*:last-child:nth-child(odd)]:col-span-1"
+      style={{ "--cols": columns } as React.CSSProperties}
     >
       {stats.map((s) => (
         <div key={s.label} className={cn("bg-bg", compact ? "px-4 py-2.5" : "px-6 py-4")}>
