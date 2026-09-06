@@ -284,15 +284,28 @@ on before the account is ready does not collect tax - it stops anyone paying.
 
 To start collecting VAT, in this order:
 
-1. **Tax → Settings**: activate Stripe Tax with the head-office address, and set
-   the default product tax code to *Software as a service (SaaS) – business use*
-   (`txcd_10103001`). The products carry no tax code of their own; without a
-   default, `automatic_tax` errors at checkout.
-2. **Tax → Settings → Default tax behavior → Exclusive**, or per Price: Product
-   catalogue → price → ⋯ → Edit → "Include tax in price" → **No**. Left
-   unspecified, Stripe treats €69 as tax-inclusive and computes VAT out of it.
-   `tax_behavior` **cannot be changed once set**; a price created as inclusive
-   has to be replaced.
+1. **Tax → Settings → Business information**: activate Stripe Tax with the
+   head-office address and register (Tax → Registrations) wherever you owe VAT.
+   The products carry no tax code of their own, so the *Preset product category*
+   is what `automatic_tax` uses; without one it errors at checkout. Stripe's
+   default, *Electronically Supplied Services* (`txcd_10000000`), is the right
+   answer for an EU seller: SaaS is an electronically supplied service and it
+   lands on the standard rate. *Software as a service (SaaS) – business use*
+   (`txcd_10103001`) is the narrower code and only pays for itself in the US,
+   where some states treat business SaaS differently from digital services
+   generally — and it is the wrong code if consumers can buy, which on this
+   product they can.
+2. **Tax → Settings → Include tax in prices → No.** The default is *Automatic*,
+   which excludes tax for USD and CAD and **includes it for every other
+   currency**. Prices here are in euros, so *Automatic* means Stripe reads €69 as
+   tax-inclusive and carves the VAT out of it: €56.56 to you instead of €69, with
+   nothing in the UI to say so. *No* adds VAT on top, which is what the pricing
+   page promises.
+
+   The account setting is changeable and applies to any Price whose own
+   `tax_behavior` is `unspecified`. Setting `tax_behavior` **on a Price** is
+   different: that is permanent, and a price created as inclusive has to be
+   replaced rather than edited.
 3. Set `STRIPE_TAX_ENABLED=true` on the deployment and redeploy. The session
    then sends `automatic_tax`, `tax_id_collection` (the VAT number that triggers
    the reverse charge for EU businesses) and keeps the customer's address for

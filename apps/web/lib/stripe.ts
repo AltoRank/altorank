@@ -43,10 +43,13 @@ export const billingEnabled = Boolean(process.env.STRIPE_SECRET_KEY);
  * account not set up, `checkout.sessions.create` throws and nobody can pay.
  * That was the state on 2026-09-06 for a few hours.
  *
- * The operator's decision is to charge the listed price with no VAT added until
- * there are customers to register for. When that changes: activate Stripe Tax,
- * set every Price to exclusive (immutable once set) and a SaaS tax code, then
- * set STRIPE_TAX_ENABLED=true. docs/deploy.md, "Stripe", has the steps.
+ * SUPALABS registered for Italian VAT on 2026-09-06 (domestic only, having
+ * elected the EU micro-business threshold, so EU consumers are charged the
+ * Italian rate). The flag stays off until the account finishes the two settings
+ * that make automatic_tax safe: a preset product category, and "Include tax in
+ * prices" = No. The default there is Automatic, which treats every non-USD/CAD
+ * price as tax-INCLUSIVE - on euro prices that quietly carves the VAT out of
+ * revenue instead of adding it. docs/deploy.md, "Stripe", has the order.
  */
 export const stripeTaxEnabled = process.env.STRIPE_TAX_ENABLED === "true";
 
