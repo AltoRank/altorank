@@ -1,24 +1,8 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
-import { getStripe } from "@/lib/stripe";
+import { getStripe, isSelfServePlan, planForPriceId, type SelfServePlan } from "@/lib/stripe";
 import { createServiceClient } from "@/lib/supabase/server";
 import { paceOnActivation } from "@/lib/content/pace";
-
-// Resolve a Stripe price id back to our plan tier.
-function planForPrice(priceId: string | undefined): "starter" | "growth" | undefined {
-  if (!priceId) return undefined;
-  if (
-    priceId === process.env.STRIPE_PRICE_STARTER ||
-    priceId === process.env.STRIPE_PRICE_STARTER_YEARLY
-  )
-    return "starter";
-  if (
-    priceId === process.env.STRIPE_PRICE_GROWTH ||
-    priceId === process.env.STRIPE_PRICE_GROWTH_YEARLY
-  )
-    return "growth";
-  return undefined;
-}
 
 function mapStatus(s: Stripe.Subscription.Status): string {
   switch (s) {
@@ -35,6 +19,44 @@ function mapStatus(s: Stripe.Subscription.Status): string {
     default:
       return "inactive";
   }
+}
+
+/**
+ * Which tier a completed checkout bought.
+ *
+ * `checkout.session.completed` carries no line items, so the price has to be
+ * read off the subscription the session created. That read is the authoritative
+ * answer - it is what Stripe bills - and `session.metadata.plan`, written by
+ * `createCheckoutSession`, is the fallback for when the read fails or returns a
+ * price id this deployment does not recognise.
+ *
+ * This exists because the handler used to write `stripe_customer_id`,
+ * `stripe_subscription_id` and `plan_status` and *not* `plan`. `agencies.plan`
+ * is `not null default 'starter'`, so a EUR 199 Agency buyer sat on Managed's
+ * row - badged "Managed plan" on the Billing page and metered at
+ * PLAN_ARTICLE_LIMITS.starter = 100 instead of 400, which also capped the pace
+ * they were allowed to set - until some later `customer.subscription.updated`
+ * happened to arrive and correct it (2026-09-06).
+ */
+export async function planForCheckoutSession(
+  session: Stripe.Checkout.Session,
+): Promise<SelfServePlan | undefined> {
+  const subscriptionId =
+    typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+
+  if (subscriptionId) {
+    try {
+      const sub = await getStripe().subscriptions.retrieve(subscriptionId);
+      const fromPrice = planForPriceId(sub.items?.data?.[0]?.price?.id);
+      if (fromPrice) return fromPrice;
+    } catch {
+      // Fall through to the metadata hint. A Stripe read that fails must not
+      // cost us the plan write; leaving the row on the default is the bug.
+    }
+  }
+
+  const hint = session.metadata?.plan;
+  return isSelfServePlan(hint) ? hint : undefined;
 }
 
 /**
@@ -65,12 +87,19 @@ export async function POST(request: Request) {
       const session = event.data.object as Stripe.Checkout.Session;
       const agencyId = session.metadata?.agency_id ?? session.client_reference_id ?? undefined;
       if (agencyId && session.customer && session.subscription) {
+        const plan = await planForCheckoutSession(session);
+
         await supabase
           .from("agencies")
           .update({
             stripe_customer_id: String(session.customer),
             stripe_subscription_id: String(session.subscription),
             plan_status: "active",
+            // The tier the money bought. Omitted only when neither the
+            // subscription's price nor the session metadata resolved to a
+            // plan we sell, in which case the later subscription event is the
+            // last line of defence rather than the first.
+            ...(plan ? { plan } : {}),
           })
           .eq("id", agencyId);
 
@@ -102,16 +131,24 @@ export async function POST(request: Request) {
       break;
     }
 
+    // `created` fires for every new subscription, including ones that never
+    // went through our checkout (a subscription started from the Stripe
+    // dashboard, or a plan switch that replaces rather than updates). Handled
+    // with `updated` because the work is identical: resolve the price to a
+    // tier and write it.
+    case "customer.subscription.created":
     case "customer.subscription.updated":
     case "customer.subscription.deleted": {
       const sub = event.data.object as Stripe.Subscription;
       const priceId = sub.items.data[0]?.price.id;
-      const plan = planForPrice(priceId);
+      const hint = sub.metadata?.plan;
+      const plan = planForPriceId(priceId) ?? (isSelfServePlan(hint) ? hint : undefined);
       const periodEnd = (sub as unknown as { current_period_end?: number }).current_period_end;
 
+      const status =
+        event.type === "customer.subscription.deleted" ? "canceled" : mapStatus(sub.status);
+
       const updates: Record<string, unknown> = {
-        plan_status:
-          event.type === "customer.subscription.deleted" ? "canceled" : mapStatus(sub.status),
         ...(periodEnd ? { current_period_end: new Date(periodEnd * 1000).toISOString() } : {}),
         ...(plan ? { plan } : {}),
         // Cancel-at-period-end set from the Billing page or from the portal
@@ -124,6 +161,25 @@ export async function POST(request: Request) {
               ? new Date(sub.cancel_at * 1000).toISOString()
               : null,
       };
+
+      if (event.type === "customer.subscription.created") {
+        // A new subscription is also where the customer and subscription ids
+        // first exist for a purchase that did not come through our checkout.
+        if (sub.customer) {
+          updates.stripe_customer_id =
+            typeof sub.customer === "string" ? sub.customer : sub.customer.id;
+          updates.stripe_subscription_id = sub.id;
+        }
+        // `created` states what was bought, not whether it is paid for. Stripe
+        // does not order it against `checkout.session.completed`, and a card
+        // that needed 3-D Secure creates the subscription `incomplete`, so
+        // writing that status here could arrive after the checkout handler and
+        // knock a live account back to past_due. Only a status that is already
+        // good is worth writing; anything else waits for `updated`.
+        if (status === "active" || status === "trialing") updates.plan_status = status;
+      } else {
+        updates.plan_status = status;
+      }
 
       const agencyId = sub.metadata?.agency_id;
       if (agencyId) {

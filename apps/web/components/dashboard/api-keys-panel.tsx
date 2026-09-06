@@ -47,8 +47,9 @@ export function ApiKeysPanel({ keys, canManage }: { keys: ApiKeyRow[]; canManage
       <div className="flex items-start justify-between gap-4">
         <p className="text-[13px] text-ink-2 max-w-[620px]">
           Keys let coding agents and scripts read this account and create drafts for review;
-          with edits allowed they can also move the plan and edit drafts. They can never
-          approve or publish; that stays with a person in the editor.
+          with edits allowed they can also move the plan, edit drafts, pause a site, and
+          retry a publish a person already approved. They can never approve, schedule or
+          publish a new post; that stays with a person in the editor.
         </p>
         {canManage ? (
           <Button variant="accent" onClick={() => { setError(null); setCreateOpen(true); }}>
@@ -144,9 +145,14 @@ export function ApiKeysPanel({ keys, canManage }: { keys: ApiKeyRow[]; canManage
           <label className="flex items-start gap-2.5 text-[12.5px] text-ink-2 cursor-pointer">
             <input type="checkbox" name="allow_write" className="mt-0.5" />
             <span>
+              {/* "Still cannot approve or publish" sat eight lines from
+                  "retry a failed publish", which is a publish. Approving and
+                  first publication are what stay with a person; a retry of
+                  something already approved is not (2026-09-06). */}
               <span className="font-medium text-ink">Allow edits</span> — move or remove planned keywords,
-              find-and-replace inside drafts, retry a failed publish, pause or resume a site.
-              Still cannot approve or publish.
+              find-and-replace inside drafts, pause or resume a site, and retry a publish that a
+              person already approved and that failed. Still cannot approve an article, schedule
+              one, or publish anything for the first time.
             </span>
           </label>
           <p className="text-[12.5px] text-amber-700 bg-amber-500/10 border border-amber-500/20 rounded-md px-3 py-2">

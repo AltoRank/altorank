@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { describePace, paceAllowed, paceOptions, planNeededFor, PACE_OPTIONS } from "../pace-options";
+import { describePace, paceAllowed, paceMeaning, paceOptions, planNeededFor, PACE_OPTIONS } from "../pace-options";
 
 describe("paceOptions", () => {
   it("offers the paces people mean, in words", () => {
@@ -26,6 +26,38 @@ describe("paceOptions", () => {
     expect(opts.find((o) => o.pace === 1)?.allowed).toBe(true);
     expect(opts.find((o) => o.pace === 7)?.allowed).toBe(true);
     expect(opts.find((o) => o.pace === 14)).toMatchObject({ allowed: false, needsPlan: "starter" });
+  });
+  it("never quotes a free account a monthly figure the quota refuses", () => {
+    // The bug: every selectable pace quoted monthlyFromPace() alone, so 2, 3,
+    // 5 and 7 a week read "about 9 / 13 / 22 / 30 articles a month" to an
+    // account entitled to seven all month.
+    const opts = paceOptions({ limit: 7, reason: "no-plan" });
+    const allowed = opts.filter((o) => o.allowed);
+    expect(allowed.map((o) => o.pace)).toEqual([1, 2, 3, 5, 7]);
+    for (const o of allowed) {
+      if (o.monthly > 7) expect(o.meaning).not.toContain(`${o.monthly} articles a month`);
+    }
+    // One a week does fit inside the allowance, so it keeps the plain figure.
+    expect(opts.find((o) => o.pace === 1)?.meaning).toBe("about 4 articles a month");
+    expect(opts.find((o) => o.pace === 7)?.meaning).toBe("the 7 free drafts, in about 7 days");
+    expect(opts.find((o) => o.pace === 2)?.meaning).toBe("the 7 free drafts, in about 25 days");
+  });
+  it("keeps the monthly figure on options that are arguing for a plan", () => {
+    // A refused row's job is to say what the plan would deliver, beside its
+    // "Needs the … plan" link, so it keeps the arithmetic.
+    const opts = paceOptions({ limit: 7, reason: "no-plan" });
+    expect(opts.find((o) => o.pace === 14)?.meaning).toBe("about 61 articles a month");
+  });
+  it("leaves paid and unmetered accounts on the plain monthly figure", () => {
+    for (const o of paceOptions({ limit: 400, reason: "plan" })) {
+      expect(o.meaning).toBe(`about ${o.monthly} articles a month`);
+    }
+    for (const o of paceOptions({ limit: null, reason: "self-host" })) {
+      expect(o.meaning).toBe(`about ${o.monthly} articles a month`);
+    }
+  });
+  it("paceMeaning leaves a paused site alone", () => {
+    expect(paceMeaning(0, 0, { limit: 7, reason: "no-plan" })).toBe("about 0 articles a month");
   });
   it("names the cheapest tier that covers the volume", () => {
     expect(planNeededFor(30)).toBe("starter");

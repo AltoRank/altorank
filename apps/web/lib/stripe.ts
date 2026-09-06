@@ -57,6 +57,40 @@ export const PLAN_PRICE_IDS: Record<
 };
 
 /**
+ * Which tier a Stripe price id sells, or undefined for one we do not recognise.
+ *
+ * The inverse of PLAN_PRICE_IDS and the only trustworthy answer to "what did
+ * this customer buy": the price on the subscription is what Stripe charges,
+ * whereas anything in metadata is a hint we wrote earlier and could have got
+ * wrong. The webhook resolves the tier through here before it writes
+ * `agencies.plan`, because that column drives PLAN_ARTICLE_LIMITS - getting it
+ * wrong meters an Agency customer at Managed's 100 (2026-09-06).
+ *
+ * Env is read on every call rather than captured at import so a price id
+ * rotated in the environment takes effect on the next event, and so tests can
+ * set the four variables they need.
+ */
+export function planForPriceId(priceId: string | null | undefined): SelfServePlan | undefined {
+  if (!priceId) return undefined;
+  if (
+    priceId === process.env.STRIPE_PRICE_STARTER ||
+    priceId === process.env.STRIPE_PRICE_STARTER_YEARLY
+  )
+    return "starter";
+  if (
+    priceId === process.env.STRIPE_PRICE_GROWTH ||
+    priceId === process.env.STRIPE_PRICE_GROWTH_YEARLY
+  )
+    return "growth";
+  return undefined;
+}
+
+/** True when `plan` is a tier we sell self-serve, for narrowing untrusted strings. */
+export function isSelfServePlan(plan: unknown): plan is SelfServePlan {
+  return plan === "starter" || plan === "growth";
+}
+
+/**
  * Included articles per calendar month, by tier. Restates the pricing page's
  * feature list (src/data/pricing.ts in AltoRank/altorank-marketing) - change
  * them together; nothing across the two repositories enforces it.

@@ -13,6 +13,7 @@ import {
 import { getSimulation } from "@/lib/dev/simulation";
 import { getOperatorPreview } from "@/lib/auth/preview";
 import { getQuota } from "@/lib/billing/quota";
+import { usageLine } from "@/lib/billing/usage-line";
 import { PlanCards, type PlanCard } from "./plan-cards";
 import { RetentionCard } from "./retention-card";
 import { SettingsTabs } from "../settings-tabs";
@@ -97,6 +98,8 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
       minimumFractionDigits: 2,
     }).format(Number(n ?? 0));
 
+  const usage = usageLine(quota);
+
   const renews = agency?.current_period_end
     ? new Date(agency.current_period_end).toLocaleDateString("en-US", {
         month: "short",
@@ -138,32 +141,18 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
         <div className="max-w-[1140px] space-y-6">
           <Card title="Usage this month">
             <div className="flex items-center justify-between gap-5 flex-wrap">
+              {/* Copy derived from the same Quota the generation gate reads,
+                  in lib/billing/usage-line.ts, so this card cannot tell
+                  someone to subscribe before anything is actually blocked. */}
               <div className="text-[13px] text-ink-2">
-                {quota.limit === null ? (
-                  <>
-                    <span className="font-mono font-semibold text-ink">{quota.used}</span>{" "}
-                    articles generated. This account is unmetered
-                    {quota.reason === "operator" ? " (operator)" : " (self-host)"}.
-                  </>
-                ) : (
-                  <>
-                    <span className="font-mono font-semibold text-ink">
-                      {quota.limit === 0 ? quota.used : `${quota.used} / ${quota.limit}`}
-                    </span>{" "}
-                    {quota.limit === 0 ? "generated, no active plan." : "included articles used."}
-                    {quota.used >= quota.limit &&
-                      quota.reason === "plan" &&
-                      " Additional articles bill at the published overage rate."}
-                    {quota.reason === "no-plan" &&
-                      " Subscribe to generate articles, or self-host free."}
-                  </>
-                )}
+                <span className="font-mono font-semibold text-ink">{usage.figure}</span>{" "}
+                {usage.sentence}
               </div>
-              {quota.limit !== null && (
+              {usage.fraction !== null && (
                 <div className="w-[220px] h-1.5 rounded-full bg-panel-2 overflow-hidden">
                   <div
-                    className={`h-full rounded-full ${quota.used >= quota.limit ? "bg-err" : "bg-accent"}`}
-                    style={{ width: `${Math.min(100, (quota.used / Math.max(1, quota.limit)) * 100)}%` }}
+                    className={`h-full rounded-full ${usage.exhausted ? "bg-err" : "bg-accent"}`}
+                    style={{ width: `${usage.fraction * 100}%` }}
                   />
                 </div>
               )}
@@ -180,6 +169,7 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
                 currentTier={isActive ? plan : null}
                 isActive={isActive}
                 hasCustomer={!!agency?.stripe_customer_id}
+                hasSubscription={!!agency?.stripe_subscription_id}
                 returnTo={returnTo}
                 canManage={canManage}
                 cancelHandledBelow={showRetention}
@@ -242,8 +232,25 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
                 </table>
               </div>
             ) : (
-              <div className="text-[13px] text-ink-3 italic p-[18px]">
-                No invoices yet. They&rsquo;ll appear here after your first payment.
+              /* Nothing in this app writes the `invoices` table: the Stripe
+                 webhook handles checkout and subscription events only, and
+                 there is no `invoice.paid` case. The old empty state said
+                 they would appear after the first payment, which on the
+                 payment screen is the worst place to be wrong. Until an
+                 invoice sync exists, this points at the one place the
+                 invoices really are. */
+              <div className="text-[13px] text-ink-3 p-[18px]">
+                {agency?.stripe_customer_id ? (
+                  <>
+                    Invoices and receipts live in the Stripe billing portal — open it with
+                    &ldquo;Invoices and billing&rdquo; above. They are not mirrored here.
+                  </>
+                ) : (
+                  <>
+                    Nothing has been billed yet. Once you are on a plan, invoices and receipts
+                    live in the Stripe billing portal rather than on this page.
+                  </>
+                )}
               </div>
             )}
           </Card>

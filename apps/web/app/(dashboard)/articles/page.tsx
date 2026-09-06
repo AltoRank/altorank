@@ -15,6 +15,8 @@ import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { canRetryPublish, getLastPublishes } from "@/lib/publishing/log";
+import { getRequestQuota } from "@/lib/queries/quota";
+import { quotaExceededMessage } from "@/lib/billing/quota";
 
 /** ISO date `n` days ago, for the analytics window. */
 function daysAgo(n: number): string {
@@ -52,10 +54,11 @@ export default async function ArticlesPage({ searchParams }: Props) {
     .is("query", null)
     .gte("metric_date", since);
   if (scopeId) metricsQuery = metricsQuery.eq("workspace_id", scopeId);
-  const [workspaces, allArticles, { data: metricRows }] = await Promise.all([
+  const [workspaces, allArticles, { data: metricRows }, { data: auth }] = await Promise.all([
     getWorkspaces(),
     getArticles(scopeId ?? undefined),
     metricsQuery,
+    supabase.auth.getUser(),
   ]);
   const clicksByArticle = new Map<string, number>();
   // Served in search at least once: the page is in Google's index, whatever
@@ -140,6 +143,20 @@ export default async function ArticlesPage({ searchParams }: Props) {
 
   const autoOn = Boolean(site?.auto_generate) && site?.status !== "paused";
 
+  // Whether "New article" can succeed at all. The button used to be rendered
+  // always enabled with no quota passed in, so the refusal arrived after the
+  // dialog had opened, suggestKeywords had run, a keyword had been picked and
+  // Generate had been pressed. The calendar's "Write now" gets this right
+  // (app/(dashboard)/content/page.tsx); this is the same gate, computed from
+  // the same per-request quota. Only an exhausted free allowance is a refusal:
+  // a paid plan at its limit writes as overage, like any generation.
+  const agencyId = workspaces[0]?.agency_id;
+  const quota = agencyId ? await getRequestQuota(agencyId, auth.user?.email ?? null) : null;
+  const writeBlocked =
+    quota && quota.reason === "no-plan" && quota.limit !== null && (quota.remaining ?? 0) <= 0
+      ? quotaExceededMessage(quota)
+      : null;
+
   return (
     <>
       <PageHead
@@ -158,7 +175,12 @@ export default async function ArticlesPage({ searchParams }: Props) {
         actions={
           <>
             <HowItWorks explainer={reviewExplainer} />
-            <ArticleActions workspaces={workspaces} articles={allArticles} scopedId={scopeId} />
+            <ArticleActions
+              workspaces={workspaces}
+              articles={allArticles}
+              scopedId={scopeId}
+              writeBlocked={writeBlocked}
+            />
           </>
         }
       />

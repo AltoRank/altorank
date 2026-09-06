@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Icons, Dialog } from "@/components/ui";
 import { useOnboarding } from "@/components/onboarding/use-onboarding";
@@ -13,9 +14,24 @@ interface ArticleActionsProps {
   articles?: Article[];
   /** The site the sidebar is scoped to; the dialog stops asking when set. */
   scopedId?: string | null;
+  /**
+   * Why generation would be refused, or null when it would not.
+   *
+   * The button was always enabled and this component was passed no quota, so
+   * an account with its free allowance spent found out only after opening the
+   * dialog, waiting for suggestKeywords, choosing a keyword and pressing
+   * Generate. The editor and the calendar both refuse up front; this makes
+   * the Articles page agree with them.
+   */
+  writeBlocked?: string | null;
 }
 
-export function ArticleActions({ workspaces, articles = [], scopedId }: ArticleActionsProps) {
+export function ArticleActions({
+  workspaces,
+  articles = [],
+  scopedId,
+  writeBlocked = null,
+}: ArticleActionsProps) {
   const [open, setOpen] = useState(false);
   // The sidebar decides which site this is for; the dialog only asks when
   // you are looking at all of them.
@@ -146,14 +162,26 @@ export function ArticleActions({ workspaces, articles = [], scopedId }: ArticleA
         <Icons.download size={14} />
         Export
       </Button>
-      <Button
-        variant="accent"
-        data-onboarding="ask-ai"
-        onClick={() => setOpen(true)}
-      >
-        <Icons.sparkle size={14} />
-        New article
-      </Button>
+      {writeBlocked ? (
+        /* The refusal, where the action was: a link to the one screen that
+           resolves it, with the reason as its tooltip. Same shape as the
+           calendar's "Write now" gate. */
+        <Link href="/settings/billing?return=%2Farticles" title={writeBlocked}>
+          <Button variant="accent">
+            <Icons.sparkle size={14} />
+            Choose a plan to write more
+          </Button>
+        </Link>
+      ) : (
+        <Button
+          variant="accent"
+          data-onboarding="ask-ai"
+          onClick={() => setOpen(true)}
+        >
+          <Icons.sparkle size={14} />
+          New article
+        </Button>
+      )}
 
       <Dialog
         open={open}

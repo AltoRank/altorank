@@ -117,7 +117,12 @@ export function OutputFields({ output, setOutput }: { output: OutputSettings; se
       />
       <Toggle
         label="FAQ schema"
-        hint="If the article has a FAQ section, its questions and answers are sent to your site as FAQPage structured data. The visible text is unchanged either way."
+        /* Copy made honest, not the feature invented (2026-09-06). The schema
+           is built (lib/content/enrich/index.ts) and stored on the article,
+           but generate.ts keeps only the HTML, PublishPayload has no field for
+           it and no adapter can receive one - so "sent to your site" was a
+           delivery that has never happened. */
+        hint="If the article has a FAQ section, its questions and answers are generated and stored as FAQPage structured data, ready for whenever publishing can carry it. It is not sent to your site yet, and the visible text is unchanged either way."
         checked={output.faqSchema}
         onChange={(v) => set({ faqSchema: v })}
       />
