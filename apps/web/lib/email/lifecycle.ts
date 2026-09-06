@@ -34,6 +34,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { agencyRecipients, agencyBillingRecipients, userEmail } from "./agency-recipients";
 import { appLink } from "./app-url";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_2, EMAIL_INK_3 } from "./layout";
+import { formatGraceDate } from "@/lib/billing/dunning";
 import { sendOnce, type RenderedEmail, type SendOnceOutcome } from "./send-once";
 
 /** Every string below is user data: a domain, a title, a keyword, a name. */
@@ -263,8 +264,11 @@ export type PaymentFailedEmail = {
  */
 export function renderPaymentFailed(a: PaymentFailedEmail): RenderedEmail {
   const who = a.agencyName ? `${a.agencyName}'s ` : "your ";
+  // `formatGraceDate` rather than this file's own formatter, so the string in
+  // the inbox is character-for-character the string in the dunning banner.
+  const ends = formatGraceDate(a.graceEndsAt);
   return {
-    subject: `Your card was declined — ${a.planLabel} stays on until ${dateLabel(a.graceEndsAt)}`,
+    subject: `Your card was declined — ${a.planLabel} stays on until ${ends}`,
     preheader: `Update the card and nothing changes. Writing and publishing continue meanwhile.`,
     footerNote: `Sent because you manage billing for this AltoRank account.`,
     html:
@@ -274,11 +278,11 @@ export function renderPaymentFailed(a: PaymentFailedEmail): RenderedEmail {
       ) +
       emailParagraph(
         `<strong>Nothing has stopped.</strong> Drafting, approving and publishing all keep working until ` +
-          `<strong>${esc(dateLabel(a.graceEndsAt))}</strong>. Your bank may retry on its own in that time; if it goes through, this resolves itself and you can ignore this email.`,
+          `<strong>${esc(ends)}</strong>. Your bank may retry on its own in that time; if it goes through, this resolves itself and you can ignore this email.`,
       ) +
       emailButton(appLink("/settings/billing"), "Update the card") +
       emailParagraph(
-        `If it is still unpaid after that date the account goes back to the free tier: the workspaces, articles, keywords and history all stay, and approving and publishing stop until the card is updated. Nothing is deleted at any point.`,
+        `If it is still unpaid after ${esc(ends)} the account goes back to the free tier: the workspaces, articles, keywords and history all stay, and approving and publishing stop until the card is updated. Nothing is deleted at any point.`,
       ),
   };
 }

@@ -1,9 +1,19 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
-import { getStripe, isSelfServePlan, planForPriceId, type SelfServePlan } from "@/lib/stripe";
+import {
+  getStripe,
+  isSelfServePlan,
+  planForPriceId,
+  PLAN_ARTICLE_LIMITS,
+  PLAN_LABELS,
+  type PlanTier,
+  type SelfServePlan,
+} from "@/lib/stripe";
 import { createServiceClient } from "@/lib/supabase/server";
 import { paceOnActivation } from "@/lib/content/pace";
 import { resumePausedWorkspaces } from "@/lib/billing/resume";
+import { graceEndsAt } from "@/lib/billing/dunning";
+import { notifyPaymentFailed, notifyPlanChanged, notifySubscriptionCancelled } from "@/lib/email/lifecycle";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 function mapStatus(s: Stripe.Subscription.Status): string {
@@ -77,7 +87,78 @@ export function planForSubscription(sub: Stripe.Subscription): SelfServePlan | u
   return isSelfServePlan(hint) ? hint : undefined;
 }
 
-type AgencyBillingRow = { id: string; plan_status: string | null; payment_failed_at: string | null };
+type AgencyBillingRow = {
+  id: string;
+  plan_status: string | null;
+  payment_failed_at: string | null;
+  /** For the emails: which tier they are on, and what to call the account. */
+  plan?: string | null;
+  name?: string | null;
+  cancels_at?: string | null;
+};
+
+/** The columns every notice below needs. Kept in one place so they agree. */
+const AGENCY_BILLING_COLUMNS = "id, plan_status, payment_failed_at, plan, name, cancels_at";
+
+/**
+ * Tell the owners and admins that the renewal failed - once per episode.
+ *
+ * `payment_failed_at` is the key, not the event: Stripe raises a fresh
+ * `invoice.payment_failed` on every card retry it makes for days, and retries
+ * each of those events until it gets a 200. Keying on the moment the failure
+ * *started* is what turns a week of retries into one email, and it is the same
+ * timestamp the in-app dunning banner counts its grace window from, so the
+ * date in the inbox is the date on the screen.
+ *
+ * Never allowed to fail the webhook. A non-200 makes Stripe redeliver, and a
+ * redelivery whose only unfinished business is an email would re-run the state
+ * writes for nothing.
+ */
+async function emailPaymentFailed(
+  supabase: SupabaseClient,
+  agency: AgencyBillingRow,
+  failedAt: Date,
+  invoice?: Stripe.Invoice,
+): Promise<void> {
+  try {
+    // The window the customer actually has, counted from the recorded start -
+    // which is the earlier of this failure and one already on the row.
+    const episodeStart = agency.payment_failed_at ?? failedAt.toISOString();
+    const ends = graceEndsAt(episodeStart);
+    if (!ends) return;
+    await notifyPaymentFailed(
+      supabase,
+      agency.id,
+      {
+        agencyName: agency.name ?? null,
+        planLabel: PLAN_LABELS[(agency.plan ?? "starter") as PlanTier] ?? "your",
+        graceEndsAt: ends.toISOString(),
+        amount: formatInvoiceAmount(invoice),
+      },
+      episodeStart,
+    );
+  } catch (err) {
+    console.error(`[stripe] payment-failed email for ${agency.id}: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+/** Where a tier sits on the ladder, so a switch can be called up or down. */
+function rungOf(plan: string): number {
+  return ["starter", "growth", "scale"].indexOf(plan);
+}
+
+/** Stripe's own amount and currency, or null. Never a number we worked out. */
+function formatInvoiceAmount(invoice?: Stripe.Invoice): string | null {
+  const cents = invoice?.amount_due;
+  if (typeof cents !== "number" || !invoice?.currency) return null;
+  try {
+    return new Intl.NumberFormat("en-IE", { style: "currency", currency: invoice.currency.toUpperCase() }).format(
+      cents / 100,
+    );
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The agency an invoice belongs to, by the ids we stored at checkout.
@@ -108,7 +189,7 @@ async function agencyForInvoice(
   for (const [col, val] of lookups) {
     const { data } = await supabase
       .from("agencies")
-      .select("id, plan_status, payment_failed_at")
+      .select(AGENCY_BILLING_COLUMNS)
       .eq(col, val)
       .maybeSingle();
     if (data) return data as AgencyBillingRow;
@@ -262,6 +343,17 @@ export async function POST(request: Request) {
       }
 
       const agencyId = sub.metadata?.agency_id;
+
+      // Read the row before writing it. Every notice below is about a
+      // *change* - the tier moved, a cancellation was scheduled - and a change
+      // cannot be seen once the new value is already in the column.
+      const { data: beforeRow } = await supabase
+        .from("agencies")
+        .select(AGENCY_BILLING_COLUMNS)
+        .eq(agencyId ? "id" : "stripe_subscription_id", agencyId ?? sub.id)
+        .maybeSingle();
+      const before = (beforeRow as AgencyBillingRow | null) ?? null;
+
       if (agencyId) {
         await supabase.from("agencies").update(updates).eq("id", agencyId);
       } else {
@@ -269,21 +361,85 @@ export async function POST(request: Request) {
         await supabase.from("agencies").update(updates).eq("stripe_subscription_id", sub.id);
       }
 
+      /**
+       * The plan actually moved. Both doors reach here: our own in-place
+       * switch (`subscriptions.update` on the item) and a change made in the
+       * Stripe portal, which never touches our server otherwise.
+       *
+       * Keyed by the day as well as the tiers, so a customer who upgrades in
+       * March and again in June after a downgrade still hears about June -
+       * while the several `customer.subscription.updated` events one switch
+       * produces collapse into one email.
+       */
+      if (before && plan && before.plan && before.plan !== plan && status !== "canceled") {
+        const from = before.plan as PlanTier;
+        const day = new Date(event.created * 1000).toISOString().slice(0, 10);
+        try {
+          await notifyPlanChanged(
+            supabase,
+            before.id,
+            {
+              fromLabel: PLAN_LABELS[from] ?? from,
+              toLabel: PLAN_LABELS[plan] ?? plan,
+              articleLimit: PLAN_ARTICLE_LIMITS[plan] ?? null,
+              upgrade: rungOf(plan) > rungOf(from),
+            },
+            `${from}->${plan}:${day}`,
+          );
+        } catch (err) {
+          console.error(`[stripe] plan-changed email: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+
+      /**
+       * A cancellation was scheduled.
+       *
+       * Sent from here rather than from `cancelPlan` because the Billing page
+       * links straight into the Stripe portal's cancel flow, which never calls
+       * our action - so an email wired to the action would miss whichever half
+       * of the customers used the other button. `cancels_at` moving from null
+       * to a date is the fact, and it arrives the same way from both.
+       *
+       * `customer.subscription.deleted` deliberately sends nothing. It is the
+       * period end finally arriving on a cancellation this already announced,
+       * weeks earlier, with the date on it; a second email then would tell
+       * somebody who has already left that they have left. The rare immediate
+       * cancellation is one we make from the Stripe dashboard, and it is on us
+       * to say why.
+       */
+      const cancelsAt = updates.cancels_at as string | null;
+      if (before && event.type === "customer.subscription.updated" && cancelsAt && before.cancels_at !== cancelsAt) {
+        try {
+          await notifySubscriptionCancelled(
+            supabase,
+            before.id,
+            {
+              agencyName: before.name ?? null,
+              planLabel: PLAN_LABELS[(before.plan ?? "starter") as PlanTier] ?? "your",
+              endsAt: cancelsAt,
+            },
+            sub.id,
+          );
+        } catch (err) {
+          console.error(`[stripe] cancellation email: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+
       if (event.type === "customer.subscription.updated") {
         // Going past due without an `invoice.payment_failed` (the events are
         // not ordered) still starts the grace window, from now.
         if (status === "past_due") {
-          const { data: row } = await supabase
-            .from("agencies")
-            .select("id, plan_status, payment_failed_at")
-            .eq(agencyId ? "id" : "stripe_subscription_id", agencyId ?? sub.id)
-            .maybeSingle();
-          if (row && !(row as AgencyBillingRow).payment_failed_at) {
+          const failedAt = new Date(event.created * 1000);
+          if (before && !before.payment_failed_at) {
             await supabase
               .from("agencies")
-              .update({ payment_failed_at: new Date(event.created * 1000).toISOString() })
-              .eq("id", (row as AgencyBillingRow).id);
+              .update({ payment_failed_at: failedAt.toISOString() })
+              .eq("id", before.id);
           }
+          // Whether the window started here or on an earlier invoice event,
+          // the people who can fix it are told once (keyed by the window's
+          // own start, so the two routes cannot both send).
+          if (before) await emailPaymentFailed(supabase, before, failedAt);
         }
 
         // The account pause ending on Stripe's side. `resumes_at` lifts
@@ -324,6 +480,7 @@ export async function POST(request: Request) {
       if (!agency) break;
       const failedAt = new Date((invoice.created ?? event.created) * 1000);
       await markPaymentFailed(supabase, agency, failedAt);
+      await emailPaymentFailed(supabase, agency, failedAt, invoice);
       break;
     }
 
