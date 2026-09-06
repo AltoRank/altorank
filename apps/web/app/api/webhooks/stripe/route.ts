@@ -120,7 +120,7 @@ export async function POST(request: Request) {
           .select("id, auto_generate_weekly_limit")
           .eq("agency_id", agencyId);
         for (const site of sites ?? []) {
-          const next = paceOnActivation(site.auto_generate_weekly_limit as number | null);
+          const next = paceOnActivation(site.auto_generate_weekly_limit as number | null, plan);
           if (next === null) continue;
           await supabase
             .from("workspaces")

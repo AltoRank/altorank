@@ -192,23 +192,25 @@ describe("checkout.session.completed", () => {
     expect(writes).toHaveLength(0);
   });
 
-  it("raises each site's pace off the free-tier default", async () => {
+  it("raises each site to the pace the purchased tier starts at", async () => {
+    // The tier decides the target: a site that bought Agency (growth) starts at
+    // 21 a week. Before PLAN_DEFAULT_PACE every tier started at 7, so a customer
+    // paying for 400 articles a month defaulted to about 30.
     workspaceRows = [
-      // Never set: raised to the paid default.
+      // Never set, and sitting on the signup pace: both are the product's own
+      // value, so both are raised.
       { id: "ws-1", auto_generate_weekly_limit: null },
-      // Deliberately paused, a deliberate 2, and one already at or above the
-      // paid default: every one of these is somebody's choice, so left alone.
-      // (FREE_TIER_PACE and PAID_DEFAULT_PACE are both 7 today, which is why
-      // a site sitting on the signup value is not touched either.)
+      { id: "ws-4", auto_generate_weekly_limit: 7 },
+      // Deliberately paused, a deliberate 2, and one already past the tier's
+      // default: every one is somebody's choice, so left alone.
       { id: "ws-2", auto_generate_weekly_limit: 0 },
       { id: "ws-3", auto_generate_weekly_limit: 2 },
-      { id: "ws-4", auto_generate_weekly_limit: 7 },
-      { id: "ws-5", auto_generate_weekly_limit: 14 },
+      { id: "ws-5", auto_generate_weekly_limit: 25 },
     ];
     await deliver(checkoutCompleted());
     const paced = writes.filter((w) => w.table === "workspaces");
-    expect(paced.map((w) => w.val)).toEqual(["ws-1"]);
-    expect(paced[0].row).toEqual({ auto_generate_weekly_limit: 7 });
+    expect(paced.map((w) => w.val).sort()).toEqual(["ws-1", "ws-4"]);
+    for (const w of paced) expect(w.row).toEqual({ auto_generate_weekly_limit: 21 });
   });
 });
 
