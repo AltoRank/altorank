@@ -12,7 +12,7 @@
  *   npm run cli -- articles list --workspace <id> [--status review]
  *   npm run cli -- articles get <id>
  *   npm run cli -- articles content <id> [--format markdown|html|tiptap]
- *   npm run cli -- articles generate --workspace <id> --keyword "…" [--title "…"] [--article <id>] [--allow-overage]
+ *   npm run cli -- articles generate --workspace <id> --keyword "…" [--title "…"] [--article <id>] [--allow-overage] [--idempotency-key <key>]
  *   npm run cli -- articles replace <id> --find "…" --replace "…" [--match-case] [--whole-word] [--apply]
  *   npm run cli -- articles bulk-replace --workspace <id> --find "…" --replace "…" [--ids a,b] [--apply]
  *   npm run cli -- articles retry-publish <id>
@@ -235,6 +235,9 @@ async function run(argv: string[]): Promise<Envelope> {
           title: str(flags.title),
           article_id: str(flags.article),
           allow_overage: flags["allow-overage"] === true,
+          // Reuse the same key when retrying after a timeout: the server
+          // answers with the draft it already started instead of a second one.
+          idempotency_key: str(flags["idempotency-key"]),
         },
       });
     }

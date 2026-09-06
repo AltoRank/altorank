@@ -5,13 +5,15 @@ import { useRouter } from "next/navigation";
 import { Button, Chip } from "@/components/ui";
 import { scheduleCandidates, storeCandidates } from "@/app/actions/keyword-research";
 import { funnelLine, isEasyWin } from "@/lib/keyword-research/funnel";
-import type { PlanCapacity, ResearchCandidate, ResearchFunnel } from "@/lib/keyword-research/types";
+import type { PlanCapacity, ResearchCandidate, ResearchFunnel, ResearchKind } from "@/lib/keyword-research/types";
 
 interface ProposalTableProps {
   workspaceId: string;
   candidates: ResearchCandidate[];
   funnel: ResearchFunnel | null;
   runId?: string | null;
+  /** How these were researched; recorded on each keyword row as its source. */
+  kind: ResearchKind;
   note?: string | null;
   trace?: string[];
   /** Hide the Store action (the Stored tab already is the shelf). */
@@ -48,7 +50,7 @@ function DifficultyBar({ value }: { value: number | null }) {
  * take the 5. Nothing leaves this component without a click on Schedule or
  * Store, and after either the row says what happened to it.
  */
-export function ProposalTable({ workspaceId, candidates, funnel, runId = null, note, trace, compact, onCapacity, onChanged }: ProposalTableProps) {
+export function ProposalTable({ workspaceId, candidates, funnel, runId = null, kind, note, trace, compact, onCapacity, onChanged }: ProposalTableProps) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(() => new Set(candidates.map((c) => c.term)));
   const [done, setDone] = useState<Map<string, "scheduled" | "stored" | "refused">>(new Map());
@@ -75,13 +77,13 @@ export function ProposalTable({ workspaceId, candidates, funnel, runId = null, n
     });
   }
 
-  async function act(kind: "schedule" | "store") {
+  async function act(action: "schedule" | "store") {
     if (!actionable.length) return;
-    setPending(kind);
+    setPending(action);
     setMessage(null);
     try {
-      if (kind === "schedule") {
-        const r = await scheduleCandidates(workspaceId, actionable, runId);
+      if (action === "schedule") {
+        const r = await scheduleCandidates(workspaceId, actionable, runId, kind);
         setScheduledCount((n) => n + r.scheduled);
         setDone((prev) => {
           const next = new Map(prev);
@@ -94,7 +96,7 @@ export function ProposalTable({ workspaceId, candidates, funnel, runId = null, n
         if (r.refused) parts.push(`${r.refused} refused: the calendar holds ${r.capacity.cap} keywords and it is full`);
         setMessage(parts.join(" · "));
       } else {
-        const r = await storeCandidates(workspaceId, actionable);
+        const r = await storeCandidates(workspaceId, actionable, kind);
         setDone((prev) => {
           const next = new Map(prev);
           actionable.forEach((c) => next.set(c.term, "stored"));

@@ -90,6 +90,8 @@ export type Workspace = {
   language: string;
   location_code: number;
   brand_style: Record<string, unknown>;
+  /** Token behind the public share link (migration 068). null = no link. */
+  share_token?: string | null;
   created_at: string;
 };
 

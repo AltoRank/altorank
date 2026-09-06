@@ -15,7 +15,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { scheduleKeywords, PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
+import { decoratePlannedKeywords, scheduleKeywords, PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { normalizeTarget } from "@/lib/seo/recommendations";
 import {
@@ -31,7 +31,9 @@ import { parseTermList, planCapacity } from "@/lib/keyword-research/funnel";
 import { KEYWORD_INSTRUCTIONS_MAX, readKeywordInstructions } from "@/lib/keyword-research/instructions";
 import { PLAYBOOKS, competitorName, playbookExamples, type PlaybookId } from "@/lib/keyword-research/seeds";
 import { runResearchChat, type ChatReply, type ChatTurn } from "@/lib/keyword-research/chat";
-import type { PlanCapacity, ResearchCandidate, ResearchResult } from "@/lib/keyword-research/types";
+import { hasDataForSEOCredentials, hasModelCredentials, modelHint, modelUnavailableNote, providerHint } from "@/lib/keyword-research/availability";
+import { keywordProvenance } from "@/lib/keyword-research/provenance";
+import type { PlanCapacity, ResearchCandidate, ResearchKind, ResearchResult } from "@/lib/keyword-research/types";
 
 export interface StoredKeyword {
   id: string;
@@ -63,6 +65,8 @@ export interface ResearchContext {
   playbooks: PlaybookCard[];
   providerReady: boolean;
   modelReady: boolean;
+  /** Operator hints for the two above. Null outside development: a customer cannot act on a variable name. */
+  hints: { provider: string | null; model: string | null };
 }
 
 async function scoped(workspaceId: string): Promise<{ supabase: SupabaseClient; ws: ResearchWorkspace }> {
@@ -117,8 +121,9 @@ export async function loadResearchContext(workspaceId: string): Promise<Research
       const examples = playbookExamples(p.id, seedCtx);
       return { id: p.id, title: p.title, description: p.description, pattern: p.pattern, examples, available: examples.length > 0, needs: p.needs };
     }),
-    providerReady: Boolean(process.env.DATAFORSEO_API_KEY || (process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD)),
-    modelReady: Boolean(process.env.ANTHROPIC_API_KEY),
+    providerReady: hasDataForSEOCredentials(),
+    modelReady: hasModelCredentials(),
+    hints: { provider: providerHint(), model: modelHint() },
   };
 }
 
@@ -150,11 +155,15 @@ export async function runImport(workspaceId: string, text: string): Promise<Rese
  * New terms are inserted as `stored`; an existing row keeps its status. Terms
  * are matched the way the funnel matched them, so a candidate flagged as
  * already tracked resolves to that row rather than a near-duplicate.
+ *
+ * `kind` is where the candidates were researched; it becomes `source_type`
+ * for any row the candidate itself does not attribute more finely.
  */
 async function ensureKeywordRows(
   supabase: SupabaseClient,
   workspaceId: string,
   candidates: ResearchCandidate[],
+  kind: ResearchKind,
 ): Promise<Map<string, { id: string; status: string }>> {
   const { data: existing } = await supabase.from("keywords").select("id, term, status").eq("workspace_id", workspaceId);
   const byTarget = new Map<string, { id: string; status: string }>();
@@ -180,6 +189,7 @@ async function ensureKeywordRows(
       difficulty: c.difficulty,
       intent: c.intent,
       status: "stored",
+      ...keywordProvenance(c, kind),
     }));
     const { data: inserted, error } = await supabase
       .from("keywords")
@@ -217,20 +227,36 @@ export interface ScheduleReport {
   alreadyPlanned: number;
 }
 
+/**
+ * A keyword that just landed on the calendar gets the same shape and
+ * questions a wizard-planned one gets. Best-effort, like the wizard: the
+ * calendar row is already written, and a model hiccup must not undo it.
+ */
+async function decorateScheduled(supabase: SupabaseClient, workspaceId: string, keywordIds: string[]): Promise<void> {
+  if (!keywordIds.length) return;
+  try {
+    await decoratePlannedKeywords(supabase, workspaceId, keywordIds);
+  } catch (err) {
+    console.warn("[research] could not decorate scheduled keywords:", err instanceof Error ? err.message : err);
+  }
+}
+
 /** Put the chosen candidates on the calendar. The one place the drawer writes a plan. */
 export async function scheduleCandidates(
   workspaceId: string,
   candidates: ResearchCandidate[],
   runId: string | null,
+  kind: ResearchKind = "manual",
 ): Promise<ScheduleReport> {
   const { supabase } = await scoped(workspaceId);
   if (!candidates.length) {
     return { scheduled: 0, refused: 0, alreadyPlanned: 0, capacity: await readCapacity(supabase, workspaceId) };
   }
-  const rows = await ensureKeywordRows(supabase, workspaceId, candidates);
+  const rows = await ensureKeywordRows(supabase, workspaceId, candidates, kind);
   const ids = [...new Set([...rows.values()].map((r) => r.id))];
   const outcome = await scheduleKeywords(supabase, workspaceId, ids);
   const alreadyPlanned = ids.length - outcome.scheduled.length - outcome.refused.length;
+  await decorateScheduled(supabase, workspaceId, outcome.scheduled.map((p) => p.keywordId));
 
   if (runId && outcome.scheduled.length) {
     await supabase
@@ -245,10 +271,14 @@ export async function scheduleCandidates(
 }
 
 /** Keep the chosen candidates without scheduling them. */
-export async function storeCandidates(workspaceId: string, candidates: ResearchCandidate[]): Promise<{ stored: number; alreadyTracked: number }> {
+export async function storeCandidates(
+  workspaceId: string,
+  candidates: ResearchCandidate[],
+  kind: ResearchKind = "manual",
+): Promise<{ stored: number; alreadyTracked: number }> {
   const { supabase } = await scoped(workspaceId);
   if (!candidates.length) return { stored: 0, alreadyTracked: 0 };
-  const rows = await ensureKeywordRows(supabase, workspaceId, candidates);
+  const rows = await ensureKeywordRows(supabase, workspaceId, candidates, kind);
   // A row nobody has looked at yet ('new') becomes stored; anything further
   // along - planned, drafting, shipped - is left exactly where it is.
   const promote = [...rows.values()].filter((r) => r.status === "new").map((r) => r.id);
@@ -264,6 +294,7 @@ export async function storeCandidates(workspaceId: string, candidates: ResearchC
 export async function scheduleStored(workspaceId: string, keywordIds: string[]): Promise<ScheduleReport> {
   const { supabase } = await scoped(workspaceId);
   const outcome = await scheduleKeywords(supabase, workspaceId, keywordIds);
+  await decorateScheduled(supabase, workspaceId, outcome.scheduled.map((p) => p.keywordId));
   revalidatePath("/keywords");
   revalidatePath("/content");
   return {
@@ -291,8 +322,8 @@ export async function chatResearch(
   known: ResearchCandidate[],
 ): Promise<ChatReply> {
   const { supabase, ws } = await scoped(workspaceId);
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return { text: "Chat needs ANTHROPIC_API_KEY on the server. The Generate and Add tabs still work without it.", proposals: [], trace: [] };
+  if (!hasModelCredentials()) {
+    return { text: modelUnavailableNote("Chat", "The Generate and Add tabs still work without it."), proposals: [], trace: [] };
   }
   const [capacity, instructions, { data: plannedRows }] = await Promise.all([
     readCapacity(supabase, workspaceId),

@@ -48,7 +48,7 @@ export function AddTab({ workspaceId, ctx, onCapacity, onChanged }: AddTabProps)
 
       {!ctx.providerReady && (
         <div className="text-[12.5px] text-warn-ink bg-warn-soft rounded-md px-3 py-2">
-          Keyword metrics need DataForSEO credentials on the server. Set DATAFORSEO_API_KEY to look terms up.
+          Keyword volumes aren&apos;t available on this account yet, so terms cannot be looked up.{ctx.hints.provider ? ` ${ctx.hints.provider}` : ""}
         </div>
       )}
 
@@ -85,6 +85,7 @@ export function AddTab({ workspaceId, ctx, onCapacity, onChanged }: AddTabProps)
           candidates={result.candidates}
           funnel={result.funnel}
           runId={result.runId}
+          kind={result.kind}
           note={result.note}
           trace={result.trace}
           onCapacity={onCapacity}

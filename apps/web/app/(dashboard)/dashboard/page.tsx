@@ -34,7 +34,7 @@ import { buildShareCard } from "@/lib/share/card";
 import { WorkspaceGrid } from "@/components/dashboard/workspace-grid";
 import { RecommendedActionsStrip } from "@/components/dashboard/recommended-actions-strip";
 import { recommendedActions } from "@/lib/dashboard/recommended-actions";
-import { yieldsForInputs, type KeywordSourceYields } from "@/lib/keywords/yields";
+import { unattributedCount, unknownSourceCount, yieldsForInputs, type KeywordSourceYields } from "@/lib/keywords/yields";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
@@ -175,6 +175,14 @@ export default async function DashboardPage() {
   });
   const competitorYields = yields ? yieldsForInputs(profile?.competitors ?? [], "competitor", yields) : [];
   const audienceYields = yields ? yieldsForInputs(profile?.audiences ?? [], "audience", yields) : [];
+  // Audience research only records provenance since the drawer started
+  // writing it, so a site whose audiences all read 0 is more likely one
+  // where nobody has run an audience research than one whose audiences all
+  // failed. Until a single keyword has come from an audience, say so rather
+  // than present the zeros as findings.
+  const audienceUnsplit = yields ? unattributedCount(yields, "audience") : 0;
+  const audienceMeasured = audienceYields.some((a) => a.keywords > 0) || audienceUnsplit > 0;
+  const unknownSources = yields ? unknownSourceCount(yields) : 0;
 
   return (
     <>
@@ -199,7 +207,12 @@ export default async function DashboardPage() {
         actions={
           <>
             {shareFacts && scopeId && (
-              <ShareResults card={buildShareCard(shareFacts)} ogPath={`/api/og/workspace/${scopeId}`} />
+              <ShareResults
+                card={buildShareCard(shareFacts)}
+                ogPath={`/api/og/workspace/${scopeId}`}
+                workspaceId={scopeId}
+                shareToken={wsMap.get(scopeId)?.share_token ?? null}
+              />
             )}
             <ClientActions
               allowance={{ limit: allowance.limit, remaining: allowance.remaining, noPlan: allowance.reason === "no-plan" }}
@@ -397,6 +410,11 @@ export default async function DashboardPage() {
                   <div className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3 mb-2">Audience effectiveness</div>
                   {audienceYields.length === 0 ? (
                     <div className="text-ink-3">No audiences named in the business profile, and no keyword came from one.</div>
+                  ) : !audienceMeasured ? (
+                    <div className="text-ink-3">
+                      Not measured yet: no keyword on this site has been researched from an audience. Run Generate with an
+                      audience selected in the research drawer and this list fills in.
+                    </div>
                   ) : (
                     <ul className="space-y-1">
                       {audienceYields.map((a) => (
@@ -407,10 +425,22 @@ export default async function DashboardPage() {
                           </span>
                         </li>
                       ))}
+                      {audienceUnsplit > 0 && (
+                        <li className="flex items-baseline justify-between gap-3 text-ink-3">
+                          <span className="truncate">from runs that named several audiences</span>
+                          <span className="shrink-0 font-mono text-[12px]">{plural(audienceUnsplit, "keyword")}</span>
+                        </li>
+                      )}
                     </ul>
                   )}
                 </div>
               </div>
+              {unknownSources > 0 && (
+                <div className="px-6 pb-4 text-[12px] text-ink-3">
+                  {plural(unknownSources, "keyword has", "keywords have")} no recorded source: added before sources were tracked, and not
+                  counted against any input above.
+                </div>
+              )}
             </Card>
           )}
 

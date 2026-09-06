@@ -63,6 +63,9 @@ export async function updateSession(request: NextRequest) {
     // Shared result pages and the badge script for the free public check.
     // Anyone holding the link is the audience; there is nothing to sign into.
     "/check",
+    // The share card behind an unguessable token (lib/share/token.ts). Same
+    // audience: whoever was handed the link, and the unfurler before them.
+    "/share",
   ];
 
   const isPublic =

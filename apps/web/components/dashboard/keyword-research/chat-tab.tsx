@@ -63,7 +63,7 @@ export function ChatTab({ workspaceId, ctx, onCapacity, onChanged }: ChatTabProp
   return (
     <div className="flex flex-col gap-3 min-h-full">
       {!ctx.modelReady && (
-        <div className="text-[12.5px] text-warn-ink bg-warn-soft rounded-md px-3 py-2">Chat needs ANTHROPIC_API_KEY on the server. The other tabs work without it.</div>
+        <div className="text-[12.5px] text-warn-ink bg-warn-soft rounded-md px-3 py-2">Chat isn&apos;t available yet. The other tabs work without it.{ctx.hints.model ? ` ${ctx.hints.model}` : ""}</div>
       )}
 
       {messages.length === 0 && (
@@ -96,6 +96,7 @@ export function ChatTab({ workspaceId, ctx, onCapacity, onChanged }: ChatTabProp
                       workspaceId={workspaceId}
                       candidates={p.candidates}
                       funnel={p.funnel}
+                      kind="chat"
                       onCapacity={onCapacity}
                       onChanged={onChanged}
                     />
