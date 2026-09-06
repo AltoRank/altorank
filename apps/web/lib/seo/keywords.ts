@@ -58,12 +58,25 @@ export type DiscoveredKeyword = {
   intent: KeywordIntent;
 };
 
+/**
+ * The CPC as it should be written to `keywords.cpc`.
+ *
+ * The parsers above default a missing `keyword_info.cpc` to 0, which is fine
+ * for sorting a research table and wrong for storage: the traffic-value
+ * estimate reads null as "unmeasured" and a number as a price, and a term
+ * with no advertiser data is the first, not a term that clicks for free.
+ * Every writer goes through this so the column never learns the difference.
+ */
+export function storedCpc(cpc: number | null | undefined): number | null {
+  return typeof cpc === "number" && Number.isFinite(cpc) && cpc > 0 ? cpc : null;
+}
+
 /** Labs returns difficulty; the Ads endpoint that lists keywords does not. */
 type LabsOverviewResult = {
   items: Array<{
     keyword: string;
     keyword_properties?: { keyword_difficulty?: number | null };
-    keyword_info?: { search_volume?: number | null };
+    keyword_info?: { search_volume?: number | null; cpc?: number | null };
   }> | null;
 };
 
@@ -124,10 +137,10 @@ export async function fetchKeywordDifficulty(
 export async function fetchKeywordFacts(
   keywords: string[],
   options?: { languageCode?: string; locationCode?: number },
-): Promise<Map<string, { volume: number | null; difficulty: number | null }>> {
+): Promise<Map<string, { volume: number | null; difficulty: number | null; cpc: number | null }>> {
   const out = new Map<
     string,
-    { volume: number | null; difficulty: number | null }
+    { volume: number | null; difficulty: number | null; cpc: number | null }
   >();
   if (!keywords.length) return out;
 
@@ -148,6 +161,7 @@ export async function fetchKeywordFacts(
         out.set(item.keyword.toLowerCase(), {
           volume: item.keyword_info?.search_volume ?? null,
           difficulty: item.keyword_properties?.keyword_difficulty ?? null,
+          cpc: storedCpc(item.keyword_info?.cpc),
         });
       }
     }

@@ -7,6 +7,7 @@ import { useOnboarding } from "@/components/onboarding/use-onboarding";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { createKeyword } from "@/app/actions/keywords";
 import type { Workspace, Keyword } from "@/lib/types";
+import { ResearchButtons } from "@/components/dashboard/keyword-research/research-buttons";
 
 interface KeywordActionsProps {
   workspaces: Workspace[];
@@ -51,7 +52,7 @@ export function KeywordActions({ workspaces, keywords = [] }: KeywordActionsProp
         const escape = (v: string) => v.includes(",") || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v;
         const header = ["Keyword","Intent","Volume","Difficulty","Status"].join(",");
         const body = keywords.map((k) => [
-          escape(k.term), k.intent, String(k.volume), String(k.difficulty), k.status,
+          escape(k.term), k.intent, k.volume == null ? "" : String(k.volume), k.difficulty == null ? "" : String(k.difficulty), k.status,
         ].join(",")).join("\n");
         const blob = new Blob([`${header}\n${body}`], { type: "text/csv" });
         const url = URL.createObjectURL(blob);
@@ -65,13 +66,13 @@ export function KeywordActions({ workspaces, keywords = [] }: KeywordActionsProp
         Export CSV
       </Button>
       <Button
-        variant="accent"
         data-onboarding="add-keywords"
         onClick={() => setOpen(true)}
       >
-        <Icons.sparkle size={14} />
-        Find new keywords
+        <Icons.plus size={14} />
+        Add keyword
       </Button>
+      <ResearchButtons />
 
       <Dialog
         open={open}

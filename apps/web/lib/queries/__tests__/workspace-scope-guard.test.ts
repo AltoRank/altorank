@@ -30,9 +30,15 @@ const SCOPED_TABLES = new Set([
   "geo_prompts",
   "geo_results",
   "keywords",
+  "keyword_research_runs",
+  "link_sources",
+  "link_targets",
   "provider_spend",
   "publish_log",
   "publishing_cadences",
+  "refresh_candidates",
+  "refresh_executions",
+  "refresh_tasks",
   "reports",
   "voice_profiles",
   "workspace_integrations",
@@ -56,10 +62,6 @@ const ALLOWED: Record<string, string> = {
   "lib/content/generate.ts:articles":
     "generation resolves its article by id first (and checks workspace_id when " +
     "it does); the later writes address that same row",
-  "app/(dashboard)/articles/page.tsx:analytics_metrics":
-    "rows are looked up by article_id against an already-scoped article list, so " +
-    "foreign rows are never read - wasteful, not wrong. Worth scoping if this " +
-    "query ever grows past a few hundred rows",
 };
 
 const ROOT = join(__dirname, "..", "..", "..");
@@ -188,11 +190,17 @@ const SCOPED_HELPERS: Record<string, number> = {
   getArticles: 0,
   getRecentArticles: 1,
   getKeywords: 0,
+  getPlannerKeywords: 0,
+  getKeywordSourceYields: 0,
   getBacklinks: 0,
   getReports: 0,
   getGeoPrompts: 0,
   getLatestGeoResults: 0,
-  getTrafficSeries: 0,
+  loadGscRows: 0,
+  syncHealthFor: 0,
+  knownPagesFor: 0,
+  getTrafficValue: 0,
+  getArticleValue: 1,
   getBingSummary: 0,
   getCalendarEntries: 0,
 };

@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
 
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("id, domain, agency_id, language")
+    .select("id, domain, agency_id, language, location_code, auto_generate_weekly_limit")
     .eq("id", workspaceId)
     .single();
   if (!workspace) return json({ error: "Workspace not found" }, 404);

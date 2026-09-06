@@ -38,6 +38,16 @@ import { groupByPage, type RankedKeyword } from "./ranked-keywords";
 import { fetchInstantPage, type OnPageFacts } from "@/lib/audit/onpage";
 import { hasDataForSEOCredentials } from "./client";
 
+const SITE_PAGES_UPSERT_CHUNK = 10;
+
+/** The crawl read the site but could not store (all of) it. */
+export class SitePagesWriteError extends Error {
+  constructor(message: string, public readonly storedBefore: number) {
+    super(message);
+    this.name = "SitePagesWriteError";
+  }
+}
+
 const UA =
   "Mozilla/5.0 (compatible; AltoRank-Auditor/1.0; +https://altorank.co; site audit)";
 
@@ -132,7 +142,7 @@ async function bodyOf(url: string, timeoutMs: number): Promise<string | null> {
   }
 }
 
-function locsIn(xml: string): string[] {
+export function locsIn(xml: string): string[] {
   return [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) =>
     decodeEntities(m[1]),
   );
@@ -525,9 +535,13 @@ export async function syncSitePages(
     }),
   );
 
-  // Upsert in chunks: one statement per page would be hundreds of round trips.
-  for (let i = 0; i < pages.length; i += 50) {
-    const chunk = pages.slice(i, i + 50).map((p) => ({
+  // Upsert in chunks: one statement per page would be hundreds of round trips,
+  // but 50 rows carrying audit and seo_checks JSON blew PostgREST's 8 s
+  // statement_timeout. Ten is well inside it; a failure after some chunks
+  // have landed is reported as a write failure so the caller can retry
+  // tomorrow instead of marking the site crawled.
+  for (let i = 0; i < pages.length; i += SITE_PAGES_UPSERT_CHUNK) {
+    const chunk = pages.slice(i, i + SITE_PAGES_UPSERT_CHUNK).map((p) => ({
       ...p,
       workspace_id: workspaceId,
       last_crawled_at: new Date().toISOString(),
@@ -535,7 +549,7 @@ export async function syncSitePages(
     const { error } = await supabase
       .from("site_pages")
       .upsert(chunk, { onConflict: "workspace_id,url" });
-    if (error) throw new Error(`site_pages upsert: ${error.message}`);
+    if (error) throw new SitePagesWriteError(`site_pages upsert: ${error.message}`, i);
   }
 
   return {

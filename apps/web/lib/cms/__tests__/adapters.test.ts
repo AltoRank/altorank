@@ -327,7 +327,7 @@ describe("resolveCMSAdapter", () => {
     const adapter = resolveCMSAdapter({
       type: "notion",
       integrationToken: "t",
-      parentPageId: "p1",
+      databaseId: "d1",
     });
     expect(adapter).toBeInstanceOf(NotionAdapter);
   });
@@ -801,17 +801,19 @@ describe("WebhookAdapter", () => {
     expect(url).toBe("https://hook.example.com/publish");
     expect(opts.method).toBe("POST");
     const body = JSON.parse(opts.body);
-    expect(body.action).toBe("publish");
-    expect(body.article.title).toBe("Webhook Post");
+    expect(body.event).toBe("publish_articles");
+    expect(body.articles).toHaveLength(1);
+    expect(body.articles[0].title).toBe("Webhook Post");
+    expect(body.articles[0].content_html).toBe("<p>content</p>");
   });
 
-  it("unpublish() sends POST with unpublish action", async () => {
+  it("unpublish() sends the unpublish_article event", async () => {
     mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
     await adapter.unpublish("hook_1");
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.action).toBe("unpublish");
-    expect(body.externalId).toBe("hook_1");
+    expect(body.event).toBe("unpublish_article");
+    expect(body.article.id).toBe("hook_1");
   });
 
   it("testConnection() returns ok on 2xx", async () => {
@@ -841,5 +843,6 @@ describe("WebhookAdapter", () => {
     const headers = mockFetch.mock.calls[0][1].headers;
     expect(headers["X-Webhook-Signature"]).toBeDefined();
     expect(headers["X-Webhook-Signature"].startsWith("sha256=")).toBe(true);
+    expect(headers["Authorization"]).toBe("Bearer mysecret");
   });
 });

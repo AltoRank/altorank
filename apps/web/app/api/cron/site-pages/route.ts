@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { cronSecretFrom } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
-import { syncSitePages } from "@/lib/seo/site-crawl";
+import { syncSitePages, SitePagesWriteError } from "@/lib/seo/site-crawl";
+import { detectLinks } from "@/lib/linking/detect";
 
 /**
  * Keep each site's published pages in step with its sitemap.
@@ -70,14 +71,37 @@ export async function GET(request: Request) {
         maxPages: PAGES_PER_RUN,
       });
       await stamp();
+      // The crawl just wrote titles and keywords for these pages; the link
+      // pool picks them up now rather than on the next "Detect links" click.
+      // Its own failure is reported, not thrown: the crawl above succeeded.
+      let links: Record<string, unknown>;
+      try {
+        const detected = await detectLinks(supabase, workspaceId);
+        links = { found: detected.found, added: detected.added };
+      } catch (err) {
+        links = { error: err instanceof Error ? err.message : "unknown error" };
+      }
       results.push({
         workspaceId, domain, status: "crawled",
         discovered: summary.discovered,
         fetched: summary.fetched,
         failed: summary.failed,
         unchanged: summary.skipped,
+        links,
       });
     } catch (err) {
+      if (err instanceof SitePagesWriteError) {
+        // The site was read but not stored. Stamping "now" would hide it for a
+        // week with zero pages; leaving null would keep it at the head of the
+        // queue ahead of never-crawled sites. Back-date the stamp so it is
+        // eligible again on the next run, behind the genuinely new ones.
+        await supabase
+          .from("workspaces")
+          .update({ last_pages_crawl_at: new Date(Date.now() - (STALE_AFTER_DAYS - 1) * 86_400_000).toISOString() })
+          .eq("id", workspaceId);
+        results.push({ workspaceId, domain, status: "error", detail: err.message, retry: "next run" });
+        continue;
+      }
       await stamp();
       results.push({
         workspaceId, domain, status: "error",

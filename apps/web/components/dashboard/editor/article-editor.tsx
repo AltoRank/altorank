@@ -1,14 +1,15 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, ReactNodeViewRenderer } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 // Without these the editor treats a stored table as an unknown node and drops
 // it on the next save, which would turn a rendering bug into data loss.
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
 import Placeholder from "@tiptap/extension-placeholder";
+import { enrichmentNodes } from "@/components/dashboard/editor/enrichment-nodes";
 import { toast } from "sonner";
 import { Icons } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
@@ -18,18 +19,44 @@ import { ConnectCmsDialog } from "@/components/dashboard/connect-cms-dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { PLATFORM_HINT, PLATFORM_LABEL, PLATFORM_CONNECT_TYPE, platformState } from "@/lib/cms/detect";
 import { updateArticle } from "@/app/actions/articles";
-import { publishArticle, approveArticle, requestChanges, markPublishedManually } from "@/app/actions/publish";
+import { publishArticle, approveArticle, requestChanges, markPublishedManually, retryPublish } from "@/app/actions/publish";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
 import type { Destination } from "@/lib/publishing/destinations";
 import { IntegrationIcon } from "@/components/dashboard/integration-icon";
+import { canRetryPublish, type LastPublish } from "@/lib/publishing/log";
+import { publishVerb } from "@/lib/cms/publish-mode";
 import { SchedulePicker } from "@/components/dashboard/editor/schedule-picker";
 import { ResearchPanel, FactCheckPanel } from "@/components/dashboard/editor/research-panel";
 import { WhyPanel } from "@/components/dashboard/editor/why-panel";
 import { AuditPanel } from "@/components/dashboard/editor/audit-panel";
+import { InternalLinksPanel } from "@/components/dashboard/editor/internal-links-panel";
+import { IndexingStatus } from "@/components/dashboard/check-indexing-button";
+import { inspectionFrom } from "@/lib/google/inspection";
 import { TabRow } from "@/components/ui/tab-row";
 import { auditArticle } from "@/lib/seo/article-audit";
+import { ArticleImage } from "@/lib/editor/image-node";
+import { NO_CHANGES, pendingCount, pendingLabel, outlineOf, type PendingChanges } from "@/lib/editor/proposals";
+import { EditorAiContext, type EditorMode } from "@/components/dashboard/editor/editor-ai-context";
+import { MetaFields } from "@/components/dashboard/editor/meta-fields";
+import { FeaturedImage, ImageNodeView } from "@/components/dashboard/editor/image-tools";
+import { SelectionBar } from "@/components/dashboard/editor/selection-bar";
+import { LinkPopover } from "@/components/dashboard/editor/link-popover";
+import { RewritePanel } from "@/components/dashboard/editor/rewrite-panel";
+import { ExportMenu } from "@/components/dashboard/editor/export-menu";
 import type { Article, Workspace, PublishingCadence, Integration } from "@/lib/types";
+
+// The body's image node, drawn with the per-image toolbar. Defined once at
+// module level: a new extension object on every render would rebuild the
+// editor's schema each time.
+const ArticleImageWithTools = ArticleImage.extend({
+  addNodeView() {
+    return ReactNodeViewRenderer(ImageNodeView);
+  },
+});
 import type { ScoringCheck } from "@/lib/seo/scoring";
+import type { LinkTarget } from "@/lib/seo/link-resolver";
+import type { TrafficValue } from "@/lib/queries/value";
+import { describeOrganicValue, formatOrganicValue } from "@/lib/analytics/value";
 
 type Props = {
   article: Article;
@@ -57,6 +84,26 @@ type Props = {
    * yet". Undefined when the page did not count.
    */
   linkableArticles?: number | null;
+  /** The pages the draft was offered, so the sidebar can name where each link goes. */
+  linkTargets?: LinkTarget[];
+  /** Every page we can show exists; the audit's internal-link item reads this, not the offered slice. */
+  knownPages?: { url: string }[];
+  /** Internal links per article the site asked for in its output settings. */
+  internalLinksWanted?: number | null;
+  /**
+   * The most recent publish_log row for this article. A failed one turns the
+   * panel into the recovery path - the error, and a Retry that goes back
+   * through the same connection - instead of a Publish button that has
+   * quietly vanished because the status is 'error'.
+   */
+  lastPublish?: LastPublish | null;
+  /**
+   * What this article's clicks would have cost as ads, priced at its target
+   * keyword. Null for anything not live: the page only asks for live
+   * articles, because a draft has no clicks and a dash over it would read
+   * as a verdict.
+   */
+  value?: TrafficValue | null;
 };
 
 export function ArticleEditor({
@@ -67,6 +114,11 @@ export function ArticleEditor({
   destinations = [],
   integrations = [],
   linkableArticles,
+  linkTargets = [],
+  knownPages,
+  internalLinksWanted = null,
+  lastPublish = null,
+  value = null,
 }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -96,7 +148,38 @@ export function ArticleEditor({
   // Generation now has phases before any text appears. Without this the button
   // reads "Generating…" through a SERP round trip with nothing on screen.
   const [phase, setPhase] = useState<"idle" | "researching" | "writing" | "checking">("idle");
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Review is read-only with the AI actions; Editor is direct editing. Both
+  // stage changes; neither writes. Save is the one commit, below.
+  const [mode, setMode] = useState<EditorMode>("review");
+  const [reviewingRewrite, setReviewingRewrite] = useState(false);
+  // The staged values of the fields outside the document. They start as what
+  // was loaded and diverge as proposals are accepted or, in Editor mode, typed.
+  const [title, setTitle] = useState(article.title);
+  const [meta, setMeta] = useState(article.meta_description ?? "");
+  const [featured, setFeatured] = useState<string | null>(article.featured_image_url);
+  const [pending, setPending] = useState<PendingChanges>(NO_CHANGES);
+  // The document as last saved (or as last applied), so "Discard edits" has
+  // something to return to and "Apply to article" can tell whether anything
+  // changed.
+  const snapshot = useRef<string>("");
+  // Typed since the snapshot. Kept as state (set from the update debounce)
+  // rather than read off the ref in render, so the header can show it.
+  const [dirty, setDirty] = useState(false);
+  const documentRef = useRef<HTMLDivElement>(null);
+  // Set once the editor exists; declared here so the editor's own callbacks
+  // can reach it. An accepted body proposal counts as one change and becomes
+  // the new snapshot, otherwise the same edit would be counted twice: once as
+  // the proposal, once as "typed since the snapshot".
+  const editorRef = useRef<ReturnType<typeof useEditor>>(null);
+  const bumpBody = useCallback(() => {
+    setPending((p) => ({ ...p, body: p.body + 1 }));
+    const ed = editorRef.current;
+    if (ed) {
+      snapshot.current = JSON.stringify(ed.getJSON());
+      setDirty(false);
+    }
+  }, []);
 
   // Which sidebar tab is showing. "draft" is everything that was here before:
   // why it exists, its scores, the fact check, research and publishing. "audit"
@@ -121,9 +204,15 @@ export function ArticleEditor({
       TableRow,
       TableHeader,
       TableCell,
+      ArticleImageWithTools,
       Placeholder.configure({ placeholder: "Start writing…" }),
+      // Images, video embeds, inline charts and heading ids from the enrichment
+      // pipeline. Without these Tiptap drops the whole document on load.
+      ...enrichmentNodes,
     ],
     content: initialContent,
+    // Review mode first. Editor mode flips this on.
+    editable: false,
     // Required under the App Router. Without it Tiptap builds an editor during
     // the server render, throws "SSR has been detected", and React recovers by
     // discarding the server tree and re-rendering the whole route on the
@@ -137,35 +226,122 @@ export function ArticleEditor({
     },
     onCreate: ({ editor }) => {
       setDocHtml(editor.getHTML());
+      snapshot.current = JSON.stringify(editor.getJSON());
     },
     onUpdate: ({ editor }) => {
-      // The audit re-reads the document a beat after typing stops. Shorter
-      // than the save debounce because nothing is written; it only has to
-      // avoid serialising the whole document on every keystroke.
+      // The audit re-reads the document a beat after typing stops: short,
+      // because nothing is written; it only has to avoid serialising the whole
+      // document on every keystroke. There is no auto-save any more. Every
+      // change, typed or proposed, is staged until the Save button, which is
+      // the one place the article is written from this screen.
       if (auditTimer.current) clearTimeout(auditTimer.current);
-      auditTimer.current = setTimeout(() => setDocHtml(editor.getHTML()), 300);
-
-      // Debounced auto-save
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(async () => {
-        setSaving(true);
-        try {
-          const json = editor.getJSON();
-          const text = editor.getText();
-          const wordCount = text.split(/\s+/).filter(Boolean).length;
-          await updateArticle(article.id, {
-            content: json,
-            seo_score: article.seo_score,
-          });
-          // Could update word count too but that requires schema change
-        } catch {
-          // Silent fail on auto-save
-        } finally {
-          setSaving(false);
-        }
-      }, 2000);
+      auditTimer.current = setTimeout(() => {
+        setDocHtml(editor.getHTML());
+        setDirty(JSON.stringify(editor.getJSON()) !== snapshot.current);
+      }, 300);
     },
   });
+
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
+
+  useEffect(() => {
+    editor?.setEditable(mode === "editor");
+  }, [editor, mode]);
+
+  // Editor mode's two buttons. Apply keeps what was typed and counts it as
+  // one change; Discard returns to the snapshot. Neither writes.
+  const applyEdits = useCallback(() => {
+    if (!editor) return;
+    const now = JSON.stringify(editor.getJSON());
+    if (now === snapshot.current) {
+      toast.info("Nothing typed since the last apply.");
+      return;
+    }
+    snapshot.current = now;
+    setDirty(false);
+    bumpBody();
+    toast.success("Applied. Save to keep it.");
+  }, [editor, bumpBody]);
+  const discardEdits = useCallback(() => {
+    if (!editor || !snapshot.current) return;
+    editor.commands.setContent(JSON.parse(snapshot.current), { emitUpdate: false });
+    setDocHtml(editor.getHTML());
+    setDirty(false);
+  }, [editor]);
+
+  /** The whole-article rewrite, accepted: swap the body, count it once. */
+  const replaceBody = useCallback(
+    (html: string) => {
+      if (!editor) return;
+      editor.commands.setContent(html, { emitUpdate: false });
+      snapshot.current = JSON.stringify(editor.getJSON());
+      setDocHtml(editor.getHTML());
+      setDirty(false);
+      bumpBody();
+    },
+    [editor, bumpBody],
+  );
+
+  // Accepted proposals stage the field; typing in Editor mode does the same.
+  const stageTitle = useCallback(
+    (next: string) => {
+      setTitle(next);
+      setPending((p) => ({ ...p, title: next !== article.title }));
+    },
+    [article.title],
+  );
+  const stageMeta = useCallback(
+    (next: string) => {
+      setMeta(next);
+      setPending((p) => ({ ...p, meta: next !== (article.meta_description ?? "") }));
+    },
+    [article.meta_description],
+  );
+  const stageFeatured = useCallback(
+    (next: string | null) => {
+      setFeatured(next);
+      setPending((p) => ({ ...p, featuredImage: next !== article.featured_image_url }));
+    },
+    [article.featured_image_url],
+  );
+
+  // The one write. Typed edits not yet applied go too: a person who pressed
+  // Save meant what is on screen.
+  const handleSave = useCallback(async () => {
+    if (!editor) return;
+    setSaving(true);
+    try {
+      const json = editor.getJSON();
+      const wordCount = editor.getText().split(/\s+/).filter(Boolean).length;
+      await updateArticle(article.id, {
+        content: json,
+        title: title.trim() || article.title,
+        meta_description: meta.trim() || null,
+        featured_image_url: featured,
+        word_count: wordCount,
+      });
+      snapshot.current = JSON.stringify(json);
+      setPending(NO_CHANGES);
+      setDirty(false);
+      toast.success("Saved");
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setSaving(false);
+    }
+  }, [editor, article.id, article.title, title, meta, featured, router]);
+
+  const outline = useMemo(() => outlineOf(docHtml), [docHtml]);
+  const aiContext = useMemo(
+    () => ({ articleId: article.id, mode, outline, docHtml, onBodyChange: bumpBody }),
+    [article.id, mode, outline, docHtml, bumpBody],
+  );
+  // Typed-but-unapplied edits count as one change: Save takes them too.
+  const changes = pendingCount(pending) + (dirty ? 1 : 0);
+  const getHtml = useCallback(() => editor?.getHTML() ?? "", [editor]);
 
   const handleAskAI = useCallback(async () => {
     setGenerating(true);
@@ -302,7 +478,9 @@ export function ArticleEditor({
     try {
       const result = await publishArticle(article.id, destination?.id);
       toast.success(
-        destination ? `Published to ${destination.label}` : "Article published",
+        result.publishMode === "draft"
+          ? `Saved as a draft on ${destination?.label ?? "the CMS"}`
+          : destination ? `Published to ${destination.label}` : "Article published",
         result?.url ? { description: result.url } : undefined,
       );
       router.refresh();
@@ -312,6 +490,25 @@ export function ArticleEditor({
       setPublishing(false);
     }
   }, [article.id, destination, router]);
+
+  // Same connection the failed attempt used - the action reads it off the log
+  // - so this is not a chance to pick a different one.
+  const handleRetry = useCallback(async () => {
+    setPublishing(true);
+    try {
+      const result = await retryPublish(article.id);
+      toast.success(
+        result.publishMode === "draft" ? "Saved as a draft this time" : "Published this time",
+        result?.url ? { description: result.url } : undefined,
+      );
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "The retry failed too");
+    } finally {
+      setPublishing(false);
+    }
+  }, [article.id, router]);
+  const retryable = canRetryPublish(lastPublish, article.status);
 
   // Both render from what is on screen right now, synchronously inside the
   // click, so the clipboard write stays within the user gesture Safari
@@ -334,18 +531,18 @@ export function ArticleEditor({
   const copyMarkdown = useCallback(() => {
     const markdown = renderArticleMarkdown(
       {
-        title: article.title,
+        title,
         slug: article.slug,
         html: editor?.getHTML() ?? "",
-        metaDescription: article.meta_description,
+        metaDescription: meta || null,
         keyword: article.keyword,
-        featuredImageUrl: article.featured_image_url,
+        featuredImageUrl: featured,
         publishedAt: article.published_at,
       },
       `https://${workspace.domain}`,
     );
     return copyToClipboard(markdown, "Copied the article as Markdown, front matter included.");
-  }, [editor, article, workspace.domain, copyToClipboard]);
+  }, [editor, article, title, meta, featured, workspace.domain, copyToClipboard]);
 
   /**
    * The two ways out for a site we cannot post to. Rendered both before and
@@ -397,72 +594,106 @@ export function ArticleEditor({
   // other reason does not recompute it.
   const audit = useMemo(
     () =>
+      // The staged title, description and image, not the saved ones: the
+      // audit should answer for what the person is about to save.
       auditArticle({
         html: docHtml,
         keyword: article.keyword,
         siteDomain: workspace.domain,
-        title: article.title,
-        metaDescription: article.meta_description,
+        title,
+        metaDescription: meta || null,
         slug: article.slug,
-        featuredImageUrl: article.featured_image_url,
+        featuredImageUrl: featured,
         linkableArticles,
+        // The pool this draft was offered, so a same-domain link to a page
+        // not in it fails the item rather than counting towards a pass.
+        knownPages: knownPages ?? linkTargets,
         linkChecks: article.link_checks,
       }),
     [
       docHtml,
       article.keyword,
-      article.title,
-      article.meta_description,
+      title,
+      meta,
       article.slug,
-      article.featured_image_url,
+      featured,
       article.link_checks,
       workspace.domain,
       linkableArticles,
+      linkTargets,
     ],
   );
   const auditOpen = audit.counts.fail + audit.counts.warn;
 
+  const editing = mode === "editor";
+
   return (
-    <div className="flex-1 grid min-h-0" style={{ gridTemplateColumns: "1fr 340px" }}>
+    <EditorAiContext.Provider value={aiContext}>
+    <div className="flex-1 grid min-h-0" style={{ gridTemplateColumns: `${reviewingRewrite ? 440 : 280}px 1fr 340px` }}>
+      {/* Rewrite panel: the whole-article proposal, reviewed hunk by hunk.
+          It gets more room while a review is open so blocks read as prose. */}
+      <RewritePanel
+        articleId={article.id}
+        getHtml={getHtml}
+        onReplace={replaceBody}
+        onReviewingChange={setReviewingRewrite}
+        className="border-r border-line"
+      />
+
       {/* Editor pane */}
       <div className="border-r border-line flex flex-col min-h-0">
-        {/* Toolbar */}
-        <div className="sticky top-0 z-[2] flex gap-0.5 items-center px-8 py-2.5 bg-bg border-b border-line">
-          <ToolbarBtn icon={<Icons.h1 size={14} />} onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} active={editor?.isActive("heading")} />
-          <ToolbarBtn icon={<Icons.bold size={14} />} onClick={() => editor?.chain().focus().toggleBold().run()} active={editor?.isActive("bold")} />
-          <ToolbarBtn icon={<Icons.italic size={14} />} onClick={() => editor?.chain().focus().toggleItalic().run()} active={editor?.isActive("italic")} />
-          <ToolbarBtn icon={<Icons.list size={14} />} onClick={() => editor?.chain().focus().toggleBulletList().run()} active={editor?.isActive("bulletList")} />
+        {/* Header: mode, formatting (Editor mode only), changes, export, save */}
+        <div className="sticky top-0 z-[2] flex gap-0.5 items-center px-6 py-2.5 bg-bg border-b border-line">
+          <div className="mr-3 inline-flex rounded-[7px] border border-line bg-panel p-0.5" role="tablist" aria-label="Mode">
+            {(["review", "editor"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={mode === m}
+                onClick={() => setMode(m)}
+                className={`rounded-[5px] px-2.5 py-1 text-[12px] font-medium transition-colors ${
+                  mode === m ? "bg-bg text-ink shadow-[0_1px_2px_rgba(0,0,0,0.06)]" : "text-ink-3 hover:text-ink"
+                }`}
+              >
+                {m === "review" ? "Review" : "Editor"}
+              </button>
+            ))}
+          </div>
+          <ToolbarBtn disabled={!editing} icon={<Icons.h1 size={14} />} onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} active={editor?.isActive("heading")} />
+          <ToolbarBtn disabled={!editing} icon={<Icons.bold size={14} />} onClick={() => editor?.chain().focus().toggleBold().run()} active={editor?.isActive("bold")} />
+          <ToolbarBtn disabled={!editing} icon={<Icons.italic size={14} />} onClick={() => editor?.chain().focus().toggleItalic().run()} active={editor?.isActive("italic")} />
+          <ToolbarBtn disabled={!editing} icon={<Icons.list size={14} />} onClick={() => editor?.chain().focus().toggleBulletList().run()} active={editor?.isActive("bulletList")} />
           <ToolbarBtn
+            disabled={!editing}
             icon={<Icons.link size={14} />}
             active={editor?.isActive("link")}
             onClick={() => {
               if (!editor) return;
               if (editor.isActive("link")) {
-                editor.chain().focus().unsetLink().run();
+                // Selecting into the link opens the Edit URL popover.
+                editor.chain().focus().extendMarkRange("link").run();
                 return;
               }
-              const url = window.prompt("Link URL (https://…)");
-              if (!url) return;
-              const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-              editor.chain().focus().setLink({ href }).run();
+              if (editor.state.selection.empty) {
+                toast.info("Select the words to link first.");
+                return;
+              }
+              editor.chain().focus().setLink({ href: "https://" }).extendMarkRange("link").run();
             }}
           />
           <div className="flex-1" />
-          {saving && <span className="text-[11px] text-ink-3 font-mono mr-2">Saving…</span>}
-          {/* Parked, not removed: the streaming generation behind this works and
-              is exercised by /api/generate. Turning it off in the editor is a
-              product decision, so the handler stays wired and the button simply
-              cannot be pressed. `title` is the coming-soon idiom already used by
-              the calendar's disabled view tabs; there is no shadcn in this repo
-              and adding it for one tooltip would be a lot of dependency for a
-              small affordance. */}
-          <Button
-            size="sm"
-            onClick={handleAskAI}
-            disabled
-            title="Coming soon"
+          <span
+            className={`mr-2 font-mono text-[11px] ${changes > 0 ? "text-accent-ink" : "text-ink-3"}`}
+            aria-live="polite"
           >
-            <Icons.sparkle size={13} />
+            {changes === 0 ? "No changes yet" : pendingLabel({ ...NO_CHANGES, body: changes })}
+          </span>
+          {/* Parked, not removed: the streaming first-draft generation behind
+              this works and is exercised by /api/generate. Turning it off in
+              the editor is a product decision, so the handler stays wired and
+              the button simply cannot be pressed. */}
+          <Button size="sm" variant="ghost" onClick={handleAskAI} disabled title="Coming soon">
             {phase === "researching"
               ? "Researching…"
               : phase === "writing"
@@ -471,15 +702,54 @@ export function ArticleEditor({
                   ? "Checking claims…"
                   : generating
                     ? "Generating…"
-                    : "Ask AI"}
+                    : "Generate draft"}
+          </Button>
+          <ExportMenu
+            articleId={article.id}
+            getHtml={getHtml}
+            title={title}
+            metaDescription={meta || null}
+            featuredImageUrl={featured}
+          />
+          <Button size="sm" variant="primary" onClick={handleSave} disabled={saving || changes === 0} className="ml-1">
+            {saving ? "Saving…" : "Save"}
           </Button>
         </div>
 
-        {/* Document */}
-        <div className="flex-1 overflow-y-auto scroll">
-          <div className="max-w-[720px] mx-auto px-8 py-10 pb-20 [&_.ProseMirror_h1]:text-[32px] [&_.ProseMirror_h1]:font-semibold [&_.ProseMirror_h1]:tracking-[-0.02em] [&_.ProseMirror_h1]:leading-[1.15] [&_.ProseMirror_h1]:mb-3.5 [&_.ProseMirror_h2]:text-xl [&_.ProseMirror_h2]:font-semibold [&_.ProseMirror_h2]:mt-7 [&_.ProseMirror_h2]:mb-2.5 [&_.ProseMirror_p]:text-[14.5px] [&_.ProseMirror_p]:leading-[1.65] [&_.ProseMirror_p]:mb-3.5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_ol]:mb-3.5 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ul]:mb-3.5 [&_.ProseMirror_li]:mb-1.5 [&_.ProseMirror_strong]:font-semibold [&_.ProseMirror_em]:italic [&_.ProseMirror_a]:text-accent-ink [&_.ProseMirror_a]:border-b [&_.ProseMirror_a]:border-accent-soft [&_.ProseMirror_.is-editor-empty:first-child::before]:text-ink-4 [&_.ProseMirror_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_.is-editor-empty:first-child::before]:h-0 [&_.ProseMirror_.is-editor-empty:first-child::before]:pointer-events-none">
-            <EditorContent editor={editor} />
+        {/* Editor mode: the typed-edit session's two buttons. */}
+        {editing && (
+          <div className="flex items-center gap-2 border-b border-line bg-panel px-6 py-1.5 text-[12px] text-ink-3">
+            <Icons.edit size={12} />
+            <span>Editing directly. Click a link to edit its URL; alt text sits under each image.</span>
+            <div className="flex-1" />
+            <Button size="sm" variant="ghost" onClick={discardEdits}>
+              Discard edits
+            </Button>
+            <Button size="sm" onClick={applyEdits}>
+              Apply to article
+            </Button>
           </div>
+        )}
+
+        {/* Document */}
+        <div ref={documentRef} className="relative flex-1 overflow-y-auto scroll">
+          <div className="max-w-[720px] mx-auto px-8 py-8 pb-20">
+            <MetaFields
+              articleId={article.id}
+              title={title}
+              meta={meta}
+              editable={editing}
+              outline={outline}
+              onTitle={stageTitle}
+              onMeta={stageMeta}
+            />
+            <FeaturedImage articleId={article.id} url={featured} onChange={stageFeatured} />
+            <div className="[&_.ProseMirror_h1]:text-[32px] [&_.ProseMirror_h1]:font-semibold [&_.ProseMirror_h1]:tracking-[-0.02em] [&_.ProseMirror_h1]:leading-[1.15] [&_.ProseMirror_h1]:mb-3.5 [&_.ProseMirror_h2]:text-xl [&_.ProseMirror_h2]:font-semibold [&_.ProseMirror_h2]:mt-7 [&_.ProseMirror_h2]:mb-2.5 [&_.ProseMirror_p]:text-[14.5px] [&_.ProseMirror_p]:leading-[1.65] [&_.ProseMirror_p]:mb-3.5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_ol]:mb-3.5 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ul]:mb-3.5 [&_.ProseMirror_li]:mb-1.5 [&_.ProseMirror_strong]:font-semibold [&_.ProseMirror_em]:italic [&_.ProseMirror_a]:text-accent-ink [&_.ProseMirror_a]:border-b [&_.ProseMirror_a]:border-accent-soft [&_.ProseMirror_.is-editor-empty:first-child::before]:text-ink-4 [&_.ProseMirror_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_.is-editor-empty:first-child::before]:h-0 [&_.ProseMirror_.is-editor-empty:first-child::before]:pointer-events-none">
+              <EditorContent editor={editor} />
+            </div>
+          </div>
+          <SelectionBar editor={editor} container={documentRef} />
+          <LinkPopover editor={editor} container={documentRef} enabled={editing} />
         </div>
       </div>
 
@@ -564,6 +834,51 @@ export function ArticleEditor({
           </SidebarSection>
         )}
 
+        {/* Internal links: which words link where, against the configured count */}
+        <SidebarSection title="Internal links">
+          <InternalLinksPanel
+            html={docHtml}
+            siteDomain={workspace.domain}
+            targets={linkTargets}
+            wanted={internalLinksWanted}
+          />
+        </SidebarSection>
+
+        {/* What it is worth. Live articles only: the number is the article's
+            Search Console clicks × the cost-per-click of its keyword, which is
+            an estimate of what the same visits would have cost as ads, and
+            the caption says exactly that. Null renders as an em dash, never
+            $0: no synced rows or no CPC on file is "not measured", and only a
+            priced keyword with zero clicks earns a zero. */}
+        {article.status === "live" && value && (
+          <SidebarSection title="What this article is worth">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="cursor-help">
+                    <div className="text-[22px] font-semibold tracking-tight text-ink">
+                      {formatOrganicValue(value.value, workspace.language)}
+                    </div>
+                    <div className="text-[11.5px] font-mono text-ink-3 mt-1">
+                      {value.value === null
+                        ? value.clicks > 0
+                          ? `${value.clicks.toLocaleString()} clicks, no cost-per-click on file for "${article.keyword}"`
+                          : `no Search Console clicks in the last ${value.days} days`
+                        : `${value.clicks.toLocaleString()} clicks × CPC of "${article.keyword}", ${value.days}d · estimate`}
+                    </div>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[300px] font-normal">
+                  {describeOrganicValue(value, value.days)} Clicks are the
+                  article&apos;s own, from Search Console; the price is the
+                  keyword it was written for, so it undercounts an article that
+                  ranks for more than that.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </SidebarSection>
+        )}
+
         {/* Target keywords */}
         <SidebarSection title="Target keywords">
           <div className="flex flex-col gap-1.5">
@@ -609,7 +924,16 @@ export function ArticleEditor({
                       {destinations[0].label} — {workspace.domain}
                     </div>
                   </div>
-                  <StatusPill status="on" label={article.status === "live" ? "Live" : "Connected"} />
+                  <StatusPill
+                    status="on"
+                    label={
+                      article.status === "live"
+                        ? lastPublish?.status === "success" && lastPublish.publish_mode === "draft"
+                          ? "Draft on CMS"
+                          : "Live"
+                        : "Connected"
+                    }
+                  />
                 </div>
               ) : (
                 <label className="block">
@@ -639,16 +963,43 @@ export function ArticleEditor({
                   Choose a plan to publish
                 </Link>
               )}
-              {article.status === "approved" && !needsPlan && (
-                <>
+              {/*
+                The recovery path. Shown for an approved article whose last
+                attempt failed, and for an 'error' article - which the cron
+                leaves behind and which otherwise had no button at all.
+              */}
+              {retryable && !needsPlan && (
+                <div className="mt-3 rounded-[7px] border border-[var(--err)]/40 bg-[var(--err)]/5 p-2.5">
+                  <div className="text-[12px] font-medium text-[var(--err)]">Last publish failed</div>
+                  {lastPublish?.error && (
+                    <div className="mt-1 text-[12px] text-ink-2 break-words leading-[1.45]">
+                      {lastPublish.error}
+                    </div>
+                  )}
                   <Button
                     size="sm"
-                    className="w-full justify-center mt-3"
-                    onClick={handlePublish}
+                    className="w-full justify-center mt-2"
+                    onClick={handleRetry}
                     disabled={publishing}
                   >
-                    {publishing ? "Publishing…" : `Publish to ${destination?.label ?? "CMS"}`}
+                    {publishing ? "Retrying…" : "Retry publish"}
                   </Button>
+                </div>
+              )}
+              {article.status === "approved" && !needsPlan && (
+                <>
+                  {!retryable && (
+                    <Button
+                      size="sm"
+                      className="w-full justify-center mt-3"
+                      onClick={handlePublish}
+                      disabled={publishing}
+                    >
+                      {publishing
+                        ? destination?.publishMode === "draft" ? "Saving…" : "Publishing…"
+                        : publishVerb(destination?.publishMode, destination?.label ?? "CMS")}
+                    </Button>
+                  )}
                   <button
                     type="button"
                     className="w-full text-center mt-2 text-[12px] text-ink-3 hover:text-ink transition-colors disabled:opacity-50"
@@ -793,6 +1144,15 @@ export function ArticleEditor({
               View published article
             </a>
           )}
+          {/* Whether Google has the page, asked of Google. Only offered once
+              there is a URL to ask about. */}
+          {article.published_url && (
+            <IndexingStatus
+              articleId={article.id}
+              inspection={inspectionFrom(article.indexing_status)}
+              published={Boolean(article.published_url)}
+            />
+          )}
         </SidebarSection>
         </>
         )}
@@ -821,6 +1181,7 @@ export function ArticleEditor({
         }}
       />
     </div>
+    </EditorAiContext.Provider>
   );
 }
 
@@ -851,7 +1212,9 @@ function ScoreRing({
       : value >= 60
         ? "var(--warn)"
         : "var(--err)";
-  const failed = (checks ?? []).filter((c) => !c.passed);
+  // Unverified checks carry no weight, so they are not what the number is
+  // made of and do not belong in its explanation.
+  const failed = (checks ?? []).filter((c) => !c.passed && !c.unverified);
 
   return (
     <Tooltip delayDuration={150}>

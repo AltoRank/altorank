@@ -28,11 +28,14 @@ describe("reduceOnboarding", () => {
       { phase: "scanning", status: "done" },
       { phase: "keywords", status: "active" },
       { phase: "keywords", status: "done", keywordsFound: 94 },
+      { phase: "planning", status: "active" },
+      { phase: "planning", status: "done", planned: [{ term: "seo agent", date: "2026-09-04" }] },
       { phase: "drafting", status: "active" },
       { phase: "drafting", status: "done", article: ARTICLE },
       { phase: "ready" },
     ]);
-    expect(s.steps.map((x) => x.status)).toEqual(["done", "done", "done"]);
+    expect(s.steps.map((x) => x.status)).toEqual(["done", "done", "done", "done"]);
+    expect(s.planned).toEqual([{ term: "seo agent", date: "2026-09-04" }]);
     expect(s.keywordsFound).toBe(94);
     expect(s.article).toEqual(ARTICLE);
     expect(s.ready).toBe(true);
@@ -44,7 +47,7 @@ describe("reduceOnboarding", () => {
       { phase: "drafting", status: "skipped", detail: "Your free draft is already used." },
       { phase: "ready" },
     ]);
-    expect(s.steps[2]).toMatchObject({ status: "skipped", detail: "Your free draft is already used." });
+    expect(s.steps[3]).toMatchObject({ status: "skipped", detail: "Your free draft is already used." });
     expect(s.error).toBeNull();
     expect(s.ready).toBe(true);
   });
@@ -82,7 +85,7 @@ describe("reduceOnboarding", () => {
       { phase: "drafting", status: "active" },
       { phase: "drafting", status: "active", detail: "Writing now." },
     ]);
-    expect(s.steps[2]).toEqual({ phase: "drafting", status: "active", detail: "Writing now." });
+    expect(s.steps[3]).toEqual({ phase: "drafting", status: "active", detail: "Writing now." });
     expect(isTerminal(s)).toBe(false);
   });
 

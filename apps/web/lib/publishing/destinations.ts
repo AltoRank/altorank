@@ -16,6 +16,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CMSConfig } from "@/lib/types";
+import type { PublishMode } from "@/lib/cms/types";
+import { isPublishMode } from "@/lib/cms/publish-mode";
 
 export type Destination = {
   /** workspace_integrations.id */
@@ -26,12 +28,19 @@ export type Destination = {
   label: string;
   /** The adapter type inside the stored config. Usually equals integrationId. */
   type: CMSConfig["type"] | string;
+  /**
+   * Draft or live, as chosen when the connection was made. The editor labels
+   * its button with this and the publish core passes it to the adapter, so
+   * the two cannot disagree about what pressing the button does.
+   */
+  publishMode: PublishMode;
 };
 
 /** One row as it comes back from workspace_integrations joined to integrations. */
 export type IntegrationRow = {
   id: string;
   config: Record<string, unknown> | null;
+  publish_mode?: string | null;
   integration?: { id?: string; name?: string; tag?: string } | null;
 };
 
@@ -54,6 +63,10 @@ export function toDestinations(rows: IntegrationRow[] | null | undefined): Desti
       integrationId,
       label: wi.integration?.name ?? integrationId ?? "CMS",
       type,
+      // A row from before the column existed published live, and the
+      // migration backfilled it to say so; a caller that did not select the
+      // column gets the same answer rather than a draft it never asked for.
+      publishMode: isPublishMode(wi.publish_mode) ? wi.publish_mode : "publish",
     });
   }
   return out;
@@ -100,7 +113,7 @@ export async function getDestinations(
 ): Promise<Destination[]> {
   const { data } = await supabase
     .from("workspace_integrations")
-    .select("id, config, integration:integrations(id, name, tag)")
+    .select("id, config, publish_mode, integration:integrations(id, name, tag)")
     .eq("workspace_id", workspaceId);
   return toDestinations((data ?? []) as IntegrationRow[]);
 }

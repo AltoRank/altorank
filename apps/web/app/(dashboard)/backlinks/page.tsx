@@ -9,6 +9,8 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { BacklinkFreshness } from "@/components/dashboard/backlink-freshness";
 import { BacklinkFilters } from "@/components/dashboard/backlink-filters";
 import { ExportCsv } from "@/components/dashboard/export-csv";
+import { HowItWorks } from "@/components/dashboard/how-it-works";
+import { backlinksExplainer } from "@/lib/explainers";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
@@ -75,6 +77,7 @@ export default async function BacklinksPage({ searchParams }: Props) {
         subtitle={<><StatusPill status="on" label={plural(backlinks.length, "link")} /><span>{wsMap.get(scopeId ?? "")?.domain ?? plural(workspaces.length, "workspace")}</span><DotSep /><span>Avg DR {avgDr}</span></>}
         actions={
           <>
+            <HowItWorks explainer={backlinksExplainer} />
             <ExportCsv columns={csvColumns} rows={csvRows} filename="backlinks" />
             <BacklinkFreshness workspaces={workspaces} scopedId={scopeId} lastCheckedAt={lastCheckedAt} />
             {workspaces.length > 0 && <ExchangeRequestForm workspaces={workspaces} scopedId={scopeId} />}
@@ -187,7 +190,17 @@ export default async function BacklinksPage({ searchParams }: Props) {
               })}
               {backlinks.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-3.5 py-8 text-center text-ink-3">No backlinks tracked yet</td>
+                  <td colSpan={8} className="px-3.5 py-10 text-center text-ink-3">
+                    {params.status ? (
+                      <>No {params.status} links right now.</>
+                    ) : (
+                      <span className="inline-block max-w-[56ch] leading-[1.6]">
+                        No backlinks tracked yet. They come from DataForSEO&rsquo;s backlink index, read once a week
+                        inside the nightly rank run; Check now looks the site up immediately. A site with no links in
+                        the index shows an empty table, not a zero.
+                      </span>
+                    )}
+                  </td>
                 </tr>
               )}
             </tbody>

@@ -108,7 +108,7 @@ async function tokenHashFor(type: "recovery" | "magiclink", email: string): Prom
  * Create the user (unconfirmed) and email the confirmation link.
  * Returns the new user's id, or throws with a message safe to show.
  */
-export async function sendSignupConfirmation(opts: { email: string; password: string; name: string }): Promise<string> {
+export async function sendSignupConfirmation(opts: { email: string; password: string; name: string; next?: string }): Promise<string> {
   const admin = createServiceClient();
   // `signup` creates the user when it does not exist and returns the token
   // for the confirmation link; no email leaves Supabase.
@@ -120,7 +120,7 @@ export async function sendSignupConfirmation(opts: { email: string; password: st
   });
   if (error || !data.user) throw new Error(error?.message ?? "Could not create the account");
 
-  const url = authLink("signup", data.properties.hashed_token, "/dashboard");
+  const url = authLink("signup", data.properties.hashed_token, opts.next ?? "/dashboard");
   const { subject, html, footerNote } = renderConfirmSignup(url, opts.email);
   await sendTransactionalEmail(opts.email, subject, html, footerNote, "One click and your account is live.");
   return data.user.id;

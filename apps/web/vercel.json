@@ -39,6 +39,10 @@
     {
       "path": "/api/cron/geo",
       "schedule": "0 8 * * 1"
+    },
+    {
+      "path": "/api/cron/refresh",
+      "schedule": "30 7 * * *"
     }
   ]
 }

@@ -25,8 +25,13 @@
 import { randomBytes } from "node:crypto";
 
 export type IndexingResult = {
-  indexnow: "submitted" | "no-key" | "failed" | "awaiting-build";
-  google: "sitemap-resubmitted" | "not-connected" | "failed" | "awaiting-build";
+  /**
+   * held-in-cms: the destination accepted the post but is holding it as a
+   * draft (the WordPress plugin's "post as draft" setting). Nothing to submit
+   * until a person on that site presses Publish; there is no URL yet.
+   */
+  indexnow: "submitted" | "no-key" | "failed" | "awaiting-build" | "held-in-cms";
+  google: "sitemap-resubmitted" | "not-connected" | "failed" | "awaiting-build" | "held-in-cms";
   /**
    * Only set for git publishes, where "published" and "live" are two events.
    *

@@ -2,13 +2,20 @@
 // Local SEO content scoring — no external API required
 // ---------------------------------------------------------------------------
 
-import { classifyHref } from "./links";
+import { classifyHref, isKnownPage } from "./links";
 
 export type ScoringCheck = {
   name: string;
   passed: boolean;
   score: number;
   note?: string;
+  /**
+   * The check had nothing it could measure against, so it is reported and
+   * not counted: it carries no weight in the score and is neither a pass nor
+   * a failure in the list. Set, for instance, when a draft has no internal
+   * links and the site has no pages to link to yet.
+   */
+  unverified?: boolean;
 };
 
 export type ScoringResult = {
@@ -84,21 +91,21 @@ const KNOWN_THIRD_PARTY = /youtube\.com|wikipedia\.org|twitter\.com|facebook\.co
  * to other pages and never count; the first version counted all three, so a
  * draft with three dead anchors passed this check.
  */
-function countInternalLinks(html: string, siteDomain?: string | null): number {
+function internalHrefs(html: string, siteDomain?: string | null): string[] {
   const linkRegex = /<a[^>]+href=["']([^"']*)["'][^>]*>/gi;
-  let count = 0;
+  const out: string[] = [];
   let m = linkRegex.exec(html);
   while (m) {
     const href = m[1];
     const kind = classifyHref(href, siteDomain);
     if (kind === "internal") {
-      count++;
+      out.push(href);
     } else if (!siteDomain && kind === "external" && !KNOWN_THIRD_PARTY.test(href)) {
-      count++;
+      out.push(href);
     }
     m = linkRegex.exec(html);
   }
-  return count;
+  return out;
 }
 
 /** Extract meta description from content if present. */
@@ -369,22 +376,51 @@ function checkReadability(content: string): ScoringCheck {
   };
 }
 
-function checkInternalLinks(content: string, siteDomain?: string | null): ScoringCheck {
-  const count = countInternalLinks(content, siteDomain);
-  const passed = count >= 3;
+/**
+ * Internal links, counted only when they point at a page we know.
+ *
+ * "Points at this domain" is not "exists". The first draft for a fresh site had
+ * four links to same-domain paths the writer invented on an empty pool, and
+ * this check read "Internal links found: 4 · passed" while the editor's own
+ * panel flagged all four as not in the pool. With `knownPages` (the pool the
+ * draft was offered: configured targets, live articles, crawled pages, plus
+ * the site root) a link to anything else is named in the note and counted
+ * for nothing, and the check cannot pass while one remains. With no links
+ * and no pages to link to, there is nothing to measure: the check is marked
+ * unverified and carries no weight, rather than failing the draft for a link
+ * that could not exist. Without `knownPages` the caller made no claim about
+ * what exists, and the count is by domain as before.
+ */
+function checkInternalLinks(
+  content: string,
+  siteDomain?: string | null,
+  knownPages?: readonly { url: string }[] | null,
+): ScoringCheck {
+  const hrefs = internalHrefs(content, siteDomain);
+  const unknown = knownPages ? hrefs.filter((h) => !isKnownPage(h, siteDomain, knownPages)) : [];
+  const count = hrefs.length - unknown.length;
 
-  let score: number;
-  if (count >= 3) {
-    score = 100;
-  } else {
-    score = Math.round((count / 3) * 100);
+  if (knownPages && knownPages.length === 0 && hrefs.length === 0) {
+    return {
+      name: "internalLinks",
+      passed: false,
+      score: 0,
+      unverified: true,
+      note: "No internal links, and no pages in the link pool to point at yet. Not counted.",
+    };
   }
+
+  const passed = count >= 3 && unknown.length === 0;
+  const score = count >= 3 ? 100 : Math.round((count / 3) * 100);
+  const shown = unknown.slice(0, 4).join(", ") + (unknown.length > 4 ? ", …" : "");
 
   return {
     name: "internalLinks",
     passed,
     score: Math.max(0, Math.min(100, score)),
-    note: `Internal links found: ${count} (target: 3+)`,
+    note: unknown.length
+      ? `Internal links found: ${count} to known pages (target: 3+); ${unknown.length} to ${unknown.length === 1 ? "a page" : "pages"} not in the link pool (${shown}), not counted. Check ${unknown.length === 1 ? "it exists" : "they exist"} or unlink the words.`
+      : `Internal links found: ${count} (target: 3+)`,
   };
 }
 
@@ -398,6 +434,9 @@ function checkInternalLinks(content: string, siteDomain?: string | null): Scorin
  *                 workspace domain, so a link can be told inside from outside.
  *                 `targetWordCount`: the SERP-derived length from research.
  *                 `title`: the stored title, when the H1 is not it.
+ *                 `knownPages`: the pages of the site a link may point at
+ *                 (the link pool); an internal link to anything else is
+ *                 not counted. Omit when the caller does not know.
  * @returns        Overall score (0-100) and individual check results
  */
 export function scoreArticle(
@@ -408,6 +447,7 @@ export function scoreArticle(
     siteDomain?: string | null;
     targetWordCount?: number | null;
     title?: string | null;
+    knownPages?: readonly { url: string }[] | null;
   },
 ): ScoringResult {
   const checks: ScoringCheck[] = [
@@ -418,18 +458,27 @@ export function scoreArticle(
     checkMetaDescriptionLength(content, opts?.metaDescription, keyword),
     checkWordCount(content, opts?.targetWordCount),
     checkReadability(content),
-    checkInternalLinks(content, opts?.siteDomain),
+    checkInternalLinks(content, opts?.siteDomain, opts?.knownPages),
   ];
 
-  // Weighted average
+  // Weighted average over the checks that measured something. An unverified
+  // check drops out and the others are rescaled to fill its weight, so the
+  // score still runs 0-100.
+  const counted = checks.filter((c) => !c.unverified);
   let totalScore = 0;
-  for (const check of checks) {
+  let totalWeight = 0;
+  for (const check of counted) {
     const weight = WEIGHTS[check.name] ?? 0;
     totalScore += check.score * weight;
+    totalWeight += weight;
   }
+  let score = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;
 
-  return {
-    score: Math.round(totalScore),
-    checks,
-  };
+  // A list with a failing check beside a 100 disagrees with itself, and it
+  // happened: density at 2.1% scores 95, which at 10% weight is 99.5, which
+  // rounds to 100. The number yields to the list, because the list is what a
+  // person can act on.
+  if (score === 100 && counted.some((c) => !c.passed)) score = 99;
+
+  return { score, checks };
 }

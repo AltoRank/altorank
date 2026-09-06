@@ -8,6 +8,9 @@ import { ArticleEditor } from "@/components/dashboard/editor/article-editor";
 import { needsPlanToShip } from "@/lib/billing/quota";
 import { getDestinations } from "@/lib/publishing/destinations";
 import { fetchLinkTargets } from "@/lib/seo/link-resolver";
+import { fetchKnownPages } from "@/lib/linking/targets";
+import { getLastPublish } from "@/lib/publishing/log";
+import { getArticleValue } from "@/lib/queries/value";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 
@@ -34,7 +37,7 @@ export default async function ArticleEditorPage({ params }: Props) {
   // after the other they cost three round trips on the route the editor lives
   // behind; the article and workspace lookups above genuinely are a chain,
   // since each supplies the next one's id.
-  const [cadence, needsPlan, destinations, integrations, linkable] = await Promise.all([
+  const [cadence, needsPlan, destinations, integrations, linkable, knownPages, outputRow, lastPublish, value] = await Promise.all([
     getPublishingCadence(workspace.id),
     needsPlanToShip(supabase, workspace.agency_id),
     // The connected CMSs decide whether the editor offers a Publish button.
@@ -47,7 +50,24 @@ export default async function ArticleEditorPage({ params }: Props) {
     // internal links" on a site with nothing live says so, rather than failing
     // the draft for a link that could not exist. The same function feeds the
     // generator's prompt and resolver, so all three agree on what a target is.
-    fetchLinkTargets(supabase, workspace.id, article.id),
+    fetchLinkTargets(supabase, workspace.id, article.id, { keyword: article.keyword }),
+    // Every page we can show exists, for the audit's internal-link item.
+    fetchKnownPages(supabase, workspace.id, article.id),
+    // How many internal links this site asked for per article, so the editor
+    // can say whether the draft has them.
+    supabase
+      .from("workspace_output_settings")
+      .select("internal_links")
+      .eq("workspace_id", workspace.id)
+      .maybeSingle(),
+    // The last attempt, so a failed one gets a Retry instead of silence.
+    getLastPublish(supabase, workspace.id, article.id),
+    // What the article's clicks would have cost as ads. Only a live article
+    // has clicks to price; a draft is not asked, so the sidebar cannot show
+    // a dash that reads as "worth nothing" over something unpublished.
+    article.status === "live"
+      ? getArticleValue(article.id, workspace.id, article.keyword)
+      : Promise.resolve(null),
   ]);
 
   const dateStr = article.updated_at
@@ -80,6 +100,11 @@ export default async function ArticleEditorPage({ params }: Props) {
         destinations={destinations}
         integrations={integrations}
         linkableArticles={linkable.length}
+        linkTargets={linkable}
+        knownPages={knownPages}
+        internalLinksWanted={(outputRow.data?.internal_links as number | undefined) ?? null}
+        lastPublish={lastPublish}
+        value={value}
       />
     </>
   );

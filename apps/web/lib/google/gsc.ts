@@ -16,6 +16,67 @@ export interface GSCPageMetrics {
   position: number;
 }
 
+export interface GSCQueryPageMetrics {
+  query: string;
+  pageUrl: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+/** The property's own total for a day, with no dimension applied. */
+export interface GSCTotals {
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+type RawRow = { keys?: string[]; clicks: number; impressions: number; ctr: number; position: number };
+
+/** Thrown for a non-2xx answer, with the status kept so a caller can tell a
+ *  permission problem (403) from an outage. */
+export class GSCApiError extends Error {
+  constructor(public readonly status: number, body: string) {
+    super(`GSC API error (${status}): ${body}`);
+    this.name = "GSCApiError";
+  }
+}
+
+/**
+ * One Search Analytics call. Four reports used to be four copies of this
+ * fetch; the dimensions are the only thing that differs between them.
+ */
+async function searchAnalytics(
+  accessToken: string,
+  siteUrl: string,
+  startDate: string,
+  endDate: string,
+  dimensions: string[],
+  rowLimit = 500,
+): Promise<RawRow[]> {
+  const res = await fetch(
+    `${GSC_API}/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ startDate, endDate, dimensions, rowLimit }),
+    },
+  );
+
+  if (!res.ok) throw new GSCApiError(res.status, await res.text());
+
+  const data = (await res.json()) as { rows?: RawRow[] };
+  return data.rows ?? [];
+}
+
+const round4 = (v: number) => Math.round(v * 10000) / 10000;
+const round2 = (v: number) => Math.round(v * 100) / 100;
+
 /**
  * Fetch search query performance from Google Search Console.
  */
@@ -25,39 +86,14 @@ export async function fetchGSCQueryMetrics(
   startDate: string,
   endDate: string,
 ): Promise<GSCQueryMetrics[]> {
-  const res = await fetch(
-    `${GSC_API}/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        startDate,
-        endDate,
-        dimensions: ["query"],
-        rowLimit: 500,
-      }),
-    },
-  );
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`GSC API error (${res.status}): ${err}`);
-  }
-
-  const data = await res.json();
-
-  return (data.rows ?? []).map(
-    (row: { keys: string[]; clicks: number; impressions: number; ctr: number; position: number }) => ({
-      query: row.keys[0] ?? "",
-      clicks: row.clicks,
-      impressions: row.impressions,
-      ctr: Math.round(row.ctr * 10000) / 10000,
-      position: Math.round(row.position * 100) / 100,
-    }),
-  );
+  const rows = await searchAnalytics(accessToken, siteUrl, startDate, endDate, ["query"]);
+  return rows.map((row) => ({
+    query: row.keys?.[0] ?? "",
+    clicks: row.clicks,
+    impressions: row.impressions,
+    ctr: round4(row.ctr),
+    position: round2(row.position),
+  }));
 }
 
 /**
@@ -69,39 +105,75 @@ export async function fetchGSCPageMetrics(
   startDate: string,
   endDate: string,
 ): Promise<GSCPageMetrics[]> {
-  const res = await fetch(
-    `${GSC_API}/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        startDate,
-        endDate,
-        dimensions: ["page"],
-        rowLimit: 500,
-      }),
-    },
-  );
+  const rows = await searchAnalytics(accessToken, siteUrl, startDate, endDate, ["page"]);
+  return rows.map((row) => ({
+    pageUrl: row.keys?.[0] ?? "",
+    clicks: row.clicks,
+    impressions: row.impressions,
+    ctr: round4(row.ctr),
+    position: round2(row.position),
+  }));
+}
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`GSC API error (${res.status}): ${err}`);
-  }
+/**
+ * Which of our pages Google shows for which query. Two pages under one query
+ * is cannibalisation, and neither the query report nor the page report can
+ * see it: each collapses the other dimension.
+ */
+export async function fetchGSCQueryPageMetrics(
+  accessToken: string,
+  siteUrl: string,
+  startDate: string,
+  endDate: string,
+): Promise<GSCQueryPageMetrics[]> {
+  const rows = await searchAnalytics(accessToken, siteUrl, startDate, endDate, ["query", "page"]);
+  return rows.map((row) => ({
+    query: row.keys?.[0] ?? "",
+    pageUrl: row.keys?.[1] ?? "",
+    clicks: row.clicks,
+    impressions: row.impressions,
+    ctr: round4(row.ctr),
+    position: round2(row.position),
+  }));
+}
 
-  const data = await res.json();
+/**
+ * The property's total for one day. Summing the query report undercounts
+ * (Google withholds anonymised queries from it) and summing the page report
+ * counts nothing a page did not earn; the undimensioned call is the number
+ * Search Console itself shows.
+ */
+export async function fetchGSCDailyTotals(
+  accessToken: string,
+  siteUrl: string,
+  date: string,
+): Promise<GSCTotals | null> {
+  const rows = await searchAnalytics(accessToken, siteUrl, date, date, []);
+  const row = rows[0];
+  if (!row) return null;
+  return { clicks: row.clicks, impressions: row.impressions, ctr: round4(row.ctr), position: round2(row.position) };
+}
 
-  return (data.rows ?? []).map(
-    (row: { keys: string[]; clicks: number; impressions: number; ctr: number; position: number }) => ({
-      pageUrl: row.keys[0] ?? "",
-      clicks: row.clicks,
-      impressions: row.impressions,
-      ctr: Math.round(row.ctr * 10000) / 10000,
-      position: Math.round(row.position * 100) / 100,
-    }),
-  );
+// ---------------------------------------------------------------------------
+// URL Inspection
+// ---------------------------------------------------------------------------
+//
+// A different host from the analytics API, and a POST per URL. Accepts the
+// `webmasters.readonly` scope we already hold. Quota is per property and per
+// day; one click on one article is far inside it, a loop over a sitemap is
+// not, which is why nothing here is called from a cron.
+
+const INSPECTION_API = "https://searchconsole.googleapis.com/v1/urlInspection/index:inspect";
+
+/** Raw response body of urlInspection.index:inspect; lib/google/inspection.ts parses it. */
+export async function inspectUrl(accessToken: string, siteUrl: string, inspectionUrl: string): Promise<unknown> {
+  const res = await fetch(INSPECTION_API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ inspectionUrl, siteUrl, languageCode: "en-US" }),
+  });
+  if (!res.ok) throw new GSCApiError(res.status, (await res.text()).slice(0, 300));
+  return res.json();
 }
 
 // ---------------------------------------------------------------------------

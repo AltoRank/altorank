@@ -41,6 +41,7 @@ describe("PLATFORM_CONNECT_TYPE", () => {
     expect(PLATFORM_CONNECT_TYPE.nextjs).toBe("git");
     expect(PLATFORM_CONNECT_TYPE.astro).toBe("git");
     expect(PLATFORM_CONNECT_TYPE.squarespace).toBeNull();
-    expect(PLATFORM_CONNECT_TYPE.wordpress).toBe("wordpress");
+    // Detected WordPress goes to the plugin path, not the app-password one.
+    expect(PLATFORM_CONNECT_TYPE.wordpress).toBe("wordpress-plugin");
   });
 });

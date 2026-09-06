@@ -19,6 +19,7 @@ const styles = StyleSheet.create({
   tableCell: { flex: 1, fontSize: 9 },
   tableCellSmall: { width: 60, fontSize: 9, textAlign: "right" },
   footer: { position: "absolute", bottom: 30, left: 40, right: 40, textAlign: "center", fontSize: 8, color: "#999" },
+  note: { fontSize: 8, color: "#666", marginTop: -8, marginBottom: 12 },
 });
 
 interface ReportPDFProps {
@@ -100,7 +101,18 @@ export function ReportPDF({ data }: ReportPDFProps) {
                   </View>
                 </>
               )}
+              {/* The one estimated figure in the report, labelled as one. It
+                  sits beside the clicks it is made of, and prints an em dash
+                  when nothing could be priced rather than a zero the client
+                  would read as a verdict. */}
+              {data.organicValue && (
+                <View style={styles.statBox}>
+                  <Text style={[styles.statValue, { color: accentColor }]}>{data.organicValue.formatted}</Text>
+                  <Text style={styles.statLabel}>Estimated organic value</Text>
+                </View>
+              )}
             </View>
+            {data.organicValue && <Text style={styles.note}>{data.organicValue.note}</Text>}
           </>
         )}
 

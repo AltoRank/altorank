@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { buildSystemPrompt } from "./prompts";
+import { buildSystemPrompt, buildUserMessage } from "./prompts";
 import type { AIProvider, ArticlePrompt, ArticleResult } from "./types";
 import { extractArticleMeta, countWords } from "./utils";
 import { anthropicModel } from "./models";
@@ -42,7 +42,7 @@ export class ClaudeProvider implements AIProvider {
       messages: [
         {
           role: "user",
-          content: `Write the article now for the keyword: "${prompt.keyword}"`,
+          content: buildUserMessage(prompt),
         },
       ],
     });

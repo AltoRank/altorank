@@ -22,11 +22,13 @@ export async function GET(request: Request) {
   const supabase = createServiceClient();
 
   // Calculate last month's date range
+  // Built in UTC: the local-time constructor followed by toISOString() slid
+  // both ends back a day on any server east of Greenwich.
   const now = new Date();
-  const startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
     .toISOString()
     .split("T")[0];
-  const endDate = new Date(now.getFullYear(), now.getMonth(), 0)
+  const endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0))
     .toISOString()
     .split("T")[0];
 

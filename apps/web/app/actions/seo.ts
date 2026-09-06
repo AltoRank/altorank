@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { discoverKeywords } from "@/lib/seo/keywords";
+import { discoverKeywords, storedCpc } from "@/lib/seo/keywords";
 import { checkRankings } from "@/lib/seo/serp";
 import { syncBacklinks } from "@/lib/seo/backlinks";
 import { scoreArticle } from "@/lib/seo/scoring";
+import { fetchKnownPages } from "@/lib/linking/targets";
 import type { Workspace, Keyword, Article } from "@/lib/types";
 import { buildRankingRows } from "@/lib/seo/rankings";
 
@@ -43,14 +44,26 @@ export async function runKeywordResearch(workspaceId: string) {
     withDifficulty: true,
   });
 
-  // Upsert into keywords table
+  // Upsert into keywords table. Provenance is stamped on new rows only: a
+  // re-run refreshes volume and difficulty on rows that exist but must not
+  // relabel a competitor's keyword as an ads one.
+  const { data: known } = await supabase
+    .from("keywords")
+    .select("term")
+    .eq("workspace_id", workspaceId);
+  const knownTerms = new Set((known ?? []).map((k) => (k.term as string).toLowerCase()));
   const rows = keywords.map((kw) => ({
     workspace_id: workspaceId,
     term: kw.keyword,
     volume: kw.volume,
     difficulty: kw.difficulty,
+    // The one field that prices the traffic later. Fetched on every call
+    // since day one and dropped here until migration 060.
+    cpc: storedCpc(kw.cpc),
     intent: kw.intent,
     status: "new" as const,
+    // keywords_for_site is the ads endpoint; say so, so the rollup can.
+    ...(knownTerms.has(kw.keyword.toLowerCase()) ? {} : { source_type: "ads" as const }),
   }));
 
   if (rows.length > 0) {
@@ -198,10 +211,16 @@ export async function scoreArticleSeo(articleId: string) {
     throw new Error("Article has no target keyword set");
   }
 
+  // The pages this article may link to, so a same-domain link to a page not
+  // in the pool is not counted as an internal link. Same list the generator
+  // and the editor read.
+  const knownPages = await fetchKnownPages(supabase, article.workspace_id, articleId);
+
   // Run the scoring
   const result = scoreArticle(htmlContent, article.keyword, {
     metaDescription: article.meta_description,
     siteDomain: ws?.domain ?? null,
+    knownPages,
     targetWordCount: article.research?.recommendedWordCount ?? null,
     title: article.title,
   });

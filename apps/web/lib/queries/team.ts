@@ -1,9 +1,8 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { AgencyMember, Invite } from "@/lib/types";
+import type { ResolvedUser } from "@/lib/team/display";
 
-export type MemberWithUser = AgencyMember & {
-  user: { email: string; raw_user_meta_data: Record<string, unknown> } | null;
-};
+export type MemberWithUser = AgencyMember & { user: ResolvedUser };
 
 export async function getAgencyMembers(): Promise<MemberWithUser[]> {
   const supabase = await createClient();
@@ -28,7 +27,30 @@ export async function getAgencyMembers(): Promise<MemberWithUser[]> {
     .order("created_at", { ascending: true });
 
   if (error) throw new Error(error.message);
-  return (data ?? []) as MemberWithUser[];
+  const rows = (data ?? []) as AgencyMember[];
+
+  // agency_members stores a user id and nothing else about the person, and
+  // there is no profiles table: the email lives in auth.users, which the
+  // session client cannot read. This type declared `user` from the start and
+  // nothing ever filled it, so every row rendered as "Member" with an "M".
+  // Resolved the way the rest of the app reaches auth.users (impersonation,
+  // admin/users): the service role, one lookup per member. Teams are a handful
+  // of people, so the fan-out is bounded; a lookup that fails leaves `user`
+  // null and the page says "Unknown member" rather than guessing.
+  const admin = createServiceClient();
+  const users = await Promise.all(
+    rows.map(async (m): Promise<ResolvedUser> => {
+      try {
+        const { data: found, error: lookupError } = await admin.auth.admin.getUserById(m.user_id);
+        const u = found?.user;
+        if (lookupError || !u?.email) return null;
+        return { email: u.email, raw_user_meta_data: u.user_metadata ?? {} };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return rows.map((m, i) => ({ ...m, user: users[i] }));
 }
 
 export async function getPendingInvites(): Promise<Invite[]> {

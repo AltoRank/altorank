@@ -25,8 +25,8 @@ export function corsHeaders(origin: string | null): Record<string, string> {
   };
 }
 
-export function json(body: unknown, status: number, origin: string | null) {
-  return NextResponse.json(body, { status, headers: corsHeaders(origin) });
+export function json(body: unknown, status: number, origin: string | null, extra: Record<string, string> = {}) {
+  return NextResponse.json(body, { status, headers: { ...corsHeaders(origin), ...extra } });
 }
 
 export function preflight(origin: string | null) {

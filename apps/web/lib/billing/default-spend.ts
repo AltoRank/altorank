@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { recordSpend, type SpendEntry } from "./spend";
 
 /**
@@ -12,9 +12,18 @@ import { recordSpend, type SpendEntry } from "./spend";
  * a dollar and left no row.
  *
  * So this is the fallback when no reporter is armed: a service-role client
- * built directly from the environment, with no workspace attribution. A row
- * with no workspace beats no row; the operation column still says which
- * endpoint, and the timestamp still says when.
+ * built directly from the environment. Unattributed unless the caller says
+ * otherwise - a row with no workspace beats no row; the operation column still
+ * says which endpoint, and the timestamp still says when. A caller that does
+ * know the workspace passes it (onboarding does), and the row carries it.
+ *
+ * The same client is what `spendClient()` hands out. provider_spend has a
+ * SELECT policy and nothing else (025, 053), so an insert through a user's
+ * session client is refused by RLS - and recordSpend swallows that, by design,
+ * so the row simply never appears. Every draft written from a signed-in
+ * request (onboarding's first draft, the "New article" modal) lost its
+ * Anthropic row that way until 2026-09-05. Bookkeeping is the operator's, not
+ * the tenant's, and is written with the operator's key.
  *
  * Built from @supabase/supabase-js rather than @/lib/supabase/server on
  * purpose: that module imports next/headers, and this one is reached from
@@ -23,9 +32,14 @@ import { recordSpend, type SpendEntry } from "./spend";
  * script running against the API alone should get.
  */
 
-let client: ReturnType<typeof createClient> | null | undefined;
+let client: SupabaseClient | null | undefined;
 
-function serviceClient() {
+/**
+ * The service-role client spend is written with, or null when the environment
+ * has no Supabase (scripts, the test suite). Callers that hold a user-session
+ * client must record spend through this one, not theirs; see above.
+ */
+export function spendClient(): SupabaseClient | null {
   if (client !== undefined) return client;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -34,7 +48,7 @@ function serviceClient() {
 }
 
 export function recordSpendByDefault(entry: SpendEntry): void {
-  const supabase = serviceClient();
+  const supabase = spendClient();
   if (!supabase) return;
   // Fire and forget. recordSpend already swallows its own failures; the
   // `void` is so an unhandled rejection can never surface from here.

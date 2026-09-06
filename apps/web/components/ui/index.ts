@@ -4,6 +4,7 @@ export { Card } from "./card";
 export { Chip } from "./chip";
 export { DataTable, type Column } from "./data-table";
 export { Dialog } from "./dialog";
+export { Drawer } from "./drawer";
 export { Icons, type IconName } from "./icons";
 export { PageHead, DotSep, EyebrowCode } from "./page-head";
 export { SearchInput } from "./search-input";

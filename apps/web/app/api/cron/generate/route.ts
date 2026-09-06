@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { cronSecretFrom } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
+import { duePlannedKeyword, fulfilPlannedEntry } from "@/lib/onboarding/plan";
 import { profileIsUsable } from "@/lib/seo/topical-profile";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { generateArticle } from "@/lib/content/generate";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
+import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
+import { readFrozenEntries } from "@/lib/plan/frozen";
 import { agencyRecipients } from "@/lib/email/agency-recipients";
 import { sendArticleDraftedEmails } from "@/lib/email/article-emails";
 import {
@@ -67,6 +70,11 @@ import {
  * Nothing about the safety rails changes: `auto_generate` is still opt-in, the
  * weekly limit still caps each workspace, and the plan quota still caps the
  * account. Spend follows articles written, not runs.
+ *
+ * The weekly limit is shared with cron/refresh: a scheduled improvement spends
+ * one of the week's articles, and one still due this week is held back from
+ * this side so the calendar's promise is the one that gets kept. The
+ * arithmetic is lib/plan/pace-budget.ts, read by both crons.
  */
 
 // A literal, and it has to be: route segment config is read statically, so
@@ -96,7 +104,7 @@ export async function GET(request: Request) {
 
   const { data: workspaces, error } = await supabase
     .from("workspaces")
-    .select("id, domain, agency_id, auto_generate_weekly_limit")
+    .select("id, domain, agency_id, auto_generate_weekly_limit, refresh_enabled, refresh_days")
     .eq("auto_generate", true)
     .neq("status", "paused");
 
@@ -144,22 +152,21 @@ export async function GET(request: Request) {
         continue;
       }
 
-      // Count what was actually written, not what was scheduled. A retry that
+      // Count what was actually done, not what was scheduled: drafts written
+      // and rewrites executed, the same week and the same limit. A retry that
       // succeeded after a timeout still consumed budget and still produced a
       // draft somebody has to read.
-      const { count } = await supabase
-        .from("articles")
-        .select("id", { count: "exact", head: true })
-        .eq("workspace_id", workspaceId)
-        .eq("generated_autonomously", true)
-        .gte("created_at", since);
-
-      if ((count ?? 0) >= limit) {
+      const budget = await readPaceBudget(supabase, workspaceId, {
+        weeklyLimit: limit,
+        refreshEnabled: Boolean(ws.refresh_enabled),
+        refreshDays: ws.refresh_days as number[] | null,
+      });
+      if (budget.articlesLeft <= 0) {
         results.push({
           workspaceId,
           domain,
           status: "skipped",
-          detail: `weekly limit reached (${count}/${limit})`,
+          detail: `weekly limit reached: ${describePaceBudget(budget)}`,
         });
         continue;
       }
@@ -193,7 +200,29 @@ export async function GET(request: Request) {
       }
 
       const recommendations = await recommendKeywords(supabase, workspaceId, { limit: 25 });
-      const next = pickNextKeyword(recommendations);
+      // The calendar is a promise. If the plan says today is "<term>", write
+      // that, and fall back to the live queue only when nothing is due.
+      const due = await duePlannedKeyword(supabase, workspaceId);
+
+      // A due entry the plan cannot pay for is inactive, and the calendar says
+      // so (lib/plan/frozen.ts). Skip rather than fall back to the live queue:
+      // writing a different keyword instead would spend the allowance the
+      // calendar just said was spoken for.
+      if (due) {
+        const frozen = await readFrozenEntries(supabase, workspaceId, quota);
+        if (frozen.ids.has(due.entryId)) {
+          results.push({
+            workspaceId,
+            domain,
+            status: "skipped",
+            keyword: due.term,
+            detail: `"${due.term}" is inactive under the current plan: ${frozen.reason ?? quotaExceededMessage(quota)}`,
+          });
+          continue;
+        }
+      }
+      const planned = due ? recommendations.find((r) => r.term === due.term) ?? null : null;
+      const next = planned ?? pickNextKeyword(recommendations);
 
       if (!next) {
         results.push({
@@ -211,6 +240,9 @@ export async function GET(request: Request) {
         supabase,
         workspaceId,
         keyword: next.term,
+        // The planned entry names its keyword row, and that row carries the
+        // owner's brief: instructions, answers, shape, length.
+        keywordId: planned ? (due?.keywordId ?? next.keywordId) : next.keywordId,
         autonomous: true,
         // Explicitly nobody, matching the getQuota call above. Without this the
         // gate inside generateArticle resolves its own answer and can reach a
@@ -231,6 +263,7 @@ export async function GET(request: Request) {
       // Counted here, not before the call: a generation that threw consumed
       // time but produced nothing, and the bound is on articles written.
       written += 1;
+      if (due && planned) await fulfilPlannedEntry(supabase, due.entryId, result.articleId);
 
       // Announce it. A draft nobody is told about is the failure mode this
       // whole schedule creates: four runs a day writing into a queue that only

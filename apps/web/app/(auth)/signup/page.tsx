@@ -21,13 +21,18 @@ async function signUp(formData: FormData) {
   // already typed their domain once and seen a plan for it, so the first
   // workspace is created for that domain here rather than asked for again.
   const domain = normalizeDomain((formData.get("domain") as string | null) ?? "");
+  // Without a workspace there is nothing to onboard, and the wizard would
+  // bounce the new account to an empty "Your sites" page. Refuse up front.
+  if (!DOMAIN_PATTERN.test(domain)) {
+    redirect("/signup?error=" + encodeURIComponent("Enter your website as a domain, like acme.com."));
+  }
 
   // Create the auth user and send OUR confirmation email. `auth.signUp`
   // would make Supabase send its own from a dashboard template; this keeps
   // the email in the repo (lib/email/auth-emails.ts).
   let userId: string;
   try {
-    userId = await sendSignupConfirmation({ email, password, name });
+    userId = await sendSignupConfirmation({ email, password, name, next: "/onboarding" });
   } catch (e) {
     redirect("/signup?error=" + encodeURIComponent(authErrorMessage(e instanceof Error ? e.message : "Could not create the account")));
   }
@@ -128,12 +133,11 @@ export default async function SignUpPage(props: {
         <p className="mt-2 text-sm text-ink-3">
           {prefilled
             ? `Your workspace for ${prefilled} is set up the moment you sign up`
-            : "Add a domain and AltoRank sets up your workspace"}
+            : "One site to start. AltoRank reads it and plans your first month."}
         </p>
       </div>
 
       <form action={signUp} className="space-y-4">
-        {prefilled && <input type="hidden" name="domain" value={prefilled} />}
         {searchParams?.success && (
           <div className="text-sm text-accent-ink bg-accent-soft px-3 py-2 rounded-lg">
             {searchParams.success}
@@ -155,6 +159,24 @@ export default async function SignUpPage(props: {
             className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
             placeholder="Acme"
           />
+        </div>
+        <div>
+          <label className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1.5 block">
+            Your website
+          </label>
+          <input
+            name="domain"
+            type="text"
+            required
+            defaultValue={prefilled ?? ""}
+            inputMode="url"
+            autoComplete="url"
+            className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
+            placeholder="acme.com"
+          />
+          <p className="mt-1.5 text-[11.5px] text-ink-3">
+            We read it first, so setup is a check rather than a form. Nothing publishes without your approval.
+          </p>
         </div>
         <div>
           <label className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1.5 block">

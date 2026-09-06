@@ -3,11 +3,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const rows: Record<string, unknown>[] = [];
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
-    from: () => {
-      const q = {
+    // Articles come from `rows`; the planned-keyword query (calendar_entries)
+    // is empty here, since these tests are about deriving entries from articles.
+    from: (table: string) => {
+      const data = table === "articles" ? rows : [];
+      const q: Record<string, unknown> = {
         select: () => q,
         eq: () => q,
-        then: (r: (v: { data: unknown; error: null }) => unknown) => r({ data: rows, error: null }),
+        is: () => q,
+        in: () => q,
+        then: (r: (v: { data: unknown; error: null }) => unknown) => r({ data, error: null }),
       };
       return q;
     },

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { cronSecretFrom } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
-import { publishArticleCore } from "@/lib/publishing/core";
-import { isCadenceDue, cadenceLocalDate } from "@/lib/publishing/cadence";
+import { publishArticleCore, PublishError } from "@/lib/publishing/core";
+import { recordPublish } from "@/lib/publishing/log";
+import { cadenceDueState, cadenceLocalDate, withoutPaused } from "@/lib/publishing/cadence";
 import type { PublishingCadence } from "@/lib/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { urlIsLive, deriveBlogBaseUrl } from "@/lib/cms/blog-url";
@@ -13,8 +14,10 @@ export const maxDuration = 60;
 type Result = {
   articleId: string;
   workspaceId: string;
-  status: "success" | "error";
+  status: "success" | "error" | "skipped";
   error?: string;
+  /** Why a cadence was passed over ("before publish time", "workspace paused", …). */
+  detail?: string;
 };
 
 export async function GET(request: Request) {
@@ -26,6 +29,21 @@ export async function GET(request: Request) {
   const supabase = createServiceClient();
   const now = new Date();
   const results: Result[] = [];
+
+  // A paused site publishes nothing, however it was paused (by hand from the
+  // switcher, or account-wide from Billing). The other crons filter on the
+  // workspace row; here the queue is articles and cadences, so the paused set
+  // is read once and both phases skip it. A read failure is a failure: an
+  // empty set would mean "nothing is paused", and publishing to a paused
+  // client's site is exactly the mistake this exists to prevent.
+  const { data: pausedRows, error: pausedError } = await supabase
+    .from("workspaces")
+    .select("id")
+    .eq("status", "paused");
+  if (pausedError) {
+    return NextResponse.json({ error: pausedError.message }, { status: 500 });
+  }
+  const pausedWorkspaceIds = new Set((pausedRows ?? []).map((w) => w.id as string));
 
   // ── Phase 1: per-article overrides (scheduled_at <= now) ──
   const { data: overrideArticles, error: overrideError } = await supabase
@@ -44,14 +62,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: overrideError.message }, { status: 500 });
   }
 
-  for (const article of overrideArticles ?? []) {
+  for (const article of withoutPaused(overrideArticles ?? [], pausedWorkspaceIds)) {
     try {
-      await publishArticleCore(supabase, article.id);
-      await supabase.from("publish_log").insert({
-        article_id: article.id,
-        workspace_id: article.workspace_id,
+      const result = await publishArticleCore(supabase, article.id);
+      await recordPublish(supabase, {
+        articleId: article.id,
+        workspaceId: article.workspace_id,
         status: "success",
-        triggered_by: "cron",
+        triggeredBy: "cron",
+        destinationId: result.destinationId,
+        publishMode: result.publishMode,
       });
       results.push({
         articleId: article.id,
@@ -60,16 +80,20 @@ export async function GET(request: Request) {
       });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
+      // Which connection it was going through, so a retry can use the same one.
+      const context = err instanceof PublishError ? err.context : null;
       await supabase
         .from("articles")
         .update({ status: "error", updated_at: now.toISOString() })
         .eq("id", article.id);
-      await supabase.from("publish_log").insert({
-        article_id: article.id,
-        workspace_id: article.workspace_id,
+      await recordPublish(supabase, {
+        articleId: article.id,
+        workspaceId: article.workspace_id,
         status: "error",
         error: errorMsg,
-        triggered_by: "cron",
+        triggeredBy: "cron",
+        destinationId: context?.destinationId,
+        publishMode: context?.publishMode,
       });
       results.push({
         articleId: article.id,
@@ -90,7 +114,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: cadenceError.message }, { status: 500 });
   }
 
-  for (const cadence of (cadences ?? []) as PublishingCadence[]) {
+  const allCadences = (cadences ?? []) as PublishingCadence[];
+
+  for (const cadence of withoutPaused(allCadences, pausedWorkspaceIds)) {
     // "Already published today" is what keeps this idempotent now that the
     // window is gone. Without it a cron running more than once a day would
     // publish the whole queue in a single day. publish_log already records
@@ -107,7 +133,11 @@ export async function GET(request: Request) {
       ? cadenceLocalDate(cadence.timezone, new Date(lastPublish[0].created_at))
       : null;
 
-    if (!isCadenceDue(cadence, now, lastLocalDate)) continue;
+    const due = cadenceDueState(cadence, now, lastLocalDate);
+    if (!due.due) {
+      results.push({ articleId: "", workspaceId: cadence.workspace_id, status: "skipped", detail: due.reason });
+      continue;
+    }
 
     // Find oldest scheduled article without a specific scheduled_at
     const { data: queueArticles, error: queueError } = await supabase
@@ -132,15 +162,20 @@ export async function GET(request: Request) {
     }
 
     const article = queueArticles?.[0];
-    if (!article) continue;
+    if (!article) {
+      results.push({ articleId: "", workspaceId: cadence.workspace_id, status: "skipped", detail: "nothing scheduled" });
+      continue;
+    }
 
     try {
-      await publishArticleCore(supabase, article.id);
-      await supabase.from("publish_log").insert({
-        article_id: article.id,
-        workspace_id: article.workspace_id,
+      const result = await publishArticleCore(supabase, article.id);
+      await recordPublish(supabase, {
+        articleId: article.id,
+        workspaceId: article.workspace_id,
         status: "success",
-        triggered_by: "cron",
+        triggeredBy: "cron",
+        destinationId: result.destinationId,
+        publishMode: result.publishMode,
       });
       results.push({
         articleId: article.id,
@@ -149,16 +184,20 @@ export async function GET(request: Request) {
       });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
+      // Which connection it was going through, so a retry can use the same one.
+      const context = err instanceof PublishError ? err.context : null;
       await supabase
         .from("articles")
         .update({ status: "error", updated_at: now.toISOString() })
         .eq("id", article.id);
-      await supabase.from("publish_log").insert({
-        article_id: article.id,
-        workspace_id: article.workspace_id,
+      await recordPublish(supabase, {
+        articleId: article.id,
+        workspaceId: article.workspace_id,
         status: "error",
         error: errorMsg,
-        triggered_by: "cron",
+        triggeredBy: "cron",
+        destinationId: context?.destinationId,
+        publishMode: context?.publishMode,
       });
       results.push({
         articleId: article.id,
@@ -166,6 +205,14 @@ export async function GET(request: Request) {
         status: "error",
         error: errorMsg,
       });
+    }
+  }
+
+  // A paused workspace's cadence is skipped, and says so: a run that publishes
+  // nothing must be distinguishable from a run that had nothing to consider.
+  for (const cadence of allCadences) {
+    if (pausedWorkspaceIds.has(cadence.workspace_id)) {
+      results.push({ articleId: "", workspaceId: cadence.workspace_id, status: "skipped", detail: "workspace paused" });
     }
   }
 

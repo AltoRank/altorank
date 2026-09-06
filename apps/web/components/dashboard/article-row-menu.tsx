@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { IconButton } from "@/components/ui/button";
 import { Icons } from "@/components/ui";
 import { updateArticle, deleteArticle } from "@/app/actions/articles";
-import { publishArticle } from "@/app/actions/publish";
+import { publishArticle, retryPublish } from "@/app/actions/publish";
 
 interface ArticleRowMenuProps {
   articleId: string;
@@ -19,12 +19,17 @@ interface ArticleRowMenuProps {
    * from a list an article nobody can see published would be a guess.
    */
   canPublish?: boolean;
+  /**
+   * The article's last publish attempt failed. "Retry publish" replaces
+   * "Publish now": same article, same connection, one more log row.
+   */
+  canRetry?: boolean;
 }
 
 /** Tallest the menu gets, with the status submenu open. */
 const MENU_MAX_HEIGHT = 280;
 
-export function ArticleRowMenu({ articleId, currentStatus, canPublish = false }: ArticleRowMenuProps) {
+export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, canRetry = false }: ArticleRowMenuProps) {
   const [open, setOpen] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -94,6 +99,23 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false }:
     }
   }
 
+  async function handleRetry() {
+    setPublishing(true);
+    try {
+      const result = await retryPublish(articleId);
+      toast.success(
+        result.publishMode === "draft" ? "Saved as a draft this time" : "Published this time",
+        result?.url ? { description: result.url } : undefined,
+      );
+      setOpen(false);
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "The retry failed too");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   async function handleDelete() {
     if (!confirm("Delete this article? This cannot be undone.")) return;
     await deleteArticle(articleId);
@@ -150,7 +172,19 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false }:
           >
             Edit
           </button>
-          {currentStatus === "approved" && (
+          {canRetry && (
+            <button
+              className={`${menuItemClass} font-medium text-accent-ink`}
+              disabled={publishing}
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleRetry();
+              }}
+            >
+              {publishing ? "Retrying…" : "Retry publish"}
+            </button>
+          )}
+          {currentStatus === "approved" && !canRetry && (
             <button
               className={`${menuItemClass} ${canPublish ? "font-medium text-accent-ink" : ""}`}
               disabled={publishing}

@@ -24,8 +24,10 @@
 
 import { findFigures } from "./aeo-scoring";
 import { findAttribution } from "@/lib/ai/fact-check";
+import { checkInlineCitations } from "@/lib/ai/inline-citations";
+import { findWeakAltText, MIN_ALT_WORDS } from "@/lib/ai/alt-text";
 import { decodeEntities } from "@/lib/audit/html-utils";
-import { extractLinks, hostOf, normaliseDomain, type LinkRef } from "./links";
+import { extractLinks, hostOf, normaliseDomain, type LinkRef, isKnownPage } from "./links";
 import type { LinkCheck } from "./link-check";
 
 // The link classifier moved to ./links so the scorers can share it without
@@ -63,6 +65,14 @@ export interface ArticleAuditInput {
    * caller does not know.
    */
   linkableArticles?: number | null;
+  /**
+   * The pages of this site a link may point at: the link pool the draft was
+   * offered (configured targets, live articles, crawled pages). Given, an
+   * internal link to any other URL is a link to a page nobody has seen, and
+   * the internal-links item fails on it. Undefined when the caller does not
+   * know what exists, in which case links are counted by domain only.
+   */
+  knownPages?: readonly { url: string }[] | null;
   /**
    * What each outbound link answered when the draft was generated, from
    * `articles.link_checks`. Turns "not verified" into a count of what was.
@@ -152,6 +162,14 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
 
   // ── Links ────────────────────────────────────────────────────────────────
 
+  // A link to this domain is not a link to a page. Given the pool, the ones
+  // that point at nothing we know are named and fail the item: the first
+  // example.com draft had four such links and this read "4 internal links,
+  // pass" while the editor panel beside it flagged every one.
+  const unknownInternal = input.knownPages
+    ? internal.filter((l) => !isKnownPage(l.href, siteDomain, input.knownPages!))
+    : [];
+
   if (input.linkableArticles === 0 && internal.length === 0) {
     push({
       id: "internal-links",
@@ -161,6 +179,18 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
       detail:
         "None, and nothing to point at yet: this site has no other live article. " +
         "Internal links arrive once there is something live to link to.",
+    });
+  } else if (unknownInternal.length) {
+    const paths = [...new Set(unknownInternal.map((l) => l.href))].slice(0, 4).join(", ");
+    push({
+      id: "internal-links",
+      group: "links",
+      status: "fail",
+      label: "Internal links",
+      detail:
+        `${unknownInternal.length} of ${internal.length} internal ${internal.length === 1 ? "link points" : "links point"} at ${unknownInternal.length === 1 ? "a page" : "pages"} not in this site's link pool (${paths}). ` +
+        "A link to a page nobody has seen publishes as a 404 on the customer's own domain. Check each exists, or unlink the words.",
+      locate: unknownInternal.map((l) => l.anchor).filter(Boolean).slice(0, 6),
     });
   } else {
     push({
@@ -296,6 +326,28 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
       : "No \"studies show\" without a study.",
     locate: [...new Set(hollowAppeals)].slice(0, 6),
   });
+
+  // A citation only in a "Sources" list at the end is evidence detached from
+  // its claim. The check is on the footer, not on the body: `unsourced-figures`
+  // above already says which passages cite nothing. Only worth a line when
+  // there is a footer, or outbound links whose placement can be praised.
+  const citations = checkInlineCitations(html, siteDomain);
+  if (citations.footer || external.length) {
+    const orphaned = citations.orphaned;
+    const listed = citations.footerUrls.length;
+    push({
+      id: "inline-citations",
+      group: "sources",
+      status: orphaned.length ? "fail" : "pass",
+      label: "Sources linked at the claim",
+      detail: orphaned.length
+        ? `${orphaned.length} of ${listed} ${listed === 1 ? "URL" : "URLs"} in the "${citations.footer?.label}" list ${orphaned.length === 1 ? "is" : "are"} linked nowhere else. A source that lives only in a footer is evidence a reader never reaches and an answer engine never quotes: link each one inside the sentence it supports, then the list can stay or go.`
+        : citations.footer
+          ? `Every URL in the "${citations.footer.label}" list is also linked inline where the claim is made.`
+          : "Sources are linked in the sentences that make the claims; no citation list at the end.",
+      locate: orphaned.map((r) => r.anchor).slice(0, 6),
+    });
+  }
 
   if (external.length) {
     const checks = input.linkChecks ?? [];
@@ -530,6 +582,31 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
         ? `${noAlt.length} of ${imgs.length} images have no alt text. Alt text is how a crawler and a screen reader know what the image shows.`
         : "Every image has alt text.",
     });
+
+    // Having alt text and having useful alt text are different findings. The
+    // keyword on its own, or a two-word label, passes the check above and
+    // describes nothing; the prompt asks for a sentence and this is the
+    // check that it got one.
+    const withAlt = imgs.length - noAlt.length;
+    if (withAlt > 0) {
+      const weak = findWeakAltText(html, keyword).filter((f) => f.problem !== "missing");
+      const keywordOnly = weak.filter((f) => f.problem === "keyword").length;
+      const short = weak.filter((f) => f.problem === "short").length;
+      const reasons = [
+        keywordOnly ? `${keywordOnly} ${keywordOnly === 1 ? "repeats" : "repeat"} the keyword and nothing else` : "",
+        short ? `${short} ${short === 1 ? "is" : "are"} under ${MIN_ALT_WORDS} words` : "",
+      ].filter(Boolean);
+      push({
+        id: "image-alt-descriptive",
+        group: "media",
+        status: weak.length ? "warn" : "pass",
+        label: "Alt text describes the image",
+        detail: weak.length
+          ? `${weak.length} of ${withAlt} alt ${withAlt === 1 ? "text" : "texts"} ${weak.length === 1 ? "does" : "do"} not describe the image: ${reasons.join("; ")}. Alt text is a sentence about what the picture shows ("Bar chart comparing the monthly price of five email tools"), not a label and not the keyword.`
+          : `Every alt text is a descriptive sentence of ${MIN_ALT_WORDS} words or more.`,
+        locate: weak.map((f) => f.alt).slice(0, 6),
+      });
+    }
   }
 
   // ── Trust ────────────────────────────────────────────────────────────────

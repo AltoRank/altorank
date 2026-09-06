@@ -8,6 +8,8 @@ import { z } from "zod";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
 import { getWorkspaceAllowance, workspaceLimitMessage } from "@/lib/billing/workspaces";
 import { MAX_PACE, normalisePace, PAID_DEFAULT_PACE } from "@/lib/content/pace";
+import { pauseWorkspace as pauseWorkspaceCore, resumeWorkspace as resumeWorkspaceCore } from "@/lib/workspaces/pause";
+import type { PausedMeta } from "@/lib/types";
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1),
@@ -141,4 +143,37 @@ export async function deleteWorkspace(id: string) {
   const { error } = await supabase.from("workspaces").delete().eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/workspaces");
+}
+
+/** Every page that shows a site's status or its calendar. */
+function revalidateSite(id: string) {
+  revalidatePath("/workspaces");
+  revalidatePath(`/workspaces/${id}`);
+  revalidatePath("/content");
+  revalidatePath("/dashboard");
+}
+
+/**
+ * Pause one site. The behaviour is lib/workspaces/pause.ts, shared with the
+ * agent API's POST /workspaces/{id}/pause; this is its server-action door.
+ * Nothing is written or published for a paused site until Resume.
+ */
+export async function pauseWorkspace(id: string): Promise<PausedMeta> {
+  const { agencyId, user } = await requireAuth();
+  const supabase = await createClient();
+  const { meta } = await pauseWorkspaceCore(supabase, agencyId, id, user.id);
+  revalidateSite(id);
+  return meta;
+}
+
+/**
+ * Resume a site paused by hand: status back, calendar re-planned from today.
+ * Same core as the agent API's POST /workspaces/{id}/resume.
+ */
+export async function resumeWorkspace(id: string): Promise<{ status: string; replanned: number | null }> {
+  const { agencyId } = await requireAuth();
+  const supabase = await createClient();
+  const { status, replanned } = await resumeWorkspaceCore(supabase, agencyId, id);
+  revalidateSite(id);
+  return { status, replanned };
 }
