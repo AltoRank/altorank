@@ -13,7 +13,6 @@ The Cloudflare question ("can all of it run there?") has its own page:
 | Piece | What it is | Where it runs | How it gets there |
 |---|---|---|---|
 | `apps/web` | Next.js 16 dashboard and engine | Vercel (`fra1`) | automatically, on every push to `main` |
-| `apps/marketing` | Astro, fully static | Cloudflare Pages | by hand (`wrangler pages deploy`), or the optional workflow below |
 | Database, auth, storage | Supabase (Postgres 17 + GoTrue + Storage) | a hosted Supabase project, or `supabase start` locally | migrations applied **by hand** |
 | Scheduled jobs | nine `/api/cron/*` routes | Vercel Cron, plus GitHub Actions for the extra generate runs | `apps/web/vercel.json` on deploy; the workflow needs a repository secret |
 
@@ -250,70 +249,16 @@ To run a job by hand:
 curl -fsS -H "x-cron-secret: $CRON_SECRET" https://<your-app>/api/cron/generate
 ```
 
-## `apps/marketing` on Cloudflare Pages
+## The marketing site
 
-Fully static Astro (`output: 'static'`); nothing runs at request time.
-`public/_headers` and `public/_redirects` are Cloudflare Pages files and are
-copied into `dist/` as-is.
+`altorank.co` is no longer in this repository. It lives in
+`AltoRank/altorank-marketing` (private) and deploys itself to the Cloudflare
+Pages project `altorank-marketing`; that repo's README carries the build and
+deploy steps.
 
-### Deploy by hand (what happens today)
-
-From the repository root, on a clean checkout of `main`:
-
-```bash
-npm ci
-npm run build:marketing         # astro build + scripts/generate-agent-files.mjs → apps/marketing/dist
-npx wrangler login              # once; or export CLOUDFLARE_API_TOKEN
-npx wrangler pages deploy apps/marketing/dist --project-name altorank-marketing --branch main
-```
-
-or, equivalently, `CF_PAGES_PROJECT=<pages-project> npm run deploy -w apps/marketing`.
-
-Two things about that command:
-
-- **`--branch main`, not `master`.** Wrangler infers the branch from git when
-  the flag is absent. The Pages project's production branch is `main`; a
-  deploy tagged with any other branch (a worktree branch, `master` on an old
-  clone) is published as a **preview** URL and the live site does not change.
-  Pass the flag every time.
-- **The `success-stories` warning is benign.** `astro build` prints that the
-  `success-stories` collection is empty or does not exist. It is empty on
-  purpose: the directory holds a `.gitkeep` and nothing else, because there
-  are no case studies yet and the site does not pretend otherwise. The build
-  succeeds; ignore the warning.
-
-Environment variables for the marketing site (`PUBLIC_CF_ANALYTICS_TOKEN`
-and one of the Umami / Plausible pairs, see
-[`apps/marketing/.env.example`](../apps/marketing/.env.example)) are read at
-build time. For a manual deploy they come from your shell; for a Git-connected
-Pages project they are set under *Project → Settings → Environment variables*.
-
-### Deploy automatically (optional)
-
-Two ways, pick one:
-
-1. **Cloudflare's Git integration.** Connect the Pages project to the GitHub
-   repository with root directory `apps/marketing`, build command
-   `npm run build`, output directory `dist`, production branch `main`, and
-   Build System V2 (required for monorepo root directories). Set the build
-   watch paths to `apps/marketing/*` so a dashboard-only commit does not
-   trigger a marketing build. Note that Cloudflare's builder installs from
-   the root lockfile; the marketing app pulls Astro 5's `rolldown` native
-   binding, which is why CI now builds the marketing app too.
-2. **`.github/workflows/deploy-marketing.yml`** (in this repository). On a
-   push to `main` that touches `apps/marketing/**` it runs the same build and
-   the same `wrangler pages deploy … --branch main`. It is dormant until two
-   repository secrets exist:
-   - `CLOUDFLARE_API_TOKEN`: an API token with *Cloudflare Pages: Edit* on the
-     account, and nothing else.
-   - `CLOUDFLARE_ACCOUNT_ID`: from the dashboard URL.
-
-   Optionally the repository variable `CF_PAGES_PROJECT` (defaults to
-   `altorank`). Without the secrets the job prints what is missing and exits
-   0.
-
-Do not enable both: two deployers racing on the same push is how a site ends
-up one commit behind its own dashboard.
+Only one thing here still concerns it: `apps/web/lib/stripe.ts` and
+`apps/web/lib/billing/quota.ts` enforce plan limits that the site's pricing page
+restates. Nothing checks the two repositories agree, so change them together.
 
 ## Local development
 
@@ -344,7 +289,6 @@ cp docker/.env.example apps/web/.env.local
 # fill NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54331 and the two keys from `supabase start`,
 # ANTHROPIC_API_KEY, ENCRYPTION_KEY and CRON_SECRET (openssl rand -hex 32 for the last two)
 npm run dev                          # http://localhost:3000
-npm run dev:marketing                # http://localhost:4321
 ```
 
 `supabase status` prints the values again; `supabase stop` keeps the data,
@@ -366,8 +310,6 @@ and compiles with no env at all, which is exactly what CI does.
 rebuild. Then revert the commit on `main`, or the next push re-deploys the
 bad one.
 
-**`apps/marketing` (Pages).** Same idea: *Deployments → previous deployment →
-Rollback to this deployment*, or `wrangler pages deployment list` and
 re-deploy the old `dist/` from the matching commit with the command above.
 
 **Database.** There are no down migrations. Rolling back a schema change means
@@ -417,5 +359,4 @@ least once.
 [ ] First push to main → deployment READY → /login renders
 [ ] curl -H "x-cron-secret: …" https://<app>/api/cron/analyze returns 200, not 401
 [ ] CRON_SECRET added as a GitHub repository secret (optional, for the extra generate runs)
-[ ] Marketing: npm run build:marketing && wrangler pages deploy … --branch main
 ```

@@ -149,7 +149,8 @@ export const AVATAR_COLORS = [
 
 export type AvatarColor = (typeof AVATAR_COLORS)[number];
 
-// Mirrors OSS_REPO_PUBLIC / OSS_REPO_URL in apps/marketing/src/constants.ts,
+// Mirrors OSS_REPO_PUBLIC / OSS_REPO_URL in src/constants.ts of
+// AltoRank/altorank-marketing,
 // which is the source of truth and carries the history. Flipped true
 // 2026-08-30 when github.com/AltoRank/altorank went public. Change both.
 export const OSS_REPO_PUBLIC = true;

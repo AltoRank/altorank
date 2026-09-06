@@ -3,7 +3,8 @@
 Short answer: the two applications can, the data layer cannot, and the
 application that matters is not quite there yet.
 
-- **`apps/marketing`** already runs on Cloudflare Pages. Nothing to do.
+- **The marketing site** already runs on Cloudflare Pages, from its own
+  repository (`AltoRank/altorank-marketing`). Nothing to do.
 - **`apps/web`** builds for Cloudflare Workers with `@opennextjs/cloudflare`
   and serves pages, middleware, API routes and cron dispatch from `wrangler
   dev` today. This was tried on 2026-09-05; the evidence is below, including
@@ -466,37 +467,7 @@ $25 with the VM's price and your time.
 were added; the first two pass, and eslint reports the same eight pre-existing
 errors it reported before, none in the new files.
 
-## `apps/marketing` on Pages: the workflow
+## The marketing site on Pages
 
-`.github/workflows/deploy-marketing.yml` runs, on a push to `main` touching
-`apps/marketing/**`:
-
-```
-npx --yes wrangler@4 pages deploy apps/marketing/dist \
-  --project-name "${CF_PAGES_PROJECT}" \
-  --branch main
-```
-
-Checked against wrangler 4's documented synopsis on 2026-09-05: `wrangler pages
-deploy [<DIRECTORY>]` with `--project-name`, `--branch`, and optionally
-`--commit-hash`, `--commit-message`, `--commit-dirty`, `--skip-caching`,
-`--no-bundle`, `--upload-source-maps`. `pages publish` no longer exists in the
-command set; the workflow does not use it. `--branch main` is passed
-explicitly because wrangler otherwise infers the branch from git, and a deploy
-tagged with anything but the project's production branch lands as a preview.
-
-The Pages project must already exist (`npx wrangler pages project create
-<name> --production-branch main`, once). Wrangler authenticates
-non-interactively from two environment variables, which the workflow reads
-from repository secrets (*Settings → Secrets and variables → Actions*):
-
-| Secret | What | Scope |
-|---|---|---|
-| `CLOUDFLARE_API_TOKEN` | An API token created at *My Profile → API Tokens*. Permission: *Account → Cloudflare Pages → Edit*. Nothing else. | The one account that owns the Pages project |
-| `CLOUDFLARE_ACCOUNT_ID` | The 32-hex account id from the dashboard URL (`dash.cloudflare.com/<account id>/…`) | – |
-
-Optional repository *variable* `CF_PAGES_PROJECT` (default `altorank`). Until
-both secrets exist the job prints what is missing and exits 0, so the
-repository stays green while the marketing site is still deployed by hand.
-Do not also connect the Pages project to GitHub: two deployers on one push
-race.
+Moved to `AltoRank/altorank-marketing` on 2026-09-06, along with its deploy
+workflow. Nothing in this repository builds or deploys it any more.

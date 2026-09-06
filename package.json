@@ -6,9 +6,7 @@
   ],
   "scripts": {
     "dev": "npm run dev -w apps/web",
-    "dev:marketing": "npm run dev -w apps/marketing",
     "build": "npm run build -w apps/web",
-    "build:marketing": "npm run build -w apps/marketing",
     "test": "npm run test -w apps/web",
     "smoke": "npm run smoke -w apps/web"
   },

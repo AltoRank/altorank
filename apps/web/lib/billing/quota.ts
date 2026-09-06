@@ -180,7 +180,7 @@ export function quotaExceededMessage(q: Quota): string {
 /**
  * Overage per additional article, in cents, exactly as the pricing page
  * states it: EUR 0.60 on Managed, EUR 0.45 on Agency. Restated from
- * apps/marketing/src/data/pricing.ts - change them together.
+ * src/data/pricing.ts in AltoRank/altorank-marketing - change them together.
  */
 export const OVERAGE_CENTS: Record<Exclude<PlanTier, "scale">, number> = {
   starter: 60,

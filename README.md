@@ -118,15 +118,16 @@ apps/web/               the engine and dashboard (Next.js)
   lib/cms/              12 publishing adapters
   lib/geo/              AI-answer visibility
   scripts/mcp.ts        MCP server
-apps/marketing/         altorank.co itself (Astro, static)
 docker/                 container setup for self-hosting
 tools/agent-readiness/  standalone agent-readiness scanner
 ```
 
-`apps/marketing` is the real site, not a demo of one. It is here because the
-claims a product makes about itself should be as auditable as its code: if the
-homepage says the engine does something, you can go and read whether it does.
-It carries no case studies, because there are none yet.
+The marketing site (altorank.co) lives in its own private repository,
+`AltoRank/altorank-marketing`. It moved out of this tree on 2026-09-06 so the
+product stays open while positioning and pricing copy do not. Nothing here
+imports it; the two are coupled only by the plan limits noted in
+`apps/web/lib/stripe.ts` and `apps/web/lib/billing/quota.ts`, which must be
+changed in both places together.
 
 Two conventions worth knowing before you send a patch:
 

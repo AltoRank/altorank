@@ -58,7 +58,8 @@ export const PLAN_PRICE_IDS: Record<
 
 /**
  * Included articles per calendar month, by tier. Restates the pricing page's
- * feature list (apps/marketing/src/data/pricing.ts) - change them together.
+ * feature list (src/data/pricing.ts in AltoRank/altorank-marketing) - change
+ * them together; nothing across the two repositories enforces it.
  * `scale` is sales-led: null means no metered ceiling here.
  */
 export const PLAN_ARTICLE_LIMITS: Record<PlanTier, number | null> = {
@@ -107,8 +108,8 @@ export const PLAN_TAGLINES: Record<PlanTier, string> = {
  * What each rung includes, in the buyer's words.
  *
  * A deliberate second copy of the `features` arrays in
- * apps/marketing/src/data/pricing.ts, for the same reason PLAN_ARTICLE_LIMITS
- * and PLAN_PRICES are: apps/web and apps/marketing are separate workspaces and
+ * src/data/pricing.ts in AltoRank/altorank-marketing, for the same reason
+ * PLAN_ARTICLE_LIMITS and PLAN_PRICES are: they are separate repositories and
  * neither can import the other. Change them together. The billing page is the
  * screen where a wrong figure becomes a chargeback, so it quotes the ladder
  * rather than paraphrasing it.
