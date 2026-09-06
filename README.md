@@ -16,8 +16,10 @@ Read this before you invest time in it.
 
 - **No paying customers, no case studies.** Nothing here has a growth figure
   attached to it, and that is on purpose.
-- **There is no CLI yet.** The MCP server exists (`npm run mcp`); a packaged
-  command-line tool does not.
+- **The CLI is not packaged.** `npm run cli` from `apps/web` drives the whole
+  agent API (`apps/web/scripts/cli.ts`), and `apps/web/scripts/SKILL.md` is the
+  skill file a coding agent reads. There is no published npm binary yet, so
+  today it runs from a checkout rather than from `npx`.
 - **The hosted dashboard is what runs today.** It works locally against your own
   Supabase and your own API keys.
 
@@ -47,19 +49,19 @@ checkable here: grep for a publish tool and you will not find one.
 | Domain audit | 9 readiness checks, crawl, PageSpeed |
 | Article generation | research → draft → score → fact-check |
 | Brand voice | per-workspace voice profiles |
-| Publishing | **12 destinations** (below) |
+| Publishing | **13 destinations** (below) |
 | Locales | **35** (`apps/web/lib/seo/locales.ts`) |
 | Rank tracking | scheduled SERP checks |
 | Search analytics | Google Search Console; Bing Webmaster Tools (clicks and impressions per day) |
 | AI visibility | whether AI answers name you, and who they name instead |
 
-**Publishing destinations** (`apps/web/lib/cms/adapter.ts`) — twelve adapters, of
-which ten are content management systems; `git` and `webhook` are publishing
-targets rather than CMSs, which is why the site says eleven CMSs and this table
-says twelve destinations. Both are counting honestly, just counting different
-things: Framer, Ghost, git,
-HubSpot, Magento, Notion, Shopify, Webflow, webhook, Wix, WooCommerce,
-WordPress.
+**Publishing destinations** (`apps/web/lib/cms/adapter.ts`) — thirteen adapters,
+of which eleven are content management systems; `git` and `webhook` are
+publishing targets rather than CMSs. Framer, Ghost, git, HubSpot, Magento,
+Notion, Shopify, Webflow, webhook, Wix, WooCommerce, WordPress, and the
+WordPress plugin — a second, recommended route to WordPress that installs a
+plugin and takes a per-site token instead of an application password
+(`apps/web/lib/cms/wordpress-plugin.ts`), which is why WordPress appears twice.
 
 ## Running it
 
@@ -89,6 +91,16 @@ npm run test     # vitest
 npm run smoke    # research → prompt → model → fact check, against real APIs
 ```
 
+and from `apps/web`:
+
+```bash
+npm run cli -- --help        # the agent API from a shell; auth with ALTORANK_API_KEY
+npm run readiness -- <domain>  # the agent-readiness checks on their own
+```
+
+Neither the CLI nor the MCP server can publish, approve or delete. That is not a
+flag; those calls do not exist in the API either (`apps/web/scripts/SKILL.md`).
+
 ### Database
 
 `apps/web/supabase/` carries a `config.toml` and the numbered migrations, which
@@ -115,9 +127,11 @@ apps/web/               the engine and dashboard (Next.js)
   lib/seo/              recommendations, scoring, locales, topical profile
   lib/content/          generation (one implementation, shared by route + cron)
   lib/ai/               fact checking
-  lib/cms/              12 publishing adapters
+  lib/cms/              13 publishing adapters
   lib/geo/              AI-answer visibility
   scripts/mcp.ts        MCP server
+  scripts/cli.ts        CLI over /api/agent/v1
+  scripts/SKILL.md      the skill file a coding agent reads
 docker/                 container setup for self-hosting
 tools/agent-readiness/  standalone agent-readiness scanner
 ```

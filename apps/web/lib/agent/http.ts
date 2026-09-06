@@ -23,8 +23,8 @@ export type HandlerResult = Envelope | { envelope: Envelope; status: number } | 
  * Mutations get a second, tighter window on top of the per-key 120/min: 30 a
  * minute per key. A looping agent that reschedules the same keyword forever
  * is stopped before it has moved the whole month around, and the reads it
- * needs to notice are not throttled with it. Same in-memory limiter the free
- * tools use (lib/tools/rate-limit.ts), keyed by API key id.
+ * needs to notice are not throttled with it. Same in-memory limiter the public
+ * endpoints use (lib/tools/rate-limit.ts), keyed by API key id.
  */
 export const MUTATION_LIMIT = 30;
 export const MUTATION_WINDOW_MS = 60_000;

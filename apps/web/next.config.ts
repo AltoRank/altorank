@@ -34,6 +34,11 @@ const nextConfig: NextConfig = {
         missing: [{ type: 'query', key: 'code' }],
       },
       { source: '/pricing', destination: 'https://altorank.co/pricing', permanent: true },
+      // The free tools live on the marketing site like /pricing and /blog do,
+      // and this was the one of its siblings nobody added: a link to
+      // app.altorank.co/tools/... 404ed instead of landing on the tool.
+      { source: '/tools', destination: 'https://altorank.co/tools', permanent: true },
+      { source: '/tools/:path*', destination: 'https://altorank.co/tools/:path*', permanent: true },
       { source: '/integrations', destination: 'https://altorank.co/integrations', permanent: true },
       { source: '/blog/:path*', destination: 'https://altorank.co/blog/:path*', permanent: true },
       { source: '/success-stories/:path*', destination: 'https://altorank.co/success-stories/:path*', permanent: true },

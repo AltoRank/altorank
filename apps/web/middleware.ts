@@ -9,8 +9,8 @@ const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
  * Read-only enforcement for the operator's "preview as customer" mode.
  *
  * This is the only layer every request passes through, which is precisely why
- * the check lives here. The obvious home would be `requireAuth`, but 18 of the
- * 29 server-action modules never call it - they build a Supabase client and
+ * the check lives here. The obvious home would be `requireAuth`, but 13 of the
+ * 33 server-action modules never call it - they build a Supabase client and
  * write directly - so guarding there would produce a read-only mode that is
  * read-only on the paths someone remembered and silently writable on the rest.
  * A safety promise that holds most of the time is not one.

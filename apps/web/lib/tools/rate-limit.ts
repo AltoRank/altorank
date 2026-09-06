@@ -1,6 +1,13 @@
 // ---------------------------------------------------------------------------
-// Reusable in-memory rate limiter for free tools — resets on deploy
+// Reusable in-memory rate limiter — resets on deploy
 // ---------------------------------------------------------------------------
+//
+// Named for the free tools it was written for; those moved to the marketing
+// repository with the rest of the site (#118). Its callers now are the public
+// endpoints that survived that move — /api/growth-plan, /api/public/readiness,
+// /check/[domain], password reset — and the agent API's mutation window
+// (lib/agent/http.ts). Per instance and lost on a cold start, which is enough
+// to stop one client looping a form and is not a shared store.
 
 type RateEntry = { count: number; resetAt: number };
 

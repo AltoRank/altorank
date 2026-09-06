@@ -6,10 +6,14 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # Scope: an agency is not a workspace
 
-A workspace is one site. An agency is the account that owns several. RLS
-enforces the *agency* boundary and nothing else: every policy resolves through
-`user_agency_ids()`, so a query with no `workspace_id` filter still returns
-only the signed-in account's rows. It does not error, it does not leak across
+A workspace is one site. An agency is the account that owns several. RLS keeps
+one customer out of another customer's data and stops there. Since migration
+053 the workspace-scoped tables resolve through `user_workspace_ids()` rather
+than `user_agency_ids()`, so a member restricted to some sites
+(`agency_members.workspace_ids`) is held to them — but that column is `NULL`
+for everyone by default, meaning "all of this account's sites". So the practical
+outcome is unchanged: a query with no `workspace_id` filter still returns every
+site in the signed-in account. It does not error, it does not leak across
 customers, and on an account with one site it returns exactly the same list as
 the correct query.
 
@@ -27,9 +31,10 @@ nav-visibility gates and recent-item strips sit beside a correctly scoped main
 query and quietly answer a different question. A dialog should *follow* the
 sidebar switcher, never offer its own workspace picker.
 
-Not everything is workspace-scoped. `backlink_exchanges`, `invoices`,
-`invites` and `backlink_credits` are agency-level by design — check the table
-has a `workspace_id` column before "fixing" it.
+Not everything is workspace-scoped. `agencies`, `agency_members`,
+`agency_integrations`, `api_keys`, `backlink_exchanges`, `backlink_credits`,
+`cancellation_feedback`, `invites` and `invoices` are agency-level by design —
+check the table has a `workspace_id` column before "fixing" it.
 
 `lib/queries/__tests__/workspace-scope*.ts` fails the build on new instances,
 including a call site that simply omits the argument. If it fires, read the
