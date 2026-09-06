@@ -214,11 +214,17 @@ export function freeAllowanceUsedClause(limit: number = FREE_DRAFTS): string {
 }
 
 /** Message for the moment generation is refused. Says what to do, not just no. */
-export function quotaExceededMessage(q: Quota): string {
+export function quotaExceededMessage(q: Quota, now: Date = new Date()): string {
   if (q.reason === "no-plan") {
-    // The reset is part of the answer: `used` is counted from the 1st, so
-    // waiting is a real third option beside paying and self-hosting.
-    return `${freeAllowanceUsedMessage(q.limit ?? FREE_DRAFTS)} Choose a plan on the Billing page to keep going, wait for the 1st when the allowance resets, or self-host AltoRank free.`;
+    // The reset is part of the answer: `used` is counted from monthStart(), so
+    // waiting is a real third option beside paying and self-hosting - and the
+    // date says how long, which "the 1st" alone does not.
+    const resets = nextResetDate(now).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+    return `${freeAllowanceUsedMessage(q.limit ?? FREE_DRAFTS)} Choose a plan on the Billing page to keep going, wait for ${resets} when the allowance resets, or self-host AltoRank free.`;
   }
   return `This month's included ${q.limit} articles are used. The next article is billed as overage, or upgrade on the Billing page.`;
 }

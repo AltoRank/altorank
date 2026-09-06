@@ -58,9 +58,11 @@ describe("quotaExceededMessage", () => {
   });
 
   it("offers all three ways forward, the reset included", () => {
-    const message = quotaExceededMessage(noPlan(FREE_DRAFTS));
+    // The reset is named as a date rather than "the 1st": both say when the
+    // allowance comes back, and a date also says how long that is.
+    const message = quotaExceededMessage(noPlan(FREE_DRAFTS), new Date("2026-09-06T00:00:00Z"));
     expect(message).toMatch(/Billing page/);
-    expect(message).toMatch(/1st/);
+    expect(message).toMatch(/Oct 1/);
     expect(message).toMatch(/self-host/);
   });
 
