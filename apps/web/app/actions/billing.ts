@@ -2,7 +2,7 @@
 
 import { requireAuth } from "@/lib/auth/require-auth";
 import { createClient } from "@/lib/supabase/server";
-import { getStripe, PLAN_PRICE_IDS } from "@/lib/stripe";
+import { getStripe, PLAN_PRICE_IDS, stripeTaxEnabled } from "@/lib/stripe";
 import type { SelfServePlan, BillingInterval } from "@/lib/stripe";
 import { subscriptionSwitchable } from "@/lib/billing/plan-switch";
 
@@ -88,10 +88,17 @@ export async function createCheckoutSession(
     // session already has a customer. The prices carry `tax_behavior:
     // 'exclusive'` on the Price object in the Stripe dashboard - that is not
     // something this call can set.
-    automatic_tax: { enabled: true },
-    tax_id_collection: { enabled: true },
-    ...(agency?.stripe_customer_id
-      ? { customer_update: { address: "auto" as const, name: "auto" as const } }
+    // Only when the account is set up for it: with Stripe Tax not activated,
+    // `automatic_tax` makes this call throw and nobody can pay. See
+    // stripeTaxEnabled in lib/stripe.ts for the switch and its preconditions.
+    ...(stripeTaxEnabled
+      ? {
+          automatic_tax: { enabled: true },
+          tax_id_collection: { enabled: true },
+          ...(agency?.stripe_customer_id
+            ? { customer_update: { address: "auto" as const, name: "auto" as const } }
+            : {}),
+        }
       : {}),
     success_url:
       returnTo && /^\/[a-zA-Z0-9/_?=&%-]*$/.test(returnTo)
