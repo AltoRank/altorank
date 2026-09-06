@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -11,6 +12,12 @@ const nextConfig: NextConfig = {
   // reached, which is what makes the self-host image small enough to be worth
   // shipping. Vercel ignores this and uses its own adapter, so it is safe here.
   output: "standalone",
+  // Without this, Next picks the tracing root by walking up for a lockfile, and
+  // it does not stop at ours: a stray package-lock.json two directories above
+  // the repo wins, so `standalone` gets traced from the wrong root and drags in
+  // whatever else lives up there. npm hoists our workspace deps to the repo
+  // root, so that - not apps/web - is the correct root to pin.
+  outputFileTracingRoot: path.join(__dirname, "../.."),
 
   async redirects() {
     return [
