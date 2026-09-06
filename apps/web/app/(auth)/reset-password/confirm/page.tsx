@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { authErrorMessage } from "@/lib/auth/errors";
+import { announcePasswordChanged } from "@/lib/email/account-events";
 
 export const metadata: Metadata = { title: "Choose a new password" };
 
@@ -32,6 +33,9 @@ async function setNewPassword(formData: FormData) {
   }
 
   const supabase = await createClient();
+  const {
+    data: { user: current },
+  } = await supabase.auth.getUser();
   const { error } = await supabase.auth.updateUser({ password });
   if (error) {
     redirect(
@@ -39,6 +43,11 @@ async function setNewPassword(formData: FormData) {
         encodeURIComponent(authErrorMessage(error.message)),
     );
   }
+
+  // The reset path is exactly where somebody else's password change would be
+  // invisible to the account holder, so it says so - after the change, and
+  // never allowed to fail the redirect into the app.
+  await announcePasswordChanged(current?.email ?? null);
 
   redirect("/dashboard");
 }
