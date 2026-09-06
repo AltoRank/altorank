@@ -373,6 +373,13 @@ export type ShopifyConfig = {
   type: "shopify";
   storeUrl: string;
   blogId?: string;
+  /**
+   * The chosen blog's handle - `news` in /blogs/news/my-post. A storefront
+   * URL is built from this, not from the numeric blog id, which appears in no
+   * public path. Absent on connections made before the URL fix, and resolved
+   * off the store's blog list when it is.
+   */
+  blogHandle?: string;
 } & ShopifyCredentials;
 
 export type MagentoConfig = {
@@ -401,6 +408,14 @@ export type WebflowConfig = {
   collectionId: string;
   apiToken: string;
   fieldMap?: WebflowFieldMap;
+  /**
+   * Where the collection's items come out on the live site, e.g.
+   * "https://acme.com/blog". Captured in the connect dialog because Webflow's
+   * API cannot say: the item response carries no URL and the collection
+   * page's path is the site designer's choice. Absent means no published URL
+   * is claimed at all - see webflowItemUrl.
+   */
+  publicBaseUrl?: string;
 };
 
 export type GhostConfig = {

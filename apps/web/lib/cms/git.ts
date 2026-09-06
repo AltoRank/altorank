@@ -191,6 +191,25 @@ export class GitAdapter implements CMSAdapter {
     return body.sha;
   }
 
+  /**
+   * Where the committed post comes out, or nothing.
+   *
+   * The public URL field is optional, and the fallback used to be the commit
+   * path: `published_url` became "src/content/blog/my-post.md", which core.ts
+   * marked live and the sidebar rendered as a dashboard-relative link the
+   * person clicked and got a 404 from. The publish cron then called urlIsLive
+   * on it, failed its eight passes and reverted the article to review two
+   * hours later.
+   *
+   * So a connection with no public URL claims none: published_url stays null,
+   * nothing links anywhere, and nothing is submitted to IndexNow.
+   */
+  private postUrl(slug: string): string {
+    const base = this.config.publicBaseUrl?.trim().replace(/\/+$/, "");
+    if (!base) return "";
+    return `${base}/${safeSlug(slug)}${this.config.trailingSlash ? "/" : ""}`;
+  }
+
   async publish(article: PublishPayload): Promise<PublishResult> {
     const { path, contents: fileContents } = renderPost(article, this.config);
     const sha = await this.existingSha(path);
@@ -215,7 +234,6 @@ export class GitAdapter implements CMSAdapter {
 
     const body = (await res.json()) as { content?: { sha?: string; path?: string } };
 
-    const base = this.config.publicBaseUrl?.replace(/\/+$/, "");
     return {
       externalId: body.content?.path ?? path,
       // Still derived - the GitHub API cannot know the host's routing - but no
@@ -223,9 +241,7 @@ export class GitAdapter implements CMSAdapter {
       // own sitemap at connect time and validated against a URL that already
       // resolves. Whether it is live *now* is a separate question, answered
       // after the build by the publish cron, because a commit is not a deploy.
-      url: base
-        ? `${base}/${safeSlug(article.slug)}${this.config.trailingSlash ? "/" : ""}`
-        : path,
+      url: this.postUrl(article.slug),
     };
   }
 
@@ -259,12 +275,9 @@ export class GitAdapter implements CMSAdapter {
     if (!res.ok) {
       throw new Error(`GitHub update failed (${res.status}): ${await res.text()}`);
     }
-    const base = this.config.publicBaseUrl?.replace(/\/+$/, "");
     return {
       externalId,
-      url: base
-        ? `${base}/${safeSlug(article.slug)}${this.config.trailingSlash ? "/" : ""}`
-        : externalId,
+      url: this.postUrl(article.slug),
     };
   }
 
@@ -310,6 +323,32 @@ export class GitAdapter implements CMSAdapter {
         return { ok: false, error: "Token rejected or missing contents:write" };
       }
       if (!res.ok) return { ok: false, error: `GitHub returned ${res.status}` };
+
+      /**
+       * The branch read above is a read: a token with no write permission
+       * passes it, and a public repo passes it with no token at all - while
+       * the field is labelled "GitHub token (contents:write)" and the failure
+       * says "missing contents:write". So ask GitHub what this token may do.
+       *
+       * The repository object carries the authenticated caller's permissions.
+       * Only an explicit `push: false` is treated as a refusal: when GitHub
+       * omits the block there is nothing to conclude, and rejecting a working
+       * connection on a missing field would be worse than the read test.
+       * https://docs.github.com/en/rest/repos/repos#get-a-repository
+       */
+      if (!this.config.token.trim()) {
+        return { ok: false, error: "A token is required: this repo may be readable without one, but not writable." };
+      }
+      const repoRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, { headers: this.headers() });
+      if (repoRes.ok) {
+        const repoBody = (await repoRes.json()) as { permissions?: { push?: boolean } };
+        if (repoBody.permissions && repoBody.permissions.push === false) {
+          return {
+            ok: false,
+            error: `This token can read ${owner}/${repo} but not write to it. It needs contents:write (or the repo scope on a classic token).`,
+          };
+        }
+      }
 
       /**
        * The repo is reachable. The other half of a git connection is where the

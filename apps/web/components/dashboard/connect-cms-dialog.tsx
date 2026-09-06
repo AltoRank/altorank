@@ -9,6 +9,8 @@ import { connectIntegration, deriveBlogUrl, testIntegrationConfig } from "@/app/
 import {
   DEFAULT_PUBLISH_MODE,
   DRAFT_BEHAVIOUR,
+  LIVE_BEHAVIOUR,
+  TEST_PROVES,
   draftSupport,
   type PublishMode,
 } from "@/lib/cms/publish-mode";
@@ -278,7 +280,16 @@ export function ConnectCmsDialog({
       const r = await testIntegrationConfig(config, publishMode);
       setTestResult(
         r.ok
-          ? { ok: true, message: `${tabLabel(cmsType)} answered. Press Connect to save.` }
+          ? {
+              ok: true,
+              // What the test proved, not what one would like it to have
+              // proved: eleven of the thirteen tests are a read, and saying
+              // otherwise is how a Subscriber-role password gets connected.
+              message:
+                TEST_PROVES[cmsType] === "write"
+                  ? `${tabLabel(cmsType)} accepted a test write. Press Connect to save.`
+                  : `${tabLabel(cmsType)} answered a read request. That the credentials can also publish is not proven until the first publish. Press Connect to save.`,
+            }
           : { ok: false, message: r.error },
       );
     } catch (err) {
@@ -603,6 +614,12 @@ export function ConnectCmsDialog({
                   {derivation.evidence}. Example: {derivation.samples[0]}
                 </p>
               )}
+
+              <p className="text-[11.5px] text-ink-3 leading-[1.5] -mt-1">
+                Optional. Left empty, a published article carries no link at all: a
+                commit tells us the file&apos;s path in your repository, not the address
+                your site serves it at.
+              </p>
             </>
           )}
 
@@ -655,8 +672,7 @@ export function ConnectCmsDialog({
               <span className="flex flex-col gap-0.5">
                 <span className="text-[13px] font-medium text-ink">Publish live</span>
                 <span className="text-[12px] text-ink-3 leading-[1.45]">
-                  The article is public on {tabLabel(cmsType)} the moment you press
-                  Publish, or the schedule fires.
+                  {LIVE_BEHAVIOUR[cmsType]}
                 </span>
               </span>
             </label>
@@ -689,7 +705,7 @@ export function ConnectCmsDialog({
               type="button"
               disabled={testing || pending || !draftCheck.ok}
               onClick={handleSendTest}
-              title="Run the live connection test with these values. Nothing is saved."
+              title="Ask the CMS to answer with these values. Nothing is saved, and nothing is written on the far side except on the WordPress plugin and webhook connectors."
             >
               {testing ? "Testing…" : "Send test"}
             </Button>
@@ -739,6 +755,9 @@ function buildConfig(type: CMSType, fd: FormData): CMSConfig {
       // Chosen from the store's own list in the guide; absent means the
       // adapter's default, the first blog, as every connection did before.
       const blogId = (fd.get("blogId") as string | null)?.trim();
+      // The handle the guide read off the store, kept so a published article
+      // links to /blogs/{handle}/... rather than to the numeric id.
+      const blogHandle = (fd.get("blogHandle") as string | null)?.trim();
       return {
         type: "shopify",
         storeUrl: (fd.get("storeUrl") as string).trim(),
@@ -746,6 +765,7 @@ function buildConfig(type: CMSType, fd: FormData): CMSConfig {
         // form carries exactly one credential; the server re-checks that.
         ...shopifyCredentialsFromForm(fd),
         ...(blogId ? { blogId } : {}),
+        ...(blogHandle ? { blogHandle } : {}),
       };
     }
     case "magento":
@@ -766,12 +786,17 @@ function buildConfig(type: CMSType, fd: FormData): CMSConfig {
           fieldMap = null;
         }
       }
+      // Where items come out on the live site. Webflow answers with no URL of
+      // its own, so this is the only thing that can make a published link
+      // resolve; absent, the connection claims no URL at all.
+      const publicBaseUrl = (fd.get("publicBaseUrl") as string | null)?.trim();
       return {
         type: "webflow",
         siteId: (fd.get("siteId") as string).trim(),
         collectionId: (fd.get("collectionId") as string).trim(),
         apiToken: fd.get("apiToken") as string,
         ...(fieldMap ? { fieldMap } : {}),
+        ...(publicBaseUrl ? { publicBaseUrl } : {}),
       };
     }
     case "ghost":

@@ -256,10 +256,15 @@ async function pushToDestination(
   if (existingId && canUpdate(adapter)) {
     result = await adapter.update(existingId, payload);
   } else if (existingId && config.type !== "git") {
+    // "Unpublish it first" was an instruction the product cannot obey:
+    // unpublishArticle exists in app/actions/publish.ts and has no caller
+    // anywhere in the UI. Say what can actually be done instead. Most
+    // destinations can now be edited in place - only Notion and Wix reach
+    // this branch - so it is rare as well as honest.
     throw new Error(
       `This article already exists on ${config.type}${
         article.published_url ? ` (${article.published_url})` : ""
-      } and that destination cannot be updated in place from here. Unpublish it first, or edit it on the CMS.`,
+      }, and ${config.type} pages cannot be replaced from here. Edit it on ${config.type}, or delete it there and publish again.`,
     );
   } else {
     result = await adapter.publish(payload);
@@ -380,6 +385,19 @@ async function pushToDestination(
       console.warn("[publish] indexing submission skipped outside production");
       return result;
     }
+    /**
+     * Nothing to submit without an address. An adapter returns "" when the
+     * destination reports no URL and the connection stores no public prefix
+     * to build one from (Webflow, Wix, Framer, a git connection with no
+     * public URL); published_url is null in that case, and submitting an
+     * empty string would have been a request about the customer's domain
+     * root.
+     */
+    if (!result.url) {
+      console.warn("[publish] no published URL to submit for indexing");
+      return result;
+    }
+
     const indexing = await submitForIndexing({
       url: result.url,
       indexNowKey: ws?.indexnow_key ?? null,

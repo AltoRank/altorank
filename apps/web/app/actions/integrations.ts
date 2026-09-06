@@ -47,6 +47,10 @@ const shopifySchema = z
     clientId: z.string().optional(),
     clientSecret: z.string().optional(),
     blogId: z.string().optional(),
+    // The chosen blog's handle, for the storefront URL a published article
+    // links to. /blogs/{handle}/{article-handle} is the public path; the
+    // numeric blog id appears in none.
+    blogHandle: z.string().optional(),
   })
   .superRefine((cfg, ctx) => {
     try {
@@ -80,6 +84,11 @@ const webflowSchema = z.object({
       image: z.string().min(1).optional(),
     })
     .optional(),
+  // Where the collection's items come out on the live site. Webflow's API
+  // reports no URL for an item and the collection page's path is the site
+  // designer's choice, so this is captured in the dialog; without it no
+  // published URL is claimed at all (lib/cms/webflow.ts webflowItemUrl).
+  publicBaseUrl: z.string().url().optional(),
 });
 
 const ghostSchema = z.object({
@@ -190,8 +199,14 @@ const configSchema = z.discriminatedUnion("type", [
 function parseConfig(config: CMSConfig): CMSConfig {
   const parsed = configSchema.parse(config);
   if (parsed.type !== "shopify") return parsed;
-  const { type, storeUrl, blogId } = parsed;
-  return { type, storeUrl, ...(blogId ? { blogId } : {}), ...shopifyCredentialsOf(shopifyCredential(parsed)) };
+  const { type, storeUrl, blogId, blogHandle } = parsed;
+  return {
+    type,
+    storeUrl,
+    ...(blogId ? { blogId } : {}),
+    ...(blogHandle ? { blogHandle } : {}),
+    ...shopifyCredentialsOf(shopifyCredential(parsed)),
+  };
 }
 
 /**

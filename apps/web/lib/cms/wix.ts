@@ -1,5 +1,6 @@
 import type { CMSAdapter, PublishPayload, PublishResult } from "./types";
 import type { WixConfig } from "@/lib/types";
+import { htmlToRicosNodes } from "./ricos";
 
 const WIX_API = "https://www.wixapis.com";
 
@@ -48,6 +49,30 @@ export async function listWixSites(apiKey: string, accountId: string): Promise<W
   }));
 }
 
+/**
+ * The public address of a published post, as Wix reports it.
+ *
+ * Wix Blog v3 answers with a page URL split in two - `{ base, path }` - so
+ * storing `post.url` raw wrote "[object Object]" into published_url on the
+ * happy path. A string is accepted too, for the shape an older API version
+ * returned.
+ * https://dev.wix.com/docs/rest/business-solutions/blog/posts/post-object
+ */
+export function postUrl(url: unknown): string {
+  if (typeof url === "string") return url;
+  if (url && typeof url === "object") {
+    const { base, path } = url as { base?: unknown; path?: unknown };
+    if (typeof base === "string" && base) {
+      const trimmed = base.replace(/\/+$/, "");
+      if (typeof path === "string" && path) {
+        return `${trimmed}/${path.replace(/^\/+/, "")}`;
+      }
+      return trimmed;
+    }
+  }
+  return "";
+}
+
 export class WixAdapter implements CMSAdapter {
   private accountId: string;
   private siteId: string;
@@ -69,6 +94,10 @@ export class WixAdapter implements CMSAdapter {
   }
 
   async publish(article: PublishPayload): Promise<PublishResult> {
+    // Converted before the request, so a body that cannot be represented
+    // fails here with nothing created on the far side.
+    const nodes = htmlToRicosNodes(article.html);
+
     // Step 1: Create draft post
     const createRes = await fetch(
       `${WIX_API}/blog/v3/draft-posts`,
@@ -78,20 +107,11 @@ export class WixAdapter implements CMSAdapter {
         body: JSON.stringify({
           draftPost: {
             title: article.title,
-            richContent: {
-              nodes: [
-                {
-                  type: "PARAGRAPH",
-                  paragraphData: {},
-                  nodes: [
-                    {
-                      type: "TEXT",
-                      textData: { text: "" },
-                    },
-                  ],
-                },
-              ],
-            },
+            // The article, converted to Ricos. This used to be one hardcoded
+            // empty paragraph, so Wix received the title and nothing else
+            // while the product reported a successful publish; the converter
+            // throws rather than send an empty body.
+            richContent: { nodes },
             excerpt: article.metaDescription ?? "",
           },
         }),
@@ -133,7 +153,12 @@ export class WixAdapter implements CMSAdapter {
 
     return {
       externalId: post.id ?? draftId,
-      url: post.url ?? `https://${this.siteId}.wixsite.com/blog/${article.slug}`,
+      // Wix's own address for the post, or none. The old fallback,
+      // `https://${siteId}.wixsite.com/blog/${slug}`, could not resolve: the
+      // site id is a UUID, not a hostname, so every "View published article"
+      // link on a Wix connection was a 404 that also went to IndexNow. An
+      // empty URL leaves published_url null and renders no link.
+      url: postUrl(post.url),
     };
   }
 

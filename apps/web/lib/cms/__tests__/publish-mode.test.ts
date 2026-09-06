@@ -20,7 +20,14 @@ import { FramerAdapter } from "../framer";
 import { MagentoAdapter } from "../magento";
 import { WebhookAdapter } from "../webhook";
 import { renderPost } from "../git";
-import { assertPublishMode, draftSupport, DRAFT_BEHAVIOUR, publishVerb } from "../publish-mode";
+import {
+  assertPublishMode,
+  draftSupport,
+  DRAFT_BEHAVIOUR,
+  LIVE_BEHAVIOUR,
+  TEST_PROVES,
+  publishVerb,
+} from "../publish-mode";
 import type { PublishPayload } from "../types";
 
 const mockFetch = vi.fn();
@@ -94,7 +101,7 @@ describe("Webflow", () => {
 });
 
 describe("Shopify", () => {
-  const shopify = new ShopifyAdapter({ type: "shopify", storeUrl: "https://s.myshopify.com", accessToken: "t", blogId: "7" });
+  const shopify = new ShopifyAdapter({ type: "shopify", storeUrl: "https://s.myshopify.com", accessToken: "t", blogId: "7", blogHandle: "news" });
 
   it("draft is published=false with no published_at", async () => {
     mockFetch.mockResolvedValue({ ok: true, json: async () => ({ article: { id: 1, handle: "hello" } }) });
@@ -135,6 +142,16 @@ describe("Wix", () => {
 });
 
 describe("Notion", () => {
+  // The adapter reads the database schema before it writes: the first fetch
+  // is that GET, so the page POST is the second call.
+  const schema = {
+    ok: true,
+    json: async () => ({
+      properties: { Name: { type: "title" }, Slug: { type: "rich_text" }, Stage: { type: "status" } },
+    }),
+  };
+  const page = { ok: true, json: async () => ({ id: "pg", url: "https://notion.so/pg" }) };
+
   it("sets the named Status property to the draft or published option", async () => {
     const notion = new NotionAdapter({
       type: "notion",
@@ -143,20 +160,20 @@ describe("Notion", () => {
       statusProperty: "Stage",
       draftStatus: "In review",
     });
-    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ id: "pg", url: "https://notion.so/pg" }) });
+    mockFetch.mockResolvedValueOnce(schema).mockResolvedValue(page);
     await notion.publish(draft);
     await notion.publish(live);
-    const props0 = body(0).properties as Record<string, { status: { name: string } }>;
-    const props1 = body(1).properties as Record<string, { status: { name: string } }>;
+    const props0 = body(1).properties as Record<string, { status: { name: string } }>;
+    const props1 = body(2).properties as Record<string, { status: { name: string } }>;
     expect(props0.Stage.status.name).toBe("In review");
     expect(props1.Stage.status.name).toBe("Published");
   });
 
   it("writes no status at all when none is configured", async () => {
     const notion = new NotionAdapter({ type: "notion", databaseId: "db", integrationToken: "t" });
-    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ id: "pg", url: "https://notion.so/pg" }) });
+    mockFetch.mockResolvedValueOnce(schema).mockResolvedValue(page);
     await notion.publish(live);
-    expect(Object.keys(body(0).properties as object)).toEqual(["Name", "Slug"]);
+    expect(Object.keys(body(1).properties as object)).toEqual(["Name", "Slug"]);
   });
 });
 
@@ -244,5 +261,42 @@ describe("draftSupport", () => {
     expect(publishVerb("draft", "WordPress")).toBe("Save draft to WordPress");
     expect(publishVerb("publish", "WordPress")).toBe("Publish to WordPress");
     expect(publishVerb(undefined, "WordPress")).toBe("Publish to WordPress");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// What the dialog is allowed to promise (P0-C5, P0-C4)
+// ---------------------------------------------------------------------------
+
+describe("LIVE_BEHAVIOUR", () => {
+  it("covers every connector, so the dialog never has nothing to say", () => {
+    expect(Object.keys(LIVE_BEHAVIOUR).sort()).toEqual(Object.keys(DRAFT_BEHAVIOUR).sort());
+    for (const [type, text] of Object.entries(LIVE_BEHAVIOUR)) {
+      expect(text.trim().length, type).toBeGreaterThan(30);
+      expect(text.trim().endsWith("."), type).toBe(true);
+    }
+  });
+
+  it("does not claim a git commit is live: the host still has to build", () => {
+    expect(LIVE_BEHAVIOUR.git).toMatch(/build/i);
+    expect(LIVE_BEHAVIOUR.git).not.toMatch(/the moment you press/i);
+  });
+
+  it("says the WordPress plugin's own setting can still hold the post as a draft", () => {
+    expect(LIVE_BEHAVIOUR["wordpress-plugin"]).toMatch(/draft/i);
+  });
+});
+
+describe("TEST_PROVES", () => {
+  it("covers every connector", () => {
+    expect(Object.keys(TEST_PROVES).sort()).toEqual(Object.keys(DRAFT_BEHAVIOUR).sort());
+  });
+
+  it("claims a write only for the two tests that perform one", () => {
+    const write = Object.entries(TEST_PROVES)
+      .filter(([, v]) => v === "write")
+      .map(([k]) => k)
+      .sort();
+    expect(write).toEqual(["webhook", "wordpress-plugin"]);
   });
 });

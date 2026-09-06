@@ -68,7 +68,7 @@ export const CONNECTOR_NOTES: Record<CMSConfig["type"], ConnectorNote> = {
   },
   notion: {
     text:
-      "Pages in a Notion database have no draft or published state of their own. A draft connection needs a Status-type property on the database, named below; without one only live publishing is offered. The integration token must have access to that database.",
+      "The article's title goes into the database's own title property, whatever it is called, and its slug into a rich-text property named Slug when the database has one. Pages in a Notion database have no draft or published state of their own: a draft connection needs a status or select property on the database, named below; without one only live publishing is offered. The integration token must have access to that database.",
   },
   hubspot: {
     text:
