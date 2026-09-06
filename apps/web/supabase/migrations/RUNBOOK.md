@@ -351,3 +351,15 @@ Search Console tab, the dashboard's Search Console blocks and the agent's `sync`
 (`add column if not exists`), no data change, depends on 001 only. Pre-flight:
 `exists (select 1 from col where t='workspace_integrations' and c='needs_reconnect')`. Roll back with
 `alter table workspace_integrations drop column needs_reconnect, drop column last_sync_error;`.
+
+## 073 — added 2026-09-06
+
+`073_lifecycle_emails.sql`: adds `sent_emails` (a send is claimed here *before* it leaves,
+keyed by type + subject + recipient, and the claim is released if the send fails, so a
+retried Stripe webhook or a re-run cron cannot mail the same fact twice), `email_preferences`
+(keyed by address rather than user id, because the monthly report may go to a shared inbox)
+and a partial unique index giving one pending invite per address. Depends on 001 and 010.
+Idempotent; no data change. Pre-flight:
+`to_regclass('public.sent_emails') is not null`. Note that `sent_emails` and
+`email_preferences` already exist on the local dev stack from an earlier hand-run, so the
+detection query above returns true there before this file is applied.

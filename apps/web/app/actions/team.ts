@@ -70,7 +70,7 @@ export async function inviteMember(formData: FormData): Promise<InviteResult> {
    * "create a second invitation". It used to mean the second: `invites` was
    * unique on the token only, so a second click wrote a second row, sent a
    * second email, and listed the address twice on the Team page with two links
-   * that both worked. Migration 072 adds the partial unique index that makes
+   * that both worked. Migration 073 adds the partial unique index that makes
    * this the only possible outcome.
    *
    * The pending row's token is reused, so a link already in their inbox keeps

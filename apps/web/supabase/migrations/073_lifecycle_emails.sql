@@ -1,4 +1,4 @@
--- 072: the ledger that stops a lifecycle email being sent twice, the
+-- 073: the ledger that stops a lifecycle email being sent twice, the
 --      preferences that let somebody stop receiving one, and one pending
 --      invite per address.
 -- Depends on: 001_initial_schema (agencies, workspaces), 010_invites

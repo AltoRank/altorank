@@ -2,7 +2,7 @@
 // Reading and writing what an address wants to hear about
 // ---------------------------------------------------------------------------
 //
-// One row per address in `email_preferences` (migration 072), holding the
+// One row per address in `email_preferences` (migration 073), holding the
 // category slugs it has switched off. By address rather than by user id,
 // because the monthly report goes to `agencies.report_email`, which may be a
 // shared inbox with no account behind it - and that inbox has the same right to

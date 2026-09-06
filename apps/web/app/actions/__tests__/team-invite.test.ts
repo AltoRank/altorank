@@ -137,7 +137,7 @@ describe("inviteMember", () => {
   /**
    * The duplicate: pressing Invite twice used to write a second row and send a
    * second email, and the Team page then listed the address twice with two
-   * links that both worked. Migration 072's partial unique index makes a second
+   * links that both worked. Migration 073's partial unique index makes a second
    * row impossible; this is the action agreeing with it.
    */
   describe("inviting the same address again", () => {

@@ -10,7 +10,7 @@
 // mailing-list annoyance - it reads as the product being broken, and for a
 // dunning notice it reads as being shouted at.
 //
-// So a send is claimed in `sent_emails` (migration 072) *before* it leaves,
+// So a send is claimed in `sent_emails` (migration 073) *before* it leaves,
 // keyed by (type, subject, recipient), and the claim is deleted again if the
 // send fails. Claim-then-send rather than send-then-record because the failure
 // that matters is a second run starting while the first is still inside the

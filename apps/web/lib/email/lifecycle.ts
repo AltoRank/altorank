@@ -12,7 +12,7 @@
 // Three rules hold for every send here, and they are enforced by `sendOnce`
 // rather than by remembering:
 //
-//   once      claimed in `sent_emails` (migration 072) before it leaves, keyed
+//   once      claimed in `sent_emails` (migration 073) before it leaves, keyed
 //             by (type, subject, recipient). A retried Stripe webhook, a cron
 //             that runs four times a day and a double-submitted form all
 //             produce one email.
