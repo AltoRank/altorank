@@ -74,7 +74,11 @@ type Fixture = {
 let fx: Fixture;
 
 /** A request the route handlers accept, carrying a bearer key. */
-function req(url: string, key: string, init: RequestInit = {}): NextRequest {
+function req(
+  url: string,
+  key: string,
+  init: { method?: string; body?: string; headers?: Record<string, string> } = {},
+): NextRequest {
   return new NextRequest(`https://app.altorank.co${url}`, {
     ...init,
     headers: { authorization: `Bearer ${key}`, "content-type": "application/json", ...(init.headers ?? {}) },
