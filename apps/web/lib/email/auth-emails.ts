@@ -18,8 +18,9 @@ import type { AuthError } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendTransactionalEmail } from "@/lib/email/resend";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_3 } from "@/lib/email/layout";
+import { appUrl } from "@/lib/app-url";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3100";
+
 
 export type AuthLinkType = "signup" | "recovery" | "magiclink";
 
@@ -28,7 +29,7 @@ const esc = (s: unknown) =>
 
 /** The URL the email carries: our callback, which verifies the hash. */
 export function authLink(type: AuthLinkType, hashedToken: string, next: string): string {
-  const u = new URL("/callback", APP_URL);
+  const u = new URL("/callback", appUrl());
   u.searchParams.set("token_hash", hashedToken);
   u.searchParams.set("type", type);
   u.searchParams.set("next", next);

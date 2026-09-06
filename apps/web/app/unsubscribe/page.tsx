@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { createServiceClient } from "@/lib/supabase/server";
 import { readUnsubscribeParams } from "@/lib/email/unsubscribe";
 import { ALL_OPTIONAL, EMAIL_CATEGORIES, isEmailCategory, type EmailCategory } from "@/lib/email/categories";
@@ -25,9 +26,9 @@ import {
  * everything else optional is listed with a switch, including the one just
  * turned off, so an accidental click is one press from undone.
  *
- * The required categories are shown too, greyed, saying why they cannot be
- * turned off. Hiding them would make the list look like a lie the first time a
- * failed-payment notice arrived.
+ * The required categories are named at the bottom, with the reason they have
+ * no switch. Leaving them off the page entirely would make the list read as a
+ * lie the first time a failed-payment notice arrived.
  */
 
 export const metadata: Metadata = { title: "Email preferences", robots: { index: false, follow: false } };
@@ -92,7 +93,6 @@ export default async function UnsubscribePage(props: Props) {
     if (wanted) await resubscribeAddress(client, check.email, t);
     else await unsubscribeAddress(client, check.email, t);
 
-    const { redirect } = await import("next/navigation");
     redirect(`/unsubscribe?e=${encodeURIComponent(address)}&c=${encodeURIComponent(linkCategory)}&s=${sig}&done=1`);
   }
 

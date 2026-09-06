@@ -32,7 +32,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { agencyRecipients, agencyBillingRecipients, userEmail } from "./agency-recipients";
-import { appLink } from "./app-url";
+import { appLink } from "@/lib/app-url";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_2, EMAIL_INK_3 } from "./layout";
 import { formatGraceDate } from "@/lib/billing/dunning";
 import { sendOnce, type RenderedEmail, type SendOnceOutcome } from "./send-once";

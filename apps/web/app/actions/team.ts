@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { sendInviteEmail } from "@/lib/email/resend";
+import { appLink } from "@/lib/app-url";
 import { INVITABLE_ROLES, canEditMember, parseWorkspaceIds, type Role } from "@/lib/team/access";
 import { z } from "zod";
 import crypto from "node:crypto";
@@ -61,24 +62,55 @@ export async function inviteMember(formData: FormData): Promise<InviteResult> {
 
   const inviterName = user.user_metadata?.full_name ?? user.email ?? "A team member";
 
-  const token = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 7);
 
-  const { error: inviteError } = await supabase.from("invites").insert({
-    agency_id: agencyId,
-    email: parsed.email,
-    role: parsed.role,
-    workspace_ids: workspaceIds,
-    token,
-    invited_by: user.id,
-    expires_at: expiresAt.toISOString(),
-  });
+  /**
+   * Pressing Invite twice for the same colleague means "send it again", not
+   * "create a second invitation". It used to mean the second: `invites` was
+   * unique on the token only, so a second click wrote a second row, sent a
+   * second email, and listed the address twice on the Team page with two links
+   * that both worked. Migration 072 adds the partial unique index that makes
+   * this the only possible outcome.
+   *
+   * The pending row's token is reused, so a link already in their inbox keeps
+   * working - re-inviting somebody must not silently break the link they were
+   * sent yesterday. The role, the workspaces and the expiry are refreshed,
+   * because those are what the person filling the form in again just chose.
+   */
+  const { data: pending } = await supabase
+    .from("invites")
+    .select("id, token")
+    .eq("agency_id", agencyId)
+    .ilike("email", parsed.email)
+    .is("accepted_at", null)
+    .maybeSingle();
+
+  const token = (pending?.token as string | undefined) ?? crypto.randomBytes(32).toString("hex");
+
+  const { error: inviteError } = pending
+    ? await supabase
+        .from("invites")
+        .update({
+          role: parsed.role,
+          workspace_ids: workspaceIds,
+          invited_by: user.id,
+          expires_at: expiresAt.toISOString(),
+        })
+        .eq("id", pending.id)
+    : await supabase.from("invites").insert({
+        agency_id: agencyId,
+        email: parsed.email,
+        role: parsed.role,
+        workspace_ids: workspaceIds,
+        token,
+        invited_by: user.id,
+        expires_at: expiresAt.toISOString(),
+      });
 
   if (inviteError) throw new Error(inviteError.message);
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const acceptUrl = `${baseUrl}/invite/${token}`;
+  const acceptUrl = appLink(`/invite/${token}`);
 
   // Non-fatal, but never silent: the invite row is already written and its
   // link works, so throwing would lose a valid invite over a mail problem.

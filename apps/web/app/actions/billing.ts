@@ -6,7 +6,7 @@ import { getStripe, PLAN_PRICE_IDS, stripeTaxEnabled } from "@/lib/stripe";
 import type { SelfServePlan, BillingInterval } from "@/lib/stripe";
 import { subscriptionSwitchable } from "@/lib/billing/plan-switch";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3100";
+import { appUrl } from "@/lib/app-url";
 
 /**
  * Start a Stripe Checkout session for a self-serve plan, or - when the
@@ -54,7 +54,7 @@ export async function createCheckoutSession(
     // The tier follows the price at once rather than on the webhook's
     // schedule, so the page that reloads next says what was just bought.
     await supabase.from("agencies").update({ plan }).eq("id", agencyId);
-    return `${APP_URL}/settings/billing?status=switched`;
+    return `${appUrl()}/settings/billing?status=switched`;
   }
 
   const session = await getStripe().checkout.sessions.create({
@@ -102,9 +102,9 @@ export async function createCheckoutSession(
       : {}),
     success_url:
       returnTo && /^\/[a-zA-Z0-9/_?=&%-]*$/.test(returnTo)
-        ? `${APP_URL}${returnTo}${returnTo.includes("?") ? "&" : "?"}upgraded=1`
-        : `${APP_URL}/settings/billing?status=success`,
-    cancel_url: `${APP_URL}/settings/billing?status=cancelled`,
+        ? `${appUrl()}${returnTo}${returnTo.includes("?") ? "&" : "?"}upgraded=1`
+        : `${appUrl()}/settings/billing?status=success`,
+    cancel_url: `${appUrl()}/settings/billing?status=cancelled`,
   });
 
   if (!session.url) throw new Error("Failed to create checkout session");
@@ -173,7 +173,7 @@ export async function createBillingPortalSession(flow: PortalFlow = "manage"): P
     throw new Error("No billing account yet — subscribe to a plan first");
   }
 
-  const returnUrl = `${APP_URL}/settings/billing`;
+  const returnUrl = `${appUrl()}/settings/billing`;
   const base = { customer: agency.stripe_customer_id, return_url: returnUrl };
 
   if (flow === "cancel") {

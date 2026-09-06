@@ -18,7 +18,7 @@
 // that cannot be honoured is worse than none.
 
 import crypto from "node:crypto";
-import { appUrl } from "./app-url";
+import { appUrl } from "@/lib/app-url";
 import { ALL_OPTIONAL, isEmailCategory, type EmailCategory } from "./categories";
 
 function secret(): string | null {
