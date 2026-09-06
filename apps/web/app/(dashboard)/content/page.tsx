@@ -24,7 +24,7 @@ import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
-export const metadata: Metadata = { title: "Calendar" };
+export const metadata: Metadata = { title: "Content planner" };
 
 type Props = {
   searchParams: Promise<{ month?: string }>;
