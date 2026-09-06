@@ -60,6 +60,9 @@ export async function updateSession(request: NextRequest) {
     // The readiness checker is deliberately public: it runs on any domain with
     // no workspace and no account, and is the top of the funnel.
     "/readiness",
+    // Shared result pages and the badge script for the free public check.
+    // Anyone holding the link is the audience; there is nothing to sign into.
+    "/check",
   ];
 
   const isPublic =

@@ -10,6 +10,8 @@ const ALLOWED_ORIGINS = new Set([
   // Astro dev server and a local preview of the built site.
   "http://localhost:4321",
   "http://127.0.0.1:4321",
+  "http://localhost:4323",
+  "http://127.0.0.1:4323",
 ]);
 
 export function corsHeaders(origin: string | null): Record<string, string> {

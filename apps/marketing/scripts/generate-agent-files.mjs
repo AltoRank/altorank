@@ -67,7 +67,7 @@ async function describe(url) {
 
 // Grouped the way a reader would want them, not the way the filesystem has them.
 const SECTIONS = [
-  { name: 'Start here', match: (p) => p === '' || p === '/open-source' || p === '/pricing' || p === '/agency-blueprint' },
+  { name: 'Start here', match: (p) => p === '' || p === '/check' || p === '/open-source' || p === '/pricing' || p === '/agency-blueprint' },
   { name: 'How it works', match: (p) => p === '/approval-first-seo-content' || p.startsWith('/for/') || p.startsWith('/integrations') },
   { name: 'Generative engine optimization', match: (p) => p.startsWith('/geo/') },
   { name: 'Comparisons', match: (p) => p.startsWith('/alternatives/') || p.startsWith('/vs/') },

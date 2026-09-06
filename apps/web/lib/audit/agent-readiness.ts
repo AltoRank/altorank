@@ -46,6 +46,13 @@ export interface ReadinessFinding {
   passed: boolean;
   severity: ReadinessSeverity;
   detail: string;
+  /**
+   * The server's answer did not let us decide (lesson 3: a 5xx on
+   * /robots.txt is "refused", not "absent"). `passed` still says what the
+   * score assumes, so scores stay comparable with the Python checker; a
+   * consumer that distinguishes unknown from failed reads this instead.
+   */
+  inconclusive?: boolean;
 }
 
 export interface ReadinessResult {
@@ -54,6 +61,24 @@ export interface ReadinessResult {
   /** 0-100, severity-weighted. 0 with an error means the site wasn't analysable. */
   score: number;
   error?: string;
+  /**
+   * The run hit its deadline and `findings` holds only the checks that
+   * finished. Checks that are missing were never run: they are unknown, not
+   * failed, and the score covers only what is present.
+   */
+  partial?: boolean;
+}
+
+/**
+ * Thrown by a fetcher to stop the run at a deadline. `runAgentReadiness`
+ * catches it and returns whatever findings it has, marked `partial`, rather
+ * than letting the checks that never ran read as failures.
+ */
+export class ReadinessDeadline extends Error {
+  constructor() {
+    super("readiness checks stopped at their deadline");
+    this.name = "ReadinessDeadline";
+  }
 }
 
 export interface FetchedResource {
@@ -96,13 +121,24 @@ const USER_AGENT =
   "Mozilla/5.0 (compatible; AltoRank-AgentReadiness/1.0; " +
   "+https://altorank.co; site readiness audit)";
 
-const FETCH_TIMEOUT_MS = 12_000;
+export const FETCH_TIMEOUT_MS = 12_000;
 const MAX_BODY_BYTES = 1_500_000;
 
 /** Default fetcher. Never throws; unreachable is {status: 0}. */
-export const defaultFetcher: ResourceFetcher = async (url) => {
+export const defaultFetcher: ResourceFetcher = (url) => fetchResource(url);
+
+/**
+ * One GET with the checker's User-Agent and a caller-chosen timeout. Never
+ * throws; unreachable (or timed out) is {status: 0}. Split from
+ * `defaultFetcher` so a caller with an overall deadline can hand each fetch
+ * only the time that is left.
+ */
+export async function fetchResource(
+  url: string,
+  timeoutMs: number = FETCH_TIMEOUT_MS,
+): Promise<FetchedResource> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       signal: controller.signal,
@@ -121,7 +157,7 @@ export const defaultFetcher: ResourceFetcher = async (url) => {
     // chain is reported by the crawl audit, which sees the same flag.
     if (isTlsChainError(err)) {
       try {
-        const r = await fetchLenient(url, { userAgent: USER_AGENT, timeoutMs: FETCH_TIMEOUT_MS, maxBytes: MAX_BODY_BYTES });
+        const r = await fetchLenient(url, { userAgent: USER_AGENT, timeoutMs, maxBytes: MAX_BODY_BYTES });
         return { status: r.status, headers: r.headers, body: r.body };
       } catch {
         return { status: 0, headers: {}, body: "" };
@@ -245,7 +281,10 @@ export function collectJsonLdTypes(html: string): string[] {
 
 // ── the run ───────────────────────────────────────────────────────────────────
 
-function score(findings: ReadinessFinding[]): number {
+/** Severity-weighted 0-100 over exactly the findings given. Exported so a
+ * consumer that drops inconclusive findings can score what remains the same
+ * way. */
+export function scoreFindings(findings: ReadinessFinding[]): number {
   const total = findings.reduce((s, f) => s + WEIGHTS[f.severity], 0);
   if (total === 0) return 0;
   const earned = findings
@@ -270,8 +309,28 @@ export async function runAgentReadiness(
     .toLowerCase()
     .replace(/^https?:\/\//, "")
     .replace(/\/+$/, "");
-  const base = `https://${domain}`;
   const findings: ReadinessFinding[] = [];
+  try {
+    return await runChecks(domain, fetcher, findings);
+  } catch (err) {
+    if (!(err instanceof ReadinessDeadline)) throw err;
+    // Whatever finished is reported; whatever did not is absent, not failed.
+    return {
+      domain,
+      findings,
+      score: scoreFindings(findings),
+      partial: true,
+      ...(findings.length ? {} : { error: "the site did not answer before the deadline" }),
+    };
+  }
+}
+
+async function runChecks(
+  domain: string,
+  fetcher: ResourceFetcher,
+  findings: ReadinessFinding[],
+): Promise<ReadinessResult> {
+  const base = `https://${domain}`;
 
   const home = await fetcher(`${base}/`);
   if (home.status === 0) {
@@ -284,26 +343,38 @@ export async function runAgentReadiness(
   // 1. robots.txt reachable (lesson 3: refused !== absent)
   const robots = await fetcher(`${base}/robots.txt`);
   const robotsOk = robots.status >= 200 && robots.status < 300 && robots.body.trim() !== "";
+  // 404 is an answer ("there is none"). A 403, a 5xx or no answer at all,
+  // when the homepage itself answered, is the server refusing us.
+  const robotsRefused =
+    !robotsOk && robots.status !== 404 && (robots.status === 0 || robots.status >= 400);
   findings.push({
     check: "robots_reachable",
     passed: robotsOk,
     severity: "medium",
     detail: robotsOk
       ? "robots.txt found"
-      : robots.status >= 400 && robots.status !== 404
-        ? `server returned ${robots.status} for /robots.txt, not conclusive`
+      : robotsRefused
+        ? robots.status === 0
+          ? "/robots.txt did not answer, not conclusive"
+          : `server returned ${robots.status} for /robots.txt, not conclusive`
         : "no robots.txt, crawlers get no guidance",
+    ...(robotsRefused ? { inconclusive: true } : {}),
   });
 
-  // 2. AI crawlers allowed — the finding that opens conversations
+  // 2. AI crawlers allowed — the finding that opens conversations. With no
+  // readable robots.txt nothing is blocked, which is a pass when the file is
+  // absent and an unknown when the server refused to show it to us.
   const blocked = robotsOk ? blockedCrawlers(robots.body) : [];
   findings.push({
     check: "ai_crawlers_allowed",
     passed: blocked.length === 0,
     severity: "high",
     detail: blocked.length === 0
-      ? "all major AI crawlers allowed"
+      ? robotsRefused
+        ? "robots.txt could not be read, so crawler rules are unknown"
+        : "all major AI crawlers allowed"
       : `blocked: ${blocked.join(", ")}`,
+    ...(robotsRefused ? { inconclusive: true } : {}),
   });
 
   // 3. sitemap declared or discoverable
@@ -397,8 +468,11 @@ export async function runAgentReadiness(
     severity: "low",
     detail: hasSignal
       ? "content-signal directive present"
-      : "no content-signal directive (optional, emerging)",
+      : robotsRefused
+        ? "robots.txt could not be read, so content signals are unknown"
+        : "no content-signal directive (optional, emerging)",
+    ...(robotsRefused ? { inconclusive: true } : {}),
   });
 
-  return { domain, findings, score: score(findings) };
+  return { domain, findings, score: scoreFindings(findings) };
 }
