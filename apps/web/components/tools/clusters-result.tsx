@@ -135,9 +135,17 @@ export function ClustersResult({ result }: { result: KeywordClusterResult }) {
           toolSlug="keyword-cluster-mapper"
           label="Unlock full keyword lists"
           description="Enter your email to see all keywords in each cluster and export the data."
-          context={{ seeds: result.seedKeywords }}
-          emailSubject={`Keyword Clusters: ${result.seedKeywords.join(", ")}`}
-          emailBody={`<h2 style="color:#1a1a1a;">Keyword Clusters</h2><p style="color:#666;">Seeds: ${result.seedKeywords.join(", ")}</p><p style="color:#666;">${result.clusters.length} clusters, ${result.totalKeywords} total keywords, ${formatVolume(result.totalVolume)} total volume.</p>${result.clusters.map((c) => `<p style="margin-top:12px;"><strong style="color:#1a1a1a;">${c.name}</strong> <span style="color:#999;">(${c.suggestedPageType})</span><br/><span style="color:#666;">${c.keywords.map((k) => k.keyword).join(", ")}</span></p>`).join("")}`}
+          context={{
+            seeds: result.seedKeywords,
+            totalKeywords: result.totalKeywords,
+            totalVolume: result.totalVolume,
+            clusters: result.clusters.map((c) => ({
+              name: c.name,
+              suggestedPageType: c.suggestedPageType,
+              keywords: c.keywords.map((k) => k.keyword),
+            })),
+          }}
+          sendEmail
           onSuccess={() => setUnlocked(true)}
         />
       )}

@@ -144,9 +144,9 @@ export function GapResult({ result }: { result: KeywordGapResult }) {
           context={{
             yourDomain: result.yourDomain,
             competitors: result.competitorDomains,
+            totalGapsFound: result.totalGapsFound,
           }}
-          emailSubject={`Keyword Gap Analysis: ${result.yourDomain}`}
-          emailBody={`<h2 style="color:#1a1a1a;">Keyword Gap Analysis</h2><p style="color:#666;">${result.yourDomain} vs ${result.competitorDomains.join(", ")}</p><p style="color:#666;">${result.totalGapsFound} keyword gaps found.</p><p style="color:#999;font-size:13px;">Generated with AltoRank's free Keyword Gap Analyzer.</p>`}
+          sendEmail
           onSuccess={() => setUnlocked(true)}
         />
       )}

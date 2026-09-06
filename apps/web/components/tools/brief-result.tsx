@@ -190,9 +190,13 @@ export function BriefResult({ brief }: { brief: ContentBrief }) {
         toolSlug="content-brief-generator"
         label="Email me this brief"
         description="Get the full content brief delivered to your inbox as a formatted report."
-        context={{ keyword: brief.keyword }}
-        emailSubject={`Content Brief: ${brief.keyword}`}
-        emailBody={`<h2 style="color:#1a1a1a;">${brief.title}</h2><p style="color:#666;">${brief.metaDescription}</p><p style="color:#666;">Word count target: ${brief.wordCountTarget.toLocaleString()}</p><p style="color:#999;font-size:13px;">Generated with AltoRank's free Content Brief Generator.</p>`}
+        context={{
+          keyword: brief.keyword,
+          title: brief.title,
+          metaDescription: brief.metaDescription,
+          wordCountTarget: brief.wordCountTarget,
+        }}
+        sendEmail
       />
 
       {/* CTA */}
