@@ -122,8 +122,44 @@ export async function sendSignupConfirmation(opts: { email: string; password: st
 
   const url = authLink("signup", data.properties.hashed_token, opts.next ?? "/dashboard");
   const { subject, html, footerNote } = renderConfirmSignup(url, opts.email);
-  await sendTransactionalEmail(opts.email, subject, html, footerNote, "One click and your account is live.");
+  try {
+    await sendTransactionalEmail(opts.email, subject, html, footerNote, "One click and your account is live.");
+  } catch (e) {
+    // The user exists by now and the link that would confirm them never left.
+    // Left alone, the next attempt is refused as "already registered" and
+    // there is no resend path, so the address is locked out for good. Undo
+    // the creation and say so; the retry then starts clean.
+    console.error(`[signup] confirmation email to ${opts.email} failed: ${e instanceof Error ? e.message : String(e)}`);
+    await rollbackUnsentSignup(data.user.id);
+    throw new Error("We could not send the confirmation email, so the account was not created. Please try again in a minute.");
+  }
   return data.user.id;
+}
+
+/**
+ * Delete an auth user whose confirmation email was never sent, unless they
+ * already hold a membership. `generateLink({type:"signup"})` also returns an
+ * existing *unconfirmed* user, and one with an agency was set up on an
+ * earlier attempt whose email did go out; deleting them would orphan that
+ * agency. Never throws: the caller is already reporting the send failure.
+ */
+async function rollbackUnsentSignup(userId: string): Promise<void> {
+  const admin = createServiceClient();
+  try {
+    const { count, error } = await admin
+      .from("agency_members")
+      .select("agency_id", { count: "exact", head: true })
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    if ((count ?? 0) > 0) {
+      console.warn(`[signup] user ${userId} kept: already a member of an agency`);
+      return;
+    }
+    const { error: delError } = await admin.auth.admin.deleteUser(userId);
+    if (delError) throw new Error(delError.message);
+  } catch (e) {
+    console.error(`[signup] could not roll back user ${userId}: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 /**
