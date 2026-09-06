@@ -10,8 +10,9 @@ import { isAdminEmail } from "@/lib/auth/operators";
  * accounts: our own agency is still our own agency at three in the morning,
  * and with that check unavailable every cron treated it as a stranger.
  *
- * In production that meant the operator's own workspaces got FREE_DRAFTS = 1
- * from cron/generate and, once scheduled work was gated on a plan, no rank
+ * In production that meant the operator's own workspaces got only the free
+ * tier's allowance from cron/generate - FREE_DRAFTS, which was 1 at the time
+ * and is 7 now - and, once scheduled work was gated on a plan, no rank
  * tracking at all. The account that most needs to see the product working was
  * the one the product had quietly stopped running for.
  *

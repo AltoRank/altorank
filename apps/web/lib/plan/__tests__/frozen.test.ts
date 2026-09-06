@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { frozenEntryIds, frozenReason, readFrozenEntries, type FrozenCandidate } from "../frozen";
+import { FREE_DRAFTS } from "@/lib/billing/quota";
 
 /**
  * Which planned keywords the plan cannot pay for. The boundary is the quota's
@@ -62,11 +63,29 @@ describe("frozenEntryIds", () => {
   });
 });
 
+const freeTier = (remaining: number) => ({ limit: FREE_DRAFTS, remaining, reason: "no-plan" as const });
+
 describe("frozenReason", () => {
-  it("names the free tier's one draft, and says it is used once it is", () => {
-    expect(frozenReason(noPlan(1))).toMatch(/free tier includes 1 draft/);
-    expect(frozenReason(noPlan(0))).toMatch(/free draft is used/);
+  it("names the free tier's allowance, and says it is used once it is", () => {
+    expect(frozenReason(noPlan(1))).toMatch(/free tier includes 1 draft a month/);
+    expect(frozenReason(noPlan(0))).toMatch(/1 free draft is used/);
     expect(frozenReason(noPlan(0))).toMatch(/Billing/);
+  });
+
+  /**
+   * FREE_DRAFTS went 1 -> 7 on 2026-09-06 and this string was written when it
+   * was 1, so it rendered "the free tier includes 7 draft" (P2-O5) and, once
+   * spent, "the free draft is used" for seven of them.
+   */
+  it("pluralises off the limit rather than off the number it was written for", () => {
+    expect(frozenReason(freeTier(3))).toMatch(/free tier includes 7 drafts a month/);
+    expect(frozenReason(freeTier(3))).not.toMatch(/7 draft\b/);
+    expect(frozenReason(freeTier(0))).toMatch(/this month's 7 free drafts are used/);
+    expect(frozenReason(freeTier(0))).not.toMatch(/the free draft is used/);
+  });
+
+  it("names the reset as a way out of the exhausted free tier", () => {
+    expect(frozenReason(freeTier(0))).toMatch(/1st/);
   });
 
   it("quotes the plan's included volume and the two ways out", () => {

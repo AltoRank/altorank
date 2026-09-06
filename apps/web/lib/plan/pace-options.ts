@@ -58,9 +58,11 @@ export function planNeededFor(monthly: number): PlanTier {
 /**
  * Is `pace` within what the account pays for?
  *
- * no-plan: the free tier's pace (1 a week) and nothing above it. The quota
- * would let the cron write one draft a month whatever the pace said, so a
- * higher number here would be a setting with no effect.
+ * no-plan: the free tier's pace (FREE_TIER_PACE, 7 a week since 2026-09-06)
+ * and nothing above it. The quota stops the cron at FREE_DRAFTS a month
+ * whatever the pace said, so a higher number here would be a setting with no
+ * effect. This comment described a 1-a-week free tier for four days after it
+ * stopped being one: the function returns true for 1, 2, 3, 5 and 7.
  * plan: the tier's included monthly volume must cover the pace's monthly figure.
  * unmetered (self-host, operator): anything the column allows.
  */

@@ -16,11 +16,17 @@
 --   7+  was chosen by a human at the control 041 added, and is already at or
 --       above what this sets.
 --
--- Free-tier sites are included, and it changes nothing for them on its own: a
--- no-plan account gets one free draft a calendar month (FREE_DRAFTS in
--- lib/billing/quota.ts), so the extra attempts meet the quota gate and are
--- recorded as skipped rather than written. The pace is ready for the day the
--- plan is; it does not by itself spend anything.
+-- Free-tier sites are included, and when this was applied it changed nothing
+-- for them on its own: a no-plan account got one free draft a calendar month
+-- (FREE_DRAFTS in lib/billing/quota.ts), so the extra attempts met the quota
+-- gate and were recorded as skipped rather than written. The pace was ready
+-- for the day the plan was; it did not by itself spend anything.
+--
+-- Superseded 2026-09-06 (#119): FREE_DRAFTS is 7, so a free site now spends
+-- its whole allowance inside the first week at this pace. Nothing to change
+-- here - that is what the 7 was chosen to allow - but the paragraph above no
+-- longer describes the free tier, and this note is here because the next
+-- reader would otherwise repeat it.
 
 ALTER TABLE workspaces ALTER COLUMN auto_generate_weekly_limit SET DEFAULT 7;
 

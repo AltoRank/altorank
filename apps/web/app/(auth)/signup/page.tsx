@@ -101,12 +101,14 @@ async function signUp(formData: FormData) {
         initials: domain.slice(0, 2).toUpperCase(),
         color: "av-c1",
         indexnow_key: generateIndexNowKey(),
-        // The free draft is delivered by the generate cron, which only
-        // writes for opted-in workspaces. A workspace created at signup is
+        // The free drafts are delivered by onboarding (the first, inline)
+        // and the generate cron and fan-out (the rest), all of which only
+        // write for opted-in workspaces. A workspace created at signup is
         // the opt-in: the person typed their domain to get exactly this.
-        // Bounded by FREE_DRAFTS until they choose a plan, which is why the
-        // pace is one a week and not more: the quota would refuse the rest.
-        // The Stripe webhook raises it when they subscribe.
+        // Bounded by FREE_DRAFTS until they choose a plan; the pace is
+        // FREE_TIER_PACE so the whole allowance lands inside the first week
+        // rather than over seven of them. The Stripe webhook raises it to the
+        // paid default when they subscribe.
         auto_generate: true,
         auto_generate_weekly_limit: FREE_TIER_PACE,
       });

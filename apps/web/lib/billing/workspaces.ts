@@ -5,8 +5,9 @@
 // Articles are the meter; workspaces are not (pricing page: "metered on
 // output, not seats or workspaces"). But a workspace costs before an article
 // does: a crawl, PageSpeed, keyword discovery, voice training and, since
-// 2026-09-02, one free draft. With no ceiling an unpaid account could add
-// fifty domains and get fifty of each. So: one site to try it on, three on
+// 2026-09-02, free drafts - FREE_DRAFTS of them a month since 2026-09-06.
+// With no ceiling an unpaid account could add fifty domains and get fifty of
+// each. So: one site to try it on, three on
 // Managed, no limit on Agency, and never a limit for self-host or operators.
 
 import type { SupabaseClient } from "@supabase/supabase-js";

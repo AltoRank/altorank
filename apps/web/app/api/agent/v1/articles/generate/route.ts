@@ -6,7 +6,7 @@ import { articleInAgency, workspaceInAgency } from "@/lib/agent/data";
 import { articleMutations } from "@/lib/agent/mutations";
 import { toAgentArticle } from "@/lib/agent/records";
 import { generateArticle, slugFor } from "@/lib/content/generate";
-import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
+import { freeAllowanceUsedMessage, getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import type { Article } from "@/lib/types";
 
 // The model call is the long pole; same budget the generate cron has.
@@ -73,7 +73,11 @@ export const POST = withAgent(async (request, ctx) => {
   const quota = await getQuota(ctx.supabase, ctx.agencyId, null);
   if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
     if (quota.reason === "no-plan") {
-      return fail("quota_exceeded", quotaExceededMessage(quota), "The free draft is used and there is no plan. Ask the human to choose one on the Billing page; do not retry until they have.");
+      return fail(
+        "quota_exceeded",
+        quotaExceededMessage(quota),
+        `${freeAllowanceUsedMessage(quota.limit ?? undefined)} There is no plan. Ask the human to choose one on the Billing page; do not retry until they have, or until the allowance resets on the 1st.`,
+      );
     }
     if (!allow_overage) {
       return fail(

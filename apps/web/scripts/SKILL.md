@@ -138,7 +138,7 @@ the human's click ("Check indexing") in the editor.
 | `not_found` | 404 | Id is not in this account | Re-list and use an id from the list |
 | `invalid_request` | 400 | Bad or missing parameter | Fix the request per `agent_guidance` |
 | `rate_limited` | 429 | Over 120 req/min for this key | Wait `Retry-After` seconds; batch reads |
-| `quota_exceeded` | 402 | Free draft used, or included volume used | Tell the human; retry only after they choose a plan or approve overage |
+| `quota_exceeded` | 402 | The month's free drafts used, or included volume used | Tell the human; retry only after they choose a plan or approve overage |
 | `not_available` | 409 | Action not possible in this state or on this install | Report the `reason`; do not retry |
 | `upstream_error` | 502 | Third-party site or provider failed | Retry once, then report |
 | `internal_error` | 500 | Unexpected | Retry once, then report the message verbatim |

@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 //
 // The calendar used to have no over-limit state. A plan that dropped - a
-// cancelled subscription, the free draft used - left every planned keyword
+// cancelled subscription, the month's free drafts used - left every planned keyword
 // reading "Planned", although the schedule would refuse to write all but the
 // first few. This derives the rest from what the rows already say, so a
 // downgrade is recoverable rather than destructive: nothing is deleted, the
@@ -35,6 +35,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Quota } from "@/lib/billing/quota";
+import { freeAllowanceUsedClause } from "@/lib/billing/quota";
+import { plural } from "@/lib/utils";
 
 /** What the ordering reads from an unwritten planned entry. */
 export type FrozenCandidate = {
@@ -67,9 +69,12 @@ export function frozenEntryIds(entries: readonly FrozenCandidate[], quota: Allow
  */
 export function frozenReason(quota: Allowance): string {
   if (quota.reason === "no-plan") {
+    // Both halves are counted off `quota.limit`. The first used to read "the
+    // free tier includes 7 draft" - written when the limit was 1 - and the
+    // second still said "the free draft" after it became a week's worth.
     return (quota.remaining ?? 0) > 0
-      ? `Inactive: the free tier includes ${quota.limit} draft before a plan. Choose one on the Billing page to reactivate.`
-      : "Inactive: the free draft is used. Choose a plan on the Billing page to reactivate.";
+      ? `Inactive: the free tier includes ${plural(quota.limit ?? 0, "draft")} a month before a plan. Choose one on the Billing page to reactivate.`
+      : `Inactive: this month's ${freeAllowanceUsedClause(quota.limit ?? undefined)}. Choose a plan on the Billing page to reactivate, or wait for the 1st, when the allowance resets.`;
   }
   return `Inactive: this month's ${quota.limit} included articles are spoken for. Upgrade on the Billing page to reactivate, or it thaws next month.`;
 }

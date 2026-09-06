@@ -24,21 +24,41 @@ const createWorkspaceSchema = z.object({
   color: z.string().default("av-c1"),
 });
 
-export async function createWorkspace(formData: FormData) {
+/**
+ * Why this returns a result instead of throwing.
+ *
+ * Every refusal here is one the person can act on - the workspace limit, a
+ * domain already in the account, a typo in the domain - and Next.js replaces a
+ * thrown server-action message with an opaque digest in production, so the
+ * only thing the dialog could show was a console line. It showed nothing: the
+ * caller caught, logged and closed the spinner, and "Add workspace" went quiet
+ * at the limit (P0-O3). A refusal the user can read has to travel as data.
+ */
+export type CreateWorkspaceResult =
+  | { ok: true; workspaceId: string; domain: string }
+  | { ok: false; error: string };
+
+export async function createWorkspace(formData: FormData): Promise<CreateWorkspaceResult> {
   const supabase = await createClient();
   // `domain` comes via ?? undefined: FormData.get returns null for a missing
   // field, z.optional() only accepts undefined, and the difference took the
   // whole form down when the plan select was removed.
-  const parsed = createWorkspaceSchema.parse({
-    name: formData.get("name"),
+  const name = formData.get("name");
+  const parsed = createWorkspaceSchema.safeParse({
+    name,
     domain: formData.get("domain") ?? undefined,
-    initials: formData.get("initials") || (formData.get("name") as string).slice(0, 2).toUpperCase(),
+    initials: formData.get("initials") || String(name ?? "").slice(0, 2).toUpperCase(),
     color: formData.get("color") || "av-c1",
   });
+  if (!parsed.success) {
+    // The field message, not Zod's JSON dump: "Enter a domain like acme.com"
+    // is the one the schema wrote for exactly this moment.
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the name and domain." };
+  }
 
   // Get or create user's agency
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
+  if (!user) return { ok: false, error: "Your session has expired. Sign in again." };
 
   const agencyId = await ensureAgency(user.id, user.user_metadata ?? {}, user.email);
 
@@ -47,26 +67,29 @@ export async function createWorkspace(formData: FormData) {
   // fifty free drafts under fifty domains.
   const allowance = await getWorkspaceAllowance(supabase, agencyId, user.email);
   if (allowance.remaining !== null && allowance.remaining <= 0) {
-    throw new Error(workspaceLimitMessage(allowance));
+    return { ok: false, error: workspaceLimitMessage(allowance) };
   }
 
   const { data: dup } = await supabase
     .from("workspaces")
     .select("id, name")
     .eq("agency_id", agencyId)
-    .ilike("domain", parsed.domain)
+    .ilike("domain", parsed.data.domain)
     .maybeSingle();
-  if (dup) throw new Error(`${parsed.domain} is already the workspace "${dup.name}". One workspace per site.`);
+  if (dup) {
+    return { ok: false, error: `${parsed.data.domain} is already the workspace "${dup.name}". One workspace per site.` };
+  }
 
   const { data, error } = await supabase
     .from("workspaces")
-    .insert({ ...parsed, agency_id: agencyId, indexnow_key: generateIndexNowKey() })
+    .insert({ ...parsed.data, agency_id: agencyId, indexnow_key: generateIndexNowKey() })
     .select("id")
     .single();
 
-  if (error) throw new Error(error.message);
+  if (error) return { ok: false, error: error.message };
   revalidatePath("/workspaces");
-  return data.id as string;
+  revalidatePath("/dashboard");
+  return { ok: true, workspaceId: data.id as string, domain: parsed.data.domain };
 }
 
 export async function updateWorkspace(id: string, formData: FormData) {

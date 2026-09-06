@@ -5,6 +5,9 @@ import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { OnboardingWizard } from "@/components/onboarding/wizard";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { outputFromRow } from "@/lib/onboarding/output-settings";
+import { FREE_TIER_PACE } from "@/lib/content/pace";
+import { requireAuth } from "@/lib/auth/require-auth";
+import { getRequestQuota } from "@/lib/queries/quota";
 
 export const metadata: Metadata = { title: "Set up your site" };
 
@@ -25,7 +28,12 @@ export default async function OnboardingPage() {
   if (!scopeId) redirect("/workspaces");
 
   const supabase = await createClient();
-  const [{ data: workspace }, { data: destinations }, { data: output }] = await Promise.all([
+  // What the account may actually have written before it needs a plan. The
+  // wizard promises a thirty-day plan; on the free tier only the first week of
+  // it can be written, and until now nothing said so (P1-A1). Null when
+  // unmetered, and then there is nothing to qualify.
+  const quotaRead = requireAuth().then(({ agencyId, user }) => getRequestQuota(agencyId, user.email ?? null));
+  const [{ data: workspace }, { data: destinations }, { data: output }, quota] = await Promise.all([
     supabase
       .from("workspaces")
       // The account's answer rides along on the workspace's own account row,
@@ -40,6 +48,7 @@ export default async function OnboardingPage() {
       .select("tone, internal_links, table_of_contents, call_to_action, first_person, mention_similar_products, global_article_prompt")
       .eq("workspace_id", scopeId)
       .maybeSingle(),
+    quotaRead,
   ]);
   if (!workspace) redirect("/workspaces");
 
@@ -54,7 +63,12 @@ export default async function OnboardingPage() {
     <OnboardingWizard
       workspaceId={workspace.id}
       domain={workspace.domain ?? ""}
-      weeklyLimit={workspace.auto_generate_weekly_limit ?? 1}
+      // The same fallback the planner uses (app/actions/plan.ts) and the
+      // same default the column carries since migration 042. This said 1,
+      // seven times lower, so a null column made the wizard promise "1
+      // article a week" for a site the planner would schedule seven for.
+      weeklyLimit={workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE}
+      freeDrafts={quota.reason === "no-plan" ? Math.max(0, quota.remaining ?? 0) : null}
       initialProfile={(workspace.business_profile as BusinessProfile | null) ?? null}
       initialSite={{
         sitemapUrl: workspace.sitemap_url ?? "",
