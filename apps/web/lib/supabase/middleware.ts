@@ -66,6 +66,11 @@ export async function updateSession(request: NextRequest) {
     // The share card behind an unguessable token (lib/share/token.ts). Same
     // audience: whoever was handed the link, and the unfurler before them.
     "/share",
+    // The unsubscribe link from an email footer. Somebody who wants the mail
+    // to stop must not be asked to sign in first - and the address a shared
+    // report inbox uses may have no account at all. The HMAC in the URL is
+    // what authorises it (lib/email/unsubscribe.ts).
+    "/unsubscribe",
   ];
 
   const isPublic =
