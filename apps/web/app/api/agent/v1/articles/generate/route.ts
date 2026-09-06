@@ -3,6 +3,7 @@ import { z } from "zod";
 import { withAgent, readJson, appBaseUrl } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
 import { articleInAgency, workspaceInAgency } from "@/lib/agent/data";
+import { bindIdempotencyKey, claimIdempotencyKey, idempotencyKeyFrom, releaseIdempotencyKey } from "@/lib/agent/idempotency";
 import { articleMutations } from "@/lib/agent/mutations";
 import { toAgentArticle } from "@/lib/agent/records";
 import { generateArticle, slugFor } from "@/lib/content/generate";
@@ -23,6 +24,12 @@ const bodySchema = z.object({
    * default: an agent must not spend a customer's money without being told.
    */
   allow_overage: z.boolean().default(false),
+  /**
+   * Same as the Idempotency-Key header. A repeat with the same key within
+   * 24 hours returns the draft the first call started; no second row, no
+   * second quota unit. Send one on every call, and reuse it after a timeout.
+   */
+  idempotency_key: z.string().optional(),
 });
 
 /**
@@ -36,6 +43,11 @@ const bodySchema = z.object({
  * Generation runs in `after()`, so it is bounded by this route's maxDuration.
  * If the function is cut off mid-run the row stays in `drafting`, the same
  * failure mode the cron documents; GET /articles/{id} shows it.
+ *
+ * A timed-out request looks, to the caller, like one that never happened.
+ * `Idempotency-Key` (or `idempotency_key` in the body) makes the retry safe:
+ * the key is claimed before any row is written, bound to the row, and a
+ * repeat within 24h gets that row back with `replayed: true`.
  */
 export const POST = withAgent(async (request, ctx) => {
   const parsed = await readJson<unknown>(request);
@@ -49,6 +61,11 @@ export const POST = withAgent(async (request, ctx) => {
     );
   }
   const { workspace_id, keyword, title, article_id, allow_overage } = body.data;
+  const keyRead = idempotencyKeyFrom(request, parsed.body);
+  if (!keyRead.ok) {
+    return fail("invalid_request", keyRead.message, "Send an Idempotency-Key of up to 200 printable characters, e.g. a UUID you generate per intended draft.");
+  }
+  const idemKey = keyRead.key;
 
   const workspace = await workspaceInAgency(ctx, workspace_id);
   if (!workspace) {
@@ -68,11 +85,51 @@ export const POST = withAgent(async (request, ctx) => {
     }
   }
 
+  // The key is claimed before the spend gate and before any row, so a
+  // duplicate that arrives while this one is still inside the gate cannot
+  // pass it a second time. A refusal below releases the claim: the human's
+  // "yes" to overage should make the same key work, not replay a refusal.
+  if (idemKey) {
+    const claim = await claimIdempotencyKey(ctx.supabase, ctx.agencyId, idemKey);
+    if (claim.state === "replay") {
+      const existing = claim.article_id ? await articleInAgency(ctx, claim.article_id) : null;
+      if (claim.article_id && !existing) {
+        // Bound to an article that is gone: nothing to replay, start over.
+        await releaseIdempotencyKey(ctx.supabase, ctx.agencyId, idemKey);
+        const again = await claimIdempotencyKey(ctx.supabase, ctx.agencyId, idemKey);
+        if (again.state === "replay") return inFlight();
+      } else if (!existing) {
+        return inFlight();
+      } else {
+        const record = toAgentArticle(existing, appBaseUrl(request));
+        return {
+          status: 200,
+          envelope: ok(
+            {
+              article_id: existing.id,
+              status: existing.status,
+              editor_url: record.editor_url,
+              poll_url: `${appBaseUrl(request)}/api/agent/v1/articles/${existing.id}`,
+              article: record,
+              overage: false,
+              replayed: true,
+            },
+            `This Idempotency-Key was already used at ${new Date(claim.created_at).toISOString()}: this is the draft that call started, not a new one, and nothing more was billed. Poll poll_url until status is review; if status is error, start a new draft with a NEW key.`,
+          ),
+        };
+      }
+    }
+  }
+  const release = async () => {
+    if (idemKey) await releaseIdempotencyKey(ctx.supabase, ctx.agencyId, idemKey);
+  };
+
   // Spend gate, before any row is written. Null caller: a key is nobody's
   // session, the same contract the cron uses.
   const quota = await getQuota(ctx.supabase, ctx.agencyId, null);
   if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
     if (quota.reason === "no-plan") {
+      await release();
       return fail(
         "quota_exceeded",
         quotaExceededMessage(quota),
@@ -80,6 +137,7 @@ export const POST = withAgent(async (request, ctx) => {
       );
     }
     if (!allow_overage) {
+      await release();
       return fail(
         "quota_exceeded",
         `This month's included ${quota.limit} articles are used. The next draft bills as overage.`,
@@ -103,10 +161,14 @@ export const POST = withAgent(async (request, ctx) => {
       })
       .select("*")
       .single();
-    if (error || !created) throw new Error(error?.message ?? "Could not create the article row");
+    if (error || !created) {
+      await release();
+      throw new Error(error?.message ?? "Could not create the article row");
+    }
     articleRowId = (created as Article).id;
   }
   const targetId = articleRowId;
+  if (idemKey) await bindIdempotencyKey(ctx.supabase, ctx.agencyId, idemKey, targetId);
 
   after(async () => {
     try {
@@ -144,8 +206,18 @@ export const POST = withAgent(async (request, ctx) => {
         poll_url: `${appBaseUrl(request)}/api/agent/v1/articles/${targetId}`,
         article: record,
         overage: quota.limit !== null && (quota.remaining ?? 0) <= 0,
+        replayed: false,
       },
-      "Draft started; it takes about two minutes. Poll poll_url every 30-60s until status is review, then send the human editor_url. It will not publish itself and you cannot publish it.",
+      `Draft started; it takes about two minutes. Poll poll_url every 30-60s until status is review, then send the human editor_url. It will not publish itself and you cannot publish it.${idemKey ? "" : " Next time send an Idempotency-Key: if this call had timed out you would have had no safe way to retry it."}`,
     ),
   };
 }, { scope: "generate" });
+
+/** A duplicate arrived in the one-statement window between claim and row. */
+function inFlight() {
+  return fail(
+    "not_available",
+    "A request with this Idempotency-Key is still being set up.",
+    "Wait a few seconds and repeat the same call with the same key; you will get the draft it started.",
+  );
+}

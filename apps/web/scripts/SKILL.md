@@ -63,8 +63,11 @@ Every response, every surface:
    This spends research credits: **ask before calling it**. Results are
    candidates, not saved.
 3. Agree the keyword (and optionally a title) with the human.
-4. `POST /articles/generate { workspace_id, keyword, title? }` - returns 202
-   with `article_id`, `poll_url`, `editor_url`. Nothing is published.
+4. `POST /articles/generate { workspace_id, keyword, title?, idempotency_key }`
+   - returns 202 with `article_id`, `poll_url`, `editor_url`. Nothing is
+   published. Make up one `idempotency_key` per draft you intend (a UUID is
+   fine; the `Idempotency-Key` header works too) and keep it until the draft
+   is in review.
 5. Poll `GET /articles/{id}` every 30-60 s until `status` is `review`
    (about two minutes). `error` means the run failed; the `generation`
    block says why.
@@ -128,6 +131,15 @@ the human's click ("Check indexing") in the editor.
   unless `allow_overage: true` - only send that after the human said yes.
 - One draft at a time per keyword. Do not queue several to "see which is best".
 - Do not regenerate something a human has not read yet (`status: review`).
+- **A timeout is not a failure.** `generate` answers 202 and writes the
+  draft afterwards, so a request that timed out on your side has usually
+  started one. Never retry it with a fresh call: repeat it with the **same**
+  `idempotency_key` and you get the draft that already started
+  (`replayed: true`), no second row, no second quota unit. With no key,
+  `GET /articles?workspace_id=&status=drafting` before you send anything
+  else. The same goes for every other verb: re-list, then decide.
+- Do not invent commands or endpoints. What is in the index below is all
+  there is; if a task needs something else, say so to the human.
 
 ## Errors
 

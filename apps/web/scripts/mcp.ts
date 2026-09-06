@@ -347,13 +347,15 @@ server.registerTool(
     description:
       "Write an article draft into the human's review queue. Returns immediately with the article id; poll " +
       "altorank_get_article until status is review, then hand the human editor_url. Costs quota: agree the " +
-      "keyword with the human first. Cannot publish.",
+      "keyword with the human first. Cannot publish. Always pass idempotency_key (any string you make up per intended draft) " +
+      "and reuse it if the call times out: a repeat returns the draft already started instead of a second one.",
     inputSchema: {
       ...workspaceArg,
       keyword: z.string().min(2).max(200),
       title: z.string().min(2).max(200).optional(),
       article_id: z.string().uuid().optional().describe("Regenerate into this existing draft instead of creating a new one."),
       allow_overage: z.boolean().optional().describe("Only after the human agreed to pay overage."),
+      idempotency_key: z.string().min(1).max(200).optional().describe("Your own key for this draft. Reuse it on retry; a repeat within 24h returns the same article and bills nothing more."),
     },
   },
   async (input) => asEnvelope(await agentRequest("/articles/generate", { method: "POST", body: input })),
