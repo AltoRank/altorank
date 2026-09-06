@@ -135,6 +135,16 @@ describe("Wix", () => {
 });
 
 describe("Notion", () => {
+  // The adapter reads the database schema before it writes: the first fetch
+  // is that GET, so the page POST is the second call.
+  const schema = {
+    ok: true,
+    json: async () => ({
+      properties: { Name: { type: "title" }, Slug: { type: "rich_text" }, Stage: { type: "status" } },
+    }),
+  };
+  const page = { ok: true, json: async () => ({ id: "pg", url: "https://notion.so/pg" }) };
+
   it("sets the named Status property to the draft or published option", async () => {
     const notion = new NotionAdapter({
       type: "notion",
@@ -143,20 +153,20 @@ describe("Notion", () => {
       statusProperty: "Stage",
       draftStatus: "In review",
     });
-    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ id: "pg", url: "https://notion.so/pg" }) });
+    mockFetch.mockResolvedValueOnce(schema).mockResolvedValue(page);
     await notion.publish(draft);
     await notion.publish(live);
-    const props0 = body(0).properties as Record<string, { status: { name: string } }>;
-    const props1 = body(1).properties as Record<string, { status: { name: string } }>;
+    const props0 = body(1).properties as Record<string, { status: { name: string } }>;
+    const props1 = body(2).properties as Record<string, { status: { name: string } }>;
     expect(props0.Stage.status.name).toBe("In review");
     expect(props1.Stage.status.name).toBe("Published");
   });
 
   it("writes no status at all when none is configured", async () => {
     const notion = new NotionAdapter({ type: "notion", databaseId: "db", integrationToken: "t" });
-    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ id: "pg", url: "https://notion.so/pg" }) });
+    mockFetch.mockResolvedValueOnce(schema).mockResolvedValue(page);
     await notion.publish(live);
-    expect(Object.keys(body(0).properties as object)).toEqual(["Name", "Slug"]);
+    expect(Object.keys(body(1).properties as object)).toEqual(["Name", "Slug"]);
   });
 });
 

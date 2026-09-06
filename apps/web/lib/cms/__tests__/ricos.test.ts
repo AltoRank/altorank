@@ -25,7 +25,7 @@ describe("htmlToRicosNodes", () => {
 
   it("turns a link into a LINK decoration rather than dropping the paragraph", () => {
     const nodes = htmlToRicosNodes('<p>See our <a href="https://example.com/x">guide</a>.</p>');
-    const texts = nodes[0].nodes as Array<{ textData: { text: string; decorations: unknown[] } }>;
+    const texts = nodes[0].nodes as unknown as Array<{ textData: { text: string; decorations: unknown[] } }>;
     expect(texts.map((t) => t.textData.text)).toEqual(["See our ", "guide", "."]);
     expect(texts[1].textData.decorations).toEqual([
       { type: "LINK", linkData: { link: { url: "https://example.com/x", target: "BLANK" } } },
@@ -34,13 +34,13 @@ describe("htmlToRicosNodes", () => {
 
   it("opens a root-relative link in the same tab", () => {
     const nodes = htmlToRicosNodes('<p><a href="/pricing">Pricing</a></p>');
-    const texts = nodes[0].nodes as Array<{ textData: { decorations: Array<{ linkData?: { link: { target: string } } }> } }>;
+    const texts = nodes[0].nodes as unknown as Array<{ textData: { decorations: Array<{ linkData?: { link: { target: string } } }> } }>;
     expect(texts[0].textData.decorations[0].linkData?.link.target).toBe("SELF");
   });
 
   it("sends bold and italic as decorations", () => {
     const nodes = htmlToRicosNodes("<p><strong>b</strong><em>i</em></p>");
-    const texts = nodes[0].nodes as Array<{ textData: { decorations: Array<{ type: string }> } }>;
+    const texts = nodes[0].nodes as unknown as Array<{ textData: { decorations: Array<{ type: string }> } }>;
     expect(texts[0].textData.decorations[0].type).toBe("BOLD");
     expect(texts[1].textData.decorations[0].type).toBe("ITALIC");
   });
