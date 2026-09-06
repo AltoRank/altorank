@@ -48,6 +48,7 @@ export const Icons = {
   more: (p: IconProps = {}) => <Icon {...p}><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></Icon>,
   check: (p: IconProps = {}) => <Icon {...p}><path d="M5 12.5 10 17 19 7"/></Icon>,
   x: (p: IconProps = {}) => <Icon {...p}><path d="M6 6l12 12M18 6L6 18"/></Icon>,
+  menu: (p: IconProps = {}) => <Icon {...p}><path d="M4 7h16M4 12h16M4 17h16"/></Icon>,
   arrow: (p: IconProps = {}) => <Icon {...p}><path d="M5 12h14m0 0-6-6m6 6-6 6"/></Icon>,
   arrowLeft: (p: IconProps = {}) => <Icon {...p}><path d="M19 12H5m0 0 6-6m-6 6 6 6"/></Icon>,
   caretDown: (p: IconProps = {}) => <Icon {...p}><path d="m6 9 6 6 6-6"/></Icon>,

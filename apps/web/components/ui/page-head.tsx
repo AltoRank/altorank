@@ -40,7 +40,9 @@ export function PageHead({
   return (
     <div
       className={cn(
-        "h-[var(--topbar-h)] shrink-0 px-8 border-b border-line flex items-center gap-4",
+        // One row from md up. Below it the actions may drop to a second line
+        // rather than truncate the title to a letter.
+        "min-h-[var(--topbar-h)] py-2 md:py-0 md:h-[var(--topbar-h)] shrink-0 px-8 border-b border-line flex flex-wrap md:flex-nowrap items-center gap-4",
         className
       )}
     >
@@ -68,7 +70,7 @@ export function PageHead({
         </div>
       )}
 
-      {actions && <div className="ml-auto flex gap-2 shrink-0">{actions}</div>}
+      {actions && <div className="ml-auto flex flex-wrap md:flex-nowrap gap-2 max-w-full md:shrink-0">{actions}</div>}
     </div>
   );
 }

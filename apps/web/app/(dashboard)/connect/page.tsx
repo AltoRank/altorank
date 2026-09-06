@@ -115,7 +115,7 @@ export default async function IntegrationsPage({
           return (
             <div key={g} className="mb-7">
               <h2 className="text-[13px] font-mono uppercase tracking-[0.08em] text-ink-3 mb-3">{g}</h2>
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {groupIntegrations.map((i) => (
                   <div key={i.id} className="border border-line rounded-[10px] p-4 bg-bg">
                     <div className="flex items-center gap-2.5">

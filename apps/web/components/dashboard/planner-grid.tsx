@@ -214,14 +214,14 @@ export function PlannerGrid({
       onDragCancel={() => setActiveId(null)}
       accessibility={{ announcements, screenReaderInstructions: { draggable: "Press Space to lift a planned keyword, arrow keys to choose a day, Space to drop, Escape to cancel." } }}
     >
-      <div className="grid grid-cols-7 bg-panel border-b border-line">
+      <div className="grid grid-cols-7 min-w-[640px] bg-panel border-b border-line">
         {DAY_NAMES.map((d) => (
           <div key={d} className="px-3.5 py-2.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3 border-r border-line last:border-r-0">
             {d}
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7">
+      <div className="grid grid-cols-7 min-w-[640px]">
         {cells.map((cell, i) =>
           cell ? (
             <DayCellView key={cell.date} cell={cell} now={now} writeGate={writeGate} frozenCount={frozenCount} dragging={activeId !== null} />

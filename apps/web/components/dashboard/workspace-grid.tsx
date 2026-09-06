@@ -43,7 +43,7 @@ export function WorkspaceGrid({ workspaces, counts }: WorkspaceGridProps) {
           />
         ))}
       </div>
-      <div className="p-3.5 grid grid-cols-4 gap-3">
+      <div className="p-3.5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {filtered.map((w) => {
           const c = counts[w.id] ?? { total: 0, live: 0 };
           return (

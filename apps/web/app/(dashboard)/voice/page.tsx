@@ -32,7 +32,7 @@ export default async function VoicePage() {
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {workspaces.map((w) => {
             const voice = voiceMap.get(w.id);
             const rules = voice?.rules as {

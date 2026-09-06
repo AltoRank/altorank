@@ -67,7 +67,7 @@ export function SettingsTabs() {
     <div className="border-b border-line bg-bg">
       {/* Row 1: the groups. Each is a link to its first tab, so the row is
           navigation, not a filter. */}
-      <div className="px-8 flex items-center gap-1 pt-2" role="tablist" aria-label="Settings sections">
+      <div className="px-8 flex items-center gap-1 pt-2 overflow-x-auto" role="tablist" aria-label="Settings sections">
         {SETTINGS_GROUPS.map((g) => {
           const active = g.id === group.id;
           return (
