@@ -95,14 +95,15 @@ export function MetaResult({ result }: { result: MetaDescriptionResult }) {
               toolSlug="meta-description-generator"
               label={`Unlock all ${result.variants.length} variants`}
               description="Enter your email to see every style variant and save them."
-              context={{ keyword: result.keyword }}
-              emailSubject={`Meta Descriptions: ${result.keyword}`}
-              emailBody={result.variants
-                .map(
-                  (v) =>
-                    `<p style="margin-bottom:16px;"><strong style="color:#1a1a1a;">${v.style}</strong> <span style="color:#999;">(${v.charCount} chars)</span><br/><span style="color:#666;">${v.text}</span></p>`,
-                )
-                .join("")}
+              context={{
+                keyword: result.keyword,
+                variants: result.variants.map((v) => ({
+                  style: v.style,
+                  charCount: v.charCount,
+                  text: v.text,
+                })),
+              }}
+              sendEmail
               onSuccess={() => setUnlocked(true)}
             />
           </div>

@@ -132,9 +132,14 @@ export function SerpResult({ result }: { result: SerpAnalysisResult }) {
         toolSlug="serp-analyzer"
         label="Email me this analysis"
         description="Get the full SERP analysis with AI insights delivered to your inbox."
-        context={{ keyword: result.keyword }}
-        emailSubject={`SERP Analysis: ${result.keyword}`}
-        emailBody={`<h2 style="color:#1a1a1a;">SERP Analysis: ${result.keyword}</h2><p style="color:#666;">Locale: ${result.locale} | ${result.organic.length} results analyzed${result.avgWordCount ? ` | Avg. word count: ${result.avgWordCount}` : ""}</p>${result.aiInsights ? `<p style="color:#666;margin-top:16px;">${result.aiInsights}</p>` : ""}<p style="color:#999;font-size:13px;margin-top:16px;">Generated with AltoRank's free SERP Analyzer.</p>`}
+        context={{
+          keyword: result.keyword,
+          locale: result.locale,
+          resultsAnalyzed: result.organic.length,
+          avgWordCount: result.avgWordCount,
+          aiInsights: result.aiInsights,
+        }}
+        sendEmail
       />
     </div>
   );

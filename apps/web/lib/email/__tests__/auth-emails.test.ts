@@ -2,16 +2,21 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Supabase and Resend are replaced: what matters here is which of their
 // answers stays silent and which is thrown.
-const { generateLink, sendTransactionalEmail } = vi.hoisted(() => ({
+const { generateLink, deleteUser, memberCount, sendTransactionalEmail } = vi.hoisted(() => ({
   generateLink: vi.fn(),
+  deleteUser: vi.fn(),
+  memberCount: vi.fn(),
   sendTransactionalEmail: vi.fn(),
 }));
 vi.mock("@/lib/supabase/server", () => ({
-  createServiceClient: () => ({ auth: { admin: { generateLink } } }),
+  createServiceClient: () => ({
+    auth: { admin: { generateLink, deleteUser } },
+    from: () => ({ select: () => ({ eq: memberCount }) }),
+  }),
 }));
 vi.mock("@/lib/email/resend", () => ({ sendTransactionalEmail }));
 
-import { authLink, renderConfirmSignup, renderPasswordReset, renderMagicLink, sendPasswordReset } from "../auth-emails";
+import { authLink, renderConfirmSignup, renderPasswordReset, renderMagicLink, sendPasswordReset, sendSignupConfirmation } from "../auth-emails";
 import { emailLayout } from "../layout";
 
 describe("auth emails", () => {
@@ -87,5 +92,78 @@ describe("sendPasswordReset", () => {
     });
     sendTransactionalEmail.mockRejectedValue(new Error("Resend refused the email (validation_error 403): domain not verified"));
     await expect(sendPasswordReset("a@x.co")).rejects.toThrow("Resend refused the email");
+  });
+});
+
+describe("sendSignupConfirmation", () => {
+  beforeEach(() => {
+    generateLink.mockReset();
+    deleteUser.mockReset();
+    memberCount.mockReset();
+    sendTransactionalEmail.mockReset();
+    sendTransactionalEmail.mockResolvedValue(undefined);
+    deleteUser.mockResolvedValue({ error: null });
+    memberCount.mockResolvedValue({ count: 0, error: null });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  it("creates the user and sends the link", async () => {
+    generateLink.mockResolvedValue({
+      data: { properties: { hashed_token: "h" }, user: { id: "u1" } },
+      error: null,
+    });
+    await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw", name: "A" })).resolves.toBe("u1");
+    expect(sendTransactionalEmail).toHaveBeenCalledTimes(1);
+    expect(deleteUser).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The bug: the user was created, the send threw, the form showed an error,
+   * and the next attempt was refused as "already registered" with no link to
+   * confirm and no way to ask for one.
+   */
+  it("deletes the just-created user when the email cannot be sent, so the retry starts clean", async () => {
+    generateLink.mockResolvedValue({
+      data: { properties: { hashed_token: "h" }, user: { id: "u1" } },
+      error: null,
+    });
+    sendTransactionalEmail.mockRejectedValue(new Error("Resend refused the email (validation_error 403): domain not verified"));
+    await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw", name: "A" })).rejects.toThrow(
+      "could not send the confirmation email, so the account was not created",
+    );
+    expect(deleteUser).toHaveBeenCalledWith("u1");
+  });
+
+  /** An unconfirmed user who already has an agency came from an earlier, sent attempt: keep them. */
+  it("keeps a user who already holds a membership", async () => {
+    generateLink.mockResolvedValue({
+      data: { properties: { hashed_token: "h" }, user: { id: "u1" } },
+      error: null,
+    });
+    memberCount.mockResolvedValue({ count: 1, error: null });
+    sendTransactionalEmail.mockRejectedValue(new Error("RESEND_API_KEY not configured"));
+    await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw", name: "A" })).rejects.toThrow("not created");
+    expect(deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("still reports the send failure when the rollback itself fails", async () => {
+    generateLink.mockResolvedValue({
+      data: { properties: { hashed_token: "h" }, user: { id: "u1" } },
+      error: null,
+    });
+    sendTransactionalEmail.mockRejectedValue(new Error("refused"));
+    deleteUser.mockRejectedValue(new Error("network"));
+    await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw", name: "A" })).rejects.toThrow("not created");
+  });
+
+  it("does not delete anyone when the user could not be created at all", async () => {
+    generateLink.mockResolvedValue({
+      data: { properties: null, user: null },
+      error: { code: "email_exists", status: 422, message: "A user with this email address has already been registered" },
+    });
+    await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw", name: "A" })).rejects.toThrow("already been registered");
+    expect(sendTransactionalEmail).not.toHaveBeenCalled();
+    expect(deleteUser).not.toHaveBeenCalled();
   });
 });

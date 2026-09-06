@@ -7,9 +7,13 @@ type EmailGateProps = {
   toolSlug: string;
   label?: string;
   description?: string;
+  /**
+   * The tool's result data. When `sendEmail` is set the server renders the
+   * email from it (lib/tools/result-email.ts); the browser never supplies a
+   * subject or a body.
+   */
   context?: Record<string, unknown>;
-  emailSubject?: string;
-  emailBody?: string;
+  sendEmail?: boolean;
   onSuccess?: () => void;
 };
 
@@ -20,8 +24,7 @@ export function EmailGate({
   label = "Email me this report",
   description = "Get the full results delivered to your inbox.",
   context,
-  emailSubject,
-  emailBody,
+  sendEmail = false,
   onSuccess,
 }: EmailGateProps) {
   const [submitted, setSubmitted] = useState(false);
@@ -67,15 +70,7 @@ export function EmailGate({
             value={JSON.stringify(context)}
           />
         )}
-        {emailSubject && (
-          <>
-            <input type="hidden" name="sendEmail" value="true" />
-            <input type="hidden" name="emailSubject" value={emailSubject} />
-          </>
-        )}
-        {emailBody && (
-          <input type="hidden" name="emailBody" value={emailBody} />
-        )}
+        {sendEmail && <input type="hidden" name="sendEmail" value="true" />}
 
         <input
           name="email"

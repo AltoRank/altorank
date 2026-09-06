@@ -332,3 +332,13 @@ agency-scoped policies on `refresh_candidates`, `refresh_tasks`, `refresh_execut
 ## 063 — added 2026-09-05
 
 `063_onboarded_backfill.sql` (PR #94): `onboarded_at = created_at` for workspaces created before the wizard, so existing customers are not redirected to /onboarding after deploy. Idempotent; no schema change. **Apply last: final production order is 048 → 063.**
+
+## 066 — added 2026-09-06
+
+`066_reports_bucket.sql`: creates the private `reports` storage bucket (PDF only) that
+`lib/reports/generate.ts` has always uploaded to, with select/insert/update/delete
+policies on `storage.objects` keyed on the workspace folder segment via
+`user_workspace_ids()`. If the bucket was created by hand as public, this flips it to
+private: the app now mails and opens signed URLs, and `reports.url` holds the object
+path rather than a public link (old rows are read either way). Requires 053. No data
+change. Detect with `exists (select 1 from storage.buckets where id='reports' and not public)`.

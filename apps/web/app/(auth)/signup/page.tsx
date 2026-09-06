@@ -29,7 +29,9 @@ async function signUp(formData: FormData) {
 
   // Create the auth user and send OUR confirmation email. `auth.signUp`
   // would make Supabase send its own from a dashboard template; this keeps
-  // the email in the repo (lib/email/auth-emails.ts).
+  // the email in the repo (lib/email/auth-emails.ts). If the email cannot be
+  // sent the user is deleted again there, so a retry is not "already
+  // registered" with no link to confirm.
   let userId: string;
   try {
     userId = await sendSignupConfirmation({ email, password, name, next: "/onboarding" });

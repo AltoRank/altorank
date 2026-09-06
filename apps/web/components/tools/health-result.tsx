@@ -181,9 +181,14 @@ export function HealthResult({ result }: { result: HealthCheckResult }) {
         toolSlug="seo-health-checker"
         label="Email me this report"
         description="Get the full SEO health report delivered to your inbox."
-        context={{ url: result.url, score: result.score }}
-        emailSubject={`SEO Health Report: ${result.url}`}
-        emailBody={`<h2 style="color:#1a1a1a;">SEO Health Score: ${result.score}/100</h2><p style="color:#666;">${result.url}</p><p style="color:#666;">${errors.length} errors, ${warnings.length} warnings, ${passes.length} checks passed.</p><p style="color:#999;font-size:13px;">Generated with AltoRank's free SEO Health Checker.</p>`}
+        context={{
+          url: result.url,
+          score: result.score,
+          errors: errors.length,
+          warnings: warnings.length,
+          passes: passes.length,
+        }}
+        sendEmail
       />
     </div>
   );

@@ -99,7 +99,7 @@ export async function sendReportEmail(
         emailParagraph(`What moved this period. Every number is measured; where nothing was measured the report says so rather than showing a zero.`) +
         `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 4px;font-size:14px;">${rows}</table>` +
         emailButton(reportUrl, "Open the full report") +
-        emailParagraph(`The report stays at that link; share it with whoever needs it.`),
+        emailParagraph(`The link works for 30 days. The report itself stays in your dashboard under Reports.`),
       footerNote: `Sent to ${to} as a member of ${agencyName} on AltoRank.`,
     }),
   });

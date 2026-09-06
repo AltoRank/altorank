@@ -275,7 +275,7 @@ export async function GET(request: Request) {
       // cost the workspace its weekly slot. The outcome is reported instead.
       let notified = "";
       try {
-        const to = await agencyRecipients(supabase, ws.agency_id as string);
+        const to = await agencyRecipients(supabase, ws.agency_id as string, workspaceId);
         const out = await sendArticleDraftedEmails(to, {
           domain,
           keyword: next.term,
