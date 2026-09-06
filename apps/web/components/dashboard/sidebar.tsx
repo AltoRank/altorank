@@ -57,14 +57,38 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
    * alternative broke the page - so the effect is back, and it only sets state
    * when there is a stored preference that differs from the server's.
    */
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsedPref, setCollapsedPref] = useState(false);
   useEffect(() => {
     try {
-      if (localStorage.getItem("sidebar_collapsed") === "1") setCollapsed(true);
+      if (localStorage.getItem("sidebar_collapsed") === "1") setCollapsedPref(true);
     } catch {
       /* private window or blocked site data: stay expanded */
     }
   }, []);
+
+  // Below `md` the sidebar is a slide-over opened from the top bar. A drawer
+  // is never a rail: the collapsed preference is a desktop preference and
+  // stays put for when the window is wide again.
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const collapsed = collapsedPref && !mobileOpen;
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileOpen(false);
+    };
+    // Crossing back to the desktop layout with the drawer open would leave a
+    // static sidebar rendered in its drawer state.
+    const mq = window.matchMedia("(min-width: 768px)");
+    const onChange = () => {
+      if (mq.matches) setMobileOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    mq.addEventListener("change", onChange);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      mq.removeEventListener("change", onChange);
+    };
+  }, [mobileOpen]);
 
   // Sub-item groups are open by default; only what a person closed is
   // remembered, so a new group ships expanded. Restored after mount for the
@@ -91,7 +115,7 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
   }
 
   function toggleCollapsed() {
-    setCollapsed((prev) => {
+    setCollapsedPref((prev) => {
       const next = !prev;
       try {
         localStorage.setItem("sidebar_collapsed", next ? "1" : "0");
@@ -104,10 +128,38 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
 
   return (
     <TooltipProvider>
+    {/* Mobile top bar: the site switcher and the way into the drawer. Gone
+        from md up, where the sidebar itself carries both. */}
+    <div className="md:hidden h-[var(--topbar-h)] shrink-0 flex items-center gap-2 border-b border-line bg-panel px-3">
+      <button
+        type="button"
+        onClick={() => setMobileOpen(true)}
+        aria-label="Open menu"
+        aria-expanded={mobileOpen}
+        aria-controls="dashboard-sidebar"
+        className="w-[34px] h-[34px] -ml-1 rounded-[6px] text-ink-2 grid place-items-center hover:bg-panel-2 hover:text-ink"
+      >
+        <Icons.menu size={18} />
+      </button>
+      <div className="w-[26px] h-[26px] rounded-[7px] bg-mark grid place-items-center relative shrink-0">
+        <Image src="/brand/altorank-mark-white.svg" alt="" width={15} height={15} priority />
+        <span className="absolute -right-[3px] -bottom-[3px] w-2 h-2 rounded-full bg-accent border-2 border-panel" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <WorkspaceSwitcher inline allowance={siteAllowance} />
+      </div>
+    </div>
+    {mobileOpen && (
+      <div className="md:hidden fixed inset-0 z-[200] bg-black/30" onClick={() => setMobileOpen(false)} />
+    )}
     <aside
+      id="dashboard-sidebar"
       className={cn(
-        "bg-panel border-r border-line flex flex-col min-h-0 transition-[width] duration-150",
-        collapsed ? "w-[56px]" : "w-[var(--sidebar-w)]",
+        "bg-panel border-r border-line flex flex-col min-h-0 duration-150",
+        // Slide-over below md; the static column from md up.
+        "fixed inset-y-0 left-0 z-[201] w-[var(--sidebar-w)] transition-transform md:static md:translate-x-0 md:transition-[width]",
+        mobileOpen ? "translate-x-0" : "-translate-x-full",
+        collapsed ? "md:w-[56px]" : "md:w-[var(--sidebar-w)]",
       )}
     >
       {/* Brand */}
@@ -164,7 +216,7 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
                   onClick={toggleCollapsed}
                   aria-label="Collapse sidebar"
                   aria-expanded
-                  className="ml-auto w-[26px] h-[26px] rounded-[6px] text-ink-3 grid place-items-center hover:bg-panel-2 hover:text-ink"
+                  className="ml-auto w-[26px] h-[26px] rounded-[6px] text-ink-3 hidden md:grid place-items-center hover:bg-panel-2 hover:text-ink"
                 >
                   {/* An arrow pointing at the edge it collapses toward. The
                       caretUpDown that was here reads as "switch", which is what
@@ -174,6 +226,14 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
               </TooltipTrigger>
               <TooltipContent side="right">Collapse sidebar</TooltipContent>
             </Tooltip>
+            <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Close menu"
+              className="ml-auto w-[26px] h-[26px] rounded-[6px] text-ink-3 grid md:hidden place-items-center hover:bg-panel-2 hover:text-ink"
+            >
+              <Icons.x size={14} />
+            </button>
           </>
         )}
       </div>
@@ -184,8 +244,17 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
           A control whose effect is invisible teaches people the app ignores
           them. */}
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-2 pt-2 pb-3 scroll">
-        <WorkspaceSwitcher collapsed={collapsed} allowance={siteAllowance} />
+      <nav
+        className="flex-1 overflow-y-auto px-2 pt-2 pb-3 scroll"
+        // Any link in the drawer is a navigation, and the drawer has no reason
+        // to outlive one.
+        onClick={(e) => {
+          if (mobileOpen && (e.target as HTMLElement).closest("a")) setMobileOpen(false);
+        }}
+      >
+        <div className="hidden md:block">
+          <WorkspaceSwitcher collapsed={collapsed} allowance={siteAllowance} />
+        </div>
         {DASHBOARD_NAV.map((group) => {
           const items = group.items
             .map((item) => (item.children ? { ...item, children: item.children.filter((c) => !hidden.includes(c.id)) } : item))

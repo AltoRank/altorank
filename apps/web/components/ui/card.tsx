@@ -45,7 +45,9 @@ export function Card({
       )}
       {/* 18px matches the title's inset, so body copy lines up with the
           heading it sits under rather than starting to the left of it. */}
-      {flush ? children : <div className={cn("p-[18px]", bodyClassName)}>{children}</div>}
+      {/* Flush children are the wide ones - tables, the planner grid - so
+          they get their own horizontal scroll rather than pushing the page. */}
+      {flush ? <div className="overflow-x-auto">{children}</div> : <div className={cn("p-[18px]", bodyClassName)}>{children}</div>}
     </div>
   );
 }

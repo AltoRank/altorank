@@ -82,7 +82,7 @@ function OverviewTab({ workspace, articles, keywords, backlinks, voice, now }: {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: "Articles", value: articles.length, sub: `${liveCount} live` },
           { label: "Keywords", value: keywords.length, sub: "tracked" },
@@ -374,7 +374,7 @@ function VoiceTab({ voice }: { voice: VoiceProfile | null }) {
         <div className="flex items-center gap-2 mb-3">
           <StatusPill status={voice.trained ? "on" : "setup"} label={voice.trained ? "Trained" : "Untrained"} />
         </div>
-        <div className="grid grid-cols-3 gap-4 text-[13px]">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-[13px]">
           <div>
             <div className="text-[11px] text-ink-3 uppercase tracking-[0.06em] mb-1">Words analyzed</div>
             <div className="font-mono font-semibold">{wordCount?.toLocaleString() ?? "—"}</div>

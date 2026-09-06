@@ -294,9 +294,9 @@ export default async function DashboardPage() {
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
         <RecommendedActionsStrip actions={actions} />
-        <div className="grid grid-cols-12 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
           {/* Traffic chart */}
-          <Card title={`Search performance · last ${traffic.days} days`} meta={<Chip label={scopeId ? (workspaces.find((w) => w.id === scopeId)?.name ?? "This workspace") : "All workspaces"} soft />} className="col-span-8">
+          <Card title={`Search performance · last ${traffic.days} days`} meta={<Chip label={scopeId ? (workspaces.find((w) => w.id === scopeId)?.name ?? "This workspace") : "All workspaces"} soft />} className="md:col-span-8">
             <SearchPerformanceBlock perf={traffic} connected={gscConnected} needsReconnect={gscNeedsReconnect} />
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-ink-3 mt-2.5 font-mono">
               <span className="flex items-center gap-1.5">
@@ -333,7 +333,7 @@ export default async function DashboardPage() {
           </Card>
 
           {/* Today's queue */}
-          <Card title="Needs your review" meta={`${pendingReviews} waiting`} className="col-span-4" flush>
+          <Card title="Needs your review" meta={`${pendingReviews} waiting`} className="md:col-span-4" flush>
             <div className="px-2 py-1.5">
               {allArticles
                 .filter((a) => a.status === "review")
@@ -361,16 +361,16 @@ export default async function DashboardPage() {
               property, and the page has no honest way to add two of them. */}
           {scopeId && coverage && (
             <>
-              <Card title={`Best articles · last ${traffic.days} days`} meta="clicks per page, Google's count" className="col-span-7" flush>
-                <BestArticlesBlock pages={bestPages} connected={gscConnected} hasData={traffic.hasData} days={traffic.days} needsReconnect={gscNeedsReconnect} />
+              <Card title={`Best articles · last ${traffic.days} days`} meta="clicks per page, Google's count" className="md:col-span-7" flush>
+                <BestArticlesBlock pages={bestPages} connected={gscConnected} hasData={traffic.hasData} days={traffic.days} />
               </Card>
-              <Card title="Index coverage" meta="from what we hold" className="col-span-5" flush>
+              <Card title="Index coverage" meta="from what we hold" className="md:col-span-5" flush>
                 <IndexCoverageBlock coverage={coverage} connected={gscConnected} hasData={traffic.hasData} needsReconnect={gscNeedsReconnect} />
               </Card>
               <Card
                 title="Cannibalization"
                 meta={cannibals.length > 0 ? `${plural(cannibals.length, "query", "queries")} with competing pages` : "queries with two or more of your pages ranking"}
-                className="col-span-12"
+                className="md:col-span-12"
                 flush
               >
                 <CannibalizationBlock items={cannibals} connected={gscConnected} hasData={traffic.hasData} days={traffic.days} needsReconnect={gscNeedsReconnect} />
@@ -383,7 +383,7 @@ export default async function DashboardPage() {
               rival shares no keywords with this site), and there is no metric
               here that could be mistaken for one. */}
           {yields && (
-            <Card title="Keyword sources" meta={<Link href="/keywords"><Button size="sm">Keywords</Button></Link>} className="col-span-12" flush>
+            <Card title="Keyword sources" meta={<Link href="/keywords"><Button size="sm">Keywords</Button></Link>} className="md:col-span-12" flush>
               <StatStrip
                 compact
                 stats={[
@@ -393,7 +393,7 @@ export default async function DashboardPage() {
                   { label: "Stored", value: yields.stored.toLocaleString(), delta: "tracked, not on the plan" },
                 ]}
               />
-              <div className="grid grid-cols-2 gap-x-8 px-6 py-4 text-[13px]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 px-6 py-4 text-[13px]">
                 <div>
                   <div className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3 mb-2">Competitor effectiveness</div>
                   {competitorYields.length === 0 ? (
@@ -453,13 +453,13 @@ export default async function DashboardPage() {
               site, a grid of every other site is noise on the page that is
               supposed to be about this one (2026-09-02). */}
           {!scopeId && (
-            <Card title="Workspaces" className="col-span-12" flush>
+            <Card title="Workspaces" className="md:col-span-12" flush>
               <WorkspaceGrid workspaces={workspaces} counts={wsCountsObj} />
             </Card>
           )}
 
           {/* Recent articles */}
-          <Card title="Recent articles" meta={<Link href="/articles"><Button size="sm">View all</Button></Link>} className="col-span-12" flush>
+          <Card title="Recent articles" meta={<Link href="/articles"><Button size="sm">View all</Button></Link>} className="md:col-span-12" flush>
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>

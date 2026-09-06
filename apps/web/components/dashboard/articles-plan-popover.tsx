@@ -77,7 +77,7 @@ export function ArticlesPlanPopover() {
         <div
           role="dialog"
           aria-label="Articles plan"
-          className="absolute right-0 top-[calc(100%+6px)] z-[80] w-[380px] rounded-[10px] border border-line bg-bg p-4 shadow-lg"
+          className="absolute right-0 top-[calc(100%+6px)] z-[80] w-[380px] max-w-[calc(100vw-2rem)] rounded-[10px] border border-line bg-bg p-4 shadow-lg"
         >
           {/* Keyed on the site so switching while open starts clean rather
               than showing one site's plan under another's name. */}

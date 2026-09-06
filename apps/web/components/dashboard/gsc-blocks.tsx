@@ -387,7 +387,7 @@ export function IndexCoverageBlock({ coverage, connected, hasData, needsReconnec
   ];
   return (
     <div>
-      <div className="grid grid-cols-3 gap-px bg-line border-b border-line">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-line border-b border-line">
         {cells.map((c) => (
           <div key={c.bucket} className="bg-bg px-4 py-3">
             <div className="mb-1.5"><IndexBadge bucket={c.bucket} /></div>

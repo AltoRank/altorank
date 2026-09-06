@@ -80,7 +80,7 @@ export function PlanningSkeleton({
       aria-live="polite"
       aria-label={`Planning ${count} articles over the next ${PLAN_HORIZON_DAYS} days`}
     >
-      <div className="grid grid-cols-7 border-b border-line bg-panel">
+      <div className="grid grid-cols-7 min-w-[640px] border-b border-line bg-panel">
         {DAYS.map((d) => (
           <div
             key={d}
@@ -91,7 +91,7 @@ export function PlanningSkeleton({
         ))}
       </div>
 
-      <div className="grid grid-cols-7">
+      <div className="grid grid-cols-7 min-w-[640px]">
         {Array.from({ length: pad }, (_, i) => (
           <div
             key={`pad-${i}`}

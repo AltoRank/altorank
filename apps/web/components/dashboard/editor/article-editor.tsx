@@ -629,7 +629,10 @@ export function ArticleEditor({
 
   return (
     <EditorAiContext.Provider value={aiContext}>
-    <div className="flex-1 grid min-h-0" style={{ gridTemplateColumns: `${reviewingRewrite ? 440 : 280}px 1fr 340px` }}>
+    {/* Below md the three panes keep their desktop widths and the wrapper
+        scrolls sideways; the page itself never does. */}
+    <div className="flex-1 min-h-0 flex flex-col overflow-x-auto md:overflow-x-visible">
+    <div className="flex-1 grid min-h-0 min-w-[960px] md:min-w-0" style={{ gridTemplateColumns: `${reviewingRewrite ? 440 : 280}px 1fr 340px` }}>
       {/* Rewrite panel: the whole-article proposal, reviewed hunk by hunk.
           It gets more room while a review is open so blocks read as prose. */}
       <RewritePanel
@@ -1180,6 +1183,7 @@ export function ArticleEditor({
           router.refresh();
         }}
       />
+    </div>
     </div>
     </EditorAiContext.Provider>
   );

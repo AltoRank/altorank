@@ -46,10 +46,13 @@ function StatusDot({ status }: { status: Workspace["status"] }) {
 export function WorkspaceSwitcher({
   collapsed = false,
   allowance = null,
+  inline = false,
 }: {
   collapsed?: boolean;
   /** Null when unknown; the footer then shows a dash rather than a number. */
   allowance?: SiteAllowance;
+  /** Just the control, no label or panel chrome: the mobile top bar. */
+  inline?: boolean;
 }) {
   const { workspaces, active, setActiveId } = useWorkspace();
   const router = useRouter();
@@ -105,10 +108,12 @@ export function WorkspaceSwitcher({
   }
 
   return (
-    <div className="border-b border-line px-3 py-2.5" ref={ref}>
-      <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-ink-3">
-        Site
-      </label>
+    <div className={cn(!inline && "border-b border-line px-3 py-2.5")} ref={ref}>
+      {!inline && (
+        <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-ink-3">
+          Site
+        </label>
+      )}
       <div className="relative">
         <button
           type="button"
@@ -197,7 +202,7 @@ export function WorkspaceSwitcher({
       </div>
       {/* The site's on/off switch lives with its name: pausing is about the
           scope, not about any one page below it. */}
-      {active && (
+      {active && !inline && (
         <div className="mt-1 flex items-center gap-2">
           {active.status === "paused" && (
             <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-3">Paused</span>

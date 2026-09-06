@@ -209,7 +209,7 @@ export default async function DashboardLayout({
   const content = (
     <TooltipProvider delayDuration={150}>
     <WorkspaceProvider workspaces={workspaces} initialId={initialWorkspaceId}>
-      <div className="flex h-screen min-h-[720px] flex-col">
+      <div className="flex h-dvh min-h-[720px] flex-col">
       {/* Both bars can be up at once - an operator can be impersonating and
           previewing - and they stack rather than compete, because each says a
           different true thing about why the app is behaving oddly. */}
@@ -224,7 +224,9 @@ export default async function DashboardLayout({
           startedAt={impersonation.startedAt}
         />
       )}
-      <div className="grid flex-1 min-h-0" style={{ gridTemplateColumns: "auto 1fr" }}>
+      {/* Below md the sidebar is a slide-over and its top bar stacks above
+          the page; from md up it is the left column it always was. */}
+      <div className="flex flex-1 min-h-0 flex-col md:grid md:grid-cols-[auto_1fr]">
         <Sidebar
           badges={{ articles: articleCount ?? 0 }}
           hidden={hiddenNav}
@@ -239,8 +241,11 @@ export default async function DashboardLayout({
             below it, and its two live controls moved into the sidebar, where
             they survive being collapsed. `PageHead` now occupies that row and
             lines the page title up with the mark. */}
-        <div className="flex flex-col min-h-0 bg-bg">
-          <main className="flex-1 flex flex-col min-h-0 overflow-hidden">{children}</main>
+        <div className="flex flex-col min-h-0 min-w-0 overflow-x-hidden bg-bg">
+          <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {/* banners */}
+            {children}
+          </main>
           <FeedbackWidget />
           {process.env.NODE_ENV === "development" && (
             <DevToolbar simulation={simulation} />
