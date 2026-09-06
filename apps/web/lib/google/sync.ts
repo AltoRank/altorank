@@ -7,7 +7,7 @@
 // the last week, and the person lands on the workspace with the numbers.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getValidAccessToken } from "@/lib/google/oauth";
+import { getValidAccessToken, isGoogleReconnectError } from "@/lib/google/oauth";
 import { fetchGA4Metrics } from "@/lib/google/ga4";
 import {
   fetchGSCDailyTotals,
@@ -24,9 +24,27 @@ export type SyncableIntegration = {
   tokens: { encrypted?: string } | null;
   config: { ga4PropertyId?: string; gscSiteUrl?: string } | null;
   workspace: { id: string; domain: string | null } | null;
+  /** Migration 070: Google refused the refresh token; only a reconnect clears it. */
+  needs_reconnect?: boolean | null;
 };
 
-export type SyncResult = { workspaceId: string; ga4: number; gsc: number; error?: string };
+export type SyncResult = { workspaceId: string; ga4: number; gsc: number; error?: string; needsReconnect?: boolean };
+
+/** The result for a connection that is waiting on the person, not on Google. */
+export const NEEDS_RECONNECT_MESSAGE = "Google disconnected: the stored token was refused. Reconnect Google to resume syncing.";
+
+/**
+ * Record that Google refused this workspace's token. The gsc and ga4 rows
+ * hold the same token (one consent grants both, see the OAuth callback), so
+ * both are marked; the callback clears both when it writes fresh tokens.
+ */
+export async function markGoogleNeedsReconnect(supabase: SupabaseClient, workspaceId: string, message: string): Promise<void> {
+  await supabase
+    .from("workspace_integrations")
+    .update({ needs_reconnect: true, last_sync_error: message.slice(0, 500) })
+    .eq("workspace_id", workspaceId)
+    .in("integration_id", ["gsc", "ga4"]);
+}
 
 /**
  * The Search Console property this integration reads, resolved once and
@@ -70,6 +88,9 @@ export async function syncWorkspaceAnalytics(
   if (!ws) return { workspaceId: "", ga4: 0, gsc: 0, error: "no workspace" };
   const encrypted = integration.tokens?.encrypted;
   if (!encrypted) return { workspaceId: ws.id, ga4: 0, gsc: 0, error: "no tokens" };
+  // A dead token stays dead until the person reconnects. Asking Google again
+  // every night only adds a refused request to the log; the row says why.
+  if (integration.needs_reconnect) return { workspaceId: ws.id, ga4: 0, gsc: 0, error: NEEDS_RECONNECT_MESSAGE, needsReconnect: true };
 
   try {
     const accessToken = await getValidAccessToken(encrypted, async (newEncrypted) => {
@@ -123,7 +144,16 @@ export async function syncWorkspaceAnalytics(
 
     return { workspaceId: ws.id, ga4: ga4Count, gsc: gscCount };
   } catch (err) {
-    return { workspaceId: ws.id, ga4: 0, gsc: 0, error: err instanceof Error ? err.message : "Unknown error" };
+    const message = err instanceof Error ? err.message : "Unknown error";
+    // invalid_grant / 401 from the refresh: the connection needs the person,
+    // so the row is marked and the product stops reporting "Connected".
+    // Any other failure (a 5xx, a property that vanished) is the night's
+    // error and nothing more; tomorrow's run tries again.
+    if (isGoogleReconnectError(err)) {
+      await markGoogleNeedsReconnect(supabase, ws.id, message);
+      return { workspaceId: ws.id, ga4: 0, gsc: 0, error: message, needsReconnect: true };
+    }
+    return { workspaceId: ws.id, ga4: 0, gsc: 0, error: message };
   }
 }
 

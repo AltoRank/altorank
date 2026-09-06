@@ -83,7 +83,20 @@ describe("syncHealthFor", () => {
     seed.workspace_integrations = [];
     const { syncHealthFor } = await import("../queries");
     const h = await syncHealthFor(WORKSPACE_A);
-    expect(h).toEqual({ connected: false, connectedAt: null, siteUrl: null, lastSyncAt: null, latestMetricDate: null });
+    expect(h).toEqual({ connected: false, connectedAt: null, siteUrl: null, lastSyncAt: null, latestMetricDate: null, needsReconnect: false, lastSyncError: null });
+  });
+  it("carries the refused-token flag and its reason off the connection row", async () => {
+    seed.workspace_integrations = seed.workspace_integrations.map((r) =>
+      r.workspace_id === WORKSPACE_A ? { ...r, needs_reconnect: true, last_sync_error: "invalid_grant" } : r,
+    );
+    const { syncHealthFor } = await import("../queries");
+    const a = await syncHealthFor(WORKSPACE_A);
+    expect(a.connected).toBe(true);
+    expect(a.needsReconnect).toBe(true);
+    expect(a.lastSyncError).toBe("invalid_grant");
+    const b = await syncHealthFor(WORKSPACE_B);
+    expect(b.needsReconnect).toBe(false);
+    expect(b.lastSyncError).toBeNull();
   });
 });
 

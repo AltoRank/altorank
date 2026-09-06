@@ -342,3 +342,12 @@ policies on `storage.objects` keyed on the workspace folder segment via
 private: the app now mails and opens signed URLs, and `reports.url` holds the object
 path rather than a public link (old rows are read either way). Requires 053. No data
 change. Detect with `exists (select 1 from storage.buckets where id='reports' and not public)`.
+## 070 — added 2026-09-06
+
+`070_google_needs_reconnect.sql`: adds `workspace_integrations.needs_reconnect boolean not null default false`
+and `workspace_integrations.last_sync_error text`. The nightly analytics sync sets them when Google refuses
+the stored refresh token (`invalid_grant` / 401); the OAuth callback clears them on reconnect; the settings
+Search Console tab, the dashboard's Search Console blocks and the agent's `sync` block read them. Idempotent
+(`add column if not exists`), no data change, depends on 001 only. Pre-flight:
+`exists (select 1 from col where t='workspace_integrations' and c='needs_reconnect')`. Roll back with
+`alter table workspace_integrations drop column needs_reconnect, drop column last_sync_error;`.

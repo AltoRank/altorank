@@ -26,6 +26,8 @@ export interface WorkspaceSettings {
   keywordPrompt: string;
   /** Search Console: a token row exists for this workspace. */
   gscConnected: boolean;
+  /** The row exists but Google refused its token (migration 070): reconnect. */
+  gscNeedsReconnect: boolean;
   /** Newest GSC metric date synced for this workspace, or null when nothing has. */
   gscLastDate: string | null;
 }
@@ -35,7 +37,7 @@ export async function getWorkspaceSettings(): Promise<WorkspaceSettings | null> 
   if (!scopeId) return null;
 
   const supabase = await createClient();
-  const [{ data: ws }, { data: output }, { count: gscCount }, { data: latest }] = await Promise.all([
+  const [{ data: ws }, { data: output }, { data: gscRow }, { data: latest }] = await Promise.all([
     supabase
       .from("workspaces")
       .select("id, name, domain, business_profile, sitemap_url, blog_root_url, example_article_urls")
@@ -45,9 +47,10 @@ export async function getWorkspaceSettings(): Promise<WorkspaceSettings | null> 
     supabase.from("workspace_output_settings").select("*").eq("workspace_id", scopeId).maybeSingle(),
     supabase
       .from("workspace_integrations")
-      .select("id", { count: "exact", head: true })
+      .select("id, needs_reconnect")
       .eq("workspace_id", scopeId)
-      .eq("integration_id", "gsc"),
+      .eq("integration_id", "gsc")
+      .maybeSingle(),
     supabase
       .from("analytics_metrics")
       .select("metric_date")
@@ -80,7 +83,8 @@ export async function getWorkspaceSettings(): Promise<WorkspaceSettings | null> 
     },
     output: outputFromRow(output as OutputSettingsRow | null),
     keywordPrompt: (output as { global_keyword_prompt?: string | null } | null)?.global_keyword_prompt ?? "",
-    gscConnected: (gscCount ?? 0) > 0,
+    gscConnected: Boolean(gscRow),
+    gscNeedsReconnect: Boolean(gscRow?.needs_reconnect),
     gscLastDate: (latest?.metric_date as string | undefined) ?? null,
   };
 }

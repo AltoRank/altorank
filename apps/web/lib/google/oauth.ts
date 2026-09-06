@@ -78,6 +78,43 @@ export async function exchangeCode(code: string): Promise<GoogleTokens> {
 }
 
 /**
+ * Google refused the refresh token itself, not a single request: the person
+ * revoked access, the account's password changed, the token aged out, or the
+ * app's OAuth client changed. No retry will succeed; only a new consent will.
+ * Callers that hold a connection row mark it needs_reconnect on this error
+ * (lib/google/sync.ts) so the product stops asking and the person is told.
+ */
+export class GoogleReconnectError extends Error {
+  readonly needsReconnect = true;
+  constructor(message: string) {
+    super(message);
+    this.name = "GoogleReconnectError";
+  }
+}
+
+export function isGoogleReconnectError(err: unknown): err is GoogleReconnectError {
+  return err instanceof GoogleReconnectError || (typeof err === "object" && err !== null && (err as { needsReconnect?: unknown }).needsReconnect === true);
+}
+
+/**
+ * Whether a failed refresh means the token is dead rather than the call
+ * having failed. Google returns 400 `invalid_grant` for a revoked or expired
+ * refresh token and 401 `invalid_client` for a client it no longer knows;
+ * a 5xx or a network error is neither, and those are worth trying again
+ * tomorrow.
+ */
+export function refreshFailureNeedsReconnect(status: number, body: string): boolean {
+  if (status === 401) return true;
+  if (status !== 400) return false;
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown };
+    return parsed.error === "invalid_grant";
+  } catch {
+    return /invalid_grant/.test(body);
+  }
+}
+
+/**
  * Refresh an expired access token.
  */
 export async function refreshTokens(refreshToken: string): Promise<GoogleTokens> {
@@ -96,6 +133,11 @@ export async function refreshTokens(refreshToken: string): Promise<GoogleTokens>
 
   if (!res.ok) {
     const err = await res.text();
+    if (refreshFailureNeedsReconnect(res.status, err)) {
+      throw new GoogleReconnectError(
+        `Google no longer accepts this connection's refresh token (${res.status}: ${err.trim().slice(0, 200)}). Reconnect Google to resume syncing.`,
+      );
+    }
     throw new Error(`Google token refresh failed: ${err}`);
   }
 

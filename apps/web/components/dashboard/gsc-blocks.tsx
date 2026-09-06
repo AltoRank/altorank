@@ -25,13 +25,33 @@ type GateProps = {
   connected: boolean;
   /** Any Search Console row at all for this workspace. */
   hasData: boolean;
+  /**
+   * Google refused the stored token (migration 070). The rows below, if any,
+   * stop at the last successful sync and will not move until a person
+   * reconnects; the block says so instead of looking merely slow.
+   */
+  needsReconnect?: boolean;
   /** Short name of what the block would show, for the locked-state sentence. */
   children: React.ReactNode;
   /** Compact variant for a card that is a list rather than a chart. */
   dense?: boolean;
 };
 
-export function GscGate({ connected, hasData, children, dense = false }: GateProps) {
+export function GscGate({ connected, hasData, needsReconnect = false, children, dense = false }: GateProps) {
+  if (connected && needsReconnect) {
+    return (
+      <div className={dense ? "py-2" : "min-h-[220px] grid place-items-center"}>
+        <ConnectPrompt
+          icon="trend"
+          service="Google Search Console"
+          title="Google disconnected - reconnect to resume syncing"
+          body="Google no longer accepts the token this site was connected with, so the nightly sync has stopped. Nothing here is estimated: what is shown ends at the last successful sync. Reconnecting takes one consent screen."
+          href="/settings/search-console"
+          cta="Reconnect Google"
+        />
+      </div>
+    );
+  }
   if (!connected) {
     return (
       <div className={dense ? "py-2" : "min-h-[220px] grid place-items-center"}>
@@ -119,9 +139,9 @@ function Series({ label, current, previous, gradientId }: { label: string; curre
  * would put a number in the hundreds beside one in the tens of thousands
  * and flatten the one that matters.
  */
-export function SearchPerformanceBlock({ perf, connected }: { perf: SearchPerformance; connected: boolean }) {
+export function SearchPerformanceBlock({ perf, connected, needsReconnect }: { perf: SearchPerformance; connected: boolean; needsReconnect?: boolean }) {
   return (
-    <GscGate connected={connected} hasData={perf.hasData}>
+    <GscGate connected={connected} hasData={perf.hasData} needsReconnect={needsReconnect}>
       {!perf.hasClicks && perf.impressions.current === 0 && (perf.impressions.previous ?? 0) === 0 ? (
         // Synced, and the measurement is zero. Drawing a flat line would be a
         // claim about the site rather than about the data.
@@ -161,6 +181,16 @@ export function describeChange(c: { current: number; previous: number | null; ch
 
 export function DataFreshness({ health, now = new Date() }: { health: SyncHealth | null; now?: Date }) {
   if (!health?.connected) return null;
+  // A refused token is not a slow sync: say so, and where to fix it, rather
+  // than letting "synced 12 days ago" stand as the only clue.
+  if (health.needsReconnect) {
+    return (
+      <div className="font-mono text-[11px] text-err-ink" title={health.lastSyncError ?? undefined}>
+        Google disconnected · last synced {relativeTime(health.lastSyncAt, now)} ·{" "}
+        <Link href="/settings/search-console" className="underline decoration-line underline-offset-2">reconnect</Link>
+      </div>
+    );
+  }
   const next = nextSyncClock(now);
   return (
     <div className="font-mono text-[11px] text-ink-3" title={health.latestMetricDate ? `Newest day reported by Google: ${health.latestMetricDate}` : undefined}>
@@ -185,9 +215,9 @@ function Delta({ value }: { value: number | null }) {
   return <span className={value > 0 ? "text-ok-ink" : "text-err-ink"}>{value > 0 ? "+" : "−"}{Math.abs(value).toLocaleString()}</span>;
 }
 
-export function BestArticlesBlock({ pages, connected, hasData, days }: { pages: PageStat[]; connected: boolean; hasData: boolean; days: number }) {
+export function BestArticlesBlock({ pages, connected, hasData, days, needsReconnect }: { pages: PageStat[]; connected: boolean; hasData: boolean; days: number; needsReconnect?: boolean }) {
   return (
-    <GscGate connected={connected} hasData={hasData} dense>
+    <GscGate connected={connected} hasData={hasData} needsReconnect={needsReconnect} dense>
       {pages.length === 0 ? (
         <div className="px-3.5 py-6 text-center text-[13px] text-ink-3">
           Google reported no page with a click or an impression in the last {days} days.
@@ -257,9 +287,9 @@ export function OpportunitiesList({ opportunities }: { opportunities: QueryStat[
 // Cannibalization
 // ---------------------------------------------------------------------------
 
-export function CannibalizationBlock({ items, connected, hasData, days }: { items: Cannibalization[]; connected: boolean; hasData: boolean; days: number }) {
+export function CannibalizationBlock({ items, connected, hasData, days, needsReconnect }: { items: Cannibalization[]; connected: boolean; hasData: boolean; days: number; needsReconnect?: boolean }) {
   return (
-    <GscGate connected={connected} hasData={hasData} dense>
+    <GscGate connected={connected} hasData={hasData} needsReconnect={needsReconnect} dense>
       {items.length === 0 ? (
         <div className="px-3.5 py-6 text-center text-[13px] text-ink-3">
           No query in the last {days} days had two of this site&apos;s pages ranking for it. That is a measurement over the
@@ -338,7 +368,7 @@ export function IndexBadge({ bucket, title }: { bucket: CoverageBucket; title?: 
   );
 }
 
-export function IndexCoverageBlock({ coverage, connected, hasData }: { coverage: IndexCoverage; connected: boolean; hasData: boolean }) {
+export function IndexCoverageBlock({ coverage, connected, hasData, needsReconnect }: { coverage: IndexCoverage; connected: boolean; hasData: boolean; needsReconnect?: boolean }) {
   // Coverage is measured partly without Search Console (URL inspection
   // needs it, but knowing the pages exist does not), so the gate only
   // applies when we hold no measurement of any kind.
@@ -372,7 +402,9 @@ export function IndexCoverageBlock({ coverage, connected, hasData }: { coverage:
           ? `${coverage.byInspection} measured by URL inspection, ${coverage.bySearch} by appearing in search.`
           : connected && hasData
             ? "Nothing measured yet: no page has appeared in search and none has been inspected. “Check indexing” on an article asks Google directly."
-            : connected
+            : connected && needsReconnect
+              ? "Google disconnected: the stored token was refused, so no page can be inspected until Google is reconnected in Settings."
+              : connected
               ? "Search Console is connected but has returned no rows yet, so every page is unknown until it does."
               : "Without Search Console, pages stay unknown until one is inspected. A page that answered our own fetch with a 200 is not indexed for having done so."}
       </div>

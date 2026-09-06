@@ -77,6 +77,10 @@ export function syncBlock(health: SyncHealth) {
     site_url: health.siteUrl,
     last_sync_at: health.lastSyncAt,
     latest_metric_date: health.latestMetricDate,
+    // True when Google refused the stored token: the numbers below stop at
+    // last_sync_at and will not move until a person reconnects in Settings.
+    needs_reconnect: health.needsReconnect,
+    last_sync_error: health.lastSyncError,
   };
 }
 

@@ -110,6 +110,10 @@ export async function GET(request: NextRequest) {
           config: { type: id },
           tokens: { encrypted },
           connected_at: new Date().toISOString(),
+          // Fresh consent, fresh token: a row the nightly sync had marked
+          // dead (migration 070) is live again.
+          needs_reconnect: false,
+          last_sync_error: null,
         })),
         { onConflict: "workspace_id,integration_id" },
       );
@@ -142,8 +146,9 @@ export async function GET(request: NextRequest) {
         if (!site && !property) continue;
         const rows: Record<string, unknown>[] = [];
         const connectedAt = new Date().toISOString();
-        if (site) rows.push({ workspace_id: ws.id, integration_id: "gsc", config: { type: "gsc", gscSiteUrl: site.siteUrl }, tokens: { encrypted }, connected_at: connectedAt });
-        if (property) rows.push({ workspace_id: ws.id, integration_id: "ga4", config: { type: "ga4", ga4PropertyId: property.propertyId }, tokens: { encrypted }, connected_at: connectedAt });
+        const fresh = { tokens: { encrypted }, connected_at: connectedAt, needs_reconnect: false, last_sync_error: null };
+        if (site) rows.push({ workspace_id: ws.id, integration_id: "gsc", config: { type: "gsc", gscSiteUrl: site.siteUrl }, ...fresh });
+        if (property) rows.push({ workspace_id: ws.id, integration_id: "ga4", config: { type: "ga4", ga4PropertyId: property.propertyId }, ...fresh });
         await supabase.from("workspace_integrations").upsert(rows, { onConflict: "workspace_id,integration_id" });
         if (ws.id !== workspaceId) alsoConnected++;
       }
