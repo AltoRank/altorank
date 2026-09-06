@@ -1,7 +1,8 @@
 /**
  * HTML to Markdown, and llms.txt, for sites we do not control.
  *
- * `apps/marketing/scripts/generate-agent-files.mjs` does this for AltoRank's
+ * `scripts/generate-agent-files.mjs` in AltoRank/altorank-marketing does this
+ * for AltoRank's
  * own site at build time. It can assume a lot: it reads the built `dist/`, it
  * knows the sitemap is already on disk, and it strips chrome via
  * `data-print-hide`, a marker we put there ourselves.

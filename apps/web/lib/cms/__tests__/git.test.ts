@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { resolveContentPath, buildFrontmatter } from "../git";
 
+// A representative contentPath. Nothing reads this directory; the tests only
+// check how resolveContentPath joins and sanitises a path.
 const DIR = "apps/marketing/src/content/blog";
 
 describe("resolveContentPath — path traversal", () => {
