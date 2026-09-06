@@ -125,12 +125,9 @@ const structuredData = [
           </thead>
           <tbody>
             {TLDR_ROWS.map((row, i) => (
-              <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+              <tr class={`${i > 0 ? 'border-t border-line-soft' : ''} ${row.ours ? 'bg-accent-soft/30 font-semibold text-ink' : ''}`}>
                 <td class="px-5 py-4 font-medium">
                   {row.name}
-                  {row.ours && (
-                    <span class="ml-2 rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-accent-ink">ours</span>
-                  )}
                 </td>
                 <td class="px-5 py-4 text-ink-2">{row.bestFor}</td>
                 <td class="px-5 py-4 text-ink-2">{row.publishing}</td>
@@ -198,11 +195,11 @@ const structuredData = [
       </p>
       <div class="mb-6 grid gap-3 sm:grid-cols-2">
         <div class="rounded-lg border border-line bg-panel p-5">
-          <div class="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Trustpilot</div>
+          <div class="text-[12.5px] font-medium text-ink-3">Trustpilot</div>
           <div class="mt-1 text-[15px] font-medium text-ink">29 reviews, 2.9 out of 5, 52% one-star. Since March 2026, eight of ten negative reviews are about billing rather than the product, and the company has not replied to any review since 6 March 2026. The first review on the page is the founder&rsquo;s own five stars.</div>
         </div>
         <div class="rounded-lg border border-line bg-panel p-5">
-          <div class="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Independent tests</div>
+          <div class="text-[12.5px] font-medium text-ink-3">Independent tests</div>
           <div class="mt-1 text-[15px] font-medium text-ink">aboahreviews (90 days, 3 sites, 36 articles): 40% of articles &ldquo;required more significant work&rdquo;, no editorial gate by default, no rank tracking or Search Console. Their AI-visibility tracking is still &ldquo;Coming Soon&rdquo;.</div>
         </div>
       </div>
@@ -248,8 +245,8 @@ const structuredData = [
       </div>
 
       <div class="mt-10 flex flex-wrap gap-2.5">
-        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
-        <Button href="/open-source" variant="secondary" size="lg">Read the licence</Button>
+        <Button href={PRIMARY_CTA.href} arrow size="sm">{PRIMARY_CTA.label}</Button>
+        <Button href="/open-source" variant="secondary" size="sm">Read the licence</Button>
       </div>
     </div>
   </section>

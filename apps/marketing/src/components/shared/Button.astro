@@ -15,7 +15,6 @@ interface Props {
   /** Renders an <a> when set, a <button> otherwise. */
   href?: string;
   variant?: 'primary' | 'secondary' | 'light' | 'ghost-dark';
-  size?: 'sm' | 'md' | 'lg';
   /** Full width and a taller tap target below sm. */
   block?: boolean;
   /** Trailing chevron. Was hand-pasted at 11 call sites. */
@@ -29,7 +28,6 @@ interface Props {
 const {
   href,
   variant = 'primary',
-  size = 'md',
   block = false,
   arrow = false,
   type = 'button',
@@ -40,8 +38,8 @@ const {
 
 const classes = [
   'btn',
+  'btn-sm',
   `btn-${variant}`,
-  size !== 'md' && `btn-${size}`,
   block && 'btn-block',
   className,
 ]

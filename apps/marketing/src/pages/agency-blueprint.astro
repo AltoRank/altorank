@@ -2,7 +2,7 @@
 import PSEO from '@/layouts/PSEO.astro';
 import Button from '@/components/shared/Button.astro';
 import { buildArticleSchema, buildFAQSchema } from '@/lib/schema';
-import { APP_NAME, SITE_URL, AUTHOR_NAME, AUTHOR_URL, OSS_REPO_PUBLIC, PILOT_START } from '@/constants';
+import { APP_NAME, SITE_URL, AUTHOR_NAME, AUTHOR_URL, OSS_REPO_PUBLIC } from '@/constants';
 import { PLANS } from '@/data/pricing';
 
 // Outreach artifact. This is the page you send when an agency asks "so what are
@@ -94,14 +94,14 @@ const AGENCY_LAYER = [
   },
   {
     title: 'White-label is ungated, including in the free build',
-    body: 'The logo, accent colour, custom domain, and the address monthly reports are sent from are account-level settings, applied to everything a client sees. This is not an upsell: under the licence there are no feature gates, so the self-hosted build carries the same white-label and multi-tenant capability as the paid rungs. Anyone selling you client-facing branding as a premium tier is charging for something we do not gate.',
+    body: 'The agency name, accent colour and the address monthly reports are sent from are account-level settings, applied to everything a client sees. This is not an upsell: under the licence there are no feature gates, so the self-hosted build carries the same white-label and multi-tenant capability as the paid rungs. Anyone selling you client-facing branding as a premium tier is charging for something we do not gate.',
   },
   {
     title: 'Three roles, so a writer cannot rebrand the account',
     body: 'Owner, admin, and editor. Editors draft, review, and approve content but cannot touch billing, branding, or the client roster, and changing white-label settings is restricted to owner and admin. That is the split that matters once a junior writer is working inside a live client brand rather than a sandbox.',
   },
   {
-    title: 'Approval sits inside publish, with optional client sign-off',
+    title: 'Approval sits inside publish',
     body: 'The gate is part of the publish step rather than a status field beside it, so scheduled jobs and bulk actions cannot route around it, and publishing defaults to draft. Add the client as a reviewer and the trail records who approved which version and when, which is the artifact you want when a client asks why a page went live.',
   },
   {
@@ -142,8 +142,8 @@ const FAQS = [
     answer: 'No, and this is worth being precise about because most tools in this category do lock it. White-label branding and multi-client workspaces are ungated, including in the free self-hosted build. The paid rungs sell hosting, included model and data costs, volume, roles, and support, not access to client-facing branding.',
   },
   {
-    question: 'Can a client approve their own content before it goes live?',
-    answer: 'Yes. Client sign-off is an optional second gate on top of your own editorial approval, and publishing defaults to draft either way. The audit trail records which version was approved and by whom, so the answer to \u201cwho signed off on this page\u201d is a record rather than a memory.',
+    question: 'Who approves content before it goes live?',
+    answer: 'A named member of your team. Approval is the editorial gate: nothing is published until someone with access to that workspace approves it, publishing defaults to draft either way, and every article records who approved it and when. There is no separate client-facing sign-off step today; if a client needs to review, give them an editor seat on their own workspace.',
   },
   {
     question: 'Why would you give away the parts other tools charge for?',
@@ -168,7 +168,7 @@ const structuredData = [
 ---
 
 <PSEO
-  title="White-label SEO content software for agencies"
+  title="Agency Blueprint: Running SEO Content Across a Client Roster"
   description="Multi-client workspaces, ungated white-label, approval before publish. What AltoRank is building for agencies, what it costs, and data from 1,758 agency sites."
   breadcrumbs={breadcrumbs}
   structuredData={structuredData}
@@ -376,7 +376,7 @@ const structuredData = [
           </li>
           <li class="flex items-start gap-2.5">
             <span class="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-ok"></span>
-            <span>Early engagements are being lined up now. The first pilots start in {PILOT_START.en}.</span>
+            <span>Early engagements are being lined up now.</span>
           </li>
           <li class="flex items-start gap-2.5">
             <span class="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-ok"></span>

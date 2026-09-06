@@ -29,11 +29,11 @@ const copy = chrome(lang).cta;
     {/* The secondary used to be href="#", a dead anchor shipping on every PSEO
         page. PRIMARY_CTA decides the primary from one place, so the label and
         destination stay in step with the nav and the homepage hero. */}
-    <div class="flex flex-col items-stretch gap-2.5 sm:inline-flex sm:flex-row sm:flex-wrap sm:justify-center">
-      <Button href={PRIMARY_CTA.href} size="lg" block arrow>
+    <div class="flex flex-col items-stretch gap-2.5 sm:inline-flex sm:flex-row sm:flex-wrap">
+      <Button href={PRIMARY_CTA.href} block arrow>
   {copy.label}
 </Button>
-      <Button href="/open-source" variant="secondary" size="lg" block>
+      <Button href="/open-source" variant="secondary" block>
   {copy.secondary}
 </Button>
     </div>

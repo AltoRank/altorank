@@ -54,6 +54,10 @@ const tools = defineCollection({
       'robots-txt',
       'schema-generator',
       'slug-generator',
+      'keyword-cluster',
+      'keyword-gap',
+      'internal-links',
+      'brief-template',
     ]).optional(),
     // Optional ordered steps. When present, the page emits HowTo schema and can
     // render the method as a numbered walkthrough.

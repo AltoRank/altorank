@@ -1,21 +1,30 @@
 ---
 import ToolShell from './ToolShell.astro';
+import Button from '@/components/shared/Button.astro';
 ---
 <ToolShell label="URL slug generator">
   <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="sl-in">Titles, one per line</label>
   <textarea id="sl-in" rows="5" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft">How to Write Meta Descriptions That Earn Clicks
 The 10 Best SEO Tools for Agencies in 2026
-Café & Bar Menus: A Complete Guide</textarea>
-  <div class="mt-3 flex flex-wrap items-center gap-4">
-    <label class="flex items-center gap-2 text-[13px] text-ink-2"><input id="sl-stop" type="checkbox" class="h-4 w-4" /> Drop filler words</label>
-    <label class="flex items-center gap-2 text-[13px] text-ink-2"><input id="sl-nums" type="checkbox" checked class="h-4 w-4" /> Keep numbers</label>
-    <label class="flex items-center gap-2 text-[13px] text-ink-2">Max words <input id="sl-max" type="number" min="1" max="20" value="8" class="w-16 rounded-[9px] border border-line bg-bg px-2 py-1 text-[13px] text-ink" /></label>
+Café & Bar Menus: A Complete Guide
+Straße, Øresund and Łódź: Slugs for European Names</textarea>
+  <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
+    <label class="flex min-h-11 items-center gap-2 text-[13px] text-ink-2"><input id="sl-stop" type="checkbox" class="h-4 w-4" /> Drop filler words</label>
+    <label class="flex min-h-11 items-center gap-2 text-[13px] text-ink-2"><input id="sl-nums" type="checkbox" checked class="h-4 w-4" /> Keep numbers</label>
+    <label class="flex min-h-11 items-center gap-2 text-[13px] text-ink-2">Max words <input id="sl-max" type="number" min="1" max="20" value="8" class="min-h-11 w-16 rounded-[9px] border border-line bg-bg px-2 py-1 text-[13px] text-ink" /></label>
+    <label class="flex min-h-11 items-center gap-2 text-[13px] text-ink-2">Separator
+      <select id="sl-sep" class="min-h-11 rounded-[9px] border border-line bg-bg px-2 py-1 text-[13px] text-ink">
+        <option value="-">hyphen</option>
+        <option value="_">underscore</option>
+      </select>
+    </label>
+    <span class="ml-auto"><Button variant="secondary" size="sm" data-sl="copyall">Copy all</Button></span>
   </div>
   <div class="mt-4 overflow-hidden rounded-lg border border-line bg-bg" data-sl="out"></div>
   <p class="mt-3 text-[12.5px] leading-relaxed text-ink-3">
     Accents are transliterated rather than stripped, so &ldquo;café&rdquo; becomes <code>cafe</code> and not
-    <code>caf</code>. If a page is already live and ranking, changing its slug costs you the ranking unless
-    you redirect it &mdash; renaming is rarely worth it.
+    <code>caf</code>, and &ldquo;Straße&rdquo; becomes <code>strasse</code>. If a page is already live and
+    ranking, changing its slug costs you the ranking unless you redirect it &mdash; renaming is rarely worth it.
   </p>
 </ToolShell>
 
@@ -25,41 +34,61 @@ Café & Bar Menus: A Complete Guide</textarea>
     const out = document.querySelector('[data-sl="out"]');
     if (!ta || !out) return;
     const STOP = new Set('a an the and or but of to in on at for with by from as is are that this these those how what why your you'.split(' '));
+    const DANGLE = new Set('a an the and or but of to in on at for with by from as is are that this these those'.split(' '));
+    // Letters NFKD does not decompose into a base letter plus a mark. Without
+    // this table "Straße" slugs to "strae" and "Łódź" to "d".
+    const SPECIAL: Record<string, string> = { 'ß': 'ss', 'æ': 'ae', 'œ': 'oe', 'ø': 'o', 'đ': 'd', 'ð': 'd', 'ł': 'l', 'þ': 'th', 'ı': 'i', 'ħ': 'h', 'ŧ': 't', 'ŋ': 'ng', 'ĸ': 'k' };
+    const esc = (x: string) => x.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] as string));
     const slugify = (title: string) => {
       const stop = (document.getElementById('sl-stop') as HTMLInputElement).checked;
       const nums = (document.getElementById('sl-nums') as HTMLInputElement).checked;
       const max = parseInt((document.getElementById('sl-max') as HTMLInputElement).value, 10) || 8;
-      let s = title.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
+      const sep = (document.getElementById('sl-sep') as HTMLSelectElement).value || '-';
+      let s = title.toLowerCase().replace(/[ßæœøđðłþıħŧŋĸ]/g, (c) => SPECIAL[c] ?? c);
+      s = s.normalize('NFKD').replace(/[̀-ͯ]/g, '');
       s = s.replace(/&/g, ' and ').replace(/['’]/g, '');
-      let words = s.replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/).filter(Boolean);
+      let words = s.replace(/[^a-z0-9\s-]/g, ' ').replace(/-/g, ' ').split(/\s+/).filter(Boolean);
       if (!nums) words = words.filter((w) => !/^\d+$/.test(w));
       if (stop) { const kept = words.filter((w) => !STOP.has(w)); if (kept.length) words = kept; }
       words = words.slice(0, max);
       // Slicing to a word limit can leave a dangling preposition:
       // "the 10 best seo tools for agencies in 2026" cut at 8 words ends
       // "...agencies in". Trim trailing filler so the slug ends on a real word.
-      const DANGLE = new Set('a an the and or but of to in on at for with by from as is are that this these those'.split(' '));
       while (words.length > 1 && DANGLE.has(words[words.length - 1])) words.pop();
-      return words.join('-');
+      return words.join(sep);
     };
+    let all: string[] = [];
     const render = () => {
       const rows = ta.value.split('\n').map((t) => t.trim()).filter(Boolean);
+      all = rows.map(slugify);
       if (!rows.length) { out.innerHTML = '<p class="p-5 text-[13.5px] text-ink-3">Add a title to see its slug.</p>'; return; }
       out.innerHTML = rows.map((t, i) => {
-        const slug = slugify(t);
-        const esc = (x: string) => x.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
+        const slug = all[i];
+        const long = slug.length > 75;
         return `<div class="${i > 0 ? 'border-t border-line-soft' : ''} p-3.5">
           <div class="mb-1 truncate text-[12.5px] text-ink-3">${esc(t)}</div>
-          <div class="flex items-baseline justify-between gap-3">
-            <code class="font-mono text-[14px] text-ink">/${esc(slug)}</code>
-            <span class="shrink-0 font-mono text-[11.5px] text-ink-3">${slug.length} chars</span>
+          <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <code class="font-mono text-[14px] text-ink break-all">/${esc(slug)}</code>
+            <span class="flex items-center gap-2">
+              <span class="font-mono text-[11.5px] ${long ? 'text-[oklch(0.55_0.16_25)]' : 'text-ink-3'}">${slug.length} chars${long ? ' · long' : ''}</span>
+              <button type="button" class="btn btn-secondary btn-sm" data-sl-copy="${esc(slug)}">Copy</button>
+            </span>
           </div>
         </div>`;
       }).join('');
     };
-    ['sl-in', 'sl-stop', 'sl-nums', 'sl-max'].forEach((id) => {
+    ['sl-in', 'sl-stop', 'sl-nums', 'sl-max', 'sl-sep'].forEach((id) => {
       const el = document.getElementById(id);
       el?.addEventListener('input', render); el?.addEventListener('change', render);
+    });
+    out.addEventListener('click', async (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-sl-copy]');
+      if (!b) return;
+      try { await navigator.clipboard.writeText(b.dataset.slCopy ?? ''); b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy'; }, 1400); } catch { b.textContent = 'Select and copy'; }
+    });
+    const copyAll = document.querySelector('[data-sl="copyall"]') as HTMLButtonElement | null;
+    copyAll?.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(all.join('\n')); copyAll.textContent = 'Copied'; setTimeout(() => { copyAll.textContent = 'Copy all'; }, 1400); } catch { copyAll.textContent = 'Select and copy'; }
     });
     render();
   }

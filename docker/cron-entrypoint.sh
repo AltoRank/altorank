@@ -1,7 +1,7 @@
 #!/bin/sh
 # Scheduler sidecar for the self-hosted deployment.
 #
-# The app container serves the eight cron routes but nothing calls them: on
+# The app container serves the nine cron routes but nothing calls them: on
 # Vercel that is the platform's job, and self-hosting had no equivalent. So the
 # $0 rung shipped the product without the automation that is the product's whole
 # proposition. This closes that.
@@ -51,7 +51,7 @@ chmod +x /usr/local/bin/altorank-cron
   cat /etc/altorank/crontab
 } > /etc/crontabs/root
 
-echo "cron: scheduling 8 jobs against ${APP_URL}"
+echo "cron: scheduling 9 jobs against ${APP_URL}"
 
 # Wait for the app to answer before the first tick, so a cold start does not
 # produce a misleading failure in the log.

@@ -1,9 +1,17 @@
+# altorank.co
+#
+# Everything on this site is meant to be read by people, search engines and
+# answer engines alike. The wildcard rule already permits every crawler; the
+# named entries below make the AI-crawler policy explicit so a future edit
+# cannot restrict one of them by accident, and so a crawler that only honours
+# its own token still finds an explicit Allow.
+
 User-agent: *
 Allow: /
 
-# AI answer-engine crawlers — explicitly allowed (GEO/AEO). The wildcard above
-# already permits them; these entries document intent and guard against future
-# restrictive edits. See memory/research/strategy/2026-06-20-altorank-seo-aeo-geo-strategy.md.
+# ── AI crawlers, explicitly allowed ─────────────────────────────────────────
+# OpenAI: training (GPTBot), search index (OAI-SearchBot), live browsing on a
+# user's behalf (ChatGPT-User).
 User-agent: GPTBot
 Allow: /
 
@@ -13,19 +21,41 @@ Allow: /
 User-agent: ChatGPT-User
 Allow: /
 
+# Anthropic: training (ClaudeBot), live browsing (Claude-User), search index
+# (Claude-SearchBot).
 User-agent: ClaudeBot
 Allow: /
 
+User-agent: Claude-User
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+# Perplexity's index crawler.
 User-agent: PerplexityBot
 Allow: /
 
+# Google-Extended controls whether Google may use pages for Gemini training
+# and grounding. It does NOT affect Search ranking or AI Overviews, which use
+# Googlebot. Decision: ALLOW. Being in the grounding corpus is how a small
+# domain becomes a resolvable entity for Gemini; blocking it would give up
+# that with nothing gained in Search.
 User-agent: Google-Extended
 Allow: /
 
+# Apple: Applebot-Extended is the opt-out token for Apple Intelligence
+# training. Allowed for the same reason as Google-Extended.
+User-agent: Applebot-Extended
+Allow: /
+
+# Common Crawl feeds most open training sets. Allowed.
+User-agent: CCBot
+Allow: /
+
 # Content Signals (contentsignals.org, draft-romm-aipref-contentsignals).
-# Deliberate policy, not a default: AltoRank wants to be in the training corpus
-# and in AI answers. Entity resolution at DR 0.2 depends on being ingested, so
-# ai-train stays yes. Revisit only if that stops being the strategy.
+# Deliberate policy, not a default: this site wants to be in training corpora
+# and in AI answers. Revisit only if that stops being the strategy.
 Content-Signal: ai-train=yes, search=yes, ai-input=yes
 
 Sitemap: https://altorank.co/sitemap-index.xml

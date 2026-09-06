@@ -169,12 +169,9 @@ const structuredData = [
           </thead>
           <tbody>
             {TLDR_ROWS.map((row, i) => (
-              <tr class={i > 0 ? 'border-t border-line-soft' : ''}>
+              <tr class={`${i > 0 ? 'border-t border-line-soft' : ''} ${row.ours ? 'bg-accent-soft/30 font-semibold text-ink' : ''}`}>
                 <td class="px-5 py-4 font-medium">
                   {row.name}
-                  {row.ours && (
-                    <span class="ml-2 rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-accent-ink">ours</span>
-                  )}
                 </td>
                 <td class="px-5 py-4 text-ink-2">{row.bestFor}</td>
                 <td class="px-5 py-4 text-ink-2">{row.publishing}</td>
@@ -241,11 +238,11 @@ const structuredData = [
       </p>
       <div class="mb-6 grid gap-3 sm:grid-cols-2">
         <div class="rounded-lg border border-line bg-panel p-5">
-          <div class="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Trustpilot</div>
+          <div class="text-[12.5px] font-medium text-ink-3">Trustpilot</div>
           <div class="mt-1 text-[15px] font-medium text-ink">Six reviews: two one-star in July 2026, then four five-star sixteen days later. The company replies to every review; both one-stars were answered by calling the reviewer a fake or a competitor.</div>
         </div>
         <div class="rounded-lg border border-line bg-panel p-5">
-          <div class="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Independent tests</div>
+          <div class="text-[12.5px] font-medium text-ink-3">Independent tests</div>
           <div class="mt-1 text-[15px] font-medium text-ink">aboahreviews (June 2026): 5 of 8 articles scored 70–85% on AI detection, 25–40 minutes of editing per article, about 1–2 new referring domains a month. julienctr.fr (July 2026): &ldquo;Publish blind and you get average content.&rdquo;</div>
         </div>
       </div>
@@ -283,8 +280,8 @@ const structuredData = [
       </div>
 
       <div class="mt-10 flex flex-wrap gap-2.5">
-        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
-        <Button href="/open-source" variant="secondary" size="lg">Read the licence</Button>
+        <Button href={PRIMARY_CTA.href} arrow size="sm">{PRIMARY_CTA.label}</Button>
+        <Button href="/open-source" variant="secondary" size="sm">Read the licence</Button>
       </div>
     </div>
   </section>

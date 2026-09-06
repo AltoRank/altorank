@@ -8,13 +8,18 @@ import {
   OSS_LICENSE_URL,
 } from '@/constants';
 
+// The one logo file the schema points at. Was `/logo.png`, which has never
+// existed in public/, so every page's Organization.logo 404'd. 512x512 PNG,
+// above Google's 112px minimum for a publisher logo.
+export const LOGO_URL = `${SITE_URL}/brand/altorank-icon.png`;
+
 export function buildOrganizationSchema() {
   return {
     '@context': 'https://schema.org',
     '@type': 'Organization',
     name: APP_NAME,
     url: SITE_URL,
-    logo: `${SITE_URL}/logo.png`,
+    logo: LOGO_URL,
     // Description kept consistent with the off-site profile boilerplate (LinkedIn,
     // Crunchbase, G2, …), cross-source consistency is what resolves the entity.
     // See memory/research/strategy/2026-06-21-entity-authority-asset-pack.md.
@@ -95,14 +100,24 @@ export function buildArticleSchema(post: {
   authorUrl?: string;
   url: string;
   image?: string;
+  /** Blog posts are BlogPosting; case studies and other long-form stay Article. */
+  type?: 'Article' | 'BlogPosting';
+  tags?: string[];
+  lang?: string;
 }) {
+  // dateModified is required by Google's article rich-result guidance and read
+  // by every AI crawler as the freshness signal. A post that has never been
+  // revised was last modified when it was published, so that date is the
+  // honest default; the frontmatter field overrides it only for real edits.
+  const modified = post.dateModified ?? post.publishDate;
   return {
     '@context': 'https://schema.org',
-    '@type': 'Article',
+    '@type': post.type ?? 'Article',
     headline: post.title,
     description: post.description,
     datePublished: post.publishDate.toISOString(),
-    ...(post.dateModified && { dateModified: post.dateModified.toISOString() }),
+    dateModified: modified.toISOString(),
+    inLanguage: post.lang ?? 'en',
     author: {
       '@type': post.authorType ?? 'Person',
       name: post.author,
@@ -116,9 +131,11 @@ export function buildArticleSchema(post: {
       '@type': 'Organization',
       name: APP_NAME,
       url: SITE_URL,
+      logo: { '@type': 'ImageObject', url: LOGO_URL },
     },
-    mainEntityOfPage: post.url,
+    mainEntityOfPage: { '@type': 'WebPage', '@id': post.url },
     ...(post.image && { image: post.image }),
+    ...(post.tags && post.tags.length > 0 && { keywords: post.tags.join(', ') }),
   };
 }
 

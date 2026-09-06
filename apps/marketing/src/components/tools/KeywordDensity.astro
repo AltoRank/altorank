@@ -1,21 +1,28 @@
 ---
 import ToolShell from './ToolShell.astro';
 ---
-<ToolShell label="Keyword density">
+<ToolShell label="Keyword density checker">
   <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="kd-text">Paste your text</label>
   <textarea id="kd-text" rows="8" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft" placeholder="Paste an article here…"></textarea>
-  <div class="mt-3 flex flex-wrap items-center gap-3">
-    <label class="text-[13px] text-ink-2" for="kd-n">Phrase length</label>
-    <select id="kd-n" class="rounded-[9px] border border-line bg-bg px-3 py-2 text-[13.5px] text-ink focus:border-accent focus:outline-none">
-      <option value="1">1 word</option>
-      <option value="2">2 words</option>
-      <option value="3">3 words</option>
-    </select>
-    <label class="ml-2 flex items-center gap-2 text-[13px] text-ink-2">
+  <div class="mt-3 grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+    <div>
+      <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="kd-target">Target phrase (optional)</label>
+      <input id="kd-target" class="min-h-11 w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft" placeholder="keyword density" />
+    </div>
+    <label class="flex flex-col gap-1.5 text-[13px] text-ink-2">Phrase length
+      <select id="kd-n" class="min-h-11 rounded-[9px] border border-line bg-bg px-3 py-2 text-[13.5px] text-ink focus:border-accent focus:outline-none">
+        <option value="1">1 word</option>
+        <option value="2">2 words</option>
+        <option value="3">3 words</option>
+      </select>
+    </label>
+    <label class="flex min-h-11 items-center gap-2 text-[13px] text-ink-2">
       <input id="kd-stop" type="checkbox" checked class="h-4 w-4 rounded border-line" /> Ignore common words
     </label>
   </div>
-  <div class="mt-4 overflow-hidden rounded-lg border border-line bg-bg" data-kd="out"></div>
+  <div class="mt-4 hidden rounded-lg border border-line bg-bg p-3.5" data-kd="target"></div>
+  <p class="mt-4 text-[13px] text-ink-2" data-kd="summary"></p>
+  <div class="mt-2 overflow-hidden rounded-lg border border-line bg-bg" data-kd="out"></div>
   <p class="mt-3 text-[12.5px] leading-relaxed text-ink-3">
     There is no correct density figure and there has not been for years. Use this to catch the opposite
     problem: a page that never states its own subject, or one that repeats it so often it reads as spam.
@@ -27,13 +34,36 @@ import ToolShell from './ToolShell.astro';
     const ta = document.getElementById('kd-text') as HTMLTextAreaElement | null;
     const nSel = document.getElementById('kd-n') as HTMLSelectElement | null;
     const stopCb = document.getElementById('kd-stop') as HTMLInputElement | null;
+    const target = document.getElementById('kd-target') as HTMLInputElement | null;
     const out = document.querySelector('[data-kd="out"]');
-    if (!ta || !nSel || !stopCb || !out) return;
+    const tgtEl = document.querySelector('[data-kd="target"]') as HTMLElement | null;
+    const summary = document.querySelector('[data-kd="summary"]');
+    if (!ta || !nSel || !stopCb || !target || !out || !tgtEl || !summary) return;
     const STOP = new Set('a an the and or but if then than that this these those of to in on at for with by from as is are was were be been being it its i you your we our they their he she his her not no do does did have has had will would can could should may might must about into over after before'.split(' '));
+    const esc = (x: string) => x.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
+    const tokenise = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}\s'-]/gu, ' ').split(/\s+/).filter(Boolean);
     const render = () => {
       const n = parseInt(nSel.value, 10);
       const skip = stopCb.checked;
-      const words = ta.value.toLowerCase().replace(/[^\p{L}\p{N}\s'-]/gu, ' ').split(/\s+/).filter(Boolean);
+      const words = tokenise(ta.value);
+      summary.textContent = words.length ? `${words.length} words.` : '';
+      // Target phrase: exact-sequence count, density, and whether it appears
+      // in the opening hundred words, which is where a reader and a crawler
+      // both look for the subject.
+      const tw = tokenise(target.value);
+      if (tw.length && words.length) {
+        let count = 0, first = -1;
+        for (let i = 0; i + tw.length <= words.length; i++) {
+          if (tw.every((w, j) => words[i + j] === w)) { count++; if (first < 0) first = i; }
+        }
+        const density = ((count * tw.length) / words.length * 100).toFixed(2);
+        const early = first >= 0 && first < 100;
+        tgtEl.classList.remove('hidden');
+        tgtEl.innerHTML = `<div class="flex flex-wrap items-baseline justify-between gap-2"><span class="text-[14px] font-medium text-ink">“${esc(target.value.trim())}”</span><span class="font-mono text-[12px] text-ink-3">${count}× · ${density}% of words</span></div>
+          <p class="mt-1.5 text-[12.5px] ${count === 0 ? 'text-[oklch(0.55_0.16_25)]' : early ? 'text-ink-3' : 'text-[oklch(0.5_0.12_75)]'}">${count === 0 ? 'Not found. If this is the subject of the page, the page never says so.' : early ? `First appears at word ${first + 1}, inside the opening hundred words.` : `First appears at word ${first + 1}. Consider stating the subject earlier.`}</p>`;
+      } else {
+        tgtEl.classList.add('hidden'); tgtEl.innerHTML = '';
+      }
       if (words.length < n) { out.innerHTML = '<p class="p-5 text-[13.5px] text-ink-3">Paste some text to see the phrases it actually uses.</p>'; return; }
       const counts = new Map<string, number>();
       for (let i = 0; i + n <= words.length; i++) {
@@ -52,7 +82,7 @@ import ToolShell from './ToolShell.astro';
         const bar = Math.round((c / max) * 100);
         return `<div class="${i > 0 ? 'border-t border-line-soft' : ''} p-3.5">
           <div class="flex items-baseline justify-between gap-3">
-            <span class="text-[14px] font-medium text-ink">${term.replace(/[<>&]/g, '')}</span>
+            <span class="text-[14px] font-medium text-ink">${esc(term)}</span>
             <span class="shrink-0 font-mono text-[12px] text-ink-3">${c}× · ${pct}%</span>
           </div>
           <div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-panel-2">
@@ -61,7 +91,7 @@ import ToolShell from './ToolShell.astro';
         </div>`;
       }).join('');
     };
-    [ta, nSel, stopCb].forEach((el) => el.addEventListener('input', render));
+    [ta, nSel, stopCb, target].forEach((el) => el.addEventListener('input', render));
     nSel.addEventListener('change', render);
     render();
   }

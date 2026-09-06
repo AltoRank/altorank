@@ -1,10 +1,10 @@
 ---
-title: "Keyword Cluster Mapper"
+title: "Free Keyword Clustering Tool: Group Keywords by Topic"
 slug: "keyword-cluster-mapper"
-description: "Group a raw keyword list into topical clusters, with the page-type decisions that stop cannibalization."
+description: "Paste a keyword list and get topic groups with a page type for each. Free, in your browser, plus the method for confirming groups against the SERP."
 category: "keyword"
-heroHeadline: "Turn a keyword list into a content strategy."
-heroSubhead: "Grouping a raw keyword export into topical clusters is what separates a content calendar from a pile of blog ideas. Here is the method we use, plus a template you can copy."
+heroHeadline: "Keyword clustering tool: paste a list, get topic groups."
+heroSubhead: "Grouping a raw keyword export into topical clusters is what separates a content calendar from a pile of blog ideas. The tool does the first pass on shared terms; the method below is how you confirm each group against the SERP before you brief it."
 useCases:
   - "Build a topical content calendar from a raw keyword export"
   - "Avoid keyword cannibalization across a client's pages"
@@ -13,9 +13,11 @@ useCases:
 relatedTools:
   - "keyword-gap-analyzer"
   - "content-brief-generator"
+  - "keyword-density-analyzer"
+widget: "keyword-cluster"
 published: true
 datePublished: 2026-08-21
-dateModified: 2026-08-21
+dateModified: 2026-09-05
 steps:
   - name: "Export the raw keyword list"
     text: "Pull every keyword you are considering into one column: the client's current rankings, competitor gaps, and your own seed ideas. Deduplicate before you cluster."
@@ -34,13 +36,17 @@ faq:
     answer: "Ask whether one page could rank for both and satisfy the searcher in each case. If yes, cluster them. A fast confirmation is to compare the live SERPs: if the top results overlap heavily, Google already treats the keywords as one topic."
   - question: "How is clustering by intent different from clustering by shared words?"
     answer: "Shared-word grouping puts 'asana pricing' and 'asana alternatives' together because both contain 'asana', but they need different pages. Intent grouping puts 'best pm software' and 'top project management tools' together because one comparison page answers both."
+  - question: "How does this clustering tool group keywords?"
+    answer: "On shared terms. Each keyword is reduced to its meaningful words, filler dropped and plurals folded, and keywords that share the same one or two most common terms form a group. Each group gets a page-type suggestion from the intent words its keywords carry. It runs in your browser with no search data, so it is a fast first pass, not a SERP-overlap clusterer: confirm groups against live results before you brief them."
+  - question: "Is this keyword clustering tool free?"
+    answer: "Yes, with no signup, no quota and nothing uploaded. Paste any number of keywords; the grouping happens on your machine. The paid product does the SERP-overlap step across a client roster, but the tool on this page does not require it."
   - question: "How does this prevent keyword cannibalization?"
     answer: "Cannibalization happens when two pages target the same intent and split rankings and links between them. Assigning one page type per cluster, and one cluster per URL, means no two pages compete for the same query."
 ---
 
 Keyword research gives you a list. Clustering turns that list into a plan. The gap between the two is where most agency content calendars quietly fail: keywords get assigned to writers one at a time, three posts end up targeting the same intent, and the client's own pages start competing with each other.
 
-The fix is to group before you brief. Below is the method, a worked example, and a template you can paste into a sheet.
+The fix is to group before you brief. The tool above does the first pass: paste the export, get groups on shared terms with a suggested page type for each, copy the result as CSV. Below is the method for turning those groups into a plan, including the SERP check the tool cannot do for you.
 
 ## Group by intent, then confirm with the SERP
 

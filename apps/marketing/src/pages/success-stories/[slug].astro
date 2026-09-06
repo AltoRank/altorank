@@ -28,22 +28,22 @@ const { Content } = await render(story);
 >
   {/* Results summary */}
   <div class="mb-10 grid grid-cols-2 gap-4 sm:grid-cols-4">
-    <div class="rounded-lg border border-line bg-panel p-4 text-center">
+    <div class="rounded-lg border border-line bg-panel p-4">
       <div class="text-2xl font-semibold text-ok-ink">{story.data.results.trafficGrowth}</div>
       <div class="mt-1 text-xs text-ink-3">Traffic growth</div>
     </div>
-    <div class="rounded-lg border border-line bg-panel p-4 text-center">
+    <div class="rounded-lg border border-line bg-panel p-4">
       <div class="text-2xl font-semibold text-accent-ink">{story.data.results.timeToFirstRank}</div>
       <div class="mt-1 text-xs text-ink-3">Time to rank</div>
     </div>
     {story.data.results.articlesPublished && (
-      <div class="rounded-lg border border-line bg-panel p-4 text-center">
+      <div class="rounded-lg border border-line bg-panel p-4">
         <div class="text-2xl font-semibold">{story.data.results.articlesPublished}</div>
         <div class="mt-1 text-xs text-ink-3">Articles</div>
       </div>
     )}
     {story.data.results.backlinksGained && (
-      <div class="rounded-lg border border-line bg-panel p-4 text-center">
+      <div class="rounded-lg border border-line bg-panel p-4">
         <div class="text-2xl font-semibold">{story.data.results.backlinksGained}</div>
         <div class="mt-1 text-xs text-ink-3">Backlinks</div>
       </div>

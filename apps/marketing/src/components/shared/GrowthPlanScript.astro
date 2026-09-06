@@ -72,7 +72,7 @@
 
       const targets = (plan.cadence?.firstTargets ?? []).map(esc);
       out.innerHTML = `
-        <p class="mb-4 font-mono text-[11px] uppercase tracking-[0.08em] text-[oklch(0.72_0.03_275)]">Growth plan for ${d}${plan.cached ? " · cached today" : ""}</p>
+        <p class="mb-4 text-[13.5px] text-[oklch(0.78_0.03_275)]">Growth plan for <span class="font-medium text-white">${d}</span>${plan.cached ? " · cached today" : ""}</p>
         <div class="grid gap-3 md:grid-cols-3">
           ${card("Closest wins", "Terms you already rank for on page two. One revision from page one.", winsBody)}
           ${card("Gaps", `What ${plan.competitors?.map((c: any) => esc(c.domain)).join(" and ") || "competitors"} rank for on page one and you do not.`, gapsBody)}
@@ -83,10 +83,10 @@
             ${plan.cadence?.articlesPerMonth ?? 4} articles a month${targets.length ? `, starting with <em class="font-display-italic">${targets.join("</em>, <em class=\"font-display-italic\">")}</em>` : ""}. First one published in ${plan.cadence?.firstPublishDays ?? 5} working days, after you approve it.
           </p>
           <div class="mt-4 flex flex-col gap-2.5 sm:flex-row sm:items-center">
-            <a href="${signup}?domain=${encodeURIComponent(plan.domain)}" class="inline-flex h-11 items-center justify-center rounded-[9px] bg-white px-5 text-[14px] font-medium text-[oklch(0.2_0.06_275)] hover:bg-[oklch(0.94_0.01_275)]">Start publishing against this plan &rarr;</a>
-            <form id="growth-plan-lead" class="flex flex-1 gap-2">
-              <input name="email" type="email" required placeholder="you@company.com" class="h-11 min-w-0 flex-1 rounded-[9px] border border-white/15 bg-white/[0.07] px-3.5 text-[14px] text-white placeholder:text-[oklch(0.68_0.03_275)] focus:border-white/40 focus:outline-none" />
-              <button type="submit" class="h-11 shrink-0 cursor-pointer rounded-[9px] border border-white/25 px-4 text-[14px] text-white hover:bg-white/10">Email me the full plan</button>
+            <a href="${signup}?domain=${encodeURIComponent(plan.domain)}" class="btn btn-light btn-sm btn-block">Start publishing against this plan &rarr;</a>
+            <form id="growth-plan-lead" class="flex flex-1 flex-col gap-2 sm:flex-row">
+              <input name="email" type="email" required placeholder="you@company.com" class="h-10 min-w-0 flex-1 rounded-[var(--radius)] border border-white/15 bg-white/[0.07] px-2.5 text-[12.5px] text-white placeholder:text-[oklch(0.68_0.03_275)] focus:border-white/40 focus:outline-none sm:h-7" />
+              <button type="submit" class="btn btn-ghost-dark btn-sm btn-block shrink-0 cursor-pointer">Email me the full plan</button>
             </form>
           </div>
           <p data-lead-status class="mt-2 min-h-[1.2em] text-[12.5px] text-[oklch(0.72_0.03_275)]"></p>

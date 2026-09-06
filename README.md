@@ -63,11 +63,14 @@ WordPress.
 
 ## Running it
 
-Requires Node 20+, and a Supabase project (local via Docker, or hosted).
+Requires Node 22+, and a Supabase project (local via Docker, or hosted).
+The full deployment story, hosted and self-hosted, is in
+[docs/deploy.md](docs/deploy.md); the Cloudflare assessment is in
+[docs/deploy-cloudflare.md](docs/deploy-cloudflare.md).
 
 ```bash
 npm install
-cp apps/web/.env.local.example apps/web/.env.local
+cp docker/.env.example apps/web/.env.local   # every variable, with what each one enables
 npm run dev
 ```
 
@@ -88,8 +91,8 @@ npm run smoke    # research → prompt → model → fact check, against real AP
 
 ### Database
 
-`apps/web/supabase/` carries a `config.toml` and 30 migrations that apply in
-order. With the [Supabase CLI](https://supabase.com/docs/guides/cli):
+`apps/web/supabase/` carries a `config.toml` and the numbered migrations, which
+apply in order. With the [Supabase CLI](https://supabase.com/docs/guides/cli):
 
 ```bash
 cd apps/web

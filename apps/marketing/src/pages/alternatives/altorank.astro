@@ -23,6 +23,7 @@ const pageUrl = `${SITE_URL}/alternatives/altorank`;
 const publishDate = new Date('2026-09-04');
 const dateModified = new Date('2026-09-04');
 const publishDateDisplay = publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+const verified = dateModified.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
 
 const breadcrumbs = [
   { label: 'Home', href: '/' },
@@ -104,7 +105,7 @@ const structuredData = [
 
 <PSEO
   title={`${APP_NAME} Alternatives: When to Pick One Over Us`}
-  description={`The twelve tools people weigh against ${APP_NAME}, what each is better at, and where ${APP_NAME} is the wrong choice.`}
+  description={`The twelve tools people weigh against ${APP_NAME}, what each is better at, and where ${APP_NAME} is the wrong choice. Checked ${verified}.`}
   breadcrumbs={breadcrumbs}
   structuredData={structuredData}
 >
@@ -140,7 +141,7 @@ const structuredData = [
               <div class="text-[15.5px] font-semibold text-ink group-hover:text-accent-ink">
                 {i + 1}. {c.name}
               </div>
-              <div class="mt-0.5 font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">
+              <div class="mt-0.5 text-[12.5px] text-ink-3">
                 {c.theirCategory}
               </div>
             </div>
@@ -215,8 +216,8 @@ const structuredData = [
         ))}
       </div>
       <div class="mt-10 flex flex-wrap gap-2.5">
-        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
-        <Button href="/open-source" variant="secondary" size="lg">Self-host it instead</Button>
+        <Button href={PRIMARY_CTA.href} arrow size="sm">{PRIMARY_CTA.label}</Button>
+        <Button href="/open-source" variant="secondary" size="sm">Self-host it instead</Button>
       </div>
     </div>
   </section>

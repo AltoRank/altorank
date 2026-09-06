@@ -7,8 +7,12 @@ import KeywordDensity from '@/components/tools/KeywordDensity.astro';
 import RobotsTxt from '@/components/tools/RobotsTxt.astro';
 import SchemaGenerator from '@/components/tools/SchemaGenerator.astro';
 import SlugGenerator from '@/components/tools/SlugGenerator.astro';
+import KeywordCluster from '@/components/tools/KeywordCluster.astro';
+import KeywordGap from '@/components/tools/KeywordGap.astro';
+import InternalLinks from '@/components/tools/InternalLinks.astro';
+import BriefTemplate from '@/components/tools/BriefTemplate.astro';
 import { getCollection, render } from 'astro:content';
-import { buildArticleSchema, buildFAQSchema, buildHowToSchema } from '@/lib/schema';
+import { buildArticleSchema, buildFAQSchema, buildHowToSchema, buildSoftwareAppSchema } from '@/lib/schema';
 import { SIGNUP_URL, APP_NAME, AUTHOR_NAME, AUTHOR_URL, SITE_URL } from '@/constants';
 
 export async function getStaticPaths() {
@@ -29,15 +33,40 @@ const url = `${SITE_URL}/tools/${d.slug}`;
 
 const breadcrumbs = [
   { label: 'Home', href: '/' },
-  { label: 'Tools', href: '/tools' },
+  { label: 'Free tools', href: '/tools' },
   { label: d.title, href: `/tools/${d.slug}` },
 ];
 
-// These are guides and templates, not an on-page app, so the schema is Article
-// (+ HowTo when the body is a method, + FAQ). Article is emitted only when we
-// have a real datePublished; the SoftwareApplication schema was removed because
-// asserting a free web app that does not exist is the same class of false claim
-// the site's hard rules forbid.
+// Widget lookup. The schema already restricts `widget` to these keys, so an
+// unknown value cannot reach here; the ?? undefined is belt and braces for a
+// content file edited ahead of a schema change.
+const WIDGETS = {
+  'serp-preview': SerpPreview,
+  'word-counter': WordCounter,
+  'keyword-density': KeywordDensity,
+  'robots-txt': RobotsTxt,
+  'schema-generator': SchemaGenerator,
+  'slug-generator': SlugGenerator,
+  'keyword-cluster': KeywordCluster,
+  'keyword-gap': KeywordGap,
+  'internal-links': InternalLinks,
+  'brief-template': BriefTemplate,
+} as const;
+const Widget = d.widget ? WIDGETS[d.widget] ?? undefined : undefined;
+
+// Schema: Article when we have a real datePublished; HowTo when the body is a
+// method; FAQPage when there are questions; and SoftwareApplication ONLY when
+// the page carries a working widget. A guide without a widget is not a free web
+// app, and asserting one would be the class of false claim the site's hard
+// rules forbid - which is why this schema was absent until the widgets shipped.
+// Category is a schema.org applicationCategory, so the four content categories
+// map onto the two that fit.
+const APP_CATEGORY: Record<string, string> = {
+  keyword: 'BusinessApplication',
+  content: 'BusinessApplication',
+  analytics: 'BusinessApplication',
+  technical: 'DeveloperApplication',
+};
 const structuredData = [
   ...(d.datePublished
     ? [buildArticleSchema({
@@ -51,36 +80,39 @@ const structuredData = [
         url,
       })]
     : []),
+  ...(Widget
+    ? [buildSoftwareAppSchema({
+        name: d.title,
+        description: d.description,
+        url,
+        category: APP_CATEGORY[d.category] ?? 'BusinessApplication',
+      })]
+    : []),
   ...(d.steps && d.steps.length
     ? [buildHowToSchema({ name: d.title, description: d.description, steps: d.steps })]
     : []),
   ...(d.faq ? [buildFAQSchema(d.faq)] : []),
 ];
 
-// Only cross-link to sibling guides that are themselves indexable, so an indexed
-// page never passes links to a noindex draft.
+// Only cross-link to sibling pages that are themselves indexable, so an indexed
+// page never passes links to a noindex draft. Two lists: the hand-picked
+// related tools first, then every other published tool, so each tool page
+// feeds the whole set rather than two or three of it.
+const allPublished = (await getCollection('tools'))
+  .filter((t) => t.data.published && t.data.slug !== d.slug)
+  .sort((a, b) => a.data.title.localeCompare(b.data.title));
 const relatedPublished = d.relatedTools.filter((slug) => publishedSlugs.has(slug));
-const relatedTitles = await getCollection('tools').then((tools) =>
-  Object.fromEntries(tools.map((t) => [t.data.slug, t.data.title])),
-);
-
-// Widget lookup. The schema already restricts `widget` to these keys, so an
-// unknown value cannot reach here; the ?? undefined is belt and braces for a
-// content file edited ahead of a schema change.
-const WIDGETS = {
-  'serp-preview': SerpPreview,
-  'word-counter': WordCounter,
-  'keyword-density': KeywordDensity,
-  'robots-txt': RobotsTxt,
-  'schema-generator': SchemaGenerator,
-  'slug-generator': SlugGenerator,
-} as const;
-const Widget = d.widget ? WIDGETS[d.widget] ?? undefined : undefined;
+const relatedSet = new Set(relatedPublished);
+const related = relatedPublished
+  .map((slug) => allPublished.find((t) => t.data.slug === slug))
+  .filter((t): t is (typeof allPublished)[number] => Boolean(t));
+const others = allPublished.filter((t) => !relatedSet.has(t.data.slug));
 
 const displayDate = d.dateModified ?? d.datePublished;
 const dateLabel = displayDate
   ? displayDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   : null;
+const link = 'underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent';
 ---
 
 <PSEO
@@ -90,27 +122,28 @@ const dateLabel = displayDate
   structuredData={structuredData}
   noindex={!d.published}
 >
-  <section class="border-b border-line py-[88px]">
-    <div class="mx-auto max-w-[1240px] px-8">
-      <div class="mx-auto max-w-[720px] text-center">
-        <h1 class="mb-4 text-[42px] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
+  <section class="border-b border-line py-12 md:py-16 lg:py-[72px]">
+    <div class="mx-auto max-w-[1240px] px-5 sm:px-6 lg:px-8">
+      <div class="max-w-[760px]">
+        <h1 class="mb-4 text-[clamp(28px,5vw,42px)] font-semibold leading-[1.08] tracking-[-0.025em] [text-wrap:balance]">
           {d.heroHeadline}
         </h1>
-        <p class="mb-6 text-lg text-ink-2">
+        <p class="mb-5 text-[17px] leading-relaxed text-ink-2 [text-wrap:pretty]">
           {d.heroSubhead}
         </p>
         {dateLabel && (
-          <p class="mb-8 text-sm text-ink-3">
+          <p class="mb-6 text-sm text-ink-3">
             By{' '}
-            <a href={AUTHOR_URL} rel="author" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
+            <a href={AUTHOR_URL} rel="author" class={`text-ink-2 ${link}`}>
               {AUTHOR_NAME}
             </a>
             {' '}· Updated {dateLabel}
           </p>
         )}
-        <Button href={SIGNUP_URL} size="lg" arrow>
-  Run this for every client with {APP_NAME}
-</Button>
+        <div class="flex flex-wrap gap-2.5">
+          <Button href={SIGNUP_URL} size="sm" arrow>Run this for every client with {APP_NAME}</Button>
+          {!Widget && <Button href="/tools" variant="secondary" size="sm">All free tools</Button>}
+        </div>
       </div>
     </div>
   </section>
@@ -121,21 +154,21 @@ const dateLabel = displayDate
       the explanation, and the explanation becomes the thing you scroll to when
       the widget raises a question. */}
   {Widget && (
-    <section class="border-b border-line bg-panel py-10 md:py-14">
-      <div class="mx-auto max-w-[900px] px-5 sm:px-6 lg:px-8">
+    <section class="border-b border-line bg-panel py-8 md:py-12">
+      <div class="mx-auto max-w-[1000px] px-4 sm:px-6 lg:px-8">
         <Widget />
       </div>
     </section>
   )}
 
   {/* Use cases */}
-  <section class="border-b border-line py-16">
-    <div class="mx-auto max-w-[720px] px-8">
-      <h2 class="mb-6 text-2xl font-semibold tracking-[-0.015em]">What you can do</h2>
+  <section class="border-b border-line py-12 md:py-16">
+    <div class="mx-auto max-w-[760px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-6 text-2xl font-semibold tracking-[-0.015em]">What you can do with it</h2>
       <ul class="flex flex-col gap-3">
         {d.useCases.map((useCase) => (
           <li class="flex items-start gap-3 text-ink-2">
-            <svg class="mt-0.5 w-[16px] h-[16px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="oklch(0.55 0.13 155)" stroke-width="2">
+            <svg class="mt-1 h-[16px] w-[16px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="oklch(0.55 0.13 155)" stroke-width="2" aria-hidden="true">
               <path d="M5 12.5 10 17 19 7" />
             </svg>
             {useCase}
@@ -147,9 +180,9 @@ const dateLabel = displayDate
 
   {/* Method (HowTo) */}
   {d.steps && d.steps.length > 0 && (
-    <section class="border-b border-line py-16">
-      <div class="mx-auto max-w-[720px] px-8">
-        <h2 class="mb-6 text-2xl font-semibold tracking-[-0.015em]">The method, step by step</h2>
+    <section class="border-b border-line py-12 md:py-16">
+      <div class="mx-auto max-w-[760px] px-5 sm:px-6 lg:px-8">
+        <h2 class="mb-6 text-2xl font-semibold tracking-[-0.015em]">How it works, step by step</h2>
         <ol class="flex flex-col gap-5">
           {d.steps.map((step, i) => (
             <li class="flex items-start gap-4">
@@ -158,7 +191,7 @@ const dateLabel = displayDate
               </span>
               <div>
                 <h3 class="mb-1 font-semibold">{step.name}</h3>
-                <p class="text-sm text-ink-2 leading-relaxed">{step.text}</p>
+                <p class="text-sm leading-relaxed text-ink-2">{step.text}</p>
               </div>
             </li>
           ))}
@@ -168,22 +201,22 @@ const dateLabel = displayDate
   )}
 
   {/* Content */}
-  <section class="border-b border-line py-16">
-    <div class="mx-auto max-w-[720px] px-8 prose prose-lg max-w-none">
+  <section class="border-b border-line py-12 md:py-16">
+    <div class="prose prose-lg mx-auto max-w-[760px] px-5 sm:px-6 lg:px-8">
       <Content />
     </div>
   </section>
 
   {/* FAQ */}
   {d.faq && d.faq.length > 0 && (
-    <section class="border-b border-line py-16">
-      <div class="mx-auto max-w-[720px] px-8">
+    <section class="border-b border-line py-12 md:py-16">
+      <div class="mx-auto max-w-[760px] px-5 sm:px-6 lg:px-8">
         <h2 class="mb-6 text-2xl font-semibold tracking-[-0.015em]">Frequently asked questions</h2>
         <div class="flex flex-col gap-4">
           {d.faq.map((item) => (
             <div class="rounded-lg border border-line bg-panel p-5">
               <h3 class="mb-2 font-semibold">{item.question}</h3>
-              <p class="text-sm text-ink-2 leading-relaxed">{item.answer}</p>
+              <p class="text-sm leading-relaxed text-ink-2">{item.answer}</p>
             </div>
           ))}
         </div>
@@ -191,22 +224,34 @@ const dateLabel = displayDate
     </section>
   )}
 
-  {/* Keep exploring: internal links into the indexable TOFU cluster */}
-  <section class="border-b border-line py-16">
-    <div class="mx-auto max-w-[720px] px-8">
-      <h2 class="mb-6 text-2xl font-semibold tracking-[-0.015em]">Keep exploring</h2>
-      <div class="flex flex-col gap-3 text-ink-2">
-        {relatedPublished.map((slug) => (
-          <a href={`/tools/${slug}`} class="underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
-            {relatedTitles[slug]}
-          </a>
-        ))}
-        <a href="/alternatives" class="underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
-          Compare {APP_NAME} against the alternatives
-        </a>
-        <a href="/blog" class="underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
-          More on SEO and GEO for agencies on the blog
-        </a>
+  {/* More free tools: the internal-link block that lets every tool page feed
+      every other one. Related first, then the rest. */}
+  <section class="border-b border-line py-12 md:py-16">
+    <div class="mx-auto max-w-[1000px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-6 text-2xl font-semibold tracking-[-0.015em]">More free tools</h2>
+      {related.length > 0 && (
+        <div class="mb-6 grid gap-3 sm:grid-cols-2">
+          {related.map((t) => (
+            <a href={`/tools/${t.data.slug}`} class="group rounded-lg border border-line bg-bg p-4 transition-colors hover:border-accent">
+              <span class="block text-[15px] font-semibold text-ink transition-colors group-hover:text-accent-ink">{t.data.title}</span>
+              <span class="mt-1 block text-[13px] leading-relaxed text-ink-2">{t.data.description}</span>
+            </a>
+          ))}
+        </div>
+      )}
+      {others.length > 0 && (
+        <ul class="flex flex-col gap-2 text-[14.5px] text-ink-2 sm:columns-2">
+          {others.map((t) => (
+            <li class="break-inside-avoid">
+              <a href={`/tools/${t.data.slug}`} class={link}>{t.data.title}</a>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div class="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-[14px] text-ink-2">
+        <a href="/growth-plan" class={link}>Free growth plan for any domain</a>
+        <a href="/alternatives" class={link}>Compare {APP_NAME} against the alternatives</a>
+        <a href="/blog" class={link}>More on SEO and GEO on the blog</a>
       </div>
     </div>
   </section>

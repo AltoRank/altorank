@@ -1,10 +1,10 @@
 ---
-title: "Content Briefs: A Template Writers Actually Follow"
+title: "Free SEO Content Brief Template and Generator"
 slug: "content-brief-generator"
-description: "What belongs in an SEO content brief and what does not, plus a template you can copy for client work."
+description: "Fill in eleven fields and copy a Markdown content brief a writer will follow. Free, in your browser, with the reasoning behind each field."
 category: "content"
-heroHeadline: "Generate SEO briefs that writers actually follow."
-heroSubhead: "Most briefs are either too thin to be useful or so long nobody reads them. Here is the shorter structure that changes what comes back, and the template behind it."
+heroHeadline: "SEO content brief template: eleven fields, one page, copy as Markdown."
+heroSubhead: "Most briefs are either too thin to be useful or so long nobody reads them. The generator above produces the shorter structure that changes what comes back; the guide below explains why each field is there."
 useCases:
   - "Brief writers so the first draft needs less rework"
   - "Keep quality consistent across freelancers and clients"
@@ -13,9 +13,11 @@ useCases:
 relatedTools:
   - "keyword-cluster-mapper"
   - "serp-analyzer"
+  - "internal-link-checker"
+widget: "brief-template"
 published: true
 datePublished: 2026-08-22
-dateModified: 2026-08-22
+dateModified: 2026-09-05
 steps:
   - name: "Brief the cluster, not the keyword"
     text: "Hand the writer the group of keywords one page should satisfy, plus the page type. Briefing single keywords is how two pages end up competing for the same intent."
@@ -36,6 +38,8 @@ faq:
     answer: "Short enough to be read in full. A brief that runs several pages tends to get skimmed, which means the important instruction competes with boilerplate. One page that carries only decisions outperforms five pages of context."
   - question: "Why do writers ignore briefs?"
     answer: "Usually because the brief is mostly reference material rather than instruction, or because it specifies surface details like word count while leaving the genuinely hard choices, such as the angle and the structure, unstated. Briefs that lead with decisions get followed more reliably."
+  - question: "Is this content brief generator free, and does it use AI?"
+    answer: "Free, no signup, and no AI. It is a structured template: you supply the decisions, it formats them as Markdown you can paste into a doc or a ticket. A generator that invents the angle for you produces the same generic brief for everyone, which is the problem this template exists to fix."
   - question: "Should a brief include a full heading outline?"
     answer: "It depends on the writer. A specified outline gives consistency across many writers and clients, which is why agencies tend to use them. A strong subject-matter writer will often produce a better structure given the intent and the angle, so the outline becomes a constraint rather than a help."
 ---
