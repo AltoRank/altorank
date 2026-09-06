@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { ensureAgency } from "@/lib/queries/agency";
 import { requireAuth } from "@/lib/auth/require-auth";
+import { canAddWorkspace } from "@/lib/team/access";
 import { z } from "zod";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
 import { getWorkspaceAllowance, workspaceLimitMessage } from "@/lib/billing/workspaces";
@@ -42,6 +43,23 @@ export type CreateWorkspaceResult =
   | { ok: false; error: string };
 
 export async function createWorkspace(formData: FormData): Promise<CreateWorkspaceResult> {
+  // Owner or admin, like the Search Console door that also creates workspaces
+  // (app/actions/google-properties.ts) and like every other action that spends
+  // the account's allowance. This one had no role check at all: an editor
+  // scoped to a single site could add a fourth site to the account, take a
+  // plan slot, and start it drawing on the shared monthly quota - while the
+  // Team page told them "Editors ... cannot manage billing".
+  //
+  // A result, not a throw, because everything else this action refuses comes
+  // back as a sentence the dialog can print.
+  const { role } = await requireAuth();
+  if (!canAddWorkspace(role)) {
+    return {
+      ok: false,
+      error: "Adding a site changes what the account pays for, so an owner or admin has to do it. Ask one of them and it takes a moment.",
+    };
+  }
+
   const supabase = await createClient();
   // `domain` comes via ?? undefined: FormData.get returns null for a missing
   // field, z.optional() only accepts undefined, and the difference took the

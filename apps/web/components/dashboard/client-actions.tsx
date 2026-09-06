@@ -10,7 +10,19 @@ import { OnboardingProgress } from "@/components/onboarding/onboarding-progress"
 
 type OnboardStep = "idle" | "creating";
 
-export function ClientActions({ allowance }: { allowance?: { limit: number | null; remaining: number | null; noPlan: boolean; used?: number } }) {
+export function ClientActions({
+  allowance,
+  canAdd = true,
+}: {
+  allowance?: { limit: number | null; remaining: number | null; noPlan: boolean; used?: number };
+  /**
+   * False for an editor. Adding a site takes a plan slot and starts drawing on
+   * the account's shared article quota, so it is owner/admin like every other
+   * allowance-spending action (lib/team/access.ts). The server refuses it
+   * either way; this is so the refusal does not arrive after a filled-in form.
+   */
+  canAdd?: boolean;
+}) {
   const atLimit = allowance ? allowance.remaining !== null && allowance.remaining <= 0 : false;
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<OnboardStep>("idle");
@@ -54,6 +66,16 @@ export function ClientActions({ allowance }: { allowance?: { limit: number | nul
       setError(err instanceof Error ? err.message : "Could not create the workspace. Try again.");
       setStep("idle");
     }
+  }
+
+  if (!canAdd) {
+    // Nothing rather than a disabled button with an upgrade link: an editor
+    // cannot buy the upgrade either, so the only true thing to say is who can.
+    return (
+      <span className="text-[11.5px] text-ink-3">
+        Owners and admins add sites.
+      </span>
+    );
   }
 
   return (
