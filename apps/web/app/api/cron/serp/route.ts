@@ -8,6 +8,14 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { postRankingTasks } from "@/lib/seo/serp";
 import type { Workspace, Keyword } from "@/lib/types";
 
+/**
+ * One DataForSEO round trip per workspace, and the workspace list is not
+ * capped, so the 60-second default was the first thing this ran out of on an
+ * account with more than a handful of sites - silently, half way through the
+ * list, reporting nothing.
+ */
+export const maxDuration = 300;
+
 export async function GET(request: Request) {
   // Verify cron secret
   const cronSecret = cronSecretFrom(request);
@@ -26,10 +34,13 @@ export async function GET(request: Request) {
  */
   const supabase = createServiceClient();
 
-  // Fetch all workspaces
+  // Every workspace except the paused ones. A paused site is paused for the
+  // whole product, not only for publishing: posting rank-tracking tasks for it
+  // spends DataForSEO money on a client nobody is working for.
   const { data: workspacesData, error: wsError } = await supabase
     .from("workspaces")
-    .select("*");
+    .select("*")
+    .neq("status", "paused");
 
   if (wsError) {
     return NextResponse.json(

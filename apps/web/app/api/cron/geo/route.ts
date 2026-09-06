@@ -48,6 +48,8 @@ export async function GET(request: Request) {
     .select("id, name, domain, agency_id, geo_last_checked_at")
     .eq("geo_tracking", true)
     .not("domain", "is", null)
+    // A paused site buys nothing, and a probe is the most expensive thing here.
+    .neq("status", "paused")
     .or(`geo_last_checked_at.is.null,geo_last_checked_at.lt.${cutoff}`)
     .order("geo_last_checked_at", { ascending: true, nullsFirst: true })
     .limit(MAX_WORKSPACES_PER_RUN);

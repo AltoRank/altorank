@@ -6,7 +6,14 @@ import { sendReportEmail } from "@/lib/email/resend";
 
 /**
  * Monthly cron (1st of month): auto-generate reports for all workspaces.
+ *
+ * Every workspace, one PDF render and one upload each, in a single invocation.
+ * At the 60-second default that stops part way through the list with no marker
+ * saying where, so the sites at the end of it would never get a report at all.
+ * The row upserts on (workspace_id, period), so a re-run is safe.
  */
+export const maxDuration = 300;
+
 export async function GET(request: Request) {
   const cronSecret = cronSecretFrom(request);
   if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
@@ -32,10 +39,13 @@ export async function GET(request: Request) {
     .toISOString()
     .split("T")[0];
 
-  // Fetch all workspaces with their agency info
+  // Every workspace except the paused ones. This is the one scheduled job a
+  // customer sees the output of: a paused client was still being sent a
+  // monthly PDF about a month in which nothing was meant to happen.
   const { data: workspaces, error: workspacesError } = await supabase
     .from("workspaces")
-    .select("id, name, agency_id");
+    .select("id, name, agency_id")
+    .neq("status", "paused");
 
   // `generated: 0` must mean there was nothing to generate, not that the
   // workspace list could not be read.
