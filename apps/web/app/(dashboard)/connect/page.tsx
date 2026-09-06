@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { INTEGRATION_DESCRIPTIONS } from "@/lib/cms/integration-descriptions";
 import Link from "next/link";
 import { getIntegrations } from "@/lib/queries/integrations";
 import { getWorkspaces } from "@/lib/queries/workspaces";
@@ -126,7 +127,16 @@ export default async function IntegrationsPage({
                         }
                       />
                     </div>
-                    <p className="text-[12.5px] text-ink-2 my-2.5 leading-[1.5]">{i.description}</p>
+                    {/*
+                      The code's description wins over the row's. The seeded
+                      copy advertised collections, metafields, feature images
+                      and template binding that no adapter sends; migration 065
+                      rewrites it, and this makes an install that has not run
+                      065 yet tell the truth too.
+                    */}
+                    <p className="text-[12.5px] text-ink-2 my-2.5 leading-[1.5]">
+                      {INTEGRATION_DESCRIPTIONS[i.id] ?? i.description}
+                    </p>
                     {GOOGLE_INTEGRATIONS.has(i.id) ? (
                       <GoogleConnectButton
                         integrationId={i.id as "gsc" | "ga4"}
