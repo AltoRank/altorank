@@ -54,6 +54,68 @@ export const DRAFT_BEHAVIOUR: Record<CMSConfig["type"], string> = {
 };
 
 /**
+ * What "publish live" actually does, per platform, in words the dialog can
+ * show beside the option.
+ *
+ * The dialog used to print one generic sentence for all thirteen: "The article
+ * is public on {CMS} the moment you press Publish, or the schedule fires."
+ * That is false for two of them, and this codebase says so elsewhere. A git
+ * publish is a commit, not a deploy - lib/publishing/core.ts returns
+ * `indexnow: "awaiting-build"` and the publish cron budgets two hours for the
+ * URL to appear. And the WordPress plugin decides for itself: its own "post as
+ * draft" setting wins over this radio (wordpress-plugin.ts sends whatever the
+ * plugin asks for), which is why the note above the radio already warns about
+ * it.
+ */
+export const LIVE_BEHAVIOUR: Record<CMSConfig["type"], string> = {
+  wordpress: "Published as a public post the moment you press Publish.",
+  "wordpress-plugin":
+    "Sent as a published post - but the plugin decides: if its own setting says post as drafts, the article arrives as a draft anyway.",
+  woocommerce: "Published as a public post the moment you press Publish.",
+  ghost: "Published the moment you press Publish.",
+  webflow:
+    "The item is created and the collection is published, so it is live as soon as Webflow's publish finishes.",
+  shopify: "Visible on the storefront the moment you press Publish.",
+  wix: "Created as a draft post and published in a second call, so it is live when both return.",
+  notion:
+    "The page is added to the database, with the Status property set to the published option when one is named. A Notion page is visible to whoever the database is shared with; there is no public state of its own.",
+  hubspot: "Published the moment you press Publish.",
+  framer:
+    "The item is created without the draft flag. This connector has not been exercised against a live Framer project.",
+  magento: "Created as an enabled CMS page, public at /your-slug.",
+  webhook:
+    'The payload carries publish_mode: "publish". Your endpoint decides what that means.',
+  git:
+    "Committed to the branch. Your host still has to build and deploy, so the URL does not resolve yet - the publish cron confirms it afterwards, over about two hours before it gives up.",
+};
+
+/**
+ * Whether this connector's test proves the credentials can write.
+ *
+ * Eleven of the thirteen tests are a GET or a list. The dialog said "Test
+ * passed. {CMS} answered. Press Connect to save.", which reads as proof that
+ * publishing will work - and a Subscriber-role application password or a
+ * read_content-only Shopify app passes it, saves, and 403s on the first
+ * publish. Only the WordPress plugin (which creates and deletes a real draft)
+ * and the webhook (which delivers a test payload) exercise a write.
+ */
+export const TEST_PROVES: Record<CMSConfig["type"], "write" | "read"> = {
+  wordpress: "read",
+  "wordpress-plugin": "write",
+  woocommerce: "read",
+  ghost: "read",
+  webflow: "read",
+  shopify: "read",
+  wix: "read",
+  notion: "read",
+  hubspot: "read",
+  framer: "read",
+  magento: "read",
+  webhook: "write",
+  git: "read",
+};
+
+/**
  * Whether this connection can save a draft, and if not, why.
  *
  * Almost every platform can. Notion is the exception: a page in a database

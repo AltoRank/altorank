@@ -9,6 +9,8 @@ import { connectIntegration, deriveBlogUrl, testIntegrationConfig } from "@/app/
 import {
   DEFAULT_PUBLISH_MODE,
   DRAFT_BEHAVIOUR,
+  LIVE_BEHAVIOUR,
+  TEST_PROVES,
   draftSupport,
   type PublishMode,
 } from "@/lib/cms/publish-mode";
@@ -278,7 +280,16 @@ export function ConnectCmsDialog({
       const r = await testIntegrationConfig(config, publishMode);
       setTestResult(
         r.ok
-          ? { ok: true, message: `${tabLabel(cmsType)} answered. Press Connect to save.` }
+          ? {
+              ok: true,
+              // What the test proved, not what one would like it to have
+              // proved: eleven of the thirteen tests are a read, and saying
+              // otherwise is how a Subscriber-role password gets connected.
+              message:
+                TEST_PROVES[cmsType] === "write"
+                  ? `${tabLabel(cmsType)} accepted a test write. Press Connect to save.`
+                  : `${tabLabel(cmsType)} answered a read request. That the credentials can also publish is not proven until the first publish. Press Connect to save.`,
+            }
           : { ok: false, message: r.error },
       );
     } catch (err) {
@@ -661,8 +672,7 @@ export function ConnectCmsDialog({
               <span className="flex flex-col gap-0.5">
                 <span className="text-[13px] font-medium text-ink">Publish live</span>
                 <span className="text-[12px] text-ink-3 leading-[1.45]">
-                  The article is public on {tabLabel(cmsType)} the moment you press
-                  Publish, or the schedule fires.
+                  {LIVE_BEHAVIOUR[cmsType]}
                 </span>
               </span>
             </label>
@@ -695,7 +705,7 @@ export function ConnectCmsDialog({
               type="button"
               disabled={testing || pending || !draftCheck.ok}
               onClick={handleSendTest}
-              title="Run the live connection test with these values. Nothing is saved."
+              title="Ask the CMS to answer with these values. Nothing is saved, and nothing is written on the far side except on the WordPress plugin and webhook connectors."
             >
               {testing ? "Testing…" : "Send test"}
             </Button>
