@@ -5,11 +5,13 @@ import { buildShareCard, CARD_WIDTH, CARD_HEIGHT } from "@/lib/share/card";
 import { ShareCardView } from "@/components/share/card-view";
 
 /**
- * The share card as a PNG, for a link that unfurls.
+ * The share card as a PNG, for the signed-in owner's own preview.
  *
  * Reads through the caller's cookie client, so RLS decides whether this
  * workspace is theirs: a foreign id is a 404, not a card. The picture is the
- * same `ShareCardView` the dialog rasterises, fed to satori.
+ * same `ShareCardView` the dialog rasterises, fed to satori. This route does
+ * not unfurl for anyone else and is not meant to: the public one is
+ * /api/og/share/[token], behind the workspace's share token.
  */
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

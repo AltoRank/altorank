@@ -207,7 +207,12 @@ export default async function DashboardPage() {
         actions={
           <>
             {shareFacts && scopeId && (
-              <ShareResults card={buildShareCard(shareFacts)} ogPath={`/api/og/workspace/${scopeId}`} />
+              <ShareResults
+                card={buildShareCard(shareFacts)}
+                ogPath={`/api/og/workspace/${scopeId}`}
+                workspaceId={scopeId}
+                shareToken={wsMap.get(scopeId)?.share_token ?? null}
+              />
             )}
             <ClientActions
               allowance={{ limit: allowance.limit, remaining: allowance.remaining, noPlan: allowance.reason === "no-plan" }}

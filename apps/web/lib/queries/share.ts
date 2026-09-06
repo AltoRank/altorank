@@ -1,17 +1,36 @@
-import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { ShareCardFacts } from "@/lib/share/card";
+import { resolveShareToken } from "@/lib/share/token";
 
 const CLICK_DAYS = 28;
 
 /**
- * The measured facts behind the share card, for one workspace.
- *
+ * The measured facts behind the share card, for one workspace, through the
+ * signed-in user's client: RLS decides whether the id is theirs.
+ */
+export async function getShareCardFacts(workspaceId: string): Promise<ShareCardFacts | null> {
+  return shareCardFactsWith(await createClient(), workspaceId);
+}
+
+/**
+ * The same facts for a public share link. The service role reads them, so
+ * the token is the whole credential: anything that does not resolve is null,
+ * and the caller answers 404 with nothing else said.
+ */
+export async function getShareCardFactsByToken(token: unknown): Promise<ShareCardFacts | null> {
+  const supabase = createServiceClient();
+  const workspaceId = await resolveShareToken(supabase, token);
+  if (!workspaceId) return null;
+  return shareCardFactsWith(supabase, workspaceId);
+}
+
+/**
  * Every read names the workspace. Clicks are null, not zero, when Search
  * Console is not connected or has synced nothing for the window; a connected
  * account that measured zero clicks gets a real zero.
  */
-export async function getShareCardFacts(workspaceId: string): Promise<ShareCardFacts | null> {
-  const supabase = await createClient();
+export async function shareCardFactsWith(supabase: SupabaseClient, workspaceId: string): Promise<ShareCardFacts | null> {
   const today = new Date().toISOString().slice(0, 10);
   const since = new Date(Date.now() - CLICK_DAYS * 86_400_000).toISOString().slice(0, 10);
 
