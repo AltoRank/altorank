@@ -31,7 +31,6 @@ type GateProps = {
    * reconnects; the block says so instead of looking merely slow.
    */
   needsReconnect?: boolean;
-  /** Short name of what the block would show, for the locked-state sentence. */
   children: React.ReactNode;
   /** Compact variant for a card that is a list rather than a chart. */
   dense?: boolean;
@@ -44,32 +43,46 @@ type GateProps = {
    * the failure this codebase keeps undoing - so it stays, as one line.
    */
   restated?: boolean;
+  /**
+   * What this block in particular would have shown, e.g. "clicks per page".
+   * The restated line names it, so three gated cards in a column read as
+   * three facts about three blocks rather than the same sentence three
+   * times. Only the first of them carries the link: one page, one CTA.
+   */
+  needs?: string;
+  /** Give this restated block the link. Exactly one per page should. */
+  restatedCta?: boolean;
 };
 
 /** One line, for the second and third block that gate on the same connection. */
-function BriefGate({ text, href, cta }: { text: string; href: string; cta: string }) {
+function BriefGate({ text, href, cta }: { text: string; href?: string; cta?: string }) {
   return (
     // h-full so a one-line message sits in the middle of a card whose height
     // is set by whatever is beside it, rather than at the top of the space.
     <div className="h-full min-h-[72px] grid place-items-center px-[18px] py-6 text-center text-[13px] text-ink-3">
       <p className="m-0 max-w-[46ch]">
-        {text}{" "}
-        <Link href={href} className="text-accent-ink underline decoration-line underline-offset-[3px]">
-          {cta}
-        </Link>
+        {text}
+        {href && cta && (
+          <>
+            {" "}
+            <Link href={href} className="text-accent-ink underline decoration-line underline-offset-[3px]">
+              {cta}
+            </Link>
+          </>
+        )}
       </p>
     </div>
   );
 }
 
-export function GscGate({ connected, hasData, needsReconnect = false, children, dense = false, restated = false }: GateProps) {
+export function GscGate({ connected, hasData, needsReconnect = false, children, dense = false, restated = false, needs, restatedCta = false }: GateProps) {
   if (connected && needsReconnect) {
     if (restated) {
       return (
         <BriefGate
-          text="Google refused the stored token, so nothing here has moved since the last successful sync."
-          href="/settings/search-console"
-          cta="Reconnect Google"
+          text={`Google refused the stored token, so ${needs ?? "nothing here"} stopped at the last successful sync.`}
+          href={restatedCta ? "/settings/search-console" : undefined}
+          cta={restatedCta ? "Reconnect Google" : undefined}
         />
       );
     }
@@ -90,9 +103,9 @@ export function GscGate({ connected, hasData, needsReconnect = false, children, 
     if (restated) {
       return (
         <BriefGate
-          text="Search Console is not connected, so there is nothing measured to show here."
-          href="/connect"
-          cta="Connect Search Console"
+          text={`Search Console is not connected, so ${needs ?? "there is nothing measured to show here"}.`}
+          href={restatedCta ? "/connect" : undefined}
+          cta={restatedCta ? "Connect Search Console" : undefined}
         />
       );
     }
@@ -114,7 +127,7 @@ export function GscGate({ connected, hasData, needsReconnect = false, children, 
     if (restated) {
       return (
         <div className="h-full min-h-[72px] grid place-items-center px-[18px] py-6 text-center text-[13px] text-ink-3">
-          Connected, and Google has not returned rows yet.
+          Connected, and Google has not returned {needs ?? "rows"} yet.
         </div>
       );
     }
@@ -189,9 +202,16 @@ function Series({ label, current, previous, gradientId }: { label: string; curre
  * would put a number in the hundreds beside one in the tens of thousands
  * and flatten the one that matters.
  */
-export function SearchPerformanceBlock({ perf, connected, needsReconnect }: { perf: SearchPerformance; connected: boolean; needsReconnect?: boolean }) {
+export function SearchPerformanceBlock({ perf, connected, needsReconnect, restated }: { perf: SearchPerformance; connected: boolean; needsReconnect?: boolean; restated?: boolean }) {
   return (
-    <GscGate connected={connected} hasData={perf.hasData} needsReconnect={needsReconnect}>
+    <GscGate
+      connected={connected}
+      hasData={perf.hasData}
+      needsReconnect={needsReconnect}
+      restated={restated}
+      needs="there are no clicks or impressions to plot"
+      restatedCta
+    >
       {!perf.hasClicks && perf.impressions.current === 0 && (perf.impressions.previous ?? 0) === 0 ? (
         // Synced, and the measurement is zero. Drawing a flat line would be a
         // claim about the site rather than about the data.
@@ -267,7 +287,14 @@ function Delta({ value }: { value: number | null }) {
 
 export function BestArticlesBlock({ pages, connected, hasData, days, needsReconnect, restated }: { pages: PageStat[]; connected: boolean; hasData: boolean; days: number; needsReconnect?: boolean; restated?: boolean }) {
   return (
-    <GscGate connected={connected} hasData={hasData} needsReconnect={needsReconnect} dense restated={restated}>
+    <GscGate
+      connected={connected}
+      hasData={hasData}
+      needsReconnect={needsReconnect}
+      dense
+      restated={restated}
+      needs="Google's per-page click counts are unavailable"
+    >
       {pages.length === 0 ? (
         <div className="px-3.5 py-6 text-center text-[13px] text-ink-3">
           Google reported no page with a click or an impression in the last {days} days.
@@ -339,7 +366,14 @@ export function OpportunitiesList({ opportunities }: { opportunities: QueryStat[
 
 export function CannibalizationBlock({ items, connected, hasData, days, needsReconnect, restated }: { items: Cannibalization[]; connected: boolean; hasData: boolean; days: number; needsReconnect?: boolean; restated?: boolean }) {
   return (
-    <GscGate connected={connected} hasData={hasData} needsReconnect={needsReconnect} dense restated={restated}>
+    <GscGate
+      connected={connected}
+      hasData={hasData}
+      needsReconnect={needsReconnect}
+      dense
+      restated={restated}
+      needs="the query-level positions this reads from are unavailable"
+    >
       {items.length === 0 ? (
         <div className="px-3.5 py-6 text-center text-[13px] text-ink-3">
           No query in the last {days} days had two of this site&apos;s pages ranking for it. That is a measurement over the

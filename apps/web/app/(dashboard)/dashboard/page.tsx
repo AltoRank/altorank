@@ -302,7 +302,20 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
           {/* Traffic chart */}
           <Card title={`Search performance · last ${traffic.days} days`} meta={<Chip label={scopeId ? (workspaces.find((w) => w.id === scopeId)?.name ?? "This workspace") : "All workspaces"} soft />} className="md:col-span-8">
-            <SearchPerformanceBlock perf={traffic} connected={gscConnected} needsReconnect={gscNeedsReconnect} />
+            {/* `restated`: with Search Console missing, the Recommended
+                actions strip directly above already gives the reason and the
+                Connect button, and it is the row designed to carry exactly
+                that. This card repeated it as a 220px prompt, Best articles
+                repeated it again, and Cannibalization a fourth time, so a
+                disconnected account met the same sentence four times before
+                it met anything about its own site. Each block still says why
+                it is empty; only one of them says it at length. */}
+            <SearchPerformanceBlock perf={traffic} connected={gscConnected} needsReconnect={gscNeedsReconnect} restated />
+            {/* A legend for a chart nothing drew, and a sync clock for rows
+                that were never fetched, are two more lines of chrome under a
+                block whose whole content is "not connected". */}
+            {gscConnected && (
+            <>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-ink-3 mt-2.5 font-mono">
               <span className="flex items-center gap-1.5">
                 <i className="inline-block w-2.5 h-2.5 rounded-sm bg-accent" />Current {traffic.days}d
@@ -334,6 +347,8 @@ export default async function DashboardPage() {
             <div className="mt-2">
               <DataFreshness health={health} now={now} />
             </div>
+            </>
+            )}
             {gscConnected && traffic.hasData && <OpportunitiesList opportunities={opportunities} />}
           </Card>
 
