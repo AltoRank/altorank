@@ -14,6 +14,8 @@ import { PageHead, DotSep, StatusPill } from "@/components/ui";
 import { Card } from "@/components/ui/card";
 import { CalendarControls } from "@/components/dashboard/calendar-controls";
 import { PlannerGrid, type PlannerCell, type PlannerItem } from "@/components/dashboard/planner-grid";
+import { PlanningProvider } from "@/components/dashboard/planning-state";
+import { PlannerSlot } from "@/components/dashboard/planner-slot";
 import type { WriteGate } from "@/components/dashboard/planner-card";
 import { PlanMonthButton } from "@/components/dashboard/plan-month-button";
 import type { Workspace } from "@/lib/types";
@@ -155,55 +157,60 @@ export default async function CalendarPage({ searchParams }: Props) {
   const slots = capacity?.available ?? 0;
 
   return (
-    <>
-      <PageHead
-        title={`${monthLabel} plan`}
-        subtitle={
-          <>
-            {runningCount > 0 && <StatusPill status="run" label={`${runningCount} running now`} />}
-            <span>{describeSlots(articleItems.length, improvementItems.length)} this month</span>
-            {wsMap.get(scopeId ?? "")?.domain ? (
-              <>
-                <DotSep />
-                <span className="font-mono text-[11.5px]">{wsMap.get(scopeId ?? "")?.domain}</span>
-              </>
-            ) : null}
-            <DotSep />
-            <span>
-              {doneCount} published · {queuedCount} queued
-              {frozenCount > 0 && (
+    <PlanningProvider>
+        <PageHead
+          title={`${monthLabel} plan`}
+          subtitle={
+            <>
+              {runningCount > 0 && <StatusPill status="run" label={`${runningCount} running now`} />}
+              <span>{describeSlots(articleItems.length, improvementItems.length)} this month</span>
+              {wsMap.get(scopeId ?? "")?.domain ? (
                 <>
-                  {" · "}
-                  <span title={frozen.reason ?? undefined}>{frozenCount} inactive</span>
+                  <DotSep />
+                  <span className="font-mono text-[11.5px]">{wsMap.get(scopeId ?? "")?.domain}</span>
+                </>
+              ) : null}
+              <DotSep />
+              <span>
+                {doneCount} published · {queuedCount} queued
+                {frozenCount > 0 && (
+                  <>
+                    {" · "}
+                    <span title={frozen.reason ?? undefined}>{frozenCount} inactive</span>
+                  </>
+                )}
+              </span>
+              {capacity && (
+                <>
+                  <DotSep />
+                  {/* The cap, stated as a count: "N of 60" is a fact about the
+                      calendar, and the room left is what the Plan button fills.
+                      Both kinds of slot are named when both are held. */}
+                  <span>
+                    {capacity.scheduled} of {capacity.cap} scheduled
+                    {capacity.improvements > 0 && ` (${describeSlots(capacity.articles, capacity.improvements)})`}
+                    {" · "}
+                    {plural(slots, "slot")} available
+                  </span>
                 </>
               )}
-            </span>
-            {capacity && (
-              <>
-                <DotSep />
-                {/* The cap, stated as a count: "N of 60" is a fact about the
-                    calendar, and the room left is what the Plan button fills.
-                    Both kinds of slot are named when both are held. */}
-                <span>
-                  {capacity.scheduled} of {capacity.cap} scheduled
-                  {capacity.improvements > 0 && ` (${describeSlots(capacity.articles, capacity.improvements)})`}
-                  {" · "}
-                  {plural(slots, "slot")} available
-                </span>
-              </>
-            )}
-          </>
-        }
-        actions={<>{scopeId && slots > 0 && <PlanMonthButton label={(capacity?.articles ?? 0) === 0 ? "Plan the month" : "Top up the plan"} />}</>}
-      />
+            </>
+          }
+          actions={<>{scopeId && slots > 0 && <PlanMonthButton label={(capacity?.articles ?? 0) === 0 ? "Plan the month" : "Top up the plan"} />}</>}
+        />
 
-      <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
-        <CalendarControls currentMonth={month} monthLabel={monthLabel} />
+        <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
+          <CalendarControls currentMonth={month} monthLabel={monthLabel} />
 
-        <Card flush>
-          <PlannerGrid cells={cells} now={now.getTime()} writeGate={writeGate} frozenCount={frozenCount} />
-        </Card>
-      </div>
-    </>
+          <Card flush>
+            <PlannerSlot
+              pace={capacity?.weeklyLimit ?? 0}
+              occupied={cells.flatMap((c) => (c ? c.items.map(() => c.date) : []))}
+            >
+              <PlannerGrid cells={cells} now={now.getTime()} writeGate={writeGate} frozenCount={frozenCount} />
+            </PlannerSlot>
+          </Card>
+        </div>
+    </PlanningProvider>
   );
 }
