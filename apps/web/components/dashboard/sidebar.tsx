@@ -9,11 +9,10 @@ import { usePathname } from "next/navigation";
 import { cn, plural } from "@/lib/utils";
 import { APP_NAME, DASHBOARD_NAV, type NavItem } from "@/lib/constants";
 import { Icons } from "@/components/ui/icons";
-import { Avatar } from "@/components/ui/avatar";
+import { AccountMenu } from "@/components/dashboard/account-menu";
 import { WorkspaceSwitcher } from "@/components/dashboard/workspace-switcher";
 import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 import { useOnboarding } from "@/components/onboarding/use-onboarding";
-import { signOut } from "@/app/actions/auth";
 import type { SiteAllowance } from "@/lib/workspaces/slots";
 
 const iconMap: Record<string, (p?: { size?: number }) => React.ReactNode> = Icons;
@@ -289,76 +288,34 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
         </Link>
       )}
 
-      {/* Footer */}
+      {/* Footer: the account block opens upward into the account menu, which
+          took over the guide, settings and sign-out icon buttons that used to
+          sit unlabelled beside the name. */}
       <div
         className={cn(
-          "border-t border-line py-2.5 text-[12.5px] text-ink-2 flex gap-2.5",
-          collapsed ? "px-0 flex-col items-center" : "px-3 items-center",
+          "border-t border-line py-2 flex items-center",
+          collapsed ? "flex-col gap-1" : "pr-2",
         )}
       >
-        <div className="flex items-center gap-[9px] flex-1 min-w-0">
-          <Avatar initials={userInitials} color="av-c5" round />
-          {!collapsed && (
-            <span className="flex-1 min-w-0">
-              <div className="font-medium text-ink truncate">{userName}</div>
-              {(role || typeof memberCount === "number") && (
-                <div className="text-[11px] text-ink-3">
-                  {[
-                    role ? role.charAt(0).toUpperCase() + role.slice(1) : null,
-                    typeof memberCount === "number" ? plural(memberCount, "member") : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </div>
-              )}
-            </span>
-          )}
+        <div className="flex-1 min-w-0">
+          <AccountMenu
+            userName={userName}
+            userInitials={userInitials}
+            subtitle={
+              [
+                role ? role.charAt(0).toUpperCase() + role.slice(1) : null,
+                typeof memberCount === "number" ? plural(memberCount, "member") : null,
+              ]
+                .filter(Boolean)
+                .join(" · ") || null
+            }
+            collapsed={collapsed}
+            openGuide={onboarding?.openGuide}
+          />
         </div>
-        {/* Grouped tightly: four controls at the footer's own gap left the
-            account name about forty pixels, which is four letters. */}
-        <div className={cn("flex items-center shrink-0", collapsed ? "flex-col gap-2" : "gap-0.5")}>
-            {/* Reopens the setup checklist. Lived in the topbar until the
-                topbar went; "Skip setup" is still the only way to hide it, so
-                there has to be a way back. */}
-            {onboarding && (
-              <Tooltip delayDuration={200}>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={onboarding.openGuide}
-                    aria-label="Open the setup guide"
-                    className="w-[26px] h-[26px] rounded-[6px] text-ink-3 grid place-items-center hover:bg-panel-2 hover:text-ink"
-                  >
-                    <Icons.help size={14} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top">Setup guide</TooltipContent>
-              </Tooltip>
-            )}
-            {/* Light or dark. Persisted per browser; the root layout's inline
-                script applies it before paint (lib/theme.ts). */}
-            <ThemeToggle />
-            {/* Had no onClick at all. It is a settings button beside an account
-                name, so it goes to settings. */}
-            <Link
-              href="/settings"
-              aria-label="Settings"
-              className="w-[26px] h-[26px] rounded-[6px] text-ink-3 grid place-items-center hover:bg-panel-2 hover:text-ink"
-            >
-              <Icons.settings size={14} />
-            </Link>
-            <Tooltip delayDuration={200}>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={() => signOut()}
-                  aria-label="Sign out"
-                  className="w-[26px] h-[26px] rounded-[6px] text-ink-3 grid place-items-center hover:bg-panel-2 hover:text-ink"
-                >
-                  <Icons.signOut size={14} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">Sign out</TooltipContent>
-            </Tooltip>
-        </div>
+        {/* Light or dark. Persisted per browser; the root layout's inline
+            script applies it before paint (lib/theme.ts). */}
+        <ThemeToggle />
       </div>
     </aside>
     </TooltipProvider>
