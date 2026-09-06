@@ -49,6 +49,27 @@ export async function createCheckoutSession(
     // customer is paying for Agency (2026-09-06).
     metadata: { agency_id: agencyId, plan, interval },
     subscription_data: { metadata: { agency_id: agencyId, plan, interval } },
+    // VAT, added at checkout rather than folded into the price.
+    //
+    // Nothing here handled tax before, so exactly EUR 69 / EUR 199 was charged
+    // to everyone. Inclusive pricing cannot work for this buyer: a VAT-
+    // registered business elsewhere in the EU is reverse-charged (it
+    // self-accounts and we collect nothing), while a consumer is charged at
+    // their own country's rate, 17% to 27%. One inclusive price would therefore
+    // pay us a different amount depending on who bought it and from where.
+    //
+    // `automatic_tax` makes Stripe decide the rate from the customer's
+    // location; `tax_id_collection` captures the VAT number that triggers the
+    // reverse charge; `customer_update.address` lets Stripe keep the address it
+    // needs to do either again on renewal, and is only accepted when the
+    // session already has a customer. The prices carry `tax_behavior:
+    // 'exclusive'` on the Price object in the Stripe dashboard - that is not
+    // something this call can set.
+    automatic_tax: { enabled: true },
+    tax_id_collection: { enabled: true },
+    ...(agency?.stripe_customer_id
+      ? { customer_update: { address: "auto" as const, name: "auto" as const } }
+      : {}),
     success_url:
       returnTo && /^\/[a-zA-Z0-9/_?=&%-]*$/.test(returnTo)
         ? `${APP_URL}${returnTo}${returnTo.includes("?") ? "&" : "?"}upgraded=1`
