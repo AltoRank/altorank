@@ -199,7 +199,7 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
             />
           )}
 
-          <Card title="Recent invoices" flush>
+          <Card title="Recent invoices" flush className="scroll-mt-6" id="invoices">
             {invoices && invoices.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[620px] border-collapse text-[13px]">

@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 export function Card({
   title,
   meta,
+  id,
   className,
   bodyClassName,
   flush = false,
@@ -25,6 +26,8 @@ export function Card({
 }: {
   title?: string;
   meta?: React.ReactNode;
+  /** Anchor target, so a link can land on one card. */
+  id?: string;
   className?: string;
   /** Extra classes for the body wrapper. Ignored when `flush`. */
   bodyClassName?: string;
@@ -33,7 +36,7 @@ export function Card({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn("bg-bg border border-line rounded-lg overflow-hidden", className)}>
+    <div id={id} className={cn("bg-bg border border-line rounded-lg overflow-hidden", className)}>
       {title && (
         <div className="px-[18px] py-3.5 border-b border-line-soft flex items-center gap-2.5">
           <h3 className="m-0 text-sm font-semibold tracking-[-0.005em]">{title}</h3>
