@@ -84,15 +84,26 @@ export function OpportunityBadge({ opportunity }: { opportunity: Opportunity }) 
   );
 }
 
+/**
+ * One thing that is undone, what it costs, and the way to undo it.
+ *
+ * Deliberately the same object as a card in the Dashboard's Recommended
+ * actions strip: same ground, same radius, same padding, a Button rather
+ * than a bare underlined link. The two were the same idea drawn two ways -
+ * `bg-panel` at `rounded-[9px]` here, `bg-bg` at `rounded-[10px]` there -
+ * on two pages a person moves between in one session.
+ */
 function Blocker({ title, body, href, cta }: { title: string; body: string; href?: string; cta?: string }) {
   return (
-    <div className="rounded-[9px] border border-line bg-panel px-4 py-3 text-[13px]">
-      <div className="font-medium text-ink mb-0.5">{title}</div>
-      <p className="text-ink-3 leading-relaxed m-0">{body}</p>
+    <div className="rounded-[10px] border border-line bg-bg px-4 py-3.5 flex flex-col gap-2">
+      <div className="text-[13.5px] font-medium text-ink">{title}</div>
+      <p className="text-[12.5px] text-ink-3 leading-[1.55] m-0 flex-1">{body}</p>
       {href && cta && (
-        <Link href={href} className="inline-block mt-2 text-accent-ink underline decoration-line underline-offset-[3px]">
-          {cta}
-        </Link>
+        <div>
+          <Link href={href}>
+            <Button size="sm">{cta}</Button>
+          </Link>
+        </div>
       )}
     </div>
   );
@@ -104,6 +115,11 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
   const [analyzing, startAnalyze] = useTransition();
 
   const visible = tab === "all" ? executions : executions.filter((e) => e.review_status === tab);
+  const blockerCount =
+    Number(!gscConnected) +
+    Number(!cms.connected) +
+    Number(cms.connected && !cms.updatable) +
+    Number(!refresh.enabled);
   const count = (s: ReviewStatus) => executions.filter((e) => e.review_status === s).length;
 
   function runAnalyze() {
@@ -143,8 +159,16 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
             for your existing articles. Approve the changes you like and push
             them to your CMS." - the title, the four tabs and the row actions
             below already say all three of those things. */}
-        {(!gscConnected || !cms.connected || (cms.connected && !cms.updatable) || !refresh.enabled) && (
-          <div className="grid gap-3 md:grid-cols-2">
+        {blockerCount > 0 && (
+          // Same column formula as the Recommended actions strip: as many
+          // columns as there are cards, capped. `md:grid-cols-2` left the
+          // third blocker alone on its own row at half width whenever three
+          // things were undone at once, which is the common case on a site
+          // nobody has connected anything to yet.
+          <div
+            className="grid gap-3 grid-cols-1 sm:grid-cols-[repeat(var(--cols),minmax(0,1fr))]"
+            style={{ "--cols": Math.min(blockerCount, 3) } as React.CSSProperties}
+          >
             {/* One sentence each, naming the consequence. Each of these was
                 two or three: the second sentence in every one of them
                 described a control that is visible on the rewrite it talks
@@ -248,9 +272,14 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
         <Card title="Candidates" meta={candidates.length ? plural(candidates.length, "page") : undefined} flush>
           {candidates.length === 0 ? (
             <div className="px-[18px] py-8 text-center text-[13px] text-ink-3">
+              {/* The blocker card at the top of this page is where the
+                  missing connection is explained and where its link lives.
+                  Repeating the CTA here made the same request twice on one
+                  screen; what this list owes the reader is why it in
+                  particular is empty. */}
               {gscConnected
                 ? "Nothing flagged. Analyze now reads the last 28 days of Search Console against your pages; the weekly pass does the same."
-                : "Connect Search Console to find pages worth rewriting."}
+                : "No candidates: pages are ranked for rewriting by their Search Console impressions, and there are none."}
             </div>
           ) : (
             <ul className="m-0 p-0 list-none divide-y divide-line-soft">
