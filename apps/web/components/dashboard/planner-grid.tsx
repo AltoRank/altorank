@@ -201,7 +201,12 @@ export function PlannerGrid({
   };
 
   return (
+    // A fixed id: dnd-kit otherwise numbers each context from a module-level
+    // counter, and the server and the client do not count the same way, so
+    // every drag handle's aria-describedby differed between the two and React
+    // logged a hydration mismatch on every load of /content.
     <DndContext
+      id="planner-dnd"
       sensors={sensors}
       collisionDetection={dayUnderPointer}
       onDragStart={onDragStart}

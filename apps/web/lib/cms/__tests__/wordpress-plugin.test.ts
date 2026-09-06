@@ -138,9 +138,11 @@ describe("WordPressPluginAdapter", () => {
 });
 
 describe("pluginInstallUrl", () => {
-  it("deep-links into the customer's own plugin installer", () => {
-    expect(pluginInstallUrl("https://example.com/")).toBe(
-      "https://example.com/wp-admin/plugin-install.php?s=altorank&tab=search&type=term",
-    );
+  it("deep-links to the Upload Plugin tab of the customer's own admin", () => {
+    expect(pluginInstallUrl("https://example.com/")).toBe("https://example.com/wp-admin/plugin-install.php?tab=upload");
+  });
+  it("never sends the person to a wordpress.org search: the plugin is not listed there", () => {
+    expect(pluginInstallUrl("https://example.com")).not.toContain("tab=search");
+    expect(pluginInstallUrl("https://example.com")).not.toContain("s=altorank");
   });
 });
