@@ -135,9 +135,10 @@ describe("token cache", () => {
   it("exchanges once and reuses the token across requests and adapter instances", async () => {
     mockFetch
       .mockResolvedValueOnce(tokenResponse("tok_A"))
-      .mockResolvedValueOnce(blogsResponse)
-      .mockResolvedValueOnce(blogsResponse)
-      .mockResolvedValueOnce(blogsResponse);
+      // testConnection reads the blog list, then asks for the granted scopes;
+      // the scopes answer is this same shape, which carries none, and a store
+      // that will not name them leaves the read result standing.
+      .mockResolvedValue(blogsResponse);
 
     const a = new ShopifyAdapter({ type: "shopify", storeUrl: STORE, ...CLIENT });
     const b = new ShopifyAdapter({ type: "shopify", storeUrl: STORE, ...CLIENT });
@@ -220,7 +221,7 @@ describe("401 handling", () => {
       .mockResolvedValueOnce(tokenResponse("tok_fresh"))
       .mockResolvedValueOnce(okJson({ article: { id: 99, handle: "hi" } }));
 
-    const adapter = new ShopifyAdapter({ type: "shopify", storeUrl: STORE, blogId: "7", ...CLIENT });
+    const adapter = new ShopifyAdapter({ type: "shopify", storeUrl: STORE, blogId: "7", blogHandle: "news", ...CLIENT });
     const r = await adapter.publish({ title: "Hi", html: "<p>x</p>", slug: "hi" });
 
     expect(r.externalId).toBe("99");

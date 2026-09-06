@@ -739,6 +739,9 @@ function buildConfig(type: CMSType, fd: FormData): CMSConfig {
       // Chosen from the store's own list in the guide; absent means the
       // adapter's default, the first blog, as every connection did before.
       const blogId = (fd.get("blogId") as string | null)?.trim();
+      // The handle the guide read off the store, kept so a published article
+      // links to /blogs/{handle}/... rather than to the numeric id.
+      const blogHandle = (fd.get("blogHandle") as string | null)?.trim();
       return {
         type: "shopify",
         storeUrl: (fd.get("storeUrl") as string).trim(),
@@ -746,6 +749,7 @@ function buildConfig(type: CMSType, fd: FormData): CMSConfig {
         // form carries exactly one credential; the server re-checks that.
         ...shopifyCredentialsFromForm(fd),
         ...(blogId ? { blogId } : {}),
+        ...(blogHandle ? { blogHandle } : {}),
       };
     }
     case "magento":

@@ -317,6 +317,17 @@ export function ShopifyGuide() {
           {blogs && blogs.length > 0 ? (
             <label className="flex flex-col gap-1.5">
               <span className="text-[12.5px] font-medium text-ink-2">Blog</span>
+              {/*
+                The handle, not just the id: a storefront URL is
+                /blogs/{handle}/{article-handle}, and the id appears in no
+                public path. It was read here and thrown away, which is why
+                every published Shopify link 404'd.
+              */}
+              <input
+                type="hidden"
+                name="blogHandle"
+                value={(blogId ? blogs.find((b) => b.id === blogId) : blogs[0])?.handle ?? ""}
+              />
               <select
                 name="blogId"
                 value={blogId}

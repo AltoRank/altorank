@@ -373,6 +373,13 @@ export type ShopifyConfig = {
   type: "shopify";
   storeUrl: string;
   blogId?: string;
+  /**
+   * The chosen blog's handle - `news` in /blogs/news/my-post. A storefront
+   * URL is built from this, not from the numeric blog id, which appears in no
+   * public path. Absent on connections made before the URL fix, and resolved
+   * off the store's blog list when it is.
+   */
+  blogHandle?: string;
 } & ShopifyCredentials;
 
 export type MagentoConfig = {

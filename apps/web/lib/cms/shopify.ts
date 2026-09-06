@@ -230,33 +230,94 @@ export async function listShopifyBlogs(storeUrl: string, credentials: ShopifyCre
   }));
 }
 
+/**
+ * A storefront article URL.
+ *
+ * Shopify's storefront routes an article as `/blogs/{blog-handle}/{article-handle}`.
+ * The adapter used to build `/blogs/{blogId}/{handle}` from the numeric blog
+ * id, which is an admin identifier and not part of any storefront path, so
+ * every "View published article" on a Shopify connection was a 404 - and it
+ * went to IndexNow under the store's own domain. The handle is read off the
+ * store's blog list, which the connect dialog already shows.
+ * https://shopify.dev/docs/api/admin-rest/latest/resources/article
+ */
+export function shopifyArticleUrl(
+  storeUrl: string,
+  blogHandle: string,
+  articleHandle: string,
+): string {
+  if (!blogHandle || !articleHandle) return "";
+  return `${normaliseStoreUrl(storeUrl)}/blogs/${blogHandle}/${articleHandle}`;
+}
+
+/** The scopes Shopify says this app was granted, or null when it will not say. */
+export async function shopifyGrantedScopes(
+  storeUrl: string,
+  credentials: ShopifyCredentials,
+): Promise<string[] | null> {
+  try {
+    // Not a versioned endpoint, so it does not go through shopifyRequest.
+    const token = await resolveToken(normaliseStoreUrl(storeUrl), shopifyCredential(credentials));
+    const res = await fetch(`${normaliseStoreUrl(storeUrl)}/admin/oauth/access_scopes.json`, {
+      headers: { "X-Shopify-Access-Token": token },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { access_scopes?: Array<{ handle?: string }> };
+    const scopes = (data.access_scopes ?? [])
+      .map((s) => s.handle)
+      .filter((h): h is string => typeof h === "string");
+    return scopes.length ? scopes : null;
+  } catch {
+    return null;
+  }
+}
+
 export class ShopifyAdapter implements CMSAdapter {
   private storeUrl: string;
   private credential: ShopifyCredential;
   private blogId: string | undefined;
+  private blogHandle: string | undefined;
 
   constructor(config: ShopifyConfig) {
     this.storeUrl = normaliseStoreUrl(config.storeUrl);
     this.credential = shopifyCredential(config);
     this.blogId = config.blogId;
+    this.blogHandle = config.blogHandle;
   }
 
   private request(path: string, init?: Omit<RequestInit, "headers">) {
     return shopifyRequest(this.storeUrl, this.credential, path, init);
   }
 
-  private async resolveBlogId(): Promise<string> {
-    if (this.blogId) return this.blogId;
+  /**
+   * The blog to publish into, id and handle.
+   *
+   * The handle is what a storefront URL is made of, so it is resolved
+   * alongside the id: from the connection when the dialog stored it, and off
+   * the store's own blog list otherwise, which is also how a connection with
+   * no blog chosen finds the first one.
+   */
+  private async resolveBlog(): Promise<{ id: string; handle: string }> {
+    if (this.blogId && this.blogHandle) return { id: this.blogId, handle: this.blogHandle };
 
     const blogs = await listShopifyBlogs(this.storeUrl, shopifyCredentialsOf(this.credential));
     if (!blogs.length) throw new Error("No blogs found on Shopify store");
 
-    this.blogId = blogs[0].id;
-    return this.blogId;
+    const chosen = this.blogId ? blogs.find((b) => b.id === this.blogId) : blogs[0];
+    if (!chosen) {
+      throw new Error(`Blog ${this.blogId} is not on this store any more. Reconnect and choose one.`);
+    }
+    this.blogId = chosen.id;
+    this.blogHandle = chosen.handle;
+    return { id: chosen.id, handle: chosen.handle };
+  }
+
+  private async resolveBlogId(): Promise<string> {
+    return (await this.resolveBlog()).id;
   }
 
   async publish(article: PublishPayload): Promise<PublishResult> {
-    const blogId = await this.resolveBlogId();
+    const { id: blogId, handle: blogHandle } = await this.resolveBlog();
     const draft = article.publishMode === "draft";
 
     const res = await this.request(`blogs/${blogId}/articles.json`, {
@@ -283,7 +344,50 @@ export class ShopifyAdapter implements CMSAdapter {
     const data = await res.json();
     return {
       externalId: String(data.article.id),
-      url: data.article.url ?? `${this.storeUrl}/blogs/${blogId}/${data.article.handle}`,
+      // A hidden article has no storefront URL to claim.
+      url: draft
+        ? ""
+        : data.article.url ?? shopifyArticleUrl(this.storeUrl, blogHandle, data.article.handle),
+    };
+  }
+
+  /**
+   * Rewrite the article in place.
+   *
+   * Without this, a Shopify connection - which defaults to draft mode - hit
+   * lib/publishing/core.ts's "cannot be updated in place from here" refusal on
+   * the second press of Publish, with nothing else on offer. The Admin REST
+   * article resource has a PUT, so the refusal was ours, not Shopify's.
+   */
+  async update(externalId: string, article: PublishPayload): Promise<PublishResult> {
+    const { id: blogId, handle: blogHandle } = await this.resolveBlog();
+    const draft = article.publishMode === "draft";
+
+    const res = await this.request(`blogs/${blogId}/articles/${externalId}.json`, {
+      method: "PUT",
+      body: JSON.stringify({
+        article: {
+          id: Number(externalId),
+          title: article.title,
+          body_html: article.html,
+          tags: article.tags?.join(", ") ?? "",
+          published: !draft,
+          summary_html: article.metaDescription ? `<p>${article.metaDescription}</p>` : undefined,
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Shopify update failed (${res.status}): ${err}`);
+    }
+
+    const data = await res.json();
+    return {
+      externalId: String(data.article?.id ?? externalId),
+      url: draft
+        ? ""
+        : data.article?.url ?? shopifyArticleUrl(this.storeUrl, blogHandle, data.article?.handle ?? article.slug),
     };
   }
 
@@ -295,10 +399,28 @@ export class ShopifyAdapter implements CMSAdapter {
     if (!res.ok) throw new Error(`Shopify unpublish failed (${res.status})`);
   }
 
+  /**
+   * The store answers, and the app may write.
+   *
+   * The read alone used to be the whole test, so a `read_content`-only app
+   * passed, saved, and 403'd on the first publish - which the dialog had
+   * already called a passed connection test. Shopify will name the granted
+   * scopes, so when it does, a missing write_content is a refusal here
+   * instead of a failed publish later. When it will not say, the read result
+   * stands and the dialog says only that the store answered a read request.
+   */
   async testConnection(): Promise<{ ok: boolean; error?: string }> {
     try {
       const res = await this.request("blogs.json");
       if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+
+      const scopes = await shopifyGrantedScopes(this.storeUrl, shopifyCredentialsOf(this.credential));
+      if (scopes && !scopes.includes("write_content")) {
+        return {
+          ok: false,
+          error: `This app was granted ${scopes.join(", ")}. Publishing needs write_content: add it to the app's scopes and reinstall.`,
+        };
+      }
       return { ok: true };
     } catch (e) {
       return { ok: false, error: (e as Error).message };

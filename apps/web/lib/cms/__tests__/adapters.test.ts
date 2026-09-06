@@ -85,11 +85,14 @@ describe("WordPressAdapter", () => {
 // Shopify
 // ---------------------------------------------------------------------------
 describe("ShopifyAdapter", () => {
+  // Both id and handle stored, which is what the connect dialog saves now, so
+  // no blog lookup is needed before a publish.
   const adapter = new ShopifyAdapter({
     type: "shopify",
     storeUrl: "https://mystore.myshopify.com",
     accessToken: "shpat_xxx",
     blogId: "123",
+    blogHandle: "news",
   });
 
   it("publish() uses API response url field", async () => {
@@ -99,7 +102,7 @@ describe("ShopifyAdapter", () => {
         article: {
           id: 99,
           handle: "hello",
-          url: "https://custom-domain.com/blogs/123/hello",
+          url: "https://custom-domain.com/blogs/news/hello",
         },
       }),
     });
@@ -110,16 +113,17 @@ describe("ShopifyAdapter", () => {
       slug: "hello",
     });
 
-    expect(result.url).toBe("https://custom-domain.com/blogs/123/hello");
+    expect(result.url).toBe("https://custom-domain.com/blogs/news/hello");
     expect(result.externalId).toBe("99");
   });
 
-  it("publish() falls back to constructed url if api url missing", async () => {
+  // P0-C2: the fallback used to be `/blogs/{blogId}/{handle}`, and the numeric
+  // blog id is an admin identifier that appears in no storefront path - so
+  // every "View published article" was a 404 sent to IndexNow.
+  it("publish() builds the storefront path from the blog handle, not its id", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({
-        article: { id: 99, handle: "hello" },
-      }),
+      json: async () => ({ article: { id: 99, handle: "hello" } }),
     });
 
     const result = await adapter.publish({
@@ -128,14 +132,48 @@ describe("ShopifyAdapter", () => {
       slug: "hello",
     });
 
-    expect(result.url).toBe("https://mystore.myshopify.com/blogs/123/hello");
+    expect(result.url).toBe("https://mystore.myshopify.com/blogs/news/hello");
+  });
+
+  it("publish() looks the handle up when the connection predates it", async () => {
+    const idOnly = new ShopifyAdapter({
+      type: "shopify",
+      storeUrl: "https://mystore.myshopify.com",
+      accessToken: "shpat_xxx",
+      blogId: "123",
+    });
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ blogs: [{ id: 9, handle: "other" }, { id: 123, handle: "news" }] }),
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ article: { id: 99, handle: "hello" } }) });
+
+    const result = await idOnly.publish({ title: "Hello", html: "<p>w</p>", slug: "hello" });
+    expect(result.url).toBe("https://mystore.myshopify.com/blogs/news/hello");
+    expect(mockFetch.mock.calls[1][0]).toContain("/blogs/123/articles.json");
+  });
+
+  it("a hidden (draft) article claims no storefront URL", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ article: { id: 99, handle: "hello" } }),
+    });
+
+    const result = await adapter.publish({
+      title: "Hello",
+      html: "<p>w</p>",
+      slug: "hello",
+      publishMode: "draft",
+    });
+    expect(result).toEqual({ externalId: "99", url: "" });
   });
 
   it("publish() uses 2025-01 API version", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        article: { id: 1, handle: "x", url: "https://x.com/blogs/123/x" },
+        article: { id: 1, handle: "x", url: "https://x.com/blogs/news/x" },
       }),
     });
 
@@ -143,6 +181,31 @@ describe("ShopifyAdapter", () => {
 
     const url = mockFetch.mock.calls[0][0] as string;
     expect(url).toContain("/admin/api/2025-01/");
+  });
+
+  // P0-C7: without update(), the second press of Publish on a Shopify draft
+  // hit core.ts's "cannot be updated in place" refusal, with nothing else on
+  // offer. The Admin REST article resource has a PUT.
+  it("update() PUTs the article in place and keeps its id", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ article: { id: 99, handle: "hello" } }),
+    });
+
+    const result = await adapter.update("99", { title: "New", html: "<p>w2</p>", slug: "hello" });
+
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toContain("/blogs/123/articles/99.json");
+    expect(opts.method).toBe("PUT");
+    expect(JSON.parse(opts.body).article).toMatchObject({ id: 99, title: "New", published: true });
+    expect(result).toEqual({ externalId: "99", url: "https://mystore.myshopify.com/blogs/news/hello" });
+  });
+
+  it("update() reports Shopify's own error", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 404, text: async () => "Not Found" });
+    await expect(
+      adapter.update("99", { title: "New", html: "<p>x</p>", slug: "hello" }),
+    ).rejects.toThrow(/Shopify update failed \(404\)/);
   });
 
   it("unpublish() sends DELETE", async () => {
@@ -161,30 +224,68 @@ describe("ShopifyAdapter", () => {
     expect(mockFetch.mock.calls[0][0]).toContain("/blogs.json");
   });
 
-  it("resolveBlogId() fetches from API when blogId not set", async () => {
+  // P0-C4: a read-only app used to pass the test, save, and 403 on the first
+  // publish. Shopify will name its granted scopes, so when it does, say so.
+  it("testConnection() refuses an app without write_content", async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ access_scopes: [{ handle: "read_content" }] }),
+      });
+
+    const result = await adapter.testConnection();
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/needs write_content/);
+  });
+
+  it("testConnection() passes when write_content is granted", async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ access_scopes: [{ handle: "read_content" }, { handle: "write_content" }] }),
+      });
+
+    expect(await adapter.testConnection()).toEqual({ ok: true });
+  });
+
+  it("resolveBlog() fetches from API when no blog is chosen", async () => {
     const noBlogAdapter = new ShopifyAdapter({
       type: "shopify",
       storeUrl: "https://mystore.myshopify.com",
       accessToken: "shpat_xxx",
     });
 
-    // First call: resolveBlogId fetches blogs
+    // First call: the blog list
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ blogs: [{ id: 456 }] }),
+      json: async () => ({ blogs: [{ id: 456, handle: "journal" }] }),
     });
     // Second call: actual publish
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({
-        article: { id: 1, handle: "x", url: "https://x.com/blogs/456/x" },
-      }),
+      json: async () => ({ article: { id: 1, handle: "x" } }),
     });
 
-    await noBlogAdapter.publish({ title: "T", html: "<p>h</p>", slug: "t" });
+    const result = await noBlogAdapter.publish({ title: "T", html: "<p>h</p>", slug: "t" });
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(mockFetch.mock.calls[1][0]).toContain("/blogs/456/");
+    expect(result.url).toBe("https://mystore.myshopify.com/blogs/journal/x");
+  });
+
+  it("says so when the chosen blog is gone, instead of publishing elsewhere", async () => {
+    const stale = new ShopifyAdapter({
+      type: "shopify",
+      storeUrl: "https://mystore.myshopify.com",
+      accessToken: "shpat_xxx",
+      blogId: "999",
+    });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ blogs: [{ id: 1, handle: "news" }] }) });
+    await expect(stale.publish({ title: "T", html: "<p>h</p>", slug: "t" })).rejects.toThrow(
+      /not on this store any more/,
+    );
   });
 });
 
@@ -630,7 +731,7 @@ describe("WebflowAdapter", () => {
 
     await expect(
       adapter.publish({ title: "Hello", html: "<p>world</p>", slug: "hello" }),
-    ).rejects.toThrow(/would not publish it \(402\).*staged in the collection/s);
+    ).rejects.toThrow(/would not publish it \(402\)[\s\S]*staged in the collection/);
   });
 
   it("update() throws when the republish is refused", async () => {

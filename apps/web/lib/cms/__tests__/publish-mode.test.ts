@@ -94,7 +94,7 @@ describe("Webflow", () => {
 });
 
 describe("Shopify", () => {
-  const shopify = new ShopifyAdapter({ type: "shopify", storeUrl: "https://s.myshopify.com", accessToken: "t", blogId: "7" });
+  const shopify = new ShopifyAdapter({ type: "shopify", storeUrl: "https://s.myshopify.com", accessToken: "t", blogId: "7", blogHandle: "news" });
 
   it("draft is published=false with no published_at", async () => {
     mockFetch.mockResolvedValue({ ok: true, json: async () => ({ article: { id: 1, handle: "hello" } }) });
