@@ -249,6 +249,49 @@ To run a job by hand:
 curl -fsS -H "x-cron-secret: $CRON_SECRET" https://<your-app>/api/cron/generate
 ```
 
+## Stripe
+
+Billing is off until `STRIPE_SECRET_KEY` is set (`billingEnabled` in
+`apps/web/lib/stripe.ts`); a self-hosted install without it runs unmetered.
+When it is on, three things live in the Stripe dashboard and nothing in this
+repository can set them:
+
+### 1. The webhook endpoint and its events
+
+Endpoint URL: `https://<your-app>/api/webhooks/stripe`. Its signing secret is
+`STRIPE_WEBHOOK_SECRET`. Subscribe it to exactly these events - the list is
+`REQUIRED_STRIPE_EVENTS` in `apps/web/lib/stripe.ts`, and a test fails if the
+route stops handling any of them:
+
+| Event | Without it |
+|---|---|
+| `checkout.session.completed` | `plan_status` never becomes active after checkout |
+| `customer.subscription.created` | a subscription started outside our checkout is never mapped to an account |
+| `customer.subscription.updated` | plan changes, cancel-at-period-end and the period end are never recorded |
+| `customer.subscription.deleted` | cancellations never land; access never ends |
+| `invoice.payment_failed` | the past-due grace window and dunning banner never start |
+| `invoice.paid` | a recovered payment never clears them |
+
+A missing event fails silently: Stripe simply never calls, and the product
+shows whatever state it last knew.
+
+### 2. `tax_behavior` on every Price
+
+The Checkout session asks Stripe to compute VAT (`automatic_tax`) and to
+collect a VAT number (`tax_id_collection`). Both assume the four Prices in
+`STRIPE_PRICE_*` are marked **exclusive** - in the dashboard, each price's
+"Include tax in price" set to **No**. `tax_behavior` lives on the Price object,
+cannot be passed from the session, and **cannot be changed once set**; a price
+created as inclusive has to be replaced. Left unspecified, Stripe treats EUR 69
+as tax-inclusive and computes the VAT out of it, which is the opposite of what
+the pricing page says.
+
+### 3. Stripe Tax itself
+
+`automatic_tax` requires Stripe Tax to be activated on the account with a head
+office address (Tax → Settings). Without it, checkout returns an error rather
+than a session.
+
 ## The marketing site
 
 `altorank.co` is no longer in this repository. It lives in
@@ -335,7 +378,7 @@ least once.
    Without it the hosted product generates once a day, not four times.
 5. **The marketing deploy.** By hand, unless one of the two automatic paths
    above is switched on.
-6. **Stripe webhook registration** (`/api/webhooks/stripe`) and the price ids.
+6. **Stripe webhook registration** (`/api/webhooks/stripe`) and the price ids. See **Stripe** below for the six events and the price setting nothing here can set.
 7. **Google OAuth client** and its redirect URI.
 8. **Supabase Auth URL configuration** (Site URL, redirect allow-list) and a
    verified Resend sender domain.

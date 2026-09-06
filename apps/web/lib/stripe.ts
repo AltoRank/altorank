@@ -189,3 +189,29 @@ export const PLAN_FEATURES: Record<PlanTier, string[]> = {
     "A named contact",
   ],
 };
+
+/**
+ * Every event the webhook at /api/webhooks/stripe needs the Stripe endpoint to
+ * be subscribed to. The endpoint's event list is dashboard configuration that
+ * nothing in this repository can set, so this is the checklist - and a test
+ * asserts the route handles each one, so the list cannot drift from the code.
+ *
+ * What breaks when one is missing:
+ *   checkout.session.completed      plan_status never goes active after checkout
+ *   customer.subscription.created   a subscription started outside our checkout
+ *                                   is never mapped to an agency
+ *   customer.subscription.updated   plan changes, cancel-at-period-end and the
+ *                                   period end are never recorded
+ *   customer.subscription.deleted   cancellations never land; access never ends
+ *   invoice.payment_failed          the past-due grace window and dunning banner
+ *                                   never start (migration 071)
+ *   invoice.paid                    a recovered payment never clears them
+ */
+export const REQUIRED_STRIPE_EVENTS = [
+  "checkout.session.completed",
+  "customer.subscription.created",
+  "customer.subscription.updated",
+  "customer.subscription.deleted",
+  "invoice.payment_failed",
+  "invoice.paid",
+] as const;
