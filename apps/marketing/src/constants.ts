@@ -65,14 +65,6 @@ export const OSS_COMPARISON_LABEL_DE = OSS_REPO_PUBLIC
 // and a traction number we cannot evidence is the exact failure mode commits
 // cfd78ef / edc6ed9 were cleaning up.
 //
-// ⚠️ VERIFY BEFORE SENDING. September 2026 is an assumption, not a confirmed
-// date. Change it here and both languages update. If the date slips, change it
-// here rather than letting a stale claim sit on a document going to agencies.
-export const PILOT_START = {
-  en: 'September 2026',
-  it: 'settembre 2026',
-};
-
 export const NAV_LINKS = [
   { label: 'How it works', href: '/#how-it-works' },
   { label: 'Features', href: '/#features' },

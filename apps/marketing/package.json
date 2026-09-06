@@ -11,7 +11,7 @@
     "og:generate": "node scripts/generate-og-default.mjs",
     "favicon:generate": "node scripts/generate-favicon.mjs",
     "pdf": "node scripts/generate-pdf.mjs",
-    "deploy": "astro build && npx --yes wrangler pages deploy dist --project-name ${CF_PAGES_PROJECT:?set CF_PAGES_PROJECT to your Cloudflare Pages project name (and CLOUDFLARE_API_TOKEN, or run: npx wrangler login)}",
+    "deploy": "npm run build && npx --yes wrangler pages deploy dist --branch main --project-name ${CF_PAGES_PROJECT:?set CF_PAGES_PROJECT to your Cloudflare Pages project name (and CLOUDFLARE_API_TOKEN, or run: npx wrangler login)}",
     "brand:generate": "node scripts/generate-brand.mjs",
     "og:posts": "node scripts/generate-og-posts.mjs",
     "og": "npm run og:generate && npm run og:posts"

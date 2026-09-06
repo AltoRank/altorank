@@ -1,2 +1,8 @@
 .vercel
 .env*
+
+# Cloudflare Workers (opt-in, see docs/deploy-cloudflare.md)
+.open-next/
+.wrangler/
+.dev.vars
+cloudflare-env.d.ts

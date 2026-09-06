@@ -38,10 +38,5 @@
 # sent to prospects as an outreach artifact, it is paired with /it/agency-blueprint
 # via hreflang, and a slug is a far weaker signal than the title and body it
 # would cost two more redirects to change.
-/for/agencies          /agency-blueprint             301
+/for/agencies          /for-agencies                 301
 
-# /integrations/* removed 2026-08-22: three templated pages of 120-141 unique
-# words each. The home page carries the integrations feature block, so it is the
-# closest surviving equivalent.
-/integrations          /                             301
-/integrations/*        /                             301

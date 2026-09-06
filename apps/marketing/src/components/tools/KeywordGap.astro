@@ -1,0 +1,106 @@
+---
+import ToolShell from './ToolShell.astro';
+import Button from '@/components/shared/Button.astro';
+---
+<ToolShell label="Keyword gap analysis">
+  <div class="grid gap-4 md:grid-cols-2">
+    <div>
+      <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="kg-yours">Your keywords, one per line</label>
+      <textarea id="kg-yours" rows="7" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft" placeholder="Paste a Search Console or rank-tracker export. Extra columns after a tab or comma are ignored.">project management software
+free project management tools
+project brief template
+asana alternatives</textarea>
+    </div>
+    <div>
+      <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="kg-theirs">Competitor keywords, one per line</label>
+      <textarea id="kg-theirs" rows="7" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft" placeholder="One competitor's ranking keywords. Run it once per competitor.">project management software
+best project management software for small business
+project charter template
+gantt chart maker
+monday.com login
+monday.com careers
+asana alternatives</textarea>
+    </div>
+  </div>
+  <div class="mt-3 flex flex-wrap items-center gap-3">
+    <label class="flex flex-1 items-center gap-2 text-[13px] text-ink-2 min-w-[240px]">Exclude keywords containing
+      <input id="kg-brand" class="min-h-11 flex-1 rounded-[9px] border border-line bg-bg px-2.5 py-1.5 text-[13px] text-ink placeholder:text-ink-3" placeholder="monday, careers, login" value="monday.com" />
+    </label>
+    <Button variant="secondary" size="sm" data-kg="copy">Copy the gaps</Button>
+  </div>
+  <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+    {[['gap','They rank, you do not'],['shared','Both rank'],['yours','Only you rank']].map(([k,label]) => (
+      <div class="rounded-lg border border-line bg-bg p-3">
+        <div class="text-[20px] font-semibold leading-none tracking-[-0.02em] text-ink" data-kg={`n-${k}`}>0</div>
+        <div class="mt-1.5 text-[12px] text-ink-3">{label}</div>
+      </div>
+    ))}
+  </div>
+  <div class="mt-4 grid gap-4 md:grid-cols-3">
+    {[['gap','Gaps to consider'],['shared','Shared'],['yours','Yours alone']].map(([k,label]) => (
+      <div>
+        <p class="mb-1.5 text-[13px] font-medium text-ink-2">{label}</p>
+        <div class="max-h-[280px] overflow-auto rounded-lg border border-line bg-bg" data-kg={`l-${k}`}></div>
+      </div>
+    ))}
+  </div>
+  <p class="mt-3 text-[12.5px] leading-relaxed text-ink-3">
+    A gap is a keyword the competitor ranks for and you do not. Most of a raw gap list is their brand,
+    their careers page and SERPs you cannot reach yet, so the exclusion box is the most useful control
+    here. What survives still needs a look at the live results before it becomes a brief.
+  </p>
+</ToolShell>
+
+<script>
+  // Set difference over normalised keyword strings. Exports arrive as
+  // "keyword<tab>position<tab>volume" or "keyword,position", so everything
+  // after the first tab or comma is dropped. Normalisation is lowercase,
+  // trimmed, single-spaced; nothing cleverer, because "asana alternative"
+  // and "asana alternatives" are different rows in every export too.
+  function initKeywordGap() {
+    const yours = document.getElementById('kg-yours') as HTMLTextAreaElement | null;
+    const theirs = document.getElementById('kg-theirs') as HTMLTextAreaElement | null;
+    const brand = document.getElementById('kg-brand') as HTMLInputElement | null;
+    if (!yours || !theirs || !brand) return;
+    const q = (k: string) => document.querySelector(`[data-kg="${k}"]`);
+    const esc = (x: string) => x.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
+    const parse = (text: string) => {
+      const set = new Set<string>();
+      text.split('\n').forEach((line) => {
+        const kw = line.split(/\t|,/)[0].trim().toLowerCase().replace(/\s+/g, ' ');
+        if (kw && kw !== 'keyword' && kw !== 'query') set.add(kw);
+      });
+      return set;
+    };
+    let gapText = '';
+    const list = (k: string, items: string[], empty: string) => {
+      const el = q(`l-${k}`); if (!el) return;
+      el.innerHTML = items.length
+        ? items.map((kw, i) => `<div class="${i ? 'border-t border-line-soft' : ''} px-3 py-2 text-[13px] text-ink-2">${esc(kw)}</div>`).join('')
+        : `<p class="p-4 text-[12.5px] text-ink-3">${empty}</p>`;
+    };
+    const render = () => {
+      const a = parse(yours.value), b = parse(theirs.value);
+      const excl = brand.value.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+      const keep = (kw: string) => !excl.some((x) => kw.includes(x));
+      const gap = [...b].filter((kw) => !a.has(kw) && keep(kw)).sort();
+      const shared = [...b].filter((kw) => a.has(kw)).sort();
+      const mine = [...a].filter((kw) => !b.has(kw)).sort();
+      const excluded = [...b].filter((kw) => !a.has(kw) && !keep(kw)).length;
+      const set = (k: string, v: string) => { const el = q(k); if (el) el.textContent = v; };
+      set('n-gap', String(gap.length)); set('n-shared', String(shared.length)); set('n-yours', String(mine.length));
+      list('gap', gap, excluded ? `Nothing left after excluding ${excluded} keyword${excluded === 1 ? '' : 's'}.` : 'No gaps: everything they rank for, you rank for too.');
+      list('shared', shared, 'No overlap. Check that the two lists describe the same market.');
+      list('yours', mine, 'Nothing here is yours alone.');
+      gapText = gap.join('\n');
+    };
+    [yours, theirs, brand].forEach((el) => el.addEventListener('input', render));
+    const copy = document.querySelector('[data-kg="copy"]') as HTMLButtonElement | null;
+    copy?.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(gapText); copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy the gaps'; }, 1400); } catch { copy.textContent = 'Select and copy'; }
+    });
+    render();
+  }
+  initKeywordGap();
+  document.addEventListener('astro:page-load', initKeywordGap);
+</script>

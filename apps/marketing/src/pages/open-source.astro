@@ -89,7 +89,7 @@ const FAQS = [
   },
   {
     question: `Can I white-label ${APP_NAME} for my clients?`,
-    answer: `Yes, and it is in the free self-hosted build rather than gated behind a premium tier. That is the point of the model for agencies: run it on your own infrastructure, put your own brand on the reports and the client portal, and keep both the client relationship and the margin. Your clients never need to know what is underneath.`,
+    answer: `Yes, and it is in the free self-hosted build rather than gated behind a premium tier. That is the point of the model for agencies: run it on your own infrastructure, put your own brand on the reports, and keep both the client relationship and the margin. Your clients never need to know what is underneath.`,
   },
   {
     question: 'What ships first?',
@@ -107,7 +107,7 @@ const structuredData = [
   buildArticleSchema({
     title: `Open Source AI SEO Content Engine, ${APP_NAME}`,
     description:
-      'AltoRank is going open source, the whole product, with no feature gates. What that means for agencies, what you can and cannot do with it, and what ships first.',
+      'AltoRank is open source, the whole product, with no feature gates. What that means for agencies, what you can and cannot do with it, and what ships first.',
     publishDate,
     dateModified,
     author: AUTHOR_NAME,
@@ -121,13 +121,13 @@ const structuredData = [
 
 <PSEO
   title="Open Source SEO Tools: One Self-Hosted Content Engine"
-  description="AltoRank is going open source, the whole product, no feature gates. What that means for you, what stops a competitor reselling it, and what ships first."
+  description="AltoRank is open source, the whole product, no feature gates. What that means for you, what stops a competitor reselling it, and what ships first."
   breadcrumbs={breadcrumbs}
   structuredData={structuredData}
 >
   {/* ── HERO ──────────────────────────────────────────── */}
-  <header class="border-b border-line bg-[radial-gradient(600px_300px_at_88%_-10%,var(--accent-soft),transparent_70%),linear-gradient(180deg,var(--bg),var(--bg-2))] py-[72px]">
-    <div class="mx-auto max-w-[760px] px-8">
+  <header class="border-b border-line py-12 md:py-16 lg:py-[72px]">
+    <div class="mx-auto max-w-[760px] px-5 sm:px-6 lg:px-8">
       <h1 class="mb-6 text-[clamp(34px,5vw,48px)] font-semibold leading-[1.05] tracking-[-0.025em] text-ink [text-wrap:balance]">
         Open source SEO tools, in one self-hosted content engine
       </h1>
@@ -149,7 +149,7 @@ const structuredData = [
   {/* ── STATUS ────────────────────────────────────────── */}
   {/* Honest pre-launch status. Disappears automatically once the repo is public. */}
   <section class="border-b border-line py-10">
-    <div class="mx-auto max-w-[760px] px-8">
+    <div class="mx-auto max-w-[760px] px-5 sm:px-6 lg:px-8">
       {OSS_REPO_PUBLIC ? (
         <a
           href={OSS_REPO_URL}
@@ -164,10 +164,7 @@ const structuredData = [
         </a>
       ) : (
         <div class="rounded-xl border border-line bg-panel px-5 py-4">
-          <div class="mb-1.5 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.08em] text-warn">
-            <span class="h-1.5 w-1.5 rounded-full bg-current"></span>
-            Not public yet
-          </div>
+          <p class="mb-1.5 text-[14.5px] font-semibold text-ink">Not public yet</p>
           <p class="text-[14.5px] leading-relaxed text-ink-2">
             The repository is not open to the public at the time of writing, so there is
             nothing to clone today. The licence and the scope below are decided, not
@@ -181,7 +178,7 @@ const structuredData = [
 
   {/* ── NO FEATURE GATES ──────────────────────────────── */}
   <section class="border-b border-line py-[72px]">
-    <div class="mx-auto max-w-[760px] px-8">
+    <div class="mx-auto max-w-[760px] px-5 sm:px-6 lg:px-8">
       <div class="mb-8">
         <h2 class="mb-4 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
           No <code class="rounded bg-panel-2 px-1.5 py-0.5 font-mono text-[0.85em] text-ink-2">ee/</code> directory, no held-back tier
@@ -221,10 +218,9 @@ const structuredData = [
 
   {/* ── FOR AGENCIES (the reseller framing) ───────────── */}
   <section class="border-b border-line py-[72px]">
-    <div class="mx-auto max-w-[760px] px-8">
-      <div class="relative overflow-hidden rounded-xl border border-ink bg-ink p-8 text-bg">
-        <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(500px_240px_at_100%_0%,oklch(0.45_0.15_265/0.45),transparent_60%)]"></div>
-        <div class="relative z-10">
+    <div class="mx-auto max-w-[760px] px-5 sm:px-6 lg:px-8">
+      <div class="rounded-xl border border-ink bg-ink p-6 text-bg sm:p-8">
+        <div>
           <h2 class="mb-4 text-[clamp(23px,3vw,29px)] font-semibold leading-[1.15] tracking-[-0.02em] [text-wrap:balance]">
             Run it yourself. Put your brand on it. Keep the margin.
           </h2>
@@ -253,7 +249,7 @@ const structuredData = [
 
   {/* ── AUDITABLE MEASUREMENT ─────────────────────────── */}
   <section class="border-b border-line py-[72px]">
-    <div class="mx-auto max-w-[760px] px-8 flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+    <div class="mx-auto max-w-[760px] px-5 sm:px-6 lg:px-8 flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
       <h2 class="mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
         Ask three AI-visibility tools the same question, get three answers
       </h2>
@@ -283,7 +279,7 @@ const structuredData = [
 
   {/* ── THE LADDER ────────────────────────────────────── */}
   <section class="border-b border-line py-[72px]">
-    <div class="mx-auto max-w-[760px] px-8">
+    <div class="mx-auto max-w-[760px] px-5 sm:px-6 lg:px-8">
       <div class="mb-8">
         <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
           Free to self-host, priced when we run it
@@ -309,7 +305,7 @@ const structuredData = [
 
   {/* ── WHAT SHIPS FIRST ──────────────────────────────── */}
   <section class="border-b border-line py-[72px]">
-    <div class="mx-auto max-w-[760px] px-8 flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
+    <div class="mx-auto max-w-[760px] px-5 sm:px-6 lg:px-8 flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
       <h2 class="mb-1 text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
         The whole engine, in the open
       </h2>
@@ -335,7 +331,7 @@ The open release is the whole product rather than a first slice: research a keyw
 
   {/* ── FAQ ───────────────────────────────────────────── */}
   <section class="border-b border-line py-[72px]">
-    <div class="mx-auto max-w-[760px] px-8">
+    <div class="mx-auto max-w-[760px] px-5 sm:px-6 lg:px-8">
       <div class="mb-8">
         <h2 class="text-[clamp(24px,3.2vw,30px)] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">
           Common questions about the licence

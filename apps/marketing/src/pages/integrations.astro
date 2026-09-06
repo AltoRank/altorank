@@ -1,18 +1,27 @@
 ---
 import PSEO from '@/layouts/PSEO.astro';
 import Button from '@/components/shared/Button.astro';
-import { INTEGRATIONS } from '@/data/integrations';
+import { INTEGRATIONS, logoSvg } from '@/data/integrations';
 import { buildItemListSchema, buildFAQSchema, buildBreadcrumbSchema } from '@/lib/schema';
 import { APP_NAME, SITE_URL, PRIMARY_CTA } from '@/constants';
 
 // The site claimed twelve destinations in three places and had no page that
 // listed them. This is that page, and it renders from src/data/integrations.ts,
-// which in turn tracks apps/web/app/actions/integrations.ts. Adding a
-// connector to the product and forgetting this page is now a one-line diff
-// rather than an invisible omission.
+// which in turn tracks apps/web/app/actions/integrations.ts and the adapters in
+// apps/web/lib/cms. Adding a connector to the product and forgetting this page
+// is now a one-line diff rather than an invisible omission.
+//
+// The "what approving does" table exists because the honest answer differs per
+// platform: approving is always the publish, but unpublishing returns a post to
+// draft on some platforms and deletes it on others. Saying "publish" for all of
+// them would be true and would still mislead.
 const pageUrl = `${SITE_URL}/integrations`;
 const live = INTEGRATIONS.filter((i) => !i.soon);
 const soon = INTEGRATIONS.filter((i) => i.soon);
+
+// Platforms lib/cms/detect.ts identifies from one fetch of the homepage. Kept
+// as a list so the sentence below cannot claim a detection the code lacks.
+const DETECTED = ['WordPress', 'WooCommerce', 'Shopify', 'Webflow', 'Ghost', 'Framer', 'Wix', 'HubSpot', 'Magento', 'Squarespace', 'Next.js', 'Astro', 'Hugo', 'Jekyll'];
 
 const breadcrumbs = [
   { label: 'Home', href: '/' },
@@ -25,8 +34,16 @@ const FAQ = [
     answer: `No, and that is the point of the product. A connection is a destination, not a permission to act: the publish path requires a person to approve that specific draft first. Connecting WordPress does not create a robot that posts daily; it removes the copy-and-paste step after you have said yes.`,
   },
   {
+    question: 'Can I publish as a draft instead of live?',
+    answer: `Not as a connector setting: the review happens in ${APP_NAME} before anything is sent, so approving is the publish. Every destination goes live on approve. If you want a second pair of eyes on the destination side, connect Notion as a staging database and approve there first, or unpublish afterwards, which returns the post to draft on WordPress, WooCommerce, Ghost, Framer, HubSpot and Wix and archives or deletes it on the others. The table above says which.`,
+  },
+  {
+    question: 'How do I know which connector my site needs?',
+    answer: `Usually you do not have to. When you add a domain, one fetch of its homepage identifies ${DETECTED.slice(0, -1).join(', ')} or ${DETECTED[DETECTED.length - 1]} from public signals and names the signal it matched, so you can tell "we saw a wp-json link" from a guess. When nothing matches it says so and shows the full picker rather than guessing; a wrong guess would send you hunting for a credential that does not exist.`,
+  },
+  {
     question: 'What if my platform is not listed?',
-    answer: `Use the webhook connector. It posts the approved article to any https:// endpoint you control, optionally signed with a shared secret, so anything that can receive JSON can be a destination. Static sites built with Astro, Hugo, Jekyll or Next are the other common case, and a Git connector for those is next.`,
+    answer: `Use the webhook connector. It posts the approved article as JSON to any https:// endpoint you control, optionally signed with a shared secret, so anything that can receive JSON can be a destination. Static sites built with Astro, Hugo, Jekyll or Next are the other common case, and the GitHub connector commits Markdown to your repository for those.`,
   },
   {
     question: 'How are my credentials stored?',
@@ -53,7 +70,7 @@ const structuredData = [
 
 <PSEO
   title={`Integrations: Publish to ${live.length} Destinations`}
-  description={`Publish approved articles to WordPress, Shopify, Webflow, Ghost, Notion, HubSpot or any webhook. Eleven destinations.`}
+  description={`Publish approved articles to WordPress, Shopify, Webflow, Ghost, Notion, HubSpot, GitHub or any webhook. ${live.length} destinations, each with a setup guide.`}
   breadcrumbs={breadcrumbs}
   structuredData={structuredData}
 >
@@ -70,42 +87,89 @@ const structuredData = [
       </p>
 
       <div class="overflow-hidden rounded-lg border border-line">
-        {live.map((i, idx) => (
-          <div class={`grid gap-1.5 p-5 sm:grid-cols-[1fr_1.2fr_auto] sm:items-center sm:gap-5 ${idx > 0 ? 'border-t border-line-soft' : ''}`}>
-            <div class="flex items-center gap-3">
-              <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-line bg-panel font-mono text-[11px] font-medium text-ink-2">
-                {i.code}
-              </span>
-              <span class="text-[15px] font-semibold text-ink">{i.name}</span>
+        {live.map((i, idx) => {
+          const logo = logoSvg(i.code);
+          return (
+            <div class={`grid gap-1.5 p-5 sm:grid-cols-[1fr_1.2fr_auto] sm:items-center sm:gap-5 ${idx > 0 ? 'border-t border-line-soft' : ''}`}>
+              <div class="flex items-center gap-3">
+                <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-line bg-panel text-ink" aria-hidden="true">
+                  {logo ? (
+                    <span class="inline-flex h-[18px] w-[18px] [&>svg]:h-full [&>svg]:w-full" set:html={logo} />
+                  ) : (
+                    <span class="font-mono text-[11px] font-medium text-ink-2">{i.code}</span>
+                  )}
+                </span>
+                <span class="text-[15px] font-semibold text-ink">{i.name}</span>
+              </div>
+              <div class="text-[14px] text-ink-2">
+                <span class="text-ink-3 sm:hidden">Authenticates with: </span>{i.auth}
+              </div>
+              <div class="text-[13.5px]">
+                {i.documented ? (
+                  <a href={`/docs/${i.slug}`} class="inline-flex min-h-[44px] items-center text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent sm:min-h-0">
+                    Setup guide
+                  </a>
+                ) : (
+                  <span class="text-ink-3">In-app setup</span>
+                )}
+              </div>
             </div>
-            <div class="text-[14px] text-ink-2">
-              <span class="text-ink-3 sm:hidden">Authenticates with: </span>{i.auth}
-            </div>
-            <div class="text-[13.5px]">
-              {i.documented ? (
-                <a href={`/docs/${i.slug}`} class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">
-                  Setup guide
-                </a>
-              ) : (
-                <span class="text-ink-3">In-app setup</span>
-              )}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {soon.length > 0 && (
         <p class="mt-5 text-[14.5px] leading-relaxed text-ink-3">
-          Shipping next: {soon.map((i) => i.name).join(', ')} &mdash; for static sites built with Astro,
-          Hugo, Jekyll or Next, committing Markdown to your repository instead of calling an API. The
-          adapter is written and tested; it is not in the picker yet, so it is listed here as coming
-          rather than counted above.
+          Shipping next: {soon.map((i) => i.name).join(', ')}.
         </p>
       )}
+
+      <p class="mt-6 text-[15px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        Not sure which one your site is? You usually do not have to pick. Adding a domain fetches its
+        homepage once and identifies the platform from public signals &mdash; a WordPress install says so in
+        a meta tag, Shopify in a response header &mdash; and names the signal it matched. When nothing
+        matches, it says so and shows the full list rather than guessing.
+      </p>
     </div>
   </section>
 
   <section class="border-b border-line bg-panel py-14 md:py-20">
+    <div class="mx-auto max-w-[900px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-3 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em] [text-wrap:balance]">
+        What approving does, per destination
+      </h2>
+      <p class="mb-6 text-[16px] leading-relaxed text-ink-2 [text-wrap:pretty]">
+        Approving is always the publish. Unpublishing is where platforms differ: some take a post back to
+        draft, some archive it, and two can only delete. Read from each adapter, not from the platform&rsquo;s
+        brochure.
+      </p>
+      <div class="overflow-x-auto rounded-lg border border-line bg-bg">
+        <table class="w-full min-w-[720px] text-left text-sm">
+          <caption class="sr-only">What approve and unpublish do on each publishing destination.</caption>
+          <thead class="bg-panel text-[12.5px] font-medium text-ink-2">
+            <tr>
+              <th scope="col" class="px-4 py-3">Destination</th>
+              <th scope="col" class="px-4 py-3">On approve</th>
+              <th scope="col" class="px-4 py-3">On unpublish</th>
+            </tr>
+          </thead>
+          <tbody>
+            {live.map((i, idx) => (
+              <tr class={idx > 0 ? 'border-t border-line-soft' : ''}>
+                <th scope="row" class="px-4 py-3 align-top font-semibold text-ink">
+                  <a href={`/docs/${i.slug}`} class="hover:text-accent-ink">{i.name}</a>
+                </th>
+                <td class="px-4 py-3 align-top text-[13.5px] leading-relaxed text-ink-2">{i.publishes}</td>
+                <td class="px-4 py-3 align-top text-[13.5px] leading-relaxed text-ink-2">{i.unpublishes}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line py-14 md:py-20">
     <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
       <h2 class="mb-8 text-[clamp(24px,4vw,32px)] font-semibold leading-[1.1] tracking-[-0.022em]">
         Common questions
@@ -123,8 +187,8 @@ const structuredData = [
         ))}
       </div>
       <div class="mt-10 flex flex-wrap gap-2.5">
-        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
-        <Button href="/docs" variant="secondary" size="lg">Read the setup guides</Button>
+        <Button href={PRIMARY_CTA.href} size="sm" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/docs" variant="secondary" size="sm">Read the setup guides</Button>
       </div>
     </div>
   </section>

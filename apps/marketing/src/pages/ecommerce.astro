@@ -4,6 +4,7 @@ import Button from '@/components/shared/Button.astro';
 import { buildFAQSchema, buildBreadcrumbSchema } from '@/lib/schema';
 import { INTEGRATIONS } from '@/data/integrations';
 import { APP_NAME, PRIMARY_CTA } from '@/constants';
+import { PLANS } from '@/data/pricing';
 
 // The e-commerce landing page. The content existed but was scattered across
 // /for/ecommerce and three /geo/* Shopify guides with no page collecting it.
@@ -21,6 +22,16 @@ const WHAT = [
   { h: 'Product descriptions at scale, each one different', p: 'Per-product copy that does not read as the same sentence with the SKU swapped. The failure mode of every bulk description tool is duplication, so the voice profile and the fact-check run per item.' },
   { h: 'Structured data that survives a theme update', p: 'Product and article schema emitted with the content rather than bolted on by a plugin that a theme change can silently break.' },
   { h: 'Answers to the questions buyers actually type', p: 'Comparison, sizing, compatibility and "is X worth it" queries, built from live SERP data for your catalogue rather than guessed from the category name.' },
+];
+
+// How a store is onboarded, in the order the product actually does it.
+// Mirrors the onboarding checklist in apps/web (add domain -> keywords ->
+// first article -> connect CMS -> voice), stated for a store.
+const STEPS = [
+  { h: 'Add the store\'s domain', p: 'It crawls the catalogue and existing pages, and builds the first keyword plan from what the store already ranks for and what its category is missing.' },
+  { h: 'Connect the platform', p: 'Shopify, WooCommerce, Magento or Wix, using a credential you create in your own admin. Connecting makes it a destination, not a permission.' },
+  { h: 'Review the first draft', p: 'A collection page or article arrives with its SEO score, its fact check and the internal links it proposes. Edit or reject before anything is published.' },
+  { h: 'Set the pace', p: 'Choose how many pieces a week the store should get. Everything is metered on articles, and each one stops for approval before it reaches the store.' },
 ];
 
 const FAQ = [
@@ -50,8 +61,8 @@ const structuredData = [buildBreadcrumbSchema(breadcrumbs), buildFAQSchema(FAQ)]
         and your live SERP data, and reviewed by a person before anything touches the store.
       </p>
       <div class="flex flex-wrap gap-2.5">
-        <Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button>
-        <Button href="/for/ecommerce" variant="secondary" size="lg">The e-commerce playbook</Button>
+        <Button href={PRIMARY_CTA.href} size="sm" arrow>{PRIMARY_CTA.label}</Button>
+        <Button href="/for/ecommerce" variant="secondary" size="sm">The e-commerce playbook</Button>
       </div>
     </div>
   </section>
@@ -100,6 +111,27 @@ const structuredData = [buildBreadcrumbSchema(breadcrumbs), buildFAQSchema(FAQ)]
   </section>
 
   <section class="border-b border-line bg-panel py-14 md:py-20 lg:py-[88px]">
+    <div class="mx-auto max-w-[900px] px-5 sm:px-6 lg:px-8">
+      <h2 class="mb-8 text-[clamp(25px,5vw,36px)] font-semibold leading-[1.08] tracking-[-0.024em]">How it works for a store</h2>
+      <ol class="grid gap-4 sm:grid-cols-2">
+        {STEPS.map((s, i) => (
+          <li class="flex items-start gap-4 rounded-lg border border-line bg-bg p-5">
+            <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-soft font-mono text-[13px] font-medium text-accent-ink">{i + 1}</span>
+            <div>
+              <h3 class="mb-1.5 text-[16px] font-semibold leading-snug tracking-[-0.015em]">{s.h}</h3>
+              <p class="text-[14px] leading-relaxed text-ink-2">{s.p}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <p class="mt-6 text-[14.5px] leading-relaxed text-ink-2">
+        Priced on articles, not on products or seats: {PLANS[1].name} is {PLANS[1].price}{PLANS[1].period} for one to three stores, {PLANS[2].name} is {PLANS[2].price}{PLANS[2].period} for a roster, and the engine is free to self-host.
+        <a href="/pricing" class="ml-1 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">Full pricing</a>.
+      </p>
+    </div>
+  </section>
+
+  <section class="border-b border-line py-14 md:py-20 lg:py-[88px]">
     <div class="mx-auto max-w-[820px] px-5 sm:px-6 lg:px-8">
       <h2 class="mb-8 text-[clamp(25px,5vw,36px)] font-semibold leading-[1.08] tracking-[-0.024em]">Common questions</h2>
       <div class="flex flex-col gap-2">
@@ -110,7 +142,7 @@ const structuredData = [buildBreadcrumbSchema(breadcrumbs), buildFAQSchema(FAQ)]
           </details>
         ))}
       </div>
-      <div class="mt-10"><Button href={PRIMARY_CTA.href} size="lg" arrow>{PRIMARY_CTA.label}</Button></div>
+      <div class="mt-10"><Button href={PRIMARY_CTA.href} size="sm" arrow>{PRIMARY_CTA.label}</Button></div>
     </div>
   </section>
 </PSEO>

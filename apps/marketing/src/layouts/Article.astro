@@ -1,6 +1,7 @@
 ---
 import Marketing from './Marketing.astro';
-import { buildBreadcrumbSchema, buildArticleSchema } from '@/lib/schema';
+import Button from '@/components/shared/Button.astro';
+import { buildBreadcrumbSchema, buildArticleSchema, buildFAQSchema } from '@/lib/schema';
 import { AUTHOR_NAME, AUTHOR_URL } from '@/constants';
 
 interface Props {
@@ -10,8 +11,16 @@ interface Props {
   dateModified?: Date;
   author: string;
   category: string;
+  tags?: string[];
   ogImage?: string;
   breadcrumbs?: { label: string; href: string }[];
+  /** Blog posts pass "BlogPosting"; case studies and other long-form keep Article. */
+  schemaType?: 'Article' | 'BlogPosting';
+  /** Rendered as a visible FAQ section and emitted as FAQPage schema. */
+  faq?: { question: string; answer: string }[];
+  /** Posts sharing a tag with this one. Rendered only when non-empty. */
+  related?: { title: string; description: string; href: string }[];
+  lang?: string;
 }
 
 const {
@@ -21,7 +30,12 @@ const {
   dateModified,
   author,
   category,
+  tags = [],
   ogImage,
+  schemaType = 'Article',
+  faq,
+  related = [],
+  lang = 'en',
   breadcrumbs = [
     { label: 'Home', href: '/' },
     { label: 'Blog', href: '/blog' },
@@ -36,12 +50,22 @@ const {
 // claiming a Person who cannot be looked up.
 const isNamedAuthor = author === AUTHOR_NAME;
 
+// The visible "Updated on" date is the same value the schema's dateModified
+// carries: the frontmatter revision date when there is one, otherwise the
+// publish date, because an unrevised post was last modified when it went live.
+// Showing the two from one variable is what keeps them from disagreeing.
+const modified = dateModified ?? publishDate;
+const sameDay = modified.toISOString().slice(0, 10) === publishDate.toISOString().slice(0, 10);
+const longDate = (d: Date) => d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const ogImageAbsolute = ogImage ? new URL(ogImage, Astro.site).href : undefined;
+
 const structuredData = [
   buildArticleSchema({
     title,
     description,
     publishDate,
-    dateModified,
+    dateModified: modified,
     author,
     authorType: isNamedAuthor ? 'Person' : 'Organization',
     ...(isNamedAuthor && { authorUrl: AUTHOR_URL }),
@@ -49,9 +73,13 @@ const structuredData = [
     // Absolute. `Base.astro` resolves the og:image meta tag against
     // `Astro.site`, but the JSON-LD was handed the raw "/og/foo.png", which
     // nothing outside the page can resolve. Google reads image as a URL.
-    image: ogImage ? new URL(ogImage, Astro.site).href : undefined,
+    image: ogImageAbsolute,
+    type: schemaType,
+    tags,
+    lang,
   }),
   buildBreadcrumbSchema(breadcrumbs),
+  ...(faq && faq.length > 0 ? [buildFAQSchema(faq)] : []),
 ];
 ---
 
@@ -60,15 +88,22 @@ const structuredData = [
   description={description}
   ogImage={ogImage}
   ogType="article"
+  lang={lang}
   structuredData={structuredData}
+  article={{
+    publishedTime: publishDate.toISOString(),
+    modifiedTime: modified.toISOString(),
+    author: isNamedAuthor ? AUTHOR_URL : undefined,
+    tags,
+  }}
 >
   <article class="border-b border-line py-16">
     <div class="mx-auto max-w-[720px] px-6">
       <!-- Breadcrumbs -->
-      <nav class="mb-8 flex items-center gap-2 text-xs text-ink-3">
+      <nav aria-label="Breadcrumb" class="mb-8 flex items-center gap-2 text-xs text-ink-3">
         {breadcrumbs.map((crumb, i) => (
           <>
-            {i > 0 && <span>/</span>}
+            {i > 0 && <span aria-hidden="true">/</span>}
             {i < breadcrumbs.length - 1 ? (
               <a href={crumb.href} class="hover:text-ink transition-colors">{crumb.label}</a>
             ) : (
@@ -78,40 +113,86 @@ const structuredData = [
         ))}
       </nav>
 
-      <!-- Meta -->
-      <div class="mb-6 flex items-center gap-3 text-sm text-ink-3">
-        <span class="rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[10.5px] text-accent-ink uppercase tracking-wider">
-          {category}
+      <!-- The H1 comes first: nothing above it competes for the page's one
+           heading, and the byline reads as a caption to the title rather than
+           a kicker. -->
+      <h1 class="mb-4 text-[36px] font-semibold leading-tight tracking-[-0.025em] [text-wrap:balance]">
+        {title}
+      </h1>
+
+      <p class="mb-10 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-3">
+        <span>
+          By {isNamedAuthor ? (
+            <a href={AUTHOR_URL} rel="author" class="text-ink-2 hover:text-ink transition-colors">{author}</a>
+          ) : (
+            <span class="text-ink-2">{author}</span>
+          )}
         </span>
-        <time datetime={publishDate.toISOString()}>
-          {publishDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-        </time>
-        {dateModified && (
+        <span aria-hidden="true">&middot;</span>
+        <span>
+          Updated on <time datetime={modified.toISOString()} class="text-ink-2">{longDate(modified)}</time>
+        </span>
+        {!sameDay && (
           <>
-            <span>&middot;</span>
+            <span aria-hidden="true">&middot;</span>
             <span>
-              Updated{' '}
-              <time datetime={dateModified.toISOString()}>
-                {dateModified.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-              </time>
+              First published <time datetime={publishDate.toISOString()}>{longDate(publishDate)}</time>
             </span>
           </>
         )}
-        <span>&middot;</span>
-        {isNamedAuthor ? (
-          <a href={AUTHOR_URL} rel="author" class="hover:text-ink transition-colors">{author}</a>
-        ) : (
-          <span>{author}</span>
-        )}
-      </div>
-
-      <h1 class="mb-6 text-[36px] font-semibold leading-tight tracking-[-0.025em] [text-wrap:balance]">
-        {title}
-      </h1>
+      </p>
 
       <!-- Content -->
       <div class="prose prose-lg max-w-none">
         <slot />
+      </div>
+
+      {faq && faq.length > 0 && (
+        <section class="mt-12 border-t border-line pt-10" aria-labelledby="faq-heading">
+          <h2 id="faq-heading" class="mb-6 text-2xl font-semibold tracking-[-0.015em]">FAQ</h2>
+          <div class="flex flex-col gap-4">
+            {faq.map((item) => (
+              <div class="rounded-lg border border-line bg-panel p-5">
+                <h3 class="mb-2 font-semibold">{item.question}</h3>
+                <p class="text-sm text-ink-2 leading-relaxed">{item.answer}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <!-- Category and tags as plain text: there are no tag or category
+           archive pages, so linking them would mint 404s. -->
+      <p class="mt-10 text-xs text-ink-3">
+        Filed under <span class="text-ink-2">{category}</span>
+        {tags.length > 0 && (
+          <>
+            {' '}&middot; {tags.join(' · ')}
+          </>
+        )}
+      </p>
+
+      {related.length > 0 && (
+        <section class="mt-12 border-t border-line pt-10" aria-labelledby="related-heading">
+          <h2 id="related-heading" class="mb-6 text-2xl font-semibold tracking-[-0.015em]">Related reading</h2>
+          <ul class="grid gap-4 sm:grid-cols-2">
+            {related.map((post) => (
+              <li>
+                <a
+                  href={post.href}
+                  class="group flex h-full flex-col rounded-lg border border-line bg-bg p-5 transition-colors hover:border-accent-soft"
+                >
+                  <span class="mb-2 font-semibold tracking-[-0.01em] group-hover:text-accent-ink transition-colors">{post.title}</span>
+                  <span class="text-sm text-ink-2 leading-relaxed line-clamp-3">{post.description}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <div class="mt-12 flex flex-wrap gap-3">
+        <Button href="/blog" variant="secondary" arrow>All posts</Button>
       </div>
     </div>
   </article>

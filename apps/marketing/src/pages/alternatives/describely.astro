@@ -17,13 +17,13 @@ const breadcrumbs = [
 ];
 
 interface TldrRow {
-  name: string;
-  bestFor: string;
-  multiClient: string;
-  whiteLabel: string;
-  ecommerce: string;
-  price: string;
-  ours?: boolean;
+ name: string;
+ bestFor: string;
+ multiClient: string;
+ whiteLabel: string;
+ ecommerce: string;
+ price: string;
+ ours?: boolean;
 }
 
 const TLDR_ROWS: TldrRow[] = [
@@ -40,7 +40,7 @@ const ALTORANK_VS_DESCRIBELY = [
   { feature: 'Multi-client', ours: 'Isolated per-client workspaces, priced per client', theirs: 'Multi-store via connectors, no per-client agency isolation/billing' },
   { feature: 'White-label client reporting', ours: 'Reports + portal, included at €199', theirs: 'No agency white-label reporting layer' },
   { feature: 'Content scope', ours: 'Full program, catalog + blog/buying guides + GEO + backlinks', theirs: 'Catalog-deep: product + collection copy + data enrichment' },
-  { feature: 'Editorial control', ours: 'Draft → review → approve + client sign-off + audit trail', theirs: 'Team workflow + collaboration (no client-facing sign-off)' },
+  { feature: 'Editorial control', ours: 'Draft → review → approve, approver recorded', theirs: 'Team workflow + collaboration' },
   { feature: 'GEO / AI shopping', ours: 'Product/FAQ schema + a GEO citation-tracking surface', theirs: 'SEO + structured data for product content' },
   { feature: 'Best when', ours: "You're an agency managing many client stores", theirs: "You're an in-house team optimizing one large catalog" },
   { feature: 'Source code', ours: 'Open source, self-hostable at no cost', theirs: 'Proprietary SaaS' },
@@ -49,96 +49,96 @@ const ALTORANK_VS_DESCRIBELY = [
 ];
 
 interface Tool {
-  index: string;
-  name: string;
-  ours?: boolean;
-  url?: string;
-  subtitle: string;
-  whatItIs: string;
-  bestFor: string;
-  pricing: string;
-  beatsRef: string;
-  beatsTheirs: string;
+ index: string;
+ name: string;
+ ours?: boolean;
+ url?: string;
+ subtitle: string;
+ whatItIs: string;
+ bestFor: string;
+ pricing: string;
+ beatsRef: string;
+ beatsTheirs: string;
 }
 
 const TOOLS: Tool[] = [
   {
-    index: '01',
-    name: APP_NAME,
-    ours: true,
-    subtitle: 'Best Describely Alternative for a Full Content Program',
-    whatItIs: 'An approval-first AI SEO content engine for e-commerce agencies. Where Describely optimizes one store’s catalog, AltoRank runs the whole SEO content program across every client store (product and collection copy, blog and buying guides, AI-shopping schema, and backlinks) with isolated per-client workspaces, white-label reporting, and an editorial approval gate.',
-    bestFor: 'Agencies producing SEO content for many Shopify/WooCommerce/Magento client stores who need an agency operating layer, not just a catalog tool.',
-    pricing: '€69/mo Managed (100 articles, model costs included, all CMS, rank tracking), €199/mo Agency (400 articles, unlimited client workspaces, white-label reports, referral traffic exchange).',
-    beatsRef: '',
-    beatsTheirs: "If you're an in-house team optimizing your own large catalog, Describely is genuinely excellent: purpose-built bulk product/collection generation with enrichment and Shopify connectors, and a 4.3★ Capterra track record. AltoRank isn't trying to out-catalog Describely; it's the agency layer over the catalog for firms running many client stores.",
+ index: '01',
+ name: APP_NAME,
+ ours: true,
+ subtitle: 'Best Describely Alternative for a Full Content Program',
+ whatItIs: 'An approval-first AI SEO content engine for e-commerce agencies. Where Describely optimizes one store’s catalog, AltoRank runs the whole SEO content program across every client store (product and collection copy, blog and buying guides, AI-shopping schema, and backlinks) with isolated per-client workspaces, white-label reporting, and an editorial approval gate.',
+ bestFor: 'Agencies producing SEO content for many Shopify/WooCommerce/Magento client stores who need an agency operating layer, not just a catalog tool.',
+ pricing: '€69/mo Managed (100 articles, model costs included, all CMS, rank tracking), €199/mo Agency (400 articles, unlimited client workspaces, white-label reports, referral traffic exchange).',
+ beatsRef: '',
+ beatsTheirs: "If you're an in-house team optimizing your own large catalog, Describely is genuinely excellent: purpose-built bulk product/collection generation with enrichment and Shopify connectors, and a 4.3★ Capterra track record. AltoRank isn't trying to out-catalog Describely; it's the agency layer over the catalog for firms running many client stores.",
   },
   {
-    index: '02',
-    name: 'Describely',
-    url: 'https://www.describely.ai',
-    subtitle: 'Reference, Bulk Catalog Content',
-    whatItIs: 'An AI product-content platform purpose-built for e-commerce teams: bulk product and collection descriptions, SEO optimization, data enrichment, brand rules, templates, and store connectors (Shopify). Rated 4.3★ on Capterra.',
-    bestFor: 'Mid-market retailers and distributors with 500+ SKUs needing consistent, SEO-optimized catalog content fast.',
-    pricing: 'Usage-based, from roughly $29/mo for a starter volume; scales with product count.',
-    beatsRef: 'Purpose-built for catalog scale: bulk product and collection generation, data enrichment, brand rules, and direct Shopify sync, with a strong review track record. For a single large catalog, it does that job very well.',
-    beatsTheirs: `Describely is a catalog-content tool for the team that owns the catalog, not an agency platform. There are no isolated per-client workspaces with per-client billing, no white-label client reporting, no client-facing sign-off/audit trail, and the scope stays on the catalog rather than the full program (blog, buying guides, GEO tracking, backlinks). ${APP_NAME} adds that agency operating layer on top.`,
+ index: '02',
+ name: 'Describely',
+ url: 'https://www.describely.ai',
+ subtitle: 'Reference, Bulk Catalog Content',
+ whatItIs: 'An AI product-content platform purpose-built for e-commerce teams: bulk product and collection descriptions, SEO optimization, data enrichment, brand rules, templates, and store connectors (Shopify). Rated 4.3★ on Capterra.',
+ bestFor: 'Mid-market retailers and distributors with 500+ SKUs needing consistent, SEO-optimized catalog content fast.',
+ pricing: 'Usage-based, from roughly $29/mo for a starter volume; scales with product count.',
+ beatsRef: 'Purpose-built for catalog scale: bulk product and collection generation, data enrichment, brand rules, and direct Shopify sync, with a strong review track record. For a single large catalog, it does that job very well.',
+ beatsTheirs: `Describely is a catalog-content tool for the team that owns the catalog, not an agency platform. There are no isolated per-client workspaces with per-client billing, no white-label client reporting, and the scope stays on the catalog rather than the full program (blog, buying guides, GEO tracking, backlinks). ${APP_NAME} adds that agency operating layer on top.`,
   },
   {
-    index: '03',
-    name: 'Hypotenuse',
-    url: 'https://www.hypotenuse.ai',
-    subtitle: 'Brand-Side Catalog Generation',
-    whatItIs: 'An AI content tool with bulk product-description generation (CSV import) plus general marketing copy, aimed at brands generating large catalogs.',
-    bestFor: 'Brands generating hundreds or thousands of SKUs in bulk.',
-    pricing: 'From $29/mo.',
-    beatsRef: 'Like Describely, it’s built for bulk catalog generation, CSV import, SEO keywords, original descriptions at volume.',
-    beatsTheirs: `Hypotenuse is brand-side bulk generation, not an agency workflow: no per-client isolation, no white-label, no approval gate or client sign-off. ${APP_NAME} gives agencies an approval-gated, catalog-aware workspace per client plus the wider content program.`,
+ index: '03',
+ name: 'Hypotenuse',
+ url: 'https://www.hypotenuse.ai',
+ subtitle: 'Brand-Side Catalog Generation',
+ whatItIs: 'An AI content tool with bulk product-description generation (CSV import) plus general marketing copy, aimed at brands generating large catalogs.',
+ bestFor: 'Brands generating hundreds or thousands of SKUs in bulk.',
+ pricing: 'From $29/mo.',
+ beatsRef: 'Like Describely, it’s built for bulk catalog generation, CSV import, SEO keywords, original descriptions at volume.',
+ beatsTheirs: `Hypotenuse is brand-side bulk generation, not an agency workflow: no per-client isolation, no white-label, no approval gate. ${APP_NAME} gives agencies an approval-gated, catalog-aware workspace per client plus the wider content program.`,
   },
   {
-    index: '04',
-    name: 'WriteText.ai',
-    url: 'https://writetext.ai',
-    subtitle: 'PDP + Category SEO Copy',
-    whatItIs: 'An AI tool focused on product and category description SEO, with bulk generation and e-commerce platform integrations.',
-    bestFor: 'Stores that want SEO-tuned product and category copy with platform integration.',
-    pricing: 'Usage/credit-based.',
-    beatsRef: 'Sharper focus on the on-page SEO fields of product and category copy, with bulk and integration support.',
-    beatsTheirs: `WriteText.ai is a product/category copy tool, not a multi-client agency engine: no per-client workspaces, white-label, approval gate, or full content program. ${APP_NAME} is the agency layer for firms running this across many client stores.`,
+ index: '04',
+ name: 'WriteText.ai',
+ url: 'https://writetext.ai',
+ subtitle: 'PDP + Category SEO Copy',
+ whatItIs: 'An AI tool focused on product and category description SEO, with bulk generation and e-commerce platform integrations.',
+ bestFor: 'Stores that want SEO-tuned product and category copy with platform integration.',
+ pricing: 'Usage/credit-based.',
+ beatsRef: 'Sharper focus on the on-page SEO fields of product and category copy, with bulk and integration support.',
+ beatsTheirs: `WriteText.ai is a product/category copy tool, not a multi-client agency engine: no per-client workspaces, white-label, approval gate, or full content program. ${APP_NAME} is the agency layer for firms running this across many client stores.`,
   },
   {
-    index: '05',
-    name: 'Copy.ai',
-    url: 'https://www.copy.ai',
-    subtitle: 'General GTM Copy',
-    whatItIs: 'An all-purpose AI writing / GTM platform for marketing copy of every kind, not specific to e-commerce catalogs.',
-    bestFor: 'Teams wanting broad marketing copy across many formats.',
-    pricing: 'Free tier + paid plans.',
-    beatsRef: 'Far broader format coverage than Describely (emails, ads, social, long-form) across any use case.',
-    beatsTheirs: `Copy.ai is a generalist, not e-commerce-native: no catalog plumbing, no per-client agency workspaces, no white-label, no approval gate. ${APP_NAME} is purpose-built for agencies producing e-commerce SEO content with an approval workflow.`,
+ index: '05',
+ name: 'Copy.ai',
+ url: 'https://www.copy.ai',
+ subtitle: 'General GTM Copy',
+ whatItIs: 'An all-purpose AI writing / GTM platform for marketing copy of every kind, not specific to e-commerce catalogs.',
+ bestFor: 'Teams wanting broad marketing copy across many formats.',
+ pricing: 'Free tier + paid plans.',
+ beatsRef: 'Far broader format coverage than Describely (emails, ads, social, long-form) across any use case.',
+ beatsTheirs: `Copy.ai is a generalist, not e-commerce-native: no catalog plumbing, no per-client agency workspaces, no white-label, no approval gate. ${APP_NAME} is purpose-built for agencies producing e-commerce SEO content with an approval workflow.`,
   },
   {
-    index: '06',
-    name: 'Shopify Magic',
-    url: 'https://www.shopify.com/magic',
-    subtitle: 'Free, In-Admin',
-    whatItIs: "Shopify's built-in AI: product descriptions and basic content from inside the Shopify admin, free with a Shopify plan.",
-    bestFor: 'Single-store merchants who want quick, in-admin product copy.',
-    pricing: 'Free (included with Shopify).',
-    beatsRef: 'Free and built right into the store, for one product at a time on one store, nothing is simpler.',
-    beatsTheirs: `Shopify Magic stops at the product description for one store: no bulk catalog workflow, no agency layer, no white-label, no collection program, no approval. ${APP_NAME} is the engine the agency running those stores needs. See /alternatives/shopify-magic.`,
+ index: '06',
+ name: 'Shopify Magic',
+ url: 'https://www.shopify.com/magic',
+ subtitle: 'Free, In-Admin',
+ whatItIs: "Shopify's built-in AI: product descriptions and basic content from inside the Shopify admin, free with a Shopify plan.",
+ bestFor: 'Single-store merchants who want quick, in-admin product copy.',
+ pricing: 'Free (included with Shopify).',
+ beatsRef: 'Free and built right into the store, for one product at a time on one store, nothing is simpler.',
+ beatsTheirs: `Shopify Magic stops at the product description for one store: no bulk catalog workflow, no agency layer, no white-label, no collection program, no approval. ${APP_NAME} is the engine the agency running those stores needs. See /alternatives/shopify-magic.`,
   },
 ];
 
 interface DecisionRow {
-  when: string;
-  pick: string;
-  rationale: string;
-  ours?: boolean;
+ when: string;
+ pick: string;
+ rationale: string;
+ ours?: boolean;
 }
 
 const DECISION_MATRIX: DecisionRow[] = [
-  { when: 'You run an agency producing SEO content across many client stores', pick: APP_NAME, rationale: 'The agency operating layer Describely lacks: per-client workspaces, white-label reporting, client sign-off, plus the full program beyond the catalog (blog, GEO, backlinks).', ours: true },
+  { when: 'You run an agency producing SEO content across many client stores', pick: APP_NAME, rationale: 'The agency operating layer Describely lacks: per-client workspaces, white-label reporting, plus the full program beyond the catalog (blog, GEO, backlinks).', ours: true },
   { when: "You're an in-house team optimizing your own large catalog", pick: 'Use Describely', rationale: 'Purpose-built bulk product/collection generation with enrichment and Shopify sync. For one catalog, it’s a strong, focused tool.' },
   { when: 'You generate large product catalogs brand-side', pick: 'Hypotenuse', rationale: 'Bulk CSV catalog generation at volume.' },
   { when: 'You want SEO-tuned product + category copy with integrations', pick: 'WriteText.ai', rationale: 'Focused on the on-page SEO fields of catalog copy.' },
@@ -148,37 +148,37 @@ const DECISION_MATRIX: DecisionRow[] = [
 
 const FAQS = [
   { question: 'What is Describely?', answer: 'Describely is an AI product-content platform built for e-commerce teams. It generates product and collection descriptions in bulk, with SEO optimization, data enrichment, brand rules, templates, and store connectors (Shopify), and is rated 4.3★ on Capterra. It’s designed for retailers and distributors optimizing their own large catalogs, typically 500+ SKUs.' },
-  { question: 'What is the best Describely alternative for agencies?', answer: `${APP_NAME}. Describely optimizes one team’s catalog; ${APP_NAME} runs the whole SEO content program across every client store (catalog copy plus blog, buying guides, GEO schema, and backlinks) with isolated per-client workspaces, white-label client reporting, and an editorial-approval gate with client sign-off. It’s built for the agency managing many stores, not the in-house team optimizing one.` },
-  { question: 'Is AltoRank better than Describely?', answer: 'It depends on who you are. If you’re an in-house team optimizing your own large catalog, Describely is excellent and tightly focused. If you’re an agency running SEO content across multiple client brands, AltoRank is the better fit because it adds the agency layer Describely doesn’t have: per-client isolation, white-label reporting, client sign-off, and a content program that goes beyond the catalog.' },
+  { question: 'What is the best Describely alternative for agencies?', answer: `${APP_NAME}. Describely optimizes one team’s catalog; ${APP_NAME} runs the whole SEO content program across every client store (catalog copy plus blog, buying guides, GEO schema, and backlinks) with isolated per-client workspaces, white-label client reporting, and an editorial-approval gate. It’s built for the agency managing many stores, not the in-house team optimizing one.` },
+  { question: 'Is AltoRank better than Describely?', answer: 'It depends on who you are. If you’re an in-house team optimizing your own large catalog, Describely is excellent and tightly focused. If you’re an agency running SEO content across multiple client brands, AltoRank is the better fit because it adds the agency layer Describely doesn’t have: per-client isolation, white-label reporting, and a content program that goes beyond the catalog.' },
   { question: 'Does AltoRank do bulk product descriptions like Describely?', answer: `Yes, AltoRank produces unique product and collection copy with schema across client catalogs, gated behind editorial approval before it publishes to a client’s brand. The difference is the surrounding program (blog, GEO, backlinks) and the agency operating layer (per-client workspaces, white-label, sign-off). For a single in-house catalog with no agency needs, Describely’s focused bulk tooling may be all you need.` },
 ];
 
 const structuredData = [
-  buildArticleSchema({
-    title: `${APP_NAME} vs. Describely: 6 Describely Alternatives (2026)`,
-    description: 'Describely does bulk catalog content for one team. We compared 6 alternatives on multi-client, white-label and scope.',
-    publishDate,
-    dateModified,
-    author: AUTHOR_NAME,
-    authorType: 'Person',
-    authorUrl: AUTHOR_URL,
-    url: pageUrl,
+ buildArticleSchema({
+ title: `${APP_NAME} vs. Describely: 6 Describely Alternatives (2026)`,
+ description: 'Describely does bulk catalog content for one team. We compared 6 alternatives on multi-client, white-label and scope.',
+ publishDate,
+ dateModified,
+ author: AUTHOR_NAME,
+ authorType: 'Person',
+ authorUrl: AUTHOR_URL,
+ url: pageUrl,
   }),
-  buildFAQSchema(FAQS),
-  buildItemListSchema(
-    TLDR_ROWS.map((t) => ({
-      name: t.name,
-      description: `${t.bestFor}, starting at ${t.price}`,
+ buildFAQSchema(FAQS),
+ buildItemListSchema(
+ TLDR_ROWS.map((t) => ({
+ name: t.name,
+ description: `${t.bestFor}, starting at ${t.price}`,
     })),
   ),
 ];
 ---
 
 <PSEO
-  title="Describely Review and 6 Alternatives (2026)"
-  description="Describely does bulk catalog content for one team. We compared 6 alternatives on multi-client, white-label and scope."
-  breadcrumbs={breadcrumbs}
-  structuredData={structuredData}
+ title="Describely Review and 6 Alternatives (2026)"
+ description="Describely does bulk catalog content for one team. We compared 6 alternatives on multi-client, white-label and scope."
+ breadcrumbs={breadcrumbs}
+ structuredData={structuredData}
 >
   {/* ── HERO ──────────────────────────────────────────── */}
   <header class="border-b border-line bg-[radial-gradient(600px_300px_at_88%_-10%,var(--accent-soft),transparent_70%),linear-gradient(180deg,var(--bg),var(--bg-2))] py-[72px]">
@@ -187,13 +187,13 @@ const structuredData = [
         {APP_NAME} vs. Describely: 6 Describely Alternatives (2026)
       </h1>
       <p class="mb-5 max-w-[680px] text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
-        For agencies running SEO content across many client stores, {APP_NAME} is the strongest Describely alternative: it adds the agency operating layer (per-client workspaces, white-label reporting, client sign-off) on top of a content program that goes beyond the catalog to blog, GEO, and backlinks.
+ For agencies running SEO content across many client stores, {APP_NAME} is the strongest Describely alternative: it adds the agency operating layer (per-client workspaces, white-label reporting) on top of a content program that goes beyond the catalog to blog, GEO, and backlinks.
       </p>
       <p class="mb-5 max-w-[680px] text-lg leading-relaxed text-ink-2 [text-wrap:pretty]">
-        <a href="https://www.describely.ai" target="_blank" rel="noopener noreferrer" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">Describely</a> is genuinely excellent at one thing: bulk product and collection content for a team optimizing its <em>own</em> catalog (4.3★ on Capterra, Shopify-native, built for 500+ SKUs). An <em>agency</em> running content across many client stores needs more than catalog generation: isolated client workspaces, white-label, approval with client sign-off, and the wider program. The 6 alternatives below are ranked by <strong class="font-semibold text-ink">agency e-commerce criteria</strong>, with an honest verdict on when Describely's focused catalog tooling is the right pick.
+        <a href="https://www.describely.ai" target="_blank" rel="noopener noreferrer" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">Describely</a> is genuinely excellent at one thing: bulk product and collection content for a team optimizing its <em>own</em> catalog (4.3★ on Capterra, Shopify-native, built for 500+ SKUs). An <em>agency</em> running content across many client stores needs more than catalog generation: isolated client workspaces, white-label, approval, and the wider program. The 6 alternatives below are ranked by <strong class="font-semibold text-ink">agency e-commerce criteria</strong>, with an honest verdict on when Describely's focused catalog tooling is the right pick.
       </p>
       <p class="max-w-[680px] text-base leading-relaxed text-ink-2">
-        If you're an in-house team optimizing one large catalog, Describely is a strong, focused choice. If you're an agency managing many client stores, read on.
+ If you're an in-house team optimizing one large catalog, Describely is a strong, focused choice. If you're an agency managing many client stores, read on.
       </p>
       <div class="mt-8 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
         <span>By <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
@@ -210,14 +210,14 @@ const structuredData = [
     <div class="mx-auto max-w-[1100px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          The 6 tools at a glance
+ The 6 tools at a glance
         </h2>
       </div>
       <div class="overflow-hidden rounded-lg border border-line bg-bg">
         <div class="overflow-x-auto">
           <table class="w-full min-w-[820px] text-sm">
             <caption class="sr-only">Comparison of Describely and 5 alternatives across multi-client support, white-label, e-commerce content depth, and starting price.</caption>
-            <thead class="bg-panel text-left font-mono text-[11px] uppercase tracking-[0.06em] text-ink-2">
+            <thead class="bg-panel text-left text-[12.5px] font-medium text-ink-2">
               <tr>
                 <th scope="col" class="px-5 py-3.5 font-medium">Tool</th>
                 <th scope="col" class="px-5 py-3.5 font-medium">Best for</th>
@@ -234,7 +234,6 @@ const structuredData = [
                     {row.ours ? (
                       <span class="inline-flex items-center gap-2">
                         {row.name}
-                        <span class="rounded-full bg-accent px-1.5 py-[1px] font-mono text-[9.5px] tracking-[0.08em] text-white">OURS</span>
                       </span>
                     ) : (
                       <span>{row.name}</span>
@@ -252,10 +251,7 @@ const structuredData = [
         </div>
       </div>
       <div class="mt-7 flex flex-wrap items-center justify-center gap-3">
-        <Button href={SIGNUP_URL}>
-  Add your domain with {APP_NAME}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
-</Button>
+        <Button href={SIGNUP_URL} size="sm" arrow>Add your domain with {APP_NAME}</Button>
       </div>
     </div>
   </section>
@@ -265,7 +261,7 @@ const structuredData = [
     <div class="mx-auto max-w-[820px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          Why agencies look past a catalog tool
+ Why agencies look past a catalog tool
         </h2>
       </div>
       <div class="flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
@@ -275,7 +271,7 @@ const structuredData = [
         <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">The job is bigger than the catalog</h3>
         <p>Catalog copy is one part of e-commerce SEO. The full program also means <span class="font-medium text-ink">blog and buying-guide content</span>, internal linking, GEO/AI-shopping readiness, citation tracking, and backlinks. An agency’s deliverable is the program, not just the product descriptions.</p>
         <h3 class="mt-6 mb-2 text-lg font-semibold tracking-[-0.015em] text-ink">Client brands need a sign-off trail</h3>
-        <p>Publishing AI content to a <span class="font-medium text-ink">client’s</span> brand raises the bar: you want a human approval gate and a client-facing sign-off with an audit trail, not just internal collaboration. That editorial control is the difference between a catalog tool and an agency platform.</p>
+        <p>Publishing AI content to a <span class="font-medium text-ink">client’s</span> brand raises the bar: you want a human approval gate with a record of who approved what, not just internal collaboration. That editorial control is the difference between a catalog tool and an agency platform.</p>
         <p>For an in-house team optimizing one catalog, none of this matters. For an agency, it’s the operating model.</p>
       </div>
     </div>
@@ -286,7 +282,7 @@ const structuredData = [
     <div class="mx-auto max-w-[820px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          How we evaluated each Describely alternative
+ How we evaluated each Describely alternative
         </h2>
       </div>
       <div class="flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
@@ -295,7 +291,7 @@ const structuredData = [
           <li><strong class="font-semibold text-ink">Content scope</strong>: catalog only, or catalog + blog + GEO + backlinks?</li>
           <li><strong class="font-semibold text-ink">Multi-client</strong>: isolated workspace, voice, billing, and reporting per client?</li>
           <li><strong class="font-semibold text-ink">White-label</strong>, can the agency hand it to a client under its own brand?</li>
-          <li><strong class="font-semibold text-ink">Editorial control</strong>, approval gate + client sign-off + audit trail before publish?</li>
+          <li><strong class="font-semibold text-ink">Editorial control</strong>, approval gate with the approver recorded before publish?</li>
         </ol>
         <p>Every tool here can generate product copy. For an agency, the differentiation is program scope, the client layer, and editorial control.</p>
       </div>
@@ -306,38 +302,32 @@ const structuredData = [
   {TOOLS.map((tool) => (
     <section class={`border-b border-line py-[72px] ${tool.ours ? 'bg-accent-soft/15' : ''}`}>
       <div class="mx-auto max-w-[820px] px-8">
-        <div class="mb-2 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">
-          <span>Tool {tool.index}</span>
-          {tool.ours && (
-            <span class="rounded-full bg-accent px-1.5 py-[1px] font-mono text-[9.5px] tracking-[0.08em] text-white">OURS</span>
-          )}
-        </div>
         <h2 class="mb-2 text-[clamp(28px,3.5vw,34px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
           {tool.name}
         </h2>
         <p class="mb-7 text-base font-medium text-accent-ink">{tool.subtitle}</p>
         <div class="mb-5 grid gap-3 rounded-lg border border-line bg-bg p-5 sm:grid-cols-3">
           <div>
-            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">What it is</div>
+            <div class="mb-1.5 text-[12.5px] font-medium text-ink-3">What it is</div>
             <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.whatItIs}</div>
           </div>
           <div>
-            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Best for</div>
+            <div class="mb-1.5 text-[12.5px] font-medium text-ink-3">Best for</div>
             <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.bestFor}</div>
           </div>
           <div>
-            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Pricing</div>
+            <div class="mb-1.5 text-[12.5px] font-medium text-ink-3">Pricing</div>
             <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.pricing}</div>
           </div>
         </div>
 
         {tool.ours ? (
           <>
-            <h3 class="mt-7 mb-4 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">How {APP_NAME} differs from Describely</h3>
+            <h3 class="mt-7 mb-4 text-[17px] font-semibold tracking-[-0.01em] text-ink">How {APP_NAME} differs from Describely</h3>
             <div class="overflow-hidden rounded-lg border border-line bg-bg">
               <table class="w-full text-sm">
                 <caption class="sr-only">{APP_NAME} versus Describely, feature-by-feature comparison.</caption>
-                <thead class="bg-panel text-left font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-2">
+                <thead class="bg-panel text-left text-[12.5px] font-medium text-ink-2">
                   <tr>
                     <th scope="col" class="px-4 py-3 font-medium">Feature</th>
                     <th scope="col" class="px-4 py-3 font-medium">{APP_NAME}</th>
@@ -356,33 +346,30 @@ const structuredData = [
               </table>
             </div>
             <p class="mt-5 text-[15px] leading-relaxed text-ink-2">
-              The difference isn’t whether AI can write product copy, both do it well. It’s that {APP_NAME} runs the whole SEO content program for every client store, with an approval gate and white-label reporting, where Describely is a focused catalog tool for the team that owns the catalog.
+ The difference isn’t whether AI can write product copy, both do it well. It’s that {APP_NAME} runs the whole SEO content program for every client store, with an approval gate and white-label reporting, where Describely is a focused catalog tool for the team that owns the catalog.
             </p>
             <p class="mt-4 text-[15px] leading-relaxed text-ink-2">
               {APP_NAME} Managed is €69/mo; <a href="/pricing" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">Agency at €199/mo</a> adds 400 articles a month, unlimited client workspaces, white-label reports, and rank tracking.
             </p>
-            <h3 class="mt-7 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Where {APP_NAME} loses</h3>
+            <h3 class="mt-7 mb-3 text-[17px] font-semibold tracking-[-0.01em] text-ink">Where {APP_NAME} loses</h3>
             <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsTheirs}</p>
             <div class="mt-7">
-              <Button href={SIGNUP_URL}>
-  {PRIMARY_CTA.label}
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
-</Button>
+              <Button href={SIGNUP_URL} size="sm" arrow>{PRIMARY_CTA.label}</Button>
             </div>
           </>
         ) : (
           <>
-            <h3 class="mt-6 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+            <h3 class="mt-6 mb-3 text-[17px] font-semibold tracking-[-0.01em] text-ink">
               {tool.name === 'Describely' ? 'Where Describely wins' : `Where ${tool.name} differs from Describely`}
             </h3>
             <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsRef}</p>
-            <h3 class="mt-6 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+            <h3 class="mt-6 mb-3 text-[17px] font-semibold tracking-[-0.01em] text-ink">
               {tool.name === 'Describely' ? `Where ${APP_NAME} wins` : `Where ${APP_NAME} beats ${tool.name}`}
             </h3>
             <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsTheirs}</p>
             {tool.url && (
               <p class="mt-6 text-[13px] text-ink-3">
-                Visit <a href={tool.url} target="_blank" rel="noopener noreferrer" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent hover:text-ink">{tool.name}</a> for current details.
+ Visit <a href={tool.url} target="_blank" rel="noopener noreferrer" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent hover:text-ink">{tool.name}</a> for current details.
               </p>
             )}
           </>
@@ -396,16 +383,16 @@ const structuredData = [
     <div class="mx-auto max-w-[1100px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          Which Describely alternative should you choose?
+ Which Describely alternative should you choose?
         </h2>
         <p class="mt-3 max-w-[640px] text-base leading-relaxed text-ink-2">After the tool deep-dives, here's the short version.</p>
       </div>
       <div class="grid gap-3 md:grid-cols-2">
         {DECISION_MATRIX.map((row) => (
           <div class={`rounded-xl border p-5 ${row.ours ? 'border-accent bg-accent-soft/40' : 'border-line bg-bg'}`}>
-            <div class="mb-2 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">If</div>
+            <div class="mb-2 text-[12.5px] font-medium text-ink-3">If</div>
             <div class="mb-3 text-[15px] font-medium text-ink">{row.when}</div>
-            <div class="mb-1 font-mono text-[11px] uppercase tracking-[0.08em] text-accent-ink">Then</div>
+            <div class="mb-1 text-[12.5px] font-medium text-accent-ink">Then</div>
             <div class="mb-2 text-lg font-semibold tracking-[-0.01em] text-ink">→ {row.pick}</div>
             <p class="text-sm leading-relaxed text-ink-2">{row.rationale}</p>
           </div>
@@ -419,7 +406,7 @@ const structuredData = [
     <div class="mx-auto max-w-[820px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          Frequently asked questions
+ Frequently asked questions
         </h2>
       </div>
       <div class="flex flex-col gap-3">

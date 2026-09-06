@@ -1,0 +1,138 @@
+---
+import ToolShell from './ToolShell.astro';
+import Button from '@/components/shared/Button.astro';
+---
+<ToolShell label="Keyword clustering tool">
+  <label class="mb-1.5 block text-[13px] font-medium text-ink-2" for="kc-in">Keywords, one per line (commas work too)</label>
+  <textarea id="kc-in" rows="8" class="w-full rounded-[9px] border border-line bg-bg px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent-soft">best project management software
+project management software for small business
+free project management tools
+asana vs monday
+asana pricing
+asana alternatives
+how to write a project brief
+project brief template
+what is a project charter
+project charter template
+monday.com pricing
+best free project management app</textarea>
+  <div class="mt-3 flex flex-wrap items-center gap-4">
+    <label class="flex items-center gap-2 text-[13px] text-ink-2">Group on
+      <select id="kc-min" class="min-h-11 rounded-[9px] border border-line bg-bg px-2 py-1 text-[13px] text-ink">
+        <option value="1">1 shared term</option>
+        <option value="2" selected>2 shared terms</option>
+      </select>
+    </label>
+    <label class="flex min-h-11 items-center gap-2 text-[13px] text-ink-2"><input id="kc-stop" type="checkbox" checked class="h-4 w-4" /> Ignore filler words</label>
+    <label class="flex min-h-11 items-center gap-2 text-[13px] text-ink-2"><input id="kc-stem" type="checkbox" checked class="h-4 w-4" /> Treat plurals as one term</label>
+    <span class="ml-auto"><Button variant="secondary" size="sm" data-kc="copy">Copy as CSV</Button></span>
+  </div>
+  <p class="mt-3 text-[13px] text-ink-2" data-kc="summary"></p>
+  <div class="mt-3 flex flex-col gap-3" data-kc="out"></div>
+  <p class="mt-3 text-[12.5px] leading-relaxed text-ink-3">
+    Groups are formed on shared terms, which is a fast first pass and a weak final one. Two keywords that
+    share no words can still want the same page, and two that share a brand name can want different ones.
+    Confirm each group against the live SERP before you brief it.
+  </p>
+</ToolShell>
+
+<script>
+  // Shared-term clustering. Each keyword becomes a set of stems (filler words
+  // dropped); a cluster is labelled by the N most widely shared stems the
+  // keyword carries, where N is the "group on" setting. A keyword whose stems
+  // are shared with nothing else is a singleton, listed as such rather than
+  // forced into a group it does not belong in. Intent is a modifier lookup,
+  // and the page-type suggestion is the majority intent of the group.
+  function initKeywordCluster() {
+    const ta = document.getElementById('kc-in') as HTMLTextAreaElement | null;
+    const out = document.querySelector('[data-kc="out"]');
+    const summary = document.querySelector('[data-kc="summary"]');
+    if (!ta || !out || !summary) return;
+    const minSel = document.getElementById('kc-min') as HTMLSelectElement;
+    const stopCb = document.getElementById('kc-stop') as HTMLInputElement;
+    const stemCb = document.getElementById('kc-stem') as HTMLInputElement;
+    const STOP = new Set('a an the and or of to in on at for with by from as is are be your you my our their it its how what why when where which who do does can i we vs versus'.split(' '));
+    const COMMERCIAL = new Set('best top review reviews alternative alternatives vs versus compare comparison comparisons rated ranking rankings'.split(' '));
+    const TRANSACTIONAL = new Set('buy price prices pricing cost costs cheap cheapest discount deal deals coupon order purchase subscription plan plans trial download free near'.split(' '));
+    const INFORMATIONAL = new Set('how what why when guide tutorial tips examples example ideas learn definition meaning template templates checklist'.split(' '));
+    const esc = (x: string) => x.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] as string));
+    const stem = (w: string) => {
+      if (!stemCb.checked || w.length < 5) return w;
+      if (/ies$/.test(w)) return w.slice(0, -3) + 'y';
+      if (/(ches|shes|sses|xes)$/.test(w)) return w.slice(0, -2);
+      if (/s$/.test(w) && !/ss$/.test(w)) return w.slice(0, -1);
+      return w;
+    };
+    const tokens = (kw: string) => {
+      const raw = kw.toLowerCase().replace(/[^\p{L}\p{N}\s.-]/gu, ' ').split(/\s+/).filter(Boolean);
+      const kept = raw.map((w) => w.replace(/^[.-]+|[.-]+$/g, '')).filter((w) => w && !(stopCb.checked && STOP.has(w)));
+      return { raw, stems: [...new Set(kept.map(stem))] };
+    };
+    const intentOf = (raw: string[]) => {
+      if (raw.some((w) => TRANSACTIONAL.has(w)) || raw.join(' ').includes('near me')) return 'transactional';
+      if (raw.some((w) => COMMERCIAL.has(w))) return 'commercial';
+      if (raw.some((w) => INFORMATIONAL.has(w))) return 'informational';
+      return 'unclear';
+    };
+    const PAGE_TYPE: Record<string, string> = {
+      transactional: 'Product, pricing or category page',
+      commercial: 'Comparison or listicle page',
+      informational: 'Guide or blog post',
+      unclear: 'Pillar page if the group is large, otherwise a supporting post',
+    };
+    let lastCsv = '';
+    const render = () => {
+      const min = parseInt(minSel.value, 10) || 1;
+      const seen = new Set<string>();
+      const kws = ta.value.split(/[\n,]/).map((k) => k.trim().replace(/\s+/g, ' ')).filter((k) => k && !seen.has(k.toLowerCase()) && seen.add(k.toLowerCase()));
+      if (kws.length < 2) {
+        out.innerHTML = '<p class="rounded-lg border border-line bg-bg p-5 text-[13.5px] text-ink-3">Paste at least two keywords to see groups.</p>';
+        summary.textContent = ''; lastCsv = ''; return;
+      }
+      const parsed = kws.map((k) => ({ k, ...tokens(k) }));
+      const df = new Map<string, number>();
+      parsed.forEach((p) => p.stems.forEach((s) => df.set(s, (df.get(s) ?? 0) + 1)));
+      const clusters = new Map<string, typeof parsed>();
+      const singles: typeof parsed = [];
+      parsed.forEach((p) => {
+        const shared = p.stems.filter((s) => (df.get(s) ?? 0) > 1).sort((a, b) => (df.get(b)! - df.get(a)!) || a.localeCompare(b));
+        if (shared.length < min) { singles.push(p); return; }
+        const label = shared.slice(0, min).sort().join(' ');
+        if (!clusters.has(label)) clusters.set(label, []);
+        clusters.get(label)!.push(p);
+      });
+      // A label that collected only one keyword is a singleton in disguise.
+      for (const [label, members] of [...clusters]) {
+        if (members.length < 2) { singles.push(...members); clusters.delete(label); }
+      }
+      const rows = [...clusters.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+      const csv: string[] = ['cluster,keyword,intent'];
+      const card = (label: string, members: typeof parsed, isSingle: boolean) => {
+        const intents = members.map((m) => intentOf(m.raw));
+        const tally = new Map<string, number>();
+        intents.forEach((i) => tally.set(i, (tally.get(i) ?? 0) + 1));
+        const major = [...tally.entries()].sort((a, b) => b[1] - a[1])[0][0];
+        const pageType = isSingle ? 'Check each against the SERP; some belong in a group above' : (major === 'unclear' && members.length >= 5 && label.split(' ').length === 1 ? 'Pillar page' : PAGE_TYPE[major]);
+        members.forEach((m, i) => csv.push(`"${(isSingle ? 'unclustered' : label).replace(/"/g, '""')}","${m.k.replace(/"/g, '""')}",${intents[i]}`));
+        return `<div class="rounded-lg border border-line bg-bg p-4">
+          <div class="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+            <h3 class="text-[15px] font-semibold text-ink">${esc(isSingle ? 'Unclustered' : label)} <span class="ml-1 font-mono text-[11.5px] font-normal text-ink-3">${members.length} keyword${members.length === 1 ? '' : 's'}</span></h3>
+            <span class="rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[10.5px] text-accent-ink">${esc(pageType)}</span>
+          </div>
+          <div class="flex flex-wrap gap-1.5">${members.map((m, i) => `<span class="inline-flex items-center gap-1.5 rounded-full border border-line bg-panel px-2.5 py-[3px] text-[12.5px] text-ink-2">${esc(m.k)}<span class="font-mono text-[10px] text-ink-3">${intents[i]}</span></span>`).join('')}</div>
+        </div>`;
+      };
+      out.innerHTML = rows.map(([label, members]) => card(label, members, false)).join('') + (singles.length ? card('', singles, true) : '');
+      summary.textContent = `${kws.length} keywords → ${rows.length} group${rows.length === 1 ? '' : 's'}${singles.length ? `, ${singles.length} unclustered` : ''}.`;
+      lastCsv = csv.join('\n');
+    };
+    [ta, minSel, stopCb, stemCb].forEach((el) => { el.addEventListener('input', render); el.addEventListener('change', render); });
+    const copy = document.querySelector('[data-kc="copy"]') as HTMLButtonElement | null;
+    copy?.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(lastCsv); copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy as CSV'; }, 1400); } catch { copy.textContent = 'Select and copy'; }
+    });
+    render();
+  }
+  initKeywordCluster();
+  document.addEventListener('astro:page-load', initKeywordCluster);
+</script>

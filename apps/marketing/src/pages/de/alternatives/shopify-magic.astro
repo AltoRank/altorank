@@ -17,13 +17,13 @@ const breadcrumbs = [
 ];
 
 interface TldrRow {
-  name: string;
-  bestFor: string;
-  multiClient: string;
-  whiteLabel: string;
-  ecommerce: string;
-  price: string;
-  ours?: boolean;
+ name: string;
+ bestFor: string;
+ multiClient: string;
+ whiteLabel: string;
+ ecommerce: string;
+ price: string;
+ ours?: boolean;
 }
 
 const TLDR_ROWS: TldrRow[] = [
@@ -42,7 +42,7 @@ const ALTORANK_VS_MAGIC = [
   { feature: 'White-Label', ours: 'Reports + Portal, inklusive ab 199 €', theirs: 'Nicht vorhanden' },
   { feature: 'Kategorie-SEO', ours: 'Kategorietexte + indexierbare Filter-Seiten', theirs: 'Nicht abgedeckt' },
   { feature: 'GEO / KI-Shopping', ours: 'Product/Offer/Review/FAQ-Schema für ChatGPT Shopping', theirs: 'Keine strukturierte GEO-Ausgabe' },
-  { feature: 'Redaktionelle Kontrolle', ours: 'Entwurf → Freigabe → Publizieren + Kundenfreigabe', theirs: 'Im Admin generieren, manuell bearbeiten' },
+  { feature: 'Redaktionelle Kontrolle', ours: 'Entwurf → Freigabe → Publizieren', theirs: 'Im Admin generieren, manuell bearbeiten' },
   { feature: 'Rank-Tracking', ours: 'Echtzeit pro Keyword', theirs: 'Nicht vorhanden' },
   { feature: 'Preis', ours: 'Ab 99 €/Mon. (die Agentur-Ebene)', theirs: 'Kostenlos (ein Shop, keine Agentur-Ebene)' },
   { feature: 'Quellcode', ours: 'Open Source, kostenlos selbst hostbar', theirs: 'Proprietäre SaaS' },
@@ -51,96 +51,96 @@ const ALTORANK_VS_MAGIC = [
 ];
 
 interface Tool {
-  index: string;
-  name: string;
-  ours?: boolean;
-  url?: string;
-  subtitle: string;
-  whatItIs: string;
-  bestFor: string;
-  pricing: string;
-  beatsMagic: string;
-  beatsTheirs: string;
+ index: string;
+ name: string;
+ ours?: boolean;
+ url?: string;
+ subtitle: string;
+ whatItIs: string;
+ bestFor: string;
+ pricing: string;
+ beatsMagic: string;
+ beatsTheirs: string;
 }
 
 const TOOLS: Tool[] = [
   {
-    index: '01',
-    name: APP_NAME,
-    ours: true,
-    subtitle: 'Beste Shopify-Magic-Alternative für Agenturen',
-    whatItIs: 'Eine freigabe-orientierte KI-SEO-Content-Engine für E-Commerce-Agenturen. Sie geht über einzelne Produktbeschreibungen hinaus und steuert das gesamte Content-Programm über alle Shopify-Kunden (Produkttexte, Kategorie-SEO, Ratgeber und KI-Shopping-fähiges Schema) mit Freigabe-Gate und White-Label-Reporting.',
-    bestFor: 'Agenturen, die SEO-Content für Shopify- (und WooCommerce-/Magento-) Kunden produzieren und mehr brauchen als einzelne Produkttexte.',
-    pricing: '99 €/Mon. Managed (100 Artikel, Modellkosten inklusive, alle CMS, Rank-Tracking), 199 €/Mon. Agency (400 Artikel, unbegrenzte Kunden-Workspaces, White-Label-Reports, Empfehlungs-Traffic-Austausch). 14 Tage kostenlos testen.',
-    beatsMagic: '',
-    beatsTheirs: 'Shopify Magic ist kostenlos und direkt im Admin integriert, für einen einzelnen Shop-Betreiber, der schnell eine Produktbeschreibung braucht, kaum zu schlagen. AltoRank ist für die Agentur gedacht, die Content über viele Kundenshops steuert, nicht für den Händler, der einen Text schreibt.',
+ index: '01',
+ name: APP_NAME,
+ ours: true,
+ subtitle: 'Beste Shopify-Magic-Alternative für Agenturen',
+ whatItIs: 'Eine freigabe-orientierte KI-SEO-Content-Engine für E-Commerce-Agenturen. Sie geht über einzelne Produktbeschreibungen hinaus und steuert das gesamte Content-Programm über alle Shopify-Kunden (Produkttexte, Kategorie-SEO, Ratgeber und KI-Shopping-fähiges Schema) mit Freigabe-Gate und White-Label-Reporting.',
+ bestFor: 'Agenturen, die SEO-Content für Shopify- (und WooCommerce-/Magento-) Kunden produzieren und mehr brauchen als einzelne Produkttexte.',
+ pricing: '99 €/Mon. Managed (100 Artikel, Modellkosten inklusive, alle CMS, Rank-Tracking), 199 €/Mon. Agency (400 Artikel, unbegrenzte Kunden-Workspaces, White-Label-Reports, Empfehlungs-Traffic-Austausch). 14 Tage kostenlos testen.',
+ beatsMagic: '',
+ beatsTheirs: 'Shopify Magic ist kostenlos und direkt im Admin integriert, für einen einzelnen Shop-Betreiber, der schnell eine Produktbeschreibung braucht, kaum zu schlagen. AltoRank ist für die Agentur gedacht, die Content über viele Kundenshops steuert, nicht für den Händler, der einen Text schreibt.',
   },
   {
-    index: '02',
-    name: 'Shopify Magic',
-    url: 'https://www.shopify.com/magic',
-    subtitle: 'Referenz, Kostenlos, integriert',
-    whatItIs: 'Die integrierte KI von Shopify: erzeugt Produktbeschreibungen, E-Mail-Betreffzeilen, einfache Blogposts und FAQ-Antworten direkt im Shopify-Admin. Kostenlos mit einem Shopify-Tarif.',
-    bestFor: 'Einzelshop-Händler, die schnelle KI-Texte im Admin möchten.',
-    pricing: 'Kostenlos (in Shopify enthalten).',
-    beatsMagic: 'Kostenlos, ohne Einrichtung und direkt im Shop, wo der Händler ohnehin arbeitet. Für einen Shop und ein Produkt nach dem anderen die naheliegende Wahl.',
-    beatsTheirs: `Shopify Magic hört bei der Produktbeschreibung auf. Keine Agentur-Ebene (ein Shop, im Admin), keine Workspaces pro Kunde, kein White-Label, kein Kategorie-SEO, kein Rank-Tracking, kein GEO-Schema und kein Freigabe-Workflow für ein Team. ${APP_NAME} ist die Content-Engine, die die Agentur hinter diesen Shops braucht, über die Produktseite hinaus.`,
+ index: '02',
+ name: 'Shopify Magic',
+ url: 'https://www.shopify.com/magic',
+ subtitle: 'Referenz, Kostenlos, integriert',
+ whatItIs: 'Die integrierte KI von Shopify: erzeugt Produktbeschreibungen, E-Mail-Betreffzeilen, einfache Blogposts und FAQ-Antworten direkt im Shopify-Admin. Kostenlos mit einem Shopify-Tarif.',
+ bestFor: 'Einzelshop-Händler, die schnelle KI-Texte im Admin möchten.',
+ pricing: 'Kostenlos (in Shopify enthalten).',
+ beatsMagic: 'Kostenlos, ohne Einrichtung und direkt im Shop, wo der Händler ohnehin arbeitet. Für einen Shop und ein Produkt nach dem anderen die naheliegende Wahl.',
+ beatsTheirs: `Shopify Magic hört bei der Produktbeschreibung auf. Keine Agentur-Ebene (ein Shop, im Admin), keine Workspaces pro Kunde, kein White-Label, kein Kategorie-SEO, kein Rank-Tracking, kein GEO-Schema und kein Freigabe-Workflow für ein Team. ${APP_NAME} ist die Content-Engine, die die Agentur hinter diesen Shops braucht, über die Produktseite hinaus.`,
   },
   {
-    index: '03',
-    name: 'Describely',
-    url: 'https://www.describely.ai',
-    subtitle: 'Produkttexte in großen Mengen',
-    whatItIs: 'Ein Shopify-natives Tool zur Massengenerierung von Produkt- und Kategoriebeschreibungen, mit SEO- und Structured-Data-Funktionen.',
-    bestFor: 'Shops/Agenturen, die schnell einzigartige Texte über Tausende SKUs brauchen.',
-    pricing: '~0,75 $/Produkt.',
-    beatsMagic: 'Für Katalog-Skalierung gebaut, Massengenerierung von Produkt-/Kategorietexten mit SEO-Feldern, wo Shopify Magic ein Produkt nach dem anderen macht.',
-    beatsTheirs: `Describely ist ein Punkt-Tool für Produkttexte, keine Multi-Kunden-Agenturplattform, keine isolierten Kunden-Workspaces, kein White-Label, kein Freigabe-Gate, kein vollständiges Content-Programm (Blog, Ratgeber, GEO). ${APP_NAME} ergänzt die Agentur-Betriebsebene über der Katalog-Generierung.`,
+ index: '03',
+ name: 'Describely',
+ url: 'https://www.describely.ai',
+ subtitle: 'Produkttexte in großen Mengen',
+ whatItIs: 'Ein Shopify-natives Tool zur Massengenerierung von Produkt- und Kategoriebeschreibungen, mit SEO- und Structured-Data-Funktionen.',
+ bestFor: 'Shops/Agenturen, die schnell einzigartige Texte über Tausende SKUs brauchen.',
+ pricing: '~0,75 $/Produkt.',
+ beatsMagic: 'Für Katalog-Skalierung gebaut, Massengenerierung von Produkt-/Kategorietexten mit SEO-Feldern, wo Shopify Magic ein Produkt nach dem anderen macht.',
+ beatsTheirs: `Describely ist ein Punkt-Tool für Produkttexte, keine Multi-Kunden-Agenturplattform, keine isolierten Kunden-Workspaces, kein White-Label, kein Freigabe-Gate, kein vollständiges Content-Programm (Blog, Ratgeber, GEO). ${APP_NAME} ergänzt die Agentur-Betriebsebene über der Katalog-Generierung.`,
   },
   {
-    index: '04',
-    name: 'Hypotenuse',
-    url: 'https://www.hypotenuse.ai',
-    subtitle: 'Katalog-Generierung',
-    whatItIs: 'Ein KI-Content-Tool mit Massengenerierung von Produktbeschreibungen (CSV-Import) plus allgemeinen Marketing-Texten.',
-    bestFor: 'Marken, die große Produktkataloge generieren.',
-    pricing: 'Ab 29 $/Mon.',
-    beatsMagic: 'Bulk-Katalog-Generierung und mehr Textarten als der Einzelprodukt-Flow von Shopify Magic.',
-    beatsTheirs: `Hypotenuse ist Bulk-Generierung auf Markenseite, kein Agentur-Workflow, keine Kundenisolation, kein White-Label, kein Freigabe-Gate. ${APP_NAME} gibt Agenturen einen freigabe-gesteuerten, katalogbewussten Workspace pro Kunde.`,
+ index: '04',
+ name: 'Hypotenuse',
+ url: 'https://www.hypotenuse.ai',
+ subtitle: 'Katalog-Generierung',
+ whatItIs: 'Ein KI-Content-Tool mit Massengenerierung von Produktbeschreibungen (CSV-Import) plus allgemeinen Marketing-Texten.',
+ bestFor: 'Marken, die große Produktkataloge generieren.',
+ pricing: 'Ab 29 $/Mon.',
+ beatsMagic: 'Bulk-Katalog-Generierung und mehr Textarten als der Einzelprodukt-Flow von Shopify Magic.',
+ beatsTheirs: `Hypotenuse ist Bulk-Generierung auf Markenseite, kein Agentur-Workflow, keine Kundenisolation, kein White-Label, kein Freigabe-Gate. ${APP_NAME} gibt Agenturen einen freigabe-gesteuerten, katalogbewussten Workspace pro Kunde.`,
   },
   {
-    index: '05',
-    name: 'Outrank',
-    url: 'https://www.outrank.so',
-    subtitle: 'Einzelseiten-Autopilot',
-    whatItIs: 'Ein 99-$-/Mon.-KI-SEO-Tool, das Blogartikel für eine Seite entwirft und automatisch publiziert, mit Backlink-Netzwerk und Publishing in 9 CMS.',
-    bestFor: 'Solo-Gründer mit einem Blog oder Shop.',
-    pricing: '99 $/Mon. pro Seite.',
-    beatsMagic: 'Geht über Produkttexte hinaus zu vollständigen Blogartikeln mit Auto-Publishing und einem Backlink-Netzwerk.',
-    beatsTheirs: `Outrank ist Einzelseiten-Autopilot, keine Multi-Kunden-Workspaces, keine Stimme pro Kunde, kein White-Label, kein Freigabe-Gate und keine e-commerce-spezifische Produkt-/Kategorietiefe. Siehe /alternatives/outrank für die vollständige Agentur-Analyse.`,
+ index: '05',
+ name: 'Outrank',
+ url: 'https://www.outrank.so',
+ subtitle: 'Einzelseiten-Autopilot',
+ whatItIs: 'Ein 99-$-/Mon.-KI-SEO-Tool, das Blogartikel für eine Seite entwirft und automatisch publiziert, mit Backlink-Netzwerk und Publishing in 9 CMS.',
+ bestFor: 'Solo-Gründer mit einem Blog oder Shop.',
+ pricing: '99 $/Mon. pro Seite.',
+ beatsMagic: 'Geht über Produkttexte hinaus zu vollständigen Blogartikeln mit Auto-Publishing und einem Backlink-Netzwerk.',
+ beatsTheirs: `Outrank ist Einzelseiten-Autopilot, keine Multi-Kunden-Workspaces, keine Stimme pro Kunde, kein White-Label, kein Freigabe-Gate und keine e-commerce-spezifische Produkt-/Kategorietiefe. Siehe /alternatives/outrank für die vollständige Agentur-Analyse.`,
   },
   {
-    index: '06',
-    name: 'contentbird',
-    url: 'https://contentbird.io',
-    subtitle: 'B2B-Content-Ops-Suite',
-    whatItIs: 'Eine Berliner Content-Operations-Suite mit Freigabe-Workflow, ausgerichtet auf interne B2B-Content-Teams.',
-    bestFor: 'Interne B2B-Teams, die eine breite All-in-one-Suite möchten.',
-    pricing: 'Ab 399 €/Mon.',
-    beatsMagic: 'Ein echter Freigabe-Workflow und eine vollständige Content-Ops-Suite, weit über die Admin-Generierung von Shopify Magic hinaus.',
-    beatsTheirs: `contentbird ist B2B-content-generisch (keine Shopify-/Woo-Anbindung), startet bei 399 € mit White-Label als kostenpflichtigem Zusatz und hat keine kundenseitige Freigabe. ${APP_NAME} ist e-commerce-agentur-nativ zu einem Viertel des Einstiegspreises. Siehe /alternatives/contentbird.`,
+ index: '06',
+ name: 'contentbird',
+ url: 'https://contentbird.io',
+ subtitle: 'B2B-Content-Ops-Suite',
+ whatItIs: 'Eine Berliner Content-Operations-Suite mit Freigabe-Workflow, ausgerichtet auf interne B2B-Content-Teams.',
+ bestFor: 'Interne B2B-Teams, die eine breite All-in-one-Suite möchten.',
+ pricing: 'Ab 399 €/Mon.',
+ beatsMagic: 'Ein echter Freigabe-Workflow und eine vollständige Content-Ops-Suite, weit über die Admin-Generierung von Shopify Magic hinaus.',
+ beatsTheirs: `contentbird ist B2B-content-generisch (keine Shopify-/Woo-Anbindung), startet bei 399 € mit White-Label als kostenpflichtigem Zusatz und hat keine kundenseitige Freigabe. ${APP_NAME} ist e-commerce-agentur-nativ zu einem Viertel des Einstiegspreises. Siehe /alternatives/contentbird.`,
   },
 ];
 
 interface DecisionRow {
-  when: string;
-  pick: string;
-  rationale: string;
-  ours?: boolean;
+ when: string;
+ pick: string;
+ rationale: string;
+ ours?: boolean;
 }
 
 const DECISION_MATRIX: DecisionRow[] = [
-  { when: 'Sie betreiben eine Agentur, die SEO-Content über Shopify-Kundenshops produziert', pick: APP_NAME, rationale: "Über Produkttexte hinaus: Kategorie-SEO, Ratgeber, GEO-Schema, Freigabe + Kundenfreigabe, White-Label und Workspaces pro Kunde, nichts davon bietet Shopify Magic.", ours: true },
+  { when: 'Sie betreiben eine Agentur, die SEO-Content über Shopify-Kundenshops produziert', pick: APP_NAME, rationale: "Über Produkttexte hinaus: Kategorie-SEO, Ratgeber, GEO-Schema, Freigabe, White-Label und Workspaces pro Kunde, nichts davon bietet Shopify Magic.", ours: true },
   { when: 'Sie sind Einzelshop-Betreiber und brauchen schnelle Produktbeschreibungen', pick: 'Nutzen Sie Shopify Magic', rationale: 'Kostenlos, im Admin, ohne Einrichtung. Für einen Shop und ein Produkt nach dem anderen das richtige Tool.' },
   { when: 'Sie sind eine Solo-Agentur mit einem Shopify-Kunden (und Wachstumsplänen)', pick: APP_NAME + ' Managed', rationale: '99 €/Mon. mit dem vollständigen Content-Programm + E-Commerce-Funktionen + Freigabe, bereit für mehr Kunden.', ours: true },
   { when: 'Sie brauchen einzigartige Texte über Tausende SKUs, ein Shop', pick: 'Describely', rationale: 'Speziell für Massengenerierung von Produkt-/Kategorietexten gebaut.' },
@@ -156,33 +156,33 @@ const FAQS = [
 ];
 
 const structuredData = [
-  buildArticleSchema({
-    title: `${APP_NAME} vs. Shopify Magic: 6 Shopify-Magic-Alternativen (2026)`,
-    description: 'Shopify Magic schreibt Produktbeschreibungen. Für alle, die SEO-Content über Shopify-Kunden steuern, geht AltoRank über die Produktseite hinaus. Wir haben 6 Shopify-Magic-Alternativen getestet.',
-    publishDate,
-    dateModified,
-    author: AUTHOR_NAME,
-    authorType: 'Person',
-    authorUrl: AUTHOR_URL,
-    url: pageUrl,
+ buildArticleSchema({
+ title: `${APP_NAME} vs. Shopify Magic: 6 Shopify-Magic-Alternativen (2026)`,
+ description: 'Shopify Magic schreibt Produktbeschreibungen. Für alle, die SEO-Content über Shopify-Kunden steuern, geht AltoRank über die Produktseite hinaus. Wir haben 6 Shopify-Magic-Alternativen getestet.',
+ publishDate,
+ dateModified,
+ author: AUTHOR_NAME,
+ authorType: 'Person',
+ authorUrl: AUTHOR_URL,
+ url: pageUrl,
   }),
-  buildFAQSchema(FAQS),
-  buildItemListSchema(
-    TLDR_ROWS.map((t) => ({
-      name: t.name,
-      description: `${t.bestFor}, ab ${t.price}`,
+ buildFAQSchema(FAQS),
+ buildItemListSchema(
+ TLDR_ROWS.map((t) => ({
+ name: t.name,
+ description: `${t.bestFor}, ab ${t.price}`,
     })),
   ),
 ];
 ---
 
 <PSEO
-  title="6 Shopify-Magic-Alternativen (2026)"
-  description="Shopify Magic schreibt Produktbeschreibungen. Wir haben 6 Alternativen nach Multi-Kunde und White-Label getestet."
-  breadcrumbs={breadcrumbs}
-  structuredData={structuredData}
-  lang="de"
-  alternateLanguages={[
+ title="6 Shopify-Magic-Alternativen (2026)"
+ description="Shopify Magic schreibt Produktbeschreibungen. Wir haben 6 Alternativen nach Multi-Kunde und White-Label getestet."
+ breadcrumbs={breadcrumbs}
+ structuredData={structuredData}
+ lang="de"
+ alternateLanguages={[
     { hreflang: 'de', href: `${SITE_URL}/de/alternatives/shopify-magic` },
     { hreflang: 'en', href: `${SITE_URL}/alternatives/shopify-magic` },
     { hreflang: 'x-default', href: `${SITE_URL}/alternatives/shopify-magic` },
@@ -195,13 +195,13 @@ const structuredData = [
         {APP_NAME} vs. Shopify Magic: 6 Shopify-Magic-Alternativen (2026)
       </h1>
       <p class="mb-5 max-w-[680px] text-lg font-semibold leading-relaxed text-ink [text-wrap:pretty]">
-        Für Agenturen mit Shopify-Kunden ist {APP_NAME} die stärkste Shopify-Magic-Alternative: Sie geht über einzelne Produktbeschreibungen hinaus zu einer vollständigen, freigabe-gesteuerten, White-Label-Content-Engine über alle Kundenshops, Kategorie-SEO, Ratgeber und KI-Shopping-fähiges Produktschema, das Shopify Magic nicht abdeckt.
+ Für Agenturen mit Shopify-Kunden ist {APP_NAME} die stärkste Shopify-Magic-Alternative: Sie geht über einzelne Produktbeschreibungen hinaus zu einer vollständigen, freigabe-gesteuerten, White-Label-Content-Engine über alle Kundenshops, Kategorie-SEO, Ratgeber und KI-Shopping-fähiges Produktschema, das Shopify Magic nicht abdeckt.
       </p>
       <p class="mb-5 max-w-[680px] text-lg leading-relaxed text-ink-2 [text-wrap:pretty]">
         <a href="https://www.shopify.com/magic" target="_blank" rel="noopener noreferrer" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">Shopify Magic</a> ist kostenlos, im Shopify-Admin integriert und gut in einer Sache: einer schnellen Produktbeschreibung für einen Shop. Eine <em>Agentur</em>, die SEO-Content über viele Shopify-Kunden steuert, braucht das ganze Programm (Kategorien, Ratgeber, GEO, Freigabe, White-Label) nichts davon deckt Magic ab. Die 6 Alternativen unten sind nach <strong class="font-semibold text-ink">Agentur-E-Commerce-Kriterien</strong> sortiert, mit ehrlichen Urteilen, wann das kostenlose integrierte Tool reicht.
       </p>
       <p class="max-w-[680px] text-base leading-relaxed text-ink-2">
-        Wenn Sie einen Shop besitzen und nur Produktbeschreibungen brauchen, bleiben Sie bei Shopify Magic, kostenlos und genau dort, wo Sie arbeiten. Wenn Sie eine Agentur sind, lesen Sie weiter.
+ Wenn Sie einen Shop besitzen und nur Produktbeschreibungen brauchen, bleiben Sie bei Shopify Magic, kostenlos und genau dort, wo Sie arbeiten. Wenn Sie eine Agentur sind, lesen Sie weiter.
       </p>
       <div class="mt-8 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-5 text-[13px] text-ink-3">
         <span>Von <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer" class="font-medium text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] transition-colors hover:text-ink hover:decoration-accent">{AUTHOR_NAME}</a></span>
@@ -218,7 +218,7 @@ const structuredData = [
     <div class="mx-auto max-w-[1100px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          Die 7 Tools auf einen Blick
+ Die 7 Tools auf einen Blick
         </h2>
       </div>
       <div class="overflow-hidden rounded-lg border border-line bg-bg">
@@ -273,7 +273,7 @@ const structuredData = [
     <div class="mx-auto max-w-[820px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          Warum Agenturen aus Shopify Magic herauswachsen
+ Warum Agenturen aus Shopify Magic herauswachsen
         </h2>
       </div>
       <div class="flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
@@ -294,7 +294,7 @@ const structuredData = [
     <div class="mx-auto max-w-[820px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          Wie wir jede Shopify-Magic-Alternative bewertet haben
+ Wie wir jede Shopify-Magic-Alternative bewertet haben
         </h2>
       </div>
       <div class="flex flex-col gap-4 text-[15.5px] leading-relaxed text-ink-2">
@@ -314,7 +314,7 @@ const structuredData = [
   {TOOLS.map((tool) => (
     <section class={`border-b border-line py-[72px] ${tool.ours ? 'bg-accent-soft/15' : ''}`}>
       <div class="mx-auto max-w-[820px] px-8">
-        <div class="mb-2 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">
+        <div class="mb-2 flex items-center gap-2 font-mono text-[11px] text-ink-3">
           <span>Tool {tool.index}</span>
           {tool.ours && (
             <span class="rounded-full bg-accent px-1.5 py-[1px] font-mono text-[9.5px] tracking-[0.08em] text-white">UNSER</span>
@@ -326,22 +326,22 @@ const structuredData = [
         <p class="mb-7 text-base font-medium text-accent-ink">{tool.subtitle}</p>
         <div class="mb-5 grid gap-3 rounded-lg border border-line bg-bg p-5 sm:grid-cols-3">
           <div>
-            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Was es ist</div>
+            <div class="mb-1.5 font-mono text-[10.5px] text-ink-3">Was es ist</div>
             <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.whatItIs}</div>
           </div>
           <div>
-            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Am besten für</div>
+            <div class="mb-1.5 font-mono text-[10.5px] text-ink-3">Am besten für</div>
             <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.bestFor}</div>
           </div>
           <div>
-            <div class="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Preis</div>
+            <div class="mb-1.5 font-mono text-[10.5px] text-ink-3">Preis</div>
             <div class="text-[13.5px] leading-relaxed text-ink-2">{tool.pricing}</div>
           </div>
         </div>
 
         {tool.ours ? (
           <>
-            <h3 class="mt-7 mb-4 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Wie sich {APP_NAME} von Shopify Magic unterscheidet</h3>
+            <h3 class="mt-7 mb-4 font-mono text-[11px] text-ink-3">Wie sich {APP_NAME} von Shopify Magic unterscheidet</h3>
             <div class="overflow-hidden rounded-lg border border-line bg-bg">
               <table class="w-full text-sm">
                 <caption class="sr-only">{APP_NAME} im Vergleich zu Shopify Magic, Funktion für Funktion.</caption>
@@ -364,12 +364,12 @@ const structuredData = [
               </table>
             </div>
             <p class="mt-5 text-[15px] leading-relaxed text-ink-2">
-              Der Unterschied ist nicht, ob KI eine Produktbeschreibung schreiben kann, beide tun das. Es ist, dass {APP_NAME} das gesamte SEO-Content-Programm für jeden Kundenshop steuert, mit Freigabe-Gate und White-Label-Reporting, wo Shopify Magic ein Einzelshop-, Einzelprodukt-Helfer ist.
+ Der Unterschied ist nicht, ob KI eine Produktbeschreibung schreiben kann, beide tun das. Es ist, dass {APP_NAME} das gesamte SEO-Content-Programm für jeden Kundenshop steuert, mit Freigabe-Gate und White-Label-Reporting, wo Shopify Magic ein Einzelshop-, Einzelprodukt-Helfer ist.
             </p>
             <p class="mt-4 text-[15px] leading-relaxed text-ink-2">
               {APP_NAME} Managed kostet 99 €/Mon. mit kostenloser Testphase; <a href="/pricing" class="text-ink underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent">Agency ab 199 €/Mon.</a> ergänzt 400 Artikel pro Monat, unbegrenzte Kunden-Workspaces, White-Label-Reports und Rank-Tracking.
             </p>
-            <h3 class="mt-7 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Wo {APP_NAME} verliert</h3>
+            <h3 class="mt-7 mb-3 font-mono text-[11px] text-ink-3">Wo {APP_NAME} verliert</h3>
             <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsTheirs}</p>
             <div class="mt-7">
               <Button href={SIGNUP_URL}>
@@ -380,17 +380,17 @@ const structuredData = [
           </>
         ) : (
           <>
-            <h3 class="mt-6 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+            <h3 class="mt-6 mb-3 font-mono text-[11px] text-ink-3">
               {tool.name === 'Shopify Magic' ? 'Wo Shopify Magic gewinnt' : `Wo sich ${tool.name} von Shopify Magic unterscheidet`}
             </h3>
             <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsMagic}</p>
-            <h3 class="mt-6 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+            <h3 class="mt-6 mb-3 font-mono text-[11px] text-ink-3">
               {tool.name === 'Shopify Magic' ? `Wo ${APP_NAME} gewinnt` : `Wo ${APP_NAME} ${tool.name} schlägt`}
             </h3>
             <p class="text-[15px] leading-relaxed text-ink-2">{tool.beatsTheirs}</p>
             {tool.url && (
               <p class="mt-6 text-[13px] text-ink-3">
-                Besuchen Sie <a href={tool.url} target="_blank" rel="noopener noreferrer" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent hover:text-ink">{tool.name}</a> für aktuelle Details.
+ Besuchen Sie <a href={tool.url} target="_blank" rel="noopener noreferrer" class="text-ink-2 underline decoration-line decoration-1 underline-offset-[3px] hover:decoration-accent hover:text-ink">{tool.name}</a> für aktuelle Details.
               </p>
             )}
           </>
@@ -404,16 +404,16 @@ const structuredData = [
     <div class="mx-auto max-w-[1100px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          Welche Shopify-Magic-Alternative sollten Sie wählen?
+ Welche Shopify-Magic-Alternative sollten Sie wählen?
         </h2>
         <p class="mt-3 max-w-[640px] text-base leading-relaxed text-ink-2">Nach den Tool-Analysen hier die Kurzfassung.</p>
       </div>
       <div class="grid gap-3 md:grid-cols-2">
         {DECISION_MATRIX.map((row) => (
           <div class={`rounded-xl border p-5 ${row.ours ? 'border-accent bg-accent-soft/40' : 'border-line bg-bg'}`}>
-            <div class="mb-2 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">Wenn</div>
+            <div class="mb-2 font-mono text-[11px] text-ink-3">Wenn</div>
             <div class="mb-3 text-[15px] font-medium text-ink">{row.when}</div>
-            <div class="mb-1 font-mono text-[11px] uppercase tracking-[0.08em] text-accent-ink">Dann</div>
+            <div class="mb-1 font-mono text-[11px] text-accent-ink">Dann</div>
             <div class="mb-2 text-lg font-semibold tracking-[-0.01em] text-ink">→ {row.pick}</div>
             <p class="text-sm leading-relaxed text-ink-2">{row.rationale}</p>
           </div>
@@ -427,7 +427,7 @@ const structuredData = [
     <div class="mx-auto max-w-[820px] px-8">
       <div class="mb-10">
         <h2 class="text-[clamp(28px,3.5vw,36px)] font-semibold leading-[1.1] tracking-[-0.02em] text-ink [text-wrap:balance]">
-          Häufige Fragen
+ Häufige Fragen
         </h2>
       </div>
       <div class="flex flex-col gap-3">

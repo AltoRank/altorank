@@ -5,14 +5,17 @@
 // That note is load-bearing rather than decorative. Every one of these tools
 // works with no account and no network call, and saying so is the difference
 // between a free tool and a demo of a paid one.
+//
+// The label is a plain heading, not an eyebrow: no uppercase, no tracking, no
+// pill. Headings stand alone on this site.
 interface Props { label: string; note?: string }
 const { label, note } = Astro.props;
 ---
-<div class="rounded-xl border border-line bg-panel p-5 text-left sm:p-6">
-  <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-    <p class="font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">{label}</p>
-    <p class="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">
-      {note ?? 'Runs in your browser · nothing sent anywhere'}
+<div class="rounded-xl border border-line bg-panel p-4 text-left sm:p-6">
+  <div class="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+    <p class="text-[15px] font-semibold tracking-[-0.01em] text-ink">{label}</p>
+    <p class="text-[12.5px] text-ink-3">
+      {note ?? 'Runs in your browser. Nothing you paste is sent anywhere.'}
     </p>
   </div>
   <slot />

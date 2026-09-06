@@ -11,7 +11,7 @@
 #
 #   Local, fully self-hosted and free:
 #     cd apps/web && supabase start        # postgres, auth, storage, studio
-#     supabase db push                     # apply the 14 migrations
+#     supabase db push                     # apply the migrations, in order
 #     # take the API URL and anon key it prints, put them in docker/.env
 #     docker compose -f docker/compose.yml up --build
 #
@@ -48,6 +48,26 @@ services:
       # It was documented in .env.example but never reached the container, so
       # the routes rejected every request even when it was set.
       CRON_SECRET: ${CRON_SECRET:-}
+      DATAFORSEO_API_KEY: ${DATAFORSEO_API_KEY:-}
+      PAGESPEED_API_KEY: ${PAGESPEED_API_KEY:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-}
+      FEEDBACK_EMAIL: ${FEEDBACK_EMAIL:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_STARTER: ${STRIPE_PRICE_STARTER:-}
+      STRIPE_PRICE_STARTER_YEARLY: ${STRIPE_PRICE_STARTER_YEARLY:-}
+      STRIPE_PRICE_GROWTH: ${STRIPE_PRICE_GROWTH:-}
+      STRIPE_PRICE_GROWTH_YEARLY: ${STRIPE_PRICE_GROWTH_YEARLY:-}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      ANTHROPIC_MODEL_STRUCTURED: ${ANTHROPIC_MODEL_STRUCTURED:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENAI_IMAGE_MODEL: ${OPENAI_IMAGE_MODEL:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -56,7 +76,7 @@ services:
       retries: 3
       start_period: 20s
 
-  # Runs the eight scheduled jobs that the hosted deployment gets from Vercel.
+  # Runs the nine scheduled jobs that the hosted deployment gets from Vercel.
   #
   # Without this, self-hosting shipped the dashboard but not the automation,
   # which is the part the product is actually about: analysis, drafting, rank

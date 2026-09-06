@@ -1,10 +1,10 @@
 ---
-title: "Keyword Gap Analysis: Finding What Competitors Rank For"
+title: "Free Keyword Gap Analysis Tool: Compare Two Keyword Lists"
 slug: "keyword-gap-analyzer"
-description: "A keyword gap analysis that produces a content plan, not a spreadsheet: pick competitors, filter the noise."
+description: "Paste your ranking keywords and a competitor's, get the gaps, the overlap and what is yours alone, with branded noise filtered out. Free, in your browser."
 category: "keyword"
-heroHeadline: "Find the keywords your competitors rank for, and you do not."
-heroSubhead: "A gap analysis is easy to run and easy to misread. Here is how to choose comparison sites, strip out the gaps that do not matter, and turn what is left into a plan."
+heroHeadline: "Keyword gap analysis tool: what they rank for and you do not."
+heroSubhead: "Paste two keyword exports and the tool returns the difference, with brand and junk terms excluded. A gap analysis is easy to run and easy to misread, so the method below covers choosing comparison sites and filtering what is left into a plan."
 useCases:
   - "Find topics a client is missing that competitors already own"
   - "Choose comparison sites that produce useful gaps"
@@ -13,9 +13,10 @@ useCases:
 relatedTools:
   - "keyword-cluster-mapper"
   - "serp-analyzer"
+widget: "keyword-gap"
 published: true
 datePublished: 2026-08-22
-dateModified: 2026-08-22
+dateModified: 2026-09-05
 steps:
   - name: "Pick SERP competitors, not business competitors"
     text: "The right comparison set is whoever ranks for the queries you want, which is often not the same as the companies your client names in a pitch. A publisher or a review site can be your real SERP competitor even though nobody would call it a competitor commercially."
@@ -36,11 +37,13 @@ faq:
     answer: "Because the raw export is dominated by gaps that were never winnable or never relevant: the competitor's branded terms, queries served by a different business model, and keywords held by domains with far more accumulated authority. Filtering those out before planning is what makes the output usable."
   - question: "Can I run a gap analysis without a paid tool?"
     answer: "Partially. Search Console gives you your own ranking queries for free, and you can compare those against a manual review of what competitors cover. Paid tools mainly add scale and competitor visibility, which matters more when you are running this across many client accounts."
+  - question: "What does this gap tool do, and what does it not do?"
+    answer: "It compares two keyword lists and returns three sets: keywords only the competitor has, keywords you both have, and keywords only you have, with an exclusion box for brand names and junk. It does not fetch anyone's rankings. Export your queries from Search Console and the competitor's from any rank tracker, paste both, and run it once per competitor."
   - question: "How is a gap analysis different from keyword research?"
     answer: "Keyword research starts from demand and asks what people search for. Gap analysis starts from a competitive set and asks what others already capture that you do not. They overlap, but gap analysis is better at surfacing topics you would not have thought to look for."
 ---
 
-A keyword gap report is one of the easiest things in SEO to produce and one of the easiest to misuse. Export the difference between two sites and you get several thousand rows, most of which are noise. The work is in the filtering, not the export.
+A keyword gap report is one of the easiest things in SEO to produce and one of the easiest to misuse. Export the difference between two sites and you get several thousand rows, most of which are noise. The tool above produces the difference; the work is in the filtering, and that is what the rest of this page is about.
 
 ## Choose the right comparison set
 
