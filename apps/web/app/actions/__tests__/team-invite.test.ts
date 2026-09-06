@@ -56,7 +56,7 @@ const { requireAuth, sendInviteEmail } = vi.hoisted(() => ({
     role: "owner",
     user: { id: "u1", email: "owner@acme.test", user_metadata: { full_name: "Owner" } },
   })),
-  sendInviteEmail: vi.fn(async () => "email-id"),
+  sendInviteEmail: vi.fn(async (..._args: unknown[]) => "email-id"),
 }));
 vi.mock("@/lib/auth/require-auth", () => ({ requireAuth }));
 vi.mock("@/lib/email/resend", () => ({ sendInviteEmail }));
