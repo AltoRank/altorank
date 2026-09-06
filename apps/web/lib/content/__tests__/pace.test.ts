@@ -3,10 +3,13 @@ import {
   FREE_TIER_PACE,
   MAX_PACE,
   PAID_DEFAULT_PACE,
+  PLAN_DEFAULT_PACE,
   monthlyFromPace,
   normalisePace,
   paceOnActivation,
 } from "../pace";
+import { PACE_OPTIONS } from "@/lib/plan/pace-options";
+import { PLAN_ARTICLE_LIMITS } from "@/lib/stripe";
 
 describe("paceOnActivation", () => {
   it("sets the paid default when the site has no pace of its own", () => {
@@ -78,5 +81,54 @@ describe("monthlyFromPace", () => {
 
   it("is zero for a paused site", () => {
     expect(monthlyFromPace(0)).toBe(0);
+  });
+});
+
+describe("PLAN_DEFAULT_PACE", () => {
+  it("starts each tier at a pace that uses a real share of what was bought", () => {
+    // The gap this closes: PAID_DEFAULT_PACE stayed 7 while volumes grew, so
+    // every tier defaulted to ~30 a month - 30% of Managed, 8% of Agency.
+    expect(monthlyFromPace(PLAN_DEFAULT_PACE.starter)).toBe(61);
+    expect(monthlyFromPace(PLAN_DEFAULT_PACE.growth)).toBe(91);
+    expect(monthlyFromPace(PAID_DEFAULT_PACE)).toBe(30);
+  });
+
+  it("stays inside each plan's included volume, so the default never bills overage", () => {
+    expect(monthlyFromPace(PLAN_DEFAULT_PACE.starter)).toBeLessThanOrEqual(PLAN_ARTICLE_LIMITS.starter!);
+    expect(monthlyFromPace(PLAN_DEFAULT_PACE.growth)).toBeLessThanOrEqual(PLAN_ARTICLE_LIMITS.growth!);
+  });
+
+  it("offers only paces the plan popover can show", () => {
+    for (const p of Object.values(PLAN_DEFAULT_PACE)) expect(PACE_OPTIONS).toContain(p);
+  });
+
+  it("never defaults past the ceiling the column allows", () => {
+    for (const p of Object.values(PLAN_DEFAULT_PACE)) expect(p).toBeLessThanOrEqual(MAX_PACE);
+  });
+});
+
+describe("paceOnActivation with a tier", () => {
+  it("raises the signup pace to the tier's default", () => {
+    expect(paceOnActivation(FREE_TIER_PACE, "starter")).toBe(14);
+    expect(paceOnActivation(FREE_TIER_PACE, "growth")).toBe(21);
+    expect(paceOnActivation(null, "growth")).toBe(21);
+  });
+
+  it("still refuses to overrule a number the customer chose", () => {
+    expect(paceOnActivation(3, "growth")).toBeNull();
+    expect(paceOnActivation(25, "starter")).toBeNull();
+  });
+
+  it("leaves a deliberately paused site paused, on any tier", () => {
+    expect(paceOnActivation(0, "growth")).toBeNull();
+  });
+
+  it("does not lower a site already above its tier's default", () => {
+    expect(paceOnActivation(21, "starter")).toBeNull();
+  });
+
+  it("falls back to the generic paid pace when the tier is unknown", () => {
+    expect(paceOnActivation(FREE_TIER_PACE, undefined)).toBeNull();
+    expect(paceOnActivation(null, null)).toBe(PAID_DEFAULT_PACE);
   });
 });
