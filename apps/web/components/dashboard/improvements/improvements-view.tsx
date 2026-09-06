@@ -139,17 +139,21 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll space-y-5">
-        <p className="text-[13px] text-ink-3 m-0 max-w-[72ch]">
-          Review rewrites the system has produced for your existing articles. Approve the changes you like and push
-          them to your CMS.
-        </p>
-
+        {/* The page used to open with "Review rewrites the system has produced
+            for your existing articles. Approve the changes you like and push
+            them to your CMS." - the title, the four tabs and the row actions
+            below already say all three of those things. */}
         {(!gscConnected || !cms.connected || (cms.connected && !cms.updatable) || !refresh.enabled) && (
           <div className="grid gap-3 md:grid-cols-2">
+            {/* One sentence each, naming the consequence. Each of these was
+                two or three: the second sentence in every one of them
+                described a control that is visible on the rewrite it talks
+                about, and the reader meets it there. What stays is why the
+                list below is empty, which is the half nothing else says. */}
             {!gscConnected && (
               <Blocker
                 title="Search Console is not connected"
-                body="Every opportunity here is read from impressions, clicks and positions. Without Search Console nothing can be detected, so the candidate list stays empty and Analyze now has nothing to read."
+                body="Candidates are read from impressions, clicks and positions, so nothing can be detected and Analyze now has nothing to read."
                 href="/connect"
                 cta="Connect Search Console"
               />
@@ -157,7 +161,7 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
             {!cms.connected && (
               <Blocker
                 title="No CMS connected"
-                body="Rewrites can still be produced and reviewed here. What cannot happen is Push to site: without a connection you get Copy HTML and Download Markdown on each reviewed rewrite instead."
+                body="Rewrites are still produced and reviewed here; Push to site is what a connection adds."
                 href="/connect"
                 cta="Connect a CMS"
               />
@@ -165,13 +169,13 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
             {cms.connected && !cms.updatable && (
               <Blocker
                 title={`${cms.labels.join(", ")} cannot edit an existing post yet`}
-                body="The connection can publish new articles but not update one in place, and publishing a second copy of a page would be worse than no push. Reviewed rewrites offer Copy HTML and Download Markdown instead."
+                body="It can publish a new article but not update one in place, and a second copy of a page would be worse than no push."
               />
             )}
             {!refresh.enabled && (
               <Blocker
                 title="Scheduled rewrites are off for this site"
-                body="Candidates can be found and scheduled, but the schedule only runs once it is switched on. One improvement per scheduled day, using one slot of your article pace."
+                body="Candidates can be found and scheduled, but nothing runs until the schedule is switched on."
                 href="/settings/refresh"
                 cta="Open settings"
               />

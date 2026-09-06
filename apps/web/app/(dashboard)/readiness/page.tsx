@@ -11,10 +11,16 @@ export default function ReadinessPage() {
     <>
       <PageHead
         title="Agent readiness"
-        subtitle="Check whether an AI assistant can actually read a site, then generate the fixes. Works on any domain, no workspace required."
+        subtitle="Whether an AI assistant can read a site, and the fixes if it cannot. Any domain, no workspace needed."
         actions={<HowItWorks explainer={readinessExplainer} />}
       />
-      <ReadinessCheck />
+      {/* This page put its cards flush against the sidebar and the topbar
+          while every other surface insets them by px-8 py-6, so the one page
+          a prospect is most likely to be shown was the one that looked
+          unfinished. */}
+      <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
+        <ReadinessCheck />
+      </div>
     </>
   );
 }

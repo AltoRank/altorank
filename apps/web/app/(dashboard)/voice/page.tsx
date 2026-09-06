@@ -6,6 +6,7 @@ import { VoiceActions } from "@/components/dashboard/voice-actions";
 import { VoiceCardButton } from "@/components/dashboard/voice-card-button";
 import type { Workspace, VoiceProfile } from "@/lib/types";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
+import { plural } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Brand Voice" };
 
@@ -101,9 +102,9 @@ export default async function VoicePage() {
 
                     {/* Stats row */}
                     <div className="flex items-center gap-3 text-[11px] text-ink-3 font-mono mb-2">
-                      <span>{wordCount.toLocaleString()} words</span>
+                      <span>{plural(wordCount, "word")}</span>
                       <span className="text-line">|</span>
-                      <span>{sentences.length} sentences</span>
+                      <span>{plural(sentences.length, "sentence")}</span>
                       <span className="text-line">|</span>
                       <span>avg {avgSentenceLength} words/sentence</span>
                     </div>
@@ -130,7 +131,7 @@ export default async function VoicePage() {
                         ))}
                         {sentences.length > 3 && (
                           <div className="text-[11px] text-ink-3">
-                            +{sentences.length - 3} more sentences
+                            +{plural(sentences.length - 3, "more sentence", "more sentences")}
                           </div>
                         )}
                       </div>

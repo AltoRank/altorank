@@ -18,6 +18,8 @@ import { PlanningProvider } from "@/components/dashboard/planning-state";
 import { PlannerSlot } from "@/components/dashboard/planner-slot";
 import type { WriteGate } from "@/components/dashboard/planner-card";
 import { PlanMonthButton } from "@/components/dashboard/plan-month-button";
+import { HowItWorks } from "@/components/dashboard/how-it-works";
+import { contentPlanExplainer } from "@/lib/explainers";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
@@ -150,9 +152,7 @@ export default async function CalendarPage({ searchParams }: Props) {
   const items = [...articleItems, ...improvementItems];
   const cells: PlannerCell[] = buildMonthCells(items, yearNum, monthNum, (it) => it.entry.scheduled_date);
 
-  const doneCount = articleItems.filter((it) => it.entry.status === "done").length;
   const runningCount = items.filter((it) => it.entry.status === "run" || it.inFlight !== null).length;
-  const queuedCount = articleItems.filter((it) => it.entry.status === "queue" && it.frozen === null).length;
   const frozenCount = articleItems.filter((it) => it.frozen !== null).length;
   const slots = capacity?.available ?? 0;
 
@@ -170,16 +170,18 @@ export default async function CalendarPage({ searchParams }: Props) {
                   <span className="font-mono text-[11.5px]">{wsMap.get(scopeId ?? "")?.domain}</span>
                 </>
               ) : null}
-              <DotSep />
-              <span>
-                {doneCount} published · {queuedCount} queued
-                {frozenCount > 0 && (
-                  <>
-                    {" · "}
-                    <span title={frozen.reason ?? undefined}>{frozenCount} inactive</span>
-                  </>
-                )}
-              </span>
+              {/* "N published · N queued" was a breakdown of the count two
+                  segments to the left, and every one of those states is a
+                  labelled pill on the day it sits on. Four segments plus the
+                  capacity line pushed the month out of the title, which is
+                  the one thing on this row nothing else repeats. Inactive
+                  stays: nothing else on the page says a day was skipped. */}
+              {frozenCount > 0 && (
+                <>
+                  <DotSep />
+                  <span title={frozen.reason ?? undefined}>{frozenCount} inactive</span>
+                </>
+              )}
               {capacity && (
                 <>
                   <DotSep />
@@ -196,7 +198,16 @@ export default async function CalendarPage({ searchParams }: Props) {
               )}
             </>
           }
-          actions={<>{scopeId && slots > 0 && <PlanMonthButton label={(capacity?.articles ?? 0) === 0 ? "Plan the month" : "Top up the plan"} />}</>}
+          actions={
+            <>
+              {/* contentPlanExplainer was written for this page and never
+                  mounted anywhere, so the one surface whose behaviour is
+                  pure arithmetic - which keyword, on which day, why - had no
+                  way to say what the arithmetic is. */}
+              <HowItWorks explainer={contentPlanExplainer} />
+              {scopeId && slots > 0 && <PlanMonthButton label={(capacity?.articles ?? 0) === 0 ? "Plan the month" : "Top up the plan"} />}
+            </>
+          }
         />
 
         <div className="flex-1 overflow-y-auto px-8 py-6 scroll">

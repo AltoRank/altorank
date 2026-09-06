@@ -35,10 +35,44 @@ type GateProps = {
   children: React.ReactNode;
   /** Compact variant for a card that is a list rather than a chart. */
   dense?: boolean;
+  /**
+   * The page has already shown the full reason above this block. Three cards
+   * on the Dashboard gate on the same connection, and each rendered the same
+   * 22-word paragraph and the same button, so a page with nothing connected
+   * said the same thing three times before it said anything else. The reason
+   * still has to be here - an empty card that does not say why it is empty is
+   * the failure this codebase keeps undoing - so it stays, as one line.
+   */
+  restated?: boolean;
 };
 
-export function GscGate({ connected, hasData, needsReconnect = false, children, dense = false }: GateProps) {
+/** One line, for the second and third block that gate on the same connection. */
+function BriefGate({ text, href, cta }: { text: string; href: string; cta: string }) {
+  return (
+    // h-full so a one-line message sits in the middle of a card whose height
+    // is set by whatever is beside it, rather than at the top of the space.
+    <div className="h-full min-h-[72px] grid place-items-center px-[18px] py-6 text-center text-[13px] text-ink-3">
+      <p className="m-0 max-w-[46ch]">
+        {text}{" "}
+        <Link href={href} className="text-accent-ink underline decoration-line underline-offset-[3px]">
+          {cta}
+        </Link>
+      </p>
+    </div>
+  );
+}
+
+export function GscGate({ connected, hasData, needsReconnect = false, children, dense = false, restated = false }: GateProps) {
   if (connected && needsReconnect) {
+    if (restated) {
+      return (
+        <BriefGate
+          text="Google refused the stored token, so nothing here has moved since the last successful sync."
+          href="/settings/search-console"
+          cta="Reconnect Google"
+        />
+      );
+    }
     return (
       <div className={dense ? "py-2" : "min-h-[220px] grid place-items-center"}>
         <ConnectPrompt
@@ -53,6 +87,15 @@ export function GscGate({ connected, hasData, needsReconnect = false, children, 
     );
   }
   if (!connected) {
+    if (restated) {
+      return (
+        <BriefGate
+          text="Search Console is not connected, so there is nothing measured to show here."
+          href="/connect"
+          cta="Connect Search Console"
+        />
+      );
+    }
     return (
       <div className={dense ? "py-2" : "min-h-[220px] grid place-items-center"}>
         <ConnectPrompt
@@ -68,6 +111,13 @@ export function GscGate({ connected, hasData, needsReconnect = false, children, 
   }
   if (!hasData) {
     const at = nextSyncClock();
+    if (restated) {
+      return (
+        <div className="h-full min-h-[72px] grid place-items-center px-[18px] py-6 text-center text-[13px] text-ink-3">
+          Connected, and Google has not returned rows yet.
+        </div>
+      );
+    }
     return (
       <div className={`${dense ? "py-6" : "min-h-[220px]"} grid place-items-center px-8 text-center`}>
         <div className="max-w-[46ch] text-[13px] leading-relaxed text-ink-3">
@@ -215,9 +265,9 @@ function Delta({ value }: { value: number | null }) {
   return <span className={value > 0 ? "text-ok-ink" : "text-err-ink"}>{value > 0 ? "+" : "−"}{Math.abs(value).toLocaleString()}</span>;
 }
 
-export function BestArticlesBlock({ pages, connected, hasData, days, needsReconnect }: { pages: PageStat[]; connected: boolean; hasData: boolean; days: number; needsReconnect?: boolean }) {
+export function BestArticlesBlock({ pages, connected, hasData, days, needsReconnect, restated }: { pages: PageStat[]; connected: boolean; hasData: boolean; days: number; needsReconnect?: boolean; restated?: boolean }) {
   return (
-    <GscGate connected={connected} hasData={hasData} needsReconnect={needsReconnect} dense>
+    <GscGate connected={connected} hasData={hasData} needsReconnect={needsReconnect} dense restated={restated}>
       {pages.length === 0 ? (
         <div className="px-3.5 py-6 text-center text-[13px] text-ink-3">
           Google reported no page with a click or an impression in the last {days} days.
@@ -287,9 +337,9 @@ export function OpportunitiesList({ opportunities }: { opportunities: QueryStat[
 // Cannibalization
 // ---------------------------------------------------------------------------
 
-export function CannibalizationBlock({ items, connected, hasData, days, needsReconnect }: { items: Cannibalization[]; connected: boolean; hasData: boolean; days: number; needsReconnect?: boolean }) {
+export function CannibalizationBlock({ items, connected, hasData, days, needsReconnect, restated }: { items: Cannibalization[]; connected: boolean; hasData: boolean; days: number; needsReconnect?: boolean; restated?: boolean }) {
   return (
-    <GscGate connected={connected} hasData={hasData} needsReconnect={needsReconnect} dense>
+    <GscGate connected={connected} hasData={hasData} needsReconnect={needsReconnect} dense restated={restated}>
       {items.length === 0 ? (
         <div className="px-3.5 py-6 text-center text-[13px] text-ink-3">
           No query in the last {days} days had two of this site&apos;s pages ranking for it. That is a measurement over the

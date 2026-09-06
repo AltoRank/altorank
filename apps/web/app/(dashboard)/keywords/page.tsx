@@ -130,7 +130,15 @@ export default async function KeywordsPage({ searchParams }: Props) {
           {
             label: "Unscored",
             value: String(keywords.length - scored.length),
-            delta: scored.length === keywords.length ? "all have difficulty" : "no difficulty reading",
+            // "all have difficulty" is a claim about a set. With no keywords
+            // there is no set, and the empty account read "0 / all have
+            // difficulty" beside a table saying it had none.
+            delta:
+              keywords.length === 0
+                ? "no keywords yet"
+                : scored.length === keywords.length
+                  ? "all have difficulty"
+                  : "no difficulty reading",
           },
         ]}
       />
@@ -299,11 +307,14 @@ export default async function KeywordsPage({ searchParams }: Props) {
                 <tr>
                   <td colSpan={7} className="px-3.5 py-10 text-center text-ink-3">
                     {keywords.length === 0 ? (
+                      // Was 66 words describing where the first analysis reads
+                      // from and how the plan is built. All of it is in the
+                      // How it works dialog one row above this table, verbatim
+                      // and sourced. What an empty table has to say is why it
+                      // is empty and what adds a row.
                       <span className="inline-block max-w-[56ch] leading-[1.6]">
-                        No keywords yet. The first analysis of a site fills this from what it already ranks for, what
-                        competitors rank for that it does not, and phrases seeded from its own pages. That analysis
-                        runs once per site, so nothing will add to this on its own — use Research keywords above to
-                        add them, and the content plan is built from whatever is here.
+                        No keywords yet. The one-off analysis of this site has not added any, and nothing else adds to
+                        this on its own — use Research keywords above.
                       </span>
                     ) : (
                       <>No keyword matches these filters.</>

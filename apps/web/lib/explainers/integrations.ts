@@ -13,8 +13,7 @@ export const integrationsExplainer: Explainer = {
   title: "Integrations",
   intro:
     "Four ways an approved article can reach a site, and what each one can and cannot do once it is there.",
-  mountsAt:
-    "TODO(#71 owner): mount <HowItWorks explainer={integrationsExplainer} /> in the PageHead actions of app/(dashboard)/connect/page.tsx.",
+  mountsAt: "app/(dashboard)/connect/page.tsx, PageHead actions.",
   sections: [
     {
       title: "Credential connections",

@@ -61,9 +61,12 @@ export function ReadinessCheck() {
               {pending ? "Checking…" : "Run check"}
             </Button>
           </div>
+          {/* "Any domain, no workspace needed" was here and in the page
+              subtitle directly above it, on a page whose whole body is one
+              field and one button. What is left is the part the subtitle does
+              not say: which four things get fetched. */}
           <p className="m-0 text-xs text-ink-3">
-            Reads public site configuration only: robots.txt, sitemap, llms.txt and the homepage.
-            Any domain, no workspace needed.
+            Reads public configuration only: robots.txt, sitemap, llms.txt and the homepage.
           </p>
         </div>
       </Card>

@@ -82,8 +82,14 @@ export const DASHBOARD_NAV: NavGroup[] = [
       { id: "backlinks", label: "Backlinks", href: "/backlinks", icon: "backlinks" },
       { id: "audits", label: "Site audits", href: "/audits", icon: "search" },
       { id: "readiness", label: "Agent readiness", href: "/readiness", icon: "sparkle" },
-      { id: "geo", label: "AI visibility", href: "/geo", icon: "trend", soon: true },
-      { id: "reports", label: "Reports", href: "/reports", icon: "reports", soon: true },
+      // Both were marked `soon`, which renders them as unclickable grey text
+      // with a "being built" tooltip. Both pages are built and shipped: /geo
+      // measures four engines, ranks what to do about it and dashes anything
+      // unmeasured; /reports lists reports and generates one. Labelling a
+      // working page "soon" is the same failure as labelling an unknown zero,
+      // pointed the other way, and it made both unreachable from the nav.
+      { id: "geo", label: "AI visibility", href: "/geo", icon: "trend" },
+      { id: "reports", label: "Reports", href: "/reports", icon: "reports" },
     ],
   },
   // Named "Agency" until 2026-08-30. Billing and Settings are account chrome

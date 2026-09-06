@@ -26,7 +26,7 @@ import {
 import { getTrafficValue } from "@/lib/queries/value";
 import { describeOrganicValue, formatOrganicValue } from "@/lib/analytics/value";
 import { getBingSummary } from "@/lib/queries/bing";
-import { PageHead, DotSep, StatusPill, Avatar, Icons, Button, Chip, Card, StatStrip, ConnectPrompt } from "@/components/ui";
+import { PageHead, DotSep, StatusPill, Avatar, Button, Chip, Card, StatStrip, ConnectPrompt, DataTable } from "@/components/ui";
 import { ClientActions } from "@/components/dashboard/client-actions";
 import { ShareResults } from "@/components/dashboard/share-results";
 import { getShareCardFacts } from "@/lib/queries/share";
@@ -286,8 +286,13 @@ export default async function DashboardPage() {
             ),
           },
           { label: "Pending reviews", value: String(pendingReviews), delta: (() => {
+              // Nothing pending used to read "across 0 workspaces", which is a
+              // sentence about how many sites the account has - and it says
+              // the wrong number, because the count is of sites with a review
+              // waiting, not of sites.
+              if (pendingReviews === 0) return "nothing pending";
               const n = new Set(allArticles.filter((a) => a.status === "review").map((a) => a.workspace_id)).size;
-              return `across ${n} ${n === 1 ? "workspace" : "workspaces"}`;
+              return `across ${plural(n, "workspace")}`;
             })() },
         ]}
       />
@@ -362,7 +367,11 @@ export default async function DashboardPage() {
           {scopeId && coverage && (
             <>
               <Card title={`Best articles · last ${traffic.days} days`} meta="clicks per page, Google's count" className="md:col-span-7" flush>
-                <BestArticlesBlock pages={bestPages} connected={gscConnected} hasData={traffic.hasData} days={traffic.days} />
+                {/* `restated`: the Search performance card above already
+                    carries the full reason this is empty. Repeating the same
+                    paragraph and button in every card that gates on the same
+                    connection is three copies of one sentence. */}
+                <BestArticlesBlock pages={bestPages} connected={gscConnected} hasData={traffic.hasData} days={traffic.days} restated />
               </Card>
               <Card title="Index coverage" meta="from what we hold" className="md:col-span-5" flush>
                 <IndexCoverageBlock coverage={coverage} connected={gscConnected} hasData={traffic.hasData} needsReconnect={gscNeedsReconnect} />
@@ -373,7 +382,7 @@ export default async function DashboardPage() {
                 className="md:col-span-12"
                 flush
               >
-                <CannibalizationBlock items={cannibals} connected={gscConnected} hasData={traffic.hasData} days={traffic.days} needsReconnect={gscNeedsReconnect} />
+                <CannibalizationBlock items={cannibals} connected={gscConnected} hasData={traffic.hasData} days={traffic.days} needsReconnect={gscNeedsReconnect} restated />
               </Card>
             </>
           )}
@@ -459,54 +468,55 @@ export default async function DashboardPage() {
           )}
 
           {/* Recent articles */}
+          {/* DataTable, not a hand-written <table>: this one repeated the
+              shared component's header and cell classes by hand, so a change
+              to column padding or the header rule reached every table in the
+              app except this one. */}
           <Card title="Recent articles" meta={<Link href="/articles"><Button size="sm">View all</Button></Link>} className="md:col-span-12" flush>
-            <table className="w-full border-collapse text-[13px]">
-              <thead>
-                <tr>
-                  <th className="text-left font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel">Article</th>
-                  <th className="text-left font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel">Workspace</th>
-                  <th className="text-left font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel">Status</th>
-                  <th className="text-right font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel">Score</th>
-                  <th className="text-right font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel">Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recent.map((a) => {
-                  const w = wsMap.get(a.workspace_id);
-                  const dateStr = a.updated_at ? new Date(a.updated_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—";
-                  return (
-                    <tr key={a.id} className="hover:[&>td]:bg-panel">
-                      <td className="px-3.5 py-3 border-b border-line-soft" style={{ maxWidth: 0 }}>
+            {recent.length === 0 ? (
+              <div className="px-3.5 py-8 text-center text-ink-3 text-[13px]">No articles yet</div>
+            ) : (
+              <DataTable
+                data={recent}
+                columns={[
+                  {
+                    key: "article",
+                    header: "Article",
+                    className: "max-w-0",
+                    render: (a) => (
+                      <>
                         <div className="truncate font-medium">{a.title}</div>
                         <div className="font-mono text-[11px] text-ink-3 mt-0.5">{a.keyword}</div>
-                      </td>
-                      <td className="px-3.5 py-3 border-b border-line-soft">
-                        {w && (
-                          <span className="inline-flex items-center gap-2">
-                            <Avatar initials={w.initials} color={w.color} size="sm" />
-                            {w.name}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3.5 py-3 border-b border-line-soft">
-                        <StatusPill status={a.status} />
-                      </td>
-                      <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">
-                        {a.seo_score || "—"}
-                      </td>
-                      <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">
-                        {dateStr}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {recent.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-3.5 py-8 text-center text-ink-3 text-[13px]">No articles yet</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                      </>
+                    ),
+                  },
+                  {
+                    key: "workspace",
+                    header: "Workspace",
+                    render: (a) => {
+                      const w = wsMap.get(a.workspace_id);
+                      return w ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Avatar initials={w.initials} color={w.color} size="sm" />
+                          {w.name}
+                        </span>
+                      ) : null;
+                    },
+                  },
+                  { key: "status", header: "Status", render: (a) => <StatusPill status={a.status} /> },
+                  { key: "score", header: "Score", numeric: true, render: (a) => a.seo_score || "—" },
+                  {
+                    key: "updated",
+                    header: "Updated",
+                    numeric: true,
+                    render: (a) =>
+                      a.updated_at
+                        ? new Date(a.updated_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                        : "—",
+                  },
+                ]}
+              />
+            )}
           </Card>
 
         </div>

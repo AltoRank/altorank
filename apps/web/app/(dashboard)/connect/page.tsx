@@ -10,6 +10,8 @@ import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { GoogleConnectButton } from "@/components/dashboard/google-connect-button";
 import { BingConnectButton } from "@/components/dashboard/bing-connect-button";
 import { CmsConnectionActions } from "./cms-connection-actions";
+import { HowItWorks } from "@/components/dashboard/how-it-works";
+import { integrationsExplainer } from "@/lib/explainers";
 import type { PublishingCadence } from "@/lib/types";
 import { createClient } from "@/lib/supabase/server";
 
@@ -91,7 +93,16 @@ export default async function IntegrationsPage({
       <PageHead
         title="Integrations"
         subtitle={<><StatusPill status="on" label={`${integrations.length} available`} /><span>Connect the tools your sites already run on</span><DotSep /><Link href="/connect/google" className="text-accent-ink underline decoration-line underline-offset-[3px]">See every site this Google account can read</Link></>}
-        actions={<ConnectActions workspaces={workspaces} integrations={integrations} initialCmsType={connect} />}
+        actions={
+          <>
+            {/* integrationsExplainer shipped complete and mounted nowhere; its
+                own file names this slot as where it belongs. It is the only
+                place that states what each connection pattern can and cannot
+                do once an article reaches the site. */}
+            <HowItWorks explainer={integrationsExplainer} />
+            <ConnectActions workspaces={workspaces} integrations={integrations} initialCmsType={connect} />
+          </>
+        }
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
