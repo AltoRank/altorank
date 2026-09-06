@@ -384,13 +384,20 @@ describe.skipIf(!LIVE)("tenant isolation, as two signed-in accounts", () => {
     });
 
     it("an owner can still create and revoke keys", async () => {
-      const { error: createErr } = await fx.as.aOwner.from("api_keys").insert({
-        agency_id: fx.agencyA,
-        name: "owner issued",
-        key_hash: "tenant-iso-owner-issued",
-        prefix: "altorank_live_ownr",
-      });
+      // insert(...).select("id").single() is exactly what createApiKey does:
+      // it needs the INSERT check AND the SELECT policy to hold.
+      const { data: created, error: createErr } = await fx.as.aOwner
+        .from("api_keys")
+        .insert({
+          agency_id: fx.agencyA,
+          name: "owner issued",
+          key_hash: "tenant-iso-owner-issued",
+          prefix: "altorank_live_ownr",
+        })
+        .select("id")
+        .single();
       expect(createErr).toBeNull();
+      expect(created?.id).toBeTruthy();
       const { data } = await fx.as.aOwner
         .from("api_keys")
         .update({ revoked_at: new Date().toISOString() })
