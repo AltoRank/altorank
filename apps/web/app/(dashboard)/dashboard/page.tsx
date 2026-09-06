@@ -39,6 +39,8 @@ import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
+import { requireAuth } from "@/lib/auth/require-auth";
+import { getWorkspaceAllowance } from "@/lib/billing/workspaces";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -79,8 +81,18 @@ export default async function DashboardPage() {
     .is("article_id", null);
   if (scopeId) plannedQuery = plannedQuery.eq("workspace_id", scopeId);
 
+  // The workspace allowance, so "Add workspace" can be disabled with its
+  // reason instead of opening a dialog that fails silently at the limit. The
+  // Workspaces page has always passed this; the Dashboard rendered
+  // <ClientActions /> bare, which pins `atLimit` to false (P0-O3). Chained
+  // rather than awaited here so it joins the read below instead of preceding
+  // it - it needs the agency id, nothing else on this page needs it.
+  const allowanceRead = requireAuth().then(({ agencyId, user }) =>
+    getWorkspaceAllowance(gscSupabase, agencyId, user.email),
+  );
+
   const now = new Date();
-  const [workspaces, allArticles, recent, gscRows, keywords, { count: gscCount }, bing, cmsRes, { count: plannedEntries }, yields, profileRes, health, knownPages, shareFacts, value] =
+  const [workspaces, allArticles, recent, gscRows, keywords, { count: gscCount }, bing, cmsRes, { count: plannedEntries }, yields, profileRes, health, knownPages, shareFacts, value, allowance] =
     await Promise.all([
       getWorkspaces(),
       getArticles(scopeId ?? undefined),
@@ -108,6 +120,7 @@ export default async function DashboardPage() {
       // The same clicks as the chart, priced. The one figure on this page
       // that is an estimate, and its label and tooltip say so.
       getTrafficValue(scopeId ?? undefined),
+      allowanceRead,
     ]);
   const traffic = searchPerformance(gscRows, now);
   const bestPages = scopeId ? topPages(gscRows, now) : [];
@@ -188,7 +201,9 @@ export default async function DashboardPage() {
             {shareFacts && scopeId && (
               <ShareResults card={buildShareCard(shareFacts)} ogPath={`/api/og/workspace/${scopeId}`} />
             )}
-            <ClientActions />
+            <ClientActions
+              allowance={{ limit: allowance.limit, remaining: allowance.remaining, noPlan: allowance.reason === "no-plan" }}
+            />
           </>
         }
       />

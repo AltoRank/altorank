@@ -14,6 +14,10 @@ export function ClientActions({ allowance }: { allowance?: { limit: number | nul
   const atLimit = allowance ? allowance.remaining !== null && allowance.remaining <= 0 : false;
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<OnboardStep>("idle");
+  // The refusal, rendered. This used to be a console.error and nothing else,
+  // so the workspace limit, a duplicate domain and a malformed domain all
+  // looked identical from the dialog: the spinner stopped and nothing moved.
+  const [error, setError] = useState<string | null>(null);
   // Set once a workspace with a domain exists: the dialog then shows the real
   // pipeline running instead of the form, and hands off to the dashboard.
   const [live, setLive] = useState<{ id: string; domain: string } | null>(null);
@@ -25,27 +29,29 @@ export function ClientActions({ allowance }: { allowance?: { limit: number | nul
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setStep("creating");
+    setError(null);
     try {
       const fd = new FormData(e.currentTarget);
-      const domain = String(fd.get("domain") ?? "").trim();
-      const workspaceId = await createWorkspace(fd);
+      const result = await createWorkspace(fd);
+      if (!result.ok) {
+        setError(result.error);
+        setStep("idle");
+        return;
+      }
 
       onboarding?.completeStep("add-workspace");
 
-      if (domain && workspaceId) {
-        // The dialog becomes the progress screen. What used to be here was
-        // three labels on fixed timers running alongside a server action of
-        // unknown length; the screen now shows the pipeline's own events and
-        // navigates when the pipeline says it is done.
-        setStep("idle");
-        setLive({ id: workspaceId, domain });
-      } else {
-        setOpen(false);
-        setStep("idle");
-        router.push(`/workspaces/${workspaceId}`);
-      }
+      // The dialog becomes the progress screen. What used to be here was
+      // three labels on fixed timers running alongside a server action of
+      // unknown length; the screen now shows the pipeline's own events and
+      // navigates when the pipeline says it is done.
+      setStep("idle");
+      setLive({ id: result.workspaceId, domain: result.domain });
     } catch (err) {
+      // Anything left is a genuine transport or runtime failure, and it has to
+      // say so in the dialog rather than only in the console.
       console.error(err);
+      setError(err instanceof Error ? err.message : "Could not create the workspace. Try again.");
       setStep("idle");
     }
   }
@@ -77,7 +83,7 @@ export function ClientActions({ allowance }: { allowance?: { limit: number | nul
 
       <Dialog
         open={open}
-        onOpenChange={(v) => { if (!pending) setOpen(v); }}
+        onOpenChange={(v) => { if (!pending) { setOpen(v); setError(null); } }}
         title={live ? "Setting up your workspace" : "Add workspace"}
         description={live ? undefined : "One site or one client. Add the domain and the first analysis starts on its own."}
       >
@@ -113,6 +119,15 @@ export function ClientActions({ allowance }: { allowance?: { limit: number | nul
               className="px-3 py-2 rounded-lg border border-line bg-panel text-[13px] text-ink placeholder:text-ink-3 outline-none focus:border-accent transition-colors disabled:opacity-50"
             />
           </label>
+
+          {error && (
+            <p
+              role="alert"
+              className="m-0 rounded-[7px] border border-err/40 bg-err-soft px-3 py-2 text-[12.5px] leading-relaxed text-err-ink"
+            >
+              {error}
+            </p>
+          )}
 
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" onClick={() => setOpen(false)} disabled={pending}>
