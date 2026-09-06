@@ -55,6 +55,7 @@ import { ApprovalGateCard, OutputFields } from "@/components/settings/output-fie
 import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
 import { onboardingOutcome, type OnboardingState } from "@/lib/onboarding/events";
+import { freeAllowanceClause } from "@/lib/onboarding/copy";
 
 const SITE_STEPS = ["Business", "Audience & Competitors", "Blog", "Articles", "Integration"];
 // The question about the person, after every step about the site. Present only
@@ -67,6 +68,7 @@ export function OnboardingWizard({
   workspaceId,
   domain,
   weeklyLimit,
+  freeDrafts,
   initialProfile,
   initialSite,
   initialOutput,
@@ -76,6 +78,16 @@ export function OnboardingWizard({
   workspaceId: string;
   domain: string;
   weeklyLimit: number;
+  /**
+   * Drafts this account may still have written before it needs a plan, or
+   * null when it is unmetered (self-host, operator, an active plan).
+   *
+   * `buildPlan` fills a 30-day horizon at `weeklyLimit`, so at the free tier's
+   * pace of 7 the wizard promised thirty articles against an entitlement of
+   * seven - and 23 of the 30 squares render grey with `frozenReason` the first
+   * time the calendar is opened. Nothing said so (P1-A1).
+   */
+  freeDrafts: number | null;
   initialProfile: BusinessProfile | null;
   initialSite: SiteDetails;
   initialOutput: OutputSettings;
@@ -198,7 +210,7 @@ export function OnboardingWizard({
   }
 
   if (running) {
-    return <RunScreen workspaceId={workspaceId} domain={domain} weeklyLimit={weeklyLimit} />;
+    return <RunScreen workspaceId={workspaceId} domain={domain} weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} />;
   }
 
   if (reading || !profile) return <ReadingSite domain={domain} />;
@@ -225,7 +237,7 @@ export function OnboardingWizard({
         {step === 3 && <ArticlesStep output={output} setOutput={setOutput} />}
         {step === 4 && <IntegrationStep destinations={destinations} />}
         {step === ATTRIBUTION_STEP && <AttributionStep value={attribution} onChange={setAttribution} skipping={skipping} />}
-        {step === last && !skipping && <NextUp weeklyLimit={weeklyLimit} />}
+        {step === last && !skipping && <NextUp weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} />}
         {error && <p className="mt-4 rounded-lg bg-err-soft px-3 py-2 text-[12.5px] text-err-ink">{error}</p>}
       </div>
 
@@ -415,7 +427,9 @@ function BlogStep({
             <div className="text-[13px] font-medium">Connect Search Console</div>
             <div className="text-[12px] text-ink-3">So we skip keywords you already rank for, and can show real clicks later.</div>
           </div>
-          <a href="/connect/google">
+          {/* New tab, for the same reason as the destination tiles below:
+              this screen's answers are not saved until Continue. */}
+          <a href="/connect/google" target="_blank" rel="noreferrer">
             <Button size="sm">Connect</Button>
           </a>
         </div>
@@ -448,6 +462,12 @@ function IntegrationStep({ destinations }: { destinations: Destination[] }) {
           <a
             key={d.id}
             href={`/connect?connect=${d.id}`}
+            // Same tab abandoned the wizard and dropped whatever was typed on
+            // this screen: state is client-side and each step persists only on
+            // Continue. The "While you wait" cards on the finish screen
+            // already got this right.
+            target="_blank"
+            rel="noreferrer"
             title={d.description ?? undefined}
             className="flex flex-col items-center gap-2 rounded-[10px] border border-line bg-panel px-3 py-5 text-center transition-colors hover:border-accent"
           >
@@ -468,7 +488,8 @@ function IntegrationStep({ destinations }: { destinations: Destination[] }) {
 }
 
 /** What Finish does, under whichever screen is last. */
-function NextUp({ weeklyLimit }: { weeklyLimit: number }) {
+function NextUp({ weeklyLimit, freeDrafts }: { weeklyLimit: number; freeDrafts: number | null }) {
+  const allowance = freeAllowanceClause(freeDrafts);
   return (
     <p className="mt-6 text-center text-[12.5px] leading-[1.6] text-ink-2">
       Next: we read your site properly, find what to write about, schedule up to{" "}
@@ -476,7 +497,7 @@ function NextUp({ weeklyLimit }: { weeklyLimit: number }) {
         {weeklyLimit >= 7 ? "one article a day" : `${weeklyLimit} article${weeklyLimit === 1 ? "" : "s"} a week`}
       </strong>{" "}
       for the next 30 days (only keywords that pass our checks make the plan), and write the first one. Every
-      draft waits in review.
+      draft waits in review.{allowance ? ` ${allowance}` : ""}
     </p>
   );
 }
@@ -513,7 +534,7 @@ function AttributionStep({
  * do while it runs. Nothing here is a gate. The person is already invested and
  * the value is already being produced; the ask is framed as improving a result.
  */
-function RunScreen({ workspaceId, domain, weeklyLimit }: { workspaceId: string; domain: string; weeklyLimit: number }) {
+function RunScreen({ workspaceId, domain, weeklyLimit, freeDrafts }: { workspaceId: string; domain: string; weeklyLimit: number; freeDrafts: number | null }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState | null>(null);
   const finished = Boolean(state && (state.ready || state.error));
@@ -536,8 +557,8 @@ function RunScreen({ workspaceId, domain, weeklyLimit }: { workspaceId: string; 
           <p className="mx-auto max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">
             Reading {domain}, choosing keywords by volume, difficulty and fit, scheduling up to{" "}
             {weeklyLimit >= 7 ? "one article a day" : `${weeklyLimit} a week`} for the next 30 days, and writing the
-            first one. Only keywords that pass our checks make the plan, so a new site may get fewer. A few
-            minutes. You can leave this page; we keep working.
+            first one. Only keywords that pass our checks make the plan, so a new site may get fewer.{" "}
+            {freeAllowanceClause(freeDrafts) ?? ""} A few minutes. You can leave this page; we keep working.
           </p>
         </div>
 
