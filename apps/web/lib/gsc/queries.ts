@@ -77,6 +77,10 @@ export type SyncHealth = {
   lastSyncAt: string | null;
   /** The newest day Google has reported. */
   latestMetricDate: string | null;
+  /** Google refused the stored token (migration 070); only a reconnect clears it. */
+  needsReconnect: boolean;
+  /** The provider error that set needsReconnect, or the last failed sync's. */
+  lastSyncError: string | null;
 };
 
 export async function syncHealthFor(workspaceId: string): Promise<SyncHealth> {
@@ -87,7 +91,7 @@ export async function syncHealthFrom(supabase: SupabaseClient, workspaceId: stri
   const [conn, newest, latestDay] = await Promise.all([
     supabase
       .from("workspace_integrations")
-      .select("connected_at, config")
+      .select("connected_at, config, needs_reconnect, last_sync_error")
       .eq("workspace_id", workspaceId)
       .eq("integration_id", "gsc")
       .maybeSingle(),
@@ -113,6 +117,8 @@ export async function syncHealthFrom(supabase: SupabaseClient, workspaceId: stri
     siteUrl: config?.gscSiteUrl ?? null,
     lastSyncAt: ((newest.data?.[0] as { created_at?: string } | undefined)?.created_at as string | undefined) ?? null,
     latestMetricDate: ((latestDay.data?.[0] as { metric_date?: string } | undefined)?.metric_date as string | undefined) ?? null,
+    needsReconnect: Boolean(conn.data?.needs_reconnect),
+    lastSyncError: (conn.data?.last_sync_error as string | null | undefined) ?? null,
   };
 }
 

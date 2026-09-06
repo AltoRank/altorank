@@ -128,6 +128,9 @@ export default async function DashboardPage() {
   const opportunities = scopeId ? queryOpportunities(gscRows, now, WINDOW_DAYS, 6) : [];
   const coverage = knownPages ? indexCoverage(knownPages, servedUrls(gscRows, now)) : null;
   const gscConnected = (gscCount ?? 0) > 0;
+  // The row exists but Google refused its token (migration 070): every
+  // Search Console block says "reconnect" instead of "not returned rows yet".
+  const gscNeedsReconnect = Boolean(health?.needsReconnect);
   // Same test the Articles page applies: any connected integration tagged CMS.
   const cmsConnected = (cmsRes.data ?? []).some(
     (r) => ((r as { integration?: { tag?: string } | null }).integration?.tag ?? null) === "CMS",
@@ -239,7 +242,9 @@ export default async function DashboardPage() {
                   : "no impressions reported yet"
                 : describeChange(traffic.clicks, traffic.days, "clicks")
               : gscConnected
-                ? "connected · Google has not returned rows yet"
+                ? gscNeedsReconnect
+                  ? "Google disconnected · reconnect in Settings"
+                  : "connected · Google has not returned rows yet"
                 : (
                   <ConnectPrompt
                     dense
@@ -292,7 +297,7 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-12 gap-4">
           {/* Traffic chart */}
           <Card title={`Search performance · last ${traffic.days} days`} meta={<Chip label={scopeId ? (workspaces.find((w) => w.id === scopeId)?.name ?? "This workspace") : "All workspaces"} soft />} className="col-span-8">
-            <SearchPerformanceBlock perf={traffic} connected={gscConnected} />
+            <SearchPerformanceBlock perf={traffic} connected={gscConnected} needsReconnect={gscNeedsReconnect} />
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-ink-3 mt-2.5 font-mono">
               <span className="flex items-center gap-1.5">
                 <i className="inline-block w-2.5 h-2.5 rounded-sm bg-accent" />Current {traffic.days}d
@@ -357,10 +362,10 @@ export default async function DashboardPage() {
           {scopeId && coverage && (
             <>
               <Card title={`Best articles · last ${traffic.days} days`} meta="clicks per page, Google's count" className="col-span-7" flush>
-                <BestArticlesBlock pages={bestPages} connected={gscConnected} hasData={traffic.hasData} days={traffic.days} />
+                <BestArticlesBlock pages={bestPages} connected={gscConnected} hasData={traffic.hasData} days={traffic.days} needsReconnect={gscNeedsReconnect} />
               </Card>
               <Card title="Index coverage" meta="from what we hold" className="col-span-5" flush>
-                <IndexCoverageBlock coverage={coverage} connected={gscConnected} hasData={traffic.hasData} />
+                <IndexCoverageBlock coverage={coverage} connected={gscConnected} hasData={traffic.hasData} needsReconnect={gscNeedsReconnect} />
               </Card>
               <Card
                 title="Cannibalization"
@@ -368,7 +373,7 @@ export default async function DashboardPage() {
                 className="col-span-12"
                 flush
               >
-                <CannibalizationBlock items={cannibals} connected={gscConnected} hasData={traffic.hasData} days={traffic.days} />
+                <CannibalizationBlock items={cannibals} connected={gscConnected} hasData={traffic.hasData} days={traffic.days} needsReconnect={gscNeedsReconnect} />
               </Card>
             </>
           )}

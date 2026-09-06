@@ -49,10 +49,22 @@ type PluginListResponse = {
   }>;
 };
 
-/** Install page for the plugin inside the customer's own admin. */
+/**
+ * Where the dialog sends the person to fetch the plugin: the app's own copy,
+ * built from packages/wordpress-plugin by app/api/public/wordpress-plugin.
+ * The plugin is not listed on wordpress.org, so a directory search for it
+ * found nothing and the "Recommended" path ended there.
+ */
+export const PLUGIN_DOWNLOAD_PATH = "/api/public/wordpress-plugin";
+
+/**
+ * The Upload Plugin page inside the customer's own admin, which takes the
+ * zip from PLUGIN_DOWNLOAD_PATH. Not the directory search tab: that only
+ * finds plugins wordpress.org lists, and this one is not among them.
+ */
 export function pluginInstallUrl(siteUrl: string): string {
   const base = siteUrl.replace(/\/+$/, "");
-  return `${base}/wp-admin/plugin-install.php?s=altorank&tab=search&type=term`;
+  return `${base}/wp-admin/plugin-install.php?tab=upload`;
 }
 
 export class WordPressPluginAdapter implements CMSAdapter {

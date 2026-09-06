@@ -32,7 +32,10 @@ export async function GET(request: Request) {
     .from("workspace_integrations")
     .select("*, workspace:workspaces(id, domain)")
     .eq("integration_id", "gsc")
-    .not("tokens", "is", null);
+    .not("tokens", "is", null)
+    // A connection Google has refused (migration 070) waits for the person to
+    // reconnect; retrying it nightly would only log the same refusal.
+    .eq("needs_reconnect", false);
 
   // A query that failed and a workspace list that is genuinely empty both arrive
   // here as a falsy `data`. Reporting the first as `synced: 0` told the caller
@@ -46,7 +49,7 @@ export async function GET(request: Request) {
   yesterday.setDate(yesterday.getDate() - 1);
   const dateStr = yesterday.toISOString().split("T")[0];
 
-  const results: Array<{ workspaceId: string; ga4: number; gsc: number; error?: string }> = [];
+  const results: Array<{ workspaceId: string; ga4: number; gsc: number; error?: string; needsReconnect?: boolean }> = [];
   for (const integration of integrations ?? []) {
     results.push(await syncWorkspaceAnalytics(supabase, integration as SyncableIntegration, dateStr));
   }

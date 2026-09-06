@@ -16,7 +16,7 @@ import {
 } from "@/lib/cms/publish-mode";
 import type { Workspace, Integration, CMSConfig } from "@/lib/types";
 import type { BlogUrlDerivation } from "@/lib/cms/blog-url";
-import { pluginInstallUrl } from "@/lib/cms/wordpress-plugin";
+import { pluginInstallUrl, PLUGIN_DOWNLOAD_PATH } from "@/lib/cms/wordpress-plugin";
 import { parseWebflowFieldMap } from "@/lib/cms/webflow-fields";
 import { CONNECTOR_NOTES } from "@/lib/cms/connector-notes";
 import { WebflowPicker } from "./connect-cms-webflow";
@@ -395,7 +395,22 @@ export function ConnectCmsDialog({
               </label>
               <input type="hidden" name="token" value={pluginToken} />
 
+              {/*
+                The plugin is not on wordpress.org, so the install step is a
+                download from this app and an upload into the site's own admin,
+                not a directory search that would find nothing.
+              */}
               <ol className="flex flex-col gap-3 text-[13px] text-ink-2 list-decimal pl-5">
+                <li>
+                  <a
+                    href={PLUGIN_DOWNLOAD_PATH}
+                    download="altorank.zip"
+                    className="text-accent-ink underline decoration-line underline-offset-[3px]"
+                  >
+                    Download the AltoRank plugin
+                  </a>
+                  <span className="text-ink-3"> (altorank.zip).</span>
+                </li>
                 <li>
                   {siteHost(pluginSiteUrl) ? (
                     <a
@@ -404,12 +419,16 @@ export function ConnectCmsDialog({
                       rel="noopener noreferrer"
                       className="text-accent-ink underline decoration-line underline-offset-[3px]"
                     >
-                      Install the AltoRank plugin
+                      Upload it on {siteHost(pluginSiteUrl)}
                     </a>
                   ) : (
-                    <span className="text-ink-3">Install the AltoRank plugin (enter the site URL first)</span>
+                    <span className="text-ink-3">Upload it on your site (enter the site URL first)</span>
                   )}
-                  <span className="text-ink-3"> on {siteHost(pluginSiteUrl) ?? "your site"} and activate it.</span>
+                  <span className="text-ink-3">
+                    {" "}
+                    - Plugins → Add New → Upload Plugin, choose the zip, Install Now, then Activate. Already installed?
+                    Skip to the next step.
+                  </span>
                 </li>
                 <li>
                   <div className="flex flex-col gap-1.5">

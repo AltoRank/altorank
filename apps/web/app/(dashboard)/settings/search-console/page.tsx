@@ -25,7 +25,10 @@ export default async function SearchConsoleSettingsPage() {
       subtitle={
         ws ? (
           <>
-            <StatusPill status={ws.gscConnected ? "on" : "setup"} label={ws.gscConnected ? "Connected" : "Not connected"} />
+            <StatusPill
+              status={ws.gscNeedsReconnect ? "error" : ws.gscConnected ? "on" : "setup"}
+              label={ws.gscNeedsReconnect ? "Disconnected" : ws.gscConnected ? "Connected" : "Not connected"}
+            />
             <span>{ws.domain}</span>
           </>
         ) : undefined
@@ -43,8 +46,10 @@ export default async function SearchConsoleSettingsPage() {
                 clicks and skips them, and the dashboard plots real clicks instead of nothing. Nothing here is
                 estimated: until a sync has run, the traffic chart stays empty and says so.
               </p>
-              <p className="m-0 text-[12.5px] text-ink-3">
-                {ws.gscConnected
+              <p className={`m-0 text-[12.5px] ${ws.gscNeedsReconnect ? "text-err-ink" : "text-ink-3"}`}>
+                {ws.gscNeedsReconnect
+                  ? `Google disconnected - reconnect. Google no longer accepts the token ${ws.domain} was connected with (access was revoked, the password changed, or the token expired), so the nightly sync has stopped${lastDate ? `; the newest day synced is ${lastDate}` : ""}. Reconnecting takes one consent screen and clears this.`
+                  : ws.gscConnected
                   ? lastDate
                     ? `Connected for ${ws.domain}. Newest day synced: ${lastDate}. Search Console reports with about a two-day lag.`
                     : `Connected for ${ws.domain}, and nothing has arrived yet. The first sync runs on the next schedule; if this stays empty, the connected Google account may not be able to see a property for this domain.`
