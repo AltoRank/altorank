@@ -553,12 +553,30 @@ function RunScreen({ workspaceId, domain, weeklyLimit, freeDrafts }: { workspace
     <div className="min-h-screen bg-bg">
       <div className="mx-auto max-w-[860px] px-6 py-10">
         <div className="mb-8 text-center">
-          <h1 className="mb-1.5 text-[22px] font-semibold">Creating your content plan</h1>
+          <h1 className="mb-1.5 text-[22px] font-semibold">
+            {finished ? "Your content plan" : "Creating your content plan"}
+          </h1>
           <p className="mx-auto max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">
             Reading {domain}, choosing keywords by volume, difficulty and fit, scheduling up to{" "}
             {weeklyLimit >= 7 ? "one article a day" : `${weeklyLimit} a week`} for the next 30 days, and writing the
             first one. Only keywords that pass our checks make the plan, so a new site may get fewer.{" "}
-            {freeAllowanceClause(freeDrafts) ?? ""} A few minutes. You can leave this page; we keep working.
+            {freeAllowanceClause(freeDrafts) ?? ""}
+            {/* The wait sentence used to read "You can leave this page; we keep
+                working", and it was not true: `/api/onboard/stream` hands
+                `request.signal` to the pipeline, which checks it at every phase
+                boundary, so a closed tab or a same-tab navigation stops the run
+                at its next step. What is true is the rest of it - every phase
+                persists as it completes, and the nightly analyze cron re-runs a
+                workspace with no `first_analysed_at` and tops the plan back up.
+                It is also gone once the run is over, because a screen that has
+                said "Done." has no wait left to describe. */}
+            {!finished && (
+              <>
+                {" "}
+                A few minutes. Keep this tab open while it runs: leaving stops it after the step it is on. Everything
+                already finished is kept, and tonight&rsquo;s run picks up the rest.
+              </>
+            )}
           </p>
         </div>
 
@@ -580,14 +598,27 @@ function RunScreen({ workspaceId, domain, weeklyLimit, freeDrafts }: { workspace
               </div>
             )}
             <div className="mt-6 flex items-center gap-3">
-              <Button
-                variant="accent"
-                onClick={() => router.push(finished ? next.href : "/content")}
-                disabled={!finished && planned.length === 0}
-              >
-                {finished ? next.label : "Open the calendar so far"}
-              </Button>
-              {!finished && <span className="text-[12px] text-ink-3">Still working…</span>}
+              {/* While the run is live this cannot be a same-tab navigation.
+                  `OnboardingProgress` aborts its fetch on unmount and the route
+                  passes that signal to the pipeline, so pushing /content here
+                  cancelled the very run the button sits under - the draft was
+                  never written and nothing said why. The "While you wait" cards
+                  are new tabs for exactly this reason; so is this, until the
+                  run is over and there is nothing left to cancel. */}
+              {finished ? (
+                <Button variant="accent" onClick={() => router.push(next.href)}>
+                  {next.label}
+                </Button>
+              ) : (
+                <>
+                  <a href="/content" target="_blank" rel="noreferrer">
+                    <Button variant="accent" disabled={planned.length === 0}>
+                      Open the calendar so far
+                    </Button>
+                  </a>
+                  <span className="text-[12px] text-ink-3">Still working…</span>
+                </>
+              )}
             </div>
             {/* The run's own account of itself, when it fell short of the
                 calendar the header just promised. `OnboardingProgress` prints
@@ -602,7 +633,13 @@ function RunScreen({ workspaceId, domain, weeklyLimit, freeDrafts }: { workspace
           </div>
 
           <aside className="flex flex-col gap-3">
-            <div className="text-[11px] uppercase tracking-wide text-ink-3">While you wait</div>
+            {/* The run ends in about a minute and this column does not: it kept
+                saying "While you wait" under a screen that had already said
+                "Done." Once there is no wait left, the same four cards are the
+                setup that was deferred, so name them that. */}
+            <div className="text-[11px] uppercase tracking-wide text-ink-3">
+              {finished ? "Set up next" : "While you wait"}
+            </div>
             <WaitCard
               href="/connect"
               title="Connect your CMS"
