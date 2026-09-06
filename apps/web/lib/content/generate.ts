@@ -148,6 +148,27 @@ export interface GenerateArticleResult {
   aeoScore: number;
 }
 
+/** Postgres `unique_violation`. What migration 074's index raises. */
+const UNIQUE_VIOLATION = "23505";
+
+/**
+ * Another run is already drafting this keyword for this workspace.
+ *
+ * Not a failure: the article is being written, by somebody else. Thrown so
+ * cron/generate can report a skip and move to the next workspace instead of
+ * logging an error nobody needs to act on. See migration 074 for why the
+ * database is the only place that can tell.
+ */
+export class ConcurrentGenerationError extends Error {
+  constructor(
+    public readonly workspaceId: string,
+    public readonly keyword: string,
+  ) {
+    super(`"${keyword}" is already being written by another run; leaving it to that one`);
+    this.name = "ConcurrentGenerationError";
+  }
+}
+
 /** The URL slug a new article gets from its title or keyword. Shared with the agent API, which creates the row before this runs. */
 export function slugFor(text: string): string {
   return text
@@ -324,6 +345,14 @@ export async function generateArticle(
       .single();
 
     if (articleError || !created) {
+      // Migration 074's partial unique index: another run is already writing
+      // this keyword for this workspace. Distinguished from a real insert
+      // failure because it is not one - the work is being done, just not by
+      // this caller - and the cron reports it as a skip rather than an error
+      // somebody has to investigate every morning.
+      if (articleError?.code === UNIQUE_VIOLATION) {
+        throw new ConcurrentGenerationError(workspaceId, keyword);
+      }
       throw new Error(`Failed to create article: ${articleError?.message}`);
     }
 
