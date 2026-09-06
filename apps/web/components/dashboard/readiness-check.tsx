@@ -30,8 +30,11 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-export function ReadinessCheck() {
-  const [domain, setDomain] = useState("");
+export function ReadinessCheck({ initialDomain = "" }: { initialDomain?: string }) {
+  // Prefilled with the site in scope, and editable: the check works on any
+  // domain and the page says so, but the domain the person came here about
+  // is nearly always the one already selected in the switcher.
+  const [domain, setDomain] = useState(initialDomain);
   const [report, setReport] = useState<ReadinessReport | null>(null);
   const [pending, startTransition] = useTransition();
 
