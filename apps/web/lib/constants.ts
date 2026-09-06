@@ -105,7 +105,12 @@ export const DASHBOARD_NAV: NavGroup[] = [
     items: [
       // The roster is account management, not a daily section: the sidebar
       // switcher is where a workspace is chosen (2026-09-02).
-      { id: "workspaces", label: "Your sites", href: "/workspaces", icon: "clients" },
+      // "Workspaces", not "Your sites": POSITIONING.md settled this noun on
+      // 2026-08-30 after the nav said Clients and the page said Workspaces
+      // for the same getWorkspaces() rows. The page, its tab title, its
+      // count pill and the Add workspace button on three other surfaces all
+      // say workspace; this item was the last place that did not.
+      { id: "workspaces", label: "Workspaces", href: "/workspaces", icon: "clients" },
       // General settings. The article-shaped tabs are reached from the
       // Articles group above, so this entry stays exact: it must not light up
       // while someone is on Article settings under Articles.
