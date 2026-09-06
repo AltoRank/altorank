@@ -9,12 +9,19 @@ import {
 } from "../pace";
 
 describe("paceOnActivation", () => {
-  it("raises the free-tier pace to the paid default", () => {
+  it("sets the paid default when the site has no pace of its own", () => {
     // The bug this exists for: an account went from 1 a week to 1 a week when
     // it started paying, about four articles a month against a sold 100.
-    expect(paceOnActivation(FREE_TIER_PACE)).toBe(PAID_DEFAULT_PACE);
     expect(paceOnActivation(null)).toBe(PAID_DEFAULT_PACE);
     expect(paceOnActivation(undefined)).toBe(PAID_DEFAULT_PACE);
+  });
+
+  it("has nothing to raise now that signup already sets the paid rate", () => {
+    // FREE_TIER_PACE and PAID_DEFAULT_PACE are both 7 since 2026-09-06: a free
+    // account writes its seven drafts in a week, and a plan lifts the quota
+    // rather than the speed. Activation therefore leaves the number alone.
+    expect(FREE_TIER_PACE).toBe(PAID_DEFAULT_PACE);
+    expect(paceOnActivation(FREE_TIER_PACE)).toBeNull();
   });
 
   it("never overrules a number the customer chose", () => {
@@ -63,7 +70,8 @@ describe("monthlyFromPace", () => {
   });
 
   it("describes the two defaults honestly", () => {
-    expect(monthlyFromPace(FREE_TIER_PACE)).toBe(4);
+    expect(monthlyFromPace(1)).toBe(4);
+    expect(monthlyFromPace(FREE_TIER_PACE)).toBe(30);
     expect(monthlyFromPace(PAID_DEFAULT_PACE)).toBe(30);
     expect(monthlyFromPace(2)).toBe(9);
   });
