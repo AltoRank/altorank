@@ -9,6 +9,7 @@ import { ConnectActions } from "@/components/dashboard/connect-actions";
 import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { GoogleConnectButton } from "@/components/dashboard/google-connect-button";
 import { BingConnectButton } from "@/components/dashboard/bing-connect-button";
+import { CmsConnectionActions } from "./cms-connection-actions";
 import type { PublishingCadence } from "@/lib/types";
 import { createClient } from "@/lib/supabase/server";
 
@@ -68,10 +69,15 @@ export default async function IntegrationsPage({
   const { data: connectedRows } = wsIds.length > 0
     ? await supabase
         .from("workspace_integrations")
-        .select("integration_id, publish_mode")
+        .select("id, integration_id, publish_mode")
         .in("workspace_id", wsIds)
     : { data: [] };
   const connectedIds = new Set((connectedRows ?? []).map((r) => r.integration_id as string));
+  // The workspace_integrations row id, so a connected tile can test or remove
+  // the connection rather than only offer to make it again.
+  const connectionRowIds = new Map(
+    (connectedRows ?? []).map((r) => [r.integration_id as string, r.id as string]),
+  );
   // Which connections save drafts, so the tile says what pressing Publish
   // does through it rather than a bare "Connected".
   const draftIds = new Set(
@@ -144,6 +150,12 @@ export default async function IntegrationsPage({
                       />
                     ) : i.id === "bing" ? (
                       <BingConnectButton connected={connectedIds.has(i.id)} />
+                    ) : CONNECTABLE_CMS.has(i.id) && connectionRowIds.has(i.id) ? (
+                      <CmsConnectionActions
+                        integrationId={i.id}
+                        workspaceIntegrationId={connectionRowIds.get(i.id)!}
+                        name={i.name}
+                      />
                     ) : CONNECTABLE_CMS.has(i.id) ? (
                       <Link href={`/connect?connect=${i.id}`} className="block">
                         <Button size="sm" className="w-full justify-center">
