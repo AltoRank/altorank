@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { IconButton } from "@/components/ui/button";
-import { Chip, Icons } from "@/components/ui";
+import { Icons } from "@/components/ui";
 import { ResearchButtons } from "@/components/dashboard/keyword-research/research-buttons";
 import { ArticlesPlanPopover } from "@/components/dashboard/articles-plan-popover";
 import { PausedBanner } from "@/components/dashboard/paused-banner";
@@ -27,19 +27,6 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
     router.push(`/content?${params.toString()}`);
   }
 
-  const clientFilter = searchParams.get("clients") ?? "all";
-
-
-  function setClientFilter(v: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (v === "all") {
-      params.delete("clients");
-    } else {
-      params.set("clients", v);
-    }
-    router.push(`/content?${params.toString()}`);
-  }
-
   return (
     <>
     {active?.status === "paused" && (
@@ -57,18 +44,14 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
       </div>
       <div className="flex-1" />
       <ArticlesPlanPopover />
-      {/* Was "All workspaces", which named the wrong axis: the calendar is
-          scoped to one site, and this chip filters entry kind, not workspace. */}
-      <Chip
-        label="All"
-        active={clientFilter === "all"}
-        onClick={() => setClientFilter("all")}
-      />
-      <Chip
-        label="Publishing"
-        active={clientFilter === "publishing"}
-        onClick={() => setClientFilter("publishing")}
-      />
+      {/* An "All / Publishing" pair used to sit here. It was left over from
+          the all-sites calendar: it filtered entries by their *workspace's*
+          status, and the calendar has been one site's since the merged scope
+          was removed, so "Publishing" could only ever show the whole month or
+          an empty grid depending on whether that one site was paused. The
+          comment beside it claimed it filtered entry kind, which it never
+          did. A control with two settings and one outcome is worse than no
+          control. */}
       <ResearchButtons />
     </div>
     </>
