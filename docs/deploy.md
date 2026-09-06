@@ -144,6 +144,7 @@ build args, not runtime env.
 | `FEEDBACK_EMAIL` | the in-app feedback widget mails a default address that is not yours |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | Search Console connect returns `google_oauth_not_configured`. The redirect URI is `<origin>/api/auth/google/callback` and must be registered in Google Cloud |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_STARTER_YEARLY`, `STRIPE_PRICE_GROWTH`, `STRIPE_PRICE_GROWTH_YEARLY` | billing is hidden (`billingEnabled` is false). The webhook endpoint is `<origin>/api/webhooks/stripe` and has to be registered in Stripe by hand |
+| `STRIPE_TAX_ENABLED` | Checkout charges the listed price and adds no VAT: no `automatic_tax`, no `tax_id_collection`, so no reverse charge for EU businesses. Set it to `true` **only** once Stripe Tax is activated, registered and set to exclusive - see [VAT](#2-vat-off-by-default-behind-stripe_tax_enabled). Turning it on before that stops anyone paying |
 | `YOUTUBE_API_KEY` | no video embeds in articles; silently skipped |
 | `ADMIN_EMAILS` | defaults to the AltoRank team's address, which is useless on your install. Comma-separated; set it to yourself. Set-but-empty means nobody is an operator |
 | `ANTHROPIC_MODEL`, `ANTHROPIC_MODEL_STRUCTURED`, `OPENAI_MODEL`, `OPENAI_IMAGE_MODEL` | defaults from `lib/ai/models.ts` |
