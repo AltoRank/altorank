@@ -35,6 +35,7 @@ import { getSimulation } from "@/lib/dev/simulation";
 import { isAdminEmail } from "@/lib/auth/operators";
 import { inCustomerPreview } from "@/lib/auth/preview";
 import { agencyHasOperator } from "@/lib/billing/operator-agency";
+import { dunningInfo, planEntitled, type DunningInfo } from "@/lib/billing/dunning";
 import { plural } from "@/lib/utils";
 
 export type Quota = {
@@ -46,6 +47,12 @@ export type Quota = {
   /** Why the limit is what it is, for UI copy. */
   reason: "self-host" | "operator" | "plan" | "no-plan";
   plan: PlanTier | null;
+  /**
+   * Set while a renewal is failing: `grace` keeps the paid tier's `reason:
+   * "plan"`, `lapsed` is `reason: "no-plan"` with the card still unpaid.
+   * Undefined on the paths that never read the agency row.
+   */
+  dunning?: DunningInfo | null;
 };
 
 function monthStart(): string {
@@ -125,12 +132,17 @@ export async function getQuota(
 
   const { data: agency } = await supabase
     .from("agencies")
-    .select("plan, plan_status")
+    .select("plan, plan_status, payment_failed_at")
     .eq("id", agencyId)
     .single();
 
-  let active = agency?.plan_status === "active";
+  // `past_due` inside the grace window counts as paid: a card that failed at
+  // renewal is Stripe's to retry for a week, and locking approve and publish
+  // on day one turned "update your card" into "choose a plan" and a second
+  // subscription (lib/billing/dunning.ts).
+  let active = planEntitled(agency ?? {});
   let plan = (agency?.plan ?? null) as PlanTier | null;
+  const dunning = dunningInfo(agency ?? {});
 
   // Dev-only: the DevToolbar's simulated plan drives the quota too, so "what
   // does a Managed customer at 97/100 see" is testable without a live
@@ -150,15 +162,15 @@ export async function getQuota(
     // verdict, is the thing worth paying for; the audit alone is not. So the
     // draft is free, and approving or publishing it is where the plan is
     // asked for (see requireActivePlan). Nothing is charged until they choose.
-    return { limit: FREE_DRAFTS, used, remaining: Math.max(0, FREE_DRAFTS - used), reason: "no-plan", plan };
+    return { limit: FREE_DRAFTS, used, remaining: Math.max(0, FREE_DRAFTS - used), reason: "no-plan", plan, dunning };
   }
 
   const limit = PLAN_ARTICLE_LIMITS[plan];
   if (limit === null) {
-    return { limit: null, used, remaining: null, reason: "plan", plan };
+    return { limit: null, used, remaining: null, reason: "plan", plan, dunning };
   }
 
-  return { limit, used, remaining: Math.max(0, limit - used), reason: "plan", plan };
+  return { limit, used, remaining: Math.max(0, limit - used), reason: "plan", plan, dunning };
 }
 
 /**

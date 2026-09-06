@@ -22,6 +22,8 @@ import { getSimulation } from "@/lib/dev/simulation";
 import { getOperatorPreview } from "@/lib/auth/preview";
 import { PLAN_LABELS } from "@/lib/stripe";
 import { PreviewBanner } from "@/components/dashboard/preview-banner";
+import { PaymentFailedBanner } from "@/components/dashboard/payment-failed-banner";
+import { canManageBilling } from "@/lib/team/access";
 
 export default async function DashboardLayout({
   children,
@@ -212,6 +214,9 @@ export default async function DashboardLayout({
           previewing - and they stack rather than compete, because each says a
           different true thing about why the app is behaving oddly. */}
       {preview && <PreviewBanner plan={preview.plan ? PLAN_LABELS[preview.plan] : undefined} />}
+      {/* A failing renewal, until the card works. Read off the quota already
+          computed for the sidebar: the same agency row decides both. */}
+      {quota?.dunning && <PaymentFailedBanner dunning={quota.dunning} canManage={canManageBilling(role)} />}
       {impersonation && (
         <ImpersonationBanner
           operatorEmail={impersonation.operatorEmail}

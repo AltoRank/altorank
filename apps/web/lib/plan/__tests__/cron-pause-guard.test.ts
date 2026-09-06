@@ -33,6 +33,14 @@ describe("crons skip paused workspaces", () => {
     });
   }
 
+  it("generate lifts the account pause whose date has passed before it picks work", () => {
+    // Stripe resumes charging on `paused_until` by itself; this is the
+    // write that resumes the work it is charging for (lib/billing/resume.ts).
+    const src = readFileSync(join(CRON_DIR, "generate", "route.ts"), "utf8");
+    expect(src).toContain("resumeExpiredPauses(");
+    expect(src.indexOf("resumeExpiredPauses(")).toBeLessThan(src.indexOf(`.neq("status", "paused")`));
+  });
+
   it("publish applies the paused set to both phases", () => {
     const src = readFileSync(join(CRON_DIR, "publish", "route.ts"), "utf8");
     expect(src.match(/withoutPaused\(/g)?.length).toBe(2);

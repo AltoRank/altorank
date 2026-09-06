@@ -5,6 +5,8 @@ import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { duePlannedKeyword, fulfilPlannedEntry } from "@/lib/onboarding/plan";
 import { profileIsUsable } from "@/lib/seo/topical-profile";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
+import { resumeExpiredPauses } from "@/lib/billing/resume";
+import { billingEnabled, getStripe } from "@/lib/stripe";
 import { generateArticle } from "@/lib/content/generate";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
 import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
@@ -101,6 +103,18 @@ export async function GET(request: Request) {
   }
 
   const supabase = createServiceClient();
+
+  // An account pause whose date has passed ends here, before the queue is
+  // read, so those sites are in it. Stripe resumes charging on the date by
+  // itself; until this ran, nothing resumed the work it was charging for.
+  // Reported, never fatal: a failure to lift one pause is not a reason to
+  // write nothing for anybody.
+  let resumed: Awaited<ReturnType<typeof resumeExpiredPauses>> | { error: string } = [];
+  try {
+    resumed = await resumeExpiredPauses(supabase, billingEnabled ? getStripe() : null);
+  } catch (err) {
+    resumed = { error: err instanceof Error ? err.message : "unknown error" };
+  }
 
   const { data: workspaces, error } = await supabase
     .from("workspaces")
@@ -314,6 +328,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     checked: workspaces?.length ?? 0,
+    pausesResumed: resumed,
     generated: results.filter((r) => r.status === "generated").length,
     skipped: results.filter((r) => r.status === "skipped").length,
     errors: results.filter((r) => r.status === "error").length,
