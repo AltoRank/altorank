@@ -36,6 +36,7 @@ export function PlanCards({
   currentTier,
   isActive,
   hasCustomer,
+  hasSubscription = false,
   returnTo,
   canManage,
   cancelHandledBelow = false,
@@ -45,6 +46,17 @@ export function PlanCards({
   currentTier: "starter" | "growth" | "scale" | null;
   isActive: boolean;
   hasCustomer: boolean;
+  /**
+   * Whether there is a subscription id on the row.
+   *
+   * `isActive` is true under an operator preview or the dev simulator, neither
+   * of which has a Stripe customer, and the three portal buttons were rendered
+   * on `current` alone - so all three threw "No billing account yet" or "There
+   * is no active subscription to cancel" the moment they were pressed. Cancel
+   * needs the subscription id specifically: createBillingPortalSession's
+   * cancel flow refuses without one.
+   */
+  hasSubscription?: boolean;
   /**
    * Where to send the buyer back to after checkout, when they arrived here
    * from somewhere that needed a plan. Threaded through rather than dropped:
@@ -167,7 +179,7 @@ export function PlanCards({
                   <div className="text-center text-[12px] leading-relaxed text-ink-3">
                     {current ? "Your plan." : ""} Only the account owner can change the plan or billing.
                   </div>
-                ) : current ? (
+                ) : current && hasCustomer ? (
                   <div className="flex flex-col gap-2">
                     <Button onClick={() => portal("manage")} disabled={pending} className="w-full justify-center">
                       {pending ? "Opening…" : "Invoices and billing"}
@@ -176,12 +188,23 @@ export function PlanCards({
                       <Button onClick={() => portal("payment_method")} disabled={pending} className="flex-1 justify-center">
                         Update card
                       </Button>
-                      {!cancelHandledBelow && (
+                      {/* Only with a subscription to end. The cancel flow
+                          refuses without its id, so the button would be a
+                          door onto an error message. */}
+                      {!cancelHandledBelow && hasSubscription && (
                         <Button onClick={() => portal("cancel")} disabled={pending} className="flex-1 justify-center">
                           Cancel
                         </Button>
                       )}
                     </div>
+                  </div>
+                ) : current ? (
+                  /* Shown as current with no Stripe customer behind it: an
+                     operator preview or the dev simulator. Every portal
+                     button would throw, so say why instead of offering one. */
+                  <div className="text-center text-[12px] leading-relaxed text-ink-3">
+                    Shown as your plan, but this account has no Stripe customer — billing
+                    controls open once there is a real subscription.
                   </div>
                 ) : sales ? (
                   <a href="mailto:hello@altorank.co?subject=AltoRank%20Custom%20plan" className="block">

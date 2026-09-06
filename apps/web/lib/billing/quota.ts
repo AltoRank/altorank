@@ -49,6 +49,16 @@ function monthStart(): string {
 }
 
 /**
+ * The 1st of next month, UTC: the moment `used` starts again.
+ *
+ * The counter above is the whole reason the allowance refills, so the date
+ * lives beside it rather than in the copy that quotes it.
+ */
+export function nextResetDate(now: Date = new Date()): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+}
+
+/**
  * Compute the quota for an agency. Pass the caller's Supabase client so RLS
  * scopes the counts to what that caller can see anyway.
  */
@@ -177,10 +187,24 @@ export function entitledToScheduledWork(q: Quota): boolean {
  */
 export const FREE_DRAFTS = 7;
 
-/** Message for the moment generation is refused. Says what to do, not just no. */
-export function quotaExceededMessage(q: Quota): string {
+/**
+ * Message for the moment generation is refused. Says what to do, not just no.
+ *
+ * Three ways out of the free allowance, and it used to name two. `used` is
+ * counted from monthStart(), so the drafts come back on the 1st - lib/plan
+ * frozen.ts has always known that ("they come back the moment the allowance
+ * grows - an upgrade, or the next month") and no string a user could read said
+ * so. It also still said "the free draft", singular, after FREE_DRAFTS went
+ * from 1 to 7.
+ */
+export function quotaExceededMessage(q: Quota, now: Date = new Date()): string {
   if (q.reason === "no-plan") {
-    return `The free draft is used. Choose a plan on the Billing page to keep going, or self-host AltoRank free.`;
+    const resets = nextResetDate(now).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+    return `This month's ${q.limit ?? FREE_DRAFTS} free drafts are used. Choose a plan on the Billing page to keep going, wait until ${resets} when the free drafts reset, or self-host AltoRank free.`;
   }
   return `This month's included ${q.limit} articles are used. The next article is billed as overage, or upgrade on the Billing page.`;
 }
