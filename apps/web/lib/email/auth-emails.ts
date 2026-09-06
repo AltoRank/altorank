@@ -92,7 +92,7 @@ function isUserNotFound(error: AuthError): boolean {
 }
 
 /** Token hash for a one-time link; null when the address has no account. */
-async function tokenHashFor(type: "recovery" | "magiclink", email: string): Promise<string | null> {
+async function tokenHashFor(type: "recovery", email: string): Promise<string | null> {
   const admin = createServiceClient();
   const { data, error } = await admin.auth.admin.generateLink({ type, email });
   if (error) {
@@ -174,15 +174,5 @@ export async function sendPasswordReset(email: string): Promise<boolean> {
   const url = authLink("recovery", token, "/reset-password/confirm");
   const { subject, html, footerNote } = renderPasswordReset(url, email);
   await sendTransactionalEmail(email, subject, html, footerNote, "Set a new password in one click.");
-  return true;
-}
-
-/** Email a one-time sign-in link. False when the address has no account; throws on any other failure. */
-export async function sendMagicLink(email: string): Promise<boolean> {
-  const token = await tokenHashFor("magiclink", email);
-  if (!token) return false;
-  const url = authLink("magiclink", token, "/dashboard");
-  const { subject, html, footerNote } = renderMagicLink(url, email);
-  await sendTransactionalEmail(email, subject, html, footerNote, "Your one-time sign-in link.");
   return true;
 }
