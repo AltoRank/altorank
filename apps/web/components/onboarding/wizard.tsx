@@ -54,7 +54,7 @@ import { SiteFields } from "@/components/settings/site-fields";
 import { ApprovalGateCard, OutputFields } from "@/components/settings/output-fields";
 import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
-import type { OnboardingState } from "@/lib/onboarding/events";
+import { onboardingOutcome, type OnboardingState } from "@/lib/onboarding/events";
 
 const SITE_STEPS = ["Business", "Audience & Competitors", "Blog", "Articles", "Integration"];
 // The question about the person, after every step about the site. Present only
@@ -518,6 +518,16 @@ function RunScreen({ workspaceId, domain, weeklyLimit }: { workspaceId: string; 
   const [state, setState] = useState<OnboardingState | null>(null);
   const finished = Boolean(state && (state.ready || state.error));
   const planned = state?.planned ?? [];
+  // Where "Finish" actually leads, decided by what the run produced. It used
+  // to read "Open my plan" and push /content on any terminal state, so a run
+  // that scheduled nothing offered a button to an empty calendar.
+  const outcome = state ? onboardingOutcome(state) : null;
+  const draft = state?.article ?? null;
+  const next = planned.length > 0
+    ? { href: "/content", label: "Open my plan" }
+    : draft
+      ? { href: "/review", label: "Open my first draft" }
+      : { href: "/dashboard", label: "Open the dashboard" };
   return (
     <div className="min-h-screen bg-bg">
       <div className="mx-auto max-w-[860px] px-6 py-10">
@@ -549,11 +559,25 @@ function RunScreen({ workspaceId, domain, weeklyLimit }: { workspaceId: string; 
               </div>
             )}
             <div className="mt-6 flex items-center gap-3">
-              <Button variant="accent" onClick={() => router.push("/content")} disabled={!finished && planned.length === 0}>
-                {finished ? "Open my plan" : "Open the calendar so far"}
+              <Button
+                variant="accent"
+                onClick={() => router.push(finished ? next.href : "/content")}
+                disabled={!finished && planned.length === 0}
+              >
+                {finished ? next.label : "Open the calendar so far"}
               </Button>
               {!finished && <span className="text-[12px] text-ink-3">Still working…</span>}
             </div>
+            {/* The run's own account of itself, when it fell short of the
+                calendar the header just promised. `OnboardingProgress` prints
+                the same sentence, so this only adds the part the button needs
+                to be honest about. */}
+            {outcome?.tone === "partial" && !outcome.produced && (
+              <p className="m-0 mt-2.5 text-[12px] leading-[1.55] text-ink-3">
+                Add a keyword by hand from Keywords, or connect Search Console, and the plan can be
+                built from there.
+              </p>
+            )}
           </div>
 
           <aside className="flex flex-col gap-3">

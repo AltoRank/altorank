@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icons } from "@/components/ui";
 import {
-  PHASE_LABELS,
   initialOnboardingState,
   isTerminal,
+  onboardingOutcome,
+  phaseLabel,
   reduceOnboarding,
   type OnboardingEvent,
   type OnboardingState,
@@ -142,19 +143,19 @@ export function OnboardingProgress({
   }, [finished, router, workspaceId, nextHref, autoNavigate]);
 
   const drafting = state.steps.find((s) => s.phase === "drafting");
+  // The closing sentence is derived, not chosen: `ready` is emitted whatever
+  // happened, so "Done. Your first month is on the calendar" used to print
+  // over an empty calendar and a refused draft.
+  const outcome = onboardingOutcome(state, autoNavigate);
 
   return (
     <div className="flex flex-col gap-5" aria-live="polite">
       <div>
         <div className="text-[13px] font-medium text-ink">Setting up {domain}</div>
-        <p className="m-0 mt-1 text-[12.5px] leading-relaxed text-ink-2">
-          {state.error
-            ? state.error
-            : state.ready
-              ? autoNavigate
-                ? "Done. Taking you to your plan."
-                : "Done. Your first month is on the calendar."
-              : "This takes about a minute. Nothing publishes without your approval."}
+        <p
+          className={`m-0 mt-1 text-[12.5px] leading-relaxed ${outcome.tone === "error" ? "text-err-ink" : "text-ink-2"}`}
+        >
+          {outcome.line}
         </p>
       </div>
 
@@ -175,7 +176,7 @@ export function OnboardingProgress({
 }
 
 function StepRow({ step }: { step: OnboardingStep }) {
-  const label = step.status === "active" ? PHASE_LABELS[step.phase].active : PHASE_LABELS[step.phase].rest;
+  const label = phaseLabel(step);
   const muted = step.status === "pending";
   return (
     <li className="flex items-start gap-2.5">

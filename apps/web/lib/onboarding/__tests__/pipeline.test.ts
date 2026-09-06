@@ -27,6 +27,8 @@ const recordSpendByDefault = vi.fn();
 vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault: (e: unknown) => recordSpendByDefault(e) }));
 const plan = vi.fn(async () => [] as unknown[]);
 vi.mock("../plan", () => ({ schedulePlan: () => plan(), fulfilPlannedEntry: vi.fn(async () => undefined) }));
+const fanOut = vi.fn(() => ({ dispatched: 0 }));
+vi.mock("@/lib/content/fan-out", () => ({ fanOutDrafts: (...a: unknown[]) => fanOut(...(a as [])) }));
 
 import { runOnboarding } from "../pipeline";
 import type { OnboardingEvent } from "../events";
@@ -47,8 +49,31 @@ async function collect(existing = 0): Promise<OnboardingEvent[]> {
 const phases = (events: OnboardingEvent[]) =>
   events.map((e) => ("status" in e ? `${e.phase}:${e.status}` : e.phase));
 
+/**
+ * A client that answers the whole run, not just the "already has a draft?"
+ * count: the fan-out reads calendar_entries too, and a thin mock made that
+ * branch untestable.
+ */
+const chain = (result: Record<string, unknown>): never => {
+  const self: unknown = new Proxy({}, {
+    get(_t, prop) {
+      if (prop === "then") return (res: (v: unknown) => void) => res(result);
+      return () => self;
+    },
+  });
+  return self as never;
+};
+const richClient = (existing: number) =>
+  ({ from: (table: string) => (table === "articles" ? chain({ count: existing }) : chain({ data: [] })) }) as never;
+
 beforeEach(() => {
   for (const m of [scrape, voice, analyse, generate, quota, recommend, pick, creds, setSpendReporter, recordSpendByDefault]) m.mockReset();
+  fanOut.mockReset();
+  fanOut.mockReturnValue({ dispatched: 0 });
+  // Both of these are set per-test by the fan-out cases, and a leak into the
+  // thin client below shows up as "not is not a function" three tests later.
+  plan.mockReset();
+  plan.mockResolvedValue([]);
   scrape.mockResolvedValue("word ".repeat(80));
   voice.mockResolvedValue(undefined);
   creds.mockReturnValue(true);
@@ -126,13 +151,69 @@ describe("runOnboarding", () => {
     expect(events.at(-1)).toEqual({ phase: "ready" });
   });
 
-  it("skips the draft, with the reason, when the free draft is used", async () => {
-    quota.mockResolvedValue({ limit: 1, used: 1, remaining: 0, reason: "no-plan" });
+  /**
+   * FREE_DRAFTS went 1 -> 7 on 2026-09-06 and this message still said "your
+   * free draft". It is counted off the quota's own limit now, so it cannot
+   * drift again, and it says when the allowance comes back.
+   */
+  it("skips the draft, with the reason, when the free allowance is used", async () => {
+    quota.mockResolvedValue({ limit: 7, used: 7, remaining: 0, reason: "no-plan" });
     const events = await collect();
     expect(generate).not.toHaveBeenCalled();
     expect(events.find((e) => e.phase === "drafting" && "status" in e && e.status !== "active"))
-      .toMatchObject({ status: "skipped", detail: expect.stringContaining("free draft") });
+      .toMatchObject({
+        status: "skipped",
+        detail: "This month's 7 free drafts are used. Choose a plan to keep drafting, or the allowance resets next month.",
+      });
     expect(events.at(-1)).toEqual({ phase: "ready" });
+  });
+
+  it("says \"is\" for an allowance of one and names the plan's volume for a paid account", async () => {
+    quota.mockResolvedValue({ limit: 1, used: 1, remaining: 0, reason: "no-plan" });
+    const one = await collect();
+    expect(one.find((e) => e.phase === "drafting" && "status" in e && e.status === "skipped"))
+      .toMatchObject({ detail: expect.stringContaining("This month's 1 free draft is used") });
+
+    quota.mockResolvedValue({ limit: 100, used: 100, remaining: 0, reason: "plan", plan: "starter" });
+    const paid = await collect();
+    expect(paid.find((e) => e.phase === "drafting" && "status" in e && e.status === "skipped"))
+      .toMatchObject({ detail: expect.stringContaining("This month's 100 included articles are used") });
+  });
+
+  /**
+   * The fan-out note used to be emitted as `drafting:active`, which reset the
+   * finished step to a spinner and replaced "Wrote 1,200 words on X" with a
+   * sentence about the other six. It is a note, so it carries the status the
+   * phase already settled on.
+   */
+  it("does not undo the finished draft when it announces the rest of the week", async () => {
+    plan.mockResolvedValue([
+      { term: "seo agent", date: "2026-09-07", keywordId: "k1" },
+      { term: "seo tools", date: "2026-09-08", keywordId: "k2" },
+    ]);
+    fanOut.mockReturnValue({ dispatched: 1 });
+    const events: OnboardingEvent[] = [];
+    await runOnboarding(richClient(0), WS, (e) => events.push(e));
+    const drafting = events.filter((e) => e.phase === "drafting");
+    const last = drafting.at(-1);
+    expect(last).toMatchObject({ status: "done" });
+    expect((last as { detail: string }).detail).toBe(
+      'Wrote 1,200 words on "seo agent". Writing 1 more article now. They appear as they finish.',
+    );
+    expect(events.at(-1)).toEqual({ phase: "ready" });
+  });
+
+  it("keeps a skipped draft skipped when the rest of the week is dispatched", async () => {
+    plan.mockResolvedValue([
+      { term: "seo agent", date: "2026-09-07", keywordId: "k1" },
+      { term: "seo tools", date: "2026-09-08", keywordId: "k2" },
+    ]);
+    fanOut.mockReturnValue({ dispatched: 2 });
+    pick.mockReturnValue(null);
+    recommend.mockResolvedValue([]);
+    const events: OnboardingEvent[] = [];
+    await runOnboarding(richClient(0), WS, (e) => events.push(e));
+    expect(events.filter((e) => e.phase === "drafting").at(-1)).toMatchObject({ status: "skipped" });
   });
 
   it("does not write a second draft into a workspace that has one", async () => {

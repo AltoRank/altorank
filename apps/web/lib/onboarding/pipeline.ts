@@ -30,7 +30,8 @@ import { getQuota } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
-import type { OnboardingEvent } from "./events";
+import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
+import { plural } from "@/lib/utils";
 import { schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
 import { fanOutDrafts } from "@/lib/content/fan-out";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
@@ -182,6 +183,17 @@ async function runPhases(
 
   if (gone()) return;
   emit({ phase: "drafting", status: "active" });
+  // The status and detail the drafting phase settled on. The fan-out note
+  // below is emitted on the same phase, and emitting it as `active` reset a
+  // finished step back to a spinner - and, worse, replaced "Wrote 1,240 words
+  // on X" with a sentence about the other six.
+  let draftStatus: Exclude<PhaseStatus, "pending"> = "active";
+  let draftDetail = "";
+  const settle = (status: Exclude<PhaseStatus, "pending">, detail: string, article?: OnboardingArticle) => {
+    draftStatus = status;
+    draftDetail = detail;
+    emit({ phase: "drafting", status, detail, article });
+  };
   try {
     // Not if one already exists: this pipeline can be re-run, and a second
     // identical draft is worse than none.
@@ -190,13 +202,21 @@ async function runPhases(
       .select("id", { count: "exact", head: true })
       .eq("workspace_id", workspace.id);
     if (count && count > 0) {
-      emit({ phase: "drafting", status: "skipped", detail: "This workspace already has a draft." });
+      settle("skipped", "This workspace already has a draft.");
     } else {
-      // A cost gate, and an honest message when it bites. A no-plan account gets
-      // one free draft; onboarding is where it is spent.
+      // A cost gate, and an honest message when it bites. A no-plan account
+      // gets FREE_DRAFTS a calendar month - seven since 2026-09-06, not one -
+      // and onboarding is where the first of them is spent. The message counts
+      // off the limit rather than restating a number that has already moved.
       const quota = await getQuota(supabase, workspace.agency_id);
       if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
-        emit({ phase: "drafting", status: "skipped", detail: "Your free draft is already used. Choose a plan to keep drafting." });
+        const is = quota.limit === 1 ? "is" : "are";
+        settle(
+          "skipped",
+          quota.reason === "no-plan"
+            ? `This month's ${plural(quota.limit, "free draft")} ${is} used. Choose a plan to keep drafting, or the allowance resets next month.`
+            : `This month's ${plural(quota.limit, "included article")} ${is} used. Upgrade on the Billing page to keep drafting.`,
+        );
       } else {
         const recs = await recommendKeywords(supabase, workspace.id, { limit: 25 });
         // The first day of the plan is what the person just watched get
@@ -204,7 +224,7 @@ async function runPhases(
         const first = plan[0];
         const next = (first && recs.find((r) => r.term === first.term)) ?? pickNextKeyword(recs);
         if (!next) {
-          emit({ phase: "drafting", status: "skipped", detail: "No keyword clear enough to write to yet." });
+          settle("skipped", "No keyword clear enough to write to yet.");
         } else {
           const result = await generateArticle({
             supabase,
@@ -238,23 +258,18 @@ async function runPhases(
               .maybeSingle();
             if (row?.id) await fulfilPlannedEntry(supabase, row.id as string, result.articleId);
           }
-          emit({
-            phase: "drafting",
-            status: "done",
-            detail: `Wrote ${result.wordCount.toLocaleString()} words on "${next.term}".`,
-            article: {
-              id: result.articleId,
-              title: result.title,
-              keyword: next.term,
-              wordCount: result.wordCount,
-              verdict: result.factCheck.verdict,
-            },
+          settle("done", `Wrote ${result.wordCount.toLocaleString()} words on "${next.term}".`, {
+            id: result.articleId,
+            title: result.title,
+            keyword: next.term,
+            wordCount: result.wordCount,
+            verdict: result.factCheck.verdict,
           });
         }
       }
     }
   } catch (err) {
-    emit({ phase: "drafting", status: "failed", detail: message(err) });
+    settle("failed", message(err));
   }
 
   // The rest of the week, in parallel.
@@ -279,10 +294,12 @@ async function runPhases(
       .map((p) => ({ keywordId: p.keywordId as string, term: p.term }));
     const fan = fanOutDrafts(workspace.id, rest);
     if (fan.dispatched > 0) {
+      const note = `Writing ${fan.dispatched} more article${fan.dispatched === 1 ? "" : "s"} now. They appear as they finish.`;
       emit({
         phase: "drafting",
-        status: "active",
-        detail: `Writing ${fan.dispatched} more article${fan.dispatched === 1 ? "" : "s"} now. They appear as they finish.`,
+        // Whatever the first draft did stands. This is a note about the rest.
+        status: draftStatus,
+        detail: draftDetail ? `${draftDetail} ${note}` : note,
       });
     }
   }

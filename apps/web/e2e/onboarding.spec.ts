@@ -93,7 +93,11 @@ test("a new account is walked from /dashboard to a planned first month", async (
   await expect(plannedLine).toBeVisible({ timeout: 30_000 });
   const planned = Number((await plannedLine.textContent())?.match(/Planned (\d+)/)?.[1]);
   expect(planned).toBeGreaterThan(0);
-  await expect(page.getByText("Done. Your first month is on the calendar.")).toBeVisible({ timeout: 30_000 });
+  // Worded from the run's own outcome since #P0-O2: the old fixed sentence was
+  // printed whether or not anything reached the calendar.
+  await expect(
+    page.getByText(/Done\. \d+ articles? on the calendar and your first draft is in review\./),
+  ).toBeVisible({ timeout: 30_000 });
 
   const { data: wsDone } = await db.from("workspaces").select("onboarded_at, onboarding_skipped_at").eq("id", ws.id).single();
   expect(wsDone?.onboarded_at).not.toBeNull();
