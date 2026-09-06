@@ -24,7 +24,10 @@ export interface PaceOption {
   pace: number;
   /** "3 a week", "one a day", "two a day". */
   label: string;
-  /** "about 13 articles a month" */
+  /**
+   * The consequence of picking this pace: "about 13 articles a month", or,
+   * where the free allowance would run out first, what it actually delivers.
+   */
   meaning: string;
   monthly: number;
   /** Whether this account may run at this pace today. */
@@ -68,6 +71,35 @@ export function paceAllowed(pace: number, quota: Pick<Quota, "limit" | "reason">
   return monthlyFromPace(pace) <= quota.limit;
 }
 
+/**
+ * What picking this pace actually gets you, in a phrase.
+ *
+ * `about ${monthly} articles a month` is arithmetic on the pace and nothing
+ * else, which made four of the five paces a free account may select quote a
+ * figure the quota then refuses: at 7 a week the row read "about 30 articles a
+ * month" while FREE_DRAFTS is 7. The pace is still the honest control - it
+ * decides how fast the allowance is spent, which is why 7 a week is offered at
+ * all - so where the monthly figure outruns the allowance the phrase states
+ * the allowance and how long it lasts instead of a number that cannot arrive.
+ *
+ * Only the free tier needs this. A paid tier's options are refused outright
+ * above its included volume (`paceAllowed`), so an allowed paid pace always
+ * fits inside what the plan bought.
+ */
+export function paceMeaning(
+  pace: number,
+  monthly: number,
+  quota: Pick<Quota, "limit" | "reason">,
+): string {
+  const limit = quota.limit;
+  if (quota.reason === "no-plan" && limit !== null && pace > 0 && monthly > limit) {
+    // Days to spend `limit` drafts at `pace` a week, on a 7-day week.
+    const days = Math.round((limit / pace) * 7);
+    return `the ${limit} free drafts, in about ${days} ${days === 1 ? "day" : "days"}`;
+  }
+  return `about ${monthly} articles a month`;
+}
+
 export function paceOptions(quota: Pick<Quota, "limit" | "reason">): PaceOption[] {
   return PACE_OPTIONS.map((pace) => {
     const monthly = monthlyFromPace(pace);
@@ -76,7 +108,9 @@ export function paceOptions(quota: Pick<Quota, "limit" | "reason">): PaceOption[
     return {
       pace,
       label: describePace(pace),
-      meaning: `about ${monthly} articles a month`,
+      // A refused option is arguing for a plan, so it keeps the monthly figure
+      // that plan would deliver; an allowed one has to be true today.
+      meaning: allowed ? paceMeaning(pace, monthly, quota) : `about ${monthly} articles a month`,
       monthly,
       allowed,
       needsPlan,

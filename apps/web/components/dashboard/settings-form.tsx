@@ -81,7 +81,12 @@ export function SettingsForm({ agency, quotaReason }: SettingsFormProps) {
         {/* White-label */}
         <div className="bg-bg border border-line rounded-lg p-5">
           <h3 className="text-sm font-semibold mb-1">White-label</h3>
-          <p className="text-[12.5px] text-ink-3 mb-4">Your logo and accent colour on every report PDF, and the AltoRank line removed.</p>
+          {/* "Your logo and" removed: nothing writes agencies.logo_url - there
+              is no upload anywhere - so the report template's
+              `{logo_url && <Image/>}` never renders. The card said so itself
+              eight lines above ("Logo upload is on the way") while promising
+              it here. Only accent_color is real (2026-09-06). */}
+          <p className="text-[12.5px] text-ink-3 mb-4">Your accent colour on every report PDF, and the AltoRank line removed.</p>
           <label className={labelClass}>Accent color</label>
           <div className="flex gap-2 mb-3.5">
             {COLORS.map((c) => (

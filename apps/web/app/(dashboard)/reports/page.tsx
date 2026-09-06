@@ -27,7 +27,10 @@ export default async function ReportsPage() {
     <>
       <PageHead
         title="Reports"
-        subtitle={<span>Monthly PDF reports, branded with your logo and colour</span>}
+        /* Not "your logo and colour": nothing writes agencies.logo_url, so the
+           report only ever carries the accent colour and the workspace
+           initials. Logo upload is still unbuilt (2026-09-06). */
+        subtitle={<span>Monthly PDF reports, in your accent colour</span>}
         actions={workspaces.length > 0 ? <GenerateReportButton workspaces={workspaces} /> : undefined}
       />
 

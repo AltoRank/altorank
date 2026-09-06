@@ -51,7 +51,14 @@ export const reviewExplainer: Explainer = {
     },
   ],
   cannotYet: [
-    "Update a post that is already live in the CMS. Adapters publish and unpublish; publishing again creates a new post. In-place edits arrive with the WordPress plugin (#71).",
+    // Was: "Update a post that is already live in the CMS. Adapters publish
+    // and unpublish; publishing again creates a new post. In-place edits
+    // arrive with the WordPress plugin (#71)." All three sentences had gone
+    // stale - the publish core calls adapter.update() when the adapter has
+    // one and refuses a second create when it does not, six adapters
+    // implement update, and the plugin adapter is registered. Narrowed to
+    // what is still true rather than deleted (2026-09-06).
+    "Update a post already live on Shopify, Magento, Framer, Wix, Notion, HubSpot or WooCommerce. WordPress, the WordPress plugin, Ghost, Webflow, a webhook and git edit in place; the rest have no update call, so a re-publish is refused rather than duplicated.",
     "Require a second reviewer, or approve on someone else's behalf.",
     "Publish from the Articles list for a site with no CMS connected. The editor's copy-and-record path is the route there.",
     "Show who requested changes, or why. The sign-off is cleared; the reason is not stored.",

@@ -49,6 +49,21 @@ describe("explainers", () => {
     }
   });
 
+  it("does not tell the review screen that in-place CMS updates are impossible", () => {
+    // The bullet used to read "Adapters publish and unpublish; publishing
+    // again creates a new post. In-place edits arrive with the WordPress
+    // plugin (#71)." By then publishArticleCore already called
+    // adapter.update() when one existed, six adapters implemented it, and the
+    // plugin adapter was registered - so all three sentences were false.
+    const review = EXPLAINERS.find((e) => e.id === "review");
+    expect(review).toBeDefined();
+    const gaps = review!.cannotYet.join("\n");
+    expect(gaps).not.toContain("publishing again creates a new post");
+    expect(gaps).not.toContain("arrive with the WordPress plugin");
+    // What is still true: the seven adapters with no update call.
+    expect(gaps).toContain("Shopify, Magento, Framer, Wix, Notion, HubSpot or WooCommerce");
+  });
+
   it("renders the chip with a stable test id and the heading text in the dialog data", () => {
     // The dialog is portalled after mount, so a static render shows the chip
     // only; the heading itself is a constant the component and the test share.
