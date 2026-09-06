@@ -85,6 +85,7 @@ export function AddTab({ workspaceId, ctx, onCapacity, onChanged }: AddTabProps)
           candidates={result.candidates}
           funnel={result.funnel}
           runId={result.runId}
+          kind={result.kind}
           note={result.note}
           trace={result.trace}
           onCapacity={onCapacity}

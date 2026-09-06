@@ -27,7 +27,7 @@ import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { fetchTermMetrics, type TermMetrics } from "./metrics";
 import { withInstructions } from "./instructions";
 import { buildPlaybookSeeds, competitorName, PLAYBOOKS, type PlaybookId } from "./seeds";
-import type { ResearchCandidate, ResearchKind, ResearchResult, ResearchSource } from "./types";
+import type { CandidateSource, ResearchCandidate, ResearchKind, ResearchResult, ResearchSource } from "./types";
 
 /** What the pipeline needs to know about the site it is researching for. */
 export interface ResearchWorkspace {
@@ -71,11 +71,13 @@ async function lookupPhrases(
   phrases: string[],
   origin: (term: string) => string,
   ws: ResearchWorkspace,
+  source?: CandidateSource,
 ): Promise<ResearchCandidate[]> {
   const metrics = await fetchTermMetrics(phrases, { languageCode: ws.languageCode, locationCode: ws.locationCode });
   return phrases.map((p) => {
     const m = metrics.get(p.toLowerCase());
-    return m ? metricsToCandidate(m, origin(p)) : unknownCandidate(p, origin(p), ws.languageCode);
+    const c = m ? metricsToCandidate(m, origin(p)) : unknownCandidate(p, origin(p), ws.languageCode);
+    return source ? { ...c, source } : c;
   });
 }
 
@@ -273,6 +275,7 @@ export async function researchGenerate(
             cpc: k.cpc,
             intent: classifyIntent(k.keyword, ws.languageCode).intent,
             origin: k.position ? `${competitorName(domains[i])} ranks #${k.position}` : `${competitorName(domains[i])} ranks for it`,
+            source: { type: "competitor", ref: domains[i] },
             existingId: null,
             existingStatus: null,
           });
@@ -295,7 +298,10 @@ export async function researchGenerate(
       if (note) notes.push(note);
       if (seeds.length) {
         const origin = `audience: ${audiences.length === 1 ? audiences[0] : "seed phrase"}`;
-        const looked = await lookupPhrases(seeds, () => origin, ws);
+        // One model call proposes seeds for every audience at once, so a row
+        // can only be pinned to an audience when the run named exactly one.
+        const audienceSource: CandidateSource = { type: "audience", ref: audiences.length === 1 ? audiences[0] : null };
+        const looked = await lookupPhrases(seeds, () => origin, ws, audienceSource);
         const withData = looked.filter((c) => c.volume !== null).length;
         raw.push(...looked);
         trace.push(`Proposed ${seeds.length} seed phrases for ${audiences.length} audience${audiences.length === 1 ? "" : "s"} → ${withData} had search data`);
@@ -323,6 +329,7 @@ export async function researchGenerate(
               cpc: k.cpc > 0 ? k.cpc : null,
               intent: k.intent,
               origin: "audience: expanded from a seed phrase",
+              source: audienceSource,
               existingId: null,
               existingStatus: null,
             });
@@ -376,7 +383,7 @@ export async function researchPlaybook(
     return { runId: null, kind, candidates: [], funnel: emptyFunnel(), trace, note: why };
   }
 
-  const looked = await lookupPhrases(seeds, () => meta.title, ws);
+  const looked = await lookupPhrases(seeds, () => meta.title, ws, { type: "playbook", ref: playbook });
   trace.push(`${meta.title}: built ${seeds.length} phrases → ${looked.filter((c) => c.volume !== null).length} had search data`);
 
   const existing = await existingKeywords(supabase, ws.id);

@@ -166,6 +166,7 @@ export function GenerateTab({ workspaceId, ctx, handoff, onCapacity, onChanged, 
             candidates={result.result.candidates}
             funnel={result.result.funnel}
             runId={result.result.runId}
+            kind={result.result.kind}
             note={result.result.note}
             trace={result.result.trace}
             onCapacity={onCapacity}

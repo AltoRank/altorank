@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rollupSourceYields, yieldsForInputs } from "../yields";
+import { rollupSourceYields, unattributedCount, unknownSourceCount, yieldsForInputs } from "../yields";
 
 const kws = [
   { id: "a", source_type: "competitor", source_ref: "semrush.com" },
@@ -41,5 +41,29 @@ describe("yieldsForInputs", () => {
     const y = rollupSourceYields(kws, [], []);
     const rows = yieldsForInputs(["https://www.Semrush.com"], "competitor", y);
     expect(rows[0]).toMatchObject({ input: "https://www.Semrush.com", keywords: 2 });
+  });
+});
+
+describe("unattributedCount / unknownSourceCount", () => {
+  const y = rollupSourceYields(
+    [
+      { id: "a", source_type: "audience", source_ref: "founders" },
+      { id: "b", source_type: "audience", source_ref: null },
+      { id: "c", source_type: "audience", source_ref: null },
+      { id: "d", source_type: null, source_ref: null },
+      { id: "e", source_type: "chat", source_ref: null },
+    ],
+    [],
+    [],
+  );
+  it("counts rows of a type that name no input, and nothing else", () => {
+    expect(unattributedCount(y, "audience")).toBe(2);
+    expect(unattributedCount(y, "competitor")).toBe(0);
+    // A null-ref type that is the whole story (chat) is attributed, not counted here.
+    expect(unattributedCount(y, "chat")).toBe(1);
+    expect(yieldsForInputs(["founders"], "audience", y)[0].keywords).toBe(1);
+  });
+  it("counts rows with no source at all separately from every named type", () => {
+    expect(unknownSourceCount(y)).toBe(1);
   });
 });

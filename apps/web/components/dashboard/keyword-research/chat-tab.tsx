@@ -96,6 +96,7 @@ export function ChatTab({ workspaceId, ctx, onCapacity, onChanged }: ChatTabProp
                       workspaceId={workspaceId}
                       candidates={p.candidates}
                       funnel={p.funnel}
+                      kind="chat"
                       onCapacity={onCapacity}
                       onChanged={onChanged}
                     />
