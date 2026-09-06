@@ -60,9 +60,14 @@ jobs:
 
       - run: npm ci
 
+      # Pinned, not `latest`. `latest` makes the action ask the GitHub API for
+      # the newest release on every run, and that call is rate-limited by IP on
+      # shared runners: on 2026-09-06 it failed with "rate limit exceeded"
+      # before a single test ran, on a PR whose code was fine. A pin removes the
+      # lookup. Bump it deliberately.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.116.0
 
       # `start` applies apps/web/supabase/migrations on the way up. Studio,
       # mail, realtime and storage are not needed by any spec.

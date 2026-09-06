@@ -77,6 +77,7 @@ create index if not exists idx_site_pages_opportunity on site_pages(workspace_id
 
 alter table site_pages enable row level security;
 
+drop policy if exists "Site pages by agency" on site_pages;
 create policy "Site pages by agency" on site_pages
   for all using (
     workspace_id in (
