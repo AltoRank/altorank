@@ -72,8 +72,10 @@ beforeEach(() => {
 
 describe("first purchase", () => {
   it("opens Checkout when the account has no subscription", async () => {
-    const url = await choose("growth");
-    expect(url).toBe("https://checkout.stripe.com/c/pay/cs_1");
+    // A result, not a bare string: these actions return `{ ok }` so a Stripe
+    // refusal can reach the person as a sentence instead of a Next.js digest.
+    const result = await choose("growth");
+    expect(result).toEqual({ ok: true, url: "https://checkout.stripe.com/c/pay/cs_1" });
     expect(checkoutCreate).toHaveBeenCalledOnce();
     expect(checkoutCreate.mock.calls[0][0]).toMatchObject({
       mode: "subscription",
@@ -99,7 +101,7 @@ describe("plan switch on a live subscription", () => {
   });
 
   it("updates the existing item to the new price, prorated, and never opens Checkout", async () => {
-    const url = await choose("growth");
+    const result = await choose("growth");
 
     expect(checkoutCreate).not.toHaveBeenCalled();
     expect(subRetrieve).toHaveBeenCalledWith("sub_1");
@@ -111,7 +113,10 @@ describe("plan switch on a live subscription", () => {
       proration_behavior: "create_prorations",
       metadata: { agency_id: "agency-1", plan: "growth", interval: "month" },
     });
-    expect(url).toBe(`${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3100"}/settings/billing?status=switched`);
+    expect(result).toEqual({
+      ok: true,
+      url: `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3100"}/settings/billing?status=switched`,
+    });
   });
 
   it("writes the new tier to the row at once, ahead of the webhook", async () => {

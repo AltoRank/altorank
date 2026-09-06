@@ -29,11 +29,15 @@ export function DunningCard({
 
   function portal(flow: "manage" | "payment_method") {
     start(async () => {
-      try {
-        window.location.href = await createBillingPortalSession(flow);
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Could not open billing portal");
+      // A refusal travels as data, not as a throw: Next.js replaces a thrown
+      // server-action message with a digest in production, so the button that
+      // fixes a failed card used to fail with a hex string.
+      const result = await createBillingPortalSession(flow);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
       }
+      window.location.href = result.url;
     });
   }
 

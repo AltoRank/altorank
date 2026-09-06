@@ -70,53 +70,53 @@ export async function createCheckoutSession(
   let session;
   try {
     session = await getStripe().checkout.sessions.create({
-    mode: "subscription",
-    line_items: [{ price: priceId, quantity: 1 }],
-    customer: agency?.stripe_customer_id ?? undefined,
-    client_reference_id: agencyId,
-    // metadata on both the session and the subscription so the webhook can map
-    // any subscription event back to the agency regardless of which fires first.
-    //
-    // `plan` rides along as the webhook's fallback for the tier. The price on
-    // the subscription is authoritative and the webhook prefers it; this is
-    // what it falls back to when the subscription read fails, so a checkout
-    // can never leave the account on the `starter` column default while the
-    // customer is paying for Agency (2026-09-06).
-    metadata: { agency_id: agencyId, plan, interval },
-    subscription_data: { metadata: { agency_id: agencyId, plan, interval } },
-    // VAT, added at checkout rather than folded into the price.
-    //
-    // Nothing here handled tax before, so exactly EUR 69 / EUR 199 was charged
-    // to everyone. Inclusive pricing cannot work for this buyer: a VAT-
-    // registered business elsewhere in the EU is reverse-charged (it
-    // self-accounts and we collect nothing), while a consumer is charged at
-    // their own country's rate, 17% to 27%. One inclusive price would therefore
-    // pay us a different amount depending on who bought it and from where.
-    //
-    // `automatic_tax` makes Stripe decide the rate from the customer's
-    // location; `tax_id_collection` captures the VAT number that triggers the
-    // reverse charge; `customer_update.address` lets Stripe keep the address it
-    // needs to do either again on renewal, and is only accepted when the
-    // session already has a customer. The prices carry `tax_behavior:
-    // 'exclusive'` on the Price object in the Stripe dashboard - that is not
-    // something this call can set.
-    // Only when the account is set up for it: with Stripe Tax not activated,
-    // `automatic_tax` makes this call throw and nobody can pay. See
-    // stripeTaxEnabled in lib/stripe.ts for the switch and its preconditions.
-    ...(stripeTaxEnabled
-      ? {
-          automatic_tax: { enabled: true },
-          tax_id_collection: { enabled: true },
-          ...(agency?.stripe_customer_id
-            ? { customer_update: { address: "auto" as const, name: "auto" as const } }
-            : {}),
-        }
-      : {}),
-    success_url:
-      returnTo && /^\/[a-zA-Z0-9/_?=&%-]*$/.test(returnTo)
-        ? `${APP_URL}${returnTo}${returnTo.includes("?") ? "&" : "?"}upgraded=1`
-        : `${APP_URL}/settings/billing?status=success`,
-    cancel_url: `${APP_URL}/settings/billing?status=cancelled`,
+      mode: "subscription",
+      line_items: [{ price: priceId, quantity: 1 }],
+      customer: agency?.stripe_customer_id ?? undefined,
+      client_reference_id: agencyId,
+      // metadata on both the session and the subscription so the webhook can map
+      // any subscription event back to the agency regardless of which fires first.
+      //
+      // `plan` rides along as the webhook's fallback for the tier. The price on
+      // the subscription is authoritative and the webhook prefers it; this is
+      // what it falls back to when the subscription read fails, so a checkout
+      // can never leave the account on the `starter` column default while the
+      // customer is paying for Agency (2026-09-06).
+      metadata: { agency_id: agencyId, plan, interval },
+      subscription_data: { metadata: { agency_id: agencyId, plan, interval } },
+      // VAT, added at checkout rather than folded into the price.
+      //
+      // Nothing here handled tax before, so exactly EUR 69 / EUR 199 was charged
+      // to everyone. Inclusive pricing cannot work for this buyer: a VAT-
+      // registered business elsewhere in the EU is reverse-charged (it
+      // self-accounts and we collect nothing), while a consumer is charged at
+      // their own country's rate, 17% to 27%. One inclusive price would therefore
+      // pay us a different amount depending on who bought it and from where.
+      //
+      // `automatic_tax` makes Stripe decide the rate from the customer's
+      // location; `tax_id_collection` captures the VAT number that triggers the
+      // reverse charge; `customer_update.address` lets Stripe keep the address it
+      // needs to do either again on renewal, and is only accepted when the
+      // session already has a customer. The prices carry `tax_behavior:
+      // 'exclusive'` on the Price object in the Stripe dashboard - that is not
+      // something this call can set.
+      // Only when the account is set up for it: with Stripe Tax not activated,
+      // `automatic_tax` makes this call throw and nobody can pay. See
+      // stripeTaxEnabled in lib/stripe.ts for the switch and its preconditions.
+      ...(stripeTaxEnabled
+        ? {
+            automatic_tax: { enabled: true },
+            tax_id_collection: { enabled: true },
+            ...(agency?.stripe_customer_id
+              ? { customer_update: { address: "auto" as const, name: "auto" as const } }
+              : {}),
+          }
+        : {}),
+      success_url:
+        returnTo && /^\/[a-zA-Z0-9/_?=&%-]*$/.test(returnTo)
+          ? `${APP_URL}${returnTo}${returnTo.includes("?") ? "&" : "?"}upgraded=1`
+          : `${APP_URL}/settings/billing?status=success`,
+      cancel_url: `${APP_URL}/settings/billing?status=cancelled`,
     });
   } catch (err) {
     return billingFailure(err, "Checkout could not be opened");

@@ -30,11 +30,12 @@ export function PaymentFailedBanner({
 
   function updateCard() {
     start(async () => {
-      try {
-        window.location.href = await createBillingPortalSession("payment_method");
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Could not open billing portal");
+      const result = await createBillingPortalSession("payment_method");
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
       }
+      window.location.href = result.url;
     });
   }
 

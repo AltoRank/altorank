@@ -22,9 +22,7 @@
 export type BillingRedirect = { ok: true; url: string } | { ok: false; error: string };
 
 /** What a billing action that only writes returns. */
-export type BillingOutcome<T = Record<string, never>> =
-  | ({ ok: true } & T)
-  | { ok: false; error: string };
+export type BillingOutcome<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
 /**
  * Turn a Stripe (or any) failure into a sentence for the person who pressed

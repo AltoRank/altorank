@@ -83,21 +83,23 @@ export function PlanCards({
 
   function subscribe(plan: SelfServePlan) {
     start(async () => {
-      try {
-        window.location.href = await createCheckoutSession(plan, interval, returnTo);
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Checkout failed");
+      const result = await createCheckoutSession(plan, interval, returnTo);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
       }
+      window.location.href = result.url;
     });
   }
 
   function portal(flow: "manage" | "cancel" | "payment_method") {
     start(async () => {
-      try {
-        window.location.href = await createBillingPortalSession(flow);
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Could not open billing portal");
+      const result = await createBillingPortalSession(flow);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
       }
+      window.location.href = result.url;
     });
   }
 
