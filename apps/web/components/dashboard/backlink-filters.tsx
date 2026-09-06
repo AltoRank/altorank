@@ -3,12 +3,17 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Chip, SearchInput } from "@/components/ui";
 
+// "All" leads, as it does on Articles, Keywords, Workspaces and
+// Improvements. It was last here, so the one row a person scans left to
+// right for the unfiltered view was the only row where it was not at the
+// start. The two labels that carried the noun ("Active links", "Lost
+// links") carried it in a row headed Backlinks, beside two that did not.
 const TAB_CHIPS = [
-  { label: "Active links", value: "live" },
+  { label: "All", value: "" },
+  { label: "Active", value: "live" },
   { label: "Pending", value: "pending" },
   { label: "Negotiating", value: "negotiating" },
-  { label: "Lost links", value: "lost" },
-  { label: "All", value: "" },
+  { label: "Lost", value: "lost" },
 ];
 
 export function BacklinkFilters({ workspaces = [] }: { workspaces?: { id: string; name: string }[] }) {
