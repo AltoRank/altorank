@@ -47,6 +47,11 @@ export function ArticleHistory({
   const byQuery = useMemo(() => filterHistory(sorted, { query }), [sorted, query]);
   const counts = useMemo(() => countByFilter(byQuery), [byQuery]);
   const shown = useMemo(() => filterHistory(byQuery, { status }), [byQuery, status]);
+  // A featured-image column that no article has filled is nine rows of the
+  // same grey placeholder icon and 68px of the width the title has to share.
+  // It appears the moment one article has an image, and the placeholder is
+  // then meaningful: it says which of these has none.
+  const anyImage = useMemo(() => rows.some((r) => Boolean(r.imageUrl)), [rows]);
 
   const open = (id: string) => router.push(`/content/${id}`);
 
@@ -73,7 +78,7 @@ export function ArticleHistory({
         <table className="w-full border-collapse text-[13px]">
           <thead>
             <tr>
-              {["Image", "Title", "Keyword", "Difficulty", "Volume", "Clicks /30d", "Index", "Status", "Date", ""].map((h, i) => (
+              {[...(anyImage ? ["Image"] : []), "Title", "Keyword", "Difficulty", "Volume", "Clicks /30d", "Index", "Status", "Date", ""].map((h, i) => (
                 <th
                   key={h || i}
                   className={cn(
@@ -101,54 +106,56 @@ export function ArticleHistory({
                 }}
                 className="cursor-pointer hover:[&>td]:bg-panel focus-visible:[&>td]:bg-panel outline-none"
               >
-                <td className="px-3.5 py-2 border-b border-line-soft w-[68px]">
-                  {r.imageUrl ? (
-                    // Plain <img>: featured images come from whatever storage the
-                    // install uses, and next/image would need every host allowed
-                    // in next.config to render one.
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={r.imageUrl}
-                      alt=""
-                      loading="lazy"
-                      className="w-12 h-8 rounded-[5px] object-cover bg-panel-2"
-                    />
-                  ) : (
-                    <div
-                      aria-label="No featured image"
-                      className="w-12 h-8 rounded-[5px] bg-panel-2 grid place-items-center text-ink-4"
-                    >
-                      <Icons.articles size={13} />
-                    </div>
-                  )}
-                </td>
-                <td className="px-3.5 py-2 border-b border-line-soft" style={{ maxWidth: 0 }}>
+                {anyImage && (
+                  <td className="px-3.5 py-3 border-b border-line-soft w-[68px]">
+                    {r.imageUrl ? (
+                      // Plain <img>: featured images come from whatever storage the
+                      // install uses, and next/image would need every host allowed
+                      // in next.config to render one.
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={r.imageUrl}
+                        alt=""
+                        loading="lazy"
+                        className="w-12 h-8 rounded-[5px] object-cover bg-panel-2"
+                      />
+                    ) : (
+                      <div
+                        aria-label="No featured image"
+                        className="w-12 h-8 rounded-[5px] bg-panel-2 grid place-items-center text-ink-4"
+                      >
+                        <Icons.articles size={13} />
+                      </div>
+                    )}
+                  </td>
+                )}
+                <td className="px-3.5 py-3 border-b border-line-soft" style={{ maxWidth: 0 }}>
                   <div className="truncate font-medium">{r.title}</div>
                 </td>
-                <td className="px-3.5 py-2 border-b border-line-soft font-mono text-xs text-ink-2">{r.keyword}</td>
-                <td className="px-3.5 py-2 border-b border-line-soft text-right font-mono text-xs text-ink-2">{formatMetric(r.difficulty)}</td>
-                <td className="px-3.5 py-2 border-b border-line-soft text-right font-mono text-xs text-ink-2">{formatMetric(r.volume)}</td>
-                <td className="px-3.5 py-2 border-b border-line-soft text-right font-mono text-xs text-ink-2">{formatMetric(r.clicks)}</td>
-                <td className="px-3.5 py-2 border-b border-line-soft">
+                <td className="px-3.5 py-3 border-b border-line-soft font-mono text-xs text-ink-2">{r.keyword}</td>
+                <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{formatMetric(r.difficulty)}</td>
+                <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{formatMetric(r.volume)}</td>
+                <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{formatMetric(r.clicks)}</td>
+                <td className="px-3.5 py-3 border-b border-line-soft">
                   {r.index ? <IndexBadge bucket={r.index.bucket} title={r.index.title} /> : <span className="text-ink-4 text-xs">—</span>}
                 </td>
-                <td className="px-3.5 py-2 border-b border-line-soft"><StatusPill status={r.status} /></td>
-                <td className="px-3.5 py-2 border-b border-line-soft text-right font-mono text-xs text-ink-2 whitespace-nowrap">
+                <td className="px-3.5 py-3 border-b border-line-soft"><StatusPill status={r.status} /></td>
+                <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2 whitespace-nowrap">
                   {r.date ? formatDate(r.date) : "—"}
                 </td>
-                <td className="px-3.5 py-2 border-b border-line-soft" onClick={(e) => e.stopPropagation()}>
+                <td className="px-3.5 py-3 border-b border-line-soft" onClick={(e) => e.stopPropagation()}>
                   <ArticleRowMenu articleId={r.id} currentStatus={r.status} canPublish={r.canPublish} canRetry={r.canRetry} />
                 </td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-3.5 py-10 text-center text-ink-3">{emptyState}</td>
+                <td colSpan={anyImage ? 10 : 9} className="px-3.5 py-10 text-center text-ink-3">{emptyState}</td>
               </tr>
             )}
             {rows.length > 0 && shown.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-3.5 py-8 text-center text-ink-3">
+                <td colSpan={anyImage ? 10 : 9} className="px-3.5 py-8 text-center text-ink-3">
                   {query.trim()
                     ? <>No title contains &ldquo;{query.trim()}&rdquo;{status !== "all" ? ` in ${labelFor(status)}` : ""}.</>
                     : <>Nothing is {labelFor(status)} right now.</>}
