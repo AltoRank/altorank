@@ -27,10 +27,21 @@ export interface DashboardState {
    * different actions.
    */
   keywordCount: number;
+  /**
+   * The wizard was opened for this site and never finished or skipped.
+   *
+   * The layout only bounces to /onboarding while the workspace has no
+   * `business_profile`, and step 1's Continue writes one - so anybody who left
+   * from step 2 onwards is never sent back, and nothing in the app links to
+   * /onboarding. The plan and the first draft are written by the wizard's last
+   * screen, so that account sits on a dashboard of dashes with no way back to
+   * the thing that would fill it. This card is the way back.
+   */
+  setupUnfinished: boolean;
 }
 
 export interface RecommendedAction {
-  id: "connect-cms" | "connect-gsc" | "review-drafts" | "plan-month" | "research-keywords";
+  id: "finish-setup" | "connect-cms" | "connect-gsc" | "review-drafts" | "plan-month" | "research-keywords";
   title: string;
   /** What happens if this is left undone, in one sentence. */
   consequence: string;
@@ -44,7 +55,21 @@ export interface RecommendedAction {
 export function recommendedActions(state: DashboardState): RecommendedAction[] {
   const out: RecommendedAction[] = [];
 
-  // Drafts first: they are the only item here that is waiting on a person.
+  // Before anything else: an unfinished wizard is the cause of most of the
+  // other cards, and finishing it does in one screen what they ask for one at
+  // a time.
+  if (state.setupUnfinished) {
+    out.push({
+      id: "finish-setup",
+      title: "Setup was never finished",
+      consequence:
+        "The month of scheduled articles and the first draft are written by the last screen of setup, so this site has nothing planned and nothing in review until it runs.",
+      cta: "Finish setup",
+      href: "/onboarding",
+    });
+  }
+
+  // Drafts next: they are the only item here that is waiting on a person.
   if (state.pendingReviews > 0) {
     out.push({
       id: "review-drafts",

@@ -64,6 +64,21 @@ const ATTRIBUTION_STEP = SITE_STEPS.length;
 
 export type Destination = { id: string; name: string; description: string | null };
 
+/**
+ * The screen the URL is asking for, 0-based, clamped to the steps that exist.
+ *
+ * `?step=` is 1-based because it is a thing a person can read in an address
+ * bar. Absent, unparseable or out of range all mean the first screen, so a
+ * hand-edited URL cannot render a blank wizard.
+ */
+function stepFromLocation(count: number): number {
+  if (typeof window === "undefined") return 0;
+  const raw = new URLSearchParams(window.location.search).get("step");
+  const n = Number(raw);
+  if (!raw || !Number.isInteger(n)) return 0;
+  return Math.min(Math.max(n - 1, 0), count - 1);
+}
+
 export function OnboardingWizard({
   workspaceId,
   domain,
@@ -97,6 +112,20 @@ export function OnboardingWizard({
   const router = useRouter();
   const steps = askAttribution ? [...SITE_STEPS, "About you"] : SITE_STEPS;
   const last = steps.length - 1;
+  // The step, mirrored into the URL.
+  //
+  // It used to live only in React state, so the wizard was one history entry:
+  // pressing browser Back on step 3 left the wizard entirely and landed on the
+  // dashboard, with the screen's unsaved answers gone and - because step 1's
+  // Continue has already written a business_profile - nothing to send the
+  // person back. Reloading restarted at step 1 for the same reason.
+  //
+  // `history.pushState` with a query string is the shallow update Next
+  // documents for exactly this: no server round trip, so the component is not
+  // remounted and nothing typed is lost, and the browser's own Back now moves
+  // one screen instead of leaving. The steps that have already been passed are
+  // persisted server-side, so a reload rehydrates them from `initialProfile`,
+  // `initialSite` and `initialOutput` and puts the person back where they were.
   const [step, setStep] = useState(0);
   const [attribution, setAttribution] = useState<AttributionDraft>(EMPTY_ATTRIBUTION);
   // Set when "Skip setup" was pressed: which screen it was pressed on, so Back
@@ -113,6 +142,26 @@ export function OnboardingWizard({
   const [running, setRunning] = useState(false);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  /** Move to a screen and leave a history entry for the one being left. */
+  function goToStep(n: number) {
+    setStep(n);
+    if (typeof window !== "undefined") {
+      window.history.pushState(null, "", n === 0 ? window.location.pathname : `?step=${n + 1}`);
+    }
+  }
+
+  // Back and Forward, and the reload case. Read after mount rather than in the
+  // initial state so the first client render still matches the server's, which
+  // has no location to read and always renders the first screen. Nothing is
+  // re-fetched: the answers are in state, and the ones already saved are on the
+  // server either way.
+  useEffect(() => {
+    const sync = () => setStep(stepFromLocation(steps.length));
+    sync();
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, [steps.length]);
 
   // Read the site. A failure is a normal outcome and is shown as one.
   useEffect(() => {
@@ -174,7 +223,7 @@ export function OnboardingWizard({
       try {
         await persist(step);
         if (step !== last) {
-          setStep(step + 1);
+          goToStep(step + 1);
         } else if (skipping) {
           if (profile) await saveProfile(workspaceId, profile);
           await completeWizard(workspaceId, { skipped: true });
@@ -195,7 +244,7 @@ export function OnboardingWizard({
     if (askAttribution) {
       setError(null);
       setSkipFrom(step);
-      setStep(ATTRIBUTION_STEP);
+      goToStep(ATTRIBUTION_STEP);
       return;
     }
     start(async () => {
@@ -250,10 +299,11 @@ export function OnboardingWizard({
               variant="ghost"
               onClick={() => {
                 if (skipFrom !== null) {
-                  setStep(skipFrom);
+                  const back = skipFrom;
                   setSkipFrom(null);
+                  goToStep(back);
                 } else {
-                  setStep((s) => Math.max(0, s - 1));
+                  goToStep(Math.max(0, step - 1));
                 }
               }}
               disabled={step === 0 || pending}

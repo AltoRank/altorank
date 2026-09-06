@@ -169,12 +169,25 @@ export default async function DashboardPage() {
   // Map workspace lookup
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));
 
+  // Read off the list already loaded - `getWorkspaces` selects every column -
+  // the same way the layout reads its wizard gate. Both dates null means the
+  // wizard was never finished and never skipped; the layout only redirects
+  // while there is also no business_profile, so from step 2 onwards this card
+  // is the only route back.
+  const scopedWorkspace = scopeId
+    ? (workspaces.find((w) => w.id === scopeId) as
+        | (Workspace & { onboarded_at?: string | null; onboarding_skipped_at?: string | null })
+        | undefined)
+    : undefined;
   const actions = recommendedActions({
     cmsConnected,
     gscConnected,
     pendingReviews,
     scheduledCount: plannedEntries ?? 0,
     keywordCount,
+    setupUnfinished: Boolean(
+      scopedWorkspace && !scopedWorkspace.onboarded_at && !scopedWorkspace.onboarding_skipped_at,
+    ),
   });
   const competitorYields = yields ? yieldsForInputs(profile?.competitors ?? [], "competitor", yields) : [];
   const audienceYields = yields ? yieldsForInputs(profile?.audiences ?? [], "audience", yields) : [];
