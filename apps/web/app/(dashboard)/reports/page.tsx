@@ -56,19 +56,27 @@ export default async function ReportsPage() {
             <DataTable
               data={reports}
               columns={[
-                {
-                  key: "workspace",
-                  header: "Workspace",
-                  render: (r) => {
-                    const w = wsMap.get(r.workspace_id);
-                    return w ? (
-                      <span className="inline-flex items-center gap-2.5">
-                        <Avatar initials={w.initials} color={w.color} />
-                        <b>{w.name}</b>
-                      </span>
-                    ) : null;
-                  },
-                },
+                // The scope gives this page one site and the switcher names
+                // it, so a Workspace column repeated that one name down
+                // every row. Kept for a merged view, which is the only case
+                // it distinguishes anything.
+                ...(scopeId
+                  ? []
+                  : [
+                      {
+                        key: "workspace",
+                        header: "Workspace",
+                        render: (r: (typeof reports)[number]) => {
+                          const w = wsMap.get(r.workspace_id);
+                          return w ? (
+                            <span className="inline-flex items-center gap-2.5">
+                              <Avatar initials={w.initials} color={w.color} />
+                              <b>{w.name}</b>
+                            </span>
+                          ) : null;
+                        },
+                      },
+                    ]),
                 { key: "period", header: "Period", render: (r) => <span className="font-mono text-xs text-ink-2">{r.period}</span> },
                 { key: "articles", header: "Articles", numeric: true, render: (r) => r.articles_count },
                 { key: "traffic", header: "Traffic", numeric: true, render: (r) => r.traffic ?? "—" },
