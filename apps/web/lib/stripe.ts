@@ -34,6 +34,22 @@ export function getStripe(): Stripe {
 /** True when billing is configured, so callers can hide it rather than crash. */
 export const billingEnabled = Boolean(process.env.STRIPE_SECRET_KEY);
 
+/**
+ * Whether Checkout asks Stripe to compute and add VAT.
+ *
+ * Off by default, and off is load-bearing: `automatic_tax: { enabled: true }`
+ * is rejected by Stripe unless Stripe Tax is activated on the account with a
+ * head-office address and the Prices carry a tax code - so with it on and the
+ * account not set up, `checkout.sessions.create` throws and nobody can pay.
+ * That was the state on 2026-09-06 for a few hours.
+ *
+ * The operator's decision is to charge the listed price with no VAT added until
+ * there are customers to register for. When that changes: activate Stripe Tax,
+ * set every Price to exclusive (immutable once set) and a SaaS tax code, then
+ * set STRIPE_TAX_ENABLED=true. docs/deploy.md, "Stripe", has the steps.
+ */
+export const stripeTaxEnabled = process.env.STRIPE_TAX_ENABLED === "true";
+
 export type PlanTier = "starter" | "growth" | "scale";
 export type SelfServePlan = "starter" | "growth";
 

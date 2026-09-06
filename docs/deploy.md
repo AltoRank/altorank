@@ -275,22 +275,32 @@ route stops handling any of them:
 A missing event fails silently: Stripe simply never calls, and the product
 shows whatever state it last knew.
 
-### 2. `tax_behavior` on every Price
+### 2. VAT: off by default, behind `STRIPE_TAX_ENABLED`
 
-The Checkout session asks Stripe to compute VAT (`automatic_tax`) and to
-collect a VAT number (`tax_id_collection`). Both assume the four Prices in
-`STRIPE_PRICE_*` are marked **exclusive** - in the dashboard, each price's
-"Include tax in price" set to **No**. `tax_behavior` lives on the Price object,
-cannot be passed from the session, and **cannot be changed once set**; a price
-created as inclusive has to be replaced. Left unspecified, Stripe treats EUR 69
-as tax-inclusive and computes the VAT out of it, which is the opposite of what
-the pricing page says.
+By default Checkout charges the listed price and adds no VAT: the session sends
+no tax fields at all. That is deliberate and load-bearing. `automatic_tax` is
+rejected by Stripe unless Stripe Tax is activated on the account, so turning it
+on before the account is ready does not collect tax - it stops anyone paying.
 
-### 3. Stripe Tax itself
+To start collecting VAT, in this order:
 
-`automatic_tax` requires Stripe Tax to be activated on the account with a head
-office address (Tax → Settings). Without it, checkout returns an error rather
-than a session.
+1. **Tax → Settings**: activate Stripe Tax with the head-office address, and set
+   the default product tax code to *Software as a service (SaaS) – business use*
+   (`txcd_10103001`). The products carry no tax code of their own; without a
+   default, `automatic_tax` errors at checkout.
+2. **Tax → Settings → Default tax behavior → Exclusive**, or per Price: Product
+   catalogue → price → ⋯ → Edit → "Include tax in price" → **No**. Left
+   unspecified, Stripe treats €69 as tax-inclusive and computes VAT out of it.
+   `tax_behavior` **cannot be changed once set**; a price created as inclusive
+   has to be replaced.
+3. Set `STRIPE_TAX_ENABLED=true` on the deployment and redeploy. The session
+   then sends `automatic_tax`, `tax_id_collection` (the VAT number that triggers
+   the reverse charge for EU businesses) and keeps the customer's address for
+   renewals.
+4. Update the pricing page and Terms §5, which say prices are charged as listed.
+
+`stripeTaxEnabled` in `apps/web/lib/stripe.ts` is the switch and repeats these
+preconditions.
 
 ## The marketing site
 

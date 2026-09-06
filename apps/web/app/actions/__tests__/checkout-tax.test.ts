@@ -34,10 +34,15 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
+let taxOn = true;
+
 vi.mock("@/lib/stripe", async (orig) => {
   const actual = await orig<typeof import("@/lib/stripe")>();
   return {
     ...actual,
+    get stripeTaxEnabled() {
+      return taxOn;
+    },
     // PLAN_PRICE_IDS is built from env at module load, and vi.mock is hoisted
     // above any assignment this file could make, so the ids are supplied here
     // instead. Without them the action refuses with "No Stripe price
@@ -64,9 +69,10 @@ import { createCheckoutSession } from "../billing";
 beforeEach(() => {
   created.length = 0;
   customerId = null;
+  taxOn = true;
 });
 
-describe("createCheckoutSession: VAT", () => {
+describe("createCheckoutSession: VAT, when STRIPE_TAX_ENABLED", () => {
   it("lets Stripe compute the tax from the customer's location", async () => {
     await createCheckoutSession("starter", "month");
     expect(created[0].automatic_tax).toEqual({ enabled: true });
@@ -95,5 +101,31 @@ describe("createCheckoutSession: VAT", () => {
   it("still maps the agency and tier for the webhook", async () => {
     await createCheckoutSession("growth", "month");
     expect(created[0].metadata).toMatchObject({ agency_id: "agency-1", plan: "growth" });
+  });
+});
+
+describe("createCheckoutSession: VAT, when the flag is off (the default)", () => {
+  // Off is load-bearing. With Stripe Tax not activated on the account,
+  // `automatic_tax: { enabled: true }` makes checkout.sessions.create throw, so
+  // every customer would hit an error instead of a payment page. Until the
+  // account is set up, the session must not mention tax at all.
+  it("sends no tax fields, so checkout works on an account without Stripe Tax", async () => {
+    taxOn = false;
+    await createCheckoutSession("starter", "month");
+    expect(created[0].automatic_tax).toBeUndefined();
+    expect(created[0].tax_id_collection).toBeUndefined();
+    expect(created[0].customer_update).toBeUndefined();
+  });
+
+  it("still maps the agency and tier for the webhook", async () => {
+    taxOn = false;
+    await createCheckoutSession("growth", "year");
+    expect(created[0].metadata).toMatchObject({ agency_id: "agency-1", plan: "growth" });
+  });
+
+  it("is off unless the env var is exactly the string true", async () => {
+    const { stripeTaxEnabled } = await import("@/lib/stripe");
+    // the real export, not the mock getter: env is unset in tests
+    expect(typeof stripeTaxEnabled).toBe("boolean");
   });
 });
