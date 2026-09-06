@@ -46,6 +46,32 @@ import { classifyKeyword, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { parseStoredQuestions } from "@/lib/keywords/questions";
 import { e2eStubsEnabled, stubGenerateArticle } from "@/lib/e2e/stubs";
 
+export type KeywordFacts = { volume: number | null; difficulty: number | null; cpc: number | null };
+
+/**
+ * Volume, difficulty and CPC for the draft's keyword from what is already
+ * known: the picker's `selection` first, then the keyword row itself.
+ *
+ * Exported for the test that pins the cost rule below: a row that discovery,
+ * the research drawer or the planner already measured must not be measured
+ * again on every draft written for it.
+ */
+export function knownKeywordFacts(
+  selection: { volume: number | null; difficulty: number | null } | undefined,
+  row: { volume?: number | null; difficulty?: number | null; cpc?: number | null } | null,
+): KeywordFacts {
+  return {
+    volume: selection?.volume ?? row?.volume ?? null,
+    difficulty: selection?.difficulty ?? row?.difficulty ?? null,
+    cpc: row?.cpc ?? null,
+  };
+}
+
+/** The provider is asked only when nothing has measured the term at all. */
+export function needsKeywordFactsLookup(facts: KeywordFacts): boolean {
+  return facts.volume === null && facts.difficulty === null;
+}
+
 export interface GenerateArticleOptions {
   supabase: SupabaseClient;
   workspaceId: string;
@@ -255,12 +281,15 @@ export async function generateArticle(
     article_type: string | null;
     article_subtype: string | null;
     expected_length: string | null;
+    volume: number | null;
+    difficulty: number | null;
+    cpc: number | null;
   };
   let keywordRow: KeywordRow | null = null;
   {
     let q = supabase
       .from("keywords")
-      .select("id, term, instructions, quality_questions, article_type, article_subtype, expected_length")
+      .select("id, term, instructions, quality_questions, article_type, article_subtype, expected_length, volume, difficulty, cpc")
       .eq("workspace_id", workspaceId);
     q = keywordId ? q.eq("id", keywordId) : q.ilike("term", keyword.replace(/[\\%_]/g, (c) => `\\${c}`));
     const { data } = await q.limit(1).maybeSingle();
@@ -413,13 +442,17 @@ export async function generateArticle(
      *
      * Best-effort on purpose: enrichment must never take the draft down with
      * it, and null remains the honest value when the lookup fails.
+     *
+     * The keyword row is read first. Discovery, the research drawer and the
+     * planner all write volume and difficulty to `keywords`, and only the
+     * cron's picker passed them back in here as `selection` - so the planned
+     * fan-out, the "New article" modal, the agent API and write-now each paid
+     * a keyword_overview call for two numbers already sitting on the row the
+     * draft was made for. Stored numbers first; the provider only for a term
+     * nothing has measured.
      */
-    let facts: { volume: number | null; difficulty: number | null; cpc: number | null } = {
-      volume: selection?.volume ?? null,
-      difficulty: selection?.difficulty ?? null,
-      cpc: null,
-    };
-    if (facts.volume === null && facts.difficulty === null && hasDataForSEOCredentials()) {
+    let facts = knownKeywordFacts(selection, keywordRow);
+    if (needsKeywordFactsLookup(facts) && hasDataForSEOCredentials()) {
       try {
         const map = await fetchKeywordFacts([keyword], {
           languageCode: workspace.language ?? "en",
