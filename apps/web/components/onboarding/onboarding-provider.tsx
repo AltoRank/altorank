@@ -13,6 +13,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ONBOARDING_STEPS,
+  stepCompletionMessage,
   type StepId,
 } from "./onboarding-steps";
 import { useElementRect } from "@/lib/hooks/use-element-rect";
@@ -46,6 +47,13 @@ interface OnboardingProviderProps {
   initialSteps: Record<string, boolean>;
   /** The person asked us to stop showing it. Reopening is still allowed. */
   dismissed: boolean;
+  /**
+   * Whether the nightly scheduled loop runs for this account
+   * (`entitledToScheduledWork`). A step whose completion message promises
+   * something that loop delivers uses its `completionMessageUnscheduled`
+   * instead when this is false.
+   */
+  scheduledWork: boolean;
 }
 
 function allComplete(steps: Record<string, boolean>): boolean {
@@ -56,6 +64,7 @@ export function OnboardingProvider({
   children,
   initialSteps,
   dismissed,
+  scheduledWork,
 }: OnboardingProviderProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -118,7 +127,7 @@ export function OnboardingProvider({
         setState("completed");
         autoHideRef.current = setTimeout(() => setState("dismissed"), 2500);
       } else if (step?.completionMessage) {
-        setCompletionMessage(step.completionMessage);
+        setCompletionMessage(stepCompletionMessage(step, scheduledWork));
         setState("step-completed");
         completionTimerRef.current = setTimeout(() => {
           setCompletionMessage(null);
@@ -128,7 +137,7 @@ export function OnboardingProvider({
         setState("idle");
       }
     },
-    [completedSteps]
+    [completedSteps, scheduledWork]
   );
 
   const dismiss = useCallback(async () => {

@@ -14,6 +14,9 @@ import { keywordsExplainer } from "@/lib/explainers";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
+import { requireAuth } from "@/lib/auth/require-auth";
+import { getRequestQuota } from "@/lib/queries/quota";
+import { entitledToScheduledWork } from "@/lib/billing/quota";
 
 export const metadata: Metadata = { title: "Keywords" };
 
@@ -53,10 +56,15 @@ export default async function KeywordsPage({ searchParams }: Props) {
   // offered, and the URL asking for it is answered with the reason.
   const ranking = params.view === "ranking" && Boolean(scopeId);
 
-  const [workspaces, keywords] = await Promise.all([
+  const [workspaces, keywords, quota] = await Promise.all([
     getWorkspaces(),
     getKeywords(scopeId ?? undefined, params.status, params.intent),
+    // Whether the nightly rank tracker will ever run for this account.
+    // cron/serp refuses a no-plan agency before it checks anything, and the
+    // page used to promise positions regardless (P0-O5).
+    requireAuth().then(({ agencyId, user }) => getRequestQuota(agencyId, user.email ?? null)),
   ]);
+  const rankTracking = entitledToScheduledWork(quota);
 
   let latest = new Map<string, LatestRanking>();
   let gscByTerm = new Map<string, QueryStat>();
@@ -138,6 +146,21 @@ export default async function KeywordsPage({ searchParams }: Props) {
         {ranking && !gscConnected && (
           <div className="mb-4 rounded-[9px] border border-line bg-panel px-4 py-3 text-[13px] text-ink-3">
             Search Console is not connected for this workspace, so clicks and impressions stay “—”. Positions come from the rank tracker where it has run.
+          </div>
+        )}
+        {/* The tracker's own entitlement, said out loud. `cron/serp` skips a
+            no-plan agency with "no plan" before it looks at a single keyword -
+            and the AI-visibility sweep and the backlink pass ride in the same
+            route - so on the free tier the Tracked pos. column can only ever
+            be "—". */}
+        {ranking && !rankTracking && (
+          <div className="mb-4 rounded-[9px] border border-line bg-panel px-4 py-3 text-[13px] text-ink-3">
+            Nightly rank tracking runs for accounts on a plan. Until then positions, the AI-visibility sweep and the
+            backlink pass do not run, so “Tracked pos.” stays “—”.{" "}
+            <Link href="/settings/billing" className="text-accent-ink underline decoration-line underline-offset-[3px]">
+              Choose a plan
+            </Link>
+            .
           </div>
         )}
 
@@ -278,8 +301,9 @@ export default async function KeywordsPage({ searchParams }: Props) {
                     {keywords.length === 0 ? (
                       <span className="inline-block max-w-[56ch] leading-[1.6]">
                         No keywords yet. The first analysis of a site fills this from what it already ranks for, what
-                        competitors rank for that it does not, and phrases seeded from its own pages. Add one by hand
-                        with Research keywords; the nightly analysis run adds more as the site is read.
+                        competitors rank for that it does not, and phrases seeded from its own pages. That analysis
+                        runs once per site, so nothing will add to this on its own — use Research keywords above to
+                        add them, and the content plan is built from whatever is here.
                       </span>
                     ) : (
                       <>No keyword matches these filters.</>

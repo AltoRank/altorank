@@ -13,6 +13,16 @@ export interface OnboardingStep {
   description: string;
   actionLabel: string;
   completionMessage: string;
+  /**
+   * The message for an account the scheduled loop will not run for.
+   *
+   * `entitledToScheduledWork` is false for exactly one reason - no plan - and
+   * `cron/serp` refuses such an agency before it looks at a keyword, so
+   * "Rank tracking starts on the next run" was a promise the only tier a new
+   * signup is on never receives (P0-O5). The provider picks between the two
+   * from the quota it already has.
+   */
+  completionMessageUnscheduled?: string;
   route: string;
   targetSelector: string;
   tooltipPosition: TooltipPosition;
@@ -34,9 +44,11 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
     id: "add-keywords",
     title: "Add target keywords",
     description:
-      "Track search volume, ranking difficulty, and SERP position for every keyword. Filter by intent type and difficulty to find easy wins.",
+      "Track search volume and ranking difficulty for every keyword, and filter by intent type and difficulty to find easy wins. SERP positions are added by the nightly rank tracker.",
     actionLabel: 'Click "Find new keywords" to add a keyword to track.',
-    completionMessage: "Keywords added. Rank tracking starts on the next run.",
+    completionMessage: "Keywords added. The nightly rank tracker picks them up on its next run.",
+    completionMessageUnscheduled:
+      "Keywords added. Volume and difficulty are recorded; nightly rank tracking runs for accounts on a plan, so positions stay “—” until then.",
     route: "/keywords",
     targetSelector: '[data-onboarding="add-keywords"]',
     tooltipPosition: "bottom",
@@ -75,3 +87,15 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
     tooltipPosition: "bottom",
   },
 ];
+
+/**
+ * The completion message for one step, for this account.
+ *
+ * Pure, and exported, because the fact it turns on - whether the nightly
+ * scheduled loop runs for the account at all - is the one the old copy got
+ * wrong, and a rule that lives in a component body cannot be tested.
+ */
+export function stepCompletionMessage(step: OnboardingStep, scheduledWork: boolean): string {
+  if (!scheduledWork && step.completionMessageUnscheduled) return step.completionMessageUnscheduled;
+  return step.completionMessage;
+}

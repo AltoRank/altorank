@@ -32,14 +32,10 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
+type Allowance = import("@/lib/billing/workspaces").WorkspaceAllowance;
+const PLAN_ALLOWANCE: Allowance = { limit: 3, used: 1, remaining: 2, reason: "plan", plan: "starter" };
 const { allowance } = vi.hoisted(() => ({
-  allowance: vi.fn(async () => ({
-    limit: 3 as number | null,
-    used: 1,
-    remaining: 2 as number | null,
-    reason: "plan" as const,
-    plan: "starter" as const,
-  })),
+  allowance: vi.fn<() => Promise<import("@/lib/billing/workspaces").WorkspaceAllowance>>(),
 }));
 vi.mock("@/lib/billing/workspaces", async () => {
   const real = await vi.importActual<typeof import("@/lib/billing/workspaces")>("@/lib/billing/workspaces");
@@ -65,7 +61,7 @@ beforeEach(() => {
   insertResult = { data: { id: "ws-new" }, error: null };
   inserted.mockClear();
   allowance.mockClear();
-  allowance.mockResolvedValue({ limit: 3, used: 1, remaining: 2, reason: "plan", plan: "starter" });
+  allowance.mockResolvedValue(PLAN_ALLOWANCE);
 });
 
 describe("createWorkspace", () => {

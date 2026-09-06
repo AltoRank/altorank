@@ -14,6 +14,7 @@ import { getImpersonation } from "@/lib/auth/impersonation";
 import { ImpersonationBanner } from "@/components/dashboard/impersonation-banner";
 import { getCompletedOnboardingSteps } from "@/lib/queries/onboarding";
 import { getRequestQuota } from "@/lib/queries/quota";
+import { entitledToScheduledWork } from "@/lib/billing/quota";
 import { siteAllowanceFrom } from "@/lib/workspaces/allowance";
 import { FeedbackWidget } from "@/components/dashboard/feedback-widget";
 import { DevToolbar } from "@/components/dashboard/dev-toolbar";
@@ -251,7 +252,12 @@ export default async function DashboardLayout({
   // topbar needs the context in order to bring it back. Returning `content`
   // bare, as this used to, made "Skip setup" a one-way door.
   return (
-    <OnboardingProvider initialSteps={initialSteps} dismissed={dismissed}>
+    <OnboardingProvider
+      initialSteps={initialSteps}
+      dismissed={dismissed}
+      // No quota at all means no agency yet, and so nothing to promise about.
+      scheduledWork={quota ? entitledToScheduledWork(quota) : true}
+    >
       {content}
     </OnboardingProvider>
   );
