@@ -32,6 +32,7 @@ import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import type { OnboardingEvent } from "./events";
 import { schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
+import { fanOutDrafts } from "@/lib/content/fan-out";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
 
 export type Emit = (event: OnboardingEvent) => void;
@@ -254,6 +255,36 @@ async function runPhases(
     }
   } catch (err) {
     emit({ phase: "drafting", status: "failed", detail: message(err) });
+  }
+
+  // The rest of the week, in parallel.
+  //
+  // One draft is ~103s and a function has 300s, so the remaining six cannot be
+  // written here: this stream is already one draft in. Each gets its own
+  // invocation instead, dispatched without waiting. They land in about the time
+  // one takes rather than over the day the four-a-day cron would need.
+  //
+  // Anything that does not go out - no CRON_SECRET on a self-hosted install, a
+  // request that never arrives - stays an unfulfilled plan entry, which is
+  // exactly what cron/generate already looks for.
+  if (!gone() && plan.length > 1) {
+    const { data: written } = await supabase
+      .from("calendar_entries")
+      .select("keyword_id")
+      .eq("workspace_id", workspace.id)
+      .not("article_id", "is", null);
+    const done = new Set((written ?? []).map((r) => r.keyword_id as string));
+    const rest = plan
+      .filter((p) => p.keywordId && !done.has(p.keywordId))
+      .map((p) => ({ keywordId: p.keywordId as string, term: p.term }));
+    const fan = fanOutDrafts(workspace.id, rest);
+    if (fan.dispatched > 0) {
+      emit({
+        phase: "drafting",
+        status: "active",
+        detail: `Writing ${fan.dispatched} more article${fan.dispatched === 1 ? "" : "s"} now. They appear as they finish.`,
+      });
+    }
   }
 
   emit({ phase: "ready" });

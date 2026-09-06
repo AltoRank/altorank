@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Icons } from "@/components/ui";
 import { planMonth } from "@/app/actions/plan";
+import { usePlanning } from "./planning-state";
 
 /**
  * "Plan the month" for the active workspace. One server action, additive, so
@@ -13,9 +14,13 @@ export function PlanMonthButton({ label = "Plan the month", size = "md" }: { lab
   const [pending, setPending] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const router = useRouter();
+  // So the calendar can draw the month it is about to have, instead of holding
+  // its empty state until the whole page re-renders at once.
+  const { setPlanning } = usePlanning();
 
   async function run() {
     setPending(true);
+    setPlanning(true);
     setNote(null);
     try {
       const out = await planMonth();
@@ -25,6 +30,7 @@ export function PlanMonthButton({ label = "Plan the month", size = "md" }: { lab
       setNote(err instanceof Error ? err.message : "Could not plan.");
     } finally {
       setPending(false);
+      setPlanning(false);
     }
   }
 

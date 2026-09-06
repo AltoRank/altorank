@@ -158,6 +158,7 @@ export default async function DashboardPage() {
     gscConnected,
     pendingReviews,
     scheduledCount: plannedEntries ?? 0,
+    keywordCount,
   });
   const competitorYields = yields ? yieldsForInputs(profile?.competitors ?? [], "competitor", yields) : [];
   const audienceYields = yields ? yieldsForInputs(profile?.audiences ?? [], "audience", yields) : [];
