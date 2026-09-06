@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button, Dialog, Icons } from "@/components/ui";
 import { ShareCardView } from "@/components/share/card-view";
@@ -34,10 +34,9 @@ export function ShareResults({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<"copy" | "download" | "link" | "revoke" | null>(null);
   const [token, setToken] = useState<string | null>(shareToken);
-  // The origin is read after mount so the server and the first client render agree.
-  const [origin, setOrigin] = useState("");
-  useEffect(() => setOrigin(window.location.origin), []);
-  const link = token && origin ? shareUrl(origin, token) : null;
+  // Shown as a path: the origin is only read at click time, so the server
+  // and the first client render agree on what this dialog says.
+  const link = token ? shareUrl("", token) : null;
   const fullRef = useRef<HTMLDivElement>(null);
   const PREVIEW_WIDTH = 440;
   const scale = PREVIEW_WIDTH / CARD_WIDTH;

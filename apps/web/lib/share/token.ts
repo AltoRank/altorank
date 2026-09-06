@@ -57,6 +57,7 @@ export function publicShareCard(card: ShareCard): PublicShareCard {
   };
 }
 
+/** `origin` may be empty, which gives the path alone. */
 export function shareUrl(origin: string, token: string): string {
   return `${origin.replace(/\/+$/, "")}/share/${token}`;
 }

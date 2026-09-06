@@ -31,6 +31,7 @@ import { parseTermList, planCapacity } from "@/lib/keyword-research/funnel";
 import { KEYWORD_INSTRUCTIONS_MAX, readKeywordInstructions } from "@/lib/keyword-research/instructions";
 import { PLAYBOOKS, competitorName, playbookExamples, type PlaybookId } from "@/lib/keyword-research/seeds";
 import { runResearchChat, type ChatReply, type ChatTurn } from "@/lib/keyword-research/chat";
+import { hasDataForSEOCredentials, hasModelCredentials, modelHint, modelUnavailableNote, providerHint } from "@/lib/keyword-research/availability";
 import { keywordProvenance } from "@/lib/keyword-research/provenance";
 import type { PlanCapacity, ResearchCandidate, ResearchKind, ResearchResult } from "@/lib/keyword-research/types";
 
@@ -64,6 +65,8 @@ export interface ResearchContext {
   playbooks: PlaybookCard[];
   providerReady: boolean;
   modelReady: boolean;
+  /** Operator hints for the two above. Null outside development: a customer cannot act on a variable name. */
+  hints: { provider: string | null; model: string | null };
 }
 
 async function scoped(workspaceId: string): Promise<{ supabase: SupabaseClient; ws: ResearchWorkspace }> {
@@ -118,8 +121,9 @@ export async function loadResearchContext(workspaceId: string): Promise<Research
       const examples = playbookExamples(p.id, seedCtx);
       return { id: p.id, title: p.title, description: p.description, pattern: p.pattern, examples, available: examples.length > 0, needs: p.needs };
     }),
-    providerReady: Boolean(process.env.DATAFORSEO_API_KEY || (process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD)),
-    modelReady: Boolean(process.env.ANTHROPIC_API_KEY),
+    providerReady: hasDataForSEOCredentials(),
+    modelReady: hasModelCredentials(),
+    hints: { provider: providerHint(), model: modelHint() },
   };
 }
 
@@ -318,8 +322,8 @@ export async function chatResearch(
   known: ResearchCandidate[],
 ): Promise<ChatReply> {
   const { supabase, ws } = await scoped(workspaceId);
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return { text: "Chat needs ANTHROPIC_API_KEY on the server. The Generate and Add tabs still work without it.", proposals: [], trace: [] };
+  if (!hasModelCredentials()) {
+    return { text: modelUnavailableNote("Chat", "The Generate and Add tabs still work without it."), proposals: [], trace: [] };
   }
   const [capacity, instructions, { data: plannedRows }] = await Promise.all([
     readCapacity(supabase, workspaceId),

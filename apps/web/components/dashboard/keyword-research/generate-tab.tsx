@@ -115,7 +115,7 @@ export function GenerateTab({ workspaceId, ctx, handoff, onCapacity, onChanged, 
 
       {!ctx.providerReady && (
         <div className="text-[12.5px] text-warn-ink bg-warn-soft rounded-md px-3 py-2">
-          Keyword metrics need DataForSEO credentials on the server. Set DATAFORSEO_API_KEY to research.
+          Keyword volumes aren&apos;t available on this account yet, so research cannot run.{ctx.hints.provider ? ` ${ctx.hints.provider}` : ""}
         </div>
       )}
 
@@ -135,7 +135,7 @@ export function GenerateTab({ workspaceId, ctx, handoff, onCapacity, onChanged, 
         <MultiSelect label="Target audiences" options={ctx.profile.audiences} value={audiences} onChange={setAudiences} empty="No audiences in the business profile yet. Add them in onboarding, or use Competitors only." />
       )}
       {needsAudiences && !ctx.modelReady && audiences.size > 0 && (
-        <div className="text-[12px] text-ink-3">Audience research proposes seed phrases with a model and needs ANTHROPIC_API_KEY; competitors still work without it.</div>
+        <div className="text-[12px] text-ink-3">Audience research isn&apos;t available yet; competitors still work.{ctx.hints.model ? ` ${ctx.hints.model}` : ""}</div>
       )}
 
       <div className="flex items-end gap-4 flex-wrap">

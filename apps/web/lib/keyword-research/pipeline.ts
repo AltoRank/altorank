@@ -20,7 +20,7 @@ import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { fetchRankedKeywords } from "@/lib/seo/ranked-keywords";
 import { discoverKeywordsFromSeeds } from "@/lib/seo/keywords";
 import { classifyIntent } from "@/lib/seo/intent";
-import { hasDataForSEOCredentials } from "@/lib/seo/client";
+import { hasDataForSEOCredentials, hasModelCredentials, modelUnavailableNote, providerUnavailableNote } from "./availability";
 import { LOCALES } from "@/lib/seo/locales";
 import { applyFunnel, MIN_VOLUME, type ExistingKeyword } from "./funnel";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
@@ -110,7 +110,7 @@ async function recordRun(
 }
 
 function requireProvider(): string | null {
-  return hasDataForSEOCredentials() ? null : "Keyword metrics need DataForSEO credentials (DATAFORSEO_API_KEY). Set them to research keywords.";
+  return hasDataForSEOCredentials() ? null : providerUnavailableNote();
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +163,7 @@ export async function generateAudienceSeeds(
   instructions = "",
 ): Promise<{ seeds: string[]; note: string | null }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return { seeds: [], note: "Audience research needs ANTHROPIC_API_KEY to propose seed phrases." };
+  if (!hasModelCredentials() || !apiKey) return { seeds: [], note: modelUnavailableNote("Audience research", "Competitor research still works.") };
   if (!audiences.length) return { seeds: [], note: null };
 
   const user = withInstructions(

@@ -39,7 +39,6 @@ export function idempotencyKeyFrom(
   const key = raw.trim();
   if (!key) return { ok: true, key: null };
   if (key.length > IDEMPOTENCY_KEY_MAX) return { ok: false, message: `Idempotency-Key is longer than ${IDEMPOTENCY_KEY_MAX} characters.` };
-  // eslint-disable-next-line no-control-regex
   if (/[\x00-\x1f\x7f]/.test(key)) return { ok: false, message: "Idempotency-Key contains control characters." };
   return { ok: true, key };
 }
