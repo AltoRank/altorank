@@ -24,7 +24,26 @@ async function agencyWorkspaceIds(agencyId: string): Promise<string[]> {
   return (data ?? []).map((w) => w.id as string);
 }
 
-export async function inviteMember(formData: FormData) {
+/**
+ * What the caller has to know after an invite: the row exists either way, but
+ * whether the person was actually told is a different fact.
+ *
+ * The toast used to read "Invite sent to X" whether or not the email left,
+ * because the send was wrapped in a bare `catch {}`. A missing RESEND_API_KEY
+ * or any Resend refusal produced a confident success and an invite nobody
+ * knew about - the exact bug class lib/email/resend.ts documents having fixed
+ * for password resets. The invite is still created, since the link works
+ * whether or not the mail did; the caller is now told which happened, and the
+ * pending row's Copy link button is the way out.
+ */
+export type InviteResult = {
+  email: string;
+  emailed: boolean;
+  /** Why the email did not leave, for the toast and the server log. */
+  emailError: string | null;
+};
+
+export async function inviteMember(formData: FormData): Promise<InviteResult> {
   const { user, agencyId } = await requireAuth(["owner", "admin"]);
 
   const supabase = await createClient();
@@ -61,6 +80,11 @@ export async function inviteMember(formData: FormData) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
   const acceptUrl = `${baseUrl}/invite/${token}`;
 
+  // Non-fatal, but never silent: the invite row is already written and its
+  // link works, so throwing would lose a valid invite over a mail problem.
+  // Reported instead, so the UI can say "created, not sent".
+  let emailed = true;
+  let emailError: string | null = null;
   try {
     await sendInviteEmail(
       parsed.email,
@@ -69,11 +93,14 @@ export async function inviteMember(formData: FormData) {
       parsed.role,
       acceptUrl,
     );
-  } catch {
-    // Email send failure is non-fatal — the invite link still works
+  } catch (e) {
+    emailed = false;
+    emailError = e instanceof Error ? e.message : "The email could not be sent";
+    console.error(`[invite] email to ${parsed.email} was refused: ${emailError}`);
   }
 
   revalidatePath("/settings/team");
+  return { email: parsed.email, emailed, emailError };
 }
 
 /** Take back a pending invite. The link stops working at once. */

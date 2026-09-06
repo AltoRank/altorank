@@ -39,8 +39,19 @@ export function InviteMemberForm() {
           action={(fd) =>
             startTransition(async () => {
               try {
-                await inviteMember(fd);
-                toast.success(`Invite sent to ${String(fd.get("email") ?? "")}.`);
+                const result = await inviteMember(fd);
+                // "Sent" only when it was. A refused email still leaves a
+                // working invite, so the toast names the way out - Copy link
+                // on the pending row - rather than reporting a success that
+                // did not happen.
+                if (result.emailed) {
+                  toast.success(`Invite sent to ${result.email}.`);
+                } else {
+                  toast.warning(
+                    `Invite created for ${result.email}, but the email could not be sent. Use Copy link on the pending invite below and send it yourself.`,
+                    { duration: 10_000 },
+                  );
+                }
                 formRef.current?.reset();
                 setAccess([]);
                 setOpen(false);
