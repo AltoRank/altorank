@@ -6,10 +6,11 @@
 // output now that the schedule runs four times a day (296ad6a). Three numbers
 // matter and they are easy to confuse, so they live here with their reasons:
 //
-//   FREE_TIER_PACE   1/week. What signup sets. A no-plan account gets one free
-//                    draft a calendar month anyway (FREE_DRAFTS), so anything
-//                    higher would only make the cron attempt work the quota
-//                    gate then refuses.
+//   FREE_TIER_PACE   7/week. What signup sets. A no-plan account is entitled to
+//                    FREE_DRAFTS (7) drafts, and this is what lets them arrive
+//                    inside the first week instead of one per week for seven.
+//                    The quota still stops it at 7; the pace only decides how
+//                    fast the entitlement is spent, never how large it is.
 //   PAID_DEFAULT     7/week. What activating a subscription raises it to. One a
 //                    day, which is the sentence the homepage has always used,
 //                    and about 30 a month against an included 100.
@@ -22,7 +23,7 @@
 // product to change it. The pricing page's "at the pace you set per site" was
 // describing a setting that did not exist.
 
-export const FREE_TIER_PACE = 1;
+export const FREE_TIER_PACE = 7;
 export const PAID_DEFAULT_PACE = 7;
 export const MAX_PACE = 25;
 
@@ -36,8 +37,13 @@ export const MAX_PACE = 25;
  */
 export function paceOnActivation(current: number | null | undefined): number | null {
   if (current === null || current === undefined) return PAID_DEFAULT_PACE;
-  if (current > FREE_TIER_PACE) return null;
   if (current <= 0) return null;
+  if (current >= PAID_DEFAULT_PACE) return null;
+  // Anything that is not the value signup set was typed by somebody. It used to
+  // be enough to test `> FREE_TIER_PACE`, because signup set 1 and everything
+  // above it was a choice. Now signup sets 7, so that test would have read a
+  // deliberate 2 as the untouched default and raised it on activation.
+  if (current !== FREE_TIER_PACE) return null;
   return PAID_DEFAULT_PACE;
 }
 

@@ -2,6 +2,7 @@ import { test, expect } from "./fixtures/test";
 import { admin } from "./fixtures/account";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { FREE_TIER_PACE, monthlyFromPace } from "@/lib/content/pace";
+import { describePace } from "@/lib/plan/pace-options";
 import { API_KEY_PREFIX, DISPLAY_PREFIX_LENGTH } from "@/lib/agent/api-keys";
 import { STUB_KEYWORDS } from "@/lib/e2e/stubs";
 
@@ -93,22 +94,31 @@ test("a planned card offers Instructions, Questions, Move and Remove; Remove dro
   expect(keyword?.plan_excluded_at).not.toBeNull();
 });
 
-test("the Articles-plan popover lists the paces; 1 -> 3 a week re-plans, and back", async ({ page, signedIn }) => {
+test("the Articles-plan popover lists the paces; the signup pace -> 3 a week re-plans, and back", async ({ page, signedIn }) => {
   const ws = signedIn.workspaces[0];
   const db = admin();
   await seedKeywords(db, ws.id);
   await planTheMonth(page);
 
-  // Top-up mode fills to the monthly figure the pace quotes, one per plan day at most.
-  const atFreePace = Math.min(monthlyFromPace(FREE_TIER_PACE), Math.ceil((FREE_TIER_PACE * PLAN_HORIZON_DAYS) / 7));
+  // Top-up mode fills to the monthly figure the pace quotes, one per plan day at
+  // most - and never past the keywords that exist. The signup pace is 7 a week
+  // since FREE_DRAFTS became a week (AltoRank/altorank#119), which wants 30
+  // slots over the horizon while the stub set has nine, so the keyword count is
+  // what binds here.
+  const atFreePace = Math.min(
+    STUB_KEYWORDS.length,
+    monthlyFromPace(FREE_TIER_PACE),
+    Math.ceil((FREE_TIER_PACE * PLAN_HORIZON_DAYS) / 7),
+  );
+  const freeLabel = describePace(FREE_TIER_PACE);
   expect(await plannedCount(db, ws.id)).toBe(atFreePace);
 
   const trigger = page.getByRole("button", { name: /^Articles plan/ });
-  await expect(trigger).toHaveText(/Articles plan: 1 a week/);
+  await expect(trigger).toHaveText(new RegExp(`Articles plan: ${freeLabel}`));
   await trigger.click();
   const popover = page.getByRole("dialog", { name: "Articles plan" });
   await expect(popover.getByText("Current plan")).toBeVisible();
-  await expect(popover.getByText(`1 a week · ${atFreePace} of 60 planned`)).toBeVisible();
+  await expect(popover.getByText(`${freeLabel} · ${atFreePace} of 60 planned`)).toBeVisible();
 
   // Every pace is offered as a choice: self-host is unmetered, so none says "Needs the … plan".
   const paces = ["1 a week", "2 a week", "3 a week", "5 a week", "one a day", "two a day", "three a day"];
@@ -116,7 +126,7 @@ test("the Articles-plan popover lists the paces; 1 -> 3 a week re-plans, and bac
     await expect(popover.getByRole("button", { name: new RegExp(`^${label}\\b`) })).toBeVisible();
   }
   await expect(popover.getByText(/Needs the .* plan/)).toHaveCount(0);
-  await expect(popover.getByRole("button", { name: /^1 a week\b/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(popover.getByRole("button", { name: new RegExp(`^${freeLabel}\\b`) })).toHaveAttribute("aria-pressed", "true");
 
   // 1 -> 3 a week. The re-plan is a replace: 13 slots over 30 days, and eight keywords to fill them.
   await popover.getByRole("button", { name: /^3 a week\b/ }).click();

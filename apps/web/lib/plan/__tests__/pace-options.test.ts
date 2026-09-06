@@ -17,10 +17,15 @@ describe("paceOptions", () => {
     const opts = paceOptions({ limit: 100, reason: "plan" });
     expect(opts.find((o) => o.pace === 21)).toMatchObject({ allowed: true, monthly: 91, meaning: "about 91 articles a month" });
   });
-  it("with no plan, only the free-tier pace is available and the rest name the plan", () => {
-    const opts = paceOptions({ limit: 1, reason: "no-plan" });
+  it("with no plan, the free week is available and anything past it names the plan", () => {
+    // FREE_DRAFTS is 7, so a no-plan account may run at up to 7 a week: that is
+    // how the seven free drafts land inside the first week instead of over
+    // seven of them. The quota still stops it at 7 articles; the pace only sets
+    // how fast the entitlement is spent.
+    const opts = paceOptions({ limit: 7, reason: "no-plan" });
     expect(opts.find((o) => o.pace === 1)?.allowed).toBe(true);
-    expect(opts.find((o) => o.pace === 7)).toMatchObject({ allowed: false, needsPlan: "starter", needsPlanLabel: "Managed" });
+    expect(opts.find((o) => o.pace === 7)?.allowed).toBe(true);
+    expect(opts.find((o) => o.pace === 14)).toMatchObject({ allowed: false, needsPlan: "starter" });
   });
   it("names the cheapest tier that covers the volume", () => {
     expect(planNeededFor(30)).toBe("starter");

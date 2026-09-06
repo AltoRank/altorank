@@ -166,8 +166,16 @@ export function entitledToScheduledWork(q: Quota): boolean {
   return q.reason !== "no-plan";
 }
 
-/** Drafts an account gets before choosing a plan. Approving them needs one. */
-export const FREE_DRAFTS = 1;
+/**
+ * Drafts an account gets before choosing a plan. Approving them needs one.
+ *
+ * A week's worth, so a new account sees the calendar working rather than a
+ * single article and an empty week behind it. Raised from 1 on 2026-09-06.
+ * Onboarding writes the first inline; cron/generate writes the rest at the
+ * site's pace, which FREE_TIER_PACE raises to match so they land in that week
+ * rather than over seven of them.
+ */
+export const FREE_DRAFTS = 7;
 
 /** Message for the moment generation is refused. Says what to do, not just no. */
 export function quotaExceededMessage(q: Quota): string {
