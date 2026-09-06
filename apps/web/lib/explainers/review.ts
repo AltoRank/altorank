@@ -1,4 +1,5 @@
 import type { Explainer } from "./types";
+import { FREE_DRAFTS } from "@/lib/billing/quota";
 
 /**
  * Read from: app/actions/publish.ts (approveArticle, requestChanges,
@@ -24,7 +25,7 @@ export const reviewExplainer: Explainer = {
         "Approve records who approved and when. It is the only path to Approved: the row menu's status change offers Draft and Review and nothing else.",
         "Approving re-runs the fact check on what is in the editor at that moment. A bare figure with no source blocks approval until it is sourced or cut; a named but unverified source is left to your judgement, which is what review is for.",
         "Request changes sends an approved article back to Review and clears the sign-off, so it must be approved again before it can go anywhere.",
-        "On the hosted free tier, approving and publishing ask you to choose a plan. Reading, editing and rewriting the free draft do not.",
+        `On the hosted free tier, approving and publishing ask you to choose a plan. Reading, editing and rewriting the month's ${FREE_DRAFTS} free drafts do not.`,
       ],
     },
     {

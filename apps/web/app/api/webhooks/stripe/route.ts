@@ -106,14 +106,15 @@ export async function POST(request: Request) {
         /**
          * Start writing at a paid pace.
          *
-         * Signup sets one article a week, which is right while the account is
-         * free: the quota allows one draft a calendar month, so a higher pace
-         * would only make the cron attempt work the quota gate then refuses.
-         * Nothing raised it afterwards, so a customer who paid for 100 a month
-         * kept getting about four, and there was no control anywhere to change
-         * it. `paceOnActivation` only ever raises, and only from a value the
-         * product itself chose - a site deliberately paused at 0, or set to
-         * anything above the free-tier pace, is left alone.
+         * Signup sets FREE_TIER_PACE, which is right while the account is
+         * free: the quota allows FREE_DRAFTS a calendar month, and the pace
+         * matches so those drafts land inside the first week. It used to set
+         * one a week against a one-draft month, and nothing raised it
+         * afterwards, so a customer who paid for 100 a month kept getting
+         * about four with no control anywhere to change it. `paceOnActivation`
+         * only ever raises, and only from a value the product itself chose - a
+         * site deliberately paused at 0, or set to anything that is not the
+         * free-tier pace, is left alone.
          */
         const { data: sites } = await supabase
           .from("workspaces")

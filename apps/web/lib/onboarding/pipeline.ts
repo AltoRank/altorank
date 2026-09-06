@@ -26,7 +26,7 @@ import { readSiteText } from "./site-text";
 import { createVoiceProfile } from "@/app/actions/voice";
 import { analyseDomain } from "@/lib/audit/domain-analysis";
 import { generateArticle } from "@/lib/content/generate";
-import { getQuota } from "@/lib/billing/quota";
+import { freeAllowanceUsedMessage, getQuota } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
@@ -210,12 +210,11 @@ async function runPhases(
       // off the limit rather than restating a number that has already moved.
       const quota = await getQuota(supabase, workspace.agency_id);
       if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
-        const is = quota.limit === 1 ? "is" : "are";
         settle(
           "skipped",
           quota.reason === "no-plan"
-            ? `This month's ${plural(quota.limit, "free draft")} ${is} used. Choose a plan to keep drafting, or the allowance resets next month.`
-            : `This month's ${plural(quota.limit, "included article")} ${is} used. Upgrade on the Billing page to keep drafting.`,
+            ? `${freeAllowanceUsedMessage(quota.limit)} Choose a plan to keep drafting, or wait for the 1st, when the allowance resets.`
+            : `This month's ${plural(quota.limit, "included article")} ${quota.limit === 1 ? "is" : "are"} used. Upgrade on the Billing page to keep drafting.`,
         );
       } else {
         const recs = await recommendKeywords(supabase, workspace.id, { limit: 25 });

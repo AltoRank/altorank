@@ -15,8 +15,12 @@
 //                                      would be absurd.
 //   Cloud, active plan                 the tier's included volume, per
 //                                      calendar month.
-//   Cloud, no active plan              zero. There is no trial (POSITIONING.md)
-//                                      and a courtesy allowance would be one.
+//   Cloud, no active plan              FREE_DRAFTS - a week's worth - per
+//                                      calendar month, indefinitely. This was
+//                                      zero, then one, and became seven on
+//                                      2026-09-06 (#119). It is a standing
+//                                      free tier, not a trial: nothing expires
+//                                      and the count refills on the 1st.
 //   Operator accounts                  unlimited, so dogfooding does not eat
 //                                      a customer-shaped quota.
 //
@@ -31,6 +35,7 @@ import { getSimulation } from "@/lib/dev/simulation";
 import { isAdminEmail } from "@/lib/auth/operators";
 import { inCustomerPreview } from "@/lib/auth/preview";
 import { agencyHasOperator } from "@/lib/billing/operator-agency";
+import { plural } from "@/lib/utils";
 
 export type Quota = {
   /** Null means unmetered. */
@@ -137,7 +142,8 @@ export async function getQuota(
   }
 
   if (!active || !plan) {
-    // One draft before the paywall. The first outside signup (2026-09-02)
+    // A week of drafts before the paywall - FREE_DRAFTS, seven since
+    // 2026-09-06, and one before that. The first outside signup (2026-09-02)
     // created a workspace, ran an audit and left within seven minutes; the
     // only place a plan was ever mentioned was a quota error behind a button
     // they never pressed. A draft in the review queue, with its fact-check
@@ -158,12 +164,12 @@ export async function getQuota(
 /**
  * Whether an account is entitled to the scheduled paid loop.
  *
- * The free draft buys a look at the product: a workspace, a first look, one
- * article with its fact check. It does not buy a standing subscription to
- * DataForSEO. Rank tracking runs nightly and forever, so an account that
- * signed up, took its free draft - which it cannot approve or publish without
- * a plan - and never came back kept costing money every night for an article
- * that could never ship.
+ * The free drafts buy a look at the product: a workspace, a first look, a
+ * week of articles with their fact checks. They do not buy a standing
+ * subscription to DataForSEO. Rank tracking runs nightly and forever, so an
+ * account that signed up, took its free drafts - which it cannot approve or
+ * publish without a plan - and never came back kept costing money every night
+ * for articles that could never ship.
  *
  * Cheap per account and unbounded in aggregate: a keyword is under two cents a
  * month, and nothing ever stops.
@@ -188,23 +194,31 @@ export function entitledToScheduledWork(q: Quota): boolean {
 export const FREE_DRAFTS = 7;
 
 /**
- * Message for the moment generation is refused. Says what to do, not just no.
+ * "This month's 7 free drafts are used." - counted off the limit, never typed.
  *
- * Three ways out of the free allowance, and it used to name two. `used` is
- * counted from monthStart(), so the drafts come back on the 1st - lib/plan
- * frozen.ts has always known that ("they come back the moment the allowance
- * grows - an upgrade, or the next month") and no string a user could read said
- * so. It also still said "the free draft", singular, after FREE_DRAFTS went
- * from 1 to 7.
+ * FREE_DRAFTS went 1 -> 7 on 2026-09-06 and nine user-facing strings still
+ * said "the free draft"; one of them rendered "the free tier includes 7
+ * draft". Every one of them now goes through here or through `plural`, so the
+ * next change to the constant changes the copy with it.
  */
-export function quotaExceededMessage(q: Quota, now: Date = new Date()): string {
+export function freeAllowanceUsedMessage(limit: number = FREE_DRAFTS): string {
+  return `This month's ${freeAllowanceUsedClause(limit)}.`;
+}
+
+/**
+ * The same fact as a clause, for a sentence that has already started:
+ * "Inactive: this month's 7 free drafts are used."
+ */
+export function freeAllowanceUsedClause(limit: number = FREE_DRAFTS): string {
+  return `${plural(limit, "free draft")} ${limit === 1 ? "is" : "are"} used`;
+}
+
+/** Message for the moment generation is refused. Says what to do, not just no. */
+export function quotaExceededMessage(q: Quota): string {
   if (q.reason === "no-plan") {
-    const resets = nextResetDate(now).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      timeZone: "UTC",
-    });
-    return `This month's ${q.limit ?? FREE_DRAFTS} free drafts are used. Choose a plan on the Billing page to keep going, wait until ${resets} when the free drafts reset, or self-host AltoRank free.`;
+    // The reset is part of the answer: `used` is counted from the 1st, so
+    // waiting is a real third option beside paying and self-hosting.
+    return `${freeAllowanceUsedMessage(q.limit ?? FREE_DRAFTS)} Choose a plan on the Billing page to keep going, wait for the 1st when the allowance resets, or self-host AltoRank free.`;
   }
   return `This month's included ${q.limit} articles are used. The next article is billed as overage, or upgrade on the Billing page.`;
 }

@@ -264,11 +264,13 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
           className="block border-t border-line px-4 py-2.5 hover:bg-panel-2"
         >
           <div className="flex items-baseline justify-between text-[11px] text-ink-3 mb-1.5">
-            {/* Without a plan the meter is the free draft, and the line is a
-                button, not a status: "No active plan" told people something
-                and asked nothing (the first outside signup left without ever
-                seeing a plan). */}
-            <span>{quota.noPlan ? "Free draft" : "Articles this month"}</span>
+            {/* Without a plan the meter is the month's free drafts, and the
+                line is a button, not a status: "No active plan" told people
+                something and asked nothing (the first outside signup left
+                without ever seeing a plan). Pluralised off the limit, which
+                went 1 -> 7 on 2026-09-06 and left this reading "Free draft"
+                above "0 / 7". */}
+            <span>{quota.noPlan ? plural(quota.limit, "free draft") : "Articles this month"}</span>
             <span className="font-mono tabular-nums">{`${quota.used} / ${quota.limit}`}</span>
           </div>
           <div className="h-1 rounded-full bg-panel-2 overflow-hidden">

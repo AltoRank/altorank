@@ -13,7 +13,12 @@ vi.mock("../site-text", () => ({ readSiteText: async (...a: unknown[]) => { cons
 vi.mock("@/app/actions/voice", () => ({ createVoiceProfile: (...a: unknown[]) => voice(...a) }));
 vi.mock("@/lib/audit/domain-analysis", () => ({ analyseDomain: (...a: unknown[]) => analyse(...a) }));
 vi.mock("@/lib/content/generate", () => ({ generateArticle: (...a: unknown[]) => generate(...a) }));
-vi.mock("@/lib/billing/quota", () => ({ getQuota: (...a: unknown[]) => quota(...a) }));
+// Only getQuota is faked. The refusal message is real: it is counted off
+// FREE_DRAFTS, and a stub would have hidden the drift this fixes.
+vi.mock("@/lib/billing/quota", async () => {
+  const real = await vi.importActual<typeof import("@/lib/billing/quota")>("@/lib/billing/quota");
+  return { ...real, getQuota: (...a: unknown[]) => quota(...a) };
+});
 vi.mock("@/lib/seo/recommendations", () => ({
   recommendKeywords: (...a: unknown[]) => recommend(...a),
   pickNextKeyword: (...a: unknown[]) => pick(...a),
@@ -163,7 +168,7 @@ describe("runOnboarding", () => {
     expect(events.find((e) => e.phase === "drafting" && "status" in e && e.status !== "active"))
       .toMatchObject({
         status: "skipped",
-        detail: "This month's 7 free drafts are used. Choose a plan to keep drafting, or the allowance resets next month.",
+        detail: "This month's 7 free drafts are used. Choose a plan to keep drafting, or wait for the 1st, when the allowance resets.",
       });
     expect(events.at(-1)).toEqual({ phase: "ready" });
   });
