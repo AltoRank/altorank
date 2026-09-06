@@ -37,14 +37,27 @@ export function isoDay(d: Date): string {
 export async function resumePausedWorkspaces(
   supabase: SupabaseClient,
   agencyId: string,
+  /**
+   * Only rows whose pause has ended by this day. Omitted, every billing-paused
+   * row of the agency is resumed - which is what the Resume button means, and
+   * what the webhook means when Stripe reports the pause cleared.
+   *
+   * `resumeExpiredPauses` passes it, because it selects an agency on the
+   * strength of *one* expired row and would otherwise resume the rest with it.
+   * `pauseAccount` writes the same date on every site, so today that is a
+   * predicate matching its own name rather than a bug being fixed - but the
+   * two are only one hand-paused site apart, and this is the cheaper half.
+   */
+  through?: string,
 ): Promise<string[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("workspaces")
     .update({ status: "on", paused_until: null })
     .eq("agency_id", agencyId)
     .eq("status", "paused")
-    .not("paused_until", "is", null)
-    .select("id");
+    .not("paused_until", "is", null);
+  if (through) query = query.lte("paused_until", through);
+  const { data, error } = await query.select("id");
   if (error) throw new Error(error.message);
   return (data ?? []).map((r) => r.id as string);
 }
@@ -92,7 +105,7 @@ export async function resumeExpiredPauses(
   const outcomes: ExpiredPauseOutcome[] = [];
 
   for (const agencyId of agencies) {
-    const workspaces = await resumePausedWorkspaces(supabase, agencyId);
+    const workspaces = await resumePausedWorkspaces(supabase, agencyId, isoDay(today));
     let stripeOutcome = "skipped";
     if (stripe) {
       const { data: agency } = await supabase

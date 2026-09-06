@@ -145,3 +145,28 @@ describe("isoDay", () => {
     expect(isoDay(new Date("2026-10-04T23:30:00Z"))).toBe("2026-10-04");
   });
 });
+
+describe("resumeExpiredPauses only lifts the pauses that have expired", () => {
+  it("bounds the write by the same date it selected the agency on", async () => {
+    // It selects an agency on the strength of *one* row whose date has passed,
+    // then writes. Without the bound, that write cleared every billing-paused
+    // row of the agency - including a site paused for another three weeks.
+    // `pauseAccount` writes the same date on every site, so the two are only
+    // one hand-paused site apart rather than a live bug; the predicate should
+    // still mean what its name says.
+    dueRows = [{ agency_id: "agency-1" }];
+    resumedIds = ["ws-1"];
+    await resumeExpiredPauses(supabase, null, new Date("2026-10-04T00:00:00Z"));
+    const workspaceWrite = writes.find((w) => w.table === "workspaces");
+    expect(workspaceWrite?.filters).toContainEqual(["paused_until", "lte", "2026-10-04"]);
+  });
+
+  it("still resumes everything when the button asks, which has no date", async () => {
+    // The Resume button and the webhook's "Stripe says the pause is cleared"
+    // both mean all of it, whatever the dates say.
+    await resumePausedWorkspaces(supabase, "agency-1");
+    const workspaceWrite = writes.find((w) => w.table === "workspaces");
+    expect(workspaceWrite?.filters.map((f) => f[0])).not.toContain("paused_until_lte");
+    expect(workspaceWrite?.filters.filter((f) => f[1] === "lte")).toHaveLength(0);
+  });
+});
