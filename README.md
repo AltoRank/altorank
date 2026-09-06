@@ -98,8 +98,13 @@ npm run cli -- --help        # the agent API from a shell; auth with ALTORANK_AP
 npm run readiness -- <domain>  # the agent-readiness checks on their own
 ```
 
-Neither the CLI nor the MCP server can publish, approve or delete. That is not a
-flag; those calls do not exist in the API either (`apps/web/scripts/SKILL.md`).
+Neither the CLI nor the MCP server can approve an article or delete anything —
+not by configuration, but because the agent API has no such call and no `DELETE`
+handler at all. Nor can either of them publish: the single endpoint that reaches
+a CMS is `POST /articles/{id}/retry-publish`, which re-runs a publish that
+**a human already approved** and that then failed. An article in draft or review
+is refused, and the refusal tells the caller to hand it to a person
+(`apps/web/app/api/agent/v1/articles/[id]/retry-publish/route.ts:13-35`).
 
 ### Database
 

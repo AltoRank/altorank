@@ -269,6 +269,14 @@ Expected: zero rows. (`public_checks`, `growth_plans`, `admin_impersonations`
 and `agent_idempotency_keys` (069) have RLS on with zero policies by design —
 service-role only — and have no `workspace_id`, so they do not appear.)
 
+If you run this against a **shared local stack** rather than production, expect
+rows for tables no migration here creates. On 2026-09-06 the local database
+carried `sent_emails`, `email_preferences` and `webhook_deliveries`, none of
+them from a file in this directory and none referenced by any code in the repo;
+`sent_emails` has a `workspace_id` with RLS on and no policy, so it is returned
+by this query. That is the check working, on a table this repo does not own.
+Confirm a row is one of ours (`grep -l <table> *.sql`) before acting on it.
+
 3. Smoke the app: sign in, open a workspace, open Settings, load the planner.
 
 ## 5. File → PR map and dependencies
