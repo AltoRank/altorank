@@ -30,6 +30,8 @@ export type Agency = {
   stripe_subscription_id: string | null;
   /** Period end at which the subscription stops, when cancel-at-period-end is set. null = renewing. */
   cancels_at?: string | null;
+  /** When the current run of failed renewals began; null = paid up. See lib/billing/dunning.ts. */
+  payment_failed_at?: string | null;
   /** Self-reported at the end of onboarding; null until answered. See lib/attribution.ts. */
   attribution_source: AttributionSource | null;
   attribution_note: string | null;

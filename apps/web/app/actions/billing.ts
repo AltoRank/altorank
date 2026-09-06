@@ -4,12 +4,23 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { createClient } from "@/lib/supabase/server";
 import { getStripe, PLAN_PRICE_IDS } from "@/lib/stripe";
 import type { SelfServePlan, BillingInterval } from "@/lib/stripe";
+import { subscriptionSwitchable } from "@/lib/billing/plan-switch";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3100";
 
 /**
- * Start a Stripe Checkout session for a self-serve plan. Owner only.
- * Returns the hosted checkout URL for the client to redirect to.
+ * Start a Stripe Checkout session for a self-serve plan, or - when the
+ * account already has a subscription - move that subscription to the new
+ * price. Owner only. Returns the URL for the client to go to next: Stripe's
+ * hosted checkout for a first purchase, the Billing page for a switch.
+ *
+ * The switch used to open a second Checkout in `mode: "subscription"`.
+ * Stripe obliged with a second subscription; `customer.subscription.created`
+ * then overwrote `stripe_subscription_id`, and the first subscription kept
+ * billing with nothing pointing at it (2026-09-06). A plan change on
+ * an existing subscription is `subscriptions.update` on its item, prorated,
+ * and the webhook's `customer.subscription.updated` writes the tier the new
+ * price sells.
  */
 export async function createCheckoutSession(
   plan: SelfServePlan,
@@ -30,9 +41,21 @@ export async function createCheckoutSession(
 
   const { data: agency } = await supabase
     .from("agencies")
-    .select("stripe_customer_id")
+    .select("stripe_customer_id, stripe_subscription_id, plan_status")
     .eq("id", agencyId)
     .single();
+
+  if (agency && subscriptionSwitchable(agency)) {
+    await switchSubscriptionPrice(agency.stripe_subscription_id as string, priceId, {
+      agencyId,
+      plan,
+      interval,
+    });
+    // The tier follows the price at once rather than on the webhook's
+    // schedule, so the page that reloads next says what was just bought.
+    await supabase.from("agencies").update({ plan }).eq("id", agencyId);
+    return `${APP_URL}/settings/billing?status=switched`;
+  }
 
   const session = await getStripe().checkout.sessions.create({
     mode: "subscription",
@@ -79,6 +102,33 @@ export async function createCheckoutSession(
 
   if (!session.url) throw new Error("Failed to create checkout session");
   return session.url;
+}
+
+/**
+ * Move an existing subscription to `priceId`, on its one item, prorated.
+ *
+ * `items[].id` is the subscription item being replaced: without it Stripe
+ * adds a second item and bills both. Prorations credit the unused part of
+ * the old price and charge the new one from today, which is what "switch"
+ * means to someone reading the invoice. Metadata is refreshed so the
+ * webhook's fallback hint agrees with the price it prefers.
+ */
+async function switchSubscriptionPrice(
+  subscriptionId: string,
+  priceId: string,
+  meta: { agencyId: string; plan: SelfServePlan; interval: BillingInterval },
+): Promise<void> {
+  const stripe = getStripe();
+  const sub = await stripe.subscriptions.retrieve(subscriptionId);
+  const item = sub.items?.data?.[0];
+  if (!item) throw new Error("The current subscription has no plan item to change");
+  if (item.price?.id === priceId) return;
+
+  await stripe.subscriptions.update(subscriptionId, {
+    items: [{ id: item.id, price: priceId }],
+    proration_behavior: "create_prorations",
+    metadata: { agency_id: meta.agencyId, plan: meta.plan, interval: meta.interval },
+  });
 }
 
 /**

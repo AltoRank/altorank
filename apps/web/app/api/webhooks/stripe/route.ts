@@ -3,6 +3,8 @@ import type Stripe from "stripe";
 import { getStripe, isSelfServePlan, planForPriceId, type SelfServePlan } from "@/lib/stripe";
 import { createServiceClient } from "@/lib/supabase/server";
 import { paceOnActivation } from "@/lib/content/pace";
+import { resumePausedWorkspaces } from "@/lib/billing/resume";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 function mapStatus(s: Stripe.Subscription.Status): string {
   switch (s) {
@@ -57,6 +59,81 @@ export async function planForCheckoutSession(
 
   const hint = session.metadata?.plan;
   return isSelfServePlan(hint) ? hint : undefined;
+}
+
+/**
+ * Which tier a subscription is on: the price first, the metadata hint second.
+ *
+ * The same resolver as the checkout above, applied to the subscription object
+ * an event carries. It matters most on `customer.subscription.updated` after
+ * a plan switch: `switchPlan` changes the price on the existing item, and the
+ * tier column has to follow the price, not the `plan` hint written when the
+ * subscription was first bought.
+ */
+export function planForSubscription(sub: Stripe.Subscription): SelfServePlan | undefined {
+  const fromPrice = planForPriceId(sub.items?.data?.[0]?.price?.id);
+  if (fromPrice) return fromPrice;
+  const hint = sub.metadata?.plan;
+  return isSelfServePlan(hint) ? hint : undefined;
+}
+
+type AgencyBillingRow = { id: string; plan_status: string | null; payment_failed_at: string | null };
+
+/**
+ * The agency an invoice belongs to, by the ids we stored at checkout.
+ *
+ * Stripe's invoice names its subscription under `parent.subscription_details`
+ * (older API versions: a top-level `subscription`) and always its customer;
+ * subscription metadata on the invoice is a snapshot of ours, so `agency_id`
+ * there is tried first.
+ */
+async function agencyForInvoice(
+  supabase: SupabaseClient,
+  invoice: Stripe.Invoice,
+): Promise<AgencyBillingRow | null> {
+  const details = invoice.parent?.subscription_details ?? null;
+  const legacy = (invoice as unknown as { subscription?: string | { id: string } | null }).subscription;
+  const subscriptionId =
+    typeof details?.subscription === "string"
+      ? details.subscription
+      : (details?.subscription?.id ?? (typeof legacy === "string" ? legacy : (legacy?.id ?? null)));
+  const customerId = typeof invoice.customer === "string" ? invoice.customer : (invoice.customer?.id ?? null);
+  const metadataAgency = details?.metadata?.agency_id ?? null;
+
+  const lookups: Array<[string, string]> = [];
+  if (metadataAgency) lookups.push(["id", metadataAgency]);
+  if (subscriptionId) lookups.push(["stripe_subscription_id", subscriptionId]);
+  if (customerId) lookups.push(["stripe_customer_id", customerId]);
+
+  for (const [col, val] of lookups) {
+    const { data } = await supabase
+      .from("agencies")
+      .select("id, plan_status, payment_failed_at")
+      .eq(col, val)
+      .maybeSingle();
+    if (data) return data as AgencyBillingRow;
+  }
+  return null;
+}
+
+/**
+ * Record when the renewal started failing. Idempotent by construction: the
+ * first failure sets the timestamp and every retry of the same run leaves it,
+ * so the grace window (lib/billing/dunning.ts) is counted from the first
+ * failed invoice, not the latest attempt. Cleared by `invoice.paid`.
+ */
+async function markPaymentFailed(
+  supabase: SupabaseClient,
+  agency: AgencyBillingRow,
+  failedAt: Date,
+): Promise<void> {
+  const updates: Record<string, unknown> = {};
+  if (!agency.payment_failed_at) updates.payment_failed_at = failedAt.toISOString();
+  // A paid plan goes past due; an account that never paid does not become
+  // one because its very first charge bounced.
+  if (agency.plan_status === "active" || agency.plan_status === "trialing") updates.plan_status = "past_due";
+  if (Object.keys(updates).length === 0) return;
+  await supabase.from("agencies").update(updates).eq("id", agency.id);
 }
 
 /**
@@ -141,9 +218,7 @@ export async function POST(request: Request) {
     case "customer.subscription.updated":
     case "customer.subscription.deleted": {
       const sub = event.data.object as Stripe.Subscription;
-      const priceId = sub.items.data[0]?.price.id;
-      const hint = sub.metadata?.plan;
-      const plan = planForPriceId(priceId) ?? (isSelfServePlan(hint) ? hint : undefined);
+      const plan = planForSubscription(sub);
       const periodEnd = (sub as unknown as { current_period_end?: number }).current_period_end;
 
       const status =
@@ -152,6 +227,10 @@ export async function POST(request: Request) {
       const updates: Record<string, unknown> = {
         ...(periodEnd ? { current_period_end: new Date(periodEnd * 1000).toISOString() } : {}),
         ...(plan ? { plan } : {}),
+        // Paid up again, or gone: either way nothing is failing any more.
+        ...(status === "active" || status === "trialing" || status === "canceled"
+          ? { payment_failed_at: null }
+          : {}),
         // Cancel-at-period-end set from the Billing page or from the portal
         // both land here; the page reads this column to say when the plan
         // ends. Cleared when the cancellation is undone.
@@ -189,6 +268,74 @@ export async function POST(request: Request) {
         // Fall back to matching by the stored subscription id.
         await supabase.from("agencies").update(updates).eq("stripe_subscription_id", sub.id);
       }
+
+      if (event.type === "customer.subscription.updated") {
+        // Going past due without an `invoice.payment_failed` (the events are
+        // not ordered) still starts the grace window, from now.
+        if (status === "past_due") {
+          const { data: row } = await supabase
+            .from("agencies")
+            .select("id, plan_status, payment_failed_at")
+            .eq(agencyId ? "id" : "stripe_subscription_id", agencyId ?? sub.id)
+            .maybeSingle();
+          if (row && !(row as AgencyBillingRow).payment_failed_at) {
+            await supabase
+              .from("agencies")
+              .update({ payment_failed_at: new Date(event.created * 1000).toISOString() })
+              .eq("id", (row as AgencyBillingRow).id);
+          }
+        }
+
+        // The account pause ending on Stripe's side. `resumes_at` lifts
+        // `pause_collection` on the date and Stripe reports it here with the
+        // old value in `previous_attributes`; the workspaces the pause set
+        // are resumed to match, so nothing is billed for a month in which
+        // nothing was drafted. Only a change is acted on - an ordinary update
+        // to an unpaused subscription also carries `pause_collection: null`
+        // and must not touch a pause that was written a moment ago.
+        const previous = event.data.previous_attributes as Partial<Stripe.Subscription> | undefined;
+        const pauseLifted =
+          sub.pause_collection == null && previous != null && "pause_collection" in previous;
+        if (pauseLifted) {
+          let target: string | null = agencyId ?? null;
+          if (!target) {
+            const { data: row } = await supabase
+              .from("agencies")
+              .select("id")
+              .eq("stripe_subscription_id", sub.id)
+              .maybeSingle();
+            target = (row?.id as string | undefined) ?? null;
+          }
+          if (target) await resumePausedWorkspaces(supabase, target);
+        }
+      }
+      break;
+    }
+
+    // Dunning. Stripe retries a failed renewal on its own schedule and the
+    // subscription sits `past_due` meanwhile; the app's job is to keep the
+    // paid tier open for a grace window from the first failure and to say,
+    // everywhere, that the card needs updating. Both handlers are safe to
+    // replay: the first failure's timestamp is kept, and a paid invoice
+    // clears it however many times it arrives.
+    case "invoice.payment_failed": {
+      const invoice = event.data.object as Stripe.Invoice;
+      const agency = await agencyForInvoice(supabase, invoice);
+      if (!agency) break;
+      const failedAt = new Date((invoice.created ?? event.created) * 1000);
+      await markPaymentFailed(supabase, agency, failedAt);
+      break;
+    }
+
+    case "invoice.paid": {
+      const invoice = event.data.object as Stripe.Invoice;
+      const agency = await agencyForInvoice(supabase, invoice);
+      if (!agency) break;
+      const updates: Record<string, unknown> = { payment_failed_at: null };
+      // The retry that went through reinstates the plan. An `inactive` row
+      // is a first purchase and `checkout.session.completed` owns that.
+      if (agency.plan_status === "past_due" || agency.plan_status === "unpaid") updates.plan_status = "active";
+      await supabase.from("agencies").update(updates).eq("id", agency.id);
       break;
     }
   }

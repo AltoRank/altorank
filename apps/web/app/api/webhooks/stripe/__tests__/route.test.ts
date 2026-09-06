@@ -11,21 +11,47 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // of 400. Every assertion below is about which columns reach the database.
 
 type Row = Record<string, unknown>;
+type Filter = [string, string, unknown];
 
 /** Every `.update(row).eq(col, val)` this request made, per table. */
-const writes: { table: string; row: Row; col: string; val: unknown }[] = [];
+const writes: { table: string; row: Row; col: string; val: unknown; filters: Filter[] }[] = [];
 let workspaceRows: Row[] = [];
+/** The one agency row any single-row read of `agencies` returns; null = no match. */
+let agencyRow: Row | null = null;
+
+/**
+ * A chainable fake of the PostgREST builder: filters are recorded, the
+ * terminal `await` resolves. Reads of `agencies` with `.single()` /
+ * `.maybeSingle()` return `agencyRow`; reads of `workspaces` return
+ * `workspaceRows`; updates are recorded and, when `.select()`ed, report
+ * `workspaceRows` back as the touched rows.
+ */
+function query(table: string, op: "select" | "update", row?: Row) {
+  const filters: Filter[] = [];
+  let single = false;
+  const q = {
+    eq: (c: string, v: unknown) => (filters.push([c, "eq", v]), q),
+    not: (c: string, o: string, v: unknown) => (filters.push([c, `not ${o}`, v]), q),
+    select: () => q,
+    single: () => ((single = true), q),
+    maybeSingle: () => ((single = true), q),
+    then: (resolve: (v: unknown) => unknown) => {
+      if (op === "update") {
+        writes.push({ table, row: row!, col: filters[0]?.[0], val: filters[0]?.[2], filters });
+        return resolve({ data: workspaceRows, error: null });
+      }
+      if (table === "agencies") return resolve({ data: single ? agencyRow : agencyRow ? [agencyRow] : [] });
+      return resolve({ data: workspaceRows });
+    },
+  };
+  return q;
+}
 
 vi.mock("@/lib/supabase/server", () => ({
   createServiceClient: () => ({
     from: (table: string) => ({
-      update: (row: Row) => ({
-        eq: (col: string, val: unknown) => {
-          writes.push({ table, row, col, val });
-          return Promise.resolve({ error: null });
-        },
-      }),
-      select: () => ({ eq: () => Promise.resolve({ data: workspaceRows }) }),
+      update: (row: Row) => query(table, "update", row),
+      select: () => query(table, "select"),
     }),
   }),
 }));
@@ -88,9 +114,11 @@ function checkoutCompleted(overrides: Record<string, unknown> = {}) {
 function subscriptionEvent(
   type: "created" | "updated" | "deleted",
   overrides: Record<string, unknown> = {},
+  previousAttributes?: Record<string, unknown>,
 ) {
   return {
     type: `customer.subscription.${type}`,
+    created: 1_790_000_000,
     data: {
       object: {
         id: "sub_1",
@@ -99,6 +127,24 @@ function subscriptionEvent(
         items: { data: [{ price: { id: GROWTH } }] },
         metadata: { agency_id: "agency-1" },
         cancel_at_period_end: false,
+        pause_collection: null,
+        ...overrides,
+      },
+      ...(previousAttributes ? { previous_attributes: previousAttributes } : {}),
+    },
+  };
+}
+
+function invoiceEvent(type: "payment_failed" | "paid", overrides: Record<string, unknown> = {}) {
+  return {
+    type: `invoice.${type}`,
+    created: 1_790_000_000,
+    data: {
+      object: {
+        id: "in_1",
+        customer: "cus_1",
+        created: 1_789_000_000,
+        parent: { subscription_details: { subscription: "sub_1", metadata: { agency_id: "agency-1" } } },
         ...overrides,
       },
     },
@@ -108,6 +154,7 @@ function subscriptionEvent(
 beforeEach(() => {
   writes.length = 0;
   workspaceRows = [];
+  agencyRow = null;
   constructEvent.mockReset();
   retrieveSubscription.mockReset();
   retrieveSubscription.mockResolvedValue({ items: { data: [{ price: { id: GROWTH } }] } });
@@ -281,6 +328,162 @@ describe("customer.subscription.updated / deleted", () => {
     await deliver(subscriptionEvent("updated"));
     expect(agencyWrite().row).not.toHaveProperty("stripe_customer_id");
   });
+
+  it("follows the price after a plan switch, even when the metadata hint is stale", async () => {
+    // `switchPlan` changes the price on the existing item; the `plan` hint in
+    // metadata was written at the first purchase. The money says Agency.
+    await deliver(
+      subscriptionEvent("updated", {
+        items: { data: [{ price: { id: GROWTH_YEARLY } }] },
+        metadata: { agency_id: "agency-1", plan: "starter" },
+      }),
+    );
+    expect(agencyWrite().row.plan).toBe("growth");
+  });
+
+  it("falls back to the hint only when the price is not one we sell", async () => {
+    await deliver(
+      subscriptionEvent("updated", {
+        items: { data: [{ price: { id: "price_legacy" } }] },
+        metadata: { agency_id: "agency-1", plan: "starter" },
+      }),
+    );
+    expect(agencyWrite().row.plan).toBe("starter");
+  });
+
+  it("clears the failed-payment mark when the subscription is active again", async () => {
+    await deliver(subscriptionEvent("updated"));
+    expect(agencyWrite().row.payment_failed_at).toBeNull();
+  });
+
+  it("starts the grace window when the subscription goes past due without an invoice event", async () => {
+    agencyRow = { id: "agency-1", plan_status: "active", payment_failed_at: null };
+    await deliver(subscriptionEvent("updated", { status: "past_due" }));
+    const rows = writes.filter((w) => w.table === "agencies");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].row.plan_status).toBe("past_due");
+    expect(rows[0].row).not.toHaveProperty("payment_failed_at");
+    expect(rows[1].row).toEqual({ payment_failed_at: new Date(1_790_000_000 * 1000).toISOString() });
+  });
+
+  it("keeps the first failure's timestamp on a later past_due update", async () => {
+    agencyRow = { id: "agency-1", plan_status: "past_due", payment_failed_at: "2026-09-01T00:00:00.000Z" };
+    await deliver(subscriptionEvent("updated", { status: "past_due" }));
+    expect(writes.filter((w) => w.table === "agencies")).toHaveLength(1);
+  });
+});
+
+describe("the account pause ending on Stripe's side", () => {
+  it("resumes the billing-paused workspaces when pause_collection is lifted", async () => {
+    // Stripe's `resumes_at` clears the pause on the date and reports the old
+    // value in previous_attributes. Our rows have to follow, or the customer
+    // is billed for a month in which nothing is drafted.
+    await deliver(
+      subscriptionEvent("updated", { pause_collection: null }, { pause_collection: { behavior: "void" } }),
+    );
+    const resumed = writes.filter((w) => w.table === "workspaces");
+    expect(resumed).toHaveLength(1);
+    expect(resumed[0].row).toEqual({ status: "on", paused_until: null });
+    expect(resumed[0].filters).toEqual([
+      ["agency_id", "eq", "agency-1"],
+      ["status", "eq", "paused"],
+      ["paused_until", "not is", null],
+    ]);
+  });
+
+  it("finds the agency by subscription id when the metadata has none", async () => {
+    agencyRow = { id: "agency-9" };
+    await deliver(
+      subscriptionEvent("updated", { metadata: {}, pause_collection: null }, { pause_collection: { behavior: "void" } }),
+    );
+    const resumed = writes.filter((w) => w.table === "workspaces");
+    expect(resumed).toHaveLength(1);
+    expect(resumed[0].filters[0]).toEqual(["agency_id", "eq", "agency-9"]);
+  });
+
+  it("leaves a pause alone on an ordinary update that merely carries pause_collection: null", async () => {
+    // Every update to an unpaused subscription says pause_collection: null.
+    // Acting on that would resume a pause written a moment ago, before
+    // Stripe's own event for it arrives.
+    await deliver(subscriptionEvent("updated", { pause_collection: null }, { cancel_at_period_end: true }));
+    expect(writes.filter((w) => w.table === "workspaces")).toHaveLength(0);
+  });
+
+  it("does nothing while the pause is still on", async () => {
+    await deliver(
+      subscriptionEvent(
+        "updated",
+        { pause_collection: { behavior: "void", resumes_at: 1_800_000_000 } },
+        { pause_collection: null },
+      ),
+    );
+    expect(writes.filter((w) => w.table === "workspaces")).toHaveLength(0);
+  });
+});
+
+describe("invoice.payment_failed", () => {
+  it("marks the plan past due from the failed invoice's time", async () => {
+    agencyRow = { id: "agency-1", plan_status: "active", payment_failed_at: null };
+    await deliver(invoiceEvent("payment_failed"));
+    const { row, col, val } = agencyWrite();
+    expect(col).toBe("id");
+    expect(val).toBe("agency-1");
+    expect(row).toEqual({
+      plan_status: "past_due",
+      payment_failed_at: new Date(1_789_000_000 * 1000).toISOString(),
+    });
+  });
+
+  it("is idempotent: a retry of the same run keeps the first failure's timestamp", async () => {
+    agencyRow = { id: "agency-1", plan_status: "past_due", payment_failed_at: "2026-09-01T00:00:00.000Z" };
+    await deliver(invoiceEvent("payment_failed"));
+    expect(writes).toHaveLength(0);
+  });
+
+  it("does not turn an account that never paid into a past-due one", async () => {
+    // A first checkout whose card bounced: `checkout.session.completed`
+    // never fired, the row is inactive, and it stays so.
+    agencyRow = { id: "agency-1", plan_status: "inactive", payment_failed_at: null };
+    await deliver(invoiceEvent("payment_failed"));
+    const { row } = agencyWrite();
+    expect(row).not.toHaveProperty("plan_status");
+    expect(row).toHaveProperty("payment_failed_at");
+  });
+
+  it("matches by customer when the invoice names no subscription", async () => {
+    agencyRow = { id: "agency-1", plan_status: "active", payment_failed_at: null };
+    await deliver(invoiceEvent("payment_failed", { parent: null }));
+    expect(agencyWrite().row.plan_status).toBe("past_due");
+  });
+
+  it("writes nothing for an invoice no agency owns", async () => {
+    agencyRow = null;
+    await deliver(invoiceEvent("payment_failed"));
+    expect(writes).toHaveLength(0);
+  });
+});
+
+describe("invoice.paid", () => {
+  it("reinstates a past-due plan and clears the mark", async () => {
+    agencyRow = { id: "agency-1", plan_status: "past_due", payment_failed_at: "2026-09-01T00:00:00.000Z" };
+    await deliver(invoiceEvent("paid"));
+    expect(agencyWrite().row).toEqual({ payment_failed_at: null, plan_status: "active" });
+  });
+
+  it("only clears the mark on an already-active plan, and is safe to replay", async () => {
+    agencyRow = { id: "agency-1", plan_status: "active", payment_failed_at: null };
+    await deliver(invoiceEvent("paid"));
+    expect(agencyWrite().row).toEqual({ payment_failed_at: null });
+    writes.length = 0;
+    await deliver(invoiceEvent("paid"));
+    expect(agencyWrite().row).toEqual({ payment_failed_at: null });
+  });
+
+  it("leaves a first purchase to checkout.session.completed", async () => {
+    agencyRow = { id: "agency-1", plan_status: "inactive", payment_failed_at: null };
+    await deliver(invoiceEvent("paid"));
+    expect(agencyWrite().row).not.toHaveProperty("plan_status");
+  });
 });
 
 describe("request handling", () => {
@@ -304,7 +507,7 @@ describe("request handling", () => {
   });
 
   it("acknowledges an event type it does not handle", async () => {
-    const res = await deliver({ type: "invoice.paid", data: { object: {} } });
+    const res = await deliver({ type: "charge.refunded", data: { object: {} } });
     expect(res.status).toBe(200);
     expect(writes).toHaveLength(0);
   });

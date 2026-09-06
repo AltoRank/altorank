@@ -5,6 +5,7 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { createClient } from "@/lib/supabase/server";
 import { billingEnabled, getStripe } from "@/lib/stripe";
 import { isPauseMonths, pausedUntil, resumesAtUnix } from "@/lib/billing/pause";
+import { liftStripePause, resumePausedWorkspaces } from "@/lib/billing/resume";
 import { validateCancellation } from "@/lib/billing/cancellation";
 
 // Pause, resume, cancel, keep. Owner only, like checkout and the portal:
@@ -58,20 +59,18 @@ export async function pauseAccount(months: unknown): Promise<{ pausedUntil: stri
  * (`paused_until` null) stays as its owner left it. Resumed sites go back to
  * publishing; a site that was still in setup would also have been in setup
  * when it was paused, and `on` is what activation would set.
+ *
+ * The same write the generate cron makes on its own once `paused_until` has
+ * passed, and the webhook makes when Stripe reports the pause lifted
+ * (lib/billing/resume.ts). This button is for ending the pause early.
  */
 export async function resumeAccount(): Promise<void> {
   const { supabase, agency } = await ownerAgency();
 
-  const { error } = await supabase
-    .from("workspaces")
-    .update({ status: "on", paused_until: null })
-    .eq("agency_id", agency.id)
-    .eq("status", "paused")
-    .not("paused_until", "is", null);
-  if (error) throw new Error(error.message);
+  await resumePausedWorkspaces(supabase, agency.id);
 
   if (billingEnabled && agency.stripe_subscription_id) {
-    await getStripe().subscriptions.update(agency.stripe_subscription_id, { pause_collection: "" });
+    await liftStripePause(getStripe(), agency.stripe_subscription_id);
   }
 
   revalidatePath("/settings/billing");

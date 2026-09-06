@@ -16,6 +16,8 @@ import { getQuota } from "@/lib/billing/quota";
 import { usageLine } from "@/lib/billing/usage-line";
 import { PlanCards, type PlanCard } from "./plan-cards";
 import { RetentionCard } from "./retention-card";
+import { DunningCard } from "./dunning-card";
+import { dunningInfo } from "@/lib/billing/dunning";
 import { SettingsTabs } from "../settings-tabs";
 import { canManageBilling } from "@/lib/team/access";
 
@@ -48,7 +50,7 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
     await Promise.all([
       supabase
         .from("agencies")
-        .select("plan, plan_status, current_period_end, stripe_customer_id, stripe_subscription_id, cancels_at")
+        .select("plan, plan_status, current_period_end, stripe_customer_id, stripe_subscription_id, cancels_at, payment_failed_at")
         .eq("id", agencyId)
         .single(),
       supabase
@@ -86,6 +88,12 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
   // the screen whose whole job is to state what you are paying for.
   const status = preview?.plan ? "active" : (agency?.plan_status ?? "inactive");
 
+  // A failing renewal is its own state, not "no plan": the tier is still the
+  // one being paid for and the fix is the card. The ladder is replaced by
+  // the one action that helps, because "Choose Managed" to a Managed
+  // customer opened a second Checkout and a second subscription.
+  const dunning = preview?.plan || simulation?.plan ? null : dunningInfo(agency ?? {});
+
   const isActive =
     Boolean(preview?.plan) || Boolean(simulation?.plan) || status === "active" || status === "trialing";
   // Owner only, like every other change to what the account pays, and only
@@ -115,10 +123,16 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
         subtitle={
           <>
             <StatusPill
-              status={isActive ? "on" : "setup"}
-              label={isActive ? `${PLAN_LABELS[plan]} plan · ${status}` : "No plan"}
+              status={dunning ? "error" : isActive ? "on" : "setup"}
+              label={
+                dunning
+                  ? `${PLAN_LABELS[plan]} plan · payment failed`
+                  : isActive
+                    ? `${PLAN_LABELS[plan]} plan · ${status}`
+                    : "No plan"
+              }
             />
-            {isActive && (
+            {(isActive || dunning) && (
               <span>
                 {PLAN_PRICES[plan]}
                 {plan !== "scale" ? " /mo" : ""}
@@ -159,6 +173,11 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
             </div>
           </Card>
 
+          {dunning ? (
+            <Card title="Your plan" flush>
+              <DunningCard planLabel={PLAN_LABELS[plan]} dunning={dunning} canManage={canManage} />
+            </Card>
+          ) : (
           <Card title={isActive ? "Your plan" : "Choose a plan"} flush>
             <div className="p-[18px]">
               <PlanCards
@@ -176,6 +195,7 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
               />
             </div>
           </Card>
+          )}
 
           {/* Only when there is something to pause or end. Self-host and
               accounts without a subscription have no billing to stop, and a
