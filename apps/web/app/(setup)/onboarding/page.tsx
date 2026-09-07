@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { OnboardingWizard } from "@/components/onboarding/wizard";
+import { SITE_STEPS, stepFromParam } from "@/lib/onboarding/steps";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { outputFromRow } from "@/lib/onboarding/output-settings";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
@@ -24,7 +25,8 @@ export const maxDuration = 120;
  * looking at. A saved profile, site details and output settings are handed
  * back in so reopening the wizard edits rather than re-proposes.
  */
-export default async function OnboardingPage() {
+export default async function OnboardingPage({ searchParams }: { searchParams: Promise<{ step?: string }> }) {
+  const { step } = await searchParams;
   const scopeId = await getScopedWorkspaceId();
   if (!scopeId) redirect("/workspaces");
 
@@ -83,6 +85,7 @@ export default async function OnboardingPage() {
       initialOutput={initialOutput}
       destinations={destinations ?? []}
       askAttribution={!answered}
+      initialStep={stepFromParam(step, SITE_STEPS.length + (answered ? 0 : 1))}
       initialRun={run}
       initialAutoApprove={Boolean(workspace.auto_approve)}
     />
