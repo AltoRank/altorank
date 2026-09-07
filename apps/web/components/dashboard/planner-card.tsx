@@ -311,32 +311,6 @@ export function PlannerCard({
       )}
       <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1">
         <StatusPill status={pill.status} label={pill.label} />
-        {/* The badge on the hover row is a number behind a glyph you have to
-            find first, and this is the one thing on the card that changes what
-            gets written. So it also says itself, in words, without hovering -
-            on the planned card only, which is the only state that can still
-            use an answer. */}
-        {keyword && actions.questions && unanswered > 0 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label={`Answer ${unanswered} unanswered question${unanswered === 1 ? "" : "s"} to personalize this article`}
-                onClick={() => openDlg("questions")}
-                className="inline-flex items-center gap-1 text-[10.5px] leading-snug text-accent-ink underline decoration-line underline-offset-[3px]"
-              >
-                <Icons.question size={10} className="shrink-0" />
-                <span>
-                  {unanswered} question{unanswered === 1 ? "" : "s"} to personalize
-                </span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-[220px]">
-              Answer them and your own experience goes into the article; leave them and the writer has only what it
-              could research.
-            </TooltipContent>
-          </Tooltip>
-        )}
         {actions.openImprovement && improvementHref && (
           <Link href={improvementHref} className="text-[11px] text-accent-ink underline decoration-line underline-offset-[3px]">
             {state === "improved" ? "Review rewrite" : "Open"}
@@ -366,6 +340,29 @@ export function PlannerCard({
           </Link>
         )}
       </div>
+      {/* The badge on the hover row is a number behind a glyph you have to find
+          first, and the interview behind it is the one thing on this card that
+          changes what gets written. So it also says itself, in words, with no
+          hovering - on the planned card only, the one state that can still use
+          an answer. Its own line, because at this size it is two of them. */}
+      {keyword && actions.questions && unanswered > 0 && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Answer ${unanswered} unanswered question${unanswered === 1 ? "" : "s"} to personalize this article`}
+              onClick={() => openDlg("questions")}
+              className="mt-1 block text-left text-[10.5px] leading-snug text-accent-ink decoration-line underline-offset-[3px] hover:underline focus-visible:underline"
+            >
+              {unanswered} question{unanswered === 1 ? "" : "s"} to personalize
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-[220px]">
+            Answer them and your own experience goes into the article; leave them and the writer has only what it could
+            research.
+          </TooltipContent>
+        </Tooltip>
+      )}
       {state === "frozen" && frozen && (
         <p className="m-0 mt-1 text-[10.5px] leading-snug text-ink-3" title={frozen}>
           {frozen}
