@@ -32,13 +32,17 @@ export default async function GeoPage() {
   ]);
 
   const summary = summariseRows(rows);
-  const trackedDomain = workspaces.find(
-    (w) => (w as { geo_tracking?: boolean }).geo_tracking,
-  )?.domain;
+  // The badge, the brand the actions are derived for, and the count all
+  // follow the scope like the results do. Until 2026-09-07 they read the
+  // whole account: on site B the header said "1 tracked" because site A
+  // was, and the action list named A's domain as the brand to look for in
+  // B's answers.
+  const inScope = scopeId ? workspaces.filter((w) => w.id === scopeId) : workspaces;
+  const tracked = inScope.filter((w) => (w as { geo_tracking?: boolean }).geo_tracking);
+  const trackedDomain = tracked[0]?.domain;
   const actions = rows.length
     ? deriveGeoActions({ rows, brandDomain: trackedDomain ?? "" })
     : [];
-  const tracked = workspaces.filter((w) => (w as { geo_tracking?: boolean }).geo_tracking);
   const lastChecked = rows[0]?.checked_at
     ? new Date(rows[0].checked_at).toLocaleDateString("en-GB", {
         day: "numeric",
@@ -67,7 +71,7 @@ export default async function GeoPage() {
           <>
             <StatusPill
               status={tracked.length ? "on" : "setup"}
-              label={tracked.length ? `${tracked.length} tracked` : "Not enabled"}
+              label={tracked.length ? (scopeId ? "Tracked" : `${tracked.length} tracked`) : "Not enabled"}
             />
             <span className="truncate">
               Whether ChatGPT, Claude, Gemini and Perplexity name this brand,

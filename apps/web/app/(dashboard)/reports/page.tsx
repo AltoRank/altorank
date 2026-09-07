@@ -32,7 +32,7 @@ export default async function ReportsPage() {
            report only ever carries the accent colour and the workspace
            initials. Logo upload is still unbuilt (2026-09-06). */
         subtitle={<span>Monthly PDF reports, in your accent colour</span>}
-        actions={workspaces.length > 0 ? <GenerateReportButton workspaces={workspaces} /> : undefined}
+        actions={workspaces.length > 0 ? <GenerateReportButton /> : undefined}
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">

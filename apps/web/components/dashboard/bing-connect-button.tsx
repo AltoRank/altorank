@@ -65,21 +65,15 @@ export function BingConnectButton({ connected }: { connected?: boolean }) {
         description="Read-only: clicks and impressions per day for the site, from Bing and the engines it powers."
       >
         <form action={action} className="flex flex-col gap-3.5">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[12.5px] font-medium text-ink-2">Workspace</span>
-            <select
-              name="workspace_id"
-              defaultValue={target.id}
-              required
-              className="px-3 py-2 rounded-lg border border-line bg-panel text-[13px] text-ink outline-none focus:border-accent transition-colors"
-            >
-              {workspaces.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/* The button already says which site ("Connect for Acme"), and the
+              rest of the screen is scoped to it. The <select> this carried
+              let the dialog connect a site the page was not showing, and it
+              defaulted to the scoped one only by coincidence of order. */}
+          <input type="hidden" name="workspace_id" value={target.id} />
+          <p className="text-[12.5px] text-ink-2">
+            For <span className="font-medium text-ink">{target.name}</span>
+            {target.domain ? <span className="font-mono text-[12px] text-ink-3"> · {target.domain}</span> : null}
+          </p>
 
           <label className="flex flex-col gap-1.5">
             <span className="text-[12.5px] font-medium text-ink-2">API key</span>
