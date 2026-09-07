@@ -34,7 +34,7 @@
  * mutations that are here (move/remove planned keywords, find-and-replace in
  * a draft, retry a publish a human already approved, pause/resume a site)
  * need a key with the "write" scope and mirror the routes one-to-one.
- * scripts/SKILL.md is the agent-facing statement of the same rules.
+ * skills/altorank/SKILL.md (repo root) is the agent-facing statement of the same rules.
  *
  * stdio discipline: stdout carries JSON-RPC frames and nothing else. Anything
  * written to stdout that is not a frame corrupts the session, so all logging
@@ -103,7 +103,7 @@ const server = new McpServer(
   {
     instructions:
       "AltoRank audits sites for AI-search readiness and writes SEO drafts into a human's review queue. " +
-      "Read apps/web/scripts/SKILL.md before using the account tools: preflight with altorank_whoami, pick a " +
+      "Read skills/altorank/SKILL.md (repo root) before using the account tools: preflight with altorank_whoami, pick a " +
       "workspace, check readiness, then suggest keywords and generate a draft. Every result is an envelope " +
       "{ ok, data | error, agent_guidance }; read agent_guidance first. Nothing here publishes, approves or " +
       "deletes, and you must not try to; the mutation tools (reschedule/remove planned keywords, find-and-replace " +
