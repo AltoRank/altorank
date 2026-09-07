@@ -27,9 +27,14 @@ export default async function BacklinksPage({ searchParams }: Props) {
   const params = await searchParams;
 
   const { agencyId } = await requireAuth();
-  const [workspaces, backlinks, openRequests] = await Promise.all([
+  const [workspaces, allBacklinks, openRequests] = await Promise.all([
     getWorkspaces(),
-    getBacklinks(params.workspace ?? scopeId ?? undefined, params.status),
+    // Unfiltered. `getBacklinks` applies the status chip in SQL, and every
+    // tile below counted over whatever came back - so with "Active" selected
+    // "Pending" and "Lost" both read 0 on an account that had plenty of both,
+    // and "Total backlinks" reported only the live subset. A count that moves
+    // when you filter is describing the filter.
+    getBacklinks(params.workspace ?? scopeId ?? undefined),
     // Other accounts' open requests. Reads with the service role behind a
     // fixed column list, because RLS scopes a member to rows their agency is
     // already part of, which an unclaimed request never is.
@@ -37,18 +42,20 @@ export default async function BacklinksPage({ searchParams }: Props) {
   ]);
 
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));
+  // The chip, applied where the table sees it and the strip does not.
+  const backlinks = params.status ? allBacklinks.filter((b) => b.status === params.status) : allBacklinks;
   // When this site's links were last looked up. The weekly pass inside the
   // rank cron does it; the button only exists for when someone cannot wait.
-  const lastCheckedAt = backlinks.reduce<string | null>(
+  const lastCheckedAt = allBacklinks.reduce<string | null>(
     (latest, b) => (b.discovered_at && (!latest || b.discovered_at > latest) ? b.discovered_at : latest),
     null,
   );
-  const liveCount = backlinks.filter((b) => b.status === "live").length;
-  const pendingCount = backlinks.filter((b) => b.status === "pending").length;
+  const liveCount = allBacklinks.filter((b) => b.status === "live").length;
+  const pendingCount = allBacklinks.filter((b) => b.status === "pending").length;
   // Average over the links that actually carry a reading. Counting an
   // unmeasured link as DR 0 drags the reported authority of the whole set down,
   // and reporting 0 for "no links yet" states a measurement nobody took.
-  const measuredDr = backlinks
+  const measuredDr = allBacklinks
     .map((b) => b.source_dr)
     .filter((d): d is number => typeof d === "number");
   const avgDr = measuredDr.length
@@ -77,7 +84,7 @@ export default async function BacklinksPage({ searchParams }: Props) {
         // "Avg DR" is the second tile of the strip immediately below this
         // line, with the hint explaining which 0-100 scale it is on. The
         // subtitle repeated the number without the scale.
-        subtitle={<><StatusPill status="on" label={plural(backlinks.length, "link")} /><span>{wsMap.get(scopeId ?? "")?.domain ?? plural(workspaces.length, "workspace")}</span></>}
+        subtitle={<><StatusPill status="on" label={plural(allBacklinks.length, "link")} /><span>{wsMap.get(scopeId ?? "")?.domain ?? plural(workspaces.length, "workspace")}</span></>}
         actions={
           <>
             <HowItWorks explainer={backlinksExplainer} />
@@ -91,11 +98,11 @@ export default async function BacklinksPage({ searchParams }: Props) {
       <StatStrip
         compact
         stats={[
-          { label: "Total backlinks", value: String(backlinks.length), delta: `${liveCount} live`, deltaType: "pos", hint: "Links pointing at this site, one row per referring domain. From DataForSEO's backlink index, refreshed weekly." },
+          { label: "Total backlinks", value: String(allBacklinks.length), delta: `${liveCount} live`, deltaType: "pos", hint: "Links pointing at this site, one row per referring domain. From DataForSEO's backlink index, refreshed weekly." },
           { label: "Avg DR", value: avgDr, delta: "source authority", hint: "Average authority of the linking domains: DataForSEO's 0-1000 domain rank mapped to 0-100. Not Ahrefs DR." },
-          { label: "Followed", value: String(backlinks.filter((b) => b.is_dofollow).length), delta: "pass authority", hint: "Links without rel=nofollow, ugc or sponsored. Only these pass authority; the rest are mentions." },
+          { label: "Followed", value: String(allBacklinks.filter((b) => b.is_dofollow).length), delta: "pass authority", hint: "Links without rel=nofollow, ugc or sponsored. Only these pass authority; the rest are mentions." },
           { label: "Pending", value: String(pendingCount), delta: "awaiting publisher", hint: "Exchange requests accepted but not yet placed by the other site." },
-          { label: "Lost", value: String(backlinks.filter((b) => b.status === "lost").length), delta: "gone since last check", hint: "Links present in an earlier check and missing from the latest one." },
+          { label: "Lost", value: String(allBacklinks.filter((b) => b.status === "lost").length), delta: "gone since last check", hint: "Links present in an earlier check and missing from the latest one." },
         ]}
       />
 

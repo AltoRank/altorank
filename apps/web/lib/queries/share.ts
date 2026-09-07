@@ -62,6 +62,15 @@ export async function shareCardFactsWith(supabase: SupabaseClient, workspaceId: 
         .select("clicks")
         .eq("workspace_id", workspaceId)
         .eq("source", "gsc")
+        // Property totals only. The sync writes four row shapes per day -
+        // totals, per query, per page, and per (query, page) - and summing
+        // them counts the same click up to four times (lib/gsc/analysis.ts).
+        // This number is printed on a public share card and burned into its
+        // OG image as "Search clicks, 28 days", which is the worst place in
+        // the product to be four times too high: it is the figure an agency
+        // puts in front of its own client.
+        .is("query", null)
+        .is("page_url", null)
         .gte("metric_date", since),
     ]);
   if (!ws) return null;

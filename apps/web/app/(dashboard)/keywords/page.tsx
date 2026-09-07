@@ -56,15 +56,25 @@ export default async function KeywordsPage({ searchParams }: Props) {
   // offered, and the URL asking for it is answered with the reason.
   const ranking = params.view === "ranking" && Boolean(scopeId);
 
-  const [workspaces, keywords, quota] = await Promise.all([
+  const [workspaces, allKeywords, quota] = await Promise.all([
     getWorkspaces(),
-    getKeywords(scopeId ?? undefined, params.status, params.intent),
+    // Unfiltered on purpose. `getKeywords` applies status and intent in SQL,
+    // and the strip below counts over whatever it is handed - so clicking
+    // "Shipped" made "Tracked" the shipped count, "Unscored" a shipped-only
+    // figure and "Avg difficulty" an average over one status. Articles fixed
+    // exactly this and left a note saying counts are "never over a filtered
+    // view" (articles/page.tsx); this page never got the same treatment.
+    getKeywords(scopeId ?? undefined),
     // Whether the nightly rank tracker will ever run for this account.
     // cron/serp refuses a no-plan agency before it checks anything, and the
     // page used to promise positions regardless (P0-O5).
     requireAuth().then(({ agencyId, user }) => getRequestQuota(agencyId, user.email ?? null)),
   ]);
   const rankTracking = entitledToScheduledWork(quota);
+  // The chips, applied where the table can see them and the strip cannot.
+  const keywords = allKeywords.filter(
+    (k) => (!params.status || k.status === params.status) && (!params.intent || k.intent === params.intent),
+  );
 
   let latest = new Map<string, LatestRanking>();
   let gscByTerm = new Map<string, QueryStat>();
@@ -87,9 +97,11 @@ export default async function KeywordsPage({ searchParams }: Props) {
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));
   const shown = keywords.filter((k) => matchesQuery([k.term], params.q ?? ""));
 
-  const shippedCount = keywords.filter((k) => k.status === "shipped").length;
-  const newCount = keywords.filter((k) => k.status === "new").length;
-  const scored = keywords
+  // Every figure in the strip is over the whole tracked set, never over the
+  // chips: a count that moves when you filter is describing the filter.
+  const shippedCount = allKeywords.filter((k) => k.status === "shipped").length;
+  const newCount = allKeywords.filter((k) => k.status === "new").length;
+  const scored = allKeywords
     .map((k) => k.difficulty)
     .filter((d): d is number => typeof d === "number");
 
@@ -121,7 +133,7 @@ export default async function KeywordsPage({ searchParams }: Props) {
 
       <StatStrip
         stats={[
-          { label: "Tracked", value: keywords.length.toLocaleString(), delta: `${newCount} new`, deltaType: newCount > 0 ? "pos" : undefined },
+          { label: "Tracked", value: allKeywords.length.toLocaleString(), delta: `${newCount} new`, deltaType: newCount > 0 ? "pos" : undefined },
           { label: "Shipped", value: shippedCount.toLocaleString(), delta: "articles live" },
           // Averaged over keywords that actually have a difficulty. Counting
           // unknowns as 0 dragged the average toward "easy" in proportion to
@@ -129,14 +141,14 @@ export default async function KeywordsPage({ searchParams }: Props) {
           { label: "Avg difficulty", value: scored.length > 0 ? Math.round(scored.reduce((s, d) => s + d, 0) / scored.length) : "—" },
           {
             label: "Unscored",
-            value: String(keywords.length - scored.length),
+            value: String(allKeywords.length - scored.length),
             // "all have difficulty" is a claim about a set. With no keywords
             // there is no set, and the empty account read "0 / all have
             // difficulty" beside a table saying it had none.
             delta:
-              keywords.length === 0
+              allKeywords.length === 0
                 ? "no keywords yet"
-                : scored.length === keywords.length
+                : scored.length === allKeywords.length
                   ? "all have difficulty"
                   : "no difficulty reading",
           },
@@ -234,7 +246,14 @@ export default async function KeywordsPage({ searchParams }: Props) {
               })}
               {shown.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-3.5 py-8 text-center text-ink-3">No keywords yet.</td>
+                  {/* "No keywords yet" was asserted whatever emptied the
+                      table, so a status chip that matched nothing told an
+                      account with 200 keywords it had none. The plan view
+                      below already branched on this; the ranking view never
+                      did. */}
+                  <td colSpan={8} className="px-3.5 py-8 text-center text-ink-3">
+                    {allKeywords.length === 0 ? "No keywords yet." : "No keyword matches these filters."}
+                  </td>
                 </tr>
               )}
             </tbody>
@@ -306,7 +325,7 @@ export default async function KeywordsPage({ searchParams }: Props) {
               {shown.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-3.5 py-10 text-center text-ink-3">
-                    {keywords.length === 0 ? (
+                    {allKeywords.length === 0 ? (
                       // Was 66 words describing where the first analysis reads
                       // from and how the plan is built. All of it is in the
                       // How it works dialog one row above this table, verbatim
