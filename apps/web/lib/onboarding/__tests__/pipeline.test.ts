@@ -40,9 +40,9 @@ vi.mock("@/lib/content/fan-out", async () => {
 // The week's related keywords, bought in one task before any draft is
 // dispatched. Faked here because the real one is a paid provider call; what
 // this suite pins is that it is called once and its rows reach the drafts.
-const relatedBatch = vi.fn(async () => new Map<string, unknown[]>());
+const relatedBatch = vi.fn(async (_terms: string[], _locale: unknown) => new Map<string, unknown[]>());
 vi.mock("@/lib/seo/brief-data", () => ({
-  fetchRelatedKeywordsBatch: (...a: unknown[]) => relatedBatch(...(a as [])),
+  fetchRelatedKeywordsBatch: (terms: string[], locale: unknown) => relatedBatch(terms, locale),
 }));
 const detect = vi.fn(async () => ({ found: 0, added: 0 }));
 vi.mock("@/lib/linking/detect", () => ({ detectLinks: (...a: unknown[]) => detect(...(a as [])) }));
