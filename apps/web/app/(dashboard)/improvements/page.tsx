@@ -11,6 +11,8 @@ import {
   type ExecutionRow,
 } from "@/components/dashboard/improvements/improvements-view";
 import type { RefreshCandidate, RefreshExecution, RefreshTask } from "@/lib/refresh/types";
+import type { TechPageRow } from "@/components/dashboard/improvements/technical-issues";
+import type { TechFinding } from "@/lib/seo/tech-audit";
 
 export const metadata: Metadata = { title: "Improvements" };
 
@@ -31,8 +33,16 @@ export default async function ImprovementsPage() {
   }
   const supabase = await createClient();
 
-  const [{ data: ws }, { data: gsc }, destinations, { data: candidates }, { data: tasks }, { data: executions }] =
-    await Promise.all([
+  const [
+    { data: ws },
+    { data: gsc },
+    destinations,
+    { data: candidates },
+    { data: tasks },
+    { data: executions },
+    { data: techPages },
+    { count: pagesChecked },
+  ] = await Promise.all([
       supabase
         .from("workspaces")
         .select("id, domain, refresh_enabled, refresh_days, refresh_last_analyzed_at")
@@ -62,7 +72,40 @@ export default async function ImprovementsPage() {
         .select("id, task_id, workspace_id, review_status, created_at, pushed_at, published_url, validation_issues, hunks, task:refresh_tasks(candidate_id, candidate:refresh_candidates(url, opportunity, article_id, site_page_id))")
         .eq("workspace_id", scopeId)
         .order("created_at", { ascending: false }),
+      // The technical assessment: pages the crawl read that have something
+      // mechanically wrong with them. Needs no Search Console, which is the
+      // whole point of showing it here - see `TechnicalIssues`. Capped at 200
+      // rows because the card groups by check and a site with 600 broken
+      // images does not need 600 <li>.
+      supabase
+        .from("site_pages")
+        .select("id, url, title, tech_findings, tech_checked_at")
+        .eq("workspace_id", scopeId)
+        .gt("tech_issue_count", 0)
+        .order("tech_issue_count", { ascending: false })
+        .limit(200),
+      // Every page that was checked, clean ones included: "9 issues" means
+      // something different across 12 pages and across 400.
+      supabase
+        .from("site_pages")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", scopeId)
+        .not("tech_checked_at", "is", null),
     ]);
+
+  const techRows: TechPageRow[] = (techPages ?? []).map((p) => ({
+    id: p.id as string,
+    url: p.url as string,
+    title: (p.title as string | null) ?? null,
+    findings: ((p.tech_findings as TechFinding[] | null) ?? []),
+  }));
+  // The most recent check across the rows we read. Null when nothing has been.
+  const techCheckedAt =
+    (techPages ?? [])
+      .map((p) => p.tech_checked_at as string | null)
+      .filter((d): d is string => Boolean(d))
+      .sort()
+      .at(-1) ?? null;
 
   // Titles for the Article column: our own articles, or the crawled page.
   const articleIds = new Set<string>();
@@ -150,6 +193,7 @@ export default async function ImprovementsPage() {
         }}
         candidates={candidateRows}
         executions={executionRows}
+        tech={{ pages: techRows, pagesChecked: pagesChecked ?? 0, checkedAt: techCheckedAt }}
       />
     </>
   );

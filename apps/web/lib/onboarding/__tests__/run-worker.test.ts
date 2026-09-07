@@ -48,7 +48,7 @@ describe("executeRun", () => {
     expect(run).toHaveBeenCalledWith(d.client, expect.objectContaining({ id: "ws1", domain: "example.com" }), expect.any(Function), { firstDraft: "dispatch" });
     const row = d.tables.onboarding_runs[0] as unknown as OnboardingRunRow;
     expect(row.status).toBe("running");
-    expect(row.phases.map((p) => `${p.phase}:${p.status}`)).toEqual(["scanning:done", "keywords:done", "planning:done", "drafting:active"]);
+    expect(row.phases.map((p) => `${p.phase}:${p.status}`)).toEqual(["scanning:done", "keywords:done", "pages:pending", "planning:done", "drafting:active"]);
     expect(row.keywords_found).toBe(94);
     expect(row.planned).toHaveLength(2);
     // One write per event (the claim is separate), each in order.
@@ -103,7 +103,7 @@ describe("executeRun", () => {
     await r.keepAlive;
     const row = d.tables.onboarding_runs[0] as unknown as OnboardingRunRow;
     expect(row.status).toBe("partial");
-    expect(row.phases[3]).toEqual({ phase: "drafting", status: "failed", detail: "The draft could not be started: ECONNREFUSED" });
+    expect(row.phases.find((p) => p.phase === "drafting")).toEqual({ phase: "drafting", status: "failed", detail: "The draft could not be started: ECONNREFUSED" });
   });
 
   it("a draft request the route refused closes the run too, unless the route already settled it", async () => {

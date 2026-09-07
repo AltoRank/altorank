@@ -26,6 +26,7 @@ import type { SiteDiscovery } from "@/lib/onboarding/site-discovery";
 import type { DomainAnalysis } from "@/lib/audit/domain-analysis";
 import type { GenerateArticleOptions, GenerateArticleResult } from "@/lib/content/generate";
 import type { ArticleResearch } from "@/lib/seo/research";
+import type { TechFinding } from "@/lib/seo/tech-audit";
 import { classifyIntent } from "@/lib/seo/intent";
 import { htmlToTiptapJson } from "@/lib/ai/tiptap";
 import { factCheckArticle } from "@/lib/ai/fact-check";
@@ -39,6 +40,23 @@ export const UNREADABLE_PREFIX = "unreadable.";
 
 function isUnreadable(domain: string): boolean {
   return domain.replace(/^https?:\/\//, "").toLowerCase().startsWith(UNREADABLE_PREFIX);
+}
+
+/**
+ * A name reserved by RFC 2606 / 6761 for testing: it resolves to nothing,
+ * anywhere, forever. Every e2e fixture domain is one (`*.altorank.test`).
+ *
+ * This exists because one of the stubs below stands in for something that is
+ * free. The other three replace a model call, a DataForSEO call and a written
+ * article, and those must never fire under test whatever domain is named. The
+ * page crawl is a plain GET: the only reason to stub it is that the fixture
+ * domain does not exist, so it is stubbed for exactly that case and a real
+ * domain gets the real crawl even with the switch on. That is what lets the
+ * crawl be exercised against a live site without any paid call firing.
+ */
+export function isReservedTestDomain(domain: string): boolean {
+  const host = domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase().replace(/\.$/, "");
+  return /\.(test|invalid|localhost|example)$/.test(host) || host === "localhost";
 }
 
 // --- The site --------------------------------------------------------------
@@ -156,6 +174,92 @@ export async function stubAnalyseDomain(options: {
       },
     ],
     headline: keywordsFound ? `${keywordsFound} fixture keywords stored. Nothing about this domain was measured.` : "Could not analyse this domain (e2e fixture).",
+  };
+}
+
+// --- The pages the customer already has --------------------------------------
+//
+// Onboarding crawls the customer's published pages and records what is
+// mechanically wrong with each one. The crawl is free, but it is still a real
+// fetch of a real domain, and every e2e domain is `*.altorank.test`, which
+// resolves to nothing. Left unstubbed the phase would spend the suite's time
+// on DNS failures and report a skip - true, but it would test nothing.
+//
+// So: three fixture pages with findings that are actually produced by
+// `checkPage` for markup of that shape. Written through the same table the
+// crawl writes, so /improvements renders them the same way.
+
+const STUB_TECH_PAGES: Array<{ path: string; title: string; meta: string | null; words: number; findings: TechFinding[] }> = [
+  {
+    path: "/blog/a-week-in-the-langhe-by-train",
+    title: "A week in the Langhe by train",
+    meta: null,
+    words: 1420,
+    findings: [
+      { code: "meta_description_missing", severity: "warning", message: "This page has no meta description." },
+      { code: "images_missing_alt", severity: "warning", message: "3 of 7 images have no alt text." },
+      { code: "no_structured_data", severity: "info", message: "No JSON-LD on this page." },
+    ],
+  },
+  {
+    path: "/blog/market-days-in-puglia",
+    title: "A week in the Langhe by train",
+    meta: null,
+    words: 180,
+    findings: [
+      { code: "meta_description_missing", severity: "warning", message: "This page has no meta description." },
+      { code: "thin_content", severity: "warning", message: "180 words, under the 300 an article usually needs." },
+      { code: "duplicate_title", severity: "warning", message: "2 pages share this title." },
+    ],
+  },
+  {
+    path: "/blog/closed-on-mondays",
+    title: "What closes on Mondays in Italy, region by region",
+    meta: "Museums, markets and family-run kitchens that shut on a Monday, listed by region, with the exceptions worth planning around.",
+    words: 940,
+    findings: [
+      { code: "h1_missing", severity: "warning", message: "This page has no H1." },
+    ],
+  },
+];
+
+/**
+ * The fixture crawl. Writes `site_pages` rows and returns the same outcome
+ * shape the real assessment returns, so the run screen's sentence comes from
+ * the same code path rather than from a second copy of it.
+ */
+export async function stubAssessExistingPages(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  domain: string,
+): Promise<{ status: "done" | "skipped"; detail: string; summary: null }> {
+  if (isUnreadable(domain)) {
+    return { status: "skipped", detail: "No sitemap we could read, so there were no existing pages to check.", summary: null };
+  }
+  const origin = `https://${domain.replace(/^https?:\/\//, "").replace(/\/+$/, "")}`;
+  const now = new Date().toISOString();
+  const rows = STUB_TECH_PAGES.map((p) => ({
+    workspace_id: workspaceId,
+    url: `${origin}${p.path}`,
+    path: p.path,
+    page_type: "article",
+    title: p.title,
+    meta_description: p.meta,
+    word_count: p.words,
+    status: 200,
+    tech_findings: p.findings,
+    tech_issue_count: p.findings.length,
+    tech_checked_at: now,
+    last_crawled_at: now,
+  }));
+  const { error } = await supabase.from("site_pages").upsert(rows, { onConflict: "workspace_id,url" });
+  if (error) throw new Error(`E2E_STUBS site pages: ${error.message}`);
+
+  const findings = STUB_TECH_PAGES.reduce((n, p) => n + p.findings.length, 0);
+  return {
+    status: "done",
+    detail: `Read ${rows.length} pages. Found ${findings} technical issues on ${rows.length} of them.`,
+    summary: null,
   };
 }
 

@@ -39,6 +39,7 @@ import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
 import { schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
 import { fanOutDrafts } from "@/lib/content/fan-out";
 import { detectLinks } from "@/lib/linking/detect";
+import { assessExistingPages } from "./site-assessment";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
 
 export type Emit = (event: OnboardingEvent) => void;
@@ -181,6 +182,35 @@ async function runPhases(
     }
   }
 
+  // --- Phase 3: read the pages they already have ---------------------------
+  //
+  // The wizard asks for the blog and says what it is for. Until now nothing
+  // read it: detectLinks below harvests its URLs, and the pages themselves
+  // were only ever fetched by cron/site-pages, which selects on
+  // `first_analysed_at` and does one workspace a night. So on day one
+  // `site_pages` was empty and nothing in the product knew what the customer
+  // had already published.
+  //
+  // Free and technical: a plain GET per page and the checks in
+  // lib/seo/tech-audit.ts, which read status codes, tag lengths, H1 counts,
+  // canonicals and robots directives. No model, no DataForSEO. Bounded by
+  // ONBOARDING_CRAWL so a 600-post blog cannot eat the worker's 300 seconds,
+  // and best-effort: `assessExistingPages` never throws.
+  emit({ phase: "pages", status: "active" });
+  if (!domain) {
+    emit({ phase: "pages", status: "skipped", detail: "No domain to read pages from." });
+  } else {
+    const startedAt = Date.now();
+    const pages = await assessExistingPages(supabase, workspace.id, domain);
+    // The number the budget is set against. Logged rather than shown: the
+    // customer wants to know what was found, and whoever tunes ONBOARDING_CRAWL
+    // wants to know how long it took on a real site.
+    console.log(
+      `[onboarding] pages: ${pages.status} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s - ${pages.detail}`,
+    );
+    emit({ phase: "pages", status: pages.status, detail: pages.detail });
+  }
+
   // --- The link pool, before anything is written ---------------------------
   //
   // The wizard asks for the sitemap and says what it is for: "Used to find
@@ -205,7 +235,7 @@ async function runPhases(
     }
   }
 
-  // --- Phase 3: write the first draft -------------------------------------
+  // --- Phase 4: schedule the month, then write the first draft ------------
   emit({ phase: "planning", status: "active" });
   let plan: PlannedEntry[] = [];
   if (keywordsFound === 0) {

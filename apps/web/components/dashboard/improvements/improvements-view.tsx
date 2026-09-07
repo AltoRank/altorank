@@ -19,6 +19,7 @@ import {
   scheduleCandidate,
 } from "@/app/actions/refresh";
 import { describeEvidence } from "@/lib/refresh/brief";
+import { TechnicalIssues, type TechPageRow } from "./technical-issues";
 import {
   OPPORTUNITY_LABELS,
   type Opportunity,
@@ -49,6 +50,8 @@ type Props = {
   refresh: { enabled: boolean; days: number[]; lastAnalyzedAt: string | null };
   candidates: CandidateRow[];
   executions: ExecutionRow[];
+  /** The free, GSC-free half of this page. See `TechnicalIssues`. */
+  tech: { pages: TechPageRow[]; pagesChecked: number; checkedAt: string | null };
 };
 
 const TABS: { id: "all" | ReviewStatus; label: string }[] = [
@@ -109,7 +112,7 @@ function Blocker({ title, body, href, cta }: { title: string; body: string; href
   );
 }
 
-export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, candidates, executions }: Props) {
+export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, candidates, executions, tech }: Props) {
   const router = useRouter();
   const [tab, setTab] = useState<"all" | ReviewStatus>("all");
   const [analyzing, startAnalyze] = useTransition();
@@ -206,6 +209,12 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
             )}
           </div>
         )}
+
+        {/* Above the rewrites on purpose. Everything below this needs Search
+            Console; this does not, so on a fresh account it is the only thing
+            on the page with anything in it, and burying it under two empty
+            tables would be the wrong order to read them in. */}
+        <TechnicalIssues pages={tech.pages} pagesChecked={tech.pagesChecked} checkedAt={tech.checkedAt} />
 
         <Card
           title="Rewrites"

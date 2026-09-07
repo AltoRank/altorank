@@ -10,12 +10,33 @@
 // component, and what lets `stateFromRun` be checked against it: a persisted
 // run must render exactly as the live stream of its events would have.
 
-export type OnboardingPhase = "scanning" | "keywords" | "planning" | "drafting";
+export type OnboardingPhase = "scanning" | "keywords" | "pages" | "planning" | "drafting";
 
 /** Where a phase is in its life. `skipped` is a real outcome, not a failure. */
 export type PhaseStatus = "pending" | "active" | "done" | "skipped" | "failed";
 
-export const PHASE_ORDER: readonly OnboardingPhase[] = ["scanning", "keywords", "planning", "drafting"];
+/**
+ * `pages` sits after `keywords` and not next to `scanning`, which is where it
+ * reads more naturally, for two reasons that are about the data rather than
+ * the sentence. `analyseDomain` writes the ranked keywords that
+ * `syncSitePages` attaches to each page, so running after it means a page's
+ * keyword comes from the SERP rather than from its slug; and `detectLinks`,
+ * which fills the internal-link pool right after this, reads `site_pages` for
+ * a target's title, so a crawl that has already happened makes the pool
+ * better on the very first draft.
+ */
+export const PHASE_ORDER: readonly OnboardingPhase[] = ["scanning", "keywords", "pages", "planning", "drafting"];
+
+/**
+ * The phases whose failure explains an empty calendar.
+ *
+ * `onboardingOutcome` names the earliest thing that went wrong as the reason
+ * nothing was scheduled, and that is only honest for phases the schedule
+ * depends on. Nothing downstream needs `pages`: a site with no sitemap still
+ * gets keywords, a plan and a draft, so letting "no sitemap we could read"
+ * become the stated reason for a missing plan would blame the wrong thing.
+ */
+const OUTCOME_PHASES: readonly OnboardingPhase[] = ["scanning", "keywords", "planning", "drafting"];
 
 /**
  * One label per phase per outcome.
@@ -42,6 +63,18 @@ export const PHASE_LABELS: Record<OnboardingPhase, Record<PhaseStatus, string>> 
     done: "Found what to write about",
     skipped: "Nothing to write about yet",
     failed: "Could not find what to write about",
+  },
+  // "Check" and not "audit": an audit in this product is the DataForSEO crawl
+  // on /audits, with a score and a cost, and calling this one an audit too
+  // would make two different things share a word on the same account. What
+  // this does is read the pages that are already published and report what is
+  // mechanically wrong with them.
+  pages: {
+    pending: "Check your existing pages",
+    active: "Checking your existing pages",
+    done: "Checked your existing pages",
+    skipped: "No existing pages to check",
+    failed: "Could not check your existing pages",
   },
   planning: {
     pending: "Schedule your first month",
@@ -304,7 +337,7 @@ function detailFor(state: OnboardingState, phase: OnboardingPhase): string | nul
  * calendar better than "nothing to schedule until there are keywords" does.
  */
 function firstReason(state: OnboardingState): string | null {
-  for (const phase of PHASE_ORDER) {
+  for (const phase of OUTCOME_PHASES) {
     const step = state.steps.find((s) => s.phase === phase);
     if (!step) continue;
     if (step.status === "skipped" || step.status === "failed") {

@@ -37,6 +37,21 @@ import { extractLinks } from "./links";
 import { groupByPage, type RankedKeyword } from "./ranked-keywords";
 import { fetchInstantPage, type OnPageFacts } from "@/lib/audit/onpage";
 import { hasDataForSEOCredentials } from "./client";
+import { ALLOW_EVERYTHING, isAllowed, loadRobots, type RobotsRules } from "./robots";
+import {
+  canonicalOf,
+  checkPage,
+  countH1,
+  countImages,
+  duplicateFindings,
+  openGraphOf,
+  robotsDirectivesOf,
+  summarise,
+  type RedirectHop,
+  type TechFacts,
+  type TechFinding,
+  type TechSummary,
+} from "./tech-audit";
 
 const SITE_PAGES_UPSERT_CHUNK = 10;
 
@@ -65,7 +80,21 @@ export const DEFAULTS = {
   timeoutMs: 15_000,
   /** Skip a page whose body is byte-identical to the stored one. */
   skipUnchanged: true,
+  /**
+   * The whole crawl, wall-clock. Nothing enforced this before: the caller was
+   * a cron with 300 seconds to itself and a page cap that fitted inside it.
+   * Onboarding shares its 300 seconds with keyword discovery and cannot, so
+   * the crawl needs a stop it applies to itself. Whatever has been read when
+   * the budget runs out is stored; the rest is left for the nightly cron,
+   * which is self-healing by `last_pages_crawl_at`.
+   */
+  budgetMs: 240_000,
+  /** Hops the crawler will follow before giving up on a URL. */
+  maxRedirects: 5,
 };
+
+/** How the crawler names itself, everywhere. Also the name robots.txt matches. */
+export const CRAWLER_NAME = "AltoRank-Auditor";
 
 /** Path segments that name a blog. Same list `lib/cms/blog-url.ts` reasons over. */
 const POST_SEGMENTS = /\/(blog|posts?|articles?|news|insights|stories|guide|guida|guides)\//i;
@@ -117,6 +146,15 @@ export interface SitePage {
   rendered_by?: "dataforseo" | null;
   /** DataForSEO's own 0-100 score, only on a rendered page. */
   onpage_score?: number | null;
+  /**
+   * What is mechanically wrong with the page (migration 078). Null means
+   * nobody has checked; `[]` means checked and clean, and the two must stay
+   * distinguishable or an unchecked site reads as a perfect one.
+   */
+  tech_findings?: TechFinding[] | null;
+  /** `tech_findings.length`, so the dashboard can sort and count in SQL. */
+  tech_issue_count?: number | null;
+  tech_checked_at?: string | null;
 }
 
 export interface CrawlSummary {
@@ -125,6 +163,17 @@ export interface CrawlSummary {
   failed: number;
   skipped: number;
   pages: SitePage[];
+  /**
+   * The technical assessment over the pages this run read, or null when the
+   * crawl was not asked for one.
+   */
+  tech: TechSummary | null;
+  /** URLs robots.txt told us not to fetch. Not failures: we did not ask. */
+  disallowed: number;
+  /** True when the budget or the page cap stopped the crawl short. */
+  truncated: boolean;
+  /** Set when robots.txt itself refused us the site. */
+  robotsBlocked: boolean;
 }
 
 // ── Discovery ───────────────────────────────────────────────────────────────
@@ -154,16 +203,19 @@ export function locsIn(xml: string): string[] {
  */
 export async function discoverUrls(
   domain: string,
-  opts: { timeoutMs?: number; maxUrls?: number } = {},
+  opts: { timeoutMs?: number; maxUrls?: number; declaredSitemaps?: string[] } = {},
 ): Promise<string[]> {
   const timeoutMs = opts.timeoutMs ?? DEFAULTS.timeoutMs;
   const maxUrls = opts.maxUrls ?? 5000;
   const origin = domain.startsWith("http") ? domain : `https://${domain}`;
 
-  const declared: string[] = [];
-  const robots = await bodyOf(`${origin}/robots.txt`, timeoutMs);
-  if (robots) {
-    for (const line of robots.split("\n")) {
+  // The caller may already hold robots.txt (syncSitePages reads it for its
+  // Disallow rules), and its Sitemap lines come with it, so the file is not
+  // fetched a second time.
+  const declared: string[] = [...(opts.declaredSitemaps ?? [])];
+  if (!opts.declaredSitemaps) {
+    const robots = await bodyOf(`${origin}/robots.txt`, timeoutMs);
+    for (const line of (robots ?? "").split("\n")) {
       const m = /^\s*sitemap:\s*(\S+)/i.exec(line);
       if (m) declared.push(m[1].trim());
     }
@@ -344,6 +396,68 @@ export function classifyPageType(
   return POST_SEGMENTS.test(path) ? "article" : "page";
 }
 
+/** One response, plus how many hops it took to get there. */
+interface FetchedPage {
+  status: number;
+  finalUrl: string;
+  redirects: RedirectHop[];
+  headers: Record<string, string>;
+  body: string;
+  tlsUnverified: boolean;
+}
+
+/**
+ * Fetch a page, following redirects by hand.
+ *
+ * `fetch()` follows them itself and reports only `redirected: boolean`, which
+ * cannot tell "your sitemap lists the http:// URL" from "four hops through a
+ * legacy path structure" - and those are different findings with different
+ * fixes. So: `redirect: "manual"`, one hop at a time, each hop re-entering
+ * `fetchSite` and therefore re-running `assertPublicUrl`, which is what stops
+ * a public site from bouncing the crawler onto a private address.
+ *
+ * The TLS-lenient fallback inside `fetchSite` follows redirects internally, so
+ * a page read that way reports no hops. That is stated rather than guessed:
+ * `tlsUnverified` is on the result and is a finding of its own.
+ */
+async function fetchChain(
+  url: string,
+  opts: { timeoutMs: number; maxRedirects?: number },
+): Promise<FetchedPage> {
+  const max = opts.maxRedirects ?? DEFAULTS.maxRedirects;
+  const redirects: RedirectHop[] = [];
+  let current = url;
+
+  for (let hop = 0; ; hop++) {
+    const res = await fetchSite(current, {
+      headers: { "User-Agent": UA },
+      signal: AbortSignal.timeout(opts.timeoutMs),
+      redirect: "manual",
+    });
+    const location = res.headers.get("location");
+    if (res.status >= 300 && res.status < 400 && location && hop < max) {
+      const next = new URL(location, current).toString();
+      redirects.push({ status: res.status, from: current, to: next });
+      // Read and discard the body so the socket is released before the next hop.
+      await res.text().catch(() => "");
+      current = next;
+      continue;
+    }
+    const headers: Record<string, string> = {};
+    res.headers.forEach((v, k) => {
+      headers[k.toLowerCase()] = v;
+    });
+    return {
+      status: res.status,
+      finalUrl: current,
+      redirects,
+      headers,
+      body: res.ok && (headers["content-type"] ?? "").includes("text/html") ? await res.text() : "",
+      tlsUnverified: headers["x-altorank-tls-unverified"] === "1",
+    };
+  }
+}
+
 export interface PageContext {
   domain: string;
   /**
@@ -358,6 +472,12 @@ export interface PageContext {
   /** Best-positioned ranked keyword per pathname, when the SERP told us. */
   rankedByPath?: Map<string, { keyword: string; position: number | null }>;
   timeoutMs?: number;
+  /**
+   * Run the technical checks and store their findings on the row. Off by
+   * default so nothing that already calls `crawlPage` changes shape without
+   * asking; `syncSitePages` turns it on for the assessment.
+   */
+  techChecks?: boolean;
 }
 
 /** Fetch one page, extract its body, and score it. Never throws. */
@@ -378,29 +498,39 @@ export async function crawlPage(url: string, ctx: PageContext): Promise<SitePage
     schema_types: null, status: 0, error: null,
   };
 
-  let html: string;
-  let status = 0;
+  // A page nothing could be established about still carries the one finding
+  // that can be: it did not load. The checks refuse to say more (see
+  // `checkPage`), so a 404 reports as a 404 rather than as five missing tags.
+  const failure = (status: number, error: string): SitePage =>
+    ctx.techChecks
+      ? {
+          ...base,
+          status,
+          error,
+          tech_findings: checkPage(emptyFacts(url, path, status)),
+          tech_issue_count: 1,
+          tech_checked_at: new Date().toISOString(),
+        }
+      : { ...base, status, error };
+
+  let fetched: FetchedPage;
   try {
-    const res = await fetchSite(url, {
-      headers: { "User-Agent": UA },
-      signal: AbortSignal.timeout(ctx.timeoutMs ?? DEFAULTS.timeoutMs),
-    });
-    status = res.status;
-    if (!res.ok) return { ...base, status, error: `HTTP ${res.status}` };
-    if (!(res.headers.get("content-type") ?? "").includes("text/html")) {
-      return { ...base, status, error: "not HTML" };
-    }
-    html = await res.text();
+    fetched = await fetchChain(url, { timeoutMs: ctx.timeoutMs ?? DEFAULTS.timeoutMs });
   } catch (err) {
     const e = err as { name?: string; cause?: { code?: string }; message?: string };
-    return {
-      ...base,
-      status,
-      error: e?.name === "TimeoutError" || e?.name === "AbortError"
+    return failure(
+      0,
+      e?.name === "TimeoutError" || e?.name === "AbortError"
         ? "timed out"
         : e?.cause?.code ?? e?.message ?? "fetch failed",
-    };
+    );
   }
+  const status = fetched.status;
+  if (status < 200 || status >= 400) return failure(status, `HTTP ${status}`);
+  if (!(fetched.headers["content-type"] ?? "").includes("text/html")) {
+    return { ...base, status, error: "not HTML" };
+  }
+  const html = fetched.body;
 
   // `main` or the longest `article`, falling back to body-minus-chrome. The
   // whole page would score the nav and footer as part of the article.
@@ -453,6 +583,42 @@ export async function crawlPage(url: string, ctx: PageContext): Promise<SitePage
       })
     : null;
 
+  const internalLinks = links.filter((l) => l.kind === "internal").length;
+  const externalLinks = links.filter((l) => l.kind === "external").length;
+
+  // The technical read. Everything below comes out of the response already in
+  // hand - no second fetch, no API - and none of it is an opinion about the
+  // writing: counts, lengths, presence, and what the page tells crawlers.
+  // `images` and `h1Count` are taken over the whole document rather than the
+  // extracted body, because a hero image in the template with no alt is still
+  // an image on the page with no alt, and a second H1 in the header is exactly
+  // the ambiguity the check is about.
+  let techFindings: TechFinding[] | null = null;
+  if (ctx.techChecks) {
+    const imgs = countImages(html);
+    const facts: TechFacts = {
+      url,
+      finalUrl: fetched.finalUrl,
+      status,
+      redirects: fetched.redirects,
+      tlsUnverified: fetched.tlsUnverified,
+      pageType,
+      title,
+      metaDescription,
+      h1Count: countH1(html),
+      wordCount: words,
+      canonical: canonicalOf(html, fetched.finalUrl),
+      robotsDirectives: robotsDirectivesOf(html, fetched.headers),
+      images: imgs.total,
+      imagesMissingAlt: imgs.missingAlt,
+      internalLinks,
+      externalLinks,
+      jsonLdTypes: schemaTypes,
+      openGraph: openGraphOf(html),
+    };
+    techFindings = checkPage(facts);
+  }
+
   return {
     url, path, page_type: pageType,
     content_hash: createHash("sha256").update(body).digest("hex").slice(0, 32),
@@ -462,12 +628,43 @@ export async function crawlPage(url: string, ctx: PageContext): Promise<SitePage
     seo_score: seo?.score ?? null, seo_checks: seo?.checks ?? null,
     aeo_score: aeo?.score ?? null, aeo_checks: aeo?.checks ?? null,
     audit: audit ? { verdict: audit.verdict, counts: audit.counts, items: audit.items } : null,
-    internal_links: links.filter((l) => l.kind === "internal").length,
-    external_links: links.filter((l) => l.kind === "external").length,
+    internal_links: internalLinks,
+    external_links: externalLinks,
     published_at: publishedAt,
     modified_at: isoOrNull(metaContent(html, ["article:modified_time", "dateModified"])),
     schema_types: schemaTypes,
     status, error: null,
+    ...(techFindings
+      ? {
+          tech_findings: techFindings,
+          tech_issue_count: techFindings.length,
+          tech_checked_at: new Date().toISOString(),
+        }
+      : {}),
+  };
+}
+
+/** The facts of a page that never answered: enough for the one honest finding. */
+function emptyFacts(url: string, path: string, status: number): TechFacts {
+  return {
+    url,
+    finalUrl: url,
+    status,
+    redirects: [],
+    tlsUnverified: false,
+    pageType: classifyPageType(path),
+    title: null,
+    metaDescription: null,
+    h1Count: 0,
+    wordCount: 0,
+    canonical: null,
+    robotsDirectives: [],
+    images: 0,
+    imagesMissingAlt: 0,
+    internalLinks: 0,
+    externalLinks: 0,
+    jsonLdTypes: [],
+    openGraph: [],
   };
 }
 
@@ -481,6 +678,20 @@ export interface SyncOptions {
   /** Only URLs matching this substring, for a targeted re-crawl. */
   only?: string;
   onProgress?: (done: number, total: number) => void;
+  /**
+   * Run the technical checks and store their findings. The crawl is the same
+   * either way - same fetches, same parse - so this only decides whether the
+   * findings are computed and written.
+   */
+  techChecks?: boolean;
+  /** Wall-clock stop for the whole crawl. See `DEFAULTS.budgetMs`. */
+  budgetMs?: number;
+  /**
+   * Obey robots.txt. On by default and there is no good reason to turn it off
+   * outside a test: this crawler visits sites that never asked for it, and a
+   * `Disallow` is the one instruction they can leave.
+   */
+  respectRobots?: boolean;
 }
 
 /**
@@ -499,10 +710,47 @@ export async function syncSitePages(
   const maxPages = opts.maxPages ?? DEFAULTS.maxPages;
   const concurrency = Math.max(1, opts.concurrency ?? DEFAULTS.concurrency);
   const skipUnchanged = opts.skipUnchanged ?? DEFAULTS.skipUnchanged;
+  const timeoutMs = opts.timeoutMs ?? DEFAULTS.timeoutMs;
+  const deadline = Date.now() + (opts.budgetMs ?? DEFAULTS.budgetMs);
+  const techChecks = opts.techChecks ?? false;
 
-  const all = await discoverUrls(domain, { timeoutMs: opts.timeoutMs });
+  // Ask permission before reading anything. `loadRobots` is handed the same
+  // guarded fetch every other request here uses, so a robots.txt on a private
+  // address is refused before it leaves.
+  const origin = domain.startsWith("http") ? domain : `https://${domain}`;
+  const robots: RobotsRules =
+    opts.respectRobots === false
+      ? ALLOW_EVERYTHING
+      : await loadRobots(origin, CRAWLER_NAME, async (u) => {
+          const body = await bodyOf(u, timeoutMs);
+          // `bodyOf` swallows the status, which is exactly what the RFC's
+          // 4xx/5xx split needs to see. Re-read it here rather than widening
+          // `bodyOf`, whose other two callers do not care.
+          if (body !== null) return { status: 200, body };
+          try {
+            const res = await fetchSite(u, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(timeoutMs) });
+            return { status: res.status, body: null };
+          } catch {
+            return { status: 0, body: null };
+          }
+        });
+
+  const all = await discoverUrls(domain, {
+    timeoutMs: opts.timeoutMs,
+    declaredSitemaps: robots.source === "fetched" ? robots.sitemaps : undefined,
+  });
   const filtered = opts.only ? all.filter((u) => u.includes(opts.only!)) : all;
-  const urls = prioritise(filtered, maxPages);
+  const allowed = filtered.filter((u) => isAllowed(robots, u));
+  const disallowed = filtered.length - allowed.length;
+  // Everything refused, and there were URLs to refuse: the site said no.
+  const robotsBlocked = filtered.length > 0 && allowed.length === 0;
+  const urls = prioritise(allowed, maxPages);
+
+  // A `Crawl-delay` is the site asking for space between requests. Honour it
+  // by dropping to one worker and pausing, rather than by ignoring it because
+  // it is not in the RFC: it is what the site owner wrote down.
+  const crawlDelayMs = Math.min((robots.crawlDelaySeconds ?? 0) * 1000, 5_000);
+  const workers = crawlDelayMs > 0 ? 1 : concurrency;
 
   const rankedByPath = await loadRankedKeywords(supabase, workspaceId);
 
@@ -520,10 +768,14 @@ export async function syncSitePages(
 
   const queue = [...urls];
   await Promise.all(
-    Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+    Array.from({ length: Math.min(workers, queue.length) }, async () => {
       while (queue.length) {
+        // The budget is checked between pages, not inside one: a page already
+        // in flight is cheaper to finish than to abandon, and the per-request
+        // timeout bounds it anyway.
+        if (Date.now() >= deadline) return;
         const url = queue.shift()!;
-        const page = await crawlPage(url, { domain, rankedByPath, timeoutMs: opts.timeoutMs });
+        const page = await crawlPage(url, { domain, rankedByPath, timeoutMs: opts.timeoutMs, techChecks });
         // Unchanged pages still get their timestamp moved, so a later run can
         // tell "checked and identical" from "never looked at".
         if (skipUnchanged && page.content_hash && knownHash.get(url) === page.content_hash) {
@@ -531,9 +783,27 @@ export async function syncSitePages(
         }
         pages.push(page);
         opts.onProgress?.(++done, urls.length);
+        if (crawlDelayMs > 0 && queue.length) await new Promise((r) => setTimeout(r, crawlDelayMs));
       }
     }),
   );
+
+  // Duplicates are the one question a single page cannot answer, so they are
+  // asked here, over what this run actually read - which is the whole site
+  // when it fitted inside the cap and the budget, and a subset otherwise.
+  // `truncated` says which, and the surfaces that render this say so too.
+  const truncated = pages.length < urls.length || urls.length < allowed.length;
+  if (techChecks) {
+    const dupes = duplicateFindings(
+      pages.map((p) => ({ url: p.url, title: p.title, metaDescription: p.meta_description, status: p.status })),
+    );
+    for (const page of pages) {
+      const extra = dupes.get(page.url);
+      if (!extra?.length) continue;
+      page.tech_findings = [...(page.tech_findings ?? []), ...extra];
+      page.tech_issue_count = page.tech_findings.length;
+    }
+  }
 
   // Upsert in chunks: one statement per page would be hundreds of round trips,
   // but 50 rows carrying audit and seo_checks JSON blew PostgREST's 8 s
@@ -541,8 +811,15 @@ export async function syncSitePages(
   // have landed is reported as a write failure so the caller can retry
   // tomorrow instead of marking the site crawled.
   for (let i = 0; i < pages.length; i += SITE_PAGES_UPSERT_CHUNK) {
+    // Every row in a chunk carries the same keys. PostgREST refuses an array
+    // whose objects differ ("All object keys must match"), and the tech
+    // columns are set on some rows and not others - a page that was rendered
+    // by the provider has no findings, and a non-HTML response has none either.
     const chunk = pages.slice(i, i + SITE_PAGES_UPSERT_CHUNK).map((p) => ({
       ...p,
+      tech_findings: p.tech_findings ?? null,
+      tech_issue_count: p.tech_issue_count ?? null,
+      tech_checked_at: p.tech_checked_at ?? null,
       workspace_id: workspaceId,
       last_crawled_at: new Date().toISOString(),
     }));
@@ -558,6 +835,12 @@ export async function syncSitePages(
     failed: pages.filter((p) => p.status === 0 || p.status >= 400).length,
     skipped,
     pages,
+    tech: techChecks
+      ? summarise(pages.map((p) => ({ findings: p.tech_findings ?? [] })))
+      : null,
+    disallowed,
+    truncated,
+    robotsBlocked,
   };
 }
 
