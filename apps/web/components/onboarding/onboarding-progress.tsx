@@ -224,8 +224,19 @@ function StepRow({ step }: { step: OnboardingStep }) {
   );
 }
 
-/** The weekday and day number for a `YYYY-MM-DD`, read in the zone it was written in. */
+/**
+ * The zone and locale every date on this screen is read in.
+ *
+ * UTC because the plan's dates are UTC. `en-US` and not the ambient locale
+ * because this renders on the server first: Node's ICU default and the
+ * browser's locale disagree ("18 Sept" against "Sep 18"), and React throws a
+ * hydration mismatch on the difference. Every other date in the dashboard is
+ * formatted the same way - `planner-grid.tsx:79` is the same call on the same
+ * `YYYY-MM-DD` shape.
+ */
+const DATE_LOCALE = "en-US";
 const DAY_LABEL: Intl.DateTimeFormatOptions = { weekday: "short", timeZone: "UTC" };
+const MONTH_DAY: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", timeZone: "UTC" };
 
 /**
  * A week of the plan, with what is planned on each day.
@@ -286,7 +297,7 @@ function CalendarStrip({
               }`}
             >
               <div className={`text-[10px] ${day.isToday ? "font-semibold text-accent-ink" : "text-ink-3"}`}>
-                {d.toLocaleDateString(undefined, DAY_LABEL)}
+                {d.toLocaleDateString(DATE_LOCALE, DAY_LABEL)}
                 <span className="ml-1 font-mono">{d.getUTCDate()}</span>
               </div>
               {isDraftDay && drafting && !article && (
@@ -320,7 +331,7 @@ function CalendarStrip({
       {beyond > 0 && lastDate && (
         <p className="m-0 mt-2 text-[12px] text-ink-3">
           and {beyond} more on the calendar through{" "}
-          {dayFromIso(lastDate).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })}.
+          {dayFromIso(lastDate).toLocaleDateString(DATE_LOCALE, MONTH_DAY)}.
         </p>
       )}
       {article && (
