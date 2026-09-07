@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { appUrl } from "@/lib/app-url";
 import type { DomainAudit } from "@/lib/types";
 
 /**
@@ -36,7 +37,7 @@ export async function startDomainAudit(workspaceId: string): Promise<string> {
   // The row was left at "running" with nothing ever coming to clear it. We now
   // wait for the 202 (fast, the crawl happens after it) and mark the audit
   // failed if the worker refused the job, so the UI can say so.
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const baseUrl = appUrl();
   const cookieHeader = (await cookies())
     .getAll()
     .map((c) => `${c.name}=${c.value}`)

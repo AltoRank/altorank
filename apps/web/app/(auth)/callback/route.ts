@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { notifyWelcome } from "@/lib/email/lifecycle";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
 const SAFE_NEXT = /^\/[a-zA-Z0-9/_-]*$/;
@@ -35,8 +36,15 @@ export async function GET(request: Request) {
   const supabase = await createClient();
 
   if (tokenHash && type) {
-    const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
-    if (!error) return NextResponse.redirect(`${origin}${next}`);
+    const { data: verified, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
+    if (!error) {
+      // The welcome, sent here rather than at signup: the confirmation link is
+      // already in their inbox, and a second email before they have clicked it
+      // is two emails each saying to click the other one. `sendOnce` is keyed
+      // by the user id, so re-opening the link does not send a second.
+      if (type === "signup" && verified.user) await sendWelcome(verified.user.id);
+      return NextResponse.redirect(`${origin}${next}`);
+    }
     return NextResponse.redirect(
       `${origin}/signin?error=${encodeURIComponent("That link has expired or was already used. Request a new one.")}`,
     );
@@ -52,4 +60,44 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.redirect(`${origin}/signin?error=Could+not+authenticate`);
+}
+
+/**
+ * Never allowed to break the confirmation. The account is confirmed by the
+ * time this runs, and a mail provider being down must not turn "you are in"
+ * into "could not authenticate".
+ */
+async function sendWelcome(userId: string): Promise<void> {
+  try {
+    const admin = createServiceClient();
+    const { data: member } = await admin
+      .from("agency_members")
+      .select("agency_id")
+      .eq("user_id", userId)
+      .limit(1)
+      .maybeSingle();
+    // The site they typed at signup, when there is one - it is what makes the
+    // email about them rather than about the product.
+    let domain: string | null = null;
+    let name: string | null = null;
+    if (member?.agency_id) {
+      const { data: workspace } = await admin
+        .from("workspaces")
+        .select("domain")
+        .eq("agency_id", member.agency_id as string)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      domain = (workspace?.domain as string | null) ?? null;
+    }
+    const { data: user } = await admin.auth.admin.getUserById(userId);
+    const meta = user?.user?.user_metadata as { name?: string; full_name?: string } | undefined;
+    name = meta?.name?.trim() || meta?.full_name?.trim() || null;
+    // A name field that holds an address is a name nobody wants read back.
+    if (name?.includes("@")) name = null;
+
+    await notifyWelcome(admin, userId, { name, domain });
+  } catch (err) {
+    console.error(`[callback] welcome email for ${userId}: ${err instanceof Error ? err.message : err}`);
+  }
 }

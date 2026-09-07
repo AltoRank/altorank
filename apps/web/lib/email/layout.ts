@@ -1,7 +1,8 @@
-// One layout for every email the app sends itself (invite, monthly report,
-// growth plan, free-tool results). Supabase's auth emails (confirm, reset,
-// magic link) use the HTML files in supabase/templates/, which mirror this
-// markup by hand because those templates cannot import code.
+// One layout for every email the app sends, without exception: the auth
+// emails, the invite, the monthly report, the growth plan, the free-tool
+// results and every lifecycle notice. Supabase's own mailer is never
+// triggered (lib/email/auth-emails.ts says why), so there are no templates
+// outside this file to keep in step with it.
 //
 // Deliberately plain: a wordmark, one accent, one column, the legal entity in
 // the footer. No images, so nothing is blocked or tracked, and it reads the
@@ -34,10 +35,24 @@ export function emailParagraph(text: string): string {
  * `preheader` is the line inbox clients show after the subject; it is hidden
  * in the body. `footerNote` is the one-line "why you got this", which every
  * transactional email should carry so the recipient never has to guess.
+ *
+ * `unsubscribeUrl` is set only for the optional categories
+ * (lib/email/categories.ts). A confirmation link or a failed-payment notice
+ * does not offer one, and offering one there would be a promise we would have
+ * to break the next time the account needed the person to act.
  */
-export function emailLayout(opts: { title: string; bodyHtml: string; preheader?: string; footerNote?: string }): string {
+export function emailLayout(opts: {
+  title: string;
+  bodyHtml: string;
+  preheader?: string;
+  footerNote?: string;
+  unsubscribeUrl?: string | null;
+}): string {
   const preheader = opts.preheader
     ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${esc(opts.preheader)}</div>`
+    : "";
+  const unsubscribe = opts.unsubscribeUrl
+    ? ` · <a href="${esc(opts.unsubscribeUrl)}" style="color:${EMAIL_INK_3};text-decoration:underline;">Stop these emails</a>`
     : "";
   return `<!doctype html>
 <html lang="en">
@@ -62,7 +77,7 @@ ${preheader}
       </td></tr>
       <tr><td style="padding:16px 32px 24px;border-top:1px solid ${EMAIL_LINE};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:${EMAIL_INK_3};">
         ${opts.footerNote ? `${esc(opts.footerNote)}<br>` : ""}
-        <a href="https://altorank.co" style="color:${EMAIL_INK_3};text-decoration:underline;">altorank.co</a> · ${LEGAL_FOOTER}
+        <a href="https://altorank.co" style="color:${EMAIL_INK_3};text-decoration:underline;">altorank.co</a> · ${LEGAL_FOOTER}${unsubscribe}
       </td></tr>
     </table>
   </td></tr>

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { authErrorMessage } from "@/lib/auth/errors";
 import { requireAuth } from "@/lib/auth/require-auth";
+import { announcePasswordChanged } from "@/lib/email/account-events";
 import { randomBytes } from "crypto";
 
 export async function updateAgencyProfile(formData: FormData) {
@@ -62,5 +63,8 @@ export async function changePassword(formData: FormData): Promise<{ error?: stri
 
   const { error } = await supabase.auth.updateUser({ password });
   if (error) return { error: authErrorMessage(error.message) };
+  // A security notice, and worth sending even though this person obviously
+  // knows: the case it exists for is the one where they do not.
+  await announcePasswordChanged(user.email ?? null);
   return {};
 }
