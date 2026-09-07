@@ -40,7 +40,7 @@ export default async function OnboardingPage() {
       // The account's answer rides along on the workspace's own account row,
       // so the question is asked of the account that owns this site, once, and
       // not again for its second site.
-      .select("id, domain, business_profile, sitemap_url, blog_root_url, example_article_urls, auto_generate_weekly_limit, agencies(attribution_source)")
+      .select("id, domain, business_profile, sitemap_url, blog_root_url, example_article_urls, auto_generate_weekly_limit, auto_approve, agencies(attribution_source)")
       .eq("id", scopeId)
       .single(),
     supabase.from("integrations").select("id, name, description").eq("tag", "CMS").order("name"),
@@ -84,6 +84,7 @@ export default async function OnboardingPage() {
       destinations={destinations ?? []}
       askAttribution={!answered}
       initialRun={run}
+      initialAutoApprove={Boolean(workspace.auto_approve)}
     />
   );
 }

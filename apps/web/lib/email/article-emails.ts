@@ -48,6 +48,12 @@ export interface ArticleDraftedEmail {
    * absent when every draft waits for a click (migration 079).
    */
   autoApproveAfter?: string | null;
+  /**
+   * The signed one-click hold URL for one recipient (lib/publishing/hold-link.ts),
+   * or null when no secret is configured. Per recipient, because the hold is
+   * recorded against the person whose address was in the link.
+   */
+  holdUrlFor?: (recipient: string) => string | null;
 }
 
 /**
@@ -67,7 +73,7 @@ const VERDICT_LINE: Record<FactCheckReport["verdict"], string> = {
     "The fact check found at least one figure with no source given anywhere in its sentence. Check those before publishing; they are listed against the draft.",
 };
 
-export function renderArticleDrafted(a: ArticleDraftedEmail): {
+export function renderArticleDrafted(a: ArticleDraftedEmail, recipient?: string): {
   subject: string;
   html: string;
   preheader: string;
@@ -77,9 +83,13 @@ export function renderArticleDrafted(a: ArticleDraftedEmail): {
   const url = articleUrl(a.articleId);
   const warn = a.verdict === "high_risk";
   const autoAfter = a.autoApproveAfter ? new Date(a.autoApproveAfter) : null;
+  const hold = autoAfter && recipient && a.holdUrlFor ? a.holdUrlFor(recipient) : null;
   const autoLine = autoAfter && !Number.isNaN(autoAfter.getTime())
-    ? `It publishes on its own after ${autoAfter.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC unless you hold it - open the draft and press Hold, or approve it now to skip the wait.`
+    ? `It publishes on its own after ${autoAfter.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC unless you hold it${hold ? "" : " - open the draft and press Hold"}, or approve it now to skip the wait.`
     : `It is a draft in your review queue - nothing publishes until you approve it.`;
+  const holdButton = hold
+    ? `<p style="margin:0 0 16px;font-size:13px;"><a href="${hold}" style="color:${EMAIL_INK};text-decoration:underline;">Hold this one</a> - it then waits for someone to approve it.</p>`
+    : "";
 
   const reasons = a.reasons.length
     ? `<p style="margin:0 0 6px;font-size:12px;color:${EMAIL_INK_3};">Why this keyword</p>` +
@@ -106,6 +116,7 @@ export function renderArticleDrafted(a: ArticleDraftedEmail): {
       emailParagraph(VERDICT_LINE[a.verdict]) +
       reasons +
       emailButton(url, "Read the draft") +
+      holdButton +
       emailParagraph(
         `If this is not what the site should be writing about, the keyword came from its queue - changing what is tracked changes what gets written next.`,
       ),
@@ -125,7 +136,6 @@ export async function sendArticleDraftedEmails(
   a: ArticleDraftedEmail,
 ): Promise<{ sent: number; failed: number; lastError?: string }> {
   if (!recipients.length) return { sent: 0, failed: 0 };
-  const { subject, html, preheader, footerNote } = renderArticleDrafted(a);
 
   let sent = 0;
   let failed = 0;
@@ -133,6 +143,8 @@ export async function sendArticleDraftedEmails(
 
   for (const to of recipients) {
     try {
+      // Rendered per recipient: the hold link is signed to the address.
+      const { subject, html, preheader, footerNote } = renderArticleDrafted(a, to);
       await sendTransactionalEmail(to, subject, html, footerNote, preheader);
       sent += 1;
     } catch (err) {
