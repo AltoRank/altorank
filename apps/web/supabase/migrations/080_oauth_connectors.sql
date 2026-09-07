@@ -1,4 +1,4 @@
--- 079: OAuth 2.0 for the hosted MCP endpoint
+-- 080: OAuth 2.0 for the hosted MCP endpoint
 -- Depends on: 051_api_keys (api_keys), 001_initial_schema (agencies)
 --
 -- MCP clients (ChatGPT, Claude.ai, Cursor, Codex...) add

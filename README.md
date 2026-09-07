@@ -113,7 +113,7 @@ from `/settings/api-keys` or the token the built-in OAuth flow issues:
 - consent at `/oauth/authorize`, owner or admin only, write scope opt-in
 - token at `/api/oauth/token`, authorization-code grant, no refresh token
 
-The token a connector receives is an `api_keys` row (migration 079), so it is
+The token a connector receives is an `api_keys` row (migration 080), so it is
 listed, expires and is revoked on `/settings/api-keys` like any other key.
 Claude Code registers it with
 `claude mcp add --transport http altorank https://app.altorank.co/api/mcp`;

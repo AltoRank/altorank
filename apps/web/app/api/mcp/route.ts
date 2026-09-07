@@ -13,7 +13,7 @@ import { agentRequest } from "@/scripts/lib/agent-client";
  * The same 26 tools as `npm run mcp`, reachable at one URL any MCP client
  * adds as a connector: ChatGPT, Claude.ai, Claude Code, Cursor, Codex. Auth
  * is a bearer token, which is either an API key from /settings/api-keys or
- * the token the OAuth flow issued (also an API key; migration 079). A missing
+ * the token the OAuth flow issued (also an API key; migration 080). A missing
  * or bad token answers 401 with the RFC 9728 pointer, and that header is what
  * lets a client discover the OAuth endpoints and sign the person in.
  *

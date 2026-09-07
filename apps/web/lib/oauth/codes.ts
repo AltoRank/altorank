@@ -7,7 +7,7 @@
 // exchange checks the PKCE verifier, the client and the redirect_uri, then
 // creates an API key: that key is the access token. From here on the
 // connector is indistinguishable from a key made on /settings/api-keys, which
-// is deliberate (see migration 079).
+// is deliberate (see migration 080).
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ALL_SCOPES, DEFAULT_SCOPES, expiryFromDays, generateApiKey, type ApiKeyScope } from "@/lib/agent/api-keys";
