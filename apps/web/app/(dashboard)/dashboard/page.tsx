@@ -203,6 +203,11 @@ export default async function DashboardPage() {
   // than present the zeros as findings.
   const audienceUnsplit = yields ? unattributedCount(yields, "audience") : 0;
   const audienceMeasured = audienceYields.some((a) => a.keywords > 0) || audienceUnsplit > 0;
+  // Same rule for competitors. A profile that names four rivals on a site
+  // where competitor research has never run printed "0 keywords" beside each
+  // of them - four measurements nobody took, rendered as four findings.
+  const competitorUnsplit = yields ? unattributedCount(yields, "competitor") : 0;
+  const competitorMeasured = competitorYields.some((c) => c.keywords > 0) || competitorUnsplit > 0;
   const unknownSources = yields ? unknownSourceCount(yields) : 0;
 
   return (
@@ -441,6 +446,11 @@ export default async function DashboardPage() {
                   <div className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3 mb-2">Competitor effectiveness</div>
                   {competitorYields.length === 0 ? (
                     <div className="text-ink-3">No competitors named in the business profile, and no keyword came from one.</div>
+                  ) : !competitorMeasured ? (
+                    <div className="text-ink-3">
+                      Not measured yet: no keyword on this site has been researched from a competitor. Run Generate with a
+                      competitor selected in the research drawer and this list fills in.
+                    </div>
                   ) : (
                     <ul className="space-y-1">
                       {competitorYields.map((c) => (
