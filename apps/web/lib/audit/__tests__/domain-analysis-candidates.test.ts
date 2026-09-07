@@ -267,6 +267,16 @@ describe("the stored hundred", () => {
     expect(stored).toHaveLength(20);
   });
 
+  it("drops nothing when the sitemap walk stopped at its own ceiling", async () => {
+    // A prefix of a huge sitemap would read the site's own pages as somebody
+    // else's. 5,000 is `discoverUrls`' cap, and hitting it means "there was
+    // more", not "this is all of it".
+    ranked.mockResolvedValue(Array.from({ length: 20 }, (_, i) => ({ ...wonRow(i), url: `https://x.co/deep/${i}` })));
+    sitemap.mockResolvedValue(Array.from({ length: 5000 }, (_, i) => `https://x.co/own/${i}`));
+    const { stored } = await analyse();
+    expect(stored).toHaveLength(20);
+  });
+
   it("does not walk the sitemap on a quick look, or when nothing ranks", async () => {
     ranked.mockResolvedValue([wonRow(1)]);
     await analyseDomain({ domain: "x.co", depth: "quick" });

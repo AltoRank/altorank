@@ -99,6 +99,8 @@ beforeEach(() => {
   for (const m of [scrape, voice, analyse, generate, quota, recommend, pick, creds, setSpendReporter, recordSpendByDefault]) m.mockReset();
   fanOut.mockReset();
   fanOut.mockReturnValue({ dispatched: 0, settled: Promise.resolve() });
+  relatedBatch.mockReset();
+  relatedBatch.mockResolvedValue(new Map());
   detect.mockReset();
   detect.mockResolvedValue({ found: 0, added: 0 });
   assess.mockReset();
@@ -388,6 +390,47 @@ describe("runOnboarding", () => {
      * plan entry still reads as unwritten; without this it would be dispatched
      * twice - once as the first draft, once as "the rest of the week".
      */
+    /**
+     * `keywords_for_keywords` is billed per task and takes twenty seeds. Seven
+     * drafts each buying their own was $0.63 of a measured $1.929 signup
+     * (round4 §4, W2), so the run buys the week once and carries each draft's
+     * share to the invocation that writes it.
+     */
+    it("buys the week's related keywords once and gives every draft its share", async () => {
+      plan.mockResolvedValue([
+        { term: "seo agent", date: "2026-09-07", keywordId: "k1" },
+        { term: "seo tools", date: "2026-09-08", keywordId: "k2" },
+      ]);
+      recommend.mockResolvedValue([{ ...NEXT, keywordId: "k1" }]);
+      fanOut.mockReturnValue({ dispatched: 1, settled: Promise.resolve() });
+      relatedBatch.mockResolvedValue(
+        new Map([
+          ["seo agent", [{ keyword: "seo agents", searchVolume: 100, competition: null }]],
+          ["seo tools", [{ keyword: "seo toolkit", searchVolume: 90, competition: null }]],
+        ]),
+      );
+
+      const { result } = await collectDispatch();
+
+      expect(relatedBatch).toHaveBeenCalledTimes(1);
+      expect(relatedBatch.mock.calls[0][0]).toEqual(["seo agent", "seo tools"]);
+      expect(result.pendingDraft?.relatedKeywords).toEqual([
+        { keyword: "seo agents", searchVolume: 100, competition: null },
+      ]);
+      expect(fanOut).toHaveBeenCalledWith("ws1", [
+        { keywordId: "k2", term: "seo tools", relatedKeywords: [{ keyword: "seo toolkit", searchVolume: 90, competition: null }] },
+      ]);
+    });
+
+    it("carries on when the shared lookup fails: each draft buys its own, as before", async () => {
+      plan.mockResolvedValue([{ term: "seo agent", date: "2026-09-07", keywordId: "k1" }]);
+      recommend.mockResolvedValue([{ ...NEXT, keywordId: "k1" }]);
+      relatedBatch.mockRejectedValue(new Error("rate limited"));
+      const { result } = await collectDispatch();
+      expect(result.pendingDraft?.term).toBe("seo agent");
+      expect(result.pendingDraft?.relatedKeywords).toBeUndefined();
+    });
+
     it("keeps the first draft out of the fan-out", async () => {
       plan.mockResolvedValue([
         { term: "seo agent", date: "2026-09-07", keywordId: "k1" },

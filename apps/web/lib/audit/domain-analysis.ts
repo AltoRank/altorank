@@ -202,11 +202,14 @@ async function ownSitemapPaths(
   rankedCount: number,
 ): Promise<Set<string> | null> {
   if (depth !== "full" || rankedCount === 0) return null;
+  const maxUrls = 5_000;
   const deadline = Date.now() + SITEMAP_WALK_MS;
   try {
-    const urls = await discoverUrls(domain, { timeoutMs: 6_000, maxUrls: 5_000, deadline });
-    // Out of time means the list is a prefix of the sitemap, not the sitemap.
-    if (Date.now() >= deadline) return null;
+    const urls = await discoverUrls(domain, { timeoutMs: 6_000, maxUrls, deadline });
+    // Both of these mean the list is a prefix of the sitemap rather than the
+    // sitemap, and a prefix would drop the site's own pages as somebody
+    // else's. Out of time, or stopped at the ceiling.
+    if (Date.now() >= deadline || urls.length >= maxUrls) return null;
     return ownPagePaths(urls);
   } catch {
     return null;
