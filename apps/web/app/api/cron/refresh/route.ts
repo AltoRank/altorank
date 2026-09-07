@@ -96,11 +96,15 @@ export async function GET(request: Request) {
     // produces, and one thing below is bought before anything checks: a
     // rewrite pays Anthropic for its brief inside `ensureBrief`, and the only
     // quota check on this path is `generateArticle`'s, which runs after that
-    // money is gone. `setRefreshSettings` needs no plan to flip the switch, so
-    // a no-plan account that had burned its free drafts paid for a brief on
-    // every scheduled day and errored immediately afterwards - and, because
+    // money is gone. Any signed-in member could arm the schedule, so a no-plan
+    // account that had burned its free drafts paid for a brief on every
+    // scheduled day and errored immediately afterwards - and, because
     // `rewrites` counts the attempt whether or not it worked, took one of the
     // run's two global slots away from a paying customer while doing it.
+    //
+    // `setRefreshSettings` now refuses to arm one without a plan, which is the
+    // half a person sees. This is the half that holds when a plan lapses after
+    // the switch was armed, and it is the one that guards the money.
     //
     // The same gate serp, geo and reports apply, for the same reason. See
     // entitledToScheduledWork.
