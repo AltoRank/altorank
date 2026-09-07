@@ -72,12 +72,17 @@ test("a planned card offers Instructions, Questions, Move and Remove; Remove dro
   await expect(card).toBeVisible();
   await expect(card.getByText("Planned")).toBeVisible();
   await card.hover();
-  for (const title of ["Instructions", "Questions", "Move to another day", "Remove from plan"]) {
-    await expect(card.getByTitle(title)).toBeVisible();
-    await expect(card.getByTitle(title)).toBeEnabled();
+  // By accessible name, not by `title`: the row is icons, and a title
+  // attribute is a tooltip only for a resting mouse pointer - never for touch,
+  // never for a keyboard, never for a screen reader. Instructions and
+  // Questions carry their state in the name ("(set)", "N unanswered"), hence
+  // the prefixes.
+  for (const name of [/^Instructions/, /^Questions/, /^Move to another day$/, /^Remove from plan$/]) {
+    await expect(card.getByRole("button", { name })).toBeVisible();
+    await expect(card.getByRole("button", { name })).toBeEnabled();
   }
 
-  await card.getByTitle("Remove from plan").click();
+  await card.getByRole("button", { name: "Remove from plan" }).click();
   const dialog = page.getByRole("dialog", { name: "Remove from plan" });
   await expect(dialog.getByText("the keyword itself stays tracked", { exact: false })).toBeVisible();
   await dialog.getByRole("button", { name: "Remove", exact: true }).click();
