@@ -31,9 +31,12 @@
 //   never blocks       The insert is one round trip and callers `await` it at
 //                      a point where they are already finishing (the end of a
 //                      cron, an error branch that is about to return). It is
-//                      never on the path of work a customer is waiting for,
-//                      and `recordEventSoon` exists for the call sites that
-//                      must not wait even that long.
+//                      never on the path of work a customer is waiting for.
+//                      There was a fire-and-forget variant here; nothing
+//                      needed it, and on Vercel a floating promise is as
+//                      likely to be frozen as delivered, so a call site that
+//                      genuinely cannot wait should say so and get one that
+//                      is tested rather than inherit an untested shortcut.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -76,17 +79,4 @@ export async function recordEvent(event: SystemEvent, client?: SupabaseClient): 
     console.error(`[observability] ${row.source}: could not record the event: ${describe(err)}`);
     return false;
   }
-}
-
-/**
- * Fire and forget, for the one shape of call site that cannot wait: a request
- * that is about to redirect or return, where an extra round trip is latency a
- * person feels.
- *
- * On Vercel the invocation can be frozen before this lands, so it is a weaker
- * promise than `recordEvent` and is used only where the alternative is not
- * recording at all. Never rejects, so it cannot produce an unhandled rejection.
- */
-export function recordEventSoon(event: SystemEvent, client?: SupabaseClient): void {
-  void recordEvent(event, client);
 }
