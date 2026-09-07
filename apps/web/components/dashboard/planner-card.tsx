@@ -408,7 +408,7 @@ export function PlannerCard({
           {keyword && actions.instructions && (
             <Tool
               label={hasInstructions ? "Instructions (set)" : "Instructions"}
-              hint="Anything the writer should know for this article in particular — what to lead with, what to leave out."
+              hint="Anything the writer should know for this article in particular: what to lead with, what to leave out."
               onClick={() => openDlg("instructions")}
               className={hasInstructions ? "text-warn-ink" : ""}
             >
