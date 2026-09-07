@@ -3,7 +3,8 @@ import { cronSecretFrom } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { generateReport } from "@/lib/reports/generate";
 import { reportRecipients } from "@/lib/reports/recipients";
-import { sendReportEmail } from "@/lib/email/resend";
+import { sendMonthlyReportEmails } from "@/lib/email/report-email";
+import { describeSendOutcome } from "@/lib/email/send-once";
 import { getQuota, entitledToScheduledWork } from "@/lib/billing/quota";
 
 /**
@@ -143,20 +144,30 @@ export async function GET(request: Request) {
             .select("id", { count: "exact", head: true })
             .eq("workspace_id", ws.id);
 
-          for (const recipient of recipients) {
-            await sendReportEmail(
-              recipient,
-              ws.name,
-              agencyInfo.name,
-              `${startDate} to ${endDate}`,
-              url,
-              {
+          // Through sendOnce: `reports` is an optional category with a switch
+          // on the preferences page, and until now the switch did nothing -
+          // an address that had turned reports off still got the PDF, with no
+          // unsubscribe link and no List-Unsubscribe headers to turn it off
+          // with. Keyed on (workspace, period), so re-running the cron for a
+          // month already mailed sends nothing.
+          const out = await sendMonthlyReportEmails(
+            supabase,
+            recipients,
+            {
+              workspaceName: ws.name,
+              agencyName: agencyInfo.name,
+              period: `${startDate} to ${endDate}`,
+              reportUrl: url,
+              highlights: {
                 articlesPublished: articleCount ?? 0,
                 keywordsTracked: keywordCount ?? 0,
               },
-            );
-          }
-          emailed = true;
+            },
+            { agencyId: ws.agency_id, workspaceId: ws.id },
+          );
+          emailed = out.sent > 0;
+          if (out.failed) emailError = out.lastError ?? "email failed";
+          else if (!out.sent) emailError = `nothing sent: ${describeSendOutcome(out)}`;
         } else {
           emailError = "no recipient: report_email is unset and no member can see this workspace";
         }

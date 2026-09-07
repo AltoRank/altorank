@@ -85,7 +85,7 @@ beforeEach(() => {
   process.env.CRON_SECRET = "s";
   workspaces = [];
   generateArticle.mockReset().mockResolvedValue(DRAFT);
-  sendArticleDraftedEmails.mockReset().mockResolvedValue({ sent: 1, failed: 0 });
+  sendArticleDraftedEmails.mockReset().mockResolvedValue({ sent: 1, skipped: 0, failed: 0 });
   announceSetupUnfinished.mockReset().mockResolvedValue("emailed 1");
   sweepUnfinishedSetups.mockReset().mockResolvedValue([]);
   announceNothingWritten.mockReset().mockResolvedValue("emailed 1");
@@ -113,6 +113,21 @@ describe("cron/generate and the stalled wizard", () => {
     await GET(request());
     expect(sendArticleDraftedEmails).toHaveBeenCalledTimes(1);
     expect(announceSetupUnfinished).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The draft-ready mail goes through sendOnce now, so the cron has to hand it
+   * a client to claim against and the workspace it is about - without those the
+   * ledger cannot key the send and the dedupe silently does nothing.
+   */
+  it("passes the client and the workspace scope to the draft-ready send", async () => {
+    workspaces = [{ ...stalled, onboarded_at: "2026-09-07T10:00:00Z" }];
+    await GET(request());
+    const [client, recipients, payload, scope] = sendArticleDraftedEmails.mock.calls[0]!;
+    expect(client).toBeTruthy();
+    expect(recipients).toEqual(["owner@acme.co"]);
+    expect(payload).toMatchObject({ articleId: "art-1", domain: "acme.com" });
+    expect(scope).toEqual({ agencyId: "ag-1", workspaceId: "ws-1" });
   });
 
   it("treats a skipped wizard as finished for this purpose", async () => {

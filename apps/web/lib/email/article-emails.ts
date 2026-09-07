@@ -19,8 +19,9 @@
 // until you have checked a number". Burying it in the body would make the
 // email a notification instead of a warning.
 
-import { sendTransactionalEmail } from "./resend";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_3 } from "./layout";
+import { sendOnce, type SendOnceOutcome } from "./send-once";
 import { appLink } from "@/lib/app-url";
 import type { FactCheckReport } from "@/lib/ai/fact-check";
 
@@ -105,7 +106,7 @@ export function renderArticleDrafted(a: ArticleDraftedEmail, recipient?: string)
     preheader: autoAfter
       ? `${a.wordCount.toLocaleString()} words, publishes on its own unless you hold it.`
       : `${a.wordCount.toLocaleString()} words, waiting in your review queue.`,
-    footerNote: `Sent because automatic drafting is on for ${esc(site)}. Turn it off in that workspace's settings and these stop.`,
+    footerNote: `Sent because automatic drafting is on for ${esc(site)}.`,
     html:
       `<p style="margin:0 0 4px;font-size:12px;color:${EMAIL_INK_3};">${esc(site)}</p>` +
       `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.3;color:${EMAIL_INK};">${esc(a.title)}</h1>` +
@@ -124,34 +125,42 @@ export function renderArticleDrafted(a: ArticleDraftedEmail, recipient?: string)
 }
 
 /**
- * Tell every member of the agency. One send each, and a failure for one address
- * does not stop the others.
+ * Tell every member of the agency, at most once each, and only those who still
+ * want to be told.
  *
- * Returns what happened rather than throwing: this is called after the article
- * is already saved, and an email problem must not turn a written draft into a
- * failed run.
+ * This is the highest-volume email the product sends, and until now it was the
+ * only lifecycle email that went out around `sendOnce` rather than through it:
+ * no `sent_emails` claim, no `email_preferences` check, no unsubscribe link and
+ * no RFC 8058 headers. Both halves of that were reproduced on the merged tree -
+ * called twice for one article id it sent six messages, and an address that had
+ * unsubscribed from `drafts` received the next draft anyway. The held digest,
+ * which is the same `drafts` category about the same drafts, had all four.
+ *
+ * Ignoring an unsubscribe is not untidiness. It is the one email behaviour with
+ * legal exposure (GDPR, CAN-SPAM), on the email sent most often.
+ *
+ * Keyed on the article id, so the four generate runs a day cannot announce one
+ * draft twice. Returns what happened rather than throwing: this is called after
+ * the article is already saved, and an email problem must not turn a written
+ * draft into a failed run.
  */
 export async function sendArticleDraftedEmails(
+  supabase: SupabaseClient,
   recipients: readonly string[],
   a: ArticleDraftedEmail,
-): Promise<{ sent: number; failed: number; lastError?: string }> {
-  if (!recipients.length) return { sent: 0, failed: 0 };
-
-  let sent = 0;
-  let failed = 0;
-  let lastError: string | undefined;
-
-  for (const to of recipients) {
-    try {
-      // Rendered per recipient: the hold link is signed to the address.
-      const { subject, html, preheader, footerNote } = renderArticleDrafted(a, to);
-      await sendTransactionalEmail(to, subject, html, footerNote, preheader);
-      sent += 1;
-    } catch (err) {
-      failed += 1;
-      lastError = err instanceof Error ? err.message : "unknown error";
-    }
-  }
-
-  return { sent, failed, ...(lastError ? { lastError } : {}) };
+  scope?: { agencyId?: string | null; workspaceId?: string | null },
+): Promise<SendOnceOutcome> {
+  return sendOnce(
+    supabase,
+    recipients,
+    {
+      type: "article_drafted",
+      subjectId: a.articleId,
+      category: "drafts",
+      agencyId: scope?.agencyId ?? null,
+      workspaceId: scope?.workspaceId ?? null,
+    },
+    // Rendered per recipient: the hold link is signed to the address.
+    (to) => renderArticleDrafted(a, to),
+  );
 }

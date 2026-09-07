@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { authErrorMessage } from "@/lib/auth/errors";
-import { safeNextPath } from "@/lib/auth/next-path";
+import { DEFAULT_AFTER_SIGN_IN, safeNextPath } from "@/lib/auth/next-path";
 import { SubmitButton } from "@/components/auth/submit-button";
 
 export const metadata: Metadata = {
@@ -14,18 +14,26 @@ async function signIn(formData: FormData) {
   "use server";
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
-  // A connector's consent screen sends people here first; go back to it after.
+  // Where the middleware was taking them before it stopped them here. Validated
+  // rather than trusted: it arrives in a URL, and a redirect target read out of
+  // a URL is an open redirect unless something refuses `//evil.com` and its
+  // relatives (lib/auth/next-path.ts).
   const next = safeNextPath(formData.get("next"));
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
-    const nextParam = next ? "&next=" + encodeURIComponent(next) : "";
-    redirect("/signin?error=" + encodeURIComponent(authErrorMessage(error.message)) + nextParam);
+    const back = new URLSearchParams({ error: authErrorMessage(error.message) });
+    // Kept across a failed attempt, or a mistyped password costs the reader the
+    // article the email was about.
+    if (next) back.set("next", next);
+    redirect(`/signin?${back}`);
   }
-  redirect(next ?? "/dashboard");
+  redirect(next ?? DEFAULT_AFTER_SIGN_IN);
 }
 
-export default async function SignInPage(props: { searchParams: Promise<{ error?: string; next?: string }> }) {
+export default async function SignInPage(props: {
+  searchParams: Promise<{ error?: string; next?: string }>;
+}) {
   const searchParams = await props.searchParams;
   const next = safeNextPath(searchParams?.next);
 
@@ -81,6 +89,9 @@ export default async function SignInPage(props: { searchParams: Promise<{ error?
 
       <p className="text-center text-sm text-ink-3">
         Don&apos;t have an account?{" "}
+        {/* No `next` here: signup ends at the confirm email and then the
+            wizard, so carrying a destination through would promise a landing
+            this flow does not make. */}
         <Link href="/signup" className="font-medium text-accent-ink hover:underline">
           Sign up
         </Link>

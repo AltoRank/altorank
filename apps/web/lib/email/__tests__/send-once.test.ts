@@ -4,67 +4,7 @@ const { sendTransactionalEmail } = vi.hoisted(() => ({ sendTransactionalEmail: v
 vi.mock("../resend", () => ({ sendTransactionalEmail }));
 
 import { sendOnce, normalizeRecipients, describeSendOutcome } from "../send-once";
-
-/**
- * A `sent_emails` table that behaves like the real one: the primary key
- * (email_type, subject_id, recipient) rejects a second claim with 23505, which
- * is the whole mechanism.
- */
-function db(opts: { preferences?: Record<string, string[]>; claimError?: string; prefsError?: string } = {}) {
-  const claims = new Set<string>();
-  const inserted: Record<string, unknown>[] = [];
-  const deleted: string[] = [];
-
-  const client = {
-    from(table: string) {
-      if (table === "email_preferences") {
-        return {
-          select: () => ({
-            in: async (_col: string, emails: string[]) => {
-              if (opts.prefsError) return { data: null, error: { message: opts.prefsError } };
-              return {
-                data: emails
-                  .filter((e) => opts.preferences?.[e])
-                  .map((e) => ({ email: e, unsubscribed: opts.preferences![e] })),
-                error: null,
-              };
-            },
-          }),
-        };
-      }
-      if (table === "sent_emails") {
-        return {
-          insert: async (row: Record<string, unknown>) => {
-            if (opts.claimError) return { error: { code: "42501", message: opts.claimError } };
-            const key = `${row.email_type}|${row.subject_id}|${row.recipient}`;
-            if (claims.has(key)) return { error: { code: "23505", message: "duplicate key" } };
-            claims.add(key);
-            inserted.push(row);
-            return { error: null };
-          },
-          delete: () => {
-            const filters: string[] = [];
-            const chain = {
-              eq(_col: string, val: string) {
-                filters.push(val);
-                if (filters.length === 3) {
-                  claims.delete(filters.join("|"));
-                  deleted.push(filters.join("|"));
-                  return Promise.resolve({ error: null });
-                }
-                return chain;
-              },
-            };
-            return chain;
-          },
-        };
-      }
-      throw new Error(`unexpected table ${table}`);
-    },
-  } as never;
-
-  return { client, inserted, deleted, claims };
-}
+import { fakeEmailDb as db } from "./fake-email-db";
 
 const render = () => ({ subject: "S", html: "<p>H</p>", footerNote: "F", preheader: "P" });
 
