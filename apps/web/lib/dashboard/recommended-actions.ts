@@ -38,6 +38,15 @@ export interface DashboardState {
    * the thing that would fill it. This card is the way back.
    */
   setupUnfinished: boolean;
+  /**
+   * The oldest draft in review for this site, when there is one.
+   *
+   * With setup unfinished this is the draft the generate cron wrote while
+   * nobody was looking (the crons do not wait for the wizard), and the card
+   * says so: the person who left at the CMS step is the one who can approve
+   * it, and nothing in "finish setup" tells them it exists.
+   */
+  reviewDraftId?: string | null;
 }
 
 export interface RecommendedAction {
@@ -50,6 +59,8 @@ export interface RecommendedAction {
   href?: string;
   /** In-place action, when it is not. Handled by the strip's client component. */
   run?: "plan";
+  /** A second, quieter link beside the action, for the one card that has two places to go. */
+  aside?: { label: string; href: string };
 }
 
 export function recommendedActions(state: DashboardState): RecommendedAction[] {
@@ -59,14 +70,26 @@ export function recommendedActions(state: DashboardState): RecommendedAction[] {
   // other cards, and finishing it does in one screen what they ask for one at
   // a time.
   if (state.setupUnfinished) {
-    out.push({
-      id: "finish-setup",
-      title: "Setup was never finished",
-      consequence:
-        "The month of scheduled articles and the first draft are written by the last screen of setup, so this site has nothing planned and nothing in review until it runs.",
-      cta: "Finish setup",
-      href: "/onboarding",
-    });
+    out.push(
+      state.reviewDraftId
+        ? {
+            id: "finish-setup",
+            title: "Setup was never finished",
+            consequence:
+              "Setup stopped before the last screen, and your first article is waiting for review. Nothing publishes until you approve it, and nothing else is planned until setup runs.",
+            cta: "Finish setup",
+            href: "/onboarding",
+            aside: { label: "Review the draft", href: `/content/${state.reviewDraftId}` },
+          }
+        : {
+            id: "finish-setup",
+            title: "Setup was never finished",
+            consequence:
+              "The month of scheduled articles and the first draft are written by the last screen of setup, so this site has nothing planned and nothing in review until it runs.",
+            cta: "Finish setup",
+            href: "/onboarding",
+          },
+    );
   }
 
   // Drafts next: they are the only item here that is waiting on a person.

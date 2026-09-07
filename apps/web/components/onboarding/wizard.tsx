@@ -56,15 +56,17 @@ import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
 import { onboardingOutcome, shouldResumeRun, type OnboardingRunSnapshot, type OnboardingState } from "@/lib/onboarding/events";
 import { freeAllowanceClause } from "@/lib/onboarding/copy";
+import { SITE_STEPS, stepIndex } from "@/lib/onboarding/steps";
 
-const SITE_STEPS = ["Business", "Audience & Competitors", "Blog", "Articles", "Integration"];
 // The question about the person, after every step about the site. Present only
 // while the account has not answered; a second workspace goes straight to plan.
 const ATTRIBUTION_STEP = SITE_STEPS.length;
 // The CMS step is the one a new account most often stops on: a credential
 // before value. Its primary action says what it does - move on without one -
 // instead of a "Continue" that reads as "continue once you have connected".
-const INTEGRATION_STEP = SITE_STEPS.indexOf("Integration");
+// The follow-up email for an account that stopped here deep-links to this
+// screen through the same list (lib/onboarding/steps.ts).
+const INTEGRATION_STEP = stepIndex("Integration");
 
 export type Destination = { id: string; name: string; description: string | null };
 
@@ -122,7 +124,7 @@ export function OnboardingWizard({
   initialRun?: OnboardingRunSnapshot | null;
 }) {
   const router = useRouter();
-  const steps = askAttribution ? [...SITE_STEPS, "About you"] : SITE_STEPS;
+  const steps: string[] = askAttribution ? [...SITE_STEPS, "About you"] : [...SITE_STEPS];
   const last = steps.length - 1;
   // The step, mirrored into the URL.
   //

@@ -28,6 +28,11 @@ export function RecommendedActionsStrip({ actions }: { actions: RecommendedActio
                   <Button size="sm">{a.cta}</Button>
                 </Link>
               )}
+              {a.aside ? (
+                <Link href={a.aside.href} className="ml-3 text-[12.5px] text-ink-2 underline underline-offset-2">
+                  {a.aside.label}
+                </Link>
+              ) : null}
             </div>
           </div>
         ))}

@@ -17,8 +17,10 @@ import { sendArticleDraftedEmails } from "@/lib/email/article-emails";
 import {
   announceNothingWritten,
   announcePausedSites,
+  announceSetupUnfinished,
   nothingWrittenReason,
   remindEndingPauses,
+  sweepUnfinishedSetups,
 } from "@/lib/email/schedule-events";
 import {
   orderByStaleness,
@@ -127,7 +129,7 @@ export async function GET(request: Request) {
 
   const { data: workspaces, error } = await supabase
     .from("workspaces")
-    .select("id, domain, agency_id, auto_generate_weekly_limit, refresh_enabled, refresh_days, auto_approve, auto_approve_hold_hours")
+    .select("id, domain, agency_id, auto_generate_weekly_limit, refresh_enabled, refresh_days, auto_approve, auto_approve_hold_hours, onboarded_at, onboarding_skipped_at")
     .eq("auto_generate", true)
     .neq("status", "paused");
 
@@ -326,8 +328,32 @@ export async function GET(request: Request) {
       // work is done and the row exists; an unreachable mail provider must not
       // turn that into an "error" the operator has to investigate, and must not
       // cost the workspace its weekly slot. The outcome is reported instead.
+      //
+      // A site whose wizard was never finished or skipped gets the setup email
+      // instead, carrying this draft: the person left at the CMS step and has
+      // not seen the plan screen, so "a draft is ready" without "here is where
+      // you stopped" is half the news. Once per site; the drafts after this
+      // one are announced the ordinary way.
       let notified = "";
+      const setupUnfinished = !ws.onboarded_at && !ws.onboarding_skipped_at;
       try {
+        if (setupUnfinished) {
+          const line = await announceSetupUnfinished(supabase, {
+            agencyId: ws.agency_id as string,
+            workspaceId,
+            domain,
+          });
+          notified = `, setup email: ${line}`;
+          results.push({
+            workspaceId,
+            domain,
+            status: "generated",
+            keyword: next.term,
+            articleId: result.articleId,
+            detail: `${result.wordCount} words, fact check ${result.factCheck.verdict}, chosen because ${next.reasons[0]}${notified}`,
+          });
+          continue;
+        }
         const to = await agencyRecipients(supabase, ws.agency_id as string, workspaceId);
         const out = await sendArticleDraftedEmails(to, {
           domain,
@@ -385,11 +411,17 @@ export async function GET(request: Request) {
   // written" is most obviously true and least visible.
   const pausedNotices = await announcePausedSites(supabase);
 
+  // The sites whose wizard stalled a day ago or more and got no draft above -
+  // the analyze cron has read them, and this says what it found and where
+  // setup stopped. A site that did get a draft was told at that moment.
+  const setupNotices = await sweepUnfinishedSetups(supabase);
+
   return NextResponse.json({
     checked: workspaces?.length ?? 0,
     pausesResumed: resumed,
     pauseReminders,
     pausedNotices,
+    setupNotices,
     generated: results.filter((r) => r.status === "generated").length,
     skipped: results.filter((r) => r.status === "skipped").length,
     errors: results.filter((r) => r.status === "error").length,

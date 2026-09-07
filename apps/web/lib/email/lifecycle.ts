@@ -35,6 +35,7 @@ import { agencyRecipients, agencyBillingRecipients, userEmail } from "./agency-r
 import { appLink } from "@/lib/app-url";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_2, EMAIL_INK_3 } from "./layout";
 import { formatGraceDate } from "@/lib/billing/dunning";
+import { wizardStepPath } from "@/lib/onboarding/steps";
 import { sendOnce, type RenderedEmail, type SendOnceOutcome } from "./send-once";
 
 /** Every string below is user data: a domain, a title, a keyword, a name. */
@@ -606,6 +607,99 @@ export function renderNothingWritten(a: NothingWrittenEmail): RenderedEmail {
   };
 }
 
+export type SetupUnfinishedEmail = {
+  domain: string | null;
+  /**
+   * The first unattended draft, when one exists - read from `articles` at send
+   * time, never assumed from the cron having run. Null means no draft, and
+   * the email says so rather than promising one.
+   */
+  draft: { articleId: string; title: string; keyword: string | null } | null;
+  /** Keywords on the workspace at send time. Shown only when there are any. */
+  keywordCount: number;
+  /**
+   * For a site nothing could be learned from: what could not be read, as the
+   * analysis recorded it ("not one page answered"). Null when it was readable.
+   * Free text on purpose, so the sender states the measured fact and this
+   * file does not paraphrase it into a guess.
+   */
+  unreadable: string | null;
+};
+
+/**
+ * The email for an account that stopped in the wizard and never came back.
+ *
+ * The first real signup (2026-09-07) confirmed their address, reached the CMS
+ * step four minutes in, and left. Nothing in the product spoke to them again:
+ * the layout only bounces to /onboarding while there is no business profile,
+ * and step 1 had already written one. Meanwhile the crons did their work - the
+ * site was read, keywords were found, and a draft was written into review -
+ * and the person who could have approved it was looking at a dashboard of
+ * dashes an hour later.
+ *
+ * Two versions, chosen from what is actually in the database when it is sent.
+ * With a draft, the article is the news and the wizard step is the second
+ * link. Without one, the email says what was measured - a keyword count only
+ * when there is one, "could not read" only when that is what happened - and
+ * offers the one thing to do. It never says an article is coming.
+ *
+ * Once per workspace, ever (`sendOnce`, keyed by the workspace id). A person
+ * who ignored this once has answered; the weekly "nothing is being written"
+ * mail is for sites that finished setup and stalled later, and it stands
+ * down for a site that never finished (schedule-events.ts).
+ */
+export function renderSetupUnfinished(a: SetupUnfinishedEmail): RenderedEmail {
+  const site = a.domain ?? "your site";
+  const resume = appLink(wizardStepPath("Integration"));
+  const footerNote = `Sent because setup for ${site} on AltoRank was started and not finished. This is the only email about it.`;
+
+  if (a.draft) {
+    return {
+      subject: `While you were away: a first draft for ${site}`,
+      preheader: `"${a.draft.title}" is waiting for review. Nothing publishes until you approve it.`,
+      footerNote,
+      html:
+        eyebrow(site) +
+        heading(a.draft.title) +
+        emailParagraph(
+          `You left setup at the CMS step. In the meantime we read <strong>${esc(site)}</strong> and drafted a first article` +
+            (a.draft.keyword ? ` for <strong>${esc(a.draft.keyword)}</strong>` : "") +
+            `.`,
+        ) +
+        emailButton(appLink(`/content/${a.draft.articleId}`), "Read the draft") +
+        emailParagraph(
+          `<strong>Nothing publishes until you approve it.</strong> The draft sits in review; you can edit it, send it back, or approve it from that page.`,
+        ) +
+        emailParagraph(
+          `Setup stopped one screen from the end. <a href="${esc(resume)}" style="color:${EMAIL_INK_2};">Pick it up at the CMS step</a>, or skip that step for now - a connected CMS is only needed to publish, not to review.`,
+        ),
+    };
+  }
+
+  const measured = a.unreadable
+    ? `We tried to read <strong>${esc(site)}</strong> and could not: ${esc(a.unreadable)}.`
+    : a.keywordCount > 0
+      ? `We read <strong>${esc(site)}</strong> and found <strong>${a.keywordCount}</strong> keyword${a.keywordCount === 1 ? "" : "s"} it could write about.`
+      : `We read <strong>${esc(site)}</strong>.`;
+
+  return {
+    subject: `We read ${site} while you were away`,
+    preheader: `Setup stopped at the CMS step. One screen finishes it.`,
+    footerNote,
+    html:
+      eyebrow(site) +
+      heading("Setup was never finished") +
+      emailParagraph(`You left setup at the CMS step. ${measured}`) +
+      emailParagraph(
+        `No article has been written yet. The month of scheduled articles and the first draft are written by the last screen of setup, so until it runs this site has nothing planned and nothing in review.`,
+      ) +
+      emailButton(resume, "Finish setup") +
+      emailParagraph(
+        `The CMS step can be skipped: a connected CMS is only needed to publish, and nothing publishes without your approval either way.`,
+      ),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Senders
 // ---------------------------------------------------------------------------
@@ -844,5 +938,27 @@ export async function notifyNothingWritten(
       workspaceId: scope.workspaceId,
     },
     () => renderNothingWritten(data),
+  );
+}
+
+export async function notifySetupUnfinished(
+  supabase: SupabaseClient,
+  scope: { agencyId: string; workspaceId: string },
+  data: SetupUnfinishedEmail,
+): Promise<SendOnceOutcome> {
+  const to = await agencyRecipients(supabase, scope.agencyId, scope.workspaceId);
+  return sendOnce(
+    supabase,
+    to,
+    {
+      type: "setup_unfinished",
+      // The workspace itself: once per site, ever. There is no second fact to
+      // key on - a person who did not come back after this has answered.
+      subjectId: scope.workspaceId,
+      category: "product",
+      agencyId: scope.agencyId,
+      workspaceId: scope.workspaceId,
+    },
+    () => renderSetupUnfinished(data),
   );
 }
