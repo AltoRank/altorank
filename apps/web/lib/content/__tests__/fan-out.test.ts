@@ -46,11 +46,11 @@ describe("fanOutDrafts", () => {
   it("no-ops without a secret or a base URL instead of throwing", () => {
     const f = vi.fn();
     expect(fanOutDrafts("ws1", targets(3), { baseUrl: "https://x", secret: null, fetchImpl: f as never }))
-      .toEqual({ dispatched: 0, skipped: "no-secret" });
+      .toMatchObject({ dispatched: 0, skipped: "no-secret" });
     expect(fanOutDrafts("ws1", targets(3), { baseUrl: null, secret: "s", fetchImpl: f as never }))
-      .toEqual({ dispatched: 0, skipped: "no-base-url" });
+      .toMatchObject({ dispatched: 0, skipped: "no-base-url" });
     expect(fanOutDrafts("ws1", [], deps(f as never)))
-      .toEqual({ dispatched: 0, skipped: "nothing-to-do" });
+      .toMatchObject({ dispatched: 0, skipped: "nothing-to-do" });
     expect(f).not.toHaveBeenCalled();
   });
 

@@ -8,6 +8,7 @@ import { outputFromRow } from "@/lib/onboarding/output-settings";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { getRequestQuota } from "@/lib/queries/quota";
+import { latestRun } from "@/lib/onboarding/run-store";
 
 export const metadata: Metadata = { title: "Set up your site" };
 
@@ -33,7 +34,7 @@ export default async function OnboardingPage() {
   // it can be written, and until now nothing said so (P1-A1). Null when
   // unmetered, and then there is nothing to qualify.
   const quotaRead = requireAuth().then(({ agencyId, user }) => getRequestQuota(agencyId, user.email ?? null));
-  const [{ data: workspace }, { data: destinations }, { data: output }, quota] = await Promise.all([
+  const [{ data: workspace }, { data: destinations }, { data: output }, quota, run] = await Promise.all([
     supabase
       .from("workspaces")
       // The account's answer rides along on the workspace's own account row,
@@ -49,6 +50,10 @@ export default async function OnboardingPage() {
       .eq("workspace_id", scopeId)
       .maybeSingle(),
     quotaRead,
+    // The run in progress, or the one just finished, so a reload lands on
+    // the run screen rather than on step 1. Same read /api/onboard/state
+    // serves the polling; through the user's client, so RLS decides.
+    latestRun(supabase, scopeId),
   ]);
   if (!workspace) redirect("/workspaces");
 
@@ -78,6 +83,7 @@ export default async function OnboardingPage() {
       initialOutput={initialOutput}
       destinations={destinations ?? []}
       askAttribution={!answered}
+      initialRun={run}
     />
   );
 }

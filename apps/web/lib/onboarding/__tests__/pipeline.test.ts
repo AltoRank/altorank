@@ -10,7 +10,7 @@ const pick = vi.fn();
 const creds = vi.fn();
 
 vi.mock("../site-text", () => ({ readSiteText: async (...a: unknown[]) => { const text = (await scrape(...a)) as string; return { text, source: text ? "static" : "none", chars: text.length }; } }));
-vi.mock("@/app/actions/voice", () => ({ createVoiceProfile: (...a: unknown[]) => voice(...a) }));
+vi.mock("@/lib/voice/train", () => ({ trainVoiceProfile: (...a: unknown[]) => voice(...a) }));
 vi.mock("@/lib/audit/domain-analysis", () => ({ analyseDomain: (...a: unknown[]) => analyse(...a) }));
 vi.mock("@/lib/content/generate", () => ({ generateArticle: (...a: unknown[]) => generate(...a) }));
 // Only getQuota is faked. The refusal message is real: it is counted off
@@ -32,7 +32,7 @@ const recordSpendByDefault = vi.fn();
 vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault: (e: unknown) => recordSpendByDefault(e) }));
 const plan = vi.fn(async () => [] as unknown[]);
 vi.mock("../plan", () => ({ schedulePlan: () => plan(), fulfilPlannedEntry: vi.fn(async () => undefined) }));
-const fanOut = vi.fn(() => ({ dispatched: 0 }));
+const fanOut = vi.fn(() => ({ dispatched: 0, settled: Promise.resolve() }));
 vi.mock("@/lib/content/fan-out", () => ({ fanOutDrafts: (...a: unknown[]) => fanOut(...(a as [])) }));
 const detect = vi.fn(async () => ({ found: 0, added: 0 }));
 vi.mock("@/lib/linking/detect", () => ({ detectLinks: (...a: unknown[]) => detect(...(a as [])) }));
@@ -51,6 +51,13 @@ async function collect(existing = 0): Promise<OnboardingEvent[]> {
   const events: OnboardingEvent[] = [];
   await runOnboarding(client(existing), WS, (e) => events.push(e));
   return events;
+}
+
+/** The worker's mode: the draft is chosen here and written elsewhere. */
+async function collectDispatch(c: never = richClient(0)) {
+  const events: OnboardingEvent[] = [];
+  const result = await runOnboarding(c, WS, (e) => events.push(e), { firstDraft: "dispatch" });
+  return { events, result };
 }
 
 const phases = (events: OnboardingEvent[]) =>
@@ -76,7 +83,7 @@ const richClient = (existing: number) =>
 beforeEach(() => {
   for (const m of [scrape, voice, analyse, generate, quota, recommend, pick, creds, setSpendReporter, recordSpendByDefault]) m.mockReset();
   fanOut.mockReset();
-  fanOut.mockReturnValue({ dispatched: 0 });
+  fanOut.mockReturnValue({ dispatched: 0, settled: Promise.resolve() });
   detect.mockReset();
   detect.mockResolvedValue({ found: 0, added: 0 });
   // Both of these are set per-test by the fan-out cases, and a leak into the
@@ -121,6 +128,17 @@ describe("runOnboarding", () => {
     expect(detect).not.toHaveBeenCalled();
   });
 
+  /**
+   * Through the client it was handed, never through the server action: the
+   * worker has no session, and the action's requireAuth failed every run's
+   * first phase with "Not authenticated" until this was the rule.
+   */
+  it("trains the voice through the client it was given", async () => {
+    const c = client(0);
+    await runOnboarding(c, WS, () => undefined);
+    expect(voice).toHaveBeenCalledWith(c, "ws1", expect.stringContaining("word"));
+  });
+
   it("emits every boundary of a full run, in order, ending in ready", async () => {
     const events = await collect();
     expect(phases(events)).toEqual([
@@ -161,27 +179,6 @@ describe("runOnboarding", () => {
     const drafting = events.filter((e) => e.phase === "drafting");
     expect(phases(drafting)).toEqual(["drafting:active", "drafting:active", "drafting:done"]);
     expect(drafting[1]).toMatchObject({ detail: expect.stringMatching(/3 ranking pages.*2 questions/) });
-  });
-
-  /**
-   * A client that aborted must not get a crawl and a paid article written for
-   * nobody. The phase in flight finishes; the next one never starts.
-   */
-  it("stops at the next phase boundary once the request is aborted", async () => {
-    const ac = new AbortController();
-    const events: OnboardingEvent[] = [];
-    scrape.mockImplementation(async () => { ac.abort(); return "word ".repeat(80); });
-    await runOnboarding(client(0), WS, (e) => events.push(e), ac.signal);
-    expect(phases(events)).toEqual(["scanning:active", "scanning:done"]);
-    expect(analyse).not.toHaveBeenCalled();
-    expect(generate).not.toHaveBeenCalled();
-  });
-
-  it("runs to completion when the signal is never aborted", async () => {
-    const ac = new AbortController();
-    const events: OnboardingEvent[] = [];
-    await runOnboarding(client(0), WS, (e) => events.push(e), ac.signal);
-    expect(events.at(-1)).toEqual({ phase: "ready" });
   });
 
   /**
@@ -231,7 +228,7 @@ describe("runOnboarding", () => {
       { term: "seo agent", date: "2026-09-07", keywordId: "k1" },
       { term: "seo tools", date: "2026-09-08", keywordId: "k2" },
     ]);
-    fanOut.mockReturnValue({ dispatched: 1 });
+    fanOut.mockReturnValue({ dispatched: 1, settled: Promise.resolve() });
     const events: OnboardingEvent[] = [];
     await runOnboarding(richClient(0), WS, (e) => events.push(e));
     const drafting = events.filter((e) => e.phase === "drafting");
@@ -248,7 +245,7 @@ describe("runOnboarding", () => {
       { term: "seo agent", date: "2026-09-07", keywordId: "k1" },
       { term: "seo tools", date: "2026-09-08", keywordId: "k2" },
     ]);
-    fanOut.mockReturnValue({ dispatched: 2 });
+    fanOut.mockReturnValue({ dispatched: 2, settled: Promise.resolve() });
     pick.mockReturnValue(null);
     recommend.mockResolvedValue([]);
     const events: OnboardingEvent[] = [];
@@ -316,18 +313,85 @@ describe("runOnboarding", () => {
     expect(setSpendReporter.mock.calls.at(-1)).toEqual([null]);
   });
 
-  it("disarms the spend reporter when the run is aborted early", async () => {
-    const ac = new AbortController();
-    scrape.mockImplementation(async () => { ac.abort(); return "word ".repeat(80); });
-    await runOnboarding(client(0), WS, () => {}, ac.signal);
-    expect(setSpendReporter.mock.calls.at(-1)).toEqual([null]);
-  });
-
   it("skips everything that needs a domain when there is none", async () => {
     const events: OnboardingEvent[] = [];
     await runOnboarding(client(0), { ...WS, domain: null }, (e) => events.push(e));
     expect(scrape).not.toHaveBeenCalled();
     expect(analyse).not.toHaveBeenCalled();
     expect(phases(events).slice(0, 4)).toEqual(["scanning:active", "scanning:skipped", "keywords:active", "keywords:skipped"]);
+  });
+
+  /**
+   * Under the worker the draft is not written here. The phase is left
+   * `active` with the keyword named, `ready` is not emitted - the draft route
+   * settles the row - and the caller gets the keyword and its gates' verdict
+   * back to dispatch after its final write.
+   */
+  describe("firstDraft: dispatch", () => {
+    it("chooses and gates the draft, returns it, and does not write or say ready", async () => {
+      const { events, result } = await collectDispatch();
+      expect(generate).not.toHaveBeenCalled();
+      expect(result.pendingDraft).toEqual({
+        term: "seo agent",
+        keywordId: null,
+        selection: { reasons: ["27,100 searches/mo"], score: 35.5, difficulty: 19, volume: 27100 },
+      });
+      expect(phases(events)).toEqual([
+        "scanning:active", "scanning:done",
+        "keywords:active", "keywords:done",
+        "planning:active", "planning:skipped",
+        "drafting:active", "drafting:active",
+      ]);
+      expect(events.at(-1)).toMatchObject({ detail: 'Writing "seo agent" now. It lands in your review queue when it is done.' });
+    });
+
+    it("still says ready when there is no draft to dispatch", async () => {
+      pick.mockReturnValue(null);
+      recommend.mockResolvedValue([]);
+      const { events, result } = await collectDispatch();
+      expect(result.pendingDraft).toBeNull();
+      expect(phases(events)).toContain("drafting:skipped");
+      expect(events.at(-1)).toEqual({ phase: "ready" });
+    });
+
+    it("gates the dispatched draft on the quota, with the same sentence", async () => {
+      quota.mockResolvedValue({ limit: 7, used: 7, remaining: 0, reason: "no-plan" });
+      const { events, result } = await collectDispatch();
+      expect(result.pendingDraft).toBeNull();
+      expect(events.find((e) => e.phase === "drafting" && "status" in e && e.status === "skipped"))
+        .toMatchObject({ detail: expect.stringContaining("This month's 7 free drafts are used") });
+      expect(events.at(-1)).toEqual({ phase: "ready" });
+    });
+
+    /**
+     * The first draft has no article yet when the fan-out is computed, so its
+     * plan entry still reads as unwritten; without this it would be dispatched
+     * twice - once as the first draft, once as "the rest of the week".
+     */
+    it("keeps the first draft out of the fan-out", async () => {
+      plan.mockResolvedValue([
+        { term: "seo agent", date: "2026-09-07", keywordId: "k1" },
+        { term: "seo tools", date: "2026-09-08", keywordId: "k2" },
+      ]);
+      recommend.mockResolvedValue([{ ...NEXT, keywordId: "k1" }]);
+      fanOut.mockReturnValue({ dispatched: 1, settled: Promise.resolve() });
+      const { result } = await collectDispatch();
+      expect(result.pendingDraft?.keywordId).toBe("k1");
+      expect(fanOut).toHaveBeenCalledWith("ws1", [{ keywordId: "k2", term: "seo tools" }]);
+    });
+
+    it("carries the fan-out note on the still-active draft", async () => {
+      plan.mockResolvedValue([
+        { term: "seo agent", date: "2026-09-07", keywordId: "k1" },
+        { term: "seo tools", date: "2026-09-08", keywordId: "k2" },
+      ]);
+      recommend.mockResolvedValue([{ ...NEXT, keywordId: "k1" }]);
+      fanOut.mockReturnValue({ dispatched: 1, settled: Promise.resolve() });
+      const { events } = await collectDispatch();
+      expect(events.filter((e) => e.phase === "drafting").at(-1)).toMatchObject({
+        status: "active",
+        detail: 'Writing "seo agent" now. It lands in your review queue when it is done. Writing 1 more article now. They appear as they finish.',
+      });
+    });
   });
 });
