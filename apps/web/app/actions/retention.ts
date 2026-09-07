@@ -87,7 +87,7 @@ export async function pauseAccount(months: unknown): Promise<BillingOutcome<{ pa
     await notifyAccountPaused(createServiceClient(), agency.id, {
       agencyName: (agency.name as string | null) ?? null,
       pausedUntil: until,
-      siteCount: (paused ?? []).length,
+      workspaceCount: (paused ?? []).length,
     });
   } catch (err) {
     console.error(`[pause] confirmation email: ${err instanceof Error ? err.message : err}`);

@@ -38,7 +38,7 @@ test("keywords and calendar show only the scoped workspace after switching", asy
   await expect(page).toHaveURL(/\/keywords$/);
 
   // The switcher is a button naming the active site; it opens a listbox of sites.
-  const switcher = page.getByRole("button", { name: "Choose which site to view" });
+  const switcher = page.getByRole("button", { name: "Choose which workspace to view" });
   async function switchTo(domain: string) {
     await switcher.click();
     await page.getByRole("listbox", { name: "Sites" }).getByRole("option", { name: domain }).click();

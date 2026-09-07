@@ -110,7 +110,7 @@ export function PauseSiteControl({
         }
         router.refresh();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Could not change the site's status");
+        toast.error(err instanceof Error ? err.message : "Could not change the workspace's status");
       }
     });
   }

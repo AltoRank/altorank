@@ -14,11 +14,11 @@ describe("workspace access", () => {
     // stored meaning is the default.
     expect(parseWorkspaceIds(["not-ours"], allowed)).toBeNull();
   });
-  it("labels null as All sites and lists names otherwise", () => {
+  it("labels null as All workspaces and lists names otherwise", () => {
     const names = new Map([["a", "Acme"], ["b", "Bolt"]]);
-    expect(accessLabel(null, names)).toBe("All sites");
+    expect(accessLabel(null, names)).toBe("All workspaces");
     expect(accessLabel(["a", "b"], names)).toBe("Acme, Bolt");
-    expect(accessLabel(["gone"], names)).toBe("No sites");
+    expect(accessLabel(["gone"], names)).toBe("No workspaces");
   });
 });
 

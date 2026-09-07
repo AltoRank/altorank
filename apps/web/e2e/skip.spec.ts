@@ -18,7 +18,7 @@ test("Skip setup records the skip and the dashboard stops redirecting", async ({
   await page.getByRole("radio", { name: "Friend or colleague" }).click();
   await finish.click();
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole("button", { name: "Choose which site to view" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Choose which workspace to view" })).toBeVisible();
 
   const db = admin();
   const { data } = await db.from("workspaces").select("onboarded_at, onboarding_skipped_at").eq("id", ws.id).single();

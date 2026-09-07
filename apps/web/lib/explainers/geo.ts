@@ -16,12 +16,12 @@ export const geoExplainer: Explainer = {
   sections: [
     {
       title: "What is asked",
-      lead: "A fixed prompt set per site. The set is the measurement, so it is chosen, not generated.",
+      lead: "A fixed prompt set per workspace. The set is the measurement, so it is chosen, not generated.",
       bullets: [
         "Each prompt is a question a buyer would actually ask. Changing the set changes the number and breaks the trend, which is why nothing writes prompts for you.",
         "Every enabled prompt is asked of every engine, so one sweep of ten prompts is forty answers.",
-        "A run stops at 24 probes and 3 sites, whichever comes first, and a site is not measured again within 7 days of its last sweep.",
-        "Measurement is opt-in per site, and on the hosted tier it needs an active plan: a web-search answer costs roughly sixty times a plain completion, so it is the most expensive thing the product does on a schedule.",
+        "A run stops at 24 probes and 3 workspaces, whichever comes first, and a workspace is not measured again within 7 days of its last sweep.",
+        "Measurement is opt-in per workspace, and on the hosted tier it needs an active plan: a web-search answer costs roughly sixty times a plain completion, so it is the most expensive thing the product does on a schedule.",
       ],
     },
     {

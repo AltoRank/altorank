@@ -34,7 +34,7 @@ export const EMAIL_CATEGORIES = {
   /** The monthly PDF. */
   reports: { optional: true, label: "Monthly reports" },
   /** Nothing is being written, and why. */
-  product: { optional: true, label: "Site status" },
+  product: { optional: true, label: "Workspace status" },
 } as const;
 
 export type EmailCategory = keyof typeof EMAIL_CATEGORIES;

@@ -73,7 +73,7 @@ export function MemberActions({
         Remove
       </Button>
 
-      <Dialog open={open} onOpenChange={setOpen} title={`Access for ${name}`} description="Role decides what they can do; workspace access decides which sites they see.">
+      <Dialog open={open} onOpenChange={setOpen} title={`Access for ${name}`} description="Role decides what they can do; workspace access decides which workspaces they see.">
         <div className="flex flex-col gap-4">
           <label className="flex flex-col gap-1.5">
             <span className="text-[12.5px] font-medium text-ink-2">Role</span>

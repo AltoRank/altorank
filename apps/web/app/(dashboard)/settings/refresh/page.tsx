@@ -41,7 +41,7 @@ export default async function RefreshSettingsPage() {
             />
           ) : (
             <p className="text-[13px] text-ink-3">
-              No site selected. <Link href="/workspaces" className="underline">Add one</Link> to schedule rewrites.
+              No workspace selected. <Link href="/workspaces" className="underline">Add one</Link> to schedule rewrites.
             </p>
           )}
           <p className="mt-4 text-[12.5px] text-ink-3">

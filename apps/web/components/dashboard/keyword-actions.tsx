@@ -33,7 +33,7 @@ export function KeywordActions({ workspaces, keywords = [] }: KeywordActionsProp
       // The workspace field is no longer a `required` <select>, so nothing in
       // the browser stops a submit when there is no workspace to bind to.
       if (!fd.get("workspace_id")) {
-        throw new Error("Add a site before tracking keywords for it.");
+        throw new Error("Add a workspace before tracking keywords for it.");
       }
       await createKeyword(fd);
       setOpen(false);

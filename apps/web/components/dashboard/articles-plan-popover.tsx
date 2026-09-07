@@ -167,7 +167,7 @@ function PlanPanel({ workspaceId, onDone }: { workspaceId: string; onDone: () =>
         const paceWords = describePace(r.pace);
         toast.success(
           r.pace === 0
-            ? "Writing paused for this site. Nothing already written changes."
+            ? "Writing paused for this workspace. Nothing already written changes."
             : `${paceWords[0].toUpperCase()}${paceWords.slice(1)}${
                 r.days.length ? `, publishing on ${r.days.length} ${r.days.length === 1 ? "day" : "days"}` : ""
               }. ${r.planned} planned.`,

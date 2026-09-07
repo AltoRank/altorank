@@ -111,7 +111,7 @@ export function WorkspaceSwitcher({
     <div className={cn(!inline && "border-b border-line px-3 py-2.5")} ref={ref}>
       {!inline && (
         <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-ink-3">
-          Site
+          Workspace
         </label>
       )}
       <div className="relative">
@@ -121,7 +121,7 @@ export function WorkspaceSwitcher({
           disabled={pending}
           aria-haspopup="listbox"
           aria-expanded={open}
-          aria-label="Choose which site to view"
+          aria-label="Choose which workspace to view"
           data-testid="workspace-switcher"
           className={cn(
             "w-full flex items-center gap-2 rounded-[7px] border border-line bg-bg py-1.5 pl-2 pr-2 text-left",
@@ -144,7 +144,7 @@ export function WorkspaceSwitcher({
         {open && (
           <div
             role="listbox"
-            aria-label="Sites"
+            aria-label="Workspaces"
             className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-[9px] border border-line bg-bg shadow-lg"
           >
             <div className="max-h-[260px] overflow-y-auto scroll py-1">
@@ -190,7 +190,7 @@ export function WorkspaceSwitcher({
                 )}
               >
                 <Icons.plus size={13} />
-                Add site
+                Add workspace
               </Link>
               <div className="mt-0.5 font-mono text-[10.5px] text-ink-3" data-testid="site-slots">
                 {siteSlotsLabel(allowance)}
