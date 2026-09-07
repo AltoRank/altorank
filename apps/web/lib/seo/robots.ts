@@ -210,8 +210,10 @@ export async function loadRobots(
   } catch {
     return ALLOW_NOTHING;
   }
-  if (res.status >= 500 || res.status === 0 || res.body === null) return ALLOW_NOTHING;
-  if (res.status >= 400) return ALLOW_EVERYTHING;
+  // Order matters: a 404 is "unavailable" and allows everything, and it also
+  // arrives with a null body, so the 4xx test has to come first.
+  if (res.status >= 500 || res.status === 0) return ALLOW_NOTHING;
+  if (res.status >= 400 || res.body === null) return ALLOW_EVERYTHING;
   // A 200 that is HTML is a soft 404: a site serving its own error page for a
   // missing file. Treating that markup as rules produces nonsense patterns.
   if (/^\s*<(!doctype|html)/i.test(res.body)) return ALLOW_EVERYTHING;

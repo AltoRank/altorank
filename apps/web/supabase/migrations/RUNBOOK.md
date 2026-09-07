@@ -10,14 +10,15 @@ works out what is applied by looking for one distinguishing object per file.
 Verified 2026-09-05 against a fresh `supabase/postgres:15.8.1.060` container:
 files 001–061 apply cleanly in numeric order (see
 `docs/integration/MIGRATION-REPORT-2026-09-05.md` for the evidence and the
-caveats). 062–077 have not been through that container check; they are in the
+caveats). 062–078 have not been through that container check; they are in the
 pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 077.** The one-line-per-file list in §3 and the pre-flight query in §1
-both go to 077. (076 and 077 came from two tracks on the same day and are
-independent of each other; either may be applied first.) If you add a
+**Head is 078.** The one-line-per-file list in §3 and the pre-flight query in §1
+both go to 078. (076 and 077 came from two tracks on the same day and are
+independent of each other; either may be applied first. 078 stacks on the same
+branch as 076 and does not depend on it.) If you add a
 migration, add its marker to the query in the same
 commit — the post-flight step is "every row is `t`", and a file with no row
 passes that check by being absent from it.
@@ -133,7 +134,8 @@ m(file, applied) as (values
   ('074_one_autonomous_draft_per_keyword',   to_regclass('public.idx_articles_one_autonomous_draft_per_keyword') is not null),
   ('075_reports_one_per_period',             to_regclass('public.idx_reports_one_per_period') is not null),
   ('076_onboarding_runs',                    to_regclass('public.onboarding_runs') is not null),
-  ('077_workspace_vocabulary_comments',      exists (select 1 from col where t='workspaces' and c='paused_meta' and cm like '%Pause this workspace%'))
+  ('077_workspace_vocabulary_comments',      exists (select 1 from col where t='workspaces' and c='paused_meta' and cm like '%Pause this workspace%')),
+  ('078_site_pages_tech_findings',           exists (select 1 from col where t='site_pages' and c='tech_findings'))
 )
 select file, applied from m order by file;
 ```
@@ -219,7 +221,7 @@ a hosted project and on `supabase start`; it fails on a bare
 `supabase/postgres` Docker image, which only ships a stub `storage` schema.
 That is the one file that could not be exercised in the 2026-09-05 check.
 
-### Production, from 048 to 077
+### Production, from 048 to 078
 
 Only the files whose PR has merged to `main` exist in the checkout. Apply what
 is there, in order. One line per file so a failure is attributable:
@@ -255,6 +257,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 074_one_autonomous_draft_per_keywo
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 075_reports_one_per_period.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 076_onboarding_runs.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 077_workspace_vocabulary_comments.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 078_site_pages_tech_findings.sql
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -312,6 +315,7 @@ no code in the repo references either).
 | 061_workspace_pause_meta.sql | `sup-pace-cadence` #82 | 001 | yes | yes |
 | 076_onboarding_runs.sql | `onboarding/poll-run` (stacks on #146) | 001, **053** | yes | yes, loses run history |
 | 077_workspace_vocabulary_comments.sql | `ui/workspace-vocabulary` (stacks on #146) | 001, 052, 053, 061 | yes | yes (old wording) |
+| 078_site_pages_tech_findings.sql | `onboarding/site-crawl` (stacks on `onboarding/poll-run`) | **044**, 046 | yes | yes, loses findings only |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -543,3 +547,32 @@ in this file's git history — there is nothing else to undo.
 
 Numbering: 076 (`onboarding_runs`) and 077 came from two tracks on the same
 day. Neither depends on the other; apply in numeric order as usual.
+
+## 078 — added 2026-09-07
+
+`078_site_pages_tech_findings.sql`: three columns on `site_pages`
+(`tech_findings jsonb`, `tech_issue_count integer`, `tech_checked_at timestamptz`)
+plus their comments and one partial index
+`idx_site_pages_tech_issues (workspace_id, tech_issue_count desc) where tech_issue_count > 0`.
+
+Onboarding now crawls the pages a customer already published and records what
+is mechanically wrong with each one — status codes, tag lengths, H1 counts,
+canonicals, robots directives, alt text, duplicates across the site. Free: a
+plain GET and regular expressions, no model and no DataForSEO. Before this the
+only thing that ever fetched those pages was `cron/site-pages`, gated on
+`first_analysed_at` and one workspace a night, so on day one `site_pages` was
+empty.
+
+`tech_findings` NULL means nobody has checked the page; `[]` means checked and
+clean. Keep the two distinguishable — collapsing them makes an unchecked site
+render as a perfect one, which is the exact shape of CLAUDE.md rule 5.
+
+No RLS change: 044's `"Site pages by agency"` policy is `for all` over the whole
+row, so the new columns are covered. Depends on **044** (the table) and 046
+(`page_type`, which the thin-content check reads). Idempotent
+(`add column if not exists`, `create index if not exists`, `comment on`
+replaces). Post-flight §4 step 2 does not list it: it adds no table. Pre-flight:
+a `site_pages.tech_findings` column exists. Roll back with
+`alter table site_pages drop column tech_findings, drop column tech_issue_count, drop column tech_checked_at;`
+— the next crawl recomputes everything, so nothing is lost but the last run's
+findings.
