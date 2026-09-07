@@ -5,6 +5,7 @@ import { getIntegrations } from "@/lib/queries/integrations";
 import { getPublishingCadence } from "@/lib/queries/schedule";
 import { PageHead, DotSep, StatusPill } from "@/components/ui";
 import { ArticleEditor } from "@/components/dashboard/editor/article-editor";
+import { ScopeFollow } from "@/components/dashboard/scope-follow";
 import { needsPlanToShip } from "@/lib/billing/quota";
 import { getDestinations } from "@/lib/publishing/destinations";
 import { fetchLinkTargets } from "@/lib/seo/link-resolver";
@@ -92,6 +93,7 @@ export default async function ArticleEditorPage({ params }: Props) {
         }
       />
 
+      <ScopeFollow workspaceId={workspace.id} />
       <ArticleEditor
         article={article}
         workspace={workspace}
