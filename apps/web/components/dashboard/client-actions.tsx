@@ -83,7 +83,7 @@ export function ClientActions({
     // cannot buy the upgrade either, so the only true thing to say is who can.
     return (
       <span className="text-[11.5px] text-ink-3">
-        Owners and admins add sites.
+        Owners and admins add workspaces.
       </span>
     );
   }
@@ -101,7 +101,7 @@ export function ClientActions({
                 none of them, so `used` can be past `limit`. "All 3 are in use"
                 above a list of five is a sentence the page can see is false. */}
             {allowance?.noPlan
-              ? "One workspace before choosing a plan. Choose a plan for more sites"
+              ? "One workspace before choosing a plan. Choose a plan for more workspaces"
               : allowance?.limit !== null && allowance?.limit !== undefined && (allowance.used ?? 0) > allowance.limit
                 ? `This plan includes ${allowance.limit} workspaces and ${allowance.used} are in use. None removed — upgrade for more`
                 : `All ${allowance?.limit} workspaces on this plan are in use. Upgrade for more`}
