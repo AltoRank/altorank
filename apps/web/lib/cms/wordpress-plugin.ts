@@ -88,6 +88,7 @@ export class WordPressPluginAdapter implements CMSAdapter {
     return deliverWithRetry({
       send: () => fetch(url, { method: init.method, headers: this.headers(), body: init.body }),
       what: `WordPress plugin ${what}`,
+      endpoint: url,
       onDelivery: this.onDelivery,
       describe: async (res) => (await this.failure(res, what)).message,
       fail: (lastError) => new Error(lastError),

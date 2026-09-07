@@ -12,6 +12,7 @@ import type { ApiKeyScope } from "./api-keys";
 import { authenticateAgentRequest, type AgentContext } from "./auth";
 import { ERROR_STATUS, fail, GUIDANCE, type Envelope } from "./envelope";
 import { rateLimitHeaders, type RateLimitDecision } from "./rate-limit";
+import { recordEvent } from "@/lib/observability/record";
 
 /**
  * A handler returns an envelope, an envelope with an explicit status, or -
@@ -89,6 +90,25 @@ export function withAgent<P = Record<string, never>>(
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       console.error("[agent api]", request.method, request.nextUrl.pathname, message);
+      // The 5xx an agent sees. Every other agent-API failure is a deliberate
+      // envelope with a code and guidance; this branch is the one nobody
+      // planned for, and until now the only trace of it was a console line in
+      // whichever function happened to serve the request. The key's own agency
+      // is on the row, so "this customer's agent has been failing all week" is
+      // a query rather than a support ticket.
+      await recordEvent(
+        {
+          level: "error",
+          source: "agent.api",
+          message: `${request.method} ${request.nextUrl.pathname}: ${message}`,
+          agencyId: auth.ctx.agencyId,
+          // `label`, not `keyName`: the recorder redacts any context key whose
+          // name looks like a credential, and this is the human label the
+          // customer typed, which is exactly what makes the row useful.
+          context: { method: request.method, path: request.nextUrl.pathname, label: auth.ctx.key.name },
+        },
+        auth.ctx.supabase,
+      );
       return envelopeResponse(
         fail(
           "internal_error",

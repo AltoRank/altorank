@@ -10,6 +10,7 @@ import {
   type AiEngine,
   type VisibilityResult,
 } from "@/lib/geo/ai-visibility";
+import { observedCron } from "@/lib/observability/cron";
 
 /**
  * Measure whether AI answers name the client.
@@ -34,7 +35,7 @@ const MIN_INTERVAL_DAYS = 7;
 const MAX_PROBES_PER_RUN = 24;
 const MAX_WORKSPACES_PER_RUN = 3;
 
-export async function GET(request: Request) {
+async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -158,3 +159,11 @@ export async function GET(request: Request) {
     results,
   });
 }
+
+/**
+ * Every run of this job lands in `system_events` (lib/observability/cron.ts):
+ * a throw or a 5xx as an error, per-item failures as a warning, and a clean
+ * run as one `info` row — which is the only thing anywhere that proves the
+ * schedule is still firing.
+ */
+export const GET = observedCron("cron.geo", run);

@@ -27,6 +27,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendTransactionalEmail } from "./resend";
 import { isOptional, wantsCategory, type EmailCategory } from "./categories";
 import { unsubscribeHeaders, unsubscribeUrl } from "./unsubscribe";
+import { recordEvent } from "@/lib/observability/record";
 
 export type LifecycleMeta = {
   /** Stable slug, e.g. "article_published". Never a subject line. */
@@ -134,6 +135,18 @@ export async function sendOnce(
         out.failed += 1;
         out.lastError = `could not claim the send: ${claimError.message}`;
         console.error(`[email] ${meta.type} to ${recipient}: ${out.lastError}`);
+        // Not the same failure as a refused send (lib/email/resend.ts records
+        // that one). This is the ledger itself being unwritable, which means
+        // the email did not even leave, and the customer is told nothing at
+        // all - the quietest of the two failures and the easier to miss.
+        await recordEvent({
+          level: "error",
+          source: "email.claim",
+          message: `${meta.type}: could not claim the send, so nothing was sent: ${claimError.message}`,
+          agencyId: meta.agencyId ?? null,
+          workspaceId: meta.workspaceId ?? null,
+          context: { type: meta.type, subjectId: meta.subjectId, recipient, code: claimError.code },
+        }, supabase);
       }
       continue;
     }

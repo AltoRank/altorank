@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { label: "Costs", href: "/admin" },
   { label: "Users", href: "/admin/users" },
+  { label: "Events", href: "/admin/events" },
 ];
 
 export function AdminTabs() {

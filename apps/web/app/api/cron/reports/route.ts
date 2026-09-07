@@ -6,6 +6,7 @@ import { reportRecipients } from "@/lib/reports/recipients";
 import { sendMonthlyReportEmails } from "@/lib/email/report-email";
 import { describeSendOutcome } from "@/lib/email/send-once";
 import { getQuota, entitledToScheduledWork } from "@/lib/billing/quota";
+import { observedCron } from "@/lib/observability/cron";
 
 /**
  * Monthly cron (1st of month): auto-generate reports for all workspaces.
@@ -21,7 +22,7 @@ import { getQuota, entitledToScheduledWork } from "@/lib/billing/quota";
  */
 export const maxDuration = 300;
 
-export async function GET(request: Request) {
+async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -198,3 +199,11 @@ export async function GET(request: Request) {
     results,
   });
 }
+
+/**
+ * Every run of this job lands in `system_events` (lib/observability/cron.ts):
+ * a throw or a 5xx as an error, per-item failures as a warning, and a clean
+ * run as one `info` row — which is the only thing anywhere that proves the
+ * schedule is still firing.
+ */
+export const GET = observedCron("cron.reports", run);

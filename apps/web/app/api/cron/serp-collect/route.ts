@@ -5,6 +5,7 @@ import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
 import { collectRankingTasks, positionFor } from "@/lib/seo/serp";
 import type { RankingRow } from "@/lib/seo/rankings";
+import { observedCron } from "@/lib/observability/cron";
 
 /**
  * Second half of the nightly rank check.
@@ -18,7 +19,7 @@ import type { RankingRow } from "@/lib/seo/rankings";
  * three days, so a night this fails to run is made up the next night, and a
  * run that is triggered twice finds nothing the second time.
  */
-export async function GET(request: Request) {
+async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
     setSpendReporter(null);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -83,3 +84,11 @@ export async function GET(request: Request) {
     ...(insertError ? { error: insertError } : {}),
   });
 }
+
+/**
+ * Every run of this job lands in `system_events` (lib/observability/cron.ts):
+ * a throw or a 5xx as an error, per-item failures as a warning, and a clean
+ * run as one `info` row — which is the only thing anywhere that proves the
+ * schedule is still firing.
+ */
+export const GET = observedCron("cron.serp_collect", run);

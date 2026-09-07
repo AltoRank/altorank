@@ -11,6 +11,7 @@ import { submitForIndexing, type IndexingResult } from "@/lib/seo/indexing";
 import { announceArticlePublished, announcePublishFailed } from "@/lib/email/article-events";
 import { runAutoApprovals, type AutoApproveResult } from "@/lib/publishing/auto-approve";
 import { sendHeldDigests } from "@/lib/email/held-digest";
+import { observedCron } from "@/lib/observability/cron";
 
 export const maxDuration = 60;
 
@@ -39,7 +40,7 @@ async function announceSuccess(supabase: SupabaseClient, articleId: string): Pro
   return announceArticlePublished(supabase, articleId);
 }
 
-export async function GET(request: Request) {
+async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -434,3 +435,11 @@ async function verifyPendingPublishes(
 
   return out;
 }
+
+/**
+ * Every run of this job lands in `system_events` (lib/observability/cron.ts):
+ * a throw or a 5xx as an error, per-item failures as a warning, and a clean
+ * run as one `info` row — which is the only thing anywhere that proves the
+ * schedule is still firing.
+ */
+export const GET = observedCron("cron.publish", run);

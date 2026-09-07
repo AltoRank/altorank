@@ -13,6 +13,7 @@ import {
 } from "@/lib/audit/profile-refresh";
 import { monthlyTarget, schedulePlan } from "@/lib/onboarding/plan";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
+import { observedCron } from "@/lib/observability/cron";
 
 /**
  * First-look analysis for domains nobody has looked at yet.
@@ -49,7 +50,7 @@ export const maxDuration = 300;
 /** Bounded per invocation: each analysis crawls a site and calls two APIs. */
 const BATCH = 3;
 
-export async function GET(request: Request) {
+async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
     setSpendReporter(null);
 
@@ -207,3 +208,11 @@ async function topUpPlans(supabase: ReturnType<typeof createServiceClient>): Pro
   }
   return out;
 }
+
+/**
+ * Every run of this job lands in `system_events` (lib/observability/cron.ts):
+ * a throw or a 5xx as an error, per-item failures as a warning, and a clean
+ * run as one `info` row — which is the only thing anywhere that proves the
+ * schedule is still firing.
+ */
+export const GET = observedCron("cron.analyze", run);

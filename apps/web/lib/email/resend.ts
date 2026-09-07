@@ -1,5 +1,6 @@
 import { Resend, type CreateEmailOptions } from "resend";
 import { emailLayout, emailButton, emailParagraph, EMAIL_INK } from "./layout";
+import { recordEvent } from "@/lib/observability/record";
 
 let resendClient: Resend | null = null;
 
@@ -31,13 +32,58 @@ function fromAddress(): string {
  * carrying Resend's own code and status, for the caller to log or show.
  */
 async function deliver(payload: CreateEmailOptions): Promise<string> {
-  const { data, error } = await getResend().emails.send(payload);
+  let sent: Awaited<ReturnType<ReturnType<typeof getResend>["emails"]["send"]>>;
+  try {
+    sent = await getResend().emails.send(payload);
+  } catch (err) {
+    // A missing key, or the network. `getResend` throws for the first, which
+    // used to surface only as a caller's console line.
+    await refused(payload, err instanceof Error ? err.message : String(err), null);
+    throw err;
+  }
+
+  const { data, error } = sent;
   if (error) {
     const status = error.statusCode ? ` ${error.statusCode}` : "";
-    throw new Error(`Resend refused the email (${error.name}${status}): ${error.message}`);
+    const message = `Resend refused the email (${error.name}${status}): ${error.message}`;
+    await refused(payload, message, error.statusCode ?? null);
+    throw new Error(message);
   }
-  if (!data) throw new Error("Resend returned neither an id nor an error");
+  if (!data) {
+    const message = "Resend returned neither an id nor an error";
+    await refused(payload, message, null);
+    throw new Error(message);
+  }
   return data.id;
+}
+
+/**
+ * Every refused send, in one row.
+ *
+ * This is the single choke point for outbound mail, so it catches the ones
+ * `sendOnce` does not wrap as well: the signup confirmation, the password
+ * reset, the invite, the feedback report. Each of those already throws to its
+ * caller and each caller logs it differently or not at all; the pattern of
+ * them - "every email to this domain has been refused since Tuesday" - was
+ * visible nowhere.
+ *
+ * The recipient is stored, deliberately: an operator debugging a bounce needs
+ * to know whose mail is not arriving, and this table is service-role only. The
+ * subject goes with it because "which email" is the first question. The body
+ * never does.
+ */
+async function refused(payload: CreateEmailOptions, message: string, status: number | null): Promise<void> {
+  await recordEvent({
+    level: "error",
+    source: "email.deliver",
+    message,
+    context: {
+      to: Array.isArray(payload.to) ? payload.to.join(", ") : payload.to,
+      subject: payload.subject,
+      from: payload.from,
+      status,
+    },
+  });
 }
 
 export async function sendInviteEmail(
