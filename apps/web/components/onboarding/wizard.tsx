@@ -229,7 +229,9 @@ export function OnboardingWizard({
     if ((s === 0 || s === 1) && profile) await saveProfile(workspaceId, profile);
     if (s === 2) await saveSiteDetails(workspaceId, site);
     if (s === 3) await saveOutputSettings(workspaceId, output);
-    if (s === ATTRIBUTION_STEP && attribution.source) await saveAttribution(attribution.source, attribution.note);
+    // Optional: saved only when actually answered, never as a blank.
+    const source = attribution.source;
+    if (s === ATTRIBUTION_STEP && source && attributionComplete(attribution)) await saveAttribution(source, attribution.note);
   }
 
   function next() {
@@ -251,6 +253,12 @@ export function OnboardingWizard({
         setError(e instanceof Error ? e.message : "Could not save this step.");
       }
     });
+  }
+
+  /** Leave this screen as it is - nothing typed on it is saved - and move on. */
+  function skipStep() {
+    setError(null);
+    goToStep(step + 1);
   }
 
   function skipAll() {
@@ -325,10 +333,23 @@ export function OnboardingWizard({
             >
               Back
             </Button>
-            {/* Not on the CMS step: its primary action is already a skip, and two
-                skips of different scope on one screen is the wrong choice to
-                offer someone who is about to leave. */}
-            {step !== ATTRIBUTION_STEP && step !== INTEGRATION_STEP && (
+            {/* Every screen can be skipped on its own: nothing typed on it is
+                saved and the next one opens. The CMS step has no link because
+                its primary action already is the skip, and the last step has
+                none because Finish is the way out. Skipping the whole setup
+                is offered once, on the first screen, where that decision is
+                actually made. */}
+            {step !== last && step !== INTEGRATION_STEP && (
+              <button
+                type="button"
+                onClick={skipStep}
+                disabled={pending}
+                className="text-[12px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink"
+              >
+                Skip this step
+              </button>
+            )}
+            {step === 0 && (
               <button
                 type="button"
                 onClick={skipAll}
@@ -342,7 +363,7 @@ export function OnboardingWizard({
           <Button
             variant="accent"
             onClick={next}
-            disabled={pending || (step === ATTRIBUTION_STEP && !attributionComplete(attribution))}
+            disabled={pending}
           >
             {pending
               ? "Saving…"
@@ -595,7 +616,7 @@ function AttributionStep({
     <>
       <Head
         title={skipping ? "One thing before you go" : "One last thing"}
-        sub="How did you hear about us? Pick the closest. It is the only way we can tell whether an AI answer sent you here, which is the thing we sell."
+        sub="How did you hear about us? Pick the closest, or finish without answering. It is the only way we can tell whether an AI answer sent you here, which is the thing we sell."
       />
       <div className="rounded-[10px] border border-line bg-panel p-5">
         <AttributionPicker value={value} onChange={onChange} />
