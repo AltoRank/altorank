@@ -26,6 +26,7 @@ import { spendClient } from "@/lib/billing/default-spend";
 import { setSpendReporter } from "@/lib/seo/client";
 import { fetchKnownPages } from "@/lib/linking/targets";
 import { anthropicModel } from "@/lib/ai/models";
+import { GenerationTruncatedError } from "@/lib/ai/claude";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
 import { generateImage } from "@/lib/ai/image-generator";
 import { outputFromRow, resolveFeaturedImage, type OutputSettingsRow } from "@/lib/onboarding/output-settings";
@@ -853,6 +854,24 @@ export async function generateArticle(
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown generation error";
+
+    // A run cut off at the ceiling is billed for every token it produced,
+    // thinking included. The row it would have written on success is written
+    // here instead, so the ledger and the dashboard's spend figures show the
+    // failed call rather than a quiet gap.
+    if (err instanceof GenerationTruncatedError) {
+      const model = anthropicModel("content");
+      await recordSpend(spendClient() ?? supabase, {
+        provider: "anthropic",
+        operation: model,
+        costUsd: anthropicCost(model, err.inputTokens, err.outputTokens),
+        inputTokens: err.inputTokens,
+        outputTokens: err.outputTokens,
+        workspaceId,
+        articleId: article.id ?? null,
+        runId: job.id,
+      });
+    }
 
     // A run that created the row marks it errored - the row exists only
     // because of this run. A run that was writing into an article the user
