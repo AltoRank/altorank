@@ -82,6 +82,30 @@ test("a planned card offers Instructions, Questions, Move and Remove; Remove dro
     await expect(card.getByRole("button", { name })).toBeEnabled();
   }
 
+  // The row is portaled to <body>, so nothing clips it - but it was painted at
+  // z-50 while the sidebar sits at z-[201] and dialogs at z-[200]/[201], so a
+  // tooltip opened here rendered *behind* the sidebar and looked cut off at its
+  // edge (reported with a screenshot 2026-09-07).
+  //
+  // Compared as computed z-index rather than by elementFromPoint: whether the
+  // two boxes actually overlap depends on which day column the seeded card
+  // lands in, so a hit test passes by luck on most days. The invariant is that
+  // a tooltip outranks the chrome, and that is what is asserted.
+  await card.getByRole("button", { name: /^Questions/ }).focus();
+  const tip = page.getByRole("tooltip").first();
+  await expect(tip).toBeVisible();
+  const stacking = await page.evaluate(() => {
+    const z = (el: Element | null) => (el ? Number.parseInt(getComputedStyle(el).zIndex, 10) : Number.NaN);
+    return { tooltip: z(document.querySelector('[role="tooltip"]')), sidebar: z(document.querySelector("aside")) };
+  });
+  expect(Number.isFinite(stacking.tooltip), "the tooltip declares a z-index").toBe(true);
+  expect(Number.isFinite(stacking.sidebar), "the sidebar declares a z-index").toBe(true);
+  expect(
+    stacking.tooltip,
+    `tooltip z-index ${stacking.tooltip} must outrank the sidebar's ${stacking.sidebar}`,
+  ).toBeGreaterThan(stacking.sidebar);
+  await page.keyboard.press("Escape");
+
   await card.getByRole("button", { name: "Remove from plan" }).click();
   const dialog = page.getByRole("dialog", { name: "Remove from plan" });
   await expect(dialog.getByText("the keyword itself stays tracked", { exact: false })).toBeVisible();
