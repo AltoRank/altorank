@@ -6,7 +6,7 @@ export default function LinkingLoading() {
   return (
     <>
       <PageHead
-        title="Linking configuration"
+        title="Linking"
         subtitle={
           <span>
             Configure how we find links on your website for internal linking. <Skeleton className="inline-block h-3 w-28 align-middle" />

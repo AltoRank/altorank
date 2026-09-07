@@ -46,10 +46,10 @@ async function plannedCount(db: SupabaseClient, workspaceId: string): Promise<nu
   return count ?? 0;
 }
 
-/** "Plan the month" on /content and wait until the header reports the plan. */
+/** "Schedule the month" on /content and wait until the header reports the plan. */
 async function planTheMonth(page: import("@playwright/test").Page): Promise<void> {
   await page.goto("/content");
-  await page.getByRole("button", { name: "Plan the month" }).click();
+  await page.getByRole("button", { name: "Schedule the month" }).click();
   await expect(page.getByText(/[1-9]\d* of 60 scheduled/)).toBeVisible();
 }
 
@@ -72,12 +72,17 @@ test("a planned card offers Instructions, Questions, Move and Remove; Remove dro
   await expect(card).toBeVisible();
   await expect(card.getByText("Planned")).toBeVisible();
   await card.hover();
-  for (const title of ["Instructions", "Questions", "Move to another day", "Remove from plan"]) {
-    await expect(card.getByTitle(title)).toBeVisible();
-    await expect(card.getByTitle(title)).toBeEnabled();
+  // By accessible name, not by `title`: the row is icons, and a title
+  // attribute is a tooltip only for a resting mouse pointer - never for touch,
+  // never for a keyboard, never for a screen reader. Instructions and
+  // Questions carry their state in the name ("(set)", "N unanswered"), hence
+  // the prefixes.
+  for (const name of [/^Instructions/, /^Questions/, /^Move to another day$/, /^Remove from plan$/]) {
+    await expect(card.getByRole("button", { name })).toBeVisible();
+    await expect(card.getByRole("button", { name })).toBeEnabled();
   }
 
-  await card.getByTitle("Remove from plan").click();
+  await card.getByRole("button", { name: "Remove from plan" }).click();
   const dialog = page.getByRole("dialog", { name: "Remove from plan" });
   await expect(dialog.getByText("the keyword itself stays tracked", { exact: false })).toBeVisible();
   await dialog.getByRole("button", { name: "Remove", exact: true }).click();
@@ -157,6 +162,31 @@ test("the Articles-plan popover lists the paces; the signup pace -> 3 a week re-
   await expect(trigger).toHaveText(/Articles plan: 1 a week/);
 });
 
+test("/content offers Research keywords exactly once, and it opens the drawer instead of navigating", async ({ page, signedIn }) => {
+  const ws = signedIn.workspaces[0];
+  const db = admin();
+
+  // The state the duplicate lived in: no keywords, so the header offered its
+  // own "Research keywords" (a link to /keywords) beside the toolbar's, which
+  // opens the drawer. One label, two behaviours, one screen.
+  await page.goto("/content");
+  const research = page.getByRole("button", { name: "Research keywords" });
+  await expect(research).toHaveCount(1);
+  await expect(page.getByText("Use Research keywords above", { exact: false })).toBeVisible();
+
+  await research.click();
+  await expect(page.getByRole("dialog", { name: "Research keywords" })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe("/content");
+  await page.keyboard.press("Escape");
+
+  // And once there is something to plan from, the header's action is the
+  // schedule button - never a second copy of this one.
+  await seedKeywords(db, ws.id);
+  await page.reload();
+  await expect(research).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Schedule the month" })).toBeVisible();
+});
+
 test("the research drawer opens with four tabs and an honest empty Stored tab", async ({ page, signedIn }) => {
   await page.goto("/keywords");
   await page.getByRole("button", { name: "Research keywords" }).click();
@@ -184,8 +214,6 @@ test("/improvements names the three things that block it for a site without Sear
   await expect(page.getByRole("link", { name: "Connect Search Console" })).toBeVisible();
   await expect(page.getByText("No CMS connected", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Connect a CMS" })).toBeVisible();
-  // "…for this workspace" since the vocabulary pass (077); this had been
-  // asserting the old wording.
   await expect(page.getByText("Scheduled rewrites are off for this workspace", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open settings" })).toBeVisible();
 
@@ -250,8 +278,6 @@ test("an API key is shown once on creation and can be revoked", async ({ page, s
 
 test("/linking offers Detect links and says what an empty result is", async ({ page, signedIn }) => {
   await page.goto("/linking");
-  // The heading is "Linking" - "Linking configuration" sat directly under a
-  // nav item reading "Linking" and was cut; this assertion kept the old text.
   await expect(page.getByRole("heading", { name: "Linking", exact: true })).toBeVisible();
   // The page head names the site; the sidebar switcher names it too, so scope to the page.
   await expect(page.getByRole("main").getByText(signedIn.workspaces[0].domain, { exact: true })).toBeVisible();

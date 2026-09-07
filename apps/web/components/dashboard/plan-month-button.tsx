@@ -7,10 +7,22 @@ import { planMonth } from "@/app/actions/plan";
 import { usePlanning } from "./planning-state";
 
 /**
- * "Plan the month" for the active workspace. One server action, additive, so
- * the button is safe to press on a plan that already has entries.
+ * "Schedule the month" for the active workspace. One server action, additive,
+ * so the button is safe to press on a plan that already has entries.
+ *
+ * `title` is the sentence that says what the press will do. The button used to
+ * explain itself nowhere, which is how the top-up label came to read like a
+ * billing action; the caller knows the free-slot count, so it writes it.
  */
-export function PlanMonthButton({ label = "Plan the month", size = "md" }: { label?: string; size?: "sm" | "md" }) {
+export function PlanMonthButton({
+  label = "Schedule the month",
+  size = "md",
+  title,
+}: {
+  label?: string;
+  size?: "sm" | "md";
+  title?: string;
+}) {
   const [pending, setPending] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const router = useRouter();
@@ -36,9 +48,9 @@ export function PlanMonthButton({ label = "Plan the month", size = "md" }: { lab
 
   return (
     <span className="inline-flex items-center gap-2">
-      <Button size={size} variant="accent" onClick={run} disabled={pending}>
+      <Button size={size} variant="accent" onClick={run} disabled={pending} title={title}>
         <Icons.calendar size={13} />
-        {pending ? "Planning…" : label}
+        {pending ? "Scheduling…" : label}
       </Button>
       {note && <span className="text-[12px] text-ink-3">{note}</span>}
     </span>

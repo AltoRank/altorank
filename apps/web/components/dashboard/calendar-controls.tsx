@@ -43,7 +43,15 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
         </IconButton>
       </div>
       <div className="flex-1" />
+      {/* Two groups, not one row of four. On the left of the divider, the
+          setting that governs the calendar itself; on the right, the two ways
+          to get keywords into it. They were adjacent and identically weighted,
+          which is how a pace setting came to look like a sibling of a research
+          action. All of them are `sm` and unaccented: the primary action on
+          this page is the schedule button in the header, and it is the only
+          accent on the screen. */}
       <ArticlesPlanPopover />
+      <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-line" />
       {/* An "All / Publishing" pair used to sit here. It was left over from
           the all-sites calendar: it filtered entries by their *workspace's*
           status, and the calendar has been one site's since the merged scope
@@ -52,7 +60,7 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
           comment beside it claimed it filtered entry kind, which it never
           did. A control with two settings and one outcome is worse than no
           control. */}
-      <ResearchButtons />
+      <ResearchButtons size="sm" emphasis="secondary" />
     </div>
     </>
   );
