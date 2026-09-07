@@ -67,6 +67,21 @@ export interface ArticlePrompt {
    * pipeline a fresh draft goes through.
    */
   refreshOf?: RefreshContext;
+  /**
+   * Who the article is for: the business profile the wizard inferred from
+   * the site and the owner confirmed. Without it the writer knew the keyword,
+   * the SERP and the house style, and nothing about the business - so the
+   * closing rule "no paragraph that would still be true if the subject were a
+   * different product" had no subject to hold it to.
+   */
+  site?: SiteContext;
+}
+
+/** `workspaces.business_profile`, the three fields a writer can use. */
+export interface SiteContext {
+  name?: string | null;
+  description?: string | null;
+  audiences?: string[];
 }
 
 export interface ArticleBrief {
@@ -90,6 +105,13 @@ export interface OutputPrefs {
   emojis?: boolean;
   /** Free-text rules the site owner wrote; they outrank everything but safety. */
   customInstructions?: string | null;
+  /**
+   * `workspace_output_settings.faq_schema`. The enrichment reads FAQPage
+   * data out of a FAQ section the article already has; this asks the writer
+   * for one, which nothing did before, so the switch was on for a section
+   * that appeared only when the model felt like it.
+   */
+  faq?: boolean;
 }
 
 export interface RefreshContext {

@@ -41,7 +41,7 @@ import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research"
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { getLocale } from "@/lib/seo/locales";
-import type { ArticleBrief, RefreshContext, VoiceRules } from "@/lib/ai/types";
+import type { ArticleBrief, RefreshContext, SiteContext, VoiceRules } from "@/lib/ai/types";
 import { classifyKeyword, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { parseStoredQuestions } from "@/lib/keywords/questions";
 import { e2eStubsEnabled, stubGenerateArticle } from "@/lib/e2e/stubs";
@@ -168,6 +168,19 @@ export function slugFor(text: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
+/** The three fields of `workspaces.business_profile` a writer can use, or undefined when there is nothing to say. */
+export function siteContextFrom(profile: unknown): SiteContext | undefined {
+  if (!profile || typeof profile !== "object") return undefined;
+  const p = profile as { name?: unknown; description?: unknown; audiences?: unknown };
+  const name = typeof p.name === "string" ? p.name.trim() : "";
+  const description = typeof p.description === "string" ? p.description.trim() : "";
+  if (!name && !description) return undefined;
+  const audiences = Array.isArray(p.audiences)
+    ? p.audiences.filter((a): a is string => typeof a === "string" && a.trim().length > 0).map((a) => a.trim())
+    : [];
+  return { name: name || null, description: description || null, audiences };
+}
+
 /** A rewrite of a page the product did not write has no article id. */
 export type RefreshArticleResult = Omit<GenerateArticleResult, "articleId"> & {
   articleId: string | null;
@@ -193,7 +206,7 @@ export async function generateArticle(
 
   const { data: workspace, error: wsError } = await supabase
     .from("workspaces")
-    .select("id, domain, ai_provider, ai_model, agency_id, language, brand_style, location_code")
+    .select("id, domain, ai_provider, ai_model, agency_id, language, brand_style, location_code, business_profile")
     .eq("id", workspaceId)
     .single();
 
@@ -252,8 +265,16 @@ export async function generateArticle(
         mentionSimilarProducts: outputSettings.mentionSimilarProducts,
         emojis: outputSettings.emojis,
         customInstructions: outputSettings.globalArticlePrompt || null,
+        faq: outputSettings.faqSchema,
       }
     : undefined;
+
+  // Who the site is, for the prompt. The wizard writes `business_profile`
+  // (name, description, audiences) and until now only the closing CTA read
+  // it: the writer was briefed on the keyword and the SERP and not on the
+  // business the article was for. Absent on installs from before 048, or
+  // when the wizard was skipped; the prompt then says nothing, as before.
+  const site = siteContextFrom(workspace.business_profile);
 
   // The keyword as an object: what the owner said about this article in
   // particular. By id when the plan supplies one, else by term within the
@@ -498,6 +519,7 @@ export async function generateArticle(
         .map((t) => ({ title: t.title, keyword: t.keyword })),
       output,
       brief,
+      site,
       refreshOf: refreshOf
         ? {
             existingHtml: refreshOf.existingHtml,
