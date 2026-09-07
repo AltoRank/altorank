@@ -49,7 +49,8 @@ export type KeywordQuality = "ok" | "suspect";
 export interface KeywordRecommendation {
   keywordId: string;
   term: string;
-  volume: number;
+  /** Null when nobody measured it (a keyword typed in by hand). */
+  volume: number | null;
   difficulty: number | null;
   intent: KeywordIntent;
   /** Composite score; only meaningful relative to the other rows. */
@@ -76,6 +77,9 @@ export interface KeywordRecommendation {
  * "zapier" is. That comparison is what separates a genuine short multi-word
  * query from a mangled single word.
  */
+/** One-letter tokens that are words in the product's markets: en "a"/"i", it/es/pt "e"/"o"/"y"/"a", fr "à"/"y", it "è". */
+const ONE_LETTER_WORDS = new Set(["a", "i", "e", "o", "y", "à", "è", "é", "ù"]);
+
 export function assessKeywordQuality(
   term: string,
   allTerms: Set<string>,
@@ -94,7 +98,11 @@ export function assessKeywordQuality(
 
   const tokens = clean.split(/\s+/).filter(Boolean);
 
-  if (tokens.some((t) => t.length === 1)) {
+  // "s eo", "zap ier": a lone letter is a split word - unless it is a word.
+  // "how to start a paid newsletter" was refused on 2026-09-07 because of
+  // the "a"; the articles and one-letter words of the markets the product
+  // is sold into are real tokens, not fragments.
+  if (tokens.some((t) => t.length === 1 && !ONE_LETTER_WORDS.has(t))) {
     return { quality: "suspect", note: "contains a single-letter word, likely a split word" };
   }
 
@@ -141,7 +149,7 @@ export function assessKeywordQuality(
   }
 
   // "ai can", "ai in": the query was cut mid-phrase. Nobody searches that.
-  const TRAILING_JUNK = new Set(["can", "in", "for", "and", "the", "of", "to", "is", "with", "on", "by", "or"]);
+  const TRAILING_JUNK = new Set(["can", "in", "for", "and", "the", "of", "to", "is", "with", "on", "by", "or", "start", "started", "add", "adding"]);
   if (tokens.length > 1 && TRAILING_JUNK.has(tokens[tokens.length - 1])) {
     return { quality: "suspect", note: `ends with "${tokens[tokens.length - 1]}", a fragment rather than a query` };
   }
@@ -161,7 +169,11 @@ export function assessKeywordQuality(
   // (2026-09-02). Question words and comparatives are deliberately absent:
   // "what is logistics" and "best warehouse software" are real queries.
   const FRAGMENT_WORDS = new Set([
-    "stop", "start", "adding", "add", "makes", "make", "made", "making",
+    // "start"/"started"/"add"/"adding" were here and refused "how to start
+    // a paid newsletter" and "how to add a signup form" - the commonest
+    // how-to shapes. The fragments they caught ("ai started") end on the
+    // word, which TRAILING_JUNK is the place for.
+    "stop", "makes", "make", "made", "making",
     "are", "you", "your", "we", "our", "us", "its", "it", "this", "that",
     "than", "then", "being", "been", "correct", "answers", "answer",
     "differently", "operating", "keep", "more", "less", "not", "into",
@@ -258,6 +270,9 @@ const ALREADY_WON = 10;
  * fraction of the volume. Linear volume makes the queue nothing but head terms,
  * which is the classic way to spend a year ranking for nothing.
  */
+/** What an unmeasured volume scores: the same as ~30 searches a month. */
+const UNKNOWN_VOLUME_SCORE = 15;
+
 function volumeScore(volume: number): number {
   if (volume <= 0) return 0;
   return Math.log10(volume + 1) * 10;
@@ -418,7 +433,13 @@ export async function recommendKeywords(
   // --- Score --------------------------------------------------------------
   const recommendations: KeywordRecommendation[] = keywords.map((k) => {
     const term = (k.term as string).toLowerCase().trim();
-    const volume = (k.volume as number) ?? 0;
+    // Null is "nobody measured this", which is what a keyword typed in by
+    // hand carries (app/actions/keywords.ts). It used to read as 0 searches
+    // and score 0, so the one keyword the owner asked for by name sat under
+    // every provider row and never reached the plan. Scored conservatively,
+    // the way an unknown difficulty already is.
+    const volumeKnown = typeof k.volume === "number";
+    const volume = volumeKnown ? (k.volume as number) : null;
     const difficulty = (k.difficulty as number | null) ?? null;
     const intent = ((k.intent as KeywordIntent) ?? "info") satisfies KeywordIntent;
 
@@ -428,8 +449,9 @@ export async function recommendKeywords(
 
     const reasons: string[] = [];
 
-    let score = volumeScore(volume);
-    if (volume > 0) reasons.push(`${volume.toLocaleString()} searches/mo`);
+    let score = volume === null ? UNKNOWN_VOLUME_SCORE : volumeScore(volume);
+    if (volume === null) reasons.push("volume unknown, scored conservatively");
+    else if (volume > 0) reasons.push(`${volume.toLocaleString()} searches/mo`);
 
     // Proven demand on this exact site beats estimated demand anywhere.
     if (impressions && impressions > 0) {
@@ -437,7 +459,7 @@ export async function recommendKeywords(
       reasons.push(`${impressions.toLocaleString()} impressions already earned`);
     }
 
-    score *= winnability(difficulty, volume, authority);
+    score *= winnability(difficulty, volume ?? 0, authority);
     reasons.push(
       difficulty === null
         ? "difficulty unknown, scored conservatively"

@@ -183,7 +183,10 @@ export type Keyword = {
   id: string;
   workspace_id: string;
   term: string;
-  volume: number;
+  /** Monthly searches, or null when nobody measured it: a keyword typed in
+   *  by hand carries no volume (app/actions/keywords.ts). Never rendered or
+   *  summed as 0 - 0 means "measured, and nobody searches it". */
+  volume: number | null;
   /** 0-100, or null when no provider supplied one. Never defaulted to 0. */
   difficulty: number | null;
   /** Google Ads cost-per-click in USD. null when no advertiser data, or

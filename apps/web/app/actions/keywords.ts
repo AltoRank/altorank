@@ -7,8 +7,11 @@ import { z } from "zod";
 const createKeywordSchema = z.object({
   workspace_id: z.string().uuid(),
   term: z.string().min(1),
-  volume: z.coerce.number().default(0),
-  difficulty: z.coerce.number().default(0),
+  // Null, not 0: a keyword typed in by hand has no measurement, and 0 read
+  // as "no searches, difficulty 0" - green in the table, at the bottom of
+  // every recommendation, and "all have difficulty" in the stat strip.
+  volume: z.preprocess((v) => (v === null || v === "" ? null : Number(v)), z.number().nullable()),
+  difficulty: z.preprocess((v) => (v === null || v === "" ? null : Number(v)), z.number().nullable()),
   intent: z.enum(["info", "commercial", "transactional", "navigational"]).default("info"),
 });
 

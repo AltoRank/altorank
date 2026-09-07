@@ -21,6 +21,21 @@ describe("assessKeywordQuality — provider noise", () => {
     expect(r.note).toContain("single-letter");
   });
 
+  it("keeps a one-letter word that is a word", () => {
+    // Refused on 2026-09-07 for the "a"; the commonest how-to shape there is.
+    expect(assessKeywordQuality("how to start a paid newsletter", terms()).quality).toBe("ok");
+    expect(assessKeywordQuality("how to add a signup form", terms()).quality).toBe("ok");
+    expect(assessKeywordQuality("come aprire una newsletter a pagamento", terms()).quality).toBe("ok");
+    // A lone consonant is still a split word.
+    expect(assessKeywordQuality("newsletter s oftware", terms()).quality).toBe("suspect");
+  });
+
+  it("still refuses a phrase cut on 'start' or 'add'", () => {
+    expect(assessKeywordQuality("ai started", terms()).quality).toBe("suspect");
+    expect(assessKeywordQuality("newsletter add", terms()).quality).toBe("suspect");
+    expect(assessKeywordQuality("ai stop", terms()).quality).toBe("suspect");
+  });
+
   it("rejects a split spelling of another tracked keyword", () => {
     const r = assessKeywordQuality("zap ier", terms("zapier", "zap ier"));
     expect(r.quality).toBe("suspect");

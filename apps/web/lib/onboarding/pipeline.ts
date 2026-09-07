@@ -294,7 +294,10 @@ async function runPhases(
         // about what the plan does, and the second copy is how it got wrong.
         settle("skipped", quotaExceededMessage(quota));
       } else {
-        const recs = await recommendKeywords(supabase, workspace.id, { limit: 25 });
+        // Not 25: the list is cut after scoring across every action, and a
+        // site with 25 page-one rankings filled it with skips before any
+        // writable term appeared (lib/onboarding/plan.ts has the same note).
+        const recs = await recommendKeywords(supabase, workspace.id, { limit: 1000 });
         // The first day of the plan is what the person just watched get
         // scheduled; writing anything else would contradict the calendar.
         const first = plan[0];

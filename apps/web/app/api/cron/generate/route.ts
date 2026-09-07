@@ -237,7 +237,10 @@ export async function GET(request: Request) {
         continue;
       }
 
-      const recommendations = await recommendKeywords(supabase, workspaceId, { limit: 25 });
+      // Not 25: the list is cut after scoring across every action, so a
+      // site with 25 page-one rankings never showed a writable term here
+      // (lib/onboarding/plan.ts has the same note).
+      const recommendations = await recommendKeywords(supabase, workspaceId, { limit: 1000 });
       // The calendar is a promise. If the plan says today is "<term>", write
       // that, and fall back to the live queue only when nothing is due.
       const due = await duePlannedKeyword(supabase, workspaceId);
