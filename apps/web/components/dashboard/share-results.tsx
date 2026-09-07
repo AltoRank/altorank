@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button, Dialog, Icons } from "@/components/ui";
 import { ShareCardView } from "@/components/share/card-view";
 import { CARD_WIDTH, CARD_HEIGHT, type ShareCard } from "@/lib/share/card";
-import { shareUrl } from "@/lib/share/token";
+import { shareUrl } from "@/lib/share/url";
 import { createShareLink, revokeShareLink } from "@/app/actions/share";
 
 /**
