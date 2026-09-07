@@ -64,46 +64,10 @@ export async function sendInviteEmail(
   });
 }
 
-/**
- * Send a monthly report email with a link to the PDF.
- */
-export async function sendReportEmail(
-  to: string,
-  workspaceName: string,
-  agencyName: string,
-  period: string,
-  reportUrl: string,
-  highlights: {
-    articlesPublished: number;
-    keywordsTracked: number;
-    topMover?: string;
-  },
-): Promise<void> {
-  const row = (label: string, value: string | number) =>
-    `<tr><td style="padding:8px 0;color:#4A4A4A;border-bottom:1px solid #E6E5E2;">${label}</td><td style="padding:8px 0;font-weight:600;text-align:right;border-bottom:1px solid #E6E5E2;">${value}</td></tr>`;
-  const rows =
-    row("Articles published", highlights.articlesPublished) +
-    row("Keywords tracked", highlights.keywordsTracked) +
-    (highlights.topMover ? row("Top mover", highlights.topMover) : "");
-
-  await deliver({
-    from: fromAddress(),
-    to,
-    subject: `${workspaceName} — SEO report for ${period}`,
-    html: emailLayout({
-      title: `${workspaceName}: SEO report for ${period}`,
-      preheader: `${highlights.articlesPublished} articles published, ${highlights.keywordsTracked} keywords tracked`,
-      bodyHtml:
-        `<p style="margin:0 0 4px;font-size:12px;color:#8A8A8A;">${agencyName}</p>` +
-        `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">${workspaceName}: ${period}</h1>` +
-        emailParagraph(`What moved this period. Every number is measured; where nothing was measured the report says so rather than showing a zero.`) +
-        `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 4px;font-size:14px;">${rows}</table>` +
-        emailButton(reportUrl, "Open the full report") +
-        emailParagraph(`The link works for 30 days. The report itself stays in your dashboard under Reports.`),
-      footerNote: `Sent to ${to} as a member of ${agencyName} on AltoRank.`,
-    }),
-  });
-}
+// The monthly report used to render and send itself here, straight through
+// `deliver`, which is how it skipped `email_preferences` and the RFC 8058
+// headers for a category the preferences page offers a switch for. It lives in
+// ./report-email.ts now and goes out through `sendOnce` like the rest.
 
 /**
  * Send free tool results to a lead's email.

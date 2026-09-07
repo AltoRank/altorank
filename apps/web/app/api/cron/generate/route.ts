@@ -14,6 +14,7 @@ import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
 import { readFrozenEntries } from "@/lib/plan/frozen";
 import { agencyRecipients } from "@/lib/email/agency-recipients";
 import { sendArticleDraftedEmails } from "@/lib/email/article-emails";
+import { describeSendOutcome } from "@/lib/email/send-once";
 import { holdUrl } from "@/lib/publishing/hold-link";
 import {
   announceNothingWritten,
@@ -356,22 +357,23 @@ export async function GET(request: Request) {
           continue;
         }
         const to = await agencyRecipients(supabase, ws.agency_id as string, workspaceId);
-        const out = await sendArticleDraftedEmails(to, {
-          domain,
-          keyword: next.term,
-          title: result.title,
-          wordCount: result.wordCount,
-          verdict: result.factCheck.verdict,
-          reasons: next.reasons,
-          articleId: result.articleId,
-          autoApproveAfter,
-          holdUrlFor: autoApproveAfter ? (to) => holdUrl(result.articleId, to) : undefined,
-        });
-        notified = out.failed
-          ? `, emailed ${out.sent}/${to.length} (${out.lastError ?? "failed"})`
-          : out.sent
-            ? `, emailed ${out.sent}`
-            : ", nobody to email";
+        const out = await sendArticleDraftedEmails(
+          supabase,
+          to,
+          {
+            domain,
+            keyword: next.term,
+            title: result.title,
+            wordCount: result.wordCount,
+            verdict: result.factCheck.verdict,
+            reasons: next.reasons,
+            articleId: result.articleId,
+            autoApproveAfter,
+            holdUrlFor: autoApproveAfter ? (to) => holdUrl(result.articleId, to) : undefined,
+          },
+          { agencyId: ws.agency_id as string, workspaceId },
+        );
+        notified = `, ${describeSendOutcome(out)}`;
       } catch (err) {
         notified = `, email failed (${err instanceof Error ? err.message : "unknown"})`;
       }
