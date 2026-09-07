@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto";
+
 /**
  * The secret a cron request carries, from either header Vercel or a person
  * might use.
@@ -17,8 +19,26 @@ export function cronSecretFrom(request: Request): string | null {
   return null;
 }
 
+/**
+ * Compared byte by byte in constant time, and length-checked first so the
+ * comparison itself cannot leak the length. `===` on a secret answers faster
+ * the sooner it disagrees, which is a character-at-a-time oracle; over a
+ * network that is a long shot, but this one string is the entire authorisation
+ * for /api/internal/draft, which writes with the service role into any tenant.
+ *
+ * An unset CRON_SECRET refuses everyone. Fail closed: a deploy that forgot the
+ * variable must not become a deploy that accepts every caller.
+ */
 export function isAuthorizedCron(request: Request): boolean {
   const expected = process.env.CRON_SECRET;
   if (!expected) return false;
-  return cronSecretFrom(request) === expected;
+  return secretsMatch(cronSecretFrom(request), expected);
+}
+
+export function secretsMatch(given: string | null, expected: string): boolean {
+  if (!given) return false;
+  const a = Buffer.from(given, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }

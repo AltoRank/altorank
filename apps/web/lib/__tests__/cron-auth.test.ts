@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { cronSecretFrom, isAuthorizedCron } from "../cron-auth";
+import { cronSecretFrom, isAuthorizedCron, secretsMatch } from "../cron-auth";
 
 describe("cron auth", () => {
   const prev = process.env.CRON_SECRET;
@@ -17,5 +17,14 @@ describe("cron auth", () => {
     delete process.env.CRON_SECRET;
     expect(isAuthorizedCron(new Request("https://x/api/cron/a", { headers: { authorization: "Bearer " } }))).toBe(false);
     expect(cronSecretFrom(new Request("https://x/a", { headers: { authorization: "Basic abc" } }))).toBeNull();
+  });
+
+  it("refuses a prefix of the secret, which a byte-at-a-time compare would leak", () => {
+    process.env.CRON_SECRET = "s3cret";
+    expect(secretsMatch("s3cre", "s3cret")).toBe(false);
+    expect(secretsMatch("s3cretx", "s3cret")).toBe(false);
+    expect(secretsMatch("", "s3cret")).toBe(false);
+    expect(secretsMatch(null, "s3cret")).toBe(false);
+    expect(secretsMatch("s3cret", "s3cret")).toBe(true);
   });
 });
