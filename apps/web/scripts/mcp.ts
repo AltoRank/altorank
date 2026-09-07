@@ -27,10 +27,12 @@
  * `{ ok, data, agent_guidance }` or `{ ok: false, error, agent_guidance }`.
  * The guidance is the part a bare JSON blob leaves the model to guess.
  *
- * Scope, honestly: this does NOT expose publishing, approval or deletion. The
- * CMS adapters need per-workspace credentials out of Supabase plus the
- * approval gate, and an agent-triggered publish that bypasses a human
- * approving it is precisely what the approval gate exists to prevent. The
+ * Scope, honestly: this does NOT expose publishing, approval, holds or deletion.
+ * The CMS adapters need per-workspace credentials out of Supabase plus the
+ * approval gate, and an agent-triggered publish is precisely what the gate
+ * exists to prevent: every approval must trace to a person, either a click in
+ * the editor or the automatic-publishing rule a named member set for the
+ * workspace (lib/publishing/auto-approve.ts). An agent is neither. The
  * mutations that are here (move/remove planned keywords, find-and-replace in
  * a draft, retry a publish a human already approved, pause/resume a site)
  * need a key with the "write" scope and mirror the routes one-to-one.
