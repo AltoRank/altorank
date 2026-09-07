@@ -68,7 +68,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
     id: "connect-cms",
     title: "Connect your CMS",
     description:
-      "Eleven CMS integrations publish over their own API, and a site that builds from a repository publishes as a git commit instead. We read the platform off your domain first, so most connections come down to one field.",
+      "Ten CMS integrations publish over their own API, and a site that builds from a repository publishes as a git commit instead. We read the platform off your domain first, so most connections come down to one field.",
     actionLabel: 'Click "New connection" to set up your first CMS integration.',
     completionMessage: "CMS connected. Approved drafts can publish straight to it.",
     route: "/connect",
