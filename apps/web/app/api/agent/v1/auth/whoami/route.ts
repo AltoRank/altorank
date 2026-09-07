@@ -42,10 +42,10 @@ export const GET = withAgent(async (request, ctx) => {
 
   const guidance =
     workspaces.length === 0
-      ? "This account has no workspaces yet. Ask the human to add a site in the dashboard before continuing."
+      ? "This account has no workspaces yet. Ask the human to add a workspace in the dashboard before continuing."
       : workspaces.length === 1
         ? `One workspace: "${workspaces[0].name}". Use its id for every workspace_id parameter. Check GET /readiness and GET /workspaces/{id} before generating.`
-        : `${workspaces.length} workspaces. Ask the human which site they mean unless it is obvious, then use that workspace_id everywhere.`;
+        : `${workspaces.length} workspaces. Ask the human which workspace they mean unless it is obvious, then use that workspace_id everywhere.`;
 
   return ok(data, guidance, {
     _meta: {

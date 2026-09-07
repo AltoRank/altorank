@@ -91,7 +91,7 @@ export async function hostExchangeRequest(
 ): Promise<HostRequestState> {
   const exchangeId = String(formData.get("exchange_id") ?? "");
   const workspaceId = String(formData.get("workspace_id") ?? "");
-  if (!exchangeId || !workspaceId) return { ok: false, error: "Pick a site to publish it on." };
+  if (!exchangeId || !workspaceId) return { ok: false, error: "Pick a workspace to publish it on." };
 
   const { agencyId } = await requireAuth();
   const supabase = await createClient();

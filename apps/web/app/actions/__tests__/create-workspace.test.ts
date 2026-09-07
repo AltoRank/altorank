@@ -142,7 +142,7 @@ describe("createWorkspace, who may", () => {
     expect(result).toEqual({
       ok: false,
       error:
-        "Adding a site changes what the account pays for, so an owner or admin has to do it. Ask one of them and it takes a moment.",
+        "Adding a workspace changes what the account pays for, so an owner or admin has to do it. Ask one of them and it takes a moment.",
     });
     expect(inserted).not.toHaveBeenCalled();
     // Refused before the allowance is even read: this is not "the plan is

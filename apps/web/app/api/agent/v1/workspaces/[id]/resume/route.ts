@@ -21,8 +21,8 @@ export const POST = withAgent<{ id: string }>(async (request, ctx, { id }) => {
   if (workspace.status === "paused" && workspace.paused_until) {
     return fail(
       "not_available",
-      "This site is paused by the account-wide pause on Billing, not by hand.",
-      "Only a human can lift the billing pause, on the Billing page. Do not try to change the site's status another way.",
+      "This workspace is paused by the account-wide pause on Billing, not by hand.",
+      "Only a human can lift the billing pause, on the Billing page. Do not try to change the workspace's status another way.",
     );
   }
 

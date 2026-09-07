@@ -118,7 +118,7 @@ describe("pauseAccount", () => {
     expect(await pauseAccount(6)).toEqual({ ok: false, error: "Choose 1, 2 or 3 months." });
   });
 
-  it("does not claim the billing paused when only the sites did", async () => {
+  it("does not claim the billing paused when only the workspaces did", async () => {
     // The rows are already paused, so writing stopped. Saying "Paused" here
     // would be a claim about money we did not make - and this is the only
     // place the customer could ever learn it.
@@ -127,7 +127,7 @@ describe("pauseAccount", () => {
     const result = await pauseAccount(1);
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected a refusal");
-    expect(result.error).toContain("Writing is paused for every site");
+    expect(result.error).toContain("Writing is paused for every workspace");
     expect(result.error).toContain("billing could not be paused");
     expect(result.error).toContain("still be charged");
   });
@@ -232,7 +232,7 @@ describe("resumeAccount", () => {
     const result = await resumeAccount();
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected a refusal");
-    expect(result.error).toContain("Writing has resumed for every site");
+    expect(result.error).toContain("Writing has resumed for every workspace");
     expect(result.error).toContain("restarts on its own");
   });
 });
