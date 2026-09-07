@@ -151,12 +151,14 @@ export function OutputFields({ output, setOutput }: { output: OutputSettings; se
       />
       <Toggle
         label="FAQ schema"
-        /* Copy made honest, not the feature invented (2026-09-06). The schema
-           is built (lib/content/enrich/index.ts) and stored on the article,
-           but generate.ts keeps only the HTML, PublishPayload has no field for
-           it and no adapter can receive one - so "sent to your site" was a
-           delivery that has never happened. */
-        hint="If the article has a FAQ section, its questions and answers are generated and stored as FAQPage structured data, ready for whenever publishing can carry it. It is not sent to your site yet, and the visible text is unchanged either way."
+        /* Was "It is not sent to your site yet", written 2026-09-06 when that
+           was true. lib/publishing/schema.ts landed after it and made the
+           delivery real: publishArticleCore rebuilds the schema from the final
+           HTML and appends it for SCRIPT_CAPABLE destinations
+           (lib/publishing/core.ts:232-261). The caveat that survives is which
+           destinations, not whether - so the hint names both lists rather than
+           denying the feature. Update it with SCRIPT_CAPABLE. */
+        hint="If the article has a FAQ section, its questions and answers ship with it as FAQPage structured data, rebuilt from the final text at publish time. WordPress, Ghost, Shopify, WooCommerce, HubSpot and git get it as a JSON-LD tag; a webhook gets it as a field. Notion, Wix, Webflow and Framer rebuild the body into their own blocks, so they get none. The visible text is unchanged either way."
         checked={output.faqSchema}
         onChange={(v) => set({ faqSchema: v })}
       />

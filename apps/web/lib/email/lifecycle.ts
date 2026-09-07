@@ -35,6 +35,7 @@ import { agencyRecipients, agencyBillingRecipients, userEmail } from "./agency-r
 import { appLink } from "@/lib/app-url";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_2, EMAIL_INK_3 } from "./layout";
 import { formatGraceDate } from "@/lib/billing/dunning";
+import { FREE_DRAFTS } from "@/lib/billing/quota";
 import { wizardStepPath } from "@/lib/onboarding/steps";
 import { sendOnce, type RenderedEmail, type SendOnceOutcome } from "./send-once";
 
@@ -459,7 +460,7 @@ export function renderWelcome(a: WelcomeEmail): RenderedEmail {
       ) +
       emailButton(appLink("/dashboard"), "Open the dashboard") +
       emailParagraph(
-        `The first draft is free and nothing is charged until you choose a plan - there is no trial running out and no card on file. When a draft is written for you we will email you about it; you can turn those off from any of them.`,
+        `Your first ${FREE_DRAFTS} articles are free and nothing is charged until you choose a plan - there is no trial running out and no card on file. When the schedule writes a draft for you we will email you about it; you can turn those off from any of them.`,
       ),
   };
 }
