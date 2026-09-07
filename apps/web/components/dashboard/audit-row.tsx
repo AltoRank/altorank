@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { StatusPill, Icons } from "@/components/ui";
 import type { DomainAudit } from "@/lib/types";
+import { plural } from "@/lib/utils";
 import {
   affectedPageCount,
   auditDuration,
@@ -105,9 +106,9 @@ export function AuditRow({ audit }: { audit: DomainAudit }) {
         <td className="px-3.5 py-3 border-b border-line-soft text-right">
           {completed ? (
             <span className="font-mono text-xs">
-              {errors > 0 && <span className="text-red-600">{errors} errors</span>}
+              {errors > 0 && <span className="text-red-600">{plural(errors, "error")}</span>}
               {errors > 0 && warnings > 0 && <span className="text-ink-3"> · </span>}
-              {warnings > 0 && <span className="text-yellow-600">{warnings} warnings</span>}
+              {warnings > 0 && <span className="text-yellow-600">{plural(warnings, "warning")}</span>}
               {errors === 0 && warnings === 0 && <span className="text-green-600">None</span>}
             </span>
           ) : (

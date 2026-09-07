@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getBacklinks } from "@/lib/queries/backlinks";
-import { PageHead, DotSep, StatusPill, Avatar, Card, StatStrip } from "@/components/ui";
+import { PageHead, StatusPill, Avatar, Card, StatStrip } from "@/components/ui";
 import { ExchangeRequestForm } from "@/components/dashboard/exchange-actions";
 import { ExchangeMarketplace } from "@/components/dashboard/exchange-marketplace";
 import { getOpenRequests } from "@/lib/queries/exchange";
@@ -74,7 +74,10 @@ export default async function BacklinksPage({ searchParams }: Props) {
     <>
       <PageHead
         title="Backlinks"
-        subtitle={<><StatusPill status="on" label={plural(backlinks.length, "link")} /><span>{wsMap.get(scopeId ?? "")?.domain ?? plural(workspaces.length, "workspace")}</span><DotSep /><span>Avg DR {avgDr}</span></>}
+        // "Avg DR" is the second tile of the strip immediately below this
+        // line, with the hint explaining which 0-100 scale it is on. The
+        // subtitle repeated the number without the scale.
+        subtitle={<><StatusPill status="on" label={plural(backlinks.length, "link")} /><span>{wsMap.get(scopeId ?? "")?.domain ?? plural(workspaces.length, "workspace")}</span></>}
         actions={
           <>
             <HowItWorks explainer={backlinksExplainer} />

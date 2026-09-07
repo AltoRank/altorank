@@ -18,8 +18,9 @@ const ENGINE_LABEL: Record<AiEngine, string> = {
 };
 
 /**
- * Reachable by URL but not linked: the section is listed as "soon" in the
- * sidebar because it is not ready to be relied on (2026-09-02).
+ * Linked from the sidebar since 2026-09-06. It was listed as "soon", which
+ * renders as unclickable grey text, while the page measured four engines,
+ * ranked what to do about it and dashed anything unmeasured.
  */
 export default async function GeoPage() {
   // Every section is about one site unless the switcher says otherwise.
@@ -111,7 +112,15 @@ export default async function GeoPage() {
         ]}
       />
 
-      <div className="flex-1 overflow-y-auto px-8 py-6 scroll flex flex-col gap-5">
+      {/* space-y-5, not `flex flex-col gap-5`. A flex column inside a
+          fixed-height scroll container shrinks its children to fit, and every
+          Card here is `overflow-hidden` for its rounded corners, so the
+          shrink clipped them instead of scrolling: the second recommendation
+          was cut mid-sentence, and "By answer engine" showed ChatGPT while
+          hiding the Perplexity row underneath it. A page that silently drops
+          measured rows is worse than one that shows none. Every other surface
+          in the app stacks with space-y-5 for this reason. */}
+      <div className="flex-1 overflow-y-auto px-8 py-6 scroll space-y-5">
         {actions.length > 0 && (
           <Card flush>
             <div className="px-5 pt-4 pb-1 font-semibold text-sm">What to do about it</div>

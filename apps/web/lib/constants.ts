@@ -74,8 +74,14 @@ export const DASHBOARD_NAV: NavGroup[] = [
       { id: "backlinks", label: "Backlinks", href: "/backlinks", icon: "backlinks" },
       { id: "audits", label: "Site audits", href: "/audits", icon: "search" },
       { id: "readiness", label: "Agent readiness", href: "/readiness", icon: "sparkle" },
-      { id: "geo", label: "AI visibility", href: "/geo", icon: "trend", soon: true },
-      { id: "reports", label: "Reports", href: "/reports", icon: "reports", soon: true },
+      // Both were marked `soon`, which renders them as unclickable grey text
+      // with a "being built" tooltip. Both pages are built and shipped: /geo
+      // measures four engines, ranks what to do about it and dashes anything
+      // unmeasured; /reports lists reports and generates one. Labelling a
+      // working page "soon" is the same failure as labelling an unknown zero,
+      // pointed the other way, and it made both unreachable from the nav.
+      { id: "geo", label: "AI visibility", href: "/geo", icon: "trend" },
+      { id: "reports", label: "Reports", href: "/reports", icon: "reports" },
     ],
   },
   // Named "Agency" until 2026-08-30. Billing and Settings are account chrome
@@ -91,7 +97,12 @@ export const DASHBOARD_NAV: NavGroup[] = [
     items: [
       // The roster is account management, not a daily section: the sidebar
       // switcher is where a workspace is chosen (2026-09-02).
-      { id: "workspaces", label: "Your sites", href: "/workspaces", icon: "clients" },
+      // "Workspaces", not "Your sites": POSITIONING.md settled this noun on
+      // 2026-08-30 after the nav said Clients and the page said Workspaces
+      // for the same getWorkspaces() rows. The page, its tab title, its
+      // count pill and the Add workspace button on three other surfaces all
+      // say workspace; this item was the last place that did not.
+      { id: "workspaces", label: "Workspaces", href: "/workspaces", icon: "clients" },
       // General settings. The article-shaped tabs are reached from the
       // Articles group above, so this entry stays exact: it must not light up
       // while someone is on Article settings under Articles.
