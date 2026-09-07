@@ -14,7 +14,8 @@ test("Skip setup records the skip and the dashboard stops redirecting", async ({
   await page.getByRole("button", { name: "Skip setup" }).click();
   await expect(page.getByRole("heading", { name: "One thing before you go" })).toBeVisible();
   const finish = page.getByRole("button", { name: "Skip and finish" });
-  await expect(finish).toBeDisabled();
+  // The question is optional: Finish is live before it is answered.
+  await expect(finish).toBeEnabled();
   await page.getByRole("radio", { name: "Friend or colleague" }).click();
   await finish.click();
   await expect(page).toHaveURL(/\/dashboard$/);
