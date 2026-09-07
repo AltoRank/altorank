@@ -9,6 +9,7 @@ import { writeBrief } from "@/lib/refresh/brief";
 import { loadPageBody } from "@/lib/refresh/rewrite";
 import { pushExecution, exportExecution, type PushResult } from "@/lib/refresh/push";
 import { recordSpend, anthropicCost } from "@/lib/billing/spend";
+import { needsPlanToShip, SCHEDULED_REWRITES_NEED_PLAN } from "@/lib/billing/quota";
 import type { Evidence, ExecutionDecisions, Opportunity, RefreshCandidate } from "@/lib/refresh/types";
 
 /**
@@ -266,7 +267,16 @@ const settingsSchema = z.object({
   days: z.array(z.number().int().min(0).max(6)).max(2, "Pick at most two days"),
 });
 
-/** The per-site switch and weekdays. */
+/**
+ * The per-site switch and weekdays.
+ *
+ * Turning it ON needs a plan. cron/refresh skips accounts that are not
+ * entitled to scheduled work, so an armed schedule on a no-plan account is a
+ * switch that says "on" and a cron that will never act on it - and until
+ * 2026-09-07 it was worse than inert, because the cron paid for the rewrite's
+ * brief before anything checked. Turning it off is always allowed: a plan that
+ * lapses must not leave a switch its owner cannot reach.
+ */
 export async function setRefreshSettings(
   workspaceId: string,
   settings: { enabled: boolean; days: number[] },
@@ -274,6 +284,9 @@ export async function setRefreshSettings(
   const { agencyId } = await requireAuth();
   const parsed = settingsSchema.parse(settings);
   const supabase = await createClient();
+  if (parsed.enabled && (await needsPlanToShip(supabase, agencyId))) {
+    throw new Error(SCHEDULED_REWRITES_NEED_PLAN);
+  }
   const { error } = await supabase
     .from("workspaces")
     .update({ refresh_enabled: parsed.enabled, refresh_days: [...new Set(parsed.days)].sort() })

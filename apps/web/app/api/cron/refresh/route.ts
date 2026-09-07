@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cronSecretFrom } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
+import { entitledToScheduledWork, getQuota } from "@/lib/billing/quota";
 import { analyzeWorkspace } from "@/lib/refresh/detect";
 import { runRefreshTask } from "@/lib/refresh/rewrite";
 import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
@@ -33,7 +34,9 @@ import { describeSendOutcome } from "@/lib/email/send-once";
  *
  * Bounded like cron/generate: two rewrites per invocation across all
  * workspaces, stalest first, and no rewrite is started past the point where
- * it could not finish inside the function's budget.
+ * it could not finish inside the function's budget. Those two slots are the
+ * run's whole capacity, so they are spent only on accounts entitled to
+ * scheduled work - see the gate at the top of the loop.
  *
  * A rewrite spends one slot of the site's weekly article pace - the settings
  * copy has said so since the feature shipped, and lib/plan/pace-budget.ts is
@@ -89,6 +92,26 @@ export async function GET(request: Request) {
     const domain = (ws.domain as string | null) ?? null;
     const out: Outcome = { workspaceId, domain, status: "ok" };
 
+    // Nothing below is worth buying for an account that cannot ship what it
+    // produces, and one thing below is bought before anything checks: a
+    // rewrite pays Anthropic for its brief inside `ensureBrief`, and the only
+    // quota check on this path is `generateArticle`'s, which runs after that
+    // money is gone. `setRefreshSettings` needs no plan to flip the switch, so
+    // a no-plan account that had burned its free drafts paid for a brief on
+    // every scheduled day and errored immediately afterwards - and, because
+    // `rewrites` counts the attempt whether or not it worked, took one of the
+    // run's two global slots away from a paying customer while doing it.
+    //
+    // The same gate serp, geo and reports apply, for the same reason. See
+    // entitledToScheduledWork.
+    const quota = await getQuota(supabase, ws.agency_id as string, null);
+    if (!entitledToScheduledWork(quota)) {
+      out.status = "skipped";
+      out.rewrite = "no plan";
+      results.push(out);
+      continue;
+    }
+
     try {
       const last = ws.refresh_last_analyzed_at ? Date.parse(ws.refresh_last_analyzed_at as string) : 0;
       if (Date.now() - last > ANALYSIS_STALE_MS) {
@@ -141,6 +164,10 @@ export async function GET(request: Request) {
             out.rewrite = "nothing scheduled";
           } else {
             const r = await runRefreshTask(supabase, task.id as string);
+            // The attempt, not the success: a rewrite that failed still spent
+            // the model call and the seconds this cap exists to bound. Only
+            // entitled accounts reach this line, so the slot is never taken
+            // from a paying customer by an account that could not use it.
             rewrites += 1;
             if (r.ok) {
               out.rewrite = `execution ${r.result.executionId}: ${r.result.changed} of ${r.result.hunks} blocks changed, ${r.result.issues} checks flagged, awaiting review`;

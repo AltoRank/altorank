@@ -16,21 +16,41 @@ export const MAX_REFRESH_DAYS = 2;
  * Two weekdays at most, one rewrite each. Each rewrite is a model call and a
  * slot of the site's article pace, so the ceiling is stated rather than left
  * for the bill to explain. Nothing here publishes: a rewrite lands in review.
+ *
+ * `planMessage` is the reason the switch cannot be armed, or null when it can.
+ * The server action refuses either way; this is so the page says why before
+ * the click instead of after it. The sentence is composed server-side
+ * (SCHEDULED_REWRITES_NEED_PLAN) because lib/billing/quota reaches
+ * next/headers and cannot be imported into a client component.
  */
 export function RefreshSettingsForm({
   workspaceId,
   domain,
   enabled: initialEnabled,
   days: initialDays,
+  planMessage = null,
 }: {
   workspaceId: string;
   domain: string | null;
   enabled: boolean;
   days: number[];
+  planMessage?: string | null;
 }) {
   const [enabled, setEnabled] = useState(initialEnabled);
   const [days, setDays] = useState<number[]>(initialDays);
   const [pending, startTransition] = useTransition();
+
+  // Off is always allowed: a plan that lapsed must not leave a switch its
+  // owner cannot reach. Only arming one is refused, and it says why.
+  function toggleEnabled() {
+    setEnabled((v) => {
+      if (!v && planMessage) {
+        toast.message(planMessage);
+        return v;
+      }
+      return !v;
+    });
+  }
 
   function toggleDay(day: number) {
     setDays((prev) => {
@@ -71,6 +91,12 @@ export function RefreshSettingsForm({
         reaches your site until you push it.
       </p>
 
+      {planMessage ? (
+        <p className="mb-4 rounded-md border border-line bg-panel-2 px-3 py-2 text-[12.5px] leading-relaxed text-ink-2">
+          {planMessage}
+        </p>
+      ) : null}
+
       <div className="space-y-4 text-[13px]">
         <div className="flex items-center justify-between">
           <span className="text-ink-2">Enable</span>
@@ -78,7 +104,7 @@ export function RefreshSettingsForm({
             type="button"
             role="switch"
             aria-checked={enabled}
-            onClick={() => setEnabled((v) => !v)}
+            onClick={toggleEnabled}
             className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer ${enabled ? "bg-accent" : "bg-panel-2"}`}
           >
             <span
