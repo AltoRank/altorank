@@ -37,7 +37,7 @@ export const contentPlanExplainer: Explainer = {
       bullets: [
         "A plan holds up to 60 entries. The header reads N of 60 scheduled and how many slots are free.",
         `Pace is set per site in articles a week. Signup sets ${FREE_TIER_PACE}, which is what activating a plan also sets, and you can raise it to ${MAX_PACE}. The monthly target is that pace scaled to 30 days; on the free tier the month's ${FREE_DRAFTS} drafts are the binding limit, not the pace.`,
-        "Top-up keeps everything already placed and appends from the day after the last entry. The nightly analysis run tops up every auto-generating site whose unwritten queue has fallen below its monthly target.",
+        "\"Schedule more articles\" keeps everything already placed and appends from the day after the last entry - it never touches billing, only the calendar. The nightly analysis run does the same for every auto-generating site whose unwritten queue has fallen below its monthly target.",
         "Phrasings of one query collapse into one entry, so the plan does not schedule 'agency seo' and 'seo for agencies' as two articles that compete with each other.",
         "Terms flagged as keyword-provider noise are scored down for you and refused by the unattended path, so an unattended run never writes 'S Eo: A Complete Guide'.",
       ],
@@ -70,7 +70,8 @@ export const contentPlanExplainer: Explainer = {
   // Two entries left on 2026-09-07 because they had become false: cards do
   // drag between days (planner-grid.tsx, DndContext), and the planner update
   // they said was pending - instructions, questions, the 60-entry cap, top-up
-  // - landed (lib/onboarding/plan.ts PLAN_MAX_ENTRIES, "Top up the plan").
+  // - landed (lib/onboarding/plan.ts PLAN_MAX_ENTRIES, "Schedule more
+  // articles").
   // An explainer that says the product does less than it does is the same
   // failure as one that says more.
   cannotYet: [

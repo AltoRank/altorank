@@ -63,9 +63,9 @@ export default async function CalendarPage({ searchParams }: Props) {
     supabase.auth.getUser(),
     // Whether there is anything to plan *from*. An empty month has two causes
     // and they need different offers: a site with keywords needs the plan run,
-    // a site with none needs research first, and "Plan the month" on the second
-    // schedules nothing and says so only after the click. The dashboard strip
-    // was fixed for exactly this; the calendar is where the button lives.
+    // a site with none needs research first, and "Schedule the month" on the
+    // second schedules nothing and says so only after the click. The dashboard
+    // strip was fixed for exactly this; the calendar is where the button lives.
     scopeId
       ? supabase.from("keywords").select("id", { count: "exact", head: true }).eq("workspace_id", scopeId)
       : Promise.resolve({ count: 0 }),
@@ -221,8 +221,18 @@ export default async function CalendarPage({ searchParams }: Props) {
                   label and two behaviours on one screen. The drawer wins - it
                   researches, proposes and schedules without leaving the plan
                   it is filling, and it is what /keywords offers too. */}
+              {/* "Top up the plan" sat one screen away from billing and read
+                  like buying credits. It never touched money: it calls
+                  planMonth(), which fills the month's free slots with
+                  scheduled articles from this site's keywords. Both labels now
+                  say "schedule", the word the header beside them already uses
+                  ("N of 60 scheduled"), and the tooltip says what the press
+                  does and how many slots it has to work with. */}
               {scopeId && slots > 0 && !nothingToPlanFrom && (
-                <PlanMonthButton label={(capacity?.articles ?? 0) === 0 ? "Plan the month" : "Top up the plan"} />
+                <PlanMonthButton
+                  label={(capacity?.articles ?? 0) === 0 ? "Schedule the month" : "Schedule more articles"}
+                  title={`Fills ${plural(slots, "free slot")} this month with articles chosen from this site's keywords. Nothing already on the calendar moves, and nothing is published.`}
+                />
               )}
             </>
           }

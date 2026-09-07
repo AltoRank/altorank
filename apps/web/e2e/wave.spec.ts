@@ -46,10 +46,10 @@ async function plannedCount(db: SupabaseClient, workspaceId: string): Promise<nu
   return count ?? 0;
 }
 
-/** "Plan the month" on /content and wait until the header reports the plan. */
+/** "Schedule the month" on /content and wait until the header reports the plan. */
 async function planTheMonth(page: import("@playwright/test").Page): Promise<void> {
   await page.goto("/content");
-  await page.getByRole("button", { name: "Plan the month" }).click();
+  await page.getByRole("button", { name: "Schedule the month" }).click();
   await expect(page.getByText(/[1-9]\d* of 60 scheduled/)).toBeVisible();
 }
 
@@ -155,6 +155,17 @@ test("the Articles-plan popover lists the paces; the signup pace -> 3 a week re-
   const { data: wsBack } = await db.from("workspaces").select("auto_generate_weekly_limit").eq("id", ws.id).single();
   expect(wsBack?.auto_generate_weekly_limit).toBe(1);
   await expect(trigger).toHaveText(/Articles plan: 1 a week/);
+});
+
+test("/content offers Research keywords exactly once, and it opens the drawer instead of navigating", async ({ page }) => {
+  // The page header carried a second button under the same label that
+  // navigated to /keywords. One label, two behaviours, one screen.
+  await page.goto("/content");
+  const research = page.getByRole("button", { name: "Research keywords" });
+  await expect(research).toHaveCount(1);
+  await research.click();
+  await expect(page.getByRole("dialog", { name: "Research keywords" })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe("/content");
 });
 
 test("the research drawer opens with four tabs and an honest empty Stored tab", async ({ page, signedIn }) => {
