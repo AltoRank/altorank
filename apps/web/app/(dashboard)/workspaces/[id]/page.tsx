@@ -24,7 +24,7 @@ type Props = {
 export async function generateMetadata({ params }: Props) {
   const { id } = await params;
   const workspace = await getWorkspace(id);
-  return { title: workspace?.name ?? "Client" };
+  return { title: workspace?.name ?? "Workspace" };
 }
 
 export default async function ClientDetailPage({ params }: Props) {
