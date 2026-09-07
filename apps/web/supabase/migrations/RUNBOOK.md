@@ -15,8 +15,8 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 079.** The one-line-per-file list in §3 and the pre-flight query in §1
-both go to 079. (076 and 077 came from two tracks on the same day and are
+**Head is 080.** The one-line-per-file list in §3 and the pre-flight query in §1
+both go to 080. (076 and 077 came from two tracks on the same day and are
 independent of each other; either may be applied first. 078 stacks on the same
 branch as 076 and does not depend on it.) If you add a
 migration, add its marker to the query in the same
@@ -136,7 +136,8 @@ m(file, applied) as (values
   ('076_onboarding_runs',                    to_regclass('public.onboarding_runs') is not null),
   ('077_workspace_vocabulary_comments',      exists (select 1 from col where t='workspaces' and c='paused_meta' and cm like '%Pause this workspace%')),
   ('078_site_pages_tech_findings',           exists (select 1 from col where t='site_pages' and c='tech_findings')),
-  ('079_auto_approve',                       exists (select 1 from col where t='workspaces' and c='auto_approve'))
+  ('079_auto_approve',                       exists (select 1 from col where t='workspaces' and c='auto_approve')),
+  ('080_oauth_connectors',                   to_regclass('public.oauth_codes') is not null)
 )
 select file, applied from m order by file;
 ```
@@ -260,6 +261,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 076_onboarding_runs.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 077_workspace_vocabulary_comments.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 078_site_pages_tech_findings.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 079_auto_approve.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 080_oauth_connectors.sql
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -319,6 +321,7 @@ no code in the repo references either).
 | 077_workspace_vocabulary_comments.sql | `ui/workspace-vocabulary` (stacks on #146) | 001, 052, 053, 061 | yes | yes (old wording) |
 | 078_site_pages_tech_findings.sql | `onboarding/site-crawl` (stacks on `onboarding/poll-run`) | **044**, 046 | yes | yes, loses findings only |
 | 079_auto_approve.sql | `feat/auto-approve` | 001, 003 | yes | yes, loses hold stamps and approval kinds |
+| 080_oauth_connectors.sql | `distribution/hosted-mcp` #158 | 001, **051** | yes | yes, disconnects connectors |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -604,3 +607,27 @@ Pre-flight: `workspaces.auto_approve` exists. Roll back with
 `alter table workspaces drop column auto_approve, drop column auto_approve_hold_hours, drop column auto_approve_min_seo, drop column auto_approve_min_aeo, drop column auto_approve_set_by, drop column auto_approve_set_at; alter table articles drop column approval_kind, drop column held_by, drop column held_at, drop column auto_approve_after, drop column auto_approve_hold_reason;`
 — approvals already made stay approved (the status and `approved_by` columns
 predate this file); only the record of *how* they were approved is lost.
+
+## 080 — added 2026-09-07
+
+`080_oauth_connectors.sql`: two tables, `oauth_clients` (dynamically registered
+MCP clients: id, name, redirect_uris) and `oauth_codes` (one-shot authorization
+codes with their PKCE challenge, scopes, agency and user), plus one nullable
+column `api_keys.oauth_client_id`. The token an approved connector receives is
+an `api_keys` row, so nothing else about authentication changes; this file only
+records who minted a key and holds the ten-minute codes in flight.
+
+RLS is enabled on both tables with **no policies**: the registration and token
+endpoints run on the service role, and no user-facing query touches them.
+Depends on 001 (`agencies`, `auth.users`) and **051** (`api_keys`); if 051 is
+missing the `alter table api_keys` fails and the transaction rolls back.
+Idempotent (`if not exists` throughout). Post-flight §4 step 2: both new tables
+must show `rowsecurity = t`. Pre-flight: `to_regclass('public.oauth_codes')`.
+Roll back with
+`alter table api_keys drop column if exists oauth_client_id; drop table if exists oauth_codes; drop table if exists oauth_clients;`
+— keys already issued to connectors keep working (they are ordinary rows); only
+the record of which app holds them is lost, and no new connector can be
+approved until the file is re-applied.
+
+Numbering: 079 (`auto_approve`) landed on `main` while this file was in review
+as 079; renamed to 080 before merge. Neither depends on the other.

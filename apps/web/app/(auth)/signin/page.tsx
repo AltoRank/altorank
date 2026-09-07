@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { authErrorMessage } from "@/lib/auth/errors";
+import { safeNextPath } from "@/lib/auth/next-path";
 import { SubmitButton } from "@/components/auth/submit-button";
 
 export const metadata: Metadata = {
@@ -13,16 +14,20 @@ async function signIn(formData: FormData) {
   "use server";
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
+  // A connector's consent screen sends people here first; go back to it after.
+  const next = safeNextPath(formData.get("next"));
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
-    redirect("/signin?error=" + encodeURIComponent(authErrorMessage(error.message)));
+    const nextParam = next ? "&next=" + encodeURIComponent(next) : "";
+    redirect("/signin?error=" + encodeURIComponent(authErrorMessage(error.message)) + nextParam);
   }
-  redirect("/dashboard");
+  redirect(next ?? "/dashboard");
 }
 
-export default async function SignInPage(props: { searchParams: Promise<{ error?: string }> }) {
+export default async function SignInPage(props: { searchParams: Promise<{ error?: string; next?: string }> }) {
   const searchParams = await props.searchParams;
+  const next = safeNextPath(searchParams?.next);
 
   return (
     <div className="space-y-6">
@@ -34,6 +39,7 @@ export default async function SignInPage(props: { searchParams: Promise<{ error?
       </div>
 
       <form action={signIn} className="space-y-4">
+        {next && <input type="hidden" name="next" value={next} />}
         {searchParams?.error && (
           <div className="text-sm text-err-ink bg-err-soft px-3 py-2 rounded-lg">
             {searchParams.error}
