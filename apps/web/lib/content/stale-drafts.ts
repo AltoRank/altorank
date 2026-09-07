@@ -51,6 +51,7 @@ export async function sweepStaleDrafts(
   const { data: jobs } = await supabase
     .from("generation_jobs")
     .select("id, article_id, created_at")
+    .eq("workspace_id", workspaceId)
     .in("article_id", ids)
     .eq("status", "running");
   const live = new Set<string>();
@@ -64,9 +65,13 @@ export async function sweepStaleDrafts(
   if (swept.length === 0) return { swept: [] };
 
   const at = new Date(now).toISOString();
-  await supabase.from("articles").update({ status: "error", updated_at: at }).in("id", swept);
+  await supabase.from("articles").update({ status: "error", updated_at: at }).eq("workspace_id", workspaceId).in("id", swept);
   if (stuckJobs.length) {
-    await supabase.from("generation_jobs").update({ status: "failed", error: STALE_ERROR, completed_at: at }).in("id", stuckJobs);
+    await supabase
+      .from("generation_jobs")
+      .update({ status: "failed", error: STALE_ERROR, completed_at: at })
+      .eq("workspace_id", workspaceId)
+      .in("id", stuckJobs);
   }
   return { swept };
 }

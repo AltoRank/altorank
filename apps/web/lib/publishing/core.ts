@@ -14,7 +14,6 @@ import { settleExchangeForArticle } from "@/lib/seo/exchange";
 import { createServiceClient } from "@/lib/supabase/server";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
 import { recordPublish } from "@/lib/publishing/log";
-import { appendJsonLd, SCRIPT_CAPABLE, structuredDataFor } from "@/lib/publishing/schema";
 import { DEFAULT_OUTPUT_SETTINGS } from "@/lib/onboarding/output-settings";
 
 /** Which connection an attempt went through, and how. Written to publish_log. */
@@ -227,6 +226,10 @@ async function pushToDestination(
   // rather than no page.
   let structuredData: object[] = [];
   try {
+    // Lazy for the same reason generate.ts loads the enrichment lazily: the
+    // schema module reaches the FAQ extractor and the audit's generator, and
+    // the mutation routes that import this file are tested under a budget.
+    const { appendJsonLd, SCRIPT_CAPABLE, structuredDataFor } = await import("@/lib/publishing/schema");
     const { data: settings } = await supabase
       .from("workspace_output_settings")
       .select("faq_schema")

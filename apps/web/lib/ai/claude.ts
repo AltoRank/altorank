@@ -3,31 +3,13 @@ import { buildSystemPrompt, buildUserMessage } from "./prompts";
 import type { AIProvider, ArticlePrompt, ArticleResult } from "./types";
 import { extractArticleMeta, countWords } from "./utils";
 import { anthropicModel } from "./models";
+import { GenerationTruncatedError } from "./errors";
+
+export { GenerationTruncatedError };
 
 // ---------------------------------------------------------------------------
 // Claude (Anthropic) provider
 // ---------------------------------------------------------------------------
-
-/**
- * The run stopped at `max_tokens`. Carries the usage the API reported, so the
- * caller can record what the call cost: a truncated draft is thrown away, but
- * the tokens were billed all the same, and until 2026-09-07 a failed run left
- * no provider_spend row at all - 24,000 output tokens invisible to the ledger.
- */
-export class GenerationTruncatedError extends Error {
-  constructor(
-    public readonly inputTokens: number,
-    public readonly outputTokens: number,
-    public readonly chars: number,
-  ) {
-    super(
-      `Generation hit the token ceiling after ${outputTokens} output tokens ` +
-        `(${chars} chars of article). Raise max_tokens or lower the ` +
-        `target word count; storing a truncated draft would be worse.`,
-    );
-    this.name = "GenerationTruncatedError";
-  }
-}
 
 export class ClaudeProvider implements AIProvider {
   private client: Anthropic;

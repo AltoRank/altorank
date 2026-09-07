@@ -19,12 +19,12 @@ function fake(drafts: Array<{ id: string }>, jobs: Array<{ id: string; article_i
       if (table === "articles") {
         return {
           select: () => chain({ data: drafts }),
-          update: (patch: Record<string, unknown>) => ({ in: (_c: string, ids: string[]) => { writes.push({ table, patch, ids }); return Promise.resolve({}); } }),
+          update: (patch: Record<string, unknown>) => ({ eq: () => ({ in: (_c: string, ids: string[]) => { writes.push({ table, patch, ids }); return Promise.resolve({}); } }) }),
         };
       }
       return {
         select: () => chain({ data: jobs }),
-        update: (patch: Record<string, unknown>) => ({ in: (_c: string, ids: string[]) => { writes.push({ table, patch, ids }); return Promise.resolve({}); } }),
+        update: (patch: Record<string, unknown>) => ({ eq: () => ({ in: (_c: string, ids: string[]) => { writes.push({ table, patch, ids }); return Promise.resolve({}); } }) }),
       };
     }),
   };
