@@ -31,7 +31,7 @@ import { classifyIntent } from "@/lib/seo/intent";
 import { buildTopicalProfile, type TopicalProfile } from "@/lib/seo/topical-profile";
 import type { CrawlResult } from "@/lib/audit/crawler";
 import { htmlToTiptapJson } from "@/lib/ai/tiptap";
-import { factCheckArticle } from "@/lib/ai/fact-check";
+import { sourceUnsourcedFigures } from "@/lib/content/sourcing";
 
 export function e2eStubsEnabled(): boolean {
   return process.env.E2E_STUBS === "1";
@@ -312,6 +312,21 @@ function titleCase(s: string): string {
   return s.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/**
+ * A draft that arrives the way the real writer's drafts arrive: with a number
+ * in it that nothing sources.
+ *
+ * Used by the approval-gate spec to seed a draft the gate refuses. The real
+ * pipeline runs `sourceUnsourcedFigures` before a draft reaches review, so
+ * this is what the pass is given, not what it leaves behind.
+ */
+export function stubArticleHtmlUnsourced(keyword: string, title: string): string {
+  return stubArticleHtml(keyword, title).replace(
+    "<h2>Start smaller than you think</h2>",
+    `<p>Teams that keep one see 73% fewer missed publishing dates, and the average ${keyword.trim()} pays for itself within 4,500 words.</p>\n<h2>Start smaller than you think</h2>`,
+  );
+}
+
 /** A short draft. No figures, so the fact checker has nothing to flag. */
 export function stubArticleHtml(keyword: string, title: string): string {
   const k = keyword.trim();
@@ -341,8 +356,11 @@ export async function stubGenerateArticle(options: GenerateArticleOptions): Prom
 
   const language = (workspace.language as string | null) ?? "en";
   const title = options.title || `${titleCase(keyword)}: A Practical Guide`;
-  const html = stubArticleHtml(keyword, title);
-  const wordCount = html.replace(/<[^>]+>/g, " ").trim().split(/\s+/).length;
+  // The fixture carries an unsourced figure on purpose: the pass below is
+  // what a real draft goes through, and a fixture with nothing to fix would
+  // exercise none of it.
+  let html = stubArticleHtmlUnsourced(keyword, title);
+  const draftWordCount = html.replace(/<[^>]+>/g, " ").trim().split(/\s+/).length;
   const slug = (options.title || keyword).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
   const research: ArticleResearch = {
@@ -355,14 +373,21 @@ export async function stubGenerateArticle(options: GenerateArticleOptions): Prom
     relatedKeywords: [],
     existingPerformance: null,
     adjacentQueries: [],
-    recommendedWordCount: wordCount,
+    recommendedWordCount: draftWordCount,
     wordCountBasis: "E2E_STUBS fixture; no SERP was read",
     layers: [],
   };
   onResearch?.(research);
   onChunk?.(html);
 
-  const factCheck = factCheckArticle(html, research);
+  // The same pass the real generator runs before a draft reaches review, with
+  // the same fallbacks a self-hosted install gets: no URL verifier and no
+  // rewriter, so nothing here fetches or spends. A fixture with a bare figure
+  // therefore lands approvable, exactly as production should.
+  const sourced = await sourceUnsourcedFigures(html, { research, language });
+  html = sourced.html;
+  const factCheck = sourced.report;
+  const wordCount = html.replace(/<[^>]+>/g, " ").trim().split(/\s+/).length;
   const now = new Date().toISOString();
 
   let articleId = options.articleId ?? null;

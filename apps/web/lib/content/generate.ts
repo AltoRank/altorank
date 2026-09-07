@@ -38,7 +38,8 @@ import {
   resolveInternalLinks,
   unwrapUnknownInternalLinks,
 } from "@/lib/seo/link-resolver";
-import { verifyOutboundLinks, type LinkCheck } from "@/lib/seo/link-check";
+import { verifyOutboundLinks, defaultFetcher, isUnsafeHost, type LinkCheck } from "@/lib/seo/link-check";
+import type { BlockRewriter } from "@/lib/content/sourcing";
 import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research";
 import type { RelatedKeyword } from "@/lib/seo/brief-data";
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
@@ -736,18 +737,6 @@ export async function generateArticle(
       return cleaned;
     });
 
-    // Open every outbound link once. The brief asks for real URLs and a model
-    // produces plausible ones; a 404 is unwrapped to its text and everything
-    // else is recorded so the audit tab can say what answered. No API cost,
-    // bounded fetch time. Runs through `enhance` for the same reason the two
-    // steps above do: a step that returns nothing must not wipe the article.
-    let linkChecks: LinkCheck[] | null = null;
-    await enhance("outbound link check", async (html) => {
-      const verified = await verifyOutboundLinks(html, workspace.domain);
-      linkChecks = verified.checks;
-      return verified.html;
-    });
-
     // Everything a finished article has beyond prose: heading ids, a table of
     // contents, section images, a how-to video, charts for quoted numbers, a
     // closing pointer to the site, FAQ schema. One call; the steps, their
@@ -772,6 +761,104 @@ export async function generateArticle(
         research: research as unknown as Record<string, unknown>,
       });
       return enriched.html;
+    });
+
+    // The draft is now what it is going to be, so this is where the two checks
+    // that decide whether a reviewer can act on it belong.
+    //
+    // They used to run before the enrichment, which adds a comparison table, a
+    // chart and a closing link: whatever those brought in was never opened and
+    // never checked. Running them last means every figure and every URL in the
+    // stored draft has been through them.
+
+    /**
+     * Ask the model to say a paragraph without the numbers it cannot source.
+     *
+     * Undefined with no key, which is the self-hosted case and the e2e case:
+     * the sourcing pass then falls back to cutting the sentence, which needs
+     * nothing from anybody. `rewriteField` already refuses a rewrite that drops
+     * a link or an image, and the pass itself refuses one that still states the
+     * figure, so the worst outcome is that nothing is proposed.
+     */
+    const rewriteBlockToDropFigures: BlockRewriter | undefined = process.env.ANTHROPIC_API_KEY
+      ? async ({ html, figures, language }) => {
+          const { rewriteField } = await import("@/lib/ai/micro");
+          const list = figures.map((f) => `"${f}"`).join(", ");
+          const result = await rewriteField({
+            field: "selection",
+            action: "ask",
+            text: html,
+            prompt:
+              `${figures.length === 1 ? "This figure has" : "These figures have"} no source: ${list}. ` +
+              `Rewrite the passage${language ? ` in ${language}` : ""} so ${figures.length === 1 ? "it is" : "they are"} not stated at all. ` +
+              "Keep the point the passage makes and keep its structure. " +
+              "Do not swap one number for another, do not add a source, do not add a hedge like \"studies show\". " +
+              "If the sentence exists only to carry the number, drop that sentence.",
+            context: { keyword, title: articleResult.title },
+          });
+          const structured = anthropicModel("structured");
+          void recordSpend(spendDb, {
+            provider: "anthropic",
+            operation: `${structured} (sourcing rewrite)`,
+            costUsd: anthropicCost(structured, result.inputTokens, result.outputTokens),
+            inputTokens: result.inputTokens,
+            outputTokens: result.outputTokens,
+            workspaceId,
+            articleId: article.id,
+            runId: job.id,
+          });
+          return result.text;
+        }
+      : undefined;
+
+    // Bare figures. `approvalBlocker` refuses a draft that still holds one, so
+    // handing the reviewer a `high_risk` draft is handing them a screen whose
+    // only button cannot work. Source it from a page the research already read,
+    // or ask the model to say it without the number, or cut the sentence.
+    await enhance("sourcing", async (html) => {
+      const { sourceUnsourcedFigures } = await import("@/lib/content/sourcing");
+      const outcome = await sourceUnsourcedFigures(html, {
+        research,
+        language: workspace.language,
+        verifyUrl: async (url) => {
+          if (isUnsafeHost(url)) return false;
+          try {
+            const { status } = await defaultFetcher(6_000)(url);
+            return status >= 200 && status < 400;
+          } catch {
+            return false;
+          }
+        },
+        rewrite: rewriteBlockToDropFigures,
+      });
+      if (outcome.sourced || outcome.rewritten || outcome.cut) {
+        console.warn(
+          `[generate] sourcing pass: ${outcome.sourced} figure(s) linked to a source, ` +
+            `${outcome.rewritten} block(s) rewritten, ${outcome.cut} sentence(s) cut; ` +
+            `verdict now ${outcome.report.verdict}`,
+        );
+      }
+      return outcome.html;
+    });
+
+    // Open every outbound link once. The brief asks for real URLs and a model
+    // produces plausible ones; a 404 is unwrapped to its text and everything
+    // else is recorded so the audit tab can say what answered. No API cost,
+    // bounded fetch time. Runs through `enhance` for the same reason the two
+    // steps above do: a step that returns nothing must not wipe the article.
+    let linkChecks: LinkCheck[] | null = null;
+    await enhance("outbound link check", async (html) => {
+      const verified = await verifyOutboundLinks(html, workspace.domain);
+      linkChecks = verified.checks;
+      return verified.html;
+    });
+
+    // A citation the link check has just unwrapped leaves its figure bare
+    // again. Cut only: no research lookup, no model call, no fetch.
+    await enhance("sourcing after link check", async (html) => {
+      const { sourceUnsourcedFigures } = await import("@/lib/content/sourcing");
+      const outcome = await sourceUnsourcedFigures(html, { research });
+      return outcome.html;
     });
 
     setSpendReporter(null);
