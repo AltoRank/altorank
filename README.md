@@ -18,11 +18,11 @@ Read this before you invest time in it.
 
 - **No paying customers, no case studies.** Nothing here has a growth figure
   attached to it, and that is on purpose.
-- **The CLI is not packaged.** `npm run cli` from `apps/web` drives the whole
-  agent API (`apps/web/scripts/cli.ts`), and `skills/altorank/SKILL.md` is the
-  skill file a coding agent reads. There is no published npm binary yet, so
-  today it runs from a checkout rather than from `npx`. (The skill itself does
-  install with `npx`; see below.)
+- **The CLI is publishable, not yet on npm.** `packages/altorank-cli` bundles
+  `apps/web/scripts/cli.ts` into an `altorank` binary (`npx altorank auth
+  whoami` once it is published); until then, `npm run cli` from `apps/web`
+  drives the same agent API from a checkout. `skills/altorank/SKILL.md` is the
+  skill file a coding agent reads, and it does install with `npx`; see below.
 - **The hosted dashboard is what runs today.** It works locally against your own
   Supabase and your own API keys.
 
@@ -189,6 +189,7 @@ apps/web/               the engine and dashboard (Next.js)
   scripts/mcp.ts        MCP server
   scripts/cli.ts        CLI over /api/agent/v1
 skills/altorank/        the skill file a coding agent reads (`npx skills add AltoRank/altorank`)
+packages/altorank-cli/  npm package `altorank`: bundles scripts/cli.ts into a bin
 docker/                 container setup for self-hosting
 tools/agent-readiness/  standalone agent-readiness scanner
 ```
