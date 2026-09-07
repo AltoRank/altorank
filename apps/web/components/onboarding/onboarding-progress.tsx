@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icons } from "@/components/ui";
+import { calendarStripDays, dayFromIso, MAX_CHIPS_PER_DAY } from "@/lib/onboarding/calendar-strip";
 import {
   initialOnboardingState,
   isTerminal,
@@ -181,6 +182,7 @@ export function OnboardingProgress({
       </ol>
 
       <CalendarStrip
+        planned={state.planned}
         drafting={drafting?.status === "active"}
         article={state.article}
         skipped={drafting?.status === "skipped" || drafting?.status === "failed"}
@@ -222,56 +224,78 @@ function StepRow({ step }: { step: OnboardingStep }) {
   );
 }
 
+/** The weekday and day number for a `YYYY-MM-DD`, read in the zone it was written in. */
+const DAY_LABEL: Intl.DateTimeFormatOptions = { weekday: "short", timeZone: "UTC" };
+
 /**
- * Seven days, today marked, and the square for today filling in.
+ * A week of the plan, with what is planned on each day.
  *
- * A skeleton while the draft is being written, then the real chip. The dates
- * are real so the strip reads as the calendar it is a preview of, and the chip
- * sits on today because that is when the draft was created - the same rule
- * lib/queries/calendar.ts uses to place a `drafting` article.
+ * This took `{ drafting, article }` and nothing else, and gated every content
+ * branch on `i === 1`, so seven squares could only ever fill one: a run that
+ * planned seven articles across 09-07…09-13 drew those exact dates as empty
+ * boxes, immediately above a SCHEDULED list that named all seven. The plan was
+ * already in this component's own state - `OnboardingState.planned`, written
+ * by the planning phase - so nothing had to be fetched to fix it, only passed
+ * one level down.
+ *
+ * The window is the plan's own first week rather than an offset from today
+ * (which showed yesterday and five days the plan might never reach); the days
+ * past it are counted in a footnote rather than dropped. `calendarStripDays`
+ * holds that arithmetic, in UTC, because the plan's dates are UTC and the list
+ * below prints them raw.
+ *
+ * The pulsing skeleton stays, but only on the draft actually in flight: the
+ * first entry of the plan, which is the one the pipeline hands to the writer.
+ * Every other planned term is a plain chip, which is what it is - scheduled,
+ * not being written.
  */
 function CalendarStrip({
+  planned,
   drafting,
   article,
   skipped,
   skippedReason,
 }: {
+  planned: OnboardingState["planned"];
   drafting: boolean;
   article: OnboardingState["article"];
   skipped: boolean;
   skippedReason?: string;
 }) {
-  const today = new Date();
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(today.getDate() - 1 + i);
-    return d;
-  });
+  const { days, beyond, lastDate, draftDate } = calendarStripDays(planned);
 
   return (
     <div>
       <div className="mb-1.5 text-[11px] uppercase tracking-wide text-ink-3">Your calendar</div>
       <div className="grid grid-cols-7 gap-1" role="presentation">
-        {days.map((d, i) => {
-          const isToday = i === 1;
+        {days.map((day) => {
+          const d = dayFromIso(day.date);
+          const isDraftDay = day.date === draftDate;
+          // The draft's own square shows the draft - as a skeleton while it is
+          // written, then as the article - and the plan's term for that day is
+          // what the skeleton stands for, so it is not repeated beside it.
+          const showsDraft = isDraftDay && (article !== null || drafting);
+          const rest = showsDraft ? day.terms.slice(1) : day.terms;
+          const chips = rest.slice(0, showsDraft ? MAX_CHIPS_PER_DAY - 1 : MAX_CHIPS_PER_DAY);
+          const more = rest.length - chips.length;
           return (
             <div
-              key={d.toISOString()}
+              key={day.date}
               className={`flex min-h-[64px] flex-col rounded-md border px-1.5 py-1 ${
-                isToday ? "border-accent/40 bg-accent/5" : "border-line bg-panel"
+                day.isToday ? "border-accent/40 bg-accent/5" : "border-line bg-panel"
               }`}
             >
-              <div className={`text-[10px] ${isToday ? "font-semibold text-accent-ink" : "text-ink-3"}`}>
-                {d.toLocaleDateString(undefined, { weekday: "short" })}
-                <span className="ml-1 font-mono">{d.getDate()}</span>
+              <div className={`text-[10px] ${day.isToday ? "font-semibold text-accent-ink" : "text-ink-3"}`}>
+                {d.toLocaleDateString(undefined, DAY_LABEL)}
+                <span className="ml-1 font-mono">{d.getUTCDate()}</span>
               </div>
-              {isToday && drafting && !article && (
+              {isDraftDay && drafting && !article && (
                 <div className="mt-1.5 flex flex-col gap-1" aria-hidden>
                   <div className="h-2 w-full animate-pulse rounded-full bg-panel-2" />
                   <div className="h-2 w-3/4 animate-pulse rounded-full bg-panel-2" style={{ animationDelay: "140ms" }} />
                 </div>
               )}
-              {isToday && article && (
+              {isDraftDay && article && (
                 <div
                   className="mt-1.5 truncate rounded-sm bg-accent/15 px-1 py-0.5 text-[10.5px] leading-tight text-accent-ink"
                   title={article.title}
@@ -279,10 +303,26 @@ function CalendarStrip({
                   {article.keyword}
                 </div>
               )}
+              {chips.map((term) => (
+                <div
+                  key={term}
+                  className="mt-1 truncate rounded-sm bg-panel-2 px-1 py-0.5 text-[10.5px] leading-tight text-ink-2"
+                  title={term}
+                >
+                  {term}
+                </div>
+              ))}
+              {more > 0 && <div className="mt-1 px-1 text-[10px] leading-tight text-ink-3">+{more}</div>}
             </div>
           );
         })}
       </div>
+      {beyond > 0 && lastDate && (
+        <p className="m-0 mt-2 text-[12px] text-ink-3">
+          and {beyond} more on the calendar through{" "}
+          {dayFromIso(lastDate).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })}.
+        </p>
+      )}
       {article && (
         <p className="m-0 mt-2 text-[12px] text-ink-2">
           First draft is in your review queue
