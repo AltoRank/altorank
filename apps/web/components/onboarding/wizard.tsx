@@ -41,6 +41,7 @@ import {
   saveOutputSettings,
   completeWizard,
 } from "@/app/actions/onboarding-wizard";
+import { setAutoApprove } from "@/app/actions/workspaces";
 import { saveAttribution } from "@/app/actions/attribution";
 import { AttributionPicker, EMPTY_ATTRIBUTION, attributionComplete, type AttributionDraft } from "@/components/onboarding/attribution-picker";
 import type { OutputSettings, SiteDetails } from "@/lib/onboarding/output-settings";
@@ -96,6 +97,7 @@ export function OnboardingWizard({
   destinations,
   askAttribution,
   initialRun = null,
+  initialAutoApprove,
 }: {
   workspaceId: string;
   domain: string;
@@ -115,6 +117,8 @@ export function OnboardingWizard({
   initialOutput: OutputSettings;
   destinations: Destination[];
   askAttribution: boolean;
+  /** The workspace's publishing decision as saved (079); signup sets it on, "Add workspace" leaves it off. */
+  initialAutoApprove: boolean;
   /**
    * The workspace's latest onboarding run, read by the page. A run still
    * going, or one that finished in the last hour, opens on the run screen
@@ -141,6 +145,7 @@ export function OnboardingWizard({
   // persisted server-side, so a reload rehydrates them from `initialProfile`,
   // `initialSite` and `initialOutput` and puts the person back where they were.
   const [step, setStep] = useState(0);
+  const [autoApprove, setAutoApproveState] = useState(initialAutoApprove);
   const [attribution, setAttribution] = useState<AttributionDraft>(EMPTY_ATTRIBUTION);
   // Set when "Skip setup" was pressed: which screen it was pressed on, so Back
   // returns there, and the finish goes to the dashboard rather than to a plan.
@@ -230,7 +235,12 @@ export function OnboardingWizard({
   async function persist(s: number) {
     if ((s === 0 || s === 1) && profile) await saveProfile(workspaceId, profile);
     if (s === 2) await saveSiteDetails(workspaceId, site);
-    if (s === 3) await saveOutputSettings(workspaceId, output);
+    if (s === 3) {
+      await saveOutputSettings(workspaceId, output);
+      // Saved with the screen that asked it. 24h and a floor of 70 are the
+      // defaults the settings card shows; both can be changed there later.
+      await setAutoApprove(workspaceId, { enabled: autoApprove, holdHours: 24, minSeo: 70 });
+    }
     // Optional: saved only when actually answered, never as a blank.
     const source = attribution.source;
     if (s === ATTRIBUTION_STEP && source && attributionComplete(attribution)) await saveAttribution(source, attribution.note);
@@ -308,10 +318,10 @@ export function OnboardingWizard({
         )}
         {step === 1 && <AudienceStep profile={profile} patch={patch} />}
         {step === 2 && <BlogStep site={site} setSite={setSite} discovery={discovery} domain={domain} />}
-        {step === 3 && <ArticlesStep output={output} setOutput={setOutput} />}
+        {step === 3 && <ArticlesStep output={output} setOutput={setOutput} autoApprove={autoApprove} setAutoApprove={setAutoApproveState} />}
         {step === 4 && <IntegrationStep destinations={destinations} />}
         {step === ATTRIBUTION_STEP && <AttributionStep value={attribution} onChange={setAttribution} skipping={skipping} />}
-        {step === last && !skipping && <NextUp weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} />}
+        {step === last && !skipping && <NextUp weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} autoApprove={autoApprove} />}
         {error && <p className="mt-4 rounded-lg bg-err-soft px-3 py-2 text-[12.5px] text-err-ink">{error}</p>}
       </div>
 
@@ -537,12 +547,22 @@ function BlogStep({
   );
 }
 
-function ArticlesStep({ output, setOutput }: { output: OutputSettings; setOutput: (o: OutputSettings) => void }) {
+function ArticlesStep({
+  output,
+  setOutput,
+  autoApprove,
+  setAutoApprove,
+}: {
+  output: OutputSettings;
+  setOutput: (o: OutputSettings) => void;
+  autoApprove: boolean;
+  setAutoApprove: (v: boolean) => void;
+}) {
   return (
     <>
       <Head title="How your articles should read" sub="Set once. Every draft follows these until you change them in Settings." />
       <div className="flex flex-col gap-4 rounded-[10px] border border-line bg-panel p-5">
-        <ApprovalGateCard />
+        <ApprovalGateCard value={autoApprove} onChange={setAutoApprove} />
         <OutputFields output={output} setOutput={setOutput} />
       </div>
     </>
@@ -586,7 +606,7 @@ function IntegrationStep({ destinations }: { destinations: Destination[] }) {
 }
 
 /** What Finish does, under whichever screen is last. */
-function NextUp({ weeklyLimit, freeDrafts }: { weeklyLimit: number; freeDrafts: number | null }) {
+function NextUp({ weeklyLimit, freeDrafts, autoApprove }: { weeklyLimit: number; freeDrafts: number | null; autoApprove: boolean }) {
   const allowance = freeAllowanceClause(freeDrafts);
   return (
     <p className="mt-6 text-center text-[12.5px] leading-[1.6] text-ink-2">
@@ -594,8 +614,11 @@ function NextUp({ weeklyLimit, freeDrafts }: { weeklyLimit: number; freeDrafts: 
       <strong className="font-medium text-ink">
         {weeklyLimit >= 7 ? "one article a day" : `${weeklyLimit} article${weeklyLimit === 1 ? "" : "s"} a week`}
       </strong>{" "}
-      for the next 30 days (only keywords that pass our checks make the plan), and write the first one. Every
-      draft waits in review.{allowance ? ` ${allowance}` : ""}
+      for the next 30 days (only keywords that pass our checks make the plan), and write the first one.{" "}
+      {autoApprove
+        ? "Each draft is emailed to you and publishes a day later unless you hold it."
+        : "Every draft waits in review."}
+      {allowance ? ` ${allowance}` : ""}
     </p>
   );
 }

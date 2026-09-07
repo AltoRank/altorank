@@ -14,22 +14,56 @@ import {
 import { Field, Toggle, RadioTiles, inputClass } from "./fields";
 
 /**
- * The one setting nobody can change, shown as a setting so the question
- * "where do I turn on auto-publish" is answered where it would be asked.
+ * Who decides that a draft ships (migration 079). Two tiles: review each draft,
+ * or publish automatically after a day unless held. Rendered by the wizard's
+ * Articles step, where it is saved with that step, and by Settings > Articles
+ * as a pointer to the workspace card that owns the thresholds.
+ *
+ * Either way the same hard checks run before anything ships - unsourced
+ * figures, failing audit items, no plan - and a held draft says why on its row.
+ * The copy says that once, because "automatic" without it reads as a firehose.
  */
-export function ApprovalGateCard() {
-  return (
-    <div className="flex items-start justify-between gap-6 rounded-[8px] border border-line bg-bg px-4 py-3">
-      <div>
-        <div className="text-[13px] font-medium">Every draft waits for your yes</div>
-        <div className="mt-0.5 text-[12px] leading-[1.5] text-ink-3">
-          Articles land in review and publish only when you approve them. This is not a setting you can turn
-          off, and it is the difference between a tool and a firehose.
+export function ApprovalGateCard({
+  value,
+  onChange,
+}: {
+  /** Undefined renders the read-only pointer used on Settings > Articles. */
+  value?: boolean;
+  onChange?: (auto: boolean) => void;
+}) {
+  if (value === undefined || !onChange) {
+    return (
+      <div className="flex items-start justify-between gap-6 rounded-[8px] border border-line bg-bg px-4 py-3">
+        <div>
+          <div className="text-[13px] font-medium">Who decides a draft ships</div>
+          <div className="mt-0.5 text-[12px] leading-[1.5] text-ink-3">
+            Review each draft, or publish automatically after a hold unless you hold it. Set per workspace under
+            Workspaces &rarr; Settings &rarr; Publishing decision; the same checks (sources, audit, plan) run either way.
+          </div>
         </div>
       </div>
-      <span className="mt-0.5 shrink-0 rounded-full border border-line px-2 py-0.5 font-mono text-[10px] text-ink-2">
-        ALWAYS ON
-      </span>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <SectionLabel>Publishing decision</SectionLabel>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {[
+          { auto: true, title: "Publish automatically", hint: "Each draft is emailed to you when written and ships a day later unless you hold it. Same checks as a click: sources, audit, plan." },
+          { auto: false, title: "Review each draft", hint: "Nothing publishes until someone clicks Approve. Pick this for client sites and regulated niches." },
+        ].map((o) => (
+          <button
+            key={String(o.auto)}
+            type="button"
+            onClick={() => onChange(o.auto)}
+            aria-pressed={value === o.auto}
+            className={`rounded-[8px] border px-4 py-3 text-left transition-colors ${value === o.auto ? "border-accent bg-accent-soft/20" : "border-line bg-bg hover:border-ink-3"}`}
+          >
+            <div className="text-[13px] font-medium">{o.title}</div>
+            <div className="mt-0.5 text-[12px] leading-[1.5] text-ink-3">{o.hint}</div>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

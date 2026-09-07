@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { IconButton } from "@/components/ui/button";
 import { Icons } from "@/components/ui";
 import { updateArticle, deleteArticle } from "@/app/actions/articles";
-import { publishArticle, retryPublish } from "@/app/actions/publish";
+import { publishArticle, retryPublish, holdArticle, releaseHold } from "@/app/actions/publish";
 
 interface ArticleRowMenuProps {
   articleId: string;
@@ -23,13 +23,16 @@ interface ArticleRowMenuProps {
    * The article's last publish attempt failed. "Retry publish" replaces
    * "Publish now": same article, same connection, one more log row.
    */
-  canRetry?: boolean;
+  canRetry?: boolean;  /** A person held this review draft, so the workspace rule skips it (079). */
+  held?: boolean;
+  /** The workspace publishes automatically, so Hold is a meaningful action on a review draft. */
+  autoApprove?: boolean;
 }
 
 /** Tallest the menu gets, with the status submenu open. */
 const MENU_MAX_HEIGHT = 280;
 
-export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, canRetry = false }: ArticleRowMenuProps) {
+export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, canRetry = false, held = false, autoApprove = false }: ArticleRowMenuProps) {
   const [open, setOpen] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -78,7 +81,7 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, c
    * the row stayed exactly as it was. Every branch now disables its item,
    * relabels it, and reports a failure where the person is looking.
    */
-  const [busy, setBusy] = useState<"status" | "delete" | null>(null);
+  const [busy, setBusy] = useState<"status" | "delete" | "hold" | null>(null);
 
   async function handleStatusChange(status: string) {
     if (busy) return;
@@ -234,6 +237,26 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, c
           >
             {busy === "status" ? "Changing status…" : <>Change status &rsaquo;</>}
           </button>
+          {currentStatus === "review" && (held || autoApprove) && (
+            <button
+              className={menuItemClass}
+              disabled={busy !== null}
+              onClick={(e) => {
+                e.stopPropagation();
+                setBusy("hold");
+                (held ? releaseHold(articleId) : holdArticle(articleId))
+                  .then(() => {
+                    toast.success(held ? "Released. The rule may publish it after its hold." : "Held. It waits for someone to approve it.");
+                    setOpen(false);
+                    router.refresh();
+                  })
+                  .catch((err) => toast.error(err instanceof Error ? err.message : "Could not update the hold"))
+                  .finally(() => setBusy(null));
+              }}
+            >
+              {busy === "hold" ? "Saving…" : held ? "Release hold" : "Hold"}
+            </button>
+          )}
           <div className="border-t border-line my-1" />
           <button
             className={`${menuItemClass} text-[var(--err)]`}

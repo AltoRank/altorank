@@ -14,6 +14,7 @@ import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
 import { readFrozenEntries } from "@/lib/plan/frozen";
 import { agencyRecipients } from "@/lib/email/agency-recipients";
 import { sendArticleDraftedEmails } from "@/lib/email/article-emails";
+import { holdUrl } from "@/lib/publishing/hold-link";
 import {
   announceNothingWritten,
   announcePausedSites,
@@ -364,6 +365,7 @@ export async function GET(request: Request) {
           reasons: next.reasons,
           articleId: result.articleId,
           autoApproveAfter,
+          holdUrlFor: autoApproveAfter ? (to) => holdUrl(result.articleId, to) : undefined,
         });
         notified = out.failed
           ? `, emailed ${out.sent}/${to.length} (${out.lastError ?? "failed"})`
