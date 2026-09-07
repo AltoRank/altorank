@@ -16,8 +16,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateImage } from "@/lib/ai/image-generator";
 import { openaiImageModel } from "@/lib/ai/models";
-import { uploadImageBuffer } from "@/lib/storage/images";
+import { imageWriter, uploadImageBuffer } from "@/lib/storage/images";
 import { recordSpend } from "@/lib/billing/spend";
+import { spendClient } from "@/lib/billing/default-spend";
 import { labelsFor, type ImageStyle } from "./labels";
 import { altWordCount, MIN_ALT_WORDS } from "@/lib/ai/alt-text";
 import { DEFAULT_OUTPUT_SETTINGS } from "@/lib/onboarding/output-settings";
@@ -203,7 +204,10 @@ export function storageImageProducer(args: {
     });
     // The images endpoint reports no price, so cost stays null rather than a
     // guess: an unmeasured number is not a zero.
-    void recordSpend(supabase, {
+    // The service client, as the Anthropic row is written: provider_spend
+    // has no insert policy for a person's session, so a row written with it
+    // was dropped without a trace.
+    void recordSpend(spendClient() ?? supabase, {
       provider: "openai",
       operation: `${openaiImageModel()} (section image)`,
       costUsd: null,
@@ -212,7 +216,7 @@ export function storageImageProducer(args: {
       runId: runId ?? null,
     });
     return uploadImageBuffer(
-      supabase,
+      imageWriter(supabase),
       result.data,
       `${workspaceId}/${articleId}-${index + 1}.${result.extension}`,
       result.contentType,

@@ -25,12 +25,12 @@ import { recordOverageArticle } from "@/lib/billing/overage";
 import { spendClient } from "@/lib/billing/default-spend";
 import { setSpendReporter } from "@/lib/seo/client";
 import { fetchKnownPages } from "@/lib/linking/targets";
-import { anthropicModel } from "@/lib/ai/models";
+import { anthropicModel, openaiImageModel } from "@/lib/ai/models";
 import { GenerationTruncatedError } from "@/lib/ai/claude";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
 import { generateImage } from "@/lib/ai/image-generator";
 import { outputFromRow, resolveFeaturedImage, type OutputSettingsRow } from "@/lib/onboarding/output-settings";
-import { uploadImageBuffer } from "@/lib/storage/images";
+import { imageWriter, uploadImageBuffer } from "@/lib/storage/images";
 import {
   existingInternalLinks,
   fetchLinkTargets,
@@ -718,8 +718,19 @@ export async function generateArticle(
           workspace.brand_style as Record<string, unknown> | undefined,
           { style: featured.style, titleCover: featured.titleCover, brandColor: outputSettings.brandColor },
         );
+        // Never metered before: the section images wrote a row, the hero did
+        // not. Cost stays null, as for the section images - the images
+        // endpoint reports no price.
+        void recordSpend(spendDb, {
+          provider: "openai",
+          operation: `${openaiImageModel()} (featured image)`,
+          costUsd: null,
+          workspaceId,
+          articleId: article.id,
+          runId: job.id,
+        });
         featuredImageUrl = await uploadImageBuffer(
-          supabase,
+          imageWriter(supabase),
           imageResult.data,
           `${workspaceId}/${article.id}.${imageResult.extension}`,
           imageResult.contentType,
