@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { sendPasswordReset } from "@/lib/email/auth-emails";
 import { checkToolRateLimit } from "@/lib/tools/rate-limit";
+import { SubmitButton } from "@/components/auth/submit-button";
 
 export const metadata: Metadata = { title: "Reset password" };
 
@@ -87,12 +88,7 @@ export default async function ResetPasswordPage(props: {
             placeholder="you@example.com"
           />
         </div>
-        <button
-          type="submit"
-          className="w-full py-2.5 bg-accent text-white font-medium text-[13px] rounded-[7px] hover:bg-accent-2 transition-colors cursor-pointer"
-        >
-          Send reset link
-        </button>
+        <SubmitButton pendingLabel="Sending…">Send reset link</SubmitButton>
       </form>
 
       <p className="text-center text-sm text-ink-3">

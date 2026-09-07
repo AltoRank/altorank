@@ -7,6 +7,7 @@ import { authErrorMessage } from "@/lib/auth/errors";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
 import { normalizeDomain, DOMAIN_PATTERN } from "@/lib/growth-plan/build";
+import { SubmitButton } from "@/components/auth/submit-button";
 
 export const metadata: Metadata = {
   title: "Sign Up",
@@ -206,12 +207,7 @@ export default async function SignUpPage(props: {
             className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
           />
         </div>
-        <button
-          type="submit"
-          className="w-full py-2.5 bg-accent text-white font-medium text-[13px] rounded-[7px] hover:bg-accent-2 transition-colors cursor-pointer"
-        >
-          Create account
-        </button>
+        <SubmitButton pendingLabel="Creating your account…">Create account</SubmitButton>
       </form>
 
       <p className="text-center text-sm text-ink-3">
