@@ -32,7 +32,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Icons } from "@/components/ui";
+import { Button } from "@/components/ui";
 import {
   proposeProfile,
   saveProfile,
@@ -514,8 +514,7 @@ function IntegrationStep({ destinations }: { destinations: Destination[] }) {
             href={`/connect?connect=${d.id}`}
             // Same tab abandoned the wizard and dropped whatever was typed on
             // this screen: state is client-side and each step persists only on
-            // Continue. The "While you wait" cards on the finish screen
-            // already got this right.
+            // Continue.
             target="_blank"
             rel="noreferrer"
             title={d.description ?? undefined}
@@ -630,7 +629,7 @@ function RunScreen({ workspaceId, domain, weeklyLimit, freeDrafts }: { workspace
           </p>
         </div>
 
-        <div className="grid grid-cols-[1fr_320px] gap-6">
+        <div className="mx-auto max-w-[640px]">
           <div className="rounded-[10px] border border-line bg-panel p-5">
             <OnboardingProgress workspaceId={workspaceId} domain={domain} autoNavigate={false} onState={setState} />
             {planned.length > 0 && (
@@ -652,9 +651,8 @@ function RunScreen({ workspaceId, domain, weeklyLimit, freeDrafts }: { workspace
                   `OnboardingProgress` aborts its fetch on unmount and the route
                   passes that signal to the pipeline, so pushing /content here
                   cancelled the very run the button sits under - the draft was
-                  never written and nothing said why. The "While you wait" cards
-                  are new tabs for exactly this reason; so is this, until the
-                  run is over and there is nothing left to cancel. */}
+                  never written and nothing said why. So this opens a new tab
+                  until the run is over and there is nothing left to cancel. */}
               {finished ? (
                 <Button variant="accent" onClick={() => router.push(next.href)}>
                   {next.label}
@@ -682,58 +680,8 @@ function RunScreen({ workspaceId, domain, weeklyLimit, freeDrafts }: { workspace
             )}
           </div>
 
-          <aside className="flex flex-col gap-3">
-            {/* The run ends in about a minute and this column does not: it kept
-                saying "While you wait" under a screen that had already said
-                "Done." Once there is no wait left, the same four cards are the
-                setup that was deferred, so name them that. */}
-            <div className="text-[11px] uppercase tracking-wide text-ink-3">
-              {finished ? "Set up next" : "While you wait"}
-            </div>
-            <WaitCard
-              href="/connect"
-              title="Connect your CMS"
-              sub="Approved articles publish to your site. Without it they stay drafts you export by hand."
-              icon={<Icons.link size={14} />}
-            />
-            <WaitCard
-              href="/connect/google"
-              title="Connect Search Console"
-              sub="Sharpens keyword research with what you already rank for, and shows real clicks."
-              icon={<Icons.trend size={14} />}
-            />
-            <WaitCard
-              href="/voice"
-              title="Review your brand voice"
-              sub="See what we learned from your writing and correct it."
-              icon={<Icons.sparkle size={14} />}
-            />
-            <WaitCard
-              href="/review"
-              title="How review works"
-              sub="Every draft waits for your approval. Nothing publishes on its own."
-              icon={<Icons.check size={14} />}
-            />
-          </aside>
         </div>
       </div>
     </div>
-  );
-}
-
-function WaitCard({ href, title, sub, icon }: { href: string; title: string; sub: string; icon: React.ReactNode }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="flex items-start gap-3 rounded-[10px] border border-line bg-panel px-4 py-3 transition-colors hover:border-accent"
-    >
-      <span className="mt-0.5 text-ink-2">{icon}</span>
-      <span>
-        <span className="block text-[13px] font-medium">{title}</span>
-        <span className="mt-0.5 block text-[12px] leading-[1.5] text-ink-3">{sub}</span>
-      </span>
-    </a>
   );
 }
