@@ -20,14 +20,16 @@ import type { WriteGate } from "@/components/dashboard/planner-card";
 import { PlanMonthButton } from "@/components/dashboard/plan-month-button";
 import Link from "next/link";
 import { Button } from "@/components/ui";
+import { HowItWorks } from "@/components/dashboard/how-it-works";
+import { contentPlanExplainer } from "@/lib/explainers";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
-export const metadata: Metadata = { title: "Calendar" };
+export const metadata: Metadata = { title: "Content planner" };
 
 type Props = {
-  searchParams: Promise<{ month?: string; clients?: string }>;
+  searchParams: Promise<{ month?: string }>;
 };
 
 export default async function CalendarPage({ searchParams }: Props) {
@@ -99,21 +101,12 @@ export default async function CalendarPage({ searchParams }: Props) {
   // them with no write. Unmetered accounts have nothing frozen.
   const frozen = deriveFrozen(unwritten, quota);
 
-  // Apply client filter
-  const clientFilter = params.clients;
-  const filteredEntries = clientFilter === "publishing"
-    ? entries.filter((e) => {
-        const w = wsMap.get(e.workspace_id);
-        return w?.status === "on";
-      })
-    : entries;
-
   // A draft being written for a planned keyword shows on the planned day, as
   // "writing". The same article also arrives from `getCalendarEntries` as a
   // derived "run" entry on today's square - the link between the two is only
   // written when the run succeeds - so that copy is dropped here.
   const claimed = new Set<string>();
-  const withFlight = filteredEntries.map((entry) => {
+  const withFlight = entries.map((entry) => {
     const inFlight = entry.article_id ? null : inFlightFor(drafts, entry);
     if (inFlight) claimed.add(inFlight.articleId);
     return { entry, inFlight };
@@ -125,7 +118,12 @@ export default async function CalendarPage({ searchParams }: Props) {
       return {
         entry,
         keyword: entry.keyword_id ? kwById.get(entry.keyword_id) ?? null : null,
-        workspace: w ? { initials: w.initials, color: w.color, domain: w.domain } : null,
+        // The calendar is one site's calendar - there is no "all sites"
+        // scope any more - and the header already names the domain. Stamping
+        // it on every square spent the top line of each one, truncated
+        // ("acme-ux.altorank.t..."), on the answer to a question the page
+        // does not raise. Passed only if a merged view ever comes back.
+        workspace: scopeId || !w ? null : { initials: w.initials, color: w.color, domain: w.domain },
         article: entry.article_id ? articleStates.get(entry.article_id) ?? null : null,
         inFlight: inFlight ? { createdAt: inFlight.createdAt, phase: inFlight.phase } : null,
         frozen: frozen.ids.has(entry.id) ? frozen.reason : null,
@@ -150,7 +148,7 @@ export default async function CalendarPage({ searchParams }: Props) {
         planned: false,
       },
       keyword: null,
-      workspace: w ? { initials: w.initials, color: w.color, domain: w.domain } : null,
+      workspace: scopeId || !w ? null : { initials: w.initials, color: w.color, domain: w.domain },
       article: null,
       inFlight: null,
       frozen: null,
@@ -160,9 +158,7 @@ export default async function CalendarPage({ searchParams }: Props) {
   const items = [...articleItems, ...improvementItems];
   const cells: PlannerCell[] = buildMonthCells(items, yearNum, monthNum, (it) => it.entry.scheduled_date);
 
-  const doneCount = articleItems.filter((it) => it.entry.status === "done").length;
   const runningCount = items.filter((it) => it.entry.status === "run" || it.inFlight !== null).length;
-  const queuedCount = articleItems.filter((it) => it.entry.status === "queue" && it.frozen === null).length;
   const frozenCount = articleItems.filter((it) => it.frozen !== null).length;
   const slots = capacity?.available ?? 0;
   // Nothing on any day of the month being looked at, and nothing anywhere on
@@ -185,16 +181,18 @@ export default async function CalendarPage({ searchParams }: Props) {
                   <span className="font-mono text-[11.5px]">{wsMap.get(scopeId ?? "")?.domain}</span>
                 </>
               ) : null}
-              <DotSep />
-              <span>
-                {doneCount} published · {queuedCount} queued
-                {frozenCount > 0 && (
-                  <>
-                    {" · "}
-                    <span title={frozen.reason ?? undefined}>{frozenCount} inactive</span>
-                  </>
-                )}
-              </span>
+              {/* "N published · N queued" was a breakdown of the count two
+                  segments to the left, and every one of those states is a
+                  labelled pill on the day it sits on. Four segments plus the
+                  capacity line pushed the month out of the title, which is
+                  the one thing on this row nothing else repeats. Inactive
+                  stays: nothing else on the page says a day was skipped. */}
+              {frozenCount > 0 && (
+                <>
+                  <DotSep />
+                  <span title={frozen.reason ?? undefined}>{frozenCount} inactive</span>
+                </>
+              )}
               {capacity && (
                 <>
                   <DotSep />
@@ -213,6 +211,11 @@ export default async function CalendarPage({ searchParams }: Props) {
           }
           actions={
             <>
+              {/* contentPlanExplainer was written for this page and never
+                  mounted anywhere, so the one surface whose behaviour is
+                  pure arithmetic - which keyword, on which day, why - had no
+                  way to say what the arithmetic is. */}
+              <HowItWorks explainer={contentPlanExplainer} />
               {scopeId && slots > 0 &&
                 (nothingToPlanFrom ? (
                   <Link href="/keywords">

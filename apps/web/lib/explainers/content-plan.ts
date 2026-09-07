@@ -16,8 +16,7 @@ export const contentPlanExplainer: Explainer = {
   title: "Content plan",
   intro:
     "A month of keywords, chosen by arithmetic you can read, written into a review queue that nothing leaves without you.",
-  mountsAt:
-    "NOT MOUNTED. Belongs in the PageHead actions of app/(dashboard)/content/page.tsx as <HowItWorks explainer={contentPlanExplainer} />, the way /articles, /keywords, /backlinks, /readiness and /geo mount theirs.",
+  mountsAt: "app/(dashboard)/content/page.tsx, PageHead actions.",
   sections: [
     {
       title: "How keywords are chosen",

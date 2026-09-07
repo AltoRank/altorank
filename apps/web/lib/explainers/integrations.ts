@@ -17,8 +17,7 @@ export const integrationsExplainer: Explainer = {
   title: "Integrations",
   intro:
     "Four ways an approved article can reach a site, and what each one can and cannot do once it is there.",
-  mountsAt:
-    "NOT MOUNTED. Belongs in the PageHead actions of app/(dashboard)/connect/page.tsx as <HowItWorks explainer={integrationsExplainer} />, the way /articles, /keywords, /backlinks, /readiness and /geo mount theirs.",
+  mountsAt: "app/(dashboard)/connect/page.tsx, PageHead actions.",
   sections: [
     {
       title: "Credential connections",

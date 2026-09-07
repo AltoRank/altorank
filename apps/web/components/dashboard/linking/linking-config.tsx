@@ -183,19 +183,19 @@ export function LinkingConfig({
                 const error = fresh ? fresh.error : s.error;
                 return (
                   <tr key={s.id} className={`border-b border-line-soft last:border-0 ${s.enabled ? "" : "opacity-60"}`}>
-                    <td className="px-3.5 py-2.5 whitespace-nowrap">{KIND_LABEL[s.kind]}</td>
-                    <td className="px-3.5 py-2.5 max-w-[420px]">
+                    <td className="px-3.5 py-3 whitespace-nowrap">{KIND_LABEL[s.kind]}</td>
+                    <td className="px-3.5 py-3 max-w-[420px]">
                       <a href={s.url} target="_blank" rel="noreferrer" className="font-mono text-[12px] text-ink-2 hover:underline break-all">
                         {s.url}
                       </a>
                       {error && <div className="text-[11.5px] text-err mt-0.5">{error}</div>}
                     </td>
-                    <td className="px-3.5 py-2.5 font-mono tabular-nums">
+                    <td className="px-3.5 py-3 font-mono tabular-nums">
                       {/* Null is "never counted", which is not zero. */}
                       {pagesFound === null || pagesFound === undefined ? <span className="text-ink-4">—</span> : pagesFound}
                     </td>
-                    <td className="px-3.5 py-2.5 text-ink-3 whitespace-nowrap">{relative(fresh ? new Date().toISOString() : s.last_detected_at)}</td>
-                    <td className="px-3.5 py-2.5">
+                    <td className="px-3.5 py-3 text-ink-3 whitespace-nowrap">{relative(fresh ? new Date().toISOString() : s.last_detected_at)}</td>
+                    <td className="px-3.5 py-3">
                       <div className="flex items-center justify-end gap-2">
                         <Toggle
                           checked={s.enabled}
@@ -305,7 +305,7 @@ function TargetRow({
 
   return (
     <tr className={`border-b border-line-soft last:border-0 align-top ${t.enabled ? "" : "opacity-60"}`}>
-      <td className="px-3.5 py-2.5 max-w-[360px]">
+      <td className="px-3.5 py-3 max-w-[360px]">
         <div className="font-medium truncate" title={t.title ?? undefined}>
           {t.title ?? <span className="text-ink-3 italic">Untitled - not crawled yet</span>}
         </div>
@@ -313,8 +313,8 @@ function TargetRow({
           {t.path ?? pathOf(t.url)}
         </a>
       </td>
-      <td className="px-3.5 py-2.5 text-ink-2 whitespace-nowrap">{t.keyword ?? <span className="text-ink-4">—</span>}</td>
-      <td className="px-3.5 py-2.5">
+      <td className="px-3.5 py-3 text-ink-2 whitespace-nowrap">{t.keyword ?? <span className="text-ink-4">—</span>}</td>
+      <td className="px-3.5 py-3">
         <select
           value={t.priority}
           disabled={disabled}
@@ -329,7 +329,7 @@ function TargetRow({
           ))}
         </select>
       </td>
-      <td className="px-3.5 py-2.5 min-w-[260px]">
+      <td className="px-3.5 py-3 min-w-[260px]">
         <div className="flex flex-wrap items-center gap-1.5">
           {t.anchors.map((a) => (
             <span key={a} className="inline-flex items-center gap-1 rounded-full bg-panel-2 px-2 py-[2px] text-[12px]">
@@ -363,7 +363,7 @@ function TargetRow({
           />
         </div>
       </td>
-      <td className="px-3.5 py-2.5">
+      <td className="px-3.5 py-3">
         <Toggle
           checked={t.enabled}
           disabled={disabled}

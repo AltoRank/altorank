@@ -88,9 +88,14 @@ export default async function ClientsPage({ searchParams }: Props) {
                     <td className="px-3.5 py-3 border-b border-line-soft">
                       <div className="flex items-center gap-2.5">
                         <Avatar initials={w.initials} color={w.color} size="lg" />
-                        <div>
-                          <div className="font-semibold">{w.name}</div>
-                          <div className="font-mono text-[11px] text-ink-3">{w.domain}</div>
+                        <div className="min-w-0">
+                          {/* A workspace's name defaults to its domain, so
+                              until an account renames one this printed the
+                              same string twice in two typefaces. */}
+                          <div className="font-semibold truncate">{w.name}</div>
+                          {w.domain && w.domain !== w.name && (
+                            <div className="font-mono text-[11px] text-ink-3 truncate">{w.domain}</div>
+                          )}
                         </div>
                       </div>
                     </td>

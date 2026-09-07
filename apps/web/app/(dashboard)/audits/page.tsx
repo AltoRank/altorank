@@ -1,14 +1,13 @@
 import type { Metadata } from "next";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getWorkspaceAudits } from "@/app/actions/audit";
-import { PageHead, Avatar, Icons, Button, Card, StatStrip } from "@/components/ui";
-import type { Workspace } from "@/lib/types";
+import { PageHead, Avatar, Card, StatStrip } from "@/components/ui";
 import { StartAuditButton } from "@/components/dashboard/start-audit-button";
 import { AuditRow } from "@/components/dashboard/audit-row";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
-export const metadata: Metadata = { title: "Audits" };
+export const metadata: Metadata = { title: "Site audits" };
 
 export default async function AuditsPage() {
   // One site at a time. Audits from two domains side by side read as one
@@ -37,12 +36,11 @@ export default async function AuditsPage() {
       : 0;
   const totalIssues = completedAudits.reduce((s, a) => s + a.issues.length, 0);
   const totalPages = completedAudits.reduce((s, a) => s + a.pages_crawled, 0);
-  const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));
 
   return (
     <>
       <PageHead
-        title="Site Audits"
+        title="Site audits"
         subtitle={
           <span>
             {plural(allAudits.length, "audit")}
@@ -67,8 +65,20 @@ export default async function AuditsPage() {
                 : "no audits yet",
             deltaType: avgScore > 0 ? (avgScore >= 80 ? "pos" : "neg") : undefined,
           },
-          { label: "Issues found", value: String(totalIssues) },
-          { label: "Pages crawled", value: String(totalPages) },
+          // Zeroes only once something has been counted. With no completed
+          // audit, "Issues found 0" reads as "this site is clean" and
+          // "Pages crawled 0" as "the crawl found nothing", and neither has
+          // been measured (CLAUDE.md rule 5).
+          {
+            label: "Issues found",
+            value: completedAudits.length ? String(totalIssues) : "—",
+            delta: completedAudits.length ? undefined : "no audits yet",
+          },
+          {
+            label: "Pages crawled",
+            value: completedAudits.length ? String(totalPages) : "—",
+            delta: completedAudits.length ? undefined : "no audits yet",
+          },
         ]}
       />
 
@@ -77,12 +87,21 @@ export default async function AuditsPage() {
           const wsAudits = auditsByWs.find((x) => x.workspace.id === ws.id)?.audits ?? [];
           return (
             <div key={ws.id} className="mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <span className="inline-flex items-center gap-2.5 text-sm font-medium">
-                  <Avatar initials={ws.initials} color={ws.color} />
-                  {ws.name}
-                  <span className="text-ink-3 font-normal">{ws.domain}</span>
-                </span>
+              {/* The per-site heading is a heading for a group, and the
+                  scope gives this page exactly one. It repeated the domain
+                  the title bar had already named - twice over, since a
+                  workspace's name defaults to its domain - so a scoped page
+                  said uxempty.altorank.test three times before its table.
+                  Kept for a merged view, which is the only case it labels
+                  anything. */}
+              <div className={`flex items-center mb-3 ${workspaces.length > 1 ? "justify-between" : "justify-end"}`}>
+                {workspaces.length > 1 && (
+                  <span className="inline-flex items-center gap-2.5 text-sm font-medium">
+                    <Avatar initials={ws.initials} color={ws.color} />
+                    {ws.name}
+                    <span className="text-ink-3 font-normal">{ws.domain}</span>
+                  </span>
+                )}
                 <StartAuditButton workspaceId={ws.id} />
               </div>
 
@@ -109,11 +128,14 @@ export default async function AuditsPage() {
                     {wsAudits.length === 0 && (
                       <tr>
                         <td colSpan={5} className="px-3.5 py-10 text-center text-ink-3">
+                          {/* Was 52 words listing all six check families and
+                              the PageSpeed caveat. An empty table owes the
+                              reader why it is empty and the one control that
+                              changes that; what the crawl reports is on the
+                              audit it reports it on. */}
                           <span className="inline-block max-w-[56ch] leading-[1.6]">
-                            No audits yet. Run audit above crawls this site&rsquo;s pages and lists broken links,
-                            missing titles and descriptions, images without alt text, heading hierarchy problems and
-                            slow pages, with a PageSpeed reading when a key is configured. Results appear here as the
-                            crawl finishes.
+                            No audits yet. Run audit crawls this site&rsquo;s pages for broken links, missing
+                            metadata, heading and image problems and slow pages; results appear here as it finishes.
                           </span>
                         </td>
                       </tr>
