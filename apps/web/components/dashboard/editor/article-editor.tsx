@@ -20,6 +20,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { PLATFORM_HINT, PLATFORM_LABEL, PLATFORM_CONNECT_TYPE, platformState } from "@/lib/cms/detect";
 import { updateArticle } from "@/app/actions/articles";
 import { publishArticle, approveArticle, requestChanges, markPublishedManually, retryPublish, holdArticle, releaseHold } from "@/app/actions/publish";
+import { fromEntryPrice } from "@/lib/billing/plan-prices";
+import { billingHref, approveIntentPath } from "@/lib/billing/upgrade-link";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
 import type { Destination } from "@/lib/publishing/destinations";
 import { IntegrationIcon } from "@/components/dashboard/integration-icon";
@@ -984,12 +986,16 @@ export function ArticleEditor({
                   </select>
                 </label>
               )}
+              {/* The price, before the click. A CTA that says only "choose a
+                  plan" asks for an unnamed amount of money, so the one thing
+                  the person needs in order to press it is on the far side of
+                  pressing it. `return` brings them back to this draft. */}
               {article.status === "approved" && needsPlan && (
                 <Link
-                  href="/settings/billing"
+                  href={billingHref(`/content/${article.id}`)}
                   className="mt-3 block w-full rounded-[7px] bg-accent px-3 py-2 text-center text-[13px] font-medium text-white hover:bg-accent-2"
                 >
-                  Choose a plan to publish
+                  Choose a plan to publish — {fromEntryPrice()}
                 </Link>
               )}
               {/*
@@ -1078,17 +1084,23 @@ export function ArticleEditor({
             />
           )}
 
+          {/* The paywall. It names the price and carries the draft with it:
+              `intent=approve` comes back on Stripe's success URL and the
+              editor finishes the approval that this click started, rather than
+              leaving a paid-up customer on an invoice table with the article
+              still in review. */}
           {article.status === "review" && needsPlan && (
             <div className="mt-3">
               <Link
-                href="/settings/billing"
+                href={billingHref(approveIntentPath(article.id))}
                 className="block w-full rounded-[7px] bg-accent px-3 py-2 text-center text-[13px] font-medium text-white hover:bg-accent-2"
               >
-                Choose a plan to approve
+                Choose a plan to approve — {fromEntryPrice()}
               </Link>
               <p className="mt-2 text-[11.5px] leading-relaxed text-ink-3">
                 This draft is yours to read and edit. Nothing has been charged; approving and
                 publishing need a plan, and you cancel it yourself from the billing page.
+                Once the plan is active this draft is approved for you.
               </p>
             </div>
           )}

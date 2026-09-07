@@ -53,8 +53,22 @@ export const billingEnabled = Boolean(process.env.STRIPE_SECRET_KEY);
  */
 export const stripeTaxEnabled = process.env.STRIPE_TAX_ENABLED === "true";
 
-export type PlanTier = "starter" | "growth" | "scale";
-export type SelfServePlan = "starter" | "growth";
+/**
+ * The ladder itself - tiers, labels and prices - lives in
+ * lib/billing/plan-prices.ts, which has no Stripe SDK behind it and can
+ * therefore be imported by a button. Re-exported here so every existing server
+ * caller keeps its import path.
+ */
+export {
+  PLAN_LABELS,
+  PLAN_PRICES,
+  PLAN_YEARLY_PRICES,
+  ENTRY_PLAN,
+  planMonthlyPrice,
+  fromEntryPrice,
+} from "@/lib/billing/plan-prices";
+export type { PlanTier, SelfServePlan } from "@/lib/billing/plan-prices";
+import type { PlanTier, SelfServePlan } from "@/lib/billing/plan-prices";
 
 export type BillingInterval = "month" | "year";
 
@@ -119,32 +133,6 @@ export const PLAN_ARTICLE_LIMITS: Record<PlanTier, number | null> = {
   starter: 100,
   growth: 400,
   scale: null,
-};
-
-// The `starter`/`growth` keys are persisted on subscriptions, so they stay as
-// they are; renaming them would need a migration. Only the display labels track
-// the ladder, which converged on 2026-08-15: Solo became Managed.
-export const PLAN_LABELS: Record<PlanTier, string> = {
-  starter: "Managed",
-  growth: "Agency",
-  scale: "Custom",
-};
-
-export const PLAN_PRICES: Record<PlanTier, string> = {
-  starter: "€69",
-  growth: "€199",
-  scale: "Let's talk",
-};
-
-/**
- * Yearly price, as displayed. Ten months for twelve - the same "2 months free"
- * deal the pricing page states, not a percentage, because the discount should
- * be quoted in the unit the buyer thinks in.
- */
-export const PLAN_YEARLY_PRICES: Record<PlanTier, string> = {
-  starter: "€690",
-  growth: "€1,990",
-  scale: "Let's talk",
 };
 
 /** One line on who each rung is for. Mirrors `desc` in the pricing data. */

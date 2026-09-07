@@ -6,6 +6,7 @@ import { getPublishingCadence } from "@/lib/queries/schedule";
 import { PageHead, DotSep, StatusPill } from "@/components/ui";
 import { ArticleEditor } from "@/components/dashboard/editor/article-editor";
 import { ScopeFollow } from "@/components/dashboard/scope-follow";
+import { ApproveAfterCheckout } from "@/components/dashboard/approve-after-checkout";
 import { needsPlanToShip } from "@/lib/billing/quota";
 import { getDestinations } from "@/lib/publishing/destinations";
 import { fetchLinkTargets } from "@/lib/seo/link-resolver";
@@ -17,6 +18,14 @@ import { notFound } from "next/navigation";
 
 type Props = {
   params: Promise<{ id: string }>;
+  /**
+   * `intent=approve&upgraded=1` is what the paywall CTA becomes after a
+   * successful checkout: the draft asked for a plan, so the plan comes back to
+   * the draft. Both are required - `upgraded` is added by Stripe's success URL
+   * - and neither approves anything on its own; see
+   * app/actions/approve-intent.ts.
+   */
+  searchParams?: Promise<{ intent?: string; upgraded?: string }>;
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -25,8 +34,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return { title: article?.title ?? `Article ${id}` };
 }
 
-export default async function ArticleEditorPage({ params }: Props) {
+export default async function ArticleEditorPage({ params, searchParams }: Props) {
   const { id } = await params;
+  const query = (await searchParams) ?? {};
+  const finishApproval = query.intent === "approve" && query.upgraded === "1";
   const article = await getArticle(id);
   if (!article) return notFound();
 
@@ -94,6 +105,7 @@ export default async function ArticleEditorPage({ params }: Props) {
       />
 
       <ScopeFollow workspaceId={workspace.id} />
+      {finishApproval && <ApproveAfterCheckout articleId={article.id} />}
       <ArticleEditor
         article={article}
         workspace={workspace}
