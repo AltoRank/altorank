@@ -18,8 +18,6 @@ import { PlanningProvider } from "@/components/dashboard/planning-state";
 import { PlannerSlot } from "@/components/dashboard/planner-slot";
 import type { WriteGate } from "@/components/dashboard/planner-card";
 import { PlanMonthButton } from "@/components/dashboard/plan-month-button";
-import Link from "next/link";
-import { Button } from "@/components/ui";
 import { HowItWorks } from "@/components/dashboard/how-it-works";
 import { contentPlanExplainer } from "@/lib/explainers";
 import type { Workspace } from "@/lib/types";
@@ -65,9 +63,9 @@ export default async function CalendarPage({ searchParams }: Props) {
     supabase.auth.getUser(),
     // Whether there is anything to plan *from*. An empty month has two causes
     // and they need different offers: a site with keywords needs the plan run,
-    // a site with none needs research first, and "Plan the month" on the second
-    // schedules nothing and says so only after the click. The dashboard strip
-    // was fixed for exactly this; the calendar is where the button lives.
+    // a site with none needs research first, and "Schedule the month" on the
+    // second schedules nothing and says so only after the click. The dashboard
+    // strip was fixed for exactly this; the calendar is where the button lives.
     scopeId
       ? supabase.from("keywords").select("id", { count: "exact", head: true }).eq("workspace_id", scopeId)
       : Promise.resolve({ count: 0 }),
@@ -216,14 +214,26 @@ export default async function CalendarPage({ searchParams }: Props) {
                   pure arithmetic - which keyword, on which day, why - had no
                   way to say what the arithmetic is. */}
               <HowItWorks explainer={contentPlanExplainer} />
-              {scopeId && slots > 0 &&
-                (nothingToPlanFrom ? (
-                  <Link href="/keywords">
-                    <Button size="sm">Research keywords</Button>
-                  </Link>
-                ) : (
-                  <PlanMonthButton label={(capacity?.articles ?? 0) === 0 ? "Plan the month" : "Top up the plan"} />
-                ))}
+              {/* No "Research keywords" here. The calendar toolbar below
+                  already carries one (ResearchButtons), and the two were not
+                  even the same action: this one navigated to /keywords, that
+                  one opens the research drawer in place. Two buttons with one
+                  label and two behaviours on one screen. The drawer wins - it
+                  researches, proposes and schedules without leaving the plan
+                  it is filling, and it is what /keywords offers too. */}
+              {/* "Top up the plan" sat one screen away from billing and read
+                  like buying credits. It never touched money: it calls
+                  planMonth(), which fills the month's free slots with
+                  scheduled articles from this site's keywords. Both labels now
+                  say "schedule", the word the header beside them already uses
+                  ("N of 60 scheduled"), and the tooltip says what the press
+                  does and how many slots it has to work with. */}
+              {scopeId && slots > 0 && !nothingToPlanFrom && (
+                <PlanMonthButton
+                  label={(capacity?.articles ?? 0) === 0 ? "Schedule the month" : "Schedule more articles"}
+                  title={`Fills ${plural(slots, "free slot")} this month with articles chosen from this site's keywords. Nothing already on the calendar moves, and nothing is published.`}
+                />
+              )}
             </>
           }
         />
@@ -237,7 +247,7 @@ export default async function CalendarPage({ searchParams }: Props) {
           {monthIsEmpty && (
             <p className="mb-3 text-[12.5px] leading-[1.6] text-ink-3">
               {nothingToPlanFrom
-                ? "Nothing is scheduled this month, and there are no keywords to schedule from yet. Research keywords first; the plan is built from the ones this site can realistically rank for."
+                ? "Nothing is scheduled this month, and there are no keywords to schedule from yet. Use Research keywords above; the plan is built from the ones this site can realistically rank for."
                 : "Nothing is scheduled this month. Planning fills these days from the keywords this site can realistically rank for, and you can drag any of them to another day afterwards."}
             </p>
           )}
