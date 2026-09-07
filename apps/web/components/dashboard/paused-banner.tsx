@@ -68,8 +68,13 @@ export function PausedBanner({
 }
 
 /**
- * Pause or resume a site from wherever its status is shown. Text, not an icon:
- * the action is rare and the word is the explanation.
+ * Pause or resume a workspace from wherever its status is shown. Text, not an
+ * icon: the action is rare and the word is the explanation.
+ *
+ * Lives on /workspaces - the roster row and the detail header - since
+ * 2026-09-07. It used to also hang under the sidebar's workspace switcher,
+ * which put a stop button on every screen in the app for an action taken once
+ * in a while.
  */
 export function PauseSiteControl({
   workspaceId,
@@ -92,7 +97,11 @@ export function PauseSiteControl({
   // thing to finish or skip.
   if (!paused && status === "setup") return null;
 
-  function toggle() {
+  // The event matters: on /workspaces this button sits inside a row that
+  // navigates to the workspace on click (client-row.tsx), and pausing must not
+  // also open the page you were pausing from.
+  function toggle(e: React.MouseEvent) {
+    e.stopPropagation();
     if (!paused) {
       const ok = window.confirm(
         `Pause ${name}? Nothing will be written or published for it until you resume. Drafts, keywords and the plan are kept.`,
@@ -110,12 +119,14 @@ export function PauseSiteControl({
         }
         router.refresh();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Could not change the site's status");
+        toast.error(err instanceof Error ? err.message : "Could not change the workspace's status");
       }
     });
   }
 
-  const label = pending ? (paused ? "Resuming…" : "Pausing…") : paused ? "Resume" : "Pause this site";
+  // "workspace", not "site": POSITIONING.md settled the noun on 2026-08-30 and
+  // the surface this control now lives on says workspace everywhere else.
+  const label = pending ? (paused ? "Resuming…" : "Pausing…") : paused ? "Resume" : "Pause this workspace";
 
   if (asButton) {
     return (
