@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PageHead } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
+import { needsPlanToShip, SCHEDULED_REWRITES_NEED_PLAN } from "@/lib/billing/quota";
 import { RefreshSettingsForm } from "@/components/dashboard/refresh-settings-form";
 import { SettingsTabs } from "../settings-tabs";
 
@@ -18,10 +19,14 @@ export default async function RefreshSettingsPage() {
   const { data: ws } = scopeId
     ? await supabase
         .from("workspaces")
-        .select("id, name, domain, refresh_enabled, refresh_days")
+        .select("id, name, domain, agency_id, refresh_enabled, refresh_days")
         .eq("id", scopeId)
         .maybeSingle()
     : { data: null };
+
+  // The switch is gated on a plan (setRefreshSettings refuses to arm one), so
+  // the page says so before the click rather than only in the error toast.
+  const needsPlan = ws ? await needsPlanToShip(supabase, ws.agency_id as string) : false;
 
   return (
     <>
@@ -38,6 +43,7 @@ export default async function RefreshSettingsPage() {
               domain={(ws.domain as string | null) ?? null}
               enabled={Boolean(ws.refresh_enabled)}
               days={((ws.refresh_days as number[] | null) ?? []).filter((d) => Number.isInteger(d))}
+              planMessage={needsPlan ? SCHEDULED_REWRITES_NEED_PLAN : null}
             />
           ) : (
             <p className="text-[13px] text-ink-3">

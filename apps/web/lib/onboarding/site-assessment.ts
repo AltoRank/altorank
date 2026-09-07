@@ -72,7 +72,16 @@ export function describeAssessment(summary: CrawlSummary): PagesPhaseOutcome {
     return skip("Your robots.txt asks crawlers not to read these pages, so we did not.");
   }
   if (summary.discovered === 0) {
-    return skip("No sitemap we could read, so there were no existing pages to check.");
+    // Two different facts, and "no sitemap" is the wrong one to report for a
+    // site whose sitemap index we simply did not finish walking inside the
+    // budget. Discovery obeys the same deadline the page loop does, so this
+    // branch is reachable on a large, slow site that has a perfectly good
+    // sitemap.
+    return skip(
+      summary.truncated
+        ? "Ran out of time reading your sitemap, so we did not check existing pages this time. The nightly crawl picks them up."
+        : "No sitemap we could read, so there were no existing pages to check.",
+    );
   }
   if (summary.pages.length === 0) {
     return skip(

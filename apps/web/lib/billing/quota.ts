@@ -293,3 +293,14 @@ export async function needsPlanToShip(
 
 export const CHOOSE_PLAN_MESSAGE =
   "Approving and publishing need a plan. Nothing has been charged yet; choose one on the Billing page and this draft is ready to go.";
+
+/**
+ * Refusing to arm a schedule that would never run. Same shape as
+ * CHOOSE_PLAN_MESSAGE: say what is missing and where to fix it, never just no.
+ *
+ * cron/refresh gates on entitledToScheduledWork, so a switch flipped on
+ * without a plan is a promise the product does not keep - the settings page
+ * would read "Rewrites on Tue and Thu" and nothing would ever be written.
+ */
+export const SCHEDULED_REWRITES_NEED_PLAN =
+  "Scheduled rewrites need a plan: each one is a model call on a schedule, so they run for paid accounts only. Nothing has been charged yet; choose a plan on the Billing page and this switch works. Candidates and briefs on the Improvements page stay available either way.";

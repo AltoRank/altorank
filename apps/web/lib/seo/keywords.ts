@@ -354,11 +354,15 @@ function permutationKey(term: string): string {
  *
  * This is the same shape as the variant spam the old keywords_for_site path
  * produced ("ai of ai", "ai for ai"); it just arrives one layer later.
+ *
+ * Generic over anything carrying a keyword and a volume, because the brief
+ * path needs it too and its rows are `RelatedKeyword`, not `DiscoveredKeyword`
+ * (lib/seo/brief-data.ts). Same rule, same tie-break, one implementation.
  */
-export function dedupePermutations(
-  keywords: DiscoveredKeyword[],
-): DiscoveredKeyword[] {
-  const best = new Map<string, DiscoveredKeyword>();
+export function dedupePermutations<T extends { keyword: string; volume: number }>(
+  keywords: T[],
+): T[] {
+  const best = new Map<string, T>();
   for (const k of keywords) {
     const key = permutationKey(k.keyword);
     if (!key) continue;

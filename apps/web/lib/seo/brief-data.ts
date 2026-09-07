@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { post } from "./client";
+import { dedupePermutations } from "./keywords";
 
 // ── SERP Advanced ──────────────────────────────────────────────────────────
 
@@ -208,9 +209,28 @@ export async function fetchRelatedKeywords(
     }
   }
 
+  // One phrasing per idea, BEFORE the slice - which is the whole point.
+  //
+  // This call is $0.0900, 97.8% of what DataForSEO costs per draft, and it
+  // buys 30 rows of which lib/ai/prompts.ts shows the writer the top 20. Over
+  // 25 production articles, 0-50% of those 20 slots were re-phrasings of each
+  // other: "ai for management" spent 11 of its 20 on "ai management", "ai in
+  // management", "ai and management", "ai manage", "artificial intelligence
+  // and management" and five more, all at identical volumes; "home ai system"
+  // spent 5 on one vendor pairing. Deduping the 1,460 rows before taking 30
+  // costs nothing and, on the measured lists, delivers up to twice the
+  // distinct concepts for the same $0.09.
+  //
+  // Deduping after the slice would not work: the duplicates ARE the top rows,
+  // so they would be removed and nothing would take their place.
+  const distinct = dedupePermutations(
+    results.map((r) => ({ ...r, volume: r.searchVolume ?? 0 })),
+  );
+
   // Highest demand first: the list is truncated, so an arbitrary 30 from an
   // alphabetical 1,460 would mostly be noise.
-  return results
-    .sort((a, b) => (b.searchVolume ?? 0) - (a.searchVolume ?? 0))
-    .slice(0, 30);
+  return distinct
+    .sort((a, b) => b.volume - a.volume)
+    .slice(0, 30)
+    .map(({ volume: _volume, ...rest }) => rest);
 }
