@@ -11,6 +11,6 @@ export const GET = withAgent(async (request, ctx) => {
     { workspaces, count: workspaces.length },
     workspaces.length
       ? "Pick the workspace the human means and pass its id as workspace_id. GET /workspaces/{id} shows its integrations."
-      : "No workspaces. Ask the human to add a site in the dashboard first.",
+      : "No workspaces. Ask the human to add a workspace in the dashboard first.",
   );
 });

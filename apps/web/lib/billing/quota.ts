@@ -35,6 +35,7 @@ import { getSimulation } from "@/lib/dev/simulation";
 import { isAdminEmail } from "@/lib/auth/operators";
 import { inCustomerPreview } from "@/lib/auth/preview";
 import { agencyHasOperator } from "@/lib/billing/operator-agency";
+import { agencyCountingClient } from "@/lib/billing/agency-client";
 import { dunningInfo, planEntitled, type DunningInfo } from "@/lib/billing/dunning";
 import { plural } from "@/lib/utils";
 
@@ -71,8 +72,10 @@ export function nextResetDate(now: Date = new Date()): Date {
 }
 
 /**
- * Compute the quota for an agency. Pass the caller's Supabase client so RLS
- * scopes the counts to what that caller can see anyway.
+ * Compute the quota for an agency. Pass the caller's Supabase client; the
+ * counts themselves run agency-wide (lib/billing/agency-client.ts), because a
+ * member scoped to some of the sites would otherwise be handed the whole
+ * account's allowance again for the sites they can see.
  */
 export async function getQuota(
   supabase: SupabaseClient,
@@ -91,7 +94,9 @@ export async function getQuota(
     const { data } = await supabase.auth.getUser();
     userEmail = data.user?.email ?? null;
   }
-  const { data: workspaceRows } = await supabase
+  // Agency-wide, never the caller's slice of it: see agency-client.ts.
+  const counting = agencyCountingClient(supabase);
+  const { data: workspaceRows } = await counting
     .from("workspaces")
     .select("id")
     .eq("agency_id", agencyId);
@@ -99,7 +104,7 @@ export async function getQuota(
 
   let used = 0;
   if (workspaceIds.length) {
-    const { count } = await supabase
+    const { count } = await counting
       .from("articles")
       .select("id", { count: "exact", head: true })
       .in("workspace_id", workspaceIds)
@@ -130,7 +135,7 @@ export async function getQuota(
     return { limit: null, used, remaining: null, reason: "self-host", plan: null };
   }
 
-  const { data: agency } = await supabase
+  const { data: agency } = await counting
     .from("agencies")
     .select("plan, plan_status, payment_failed_at")
     .eq("id", agencyId)
@@ -162,7 +167,16 @@ export async function getQuota(
     // verdict, is the thing worth paying for; the audit alone is not. So the
     // draft is free, and approving or publishing it is where the plan is
     // asked for (see requireActivePlan). Nothing is charged until they choose.
-    return { limit: FREE_DRAFTS, used, remaining: Math.max(0, FREE_DRAFTS - used), reason: "no-plan", plan, dunning };
+    //
+    // `plan: null`, not the column. `agencies.plan` is `not null default
+    // 'starter'`, so an account that never bought anything carries "starter"
+    // and every reader that trusted this field said so: GET
+    // /auth/whoami answered `plan: "starter", reason: "no-plan"` and an agent
+    // reading it tells the human they are on Managed. The tier that is not
+    // being paid for is not this field's answer - `dunning` carries the tier a
+    // lapsed subscription would come back to, and the Billing page reads the
+    // row itself for that.
+    return { limit: FREE_DRAFTS, used, remaining: Math.max(0, FREE_DRAFTS - used), reason: "no-plan", plan: null, dunning };
   }
 
   const limit = PLAN_ARTICLE_LIMITS[plan];
@@ -238,7 +252,19 @@ export function quotaExceededMessage(q: Quota, now: Date = new Date()): string {
     });
     return `${freeAllowanceUsedMessage(q.limit ?? FREE_DRAFTS)} Choose a plan on the Billing page to keep going, wait for ${resets} when the allowance resets, or self-host AltoRank free.`;
   }
-  return `This month's included ${q.limit} articles are used. The next article is billed as overage, or upgrade on the Billing page.`;
+  // Only the scheduled writer ever reads this branch: a manual generation past
+  // the included volume does not refuse, it bills the overage
+  // (lib/content/generate.ts). So the sentence has to describe what the cron
+  // does, which is stop - it said "the next article is billed as overage",
+  // which is the one thing a cron will never do ("a cron must never be the
+  // thing that spends a customer's money"). The overage is still the way
+  // through, and it is named as the deliberate, human action it is.
+  const resets = nextResetDate(now).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+  return `This month's included ${q.limit} articles are used. Scheduled writing stops until ${resets}; upgrade on the Billing page, or write one by hand from the calendar to bill it as overage.`;
 }
 
 /**

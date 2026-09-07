@@ -32,7 +32,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Icons } from "@/components/ui";
+import { Button } from "@/components/ui";
 import {
   proposeProfile,
   saveProfile,
@@ -63,6 +63,21 @@ const SITE_STEPS = ["Business", "Audience & Competitors", "Blog", "Articles", "I
 const ATTRIBUTION_STEP = SITE_STEPS.length;
 
 export type Destination = { id: string; name: string; description: string | null };
+
+/**
+ * The screen the URL is asking for, 0-based, clamped to the steps that exist.
+ *
+ * `?step=` is 1-based because it is a thing a person can read in an address
+ * bar. Absent, unparseable or out of range all mean the first screen, so a
+ * hand-edited URL cannot render a blank wizard.
+ */
+function stepFromLocation(count: number): number {
+  if (typeof window === "undefined") return 0;
+  const raw = new URLSearchParams(window.location.search).get("step");
+  const n = Number(raw);
+  if (!raw || !Number.isInteger(n)) return 0;
+  return Math.min(Math.max(n - 1, 0), count - 1);
+}
 
 export function OnboardingWizard({
   workspaceId,
@@ -97,6 +112,20 @@ export function OnboardingWizard({
   const router = useRouter();
   const steps = askAttribution ? [...SITE_STEPS, "About you"] : SITE_STEPS;
   const last = steps.length - 1;
+  // The step, mirrored into the URL.
+  //
+  // It used to live only in React state, so the wizard was one history entry:
+  // pressing browser Back on step 3 left the wizard entirely and landed on the
+  // dashboard, with the screen's unsaved answers gone and - because step 1's
+  // Continue has already written a business_profile - nothing to send the
+  // person back. Reloading restarted at step 1 for the same reason.
+  //
+  // `history.pushState` with a query string is the shallow update Next
+  // documents for exactly this: no server round trip, so the component is not
+  // remounted and nothing typed is lost, and the browser's own Back now moves
+  // one screen instead of leaving. The steps that have already been passed are
+  // persisted server-side, so a reload rehydrates them from `initialProfile`,
+  // `initialSite` and `initialOutput` and puts the person back where they were.
   const [step, setStep] = useState(0);
   const [attribution, setAttribution] = useState<AttributionDraft>(EMPTY_ATTRIBUTION);
   // Set when "Skip setup" was pressed: which screen it was pressed on, so Back
@@ -113,6 +142,26 @@ export function OnboardingWizard({
   const [running, setRunning] = useState(false);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  /** Move to a screen and leave a history entry for the one being left. */
+  function goToStep(n: number) {
+    setStep(n);
+    if (typeof window !== "undefined") {
+      window.history.pushState(null, "", n === 0 ? window.location.pathname : `?step=${n + 1}`);
+    }
+  }
+
+  // Back and Forward, and the reload case. Read after mount rather than in the
+  // initial state so the first client render still matches the server's, which
+  // has no location to read and always renders the first screen. Nothing is
+  // re-fetched: the answers are in state, and the ones already saved are on the
+  // server either way.
+  useEffect(() => {
+    const sync = () => setStep(stepFromLocation(steps.length));
+    sync();
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, [steps.length]);
 
   // Read the site. A failure is a normal outcome and is shown as one.
   useEffect(() => {
@@ -174,7 +223,7 @@ export function OnboardingWizard({
       try {
         await persist(step);
         if (step !== last) {
-          setStep(step + 1);
+          goToStep(step + 1);
         } else if (skipping) {
           if (profile) await saveProfile(workspaceId, profile);
           await completeWizard(workspaceId, { skipped: true });
@@ -195,7 +244,7 @@ export function OnboardingWizard({
     if (askAttribution) {
       setError(null);
       setSkipFrom(step);
-      setStep(ATTRIBUTION_STEP);
+      goToStep(ATTRIBUTION_STEP);
       return;
     }
     start(async () => {
@@ -250,10 +299,11 @@ export function OnboardingWizard({
               variant="ghost"
               onClick={() => {
                 if (skipFrom !== null) {
-                  setStep(skipFrom);
+                  const back = skipFrom;
                   setSkipFrom(null);
+                  goToStep(back);
                 } else {
-                  setStep((s) => Math.max(0, s - 1));
+                  goToStep(Math.max(0, step - 1));
                 }
               }}
               disabled={step === 0 || pending}
@@ -464,8 +514,7 @@ function IntegrationStep({ destinations }: { destinations: Destination[] }) {
             href={`/connect?connect=${d.id}`}
             // Same tab abandoned the wizard and dropped whatever was typed on
             // this screen: state is client-side and each step persists only on
-            // Continue. The "While you wait" cards on the finish screen
-            // already got this right.
+            // Continue.
             target="_blank"
             rel="noreferrer"
             title={d.description ?? undefined}
@@ -553,16 +602,34 @@ function RunScreen({ workspaceId, domain, weeklyLimit, freeDrafts }: { workspace
     <div className="min-h-screen bg-bg">
       <div className="mx-auto max-w-[860px] px-6 py-10">
         <div className="mb-8 text-center">
-          <h1 className="mb-1.5 text-[22px] font-semibold">Creating your content plan</h1>
+          <h1 className="mb-1.5 text-[22px] font-semibold">
+            {finished ? "Your content plan" : "Creating your content plan"}
+          </h1>
           <p className="mx-auto max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">
             Reading {domain}, choosing keywords by volume, difficulty and fit, scheduling up to{" "}
             {weeklyLimit >= 7 ? "one article a day" : `${weeklyLimit} a week`} for the next 30 days, and writing the
             first one. Only keywords that pass our checks make the plan, so a new site may get fewer.{" "}
-            {freeAllowanceClause(freeDrafts) ?? ""} A few minutes. You can leave this page; we keep working.
+            {freeAllowanceClause(freeDrafts) ?? ""}
+            {/* The wait sentence used to read "You can leave this page; we keep
+                working", and it was not true: `/api/onboard/stream` hands
+                `request.signal` to the pipeline, which checks it at every phase
+                boundary, so a closed tab or a same-tab navigation stops the run
+                at its next step. What is true is the rest of it - every phase
+                persists as it completes, and the nightly analyze cron re-runs a
+                workspace with no `first_analysed_at` and tops the plan back up.
+                It is also gone once the run is over, because a screen that has
+                said "Done." has no wait left to describe. */}
+            {!finished && (
+              <>
+                {" "}
+                A few minutes. Keep this tab open while it runs: leaving stops it after the step it is on. Everything
+                already finished is kept, and tonight&rsquo;s run picks up the rest.
+              </>
+            )}
           </p>
         </div>
 
-        <div className="grid grid-cols-[1fr_320px] gap-6">
+        <div className="mx-auto max-w-[640px]">
           <div className="rounded-[10px] border border-line bg-panel p-5">
             <OnboardingProgress workspaceId={workspaceId} domain={domain} autoNavigate={false} onState={setState} />
             {planned.length > 0 && (
@@ -580,14 +647,26 @@ function RunScreen({ workspaceId, domain, weeklyLimit, freeDrafts }: { workspace
               </div>
             )}
             <div className="mt-6 flex items-center gap-3">
-              <Button
-                variant="accent"
-                onClick={() => router.push(finished ? next.href : "/content")}
-                disabled={!finished && planned.length === 0}
-              >
-                {finished ? next.label : "Open the calendar so far"}
-              </Button>
-              {!finished && <span className="text-[12px] text-ink-3">Still working…</span>}
+              {/* While the run is live this cannot be a same-tab navigation.
+                  `OnboardingProgress` aborts its fetch on unmount and the route
+                  passes that signal to the pipeline, so pushing /content here
+                  cancelled the very run the button sits under - the draft was
+                  never written and nothing said why. So this opens a new tab
+                  until the run is over and there is nothing left to cancel. */}
+              {finished ? (
+                <Button variant="accent" onClick={() => router.push(next.href)}>
+                  {next.label}
+                </Button>
+              ) : (
+                <>
+                  <a href="/content" target="_blank" rel="noreferrer">
+                    <Button variant="accent" disabled={planned.length === 0}>
+                      Open the calendar so far
+                    </Button>
+                  </a>
+                  <span className="text-[12px] text-ink-3">Still working…</span>
+                </>
+              )}
             </div>
             {/* The run's own account of itself, when it fell short of the
                 calendar the header just promised. `OnboardingProgress` prints
@@ -601,52 +680,8 @@ function RunScreen({ workspaceId, domain, weeklyLimit, freeDrafts }: { workspace
             )}
           </div>
 
-          <aside className="flex flex-col gap-3">
-            <div className="text-[11px] uppercase tracking-wide text-ink-3">While you wait</div>
-            <WaitCard
-              href="/connect"
-              title="Connect your CMS"
-              sub="Approved articles publish to your site. Without it they stay drafts you export by hand."
-              icon={<Icons.link size={14} />}
-            />
-            <WaitCard
-              href="/connect/google"
-              title="Connect Search Console"
-              sub="Sharpens keyword research with what you already rank for, and shows real clicks."
-              icon={<Icons.trend size={14} />}
-            />
-            <WaitCard
-              href="/voice"
-              title="Review your brand voice"
-              sub="See what we learned from your writing and correct it."
-              icon={<Icons.sparkle size={14} />}
-            />
-            <WaitCard
-              href="/review"
-              title="How review works"
-              sub="Every draft waits for your approval. Nothing publishes on its own."
-              icon={<Icons.check size={14} />}
-            />
-          </aside>
         </div>
       </div>
     </div>
-  );
-}
-
-function WaitCard({ href, title, sub, icon }: { href: string; title: string; sub: string; icon: React.ReactNode }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="flex items-start gap-3 rounded-[10px] border border-line bg-panel px-4 py-3 transition-colors hover:border-accent"
-    >
-      <span className="mt-0.5 text-ink-2">{icon}</span>
-      <span>
-        <span className="block text-[13px] font-medium">{title}</span>
-        <span className="mt-0.5 block text-[12px] leading-[1.5] text-ink-3">{sub}</span>
-      </span>
-    </a>
   );
 }

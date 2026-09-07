@@ -2,19 +2,22 @@ import type { Explainer } from "./types";
 
 /**
  * Read from: lib/cms/types.ts (the adapter interface: publish, unpublish,
- * testConnection; no update), lib/cms/adapter.ts (the twelve adapters),
- * lib/cms/wordpress.ts, lib/cms/git.ts, lib/cms/webhook.ts (each pattern's
- * behaviour), lib/publishing/core.ts (IndexNow waits for a git build),
- * lib/crypto.ts (secrets encrypted at rest), and PR #71 for the plugin
- * token pattern, which is described as coming because it is not merged.
+ * testConnection; no update), lib/cms/adapter.ts (the thirteen adapters),
+ * lib/cms/wordpress.ts, lib/cms/wordpress-plugin.ts, lib/cms/git.ts,
+ * lib/cms/webhook.ts (each pattern's behaviour), lib/publishing/core.ts
+ * (IndexNow waits for a git build), lib/crypto.ts (secrets encrypted at rest).
+ *
+ * The plugin was described as "coming" here until 2026-09-06 because #71 had
+ * not merged when this was written. It has: migration 056 seeds the
+ * `wordpress-plugin` integration row, lib/cms/wordpress-plugin.ts is the
+ * adapter, /api/public/wordpress-plugin serves the zip. Present tense now.
  */
 export const integrationsExplainer: Explainer = {
   id: "integrations",
   title: "Integrations",
   intro:
     "Four ways an approved article can reach a site, and what each one can and cannot do once it is there.",
-  mountsAt:
-    "TODO(#71 owner): mount <HowItWorks explainer={integrationsExplainer} /> in the PageHead actions of app/(dashboard)/connect/page.tsx.",
+  mountsAt: "app/(dashboard)/connect/page.tsx, PageHead actions.",
   sections: [
     {
       title: "Credential connections",
@@ -29,7 +32,7 @@ export const integrationsExplainer: Explainer = {
       ],
     },
     {
-      title: "Plugin token (coming)",
+      title: "Plugin token",
       lead:
         "A WordPress plugin with a per-site token, so the site does not hand out an application password and posts can be edited in place.",
       bullets: [
@@ -57,15 +60,15 @@ export const integrationsExplainer: Explainer = {
       bullets: [
         "Publish POSTs {action: 'publish', article: {title, html, slug, metaDescription, tags, publishedAt}} to your URL; unpublish sends {action: 'unpublish', externalId}.",
         "With a secret set, the body is signed with HMAC-SHA256 and the hex digest sent as X-Webhook-Signature: sha256=... Custom headers are sent as configured, so a bearer token works.",
-        "A non-2xx response fails the publish and is recorded in the publish log with the response text.",
+        "Delivery makes up to three attempts, waiting 0.5s then 2s, on a network error, a 429 or a 5xx; every other 4xx is not retried. Each attempt lands in the publish log, so an endpoint that failed twice and then accepted shows all three.",
         "If your endpoint answers with an id and a url, they are stored on the article; if it answers with nothing, the article is still marked live.",
       ],
     },
   ],
   cannotYet: [
-    "Update a live post through a credential connection. The adapter interface is publish, unpublish and test; publishing again creates a new post. The plugin (#71) is what adds in-place edits.",
+    "Update a live post through a credential connection. The adapter interface is publish, unpublish and test; publishing again creates a new post. The WordPress plugin is the one destination that edits in place.",
     "Two-way sync. An edit made in the CMS after publishing does not come back into the editor.",
     "Publish to GitLab or Bitbucket. Git means GitHub.",
-    "Retry a webhook that failed. One attempt today; retries with backoff arrive with the webhook contract in #71.",
+    "Retry a webhook on a schedule. One publish call makes up to three attempts, backing off on a network error, a 429 or a 5xx; a 4xx is your endpoint saying no and is not retried. After that it is a person's decision, from the article.",
   ],
 };

@@ -28,7 +28,7 @@ export function PlaybooksDialog({ workspaceId, open, onOpenChange, onResult }: P
     setError(null);
     loadResearchContext(workspaceId)
       .then((ctx) => setCards(ctx.playbooks))
-      .catch((err) => setError(err instanceof Error ? err.message : "Could not load this site."));
+      .catch((err) => setError(err instanceof Error ? err.message : "Could not load this workspace."));
   }, [open, workspaceId]);
 
   async function run(card: PlaybookCard) {

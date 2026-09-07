@@ -34,13 +34,13 @@ describe("siteSlotsLabel", () => {
   });
 
   it("counts against the plan", () => {
-    expect(siteSlotsLabel({ used: 2, limit: 3 })).toBe("2 of 3 sites used");
-    expect(siteSlotsLabel({ used: 1, limit: 1 })).toBe("1 of 1 site used");
+    expect(siteSlotsLabel({ used: 2, limit: 3 })).toBe("2 of 3 workspaces used");
+    expect(siteSlotsLabel({ used: 1, limit: 1 })).toBe("1 of 1 workspace used");
   });
 
   it("says so when there is no limit", () => {
-    expect(siteSlotsLabel({ used: 1, limit: null })).toBe("1 site, no limit");
-    expect(siteSlotsLabel({ used: 5, limit: null })).toBe("5 sites, no limit");
+    expect(siteSlotsLabel({ used: 1, limit: null })).toBe("1 workspace, no limit");
+    expect(siteSlotsLabel({ used: 5, limit: null })).toBe("5 workspaces, no limit");
   });
 });
 

@@ -16,9 +16,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateImage } from "@/lib/ai/image-generator";
 import { openaiImageModel } from "@/lib/ai/models";
-import { uploadImageBuffer } from "@/lib/storage/images";
+import { imageWriter, uploadImageBuffer } from "@/lib/storage/images";
 import { recordSpend } from "@/lib/billing/spend";
+import { spendClient } from "@/lib/billing/default-spend";
 import { labelsFor, type ImageStyle } from "./labels";
+import { altWordCount, MIN_ALT_WORDS } from "@/lib/ai/alt-text";
 import { DEFAULT_OUTPUT_SETTINGS } from "@/lib/onboarding/output-settings";
 import {
   splitSections,
@@ -99,6 +101,26 @@ function dropAdjacent(indices: number[]): number[] {
   return out;
 }
 
+/**
+ * The alt text for a generated section image.
+ *
+ * "Sketch illustrating" plus the heading was the whole alt, and a two-word
+ * heading ("Pricing tiers") made a four-word alt - which the product's own
+ * audit tab then flagged as too short to describe anything, on an image the
+ * product had just generated. Every article in the sample run of 2026-09-06
+ * opened with that finding against itself. When the label and heading fall
+ * under the audit's floor, the sentence the image was drawn from is added:
+ * it is what the generator was shown, so it is the closest thing to a
+ * description of the picture that exists without looking at it.
+ */
+export function descriptiveAlt(label: string, heading: string, excerpt: string): string {
+  const base = `${label} ${heading}`.trim();
+  if (altWordCount(base) >= MIN_ALT_WORDS) return base;
+  const sentence = firstSentence(excerpt).replace(/[.!?]+$/, "").trim();
+  if (!sentence) return base;
+  return truncate(`${base}: ${sentence}`, 160);
+}
+
 export function renderImageFigure(url: string, alt: string, caption: string): string {
   return (
     `<figure class="article-image">` +
@@ -137,7 +159,7 @@ export async function addSectionImages(
       // Alt text names the subject the image was drawn for, in the style it
       // was drawn in. The caption is the section heading: a fact about where
       // the image sits, not a claim about what it depicts.
-      const alt = `${labels.illustration[style]} ${section.headingText}`;
+      const alt = descriptiveAlt(labels.illustration[style], section.headingText, excerpt);
       // A sentence that introduces a list ("...describe the fuller arc:") is
       // not a caption; the heading is.
       const sentence = firstSentence(excerpt);
@@ -182,7 +204,10 @@ export function storageImageProducer(args: {
     });
     // The images endpoint reports no price, so cost stays null rather than a
     // guess: an unmeasured number is not a zero.
-    void recordSpend(supabase, {
+    // The service client, as the Anthropic row is written: provider_spend
+    // has no insert policy for a person's session, so a row written with it
+    // was dropped without a trace.
+    void recordSpend(spendClient() ?? supabase, {
       provider: "openai",
       operation: `${openaiImageModel()} (section image)`,
       costUsd: null,
@@ -191,7 +216,7 @@ export function storageImageProducer(args: {
       runId: runId ?? null,
     });
     return uploadImageBuffer(
-      supabase,
+      imageWriter(supabase),
       result.data,
       `${workspaceId}/${articleId}-${index + 1}.${result.extension}`,
       result.contentType,

@@ -45,3 +45,44 @@ describe("buildSystemPrompt — the owner's brief", () => {
     expect(p).not.toContain("WHAT THE SITE OWNER TOLD US");
   });
 });
+
+describe("buildSystemPrompt — the site the article is for", () => {
+  const site = {
+    name: "AltoRank",
+    description: "An SEO content platform with human approval gates before publication.",
+    audiences: ["Digital marketing agencies", "WordPress site owners"],
+  };
+
+  it("says nothing about the site when there is no profile", () => {
+    expect(buildSystemPrompt({ keyword: "x" })).not.toContain("ABOUT THE SITE THIS ARTICLE IS FOR");
+    expect(buildSystemPrompt({ keyword: "x", site: { name: " ", description: null } })).not.toContain("ABOUT THE SITE");
+  });
+
+  it("briefs the writer on name, description and audiences, and bounds it", () => {
+    const p = buildSystemPrompt({ keyword: "x", site });
+    expect(p).toContain("ABOUT THE SITE THIS ARTICLE IS FOR:");
+    expect(p).toContain("- Name: AltoRank");
+    expect(p).toContain("- What it does: An SEO content platform with human approval gates before publication.");
+    expect(p).toContain("- Who it serves: Digital marketing agencies; WordPress site owners");
+    expect(p).toContain("State nothing about the business beyond what is written here");
+  });
+
+  it("puts the site before the owner's brief and the research", () => {
+    const p = buildSystemPrompt({ keyword: "x", site, brief: { answers, instructions: "Keep it short." } });
+    expect(p.indexOf("ABOUT THE SITE")).toBeLessThan(p.indexOf("WHAT THE SITE OWNER TOLD US"));
+  });
+
+  it("attributes answers in the third person when the first person is off", () => {
+    const off = buildSystemPrompt({ keyword: "x", site, brief: { answers }, output: { firstPerson: false } });
+    expect(off).toContain("attributed to the business by name (AltoRank), in the third person,");
+    expect(off).not.toContain('attributed to the site ("we"');
+    const on = buildSystemPrompt({ keyword: "x", site, brief: { answers }, output: { firstPerson: true } });
+    expect(on).toContain('attributed to the site ("we", "our team", or the business name),');
+  });
+
+  it("asks for a FAQ section only when the faq_schema switch is on", () => {
+    expect(buildSystemPrompt({ keyword: "x", output: { faq: true } })).toContain("<h2>Frequently asked questions</h2>");
+    expect(buildSystemPrompt({ keyword: "x", output: { faq: false } })).not.toContain("Frequently asked questions</h2>");
+    expect(buildSystemPrompt({ keyword: "x", output: {} })).not.toContain("Frequently asked questions</h2>");
+  });
+});

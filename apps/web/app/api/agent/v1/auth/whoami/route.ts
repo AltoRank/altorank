@@ -14,7 +14,7 @@ import { getQuota } from "@/lib/billing/quota";
 export const GET = withAgent(async (request, ctx) => {
   const base = appBaseUrl(request);
   const [{ data: agency }, workspaces, quota] = await Promise.all([
-    ctx.supabase.from("agencies").select("id, name, plan").eq("id", ctx.agencyId).single(),
+    ctx.supabase.from("agencies").select("id, name").eq("id", ctx.agencyId).single(),
     agencyWorkspaces(ctx),
     // null caller: an API key is nobody's session. Same contract as the crons.
     getQuota(ctx.supabase, ctx.agencyId, null),
@@ -22,7 +22,13 @@ export const GET = withAgent(async (request, ctx) => {
 
   const data = {
     key: ctx.key,
-    account: agency ? { id: agency.id, name: agency.name, plan: agency.plan } : null,
+    // The tier being paid for, not the column. `agencies.plan` defaults to
+    // "starter" and is never cleared, so an account that has bought nothing
+    // answered `plan: "starter"` here beside `quota.reason: "no-plan"` - two
+    // contradictory answers in one envelope, and an agent that reads the
+    // first tells the human they are on Managed. `quota.plan` is null unless
+    // the tier is actually entitled (lib/billing/quota.ts).
+    account: agency ? { id: agency.id, name: agency.name, plan: quota.plan } : null,
     workspaces: workspaces.map((w) => toAgentWorkspace(w, base)),
     quota: {
       limit: quota.limit,
@@ -36,10 +42,10 @@ export const GET = withAgent(async (request, ctx) => {
 
   const guidance =
     workspaces.length === 0
-      ? "This account has no workspaces yet. Ask the human to add a site in the dashboard before continuing."
+      ? "This account has no workspaces yet. Ask the human to add a workspace in the dashboard before continuing."
       : workspaces.length === 1
         ? `One workspace: "${workspaces[0].name}". Use its id for every workspace_id parameter. Check GET /readiness and GET /workspaces/{id} before generating.`
-        : `${workspaces.length} workspaces. Ask the human which site they mean unless it is obvious, then use that workspace_id everywhere.`;
+        : `${workspaces.length} workspaces. Ask the human which workspace they mean unless it is obvious, then use that workspace_id everywhere.`;
 
   return ok(data, guidance, {
     _meta: {

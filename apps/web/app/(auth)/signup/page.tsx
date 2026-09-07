@@ -7,6 +7,7 @@ import { authErrorMessage } from "@/lib/auth/errors";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
 import { normalizeDomain, DOMAIN_PATTERN } from "@/lib/growth-plan/build";
+import { SubmitButton } from "@/components/auth/submit-button";
 
 export const metadata: Metadata = {
   title: "Sign Up",
@@ -153,8 +154,14 @@ export default async function SignUpPage(props: {
           </div>
         )}
         <div>
+          {/* Not "Workspace name". A workspace in this product is one site,
+              and this field is not that: it names the account, which is what
+              the sidebar and every invitation show, while the workspace is
+              named after the domain typed below. Someone reading "Workspace
+              name" above "Your website" is being asked the same question
+              twice in words they have no reason to know. */}
           <label className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1.5 block">
-            Workspace name
+            Company name
           </label>
           <input
             name="name"
@@ -178,9 +185,11 @@ export default async function SignUpPage(props: {
             className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
             placeholder="acme.com"
           />
-          <p className="mt-1.5 text-[11.5px] text-ink-3">
-            We read it first, so setup is a check rather than a form. Nothing publishes without your approval.
-          </p>
+          {/* Half of this was the sub-heading again ("AltoRank reads it and
+              plans your first month" / "We read it first, so setup is a check
+              rather than a form"), two lines apart on the same screen. The
+              half worth keeping is the promise the sub-heading does not make. */}
+          <p className="mt-1.5 text-[11.5px] text-ink-3">Nothing publishes without your approval.</p>
         </div>
         <div>
           <label className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1.5 block">
@@ -206,12 +215,7 @@ export default async function SignUpPage(props: {
             className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
           />
         </div>
-        <button
-          type="submit"
-          className="w-full py-2.5 bg-accent text-white font-medium text-[13px] rounded-[7px] hover:bg-accent-2 transition-colors cursor-pointer"
-        >
-          Create account
-        </button>
+        <SubmitButton pendingLabel="Creating your account…">Create account</SubmitButton>
       </form>
 
       <p className="text-center text-sm text-ink-3">

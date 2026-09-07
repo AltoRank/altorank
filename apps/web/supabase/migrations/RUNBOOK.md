@@ -10,7 +10,17 @@ works out what is applied by looking for one distinguishing object per file.
 Verified 2026-09-05 against a fresh `supabase/postgres:15.8.1.060` container:
 files 001–061 apply cleanly in numeric order (see
 `docs/integration/MIGRATION-REPORT-2026-09-05.md` for the evidence and the
-caveats). Anything after 061 has not been through that check yet.
+caveats). 062–075 have not been through that container check; they are in the
+pre-flight query below and each is `if not exists` / `if exists` throughout, so
+re-running one is safe — except 072, whose `create policy` statements are not
+guarded (see its note below).
+
+**Head is 077.** The one-line-per-file list in §3 and the pre-flight query in §1
+both go to 077. (076 is reserved by the `onboarding_runs` track and is not in
+this tree yet; 077 does not depend on it, so applying 077 with 076 missing is
+safe.) If you add a migration, add its marker to the query in the same
+commit — the post-flight step is "every row is `t`", and a file with no row
+passes that check by being absent from it.
 
 ## Conventions
 
@@ -108,7 +118,21 @@ m(file, applied) as (values
   ('058_agency_attribution',                 exists (select 1 from col where t='agencies' and c='attribution_source')),
   ('059_publish_mode_and_retry',             exists (select 1 from col where t='publish_log' and c='retry_of')),
   ('060_keyword_cpc',                        exists (select 1 from col where t='keywords' and c='cpc' and cm is not null)),
-  ('061_workspace_pause_meta',               exists (select 1 from col where t='workspaces' and c='paused_meta'))
+  ('061_workspace_pause_meta',               exists (select 1 from col where t='workspaces' and c='paused_meta')),
+  ('062_workspace_scope_followups',          exists (select 1 from pg_policy where polname='Research runs by access')),
+  ('064_output_toggles',                     exists (select 1 from col where t='workspace_output_settings' and c='infographics')),
+  ('065_integration_tile_copy',              exists (select 1 from integrations where id='magento' and description like 'Static CMS pages%')),
+  ('066_reports_bucket',                     exists (select 1 from storage.buckets where id='reports' and not public)),
+  ('067_keyword_source_types',               exists (select 1 from chk where conname='keywords_source_type_check' and def like '%playbook%')),
+  ('068_workspace_share_token',              exists (select 1 from col where t='workspaces' and c='share_token')),
+  ('069_generate_idempotency',               to_regclass('public.agent_idempotency_keys') is not null),
+  ('070_google_needs_reconnect',             exists (select 1 from col where t='workspace_integrations' and c='needs_reconnect')),
+  ('071_billing_past_due',                   exists (select 1 from col where t='agencies' and c='payment_failed_at')),
+  ('072_tenant_authz_hardening',             exists (select 1 from pg_trigger where tgname='agencies_guard_privileged_columns')),
+  ('073_lifecycle_emails',                   to_regclass('public.idx_invites_one_pending_per_email') is not null),
+  ('074_one_autonomous_draft_per_keyword',   to_regclass('public.idx_articles_one_autonomous_draft_per_keyword') is not null),
+  ('075_reports_one_per_period',             to_regclass('public.idx_reports_one_per_period') is not null),
+  ('077_workspace_vocabulary_comments',      exists (select 1 from col where t='workspaces' and c='paused_meta' and cm like '%Pause this workspace%'))
 )
 select file, applied from m order by file;
 ```
@@ -122,6 +146,11 @@ Notes on two markers:
   the policy line, which 053 has by then replaced (see report).
 - `060` is detected by the column *comment* on `keywords.cpc`, because 050
   also adds the column. `060` applied is what puts the comment there.
+- **`063` has no row and cannot have one.** It is a one-shot data backfill
+  whose predicate is `created_at < now()`, so any workspace created *after* it
+  ran and not yet onboarded looks identical to a database it never touched.
+  There is nothing to detect. It is idempotent and cheap: if you are unsure,
+  run it again.
 
 ## 2. Pre-checks that can make a file fail on real data
 
@@ -189,7 +218,7 @@ a hosted project and on `supabase start`; it fails on a bare
 `supabase/postgres` Docker image, which only ships a stub `storage` schema.
 That is the one file that could not be exercised in the 2026-09-05 check.
 
-### Production, from 047 to 061
+### Production, from 048 to 075
 
 Only the files whose PR has merged to `main` exist in the checkout. Apply what
 is there, in order. One line per file so a failure is attributable:
@@ -211,6 +240,19 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 060_keyword_cpc.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 061_workspace_pause_meta.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 062_workspace_scope_followups.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 063_onboarded_backfill.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 064_output_toggles.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 065_integration_tile_copy.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 066_reports_bucket.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 067_keyword_source_types.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 068_workspace_share_token.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 069_generate_idempotency.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 070_google_needs_reconnect.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 071_billing_past_due.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 072_tenant_authz_hardening.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 073_lifecycle_emails.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 074_one_autonomous_draft_per_keyword.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 075_reports_one_per_period.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 077_workspace_vocabulary_comments.sql
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -236,9 +278,15 @@ where n.nspname = 'public' and c.relkind = 'r'
        or not exists (select 1 from pg_policy p where p.polrelid = c.oid));
 ```
 
-Expected: zero rows. (`public_checks`, `growth_plans`, `admin_impersonations`
-have RLS on with zero policies by design — service-role only — and have no
-`workspace_id`, so they do not appear.)
+Expected: exactly one row, `sent_emails` (073) — it carries a `workspace_id`
+with RLS on and no policy **by design**, service-role only, the same shape as
+`agent_idempotency_keys` (069). `public_checks`, `growth_plans`,
+`admin_impersonations`, `agent_idempotency_keys` (069) and `email_preferences`
+(073) are the same shape but have no `workspace_id`, so they do not appear.
+Anything else in the result is a table with a real gap. Confirm a row is one of
+ours (`grep -l <table> *.sql`) before acting on it: a **shared local stack**
+carries tables no file here creates (on 2026-09-06, `webhook_deliveries`, which
+no code in the repo references either).
 
 3. Smoke the app: sign in, open a workspace, open Settings, load the planner.
 
@@ -260,6 +308,7 @@ have RLS on with zero policies by design — service-role only — and have no
 | 059_publish_mode_and_retry.sql | `sup-publish-mode-retry` #83 | 001, 003 | yes | yes |
 | 060_keyword_cpc.sql | `sup-traffic-value` #80 | 001 (050 optional) | yes | see notes |
 | 061_workspace_pause_meta.sql | `sup-pace-cadence` #82 | 001 | yes | yes |
+| 077_workspace_vocabulary_comments.sql | `ui/workspace-vocabulary` (stacks on #146) | 001, 052, 053, 061 | yes | yes (old wording) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -327,11 +376,11 @@ for when you cannot:
 agency-scoped policies on `refresh_candidates`, `refresh_tasks`, `refresh_executions`,
 `keyword_research_runs`, `link_sources`, `link_targets` and recreates them "by access" on
 `user_workspace_ids()`. No data change. Requires 053 (defines `user_workspace_ids()`) and
-052/054/055 (the tables). Apply last: **final production order is 048 → 062**.
+052/054/055 (the tables). Requires 053.
 
 ## 063 — added 2026-09-05
 
-`063_onboarded_backfill.sql` (PR #94): `onboarded_at = created_at` for workspaces created before the wizard, so existing customers are not redirected to /onboarding after deploy. Idempotent; no schema change. **Apply last: final production order is 048 → 063.**
+`063_onboarded_backfill.sql` (PR #94): `onboarded_at = created_at` for workspaces created before the wizard, so existing customers are not redirected to /onboarding after deploy. Idempotent; no schema change.
 
 ## 066 — added 2026-09-06
 
@@ -342,6 +391,42 @@ policies on `storage.objects` keyed on the workspace folder segment via
 private: the app now mails and opens signed URLs, and `reports.url` holds the object
 path rather than a public link (old rows are read either way). Requires 053. No data
 change. Detect with `exists (select 1 from storage.buckets where id='reports' and not public)`.
+## 064, 065, 067, 068, 069, 071 — added 2026-09-06
+
+The six files that reached `main` without a note here. All six are
+`if not exists` / `if exists` throughout and safe to re-run.
+
+- **`064_output_toggles.sql`** — `workspace_output_settings` gains
+  `infographics`, `video`, `emojis`, `faq_schema` (booleans) and `image_style`
+  (text, default `'sketch'`). Read by `lib/content/enrich/index.ts` and written
+  by the Article settings tab. Depends on 049. Roll back by dropping the five
+  columns; the settings tab falls back to its defaults.
+- **`065_integration_tile_copy.sql`** — data only: rewrites
+  `integrations.description` for the CMS rows to match
+  `apps/web/lib/cms/integration-descriptions.ts`, which is the source of truth
+  and is tested against the adapters' payloads. **Change both together.** No
+  rollback needed; re-running is the fix.
+- **`067_keyword_source_types.sql`** — widens `keywords_source_type_check` to
+  `competitor, audience, profile, gsc, manual, playbook, ranked, gap, ideas,
+  ads, chat, generate, import` (or null). A superset of the old list, so it
+  cannot fail on real data. Note `keywords.source` is a *different* column with
+  a *narrower* CHECK (`ranked/gap/ideas/ads` or null): provenance goes in
+  `source_type`.
+- **`068_workspace_share_token.sql`** — `workspaces.share_token text`, the
+  token behind `/share/[token]` and `/api/og/share/[token]`. Null means the
+  site has never been shared. Roll back by dropping the column; every issued
+  share link dies with it.
+- **`069_generate_idempotency.sql`** — `agent_idempotency_keys
+  (agency_id, key)` primary key, plus a created_at index. RLS on with **no
+  policy**, deliberately: only the service role touches it
+  (`lib/agent/idempotency.ts`). Roll back with `drop table
+  agent_idempotency_keys;` — in-flight retries of `POST /articles/generate`
+  become second drafts, nothing worse.
+- **`071_billing_past_due.sql`** — `agencies.payment_failed_at timestamptz`
+  and a widened `agencies_plan_status_check` that admits `past_due` and
+  `unpaid`. Before restoring the old CHECK, move any row in those two states
+  to `active` or `canceled` first, or the constraint will refuse to apply.
+
 ## 070 — added 2026-09-06
 
 `070_google_needs_reconnect.sql`: adds `workspace_integrations.needs_reconnect boolean not null default false`
@@ -351,3 +436,89 @@ Search Console tab, the dashboard's Search Console blocks and the agent's `sync`
 (`add column if not exists`), no data change, depends on 001 only. Pre-flight:
 `exists (select 1 from col where t='workspace_integrations' and c='needs_reconnect')`. Roll back with
 `alter table workspace_integrations drop column needs_reconnect, drop column last_sync_error;`.
+
+## 072 — added 2026-09-06
+
+`072_tenant_authz_hardening.sql`: least privilege on the agency-scoped tables.
+`api_keys` INSERT/UPDATE/DELETE and `invites` SELECT move to owner/admin
+(`user_admin_agency_ids()`, from 053); the member-wide `backlink_credits`
+INSERT policy is dropped (only the service role settles an exchange);
+`workspaces` DELETE becomes admin-only; and a `BEFORE UPDATE` trigger on
+`agencies` (`agencies_guard_privileged_columns`) raises `42501` when a
+signed-in user (`auth.uid()` not null) changes `plan`, `plan_status`,
+`stripe_*`, `current_period_end`, `cancels_at`, `payment_failed_at` or
+`api_key`, and when a non-admin changes name/slug/branding/`report_email`.
+**Consequence for the app:** every write to those billing columns must go
+through `createServiceClient()` — the Stripe webhook already does, and
+`app/actions/billing.ts` / `retention.ts` were moved to it in the same
+integration branch. Depends on 053 (`user_admin_agency_ids`,
+`user_can_access_workspace`) and 071 (`payment_failed_at`). No data change.
+**Not safe to re-run**: the `create policy` statements have no `if not exists`,
+so a second apply stops on `policy "API keys visible to agency members" …
+already exists` (harmless under `-1`, nothing changes). Pre-flight:
+`exists (select 1 from pg_trigger where tgname='agencies_guard_privileged_columns')`.
+Roll back with `drop trigger agencies_guard_privileged_columns on agencies;
+drop function agencies_guard_privileged_columns();` and re-create the 001/053
+policies it dropped (`API keys by agency`, `Credits insert scoped to agency`,
+`Invites visible to agency members`, `Workspaces deleted by access`).
+
+## 073 — added 2026-09-06
+
+`073_lifecycle_emails.sql`: adds `sent_emails` (a send is claimed here *before* it leaves,
+keyed by type + subject + recipient, and the claim is released if the send fails, so a
+retried Stripe webhook or a re-run cron cannot mail the same fact twice), `email_preferences`
+(keyed by address rather than user id, because the monthly report may go to a shared inbox)
+and a partial unique index giving one pending invite per address. Depends on 001 and 010.
+Idempotent; the only data change is collapsing pre-existing duplicate pending invites.
+Pre-flight: `to_regclass('public.idx_invites_one_pending_per_email') is not null` — the
+index, not the table, because `sent_emails` and `email_preferences` already existed on the
+local dev stack from an earlier hand-run and would report the file as applied before it was.
+Roll back with `drop index idx_invites_one_pending_per_email; drop table sent_emails,
+email_preferences;` — every lifecycle email becomes re-sendable and every opt-out is lost.
+This file was `072_lifecycle_emails.sql` on its branch until 2026-09-07; it was renumbered
+because 072 is the tenant hardening file above.
+
+## 074 — added 2026-09-06
+
+`074_one_autonomous_draft_per_keyword.sql`: partial unique index
+`idx_articles_one_autonomous_draft_per_keyword` on `articles (workspace_id, keyword)`
+where `status = 'drafting' and generated_autonomously`. The second of two overlapping
+`cron/generate` runs fails its insert with `23505`, which `lib/content/generate.ts` maps to
+`ConcurrentGenerationError` and the cron skips. Hand-written articles are
+`generated_autonomously = false` and never collide. Depends on 001. Idempotent
+(`create unique index if not exists`); fails to create only if two in-flight autonomous
+drafts already share a keyword — the file's header has the query that finds them. Pre-flight:
+`to_regclass('public.idx_articles_one_autonomous_draft_per_keyword') is not null`. Roll back
+with `drop index idx_articles_one_autonomous_draft_per_keyword;`.
+
+## 075 — added 2026-09-07
+
+`075_reports_one_per_period.sql`: unique index `idx_reports_one_per_period` on
+`reports (workspace_id, period)`. `lib/reports/generate.ts` has always upserted on
+`onConflict: "workspace_id,period"`, and without this index PostgREST refuses every
+upsert, so `cron/reports` never wrote a row. Depends on 001. Idempotent
+(`create unique index if not exists`). Pre-flight:
+`to_regclass('public.idx_reports_one_per_period') is not null`. Roll back with
+`drop index idx_reports_one_per_period;`.
+
+## 077 — added 2026-09-07
+
+`077_workspace_vocabulary_comments.sql`: four `comment on column` statements and
+nothing else. `workspaces.auto_generate_weekly_limit`, `workspaces.paused_meta`,
+`workspaces.refresh_days` and `invites.workspace_ids` each described the
+*entity* as a "site", which POSITIONING.md settled as "workspace" on 2026-08-30.
+The rest of the schema was already right: every scoped table carries
+`workspace_id`, every account-scoped one `agency_id`, and `site_pages` is
+correctly named because its rows are pages of the customer's real website.
+
+No DDL, no rename, no data touched — only catalogue rows, so it takes no lock
+worth naming and cannot fail on existing data. Depends on 001 (workspaces,
+invites), 052 (`refresh_days`), 053 (`invites.workspace_ids`) and 061
+(`paused_meta`); if any of those columns is missing, `comment on` errors and the
+transaction rolls back, which is the intended signal. Idempotent (`comment on`
+replaces). Pre-flight: `col_description` on `workspaces.paused_meta` contains
+`Pause this workspace`. Roll back by re-applying the previous wording, which is
+in this file's git history — there is nothing else to undo.
+
+Numbering: 076 is held by the `onboarding_runs` track and is not in this tree.
+077 does not depend on it and may be applied while 076 is still missing.

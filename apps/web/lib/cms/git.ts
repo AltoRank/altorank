@@ -140,6 +140,8 @@ export function renderPost(
   const { markdown } = htmlToMarkdown(
     article.html,
     config.publicBaseUrl ?? "https://example.com",
+    // A committed page is rendered, not read by an agent: images keep their URL.
+    { images: "linked" },
   );
 
   const frontmatter = buildFrontmatter({

@@ -5,7 +5,7 @@ import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { ensureDefaultSources, type LinkSourceRow } from "@/lib/linking/detect";
 import { LinkingConfig, type LinkTargetRow } from "@/components/dashboard/linking/linking-config";
 
-export const metadata: Metadata = { title: "Linking configuration" };
+export const metadata: Metadata = { title: "Linking" };
 
 export default async function LinkingPage() {
   const workspaceId = await getScopedWorkspaceId();
@@ -14,11 +14,8 @@ export default async function LinkingPage() {
   if (!workspaceId) {
     return (
       <>
-        <PageHead
-          title="Linking configuration"
-          subtitle="Configure how we find links on your website for internal linking."
-        />
-        <div className="px-8 py-6 text-[13px] text-ink-3">Add a site first.</div>
+        <PageHead title="Linking" subtitle="Which of this site's pages articles link to, and where the list comes from." />
+        <div className="px-8 py-6 text-[13px] text-ink-3">Add a workspace first.</div>
       </>
     );
   }
@@ -46,18 +43,13 @@ export default async function LinkingPage() {
 
   return (
     <>
+      {/* "Linking configuration" above a nav item reading "Linking", with a
+          subtitle restating the title in different words. Every other page
+          titles itself with the noun the sidebar uses. */}
       <PageHead
-        title="Linking configuration"
+        title="Linking"
         subtitle={
-          <span>
-            Configure how we find links on your website for internal linking.
-            {workspace?.domain ? (
-              <>
-                {" "}
-                <span className="font-mono text-ink-2">{workspace.domain}</span>
-              </>
-            ) : null}
-          </span>
+          workspace?.domain ? <span className="font-mono text-[11.5px]">{workspace.domain}</span> : undefined
         }
       />
       <LinkingConfig

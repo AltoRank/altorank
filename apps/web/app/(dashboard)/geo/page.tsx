@@ -18,8 +18,9 @@ const ENGINE_LABEL: Record<AiEngine, string> = {
 };
 
 /**
- * Reachable by URL but not linked: the section is listed as "soon" in the
- * sidebar because it is not ready to be relied on (2026-09-02).
+ * Linked from the sidebar since 2026-09-06. It was listed as "soon", which
+ * renders as unclickable grey text, while the page measured four engines,
+ * ranked what to do about it and dashed anything unmeasured.
  */
 export default async function GeoPage() {
   // Every section is about one site unless the switcher says otherwise.
@@ -31,13 +32,17 @@ export default async function GeoPage() {
   ]);
 
   const summary = summariseRows(rows);
-  const trackedDomain = workspaces.find(
-    (w) => (w as { geo_tracking?: boolean }).geo_tracking,
-  )?.domain;
+  // The badge, the brand the actions are derived for, and the count all
+  // follow the scope like the results do. Until 2026-09-07 they read the
+  // whole account: on site B the header said "1 tracked" because site A
+  // was, and the action list named A's domain as the brand to look for in
+  // B's answers.
+  const inScope = scopeId ? workspaces.filter((w) => w.id === scopeId) : workspaces;
+  const tracked = inScope.filter((w) => (w as { geo_tracking?: boolean }).geo_tracking);
+  const trackedDomain = tracked[0]?.domain;
   const actions = rows.length
     ? deriveGeoActions({ rows, brandDomain: trackedDomain ?? "" })
     : [];
-  const tracked = workspaces.filter((w) => (w as { geo_tracking?: boolean }).geo_tracking);
   const lastChecked = rows[0]?.checked_at
     ? new Date(rows[0].checked_at).toLocaleDateString("en-GB", {
         day: "numeric",
@@ -66,7 +71,7 @@ export default async function GeoPage() {
           <>
             <StatusPill
               status={tracked.length ? "on" : "setup"}
-              label={tracked.length ? `${tracked.length} tracked` : "Not enabled"}
+              label={tracked.length ? (scopeId ? "Tracked" : `${tracked.length} tracked`) : "Not enabled"}
             />
             <span className="truncate">
               Whether ChatGPT, Claude, Gemini and Perplexity name this brand,
@@ -111,7 +116,15 @@ export default async function GeoPage() {
         ]}
       />
 
-      <div className="flex-1 overflow-y-auto px-8 py-6 scroll flex flex-col gap-5">
+      {/* space-y-5, not `flex flex-col gap-5`. A flex column inside a
+          fixed-height scroll container shrinks its children to fit, and every
+          Card here is `overflow-hidden` for its rounded corners, so the
+          shrink clipped them instead of scrolling: the second recommendation
+          was cut mid-sentence, and "By answer engine" showed ChatGPT while
+          hiding the Perplexity row underneath it. A page that silently drops
+          measured rows is worse than one that shows none. Every other surface
+          in the app stacks with space-y-5 for this reason. */}
+      <div className="flex-1 overflow-y-auto px-8 py-6 scroll space-y-5">
         {actions.length > 0 && (
           <Card flush>
             <div className="px-5 pt-4 pb-1 font-semibold text-sm">What to do about it</div>
@@ -142,9 +155,9 @@ export default async function GeoPage() {
                 AI visibility is measured against a fixed set of questions a buyer
                 would actually ask. The prompt set is the measurement, so it is
                 chosen deliberately rather than generated: changing it changes the
-                number and breaks the trend line. Add prompts for a workspace and
-                enable <code className="font-mono text-[12px]">geo_tracking</code>{" "}
-                to start measuring.
+                number and breaks the trend line. Choosing the prompts and switching
+                tracking on for a workspace is not in the app yet; nothing here is being
+                measured until it is.
               </p>
             </div>
           </Card>

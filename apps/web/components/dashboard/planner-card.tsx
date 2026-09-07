@@ -261,7 +261,7 @@ export function PlannerCard({
         )}
         {state === "writing" && (
           stalled ? (
-            <span className="font-mono text-[10px] text-ink-3" title="Ten minutes with no result; nothing was charged for a draft that never arrived.">
+            <span className="font-mono text-[10px] text-ink-3" title="Ten minutes with no result. The run is treated as failed the next time a draft is started; the keyword stays on the plan.">
               stopped responding
             </span>
           ) : (

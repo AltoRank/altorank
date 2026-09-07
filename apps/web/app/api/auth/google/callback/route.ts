@@ -5,12 +5,25 @@ import { backfillAnalytics } from "@/lib/google/sync";
 import { listGSCSites, matchGSCSite } from "@/lib/google/gsc";
 import { listGA4Properties, matchGA4Property } from "@/lib/google/ga4";
 import { getValidAccessToken } from "@/lib/google/oauth";
+import { clearOauthNonce, decodeOauthState, nonceMatches, OAUTH_STATE_COOKIE } from "@/lib/google/oauth-state";
 
 /**
  * Google OAuth callback — exchanges code for tokens and saves them.
- * State format: `{workspaceId}:{integrationId}`
+ * State format: `{workspaceId}:{integrationId}:{nonce}`
+ *
+ * The nonce is checked against the httpOnly cookie /api/auth/google set when
+ * this browser started the flow. Without it, `code` and `state` are just query
+ * parameters an attacker can put in a link: consent to Google as themselves,
+ * keep the code, then get a signed-in customer to load this URL, and their
+ * Google tokens land on the customer's account and pull the attacker's Search
+ * Console properties into the customer's sites. See lib/google/oauth-state.ts.
  */
-export async function GET(request: NextRequest) {
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  // One round trip, one nonce, whichever way this ends.
+  return clearOauthNonce(await handleCallback(request));
+}
+
+async function handleCallback(request: NextRequest): Promise<NextResponse> {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
@@ -28,12 +41,13 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const [workspaceId, integrationId] = state.split(":");
-  if (!workspaceId || !integrationId) {
+  const parsed = decodeOauthState(state);
+  if (!parsed || !nonceMatches(parsed.nonce, request.cookies.get(OAUTH_STATE_COOKIE)?.value)) {
     return NextResponse.redirect(
       new URL("/connect?error=invalid_state", request.url),
     );
   }
+  const { workspaceId, integrationId } = parsed;
 
   try {
     const supabase = await createClient();

@@ -98,6 +98,25 @@ describe("Webflow", () => {
     expect(body(0).isDraft).toBe(false);
     expect(mockFetch.mock.calls[1][0]).toMatch(/\/items\/item-1\/publish$/);
   });
+
+  it("update in draft mode patches the staged item and never calls /publish", async () => {
+    // A re-push (refresh, retry, second "Push to site") used to publish the
+    // item regardless, so a draft-mode connection went live from this path.
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ id: "item-1" }) });
+    const result = await webflow.update("item-1", draft);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0][1].method).toBe("PATCH");
+    expect(body(0).isDraft).toBe(true);
+    expect(result.url).toBe("");
+  });
+
+  it("update live patches then publishes, as before", async () => {
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ id: "item-1" }) });
+    await webflow.update("item-1", live);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(body(0).isDraft).toBe(false);
+    expect(mockFetch.mock.calls[1][0]).toMatch(/\/items\/item-1\/publish$/);
+  });
 });
 
 describe("Shopify", () => {

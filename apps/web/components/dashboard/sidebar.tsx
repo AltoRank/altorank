@@ -31,7 +31,17 @@ type SidebarProps = {
   /** From agency_members. Null hides the line rather than asserting "Owner". */
   role?: string | null;
   /** Metered article usage. Null (unmetered) renders no bar. */
-  quota?: { used: number; limit: number; noPlan: boolean } | null;
+  /**
+   * The month's counter, already rendered by `usageLine` (lib/billing/usage-line.ts).
+   *
+   * `figure` and `fraction` arrive computed rather than as `used`/`limit`,
+   * because this meter used to do the arithmetic itself and got it wrong in
+   * exactly the way that file exists to prevent: a downgrade keeps the month's
+   * real count while the included volume drops, so an account that wrote 150
+   * under Agency and moved to Managed read "150 / 100" here - on every screen -
+   * beside a Billing page that had already learned to say what happened.
+   */
+  quota?: { figure: string; fraction: number; noPlan: boolean; limit: number } | null;
   /** How many sites the plan allows, for the switcher's Add row. Null renders a dash. */
   siteAllowance?: SiteAllowance;
 };
@@ -125,6 +135,17 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
       return next;
     });
   }
+
+  // Groups that have something left to show once `hidden` has been applied.
+  // Resolved before rendering so the separator between groups can be decided
+  // from the rendered order: an empty group must leave no trace at all now
+  // that a hairline, not a caption, is what marks a boundary.
+  const visibleGroups = DASHBOARD_NAV.map((group) => ({
+    group: group.group,
+    items: group.items
+      .map((item) => (item.children ? { ...item, children: item.children.filter((c) => !hidden.includes(c.id)) } : item))
+      .filter((item) => !hidden.includes(item.id) && !(item.children && item.children.length === 0)),
+  })).filter((group) => group.items.length > 0);
 
   return (
     <TooltipProvider>
@@ -255,20 +276,30 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
         <div className="hidden md:block">
           <WorkspaceSwitcher collapsed={collapsed} allowance={siteAllowance} />
         </div>
-        {DASHBOARD_NAV.map((group) => {
-          const items = group.items
-            .map((item) => (item.children ? { ...item, children: item.children.filter((c) => !hidden.includes(c.id)) } : item))
-            .filter((item) => !hidden.includes(item.id) && !(item.children && item.children.length === 0));
-          // A group heading with nothing under it is worse than no group.
-          if (items.length === 0) return null;
-          return (
-          <div key={group.group} className="pt-2.5 pb-1 px-1.5">
-            {!collapsed && (
-              <div className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-4 px-2 pb-1.5">
-                {group.group}
-              </div>
+        {visibleGroups.map((group, gi) => (
+          /* The uppercase captions - Overview, Content, Growth, Account - are
+             gone (2026-09-07). Four heading rows above fourteen links was more
+             chrome than navigation, and every one of them named something the
+             links underneath already said.
+
+             The grouping is not gone with them: a hairline and a little air
+             keep the clusters apart, which is the whole job the captions were
+             doing. `role="group"` + `aria-label` keeps each cluster announced
+             by name to a screen reader, so dropping the visible text does not
+             drop the label - it stops drawing it. */
+          <div
+            key={group.group}
+            role="group"
+            aria-label={group.group}
+            className={cn(
+              "pb-1 px-1.5",
+              // Index into the groups that actually rendered, not into
+              // DASHBOARD_NAV: hiding the first group must not leave a divider
+              // above whatever is now at the top.
+              gi === 0 ? "pt-2.5" : "mt-2 border-t border-line-soft pt-2.5",
             )}
-            {items.map((item) => {
+          >
+            {group.items.map((item) => {
               if (item.children) {
                 const childActive = item.children.some((c) => isActivePath(pathname, c));
                 // Collapsed there is no room for a tree: the children become
@@ -319,8 +350,7 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
               return <NavLeaf key={item.id} item={item} pathname={pathname} collapsed={collapsed} badge={badges?.[item.id] ?? item.badge} />;
             })}
           </div>
-          );
-        })}
+        ))}
       </nav>
 
       {/* Usage. The pricing page sells an included volume per month; this is
@@ -340,15 +370,15 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
                 went 1 -> 7 on 2026-09-06 and left this reading "Free draft"
                 above "0 / 7". */}
             <span>{quota.noPlan ? plural(quota.limit, "free draft") : "Articles this month"}</span>
-            <span className="font-mono tabular-nums">{`${quota.used} / ${quota.limit}`}</span>
+            <span className="font-mono tabular-nums">{quota.figure}</span>
           </div>
           <div className="h-1 rounded-full bg-panel-2 overflow-hidden">
             <div
               className={cn(
                 "h-full rounded-full",
-                quota.used >= quota.limit ? "bg-err" : "bg-accent",
+                quota.fraction >= 1 ? "bg-err" : "bg-accent",
               )}
-              style={{ width: `${Math.min(100, (quota.used / Math.max(1, quota.limit)) * 100)}%` }}
+              style={{ width: `${Math.min(100, quota.fraction * 100)}%` }}
             />
           </div>
           {quota.noPlan && (

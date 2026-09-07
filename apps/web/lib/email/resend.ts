@@ -141,11 +141,46 @@ export async function sendTransactionalEmail(
   bodyHtml: string,
   footerNote: string,
   preheader?: string,
+  /**
+   * `headers` carries the RFC 8058 List-Unsubscribe pair for the optional
+   * categories; `unsubscribeUrl` puts the matching link in the footer. Both
+   * are absent for the required ones (lib/email/categories.ts).
+   */
+  opts?: { headers?: Record<string, string>; unsubscribeUrl?: string | null },
 ): Promise<void> {
   await deliver({
     from: fromAddress(),
     to,
     subject,
-    html: emailLayout({ title: subject, bodyHtml, footerNote, preheader }),
+    html: emailLayout({ title: subject, bodyHtml, footerNote, preheader, unsubscribeUrl: opts?.unsubscribeUrl }),
+    ...(opts?.headers ? { headers: opts.headers } : {}),
+  });
+}
+
+/**
+ * A plain-text email with attachments: the in-app feedback report, and
+ * nothing else so far.
+ *
+ * It exists so that path stops constructing its own `new Resend()` and
+ * checking nothing. Resend's SDK resolves rather than rejects on a refusal, so
+ * `await resend.emails.send(...)` inside a try/catch returned 200 "sent" for a
+ * refused domain, an invalid key or a rate limit - the exact failure the
+ * comment above `deliver` was written about, reintroduced in the one route
+ * that did not go through it.
+ */
+export async function sendPlainEmail(opts: {
+  to: string;
+  subject: string;
+  text: string;
+  replyTo?: string;
+  attachments?: { filename: string; content: string }[];
+}): Promise<void> {
+  await deliver({
+    from: fromAddress(),
+    to: opts.to,
+    subject: opts.subject,
+    text: opts.text,
+    ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
+    ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
   });
 }

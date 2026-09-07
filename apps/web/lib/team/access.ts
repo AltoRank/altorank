@@ -6,8 +6,8 @@
 // and manage content but cannot invite or remove users or manage billing.
 // Admins can do all of that except pay. Owners pay.
 //
-// Orthogonal to the role is *which sites* a member sees:
-// `agency_members.workspace_ids`, NULL for every site (including ones added
+// Orthogonal to the role is *which workspaces* a member sees:
+// `agency_members.workspace_ids`, NULL for every workspace (including ones added
 // later) and an array for exactly those. The database enforces it
 // (migration 053, user_workspace_ids()); this file is the vocabulary the
 // Team page and its actions share.
@@ -39,9 +39,28 @@ export function canManageBilling(role: string | null | undefined): boolean {
 }
 
 /**
+ * Add a workspace to the account.
+ *
+ * Billing-shaped rather than content-shaped, which is why it is not something
+ * an editor does: every plan sells a number of workspaces ("Up to 3
+ * workspaces"), a new one takes a slot, and every workspace added shares the
+ * account's monthly article allowance. When the plan is full the refusal an
+ * editor got said "Upgrade on the Billing page" - a page they can only read.
+ *
+ * The other door that creates workspaces - `createWorkspacesFromProperties`,
+ * behind Connect Search Console - has been owner/admin since it was written.
+ * `createWorkspace` had no role check at all, so a member scoped to one site
+ * could add a fourth to somebody else's account (verified 2026-09-06). Same
+ * rule now, both doors.
+ */
+export function canAddWorkspace(role: string | null | undefined): boolean {
+  return role === "owner" || role === "admin";
+}
+
+/**
  * Turn a multi-select's values into what the column stores.
  *
- * Empty means all sites, so an empty selection becomes NULL rather than an
+ * Empty means all workspaces, so an empty selection becomes NULL rather than an
  * empty array - an empty array would be a member who can see nothing, which
  * no form offers. Anything not in `allowed` (the agency's own workspaces) is
  * dropped: the ids arrive from the browser.
@@ -54,14 +73,14 @@ export function parseWorkspaceIds(values: readonly unknown[], allowed: readonly 
   return picked.length === 0 ? null : picked;
 }
 
-/** "All sites", or the names of the sites, for the Team table. */
+/** "All workspaces", or their names, for the Team table. */
 export function accessLabel(
   workspaceIds: readonly string[] | null | undefined,
   namesById: ReadonlyMap<string, string>,
 ): string {
-  if (!workspaceIds) return "All sites";
+  if (!workspaceIds) return "All workspaces";
   const names = workspaceIds.map((id) => namesById.get(id)).filter((n): n is string => Boolean(n));
-  if (names.length === 0) return "No sites";
+  if (names.length === 0) return "No workspaces";
   return names.join(", ");
 }
 

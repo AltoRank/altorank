@@ -82,7 +82,7 @@ export function VoiceCardButton({ workspaceId, trained, hasSample, profileId, ru
             open
             onOpenChange={() => setEditing(false)}
             title="Edit voice"
-            description="What the writer reads when it drafts for this site."
+            description="What the writer reads when it drafts for this workspace."
           >
             <VoiceManualEditor
               profileId={profileId}
@@ -118,7 +118,7 @@ export function VoiceCardButton({ workspaceId, trained, hasSample, profileId, ru
               name="sample_text"
               required
               rows={6}
-              placeholder="Paste 2-3 paragraphs of your client's existing content…"
+              placeholder="Paste 2-3 paragraphs of existing content…"
               className="px-3 py-2 rounded-lg border border-line bg-panel text-[13px] text-ink placeholder:text-ink-3 outline-none focus:border-accent transition-colors resize-none"
             />
           </label>

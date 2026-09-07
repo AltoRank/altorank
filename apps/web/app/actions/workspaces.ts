@@ -4,10 +4,14 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { ensureAgency } from "@/lib/queries/agency";
 import { requireAuth } from "@/lib/auth/require-auth";
+import { canAddWorkspace } from "@/lib/team/access";
 import { z } from "zod";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
 import { getWorkspaceAllowance, workspaceLimitMessage } from "@/lib/billing/workspaces";
-import { MAX_PACE, normalisePace, PAID_DEFAULT_PACE } from "@/lib/content/pace";
+import { MAX_PACE, monthlyFromPace, normalisePace, PAID_DEFAULT_PACE } from "@/lib/content/pace";
+import { getQuota } from "@/lib/billing/quota";
+import { paceAllowed, planNeededFor } from "@/lib/plan/pace-options";
+import { PLAN_LABELS } from "@/lib/stripe";
 import { pauseWorkspace as pauseWorkspaceCore, resumeWorkspace as resumeWorkspaceCore } from "@/lib/workspaces/pause";
 import type { PausedMeta } from "@/lib/types";
 
@@ -39,6 +43,23 @@ export type CreateWorkspaceResult =
   | { ok: false; error: string };
 
 export async function createWorkspace(formData: FormData): Promise<CreateWorkspaceResult> {
+  // Owner or admin, like the Search Console door that also creates workspaces
+  // (app/actions/google-properties.ts) and like every other action that spends
+  // the account's allowance. This one had no role check at all: an editor
+  // scoped to a single site could add a fourth site to the account, take a
+  // plan slot, and start it drawing on the shared monthly quota - while the
+  // Team page told them "Editors ... cannot manage billing".
+  //
+  // A result, not a throw, because everything else this action refuses comes
+  // back as a sentence the dialog can print.
+  const { role } = await requireAuth();
+  if (!canAddWorkspace(role)) {
+    return {
+      ok: false,
+      error: "Adding a workspace changes what the account pays for, so an owner or admin has to do it. Ask one of them and it takes a moment.",
+    };
+  }
+
   const supabase = await createClient();
   // `domain` comes via ?? undefined: FormData.get returns null for a missing
   // field, z.optional() only accepts undefined, and the difference took the
@@ -92,18 +113,48 @@ export async function createWorkspace(formData: FormData): Promise<CreateWorkspa
   return { ok: true, workspaceId: data.id as string, domain: parsed.data.domain };
 }
 
+/**
+ * The fields the setup wizard and the locale switcher edit. An allowlist, not
+ * whatever the form posted.
+ *
+ * This used to copy every entry of the FormData onto the row, so a hand-made
+ * POST could write any column of `workspaces`, including three that are not
+ * settings at all: `share_token`, the unguessable value the public /share/:token
+ * page treats as the whole credential (lib/queries/share.ts reads it with the
+ * service role) - overwrite it with a known string and the site's report is
+ * public to whoever chose it; `agency_id`, which for anyone who belongs to two
+ * accounts moved the site and, by foreign key, its articles, keywords and
+ * reports from one tenant to the other; and `plan`, `status` and
+ * `auto_generate`, the columns the crons and the quota read.
+ */
+const updateWorkspaceSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  domain: createWorkspaceSchema.shape.domain.optional(),
+  initials: z.string().max(2).optional(),
+  color: z.string().max(32).optional(),
+  language: z.string().min(2).max(10).optional(),
+  location_code: z.coerce.number().int().positive().optional(),
+});
+
 export async function updateWorkspace(id: string, formData: FormData) {
-  await requireAuth();
+  const { agencyId } = await requireAuth();
   const supabase = await createClient();
-  const updates: Record<string, unknown> = {};
-  for (const [key, value] of formData.entries()) {
-    if (value) updates[key] = value;
+
+  const raw: Record<string, unknown> = {};
+  for (const key of Object.keys(updateWorkspaceSchema.shape)) {
+    const value = formData.get(key);
+    if (value !== null && value !== "") raw[key] = value;
   }
+  const parsed = updateWorkspaceSchema.safeParse(raw);
+  if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Invalid value");
+  if (!Object.keys(parsed.data).length) return;
 
   const { error } = await supabase
     .from("workspaces")
-    .update(updates)
-    .eq("id", id);
+    .update(parsed.data)
+    .eq("id", id)
+    // Defence in depth over RLS: the id arrives from the browser.
+    .eq("agency_id", agencyId);
 
   if (error) throw new Error(error.message);
   revalidatePath("/workspaces");
@@ -121,13 +172,29 @@ export async function updateWorkspace(id: string, formData: FormData) {
  * "not now" and "never" visible in the row.
  */
 export async function setGenerationPace(workspaceId: string, requested: unknown) {
-  const { agencyId } = await requireAuth();
+  const { agencyId, user } = await requireAuth();
   const pace = normalisePace(requested);
   if (pace === null) {
     throw new Error(`Pick a number of articles a week between 0 and ${MAX_PACE}.`);
   }
 
   const supabase = await createClient();
+
+  // The same rule the Articles-plan control enforces (app/actions/plan.ts's
+  // `applyArticlesPlan`). This door had neither half of it: the slider ran to
+  // MAX_PACE on every tier and the action wrote whatever arrived, so a free
+  // account could set 25 a week - about 108 a month against seven drafts -
+  // and the popover next door refused the same number with "Needs the
+  // Managed plan". One setting, two answers, and the honest one only on the
+  // screen that happened to check.
+  const quota = await getQuota(supabase, agencyId, user.email ?? null);
+  if (!paceAllowed(pace, quota)) {
+    const needs = PLAN_LABELS[planNeededFor(monthlyFromPace(pace))];
+    throw new Error(
+      `${pace} a week is about ${monthlyFromPace(pace)} a month, which needs the ${needs} plan. Choose one on the Billing page.`,
+    );
+  }
+
   const { error } = await supabase
     .from("workspaces")
     .update({ auto_generate_weekly_limit: pace })
@@ -143,7 +210,7 @@ export async function setGenerationPace(workspaceId: string, requested: unknown)
 }
 
 export async function activateWorkspace(id: string) {
-  await requireAuth();
+  const { agencyId } = await requireAuth();
   const supabase = await createClient();
   // Activation is the opt-in. It used to set status only, so a workspace
   // activated by hand never got a draft: auto_generate stayed false and the
@@ -153,6 +220,7 @@ export async function activateWorkspace(id: string) {
     .from("workspaces")
     .update({ status: "on", auto_generate: true, auto_generate_weekly_limit: PAID_DEFAULT_PACE })
     .eq("id", id)
+    .eq("agency_id", agencyId)
     .eq("status", "setup"); // guard: only transition from setup
 
   if (error) throw new Error(error.message);
@@ -160,10 +228,20 @@ export async function activateWorkspace(id: string) {
   revalidatePath(`/workspaces/${id}`);
 }
 
+/**
+ * Deleting a site takes its articles, keywords, calendar and reports with it
+ * by cascade. That is an account-level decision, so it is an owner's or an
+ * admin's; migration 072 says the same thing in the RLS policy, and this is
+ * the message a person sees rather than a silent zero-row delete.
+ */
 export async function deleteWorkspace(id: string) {
-  await requireAuth();
+  const { agencyId } = await requireAuth(["owner", "admin"]);
   const supabase = await createClient();
-  const { error } = await supabase.from("workspaces").delete().eq("id", id);
+  const { error } = await supabase
+    .from("workspaces")
+    .delete()
+    .eq("id", id)
+    .eq("agency_id", agencyId);
   if (error) throw new Error(error.message);
   revalidatePath("/workspaces");
 }

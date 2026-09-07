@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { addSectionImages, chooseInsertionPoints } from "../images";
+import { addSectionImages, chooseInsertionPoints, descriptiveAlt } from "../images";
+import { altWordCount, MIN_ALT_WORDS } from "@/lib/ai/alt-text";
 import { ARTICLE, SECTION } from "./fixtures";
 
 const LONG = Array(90).fill("word").join(" ");
@@ -34,6 +35,27 @@ describe("images: where they go", () => {
       { body: `<p>${LONG}</p>` },
     ];
     expect(chooseInsertionPoints(sections, 3)).toEqual([2]);
+  });
+});
+
+describe("images: alt text", () => {
+  it("keeps the label-plus-heading alt when it already describes enough", () => {
+    expect(descriptiveAlt("Sketch illustrating", "What a small team actually needs", "Anything.")).toBe(
+      "Sketch illustrating What a small team actually needs",
+    );
+  });
+
+  it("adds the sentence the image was drawn from when the heading is too short to describe it", async () => {
+    // "Sketch illustrating Stages" is four words: the audit tab's own floor is
+    // six, and it flagged the product's images against the product.
+    const html = `<h1>T</h1><p>i</p><h2>Stages</h2><p>Every migration runs through four stages, in order. ${LONG}</p>`;
+    const { html: out } = await addSectionImages(html, { produce: async () => "https://cdn.test/s.webp", max: 1, style: "sketch" });
+    expect(out).toContain('alt="Sketch illustrating Stages: Every migration runs through four stages, in order"');
+    expect(altWordCount(out.match(/alt="([^"]*)"/)![1])).toBeGreaterThanOrEqual(MIN_ALT_WORDS);
+  });
+
+  it("stays a label when the heading is short and there is no sentence to add", () => {
+    expect(descriptiveAlt("Sketch illustrating", "Stages", "")).toBe("Sketch illustrating Stages");
   });
 });
 

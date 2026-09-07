@@ -15,6 +15,7 @@ import { ImpersonationBanner } from "@/components/dashboard/impersonation-banner
 import { getCompletedOnboardingSteps } from "@/lib/queries/onboarding";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { entitledToScheduledWork } from "@/lib/billing/quota";
+import { usageLine } from "@/lib/billing/usage-line";
 import { siteAllowanceFrom } from "@/lib/workspaces/allowance";
 import { FeedbackWidget } from "@/components/dashboard/feedback-widget";
 import { DevToolbar } from "@/components/dashboard/dev-toolbar";
@@ -234,7 +235,18 @@ export default async function DashboardLayout({
           userInitials={userInitials}
           memberCount={memberCount ?? undefined}
           role={role}
-          quota={quota && quota.limit !== null ? { used: quota.used, limit: quota.limit, noPlan: quota.reason === "no-plan" } : null}
+          quota={
+            quota && quota.limit !== null
+              ? {
+                  // Same derivation as the Billing page's usage card: one
+                  // function decides what the counter says, so the sidebar
+                  // cannot disagree with the page it links to.
+                  ...(({ figure, fraction }) => ({ figure, fraction: fraction ?? 0 }))(usageLine(quota)),
+                  noPlan: quota.reason === "no-plan",
+                  limit: quota.limit,
+                }
+              : null
+          }
           siteAllowance={siteAllowance}
         />
         {/* No topbar. It held a breadcrumb that restated the h1 immediately

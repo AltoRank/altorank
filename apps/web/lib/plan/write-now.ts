@@ -26,6 +26,7 @@ import { generateArticle } from "@/lib/content/generate";
 import { fulfilPlannedEntry } from "@/lib/onboarding/plan";
 import { getQuota } from "@/lib/billing/quota";
 import { readFrozenEntries } from "@/lib/plan/frozen";
+import { sweepStaleDrafts } from "@/lib/content/stale-drafts";
 
 export async function writePlannedEntryNow(
   supabase: SupabaseClient,
@@ -47,7 +48,14 @@ export async function writePlannedEntryNow(
   const keywordId = (entry.keyword_id as string | null) ?? undefined;
 
   // One draft at a time per keyword: a second click while the first run is
-  // still writing would spend the quota twice for the same article.
+  // still writing would spend the quota twice for the same article. A draft
+  // whose run died is not being written (lib/content/stale-drafts.ts): it
+  // used to hold the keyword forever.
+  try {
+    await sweepStaleDrafts(supabase, workspaceId);
+  } catch {
+    // Best effort; the guard below still holds.
+  }
   if (await draftingArticleFor(supabase, workspaceId, keywordId, term)) {
     throw new Error("This article is already being written.");
   }

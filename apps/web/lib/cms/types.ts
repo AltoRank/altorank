@@ -35,6 +35,13 @@ export interface PublishPayload {
    * this field existed, and a payload built by older code must keep doing so.
    */
   publishMode?: PublishMode;
+  /**
+   * JSON-LD objects for the page (a BlogPosting, a FAQPage when the article
+   * has one). Already appended to `html` as script tags for destinations
+   * that keep them (lib/publishing/schema.ts); carried here for consumers
+   * that would rather place them themselves, such as a webhook.
+   */
+  structuredData?: object[];
 }
 
 export interface PublishResult {

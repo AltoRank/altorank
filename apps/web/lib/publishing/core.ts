@@ -14,6 +14,7 @@ import { settleExchangeForArticle } from "@/lib/seo/exchange";
 import { createServiceClient } from "@/lib/supabase/server";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
 import { recordPublish } from "@/lib/publishing/log";
+import { DEFAULT_OUTPUT_SETTINGS } from "@/lib/onboarding/output-settings";
 
 /** Which connection an attempt went through, and how. Written to publish_log. */
 export type PublishContext = {
@@ -190,13 +191,18 @@ async function pushToDestination(
    * plan someone is on, we do not brand their article.
    */
   let siteUrl = "https://example.com";
+  let publisherName = "";
+  let language: string | null = null;
   try {
     const { data: ws } = await supabase
       .from("workspaces")
-      .select("agency_id, domain, agency:agencies(remove_branding)")
+      .select("agency_id, domain, language, business_profile, agency:agencies(remove_branding)")
       .eq("id", article.workspace_id)
       .single();
     if (ws?.domain) siteUrl = `https://${String(ws.domain).replace(/^https?:\/\//, "")}`;
+    const profileName = (ws?.business_profile as { name?: unknown } | null)?.name;
+    publisherName = (typeof profileName === "string" && profileName.trim()) || String(ws?.domain ?? "").replace(/^https?:\/\//, "");
+    language = typeof ws?.language === "string" ? ws.language : null;
     if (ws?.agency_id) {
       const quota = await getQuota(supabase, ws.agency_id);
       const removeBranding =
@@ -211,6 +217,44 @@ async function pushToDestination(
     }
   } catch {
     // Branding is never worth failing a publish over.
+  }
+
+  // Structured data, rebuilt from the body that is about to go out (see
+  // lib/publishing/schema.ts). The FAQ follows the Article settings switch,
+  // the BlogPosting always goes. Best effort, like the branding: a missing
+  // settings row means the defaults, a failure means a page without schema
+  // rather than no page.
+  let structuredData: object[] = [];
+  try {
+    // Lazy for the same reason generate.ts loads the enrichment lazily: the
+    // schema module reaches the FAQ extractor and the audit's generator, and
+    // the mutation routes that import this file are tested under a budget.
+    const { appendJsonLd, SCRIPT_CAPABLE, structuredDataFor } = await import("@/lib/publishing/schema");
+    const { data: settings } = await supabase
+      .from("workspace_output_settings")
+      .select("faq_schema")
+      .eq("workspace_id", article.workspace_id)
+      .maybeSingle();
+    const faqEnabled =
+      typeof settings?.faq_schema === "boolean" ? settings.faq_schema : DEFAULT_OUTPUT_SETTINGS.faqSchema;
+    const now = new Date().toISOString();
+    structuredData = structuredDataFor(
+      html,
+      {
+        title: article.title,
+        description: article.meta_description,
+        imageUrl: article.featured_image_url,
+        datePublished: article.published_at ?? now,
+        dateModified: now,
+        keyword: article.keyword,
+        publisherName: publisherName || siteUrl.replace(/^https?:\/\//, ""),
+        language,
+      },
+      faqEnabled,
+    );
+    if (SCRIPT_CAPABLE.has(config.type)) html = appendJsonLd(html, structuredData);
+  } catch {
+    // Schema is never worth failing a publish over.
   }
 
   const payload: PublishPayload = {
@@ -240,6 +284,7 @@ async function pushToDestination(
     createdAt: article.created_at ?? undefined,
     featuredImageUrl: article.featured_image_url ?? undefined,
     publishMode,
+    structuredData,
   };
 
   /**

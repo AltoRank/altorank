@@ -338,6 +338,32 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
           `Do not pad to reach the target: stop when the topic is covered.`
   );
 
+  // --- The site ---------------------------------------------------------------
+  // Before the brief and the research. The description is the wizard's own
+  // words for the business, confirmed by the owner, and it is the only place
+  // the writer learns what the site sells and to whom. Bounded the same way
+  // the owner's answers are: the model may use what is here and may not
+  // extend it, because a plausible feature or client invented for a real,
+  // named business is the fabricated-fact failure this product exists to
+  // prevent.
+  const site = prompt.site;
+  if (site && (site.name?.trim() || site.description?.trim())) {
+    const lines = ["ABOUT THE SITE THIS ARTICLE IS FOR:"];
+    if (site.name?.trim()) lines.push(`- Name: ${site.name.trim()}`);
+    if (site.description?.trim()) lines.push(`- What it does: ${site.description.trim()}`);
+    const audiences = (site.audiences ?? []).map((a) => a.trim()).filter(Boolean);
+    if (audiences.length) lines.push(`- Who it serves: ${audiences.join("; ")}`);
+    lines.push(
+      "- Write for these readers, and choose examples that fit them. Mention the site",
+      "  where it is genuinely relevant, at most a few times, never as a sales pitch.",
+      "- State nothing about the business beyond what is written here: no features,",
+      "  prices, clients, results, history or comparisons the description does not",
+      "  make. If the article needs a claim about the business that is not here,",
+      "  leave it out.",
+    );
+    sections.push(lines.join("\n"));
+  }
+
   // --- The owner's brief -----------------------------------------------------
   // Before the research, because it outranks it: the SERP says what readers
   // expect, the owner says what this business has actually done. Answers are
@@ -369,9 +395,15 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     }
     if (b.instructions?.trim()) lines.push(`- Instructions for this article: ${b.instructions.trim()}`);
     if (b.answers.length) {
+      // The site preferences below may forbid the first person; an answer
+      // attributed as "we" would then contradict them in the same prompt.
+      const attribution =
+        prompt.output?.firstPerson === false
+          ? `attributed to the business by name${site?.name?.trim() ? ` (${site.name.trim()})` : ""}, in the third person,`
+          : "attributed to the site (\"we\", \"our team\", or the business name),";
       lines.push(
         "- First-hand experience, in the owner's own words. Use it as the article's",
-        "  evidence, attributed to the site (\"we\", \"our team\", or the business name),",
+        `  evidence, ${attribution}`,
         "  and quote or closely paraphrase it. Use ONLY what is written here as the",
         "  owner's experience: do not invent further examples, results, tools, clients",
         "  or anecdotes in their voice, and do not extend an answer beyond what it says.",
@@ -619,6 +651,17 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     if (o.mentionSimilarProducts === true) prefs.push("- Where relevant, name and fairly compare similar products or tools.");
     if (o.emojis === false) prefs.push("- No emojis anywhere in the article.");
     if (o.emojis === true) prefs.push("- Emojis are welcome in headings and list items where they add warmth: at most one per heading, none in body sentences.");
+    // Asked for here, extracted in lib/content/enrich/faq.ts: the schema step
+    // reads a FAQ section and never wrote one, so with the switch on and no
+    // request in the prompt the FAQPage data existed only when the model
+    // happened to end on questions.
+    if (o.faq === true) {
+      prefs.push(
+        "- End with an <h2>Frequently asked questions</h2> section: three to five <h3> questions " +
+          "people actually type about the topic, each answered in 40-80 words that stand alone. " +
+          "Do not repeat a question already used as an H2.",
+      );
+    }
     if (o.customInstructions?.trim()) prefs.push(`- Site owner's standing instructions: ${o.customInstructions.trim()}`);
     if (prefs.length) sections.push("", "SITE PREFERENCES:", ...prefs);
   }

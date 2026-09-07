@@ -3,12 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { requireAuth } from "@/lib/auth/require-auth";
+import { appUrl } from "@/lib/app-url";
 import type { DomainAudit } from "@/lib/types";
 
 /**
  * Start a domain audit by calling the audit API route.
  */
 export async function startDomainAudit(workspaceId: string): Promise<string> {
+  await requireAuth();
   const supabase = await createClient();
 
   // Create the audit record
@@ -36,7 +39,7 @@ export async function startDomainAudit(workspaceId: string): Promise<string> {
   // The row was left at "running" with nothing ever coming to clear it. We now
   // wait for the 202 (fast, the crawl happens after it) and mark the audit
   // failed if the worker refused the job, so the UI can say so.
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const baseUrl = appUrl();
   const cookieHeader = (await cookies())
     .getAll()
     .map((c) => `${c.name}=${c.value}`)
@@ -66,6 +69,7 @@ export async function startDomainAudit(workspaceId: string): Promise<string> {
  * Get the status of a running or completed audit.
  */
 export async function getAuditStatus(auditId: string): Promise<DomainAudit | null> {
+  await requireAuth();
   const supabase = await createClient();
 
   const { data } = await supabase
@@ -81,6 +85,7 @@ export async function getAuditStatus(auditId: string): Promise<DomainAudit | nul
  * Get all audits for a workspace.
  */
 export async function getWorkspaceAudits(workspaceId: string): Promise<DomainAudit[]> {
+  await requireAuth();
   const supabase = await createClient();
 
   const { data } = await supabase

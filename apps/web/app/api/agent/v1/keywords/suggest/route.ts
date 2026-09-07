@@ -55,7 +55,7 @@ export const POST = withAgent(async (request, ctx) => {
     candidates = await discoverKeywordsFromSeeds(seeds, { ...locale, limit: body.data.limit });
   } else {
     if (!workspace.domain) {
-      return fail("invalid_request", "This workspace has no domain.", "Pass seeds, or ask the human to set the site's domain.");
+      return fail("invalid_request", "This workspace has no domain.", "Pass seeds, or ask the human to set the workspace's domain.");
     }
     source = "site";
     candidates = (await discoverKeywords(workspace.domain, { ...locale, withDifficulty: true }))

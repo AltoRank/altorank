@@ -3,6 +3,9 @@ import { buildSystemPrompt, buildUserMessage } from "./prompts";
 import type { AIProvider, ArticlePrompt, ArticleResult } from "./types";
 import { extractArticleMeta, countWords } from "./utils";
 import { anthropicModel } from "./models";
+import { GenerationTruncatedError } from "./errors";
+
+export { GenerationTruncatedError };
 
 // ---------------------------------------------------------------------------
 // Claude (Anthropic) provider
@@ -34,10 +37,17 @@ export class ClaudeProvider implements AIProvider {
        * so a generation that burned 12,529 tokens stored an empty document
        * titled "Untitled". Measured on 2026-08-30.
        *
-       * A 3,000-word article is roughly 4,000-5,000 output tokens before
-       * markup, so the ceiling has to clear thinking AND the piece.
+       * 24,000 was not enough either. With no `thinking` parameter Sonnet 5
+       * runs adaptive thinking at the default effort, and how much it thinks
+       * is the model's call: on 2026-09-07 one run spent ~19,000 tokens
+       * thinking about a 2,400-3,200-word comparison guide and was cut off at
+       * 12,638 characters of article - a $0.25 call with nothing to show.
+       * The ceiling is an enforced cutoff the model does not see, so it has
+       * to sit well above the worst thinking run plus the longest article:
+       * 64,000 (the SDK's own streaming default) costs nothing when unused,
+       * and this call streams, so the HTTP timeout is not a concern.
        */
-      max_tokens: 24_000,
+      max_tokens: 64_000,
       system: systemPrompt,
       messages: [
         {
@@ -79,11 +89,7 @@ export class ClaudeProvider implements AIProvider {
     // half-article or, when thinking consumed the whole budget, none at all -
     // and both used to be stored as a finished draft.
     if (finalMessage.stop_reason === "max_tokens") {
-      throw new Error(
-        `Generation hit the token ceiling after ${outputTokens} output tokens ` +
-          `(${fullHtml.length} chars of article). Raise max_tokens or lower the ` +
-          `target word count; storing a truncated draft would be worse.`,
-      );
+      throw new GenerationTruncatedError(inputTokens, outputTokens, fullHtml.length);
     }
 
     const { title, metaDescription, cleanHtml } = extractArticleMeta(fullHtml);

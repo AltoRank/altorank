@@ -7,12 +7,19 @@ import { profileIsUsable } from "@/lib/seo/topical-profile";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { resumeExpiredPauses } from "@/lib/billing/resume";
 import { billingEnabled, getStripe } from "@/lib/stripe";
-import { generateArticle } from "@/lib/content/generate";
+import { generateArticle, ConcurrentGenerationError } from "@/lib/content/generate";
+import { sweepStaleDrafts } from "@/lib/content/stale-drafts";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
 import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
 import { readFrozenEntries } from "@/lib/plan/frozen";
 import { agencyRecipients } from "@/lib/email/agency-recipients";
 import { sendArticleDraftedEmails } from "@/lib/email/article-emails";
+import {
+  announceNothingWritten,
+  announcePausedSites,
+  nothingWrittenReason,
+  remindEndingPauses,
+} from "@/lib/email/schedule-events";
 import {
   orderByStaleness,
   latestPerWorkspace,
@@ -94,6 +101,8 @@ interface WorkspaceOutcome {
   detail: string;
   keyword?: string;
   articleId?: string;
+  /** What, if anything, the customer was told about a skip. */
+  emailed?: string;
 }
 
 export async function GET(request: Request) {
@@ -126,6 +135,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // A pause lifts by itself, here and at Stripe. Warned a few days out, from
+  // the one job that sees every account on every run. Keyed by (agency, date),
+  // so four runs a day inside the window still send one email.
+  const pauseReminders = await remindEndingPauses(supabase);
+
   const results: WorkspaceOutcome[] = [];
   const since = new Date(Date.now() - WEEK_MS).toISOString();
 
@@ -156,13 +170,20 @@ export async function GET(request: Request) {
 
     const workspaceId = ws.id as string;
     const domain = (ws.domain as string | null) ?? null;
+    // A draft whose run died holds its keyword until something says it is
+    // not being written (lib/content/stale-drafts.ts). Once a day is enough.
+    try {
+      await sweepStaleDrafts(supabase, workspaceId);
+    } catch {
+      // Best effort; the run below does not depend on it.
+    }
     // Falls back to the same number the column now defaults to (042), so a
     // row written before that migration is not quietly held at the old 2.
     const limit = (ws.auto_generate_weekly_limit as number) ?? PAID_DEFAULT_PACE;
 
     try {
       if (limit <= 0) {
-        results.push({ workspaceId, domain, status: "skipped", detail: "weekly limit is 0" });
+        results.push(await skipped(supabase, ws, workspaceId, domain, "weekly limit is 0"));
         continue;
       }
 
@@ -239,14 +260,17 @@ export async function GET(request: Request) {
       const next = planned ?? pickNextKeyword(recommendations);
 
       if (!next) {
-        results.push({
-          workspaceId,
-          domain,
-          status: "skipped",
-          detail: recommendations.length
-            ? "no keyword qualifies: all are covered, already ranking, or flagged as provider noise"
-            : "no keywords tracked for this workspace",
-        });
+        results.push(
+          await skipped(
+            supabase,
+            ws,
+            workspaceId,
+            domain,
+            recommendations.length
+              ? "no keyword qualifies: all are covered, already ranking, or flagged as provider noise"
+              : "no keywords tracked for this workspace",
+          ),
+        );
         continue;
       }
 
@@ -317,6 +341,20 @@ export async function GET(request: Request) {
         detail: `${result.wordCount} words, fact check ${result.factCheck.verdict}, chosen because ${next.reasons[0]}${notified}`,
       });
     } catch (err) {
+      // Two runs overlapped and the other one got there first (migration 074).
+      // Nothing went wrong and nothing needs doing: the draft is being
+      // written. Reported as a skip so it does not read as an incident, and
+      // not counted against `written`, because this run wrote nothing.
+      if (err instanceof ConcurrentGenerationError) {
+        results.push({
+          workspaceId,
+          domain,
+          status: "skipped",
+          keyword: err.keyword,
+          detail: err.message,
+        });
+        continue;
+      }
       results.push({
         workspaceId,
         domain,
@@ -326,12 +364,45 @@ export async function GET(request: Request) {
     }
   }
 
+  // The sites this run never looked at, because a paused site is filtered out
+  // of the query above - which is exactly the state where "nothing is being
+  // written" is most obviously true and least visible.
+  const pausedNotices = await announcePausedSites(supabase);
+
   return NextResponse.json({
     checked: workspaces?.length ?? 0,
     pausesResumed: resumed,
+    pauseReminders,
+    pausedNotices,
     generated: results.filter((r) => r.status === "generated").length,
     skipped: results.filter((r) => r.status === "skipped").length,
     errors: results.filter((r) => r.status === "error").length,
     results,
   });
+}
+
+/**
+ * Record a skip, and tell the site's team when it is one they can fix.
+ *
+ * The scheduler's silence is its worst failure mode: it writes "skipped" into
+ * a JSON body nobody reads and the calendar simply stops. Not every skip earns
+ * an email - `nothingWrittenReason` returns null for the ones the customer
+ * cannot act on - and the ones that do are capped at one a week per site.
+ */
+async function skipped(
+  supabase: ReturnType<typeof createServiceClient>,
+  ws: { agency_id?: unknown },
+  workspaceId: string,
+  domain: string | null,
+  detail: string,
+): Promise<WorkspaceOutcome> {
+  const reason = nothingWrittenReason(detail);
+  const emailed = reason
+    ? await announceNothingWritten(
+        supabase,
+        { agencyId: ws.agency_id as string, workspaceId, domain },
+        reason,
+      )
+    : undefined;
+  return { workspaceId, domain, status: "skipped", detail, ...(emailed ? { emailed } : {}) };
 }

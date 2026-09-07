@@ -13,6 +13,7 @@ import { PausedBanner, PauseSiteControl } from "@/components/dashboard/paused-ba
 import { MetricHistory } from "@/components/dashboard/metric-history";
 import { getWorkspaceMetrics } from "@/lib/queries/metrics";
 import { getQuota } from "@/lib/billing/quota";
+import { maxAllowedPace } from "@/lib/plan/pace-options";
 import { createClient } from "@/lib/supabase/server";
 import { plural } from "@/lib/utils";
 
@@ -23,7 +24,7 @@ type Props = {
 export async function generateMetadata({ params }: Props) {
   const { id } = await params;
   const workspace = await getWorkspace(id);
-  return { title: workspace?.name ?? "Client" };
+  return { title: workspace?.name ?? "Workspace" };
 }
 
 export default async function ClientDetailPage({ params }: Props) {
@@ -138,6 +139,7 @@ export default async function ClientDetailPage({ params }: Props) {
         voice={voice}
         cadence={cadence}
         planIncluded={quota.limit}
+        maxPace={maxAllowedPace(quota)}
       />
     </>
   );

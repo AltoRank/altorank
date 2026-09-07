@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireAuth } from "@/lib/auth/require-auth";
 import { generateReport } from "@/lib/reports/generate";
 import { DASHBOARD_LINK_TTL_SECONDS, REPORTS_BUCKET, storagePathFromReportUrl } from "@/lib/reports/storage";
 
@@ -13,6 +14,7 @@ export async function generateReportAction(
   startDate: string,
   endDate: string,
 ) {
+  await requireAuth();
   const supabase = await createClient();
 
   const result = await generateReport(supabase, workspaceId, startDate, endDate);
@@ -28,6 +30,7 @@ export async function generateReportAction(
  * same job RLS does on the row.
  */
 export async function getReportUrl(reportId: string): Promise<string | null> {
+  await requireAuth();
   const supabase = await createClient();
 
   const { data } = await supabase
@@ -53,6 +56,7 @@ export async function getReportUrl(reportId: string): Promise<string | null> {
  * Delete a report (file + DB record).
  */
 export async function deleteReport(reportId: string) {
+  await requireAuth();
   const supabase = await createClient();
 
   const { data: report } = await supabase

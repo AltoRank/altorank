@@ -79,6 +79,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 403 });
   }
 
+  // The audit row has to be this workspace's. The id came from the request
+  // body, and until 2026-09-07 every write below keyed on it alone: a member
+  // of agency A could post B's audit id with A's workspace id, kick off a
+  // crawl of A's site, and have B's audit row overwritten with the result
+  // (S-8). Checked once here, and every write below is scoped as well, so a
+  // row that changes hands mid-crawl is not written either.
+  const { data: auditCheck } = await supabase
+    .from("domain_audits")
+    .select("id")
+    .eq("id", auditId)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+
+  if (!auditCheck) {
+    return NextResponse.json({ error: "Audit not found" }, { status: 404 });
+  }
+
   // Fetch workspace domain
   const { data: workspace } = await supabase
     .from("workspaces")
@@ -90,7 +107,8 @@ export async function POST(request: NextRequest) {
     await supabase
       .from("domain_audits")
       .update({ status: "failed", completed_at: new Date().toISOString() })
-      .eq("id", auditId);
+      .eq("id", auditId)
+      .eq("workspace_id", workspaceId);
     return NextResponse.json({ error: "No domain" }, { status: 400 });
   }
 
@@ -123,7 +141,8 @@ export async function POST(request: NextRequest) {
             issues: [{ type: "fetch_failed", severity: "high", page: baseUrl, message: `The site could not be fetched: ${why}` }],
             completed_at: new Date().toISOString(),
           })
-          .eq("id", auditId);
+          .eq("id", auditId)
+        .eq("workspace_id", workspaceId);
         return;
       }
       const issues = runAuditChecks(pages);
@@ -140,7 +159,8 @@ export async function POST(request: NextRequest) {
           pagespeed,
           completed_at: new Date().toISOString(),
         })
-        .eq("id", auditId);
+        .eq("id", auditId)
+        .eq("workspace_id", workspaceId);
     } catch (err) {
       // domain_audits has no column for the reason, so it goes to the log and
       // the row just says "failed". Worth a column later; not worth a migration
@@ -152,7 +172,8 @@ export async function POST(request: NextRequest) {
           status: "failed",
           completed_at: new Date().toISOString(),
         })
-        .eq("id", auditId);
+        .eq("id", auditId)
+        .eq("workspace_id", workspaceId);
     }
   });
 

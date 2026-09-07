@@ -184,7 +184,7 @@ test("/improvements names the three things that block it for a site without Sear
   await expect(page.getByRole("link", { name: "Connect Search Console" })).toBeVisible();
   await expect(page.getByText("No CMS connected", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Connect a CMS" })).toBeVisible();
-  await expect(page.getByText("Scheduled rewrites are off for this site", { exact: true })).toBeVisible();
+  await expect(page.getByText("Scheduled rewrites are off for this workspace", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open settings" })).toBeVisible();
 
   // Nothing to analyse without Search Console, and the button says so rather than pretending.
@@ -248,7 +248,7 @@ test("an API key is shown once on creation and can be revoked", async ({ page, s
 
 test("/linking offers Detect links and says what an empty result is", async ({ page, signedIn }) => {
   await page.goto("/linking");
-  await expect(page.getByRole("heading", { name: "Linking configuration" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Linking", exact: true })).toBeVisible();
   // The page head names the site; the sidebar switcher names it too, so scope to the page.
   await expect(page.getByRole("main").getByText(signedIn.workspaces[0].domain, { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Detect links" })).toBeVisible();

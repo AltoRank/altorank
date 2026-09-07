@@ -167,7 +167,7 @@ function PlanPanel({ workspaceId, onDone }: { workspaceId: string; onDone: () =>
         const paceWords = describePace(r.pace);
         toast.success(
           r.pace === 0
-            ? "Writing paused for this site. Nothing already written changes."
+            ? "Writing paused for this workspace. Nothing already written changes."
             : `${paceWords[0].toUpperCase()}${paceWords.slice(1)}${
                 r.days.length ? `, publishing on ${r.days.length} ${r.days.length === 1 ? "day" : "days"}` : ""
               }. ${r.planned} planned.`,
@@ -215,11 +215,16 @@ function PlanPanel({ workspaceId, onDone }: { workspaceId: string; onDone: () =>
                       {o.label}
                       <span className="ml-2 text-[11.5px]">{o.meaning}</span>
                     </span>
+                    {/* What picking this would do, then the way out - not the
+                        requirement on its own. "Needs the Managed plan" names
+                        a rule; this row already says "about 108 articles a
+                        month" beside it, and the fact that matters is that the
+                        plan does not cover that. (outrank-teardown, item 2.) */}
                     <Link
                       href="/settings/billing"
                       className="shrink-0 text-[11.5px] text-accent-ink underline decoration-line underline-offset-[3px]"
                     >
-                      Needs the {o.needsPlanLabel} plan
+                      More than your plan includes — {o.needsPlanLabel} covers it
                     </Link>
                   </div>
                 )}

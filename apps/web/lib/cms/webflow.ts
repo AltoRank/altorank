@@ -241,14 +241,24 @@ export class WebflowAdapter implements CMSAdapter {
     };
   }
 
-  /** Edit the item in place, then publish it so the change goes live. */
+  /**
+   * Edit the item in place, then publish it so the change goes live - unless
+   * the connection asked for drafts, in which case the edit stays staged.
+   *
+   * Until 2026-09-07 this ignored `publishMode` and always called /publish,
+   * so a site connected in draft mode that had an article re-pushed (a
+   * refresh, a retry, "Push to site" a second time) had that article go
+   * live from the one path that promised it never would.
+   */
   async update(externalId: string, article: PublishPayload): Promise<PublishResult> {
+    const draft = article.publishMode === "draft";
     const res = await fetch(
       `${WEBFLOW_API}/collections/${this.collectionId}/items/${externalId}`,
       {
         method: "PATCH",
         headers: this.headers(),
         body: JSON.stringify({
+          isDraft: draft,
           fieldData: webflowFieldData(this.fieldMap, article, { includeSlug: false }),
         }),
       },
@@ -257,10 +267,10 @@ export class WebflowAdapter implements CMSAdapter {
       const err = await res.text();
       throw new Error(`Webflow update failed (${res.status}): ${err}`);
     }
-    await this.publishItem(externalId);
+    if (!draft) await this.publishItem(externalId);
     return {
       externalId,
-      url: webflowItemUrl(this.publicBaseUrl, article.slug),
+      url: draft ? "" : webflowItemUrl(this.publicBaseUrl, article.slug),
     };
   }
 

@@ -1,12 +1,13 @@
 "use server";
 
 import { requireAuth } from "@/lib/auth/require-auth";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getStripe, PLAN_PRICE_IDS, stripeTaxEnabled } from "@/lib/stripe";
 import type { SelfServePlan, BillingInterval } from "@/lib/stripe";
 import { subscriptionSwitchable } from "@/lib/billing/plan-switch";
+import { billingFailure, type BillingRedirect } from "@/lib/billing/failure";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3100";
+import { appUrl } from "@/lib/app-url";
 
 /**
  * Start a Stripe Checkout session for a self-serve plan, or - when the
@@ -32,12 +33,17 @@ export async function createCheckoutSession(
    * paths only: this value reaches Stripe and comes back as a redirect.
    */
   returnTo?: string,
-): Promise<string> {
+): Promise<BillingRedirect> {
   const { agencyId } = await requireAuth(["owner"]);
   const supabase = await createClient();
 
   const priceId = PLAN_PRICE_IDS[plan][interval];
-  if (!priceId) throw new Error(`No Stripe price configured for the ${plan} plan (${interval})`);
+  if (!priceId) {
+    return {
+      ok: false,
+      error: `This deployment has no Stripe price configured for the ${plan} plan (${interval}), so it cannot be bought here. Nothing was charged.`,
+    };
+  }
 
   const { data: agency } = await supabase
     .from("agencies")
@@ -46,69 +52,87 @@ export async function createCheckoutSession(
     .single();
 
   if (agency && subscriptionSwitchable(agency)) {
-    await switchSubscriptionPrice(agency.stripe_subscription_id as string, priceId, {
-      agencyId,
-      plan,
-      interval,
-    });
+    try {
+      await switchSubscriptionPrice(agency.stripe_subscription_id as string, priceId, {
+        agencyId,
+        plan,
+        interval,
+      });
+    } catch (err) {
+      return billingFailure(err, "The plan could not be switched");
+    }
     // The tier follows the price at once rather than on the webhook's
     // schedule, so the page that reloads next says what was just bought.
-    await supabase.from("agencies").update({ plan }).eq("id", agencyId);
-    return `${APP_URL}/settings/billing?status=switched`;
+    //
+    // As AltoRank, not as the owner: `plan` is one of the columns migration
+    // 072 refuses to a signed-in user (42501), so through the cookie client
+    // this was a silent no-op and the page kept saying the old tier until the
+    // webhook landed. Stripe has already accepted the switch by this line, so
+    // a refusal here is worth a log line, not a failed action.
+    const { error } = await createServiceClient().from("agencies").update({ plan }).eq("id", agencyId);
+    if (error) console.error(`[billing] switch: plan not written for ${agencyId}: ${error.message}`);
+    return { ok: true, url: `${appUrl()}/settings/billing?status=switched` };
   }
 
-  const session = await getStripe().checkout.sessions.create({
-    mode: "subscription",
-    line_items: [{ price: priceId, quantity: 1 }],
-    customer: agency?.stripe_customer_id ?? undefined,
-    client_reference_id: agencyId,
-    // metadata on both the session and the subscription so the webhook can map
-    // any subscription event back to the agency regardless of which fires first.
-    //
-    // `plan` rides along as the webhook's fallback for the tier. The price on
-    // the subscription is authoritative and the webhook prefers it; this is
-    // what it falls back to when the subscription read fails, so a checkout
-    // can never leave the account on the `starter` column default while the
-    // customer is paying for Agency (2026-09-06).
-    metadata: { agency_id: agencyId, plan, interval },
-    subscription_data: { metadata: { agency_id: agencyId, plan, interval } },
-    // VAT, added at checkout rather than folded into the price.
-    //
-    // Nothing here handled tax before, so exactly EUR 69 / EUR 199 was charged
-    // to everyone. Inclusive pricing cannot work for this buyer: a VAT-
-    // registered business elsewhere in the EU is reverse-charged (it
-    // self-accounts and we collect nothing), while a consumer is charged at
-    // their own country's rate, 17% to 27%. One inclusive price would therefore
-    // pay us a different amount depending on who bought it and from where.
-    //
-    // `automatic_tax` makes Stripe decide the rate from the customer's
-    // location; `tax_id_collection` captures the VAT number that triggers the
-    // reverse charge; `customer_update.address` lets Stripe keep the address it
-    // needs to do either again on renewal, and is only accepted when the
-    // session already has a customer. The prices carry `tax_behavior:
-    // 'exclusive'` on the Price object in the Stripe dashboard - that is not
-    // something this call can set.
-    // Only when the account is set up for it: with Stripe Tax not activated,
-    // `automatic_tax` makes this call throw and nobody can pay. See
-    // stripeTaxEnabled in lib/stripe.ts for the switch and its preconditions.
-    ...(stripeTaxEnabled
-      ? {
-          automatic_tax: { enabled: true },
-          tax_id_collection: { enabled: true },
-          ...(agency?.stripe_customer_id
-            ? { customer_update: { address: "auto" as const, name: "auto" as const } }
-            : {}),
-        }
-      : {}),
-    success_url:
-      returnTo && /^\/[a-zA-Z0-9/_?=&%-]*$/.test(returnTo)
-        ? `${APP_URL}${returnTo}${returnTo.includes("?") ? "&" : "?"}upgraded=1`
-        : `${APP_URL}/settings/billing?status=success`,
-    cancel_url: `${APP_URL}/settings/billing?status=cancelled`,
-  });
+  let session;
+  try {
+    session = await getStripe().checkout.sessions.create({
+      mode: "subscription",
+      line_items: [{ price: priceId, quantity: 1 }],
+      customer: agency?.stripe_customer_id ?? undefined,
+      client_reference_id: agencyId,
+      // metadata on both the session and the subscription so the webhook can map
+      // any subscription event back to the agency regardless of which fires first.
+      //
+      // `plan` rides along as the webhook's fallback for the tier. The price on
+      // the subscription is authoritative and the webhook prefers it; this is
+      // what it falls back to when the subscription read fails, so a checkout
+      // can never leave the account on the `starter` column default while the
+      // customer is paying for Agency (2026-09-06).
+      metadata: { agency_id: agencyId, plan, interval },
+      subscription_data: { metadata: { agency_id: agencyId, plan, interval } },
+      // VAT, added at checkout rather than folded into the price.
+      //
+      // Nothing here handled tax before, so exactly EUR 69 / EUR 199 was charged
+      // to everyone. Inclusive pricing cannot work for this buyer: a VAT-
+      // registered business elsewhere in the EU is reverse-charged (it
+      // self-accounts and we collect nothing), while a consumer is charged at
+      // their own country's rate, 17% to 27%. One inclusive price would therefore
+      // pay us a different amount depending on who bought it and from where.
+      //
+      // `automatic_tax` makes Stripe decide the rate from the customer's
+      // location; `tax_id_collection` captures the VAT number that triggers the
+      // reverse charge; `customer_update.address` lets Stripe keep the address it
+      // needs to do either again on renewal, and is only accepted when the
+      // session already has a customer. The prices carry `tax_behavior:
+      // 'exclusive'` on the Price object in the Stripe dashboard - that is not
+      // something this call can set.
+      // Only when the account is set up for it: with Stripe Tax not activated,
+      // `automatic_tax` makes this call throw and nobody can pay. See
+      // stripeTaxEnabled in lib/stripe.ts for the switch and its preconditions.
+      ...(stripeTaxEnabled
+        ? {
+            automatic_tax: { enabled: true },
+            tax_id_collection: { enabled: true },
+            ...(agency?.stripe_customer_id
+              ? { customer_update: { address: "auto" as const, name: "auto" as const } }
+              : {}),
+          }
+        : {}),
+      success_url:
+        returnTo && /^\/[a-zA-Z0-9/_?=&%-]*$/.test(returnTo)
+          ? `${appUrl()}${returnTo}${returnTo.includes("?") ? "&" : "?"}upgraded=1`
+          : `${appUrl()}/settings/billing?status=success`,
+      cancel_url: `${appUrl()}/settings/billing?status=cancelled`,
+    });
+  } catch (err) {
+    return billingFailure(err, "Checkout could not be opened");
+  }
 
-  if (!session.url) throw new Error("Failed to create checkout session");
-  return session.url;
+  if (!session.url) {
+    return { ok: false, error: "Stripe did not return a checkout link. Nothing was charged; try again." };
+  }
+  return { ok: true, url: session.url };
 }
 
 /**
@@ -159,7 +183,7 @@ export type PortalFlow = "manage" | "cancel" | "payment_method";
  * they do it; the subscription ends at period end and the workspace stays
  * readable.
  */
-export async function createBillingPortalSession(flow: PortalFlow = "manage"): Promise<string> {
+export async function createBillingPortalSession(flow: PortalFlow = "manage"): Promise<BillingRedirect> {
   const { agencyId } = await requireAuth(["owner"]);
   const supabase = await createClient();
 
@@ -170,35 +194,39 @@ export async function createBillingPortalSession(flow: PortalFlow = "manage"): P
     .single();
 
   if (!agency?.stripe_customer_id) {
-    throw new Error("No billing account yet — subscribe to a plan first");
+    return { ok: false, error: "There is no billing account yet — choose a plan first." };
   }
 
-  const returnUrl = `${APP_URL}/settings/billing`;
+  const returnUrl = `${appUrl()}/settings/billing`;
   const base = { customer: agency.stripe_customer_id, return_url: returnUrl };
 
-  if (flow === "cancel") {
-    if (!agency.stripe_subscription_id) {
-      throw new Error("There is no active subscription to cancel");
+  try {
+    if (flow === "cancel") {
+      if (!agency.stripe_subscription_id) {
+        return { ok: false, error: "There is no active subscription to cancel." };
+      }
+      const session = await getStripe().billingPortal.sessions.create({
+        ...base,
+        flow_data: {
+          type: "subscription_cancel",
+          subscription_cancel: { subscription: agency.stripe_subscription_id },
+          after_completion: { type: "redirect", redirect: { return_url: `${returnUrl}?status=cancelled` } },
+        },
+      });
+      return { ok: true, url: session.url };
     }
-    const session = await getStripe().billingPortal.sessions.create({
-      ...base,
-      flow_data: {
-        type: "subscription_cancel",
-        subscription_cancel: { subscription: agency.stripe_subscription_id },
-        after_completion: { type: "redirect", redirect: { return_url: `${returnUrl}?status=cancelled` } },
-      },
-    });
-    return session.url;
-  }
 
-  if (flow === "payment_method") {
-    const session = await getStripe().billingPortal.sessions.create({
-      ...base,
-      flow_data: { type: "payment_method_update" },
-    });
-    return session.url;
-  }
+    if (flow === "payment_method") {
+      const session = await getStripe().billingPortal.sessions.create({
+        ...base,
+        flow_data: { type: "payment_method_update" },
+      });
+      return { ok: true, url: session.url };
+    }
 
-  const session = await getStripe().billingPortal.sessions.create(base);
-  return session.url;
+    const session = await getStripe().billingPortal.sessions.create(base);
+    return { ok: true, url: session.url };
+  } catch (err) {
+    return billingFailure(err, "The billing portal could not be opened");
+  }
 }

@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { entitledToScheduledWork, type Quota } from "../quota";
 
 const q = (reason: Quota["reason"], over: Partial<Quota> = {}): Quota => ({
@@ -30,5 +32,21 @@ describe("entitledToScheduledWork", () => {
   it("refuses the free account even while its free draft is unused", () => {
     // The draft is free; the standing subscription to DataForSEO is not.
     expect(entitledToScheduledWork(q("no-plan", { limit: 1, used: 0, remaining: 1 }))).toBe(false);
+  });
+});
+
+/**
+ * The crons that buy something per site on the account's behalf, and so
+ * have to ask. Read from the source, like lib/plan/__tests__/cron-pause-guard:
+ * the routes are not callable from vitest and the gate is one call that is
+ * easy to leave out. `reports` was the one without it until 2026-09-07 - a
+ * PDF render, an upload and a mail per month for accounts that never chose a
+ * plan.
+ */
+describe("the paid crons gate on entitledToScheduledWork", () => {
+  const CRON_DIR = join(__dirname, "..", "..", "..", "app", "api", "cron");
+  it.each(["serp", "geo", "reports"])("%s", (route) => {
+    const src = readFileSync(join(CRON_DIR, route, "route.ts"), "utf8");
+    expect(src).toContain("entitledToScheduledWork(");
   });
 });

@@ -7,7 +7,7 @@ description: Drive AltoRank from a coding agent - audit a site's agent readiness
 
 AltoRank writes search and AI-search content for websites. You can read an
 account, create **drafts**, move planned keywords on the calendar, edit a draft
-by find-and-replace, and pause or resume a site. A person reviews, approves and
+by find-and-replace, and pause or resume a workspace. A person reviews, approves and
 publishes in the editor. There is no publish, approve or delete call in this
 API, and you must not look for a way around that. (`retry-publish` is the one
 exception in name only: it re-runs a publish a human already approved and
@@ -48,7 +48,7 @@ Every response, every surface:
 1. `GET /auth/whoami` - confirms the key, lists workspaces, shows quota.
    CLI: `auth whoami`.
 2. Pick the workspace. One workspace: use it. Several: ask the human which
-   site unless the conversation makes it obvious.
+   workspace unless the conversation makes it obvious.
 3. `GET /workspaces/{id}` - integration status. No CMS connected means the
    human publishes by hand; say so if publishing comes up.
 4. `GET /readiness?workspace_id=` - if the score is low, fixing readiness
@@ -92,7 +92,7 @@ describe what happened to a person.
 | Find-and-replace in a draft | `POST /articles/{id}/replace` `{ find, replace, match_case?, whole_word?, preview_only? }` | **`preview_only` defaults to true.** Show the human the hits (before → after); only then resend with `preview_only: false`. Status never changes. Refused on approved, scheduled, live. |
 | …across drafts | `POST /articles/bulk-replace` `{ workspace_id, find, replace, article_ids?, preview_only? }` | Capped at 10 articles. Approved/scheduled/live are skipped with the reason, never edited. |
 | Retry a failed publish | `POST /articles/{id}/retry-publish` | Only when `GET /articles/{id}` shows `allowed_mutations.retry_publish.allowed: true` (approved + last publish failed). Otherwise refused; a human must approve. Tell the human before calling. |
-| Pause / resume a site | `POST /workspaces/{id}/pause`, `POST /workspaces/{id}/resume` | Pause stops drafting and publishing; drafts, plan and pace stay. Resume re-plans from today. Cannot lift the account-wide billing pause. |
+| Pause / resume a workspace | `POST /workspaces/{id}/pause`, `POST /workspaces/{id}/resume` | Pause stops drafting and publishing; drafts, plan and pace stay. Resume re-plans from today. Cannot lift the account-wide billing pause. |
 
 Mutations share a second limit of 30 a minute per key on top of the 120/min.
 `X-RateLimit-Mutations-*` headers say where you stand.

@@ -21,7 +21,7 @@ import { runAgentReadiness, type ReadinessResult } from "./agent-readiness";
 import { crawlSite, usablePages } from "./crawler";
 import { runAuditChecks, calculateAuditScore } from "./checks";
 import { fetchPageSpeedDetailed } from "./pagespeed";
-import { discoverKeywords, discoverKeywordsFromSeeds, type DiscoveredKeyword, storedCpc } from "@/lib/seo/keywords";
+import { discoverKeywords, discoverKeywordsFromSeeds, fetchKeywordDifficulty, type DiscoveredKeyword, storedCpc } from "@/lib/seo/keywords";
 import { profileIsUsable, seedPhrasesFromPages, scoreRelevance } from "@/lib/seo/topical-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
@@ -81,6 +81,14 @@ const CRAWL_DELAY_MS = 400;
 const MAX_KEYWORDS_STORED = 100;
 /** Ceiling on how much of a keyword list may come from keywords_for_site. */
 const ADS_FALLBACK_CAP = 40;
+
+/**
+ * How many keywords_for_site rows the fallback may still add, given how many
+ * candidates the better sources produced. Zero means the paid call is skipped.
+ */
+export function adsFallbackRoom(candidates: number, cap: number = ADS_FALLBACK_CAP): number {
+  return Math.max(0, cap - candidates);
+}
 
 function normalizeDomain(domain: string): string {
   return domain.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
@@ -356,18 +364,33 @@ export async function analyseDomain(options: {
       for (const k of seeded) if (k.intent !== "navigational") add(k, 2);
 
       // (3) The Ads endpoint, only when the first two are thin.
+      //
+      // Capped, because this is the endpoint that produced every keyword we
+      // have ever had to throw away. Making the seeded source stricter made
+      // this one fire MORE often - fewer seeded results means the threshold
+      // above is met less - and it went from 0 to 71 of altorank.co's 100
+      // slots in a single run. A thin list of real keywords beats a full one
+      // padded from the source we do not trust.
+      //
+      // The room is known before the call, so the call is only made when
+      // there is some. Between 40 and 49 candidates this used to pay for
+      // keywords_for_site ($0.09 live) plus a 700-term keyword_overview
+      // (~$0.10) and then keep none of it. And difficulty is looked up only
+      // for the rows that are kept: the overview call is priced per keyword,
+      // so asking for 700 to keep at most 40 cost ~6x what the kept rows do.
       let usedFallback = false;
-      if (depth === "full" && byTerm.size < MAX_KEYWORDS_STORED / 2) {
-        const fromSite = await discoverKeywords(domain, { withDifficulty: true }).catch(() => []);
-        // Capped, because this is the endpoint that produced every keyword we
-        // have ever had to throw away. Making the seeded source stricter made
-        // this one fire MORE often - fewer seeded results means the threshold
-        // above is met less - and it went from 0 to 71 of altorank.co's 100
-        // slots in a single run. A thin list of real keywords beats a full one
-        // padded from the source we do not trust.
-        const room = Math.max(0, ADS_FALLBACK_CAP - byTerm.size);
-        for (const k of fromSite.slice(0, room)) add(k, 3);
-        usedFallback = room > 0 && fromSite.length > 0;
+      const room = depth === "full" && byTerm.size < MAX_KEYWORDS_STORED / 2 ? adsFallbackRoom(byTerm.size) : 0;
+      if (room > 0) {
+        const fromSite = (await discoverKeywords(domain).catch(() => [])).slice(0, room);
+        if (fromSite.length) {
+          const kd = await fetchKeywordDifficulty(fromSite.map((k) => k.keyword)).catch(() => new Map<string, number>());
+          for (const k of fromSite) {
+            const d = kd.get(k.keyword.toLowerCase());
+            if (typeof d === "number") k.difficulty = d;
+          }
+        }
+        for (const k of fromSite) add(k, 3);
+        usedFallback = fromSite.length > 0;
       }
 
       // Collapse phrasings across ALL three sources, not just the seeded one.

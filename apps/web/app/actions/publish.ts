@@ -15,6 +15,7 @@ import { recordPublish } from "@/lib/publishing/log";
 import { retryPublishCore } from "@/lib/publishing/retry";
 import type { PublishResult } from "@/lib/cms/types";
 import { submitForIndexing } from "@/lib/seo/indexing";
+import { announceDraftApproved } from "@/lib/email/approval-events";
 import type { CMSConfig } from "@/lib/types";
 
 /**
@@ -117,6 +118,12 @@ export async function approveArticle(articleId: string) {
 
   if (error || !data) throw new Error("Article must be in review to approve");
 
+  // The sign-off is the one editorial moment somebody else needs to hear
+  // about: after it the article ships on its own, and a colleague who was
+  // still editing the draft would otherwise find out from the live site.
+  // Never allowed to fail the approval, which is already recorded.
+  await announceDraftApproved(articleId, user);
+
   revalidatePath("/articles");
   revalidatePath(`/content/${articleId}`);
 }
@@ -195,6 +202,9 @@ export async function approveArticles(articleIds: string[]): Promise<string[]> {
     .select("id");
 
   if (error) throw new Error(error.message);
+  // One email per article, not one per click: the recipient cares about the
+  // article, and `sent_emails` is keyed by it either way.
+  for (const row of data ?? []) await announceDraftApproved(row.id as string, user);
   revalidatePath("/articles");
   for (const row of data ?? []) revalidatePath(`/content/${row.id}`);
   return (data ?? []).map((r) => r.id as string);

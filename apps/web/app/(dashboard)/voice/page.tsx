@@ -4,10 +4,11 @@ import { getVoiceProfiles } from "@/lib/queries/voice";
 import { PageHead, StatusPill, Avatar, Chip } from "@/components/ui";
 import { VoiceActions } from "@/components/dashboard/voice-actions";
 import { VoiceCardButton } from "@/components/dashboard/voice-card-button";
-import type { Workspace, VoiceProfile } from "@/lib/types";
+import type { VoiceProfile } from "@/lib/types";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
+import { plural } from "@/lib/utils";
 
-export const metadata: Metadata = { title: "Brand Voice" };
+export const metadata: Metadata = { title: "Brand voice" };
 
 export default async function VoicePage() {
   // Every section is about one site unless the switcher says otherwise.
@@ -21,13 +22,23 @@ export default async function VoicePage() {
   const workspaces = scopeId ? allWorkspaces.filter((w) => w.id === scopeId) : allWorkspaces;
 
   const voiceMap = new Map<string, VoiceProfile>(voiceProfiles.map((v) => [v.workspace_id, v]));
-  const trainedCount = voiceProfiles.filter((v) => v.trained).length;
 
   return (
     <>
+      {/* "Brand voice", which is what the sidebar item a person clicked to
+          get here says, and what the browser tab says. It was "Voice
+          library" in the heading, "Brand Voice" in the tab and "Brand voice"
+          in the nav: three names for one page.
+
+          The header's Trained pill is gone. The scope gives this page one
+          site, so the pill was an aggregate over one card and sat six
+          centimetres from that card's own identical pill; the card is where
+          the state belongs, because it is per voice. The domain stays out of
+          the subtitle for the same reason - the switcher, the card title and
+          the card subtitle already carried it, four times on one screen. */}
       <PageHead
-        title="Voice library"
-        subtitle={<><StatusPill status={trainedCount > 0 ? "on" : "off"} label={trainedCount > 0 ? "Trained" : "Not trained yet"} /><span>Trained on sample text you approve, for {workspaces[0]?.domain ?? "this site"}</span></>}
+        title="Brand voice"
+        subtitle="Trained on sample text you approve. Articles for a workspace are written in its voice."
         actions={<VoiceActions workspaces={workspaces} />}
       />
 
@@ -69,9 +80,14 @@ export default async function VoicePage() {
               <div key={w.id} className="border border-line rounded-xl p-[18px] bg-bg">
                 <div className="flex items-center gap-2.5 mb-3.5">
                   <Avatar initials={w.initials} color={w.color} size="lg" />
-                  <div className="flex-1">
-                    <div className="font-semibold text-sm">{w.name}</div>
-                    <div className="font-mono text-[11px] text-ink-3">{w.domain}</div>
+                  <div className="flex-1 min-w-0">
+                    {/* A workspace's name defaults to its domain, so this
+                        printed the same string twice in two typefaces on
+                        every card an account has not renamed. */}
+                    <div className="font-semibold text-sm truncate">{w.name}</div>
+                    {w.domain && w.domain !== w.name && (
+                      <div className="font-mono text-[11px] text-ink-3 truncate">{w.domain}</div>
+                    )}
                   </div>
                   <StatusPill status={voice?.trained ? "on" : "setup"} label={voice?.trained ? "Trained" : "Not trained"} />
                 </div>
@@ -101,9 +117,9 @@ export default async function VoicePage() {
 
                     {/* Stats row */}
                     <div className="flex items-center gap-3 text-[11px] text-ink-3 font-mono mb-2">
-                      <span>{wordCount.toLocaleString()} words</span>
+                      <span>{plural(wordCount, "word")}</span>
                       <span className="text-line">|</span>
-                      <span>{sentences.length} sentences</span>
+                      <span>{plural(sentences.length, "sentence")}</span>
                       <span className="text-line">|</span>
                       <span>avg {avgSentenceLength} words/sentence</span>
                     </div>
@@ -130,7 +146,7 @@ export default async function VoicePage() {
                         ))}
                         {sentences.length > 3 && (
                           <div className="text-[11px] text-ink-3">
-                            +{sentences.length - 3} more sentences
+                            +{plural(sentences.length - 3, "more sentence", "more sentences")}
                           </div>
                         )}
                       </div>

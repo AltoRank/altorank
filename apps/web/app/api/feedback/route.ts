@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { Resend } from "resend";
+import { sendPlainEmail } from "@/lib/email/resend";
 import { requireAuth } from "@/lib/auth/require-auth";
 
 /**
@@ -66,11 +66,18 @@ export async function POST(request: Request) {
     attachments.push({ filename: "screenshot.png", content: base64 });
   }
 
-  const resend = new Resend(process.env.RESEND_API_KEY);
-
+  /**
+   * Through `deliver()`, like everything else.
+   *
+   * This route built its own `Resend` client and awaited `emails.send` inside
+   * a try/catch. The SDK does not throw on a refusal - it resolves to
+   * `{ data: null, error }` - so an invalid key, an unverified domain or a
+   * rate limit all returned 200 "sent" and the bug report went nowhere. That
+   * is the exact failure lib/email/resend.ts was written to end, reintroduced
+   * in the one route that did not go through it.
+   */
   try {
-    await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL ?? "AltoRank <noreply@updates.altorank.co>",
+    await sendPlainEmail({
       to: FEEDBACK_TO,
       // Reply goes straight back to the person who wrote it.
       replyTo: user.email ?? undefined,

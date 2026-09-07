@@ -22,14 +22,16 @@ import { scoreCitationReadiness } from "@/lib/seo/aeo-scoring";
 import { recordSpend, anthropicCost } from "@/lib/billing/spend";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recordOverageArticle } from "@/lib/billing/overage";
+import { accountPausedMessage } from "@/lib/billing/pause";
 import { spendClient } from "@/lib/billing/default-spend";
 import { setSpendReporter } from "@/lib/seo/client";
 import { fetchKnownPages } from "@/lib/linking/targets";
-import { anthropicModel } from "@/lib/ai/models";
+import { anthropicModel, openaiImageModel } from "@/lib/ai/models";
+import { GenerationTruncatedError } from "@/lib/ai/errors";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
 import { generateImage } from "@/lib/ai/image-generator";
 import { outputFromRow, resolveFeaturedImage, type OutputSettingsRow } from "@/lib/onboarding/output-settings";
-import { uploadImageBuffer } from "@/lib/storage/images";
+import { imageWriter, uploadImageBuffer } from "@/lib/storage/images";
 import {
   existingInternalLinks,
   fetchLinkTargets,
@@ -41,10 +43,36 @@ import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research"
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { getLocale } from "@/lib/seo/locales";
-import type { ArticleBrief, RefreshContext, VoiceRules } from "@/lib/ai/types";
+import type { ArticleBrief, RefreshContext, SiteContext, VoiceRules } from "@/lib/ai/types";
 import { classifyKeyword, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { parseStoredQuestions } from "@/lib/keywords/questions";
 import { e2eStubsEnabled, stubGenerateArticle } from "@/lib/e2e/stubs";
+
+export type KeywordFacts = { volume: number | null; difficulty: number | null; cpc: number | null };
+
+/**
+ * Volume, difficulty and CPC for the draft's keyword from what is already
+ * known: the picker's `selection` first, then the keyword row itself.
+ *
+ * Exported for the test that pins the cost rule below: a row that discovery,
+ * the research drawer or the planner already measured must not be measured
+ * again on every draft written for it.
+ */
+export function knownKeywordFacts(
+  selection: { volume: number | null; difficulty: number | null } | undefined,
+  row: { volume?: number | null; difficulty?: number | null; cpc?: number | null } | null,
+): KeywordFacts {
+  return {
+    volume: selection?.volume ?? row?.volume ?? null,
+    difficulty: selection?.difficulty ?? row?.difficulty ?? null,
+    cpc: row?.cpc ?? null,
+  };
+}
+
+/** The provider is asked only when nothing has measured the term at all. */
+export function needsKeywordFactsLookup(facts: KeywordFacts): boolean {
+  return facts.volume === null && facts.difficulty === null;
+}
 
 export interface GenerateArticleOptions {
   supabase: SupabaseClient;
@@ -148,12 +176,58 @@ export interface GenerateArticleResult {
   aeoScore: number;
 }
 
-/** The URL slug a new article gets from its title or keyword. Shared with the agent API, which creates the row before this runs. */
+/** Postgres `unique_violation`. What migration 074's index raises. */
+const UNIQUE_VIOLATION = "23505";
+
+/**
+ * Another run is already drafting this keyword for this workspace.
+ *
+ * Not a failure: the article is being written, by somebody else. Thrown so
+ * cron/generate can report a skip and move to the next workspace instead of
+ * logging an error nobody needs to act on. See migration 074 for why the
+ * database is the only place that can tell.
+ */
+export class ConcurrentGenerationError extends Error {
+  constructor(
+    public readonly workspaceId: string,
+    public readonly keyword: string,
+  ) {
+    super(`"${keyword}" is already being written by another run; leaving it to that one`);
+    this.name = "ConcurrentGenerationError";
+  }
+}
+
+/**
+ * The URL slug a new article gets from its title or keyword. Shared with the
+ * agent API, which creates the row before this runs.
+ *
+ * Accented letters are folded to their base letter before anything is
+ * dropped. The old `[^a-z0-9]` pass deleted them outright, so an Italian
+ * keyword like "città d'arte" published at `/citt-d-arte` and "perché" at
+ * `/perch`: a slug missing letters from the keyword it was meant to carry,
+ * on the locales the product is sold into first. Same fold as the heading
+ * ids in lib/content/enrich/html.ts, so an anchor and a slug agree.
+ */
 export function slugFor(text: string): string {
   return text
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
+}
+
+/** The three fields of `workspaces.business_profile` a writer can use, or undefined when there is nothing to say. */
+export function siteContextFrom(profile: unknown): SiteContext | undefined {
+  if (!profile || typeof profile !== "object") return undefined;
+  const p = profile as { name?: unknown; description?: unknown; audiences?: unknown };
+  const name = typeof p.name === "string" ? p.name.trim() : "";
+  const description = typeof p.description === "string" ? p.description.trim() : "";
+  if (!name && !description) return undefined;
+  const audiences = Array.isArray(p.audiences)
+    ? p.audiences.filter((a): a is string => typeof a === "string" && a.trim().length > 0).map((a) => a.trim())
+    : [];
+  return { name: name || null, description: description || null, audiences };
 }
 
 /** A rewrite of a page the product did not write has no article id. */
@@ -181,11 +255,38 @@ export async function generateArticle(
 
   const { data: workspace, error: wsError } = await supabase
     .from("workspaces")
-    .select("id, domain, ai_provider, ai_model, agency_id, language, brand_style, location_code")
+    .select("id, domain, ai_provider, ai_model, agency_id, language, brand_style, location_code, status, paused_until, business_profile")
     .eq("id", workspaceId)
     .single();
 
   if (wsError || !workspace) throw new Error("Workspace not found");
+
+  /**
+   * The account pause, in the same place as the quota gate and for the same
+   * reason.
+   *
+   * Two different things set `workspaces.status = 'paused'` and they promise
+   * different amounts. "Pause this site" is deliberately "not now" for the
+   * scheduled jobs only, and every cron filters it out (lib/workspaces/pause.ts);
+   * a person who then presses Write now is asking on purpose, and is allowed.
+   *
+   * The account pause on the Billing page is the one that also carries
+   * `paused_until`, and it says something stronger: "Billing and article
+   * generation pause" (PAUSE_COPY), "Nothing is drafted or billed until then"
+   * (the retention card). Stripe keeps its half - `pause_collection` voids the
+   * invoices - and until this check nothing kept ours. The agent API wrote
+   * drafts into a paused account all the way through the pause, and Write now
+   * did too: verified 2026-09-06, POST /api/agent/v1/articles/generate on a
+   * site paused until October returned 200 and a draft.
+   *
+   * So an account that has stopped paying is an account we stop spending model
+   * and data budget on, which is the trade the pause offers in both directions.
+   * `paused_until` alone is the marker, so hand-pausing a site keeps exactly
+   * the meaning it documents.
+   */
+  if (workspace.paused_until && workspace.status === "paused") {
+    throw new Error(accountPausedMessage(workspace.paused_until as string));
+  }
 
   /**
    * The quota gate, in the one place both callers pass through.
@@ -240,8 +341,16 @@ export async function generateArticle(
         mentionSimilarProducts: outputSettings.mentionSimilarProducts,
         emojis: outputSettings.emojis,
         customInstructions: outputSettings.globalArticlePrompt || null,
+        faq: outputSettings.faqSchema,
       }
     : undefined;
+
+  // Who the site is, for the prompt. The wizard writes `business_profile`
+  // (name, description, audiences) and until now only the closing CTA read
+  // it: the writer was briefed on the keyword and the SERP and not on the
+  // business the article was for. Absent on installs from before 048, or
+  // when the wizard was skipped; the prompt then says nothing, as before.
+  const site = siteContextFrom(workspace.business_profile);
 
   // The keyword as an object: what the owner said about this article in
   // particular. By id when the plan supplies one, else by term within the
@@ -255,12 +364,15 @@ export async function generateArticle(
     article_type: string | null;
     article_subtype: string | null;
     expected_length: string | null;
+    volume: number | null;
+    difficulty: number | null;
+    cpc: number | null;
   };
   let keywordRow: KeywordRow | null = null;
   {
     let q = supabase
       .from("keywords")
-      .select("id, term, instructions, quality_questions, article_type, article_subtype, expected_length")
+      .select("id, term, instructions, quality_questions, article_type, article_subtype, expected_length, volume, difficulty, cpc")
       .eq("workspace_id", workspaceId);
     q = keywordId ? q.eq("id", keywordId) : q.ilike("term", keyword.replace(/[\\%_]/g, (c) => `\\${c}`));
     const { data } = await q.limit(1).maybeSingle();
@@ -324,10 +436,44 @@ export async function generateArticle(
       .single();
 
     if (articleError || !created) {
+      // Migration 074's partial unique index: another run is already writing
+      // this keyword for this workspace. Distinguished from a real insert
+      // failure because it is not one - the work is being done, just not by
+      // this caller - and the cron reports it as a skip rather than an error
+      // somebody has to investigate every morning.
+      if (articleError?.code === UNIQUE_VIOLATION) {
+        throw new ConcurrentGenerationError(workspaceId, keyword);
+      }
       throw new Error(`Failed to create article: ${articleError?.message}`);
     }
 
     article = created;
+
+    // The gate above read the count before this row existed, and nothing
+    // held the account between the read and the insert. Six onboarding
+    // dispatches (lib/content/fan-out.ts) arrive at once, each sees the same
+    // "2 remaining", and all six write - four drafts the plan did not
+    // include, on the one night the account is most likely to be on the
+    // free allowance. The row is inserted first and then the count is read
+    // again *including it*: the k-th of N racing requests to reach this line
+    // sees at least k rows of the burst (its own plus every earlier reader's,
+    // which were inserted before those reads), so at most `remaining` of them
+    // can ever see a count within the limit. The rest delete their own row
+    // and stop, before the model is called or a job row is written. Over-
+    // refusing is possible when they all insert before any of them reads;
+    // that leaves the plan entry for the cron, which is where it would have
+    // been written anyway. Under-refusing is not.
+    //
+    // Only where the gate refuses at zero (an autonomous draft, or an account
+    // with no plan). A person writing past the limit is billed the overage
+    // above and is not a burst.
+    if (quota.limit !== null && (quota.reason === "no-plan" || autonomous)) {
+      const after = await getQuota(supabase, billedAgencyId, callerEmail);
+      if (after.limit !== null && after.used > after.limit) {
+        await supabase.from("articles").delete().eq("id", created.id);
+        throw new Error(quotaExceededMessage(after));
+      }
+    }
   }
 
   const { data: job, error: jobError } = await supabase
@@ -413,13 +559,17 @@ export async function generateArticle(
      *
      * Best-effort on purpose: enrichment must never take the draft down with
      * it, and null remains the honest value when the lookup fails.
+     *
+     * The keyword row is read first. Discovery, the research drawer and the
+     * planner all write volume and difficulty to `keywords`, and only the
+     * cron's picker passed them back in here as `selection` - so the planned
+     * fan-out, the "New article" modal, the agent API and write-now each paid
+     * a keyword_overview call for two numbers already sitting on the row the
+     * draft was made for. Stored numbers first; the provider only for a term
+     * nothing has measured.
      */
-    let facts: { volume: number | null; difficulty: number | null; cpc: number | null } = {
-      volume: selection?.volume ?? null,
-      difficulty: selection?.difficulty ?? null,
-      cpc: null,
-    };
-    if (facts.volume === null && facts.difficulty === null && hasDataForSEOCredentials()) {
+    let facts = knownKeywordFacts(selection, keywordRow);
+    if (needsKeywordFactsLookup(facts) && hasDataForSEOCredentials()) {
       try {
         const map = await fetchKeywordFacts([keyword], {
           languageCode: workspace.language ?? "en",
@@ -486,6 +636,7 @@ export async function generateArticle(
         .map((t) => ({ title: t.title, keyword: t.keyword })),
       output,
       brief,
+      site,
       refreshOf: refreshOf
         ? {
             existingHtml: refreshOf.existingHtml,
@@ -683,8 +834,19 @@ export async function generateArticle(
           workspace.brand_style as Record<string, unknown> | undefined,
           { style: featured.style, titleCover: featured.titleCover, brandColor: outputSettings.brandColor },
         );
+        // Never metered before: the section images wrote a row, the hero did
+        // not. Cost stays null, as for the section images - the images
+        // endpoint reports no price.
+        void recordSpend(spendDb, {
+          provider: "openai",
+          operation: `${openaiImageModel()} (featured image)`,
+          costUsd: null,
+          workspaceId,
+          articleId: article.id,
+          runId: job.id,
+        });
         featuredImageUrl = await uploadImageBuffer(
-          supabase,
+          imageWriter(supabase),
           imageResult.data,
           `${workspaceId}/${article.id}.${imageResult.extension}`,
           imageResult.contentType,
@@ -819,6 +981,24 @@ export async function generateArticle(
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown generation error";
+
+    // A run cut off at the ceiling is billed for every token it produced,
+    // thinking included. The row it would have written on success is written
+    // here instead, so the ledger and the dashboard's spend figures show the
+    // failed call rather than a quiet gap.
+    if (err instanceof GenerationTruncatedError) {
+      const model = anthropicModel("content");
+      await recordSpend(spendClient() ?? supabase, {
+        provider: "anthropic",
+        operation: model,
+        costUsd: anthropicCost(model, err.inputTokens, err.outputTokens),
+        inputTokens: err.inputTokens,
+        outputTokens: err.outputTokens,
+        workspaceId,
+        articleId: article.id ?? null,
+        runId: job.id,
+      });
+    }
 
     // A run that created the row marks it errored - the row exists only
     // because of this run. A run that was writing into an article the user

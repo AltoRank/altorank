@@ -26,14 +26,14 @@ import { readSiteText } from "./site-text";
 import { createVoiceProfile } from "@/app/actions/voice";
 import { analyseDomain } from "@/lib/audit/domain-analysis";
 import { generateArticle } from "@/lib/content/generate";
-import { freeAllowanceUsedMessage, getQuota } from "@/lib/billing/quota";
+import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
-import { plural } from "@/lib/utils";
 import { schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
 import { fanOutDrafts } from "@/lib/content/fan-out";
+import { detectLinks } from "@/lib/linking/detect";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
 
 export type Emit = (event: OnboardingEvent) => void;
@@ -116,7 +116,13 @@ async function runPhases(
           detail: read.source === "sitemap" ? "Learned how your site writes, from its articles." : "Learned how your site writes.",
         });
       } else {
-        emit({ phase: "scanning", status: "skipped", detail: "Too little readable text on the site to learn a voice." });
+        // Phrased so it still reads correctly when `onboardingOutcome` quotes
+        // it as the root cause of a later phase - which it does, since scanning
+        // is first in PHASE_ORDER. "…to learn a voice" produced "nothing could
+        // be scheduled yet: too little readable text on the site to learn a
+        // voice", which blames scheduling on voice training. What actually
+        // stopped both is the site.
+        emit({ phase: "scanning", status: "skipped", detail: "Too little readable text on the site to learn from." });
       }
     } catch (err) {
       emit({ phase: "scanning", status: "failed", detail: message(err) });
@@ -154,6 +160,32 @@ async function runPhases(
       });
     } catch (err) {
       emit({ phase: "keywords", status: "failed", detail: message(err) });
+    }
+  }
+
+  if (gone()) return;
+
+  // --- The link pool, before anything is written ---------------------------
+  //
+  // The wizard asks for the sitemap and says what it is for: "Used to find
+  // your existing pages for internal links." Until now nothing read it until
+  // a person pressed Detect on /linking, or the site-pages cron ran - and
+  // that cron is on no schedule (vercel.json, .github/workflows). So the
+  // first draft, and every draft after it, was written against an empty
+  // pool: the prompt said "do not add any" internal links, on a site with a
+  // 200-post blog it had just been told about. Measured on altorank.co,
+  // 2026-09-06: 0 internal links on a first draft with 28 sitemap posts.
+  //
+  // detectLinks reads the sitemap and the blog root (two fetches, no API
+  // cost) into link_targets, which is the pool generateArticle offers the
+  // writer. Best effort: a sitemap that cannot be read is a draft without
+  // internal links, not a failed onboarding.
+  if (domain) {
+    try {
+      const pool = await detectLinks(supabase, workspace.id);
+      if (pool.added > 0) console.log(`[onboarding] link pool: ${pool.added} page(s) from the site's own sources`);
+    } catch (err) {
+      console.warn("[onboarding] link pool detection failed:", message(err));
     }
   }
 
@@ -210,12 +242,13 @@ async function runPhases(
       // off the limit rather than restating a number that has already moved.
       const quota = await getQuota(supabase, workspace.agency_id);
       if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
-        settle(
-          "skipped",
-          quota.reason === "no-plan"
-            ? `${freeAllowanceUsedMessage(quota.limit)} Choose a plan to keep drafting, or wait for the 1st, when the allowance resets.`
-            : `This month's ${plural(quota.limit, "included article")} ${quota.limit === 1 ? "is" : "are"} used. Upgrade on the Billing page to keep drafting.`,
-        );
+        // The one sentence the gates share (lib/billing/quota.ts). Written out
+        // twice here, the paid half drifted: it said "Upgrade on the Billing
+        // page to keep drafting", and a paid account at its limit does not
+        // need to upgrade to keep drafting - it writes the next one by hand
+        // and bills the overage. Onboarding is the worst screen to be wrong
+        // about what the plan does, and the second copy is how it got wrong.
+        settle("skipped", quotaExceededMessage(quota));
       } else {
         const recs = await recommendKeywords(supabase, workspace.id, { limit: 25 });
         // The first day of the plan is what the person just watched get

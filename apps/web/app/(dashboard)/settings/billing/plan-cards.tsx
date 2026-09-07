@@ -83,21 +83,23 @@ export function PlanCards({
 
   function subscribe(plan: SelfServePlan) {
     start(async () => {
-      try {
-        window.location.href = await createCheckoutSession(plan, interval, returnTo);
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Checkout failed");
+      const result = await createCheckoutSession(plan, interval, returnTo);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
       }
+      window.location.href = result.url;
     });
   }
 
   function portal(flow: "manage" | "cancel" | "payment_method") {
     start(async () => {
-      try {
-        window.location.href = await createBillingPortalSession(flow);
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Could not open billing portal");
+      const result = await createBillingPortalSession(flow);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
       }
+      window.location.href = result.url;
     });
   }
 
@@ -105,8 +107,8 @@ export function PlanCards({
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-[12.5px] text-ink-3">
-          Billing is per account, not per workspace — one plan covers every site
-          in this workspace list.
+          Billing is per account, not per workspace — one plan covers every workspace
+          in the list.
         </div>
         <div className="flex self-start rounded-[7px] border border-line p-0.5 text-[12px]">
           {(["month", "year"] as const).map((iv) => (
@@ -227,7 +229,15 @@ export function PlanCards({
       </div>
 
       <p className="m-0 max-w-[76ch] text-[12px] leading-relaxed text-ink-3">
-        {hasCustomer ? (
+        {/* An editor or admin has no pause or cancel control on this page, so
+            telling them what cancelling takes describes a button they cannot
+            see. What is true for them is what happens to the work. */}
+        {locked ? (
+          <>
+            Only the account owner can change or end the plan. Whatever they
+            choose, your workspaces, articles and history stay readable.
+          </>
+        ) : hasCustomer ? (
           cancelHandledBelow ? (
             <>
               Pausing and cancelling are below. Either way your workspaces,

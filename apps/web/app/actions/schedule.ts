@@ -14,6 +14,7 @@ const cadenceSchema = z.object({
 });
 
 export async function upsertCadence(data: z.infer<typeof cadenceSchema>) {
+  await requireAuth();
   const parsed = cadenceSchema.parse(data);
   const supabase = await createClient();
 
@@ -56,6 +57,7 @@ export async function scheduleArticle(
 }
 
 export async function unscheduleArticle(articleId: string) {
+  await requireAuth();
   const supabase = await createClient();
 
   const { error } = await supabase

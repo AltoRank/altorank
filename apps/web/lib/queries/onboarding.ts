@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import type { StepId } from "@/components/onboarding/onboarding-steps";
 
 /**
@@ -25,26 +26,35 @@ export async function getCompletedOnboardingSteps(): Promise<
   Record<StepId, boolean>
 > {
   const supabase = await createClient();
+  // The site the sidebar is scoped to. The checklist sits beside pages that
+  // are all about one site, and until 2026-09-07 it counted the account: an
+  // agency's second client showed "CMS connected" and "voice trained" on the
+  // day it was added, because the first client had done both. `null` (the
+  // "all sites" view, or an operator with no scope) keeps the account-wide
+  // count, which is the only honest answer there.
+  const scopeId = await getScopedWorkspaceId();
 
   // Head counts: no rows come back, and RLS scopes every one of them to the
-  // signed-in account.
-  const count = async (table: string, eq?: [string, unknown]) => {
+  // signed-in account. `scoped` tables narrow to the site as well.
+  const count = async (table: string, opts: { scoped?: boolean; eq?: [string, unknown] } = {}) => {
     let q = supabase.from(table).select("id", { count: "exact", head: true });
-    if (eq) q = q.eq(eq[0], eq[1]);
+    if (opts.scoped && scopeId) q = q.eq("workspace_id", scopeId);
+    if (opts.eq) q = q.eq(opts.eq[0], opts.eq[1]);
     const { count: n } = await q;
     return (n ?? 0) > 0;
   };
 
   const [client, keywords, article, cms, voice] = await Promise.all([
+    // The account has a site at all: this one is about the account.
     count("workspaces"),
-    count("keywords"),
-    count("articles"),
+    count("keywords", { scoped: true }),
+    count("articles", { scoped: true }),
     // `integrations` is the catalogue of platforms we support and is never
     // empty. `workspace_integrations` is a connection someone actually made.
-    count("workspace_integrations"),
+    count("workspace_integrations", { scoped: true }),
     // A profile row exists from the moment training is attempted. Only a
     // trained one changes what gets written.
-    count("voice_profiles", ["trained", true]),
+    count("voice_profiles", { scoped: true, eq: ["trained", true] }),
   ]);
 
   return {

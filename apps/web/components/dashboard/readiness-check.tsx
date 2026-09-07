@@ -30,8 +30,11 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-export function ReadinessCheck() {
-  const [domain, setDomain] = useState("");
+export function ReadinessCheck({ initialDomain = "" }: { initialDomain?: string }) {
+  // Prefilled with the site in scope, and editable: the check works on any
+  // domain and the page says so, but the domain the person came here about
+  // is nearly always the one already selected in the switcher.
+  const [domain, setDomain] = useState(initialDomain);
   const [report, setReport] = useState<ReadinessReport | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -61,9 +64,12 @@ export function ReadinessCheck() {
               {pending ? "Checking…" : "Run check"}
             </Button>
           </div>
+          {/* "Any domain, no workspace needed" was here and in the page
+              subtitle directly above it, on a page whose whole body is one
+              field and one button. What is left is the part the subtitle does
+              not say: which four things get fetched. */}
           <p className="m-0 text-xs text-ink-3">
-            Reads public site configuration only: robots.txt, sitemap, llms.txt and the homepage.
-            Any domain, no workspace needed.
+            Reads public configuration only: robots.txt, sitemap, llms.txt and the homepage.
           </p>
         </div>
       </Card>

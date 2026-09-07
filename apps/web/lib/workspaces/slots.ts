@@ -2,13 +2,13 @@
 // server Supabase client. Deriving the allowance from a quota lives in
 // ./allowance.ts, which the dashboard layout calls on the server.
 
-/** What the switcher needs to say how many sites the plan allows. Null when unknown. */
+/** What the switcher needs to say how many workspaces the plan allows. Null when unknown. */
 export type SiteAllowance = { used: number; limit: number | null } | null;
 
-/** "2 of 3 sites used", "4 sites, no limit", or a dash when nobody knows. */
+/** "2 of 3 workspaces used", "4 workspaces, no limit", or a dash when nobody knows. */
 export function siteSlotsLabel(a: SiteAllowance): string {
   if (!a) return "—";
-  const noun = (n: number) => (n === 1 ? "site" : "sites");
+  const noun = (n: number) => (n === 1 ? "workspace" : "workspaces");
   if (a.limit === null) return `${a.used} ${noun(a.used)}, no limit`;
   return `${a.used} of ${a.limit} ${noun(a.limit)} used`;
 }

@@ -2,15 +2,16 @@ export const APP_NAME = "AltoRank";
 export const APP_DESCRIPTION =
   "SEO and AI-search content that nothing publishes without you. Keyword research, drafting, and review, a workspace per site or per client.";
 
-export const NAV_LINKS = [
-  { label: "How it works", href: "/#how-it-works" },
-  { label: "Features", href: "/#features" },
-  { label: "Tools", href: "/tools" },
-  { label: "Pricing", href: "/pricing" },
-  { label: "Blog", href: "/blog" },
-] as const;
-
 export type NavGroup = {
+  /**
+   * The group's name. Structural, not a caption: the sidebar stopped drawing
+   * these as uppercase heading rows on 2026-09-07 (four labels above fourteen
+   * links was more chrome than nav) and now separates groups with spacing and
+   * a hairline instead. The string stays because it is still the group's key,
+   * and because it is what the group is announced as to a screen reader
+   * (`aria-label` on the group in components/dashboard/sidebar.tsx). Renaming
+   * one changes what assistive tech reads out, so it is not free text.
+   */
   group: string;
   items: readonly NavItem[];
 };
@@ -82,8 +83,21 @@ export const DASHBOARD_NAV: NavGroup[] = [
       { id: "backlinks", label: "Backlinks", href: "/backlinks", icon: "backlinks" },
       { id: "audits", label: "Site audits", href: "/audits", icon: "search" },
       { id: "readiness", label: "Agent readiness", href: "/readiness", icon: "sparkle" },
+      // /reports was marked `soon`, which renders it as unclickable grey text
+      // with a "being built" tooltip, while the page lists reports and
+      // generates one. Labelling a working page "soon" is the same failure as
+      // labelling an unknown zero, pointed the other way.
+      //
+      // /geo keeps `soon`, and the reason is the opposite one: the page
+      // renders, but `workspaces.geo_tracking` has no writer anywhere in the
+      // app (`git grep geo_tracking`: the cron reads it, /admin displays it,
+      // migration 020 declares it) and `geo_prompts` is never inserted, so a
+      // customer who followed the link found an empty state whose only
+      // instruction could not be carried out. Linking it from the sidebar
+      // would sell a measurement nobody can switch on. Remove `soon` in the
+      // same change that adds the switch.
       { id: "geo", label: "AI visibility", href: "/geo", icon: "trend", soon: true },
-      { id: "reports", label: "Reports", href: "/reports", icon: "reports", soon: true },
+      { id: "reports", label: "Reports", href: "/reports", icon: "reports" },
     ],
   },
   // Named "Agency" until 2026-08-30. Billing and Settings are account chrome
@@ -99,7 +113,12 @@ export const DASHBOARD_NAV: NavGroup[] = [
     items: [
       // The roster is account management, not a daily section: the sidebar
       // switcher is where a workspace is chosen (2026-09-02).
-      { id: "workspaces", label: "Your sites", href: "/workspaces", icon: "clients" },
+      // "Workspaces", not "Your sites": POSITIONING.md settled this noun on
+      // 2026-08-30 after the nav said Clients and the page said Workspaces
+      // for the same getWorkspaces() rows. The page, its tab title, its
+      // count pill and the Add workspace button on three other surfaces all
+      // say workspace; this item was the last place that did not.
+      { id: "workspaces", label: "Workspaces", href: "/workspaces", icon: "clients" },
       // General settings. The article-shaped tabs are reached from the
       // Articles group above, so this entry stays exact: it must not light up
       // while someone is on Article settings under Articles.
