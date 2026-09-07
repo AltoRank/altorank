@@ -45,7 +45,8 @@ describe("ClaudeProvider at the token ceiling", () => {
   it("asks for a ceiling that clears a heavy thinking run plus a long article", () => {
     const provider = new ClaudeProvider("claude-sonnet-5");
     void provider.streamArticle({ keyword: "x" }).next();
-    const params = streamCall.mock.calls.at(-1)?.[0] as { max_tokens: number; model: string } | undefined;
+    const calls = streamCall.mock.calls as unknown as Array<[{ max_tokens: number; model: string }]>;
+    const params = calls.at(-1)?.[0];
     expect(params?.model).toBe("claude-sonnet-5");
     expect(params?.max_tokens).toBeGreaterThanOrEqual(64_000);
   });
