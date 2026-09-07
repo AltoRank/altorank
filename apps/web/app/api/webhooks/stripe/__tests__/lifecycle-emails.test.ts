@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ---------------------------------------------------------------------------
 // The billing emails, end to end from a Stripe event
@@ -154,6 +154,18 @@ function invoiceFailed(overrides: Row = {}) {
     },
   };
 }
+
+// The fixtures fail invoices on fixed dates in early September 2026 and the
+// route refuses to warn about a grace window that has already closed, so the
+// clock is pinned inside that window; otherwise these tests expire on
+// 2026-09-08. Only Date is faked, so nothing awaited here ever waits on a timer.
+beforeEach(() => {
+  vi.useFakeTimers({ now: Date.parse("2026-09-06T12:00:00Z"), toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   vi.resetModules();
