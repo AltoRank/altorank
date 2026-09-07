@@ -19,7 +19,7 @@ import { ConnectCmsDialog } from "@/components/dashboard/connect-cms-dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { PLATFORM_HINT, PLATFORM_LABEL, PLATFORM_CONNECT_TYPE, platformState } from "@/lib/cms/detect";
 import { updateArticle } from "@/app/actions/articles";
-import { publishArticle, approveArticle, requestChanges, markPublishedManually, retryPublish } from "@/app/actions/publish";
+import { publishArticle, approveArticle, requestChanges, markPublishedManually, retryPublish, holdArticle, releaseHold } from "@/app/actions/publish";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
 import type { Destination } from "@/lib/publishing/destinations";
 import { IntegrationIcon } from "@/components/dashboard/integration-icon";
@@ -576,6 +576,32 @@ export function ArticleEditor({
     }
   }, [article.id, router]);
 
+  const handleHold = useCallback(async () => {
+    setPublishing(true);
+    try {
+      await holdArticle(article.id);
+      toast.success("Held. It waits for someone to approve it.");
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not hold the draft");
+    } finally {
+      setPublishing(false);
+    }
+  }, [article.id, router]);
+
+  const handleReleaseHold = useCallback(async () => {
+    setPublishing(true);
+    try {
+      await releaseHold(article.id);
+      toast.success("Released. The rule may publish it after its hold.");
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not release the hold");
+    } finally {
+      setPublishing(false);
+    }
+  }, [article.id, router]);
+
   const handleRequestChanges = useCallback(async () => {
     setPublishing(true);
     try {
@@ -1110,16 +1136,28 @@ export function ArticleEditor({
             </div>
           )}
           {article.status === "review" && article.auto_approve_after && !article.held_by && (
-            <div className="mt-3 text-[12px] text-ink-3 leading-relaxed">
-              Publishes on its own after {new Date(article.auto_approve_after).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} unless held.
-              {article.auto_approve_hold_reason && article.auto_approve_hold_reason !== "held by a person" && !article.auto_approve_hold_reason.startsWith("hold window") && (
-                <> Currently held: {article.auto_approve_hold_reason}.</>
-              )}
+            <div className="mt-3 flex flex-col gap-2">
+              <div className="text-[12px] text-ink-3 leading-relaxed">
+                Publishes on its own after {new Date(article.auto_approve_after).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} unless held.
+                {article.auto_approve_hold_reason && article.auto_approve_hold_reason !== "held by a person" && !article.auto_approve_hold_reason.startsWith("hold window") && (
+                  <> Currently not approved: {article.auto_approve_hold_reason}.</>
+                )}
+              </div>
+              <Button size="sm" variant="ghost" className="justify-center" disabled={publishing} onClick={handleHold}>
+                Hold this one
+              </Button>
             </div>
           )}
           {article.status === "review" && article.held_by && (
-            <div className="mt-3 text-[12px] text-ink-3 leading-relaxed">
-              Held by a person; it will not publish until someone approves it.
+            <div className="mt-3 flex flex-col gap-2">
+              <div className="text-[12px] text-ink-3 leading-relaxed">
+                Held by a person; it will not publish until someone approves it.
+              </div>
+              {article.auto_approve_after && (
+                <Button size="sm" variant="ghost" className="justify-center" disabled={publishing} onClick={handleReleaseHold}>
+                  Release the hold
+                </Button>
+              )}
             </div>
           )}
           {article.status === "approved" && destinations.length === 0 && (

@@ -10,6 +10,7 @@ import { urlIsLive, deriveBlogBaseUrl } from "@/lib/cms/blog-url";
 import { submitForIndexing, type IndexingResult } from "@/lib/seo/indexing";
 import { announceArticlePublished, announcePublishFailed } from "@/lib/email/article-events";
 import { runAutoApprovals, type AutoApproveResult } from "@/lib/publishing/auto-approve";
+import { sendHeldDigests } from "@/lib/email/held-digest";
 
 export const maxDuration = 60;
 
@@ -71,8 +72,12 @@ export async function GET(request: Request) {
   // failure here is reported and does not stop publishing what people
   // approved by hand: those are two different promises.
   let autoApprovals: AutoApproveResult[] | { error: string } = [];
+  let heldDigests: string[] = [];
   try {
     autoApprovals = await runAutoApprovals(supabase, now);
+    // The rule held something a person can fix: tell the team once a day.
+    // Hold-window waits and human holds are not in it (lib/email/held-digest.ts).
+    heldDigests = await sendHeldDigests(supabase, autoApprovals, now);
   } catch (err) {
     autoApprovals = { error: err instanceof Error ? err.message : "unknown error" };
   }
@@ -286,6 +291,7 @@ export async function GET(request: Request) {
     errors,
     verified,
     autoApprovals,
+    heldDigests,
     results,
   });
 }

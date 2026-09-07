@@ -38,11 +38,15 @@ anything the defaults get wrong.
   was minted (`apps/web/lib/auth/impersonation-stash.ts`). A path that lets a
   non-operator start one, or lets an ordinary session use the operator's return
   cookie, is a finding.
-- **The approval gate is a security property, not just a product one.** Nothing
-  publishes without a human: the MCP server exposes no publish tool and
-  `auto_generate` has no publish counterpart. Any path that publishes to a
-  connected CMS without human approval is a vulnerability, and we want to hear
-  about it.
+- **The approval gate is a security property, not just a product one.** Every
+  publish is attributable to a person: a click in the editor, or the
+  automatic-publishing rule a named member turned on for that workspace
+  (`auto_approve`, migration 079), which runs the same checks and can be held
+  per draft. The MCP server and agent API expose no publish or approve tool.
+  Any path that publishes to a connected CMS without one of those two
+  decisions behind it - an agent route, a status flip that skips
+  `approved_by`, a rule firing for a workspace that did not opt in - is a
+  vulnerability, and we want to hear about it.
 
 ## What we will not treat as a finding
 

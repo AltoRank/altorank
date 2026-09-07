@@ -1,10 +1,12 @@
 # AltoRank
 
-**An AI SEO content engine that never publishes without you.**
+**An AI SEO content engine where every publish is somebody's decision.**
 
 It researches a keyword, writes the article, scores it, checks its claims, and
-publishes it to your CMS. A person approves every article before it goes live.
-That last part is not a setting you can switch off.
+publishes it to your CMS. Who decides that it ships is yours to choose per
+workspace: approve each draft by hand, or set a rule that publishes after a hold
+unless you hold it. Either way the approval is recorded under a named person,
+and the article is tracked after - indexing, rank, AI-search visibility.
 
 Open source, the whole product. No feature-gated tier, no `ee/` directory.
 
@@ -27,20 +29,27 @@ Read this before you invest time in it.
 If you want a finished product, wait. If you want to read how it works or run it
 yourself, everything is here.
 
-## The approval gate
+## The publishing decision
 
-This is the one design decision the rest of the product is built around, so it
-is worth stating as a mechanism rather than a promise:
+One gate, two ways through it. `lib/publishing/core.ts` refuses any article
+that is not `approved` (or `scheduled` with `approved_by` set), and nothing else
+in the code path writes `live`. What can write an approval:
 
-- The **MCP server exposes no publish tool.** Not a disabled tool, an absent
-  one. See the comment at the top of `apps/web/scripts/mcp.ts`.
-- **`auto_generate` has no publish counterpart.** Generation can be automated.
-  Publishing cannot.
-- Publishing defaults to draft status, and the gate lives in the publish step
-  itself, so scheduled jobs and bulk actions cannot route around it.
+- **A person**, from the editor (`approveArticle`), recorded as `approved_by`.
+- **A rule the workspace owner set** (`auto_approve`, migration 079): the
+  publish cron runs the same checks the Approve button runs - active plan, no
+  unsourced figure, no failing audit item, SEO score at or above the floor -
+  after a hold window (default 24h) during which the drafted email carries a
+  one-click Hold. `approved_by` is whoever turned the rule on; `approval_kind`
+  says `auto`. Held drafts carry the reason on their own row. See
+  `lib/publishing/auto-approve.ts`.
 
-Competing tools ship the words "you stay in control" as copy. The difference is
-checkable here: grep for a publish tool and you will not find one.
+What cannot write an approval: an agent. The **MCP server and the agent API
+expose no publish or approve tool** - not disabled, absent. See the comment at
+the top of `apps/web/scripts/mcp.ts`.
+
+Competing tools ship the words "you stay in control" as copy. The difference
+is checkable here: every `live` row points at a person, by click or by rule.
 
 ## What works today
 
@@ -219,6 +228,8 @@ a closed competing service is not.
 Issues and pull requests are welcome. Two things that will get a patch rejected
 regardless of how good the code is:
 
-- Adding a way to publish without human approval.
+- Adding a way to publish that is not attributable to a person - a click, or a
+  rule a named member set and can veto. An agent-triggered publish is the
+  canonical example.
 - Adding a claim the repository cannot support. If `grep` cannot find the
   feature, the README does not get to mention it.

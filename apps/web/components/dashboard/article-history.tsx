@@ -139,12 +139,24 @@ export function ArticleHistory({
                 <td className="px-3.5 py-3 border-b border-line-soft">
                   {r.index ? <IndexBadge bucket={r.index.bucket} title={r.index.title} /> : <span className="text-ink-4 text-xs">—</span>}
                 </td>
-                <td className="px-3.5 py-3 border-b border-line-soft"><StatusPill status={r.status} /></td>
+                <td className="px-3.5 py-3 border-b border-line-soft">
+                    <StatusPill status={r.status} />
+                    {/* The rule's promise, next to the status it will change (079). */}
+                    {r.status === "review" && r.held && (
+                      <div className="mt-1 text-[11px] text-ink-3">Held</div>
+                    )}
+                    {r.status === "review" && !r.held && r.holdReason && (
+                      <div className="mt-1 max-w-[180px] truncate text-[11px] text-[var(--err)]" title={r.holdReason}>Not auto-approved: {r.holdReason}</div>
+                    )}
+                    {r.status === "review" && !r.held && !r.holdReason && r.autoApproveAfter && (
+                      <div className="mt-1 text-[11px] text-ink-3" title={new Date(r.autoApproveAfter).toLocaleString()}>{autoIn(r.autoApproveAfter)}</div>
+                    )}
+                  </td>
                 <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2 whitespace-nowrap">
                   {r.date ? formatDate(r.date) : "—"}
                 </td>
                 <td className="px-3.5 py-3 border-b border-line-soft" onClick={(e) => e.stopPropagation()}>
-                  <ArticleRowMenu articleId={r.id} currentStatus={r.status} canPublish={r.canPublish} canRetry={r.canRetry} />
+                  <ArticleRowMenu articleId={r.id} currentStatus={r.status} canPublish={r.canPublish} canRetry={r.canRetry} held={r.held} autoApprove={Boolean(r.autoApproveAfter)} />
                 </td>
               </tr>
             ))}
@@ -176,4 +188,12 @@ function labelFor(status: HistoryFilter): string {
 /** UTC on purpose: the same string on the server and in every browser, so hydration never disagrees about a date near midnight. */
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+/** "Publishes in 14h" / "Publishes on the next run", from the hold stamp. */
+function autoIn(iso: string): string {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (Number.isNaN(ms) || ms <= 0) return "Publishes on the next run";
+  const h = Math.round(ms / 3_600_000);
+  return h < 1 ? "Publishes within the hour" : h < 48 ? `Publishes in ${h}h` : `Publishes in ${Math.round(h / 24)}d`;
 }

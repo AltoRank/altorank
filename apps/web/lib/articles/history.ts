@@ -49,6 +49,12 @@ export interface HistoryRow {
   clicks: number | null;
   /** Index coverage for a published URL, from URL inspection or from being served in search (#84). Null when not published. */
   index: { bucket: CoverageBucket; title: string } | null;
+  /** In review and the workspace publishes automatically: when the hold ends (migration 079). */
+  autoApproveAfter: string | null;
+  /** A person held it; the rule skips it. */
+  held: boolean;
+  /** Why the rule last skipped it, when that is something a person can act on. */
+  holdReason: string | null;
 }
 
 /** What the page knows about a row beyond the article itself. */
@@ -83,6 +89,12 @@ export function toHistoryRow(a: Article, extras: HistoryRowExtras): HistoryRow {
     canRetry: extras.canRetry ?? false,
     clicks: extras.clicks ?? null,
     index: extras.index ?? null,
+    autoApproveAfter: a.status === "review" ? (a.auto_approve_after ?? null) : null,
+    held: Boolean(a.held_by),
+    holdReason:
+      a.status === "review" && a.auto_approve_hold_reason && !a.auto_approve_hold_reason.startsWith("hold window") && a.auto_approve_hold_reason !== "held by a person"
+        ? a.auto_approve_hold_reason
+        : null,
   };
 }
 

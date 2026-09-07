@@ -7,11 +7,13 @@ description: Drive AltoRank from a coding agent - audit a site's agent readiness
 
 AltoRank writes search and AI-search content for websites. You can read an
 account, create **drafts**, move planned keywords on the calendar, edit a draft
-by find-and-replace, and pause or resume a workspace. A person reviews, approves and
-publishes in the editor. There is no publish, approve or delete call in this
-API, and you must not look for a way around that. (`retry-publish` is the one
-exception in name only: it re-runs a publish a human already approved and
-that failed; it cannot publish anything else.)
+by find-and-replace, and pause or resume a workspace. A person decides what
+publishes - by approving a draft in the editor, or through the automatic-
+publishing rule they set for a workspace, which they can hold per draft. There
+is no publish, approve, hold or delete call in this API, and you must not look
+for a way around that. (`retry-publish` is the one exception in name only: it
+re-runs a publish that was already approved and then failed; it cannot publish
+anything else.)
 
 Two surfaces, one contract:
 
@@ -122,9 +124,10 @@ the human's click ("Check indexing") in the editor.
 
 ## Rules you never break
 
-- Never attempt to publish, approve, schedule or delete. No endpoint does it;
-  do not improvise one through the dashboard or the CMS. `retry-publish` only
-  re-runs a publish a human already approved and that failed.
+- Never attempt to publish, approve, hold, schedule or delete. No endpoint does
+  it; do not improvise one through the dashboard or the CMS, and do not change
+  a workspace's automatic-publishing rule. `retry-publish` only re-runs a
+  publish that was already approved and then failed.
 - Propose before you write. `replace` and `bulk-replace` default to
   `preview_only: true`; show the hits, get a yes, then write. Never send
   `preview_only: false` on the first call.
