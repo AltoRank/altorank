@@ -81,19 +81,29 @@ export function PageBodySkeleton({
 export function PageHeadSkeleton({
   back = false,
   titleWidth = "w-64",
+  subtitleWidth,
   actions = 0,
 }: {
   back?: boolean;
   titleWidth?: string;
+  /**
+   * A bar where the page's subtitle goes. All three routes using this render
+   * one - `content/[id]`, `improvements/[id]`, `workspaces/[id]` - and there
+   * was no slot for it, so the head visibly gained a second element on load.
+   */
+  subtitleWidth?: string;
   /** How many md buttons to reserve on the right. */
   actions?: number;
 }) {
   return (
-    <div className="min-h-[var(--topbar-h)] py-2 md:py-0 md:h-[var(--topbar-h)] shrink-0 px-8 border-b border-line flex items-center gap-4">
+    // `flex-wrap md:flex-nowrap`, as PageHead has it: without it the skeleton
+    // and the page it stands in for wrap differently on a narrow screen.
+    <div className="min-h-[var(--topbar-h)] py-2 md:py-0 md:h-[var(--topbar-h)] shrink-0 px-8 border-b border-line flex flex-wrap md:flex-nowrap items-center gap-4">
       {back && <Skeleton className="shrink-0 w-[26px] h-[26px] -ml-1.5 rounded-[6px]" />}
       <Skeleton className={cn("h-5", titleWidth)} />
+      {subtitleWidth && <SubtitleSkeleton width={subtitleWidth} />}
       {actions > 0 && (
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex flex-wrap md:flex-nowrap gap-2 max-w-full md:shrink-0">
           {Array.from({ length: actions }, (_, i) => (
             <ActionSkeleton key={i} width={i === 0 ? "w-28" : "w-24"} />
           ))}
@@ -128,32 +138,45 @@ export function StatStripSkeleton({ count = 4, compact = false }: { count?: numb
 /**
  * `Card` with its real title and a body of soft lines, or whatever children
  * the caller draws. The heading is text because it is known.
+ *
+ * `meta` and `flush` mirror `Card`'s own props, and for the same reason it
+ * has them: a page whose card wraps a table renders it `flush`, and a
+ * skeleton that pads the same table indents every column by 18px and then
+ * un-indents them when the data lands. `/linking` drew both of its tables
+ * outside a card entirely, which put them roughly a header's height off.
  */
 export function CardSkeleton({
   title,
+  meta,
   lines = 3,
   className,
+  flush = false,
   children,
 }: {
   title?: string;
+  /** The right-hand slot of the header: a count, a control, a bar for one. */
+  meta?: React.ReactNode;
   /** Lines of body copy to draw when there are no children. */
   lines?: number;
   className?: string;
+  /** Render children edge to edge, as `Card flush` does. */
+  flush?: boolean;
   children?: React.ReactNode;
 }) {
+  const body =
+    children ??
+    Array.from({ length: lines }, (_, i) => (
+      <SkeletonSoft key={i} className={cn("h-3", i > 0 && "mt-3", i % 3 === 2 ? "w-1/2" : i % 3 === 1 ? "w-4/5" : "w-full")} />
+    ));
   return (
     <div className={cn("bg-bg border border-line rounded-lg overflow-hidden", className)}>
       {title && (
         <div className="px-[18px] py-3.5 border-b border-line-soft flex items-center gap-2.5">
           <h3 className="m-0 text-sm font-semibold tracking-[-0.005em]">{title}</h3>
+          {meta && <div className="ml-auto text-ink-3 text-xs">{meta}</div>}
         </div>
       )}
-      <div className="p-[18px]">
-        {children ??
-          Array.from({ length: lines }, (_, i) => (
-            <SkeletonSoft key={i} className={cn("h-3", i > 0 && "mt-3", i % 3 === 2 ? "w-1/2" : i % 3 === 1 ? "w-4/5" : "w-full")} />
-          ))}
-      </div>
+      {flush ? <div className="overflow-x-auto">{body}</div> : <div className="p-[18px]">{body}</div>}
     </div>
   );
 }

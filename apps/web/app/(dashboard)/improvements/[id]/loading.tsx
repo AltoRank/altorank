@@ -4,7 +4,7 @@ import { PageHeadSkeleton, Skeleton, SkeletonSoft } from "@/components/ui/skelet
 export default function ReviewExecutionLoading() {
   return (
     <>
-      <PageHeadSkeleton back titleWidth="w-72" />
+      <PageHeadSkeleton back titleWidth="w-72" subtitleWidth="w-56" />
       <div role="status" aria-busy="true" aria-label="Loading the rewrite" className="flex-1 min-h-0 flex flex-col">
         <span className="sr-only">Loading the rewrite</span>
         <div className="px-8 py-2.5 border-b border-line bg-bg flex items-center gap-3">

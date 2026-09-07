@@ -1,9 +1,14 @@
 import { PageBodySkeleton, PageHeadSkeleton, Skeleton, SkeletonSoft } from "@/components/ui/skeleton";
 
 /**
- * The fallback for any dashboard route without its own `loading.tsx`
- * (readiness, review, admin, the settings sub-tabs that render outside
- * SettingsShell). It replaced a centred spinner over "Loading…", which was
+ * The fallback for any dashboard route without its own `loading.tsx` - which
+ * is now only `/review` (a bare `redirect`) and `/admin/users`. This used to
+ * claim it also covered readiness, admin and "the settings sub-tabs that
+ * render outside SettingsShell": readiness and admin have their own files
+ * since, and no settings sub-tab ever rendered outside the shell -
+ * `settings/loading.tsx` intercepts every one of them.
+ *
+ * It replaced a centred spinner over "Loading…", which was
  * the one thing on this branch that looked like a different page: the head
  * row, the sidebar and the body column stay where they are, and the page
  * that arrives fills the shape rather than replacing it.
