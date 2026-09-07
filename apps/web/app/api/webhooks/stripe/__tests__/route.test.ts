@@ -371,6 +371,19 @@ describe("customer.subscription.updated / deleted", () => {
     await deliver(subscriptionEvent("updated", { status: "past_due" }));
     expect(writes.filter((w) => w.table === "agencies")).toHaveLength(1);
   });
+
+  it("does not report a paused subscription as a failed payment", async () => {
+    // Stripe pauses a subscription when a trial ends with no card, or from
+    // the dashboard. Mapped to past_due with no payment_failed_at, dunning
+    // read it as "lapsed" and the account saw "Payment failed" for a card
+    // that never failed (PM-C-P2-1).
+    agencyRow = { id: "agency-1", plan_status: "active", payment_failed_at: null };
+    await deliver(subscriptionEvent("updated", { status: "paused" }));
+    const rows = writes.filter((w) => w.table === "agencies");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].row.plan_status).toBe("inactive");
+    expect(rows[0].row).not.toHaveProperty("payment_failed_at");
+  });
 });
 
 describe("the account pause ending on Stripe's side", () => {

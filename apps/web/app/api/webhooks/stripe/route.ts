@@ -26,8 +26,16 @@ function mapStatus(s: Stripe.Subscription.Status): string {
     case "incomplete":
     case "incomplete_expired":
     case "unpaid":
-    case "paused":
       return "past_due";
+    // Paused is not a failed payment: Stripe pauses a subscription when a
+    // trial ends without a payment method, or when pause_collection is set
+    // from the dashboard. Mapped to past_due (until 2026-09-07) it carried no
+    // payment_failed_at, which dunningState reads as "lapsed", so the account
+    // saw a red "Payment failed" banner for a card that never failed. Nothing
+    // is being paid for, so the honest state is the one an account with no
+    // subscription has.
+    case "paused":
+      return "inactive";
     default:
       return "inactive";
   }
