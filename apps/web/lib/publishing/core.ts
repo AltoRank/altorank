@@ -193,12 +193,17 @@ async function pushToDestination(
   let siteUrl = "https://example.com";
   let publisherName = "";
   let language: string | null = null;
+  // Read here with the rest of the workspace row: the payload carries it to
+  // adapters that can host the key file, and the submission after the publish
+  // uses the same value. Null when the workspace has none.
+  let indexNowKey: string | null = null;
   try {
     const { data: ws } = await supabase
       .from("workspaces")
-      .select("agency_id, domain, language, business_profile, agency:agencies(remove_branding)")
+      .select("agency_id, domain, language, business_profile, indexnow_key, agency:agencies(remove_branding)")
       .eq("id", article.workspace_id)
       .single();
+    indexNowKey = typeof ws?.indexnow_key === "string" ? ws.indexnow_key : null;
     if (ws?.domain) siteUrl = `https://${String(ws.domain).replace(/^https?:\/\//, "")}`;
     const profileName = (ws?.business_profile as { name?: unknown } | null)?.name;
     publisherName = (typeof profileName === "string" && profileName.trim()) || String(ws?.domain ?? "").replace(/^https?:\/\//, "");
@@ -259,6 +264,7 @@ async function pushToDestination(
 
   const payload: PublishPayload = {
     id: articleId,
+    indexNowKey,
     title: article.title,
     html,
     // Only the webhook contract carries Markdown; rendering it for a CMS that
@@ -376,11 +382,6 @@ async function pushToDestination(
    * because the publish it would fail has already happened.
    */
   try {
-    const { data: ws } = await supabase
-      .from("workspaces")
-      .select("indexnow_key")
-      .eq("id", article.workspace_id)
-      .single();
 
     // A live Search Console token, when the Google integration is connected.
     let gscToken: string | null = null;
@@ -445,7 +446,7 @@ async function pushToDestination(
 
     const indexing = await submitForIndexing({
       url: result.url,
-      indexNowKey: ws?.indexnow_key ?? null,
+      indexNowKey,
       gscToken,
     });
     await supabase

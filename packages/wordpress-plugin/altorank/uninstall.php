@@ -14,3 +14,4 @@ delete_option( 'altorank_integration_token' );
 delete_option( 'altorank_post_as_draft' );
 delete_option( 'altorank_default_author' );
 delete_option( 'altorank_default_category' );
+delete_option( 'altorank_indexnow_key' );

@@ -36,6 +36,12 @@ export interface PublishPayload {
    */
   publishMode?: PublishMode;
   /**
+   * The workspace's IndexNow key. Adapters that control the destination host
+   * (the WordPress plugin) serve it at /{key}.txt so the submission after the
+   * publish verifies; every other adapter ignores it.
+   */
+  indexNowKey?: string | null;
+  /**
    * JSON-LD objects for the page (a BlogPosting, a FAQPage when the article
    * has one). Already appended to `html` as script tags for destinations
    * that keep them (lib/publishing/schema.ts); carried here for consumers

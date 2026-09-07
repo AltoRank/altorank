@@ -119,6 +119,10 @@ export class WordPressPluginAdapter implements CMSAdapter {
       featured_image_url: article.featuredImageUrl,
       tags: article.tags ?? [],
       created_at: article.createdAt,
+      // The plugin serves this at /{key}.txt (plugin >= 1.1.0), so the IndexNow
+      // submission that follows the publish verifies without anyone placing a
+      // file on the host. Older plugins ignore the field.
+      indexnow_key: article.indexNowKey ?? undefined,
       // The dashboard's approval gate has already passed by the time this runs.
       // The connection's publish mode decides draft or live; the plugin's own
       // "post as draft" setting may still hold it, and says so in the response.
