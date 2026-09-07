@@ -57,7 +57,6 @@ export function publicShareCard(card: ShareCard): PublicShareCard {
   };
 }
 
-/** `origin` may be empty, which gives the path alone. */
-export function shareUrl(origin: string, token: string): string {
-  return `${origin.replace(/\/+$/, "")}/share/${token}`;
-}
+// Re-exported for the server-side callers that already import it from here;
+// client components import lib/share/url directly (see that file).
+export { shareUrl } from "./url";

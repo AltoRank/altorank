@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { cronSecretFrom } from "@/lib/cron-auth";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 import { setSpendReporter } from "@/lib/seo/client";
 import { getQuota, entitledToScheduledWork } from "@/lib/billing/quota";
 import { syncBacklinks } from "@/lib/seo/backlinks";
@@ -25,10 +25,7 @@ import type { Workspace, Keyword } from "@/lib/types";
 export const maxDuration = 300;
 
 export async function GET(request: Request) {
-  // Verify cron secret
-  const cronSecret = cronSecretFrom(request);
-
-  if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
+  if (!isAuthorizedCron(request)) {
     setSpendReporter(null);
 
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

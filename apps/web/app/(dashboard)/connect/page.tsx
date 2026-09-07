@@ -175,7 +175,7 @@ export default async function IntegrationsPage({
                       </Link>
                     ) : (
                       <Button size="sm" disabled className="w-full justify-center">
-                        Connect
+                        Not available yet
                       </Button>
                     )}
                   </div>

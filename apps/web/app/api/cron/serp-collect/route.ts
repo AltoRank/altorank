@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { cronSecretFrom } from "@/lib/cron-auth";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 import { setSpendReporter } from "@/lib/seo/client";
 import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -19,8 +19,7 @@ import type { RankingRow } from "@/lib/seo/rankings";
  * run that is triggered twice finds nothing the second time.
  */
 export async function GET(request: Request) {
-  const cronSecret = cronSecretFrom(request);
-  if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
+  if (!isAuthorizedCron(request)) {
     setSpendReporter(null);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

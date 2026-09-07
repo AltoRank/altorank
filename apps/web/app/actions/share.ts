@@ -4,12 +4,16 @@
 // The share link: created on first share, revoked on request
 // ---------------------------------------------------------------------------
 //
-// Both actions run on the caller's cookie client and name the workspace, so
-// RLS answers "is this yours" and the explicit id answers "which site". The
-// token itself is generated here and never returned for a foreign id.
+// Both actions establish the caller first (requireAuth), then run on the
+// caller's cookie client and name the workspace, so RLS answers "is this yours"
+// and the explicit id answers "which site". The token itself is generated here
+// and never returned for a foreign id. Until 2026-09-07 neither action called
+// requireAuth(): RLS still refused a stranger, but an anonymous call reached
+// the database before anything said no.
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireAuth } from "@/lib/auth/require-auth";
 import { generateShareToken } from "@/lib/share/token";
 
 async function readToken(workspaceId: string): Promise<{ supabase: Awaited<ReturnType<typeof createClient>>; token: string | null }> {
@@ -22,6 +26,7 @@ async function readToken(workspaceId: string): Promise<{ supabase: Awaited<Retur
 
 /** The workspace's share token, minting one the first time. */
 export async function createShareLink(workspaceId: string): Promise<{ token: string }> {
+  await requireAuth();
   const { supabase, token } = await readToken(workspaceId);
   if (token) return { token };
   const fresh = generateShareToken();
@@ -37,6 +42,7 @@ export async function createShareLink(workspaceId: string): Promise<{ token: str
 
 /** Kill every copy of the link. A new "Copy link" mints a different token. */
 export async function revokeShareLink(workspaceId: string): Promise<void> {
+  await requireAuth();
   const { supabase } = await readToken(workspaceId);
   const { error } = await supabase.from("workspaces").update({ share_token: null }).eq("id", workspaceId);
   if (error) throw new Error(error.message);

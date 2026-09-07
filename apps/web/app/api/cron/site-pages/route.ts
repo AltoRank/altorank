@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { cronSecretFrom } from "@/lib/cron-auth";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { syncSitePages, SitePagesWriteError } from "@/lib/seo/site-crawl";
 import { detectLinks } from "@/lib/linking/detect";
@@ -31,7 +31,7 @@ const PAGES_PER_RUN = 120;
 const STALE_AFTER_DAYS = 7;
 
 export async function GET(request: Request) {
-  if (!process.env.CRON_SECRET || cronSecretFrom(request) !== process.env.CRON_SECRET) {
+  if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

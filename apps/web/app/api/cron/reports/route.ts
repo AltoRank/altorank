@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { cronSecretFrom } from "@/lib/cron-auth";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { generateReport } from "@/lib/reports/generate";
 import { reportRecipients } from "@/lib/reports/recipients";
@@ -22,8 +22,7 @@ import { getQuota, entitledToScheduledWork } from "@/lib/billing/quota";
 export const maxDuration = 300;
 
 export async function GET(request: Request) {
-  const cronSecret = cronSecretFrom(request);
-  if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
+  if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

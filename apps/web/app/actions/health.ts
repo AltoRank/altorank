@@ -1,6 +1,7 @@
 "use server";
 
 import { headers } from "next/headers";
+import { clientIp } from "@/lib/tools/client-ip";
 import { z } from "zod";
 import { checkToolRateLimit } from "@/lib/tools/rate-limit";
 import { getToolBySlug } from "@/lib/tools/registry";
@@ -24,7 +25,7 @@ export async function checkHealthAction(
   formData: FormData,
 ): Promise<HealthActionState> {
   const h = await headers();
-  const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = clientIp(h);
 
   if (!checkToolRateLimit(TOOL.slug, ip, TOOL.rateLimit, TOOL.rateWindowMs)) {
     return {

@@ -226,7 +226,7 @@ export function PlannerGrid({
           cell ? (
             <DayCellView key={cell.date} cell={cell} now={now} writeGate={writeGate} frozenCount={frozenCount} dragging={activeId !== null} />
           ) : (
-            <div key={`pad-${i}`} className="min-h-[130px] border-r border-line-soft border-b border-b-line-soft [&:nth-child(7n)]:border-r-0 bg-[oklch(0.99_0_0)]" />
+            <div key={`pad-${i}`} className="min-h-[130px] border-r border-line-soft border-b border-b-line-soft [&:nth-child(7n)]:border-r-0 bg-bg-2" />
           ),
         )}
       </div>

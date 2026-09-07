@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { ScopeFollow } from "@/components/dashboard/scope-follow";
 import { PageHead, DotSep } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { getDestinations } from "@/lib/publishing/destinations";
@@ -62,6 +63,7 @@ export default async function ReviewExecutionPage({ params }: Props) {
 
   return (
     <>
+      <ScopeFollow workspaceId={execution.workspace_id} />
       <PageHead
         title={title}
         backHref="/improvements"

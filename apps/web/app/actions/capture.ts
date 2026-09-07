@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { headers } from "next/headers";
+import { clientIp } from "@/lib/tools/client-ip";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendToolResultEmail } from "@/lib/email/resend";
 import { checkToolRateLimit } from "@/lib/tools/rate-limit";
@@ -61,7 +62,7 @@ export async function captureToolLead(
   const email = parsed.data.email.trim().toLowerCase();
 
   const h = await headers();
-  const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = clientIp(h);
   if (
     !checkToolRateLimit("tool-lead-ip", ip, IP_LIMIT.count, IP_LIMIT.windowMs) ||
     !checkToolRateLimit("tool-lead-email", email, EMAIL_LIMIT.count, EMAIL_LIMIT.windowMs)
