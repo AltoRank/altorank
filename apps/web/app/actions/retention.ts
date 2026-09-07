@@ -8,6 +8,8 @@ import { isPauseMonths, pausedUntil, resumesAtUnix } from "@/lib/billing/pause";
 import { liftStripePause, resumePausedWorkspaces } from "@/lib/billing/resume";
 import { validateCancellation } from "@/lib/billing/cancellation";
 import { billingFailure, type BillingOutcome } from "@/lib/billing/failure";
+import { createServiceClient } from "@/lib/supabase/server";
+import { notifyAccountPaused } from "@/lib/email/lifecycle";
 
 // Pause, resume, cancel, keep. Owner only, like checkout and the portal:
 // these change what the account pays. Each one writes our own rows first and
@@ -23,7 +25,7 @@ async function ownerAgency() {
   const supabase = await createClient();
   const { data: agency } = await supabase
     .from("agencies")
-    .select("id, plan, stripe_subscription_id, current_period_end")
+    .select("id, name, plan, stripe_subscription_id, current_period_end")
     .eq("id", agencyId)
     .single();
   if (!agency) throw new Error("No account found.");
@@ -41,11 +43,12 @@ export async function pauseAccount(months: unknown): Promise<BillingOutcome<{ pa
   const { supabase, agency } = await ownerAgency();
   const until = pausedUntil(new Date(), months);
 
-  const { error } = await supabase
+  const { data: paused, error } = await supabase
     .from("workspaces")
     .update({ status: "paused", paused_until: until })
     .eq("agency_id", agency.id)
-    .neq("status", "paused");
+    .neq("status", "paused")
+    .select("id");
   if (error) return billingFailure(error, "The sites could not be paused");
 
   if (billingEnabled && agency.stripe_subscription_id) {
@@ -64,6 +67,22 @@ export async function pauseAccount(months: unknown): Promise<BillingOutcome<{ pa
           "Writing is paused for every site, but billing could not be paused with it — you may still be charged for the next renewal. Try again in a moment, or email hello@altorank.co.",
       };
     }
+  }
+
+  // Confirm it, in writing, with the date. A pause is the one retention
+  // choice that ends by itself - here and at Stripe - so the customer needs
+  // the date somewhere they will still have it in two months. The reminder
+  // before that date comes from the generate cron.
+  //
+  // Never fatal: the pause is already written on both sides.
+  try {
+    await notifyAccountPaused(createServiceClient(), agency.id, {
+      agencyName: (agency.name as string | null) ?? null,
+      pausedUntil: until,
+      siteCount: (paused ?? []).length,
+    });
+  } catch (err) {
+    console.error(`[pause] confirmation email: ${err instanceof Error ? err.message : err}`);
   }
 
   revalidatePath("/settings/billing");

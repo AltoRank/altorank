@@ -167,6 +167,9 @@ export interface RunTaskResult {
   issues: number;
   wordsBefore: number;
   wordsAfter: number;
+  /** The page as it reads today, for the "a rewrite is waiting" email. */
+  pageTitle: string | null;
+  pageUrl: string;
 }
 
 /**
@@ -284,6 +287,8 @@ export async function runRefreshTask(
         issues: issues.length,
         wordsBefore: words(before.html),
         wordsAfter: words(after.html),
+        pageTitle: before.title ?? null,
+        pageUrl: candidate.url,
       },
     };
   } catch (err) {

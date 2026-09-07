@@ -7,7 +7,7 @@ import type { SelfServePlan, BillingInterval } from "@/lib/stripe";
 import { subscriptionSwitchable } from "@/lib/billing/plan-switch";
 import { billingFailure, type BillingRedirect } from "@/lib/billing/failure";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3100";
+import { appUrl } from "@/lib/app-url";
 
 /**
  * Start a Stripe Checkout session for a self-serve plan, or - when the
@@ -64,7 +64,7 @@ export async function createCheckoutSession(
     // The tier follows the price at once rather than on the webhook's
     // schedule, so the page that reloads next says what was just bought.
     await supabase.from("agencies").update({ plan }).eq("id", agencyId);
-    return { ok: true, url: `${APP_URL}/settings/billing?status=switched` };
+    return { ok: true, url: `${appUrl()}/settings/billing?status=switched` };
   }
 
   let session;
@@ -114,9 +114,9 @@ export async function createCheckoutSession(
         : {}),
       success_url:
         returnTo && /^\/[a-zA-Z0-9/_?=&%-]*$/.test(returnTo)
-          ? `${APP_URL}${returnTo}${returnTo.includes("?") ? "&" : "?"}upgraded=1`
-          : `${APP_URL}/settings/billing?status=success`,
-      cancel_url: `${APP_URL}/settings/billing?status=cancelled`,
+          ? `${appUrl()}${returnTo}${returnTo.includes("?") ? "&" : "?"}upgraded=1`
+          : `${appUrl()}/settings/billing?status=success`,
+      cancel_url: `${appUrl()}/settings/billing?status=cancelled`,
     });
   } catch (err) {
     return billingFailure(err, "Checkout could not be opened");
@@ -190,7 +190,7 @@ export async function createBillingPortalSession(flow: PortalFlow = "manage"): P
     return { ok: false, error: "There is no billing account yet — choose a plan first." };
   }
 
-  const returnUrl = `${APP_URL}/settings/billing`;
+  const returnUrl = `${appUrl()}/settings/billing`;
   const base = { customer: agency.stripe_customer_id, return_url: returnUrl };
 
   try {

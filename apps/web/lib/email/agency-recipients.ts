@@ -57,3 +57,49 @@ export function canSeeWorkspace(workspaceIds: string[] | null | undefined, works
   if (workspaceIds == null) return true;
   return workspaceIds.includes(workspaceId);
 }
+
+/** Roles that can do something about a billing email. Editors cannot. */
+const BILLING_ROLES = new Set(["owner", "admin"]);
+
+/**
+ * Who to tell about the account itself: a failed renewal, a cancellation, a
+ * pause, a plan change, a new API key.
+ *
+ * Not workspace-scoped, because none of those facts belong to a site. Scoped
+ * by role instead: `canManageBilling` is owner-only and `canManageMembers` is
+ * owner-or-admin (lib/team/access.ts), so an editor who cannot open the
+ * Billing page has no use for "your card was declined" beyond learning what
+ * their client pays. Owners and admins are told; editors are not.
+ */
+export async function agencyBillingRecipients(
+  supabase: SupabaseClient,
+  agencyId: string,
+): Promise<string[]> {
+  const found = new Set<string>();
+  try {
+    const { data: members } = await supabase
+      .from("agency_members")
+      .select("user_id, role")
+      .eq("agency_id", agencyId);
+
+    for (const m of members ?? []) {
+      if (!BILLING_ROLES.has(String(m.role))) continue;
+      const { data } = await supabase.auth.admin.getUserById(m.user_id as string);
+      const email = data?.user?.email?.trim().toLowerCase();
+      if (email) found.add(email);
+    }
+  } catch {
+    return [];
+  }
+  return [...found];
+}
+
+/** One member's address, for the emails that are about that person only. */
+export async function userEmail(supabase: SupabaseClient, userId: string): Promise<string | null> {
+  try {
+    const { data } = await supabase.auth.admin.getUserById(userId);
+    return data?.user?.email?.trim().toLowerCase() ?? null;
+  } catch {
+    return null;
+  }
+}
