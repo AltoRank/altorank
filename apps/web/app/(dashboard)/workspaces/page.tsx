@@ -82,7 +82,7 @@ export default async function ClientsPage({ searchParams }: Props) {
                 {/* Pause/Resume. The column has no visible heading - the
                     control names itself and a caption over one button is
                     noise - but it is not nameless: screen readers get one. */}
-                <th className="w-px px-3.5 py-2.5 border-b border-line bg-panel">
+                <th className="w-px pl-8 pr-3.5 py-2.5 border-b border-line bg-panel">
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>
@@ -125,7 +125,7 @@ export default async function ClientsPage({ searchParams }: Props) {
                         a workspace is paused; this is only the way in and out.
                         Renders nothing for a workspace still in setup - there
                         is nothing running to stop. */}
-                    <td className="px-3.5 py-3 border-b border-line-soft text-right whitespace-nowrap">
+                    <td className="pl-8 pr-3.5 py-3 border-b border-line-soft text-right whitespace-nowrap">
                       <PauseSiteControl workspaceId={w.id} name={w.name} status={w.status} />
                     </td>
                   </ClientRow>

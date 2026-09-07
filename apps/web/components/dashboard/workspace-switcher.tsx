@@ -108,11 +108,11 @@ export function WorkspaceSwitcher({
 
   return (
     <div className={cn(!inline && "border-b border-line px-3 py-2.5")} ref={ref}>
-      {!inline && (
-        <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-ink-3">
-          Site
-        </label>
-      )}
+      {/* The "SITE" caption that sat here is gone with the nav's group
+          headings (2026-09-07): same uppercase mono chrome, same job of
+          naming something the control below already shows. It was a <label>
+          with no htmlFor, so it labelled nothing; the button's own aria-label
+          is what a screen reader was already reading, and that is untouched. */}
       <div className="relative">
         <button
           type="button"
