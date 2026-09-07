@@ -23,13 +23,23 @@ let feedbackError: { message: string } | null = null;
 const agencyWrites: Row[] = [];
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+// The pause confirmation email is never fatal and is not what these tests
+// are about.
+vi.mock("@/lib/email/lifecycle", () => ({ notifyAccountPaused: vi.fn(async () => {}) }));
 
 vi.mock("@/lib/supabase/server", () => ({
+  createServiceClient: () => ({}),
   createClient: async () => ({
     from: (table: string) => {
       if (table === "workspaces") {
         return {
-          update: () => ({ eq: () => ({ neq: () => Promise.resolve({ error: workspaceUpdateError }) }) }),
+          // pauseAccount ends the chain with .select("id") so it can count the
+          // sites it paused for the confirmation email.
+          update: () => ({
+            eq: () => ({
+              neq: () => ({ select: () => Promise.resolve({ data: [{ id: "ws1" }], error: workspaceUpdateError }) }),
+            }),
+          }),
         };
       }
       if (table === "cancellation_feedback") {
