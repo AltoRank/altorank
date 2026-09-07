@@ -109,6 +109,8 @@ export async function approveArticle(articleId: string) {
       status: "approved",
       approved_by: user.id,
       approved_at: new Date().toISOString(),
+      approval_kind: "human",
+      auto_approve_hold_reason: null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", articleId)
@@ -195,6 +197,8 @@ export async function approveArticles(articleIds: string[]): Promise<string[]> {
       status: "approved",
       approved_by: user.id,
       approved_at: new Date().toISOString(),
+      approval_kind: "human",
+      auto_approve_hold_reason: null,
       updated_at: new Date().toISOString(),
     })
     .in("id", ids)
@@ -211,11 +215,50 @@ export async function approveArticles(articleIds: string[]): Promise<string[]> {
 }
 
 /**
+ * "Not this one." A draft in a workspace that publishes automatically stays
+ * in review, but the rule skips it until a person approves or archives it by
+ * hand (migration 079). Recorded, like the approval it prevents.
+ */
+export async function holdArticle(articleId: string) {
+  const { user } = await requireAuth();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("articles")
+    .update({
+      held_by: user.id,
+      held_at: new Date().toISOString(),
+      auto_approve_hold_reason: "held by a person",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", articleId)
+    .eq("status", "review")
+    .select("id")
+    .single();
+  if (error || !data) throw new Error("Only a draft in review can be held");
+  revalidatePath("/review");
+  revalidatePath(`/content/${articleId}`);
+}
+
+/** Lift a hold so the workspace rule may approve the draft again. */
+export async function releaseHold(articleId: string) {
+  await requireAuth();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("articles")
+    .update({ held_by: null, held_at: null, auto_approve_hold_reason: null, updated_at: new Date().toISOString() })
+    .eq("id", articleId)
+    .eq("status", "review");
+  if (error) throw new Error(error.message);
+  revalidatePath("/review");
+  revalidatePath(`/content/${articleId}`);
+}
+
+/**
  * Send an approved article back for changes (approved → review), clearing the
  * sign-off so it must be re-approved before it can publish.
  */
 export async function requestChanges(articleId: string) {
-  await requireAuth();
+  const { user } = await requireAuth();
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -224,6 +267,10 @@ export async function requestChanges(articleId: string) {
       status: "review",
       approved_by: null,
       approved_at: null,
+      approval_kind: null,
+      // Sent back by a person: the rule must not re-approve it unread.
+      held_by: user.id,
+      held_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
     .eq("id", articleId)

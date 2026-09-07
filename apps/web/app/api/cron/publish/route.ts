@@ -9,6 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { urlIsLive, deriveBlogBaseUrl } from "@/lib/cms/blog-url";
 import { submitForIndexing, type IndexingResult } from "@/lib/seo/indexing";
 import { announceArticlePublished, announcePublishFailed } from "@/lib/email/article-events";
+import { runAutoApprovals, type AutoApproveResult } from "@/lib/publishing/auto-approve";
 
 export const maxDuration = 60;
 
@@ -61,6 +62,20 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: pausedError.message }, { status: 500 });
   }
   const pausedWorkspaceIds = new Set((pausedRows ?? []).map((w) => w.id as string));
+
+  // ── Phase 0: automatic approvals (workspaces with the rule on) ──
+  //
+  // Before the cadence phase, so a draft approved here can ship in the same
+  // run. The rule runs the checks the human Approve button runs and writes
+  // the same row addToQueue writes; the gate in core.ts is unchanged. A
+  // failure here is reported and does not stop publishing what people
+  // approved by hand: those are two different promises.
+  let autoApprovals: AutoApproveResult[] | { error: string } = [];
+  try {
+    autoApprovals = await runAutoApprovals(supabase, now);
+  } catch (err) {
+    autoApprovals = { error: err instanceof Error ? err.message : "unknown error" };
+  }
 
   // ── Phase 1: per-article overrides (scheduled_at <= now) ──
   const { data: overrideArticles, error: overrideError } = await supabase
@@ -270,6 +285,7 @@ export async function GET(request: Request) {
     published,
     errors,
     verified,
+    autoApprovals,
     results,
   });
 }

@@ -66,6 +66,14 @@ export type Workspace = {
   /** Cron writes drafts for this workspace (opt-in; set by activation and by the signup flow). */
   auto_generate?: boolean;
   auto_generate_weekly_limit?: number | null;
+  /** Drafts ship without a click after the hold (migration 079; lib/publishing/auto-approve.ts). */
+  auto_approve?: boolean;
+  auto_approve_hold_hours?: number;
+  auto_approve_min_seo?: number;
+  auto_approve_min_aeo?: number | null;
+  /** Who turned the rule on; written as approved_by on every automatic approval. */
+  auto_approve_set_by?: string | null;
+  auto_approve_set_at?: string | null;
   id: string;
   agency_id: string;
   name: string;
@@ -110,6 +118,15 @@ export type Article = {
   status: ArticleStatus;
   approved_by: string | null;
   approved_at: string | null;
+  /** "human" for a click, "auto" for the workspace rule. null before approval and pre-079. */
+  approval_kind?: "human" | "auto" | null;
+  /** A person said "not this one": automatic approval skips it (migration 079). */
+  held_by?: string | null;
+  held_at?: string | null;
+  /** When the hold window ends and the cron may approve it; null when the workspace reviews by hand. */
+  auto_approve_after?: string | null;
+  /** Why the last automatic pass skipped it. Cleared on approval. */
+  auto_approve_hold_reason?: string | null;
   seo_score: number;
   /** Citation readiness 0-100. null when not scored: render —, never 0. */
   aeo_score: number | null;

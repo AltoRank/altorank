@@ -127,7 +127,7 @@ export async function GET(request: Request) {
 
   const { data: workspaces, error } = await supabase
     .from("workspaces")
-    .select("id, domain, agency_id, auto_generate_weekly_limit, refresh_enabled, refresh_days")
+    .select("id, domain, agency_id, auto_generate_weekly_limit, refresh_enabled, refresh_days, auto_approve, auto_approve_hold_hours")
     .eq("auto_generate", true)
     .neq("status", "paused");
 
@@ -303,6 +303,21 @@ export async function GET(request: Request) {
       written += 1;
       if (due && planned) await fulfilPlannedEntry(supabase, due.entryId, result.articleId);
 
+      // Workspaces that publish automatically: stamp when the hold window
+      // ends, so the review card and the email below can say it and the
+      // publish cron can act on it (lib/publishing/auto-approve.ts). Never
+      // fatal: without the stamp the cron counts the hold from created_at.
+      let autoApproveAfter: string | null = null;
+      if (ws.auto_approve) {
+        const hours = Number(ws.auto_approve_hold_hours ?? 24);
+        autoApproveAfter = new Date(Date.now() + hours * 3_600_000).toISOString();
+        const { error: stampError } = await supabase
+          .from("articles")
+          .update({ auto_approve_after: autoApproveAfter })
+          .eq("id", result.articleId);
+        if (stampError) autoApproveAfter = null;
+      }
+
       // Announce it. A draft nobody is told about is the failure mode this
       // whole schedule creates: four runs a day writing into a queue that only
       // shows itself to someone who opens the dashboard.
@@ -322,6 +337,7 @@ export async function GET(request: Request) {
           verdict: result.factCheck.verdict,
           reasons: next.reasons,
           articleId: result.articleId,
+          autoApproveAfter,
         });
         notified = out.failed
           ? `, emailed ${out.sent}/${to.length} (${out.lastError ?? "failed"})`
