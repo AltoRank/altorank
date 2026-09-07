@@ -28,6 +28,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readSiteText } from "./site-text";
+import { checkDomainReachable } from "@/lib/domain/reachable";
+import { e2eStubsEnabled } from "@/lib/e2e/stubs";
 import { trainVoiceProfile } from "@/lib/voice/train";
 import { analyseDomain } from "@/lib/audit/domain-analysis";
 import { generateArticle } from "@/lib/content/generate";
@@ -117,6 +119,31 @@ async function runPhases(
   firstDraft: "inline" | "dispatch",
 ): Promise<RunOnboardingResult> {
   const domain = workspace.domain;
+
+  // --- Phase 0: is there a site here at all? -------------------------------
+  //
+  // Every phase below gates on `!domain` and on nothing else, so until this
+  // check a domain that resolves to nothing still produced keywords, a page
+  // check, a planned month and a first draft - each one rendered as a green
+  // tick. A run reported "read 42 pages" of a site that does not exist.
+  //
+  // `no-dns` is the only verdict that stops the run, because it is the only
+  // one that is certain: there is no host. A site behind a WAF that refuses
+  // our fetch still gets its full run (lib/domain/reachable.ts explains why).
+  // `E2E_STUBS` stands in for the outside world, DNS included: every e2e domain
+  // is `*.altorank.test` precisely because it resolves to nothing, and the
+  // stubs supply what a real fetch would. Checking reachability there would
+  // block the suite from ever exercising the phases below.
+  if (domain && !e2eStubsEnabled()) {
+    const reach = await checkDomainReachable(domain);
+    if (reach.verdict === "no-dns" || reach.verdict === "invalid") {
+      emit({ phase: "scanning", status: "failed", detail: reach.reason });
+      for (const phase of ["keywords", "pages", "planning", "drafting"] as const) {
+        emit({ phase, status: "skipped", detail: "There is no site at this domain to work from." });
+      }
+      return { pendingDraft: null, fanOutSettled: Promise.resolve() };
+    }
+  }
 
   // --- Phase 1: read the site, learn its voice ----------------------------
   emit({ phase: "scanning", status: "active" });
