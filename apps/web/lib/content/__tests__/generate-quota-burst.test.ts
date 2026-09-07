@@ -17,7 +17,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  */
 
 const getQuota = vi.fn();
-vi.mock("@/lib/billing/quota", () => ({
+vi.mock("@/lib/billing/quota", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/billing/quota")>()),
   getQuota: (...args: unknown[]) => getQuota(...args),
   quotaExceededMessage: (q: { used: number; limit: number }) => `out of quota (${q.used}/${q.limit})`,
 }));
