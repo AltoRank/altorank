@@ -40,9 +40,11 @@ const SCOPED_TABLES = new Set([
   "refresh_executions",
   "refresh_tasks",
   "reports",
+  "site_pages",
   "voice_profiles",
   "workspace_integrations",
   "workspace_metrics",
+  "workspace_output_settings",
 ]);
 
 /**
