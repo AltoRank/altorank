@@ -55,9 +55,9 @@ checkable here: grep for a publish tool and you will not find one.
 | Search analytics | Google Search Console; Bing Webmaster Tools (clicks and impressions per day) |
 | AI visibility | whether AI answers name you, and who they name instead |
 
-**Publishing destinations** (`apps/web/lib/cms/adapter.ts`) — thirteen adapters,
-of which eleven are content management systems; `git` and `webhook` are
-publishing targets rather than CMSs. Framer, Ghost, git, HubSpot, Magento,
+**Publishing destinations** (`apps/web/lib/cms/adapter.ts`) — thirteen adapters
+covering **ten CMS platforms**; WordPress is reachable two ways, and `git` and
+`webhook` are publishing targets rather than CMSs. Framer, Ghost, git, HubSpot, Magento,
 Notion, Shopify, Webflow, webhook, Wix, WooCommerce, WordPress, and the
 WordPress plugin — a second, recommended route to WordPress that installs a
 plugin and takes a per-site token instead of an application password

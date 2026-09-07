@@ -5,7 +5,7 @@
 // Publishes to sites that have no CMS: an article becomes a Markdown file
 // committed to a repository, and the host's existing build pipeline deploys it.
 // Astro, Next, Hugo, Eleventy, Jekyll and Gatsby all work this way, and none of
-// the eleven CMS adapters can touch them.
+// the ten CMS adapters can touch them.
 //
 // This is also the only way to publish to altorank.co, which is an Astro site
 // built from this repository. Dogfooding our own publishing was impossible
