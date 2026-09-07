@@ -114,6 +114,9 @@ export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise
     keyword: pending.term,
     keywordId: pending.keywordId,
     selection: pending.selection,
+    // Its share of the run's one related-keyword task, so the draft route
+    // does not buy a second one (lib/seo/brief-data.ts).
+    relatedKeywords: pending.relatedKeywords,
   });
   if ("skipped" in sent) {
     // canSelfInvoke said yes a moment ago; only an env change between the

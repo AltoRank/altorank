@@ -40,6 +40,7 @@ import {
 } from "@/lib/seo/link-resolver";
 import { verifyOutboundLinks, type LinkCheck } from "@/lib/seo/link-check";
 import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research";
+import type { RelatedKeyword } from "@/lib/seo/brief-data";
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { getLocale } from "@/lib/seo/locales";
@@ -140,6 +141,17 @@ export interface GenerateArticleOptions {
    * disagreement only surfaces as an "error" in a cron summary.
    */
   callerEmail?: string | null;
+  /**
+   * Related keywords already bought for this term by the caller.
+   *
+   * The onboarding fan-out buys the whole week's related keywords in one
+   * `keywords_for_keywords` task - the endpoint is billed per task and takes
+   * twenty seeds - and hands each draft its share. Seven drafts each buying
+   * their own was $0.63 of a measured $1.929 signup. Passed straight through
+   * to `gatherArticleResearch`; an empty array means the task answered
+   * nothing for this term, which is an answer.
+   */
+  relatedKeywords?: RelatedKeyword[];
   /** Streaming hook. Omitted by the unattended path. */
   onChunk?: (html: string) => void;
   /** Called once research completes, before the model starts. */
@@ -544,6 +556,7 @@ export async function generateArticle(
       locale: workspace.language ?? "en",
       supabase,
       workspaceId,
+      relatedKeywords: options.relatedKeywords,
     });
     onResearch?.(research);
 

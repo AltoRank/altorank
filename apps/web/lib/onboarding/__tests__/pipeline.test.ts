@@ -33,7 +33,17 @@ vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault: (e: unknow
 const plan = vi.fn(async () => [] as unknown[]);
 vi.mock("../plan", () => ({ schedulePlan: () => plan(), fulfilPlannedEntry: vi.fn(async () => undefined) }));
 const fanOut = vi.fn(() => ({ dispatched: 0, settled: Promise.resolve() }));
-vi.mock("@/lib/content/fan-out", () => ({ fanOutDrafts: (...a: unknown[]) => fanOut(...(a as [])) }));
+vi.mock("@/lib/content/fan-out", async () => {
+  const real = await vi.importActual<typeof import("@/lib/content/fan-out")>("@/lib/content/fan-out");
+  return { ...real, fanOutDrafts: (...a: unknown[]) => fanOut(...(a as [])) };
+});
+// The week's related keywords, bought in one task before any draft is
+// dispatched. Faked here because the real one is a paid provider call; what
+// this suite pins is that it is called once and its rows reach the drafts.
+const relatedBatch = vi.fn(async () => new Map<string, unknown[]>());
+vi.mock("@/lib/seo/brief-data", () => ({
+  fetchRelatedKeywordsBatch: (...a: unknown[]) => relatedBatch(...(a as [])),
+}));
 const detect = vi.fn(async () => ({ found: 0, added: 0 }));
 vi.mock("@/lib/linking/detect", () => ({ detectLinks: (...a: unknown[]) => detect(...(a as [])) }));
 // Mocked, and it has to be: the real one fetches robots.txt, a sitemap and up

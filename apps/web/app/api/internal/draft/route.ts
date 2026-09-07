@@ -26,6 +26,7 @@ import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { authorised } from "@/lib/content/fan-out";
 import { stampRun } from "@/lib/onboarding/run-store";
 import type { OnboardingEvent } from "@/lib/onboarding/events";
+import type { RelatedKeyword } from "@/lib/seo/brief-data";
 
 export const maxDuration = 300;
 
@@ -36,6 +37,12 @@ interface Body {
   /** The onboarding run this is the first draft of. */
   runId?: string;
   selection?: { reasons: string[]; score: number; difficulty: number | null; volume: number | null };
+  /**
+   * This draft's share of the run's one related-keyword lookup, when the
+   * dispatcher bought the week in a single task (lib/content/fan-out.ts).
+   * Absent means nobody looked and this draft buys its own.
+   */
+  relatedKeywords?: RelatedKeyword[];
 }
 
 export async function POST(request: NextRequest) {
@@ -108,6 +115,7 @@ export async function POST(request: NextRequest) {
       keywordId: keywordId ?? undefined,
       autonomous: true,
       selection,
+      relatedKeywords: Array.isArray(body.relatedKeywords) ? body.relatedKeywords : undefined,
       billToAgencyId: workspace.agency_id as string,
       // The one boundary inside the draft: research is done, the model is
       // about to write. The same sentence the inline pipeline emits, so the

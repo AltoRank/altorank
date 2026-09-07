@@ -350,6 +350,21 @@ export async function gatherArticleResearch(options: {
   locale?: string;
   supabase?: SupabaseClient;
   workspaceId?: string;
+  /**
+   * Related keywords already bought for this term, so this does not buy them
+   * again.
+   *
+   * `keywords_for_keywords` is billed per task and takes up to twenty seeds,
+   * so a run that knows all its keywords upfront - the onboarding fan-out
+   * writes seven drafts from one plan - buys the whole week in one task and
+   * hands each draft its share. Seven separate drafts each buying their own
+   * was $0.63 of a measured $1.929 signup (round4 §4, W2).
+   *
+   * An empty array is an answer, not an absence: the batched task can
+   * legitimately return nothing for a seed, and re-buying it here would undo
+   * the saving. `undefined` means nobody looked, and this pays for the lookup.
+   */
+  relatedKeywords?: RelatedKeyword[];
 }): Promise<ArticleResearch> {
   const { keyword, locale, supabase, workspaceId } = options;
   const loc = getLocale(locale ?? "en");
@@ -359,14 +374,17 @@ export async function gatherArticleResearch(options: {
   };
 
   const hasDataForSeo = hasDataForSEOCredentials();
+  const prefetched = options.relatedKeywords;
 
   const [serpResult, keywordsResult, gscResult] = await Promise.allSettled([
     hasDataForSeo
       ? fetchAdvancedSerp(keyword, localeParam)
       : Promise.reject(new Error("DataForSEO credentials not configured")),
-    hasDataForSeo
-      ? fetchRelatedKeywords(keyword, localeParam)
-      : Promise.reject(new Error("DataForSEO credentials not configured")),
+    prefetched
+      ? Promise.resolve(prefetched)
+      : hasDataForSeo
+        ? fetchRelatedKeywords(keyword, localeParam)
+        : Promise.reject(new Error("DataForSEO credentials not configured")),
     supabase && workspaceId
       ? fetchGscSignals(supabase, workspaceId, keyword)
       : Promise.resolve({
@@ -409,7 +427,11 @@ export async function gatherArticleResearch(options: {
           : "unavailable",
     detail:
       keywordsResult.status === "fulfilled"
-        ? `${relatedKeywords.length} related keywords`
+        ? `${relatedKeywords.length} related keywords` +
+          // Say where they came from. A reviewer reading "3 related keywords"
+          // on a fan-out draft should be able to tell a thin answer from a
+          // share of one lookup, not have to guess which.
+          (prefetched ? ", from this run's shared lookup" : "")
         : reasonToDetail(keywordsResult.reason),
   });
 

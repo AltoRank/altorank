@@ -38,7 +38,9 @@ import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
 import { schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
-import { fanOutDrafts } from "@/lib/content/fan-out";
+import { fanOutDrafts, MAX_FAN_OUT } from "@/lib/content/fan-out";
+import { fetchRelatedKeywordsBatch, type RelatedKeyword } from "@/lib/seo/brief-data";
+import { getLocale } from "@/lib/seo/locales";
 import { detectLinks } from "@/lib/linking/detect";
 import { assessExistingPages } from "./site-assessment";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
@@ -55,6 +57,8 @@ export interface PendingDraft {
   term: string;
   keywordId: string | null;
   selection: { reasons: string[]; score: number; difficulty: number | null; volume: number | null };
+  /** This draft's share of the run's one related-keyword lookup, when it ran. */
+  relatedKeywords?: RelatedKeyword[];
 }
 
 export interface RunOnboardingResult {
@@ -292,6 +296,8 @@ async function runPhases(
     emit({ phase: "drafting", status, detail, article });
   };
   let pendingDraft: PendingDraft | null = null;
+  /** Each planned term's share of the run's one related-keyword lookup. */
+  let relatedByTerm = new Map<string, RelatedKeyword[]>();
   try {
     // Not if one already exists: this pipeline can be re-run, and a second
     // identical draft is worse than none.
@@ -321,6 +327,22 @@ async function runPhases(
         // scheduled; writing anything else would contradict the calendar.
         const first = plan[0];
         const next = (first && recs.find((r) => r.term === first.term)) ?? pickNextKeyword(recs);
+
+        // The week's related keywords, in one paid task instead of seven.
+        //
+        // `keywords_for_keywords` is billed per TASK and takes up to twenty
+        // seeds; the app sent one seed per task, so a signup that writes seven
+        // drafts bought seven tasks - $0.63, a third of a measured $1.929
+        // signup and three quarters of its DataForSEO half, for thirteen
+        // usable rows in total (round4 §4, W2). Every keyword is already known
+        // here: `next` plus the plan the person just watched get scheduled.
+        //
+        // Best effort in both directions. A failure leaves the map empty and
+        // each draft buys its own lookup exactly as before; a seed the task
+        // answers nothing for gets an empty list, which is an answer and is
+        // not re-bought.
+        relatedByTerm = next ? await fetchWeeksRelatedKeywords(workspace, next.term, plan) : new Map();
+
         if (!next) {
           settle("skipped", "No keyword clear enough to write to yet.");
         } else if (firstDraft === "dispatch") {
@@ -330,6 +352,7 @@ async function runPhases(
             term: next.term,
             keywordId: next.keywordId ?? null,
             selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
+            relatedKeywords: relatedByTerm.get(next.term),
           };
           settle("active", `Writing "${next.term}" now. It lands in your review queue when it is done.`);
         } else {
@@ -340,6 +363,7 @@ async function runPhases(
             keywordId: next.keywordId,
             autonomous: true,
             selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
+            relatedKeywords: relatedByTerm.get(next.term),
             // The one boundary inside the draft: research is done, the model
             // is about to write. Emitted as the same phase still active, with
             // a new detail, so the screen can say what is happening during the
@@ -402,7 +426,11 @@ async function runPhases(
     if (pendingDraft?.keywordId) done.add(pendingDraft.keywordId);
     const rest = plan
       .filter((p) => p.keywordId && !done.has(p.keywordId))
-      .map((p) => ({ keywordId: p.keywordId as string, term: p.term }));
+      .map((p) => ({
+        keywordId: p.keywordId as string,
+        term: p.term,
+        relatedKeywords: relatedByTerm.get(p.term),
+      }));
     const fan = fanOutDrafts(workspace.id, rest);
     fanOutSettled = fan.settled;
     if (fan.dispatched > 0) {
@@ -424,4 +452,39 @@ async function runPhases(
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message : "Something went wrong.";
+}
+
+/**
+ * One `keywords_for_keywords` task for every draft this run will write.
+ *
+ * The seeds are the first draft's term plus the plan, capped at what actually
+ * gets written now: the inline draft and MAX_FAN_OUT more. Anything past that
+ * is written by `cron/generate` days later, by which time a list bought today
+ * would be stale as well as unpaid-for.
+ *
+ * Never throws. An empty map means every draft buys its own lookup, which is
+ * what all of them did before this existed.
+ */
+async function fetchWeeksRelatedKeywords(
+  workspace: Workspace,
+  firstTerm: string,
+  plan: PlannedEntry[],
+): Promise<Map<string, RelatedKeyword[]>> {
+  if (!hasDataForSEOCredentials()) return new Map();
+  const terms: string[] = [];
+  for (const term of [firstTerm, ...plan.map((p) => p.term)]) {
+    if (term && !terms.includes(term)) terms.push(term);
+    if (terms.length >= MAX_FAN_OUT + 1) break;
+  }
+  if (!terms.length) return new Map();
+  const loc = getLocale(workspace.language ?? "en");
+  try {
+    return await fetchRelatedKeywordsBatch(terms, {
+      languageCode: loc.languageCode,
+      locationCode: workspace.location_code ?? loc.locationCode,
+    });
+  } catch (err) {
+    console.warn("[onboarding] shared related-keyword lookup failed:", message(err));
+    return new Map();
+  }
 }
