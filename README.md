@@ -98,6 +98,27 @@ npm run cli -- --help        # the agent API from a shell; auth with ALTORANK_AP
 npm run readiness -- <domain>  # the agent-readiness checks on their own
 ```
 
+### Hosted MCP endpoint
+
+The same tools are served at `/api/mcp` (Streamable HTTP) by the running app,
+so an MCP client adds one URL as a connector instead of running the stdio
+server: `https://app.altorank.co/api/mcp` on the hosted install, or your own
+origin when you self-host. Authentication is a bearer token, either an API key
+from `/settings/api-keys` or the token the built-in OAuth flow issues:
+
+- discovery at `/.well-known/oauth-authorization-server` and
+  `/.well-known/oauth-protected-resource/api/mcp`
+- dynamic client registration at `/api/oauth/register` (public clients, PKCE
+  S256 only)
+- consent at `/oauth/authorize`, owner or admin only, write scope opt-in
+- token at `/api/oauth/token`, authorization-code grant, no refresh token
+
+The token a connector receives is an `api_keys` row (migration 079), so it is
+listed, expires and is revoked on `/settings/api-keys` like any other key.
+Claude Code registers it with
+`claude mcp add --transport http altorank https://app.altorank.co/api/mcp`;
+ChatGPT and Claude.ai take the same URL as a custom connector.
+
 Neither the CLI nor the MCP server can approve an article or delete anything —
 not by configuration, but because the agent API has no such call and no `DELETE`
 handler at all. Nor can either of them publish: the single endpoint that reaches

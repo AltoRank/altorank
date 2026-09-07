@@ -71,6 +71,13 @@ export async function updateSession(request: NextRequest) {
     // report inbox uses may have no account at all. The HMAC in the URL is
     // what authorises it (lib/email/unsubscribe.ts).
     "/unsubscribe",
+    // OAuth discovery for the hosted MCP endpoint (RFC 8414 / 9728). An MCP
+    // client reads these before anyone has signed in; that is their purpose.
+    "/.well-known",
+    // The connector consent screen. It handles the signed-out case itself,
+    // by sending the person to /signin with a `next` back to the exact
+    // request, which a blanket redirect here would drop on the floor.
+    "/oauth/authorize",
   ];
 
   const isPublic =

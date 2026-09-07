@@ -140,8 +140,8 @@ export default async function AuthorizePage(props: { searchParams: Promise<Param
           </div>
 
           <p className="text-[12px] text-ink-3">
-            This creates an API key named &ldquo;{client.client_name} (connector)&rdquo; that expires in 90 days. Revoke it
-            any time under Settings → API keys, which disconnects the app.
+            This creates an API key named &ldquo;{`${client.client_name} (connector)`}&rdquo; that expires in 90 days.
+            Revoke it any time under Settings → API keys, which disconnects the app.
           </p>
 
           <input type="hidden" name="decision" value="approve" />
