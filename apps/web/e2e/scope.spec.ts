@@ -37,11 +37,14 @@ test("keywords and calendar show only the scoped workspace after switching", asy
   await signIn(page, account.email, "/keywords");
   await expect(page).toHaveURL(/\/keywords$/);
 
-  // The switcher is a button naming the active site; it opens a listbox of sites.
+  // The switcher is a button naming the active workspace; it opens a listbox of
+  // them. The listbox was labelled "Sites" until the vocabulary pass (077)
+  // renamed it, and this assertion had been failing since - a stale label, not
+  // a broken switcher.
   const switcher = page.getByRole("button", { name: "Choose which workspace to view" });
   async function switchTo(domain: string) {
     await switcher.click();
-    await page.getByRole("listbox", { name: "Sites" }).getByRole("option", { name: domain }).click();
+    await page.getByRole("listbox", { name: "Workspaces" }).getByRole("option", { name: domain }).click();
   }
 
   // No cookie yet: the oldest workspace (alpha) is the scope.

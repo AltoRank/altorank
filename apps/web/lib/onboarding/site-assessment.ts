@@ -22,6 +22,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { syncSitePages, type CrawlSummary } from "@/lib/seo/site-crawl";
+import { e2eStubsEnabled, isReservedTestDomain, stubAssessExistingPages } from "@/lib/e2e/stubs";
 import { plural } from "@/lib/utils";
 
 /**
@@ -125,6 +126,24 @@ export async function assessExistingPages(
   workspaceId: string,
   domain: string,
 ): Promise<PagesPhaseOutcome> {
+  // E2E_STUBS on a reserved test name: fixture pages and findings, no fetch
+  // (lib/e2e/stubs.ts). Every e2e domain is `*.altorank.test`, which resolves
+  // to nothing, so the real crawl there would spend the suite's time on DNS
+  // failures and prove nothing.
+  //
+  // Only for those names, though, and that is the point. The other stubs
+  // replace a model call, a DataForSEO call and a written article - things
+  // that cost money and must never fire under test. This one replaces a plain
+  // GET that costs nothing, so a real domain under E2E_STUBS=1 gets the real
+  // crawl, which is how this phase is exercised against a live site with no
+  // paid call anywhere in the run.
+  if (e2eStubsEnabled() && isReservedTestDomain(domain)) {
+    try {
+      return await stubAssessExistingPages(supabase, workspaceId, domain);
+    } catch (err) {
+      return { status: "failed", detail: err instanceof Error ? err.message : "stub failed", summary: null };
+    }
+  }
   try {
     const summary = await syncSitePages(supabase, workspaceId, domain, {
       ...ONBOARDING_CRAWL,

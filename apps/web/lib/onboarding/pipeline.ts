@@ -200,7 +200,14 @@ async function runPhases(
   if (!domain) {
     emit({ phase: "pages", status: "skipped", detail: "No domain to read pages from." });
   } else {
+    const startedAt = Date.now();
     const pages = await assessExistingPages(supabase, workspace.id, domain);
+    // The number the budget is set against. Logged rather than shown: the
+    // customer wants to know what was found, and whoever tunes ONBOARDING_CRAWL
+    // wants to know how long it took on a real site.
+    console.log(
+      `[onboarding] pages: ${pages.status} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s - ${pages.detail}`,
+    );
     emit({ phase: "pages", status: pages.status, detail: pages.detail });
   }
 

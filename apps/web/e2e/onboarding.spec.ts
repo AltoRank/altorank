@@ -89,6 +89,12 @@ test("a new account is walked from /dashboard to a planned first month", async (
 
   // --- The run ---------------------------------------------------------------
   await expect(page.getByRole("heading", { name: "Creating your content plan" })).toBeVisible();
+  // The pages the customer already had, read and checked. This phase exists
+  // because the wizard asks for the blog three screens up and, until it was
+  // added, nothing ever fetched it.
+  await expect(page.getByText("Checked your existing pages")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/Read \d+ pages\. Found \d+ technical issues on \d+ of them\./)).toBeVisible();
+
   const plannedLine = page.getByText(/Planned \d+ articles? over the next 30 days/);
   await expect(plannedLine).toBeVisible({ timeout: 30_000 });
   const planned = Number((await plannedLine.textContent())?.match(/Planned (\d+)/)?.[1]);
@@ -114,14 +120,27 @@ test("a new account is walked from /dashboard to a planned first month", async (
   expect(entries?.length).toBe(planned);
 
   // The first draft: written for day one of the plan, waiting in review.
+  //
+  // Not "exactly one article". The pipeline fans the rest of the week out to
+  // its own invocations (MAX_FAN_OUT = 6), and on stubs each of those lands in
+  // about a second, so a stubbed run finishes with seven drafts rather than
+  // one. This assertion said `toBe(1)` and had been failing on
+  // `onboarding/poll-run` before this branch existed, for that reason. What
+  // the run actually owes the customer is: a draft on day one, in review, in
+  // the calendar entry - and nothing that reached `articles` bypassing the
+  // approval gate.
   const { data: articles } = await db.from("articles").select("id, status, keyword, generated_autonomously").eq("workspace_id", ws.id);
-  expect(articles?.length).toBe(1);
-  expect(articles?.[0].status).toBe("review");
-  expect(articles?.[0].generated_autonomously).toBe(true);
+  expect(articles!.length).toBeGreaterThanOrEqual(1);
+  for (const a of articles!) {
+    expect(a.status).toBe("review");
+    expect(a.generated_autonomously).toBe(true);
+  }
   const first = entries![0];
   expect(first.scheduled_date).toBe(todayUtc());
-  expect(first.keyword).toBe(articles?.[0].keyword);
-  expect(first.article_id).toBe(articles?.[0].id);
+  expect(first.article_id).not.toBeNull();
+  const dayOneArticle = articles!.find((a) => a.id === first.article_id)!;
+  expect(dayOneArticle).toBeTruthy();
+  expect(first.keyword).toBe(dayOneArticle.keyword);
   expect(first.status).toBe("scheduled");
 
   // --- The plan, on the calendar ------------------------------------------------
@@ -142,5 +161,26 @@ test("a new account is walked from /dashboard to a planned first month", async (
   // the entry's (lib/plan/card-state.ts).
   const dayOne = page.locator("div.text-xs", { has: page.getByText(first.keyword as string, { exact: true }) }).first();
   await expect(dayOne).toContainText("In review");
-  await expect(dayOne.getByRole("link", { name: "Open draft" })).toHaveAttribute("href", `/content/${articles?.[0].id}`);
+  await expect(dayOne.getByRole("link", { name: "Open draft" })).toHaveAttribute("href", `/content/${dayOneArticle.id}`);
+
+  // --- What the crawl found, where the customer meets it -----------------------
+  //
+  // /improvements is otherwise gated on Search Console: with none connected it
+  // is four blocker cards and two empty tables. The technical assessment needs
+  // no connection, and the copy has to say which half is which.
+  const { data: checked } = await db
+    .from("site_pages")
+    .select("url, tech_issue_count")
+    .eq("workspace_id", ws.id)
+    .not("tech_checked_at", "is", null);
+  expect(checked!.length).toBeGreaterThan(0);
+  expect(checked!.some((p) => (p.tech_issue_count as number) > 0)).toBe(true);
+
+  await page.goto("/improvements");
+  await expect(page.getByRole("heading", { name: "Technical issues on your existing pages" })).toBeVisible();
+  await expect(page.getByText("no Search Console needed", { exact: false })).toBeVisible();
+  const noMeta = page.getByRole("button", { name: /No meta description/ });
+  await expect(noMeta).toBeVisible();
+  await noMeta.click();
+  await expect(page.getByText("This page has no meta description.").first()).toBeVisible();
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { describeAssessment, ONBOARDING_CRAWL } from "../site-assessment";
+import { isReservedTestDomain } from "@/lib/e2e/stubs";
 import type { CrawlSummary } from "@/lib/seo/site-crawl";
 import type { TechSummary } from "@/lib/seo/tech-audit";
 
@@ -107,4 +108,23 @@ describe("the onboarding budget", () => {
     expect(ONBOARDING_CRAWL.concurrency).toBeLessThanOrEqual(3);
     expect(ONBOARDING_CRAWL.timeoutMs).toBeLessThanOrEqual(15_000);
   });
+});
+
+/**
+ * The crawl is the one stubbed thing that is free, and the gate is narrow for
+ * that reason: the fixture domains do not exist, so they are stubbed; a real
+ * domain gets the real crawl even under E2E_STUBS=1. That is what let this
+ * phase be exercised against limineer.com and altorank.co with no paid call
+ * anywhere in the run.
+ */
+describe("which domains the crawl is stubbed for", () => {
+  it.each(["altorank.test", "e2e.altorank.test", "unreadable.e2e.altorank.test", "https://x.invalid/", "localhost", "app.localhost", "www.example"])(
+    "stubs %s, which cannot resolve",
+    (domain) => expect(isReservedTestDomain(domain)).toBe(true),
+  );
+
+  it.each(["limineer.com", "altorank.co", "https://www.fitsuite.co/blog", "testing.com", "invalid-name.co.uk"])(
+    "crawls %s for real",
+    (domain) => expect(isReservedTestDomain(domain)).toBe(false),
+  );
 });
