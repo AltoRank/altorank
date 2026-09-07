@@ -50,6 +50,10 @@ export default defineConfig({
       // Own build directory, so this server can start beside a plain `next dev`
       // of the same checkout (Next 16 locks `.next/dev` per process).
       NEXT_DIST_DIR: ".next-e2e",
+      // The onboarding run and the fan-out call this server back over HTTP
+      // (lib/content/fan-out.ts); a base URL pointing at another dev server
+      // would run the worker there, against whatever database it has.
+      NEXT_PUBLIC_APP_URL: `http://localhost:3110`,
       // Belt and braces: even a path the stubs miss cannot authenticate to a
       // paid provider, and the approval gate is exercised as self-host (no
       // Stripe), where approving needs no plan.

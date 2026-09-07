@@ -3,10 +3,12 @@
 // ---------------------------------------------------------------------------
 //
 // One vocabulary for the whole feature: the server pipeline emits these events,
-// the SSE route forwards them verbatim, and the progress screen folds them into
-// the state below. Keeping the reducer here - pure, no React, no server imports
-// - is what lets it be tested against an exact event sequence rather than
-// against a rendered component.
+// the worker folds each one into an `onboarding_runs` row as it happens, and
+// the progress screen polls that row and folds it into the state below. Keeping
+// the reducer here - pure, no React, no server imports - is what lets it be
+// tested against an exact event sequence rather than against a rendered
+// component, and what lets `stateFromRun` be checked against it: a persisted
+// run must render exactly as the live stream of its events would have.
 
 export type OnboardingPhase = "scanning" | "keywords" | "planning" | "drafting";
 
@@ -142,6 +144,139 @@ export function reduceOnboarding(state: OnboardingState, event: OnboardingEvent)
 /** Whether the run has stopped, either way. */
 export function isTerminal(state: OnboardingState): boolean {
   return state.ready || state.error !== null;
+}
+
+// ---------------------------------------------------------------------------
+// The run as a row
+// ---------------------------------------------------------------------------
+//
+// `onboarding_runs` (migration 076) carries the reducer's own output: `phases`
+// is `steps`, `planned` is `planned`, `keywords_found` is `keywordsFound`. The
+// article is a foreign key rather than a copy, so the row cannot claim a draft
+// that has since been deleted; /state joins the article row back in.
+
+export type OnboardingRunStatus = "running" | "done" | "partial" | "error";
+
+export interface OnboardingRunRow {
+  id: string;
+  workspace_id: string;
+  status: OnboardingRunStatus;
+  phases: OnboardingStep[];
+  planned: OnboardingPlanned[];
+  keywords_found: number | null;
+  article_id: string | null;
+  error: string | null;
+  started_at: string;
+  updated_at: string;
+  finished_at: string | null;
+}
+
+/** The columns of the first draft the screen needs, as `articles` stores them. */
+export interface OnboardingRunArticle {
+  id: string;
+  title: string | null;
+  keyword: string | null;
+  word_count: number | null;
+  fact_check_verdict: string | null;
+  status: string;
+}
+
+/** What GET /api/onboard/state answers, and what the wizard is handed on load. */
+export interface OnboardingRunSnapshot {
+  run: OnboardingRunRow | null;
+  article: OnboardingRunArticle | null;
+  /** A `running` row nothing has written to for RUN_STALE_MS: the worker died. */
+  stale: boolean;
+}
+
+/**
+ * How long a `running` row may go without a write before it is presumed dead.
+ *
+ * The worker writes after every phase and the draft route writes once
+ * research is done and again at the end, so the longest honest silence is the
+ * model writing the draft - 282s at the worst measured. Ten minutes is the
+ * same ceiling first-draft-live gives a `drafting` article before it stops
+ * polling; past it the screen reports the run stopped rather than spinning.
+ */
+export const RUN_STALE_MS = 10 * 60_000;
+
+/**
+ * How recently a finished run has to have finished for /onboarding to open on
+ * its result instead of on the wizard. A reload seconds after "Done." lands
+ * on the plan; a visit next week opens the wizard to edit the setup.
+ */
+export const RUN_RECENT_MS = 60 * 60_000;
+
+export function isRunStale(run: Pick<OnboardingRunRow, "status" | "updated_at">, now: number): boolean {
+  return run.status === "running" && now - new Date(run.updated_at).getTime() > RUN_STALE_MS;
+}
+
+/** Whether /onboarding should open on this run rather than on the wizard. */
+export function shouldResumeRun(snapshot: OnboardingRunSnapshot | null, now: number): boolean {
+  const run = snapshot?.run;
+  if (!run) return false;
+  if (run.status === "running") return !snapshot.stale;
+  return run.finished_at !== null && now - new Date(run.finished_at).getTime() < RUN_RECENT_MS;
+}
+
+export const STALE_RUN_ERROR =
+  "This run stopped responding. Everything it finished is kept, and tonight's run picks up the rest.";
+
+const VERDICTS: readonly OnboardingArticle["verdict"][] = ["clean", "review", "high_risk"];
+
+/**
+ * The persisted row, as the state the screen renders.
+ *
+ * The inverse of what the worker does with `reduceOnboarding`: it folded
+ * events into `steps`/`planned`/`keywordsFound` and wrote them down, and this
+ * reads them back. Phases the row has not reached yet are `pending`, in
+ * PHASE_ORDER, so a row with an empty `phases` renders as the first frame of a
+ * live run did. `ready` is the row having left `running`; the article is
+ * whatever `article_id` points at, which is set only once the draft is saved.
+ */
+export function stateFromRun(
+  run: OnboardingRunRow | null,
+  article: OnboardingRunArticle | null,
+  opts: { stale?: boolean } = {},
+): OnboardingState {
+  const base = initialOnboardingState();
+  if (!run) return base;
+  const known = new Map((run.phases ?? []).map((p) => [p.phase, p] as const));
+  const steps: OnboardingStep[] = PHASE_ORDER.map((phase) => {
+    const p = known.get(phase);
+    if (!p) return { phase, status: "pending" };
+    return p.detail === undefined ? { phase, status: p.status } : { phase, status: p.status, detail: p.detail };
+  });
+  const draft: OnboardingArticle | null =
+    article && run.article_id === article.id
+      ? {
+          id: article.id,
+          title: article.title ?? "",
+          keyword: article.keyword ?? "",
+          wordCount: article.word_count ?? 0,
+          verdict: VERDICTS.find((v) => v === article.fact_check_verdict) ?? "review",
+        }
+      : null;
+  return {
+    steps,
+    keywordsFound: run.keywords_found,
+    planned: run.planned ?? [],
+    article: draft,
+    ready: run.status !== "running",
+    error: run.error ?? (opts.stale ? STALE_RUN_ERROR : null),
+  };
+}
+
+/**
+ * The status a run settles on, from what it produced. The same rule
+ * `onboardingOutcome` reads the "Done." line from, so the row and the sentence
+ * cannot disagree: a plan and a draft is `done`; anything less is `partial`,
+ * and the phases say which part. `error` is reserved for the worker itself
+ * throwing - a phase that failed is `partial`, because the others still ran.
+ */
+export function runStatusFrom(state: Pick<OnboardingState, "planned" | "article" | "error">): Exclude<OnboardingRunStatus, "running"> {
+  if (state.error) return "error";
+  return state.planned.length > 0 && state.article !== null ? "done" : "partial";
 }
 
 /** What a run is worth saying about itself, once it has stopped. */

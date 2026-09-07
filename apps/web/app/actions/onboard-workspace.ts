@@ -18,11 +18,12 @@ type OnboardResult = {
  * Non-streaming onboarding, for callers with no screen to stream to
  * (google-properties imports a site straight into a workspace).
  *
- * Delegates to the same pipeline the SSE route uses, collecting its events into
- * a plain summary instead of forwarding them. The first draft is written inside
- * this call now rather than in an after() callback, so it is as reliable here as
- * on the streaming path - the reason the old fire-and-forget draft never
- * arrived until the nightly cron picked it up.
+ * Delegates to the same pipeline the onboarding worker uses, collecting its
+ * events into a plain summary instead of persisting them. The first draft is
+ * written inside this call (the pipeline's `inline` mode) rather than in an
+ * after() callback, so it is as reliable here as on the worker path - the
+ * reason the old fire-and-forget draft never arrived until the nightly cron
+ * picked it up.
  */
 export async function onboardWorkspace(workspaceId: string): Promise<OnboardResult> {
   const result: OnboardResult = { voice: "skipped", keywords: "skipped" };

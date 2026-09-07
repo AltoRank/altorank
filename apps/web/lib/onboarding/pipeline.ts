@@ -8,13 +8,18 @@
 // them in that order and calls `emit` at each boundary, which is what turns a
 // silent 90-second wait into a screen that shows the work.
 //
-// The draft is AWAITED here, deliberately. It used to run in an after()
-// callback fired from the onboarding action, and on serverless that callback is
-// killed once the response is sent - so the "first draft" arrived hours later
-// from the nightly cron, if at all (measured 2026-09-03: first drafts landed
-// 5-19h after signup, never at onboarding). Awaiting it inside the request is
-// what makes "your draft is ready" true when the screen says so. The nightly
-// cron remains the backstop for a run that times out here.
+// Where the draft is written depends on the caller. The onboarding worker
+// (/api/onboard/run) asks for `firstDraft: "dispatch"`: this picks the keyword
+// and the gates it here, then returns it as `pendingDraft` for the worker to
+// hand to /api/internal/draft in its own invocation - a draft is 100-280s on
+// its own, and the worker's budget is the same 300s, so writing it here would
+// put the worker back at the ceiling the SSE route used to hit. The draft
+// route stamps the run when it lands. `"inline"` (the default) awaits it here,
+// which is what a caller with no way to self-invoke gets - the google-properties
+// import, and a self-hosted install with no CRON_SECRET - and what the whole
+// run did until 2026-09-07. Before that it ran in an after() callback from a
+// server action, which serverless killed once the response was sent; measured
+// 2026-09-03: first drafts landed 5-19h after signup, from the nightly cron.
 //
 // Every phase persists as it completes - createVoiceProfile writes the profile,
 // analyseDomain writes keywords and metrics, generateArticle writes the
@@ -37,6 +42,29 @@ import { detectLinks } from "@/lib/linking/detect";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
 
 export type Emit = (event: OnboardingEvent) => void;
+
+export interface RunOnboardingOptions {
+  /** See the header: `inline` awaits the draft here, `dispatch` returns it. */
+  firstDraft?: "inline" | "dispatch";
+}
+
+/** The first draft, chosen and gated but not yet written, for the caller to dispatch. */
+export interface PendingDraft {
+  term: string;
+  keywordId: string | null;
+  selection: { reasons: string[]; score: number; difficulty: number | null; volume: number | null };
+}
+
+export interface RunOnboardingResult {
+  /** Set only under `firstDraft: "dispatch"`, and only when there is a draft to write. */
+  pendingDraft: PendingDraft | null;
+  /**
+   * Settles when the fan-out's requests have all answered. A serverless
+   * caller hands it to `after()` so the instance outlives its own response
+   * long enough for the requests to leave; nothing waits on it otherwise.
+   */
+  fanOutSettled: Promise<void>;
+}
 
 interface Workspace {
   id: string;
@@ -61,16 +89,8 @@ export async function runOnboarding(
   supabase: SupabaseClient,
   workspace: Workspace,
   emit: Emit,
-  /**
-   * The request's abort signal. Checked at every phase boundary: a client that
-   * disconnected (navigated away, or React re-ran the effect and aborted the
-   * first fetch) should not have a full crawl and a paid article written for
-   * nobody. Work already in flight finishes; nothing new starts.
-   */
-  signal?: AbortSignal,
-): Promise<void> {
-  const gone = () => signal?.aborted === true;
-
+  options: RunOnboardingOptions = {},
+): Promise<RunOnboardingResult> {
   // Every DataForSEO call this run makes belongs to this workspace. With no
   // reporter armed the client falls back to the unattributed default, and one
   // onboarding on 2026-09-05 left fourteen rows with no workspace_id - the
@@ -83,7 +103,7 @@ export async function runOnboarding(
     recordSpendByDefault({ provider: "dataforseo", operation, costUsd, workspaceId: workspace.id });
   });
   try {
-    await runPhases(supabase, workspace, emit, gone);
+    return await runPhases(supabase, workspace, emit, options.firstDraft ?? "inline");
   } finally {
     setSpendReporter(null);
   }
@@ -93,8 +113,8 @@ async function runPhases(
   supabase: SupabaseClient,
   workspace: Workspace,
   emit: Emit,
-  gone: () => boolean,
-): Promise<void> {
+  firstDraft: "inline" | "dispatch",
+): Promise<RunOnboardingResult> {
   const domain = workspace.domain;
 
   // --- Phase 1: read the site, learn its voice ----------------------------
@@ -129,8 +149,6 @@ async function runPhases(
     }
   }
 
-  if (gone()) return;
-
   // --- Phase 2: find what to write about ----------------------------------
   emit({ phase: "keywords", status: "active" });
   let keywordsFound = 0;
@@ -163,8 +181,6 @@ async function runPhases(
     }
   }
 
-  if (gone()) return;
-
   // --- The link pool, before anything is written ---------------------------
   //
   // The wizard asks for the sitemap and says what it is for: "Used to find
@@ -189,8 +205,6 @@ async function runPhases(
     }
   }
 
-  if (gone()) return;
-
   // --- Phase 3: write the first draft -------------------------------------
   emit({ phase: "planning", status: "active" });
   let plan: PlannedEntry[] = [];
@@ -213,7 +227,6 @@ async function runPhases(
     }
   }
 
-  if (gone()) return;
   emit({ phase: "drafting", status: "active" });
   // The status and detail the drafting phase settled on. The fan-out note
   // below is emitted on the same phase, and emitting it as `active` reset a
@@ -226,6 +239,7 @@ async function runPhases(
     draftDetail = detail;
     emit({ phase: "drafting", status, detail, article });
   };
+  let pendingDraft: PendingDraft | null = null;
   try {
     // Not if one already exists: this pipeline can be re-run, and a second
     // identical draft is worse than none.
@@ -257,6 +271,15 @@ async function runPhases(
         const next = (first && recs.find((r) => r.term === first.term)) ?? pickNextKeyword(recs);
         if (!next) {
           settle("skipped", "No keyword clear enough to write to yet.");
+        } else if (firstDraft === "dispatch") {
+          // Chosen and gated here, written in its own invocation. The phase
+          // stays `active` with the keyword named; the draft route settles it.
+          pendingDraft = {
+            term: next.term,
+            keywordId: next.keywordId ?? null,
+            selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
+          };
+          settle("active", `Writing "${next.term}" now. It lands in your review queue when it is done.`);
         } else {
           const result = await generateArticle({
             supabase,
@@ -307,24 +330,29 @@ async function runPhases(
   // The rest of the week, in parallel.
   //
   // One draft is ~103s and a function has 300s, so the remaining six cannot be
-  // written here: this stream is already one draft in. Each gets its own
-  // invocation instead, dispatched without waiting. They land in about the time
-  // one takes rather than over the day the four-a-day cron would need.
+  // written here. Each gets its own invocation instead, dispatched without
+  // waiting. They land in about the time one takes rather than over the day
+  // the four-a-day cron would need.
   //
   // Anything that does not go out - no CRON_SECRET on a self-hosted install, a
   // request that never arrives - stays an unfulfilled plan entry, which is
   // exactly what cron/generate already looks for.
-  if (!gone() && plan.length > 1) {
+  let fanOutSettled: Promise<void> = Promise.resolve();
+  if (plan.length > 1) {
     const { data: written } = await supabase
       .from("calendar_entries")
       .select("keyword_id")
       .eq("workspace_id", workspace.id)
       .not("article_id", "is", null);
     const done = new Set((written ?? []).map((r) => r.keyword_id as string));
+    // A dispatched first draft has no article yet, so its entry still reads
+    // as unwritten here; it is the one the draft route is about to write.
+    if (pendingDraft?.keywordId) done.add(pendingDraft.keywordId);
     const rest = plan
       .filter((p) => p.keywordId && !done.has(p.keywordId))
       .map((p) => ({ keywordId: p.keywordId as string, term: p.term }));
     const fan = fanOutDrafts(workspace.id, rest);
+    fanOutSettled = fan.settled;
     if (fan.dispatched > 0) {
       const note = `Writing ${fan.dispatched} more article${fan.dispatched === 1 ? "" : "s"} now. They appear as they finish.`;
       emit({
@@ -336,7 +364,10 @@ async function runPhases(
     }
   }
 
-  emit({ phase: "ready" });
+  // With a draft still to be written, the run is not over: the draft route
+  // emits the equivalent of `ready` by settling the row when it lands.
+  if (!pendingDraft) emit({ phase: "ready" });
+  return { pendingDraft, fanOutSettled };
 }
 
 function message(err: unknown): string {

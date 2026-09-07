@@ -6,7 +6,7 @@ import { BASE_URL } from "./fixtures/env";
  * Compile the routes the specs hit, for real, before any of them is timed.
  *
  * `next dev` compiles a route on its first request. The heavy ones - the
- * onboarding pipeline behind /api/onboard/stream, the editor behind
+ * onboarding routes under /api/onboard, the editor behind
  * /content/[id] - can take tens of seconds cold, enough to blow a spec's whole
  * 60s budget on whichever test reaches them first, and to starve GoTrue while
  * every worker's fixture is creating a user at once. And most of them are
