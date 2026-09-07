@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "co.altorank/altorank",
+  "title": "AltoRank",
+  "description": "Readiness audits, Search Console, keyword research, and SEO drafts into a review queue.",
+  "version": "0.3.0",
+  "websiteUrl": "https://altorank.co/docs/mcp/",
+  "repository": {
+    "url": "https://github.com/AltoRank/altorank",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://app.altorank.co/api/mcp"
+    }
+  ]
+}
