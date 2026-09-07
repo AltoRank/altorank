@@ -10,7 +10,7 @@ const pick = vi.fn();
 const creds = vi.fn();
 
 vi.mock("../site-text", () => ({ readSiteText: async (...a: unknown[]) => { const text = (await scrape(...a)) as string; return { text, source: text ? "static" : "none", chars: text.length }; } }));
-vi.mock("@/app/actions/voice", () => ({ createVoiceProfile: (...a: unknown[]) => voice(...a) }));
+vi.mock("@/lib/voice/train", () => ({ trainVoiceProfile: (...a: unknown[]) => voice(...a) }));
 vi.mock("@/lib/audit/domain-analysis", () => ({ analyseDomain: (...a: unknown[]) => analyse(...a) }));
 vi.mock("@/lib/content/generate", () => ({ generateArticle: (...a: unknown[]) => generate(...a) }));
 // Only getQuota is faked. The refusal message is real: it is counted off
@@ -126,6 +126,17 @@ describe("runOnboarding", () => {
   it("does not look for a link pool when there is no domain", async () => {
     await runOnboarding(client(0), { ...WS, domain: null }, () => undefined);
     expect(detect).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Through the client it was handed, never through the server action: the
+   * worker has no session, and the action's requireAuth failed every run's
+   * first phase with "Not authenticated" until this was the rule.
+   */
+  it("trains the voice through the client it was given", async () => {
+    const c = client(0);
+    await runOnboarding(c, WS, () => undefined);
+    expect(voice).toHaveBeenCalledWith(c, "ws1", expect.stringContaining("word"));
   });
 
   it("emits every boundary of a full run, in order, ending in ready", async () => {

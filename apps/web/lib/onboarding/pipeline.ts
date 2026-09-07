@@ -21,14 +21,14 @@
 // server action, which serverless killed once the response was sent; measured
 // 2026-09-03: first drafts landed 5-19h after signup, from the nightly cron.
 //
-// Every phase persists as it completes - createVoiceProfile writes the profile,
+// Every phase persists as it completes - trainVoiceProfile writes the profile,
 // analyseDomain writes keywords and metrics, generateArticle writes the
 // article and its job - so a run cut short leaves real, partial state rather
 // than nothing, and the dashboard shows whatever got done.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readSiteText } from "./site-text";
-import { createVoiceProfile } from "@/app/actions/voice";
+import { trainVoiceProfile } from "@/lib/voice/train";
 import { analyseDomain } from "@/lib/audit/domain-analysis";
 import { generateArticle } from "@/lib/content/generate";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
@@ -129,7 +129,7 @@ async function runPhases(
       const read = await readSiteText(domain);
       const text = read.text;
       if (text && text.split(/\s+/).length > 50) {
-        await createVoiceProfile(workspace.id, text);
+        await trainVoiceProfile(supabase, workspace.id, text);
         emit({
           phase: "scanning",
           status: "done",
