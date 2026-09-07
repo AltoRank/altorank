@@ -44,9 +44,13 @@ function summarize(body: CronBody): Record<string, unknown> {
   let n = 0;
   for (const [key, value] of Object.entries(body)) {
     if (n >= SUMMARY_LIMIT) break;
-    // `results` is the per-item detail and can be hundreds of rows; its
-    // failures are extracted separately below.
-    if (key === "results") continue;
+    // `results` is the per-item detail and can be hundreds of rows. Only its
+    // length is kept here; the failures inside it are extracted separately.
+    if (key === "results") {
+      out.results_count = Array.isArray(value) ? value.length : 0;
+      n += 1;
+      continue;
+    }
     if (typeof value === "number" || typeof value === "boolean" || typeof value === "string") {
       out[key] = value;
       n += 1;

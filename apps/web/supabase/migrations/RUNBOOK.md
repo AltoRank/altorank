@@ -631,3 +631,39 @@ approved until the file is re-applied.
 
 Numbering: 079 (`auto_approve`) landed on `main` while this file was in review
 as 079; renamed to 080 before merge. Neither depends on the other.
+
+## 082 — added 2026-09-07
+
+`082_system_events.sql`: one new table, `system_events` (level, source,
+message, nullable `agency_id`/`workspace_id`, `context jsonb`), four indexes,
+no columns added anywhere else. It is the operational log written by
+`lib/observability/record.ts` and read by `/admin/events` and the daily
+operator digest.
+
+RLS is enabled with **no policies**, the posture 069 and 080 use: every write
+is the service role and the only reader is the operator page, which already
+reads through the service client. A customer-facing `select` policy was
+considered and left out — the rows carry raw provider error text, and the rule
+to add when an account-level feed exists is
+`agency_id in (select user_admin_agency_ids())` (owner/admin, per 072).
+
+Depends only on **001** (`agencies`, `workspaces`); both foreign keys are
+`on delete set null`, so deleting a workspace neither deletes nor blocks on the
+record that it once failed. Idempotent (`if not exists` throughout, plus
+`drop policy if exists`). Post-flight §4 step 2: the new table must show
+`rowsecurity = t` and zero policies. Pre-flight:
+`to_regclass('public.system_events')`.
+
+Two check constraints are load-bearing and the recorder enforces the same
+rules before it inserts: `level in ('info','warn','error')` and
+`char_length(source) between 1 and 120`.
+
+**Nothing reads this table to make a decision**, so it is safe to prune and
+safe to lose. There is no retention job yet; at eleven daily crons writing one
+row each plus failures, expect a few thousand rows a year. When it needs one:
+`delete from system_events where created_at < now() - interval '90 days';`
+
+Roll back with `drop table if exists system_events;` — the code keeps working.
+`recordEvent` treats a missing table as a failed insert, logs one line and
+returns false, and `/admin/events` says the log is unavailable rather than
+showing an empty table.

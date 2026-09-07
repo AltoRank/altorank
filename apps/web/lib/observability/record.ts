@@ -98,7 +98,6 @@ export function stripControlBytes(value: string): string {
       // Written as \u escapes on purpose. A source file with the byte itself
       // in it is the bug two files in this repo already have: git, grep and
       // most editors then treat the whole file as binary.
-      // eslint-disable-next-line no-control-regex
       .replace(/[\u0000-\u001f\u007f]/g, "")
       .replace(/ {2,}/g, " ")
       .trim()

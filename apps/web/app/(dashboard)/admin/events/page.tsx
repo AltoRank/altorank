@@ -59,6 +59,12 @@ const when = (iso: string) =>
     second: "2-digit",
   });
 
+/** The start of the counted window. Outside the component so the clock read is
+ *  not part of render, the same reason `seenWithin` sits outside the users pane. */
+function windowStart(): string {
+  return new Date(Date.now() - WINDOW_HOURS * 60 * 60 * 1000).toISOString();
+}
+
 function isLevel(value: string | undefined): value is Level {
   return value === "error" || value === "warn" || value === "info";
 }
@@ -104,7 +110,7 @@ export default async function AdminEventsPage({
   if (level) query = query.eq("level", level);
   if (source) query = query.eq("source", source);
 
-  const since = new Date(Date.now() - WINDOW_HOURS * 60 * 60 * 1000).toISOString();
+  const since = windowStart();
   const [{ data, error }, { data: recent }, { data: sources }, { data: workspaces }] = await Promise.all([
     query,
     // The counters describe the window, not the page: a filtered page must not
