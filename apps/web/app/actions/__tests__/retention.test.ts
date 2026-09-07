@@ -24,12 +24,19 @@ const agencyWrites: Row[] = [];
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
+vi.mock("@/lib/email/lifecycle", () => ({ notifyAccountPaused: async () => {} }));
+
 vi.mock("@/lib/supabase/server", () => ({
+  createServiceClient: () => ({}),
   createClient: async () => ({
     from: (table: string) => {
       if (table === "workspaces") {
         return {
-          update: () => ({ eq: () => ({ neq: () => Promise.resolve({ error: workspaceUpdateError }) }) }),
+          update: () => ({
+            eq: () => ({
+              neq: () => ({ select: () => Promise.resolve({ data: workspaceUpdateError ? null : [{ id: "ws1" }], error: workspaceUpdateError }) }),
+            }),
+          }),
         };
       }
       if (table === "cancellation_feedback") {
