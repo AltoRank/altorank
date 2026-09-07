@@ -54,7 +54,7 @@ export const readinessExplainer: Explainer = {
   cannotYet: [
     "Apply the fixes to your site. Artifacts are copy-and-paste, with placement instructions.",
     "Check pages beyond the homepage. The site audit crawls pages; this check reads configuration.",
-    "Keep a history per workspace. Nothing is persisted, so there is no trend line yet.",
+    "Chart the score over time. Every nightly analysis records it against the workspace (workspace_metrics.readiness, migration 034), so the history is there; the metric chart on the workspace page does not plot it yet.",
     "Confirm a crawler actually fetched the site. robots.txt says what is allowed, not what happened.",
   ],
 };

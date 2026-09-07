@@ -35,6 +35,7 @@ import { agencyRecipients, agencyBillingRecipients, userEmail } from "./agency-r
 import { appLink } from "@/lib/app-url";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_2, EMAIL_INK_3 } from "./layout";
 import { formatGraceDate } from "@/lib/billing/dunning";
+import { FREE_DRAFTS } from "@/lib/billing/quota";
 import { wizardStepPath } from "@/lib/onboarding/steps";
 import { sendOnce, type RenderedEmail, type SendOnceOutcome } from "./send-once";
 
@@ -432,6 +433,14 @@ export type WelcomeEmail = {
  * Says what the product will do next without promising a result. Every claim
  * here is about our own behaviour - one free draft, approval required, nothing
  * charged - and none about rankings.
+ *
+ * The approval paragraph used to end "there is no setting that turns it off".
+ * Migration 079 added exactly that setting, and signup switches it on for the
+ * workspace this email is announcing (app/(auth)/signup/page.tsx:122), so the
+ * sentence denied a feature the same request had just enabled. What is still
+ * true is the gate itself: lib/publishing/core.ts refuses any article without
+ * `approved_by`, whether a person clicked or a rule they set fired. The
+ * paragraph now says that, and names where the choice lives.
  */
 export function renderWelcome(a: WelcomeEmail): RenderedEmail {
   const site = a.domain;
@@ -447,11 +456,11 @@ export function renderWelcome(a: WelcomeEmail): RenderedEmail {
           : `Your account is set up. Add a workspace and AltoRank reads it, works out what it could realistically rank for, and writes a first draft for the best of those.`,
       ) +
       emailParagraph(
-        `<strong>Nothing publishes without you.</strong> Every article lands in a review queue and stays there until somebody approves it. That is the whole point of the product and there is no setting that turns it off.`,
+        `<strong>Nothing reaches your site without a person behind it.</strong> Every article lands in a review queue with its fact check, and the publish path refuses anything with no approval on record. Who gives that approval is yours to choose: you, from the draft, or an automatic rule you set per site, which runs the same sourcing and audit checks and holds anything that fails. Both live under Settings, Publishing decision.`,
       ) +
       emailButton(appLink("/dashboard"), "Open the dashboard") +
       emailParagraph(
-        `The first draft is free and nothing is charged until you choose a plan - there is no trial running out and no card on file. When a draft is written for you we will email you about it; you can turn those off from any of them.`,
+        `Your first ${FREE_DRAFTS} articles are free and nothing is charged until you choose a plan - there is no trial running out and no card on file. When the schedule writes a draft for you we will email you about it; you can turn those off from any of them.`,
       ),
   };
 }

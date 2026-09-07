@@ -42,10 +42,11 @@ export const reviewExplainer: Explainer = {
     },
     {
       title: "What never happens",
-      lead: "There is no auto-publish path. Not a hidden one, not a flag: it does not exist.",
+      lead: "Nothing reaches a CMS without an approval recorded under a named person. There is no path around that one.",
       bullets: [
-        "Nothing publishes without an approval on record. The publish core refuses any other status, and the button and the cron both go through it.",
-        "The generator writes into Review and has no publish step. 'Auto-publish' on a site's schedule only releases articles you already approved and scheduled.",
+        "Every publish carries an `approved_by`. The publish core refuses any other status, and the button and the cron both go through it.",
+        "Two things can write that approval, and only two: a person pressing Approve, or the publishing rule a member turned on for the workspace, which waits out a hold window and re-runs the same source, audit and plan checks before it signs off as that member. Held drafts say why on their own row. Nothing else, including an agent, can write one.",
+        "The generator writes into Review and has no publish step of its own.",
         "A raw status change cannot make an article Approved, Scheduled or Live; those states are reached only through their own actions.",
         "Unpublish takes the post down in the CMS, clears the published URL, and returns the article to Review.",
       ],

@@ -1,6 +1,6 @@
 import type { Explainer } from "./types";
 import { FREE_DRAFTS } from "@/lib/billing/quota";
-import { FREE_TIER_PACE, MAX_PACE } from "@/lib/content/pace";
+import { FREE_TIER_PACE, MAX_PACE, PLAN_DEFAULT_PACE } from "@/lib/content/pace";
 
 /**
  * Read from: lib/seo/recommendations.ts (scoring), lib/content/pace.ts and
@@ -36,7 +36,7 @@ export const contentPlanExplainer: Explainer = {
         "The plan is one site's queue, capped, paced, and topped up so it never runs dry and never runs away.",
       bullets: [
         "A plan holds up to 60 entries. The header reads N of 60 scheduled and how many slots are free.",
-        `Pace is set per site in articles a week. Signup sets ${FREE_TIER_PACE}, which is what activating a plan also sets, and you can raise it to ${MAX_PACE}. The monthly target is that pace scaled to 30 days; on the free tier the month's ${FREE_DRAFTS} drafts are the binding limit, not the pace.`,
+        `Pace is set per site in articles a week. Signup sets ${FREE_TIER_PACE}; activating a plan raises it to that tier's default (${PLAN_DEFAULT_PACE.starter} on Managed, ${PLAN_DEFAULT_PACE.growth} on Agency) unless you have typed your own number, which is left alone; you can set anything up to ${MAX_PACE}. The monthly target is that pace scaled to 30 days; on the free tier the month's ${FREE_DRAFTS} drafts are the binding limit, not the pace.`,
         "\"Schedule more articles\" keeps everything already placed and appends from the day after the last entry - it never touches billing, only the calendar. The nightly analysis run does the same for every auto-generating site whose unwritten queue has fallen below its monthly target.",
         "Phrasings of one query collapse into one entry, so the plan does not schedule 'agency seo' and 'seo for agencies' as two articles that compete with each other.",
         "Terms flagged as keyword-provider noise are scored down for you and refused by the unattended path, so an unattended run never writes 'S Eo: A Complete Guide'.",
