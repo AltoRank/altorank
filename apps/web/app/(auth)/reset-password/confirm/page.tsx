@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { authErrorMessage } from "@/lib/auth/errors";
 import { announcePasswordChanged } from "@/lib/email/account-events";
+import { SubmitButton } from "@/components/auth/submit-button";
 
 export const metadata: Metadata = { title: "Choose a new password" };
 
@@ -110,12 +111,7 @@ export default async function ConfirmResetPage(props: {
             className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
           />
         </div>
-        <button
-          type="submit"
-          className="w-full py-2.5 bg-accent text-white font-medium text-[13px] rounded-[7px] hover:bg-accent-2 transition-colors cursor-pointer"
-        >
-          Set password and sign in
-        </button>
+        <SubmitButton pendingLabel="Setting your password…">Set password and sign in</SubmitButton>
       </form>
     </div>
   );
