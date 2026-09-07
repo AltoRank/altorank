@@ -385,6 +385,32 @@ export async function generateArticle(
     }
 
     article = created;
+
+    // The gate above read the count before this row existed, and nothing
+    // held the account between the read and the insert. Six onboarding
+    // dispatches (lib/content/fan-out.ts) arrive at once, each sees the same
+    // "2 remaining", and all six write - four drafts the plan did not
+    // include, on the one night the account is most likely to be on the
+    // free allowance. The row is inserted first and then the count is read
+    // again *including it*: the k-th of N racing requests to reach this line
+    // sees at least k rows of the burst (its own plus every earlier reader's,
+    // which were inserted before those reads), so at most `remaining` of them
+    // can ever see a count within the limit. The rest delete their own row
+    // and stop, before the model is called or a job row is written. Over-
+    // refusing is possible when they all insert before any of them reads;
+    // that leaves the plan entry for the cron, which is where it would have
+    // been written anyway. Under-refusing is not.
+    //
+    // Only where the gate refuses at zero (an autonomous draft, or an account
+    // with no plan). A person writing past the limit is billed the overage
+    // above and is not a burst.
+    if (quota.limit !== null && (quota.reason === "no-plan" || autonomous)) {
+      const after = await getQuota(supabase, billedAgencyId, callerEmail);
+      if (after.limit !== null && after.used > after.limit) {
+        await supabase.from("articles").delete().eq("id", created.id);
+        throw new Error(quotaExceededMessage(after));
+      }
+    }
   }
 
   const { data: job, error: jobError } = await supabase
