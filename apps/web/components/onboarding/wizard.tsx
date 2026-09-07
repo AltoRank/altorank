@@ -643,8 +643,8 @@ function RunScreen({
             {!finished && (
               <>
                 {" "}
-                A few minutes. Keep this tab open while it runs: leaving stops it after the step it is on. Everything
-                already finished is kept, and tonight&rsquo;s run picks up the rest.
+                A few minutes. You can leave this page and come back: the run carries on without you, and this
+                screen picks up where it is.
               </>
             )}
           </p>
