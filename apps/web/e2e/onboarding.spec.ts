@@ -78,7 +78,7 @@ test("a new account is walked from /dashboard to a planned first month", async (
   expect(output?.tone).toBe("friendly");
   expect(output?.internal_links).toBe(3);
 
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Skip for now" }).click();
 
   // --- Step 6: where they heard of us, asked once per account ----------------
   await expect(page.getByRole("heading", { name: "One last thing" })).toBeVisible();

@@ -61,6 +61,10 @@ const SITE_STEPS = ["Business", "Audience & Competitors", "Blog", "Articles", "I
 // The question about the person, after every step about the site. Present only
 // while the account has not answered; a second workspace goes straight to plan.
 const ATTRIBUTION_STEP = SITE_STEPS.length;
+// The CMS step is the one a new account most often stops on: a credential
+// before value. Its primary action says what it does - move on without one -
+// instead of a "Continue" that reads as "continue once you have connected".
+const INTEGRATION_STEP = SITE_STEPS.indexOf("Integration");
 
 export type Destination = { id: string; name: string; description: string | null };
 
@@ -337,7 +341,15 @@ export function OnboardingWizard({
             onClick={next}
             disabled={pending || (step === ATTRIBUTION_STEP && !attributionComplete(attribution))}
           >
-            {pending ? "Saving…" : step !== last ? "Continue" : skipping ? "Skip and finish" : "Finish and plan my first month"}
+            {pending
+              ? "Saving…"
+              : step === INTEGRATION_STEP && step !== last
+                ? "Skip for now"
+                : step !== last
+                  ? "Continue"
+                  : skipping
+                    ? "Skip and finish"
+                    : "Finish and plan my first month"}
           </Button>
         </div>
       </div>
@@ -516,7 +528,7 @@ function IntegrationStep({ destinations }: { destinations: Destination[] }) {
     <>
       <Head
         title="Where should we publish?"
-        sub="You can do this later. Drafts are yours either way, and you can export any article as Markdown."
+        sub="Skip this for now if you like: drafts are yours either way, you can export any article as Markdown, and Integrations in the dashboard connects a CMS whenever you are ready."
       />
       <div className="grid grid-cols-3 gap-3">
         {destinations.map((d) => (
