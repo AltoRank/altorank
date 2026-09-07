@@ -157,15 +157,29 @@ test("the Articles-plan popover lists the paces; the signup pace -> 3 a week re-
   await expect(trigger).toHaveText(/Articles plan: 1 a week/);
 });
 
-test("/content offers Research keywords exactly once, and it opens the drawer instead of navigating", async ({ page }) => {
-  // The page header carried a second button under the same label that
-  // navigated to /keywords. One label, two behaviours, one screen.
+test("/content offers Research keywords exactly once, and it opens the drawer instead of navigating", async ({ page, signedIn }) => {
+  const ws = signedIn.workspaces[0];
+  const db = admin();
+
+  // The state the duplicate lived in: no keywords, so the header offered its
+  // own "Research keywords" (a link to /keywords) beside the toolbar's, which
+  // opens the drawer. One label, two behaviours, one screen.
   await page.goto("/content");
   const research = page.getByRole("button", { name: "Research keywords" });
   await expect(research).toHaveCount(1);
+  await expect(page.getByText("Use Research keywords above", { exact: false })).toBeVisible();
+
   await research.click();
   await expect(page.getByRole("dialog", { name: "Research keywords" })).toBeVisible();
   expect(new URL(page.url()).pathname).toBe("/content");
+  await page.keyboard.press("Escape");
+
+  // And once there is something to plan from, the header's action is the
+  // schedule button - never a second copy of this one.
+  await seedKeywords(db, ws.id);
+  await page.reload();
+  await expect(research).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Schedule the month" })).toBeVisible();
 });
 
 test("the research drawer opens with four tabs and an honest empty Stored tab", async ({ page, signedIn }) => {
