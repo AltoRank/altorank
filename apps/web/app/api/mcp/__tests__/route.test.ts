@@ -87,12 +87,25 @@ describe("POST /api/mcp", () => {
     // Stateless: the next request carries no session id and still works.
     const list = await POST(rpc({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }, KEY));
     expect(list.status).toBe(200);
-    const body = (await list.json()) as { result: { tools: { name: string }[] } };
+    const body = (await list.json()) as { result: { tools: { name: string; title?: string; annotations?: Record<string, boolean> }[] } };
     const names = body.result.tools.map((t) => t.name).sort();
     expect(names).toHaveLength(26);
     expect(names).toContain("altorank_whoami");
     expect(names).toContain("altorank_check_readiness");
     // The gate, checkable: no publish, approve or delete tool exists.
     expect(names.some((n) => /publish|approve|delete/.test(n) && n !== "altorank_retry_publish")).toBe(false);
+
+    // Both connector directories (ChatGPT plugins, Claude connectors) reject
+    // tools without a title and read-only / destructive hints.
+    for (const t of body.result.tools as { name: string; title?: string; annotations?: Record<string, boolean> }[]) {
+      expect(t.title, t.name).toBeTruthy();
+      expect(typeof t.annotations?.readOnlyHint, t.name).toBe("boolean");
+      expect(typeof t.annotations?.destructiveHint, t.name).toBe("boolean");
+      expect(typeof t.annotations?.openWorldHint, t.name).toBe("boolean");
+    }
+    const ro = (n: string) => body.result.tools.find((t) => t.name === n)!.annotations!.readOnlyHint;
+    expect(ro("altorank_whoami")).toBe(true);
+    expect(ro("altorank_generate_draft")).toBe(false);
+    expect(ro("altorank_remove_keywords_from_plan")).toBe(false);
   });
 });
