@@ -10,7 +10,8 @@ import {
   type SelfServePlan,
 } from "@/lib/stripe";
 import { createServiceClient } from "@/lib/supabase/server";
-import { recordEvent, describe as describeError } from "@/lib/observability/record";
+import { recordEvent } from "@/lib/observability/record";
+import { describe as describeError } from "@/lib/observability/event";
 import { paceOnActivation } from "@/lib/content/pace";
 import { resumePausedWorkspaces } from "@/lib/billing/resume";
 import { graceEndsAt } from "@/lib/billing/dunning";

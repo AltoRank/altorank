@@ -5,10 +5,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
  * trains whoever receives the cron's output to ignore it. So the digest's
  * important behaviour is all in what it declines to do.
  *
- * The production case as of 2026-09-07: `ADMIN_EMAILS` is unset, so
- * lib/auth/operators.ts falls back to the AltoRank address and there *is* a
- * recipient. An install that sets it to empty on purpose, or that has no mail
- * provider at all, must no-op quietly with a reason instead.
+ * The production case as of 2026-09-07: `ADMIN_EMAILS` is unset. The digest
+ * reads `operatorRecipients()`, which has no fallback, so that case sends
+ * nothing — the `ADMIN_EMAILS` constant's fallback to the AltoRank address is
+ * a gate for /admin/*, and a default recipient in a public repo would mail one
+ * personal Gmail account from every deployment of it. An install with no mail
+ * provider must no-op just as quietly, with a reason instead of a throw.
  */
 
 const { sendOnce } = vi.hoisted(() => ({ sendOnce: vi.fn(async () => ({ sent: 1, skipped: 0, failed: 0 })) }));
@@ -62,6 +64,22 @@ afterEach(() => {
 });
 
 describe("the digest no-ops quietly", () => {
+  it("sends nothing when ADMIN_EMAILS is unset", async () => {
+    // Production, today. The address the gate falls back to is a person's, and
+    // nobody chose it as a destination for mail.
+    const { sendOperatorDigest } = await load(undefined, "re_test");
+    const out = await sendOperatorDigest(db([EVENT()]));
+    expect(out).toEqual({ sent: false, reason: expect.stringContaining("no operator") });
+    expect(sendOnce).not.toHaveBeenCalled();
+  });
+
+  it("never falls back to the hard-coded operator address", async () => {
+    const { sendOperatorDigest } = await load(undefined, "re_test");
+    await sendOperatorDigest(db([EVENT()]));
+    const sent = JSON.stringify(sendOnce.mock.calls);
+    expect(sent).not.toContain("helloaltorank");
+  });
+
   it("sends nothing when ADMIN_EMAILS is deliberately empty", async () => {
     const { sendOperatorDigest } = await load("", "re_test");
     const out = await sendOperatorDigest(db([EVENT()]));

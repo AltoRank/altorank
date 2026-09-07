@@ -15,14 +15,13 @@
 
 import type { AdapterContext, DeliveryAttempt } from "./types";
 import { recordEvent } from "@/lib/observability/record";
+import { MAX_ATTEMPTS, RETRY_DELAYS_MS, retryable } from "./retry-policy";
 
-export const MAX_ATTEMPTS = 3;
-/** Wait before attempt 2 and attempt 3. */
-export const RETRY_DELAYS_MS = [500, 2000];
-
-export function retryable(status: number): boolean {
-  return status === 429 || status >= 500;
-}
+// The numbers themselves live in ./retry-policy, which has no imports: the
+// connector help text quotes MAX_ATTEMPTS from a client component, and this
+// file reaches the database. Re-exported so every server-side caller keeps
+// importing them from here.
+export { MAX_ATTEMPTS, RETRY_DELAYS_MS, retryable };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

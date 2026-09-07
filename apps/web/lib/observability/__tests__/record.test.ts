@@ -12,15 +12,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const { createServiceClient } = vi.hoisted(() => ({ createServiceClient: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createServiceClient }));
 
+import { recordEvent } from "../record";
 import {
   buildEventRow,
-  recordEvent,
   redactSecrets,
   sanitizeContext,
   stripControlBytes,
   MAX_MESSAGE,
   MAX_CONTEXT_BYTES,
-} from "../record";
+} from "../event";
 
 /** A client that captures the row, or fails in whichever way the test wants. */
 function db(behaviour: "ok" | "error" | "throws" | "no-table" = "ok") {

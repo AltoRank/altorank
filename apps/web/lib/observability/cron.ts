@@ -26,7 +26,8 @@
 // never throws. A 401 is not recorded — these URLs are public and get probed,
 // and a log full of bot traffic is a log nobody reads.
 
-import { recordEvent, describe } from "./record";
+import { recordEvent } from "./record";
+import { describe } from "./event";
 
 /** Fields a cron body might use for its own error/skip counts. */
 interface CronBody {

@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { cronSecretFrom } from "@/lib/cron-auth";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendOperatorDigest } from "@/lib/observability/digest";
 
 /**
- * Daily: what went wrong yesterday, to whoever ADMIN_EMAILS says is watching.
+ * Daily: what went wrong yesterday, to whoever ADMIN_EMAILS names. Unset
+ * means nobody, and nobody means no email (lib/auth/operators.ts).
  *
  * Not wrapped in `observedCron`, on purpose. This is the one job whose output
  * is the log itself, and a run that recorded "ran clean" every morning would
@@ -12,12 +13,12 @@ import { sendOperatorDigest } from "@/lib/observability/digest";
  * be the only thing in it.
  *
  * A no-op is a 200 that says why (`sent: false, reason`), never an error: an
- * install with no operator address, or no mail provider, is a supported
+ * install with no operator address — which is every install that has not set
+ * ADMIN_EMAILS, production included — or no mail provider is a supported
  * configuration and must not have a cron that fails every morning.
  */
 export async function GET(request: Request) {
-  const cronSecret = cronSecretFrom(request);
-  if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
+  if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

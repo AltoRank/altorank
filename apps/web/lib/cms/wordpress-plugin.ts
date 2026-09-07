@@ -27,8 +27,13 @@ import type {
 } from "./types";
 import type { WordPressPluginConfig } from "@/lib/types";
 import { deliverWithRetry } from "./delivery";
+import { TOKEN_HEADER } from "./wordpress-plugin-install";
 
-export const TOKEN_HEADER = "X-AltoRank-Token";
+// The download path, the install URL and this header live in
+// ./wordpress-plugin-install, which imports nothing: the connect dialog is a
+// client component and this file reaches the database. Re-exported so every
+// server-side caller keeps importing them from here.
+export { TOKEN_HEADER, PLUGIN_DOWNLOAD_PATH, pluginInstallUrl } from "./wordpress-plugin-install";
 
 /** Response shape shared by /submit and /edit. */
 type PluginPostResponse = {
@@ -48,24 +53,6 @@ type PluginListResponse = {
     modified?: string;
   }>;
 };
-
-/**
- * Where the dialog sends the person to fetch the plugin: the app's own copy,
- * built from packages/wordpress-plugin by app/api/public/wordpress-plugin.
- * The plugin is not listed on wordpress.org, so a directory search for it
- * found nothing and the "Recommended" path ended there.
- */
-export const PLUGIN_DOWNLOAD_PATH = "/api/public/wordpress-plugin";
-
-/**
- * The Upload Plugin page inside the customer's own admin, which takes the
- * zip from PLUGIN_DOWNLOAD_PATH. Not the directory search tab: that only
- * finds plugins wordpress.org lists, and this one is not among them.
- */
-export function pluginInstallUrl(siteUrl: string): string {
-  const base = siteUrl.replace(/\/+$/, "");
-  return `${base}/wp-admin/plugin-install.php?tab=upload`;
-}
 
 export class WordPressPluginAdapter implements CMSAdapter {
   private baseUrl: string;

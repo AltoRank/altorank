@@ -13,17 +13,20 @@
 // It sends nothing at all when there is nothing to send. Three no-ops, all
 // quiet, all returning a reason rather than throwing:
 //
-//   no operators   ADMIN_EMAILS explicitly set to empty is a legitimate
-//                  self-hosted setting (lib/auth/operators.ts) and means
-//                  nobody wants this. Note that an *unset* variable falls back
-//                  to the default address, which is what production has today.
+//   no operators   ADMIN_EMAILS unset, or set to empty. Both mean nobody has
+//                  said where operational mail should go, and this sends none.
+//                  It deliberately does not use the `ADMIN_EMAILS` constant,
+//                  which falls back to the AltoRank address: that fallback is
+//                  a gate for /admin/*, and reusing it here would make every
+//                  deployment of this public repo mail one personal Gmail
+//                  account. `operatorRecipients()` has no default.
 //   no mail        RESEND_API_KEY unset — a self-hosted install with no mail
 //                  provider must not have a cron that fails every morning.
 //   nothing wrong  a clean day sends no email. An operator who gets one of
 //                  these knows, without reading it, that something happened.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ADMIN_EMAILS } from "@/lib/auth/operators";
+import { operatorRecipients } from "@/lib/auth/operators";
 import { sendOnce, type SendOnceOutcome } from "@/lib/email/send-once";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_2, EMAIL_INK_3 } from "@/lib/email/layout";
 import { appLink } from "@/lib/app-url";
@@ -93,9 +96,9 @@ export async function sendOperatorDigest(
   supabase: SupabaseClient,
   now: Date = new Date(),
 ): Promise<DigestOutcome> {
-  const recipients = [...ADMIN_EMAILS];
+  const recipients = operatorRecipients();
   if (recipients.length === 0) {
-    return { sent: false, reason: "ADMIN_EMAILS is empty, so this install has no operator to tell" };
+    return { sent: false, reason: "ADMIN_EMAILS is not set, so this install has no operator to tell" };
   }
   if (!process.env.RESEND_API_KEY) {
     return { sent: false, reason: "RESEND_API_KEY is not set, so this install cannot send mail" };
@@ -154,7 +157,7 @@ export async function sendOperatorDigest(
     () => ({
       subject: `AltoRank operations — ${headline}`,
       preheader: `In the last ${DIGEST_HOURS} hours, across every account.`,
-      footerNote: `Sent because this address is in ADMIN_EMAILS. Set that variable to change who gets it, or to an empty value to stop it.`,
+      footerNote: `Sent because this address is in ADMIN_EMAILS. Change that variable to change who gets it, or unset it to stop it.`,
       html:
         `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.3;color:${EMAIL_INK};">${esc(headline)}</h1>` +
         emailParagraph(
