@@ -19,7 +19,14 @@
 // only Remove, singly or with every other inactive keyword at once.
 //
 // Actions live in a hover row so the grid stays a calendar rather than a
-// toolbar. "—" wherever a number or a state is unknown: volume 0 from a
+// toolbar - six labelled buttons on each of thirty-one squares is a form, not
+// a month. The cost of that is icons, so each one carries a real name for
+// assistive tech and a tooltip that opens on focus as well as hover. The one
+// exception is the interview: unanswered questions are what decide whether
+// the article sounds like this business or like the SERP, so the card says so
+// in words, outside the hover row, where the count alone said nothing.
+//
+// "—" wherever a number or a state is unknown: volume 0 from a
 // provider is a measurement; a null difficulty is not, and rendering it as 0
 // is the green-zero bug again.
 
@@ -27,6 +34,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Avatar, Button, Dialog, Icons, StatusPill } from "@/components/ui";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { CalendarEntry } from "@/lib/types";
 import type { PlannerKeyword } from "@/lib/queries/keywords";
 import { taxonomyLabel, EXPECTED_LENGTHS, LENGTH_LABELS } from "@/lib/keywords/taxonomy";
@@ -55,6 +63,45 @@ function num(v: number | null | undefined): string {
 type Dlg = null | "instructions" | "questions" | "move" | "remove";
 
 const toolBtn = "w-6 h-6 inline-grid place-items-center rounded-[5px] text-ink-3 hover:bg-panel-2 disabled:opacity-50 disabled:hover:bg-transparent";
+
+/**
+ * One icon in the hover row.
+ *
+ * Every one of these used to be a bare glyph with a `title`, which is a
+ * tooltip only for a mouse that stops moving: it never appears on touch, and
+ * a keyboard user tabbing along the row is told nothing at all. So the name
+ * goes in `aria-label` - assistive tech reads it whatever the pointer is
+ * doing - and the explanation goes in the app's Radix tooltip, which opens on
+ * hover *and* on focus. `hint` is the sentence that says why the control is
+ * worth pressing; the label alone answers "what is this".
+ */
+function Tool({
+  label,
+  hint,
+  onClick,
+  className = "",
+  children,
+}: {
+  label: string;
+  hint?: string;
+  onClick: () => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button type="button" aria-label={label} onClick={onClick} className={`${toolBtn} ${className}`}>
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-[220px]">
+        {label}
+        {hint && <span className="mt-0.5 block font-normal opacity-70">{hint}</span>}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 export function PlannerCard({
   entry,
@@ -119,6 +166,16 @@ export function PlannerCard({
   const label = taxonomyLabel(keyword?.article_subtype);
   const unanswered = unansweredCount(questions);
   const hasInstructions = Boolean(keyword?.instructions?.trim());
+  // The count is the whole point of the badge, so it has to be in the name a
+  // screen reader reads out - "Questions, 4" is not a sentence anyone can act
+  // on. Three states, because none-generated-yet and all-answered are not the
+  // same thing and the card should not claim they are.
+  const questionsLabel =
+    unanswered > 0
+      ? `Questions — ${unanswered} unanswered`
+      : questions.length > 0
+        ? "Questions — all answered"
+        : "Questions";
   const draftHref = entry.article_id ? `/content/${entry.article_id}` : null;
   const improvementHref = improvement
     ? improvement.executionId && state === "improved"
@@ -254,6 +311,32 @@ export function PlannerCard({
       )}
       <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1">
         <StatusPill status={pill.status} label={pill.label} />
+        {/* The badge on the hover row is a number behind a glyph you have to
+            find first, and this is the one thing on the card that changes what
+            gets written. So it also says itself, in words, without hovering -
+            on the planned card only, which is the only state that can still
+            use an answer. */}
+        {keyword && actions.questions && unanswered > 0 && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={`Answer ${unanswered} unanswered question${unanswered === 1 ? "" : "s"} to personalize this article`}
+                onClick={() => openDlg("questions")}
+                className="inline-flex items-center gap-1 text-[10.5px] leading-snug text-accent-ink underline decoration-line underline-offset-[3px]"
+              >
+                <Icons.question size={10} className="shrink-0" />
+                <span>
+                  {unanswered} question{unanswered === 1 ? "" : "s"} to personalize
+                </span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[220px]">
+              Answer them and your own experience goes into the article; leave them and the writer has only what it
+              could research.
+            </TooltipContent>
+          </Tooltip>
+        )}
         {actions.openImprovement && improvementHref && (
           <Link href={improvementHref} className="text-[11px] text-accent-ink underline decoration-line underline-offset-[3px]">
             {state === "improved" ? "Review rewrite" : "Open"}
@@ -293,51 +376,86 @@ export function PlannerCard({
       {(keyword || drag || improvement) && state !== "writing" && (
         <div className="absolute -top-1 right-0 flex items-center gap-0.5 rounded-[7px] border border-line bg-bg p-0.5 shadow-sm opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto">
           {actions.writeNow && (
-            <button
-              type="button"
-              title={writeGate.ok ? "Write this article now; it lands in review" : writeGate.reason}
-              disabled={!writeGate.ok}
-              onClick={() => void startWriting()}
-              className="h-6 inline-flex items-center gap-1 rounded-[5px] px-1.5 text-[11px] text-ink-2 hover:bg-panel-2 disabled:opacity-50 disabled:hover:bg-transparent"
-            >
-              <Icons.sparkle size={12} />
-              Write now
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {/* `aria-disabled` rather than `disabled`: a disabled button takes
+                    no pointer or focus events, so the one thing worth reading -
+                    why the plan will not write this today - would be unreachable
+                    by hover and by keyboard alike. The click is already a no-op
+                    (startWriting returns on a closed gate), so the gating is
+                    unchanged; only the reason became readable. */}
+                <button
+                  type="button"
+                  aria-disabled={!writeGate.ok}
+                  onClick={() => void startWriting()}
+                  className="h-6 inline-flex items-center gap-1 rounded-[5px] px-1.5 text-[11px] text-ink-2 hover:bg-panel-2 aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:cursor-not-allowed"
+                >
+                  <Icons.sparkle size={12} />
+                  Write now
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[220px]">
+                {writeGate.ok ? (
+                  <>
+                    Write now
+                    <span className="mt-0.5 block font-normal opacity-70">
+                      Drafts the article in a few minutes and lands it in review. Nothing publishes on its own.
+                    </span>
+                  </>
+                ) : (
+                  writeGate.reason
+                )}
+              </TooltipContent>
+            </Tooltip>
           )}
           {keyword && actions.instructions && (
-            <button
-              type="button"
-              title={hasInstructions ? "Instructions (set)" : "Instructions"}
+            <Tool
+              label={hasInstructions ? "Instructions (set)" : "Instructions"}
+              hint="Anything the writer should know for this article in particular — what to lead with, what to leave out."
               onClick={() => openDlg("instructions")}
-              className={`${toolBtn} ${hasInstructions ? "text-warn-ink" : ""}`}
+              className={hasInstructions ? "text-warn-ink" : ""}
             >
               <Icons.lightbulb size={13} />
-            </button>
+            </Tool>
           )}
           {keyword && actions.questions && (
-            <button type="button" title="Questions" onClick={() => openDlg("questions")} className={`relative ${toolBtn}`}>
+            <Tool
+              label={questionsLabel}
+              hint="A short interview about this keyword. Your answers go to the writer, so the article carries your own experience instead of what everyone else already published."
+              onClick={() => openDlg("questions")}
+              className="relative"
+            >
               <Icons.question size={13} />
+              {/* The number is already in the button's name; repeating it to a
+                  screen reader would read as "Questions 4 unanswered, 4". */}
               {unanswered > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-accent text-white font-mono text-[9px] leading-[14px] text-center">
+                <span
+                  aria-hidden="true"
+                  className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-accent text-white font-mono text-[9px] leading-[14px] text-center"
+                >
                   {unanswered}
                 </span>
               )}
-            </button>
+            </Tool>
           )}
           {actions.move && (
-            <button type="button" title="Move to another day" onClick={() => openDlg("move")} className={toolBtn}>
+            <Tool
+              label="Move to another day"
+              hint={improvement ? "The rewrite runs on the first improvement day on or after the date you pick." : undefined}
+              onClick={() => openDlg("move")}
+            >
               <Icons.calendar size={13} />
-            </button>
+            </Tool>
           )}
           {actions.remove && (
-            <button
-              type="button"
-              title={improvement ? "Unschedule this improvement" : "Remove from plan"}
+            <Tool
+              label={improvement ? "Unschedule this improvement" : "Remove from plan"}
+              hint={improvement ? "The page stays under Improvements and can be scheduled again." : "Off the calendar for good; the keyword itself stays tracked."}
               onClick={() => { setRemoveScope("one"); openDlg("remove"); }}
-              className={`${toolBtn} hover:bg-err-soft hover:text-err-ink`}
+              className="hover:bg-err-soft hover:text-err-ink"
             >
               <Icons.trash size={13} />
-            </button>
+            </Tool>
           )}
           {drag && (
             <button
