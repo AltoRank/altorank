@@ -252,3 +252,27 @@ describe("buildLlmsTxt", () => {
       .not.toMatch(/\n{3,}/);
   });
 });
+
+describe("htmlToMarkdown — images for a rendered document", () => {
+  const figure =
+    '<main><figure class="article-image"><img src="/img/a-1.webp" alt="Sketch illustrating What is a setup guide?" loading="lazy" /><figcaption>What is a setup guide?</figcaption></figure><p>Body paragraph that follows the figure and is long enough to count as content for extraction purposes.</p></main>';
+
+  it("writes a linked image with an absolute URL, and the caption on its own line", () => {
+    const md = htmlToMarkdown(figure, "https://example.com", { images: "linked" }).markdown;
+    expect(md).toContain("![Sketch illustrating What is a setup guide?](https://example.com/img/a-1.webp)");
+    expect(md).not.toContain("]What is a setup guide?");
+    expect(md).toMatch(/\.webp\)\s*\n\s*What is a setup guide\?/);
+  });
+
+  it("keeps the reader form by default: alt text only, no URL", () => {
+    const md = htmlToMarkdown(figure, "https://example.com").markdown;
+    expect(md).toContain("![Sketch illustrating What is a setup guide?]");
+    expect(md).not.toContain("a-1.webp");
+  });
+
+  it("falls back to alt text when a linked image has no usable src", () => {
+    const md = htmlToMarkdown('<main><p><img alt="Only alt" /> text that pads the paragraph out to a sensible length for the extractor.</p></main>', "https://example.com", { images: "linked" }).markdown;
+    expect(md).toContain("![Only alt]");
+    expect(md).not.toContain("](");
+  });
+});

@@ -81,7 +81,7 @@ export async function exportExecution(
   const { execution, candidate } = await loadExecution(supabase, executionId);
   const html = finalHtmlOf(execution);
   const { title } = resolveFields(execution, html);
-  const { markdown } = htmlToMarkdown(`<main>${html}</main>`, candidate.url);
+  const { markdown } = htmlToMarkdown(`<main>${html}</main>`, candidate.url, { images: "linked" });
   return { title, html, markdown, url: candidate.url };
 }
 
