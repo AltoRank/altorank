@@ -10,6 +10,7 @@ import { getWorkspaceAllowance } from "@/lib/billing/workspaces";
 import { canAddWorkspace } from "@/lib/team/access";
 import { ClientFilters } from "@/components/dashboard/client-filters";
 import { ClientRow } from "@/components/dashboard/client-row";
+import { PauseSiteControl } from "@/components/dashboard/paused-banner";
 import { plural } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Workspaces" };
@@ -78,6 +79,12 @@ export default async function ClientsPage({ searchParams }: Props) {
                 <th className="text-right font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel">Articles</th>
                 <th className="text-right font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel">Traffic /mo</th>
                 <th className="text-right font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel">Authority</th>
+                {/* Pause/Resume. The column has no visible heading - the
+                    control names itself and a caption over one button is
+                    noise - but it is not nameless: screen readers get one. */}
+                <th className="w-px px-3.5 py-2.5 border-b border-line bg-panel">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -111,12 +118,22 @@ export default async function ClientsPage({ searchParams }: Props) {
                     <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">
                       {typeof w.dr === "number" ? w.dr : "—"}
                     </td>
+                    {/* Pausing is workspace management, so it lives on the
+                        roster beside the status it changes rather than under
+                        the sidebar switcher, where it used to sit on every
+                        screen in the app. The Status column above is what says
+                        a workspace is paused; this is only the way in and out.
+                        Renders nothing for a workspace still in setup - there
+                        is nothing running to stop. */}
+                    <td className="px-3.5 py-3 border-b border-line-soft text-right whitespace-nowrap">
+                      <PauseSiteControl workspaceId={w.id} name={w.name} status={w.status} />
+                    </td>
                   </ClientRow>
                 );
               })}
               {workspaces.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3.5 py-10 text-center text-ink-3">
+                  <td colSpan={6} className="px-3.5 py-10 text-center text-ink-3">
                     <span className="inline-block max-w-[56ch] leading-[1.6]">
                       No sites yet. Add workspace above takes a name and a domain, and the first analysis starts on its
                       own: agent readiness, a crawl of the site&rsquo;s pages, PageSpeed, and the keywords it already
