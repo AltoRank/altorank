@@ -2,9 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireAuth } from "@/lib/auth/require-auth";
 import { analyzeVoiceWithAI } from "@/lib/ai/voice-analyzer";
 
 export async function createVoiceProfile(workspaceId: string, sampleText: string) {
+  await requireAuth();
   const supabase = await createClient();
 
   const rules = await analyzeVoice(sampleText);
@@ -26,6 +28,7 @@ export async function createVoiceProfile(workspaceId: string, sampleText: string
 }
 
 export async function updateVoiceProfile(id: string, data: { sample_text?: string; rules?: Record<string, unknown> }) {
+  await requireAuth();
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -38,6 +41,7 @@ export async function updateVoiceProfile(id: string, data: { sample_text?: strin
 }
 
 export async function retrainVoice(workspaceId: string) {
+  await requireAuth();
   const supabase = await createClient();
 
   const { data: profile } = await supabase

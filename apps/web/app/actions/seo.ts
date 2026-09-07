@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireAuth } from "@/lib/auth/require-auth";
 import { discoverKeywords, storedCpc } from "@/lib/seo/keywords";
 import { checkRankings } from "@/lib/seo/serp";
 import { syncBacklinks } from "@/lib/seo/backlinks";
@@ -15,6 +16,7 @@ import { buildRankingRows } from "@/lib/seo/rankings";
 // ---------------------------------------------------------------------------
 
 export async function runKeywordResearch(workspaceId: string) {
+  await requireAuth();
   const supabase = await createClient();
 
   // Fetch workspace to get domain
@@ -86,6 +88,7 @@ export async function runKeywordResearch(workspaceId: string) {
 // ---------------------------------------------------------------------------
 
 export async function checkSerpPositions(workspaceId: string) {
+  await requireAuth();
   const supabase = await createClient();
 
   // Fetch workspace domain
@@ -151,6 +154,7 @@ export async function checkSerpPositions(workspaceId: string) {
 // ---------------------------------------------------------------------------
 
 export async function fetchBacklinks(workspaceId: string) {
+  await requireAuth();
   const supabase = await createClient();
   const { data: workspace, error: wsError } = await supabase
     .from("workspaces")
@@ -170,6 +174,7 @@ export async function fetchBacklinks(workspaceId: string) {
 // ---------------------------------------------------------------------------
 
 export async function scoreArticleSeo(articleId: string) {
+  await requireAuth();
   const supabase = await createClient();
 
   // Fetch the article
