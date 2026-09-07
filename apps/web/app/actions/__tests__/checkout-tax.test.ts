@@ -35,6 +35,8 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 let taxOn = true;
+let taxBehavior: string | null = "exclusive";
+let priceReadFails = false;
 
 vi.mock("@/lib/stripe", async (orig) => {
   const actual = await orig<typeof import("@/lib/stripe")>();
@@ -52,6 +54,12 @@ vi.mock("@/lib/stripe", async (orig) => {
       growth: { month: "price_growth_month", year: "price_growth_year" },
     },
     getStripe: () => ({
+      prices: {
+        retrieve: async (id: string) => {
+          if (priceReadFails) throw new Error("stripe down");
+          return { id, tax_behavior: taxBehavior };
+        },
+      },
       checkout: {
         sessions: {
           create: async (args: Record<string, unknown>) => {
@@ -70,6 +78,8 @@ beforeEach(() => {
   created.length = 0;
   customerId = null;
   taxOn = true;
+  taxBehavior = "exclusive";
+  priceReadFails = false;
 });
 
 describe("createCheckoutSession: VAT, when STRIPE_TAX_ENABLED", () => {
@@ -127,5 +137,49 @@ describe("createCheckoutSession: VAT, when the flag is off (the default)", () =>
     const { stripeTaxEnabled } = await import("@/lib/stripe");
     // the real export, not the mock getter: env is unset in tests
     expect(typeof stripeTaxEnabled).toBe("boolean");
+  });
+});
+
+describe("createCheckoutSession: the price must be tax-exclusive before VAT is added", () => {
+  // Stripe's account default reads a euro price as tax-INCLUSIVE, and a Price
+  // created that way cannot be edited back. With automatic_tax on top of an
+  // inclusive price, EUR 69 arrives as EUR 56.56. So the flag alone is not
+  // enough: the price being sold has to say `exclusive`.
+  it("adds VAT on an exclusive price", async () => {
+    taxBehavior = "exclusive";
+    await createCheckoutSession("starter");
+    expect(created[0].automatic_tax).toEqual({ enabled: true });
+  });
+
+  for (const behaviour of ["inclusive", "unspecified", null]) {
+    it(`sends no tax fields when the price is ${behaviour ?? "missing tax_behavior"}, and says so`, async () => {
+      taxBehavior = behaviour;
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      await createCheckoutSession("starter");
+      expect(created[0]).not.toHaveProperty("automatic_tax");
+      expect(created[0]).not.toHaveProperty("tax_id_collection");
+      expect(created[0]).not.toHaveProperty("customer_update");
+      expect(error).toHaveBeenCalledOnce();
+      expect(String(error.mock.calls[0][0])).toContain("price_starter_month");
+      error.mockRestore();
+    });
+  }
+
+  it("charges the listed amount rather than failing when the price cannot be read", async () => {
+    priceReadFails = true;
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await createCheckoutSession("starter");
+    expect(res.ok).toBe(true);
+    expect(created[0]).not.toHaveProperty("automatic_tax");
+    expect(error).toHaveBeenCalledOnce();
+    error.mockRestore();
+  });
+
+  it("never reads the price while the flag is off", async () => {
+    taxOn = false;
+    priceReadFails = true;
+    const res = await createCheckoutSession("starter");
+    expect(res.ok).toBe(true);
+    expect(created[0]).not.toHaveProperty("automatic_tax");
   });
 });

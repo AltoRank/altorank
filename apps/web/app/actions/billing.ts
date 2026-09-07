@@ -6,6 +6,7 @@ import { getStripe, PLAN_PRICE_IDS, stripeTaxEnabled } from "@/lib/stripe";
 import type { SelfServePlan, BillingInterval } from "@/lib/stripe";
 import { subscriptionSwitchable } from "@/lib/billing/plan-switch";
 import { billingFailure, type BillingRedirect } from "@/lib/billing/failure";
+import { priceIsTaxExclusive } from "@/lib/billing/tax-guard";
 
 import { appUrl } from "@/lib/app-url";
 
@@ -74,6 +75,11 @@ export async function createCheckoutSession(
     return { ok: true, url: `${appUrl()}/settings/billing?status=switched` };
   }
 
+  // Only when the account is set up for it, and only on a price that is
+  // tax-exclusive: see lib/billing/tax-guard.ts for what an inclusive price
+  // would do to the amount that arrives.
+  const addTax = stripeTaxEnabled && (await priceIsTaxExclusive(getStripe(), priceId));
+
   let session;
   try {
     session = await getStripe().checkout.sessions.create({
@@ -110,7 +116,7 @@ export async function createCheckoutSession(
       // Only when the account is set up for it: with Stripe Tax not activated,
       // `automatic_tax` makes this call throw and nobody can pay. See
       // stripeTaxEnabled in lib/stripe.ts for the switch and its preconditions.
-      ...(stripeTaxEnabled
+      ...(addTax
         ? {
             automatic_tax: { enabled: true },
             tax_id_collection: { enabled: true },
