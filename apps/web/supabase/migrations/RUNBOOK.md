@@ -425,6 +425,20 @@ Search Console tab, the dashboard's Search Console blocks and the agent's `sync`
 `exists (select 1 from col where t='workspace_integrations' and c='needs_reconnect')`. Roll back with
 `alter table workspace_integrations drop column needs_reconnect, drop column last_sync_error;`.
 
+## 072 — added 2026-09-06
+
+`072_tenant_authz_hardening.sql`: least privilege on the agency-scoped tables, which were `FOR ALL`
+for every member regardless of role (a scoped editor could mint agency-wide API keys, read invite
+tokens and delete sites). Replaces the `api_keys` policy with select-for-members / insert-update-
+delete-for-admins, restricts `invites` select and `workspaces` delete to admins, drops the open
+`backlink_credits` insert, and adds trigger `agencies_guard_privileged_columns` so `plan`,
+`plan_status`, `stripe_*` and the other billing columns on `agencies` can only be written by the
+service role (the signup attribution answer still writes). Depends on 053 (`user_agency_ids()`,
+role column). Idempotent (`drop policy if exists` / `create or replace`), no data change.
+Pre-flight: `exists (select 1 from pg_trigger where tgname='agencies_guard_privileged_columns')`.
+Roll back by re-running the policy block of 051 and `drop trigger agencies_guard_privileged_columns
+on agencies`. **Apply before deploying #139 / the integration PR; the app assumes it.**
+
 ## 073 — added 2026-09-06
 
 `073_lifecycle_emails.sql`: adds `sent_emails` (a send is claimed here *before* it leaves,
@@ -436,3 +450,16 @@ Idempotent; no data change. Pre-flight:
 `to_regclass('public.sent_emails') is not null`. Note that `sent_emails` and
 `email_preferences` already exist on the local dev stack from an earlier hand-run, so the
 detection query above returns true there before this file is applied.
+
+## 074 — added 2026-09-06
+
+`074_one_autonomous_draft_per_keyword.sql`: partial unique index
+`idx_articles_one_autonomous_draft_per_keyword` on `articles (keyword_id) where status='drafting'
+and generated_autonomously`, so two overlapping generate-cron runs cannot both write the same
+article (measured 2026-09-06: two full drafts 13 ms apart). The cron catches the unique violation
+as `ConcurrentGenerationError` and reports a skip. Depends on 001. Idempotent
+(`create unique index if not exists`); fails only if duplicate drafting rows already exist —
+pre-flight: `select keyword_id, count(*) from articles where status='drafting' and
+generated_autonomously group by 1 having count(*)>1` must return no rows (delete the newer
+duplicates first). Roll back with `drop index idx_articles_one_autonomous_draft_per_keyword`.
+
