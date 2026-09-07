@@ -18,8 +18,6 @@ import { PlanningProvider } from "@/components/dashboard/planning-state";
 import { PlannerSlot } from "@/components/dashboard/planner-slot";
 import type { WriteGate } from "@/components/dashboard/planner-card";
 import { PlanMonthButton } from "@/components/dashboard/plan-month-button";
-import Link from "next/link";
-import { Button } from "@/components/ui";
 import { HowItWorks } from "@/components/dashboard/how-it-works";
 import { contentPlanExplainer } from "@/lib/explainers";
 import type { Workspace } from "@/lib/types";
@@ -216,14 +214,16 @@ export default async function CalendarPage({ searchParams }: Props) {
                   pure arithmetic - which keyword, on which day, why - had no
                   way to say what the arithmetic is. */}
               <HowItWorks explainer={contentPlanExplainer} />
-              {scopeId && slots > 0 &&
-                (nothingToPlanFrom ? (
-                  <Link href="/keywords">
-                    <Button size="sm">Research keywords</Button>
-                  </Link>
-                ) : (
-                  <PlanMonthButton label={(capacity?.articles ?? 0) === 0 ? "Plan the month" : "Top up the plan"} />
-                ))}
+              {/* No "Research keywords" here. The calendar toolbar below
+                  already carries one (ResearchButtons), and the two were not
+                  even the same action: this one navigated to /keywords, that
+                  one opens the research drawer in place. Two buttons with one
+                  label and two behaviours on one screen. The drawer wins - it
+                  researches, proposes and schedules without leaving the plan
+                  it is filling, and it is what /keywords offers too. */}
+              {scopeId && slots > 0 && !nothingToPlanFrom && (
+                <PlanMonthButton label={(capacity?.articles ?? 0) === 0 ? "Plan the month" : "Top up the plan"} />
+              )}
             </>
           }
         />
@@ -237,7 +237,7 @@ export default async function CalendarPage({ searchParams }: Props) {
           {monthIsEmpty && (
             <p className="mb-3 text-[12.5px] leading-[1.6] text-ink-3">
               {nothingToPlanFrom
-                ? "Nothing is scheduled this month, and there are no keywords to schedule from yet. Research keywords first; the plan is built from the ones this site can realistically rank for."
+                ? "Nothing is scheduled this month, and there are no keywords to schedule from yet. Use Research keywords above; the plan is built from the ones this site can realistically rank for."
                 : "Nothing is scheduled this month. Planning fills these days from the keywords this site can realistically rank for, and you can drag any of them to another day afterwards."}
             </p>
           )}
