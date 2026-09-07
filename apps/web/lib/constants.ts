@@ -3,6 +3,15 @@ export const APP_DESCRIPTION =
   "SEO and AI-search content that nothing publishes without you. Keyword research, drafting, and review, a workspace per site or per client.";
 
 export type NavGroup = {
+  /**
+   * The group's name. Structural, not a caption: the sidebar stopped drawing
+   * these as uppercase heading rows on 2026-09-07 (four labels above fourteen
+   * links was more chrome than nav) and now separates groups with spacing and
+   * a hairline instead. The string stays because it is still the group's key,
+   * and because it is what the group is announced as to a screen reader
+   * (`aria-label` on the group in components/dashboard/sidebar.tsx). Renaming
+   * one changes what assistive tech reads out, so it is not free text.
+   */
   group: string;
   items: readonly NavItem[];
 };
