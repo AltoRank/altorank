@@ -7,6 +7,8 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { canAddWorkspace } from "@/lib/team/access";
 import { z } from "zod";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
+import { checkDomainReachable } from "@/lib/domain/reachable";
+import { e2eStubsEnabled } from "@/lib/e2e/stubs";
 import { getWorkspaceAllowance, workspaceLimitMessage } from "@/lib/billing/workspaces";
 import { MAX_PACE, monthlyFromPace, normalisePace, PAID_DEFAULT_PACE } from "@/lib/content/pace";
 import { getQuota } from "@/lib/billing/quota";
@@ -75,6 +77,18 @@ export async function createWorkspace(formData: FormData): Promise<CreateWorkspa
     // The field message, not Zod's JSON dump: "Enter a domain like acme.com"
     // is the one the schema wrote for exactly this moment.
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the name and domain." };
+  }
+
+  // The schema checks the shape of a hostname; it cannot tell you whether a
+  // site is there. `stripdemo.altorank.test` satisfies it perfectly, and a
+  // workspace on a name that resolves to nothing goes on to produce a content
+  // plan for a site nobody can read. Only `no-dns` blocks: a real site behind
+  // a WAF that refuses us must still be able to sign up (lib/domain/reachable.ts).
+  // Skipped under E2E_STUBS, where the whole outside world is fixtures and
+  // every domain is `*.altorank.test` by design.
+  if (!e2eStubsEnabled()) {
+    const reach = await checkDomainReachable(parsed.data.domain);
+    if (!reach.ok) return { ok: false, error: reach.reason };
   }
 
   // Get or create user's agency
