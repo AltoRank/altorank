@@ -2,14 +2,6 @@ export const APP_NAME = "AltoRank";
 export const APP_DESCRIPTION =
   "SEO and AI-search content that nothing publishes without you. Keyword research, drafting, and review, a workspace per site or per client.";
 
-export const NAV_LINKS = [
-  { label: "How it works", href: "/#how-it-works" },
-  { label: "Features", href: "/#features" },
-  { label: "Tools", href: "/tools" },
-  { label: "Pricing", href: "/pricing" },
-  { label: "Blog", href: "/blog" },
-] as const;
-
 export type NavGroup = {
   group: string;
   items: readonly NavItem[];

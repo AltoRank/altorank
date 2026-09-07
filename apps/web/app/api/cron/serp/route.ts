@@ -8,6 +8,22 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { postRankingTasks } from "@/lib/seo/serp";
 import type { Workspace, Keyword } from "@/lib/types";
 
+/**
+ * One DataForSEO round trip per workspace, and the workspace list is not
+ * capped, so the time limit is the first thing this runs out of on an account
+ * with more than a handful of sites - silently, half way through the list,
+ * reporting nothing.
+ *
+ * This declares the same 300 as analyze, generate, refresh, geo and site-pages.
+ * Be clear about what that buys today: the project is on the Vercel **Hobby**
+ * plan (verified 2026-09-06 against the deployment serving the crons), which
+ * caps a function at 60s and ignores this value. It states the requirement so
+ * the job gets its budget the moment the plan changes, and so the gap between
+ * what the job needs and what it gets is written down rather than guessed at.
+ * The real fix is a resume marker, not a bigger number - see the wiring map.
+ */
+export const maxDuration = 300;
+
 export async function GET(request: Request) {
   // Verify cron secret
   const cronSecret = cronSecretFrom(request);
@@ -26,10 +42,13 @@ export async function GET(request: Request) {
  */
   const supabase = createServiceClient();
 
-  // Fetch all workspaces
+  // Every workspace except the paused ones. A paused site is paused for the
+  // whole product, not only for publishing: posting rank-tracking tasks for it
+  // spends DataForSEO money on a client nobody is working for.
   const { data: workspacesData, error: wsError } = await supabase
     .from("workspaces")
-    .select("*");
+    .select("*")
+    .neq("status", "paused");
 
   if (wsError) {
     return NextResponse.json(

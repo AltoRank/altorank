@@ -10,7 +10,14 @@ works out what is applied by looking for one distinguishing object per file.
 Verified 2026-09-05 against a fresh `supabase/postgres:15.8.1.060` container:
 files 001–061 apply cleanly in numeric order (see
 `docs/integration/MIGRATION-REPORT-2026-09-05.md` for the evidence and the
-caveats). Anything after 061 has not been through that check yet.
+caveats). 062–071 have not been through that container check; they are in the
+pre-flight query below and each is `if not exists` / `if exists` throughout, so
+re-running one is safe.
+
+**Head is 071.** The one-line-per-file list in §3 and the pre-flight query in §1
+both go to 071. If you add a migration, add its marker to the query in the same
+commit — the post-flight step is "every row is `t`", and a file with no row
+passes that check by being absent from it.
 
 ## Conventions
 
@@ -108,7 +115,16 @@ m(file, applied) as (values
   ('058_agency_attribution',                 exists (select 1 from col where t='agencies' and c='attribution_source')),
   ('059_publish_mode_and_retry',             exists (select 1 from col where t='publish_log' and c='retry_of')),
   ('060_keyword_cpc',                        exists (select 1 from col where t='keywords' and c='cpc' and cm is not null)),
-  ('061_workspace_pause_meta',               exists (select 1 from col where t='workspaces' and c='paused_meta'))
+  ('061_workspace_pause_meta',               exists (select 1 from col where t='workspaces' and c='paused_meta')),
+  ('062_workspace_scope_followups',          exists (select 1 from pg_policy where polname='Research runs by access')),
+  ('064_output_toggles',                     exists (select 1 from col where t='workspace_output_settings' and c='infographics')),
+  ('065_integration_tile_copy',              exists (select 1 from integrations where id='magento' and description like 'Static CMS pages%')),
+  ('066_reports_bucket',                     exists (select 1 from storage.buckets where id='reports' and not public)),
+  ('067_keyword_source_types',               exists (select 1 from chk where conname='keywords_source_type_check' and def like '%playbook%')),
+  ('068_workspace_share_token',              exists (select 1 from col where t='workspaces' and c='share_token')),
+  ('069_generate_idempotency',               to_regclass('public.agent_idempotency_keys') is not null),
+  ('070_google_needs_reconnect',             exists (select 1 from col where t='workspace_integrations' and c='needs_reconnect')),
+  ('071_billing_past_due',                   exists (select 1 from col where t='agencies' and c='payment_failed_at'))
 )
 select file, applied from m order by file;
 ```
@@ -122,6 +138,11 @@ Notes on two markers:
   the policy line, which 053 has by then replaced (see report).
 - `060` is detected by the column *comment* on `keywords.cpc`, because 050
   also adds the column. `060` applied is what puts the comment there.
+- **`063` has no row and cannot have one.** It is a one-shot data backfill
+  whose predicate is `created_at < now()`, so any workspace created *after* it
+  ran and not yet onboarded looks identical to a database it never touched.
+  There is nothing to detect. It is idempotent and cheap: if you are unsure,
+  run it again.
 
 ## 2. Pre-checks that can make a file fail on real data
 
@@ -189,7 +210,7 @@ a hosted project and on `supabase start`; it fails on a bare
 `supabase/postgres` Docker image, which only ships a stub `storage` schema.
 That is the one file that could not be exercised in the 2026-09-05 check.
 
-### Production, from 047 to 061
+### Production, from 048 to 071
 
 Only the files whose PR has merged to `main` exist in the checkout. Apply what
 is there, in order. One line per file so a failure is attributable:
@@ -211,6 +232,14 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 060_keyword_cpc.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 061_workspace_pause_meta.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 062_workspace_scope_followups.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 063_onboarded_backfill.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 064_output_toggles.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 065_integration_tile_copy.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 066_reports_bucket.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 067_keyword_source_types.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 068_workspace_share_token.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 069_generate_idempotency.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 070_google_needs_reconnect.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 071_billing_past_due.sql
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -237,8 +266,16 @@ where n.nspname = 'public' and c.relkind = 'r'
 ```
 
 Expected: zero rows. (`public_checks`, `growth_plans`, `admin_impersonations`
-have RLS on with zero policies by design — service-role only — and have no
-`workspace_id`, so they do not appear.)
+and `agent_idempotency_keys` (069) have RLS on with zero policies by design —
+service-role only — and have no `workspace_id`, so they do not appear.)
+
+If you run this against a **shared local stack** rather than production, expect
+rows for tables no migration here creates. On 2026-09-06 the local database
+carried `sent_emails`, `email_preferences` and `webhook_deliveries`, none of
+them from a file in this directory and none referenced by any code in the repo;
+`sent_emails` has a `workspace_id` with RLS on and no policy, so it is returned
+by this query. That is the check working, on a table this repo does not own.
+Confirm a row is one of ours (`grep -l <table> *.sql`) before acting on it.
 
 3. Smoke the app: sign in, open a workspace, open Settings, load the planner.
 
@@ -327,11 +364,11 @@ for when you cannot:
 agency-scoped policies on `refresh_candidates`, `refresh_tasks`, `refresh_executions`,
 `keyword_research_runs`, `link_sources`, `link_targets` and recreates them "by access" on
 `user_workspace_ids()`. No data change. Requires 053 (defines `user_workspace_ids()`) and
-052/054/055 (the tables). Apply last: **final production order is 048 → 062**.
+052/054/055 (the tables). Requires 053.
 
 ## 063 — added 2026-09-05
 
-`063_onboarded_backfill.sql` (PR #94): `onboarded_at = created_at` for workspaces created before the wizard, so existing customers are not redirected to /onboarding after deploy. Idempotent; no schema change. **Apply last: final production order is 048 → 063.**
+`063_onboarded_backfill.sql` (PR #94): `onboarded_at = created_at` for workspaces created before the wizard, so existing customers are not redirected to /onboarding after deploy. Idempotent; no schema change.
 
 ## 066 — added 2026-09-06
 
@@ -342,6 +379,42 @@ policies on `storage.objects` keyed on the workspace folder segment via
 private: the app now mails and opens signed URLs, and `reports.url` holds the object
 path rather than a public link (old rows are read either way). Requires 053. No data
 change. Detect with `exists (select 1 from storage.buckets where id='reports' and not public)`.
+## 064, 065, 067, 068, 069, 071 — added 2026-09-06
+
+The six files that reached `main` without a note here. All six are
+`if not exists` / `if exists` throughout and safe to re-run.
+
+- **`064_output_toggles.sql`** — `workspace_output_settings` gains
+  `infographics`, `video`, `emojis`, `faq_schema` (booleans) and `image_style`
+  (text, default `'sketch'`). Read by `lib/content/enrich/index.ts` and written
+  by the Article settings tab. Depends on 049. Roll back by dropping the five
+  columns; the settings tab falls back to its defaults.
+- **`065_integration_tile_copy.sql`** — data only: rewrites
+  `integrations.description` for the CMS rows to match
+  `apps/web/lib/cms/integration-descriptions.ts`, which is the source of truth
+  and is tested against the adapters' payloads. **Change both together.** No
+  rollback needed; re-running is the fix.
+- **`067_keyword_source_types.sql`** — widens `keywords_source_type_check` to
+  `competitor, audience, profile, gsc, manual, playbook, ranked, gap, ideas,
+  ads, chat, generate, import` (or null). A superset of the old list, so it
+  cannot fail on real data. Note `keywords.source` is a *different* column with
+  a *narrower* CHECK (`ranked/gap/ideas/ads` or null): provenance goes in
+  `source_type`.
+- **`068_workspace_share_token.sql`** — `workspaces.share_token text`, the
+  token behind `/share/[token]` and `/api/og/share/[token]`. Null means the
+  site has never been shared. Roll back by dropping the column; every issued
+  share link dies with it.
+- **`069_generate_idempotency.sql`** — `agent_idempotency_keys
+  (agency_id, key)` primary key, plus a created_at index. RLS on with **no
+  policy**, deliberately: only the service role touches it
+  (`lib/agent/idempotency.ts`). Roll back with `drop table
+  agent_idempotency_keys;` — in-flight retries of `POST /articles/generate`
+  become second drafts, nothing worse.
+- **`071_billing_past_due.sql`** — `agencies.payment_failed_at timestamptz`
+  and a widened `agencies_plan_status_check` that admits `past_due` and
+  `unpaid`. Before restoring the old CHECK, move any row in those two states
+  to `active` or `canceled` first, or the constraint will refuse to apply.
+
 ## 070 — added 2026-09-06
 
 `070_google_needs_reconnect.sql`: adds `workspace_integrations.needs_reconnect boolean not null default false`

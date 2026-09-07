@@ -1,6 +1,18 @@
 // ---------------------------------------------------------------------------
-// Reusable in-memory rate limiter for free tools — resets on deploy
+// Reusable in-memory rate limiter — resets on deploy
 // ---------------------------------------------------------------------------
+//
+// Named for the free tools it was written for. Those tools now live on the
+// marketing site (altorank.co/tools, twelve of them); this app has no /tools
+// route, so app/actions/{brief,capture,clusters,gap,health,meta-gen,serp-tool}
+// .ts and components/tools/* are unreachable here and their calls into this
+// file are dead. See the wiring map for the removal decision.
+//
+// The callers that do run: /api/growth-plan and /api/growth-plan/lead,
+// /api/public/readiness, /check/[domain], the password-reset page, and the
+// agent API's mutation window (lib/agent/http.ts). Per instance and lost on a
+// cold start, which is enough to stop one client looping a form and is not a
+// shared store.
 
 type RateEntry = { count: number; resetAt: number };
 
