@@ -240,7 +240,15 @@ describe("account emails", () => {
     const e = renderWelcome({ name: "Dana", domain: "acme.com" });
     expect(e.subject).toBe("Your AltoRank account is live");
     expect(e.html).toContain("You are in, Dana");
-    expect(e.html).toContain("<strong>Nothing publishes without you.</strong>");
+    // Was `toContain("<strong>Nothing publishes without you.</strong>")`, the
+    // opening of a paragraph that ended "there is no setting that turns it
+    // off". Migration 079 added that setting and signup switches it on for the
+    // very workspace this email announces, so the assertion was pinning a
+    // false sentence in place. What the email must still say is the gate that
+    // is real: no publish without an approval on record, and who may give one.
+    expect(e.html).toContain("Nothing reaches your site without a person behind it.");
+    expect(e.html).toContain("refuses anything with no approval on record");
+    expect(e.html).not.toMatch(/no setting that turns it off/i);
     expect(e.html).not.toMatch(/guarantee|page one|rank first|number one/i);
   });
 
