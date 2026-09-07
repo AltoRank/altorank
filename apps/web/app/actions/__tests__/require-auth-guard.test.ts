@@ -17,7 +17,7 @@ import { join } from "node:path";
 const ACTIONS = join(__dirname, "..");
 
 /** Files whose every export must call requireAuth() (T7 §7, 2026-09-06). */
-const GUARDED = ["voice.ts", "seo.ts", "schedule.ts", "audit.ts", "reports.ts"];
+const GUARDED = ["voice.ts", "seo.ts", "schedule.ts", "audit.ts", "reports.ts", "share.ts"];
 
 function exportedActions(src: string): { name: string; body: string }[] {
   const out: { name: string; body: string }[] = [];
