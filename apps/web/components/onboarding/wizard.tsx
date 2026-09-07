@@ -56,7 +56,7 @@ import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
 import { onboardingOutcome, shouldResumeRun, type OnboardingRunSnapshot, type OnboardingState } from "@/lib/onboarding/events";
 import { freeAllowanceClause } from "@/lib/onboarding/copy";
-import { SITE_STEPS, stepIndex } from "@/lib/onboarding/steps";
+import { SITE_STEPS, stepFromParam, stepIndex } from "@/lib/onboarding/steps";
 
 // The question about the person, after every step about the site. Present only
 // while the account has not answered; a second workspace goes straight to plan.
@@ -70,19 +70,10 @@ const INTEGRATION_STEP = stepIndex("Integration");
 
 export type Destination = { id: string; name: string; description: string | null };
 
-/**
- * The screen the URL is asking for, 0-based, clamped to the steps that exist.
- *
- * `?step=` is 1-based because it is a thing a person can read in an address
- * bar. Absent, unparseable or out of range all mean the first screen, so a
- * hand-edited URL cannot render a blank wizard.
- */
+/** The screen the address bar is asking for; see `stepFromParam`. */
 function stepFromLocation(count: number): number {
   if (typeof window === "undefined") return 0;
-  const raw = new URLSearchParams(window.location.search).get("step");
-  const n = Number(raw);
-  if (!raw || !Number.isInteger(n)) return 0;
-  return Math.min(Math.max(n - 1, 0), count - 1);
+  return stepFromParam(new URLSearchParams(window.location.search).get("step"), count);
 }
 
 export function OnboardingWizard({
@@ -96,6 +87,7 @@ export function OnboardingWizard({
   destinations,
   askAttribution,
   initialRun = null,
+  initialStep = 0,
 }: {
   workspaceId: string;
   domain: string;
@@ -115,6 +107,8 @@ export function OnboardingWizard({
   initialOutput: OutputSettings;
   destinations: Destination[];
   askAttribution: boolean;
+  /** From `?step=`, read by the server page so a deep link paints the right screen first. */
+  initialStep?: number;
   /**
    * The workspace's latest onboarding run, read by the page. A run still
    * going, or one that finished in the last hour, opens on the run screen
@@ -140,7 +134,10 @@ export function OnboardingWizard({
   // one screen instead of leaving. The steps that have already been passed are
   // persisted server-side, so a reload rehydrates them from `initialProfile`,
   // `initialSite` and `initialOutput` and puts the person back where they were.
-  const [step, setStep] = useState(0);
+  // The screen itself comes from the server page, which read `?step=` - so a
+  // deep link (the follow-up email's, a reload) paints that screen first
+  // instead of the first one and a jump after hydration.
+  const [step, setStep] = useState(initialStep);
   const [attribution, setAttribution] = useState<AttributionDraft>(EMPTY_ATTRIBUTION);
   // Set when "Skip setup" was pressed: which screen it was pressed on, so Back
   // returns there, and the finish goes to the dashboard rather than to a plan.
@@ -167,14 +164,10 @@ export function OnboardingWizard({
     }
   }
 
-  // Back and Forward, and the reload case. Read after mount rather than in the
-  // initial state so the first client render still matches the server's, which
-  // has no location to read and always renders the first screen. Nothing is
-  // re-fetched: the answers are in state, and the ones already saved are on the
-  // server either way.
+  // Back and Forward. Nothing is re-fetched: the answers are in state, and
+  // the ones already saved are on the server either way.
   useEffect(() => {
     const sync = () => setStep(stepFromLocation(steps.length));
-    sync();
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);
   }, [steps.length]);
