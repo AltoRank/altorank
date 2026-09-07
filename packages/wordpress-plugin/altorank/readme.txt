@@ -4,7 +4,7 @@ Tags: seo, publishing, rank math, yoast, content
 Requires at least: 6.4
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,12 @@ The plugin's settings are removed. Posts and images it created are your
 content and stay.
 
 == Changelog ==
+
+= 1.1.0 =
+* Works on sites whose security plugin or host blocks unauthenticated REST calls: the block is lifted for the altorank/v1 namespace only; every route still checks the token.
+* SEO plugin fields are written inside the same save as the post, so Rank Math and Yoast render the title and description on the first view; Yoast's indexable is rebuilt explicitly.
+* An image that cannot be downloaded no longer fails the publish; the response reports what was imported and what was not.
+* Serves the IndexNow key file at /{key}.txt from an option, without writing to the web root. New GET /indexnow route reports the key and its location.
 
 = 1.0.0 =
 * First release: submit, edit, posts and test-integration routes; media library import with de-duplication; Rank Math, Yoast, SEOPress and AIOSEO fields; post-as-draft default.

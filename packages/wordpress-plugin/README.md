@@ -49,11 +49,14 @@ otherwise. The token is never accepted in a query string.
   "category": "slug or name",      // created if missing; else the settings default
   "author": "id, login or email",  // else the settings default, else the first administrator
   "status": "publish",             // overridden to draft while "Post as draft" is on
-  "created_at": "2026-09-04T10:00:00Z"
+  "created_at": "2026-09-04T10:00:00Z",
+  "indexnow_key": "<8-128 [A-Za-z0-9-]>" // stored; served at /{key}.txt (1.1.0)
 }
 ```
 
-Response `201 { id, url, slug, status, edit_url }`. `status` is what the site
+Response `201 { id, url, slug, status, edit_url, images }`. `images` is
+`{ imported, failed, featured: "set" | "failed" | "none", featured_error }`:
+an image that cannot be fetched never fails the publish (1.1.0). `status` is what the site
 did, which may be `draft`; the dashboard reads it and does not submit a draft's
 URL to search engines.
 
@@ -73,3 +76,15 @@ bin/build-zip.sh            # -> packages/wordpress-plugin/altorank.zip
 ```
 
 Lint without a local PHP: `docker run --rm -v "$PWD/altorank:/p" wordpress:latest sh -c 'find /p -name "*.php" -exec php -l {} \;'`.
+
+## Hardening (1.1.0)
+
+Four behaviours read out of the plugins the autopilot tools ship, ported
+because each one is a real support ticket:
+
+| Behaviour | Why |
+| --- | --- |
+| `rest_authentication_errors` cleared for `altorank/v1` only (priority 999) | Wordfence, iThemes and several managed hosts 401 every unauthenticated REST call before any `permission_callback` runs, so the token check never got a chance. Every route still checks the token. |
+| SEO meta via `meta_input` inside `wp_insert_post`, then an explicit Yoast indexable rebuild | Rank Math and Yoast build their rows on `save_post`; meta written afterwards was invisible until the next save, so a fresh post rendered with the default `<title>`. |
+| Image import and featured image in `try/catch (\Throwable)`, reported in `images` | A dead image URL used to 500 the publish after the post row existed. |
+| IndexNow key served at `/{key}.txt` from an option, on `parse_request` | Writing a file to the web root fails on read-only hosts and survives uninstall. The dashboard sends the key in `indexnow_key`; `GET /indexnow` reports it. |

@@ -103,6 +103,16 @@ function altorank_register_routes(): void {
 
 	register_rest_route(
 		ALTORANK_REST_NAMESPACE,
+		'/indexnow',
+		array(
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => 'altorank_handle_indexnow',
+			'permission_callback' => 'altorank_permission_check',
+		)
+	);
+
+	register_rest_route(
+		ALTORANK_REST_NAMESPACE,
 		'/posts',
 		array(
 			'methods'             => WP_REST_Server::READABLE,
@@ -130,6 +140,77 @@ function altorank_register_routes(): void {
 	);
 }
 add_action( 'rest_api_init', 'altorank_register_routes' );
+
+/**
+ * Some hosts and security plugins (Wordfence, iThemes, "Disable REST API") answer
+ * every unauthenticated REST request with a 401 from `rest_authentication_errors`,
+ * which runs before any route's permission_callback. The dashboard's requests
+ * carry no WordPress cookie, so on such a site the token check never gets to
+ * run: the connection test fails with "rest_not_logged_in" and the person is
+ * told to disable their security plugin, which is the wrong fix.
+ *
+ * This clears that block for requests to altorank/v1 only. Every route in the
+ * namespace still runs altorank_permission_check() (or is /capabilities, which
+ * discloses only the plugin version), so nothing becomes reachable that the
+ * token did not already guard. Other namespaces keep whatever the site decided.
+ *
+ * Priority 999: after the plugins that set the error, so there is something to
+ * clear.
+ *
+ * @param WP_Error|null|true $result Current authentication result.
+ * @return WP_Error|null|true
+ */
+function altorank_allow_own_namespace( $result ) {
+	if ( ! is_wp_error( $result ) ) {
+		return $result;
+	}
+
+	$needle = '/' . ALTORANK_REST_NAMESPACE . '/';
+
+	// Pretty permalinks: /wp-json/altorank/v1/... ; plain: ?rest_route=/altorank/v1/...
+	$path = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_parse_url( wp_unslash( $_SERVER['REQUEST_URI'] ), PHP_URL_PATH ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+	if ( '' !== $path && false !== strpos( $path, '/' . rest_get_url_prefix() . $needle ) ) {
+		return true;
+	}
+
+	$route = isset( $_GET['rest_route'] ) ? (string) wp_unslash( $_GET['rest_route'] ) : ''; // phpcs:ignore WordPress.Security.NonceVerification,WordPress.Security.ValidatedSanitizedInput
+	if ( '' !== $route && 0 === strpos( $route, $needle ) ) {
+		return true;
+	}
+
+	return $result;
+}
+add_filter( 'rest_authentication_errors', 'altorank_allow_own_namespace', 999 );
+
+/**
+ * Serve the IndexNow key file without writing to disk.
+ *
+ * IndexNow verifies a submission by fetching https://{host}/{key}.txt. Writing
+ * that file to the web root (what other plugins do) fails on read-only and
+ * managed hosts and leaves a stray file behind on uninstall. WordPress is
+ * already answering every request for the host, so the plugin answers this one
+ * from the option instead: exact path, exact key, text/plain, done. The key
+ * arrives in the submit body from the dashboard (`indexnow_key`) and is stored
+ * in ALTORANK_OPTION_INDEXNOW_KEY; the dashboard submits URLs to IndexNow with
+ * this location. Nothing else in the plugin reads it.
+ */
+function altorank_serve_indexnow_key(): void {
+	$key = (string) get_option( ALTORANK_OPTION_INDEXNOW_KEY, '' );
+	if ( '' === $key || ! preg_match( '/^[A-Za-z0-9-]{8,128}$/', $key ) ) {
+		return;
+	}
+	$path = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_parse_url( wp_unslash( $_SERVER['REQUEST_URI'] ), PHP_URL_PATH ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+	$home = rtrim( (string) wp_parse_url( home_url(), PHP_URL_PATH ), '/' );
+	if ( $path !== $home . '/' . $key . '.txt' ) {
+		return;
+	}
+	status_header( 200 );
+	nocache_headers();
+	header( 'Content-Type: text/plain; charset=utf-8' );
+	echo $key; // phpcs:ignore WordPress.Security.EscapeOutput -- validated against /^[A-Za-z0-9-]+$/ above.
+	exit;
+}
+add_action( 'parse_request', 'altorank_serve_indexnow_key', 0 );
 
 // ---------------------------------------------------------------------------
 // Auth
@@ -174,6 +255,8 @@ function altorank_handle_capabilities(): WP_REST_Response {
 				'test_integration' => true,
 				'media_import'     => true,
 				'seo_meta'         => array_keys( ALTORANK_SEO_META ),
+				'indexnow_key'     => true,
+				'rest_unblock'     => true,
 			),
 		)
 	);
@@ -213,6 +296,21 @@ function altorank_handle_test_integration() {
 		array(
 			'ok'      => true,
 			'version' => ALTORANK_VERSION,
+		)
+	);
+}
+
+/**
+ * GET /indexnow: the key this site serves, and where, so the dashboard can
+ * confirm the file resolves before it submits URLs. `key` is null until a
+ * submit has carried one.
+ */
+function altorank_handle_indexnow(): WP_REST_Response {
+	$key = (string) get_option( ALTORANK_OPTION_INDEXNOW_KEY, '' );
+	return new WP_REST_Response(
+		array(
+			'key'          => '' !== $key ? $key : null,
+			'key_location' => '' !== $key ? home_url( '/' . $key . '.txt' ) : null,
 		)
 	);
 }
@@ -362,6 +460,7 @@ function altorank_read_params( WP_REST_Request $request ): array {
 		'status'             => sanitize_key( $str( 'status' ) ),
 		'has_status'         => isset( $p['status'] ),
 		'created_at'         => $str( 'created_at' ),
+		'indexnow_key'       => preg_match( '/^[A-Za-z0-9-]{8,128}$/', $str( 'indexnow_key' ) ) ? $str( 'indexnow_key' ) : '',
 	);
 }
 
@@ -480,6 +579,22 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 	}
 
 	/**
+	 * SEO fields ride inside the same write as the post. Rank Math and Yoast
+	 * build their indexable rows on `save_post`, which fires inside
+	 * wp_insert_post(); meta written afterwards with update_post_meta() is
+	 * read only on the next save, so a freshly published post rendered with
+	 * WordPress's default <title> and no description until someone opened it
+	 * in the editor. `meta_input` is applied before those hooks run.
+	 */
+	$meta_input = altorank_seo_meta_input( $params['title'], $params['meta_description'], $params['focus_keyword'] );
+	if ( '' !== $params['external_id'] ) {
+		$meta_input[ ALTORANK_META_EXTERNAL_ID ] = $params['external_id'];
+	}
+	if ( $meta_input ) {
+		$postarr['meta_input'] = $meta_input;
+	}
+
+	/**
 	 * Token requests have no WordPress user, and for a request with no user
 	 * WordPress runs its own kses pass on save (content_save_pre), which strips
 	 * every iframe - including the YouTube embed altorank_sanitize_content()
@@ -498,33 +613,59 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 	}
 	$post_id = (int) $result;
 
-	if ( '' !== $params['external_id'] ) {
-		update_post_meta( $post_id, ALTORANK_META_EXTERNAL_ID, $params['external_id'] );
+	if ( '' !== $params['indexnow_key'] && $params['indexnow_key'] !== (string) get_option( ALTORANK_OPTION_INDEXNOW_KEY, '' ) ) {
+		update_option( ALTORANK_OPTION_INDEXNOW_KEY, $params['indexnow_key'], false );
 	}
 
-	// Images: the post exists now, so attachments can be parented to it.
-	if ( null !== $content ) {
-		$imported = altorank_import_images( $post_id, $content );
-		if ( $imported !== $content ) {
-			wp_update_post(
-				array(
-					'ID'           => $post_id,
-					'post_content' => $imported,
-				)
-			);
+	altorank_rebuild_yoast_indexable( $post_id );
+
+	/**
+	 * Images are the one step that reaches out to another server, and the one
+	 * step that must not fail the publish: the post row already exists, and a
+	 * 500 here would make the dashboard retry and, without the external_id
+	 * round trip, duplicate it. A hot-linked or missing picture is reported in
+	 * the response instead (`images`), and the URL is left as it came.
+	 */
+	$images = array(
+		'imported'       => 0,
+		'failed'         => 0,
+		'featured'       => '' === $params['featured_image_url'] ? 'none' : 'failed',
+		'featured_error' => null,
+	);
+	try {
+		if ( null !== $content ) {
+			$imported = altorank_import_images( $post_id, $content, $images );
+			if ( $imported !== $content ) {
+				wp_update_post(
+					array(
+						'ID'           => $post_id,
+						'post_content' => $imported,
+					)
+				);
+			}
 		}
+	} catch ( \Throwable $e ) {
+		$images['failed']++;
 	}
 
 	if ( '' !== $params['featured_image_url'] ) {
-		$attachment_id = altorank_sideload_image( $params['featured_image_url'], $post_id );
-		if ( ! is_wp_error( $attachment_id ) ) {
-			set_post_thumbnail( $post_id, $attachment_id );
+		try {
+			$attachment_id = altorank_sideload_image( $params['featured_image_url'], $post_id );
+			if ( is_wp_error( $attachment_id ) ) {
+				$images['featured_error'] = $attachment_id->get_error_message();
+			} elseif ( set_post_thumbnail( $post_id, $attachment_id ) ) {
+				$images['featured'] = 'set';
+			}
+		} catch ( \Throwable $e ) {
+			$images['featured_error'] = $e->getMessage();
 		}
 	}
 
-	altorank_write_seo_meta( $post_id, $params['title'], $params['meta_description'], $params['focus_keyword'] );
-
-	return altorank_post_response( $post_id, $post_id && ! $is_new ? 200 : 201 );
+	$response = altorank_post_response( $post_id, $post_id && ! $is_new ? 200 : 201 );
+	$data     = $response->get_data();
+	$data['images'] = $images;
+	$response->set_data( $data );
+	return $response;
 }
 
 function altorank_post_response( int $post_id, int $code ): WP_REST_Response {
@@ -607,7 +748,7 @@ function altorank_sanitize_content( string $html ): string {
  * fails leaves the original URL in place: a hot-linked picture beats a broken
  * one, and the publish still succeeds.
  */
-function altorank_import_images( int $post_id, string $content ): string {
+function altorank_import_images( int $post_id, string $content, ?array &$stats = null ): string {
 	if ( ! preg_match_all( '#<img\b[^>]*\bsrc=["\']([^"\']+)["\']#i', $content, $matches ) ) {
 		return $content;
 	}
@@ -624,12 +765,18 @@ function altorank_import_images( int $post_id, string $content ): string {
 
 		$attachment_id = altorank_sideload_image( $src, $post_id );
 		if ( is_wp_error( $attachment_id ) ) {
+			if ( null !== $stats ) {
+				$stats['failed']++;
+			}
 			continue;
 		}
 
 		$local = wp_get_attachment_url( $attachment_id );
 		if ( $local ) {
 			$content = str_replace( $src, $local, $content );
+			if ( null !== $stats ) {
+				$stats['imported']++;
+			}
 		}
 	}
 
@@ -731,20 +878,50 @@ function altorank_extension_for_mime( string $mime ): string {
  * an import source it picks up on its next scan of the post, so that one is
  * best effort. The other three read post meta directly.
  */
-function altorank_write_seo_meta( int $post_id, string $title, string $description, string $focus ): void {
+function altorank_seo_meta_input( string $title, string $description, string $focus ): array {
+	$meta = array();
 	foreach ( ALTORANK_SEO_META as $plugin => $keys ) {
 		if ( '' !== $title ) {
-			update_post_meta( $post_id, $keys['title'], $title );
+			$meta[ $keys['title'] ] = $title;
 		}
 		if ( '' !== $description ) {
-			update_post_meta( $post_id, $keys['description'], $description );
+			$meta[ $keys['description'] ] = $description;
 		}
 		if ( '' !== $focus ) {
-			$value = 'aioseo' === $plugin
+			$meta[ $keys['focus'] ] = 'aioseo' === $plugin
 				? wp_json_encode( array( 'focus' => array( 'keyphrase' => $focus ) ) )
 				: $focus;
-			update_post_meta( $post_id, $keys['focus'], $value );
 		}
+	}
+	return $meta;
+}
+
+/**
+ * Yoast keeps a copy of a post's SEO fields in its own indexable table and
+ * reads the <title> and description from there, not from post meta. It
+ * rebuilds that row on save_post, but only from meta it can see at the time;
+ * on some versions a meta_input write still lands a beat late. Rebuilding
+ * explicitly after the write makes the first render right on every version.
+ * No-op without Yoast. Never fails the publish.
+ */
+function altorank_rebuild_yoast_indexable( int $post_id ): void {
+	if ( function_exists( 'YoastSEO' ) ) {
+		try {
+			$container  = YoastSEO()->classes;
+			$repository = $container->get( 'Yoast\\WP\\SEO\\Repositories\\Indexable_Repository' );
+			$builder    = $container->get( 'Yoast\\WP\\SEO\\Builders\\Indexable_Builder' );
+			$indexable  = $repository->find_by_id_and_type( $post_id, 'post' );
+			if ( $indexable ) {
+				$builder->build_for_id_and_type( $post_id, 'post', $indexable );
+				$indexable->save();
+			}
+			return;
+		} catch ( \Throwable $e ) {
+			// Older container layout; fall through to the action below.
+		}
+	}
+	if ( class_exists( 'WPSEO_Meta' ) ) {
+		do_action( 'wpseo_save_indexable', $post_id, get_post( $post_id ) );
 	}
 }
 
