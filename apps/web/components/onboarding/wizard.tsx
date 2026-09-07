@@ -325,7 +325,10 @@ export function OnboardingWizard({
             >
               Back
             </Button>
-            {step !== ATTRIBUTION_STEP && (
+            {/* Not on the CMS step: its primary action is already a skip, and two
+                skips of different scope on one screen is the wrong choice to
+                offer someone who is about to leave. */}
+            {step !== ATTRIBUTION_STEP && step !== INTEGRATION_STEP && (
               <button
                 type="button"
                 onClick={skipAll}
