@@ -99,11 +99,11 @@ export default async function ArticlesPage({ searchParams }: Props) {
   if (workspaces.length === 0) {
     return (
       <div className="p-8 text-ink-3">
-        No sites yet.{" "}
+        No workspaces yet.{" "}
         <Link href="/workspaces" className="text-accent-ink underline decoration-line underline-offset-[3px]">
           Add one
         </Link>{" "}
-        and the first analysis starts on its own; articles are written for a site, so this page fills once there is one.
+        and the first analysis starts on its own; articles are written for a workspace, so this page fills once there is one.
       </div>
     );
   }
@@ -227,8 +227,8 @@ export default async function ArticlesPage({ searchParams }: Props) {
             <span className="inline-block max-w-[56ch] leading-[1.6]">
               No articles yet.{" "}
               {autoOn
-                ? "The scheduler writes the next draft from this site's keyword queue, or write one now with New article."
-                : "Auto-generation is off for this site, so nothing is written on a schedule — write one with New article, or switch the schedule on in Article settings."}
+                ? "The scheduler writes the next draft from this workspace's keyword queue, or write one now with New article."
+                : "Auto-generation is off for this workspace, so nothing is written on a schedule — write one with New article, or switch the schedule on in Article settings."}
             </span>
           }
         />

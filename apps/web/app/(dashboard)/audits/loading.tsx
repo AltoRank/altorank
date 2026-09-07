@@ -4,7 +4,7 @@ import { ActionSkeleton, PageBodySkeleton, Skeleton, StatStripSkeleton, Subtitle
 export default function AuditsLoading() {
   return (
     <>
-      <PageHead title="Site Audits" subtitle={<SubtitleSkeleton width="w-56" />} />
+      <PageHead title="Site audits" subtitle={<SubtitleSkeleton width="w-56" />} />
       <StatStripSkeleton count={4} />
       <PageBodySkeleton label="Loading audits">
         <div className="mb-3 flex items-center justify-between">

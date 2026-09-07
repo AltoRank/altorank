@@ -181,7 +181,7 @@ const CATEGORY_HELP: Record<EmailCategory, string> = {
   publishing: "An article went live, or a publish failed.",
   improvements: "A rewrite of an existing page is waiting for review.",
   reports: "The monthly PDF.",
-  product: "Nothing is being written for a site, and why.",
+  product: "Nothing is being written for a workspace, and why.",
 };
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {

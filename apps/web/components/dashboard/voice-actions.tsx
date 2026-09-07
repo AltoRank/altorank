@@ -32,7 +32,7 @@ export function VoiceActions({ workspaces }: VoiceActionsProps) {
 
       // No longer a `required` <select>, so nothing in the browser stops
       // a submit when there is no workspace to bind to.
-      if (!workspaceId) throw new Error("Add a site before training a voice for it.");
+      if (!workspaceId) throw new Error("Add a workspace before training a voice for it.");
       const sampleText = fd.get("sample_text") as string;
       await createVoiceProfile(workspaceId, sampleText);
       setOpen(false);
@@ -80,7 +80,7 @@ export function VoiceActions({ workspaces }: VoiceActionsProps) {
               name="sample_text"
               required
               rows={6}
-              placeholder="Paste 2-3 paragraphs of your client's existing content…"
+              placeholder="Paste 2-3 paragraphs of existing content…"
               className="px-3 py-2 rounded-lg border border-line bg-panel text-[13px] text-ink placeholder:text-ink-3 outline-none focus:border-accent transition-colors resize-none"
             />
           </label>

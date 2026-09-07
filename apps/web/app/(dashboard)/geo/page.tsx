@@ -156,7 +156,7 @@ export default async function GeoPage() {
                 would actually ask. The prompt set is the measurement, so it is
                 chosen deliberately rather than generated: changing it changes the
                 number and breaks the trend line. Choosing the prompts and switching
-                tracking on for a site is not in the app yet; nothing here is being
+                tracking on for a workspace is not in the app yet; nothing here is being
                 measured until it is.
               </p>
             </div>

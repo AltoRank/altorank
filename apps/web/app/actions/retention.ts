@@ -57,7 +57,7 @@ export async function pauseAccount(months: unknown): Promise<BillingOutcome<{ pa
     .eq("agency_id", agency.id)
     .neq("status", "paused")
     .select("id");
-  if (error) return billingFailure(error, "The sites could not be paused");
+  if (error) return billingFailure(error, "The workspaces could not be paused");
 
   if (billingEnabled && agency.stripe_subscription_id) {
     try {
@@ -72,7 +72,7 @@ export async function pauseAccount(months: unknown): Promise<BillingOutcome<{ pa
       return {
         ok: false,
         error:
-          "Writing is paused for every site, but billing could not be paused with it — you may still be charged for the next renewal. Try again in a moment, or email hello@altorank.co.",
+          "Writing is paused for every workspace, but billing could not be paused with it — you may still be charged for the next renewal. Try again in a moment, or email hello@altorank.co.",
       };
     }
   }
@@ -87,7 +87,7 @@ export async function pauseAccount(months: unknown): Promise<BillingOutcome<{ pa
     await notifyAccountPaused(createServiceClient(), agency.id, {
       agencyName: (agency.name as string | null) ?? null,
       pausedUntil: until,
-      siteCount: (paused ?? []).length,
+      workspaceCount: (paused ?? []).length,
     });
   } catch (err) {
     console.error(`[pause] confirmation email: ${err instanceof Error ? err.message : err}`);
@@ -114,7 +114,7 @@ export async function resumeAccount(): Promise<BillingOutcome> {
   try {
     await resumePausedWorkspaces(supabase, agency.id);
   } catch (err) {
-    return billingFailure(err, "The sites could not be resumed");
+    return billingFailure(err, "The workspaces could not be resumed");
   }
 
   if (billingEnabled && agency.stripe_subscription_id) {
@@ -128,7 +128,7 @@ export async function resumeAccount(): Promise<BillingOutcome> {
       return {
         ok: false,
         error:
-          "Writing has resumed for every site, but billing could not be restarted with it. It restarts on its own at the end of the pause; email hello@altorank.co if the plan still looks paused tomorrow.",
+          "Writing has resumed for every workspace, but billing could not be restarted with it. It restarts on its own at the end of the pause; email hello@altorank.co if the plan still looks paused tomorrow.",
       };
     }
   }

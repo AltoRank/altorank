@@ -23,7 +23,7 @@ export const GET = withAgent(async (request, ctx) => {
       return fail("not_found", "Workspace not found in this account.", "Call GET /workspaces and use an id from that list.");
     }
     if (!workspace.domain) {
-      return fail("invalid_request", "This workspace has no domain.", "Ask the human to set the site's domain, or pass ?domain= directly.");
+      return fail("invalid_request", "This workspace has no domain.", "Ask the human to set the workspace's domain, or pass ?domain= directly.");
     }
     domain = workspace.domain;
   }

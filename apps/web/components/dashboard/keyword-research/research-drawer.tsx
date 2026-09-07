@@ -30,7 +30,7 @@ export function ResearchDrawer({ workspaceId, open, onOpenChange, handoff }: Res
       setCtx(await loadResearchContext(workspaceId));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load this site.");
+      setError(err instanceof Error ? err.message : "Could not load this workspace.");
     }
   }, [workspaceId]);
 
@@ -66,7 +66,7 @@ export function ResearchDrawer({ workspaceId, open, onOpenChange, handoff }: Res
       />
       <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 scroll">
         {error && <div className="text-[13px] text-err-ink bg-err-soft rounded-md px-3 py-2 mb-3">{error}</div>}
-        {!ctx && !error && <div className="text-[13px] text-ink-3">Loading this site's profile…</div>}
+        {!ctx && !error && <div className="text-[13px] text-ink-3">Loading this workspace's profile…</div>}
         {ctx && tab === "generate" && (
           <GenerateTab workspaceId={workspaceId} ctx={ctx} handoff={handoff} onCapacity={onCapacity} onChanged={reload} onInstructionsSaved={(text) => setCtx({ ...ctx, instructions: text })} />
         )}

@@ -9,22 +9,22 @@ This version has breaking changes — APIs, conventions, and file structure may 
 A workspace is one site. An agency is the account that owns several. RLS keeps
 one customer out of another customer's data and stops there. Since migration
 053 the workspace-scoped tables resolve through `user_workspace_ids()` rather
-than `user_agency_ids()`, so a member restricted to some sites
+than `user_agency_ids()`, so a member restricted to some workspaces
 (`agency_members.workspace_ids`) is held to them — but that column is `NULL`
-for everyone by default, meaning "all of this account's sites". So the practical
-outcome is unchanged: a query with no `workspace_id` filter still returns every
-site in the signed-in account. It does not error, it does not leak across
-customers, and on an account with one site it returns exactly the same list as
-the correct query.
+for everyone by default, meaning "all of this account's workspaces". So the
+practical outcome is unchanged: a query with no `workspace_id` filter still
+returns every workspace in the signed-in account. It does not error, it does not
+leak across customers, and on an account with one workspace it returns exactly
+the same list as the correct query.
 
 That is why seven of these reached production on 2026-09-03 — a sidebar badge
 reading `4` beside a list of `2`, "Search Console connected" because a
-*different* client had connected it, dialogs filing a keyword under a site the
-screen was not showing.
+*different* customer had connected it, dialogs filing a keyword under a workspace
+the screen was not showing.
 
 **Every read a page renders must name its workspace.** Scope comes from
 `getScopedWorkspaceId()` on the server or `useWorkspace().active` on the
-client. There is no "all sites" view by design.
+client. There is no "all workspaces" view by design.
 
 The chrome is the part that gets forgotten: badges, counts, "Connected" pills,
 nav-visibility gates and recent-item strips sit beside a correctly scoped main

@@ -38,7 +38,7 @@ export default async function VoicePage() {
           the card subtitle already carried it, four times on one screen. */}
       <PageHead
         title="Brand voice"
-        subtitle="Trained on sample text you approve. Articles for a site are written in its voice."
+        subtitle="Trained on sample text you approve. Articles for a workspace are written in its voice."
         actions={<VoiceActions workspaces={workspaces} />}
       />
 

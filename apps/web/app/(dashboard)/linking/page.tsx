@@ -15,7 +15,7 @@ export default async function LinkingPage() {
     return (
       <>
         <PageHead title="Linking" subtitle="Which of this site's pages articles link to, and where the list comes from." />
-        <div className="px-8 py-6 text-[13px] text-ink-3">Add a site first.</div>
+        <div className="px-8 py-6 text-[13px] text-ink-3">Add a workspace first.</div>
       </>
     );
   }

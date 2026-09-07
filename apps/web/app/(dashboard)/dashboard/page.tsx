@@ -448,7 +448,7 @@ export default async function DashboardPage() {
                     <div className="text-ink-3">No competitors named in the business profile, and no keyword came from one.</div>
                   ) : !competitorMeasured ? (
                     <div className="text-ink-3">
-                      Not measured yet: no keyword on this site has been researched from a competitor. Run Generate with a
+                      Not measured yet: no keyword on this workspace has been researched from a competitor. Run Generate with a
                       competitor selected in the research drawer and this list fills in.
                     </div>
                   ) : (
@@ -470,7 +470,7 @@ export default async function DashboardPage() {
                     <div className="text-ink-3">No audiences named in the business profile, and no keyword came from one.</div>
                   ) : !audienceMeasured ? (
                     <div className="text-ink-3">
-                      Not measured yet: no keyword on this site has been researched from an audience. Run Generate with an
+                      Not measured yet: no keyword on this workspace has been researched from an audience. Run Generate with an
                       audience selected in the research drawer and this list fills in.
                     </div>
                   ) : (

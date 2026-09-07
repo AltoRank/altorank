@@ -33,9 +33,9 @@ export function NoWorkspaceCard() {
   return (
     <Card>
       <div className="px-2 py-8 text-center">
-        <div className="mb-1 text-[13.5px] font-medium text-ink-2">No site to configure yet</div>
+        <div className="mb-1 text-[13.5px] font-medium text-ink-2">No workspace to configure yet</div>
         <p className="mx-auto mb-4 max-w-[42ch] text-[12.5px] leading-relaxed text-ink-3">
-          These settings belong to a workspace. Add your first site and the wizard fills most of them in from
+          These settings belong to a workspace. Add your first one and the wizard fills most of them in from
           what it reads there.
         </p>
         <Link href="/workspaces">
