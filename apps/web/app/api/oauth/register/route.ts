@@ -18,6 +18,13 @@ export async function POST(request: NextRequest) {
   const outcome = validateRegistration(await readBody(request));
   if (!outcome.ok) return oauthError(outcome.error, outcome.description, 400);
 
-  await saveClient(createServiceClient(), outcome.client);
+  // A failed insert (most likely: migration 080 not applied) must still be an
+  // OAuth error body. An empty 500 makes every client library throw on the
+  // parse rather than on the message, which hides the cause from the person.
+  try {
+    await saveClient(createServiceClient(), outcome.client);
+  } catch (err) {
+    return oauthError("server_error", err instanceof Error ? err.message : "Could not register the client.", 500);
+  }
   return oauthJson(registrationResponse(outcome.client), 201);
 }
