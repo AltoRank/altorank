@@ -48,7 +48,7 @@ describe("RunRecorder", () => {
     expect(rec.writes).toBe(WORKER_EVENTS.length);
     const row = db.tables.onboarding_runs[0] as unknown as OnboardingRunRow;
     expect(row.phases.map((p) => `${p.phase}:${p.status}`)).toEqual([
-      "scanning:done", "keywords:done", "planning:done", "drafting:active",
+      "scanning:done", "keywords:done", "pages:pending", "planning:done", "drafting:active",
     ]);
     expect(row.keywords_found).toBe(94);
     expect(row.planned).toHaveLength(2);
@@ -56,7 +56,7 @@ describe("RunRecorder", () => {
     // Each write carried that moment's state, not the final one.
     const second = db.updates[1].patch as { phases: { phase: string; status: string }[] };
     expect(second.phases.map((p) => `${p.phase}:${p.status}`)).toEqual([
-      "scanning:done", "keywords:pending", "planning:pending", "drafting:pending",
+      "scanning:done", "keywords:pending", "pages:pending", "planning:pending", "drafting:pending",
     ]);
   });
 
@@ -181,7 +181,7 @@ describe("stampRun", () => {
     await stampRun(db.client, "r1", { phase: "drafting", status: "active", detail: "Read 8 ranking pages and 4 questions people ask. Writing now." });
     const row = db.tables.onboarding_runs[0] as unknown as OnboardingRunRow;
     expect(row.status).toBe("running");
-    expect(row.phases[3]).toEqual({ phase: "drafting", status: "active", detail: "Read 8 ranking pages and 4 questions people ask. Writing now." });
+    expect(row.phases.find((p) => p.phase === "drafting")).toEqual({ phase: "drafting", status: "active", detail: "Read 8 ranking pages and 4 questions people ask. Writing now." });
     expect(row.phases[0]).toMatchObject({ status: "done" });
     expect(row.keywords_found).toBe(94);
   });

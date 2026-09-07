@@ -36,6 +36,11 @@ const fanOut = vi.fn(() => ({ dispatched: 0, settled: Promise.resolve() }));
 vi.mock("@/lib/content/fan-out", () => ({ fanOutDrafts: (...a: unknown[]) => fanOut(...(a as [])) }));
 const detect = vi.fn(async () => ({ found: 0, added: 0 }));
 vi.mock("@/lib/linking/detect", () => ({ detectLinks: (...a: unknown[]) => detect(...(a as [])) }));
+// Mocked, and it has to be: the real one fetches robots.txt, a sitemap and up
+// to forty pages of whatever domain the fixture names. A unit test that
+// reaches the network is a unit test that fails on a train.
+const assess = vi.fn(async () => ({ status: "done" as const, detail: "Read 12 pages. Found 30 technical issues on 9 of them.", summary: null }));
+vi.mock("../site-assessment", () => ({ assessExistingPages: (...a: unknown[]) => assess(...(a as [])) }));
 
 import { runOnboarding } from "../pipeline";
 import type { OnboardingEvent } from "../events";
@@ -86,6 +91,8 @@ beforeEach(() => {
   fanOut.mockReturnValue({ dispatched: 0, settled: Promise.resolve() });
   detect.mockReset();
   detect.mockResolvedValue({ found: 0, added: 0 });
+  assess.mockReset();
+  assess.mockResolvedValue({ status: "done", detail: "Read 12 pages. Found 30 technical issues on 9 of them.", summary: null });
   // Both of these are set per-test by the fan-out cases, and a leak into the
   // thin client below shows up as "not is not a function" three tests later.
   plan.mockReset();
@@ -144,6 +151,7 @@ describe("runOnboarding", () => {
     expect(phases(events)).toEqual([
       "scanning:active", "scanning:done",
       "keywords:active", "keywords:done",
+      "pages:active", "pages:done",
       "planning:active", "planning:skipped",
       "drafting:active", "drafting:done",
       "ready",
@@ -266,6 +274,7 @@ describe("runOnboarding", () => {
     expect(phases(events)).toEqual([
       "scanning:active", "scanning:done",
       "keywords:active", "keywords:failed",
+      "pages:active", "pages:done",
       "planning:active", "planning:skipped",
       "drafting:active", "drafting:done",
       "ready",
@@ -339,6 +348,7 @@ describe("runOnboarding", () => {
       expect(phases(events)).toEqual([
         "scanning:active", "scanning:done",
         "keywords:active", "keywords:done",
+        "pages:active", "pages:done",
         "planning:active", "planning:skipped",
         "drafting:active", "drafting:active",
       ]);

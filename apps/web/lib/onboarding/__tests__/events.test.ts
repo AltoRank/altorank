@@ -14,6 +14,15 @@ import {
 const run = (events: OnboardingEvent[]): OnboardingState =>
   events.reduce(reduceOnboarding, initialOnboardingState());
 
+/**
+ * A step by name, not by index. These assertions used to read `steps[3]`, and
+ * every one of them broke the day a fifth phase was added between two of the
+ * four - which is a test failing for a reason that has nothing to do with what
+ * it is testing.
+ */
+const step = (s: OnboardingState, phase: OnboardingEvent["phase"]) =>
+  s.steps.find((x) => x.phase === phase)!;
+
 const ARTICLE = { id: "a1", title: "T", keyword: "seo agent", wordCount: 1200, verdict: "clean" as const };
 
 describe("reduceOnboarding", () => {
@@ -31,13 +40,15 @@ describe("reduceOnboarding", () => {
       { phase: "scanning", status: "done" },
       { phase: "keywords", status: "active" },
       { phase: "keywords", status: "done", keywordsFound: 94 },
+      { phase: "pages", status: "active" },
+      { phase: "pages", status: "done", detail: "Read 12 pages. Found 30 technical issues on 9 of them." },
       { phase: "planning", status: "active" },
       { phase: "planning", status: "done", planned: [{ term: "seo agent", date: "2026-09-04" }] },
       { phase: "drafting", status: "active" },
       { phase: "drafting", status: "done", article: ARTICLE },
       { phase: "ready" },
     ]);
-    expect(s.steps.map((x) => x.status)).toEqual(["done", "done", "done", "done"]);
+    expect(s.steps.map((x) => x.status)).toEqual(["done", "done", "done", "done", "done"]);
     expect(s.planned).toEqual([{ term: "seo agent", date: "2026-09-04" }]);
     expect(s.keywordsFound).toBe(94);
     expect(s.article).toEqual(ARTICLE);
@@ -50,14 +61,14 @@ describe("reduceOnboarding", () => {
       { phase: "drafting", status: "skipped", detail: "Your free draft is already used." },
       { phase: "ready" },
     ]);
-    expect(s.steps[3]).toMatchObject({ status: "skipped", detail: "Your free draft is already used." });
+    expect(step(s, "drafting")).toMatchObject({ status: "skipped", detail: "Your free draft is already used." });
     expect(s.error).toBeNull();
     expect(s.ready).toBe(true);
   });
 
   it("marks a step done even if its active event was lost on the wire", () => {
     const s = run([{ phase: "keywords", status: "done", keywordsFound: 3 }]);
-    expect(s.steps[1].status).toBe("done");
+    expect(step(s, "keywords").status).toBe("done");
     expect(s.keywordsFound).toBe(3);
   });
 
@@ -88,7 +99,7 @@ describe("reduceOnboarding", () => {
       { phase: "drafting", status: "active" },
       { phase: "drafting", status: "active", detail: "Writing now." },
     ]);
-    expect(s.steps[3]).toEqual({ phase: "drafting", status: "active", detail: "Writing now." });
+    expect(step(s, "drafting")).toEqual({ phase: "drafting", status: "active", detail: "Writing now." });
     expect(isTerminal(s)).toBe(false);
   });
 
