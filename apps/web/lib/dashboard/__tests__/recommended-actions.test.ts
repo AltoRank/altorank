@@ -51,4 +51,20 @@ describe("recommendedActions", () => {
   it("says nothing about setup once the wizard is finished or skipped", () => {
     expect(recommendedActions(healthy).map((a) => a.id)).not.toContain("finish-setup");
   });
+  it("puts the unfinished wizard first, and names the draft that was written meanwhile", () => {
+    const bare = recommendedActions({ ...healthy, setupUnfinished: true });
+    expect(bare.map((a) => a.id)).toEqual(["finish-setup"]);
+    expect(bare[0].href).toBe("/onboarding");
+    expect(bare[0].aside).toBeUndefined();
+    expect(bare[0].consequence).toContain("nothing in review");
+
+    // The crons do not wait for the wizard: the site was read and a draft
+    // written into review while nobody was looking, and the card is the only
+    // thing on the dashboard that says so to the person who can approve it.
+    const withDraft = recommendedActions({ ...healthy, setupUnfinished: true, pendingReviews: 1, reviewDraftId: "art-1" });
+    expect(withDraft.map((a) => a.id)).toEqual(["finish-setup", "review-drafts"]);
+    expect(withDraft[0].consequence).toContain("your first article is waiting for review");
+    expect(withDraft[0].aside).toEqual({ label: "Review the draft", href: "/content/art-1" });
+    expect(withDraft[0].href).toBe("/onboarding");
+  });
 });

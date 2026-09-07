@@ -28,6 +28,8 @@ import type { GenerateArticleOptions, GenerateArticleResult } from "@/lib/conten
 import type { ArticleResearch } from "@/lib/seo/research";
 import type { TechFinding } from "@/lib/seo/tech-audit";
 import { classifyIntent } from "@/lib/seo/intent";
+import { buildTopicalProfile, type TopicalProfile } from "@/lib/seo/topical-profile";
+import type { CrawlResult } from "@/lib/audit/crawler";
 import { htmlToTiptapJson } from "@/lib/ai/tiptap";
 import { factCheckArticle } from "@/lib/ai/fact-check";
 
@@ -102,6 +104,36 @@ export function stubDiscoverSite(domain: string): SiteDiscovery {
   };
 }
 
+/**
+ * The vocabulary a crawl of the fixture site would have produced, built by
+ * the real `buildTopicalProfile` from the fixture's own headings.
+ *
+ * The real `analyseDomain` writes `workspaces.topical_profile` from the crawl,
+ * and `cron/generate` refuses to write for a site whose profile is not usable
+ * (lib/seo/topical-profile.ts, `profileIsUsable`). Until 2026-09-07 this stub
+ * left the profile null, so under fixtures the unattended chain stopped at that
+ * gate for every site - the wizard's own draft never noticed, because
+ * lib/onboarding/pipeline.ts has no such gate. A stalled wizard is exactly the
+ * case where the cron is the only writer, so the fixture has to leave what the
+ * crawl leaves. Still nothing measured: the words come from SITE_TEXT.
+ */
+export function stubTopicalProfile(domain: string, now = new Date().toISOString()): TopicalProfile {
+  const origin = `https://${domain}`;
+  const sentences = SITE_TEXT.split(/(?<=\.)\s+/);
+  const page: CrawlResult = {
+    url: `${origin}/`,
+    status: 200,
+    title: "Nomad Atlas: slow travel itineraries for Italy",
+    metaDescription: sentences[0] ?? "",
+    h1: ["Slow journeys through Italy, checked by the people who live there"],
+    h2: sentences.slice(1),
+    images: [],
+    links: [],
+    loadTimeMs: 0,
+  };
+  return buildTopicalProfile(domain, [page], now);
+}
+
 // --- Keywords ----------------------------------------------------------------
 //
 // Eight terms that pass `assessKeywordQuality`, so the plan and the first draft
@@ -128,6 +160,14 @@ export async function stubAnalyseDomain(options: {
   const domain = options.domain.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
   const { supabase, workspaceId } = options;
   let keywordsFound = 0;
+  const now = new Date().toISOString();
+
+  if (isUnreadable(domain) && supabase && workspaceId) {
+    // Stamped, as the real analysis stamps a domain it could not reach, so the
+    // analyze cron does not re-read an unreadable fixture on every run. No
+    // profile and no keywords: nothing was learned, and the row says so.
+    await supabase.from("workspaces").update({ first_analysed_at: now }).eq("id", workspaceId);
+  }
 
   if (!isUnreadable(domain)) {
     keywordsFound = STUB_KEYWORDS.length;
@@ -147,7 +187,10 @@ export async function stubAnalyseDomain(options: {
         const { error } = await supabase.from("keywords").insert(rows);
         if (error) throw new Error(`E2E_STUBS keywords: ${error.message}`);
       }
-      await supabase.from("workspaces").update({ first_analysed_at: new Date().toISOString() }).eq("id", workspaceId);
+      await supabase
+        .from("workspaces")
+        .update({ first_analysed_at: now, topical_profile: stubTopicalProfile(domain, now) })
+        .eq("id", workspaceId);
     }
   }
 

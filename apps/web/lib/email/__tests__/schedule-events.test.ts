@@ -6,15 +6,23 @@ vi.mock("../resend", () => ({ sendTransactionalEmail }));
 import {
   announceNothingWritten,
   announcePausedSites,
+  announceSetupUnfinished,
   nothingWrittenReason,
   remindEndingPauses,
+  setupUnfinishedFacts,
+  sweepUnfinishedSetups,
   PAUSE_REMINDER_DAYS,
+  SETUP_UNFINISHED_LINE,
 } from "../schedule-events";
 
 type Row = Record<string, unknown>;
 
 const claimed = new Set<string>();
 let workspaceRows: Row[] = [];
+/** The oldest draft in review, the keyword count and the latest audit, for the setup email's facts. */
+let reviewArticle: Row | null = null;
+let keywordCount = 0;
+let latestAudit: Row | null = null;
 /** Filters the caller applied to `workspaces`, so a test can assert the window. */
 let workspaceFilters: [string, unknown][] = [];
 let members: { user_id: string; role: string; workspace_ids: string[] | null }[] = [];
@@ -29,10 +37,26 @@ function client() {
         Object.assign(q, {
           select: () => q,
           eq: record("eq"),
+          neq: record("neq"),
+          is: record("is"),
+          lt: record("lt"),
           not: (c: string, o: string, v: unknown) => (workspaceFilters.push([`not ${c} ${o}`, v]), q),
           gte: record("gte"),
           lte: record("lte"),
+          maybeSingle: async () => ({ data: workspaceRows[0] ?? null, error: null }),
           then: (resolve: (v: unknown) => unknown) => resolve({ data: workspaceRows, error: null }),
+        });
+        return q as never;
+      }
+      if (table === "articles" || table === "domain_audits" || table === "keywords") {
+        const q: Record<string, unknown> = {};
+        Object.assign(q, {
+          select: () => q,
+          eq: () => q,
+          order: () => q,
+          limit: () => q,
+          maybeSingle: async () => ({ data: table === "articles" ? reviewArticle : latestAudit, error: null }),
+          then: (resolve: (v: unknown) => unknown) => resolve({ data: null, count: keywordCount, error: null }),
         });
         return q as never;
       }
@@ -53,6 +77,17 @@ function client() {
       }
       if (table === "sent_emails") {
         return {
+          // The sweep's ledger read: which of these sites were already told.
+          select: () => ({
+            eq: (_c: string, type: string) => ({
+              in: async (_col: string, ids: string[]) => ({
+                data: ids
+                  .filter((id) => [...claimed].some((k) => k.startsWith(`${type}|${id}|`)))
+                  .map((id) => ({ workspace_id: id })),
+                error: null,
+              }),
+            }),
+          }),
           insert: async (row: Row) => {
             const key = `${row.email_type}|${row.subject_id}|${row.recipient}`;
             if (claimed.has(key)) return { error: { code: "23505", message: "duplicate" } };
@@ -79,6 +114,9 @@ beforeEach(() => {
   claimed.clear();
   workspaceRows = [];
   workspaceFilters = [];
+  reviewArticle = null;
+  keywordCount = 0;
+  latestAudit = null;
   sendTransactionalEmail.mockReset();
   sendTransactionalEmail.mockResolvedValue(undefined);
   members = [
@@ -169,6 +207,23 @@ describe("announceNothingWritten", () => {
     expect(sends()[0].html).toContain("https://app.altorank.co/keywords");
   });
 
+  /**
+   * A site whose wizard was never finished or skipped is the setup email's
+   * to talk to, not this one's: "add keywords" sends somebody who has not
+   * seen the plan screen to the wrong page for the wrong reason.
+   */
+  it("stands down for a site still in setup, and never sends both", async () => {
+    workspaceRows = [{ id: "ws-1", onboarded_at: null, onboarding_skipped_at: null }];
+    const line = await announceNothingWritten(client(), scope, "no-keywords");
+    expect(line).toBe(SETUP_UNFINISHED_LINE);
+    expect(sends()).toHaveLength(0);
+  });
+
+  it("treats a skipped wizard as finished", async () => {
+    workspaceRows = [{ id: "ws-1", onboarded_at: null, onboarding_skipped_at: "2026-09-07T10:00:00Z" }];
+    expect(await announceNothingWritten(client(), scope, "no-keywords")).toBe("emailed 2");
+  });
+
   /** Four runs a day over the same skipped site is one email a week. */
   it("sends at most once a week per site", async () => {
     const c = client();
@@ -185,7 +240,9 @@ describe("announceNothingWritten", () => {
 
 describe("announcePausedSites", () => {
   it("covers the sites the cron's own query filters out", async () => {
-    workspaceRows = [{ id: "ws-1", domain: "acme.com", agency_id: "ag-1", paused_until: "2026-10-01" }];
+    workspaceRows = [
+      { id: "ws-1", domain: "acme.com", agency_id: "ag-1", paused_until: "2026-10-01", onboarded_at: "2026-08-01T00:00:00Z" },
+    ];
     const lines = await announcePausedSites(client(), new Date("2026-09-07T07:00:00Z"));
 
     expect(lines).toEqual(["acme.com: emailed 2"]);
@@ -198,6 +255,101 @@ describe("announcePausedSites", () => {
   it("says nothing when no paused site is set to write", async () => {
     workspaceRows = [];
     expect(await announcePausedSites(client())).toEqual([]);
+    expect(sends()).toHaveLength(0);
+  });
+});
+
+describe("the setup email", () => {
+  const scope = { agencyId: "ag-1", workspaceId: "ws-1", domain: "acme.com" };
+  const usable = { terms: { crm: 1, sales: 1, pipeline: 1, forecast: 1 } };
+
+  it("carries the draft when one is in review, to everyone scoped to the site", async () => {
+    reviewArticle = { id: "art-1", title: "How to choose a CRM", keyword: "best crm" };
+    keywordCount = 8;
+    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    const line = await announceSetupUnfinished(client(), scope);
+
+    expect(line).toBe("emailed 2");
+    expect(sends().map((s) => s.to).sort()).toEqual(["editor@acme.co", "owner@acme.co"]);
+    expect(sends()[0].subject).toBe("While you were away: a first draft for acme.com");
+    expect(sends()[0].html).toContain("https://app.altorank.co/content/art-1");
+    expect(sends()[0].html).toContain("https://app.altorank.co/onboarding?step=5");
+  });
+
+  it("states only what was measured when there is no draft", async () => {
+    keywordCount = 8;
+    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    expect(await setupUnfinishedFacts(client(), "ws-1", "acme.com")).toEqual({
+      domain: "acme.com",
+      draft: null,
+      keywordCount: 8,
+      unreadable: null,
+    });
+    await announceSetupUnfinished(client(), scope);
+    expect(sends()[0].subject).toBe("We read acme.com while you were away");
+    expect(sends()[0].html).toContain("<strong>8</strong> keywords");
+  });
+
+  it("says what could not be read, from the audit, never from a guess", async () => {
+    latestAudit = { pages_crawled: 0 };
+    workspaceRows = [{ id: "ws-1", topical_profile: null }];
+    expect((await setupUnfinishedFacts(client(), "ws-1", "acme.com")).unreadable).toBe("not one page answered");
+
+    latestAudit = null;
+    expect((await setupUnfinishedFacts(client(), "ws-1", "acme.com")).unreadable).toBe(
+      "too little of its text could be read to find keywords",
+    );
+
+    // Keywords exist: the site was read well enough, whatever the profile says.
+    keywordCount = 3;
+    expect((await setupUnfinishedFacts(client(), "ws-1", "acme.com")).unreadable).toBeNull();
+  });
+
+  /** Once per site, ever - not per week, not per draft, not per run. */
+  it("goes out once per workspace, whatever changes afterwards", async () => {
+    const c = client();
+    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    await announceSetupUnfinished(c, scope);
+    reviewArticle = { id: "art-1", title: "Later", keyword: null };
+    expect(await announceSetupUnfinished(c, scope)).toBe("2 already told or opted out");
+    expect(sends()).toHaveLength(2);
+    expect([...claimed].every((k) => k.startsWith("setup_unfinished|ws-1|"))).toBe(true);
+  });
+
+  it("is a site-status email a person can opt out of", async () => {
+    process.env.EMAIL_UNSUBSCRIBE_SECRET = "test-signing-secret";
+    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    await announceSetupUnfinished(client(), scope);
+    const options = sendTransactionalEmail.mock.calls[0][5] as { unsubscribeUrl: unknown; headers?: Record<string, string> };
+    expect(String(options.unsubscribeUrl)).toContain("/unsubscribe?");
+    expect(options.headers?.["List-Unsubscribe"]).toBeTruthy();
+  });
+});
+
+describe("sweepUnfinishedSetups", () => {
+  const now = new Date("2026-09-08T07:00:00Z");
+
+  it("asks for the sites that stalled a day ago or more, were read, and are not paused", async () => {
+    await sweepUnfinishedSetups(client(), now);
+    expect(workspaceFilters).toContainEqual(["is onboarded_at", null]);
+    expect(workspaceFilters).toContainEqual(["is onboarding_skipped_at", null]);
+    expect(workspaceFilters).toContainEqual(["not first_analysed_at is", null]);
+    expect(workspaceFilters).toContainEqual(["neq status", "paused"]);
+    expect(workspaceFilters).toContainEqual(["lt created_at", "2026-09-07T07:00:00.000Z"]);
+  });
+
+  it("tells each stalled site once and reports it", async () => {
+    workspaceRows = [{ id: "ws-1", domain: "acme.com", agency_id: "ag-1", topical_profile: null }];
+    keywordCount = 8;
+    const c = client();
+    expect(await sweepUnfinishedSetups(c, now)).toEqual(["acme.com: emailed 2"]);
+    // The next run reads the ledger and does not even build the email.
+    expect(await sweepUnfinishedSetups(c, now)).toEqual([]);
+    expect(sends()).toHaveLength(2);
+  });
+
+  it("says nothing when nothing stalled", async () => {
+    expect(await sweepUnfinishedSetups(client(), now)).toEqual([]);
     expect(sends()).toHaveLength(0);
   });
 });

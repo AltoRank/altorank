@@ -56,11 +56,17 @@ import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
 import { onboardingOutcome, shouldResumeRun, type OnboardingRunSnapshot, type OnboardingState } from "@/lib/onboarding/events";
 import { freeAllowanceClause } from "@/lib/onboarding/copy";
+import { SITE_STEPS, stepIndex } from "@/lib/onboarding/steps";
 
-const SITE_STEPS = ["Business", "Audience & Competitors", "Blog", "Articles", "Integration"];
 // The question about the person, after every step about the site. Present only
 // while the account has not answered; a second workspace goes straight to plan.
 const ATTRIBUTION_STEP = SITE_STEPS.length;
+// The CMS step is the one a new account most often stops on: a credential
+// before value. Its primary action says what it does - move on without one -
+// instead of a "Continue" that reads as "continue once you have connected".
+// The follow-up email for an account that stopped here deep-links to this
+// screen through the same list (lib/onboarding/steps.ts).
+const INTEGRATION_STEP = stepIndex("Integration");
 
 export type Destination = { id: string; name: string; description: string | null };
 
@@ -118,7 +124,7 @@ export function OnboardingWizard({
   initialRun?: OnboardingRunSnapshot | null;
 }) {
   const router = useRouter();
-  const steps = askAttribution ? [...SITE_STEPS, "About you"] : SITE_STEPS;
+  const steps: string[] = askAttribution ? [...SITE_STEPS, "About you"] : [...SITE_STEPS];
   const last = steps.length - 1;
   // The step, mirrored into the URL.
   //
@@ -225,7 +231,9 @@ export function OnboardingWizard({
     if ((s === 0 || s === 1) && profile) await saveProfile(workspaceId, profile);
     if (s === 2) await saveSiteDetails(workspaceId, site);
     if (s === 3) await saveOutputSettings(workspaceId, output);
-    if (s === ATTRIBUTION_STEP && attribution.source) await saveAttribution(attribution.source, attribution.note);
+    // Optional: saved only when actually answered, never as a blank.
+    const source = attribution.source;
+    if (s === ATTRIBUTION_STEP && source && attributionComplete(attribution)) await saveAttribution(source, attribution.note);
   }
 
   function next() {
@@ -247,6 +255,12 @@ export function OnboardingWizard({
         setError(e instanceof Error ? e.message : "Could not save this step.");
       }
     });
+  }
+
+  /** Leave this screen as it is - nothing typed on it is saved - and move on. */
+  function skipStep() {
+    setError(null);
+    goToStep(step + 1);
   }
 
   function skipAll() {
@@ -321,7 +335,23 @@ export function OnboardingWizard({
             >
               Back
             </Button>
-            {step !== ATTRIBUTION_STEP && (
+            {/* Every screen can be skipped on its own: nothing typed on it is
+                saved and the next one opens. The CMS step has no link because
+                its primary action already is the skip, and the last step has
+                none because Finish is the way out. Skipping the whole setup
+                is offered once, on the first screen, where that decision is
+                actually made. */}
+            {step !== last && step !== INTEGRATION_STEP && (
+              <button
+                type="button"
+                onClick={skipStep}
+                disabled={pending}
+                className="text-[12px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink"
+              >
+                Skip this step
+              </button>
+            )}
+            {step === 0 && (
               <button
                 type="button"
                 onClick={skipAll}
@@ -335,9 +365,17 @@ export function OnboardingWizard({
           <Button
             variant="accent"
             onClick={next}
-            disabled={pending || (step === ATTRIBUTION_STEP && !attributionComplete(attribution))}
+            disabled={pending}
           >
-            {pending ? "Saving…" : step !== last ? "Continue" : skipping ? "Skip and finish" : "Finish and plan my first month"}
+            {pending
+              ? "Saving…"
+              : step === INTEGRATION_STEP && step !== last
+                ? "Skip for now"
+                : step !== last
+                  ? "Continue"
+                  : skipping
+                    ? "Skip and finish"
+                    : "Finish and plan my first month"}
           </Button>
         </div>
       </div>
@@ -516,7 +554,7 @@ function IntegrationStep({ destinations }: { destinations: Destination[] }) {
     <>
       <Head
         title="Where should we publish?"
-        sub="You can do this later. Drafts are yours either way, and you can export any article as Markdown."
+        sub="Skip this for now if you like: drafts are yours either way, you can export any article as Markdown, and Integrations in the dashboard connects a CMS whenever you are ready."
       />
       <div className="grid grid-cols-3 gap-3">
         {destinations.map((d) => (
@@ -580,7 +618,7 @@ function AttributionStep({
     <>
       <Head
         title={skipping ? "One thing before you go" : "One last thing"}
-        sub="How did you hear about us? Pick the closest. It is the only way we can tell whether an AI answer sent you here, which is the thing we sell."
+        sub="How did you hear about us? Pick the closest, or finish without answering. It is the only way we can tell whether an AI answer sent you here, which is the thing we sell."
       />
       <div className="rounded-[10px] border border-line bg-panel p-5">
         <AttributionPicker value={value} onChange={onChange} />

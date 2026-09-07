@@ -193,6 +193,12 @@ export default async function DashboardPage() {
     setupUnfinished: Boolean(
       scopedWorkspace && !scopedWorkspace.onboarded_at && !scopedWorkspace.onboarding_skipped_at,
     ),
+    // Oldest first: for a site that never finished setup, that is the draft
+    // the generate cron wrote while nobody was looking.
+    reviewDraftId:
+      allArticles
+        .filter((a) => a.status === "review")
+        .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))[0]?.id ?? null,
   });
   const competitorYields = yields ? yieldsForInputs(profile?.competitors ?? [], "competitor", yields) : [];
   const audienceYields = yields ? yieldsForInputs(profile?.audiences ?? [], "audience", yields) : [];

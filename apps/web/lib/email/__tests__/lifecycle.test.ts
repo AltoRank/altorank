@@ -13,6 +13,7 @@ import {
   renderPasswordChanged,
   renderApiKeyCreated,
   renderNothingWritten,
+  renderSetupUnfinished,
   isoWeek,
 } from "../lifecycle";
 import { graceEndsAt } from "@/lib/billing/dunning";
@@ -312,5 +313,51 @@ describe("isoWeek", () => {
   it("keys a week, not a day", () => {
     expect(isoWeek(new Date("2026-09-06T23:00:00Z"))).toBe(isoWeek(new Date("2026-09-02T01:00:00Z")));
     expect(isoWeek(new Date("2026-09-07T00:00:00Z"))).not.toBe(isoWeek(new Date("2026-09-06T00:00:00Z")));
+  });
+});
+
+describe("setup was never finished", () => {
+  const base = { domain: "acme.com", draft: null, keywordCount: 0, unreadable: null };
+  const draft = { articleId: "art-1", title: "How to choose a CRM", keyword: "best crm" };
+
+  it("with a draft: leads with the article, links to it and back to the CMS step, and says nothing publishes unapproved", () => {
+    const e = renderSetupUnfinished({ ...base, draft, keywordCount: 8 });
+    expect(e.subject).toBe("While you were away: a first draft for acme.com");
+    expect(e.html).toContain("How to choose a CRM");
+    expect(e.html).toContain("best crm");
+    expect(e.html).toContain("https://app.altorank.co/content/art-1");
+    expect(e.html).toContain("https://app.altorank.co/onboarding?step=5");
+    expect(e.html).toContain("Nothing publishes until you approve it");
+    expect(e.footerNote).toContain("only email about it");
+  });
+
+  it("without a draft: states the measured count and offers setup, and never promises an article", () => {
+    const e = renderSetupUnfinished({ ...base, keywordCount: 8 });
+    expect(e.subject).toBe("We read acme.com while you were away");
+    expect(e.html).toContain("<strong>8</strong> keywords");
+    expect(e.html).toContain("No article has been written yet");
+    expect(e.html).toContain("https://app.altorank.co/onboarding?step=5");
+    expect(e.html).not.toContain("/content/");
+    expect(e.html).not.toMatch(/drafted|is coming|will be written/);
+  });
+
+  /** A count of zero is not a fact worth stating; an unreadable site is. */
+  it("shows no number that was not measured", () => {
+    const zero = renderSetupUnfinished(base).html;
+    expect(zero).not.toMatch(/\b0\b keyword/);
+    expect(zero).not.toContain("found");
+    const unread = renderSetupUnfinished({ ...base, unreadable: "not one page answered" }).html;
+    expect(unread).toContain("could not: not one page answered");
+    expect(unread).not.toContain("keyword");
+  });
+
+  it("singularises one keyword", () => {
+    expect(renderSetupUnfinished({ ...base, keywordCount: 1 }).html).toContain("<strong>1</strong> keyword it");
+  });
+
+  it("escapes the title", () => {
+    const e = renderSetupUnfinished({ ...base, draft: { ...draft, title: "<img src=x>" } });
+    expect(e.html).not.toContain("<img");
+    expect(e.html).toContain("&lt;img");
   });
 });
