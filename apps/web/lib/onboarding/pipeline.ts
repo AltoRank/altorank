@@ -34,6 +34,7 @@ import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
 import { plural } from "@/lib/utils";
 import { schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
 import { fanOutDrafts } from "@/lib/content/fan-out";
+import { detectLinks } from "@/lib/linking/detect";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
 
 export type Emit = (event: OnboardingEvent) => void;
@@ -154,6 +155,32 @@ async function runPhases(
       });
     } catch (err) {
       emit({ phase: "keywords", status: "failed", detail: message(err) });
+    }
+  }
+
+  if (gone()) return;
+
+  // --- The link pool, before anything is written ---------------------------
+  //
+  // The wizard asks for the sitemap and says what it is for: "Used to find
+  // your existing pages for internal links." Until now nothing read it until
+  // a person pressed Detect on /linking, or the site-pages cron ran - and
+  // that cron is on no schedule (vercel.json, .github/workflows). So the
+  // first draft, and every draft after it, was written against an empty
+  // pool: the prompt said "do not add any" internal links, on a site with a
+  // 200-post blog it had just been told about. Measured on altorank.co,
+  // 2026-09-06: 0 internal links on a first draft with 28 sitemap posts.
+  //
+  // detectLinks reads the sitemap and the blog root (two fetches, no API
+  // cost) into link_targets, which is the pool generateArticle offers the
+  // writer. Best effort: a sitemap that cannot be read is a draft without
+  // internal links, not a failed onboarding.
+  if (domain) {
+    try {
+      const pool = await detectLinks(supabase, workspace.id);
+      if (pool.added > 0) console.log(`[onboarding] link pool: ${pool.added} page(s) from the site's own sources`);
+    } catch (err) {
+      console.warn("[onboarding] link pool detection failed:", message(err));
     }
   }
 
