@@ -67,10 +67,14 @@ export const contentPlanExplainer: Explainer = {
       ],
     },
   ],
+  // Two entries left on 2026-09-07 because they had become false: cards do
+  // drag between days (planner-grid.tsx, DndContext), and the planner update
+  // they said was pending - instructions, questions, the 60-entry cap, top-up
+  // - landed (lib/onboarding/plan.ts PLAN_MAX_ENTRIES, "Top up the plan").
+  // An explainer that says the product does less than it does is the same
+  // failure as one that says more.
   cannotYet: [
-    "Drag a card between days. Move uses a date picker.",
     "Plan across more than one site at once: a plan is always one workspace's.",
     "Promise a publish minute. Generation fires four times a day, so a draft arrives within that window, not at a chosen time.",
-    "Instructions, questions, the 60-entry cap and top-up are specified in the planner update (#67). Until it lands, drafts are briefed from research alone and the plan grows one draft per run.",
   ],
 };
