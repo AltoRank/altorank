@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUrl } from "@/lib/google/oauth";
+import { encodeOauthState, newOauthNonce, setOauthNonce } from "@/lib/google/oauth-state";
 
 /**
  * Start the Google OAuth flow.
@@ -12,11 +13,12 @@ import { getAuthUrl } from "@/lib/google/oauth";
  *
  *   GET /api/auth/google?workspaceId=<uuid>&integrationId=gsc|ga4
  *
- * State is `{workspaceId}:{integrationId}`, the format the callback already
- * parses. Ownership is verified here as well as in the callback: state travels
- * through the user's browser and comes back attacker-controllable, so the
- * callback cannot trust it, and checking here fails fast with a useful message
- * rather than after a round trip to Google.
+ * State is `{workspaceId}:{integrationId}:{nonce}`. Ownership is verified here
+ * as well as in the callback: state travels through the user's browser and
+ * comes back attacker-controllable, so the callback cannot trust it, and
+ * checking here fails fast with a useful message rather than after a round
+ * trip to Google. The nonce is what makes the return trip provably the same
+ * browser's - without it a victim could be handed somebody else's `code`.
  */
 
 const SUPPORTED = new Set(["gsc", "ga4"]);
@@ -72,7 +74,10 @@ export async function GET(request: NextRequest) {
   if (!workspace) return back(request, { error: "workspace_not_found" });
 
   try {
-    return NextResponse.redirect(getAuthUrl(`${workspaceId}:${integrationId}`));
+    // The nonce ties the return trip to this browser; see lib/google/oauth-state.ts.
+    const nonce = newOauthNonce();
+    const redirect = NextResponse.redirect(getAuthUrl(encodeOauthState(workspace.id, integrationId, nonce)));
+    return setOauthNonce(redirect, nonce);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown_error";
     return back(request, { error: message });
