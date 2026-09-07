@@ -114,15 +114,16 @@ async function signUp(formData: FormData) {
         // paid default when they subscribe.
         auto_generate: true,
         auto_generate_weekly_limit: FREE_TIER_PACE,
-        // The person who typed one domain wants a blog that runs. Drafts
-        // publish on their own after a day unless held; the same checks the
-        // Approve button runs still apply, and the free tier cannot ship
-        // without a plan either way (needsPlanToShip). Attributed to them:
-        // every automatic approval is recorded under this user id.
-        auto_approve: true,
-        auto_approve_hold_hours: 24,
-        auto_approve_set_by: data.user.id,
-        auto_approve_set_at: new Date().toISOString(),
+        // auto_approve is deliberately NOT set here, so the column default
+        // (false, migration 079) stands. Signup was the only path that turned
+        // it on: the migration defaults off, `createWorkspace` inherits that,
+        // and the settings action only enables it when somebody ticks the box
+        // and is recorded as having done so. Turning it on here recorded the
+        // new user as having "set" a rule they were never shown, on the one
+        // account least able to judge the drafts - and the product sells the
+        // veto ("review ALWAYS", AGENTS.md), which the onboarding wizard
+        // states as an ALWAYS ON card. Enabling it is a choice the person
+        // makes in workspace settings, after they have read a draft.
       });
       // Not fatal: the account exists, and the dashboard asks for a domain if
       // there is no workspace. Log it so a silent miss here is findable.
