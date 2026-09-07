@@ -18,6 +18,8 @@ import { PlanningProvider } from "@/components/dashboard/planning-state";
 import { PlannerSlot } from "@/components/dashboard/planner-slot";
 import type { WriteGate } from "@/components/dashboard/planner-card";
 import { PlanMonthButton } from "@/components/dashboard/plan-month-button";
+import Link from "next/link";
+import { Button } from "@/components/ui";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
@@ -45,7 +47,7 @@ export default async function CalendarPage({ searchParams }: Props) {
   // critical path, and this page (with the layout around it) had enough of
   // them in a row to take seconds on a calendar of three entries.
   const supabase = await createClient();
-  const [workspaces, entries, capacity, drafts, improvements, unwritten, { data: auth }] = await Promise.all([
+  const [workspaces, entries, capacity, drafts, improvements, unwritten, { data: auth }, { count: keywordCount }] = await Promise.all([
     getWorkspaces(),
     getCalendarEntries(scopeId ?? undefined, month),
     // The same numbers the Articles-plan control quotes: slots held by planned
@@ -59,6 +61,14 @@ export default async function CalendarPage({ searchParams }: Props) {
     // needs arrives in the second wave.
     scopeId ? readUnwrittenEntries(supabase, scopeId) : Promise.resolve([]),
     supabase.auth.getUser(),
+    // Whether there is anything to plan *from*. An empty month has two causes
+    // and they need different offers: a site with keywords needs the plan run,
+    // a site with none needs research first, and "Plan the month" on the second
+    // schedules nothing and says so only after the click. The dashboard strip
+    // was fixed for exactly this; the calendar is where the button lives.
+    scopeId
+      ? supabase.from("keywords").select("id", { count: "exact", head: true }).eq("workspace_id", scopeId)
+      : Promise.resolve({ count: 0 }),
   ]);
 
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));
@@ -155,6 +165,11 @@ export default async function CalendarPage({ searchParams }: Props) {
   const queuedCount = articleItems.filter((it) => it.entry.status === "queue" && it.frozen === null).length;
   const frozenCount = articleItems.filter((it) => it.frozen !== null).length;
   const slots = capacity?.available ?? 0;
+  // Nothing on any day of the month being looked at, and nothing anywhere on
+  // the plan: the first-run state, as opposed to a month that is simply past
+  // or still ahead of the 30-day horizon.
+  const monthIsEmpty = items.length === 0 && (capacity?.scheduled ?? 0) === 0;
+  const nothingToPlanFrom = (keywordCount ?? 0) === 0;
 
   return (
     <PlanningProvider>
@@ -196,11 +211,33 @@ export default async function CalendarPage({ searchParams }: Props) {
               )}
             </>
           }
-          actions={<>{scopeId && slots > 0 && <PlanMonthButton label={(capacity?.articles ?? 0) === 0 ? "Plan the month" : "Top up the plan"} />}</>}
+          actions={
+            <>
+              {scopeId && slots > 0 &&
+                (nothingToPlanFrom ? (
+                  <Link href="/keywords">
+                    <Button size="sm">Research keywords</Button>
+                  </Link>
+                ) : (
+                  <PlanMonthButton label={(capacity?.articles ?? 0) === 0 ? "Plan the month" : "Top up the plan"} />
+                ))}
+            </>
+          }
         />
 
         <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
           <CalendarControls currentMonth={month} monthLabel={monthLabel} />
+
+          {/* An empty month renders a grid of blank squares: the per-day hint
+              is hidden until hover, so the one screen a new site sees most
+              said nothing at all about why it was empty or what to do. */}
+          {monthIsEmpty && (
+            <p className="mb-3 text-[12.5px] leading-[1.6] text-ink-3">
+              {nothingToPlanFrom
+                ? "Nothing is scheduled this month, and there are no keywords to schedule from yet. Research keywords first; the plan is built from the ones this site can realistically rank for."
+                : "Nothing is scheduled this month. Planning fills these days from the keywords this site can realistically rank for, and you can drag any of them to another day afterwards."}
+            </p>
+          )}
 
           <Card flush>
             <PlannerSlot
