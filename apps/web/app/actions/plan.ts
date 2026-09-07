@@ -13,6 +13,8 @@ import { parseStoredQuestions, type QualityQuestion } from "@/lib/keywords/quest
 import { isExpectedLength } from "@/lib/keywords/taxonomy";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { getQuota } from "@/lib/billing/quota";
+import { canSpend } from "@/lib/billing/spend-gate";
+import type { BillingOutcome } from "@/lib/billing/failure";
 import { FREE_TIER_PACE, MAX_PACE, monthlyFromPace, normalisePace } from "@/lib/content/pace";
 import { getPlanCapacity, type PlanCapacity } from "@/lib/plan/capacity";
 import { readFrozenEntries } from "@/lib/plan/frozen";
@@ -114,7 +116,9 @@ export async function saveKeywordAnswers(
  * whatever is stored afterwards, which is still [] when generation could not
  * produce any: the dialog says so rather than showing invented ones.
  */
-export async function ensureKeywordQuestions(keywordId: string): Promise<QualityQuestion[]> {
+export async function ensureKeywordQuestions(
+  keywordId: string,
+): Promise<BillingOutcome<{ questions: QualityQuestion[] }>> {
   const { supabase, workspaceId } = await scoped();
   const read = async () => {
     const { data } = await supabase
@@ -128,12 +132,19 @@ export async function ensureKeywordQuestions(keywordId: string): Promise<Quality
   const row = await read();
   if (!row) throw new Error("Keyword not found in this workspace.");
   const current = parseStoredQuestions(row.quality_questions);
-  if (current.length > 0) return current;
+  // Already generated: reading them back costs nothing, so the gate below is
+  // only in front of the call that would write new ones.
+  if (current.length > 0) return { ok: true, questions: current };
+
+  const { agencyId } = await requireAuth();
+  const gate = await canSpend(supabase, agencyId, { workspaceId, action: "draft" });
+  if (!gate.allowed) return { ok: false, error: gate.message };
+
   await ensureQuestionsFor(supabase, workspaceId, [{ id: row.id, term: row.term }]);
   const after = await read();
   const questions = parseStoredQuestions(after?.quality_questions);
   if (questions.length) refresh();
-  return questions;
+  return { ok: true, questions };
 }
 
 /**

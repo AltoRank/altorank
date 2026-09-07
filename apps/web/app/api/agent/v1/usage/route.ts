@@ -33,7 +33,7 @@ export const GET = withAgent(async (_request, ctx) => {
   } else if ((quota.remaining ?? 0) <= 0) {
     guidance =
       quota.reason === "no-plan"
-        ? `${freeAllowanceUsedMessage(quota.limit ?? undefined)} Generating needs a plan; ask the human before doing anything else. The allowance resets on the 1st.`
+        ? `${freeAllowanceUsedMessage(quota.limit ?? undefined)} They are a one-time allowance and do not reset. Generating needs a plan; ask the human before doing anything else.`
         : "The included volume is used. Further drafts bill as overage; ask the human before passing allow_overage: true.";
   } else {
     guidance = `${quota.remaining} of ${quota.limit} included drafts remain this month. Say so before you spend several.`;

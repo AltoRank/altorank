@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
+import { entitledToScheduledWork, getQuota } from "@/lib/billing/quota";
 import { syncSitePages, SitePagesWriteError } from "@/lib/seo/site-crawl";
 import { detectLinks } from "@/lib/linking/detect";
 import { observedCron } from "@/lib/observability/cron";
@@ -44,7 +45,7 @@ async function run(request: Request) {
   // ago is not crawled before anyone has confirmed its domain.
   const { data: workspaces, error } = await supabase
     .from("workspaces")
-    .select("id, domain, last_pages_crawl_at")
+    .select("id, domain, agency_id, last_pages_crawl_at")
     .not("domain", "is", null)
     .not("first_analysed_at", "is", null)
     .neq("status", "paused")
@@ -59,6 +60,22 @@ async function run(request: Request) {
   for (const ws of workspaces ?? []) {
     const workspaceId = ws.id as string;
     const domain = ws.domain as string;
+
+    // No provider bill here, but not free either: one workspace per run, up
+    // to 120 page fetches, and the queue is ordered by staleness - so a
+    // dormant free account takes a whole night's slot from a paying one. Same
+    // rule as every other scheduled job (entitledToScheduledWork). Stamped
+    // first, or the skipped workspace stays at the head of the queue forever
+    // and no site is ever crawled again.
+    const quota = await getQuota(supabase, ws.agency_id as string, null);
+    if (!entitledToScheduledWork(quota)) {
+      await supabase
+        .from("workspaces")
+        .update({ last_pages_crawl_at: new Date().toISOString() })
+        .eq("id", workspaceId);
+      results.push({ workspaceId, domain, status: "skipped", detail: "no plan" });
+      continue;
+    }
     // Stamped whatever happens, so a site whose sitemap cannot be read does
     // not become the permanent head of the queue.
     const stamp = async () =>

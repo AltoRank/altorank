@@ -19,6 +19,7 @@ import { decoratePlannedKeywords, scheduleKeywords, PLAN_MAX_ENTRIES } from "@/l
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { normalizeTarget } from "@/lib/seo/recommendations";
 import {
+  emptyFunnel,
   loadResearchWorkspace,
   researchFind,
   researchGenerate,
@@ -34,6 +35,8 @@ import { runResearchChat, type ChatReply, type ChatTurn } from "@/lib/keyword-re
 import { hasDataForSEOCredentials, hasModelCredentials, modelHint, modelUnavailableNote, providerHint } from "@/lib/keyword-research/availability";
 import { keywordProvenance } from "@/lib/keyword-research/provenance";
 import type { PlanCapacity, ResearchCandidate, ResearchKind, ResearchResult } from "@/lib/keyword-research/types";
+import { requireAuth } from "@/lib/auth/require-auth";
+import { canSpend, type SpendDecision } from "@/lib/billing/spend-gate";
 
 export interface StoredKeyword {
   id: string;
@@ -69,13 +72,41 @@ export interface ResearchContext {
   hints: { provider: string | null; model: string | null };
 }
 
-async function scoped(workspaceId: string): Promise<{ supabase: SupabaseClient; ws: ResearchWorkspace }> {
+async function scoped(workspaceId: string): Promise<{ supabase: SupabaseClient; ws: ResearchWorkspace; agencyId: string }> {
+  const { agencyId } = await requireAuth();
   const supabase = await createClient();
   const ws = await loadResearchWorkspace(supabase, workspaceId);
   // RLS already scopes to the agency; this turns a foreign id into an error
   // rather than a silent no-op that looks like a run.
   if (!ws) throw new Error("That site is not on this account.");
-  return { supabase, ws };
+  return { supabase, ws, agencyId };
+}
+
+/**
+ * The spend gate for this drawer.
+ *
+ * Every tab here buys something: Generate and the Playbooks are DataForSEO
+ * look-ups plus a model call for the audience seeds, Add is a look-up per
+ * term, and one Chat turn is up to four model calls plus whatever research
+ * they ask for. None of it was gated, so a free account whose drafts were
+ * long gone could research keywords forever.
+ *
+ * The refusal travels as `note`, never as a throw. Next.js replaces a thrown
+ * server-action message with an opaque digest in production
+ * (lib/billing/failure.ts), and `note` is the field this drawer already
+ * renders for "why there is nothing" - so a blocked run reads exactly like
+ * every other empty run, with a sentence instead of a blank table.
+ */
+async function spendCheck(
+  supabase: SupabaseClient,
+  agencyId: string,
+  workspaceId: string,
+): Promise<SpendDecision> {
+  return canSpend(supabase, agencyId, { workspaceId, action: "keyword-research" });
+}
+
+function blockedResult(kind: ResearchKind, message: string): ResearchResult {
+  return { runId: null, kind, candidates: [], funnel: emptyFunnel(), trace: [], note: message };
 }
 
 async function readCapacity(supabase: SupabaseClient, workspaceId: string): Promise<PlanCapacity> {
@@ -128,24 +159,34 @@ export async function loadResearchContext(workspaceId: string): Promise<Research
 }
 
 export async function runGenerate(workspaceId: string, input: GenerateInput): Promise<ResearchResult> {
-  const { supabase, ws } = await scoped(workspaceId);
+  const { supabase, ws, agencyId } = await scoped(workspaceId);
+  const gate = await spendCheck(supabase, agencyId, workspaceId);
+  if (!gate.allowed) return blockedResult("generate", gate.message);
   const instructions = await readKeywordInstructions(supabase, workspaceId);
   return researchGenerate(supabase, ws, input, { instructions });
 }
 
 export async function runPlaybook(workspaceId: string, playbook: PlaybookId): Promise<ResearchResult> {
-  const { supabase, ws } = await scoped(workspaceId);
+  const { supabase, ws, agencyId } = await scoped(workspaceId);
+  const gate = await spendCheck(supabase, agencyId, workspaceId);
+  if (!gate.allowed) return blockedResult("playbook", gate.message);
   const instructions = await readKeywordInstructions(supabase, workspaceId);
   return researchPlaybook(supabase, ws, playbook, { instructions });
 }
 
 export async function runFind(workspaceId: string, term: string): Promise<ResearchResult> {
-  const { supabase, ws } = await scoped(workspaceId);
+  const { supabase, ws, agencyId } = await scoped(workspaceId);
+  const gate = await spendCheck(supabase, agencyId, workspaceId);
+  if (!gate.allowed) return blockedResult("manual", gate.message);
   return researchFind(supabase, ws, term);
 }
 
 export async function runImport(workspaceId: string, text: string): Promise<ResearchResult> {
-  const { supabase, ws } = await scoped(workspaceId);
+  const { supabase, ws, agencyId } = await scoped(workspaceId);
+  // Import prices every term it is handed (one keyword_overview batch), so it
+  // is a paid look-up like the rest, not a plain paste.
+  const gate = await spendCheck(supabase, agencyId, workspaceId);
+  if (!gate.allowed) return blockedResult("import", gate.message);
   return researchImport(supabase, ws, parseTermList(text));
 }
 
@@ -321,7 +362,12 @@ export async function chatResearch(
   history: ChatTurn[],
   known: ResearchCandidate[],
 ): Promise<ChatReply> {
-  const { supabase, ws } = await scoped(workspaceId);
+  const { supabase, ws, agencyId } = await scoped(workspaceId);
+  const gate = await spendCheck(supabase, agencyId, workspaceId);
+  // Same shape as the model-unavailable branch below: the refusal is the
+  // assistant's turn, so the person reads it in the thread they are already
+  // looking at rather than watching a button do nothing.
+  if (!gate.allowed) return { text: gate.message, proposals: [], trace: [] };
   if (!hasModelCredentials()) {
     return { text: modelUnavailableNote("Chat", "The Generate and Add tabs still work without it."), proposals: [], trace: [] };
   }

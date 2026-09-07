@@ -64,15 +64,17 @@ export function usageLine(quota: Quota, now: Date = new Date()): UsageLine {
   const fraction = limit === 0 ? 1 : Math.min(1, used / limit);
 
   if (reason === "no-plan") {
-    const reset = formatReset(now);
-
-    // A cancelled account keeps this month's real count while the allowance
-    // drops to the free one, so `used` can be far past `limit`. "150 / 7" is
-    // arithmetic nobody can read; say what happened instead.
+    // No reset date on this branch since 2026-09-07: the free drafts are a
+    // one-time seven, `used` is the lifetime count, and "wait until Oct 1"
+    // was a promise the counter no longer keeps.
+    //
+    // A cancelled account keeps its whole history here, so `used` can be far
+    // past `limit`. "150 / 7" is arithmetic nobody can read; say what
+    // happened instead.
     if (used > limit) {
       return {
         figure: String(used),
-        sentence: `articles generated this month. The free allowance of ${limit} is used — choose a plan to generate more, or wait until ${reset}, when the free drafts reset. Self-hosting is free and unmetered.`,
+        sentence: `articles generated on this account. The free allowance of ${limit} is used — choose a plan to generate more. Self-hosting is free and unmetered.`,
         fraction: 1,
         exhausted: true,
       };
@@ -81,18 +83,19 @@ export function usageLine(quota: Quota, now: Date = new Date()): UsageLine {
     if (exhausted) {
       return {
         figure: `${used} / ${limit}`,
-        sentence: `free drafts used this month. Choose a plan to generate more, or wait until ${reset}, when they reset. Self-hosting is free and unmetered.`,
+        sentence: `free drafts used. They are a one-time allowance, not a monthly one — choose a plan to generate more. Self-hosting is free and unmetered.`,
         fraction: 1,
         exhausted: true,
       };
     }
 
-    // The honest version of "Subscribe to generate articles": nothing is
-    // blocked yet. What a plan buys is approving and publishing what gets
-    // written (see requireActivePlan), which is a different sentence.
+    // Nothing is blocked yet. What a plan buys is approving and publishing
+    // what gets written (see requireActivePlan), which is a different
+    // sentence - and, since 2026-09-07, everything else that costs money once
+    // these run out.
     return {
       figure: `${used} / ${limit}`,
-      sentence: `free drafts used this month, ${remaining} left. Approving or publishing one needs a plan; the drafts themselves do not.`,
+      sentence: `free drafts used of a one-time ${limit}, ${remaining} left. Approving or publishing one needs a plan; the drafts themselves do not.`,
       fraction,
       exhausted: false,
     };

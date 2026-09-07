@@ -44,9 +44,16 @@ describe("freeAllowanceUsedClause", () => {
 });
 
 describe("freeAllowanceUsedMessage", () => {
-  it("is a sentence about this month, because the allowance resets", () => {
-    expect(freeAllowanceUsedMessage(7)).toBe("This month's 7 free drafts are used.");
-    expect(freeAllowanceUsedMessage(1)).toBe("This month's 1 free draft is used.");
+  it("is a sentence about the whole account, because the allowance is one-time", () => {
+    // It said "This month's 7 free drafts are used" while the count refilled
+    // on the 1st. Since migration 083 it does not, and "this month's" is a
+    // promise about next month that nothing keeps.
+    expect(freeAllowanceUsedMessage(7)).toBe("All 7 free drafts are used.");
+    expect(freeAllowanceUsedMessage(1)).toBe("All 1 free draft is used.");
+  });
+
+  it("names no reset date anywhere on the free path", () => {
+    expect(freeAllowanceUsedMessage(7)).not.toMatch(/month|reset|1st/i);
   });
 });
 
@@ -57,13 +64,14 @@ describe("quotaExceededMessage", () => {
     expect(message).toContain(`${FREE_DRAFTS} free drafts are used`);
   });
 
-  it("offers all three ways forward, the reset included", () => {
-    // The reset is named as a date rather than "the 1st": both say when the
-    // allowance comes back, and a date also says how long that is.
+  it("offers the two ways forward there actually are, and never a reset", () => {
+    // There used to be three, the third being "wait for Oct 1, when the
+    // allowance resets". The allowance is one-time now, so naming a date
+    // would send someone away to wait for something that never arrives.
     const message = quotaExceededMessage(noPlan(FREE_DRAFTS), new Date("2026-09-06T00:00:00Z"));
     expect(message).toMatch(/Billing page/);
-    expect(message).toMatch(/Oct 1/);
     expect(message).toMatch(/self-host/);
+    expect(message).not.toMatch(/Oct 1|resets/);
   });
 
   it("leaves the paid branch quoting the plan's own volume", () => {

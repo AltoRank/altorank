@@ -31,31 +31,37 @@ describe("usageLine, free account", () => {
     // real gate is remaining <= 0 and the next seven generations succeed.
     expect(line.sentence).not.toMatch(/subscribe to generate/i);
     expect(line.sentence).toContain("7 left");
+    // The allowance is one-time, and the bar is the one place a person reads
+    // the number: it has to say so rather than implying a monthly refill.
+    expect(line.sentence).toContain("one-time");
     expect(line.exhausted).toBe(false);
   });
 
-  it("calls them free drafts, not included articles", () => {
+  it("calls them free drafts, not included articles, and never 'this month'", () => {
     // "Included articles" is the phrase the paid tiers use for 100 and 400.
-    expect(usageLine(quota({ used: 3 }), NOW).sentence).toContain("free drafts used this month");
+    // "This month" was true until migration 083 and is not any more.
+    expect(usageLine(quota({ used: 3 }), NOW).sentence).toContain("free drafts used");
     expect(usageLine(quota({ used: 3 }), NOW).sentence).not.toContain("included articles");
+    expect(usageLine(quota({ used: 3 }), NOW).sentence).not.toContain("this month");
   });
 
-  it("names the reset date once the allowance is spent", () => {
+  it("says the allowance is one-time once it is spent, and names no reset", () => {
     const line = usageLine(quota({ used: 7 }), NOW);
     expect(line.figure).toBe("7 / 7");
-    expect(line.sentence).toContain("Oct 1");
+    expect(line.sentence).toMatch(/one-time/);
     expect(line.sentence).toMatch(/choose a plan/i);
+    expect(line.sentence).not.toContain("Oct 1");
     expect(line.exhausted).toBe(true);
     expect(line.fraction).toBe(1);
   });
 
   it("does not read '150 / 7' after a cancellation", () => {
     // getQuota drops a cancelled account to FREE_DRAFTS while `used` stays
-    // this month's real count, so the two numbers stop being a ratio.
+    // its lifetime count, so the two numbers stop being a ratio.
     const line = usageLine(quota({ used: 150 }), NOW);
     expect(line.figure).toBe("150");
     expect(line.sentence).toContain("The free allowance of 7 is used");
-    expect(line.sentence).toContain("Oct 1");
+    expect(line.sentence).not.toContain("Oct 1");
     expect(line.fraction).toBe(1);
   });
 });
@@ -118,12 +124,13 @@ describe("usageLine, unmetered", () => {
 });
 
 describe("quotaExceededMessage", () => {
-  it("names all three ways out of the free allowance, including next month", () => {
+  it("names the two ways out of the free allowance, and no reset date", () => {
     const msg = quotaExceededMessage(quota({ used: FREE_DRAFTS }), NOW);
     expect(msg).toContain("7 free drafts");
     expect(msg).toContain("Billing page");
-    expect(msg).toContain("Oct 1");
     expect(msg).toMatch(/self-host/i);
+    // One-time since migration 083: waiting is no longer a way through.
+    expect(msg).not.toContain("Oct 1");
   });
 
   it("no longer says 'the free draft', singular", () => {

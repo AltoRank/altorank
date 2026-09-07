@@ -206,6 +206,25 @@ describe("adsFallbackWorthCalling", () => {
 // ---------------------------------------------------------------------------
 
 describe("the stored hundred", () => {
+  // A readable site, because these are about the reserve rule and not about
+  // readability: since the spend gate, a site with no usable profile stores
+  // nothing at all rather than storing rows it cannot judge.
+  beforeEach(() => pages.mockReturnValue(newsletterSite()));
+
+  // On-topic for that site, because relevance now judges these rows: the
+  // shared `gapRow` is deliberately off-topic for the fallback tests below.
+  // Built from the profile's own vocabulary, since one unknown token takes a
+  // term's score to zero - which is the filter working, not a fixture quirk.
+  const VOCAB = [
+    "newsletter", "publishing", "deliverability", "subscriber", "analytics",
+    "archive", "hosting", "growth", "guide", "pricing", "plans", "workflow",
+  ];
+  const topicalGapRow = (i: number) => {
+    const a = VOCAB[i % VOCAB.length];
+    const b = VOCAB[(Math.floor(i / VOCAB.length) + 1 + (i % VOCAB.length)) % VOCAB.length];
+    return { ...gapRow(i), keyword: `${a} ${b}` };
+  };
+
   it("a site that ranks for everything still stores a hundred, all of them rankings", async () => {
     // The headline number a customer is shown must not move for this site.
     ranked.mockResolvedValue(Array.from({ length: 200 }, (_, i) => wonRow(i)));
@@ -217,7 +236,7 @@ describe("the stored hundred", () => {
 
   it("a site that ranks for nothing is untouched by the reserve", async () => {
     ranked.mockResolvedValue([]);
-    gap.mockResolvedValue(Array.from({ length: 60 }, (_, i) => gapRow(i)));
+    gap.mockResolvedValue(Array.from({ length: 60 }, (_, i) => topicalGapRow(i)));
     const { analysis, stored } = await analyse();
     expect(analysis.keywordsFound).toBe(60);
     expect(stored.every((r) => r.source === "gap")).toBe(true);
@@ -227,7 +246,7 @@ describe("the stored hundred", () => {
     // This is F2: before the reserve, all 100 slots went to page-one rankings
     // and every gap and seed row the run had already paid for was thrown away.
     ranked.mockResolvedValue(Array.from({ length: 200 }, (_, i) => wonRow(i)));
-    gap.mockResolvedValue(Array.from({ length: 60 }, (_, i) => gapRow(i)));
+    gap.mockResolvedValue(Array.from({ length: 60 }, (_, i) => topicalGapRow(i)));
     const { stored } = await analyse();
     expect(stored).toHaveLength(100);
     expect(stored.filter((r) => r.source === "ranked")).toHaveLength(PAGE_ONE_RANKED_CAP);
@@ -238,7 +257,7 @@ describe("the stored hundred", () => {
     // Position 11-20 is recommendKeywords' largest multiplier, not a term to
     // leave alone, so it is not what the reserve is protecting against.
     ranked.mockResolvedValue(Array.from({ length: 200 }, (_, i) => ({ ...wonRow(i), position: 14 })));
-    gap.mockResolvedValue(Array.from({ length: 60 }, (_, i) => gapRow(i)));
+    gap.mockResolvedValue(Array.from({ length: 60 }, (_, i) => topicalGapRow(i)));
     const { stored } = await analyse();
     expect(stored.filter((r) => r.source === "ranked")).toHaveLength(100);
   });

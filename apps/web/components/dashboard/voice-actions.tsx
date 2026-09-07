@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button, Icons, Dialog } from "@/components/ui";
 import { useOnboarding } from "@/components/onboarding/use-onboarding";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
@@ -34,12 +35,19 @@ export function VoiceActions({ workspaces }: VoiceActionsProps) {
       // a submit when there is no workspace to bind to.
       if (!workspaceId) throw new Error("Add a workspace before training a voice for it.");
       const sampleText = fd.get("sample_text") as string;
-      await createVoiceProfile(workspaceId, sampleText);
+      const res = await createVoiceProfile(workspaceId, sampleText);
+      // Said out loud rather than logged: a billing refusal used to reach the
+      // console and nowhere else, so the dialog just sat there.
+      if (!res.ok) {
+        toast.error(res.error, { duration: 12_000 });
+        return;
+      }
       setOpen(false);
       onboarding?.completeStep("train-voice");
       router.refresh();
     } catch (err) {
       console.error(err);
+      toast.error(err instanceof Error ? err.message : "Voice training failed.");
     } finally {
       setPending(false);
     }

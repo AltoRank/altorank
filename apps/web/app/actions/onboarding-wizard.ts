@@ -14,6 +14,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireAuth } from "@/lib/auth/require-auth";
+import { canSpend } from "@/lib/billing/spend-gate";
 import {
   inferBusinessProfileDetailed,
   type BusinessProfile,
@@ -50,8 +52,20 @@ async function assertWorkspace(workspaceId: string) {
  * The wizard renders the reason; it never renders blanks as a success.
  */
 export async function proposeProfile(workspaceId: string): Promise<InferenceResult> {
-  const { workspace } = await assertWorkspace(workspaceId);
+  const { supabase, workspace } = await assertWorkspace(workspaceId);
   if (!workspace.domain) return { profile: null, reason: "unreadable", source: "none" };
+  // One model call per press, and "Try again" is right there on the screen.
+  // A new account is inside its free allowance and never sees this; a lapsed
+  // one that comes back to add a site does.
+  const { agencyId, user } = await requireAuth();
+  const gate = await canSpend(supabase, agencyId, {
+    userEmail: user.email ?? undefined,
+    workspaceId,
+    action: "keyword-research",
+  });
+  if (!gate.allowed) {
+    return { profile: null, reason: "needs_plan", source: "none", message: gate.message };
+  }
   return inferBusinessProfileDetailed(workspace.domain);
 }
 

@@ -73,8 +73,8 @@ export function frozenReason(quota: Allowance): string {
     // free tier includes 7 draft" - written when the limit was 1 - and the
     // second still said "the free draft" after it became a week's worth.
     return (quota.remaining ?? 0) > 0
-      ? `Inactive: the free tier includes ${plural(quota.limit ?? 0, "draft")} a month before a plan. Choose one on the Billing page to reactivate.`
-      : `Inactive: this month's ${freeAllowanceUsedClause(quota.limit ?? undefined)}. Choose a plan on the Billing page to reactivate, or wait for the 1st, when the allowance resets.`;
+      ? `Inactive: the free tier includes ${plural(quota.limit ?? 0, "draft")}, once, before a plan. Choose one on the Billing page to reactivate.`
+      : `Inactive: all ${freeAllowanceUsedClause(quota.limit ?? undefined)} — they are a one-time allowance, not a monthly one. Choose a plan on the Billing page to reactivate.`;
   }
   return `Inactive: this month's ${quota.limit} included articles are spoken for. Upgrade on the Billing page to reactivate, or it thaws next month.`;
 }

@@ -10,6 +10,8 @@ import { loadPageBody } from "@/lib/refresh/rewrite";
 import { pushExecution, exportExecution, type PushResult } from "@/lib/refresh/push";
 import { recordSpend, anthropicCost } from "@/lib/billing/spend";
 import { needsPlanToShip, SCHEDULED_REWRITES_NEED_PLAN } from "@/lib/billing/quota";
+import { canSpend } from "@/lib/billing/spend-gate";
+import type { BillingOutcome } from "@/lib/billing/failure";
 import type { Evidence, ExecutionDecisions, Opportunity, RefreshCandidate } from "@/lib/refresh/types";
 
 /**
@@ -139,10 +141,20 @@ export async function saveBrief(candidateId: string, text: string): Promise<void
  * structured model call; the deterministic plan when no key is configured.
  * Overwrites whatever is there, which is what a "Regenerate" button means.
  */
-export async function generateBrief(candidateId: string): Promise<string> {
-  await requireAuth();
+export async function generateBrief(candidateId: string): Promise<BillingOutcome<{ text: string }>> {
+  const { agencyId, user } = await requireAuth();
   const candidate = await ownCandidate(candidateId);
   const supabase = await createClient();
+
+  // The scheduled twin of this call is gated twice over (setRefreshSettings
+  // and cron/refresh). Pressing "Generate brief" is the same model call with
+  // no gate at all, which made the paywall on scheduled rewrites a formality.
+  const gate = await canSpend(supabase, agencyId, {
+    userEmail: user.email ?? undefined,
+    workspaceId: candidate.workspace_id,
+    action: "refresh",
+  });
+  if (!gate.allowed) return { ok: false, error: gate.message };
 
   let headings: string[] = [];
   let title: string | null = null;
@@ -181,7 +193,7 @@ export async function generateBrief(candidateId: string): Promise<string> {
       .eq("workspace_id", candidate.workspace_id);
     if (error) throw new Error(error.message);
     revalidatePath(IMPROVEMENTS);
-    return out.text;
+    return { ok: true, text: out.text };
   } catch (err) {
     await supabase
       .from("refresh_candidates")

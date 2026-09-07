@@ -112,7 +112,10 @@ beforeEach(() => {
   scrape.mockResolvedValue("word ".repeat(80));
   voice.mockResolvedValue(undefined);
   creds.mockReturnValue(true);
-  analyse.mockResolvedValue({ keywordsFound: 94 });
+  // `layers` is read now: the keywords phase quotes analyseDomain's own
+  // reason when nothing was stored, so "we could not read your site" is not
+  // reported as "nothing rankable found".
+  analyse.mockResolvedValue({ keywordsFound: 94, layers: [] });
   quota.mockResolvedValue({ limit: 1, used: 0, remaining: 1, reason: "no-plan" });
   recommend.mockResolvedValue([NEXT]);
   pick.mockReturnValue(NEXT);
@@ -204,7 +207,8 @@ describe("runOnboarding", () => {
   /**
    * FREE_DRAFTS went 1 -> 7 on 2026-09-06 and this message still said "your
    * free draft". It is counted off the quota's own limit now, so it cannot
-   * drift again, and it says when the allowance comes back.
+   * drift again. It named a reset date until 2026-09-07; the allowance is
+   * one-time since migration 083, so it no longer does.
    */
   it("skips the draft, with the reason, when the free allowance is used", async () => {
     quota.mockResolvedValue({ limit: 7, used: 7, remaining: 0, reason: "no-plan" });
@@ -218,7 +222,7 @@ describe("runOnboarding", () => {
         // account at its limit to upgrade "to keep drafting" - which is not
         // what happens, since the next one bills as overage.
         detail:
-          "This month's 7 free drafts are used. Choose a plan on the Billing page to keep going, wait for Oct 1 when the allowance resets, or self-host AltoRank free.",
+          "All 7 free drafts are used. Choose a plan on the Billing page to keep going, or self-host AltoRank free.",
       });
     expect(events.at(-1)).toEqual({ phase: "ready" });
   });
@@ -227,7 +231,7 @@ describe("runOnboarding", () => {
     quota.mockResolvedValue({ limit: 1, used: 1, remaining: 0, reason: "no-plan" });
     const one = await collect();
     expect(one.find((e) => e.phase === "drafting" && "status" in e && e.status === "skipped"))
-      .toMatchObject({ detail: expect.stringContaining("This month's 1 free draft is used") });
+      .toMatchObject({ detail: expect.stringContaining("All 1 free draft is used") });
 
     quota.mockResolvedValue({ limit: 100, used: 100, remaining: 0, reason: "plan", plan: "starter" });
     const paid = await collect();
@@ -381,7 +385,7 @@ describe("runOnboarding", () => {
       const { events, result } = await collectDispatch();
       expect(result.pendingDraft).toBeNull();
       expect(events.find((e) => e.phase === "drafting" && "status" in e && e.status === "skipped"))
-        .toMatchObject({ detail: expect.stringContaining("This month's 7 free drafts are used") });
+        .toMatchObject({ detail: expect.stringContaining("All 7 free drafts are used") });
       expect(events.at(-1)).toEqual({ phase: "ready" });
     });
 

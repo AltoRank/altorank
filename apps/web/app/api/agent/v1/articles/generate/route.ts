@@ -169,7 +169,7 @@ export const POST = withAgent(async (request, ctx) => {
       return fail(
         "quota_exceeded",
         quotaExceededMessage(quota),
-        `${freeAllowanceUsedMessage(quota.limit ?? undefined)} There is no plan. Ask the human to choose one on the Billing page; do not retry until they have, or until the allowance resets on the 1st.`,
+        `${freeAllowanceUsedMessage(quota.limit ?? undefined)} They are a one-time allowance and do not reset. There is no plan. Ask the human to choose one on the Billing page; do not retry until they have.`,
       );
     }
     if (!allow_overage) {

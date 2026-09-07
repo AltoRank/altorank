@@ -4,6 +4,7 @@ import { setSpendReporter } from "@/lib/seo/client";
 import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
 import { collectRankingTasks, positionFor } from "@/lib/seo/serp";
+import { entitledToScheduledWork, getQuota } from "@/lib/billing/quota";
 import type { RankingRow } from "@/lib/seo/rankings";
 import { observedCron } from "@/lib/observability/cron";
 
@@ -31,8 +32,33 @@ async function run(request: Request) {
   });
 
   let collected;
+  let skippedWorkspaces = 0;
   try {
-    collected = await collectRankingTasks();
+    collected = await collectRankingTasks({
+      // cron/serp already refuses to post tasks for an account with no plan,
+      // so in the ordinary case this filter drops nothing. It exists for the
+      // window in between: a subscription that lapses, is cancelled or is
+      // paused after the tasks went out.
+      keep: async (workspaceIds) => {
+        if (!workspaceIds.length) return new Set<string>();
+        const { data: rows } = await supabase
+          .from("workspaces")
+          .select("id, agency_id")
+          .in("id", workspaceIds);
+        const entitledAgency = new Map<string, boolean>();
+        const keep = new Set<string>();
+        for (const row of rows ?? []) {
+          const agencyId = row.agency_id as string;
+          if (!entitledAgency.has(agencyId)) {
+            const quota = await getQuota(supabase, agencyId, null);
+            entitledAgency.set(agencyId, entitledToScheduledWork(quota));
+          }
+          if (entitledAgency.get(agencyId)) keep.add(row.id as string);
+        }
+        skippedWorkspaces = workspaceIds.length - keep.size;
+        return keep;
+      },
+    });
   } catch (err) {
     setSpendReporter(null);
     return NextResponse.json(
@@ -80,6 +106,9 @@ async function run(request: Request) {
     success: !insertError,
     collected: collected.length,
     recorded: insertError ? 0 : rows.length,
+    // Named, not silent: a night where results were dropped for want of a plan
+    // is a fact somebody should be able to read off the response.
+    skippedNoPlan: skippedWorkspaces,
     workspaces: Object.fromEntries(perWorkspace),
     ...(insertError ? { error: insertError } : {}),
   });

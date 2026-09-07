@@ -487,221 +487,259 @@ export async function analyseDomain(options: {
     });
   } else {
     try {
-      const usable = profileIsUsable(profile, domain);
-      const rel = (term: string) => (usable ? scoreRelevance(term, profile).score : 1);
+      // An inner function so the "nothing readable here" case can stop at the
+      // first line instead of nesting the whole phase in an `if`. The layers
+      // and metrics below still run: this skips the keyword discovery, not
+      // the analysis.
+      await (async () => {
+        const usable = profileIsUsable(profile, domain);
+        // Nothing readable, nothing to judge against, nothing bought.
+        //
+        // The relevance filter below is the only thing standing between a
+        // provider's raw output and this workspace's keyword table, and until
+        // 2026-09-07 it was disabled in precisely the case it exists for: `rel`
+        // returned 1 for every term when there was no profile, so `!usable` let
+        // everything through. Measured on example.com - a 1 KB page the product
+        // had just told the customer it "could not read enough of" - that
+        // stored 100 keywords ("ry domain", "explam", "hotel best auto hogar
+        // barcelona"), planned 30 articles and wrote seven of them, for $1.63.
+        //
+        // Ranked rows are dropped with the rest. They were exempt because "the
+        // SERP already decided" a term is on-topic, and that holds for a site
+        // with a real footprint; on a site with no readable text they are the
+        // junk itself. Every one of example.com's 100 was a ranked row.
+        //
+        // The paid calls below are skipped too - the competitor gap, the seeded
+        // expansion, the Ads fallback - because there is nowhere for their
+        // results to go. The workspace gets the layers it has already paid for
+        // (readiness, crawl, PageSpeed, authority) and a keyword phase that
+        // says why it is empty; `lib/onboarding/pipeline.ts` turns that into
+        // the honest run screen a site with no DNS already gets.
+        if (!usable) {
+          layers.push({
+            id: "keywords",
+            status: "unavailable",
+            detail:
+              "too little readable text on the site to tell an on-topic keyword from an off-topic one, so none were stored",
+          });
+          return;
+        }
+        const rel = (term: string) => scoreRelevance(term, profile).score;
 
-      // (1) Ranked terms, best position first - but only the ones earned by
-      // pages the site lists as its own. See `rankedOnOwnPages`: on a
-      // multi-tenant host the rest are its customers' rankings, and they are
-      // exempt from every relevance filter downstream because the SERP already
-      // decided. The headline "N ranking keywords" above is untouched: those
-      // pages do rank on this domain. This is about whose subject matter goes
-      // into the queue.
-      const ownPages = await ownSitemapPaths(domain, depth, ranked.length);
-      const rankedOwn = rankedOnOwnPages(ranked, ownPages);
-      const rankedDropped = ranked.length - rankedOwn.length;
-      const fromRanked: DiscoveredKeyword[] = rankedOwn
-        .filter((k) => k.position !== null)
-        .map((k) => ({
+
+        // (1) Ranked terms, best position first - but only the ones earned by
+        // pages the site lists as its own. See `rankedOnOwnPages`: on a
+        // multi-tenant host the rest are its customers' rankings, and they are
+        // exempt from every relevance filter downstream because the SERP already
+        // decided. The headline "N ranking keywords" above is untouched: those
+        // pages do rank on this domain. This is about whose subject matter goes
+        // into the queue.
+        const ownPages = await ownSitemapPaths(domain, depth, ranked.length);
+        const rankedOwn = rankedOnOwnPages(ranked, ownPages);
+        const rankedDropped = ranked.length - rankedOwn.length;
+        const fromRanked: DiscoveredKeyword[] = rankedOwn
+          .filter((k) => k.position !== null)
+          .map((k) => ({
+            keyword: k.keyword,
+            volume: k.volume ?? 0,
+            difficulty: k.difficulty,
+            cpc: k.cpc ?? 0,
+            competition: 0,
+            intent: classifyIntent(k.keyword, options.locale ?? "en").intent,
+          }));
+
+        // (2) Ideas from the site's own headings. A quick run has one page of
+        // headings and no budget for a second paid lookup.
+        // (1a) What close competitors rank for and we do not. Costs one call to
+        // find out there are none, which is the answer for any site without a
+        // ranking footprint of its own - so it stops there rather than taking a
+        // content plan from whoever happened to share a keyword.
+        const gapRows = depth === "full"
+          ? await fetchCompetitorGap(domain, { languageCode: options.locale ?? "en" }).catch(() => [])
+          : [];
+        // The competitor is kept on the row: it becomes the keyword's
+        // provenance, which is what lets the dashboard say how many keywords
+        // each named rival actually produced.
+        const fromGap: Sourced[] = gapRows.map((k) => ({
           keyword: k.keyword,
-          volume: k.volume ?? 0,
+          volume: k.volume,
           difficulty: k.difficulty,
-          cpc: k.cpc ?? 0,
+          cpc: k.cpc,
           competition: 0,
-          intent: classifyIntent(k.keyword, options.locale ?? "en").intent,
+          intent: k.intent,
+          competitor: k.competitor,
         }));
 
-      // (2) Ideas from the site's own headings. A quick run has one page of
-      // headings and no budget for a second paid lookup.
-      // (1a) What close competitors rank for and we do not. Costs one call to
-      // find out there are none, which is the answer for any site without a
-      // ranking footprint of its own - so it stops there rather than taking a
-      // content plan from whoever happened to share a keyword.
-      const gapRows = depth === "full"
-        ? await fetchCompetitorGap(domain, { languageCode: options.locale ?? "en" }).catch(() => [])
-        : [];
-      // The competitor is kept on the row: it becomes the keyword's
-      // provenance, which is what lets the dashboard say how many keywords
-      // each named rival actually produced.
-      const fromGap: Sourced[] = gapRows.map((k) => ({
-        keyword: k.keyword,
-        volume: k.volume,
-        difficulty: k.difficulty,
-        cpc: k.cpc,
-        competition: 0,
-        intent: k.intent,
-        competitor: k.competitor,
-      }));
+        const seeds = usable && depth === "full" ? seedPhrasesFromPages(crawledPages, domain) : [];
+        const seeded = seeds.length ? await discoverKeywordsFromSeeds(seeds).catch(() => []) : [];
 
-      const seeds = usable && depth === "full" ? seedPhrasesFromPages(crawledPages, domain) : [];
-      const seeded = seeds.length ? await discoverKeywordsFromSeeds(seeds).catch(() => []) : [];
+        // Position per ranked term, for the reserve rule below.
+        const positionByTerm = new Map<string, number | null>();
+        for (const k of ranked) positionByTerm.set(k.keyword.trim().toLowerCase(), k.position);
 
-      // Position per ranked term, for the reserve rule below.
-      const positionByTerm = new Map<string, number | null>();
-      for (const k of ranked) positionByTerm.set(k.keyword.trim().toLowerCase(), k.position);
+        const byTerm = new Map<string, { k: Sourced; rank: number }>();
+        const add = (k: Sourced, rank: number) => {
+          const key = k.keyword.trim().toLowerCase();
+          const prev = byTerm.get(key);
+          if (!prev || rank < prev.rank) byTerm.set(key, { k, rank });
+        };
+        for (const k of fromRanked) add(k, 0);
+        for (const k of fromGap) if (k.intent !== "navigational") add(k, 1);
+        for (const k of seeded) if (k.intent !== "navigational") add(k, 2);
 
-      const byTerm = new Map<string, { k: Sourced; rank: number }>();
-      const add = (k: Sourced, rank: number) => {
-        const key = k.keyword.trim().toLowerCase();
-        const prev = byTerm.get(key);
-        if (!prev || rank < prev.rank) byTerm.set(key, { k, rank });
-      };
-      for (const k of fromRanked) add(k, 0);
-      for (const k of fromGap) if (k.intent !== "navigational") add(k, 1);
-      for (const k of seeded) if (k.intent !== "navigational") add(k, 2);
-
-      // (3) The Ads endpoint, only when the first two are thin.
-      //
-      // Capped, because this is the endpoint that produced every keyword we
-      // have ever had to throw away. Making the seeded source stricter made
-      // this one fire MORE often - fewer seeded results means the threshold
-      // above is met less - and it went from 0 to 71 of altorank.co's 100
-      // slots in a single run. A thin list of real keywords beats a full one
-      // padded from the source we do not trust.
-      //
-      // The room is known before the call, so the call is only made when
-      // there is some. Between 40 and 49 candidates this used to pay for
-      // keywords_for_site ($0.09 live) plus a 700-term keyword_overview
-      // (~$0.10) and then keep none of it. And difficulty is looked up only
-      // for the rows that are kept: the overview call is priced per keyword,
-      // so asking for 700 to keep at most 40 cost ~6x what the kept rows do.
-      let usedFallback = false;
-      const room = depth === "full" && byTerm.size < MAX_KEYWORDS_STORED / 2 ? adsFallbackRoom(byTerm.size) : 0;
-      // What this profile has already done to provider rows this run. The gap
-      // and the seeds are the cheaper, better-targeted sources; if the filter
-      // took none of them, the ads list is not going to fare better.
-      const judged = [...fromGap, ...seeded];
-      const worthCalling = adsFallbackWorthCalling({
-        judged: judged.length,
-        kept: judged.filter((k) => rel(k.keyword) > 0).length,
-      });
-      if (room > 0 && worthCalling) {
-        // Relevance BEFORE the second paid call, and before the slice.
+        // (3) The Ads endpoint, only when the first two are thin.
         //
-        // Both used to run after: a measured signup bought a hundred rows for
-        // $0.0900, bought difficulty for them for $0.0146, and then dropped
-        // every one at the scoring step below (round4 §4, W1). Scoring here
-        // costs nothing - the profile is already in memory - and it means the
-        // $0.09 buys the rows that can be stored rather than the first `room`
-        // rows in the response, which on that run were all rejects.
-        const returned = await discoverKeywords(domain).catch(() => []);
-        const fromSite = returned.filter((k) => rel(k.keyword) > 0).slice(0, room);
-        if (fromSite.length) {
-          const kd = await fetchKeywordDifficulty(fromSite.map((k) => k.keyword)).catch(() => new Map<string, number>());
-          for (const k of fromSite) {
-            const d = kd.get(k.keyword.toLowerCase());
-            if (typeof d === "number") k.difficulty = d;
+        // Capped, because this is the endpoint that produced every keyword we
+        // have ever had to throw away. Making the seeded source stricter made
+        // this one fire MORE often - fewer seeded results means the threshold
+        // above is met less - and it went from 0 to 71 of altorank.co's 100
+        // slots in a single run. A thin list of real keywords beats a full one
+        // padded from the source we do not trust.
+        //
+        // The room is known before the call, so the call is only made when
+        // there is some. Between 40 and 49 candidates this used to pay for
+        // keywords_for_site ($0.09 live) plus a 700-term keyword_overview
+        // (~$0.10) and then keep none of it. And difficulty is looked up only
+        // for the rows that are kept: the overview call is priced per keyword,
+        // so asking for 700 to keep at most 40 cost ~6x what the kept rows do.
+        let usedFallback = false;
+        const room = depth === "full" && byTerm.size < MAX_KEYWORDS_STORED / 2 ? adsFallbackRoom(byTerm.size) : 0;
+        // What this profile has already done to provider rows this run. The gap
+        // and the seeds are the cheaper, better-targeted sources; if the filter
+        // took none of them, the ads list is not going to fare better.
+        const judged = [...fromGap, ...seeded];
+        const worthCalling = adsFallbackWorthCalling({
+          judged: judged.length,
+          kept: judged.filter((k) => rel(k.keyword) > 0).length,
+        });
+        if (room > 0 && worthCalling) {
+          // Relevance BEFORE the second paid call, and before the slice.
+          //
+          // Both used to run after: a measured signup bought a hundred rows for
+          // $0.0900, bought difficulty for them for $0.0146, and then dropped
+          // every one at the scoring step below (round4 §4, W1). Scoring here
+          // costs nothing - the profile is already in memory - and it means the
+          // $0.09 buys the rows that can be stored rather than the first `room`
+          // rows in the response, which on that run were all rejects.
+          const returned = await discoverKeywords(domain).catch(() => []);
+          const fromSite = returned.filter((k) => rel(k.keyword) > 0).slice(0, room);
+          if (fromSite.length) {
+            const kd = await fetchKeywordDifficulty(fromSite.map((k) => k.keyword)).catch(() => new Map<string, number>());
+            for (const k of fromSite) {
+              const d = kd.get(k.keyword.toLowerCase());
+              if (typeof d === "number") k.difficulty = d;
+            }
+          }
+          for (const k of fromSite) add(k, 3);
+          usedFallback = fromSite.length > 0;
+        }
+
+        // Collapse phrasings across ALL three sources, not just the seeded one.
+        // keyword_suggestions is the worst offender but keywords_for_site emits
+        // the same shape: altorank.co came back with "seo for agency", "agency
+        // for seo" and "seo agent" as three separate rows at 27,100 each.
+        const candidatesAll = [...byTerm.values()];
+        const deduped = dedupePermutations(candidatesAll.map((c) => c.k));
+        const keep = new Set(deduped.map((k) => k.keyword));
+        const candidates = candidatesAll.filter((c) => keep.has(c.k.keyword));
+        // Overwritten below with what actually passes the quality and relevance
+        // filters; the wizard said "Found 8" while 3 rows were stored.
+        keywordsFound = candidates.length;
+
+        if (supabase && workspaceId && candidates.length) {
+          const allTerms = new Set(candidates.map((c) => c.k.keyword.toLowerCase()));
+          const scored = candidates
+            .filter((c) => assessKeywordQuality(c.k.keyword, allTerms).quality === "ok")
+            .map((c) => ({ ...c, r: rel(c.k.keyword) }))
+            // A term the site ranks for is on-topic by definition, whatever the
+            // profile says: the SERP already decided.
+            .filter((c) => c.rank === 0 || c.r > 0)
+            .sort((a, b) => a.rank - b.rank || b.r - a.r || b.k.volume - a.k.volume);
+          // Half the list is reserved for terms that can still be written to.
+          // Sorted ranked-first, a site with 500 page-one rankings filled all
+          // 100 slots with terms `recommendKeywords` then refused to write,
+          // and the run ended with an empty month (F2). The surplus page-one
+          // rows are deferred, not dropped: they backfill whatever the other
+          // sources leave, so a site that ranks for nothing else still stores
+          // 100 and the headline number is unchanged for it.
+          const alreadyWon = (c: { rank: number; k: DiscoveredKeyword }) => {
+            if (c.rank !== 0) return false;
+            const position = positionByTerm.get(c.k.keyword.trim().toLowerCase());
+            return position !== undefined && position !== null && position <= PAGE_ONE;
+          };
+          const top = takeReservingSlots(scored, MAX_KEYWORDS_STORED, alreadyWon);
+          keywordsFound = top.length;
+
+          const { data: existing } = await supabase
+            .from("keywords")
+            .select("id, term")
+            .eq("workspace_id", workspaceId);
+          const seen = new Map(
+            (existing ?? []).map((k) => [(k.term as string).toLowerCase(), k.id as string]),
+          );
+
+          const rows = top
+            .filter((c) => !seen.has(c.k.keyword.toLowerCase()))
+            .map((c) => ({
+              workspace_id: workspaceId,
+              term: c.k.keyword,
+              volume: c.k.volume,
+              difficulty: c.k.difficulty,
+              cpc: storedCpc(c.k.cpc),
+              intent: c.k.intent ?? classifyIntent(c.k.keyword, options.locale ?? "en").intent,
+              status: "new",
+              // The rank is already the provenance: 0 is ranked_keywords, 1 the
+              // seeded expansion, 2 the domain-level ads fallback. Recording it
+              // keeps the exemption made just above - a ranked term is on-topic
+              // because the SERP said so - available to the selector, which
+              // otherwise re-applies the filter this row was excused from.
+              source:
+                c.rank === 0 ? "ranked" : c.rank === 1 ? "gap" : c.rank === 2 ? "ideas" : "ads",
+              // The finer provenance the dashboard rolls up: which competitor,
+              // or that it came from the site's own pages ("profile").
+              source_type:
+                c.rank === 0 ? "ranked" : c.rank === 1 ? "competitor" : c.rank === 2 ? "profile" : "ads",
+              source_ref: c.rank === 1 ? c.k.competitor ?? null : c.rank === 2 ? "profile" : null,
+            }));
+          if (rows.length) {
+            const { data: inserted } = await supabase.from("keywords").insert(rows).select("id, term");
+            for (const r of inserted ?? []) seen.set((r.term as string).toLowerCase(), r.id as string);
+          }
+
+          // Positions, so the queue can see striking distance. Without this the
+          // strongest multiplier in recommendKeywords (a term sitting at 11-20,
+          // one revision from page one) could never fire on a new workspace:
+          // the ranked data was fetched, shown in a headline, and dropped.
+          const positions = ranked
+            .filter((k) => k.position !== null)
+            .map((k) => ({ id: seen.get(k.keyword.trim().toLowerCase()), position: k.position, url: k.url }))
+            .filter((r): r is { id: string; position: number; url: string | null } => Boolean(r.id));
+          if (positions.length) {
+            await supabase.from("keyword_rankings").insert(
+              positions.map((r) => ({
+                keyword_id: r.id,
+                position: r.position,
+                url: r.url,
+                checked_at: new Date().toISOString(),
+              })),
+            );
           }
         }
-        for (const k of fromSite) add(k, 3);
-        usedFallback = fromSite.length > 0;
-      }
 
-      // Collapse phrasings across ALL three sources, not just the seeded one.
-      // keyword_suggestions is the worst offender but keywords_for_site emits
-      // the same shape: altorank.co came back with "seo for agency", "agency
-      // for seo" and "seo agent" as three separate rows at 27,100 each.
-      const candidatesAll = [...byTerm.values()];
-      const deduped = dedupePermutations(candidatesAll.map((c) => c.k));
-      const keep = new Set(deduped.map((k) => k.keyword));
-      const candidates = candidatesAll.filter((c) => keep.has(c.k.keyword));
-      // Overwritten below with what actually passes the quality and relevance
-      // filters; the wizard said "Found 8" while 3 rows were stored.
-      keywordsFound = candidates.length;
-
-      if (supabase && workspaceId && candidates.length) {
-        const allTerms = new Set(candidates.map((c) => c.k.keyword.toLowerCase()));
-        const scored = candidates
-          .filter((c) => assessKeywordQuality(c.k.keyword, allTerms).quality === "ok")
-          .map((c) => ({ ...c, r: rel(c.k.keyword) }))
-          // A term the site ranks for is on-topic by definition, whatever the
-          // profile says: the SERP already decided.
-          .filter((c) => c.rank === 0 || !usable || c.r > 0)
-          .sort((a, b) => a.rank - b.rank || b.r - a.r || b.k.volume - a.k.volume);
-        // Half the list is reserved for terms that can still be written to.
-        // Sorted ranked-first, a site with 500 page-one rankings filled all
-        // 100 slots with terms `recommendKeywords` then refused to write,
-        // and the run ended with an empty month (F2). The surplus page-one
-        // rows are deferred, not dropped: they backfill whatever the other
-        // sources leave, so a site that ranks for nothing else still stores
-        // 100 and the headline number is unchanged for it.
-        const alreadyWon = (c: { rank: number; k: DiscoveredKeyword }) => {
-          if (c.rank !== 0) return false;
-          const position = positionByTerm.get(c.k.keyword.trim().toLowerCase());
-          return position !== undefined && position !== null && position <= PAGE_ONE;
-        };
-        const top = takeReservingSlots(scored, MAX_KEYWORDS_STORED, alreadyWon);
-        keywordsFound = top.length;
-
-        const { data: existing } = await supabase
-          .from("keywords")
-          .select("id, term")
-          .eq("workspace_id", workspaceId);
-        const seen = new Map(
-          (existing ?? []).map((k) => [(k.term as string).toLowerCase(), k.id as string]),
-        );
-
-        const rows = top
-          .filter((c) => !seen.has(c.k.keyword.toLowerCase()))
-          .map((c) => ({
-            workspace_id: workspaceId,
-            term: c.k.keyword,
-            volume: c.k.volume,
-            difficulty: c.k.difficulty,
-            cpc: storedCpc(c.k.cpc),
-            intent: c.k.intent ?? classifyIntent(c.k.keyword, options.locale ?? "en").intent,
-            status: "new",
-            // The rank is already the provenance: 0 is ranked_keywords, 1 the
-            // seeded expansion, 2 the domain-level ads fallback. Recording it
-            // keeps the exemption made just above - a ranked term is on-topic
-            // because the SERP said so - available to the selector, which
-            // otherwise re-applies the filter this row was excused from.
-            source:
-              c.rank === 0 ? "ranked" : c.rank === 1 ? "gap" : c.rank === 2 ? "ideas" : "ads",
-            // The finer provenance the dashboard rolls up: which competitor,
-            // or that it came from the site's own pages ("profile").
-            source_type:
-              c.rank === 0 ? "ranked" : c.rank === 1 ? "competitor" : c.rank === 2 ? "profile" : "ads",
-            source_ref: c.rank === 1 ? c.k.competitor ?? null : c.rank === 2 ? "profile" : null,
-          }));
-        if (rows.length) {
-          const { data: inserted } = await supabase.from("keywords").insert(rows).select("id, term");
-          for (const r of inserted ?? []) seen.set((r.term as string).toLowerCase(), r.id as string);
-        }
-
-        // Positions, so the queue can see striking distance. Without this the
-        // strongest multiplier in recommendKeywords (a term sitting at 11-20,
-        // one revision from page one) could never fire on a new workspace:
-        // the ranked data was fetched, shown in a headline, and dropped.
-        const positions = ranked
-          .filter((k) => k.position !== null)
-          .map((k) => ({ id: seen.get(k.keyword.trim().toLowerCase()), position: k.position, url: k.url }))
-          .filter((r): r is { id: string; position: number; url: string | null } => Boolean(r.id));
-        if (positions.length) {
-          await supabase.from("keyword_rankings").insert(
-            positions.map((r) => ({
-              keyword_id: r.id,
-              position: r.position,
-              url: r.url,
-              checked_at: new Date().toISOString(),
-            })),
-          );
-        }
-      }
-
-      const parts = [
-        fromRanked.length ? `${fromRanked.length} it already ranks for` : "",
-        rankedDropped
-          ? `${rankedDropped} ranking${rankedDropped === 1 ? "" : "s"} on pages the sitemap does not list, left out`
-          : "",
-        seeded.length ? `${seeded.length} from what its pages say` : "",
-        usedFallback ? "the rest from the ads keyword tool" : "",
-      ].filter(Boolean);
-      layers.push({
-        id: "keywords",
-        status: "ok",
-        detail: `${keywordsFound} keywords found: ${parts.join(", ") || "none"}`,
-      });
+        const parts = [
+          fromRanked.length ? `${fromRanked.length} it already ranks for` : "",
+          rankedDropped
+            ? `${rankedDropped} ranking${rankedDropped === 1 ? "" : "s"} on pages the sitemap does not list, left out`
+            : "",
+          seeded.length ? `${seeded.length} from what its pages say` : "",
+          usedFallback ? "the rest from the ads keyword tool" : "",
+        ].filter(Boolean);
+        layers.push({
+          id: "keywords",
+          status: "ok",
+          detail: `${keywordsFound} keywords found: ${parts.join(", ") || "none"}`,
+        });
+      })();
     } catch (err) {
       layers.push({
         id: "keywords",

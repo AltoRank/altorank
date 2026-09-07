@@ -251,7 +251,9 @@ export function PlannerCard({
     setError(null);
     setGenerating(true);
     ensureKeywordQuestions(keyword.id)
-      .then((qs) => setQuestions(qs))
+      // A billing refusal comes back as data - a thrown server-action message
+      // is a hex digest in production - so it is read here, not caught.
+      .then((res) => (res.ok ? setQuestions(res.questions) : setError(res.error)))
       .catch((err) => setError(err instanceof Error ? err.message : "Could not generate questions."))
       .finally(() => setGenerating(false));
   }

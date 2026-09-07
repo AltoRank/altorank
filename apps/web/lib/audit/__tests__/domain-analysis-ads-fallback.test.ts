@@ -26,6 +26,19 @@ vi.mock("@/lib/seo/client", () => ({ hasDataForSEOCredentials: () => true }));
 vi.mock("@/lib/seo/keyword-gap", () => ({ fetchCompetitorGap: async () => [] }));
 vi.mock("@/lib/seo/backlinks", () => ({ syncBacklinks: async () => ({ fetched: 0, total: null, lost: 0 }) }));
 vi.mock("@/lib/seo/domain-metrics", () => ({ fetchDomainMetrics: async () => ({ authority: null, traffic: null, referringDomains: null }) }));
+// A readable site. `crawlSite` is stubbed to nothing above, so without this
+// the profile is empty and the whole keyword phase now stops before the
+// fallback it exists to measure (see the unreadable-site guard in
+// domain-analysis.ts). Relevance is pinned to 1 for the same reason: this file
+// is about what the fallback buys, not about which terms survive scoring.
+vi.mock("@/lib/seo/topical-profile", async () => {
+  const real = await vi.importActual<typeof import("@/lib/seo/topical-profile")>("@/lib/seo/topical-profile");
+  return {
+    ...real,
+    profileIsUsable: () => true,
+    scoreRelevance: () => ({ score: 1, matched: [], unmatched: [], reason: "stubbed" }),
+  };
+});
 vi.mock("@/lib/seo/ranked-keywords", async () => {
   const real = await vi.importActual<typeof import("@/lib/seo/ranked-keywords")>("@/lib/seo/ranked-keywords");
   return { ...real, fetchRankedKeywords: (...a: unknown[]) => ranked(...a) };
