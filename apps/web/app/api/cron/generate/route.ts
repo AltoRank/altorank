@@ -7,7 +7,7 @@ import { profileIsUsable } from "@/lib/seo/topical-profile";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { resumeExpiredPauses } from "@/lib/billing/resume";
 import { billingEnabled, getStripe } from "@/lib/stripe";
-import { generateArticle } from "@/lib/content/generate";
+import { generateArticle, ConcurrentGenerationError } from "@/lib/content/generate";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
 import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
 import { readFrozenEntries } from "@/lib/plan/frozen";
@@ -317,6 +317,20 @@ export async function GET(request: Request) {
         detail: `${result.wordCount} words, fact check ${result.factCheck.verdict}, chosen because ${next.reasons[0]}${notified}`,
       });
     } catch (err) {
+      // Two runs overlapped and the other one got there first (migration 074).
+      // Nothing went wrong and nothing needs doing: the draft is being
+      // written. Reported as a skip so it does not read as an incident, and
+      // not counted against `written`, because this run wrote nothing.
+      if (err instanceof ConcurrentGenerationError) {
+        results.push({
+          workspaceId,
+          domain,
+          status: "skipped",
+          keyword: err.keyword,
+          detail: err.message,
+        });
+        continue;
+      }
       results.push({
         workspaceId,
         domain,

@@ -20,8 +20,15 @@ import type { CMSConfig } from "@/lib/types";
 import { applyDecisions, readDecisions, summarizeDecisions } from "./hunks";
 import type { ExecutionSide, Hunk, RefreshCandidate, RefreshExecution } from "./types";
 
-/** Adapter types that implement `update`. Mirrors the adapters, for the UI. */
-export const UPDATABLE_CMS = new Set(["wordpress", "ghost", "webflow", "webhook", "git"]);
+/**
+ * Adapter types that implement `update`, for the UI.
+ *
+ * Re-exported rather than restated. This was a literal of five while eleven
+ * adapters could update, so the refresh screens hid "Push to site" from six
+ * CMSs whose push would have worked - see UPDATABLE_CMS_TYPES in
+ * lib/cms/adapter.ts, which derives it from the adapters themselves.
+ */
+export { UPDATABLE_CMS_TYPES as UPDATABLE_CMS } from "@/lib/cms/adapter";
 
 interface LoadedExecution {
   execution: RefreshExecution;

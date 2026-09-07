@@ -81,6 +81,31 @@ describe("factCheckArticle — flagging unsourced figures", () => {
     expect(r.claims[0].figures.length).toBeGreaterThan(3);
   });
 
+  it("sees the citation link inside a table cell", () => {
+    // Flattening the table used to strip its anchors before the hrefs were
+    // collected, so a sourced comparison table came back `unsourced`/high and
+    // approvalBlocker refused the article - telling the reviewer to link a
+    // figure that was already linked. The enrichment step adds these tables
+    // and the AEO scorer rewards them, so this was the common case.
+    const r = factCheckArticle(
+      "<h1>x</h1><table><tr><th>Plan</th><th>Free limit</th></tr>" +
+        '<tr><td>Airtable</td><td><a href="https://airtable.com/pricing">1,000 records</a></td></tr>' +
+        "</table>",
+    );
+    expect(r.claims).toHaveLength(1);
+    expect(r.claims[0].status).toBe("needs_verification");
+    expect(r.claims[0].severity).toBe("medium");
+    expect(r.verdict).toBe("review");
+  });
+
+  it("still refuses a table whose figures link nowhere", () => {
+    const r = factCheckArticle(
+      "<h1>x</h1><table><tr><td>Airtable</td><td>1,000 records</td></tr></table>",
+    );
+    expect(r.claims[0].status).toBe("unsourced");
+    expect(r.verdict).toBe("high_risk");
+  });
+
   it("downgrades a figure that names its source", () => {
     const r = factCheckArticle(
       "<p>According to the HTTP Archive, 42% of pages ship unused CSS.</p>",
