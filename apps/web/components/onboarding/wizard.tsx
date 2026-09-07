@@ -54,7 +54,7 @@ import { SiteFields } from "@/components/settings/site-fields";
 import { ApprovalGateCard, OutputFields } from "@/components/settings/output-fields";
 import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
-import { onboardingOutcome, type OnboardingState } from "@/lib/onboarding/events";
+import { onboardingOutcome, shouldResumeRun, type OnboardingRunSnapshot, type OnboardingState } from "@/lib/onboarding/events";
 import { freeAllowanceClause } from "@/lib/onboarding/copy";
 
 const SITE_STEPS = ["Business", "Audience & Competitors", "Blog", "Articles", "Integration"];
@@ -89,6 +89,7 @@ export function OnboardingWizard({
   initialOutput,
   destinations,
   askAttribution,
+  initialRun = null,
 }: {
   workspaceId: string;
   domain: string;
@@ -108,6 +109,13 @@ export function OnboardingWizard({
   initialOutput: OutputSettings;
   destinations: Destination[];
   askAttribution: boolean;
+  /**
+   * The workspace's latest onboarding run, read by the page. A run still
+   * going, or one that finished in the last hour, opens on the run screen
+   * rather than on step 1 - which is what makes a reload mid-run land back
+   * on the phases so far instead of restarting the wizard.
+   */
+  initialRun?: OnboardingRunSnapshot | null;
 }) {
   const router = useRouter();
   const steps = askAttribution ? [...SITE_STEPS, "About you"] : SITE_STEPS;
@@ -139,7 +147,9 @@ export function OnboardingWizard({
   const [reading, setReading] = useState(initialProfile === null);
   const [readFailure, setReadFailure] = useState<InferenceReason | null>(null);
   const [discovery, setDiscovery] = useState<SiteDiscovery | null | "pending">(initialSite.sitemapUrl || initialSite.blogRootUrl ? null : "pending");
-  const [running, setRunning] = useState(false);
+  // A run found on load is resumed; otherwise Finish starts one.
+  const [resumed] = useState(() => (initialRun && shouldResumeRun(initialRun, Date.now()) ? initialRun : null));
+  const [running, setRunning] = useState(resumed !== null);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -163,9 +173,10 @@ export function OnboardingWizard({
     return () => window.removeEventListener("popstate", sync);
   }, [steps.length]);
 
-  // Read the site. A failure is a normal outcome and is shown as one.
+  // Read the site. A failure is a normal outcome and is shown as one. Not
+  // while a run is on screen: that page has already been through this.
   useEffect(() => {
-    if (!reading) return;
+    if (!reading || running) return;
     let cancelled = false;
     proposeProfile(workspaceId)
       .then((r) => {
@@ -182,12 +193,12 @@ export function OnboardingWizard({
     return () => {
       cancelled = true;
     };
-  }, [reading, workspaceId]);
+  }, [reading, running, workspaceId]);
 
   // Look for the sitemap and blog in the background while step 1 is on screen,
   // so step 3 opens with an answer rather than a spinner.
   useEffect(() => {
-    if (discovery !== "pending") return;
+    if (discovery !== "pending" || running) return;
     let cancelled = false;
     discoverSiteDetails(workspaceId)
       .then((d) => {
@@ -203,7 +214,7 @@ export function OnboardingWizard({
     return () => {
       cancelled = true;
     };
-  }, [discovery, workspaceId]);
+  }, [discovery, running, workspaceId]);
 
   function patch(next: Partial<BusinessProfile>) {
     setProfile((p) => (p ? { ...p, ...next } : p));
@@ -259,7 +270,7 @@ export function OnboardingWizard({
   }
 
   if (running) {
-    return <RunScreen workspaceId={workspaceId} domain={domain} weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} />;
+    return <RunScreen workspaceId={workspaceId} domain={domain} weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} initialRun={resumed} />;
   }
 
   if (reading || !profile) return <ReadingSite domain={domain} />;
@@ -583,7 +594,19 @@ function AttributionStep({
  * do while it runs. Nothing here is a gate. The person is already invested and
  * the value is already being produced; the ask is framed as improving a result.
  */
-function RunScreen({ workspaceId, domain, weeklyLimit, freeDrafts }: { workspaceId: string; domain: string; weeklyLimit: number; freeDrafts: number | null }) {
+function RunScreen({
+  workspaceId,
+  domain,
+  weeklyLimit,
+  freeDrafts,
+  initialRun,
+}: {
+  workspaceId: string;
+  domain: string;
+  weeklyLimit: number;
+  freeDrafts: number | null;
+  initialRun: OnboardingRunSnapshot | null;
+}) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState | null>(null);
   const finished = Boolean(state && (state.ready || state.error));
@@ -610,15 +633,13 @@ function RunScreen({ workspaceId, domain, weeklyLimit, freeDrafts }: { workspace
             {weeklyLimit >= 7 ? "one article a day" : `${weeklyLimit} a week`} for the next 30 days, and writing the
             first one. Only keywords that pass our checks make the plan, so a new site may get fewer.{" "}
             {freeAllowanceClause(freeDrafts) ?? ""}
-            {/* The wait sentence used to read "You can leave this page; we keep
-                working", and it was not true: `/api/onboard/stream` hands
-                `request.signal` to the pipeline, which checks it at every phase
-                boundary, so a closed tab or a same-tab navigation stops the run
-                at its next step. What is true is the rest of it - every phase
-                persists as it completes, and the nightly analyze cron re-runs a
-                workspace with no `first_analysed_at` and tops the plan back up.
-                It is also gone once the run is over, because a screen that has
-                said "Done." has no wait left to describe. */}
+            {/* True since the run left the browser's request: it is a row
+                advanced by its own invocations (/api/onboard/run, then
+                /api/internal/draft), and this screen only polls it. An
+                earlier version said "keep this tab open", because the SSE
+                route stopped the pipeline when the tab went. Gone once the
+                run is over, because a screen that has said "Done." has no
+                wait left to describe. */}
             {!finished && (
               <>
                 {" "}
@@ -631,7 +652,7 @@ function RunScreen({ workspaceId, domain, weeklyLimit, freeDrafts }: { workspace
 
         <div className="mx-auto max-w-[640px]">
           <div className="rounded-[10px] border border-line bg-panel p-5">
-            <OnboardingProgress workspaceId={workspaceId} domain={domain} autoNavigate={false} onState={setState} />
+            <OnboardingProgress workspaceId={workspaceId} domain={domain} autoNavigate={false} onState={setState} initialRun={initialRun} />
             {planned.length > 0 && (
               <div className="mt-5">
                 <div className="mb-1.5 text-[11px] uppercase tracking-wide text-ink-3">Scheduled</div>
@@ -647,23 +668,20 @@ function RunScreen({ workspaceId, domain, weeklyLimit, freeDrafts }: { workspace
               </div>
             )}
             <div className="mt-6 flex items-center gap-3">
-              {/* While the run is live this cannot be a same-tab navigation.
-                  `OnboardingProgress` aborts its fetch on unmount and the route
-                  passes that signal to the pipeline, so pushing /content here
-                  cancelled the very run the button sits under - the draft was
-                  never written and nothing said why. So this opens a new tab
-                  until the run is over and there is nothing left to cancel. */}
+              {/* A plain navigation, live or not. This used to open a new tab
+                  while the run was live, because unmounting the progress
+                  component aborted the SSE request and the pipeline with it;
+                  the run is its own invocations now and nothing on this page
+                  can cancel it. Coming back to /onboarding resumes the screen. */}
               {finished ? (
                 <Button variant="accent" onClick={() => router.push(next.href)}>
                   {next.label}
                 </Button>
               ) : (
                 <>
-                  <a href="/content" target="_blank" rel="noreferrer">
-                    <Button variant="accent" disabled={planned.length === 0}>
-                      Open the calendar so far
-                    </Button>
-                  </a>
+                  <Button variant="accent" disabled={planned.length === 0} onClick={() => router.push("/content")}>
+                    Open the calendar so far
+                  </Button>
                   <span className="text-[12px] text-ink-3">Still working…</span>
                 </>
               )}

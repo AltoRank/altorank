@@ -9,7 +9,8 @@ import {
   onboardingOutcome,
   phaseLabel,
   reduceOnboarding,
-  type OnboardingEvent,
+  stateFromRun,
+  type OnboardingRunSnapshot,
   type OnboardingState,
   type OnboardingStep,
 } from "@/lib/onboarding/events";
@@ -21,7 +22,16 @@ import {
  * setTimeout(2000) and setTimeout(4000) while a server action ran for however
  * long it actually took, so "Discovering keywords…" was on screen during voice
  * training and "Done!" appeared whether or not anything had been done. Every
- * status here is an event the pipeline emitted at a real boundary.
+ * status here is a phase the worker wrote to the run's row at a real boundary.
+ *
+ * The run does not live in this component's request. It used to: one SSE
+ * fetch carried the whole pipeline, and its abort signal - a reload, a closed
+ * tab, this effect's own cleanup - stopped the run at its next phase. Now
+ * POST /api/onboard/start returns a run id at once and the work happens in
+ * its own invocations; this polls GET /api/onboard/state for the row and
+ * folds it through `stateFromRun`, the counterpart of the reducer the worker
+ * wrote it with. Unmounting stops the polling and nothing else. Mounting
+ * again - after a reload, tomorrow - picks the row up where it is.
  *
  * The calendar strip is the point of the screen. Keywords and a voice are
  * plumbing; a draft on a day is the thing the product sells, and watching the
@@ -29,6 +39,11 @@ import {
  */
 
 const HANDOFF_MS = 1_400;
+/** Every three seconds while the phases are moving. */
+export const POLL_MS = 3_000;
+/** After two minutes the run is in the draft, where nothing changes for a while. */
+export const POLL_SLOW_MS = 10_000;
+export const POLL_BACKOFF_AFTER_MS = 2 * 60_000;
 
 export function OnboardingProgress({
   workspaceId,
@@ -37,6 +52,7 @@ export function OnboardingProgress({
   nextHref,
   autoNavigate = true,
   onState,
+  initialRun = null,
 }: {
   workspaceId: string;
   domain: string;
@@ -48,86 +64,85 @@ export function OnboardingProgress({
   autoNavigate?: boolean;
   /** Every state change, for a parent that renders around this. */
   onState?: (state: OnboardingState) => void;
+  /**
+   * The run the page found on load, if any: rendered as the first frame, so
+   * a reload shows the phases so far rather than four pending steps. A run
+   * that has already finished is shown as it is and nothing is started.
+   */
+  initialRun?: OnboardingRunSnapshot | null;
 }) {
   const router = useRouter();
-  const [state, setState] = useState<OnboardingState>(initialOnboardingState);
-  const [closed, setClosed] = useState(false);
+  const [state, setState] = useState<OnboardingState>(() =>
+    initialRun?.run ? stateFromRun(initialRun.run, initialRun.article, { stale: initialRun.stale }) : initialOnboardingState(),
+  );
   // `onDone` is a fresh arrow on every parent render. Reading it through a ref
   // keeps it out of the hand-off effect's dependencies, so a parent re-render
   // - the workspace list refreshing after creation, for one - cannot re-run
   // that effect and clear its timer.
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
+  const settledOnMount = Boolean(initialRun?.run && (initialRun.run.status !== "running" || initialRun.stale));
 
-  // No "started" guard here, on purpose. An earlier version kept a ref that
-  // survived the effect's cleanup, so when React re-ran the effect (StrictMode
-  // does, in development) the re-run returned early and the only request had
-  // already been aborted by cleanup: one dead stream, a screen frozen on three
-  // pending steps. An effect has to be re-runnable. Cleanup aborts; a re-run
-  // fetches again; and the route watches request.signal so the aborted run
-  // stops at its next phase boundary instead of finishing a crawl nobody is
-  // listening to.
+  // Start (or find) the run, then poll its row until it stops. The effect is
+  // re-runnable: StrictMode runs it twice in development, and the second
+  // POST finds the first's row and returns the same id, so nothing is doubled.
+  // Cleanup only cancels the polling; the run is not this request's to stop.
   useEffect(() => {
-    const controller = new AbortController();
+    if (settledOnMount) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+
+    const fail = (detail: string) => setState((s) => reduceOnboarding(s, { phase: "error", detail }));
+
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const res = await fetch(`/api/onboard/state?workspaceId=${encodeURIComponent(workspaceId)}`, { cache: "no-store" });
+        if (res.ok) {
+          const snapshot = (await res.json()) as OnboardingRunSnapshot;
+          if (cancelled) return;
+          if (snapshot.run) {
+            const next = stateFromRun(snapshot.run, snapshot.article, { stale: snapshot.stale });
+            setState(next);
+            if (isTerminal(next)) return;
+          }
+        }
+      } catch {
+        /* a missed poll is the next one's problem */
+      }
+      if (cancelled) return;
+      timer = setTimeout(poll, Date.now() - startedAt > POLL_BACKOFF_AFTER_MS ? POLL_SLOW_MS : POLL_MS);
+    };
 
     (async () => {
       try {
-        const res = await fetch("/api/onboard/stream", {
+        const res = await fetch("/api/onboard/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ workspaceId }),
-          signal: controller.signal,
         });
-        if (!res.ok || !res.body) {
-          setState((s) => reduceOnboarding(s, { phase: "error", detail: `Onboarding could not start (${res.status}).` }));
+        if (cancelled) return;
+        if (!res.ok) {
+          fail(`Onboarding could not start (${res.status}).`);
           return;
         }
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          // SSE frames end in a blank line; anything after the last one is a
-          // partial frame and waits for the next chunk.
-          const frames = buffer.split("\n\n");
-          buffer = frames.pop() ?? "";
-          for (const frame of frames) {
-            const line = frame.split("\n").find((l) => l.startsWith("data: "));
-            if (!line) continue;
-            try {
-              const event = JSON.parse(line.slice(6)) as OnboardingEvent;
-              setState((s) => reduceOnboarding(s, event));
-            } catch {
-              /* a malformed frame is not worth aborting the run over */
-            }
-          }
-        }
-      } catch (err) {
-        if ((err as Error)?.name !== "AbortError") {
-          setState((s) => reduceOnboarding(s, { phase: "error", detail: "Lost the connection while setting up." }));
-        }
-      } finally {
-        // Closed means the stream ended. An aborted fetch is not that: it is
-        // this effect's own cleanup, and the run it belongs to may be the one
-        // React is about to replace. Marking the run closed from here handed
-        // off to the dashboard six seconds in, with a live stream still going
-        // and nothing yet written, because the abandoned first fetch reported
-        // itself finished on behalf of the second.
-        if (!controller.signal.aborted) setClosed(true);
+        await poll();
+      } catch {
+        if (!cancelled) fail("Onboarding could not start. Check the connection and reload.");
       }
     })();
 
-    return () => controller.abort();
-  }, [workspaceId]);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [workspaceId, settledOnMount]);
 
-  // Hand off once the run is over - or once the stream has closed without
-  // saying so, which is a timeout or a dropped connection. Either way the
-  // dashboard is the right place to be: it polls a draft still in flight
-  // (first-draft-live) and shows whatever did complete.
-  const finished = isTerminal(state) || closed;
+  // Hand off once the run is over - or once the row says it stopped
+  // responding. Either way the dashboard is the right place to be: it polls a
+  // draft still in flight (first-draft-live) and shows whatever did complete.
+  const finished = isTerminal(state);
   const onStateRef = useRef(onState);
   onStateRef.current = onState;
   useEffect(() => {
