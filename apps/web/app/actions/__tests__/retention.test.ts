@@ -20,7 +20,18 @@ type Row = Record<string, unknown>;
 let agencyRow: Row = {};
 let workspaceUpdateError: { message: string } | null = null;
 let feedbackError: { message: string } | null = null;
+// Writes to `agencies` through the signed-in (cookie) client. Migration 072
+// puts a BEFORE UPDATE trigger on the table that raises 42501 for any change
+// to a billing column by a signed-in user, so this mock answers the way the
+// database does: the write is refused. Anything that lands here fails.
 const agencyWrites: Row[] = [];
+// Writes to `agencies` as AltoRank (service role), which the trigger lets
+// through. This is where `cancels_at` has to be written.
+const serviceWrites: Row[] = [];
+const TRIGGER_REFUSAL = {
+  code: "42501",
+  message: "Billing and API-key columns on an agency are set by AltoRank, not by a signed-in user",
+};
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 // The pause confirmation email is never fatal and is not what these tests
@@ -28,7 +39,15 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/email/lifecycle", () => ({ notifyAccountPaused: vi.fn(async () => {}) }));
 
 vi.mock("@/lib/supabase/server", () => ({
-  createServiceClient: () => ({}),
+  createServiceClient: () => ({
+    from: (table: string) => ({
+      update: (row: Row) => {
+        if (table !== "agencies") throw new Error(`unexpected service write to ${table}`);
+        serviceWrites.push(row);
+        return { eq: () => Promise.resolve({ error: null }) };
+      },
+    }),
+  }),
   createClient: async () => ({
     from: (table: string) => {
       if (table === "workspaces") {
@@ -53,7 +72,7 @@ vi.mock("@/lib/supabase/server", () => ({
         select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: agencyRow, error: null }) }) }),
         update: (row: Row) => {
           agencyWrites.push(row);
-          return { eq: () => Promise.resolve({ error: null }) };
+          return { eq: () => Promise.resolve({ error: TRIGGER_REFUSAL }) };
         },
       };
     },
@@ -80,6 +99,7 @@ vi.mock("@/lib/billing/resume", async (importOriginal) => {
 
 beforeEach(() => {
   agencyWrites.length = 0;
+  serviceWrites.length = 0;
   workspaceUpdateError = null;
   feedbackError = null;
   agencyRow = {
@@ -171,6 +191,17 @@ describe("cancelPlan", () => {
     if (!result.ok) throw new Error("expected success");
     expect(result.cancelsAt).toBe(new Date(1796083200 * 1000).toISOString());
   });
+
+  it("writes cancels_at as AltoRank, not as the owner the trigger refuses", async () => {
+    // 072's trigger raises 42501 when a signed-in user - owner included -
+    // changes `cancels_at`. Through the cookie client the cancellation went
+    // through at Stripe and then failed with "could not be saved" every time.
+    const { cancelPlan } = await import("../retention");
+    const result = await cancelPlan({ reason: "price" });
+    expect(result.ok).toBe(true);
+    expect(agencyWrites).toHaveLength(0);
+    expect(serviceWrites).toEqual([{ cancels_at: new Date(1796083200 * 1000).toISOString() }]);
+  });
 });
 
 describe("keepPlan", () => {
@@ -181,6 +212,14 @@ describe("keepPlan", () => {
     const result = await keepPlan();
     expect(result.ok).toBe(false);
     expect(agencyWrites).toHaveLength(0);
+    expect(serviceWrites).toHaveLength(0);
+  });
+
+  it("clears cancels_at as AltoRank once Stripe has dropped the cancellation", async () => {
+    const { keepPlan } = await import("../retention");
+    expect(await keepPlan()).toEqual({ ok: true });
+    expect(agencyWrites).toHaveLength(0);
+    expect(serviceWrites).toEqual([{ cancels_at: null }]);
   });
 });
 

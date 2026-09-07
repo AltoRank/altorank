@@ -1,7 +1,7 @@
 "use server";
 
 import { requireAuth } from "@/lib/auth/require-auth";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getStripe, PLAN_PRICE_IDS, stripeTaxEnabled } from "@/lib/stripe";
 import type { SelfServePlan, BillingInterval } from "@/lib/stripe";
 import { subscriptionSwitchable } from "@/lib/billing/plan-switch";
@@ -63,7 +63,14 @@ export async function createCheckoutSession(
     }
     // The tier follows the price at once rather than on the webhook's
     // schedule, so the page that reloads next says what was just bought.
-    await supabase.from("agencies").update({ plan }).eq("id", agencyId);
+    //
+    // As AltoRank, not as the owner: `plan` is one of the columns migration
+    // 072 refuses to a signed-in user (42501), so through the cookie client
+    // this was a silent no-op and the page kept saying the old tier until the
+    // webhook landed. Stripe has already accepted the switch by this line, so
+    // a refusal here is worth a log line, not a failed action.
+    const { error } = await createServiceClient().from("agencies").update({ plan }).eq("id", agencyId);
+    if (error) console.error(`[billing] switch: plan not written for ${agencyId}: ${error.message}`);
     return { ok: true, url: `${appUrl()}/settings/billing?status=switched` };
   }
 

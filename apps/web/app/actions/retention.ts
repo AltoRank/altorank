@@ -11,6 +11,14 @@ import { billingFailure, type BillingOutcome } from "@/lib/billing/failure";
 import { createServiceClient } from "@/lib/supabase/server";
 import { notifyAccountPaused } from "@/lib/email/lifecycle";
 
+// `agencies.cancels_at` is a billing column. Migration 072 guards it with a
+// trigger that raises 42501 for any signed-in user - owner included - because
+// the only thing that legitimately sets it is the subscription state at
+// Stripe. These two actions have just told Stripe, so the write is made as
+// AltoRank (service role), after the owner check above has already passed.
+// Through the cookie client it is refused, and Cancel plan / Keep plan fail
+// with "could not be saved" every time.
+
 // Pause, resume, cancel, keep. Owner only, like checkout and the portal:
 // these change what the account pays. Each one writes our own rows first and
 // tells Stripe second, so a Stripe failure leaves a visible, resumable state
@@ -186,7 +194,7 @@ export async function cancelPlan(answers: {
     }
   }
 
-  const { error } = await supabase.from("agencies").update({ cancels_at: cancelsAt }).eq("id", agency.id);
+  const { error } = await createServiceClient().from("agencies").update({ cancels_at: cancelsAt }).eq("id", agency.id);
   if (error) return billingFailure(error, "The cancellation date could not be saved");
 
   revalidatePath("/settings/billing");
@@ -195,7 +203,7 @@ export async function cancelPlan(answers: {
 
 /** Undo a pending cancellation. The plan renews as before. */
 export async function keepPlan(): Promise<BillingOutcome> {
-  const { supabase, agency } = await ownerAgency();
+  const { agency } = await ownerAgency();
   if (billingEnabled && agency.stripe_subscription_id) {
     try {
       await getStripe().subscriptions.update(agency.stripe_subscription_id, { cancel_at_period_end: false });
@@ -205,7 +213,7 @@ export async function keepPlan(): Promise<BillingOutcome> {
       return billingFailure(err, "The cancellation could not be undone");
     }
   }
-  const { error } = await supabase.from("agencies").update({ cancels_at: null }).eq("id", agency.id);
+  const { error } = await createServiceClient().from("agencies").update({ cancels_at: null }).eq("id", agency.id);
   if (error) return billingFailure(error, "The cancellation could not be undone");
   revalidatePath("/settings/billing");
   return { ok: true };

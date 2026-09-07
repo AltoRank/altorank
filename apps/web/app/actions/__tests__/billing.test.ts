@@ -12,7 +12,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 type Row = Record<string, unknown>;
 
 let agencyRow: Row = {};
+// Writes made as AltoRank (service role). `agencies.plan` is guarded by
+// migration 072's trigger, which refuses it to any signed-in user, so the
+// tier can only be written this way.
 const writes: { table: string; row: Row; col: string; val: unknown }[] = [];
+// Writes made as the signed-in owner. The database answers a billing-column
+// change here with 42501; the action must not send one.
+const cookieWrites: { table: string; row: Row }[] = [];
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
@@ -20,6 +26,21 @@ vi.mock("@/lib/supabase/server", () => ({
       select: () => ({
         eq: () => ({ single: () => Promise.resolve({ data: agencyRow }) }),
       }),
+      update: (row: Row) => ({
+        eq: () => {
+          cookieWrites.push({ table, row });
+          return Promise.resolve({
+            error: {
+              code: "42501",
+              message: "Billing and API-key columns on an agency are set by AltoRank, not by a signed-in user",
+            },
+          });
+        },
+      }),
+    }),
+  }),
+  createServiceClient: () => ({
+    from: (table: string) => ({
       update: (row: Row) => ({
         eq: (col: string, val: unknown) => {
           writes.push({ table, row, col, val });
@@ -60,6 +81,7 @@ async function choose(plan: "starter" | "growth", interval: "month" | "year" = "
 
 beforeEach(() => {
   writes.length = 0;
+  cookieWrites.length = 0;
   agencyRow = { stripe_customer_id: "cus_1", stripe_subscription_id: null, plan_status: "inactive" };
   checkoutCreate.mockReset();
   checkoutCreate.mockResolvedValue({ url: "https://checkout.stripe.com/c/pay/cs_1" });
@@ -123,9 +145,13 @@ describe("plan switch on a live subscription", () => {
     });
   });
 
-  it("writes the new tier to the row at once, ahead of the webhook", async () => {
+  it("writes the new tier to the row at once, ahead of the webhook, as AltoRank", async () => {
+    // 072's trigger refuses `plan` to the owner (42501). Through the cookie
+    // client this write was a silent no-op and the Billing page kept naming
+    // the old tier until the webhook landed.
     await choose("growth");
     expect(writes).toEqual([{ table: "agencies", row: { plan: "growth" }, col: "id", val: "agency-1" }]);
+    expect(cookieWrites).toHaveLength(0);
   });
 
   it("switches the interval on the same subscription too", async () => {
