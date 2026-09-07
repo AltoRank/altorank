@@ -62,13 +62,6 @@ import { SITE_STEPS, stepFromParam, stepIndex } from "@/lib/onboarding/steps";
 // The question about the person, after every step about the site. Present only
 // while the account has not answered; a second workspace goes straight to plan.
 const ATTRIBUTION_STEP = SITE_STEPS.length;
-// The CMS step is the one a new account most often stops on: a credential
-// before value. Its primary action says what it does - move on without one -
-// instead of a "Continue" that reads as "continue once you have connected".
-// The follow-up email for an account that stopped here deep-links to this
-// screen through the same list (lib/onboarding/steps.ts).
-const INTEGRATION_STEP = stepIndex("Integration");
-
 export type Destination = { id: string; name: string; description: string | null };
 
 /** The screen the address bar is asking for; see `stepFromParam`. */
@@ -85,7 +78,6 @@ export function OnboardingWizard({
   initialProfile,
   initialSite,
   initialOutput,
-  destinations,
   askAttribution,
   initialRun = null,
   initialStep = 0,
@@ -107,7 +99,6 @@ export function OnboardingWizard({
   initialProfile: BusinessProfile | null;
   initialSite: SiteDetails;
   initialOutput: OutputSettings;
-  destinations: Destination[];
   askAttribution: boolean;
   /** From `?step=`, read by the server page so a deep link paints the right screen first. */
   initialStep?: number;
@@ -312,7 +303,6 @@ export function OnboardingWizard({
         {step === 1 && <AudienceStep profile={profile} patch={patch} />}
         {step === 2 && <BlogStep site={site} setSite={setSite} discovery={discovery} domain={domain} />}
         {step === 3 && <ArticlesStep output={output} setOutput={setOutput} autoApprove={autoApprove} setAutoApprove={setAutoApproveState} />}
-        {step === 4 && <IntegrationStep destinations={destinations} />}
         {step === ATTRIBUTION_STEP && <AttributionStep value={attribution} onChange={setAttribution} skipping={skipping} />}
         {step === last && !skipping && <NextUp weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} autoApprove={autoApprove} />}
         {error && <p className="mt-4 rounded-lg bg-err-soft px-3 py-2 text-[12.5px] text-err-ink">{error}</p>}
@@ -339,12 +329,11 @@ export function OnboardingWizard({
               Back
             </Button>
             {/* Every screen can be skipped on its own: nothing typed on it is
-                saved and the next one opens. The CMS step has no link because
-                its primary action already is the skip, and the last step has
-                none because Finish is the way out. Skipping the whole setup
-                is offered once, on the first screen, where that decision is
-                actually made. */}
-            {step !== last && step !== INTEGRATION_STEP && (
+                saved and the next one opens. The last step has no link because
+                Finish is the way out. Skipping the whole setup is offered
+                once, on the first screen, where that decision is actually
+                made. */}
+            {step !== last && (
               <button
                 type="button"
                 onClick={skipStep}
@@ -372,13 +361,11 @@ export function OnboardingWizard({
           >
             {pending
               ? "Saving…"
-              : step === INTEGRATION_STEP && step !== last
-                ? "Skip for now"
-                : step !== last
-                  ? "Continue"
-                  : skipping
-                    ? "Skip and finish"
-                    : "Finish and plan my first month"}
+              : step !== last
+                ? "Continue"
+                : skipping
+                  ? "Skip and finish"
+                  : "Finish and plan my first month"}
           </Button>
         </div>
       </div>
@@ -562,43 +549,6 @@ function ArticlesStep({
   );
 }
 
-function IntegrationStep({ destinations }: { destinations: Destination[] }) {
-  return (
-    <>
-      <Head
-        title="Where should we publish?"
-        sub="Skip this for now if you like: drafts are yours either way, you can export any article as Markdown, and Integrations in the dashboard connects a CMS whenever you are ready."
-      />
-      <div className="grid grid-cols-3 gap-3">
-        {destinations.map((d) => (
-          <a
-            key={d.id}
-            href={`/connect?connect=${d.id}`}
-            // Same tab abandoned the wizard and dropped whatever was typed on
-            // this screen: state is client-side and each step persists only on
-            // Continue.
-            target="_blank"
-            rel="noreferrer"
-            title={d.description ?? undefined}
-            className="flex flex-col items-center gap-2 rounded-[10px] border border-line bg-panel px-3 py-5 text-center transition-colors hover:border-accent"
-          >
-            <IntegrationIcon id={d.id} name={d.name} size={30} />
-            <span className="text-[12px] leading-[1.35]">{d.name}</span>
-          </a>
-        ))}
-      </div>
-      {/* Named rather than left to the grid: a static site has no CMS to pick,
-          and someone on Next.js or Astro will otherwise read this screen as
-          "not supported" and skip a destination we do have. */}
-      <p className="mt-4 text-center text-[12px] leading-[1.6] text-ink-3">
-        On Next.js, Astro, Hugo or Jekyll? <strong className="font-medium text-ink-2">Git / static site</strong> commits
-        Markdown to your repo and lets your own build deploy it.
-      </p>
-    </>
-  );
-}
-
-/** What Finish does, under whichever screen is last. */
 function NextUp({ weeklyLimit, freeDrafts, autoApprove }: { weeklyLimit: number; freeDrafts: number | null; autoApprove: boolean }) {
   const allowance = freeAllowanceClause(freeDrafts);
   return (

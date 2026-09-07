@@ -20,33 +20,32 @@
 // a Connect button that dead-ends.
 
 /**
- * CMSs the connection dialog has a real credential form for, and whose adapter
- * has been exercised. Their tiles deep-link to the dialog on that platform's
- * tab.
+ * CMSs whose tile offers a self-serve Connect button.
  *
- * `framer` is deliberately absent. Our own adapter notes say it "has not been
- * exercised against a live Framer project" (lib/cms/publish-mode.ts,
- * lib/cms/connector-notes.ts), and the research on 2026-09-07 found the
- * adapter was written against an API that does not exist in the shape we
- * assumed: Framer shipped a Server API on 2026-02-12 which is a WebSocket SDK
- * (npm `framer-api`), not the REST surface framer.ts calls. Offering Connect
- * would be offering a button that cannot work. It returns to this set when the
- * adapter is rewritten and tested against a real project.
+ * 🚨 **Empty on purpose, 2026-09-07.** Not one connector has been exercised
+ * end-to-end against a live service by us. The audit in
+ * altorank-notes/research/connectors-2026-09-07/01-code-audit.md rated exactly
+ * two "safe to advertise", and even those two are unverified against a real
+ * account; the rest carry known gaps - Wix and Notion cannot update a post they
+ * already made, Webflow and Magento assert a public URL nobody checked, Framer
+ * was written against an API that does not exist in that shape, Magento asks
+ * for a token that dies in four hours, and HubSpot's credential stops being
+ * issuable to new accounts on 2026-09-28.
+ *
+ * So every tile asks instead of offering, and onboarding is concierge-run
+ * until a connector has been watched working on somebody's real site. A
+ * Connect button that fails costs more than a request form that succeeds.
+ *
+ * **To bring one back:** add its id here once it has published to a live site,
+ * and the tile changes by itself. Its id must already be in CMS_TYPES in
+ * connect-cms-dialog.tsx - `connectable.test.ts` fails otherwise, because a
+ * Connect button whose dialog will not open is the worst of both.
+ *
+ * This does not touch connections that already exist: their tiles keep Test
+ * and Reconnect, the dialog still opens from `/connect?connect=<id>`, and the
+ * adapters are untouched. What is withdrawn is the advertisement.
  */
-export const CONNECTABLE_CMS = new Set([
-  "wordpress",
-  "wordpress-plugin",
-  "shopify",
-  "magento",
-  "webflow",
-  "ghost",
-  "wix",
-  "notion",
-  "hubspot",
-  "woocommerce",
-  "webhook",
-  "git",
-]);
+export const CONNECTABLE_CMS = new Set<string>([]);
 
 /**
  * Integrations whose tile offers "Request integration" instead of "Connect".

@@ -5,11 +5,12 @@ import { CONNECTABLE_CMS, isRequestable } from "../connectable";
 import { resolveCMSAdapter } from "../adapter";
 
 /**
- * Two lists decide whether a person is offered a credential form: this one,
- * which draws Connect or "Request integration" on the tile, and CMS_TYPES in
- * connect-cms-dialog.tsx, which decides whether the dialog opens at all. They
- * were one list until the tile gained a second state; if they drift, a tile
- * says Connect and the dialog refuses to open, or worse, the reverse.
+ * Two lists decide what a person can reach. CONNECTABLE_CMS draws Connect or
+ * "Request integration" on the tile; CMS_TYPES in connect-cms-dialog.tsx
+ * decides whether the dialog opens at all. The invariant is a subset, not
+ * equality: the dialog may open for more than the tiles advertise (an existing
+ * connection's Reconnect, a hand-held onboarding link), but a tile must never
+ * offer Connect for something the dialog will refuse to open.
  */
 function dialogCmsTypes(): string[] {
   const src = readFileSync(
@@ -22,18 +23,25 @@ function dialogCmsTypes(): string[] {
 }
 
 describe("connectable", () => {
-  it("agrees with the dialog about which platforms can be connected", () => {
-    expect(new Set(dialogCmsTypes())).toEqual(CONNECTABLE_CMS);
+  it("never advertises Connect for a platform the dialog will not open", () => {
+    const dialog = new Set(dialogCmsTypes());
+    for (const id of CONNECTABLE_CMS) expect(dialog).toContain(id);
   });
 
-  it("does not offer Framer, whose adapter was never exercised", () => {
-    expect(CONNECTABLE_CMS.has("framer")).toBe(false);
-    expect(dialogCmsTypes()).not.toContain("framer");
-    // The adapter stays registered: connections made before this must keep
-    // publishing, and only the ability to create a new one is withdrawn.
+  it("advertises nothing while no connector has been watched working live", () => {
+    // Deliberate, and the one line to change when that stops being true.
+    // See the note on CONNECTABLE_CMS.
+    expect(CONNECTABLE_CMS.size).toBe(0);
+  });
+
+  it("keeps every adapter reachable, so existing connections still publish", () => {
+    // Withdrawing the advertisement must not withdraw the capability: these
+    // resolve for a connection made before this change, and for a reconnect.
     expect(() =>
       resolveCMSAdapter({ type: "framer", siteId: "s", collectionId: "c", apiToken: "t" }),
     ).not.toThrow();
+    expect(dialogCmsTypes()).toContain("framer");
+    expect(dialogCmsTypes()).toContain("wordpress");
   });
 
   it("offers a request for anything with no adapter and no OAuth flow of its own", () => {
@@ -42,7 +50,11 @@ describe("connectable", () => {
     }
   });
 
-  it("never offers a request for something already connectable, or with its own flow", () => {
+  it("offers a request for every CMS while the connectable set is empty", () => {
+    for (const id of dialogCmsTypes()) expect(isRequestable(id, false)).toBe(true);
+  });
+
+  it("never offers a request for something connectable, or with its own flow", () => {
     for (const id of CONNECTABLE_CMS) expect(isRequestable(id, false)).toBe(false);
     // Google and Bing render their own buttons; the page passes hasOwnFlow.
     for (const id of ["gsc", "ga4", "bing"]) expect(isRequestable(id, true)).toBe(false);

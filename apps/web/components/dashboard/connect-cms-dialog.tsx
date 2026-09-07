@@ -57,21 +57,23 @@ export interface ConnectCmsDialogProps {
 }
 
 /**
- * The platforms this dialog will open for. Must agree with CONNECTABLE_CMS in
- * lib/cms/connectable.ts, which decides whether the tile on /connect offers
- * Connect or Request integration; `connectable.test.ts` fails if they drift.
+ * The platforms this dialog can open a credential form for.
  *
- * `framer` is absent from both: the adapter has never been exercised against a
- * live project and was written against a REST surface Framer does not have
- * (its Server API is a WebSocket SDK). The CMSType union below still carries
- * it, and so do the form branch and toConfig, so any connection made before
- * this keeps rendering and publishing - it simply cannot be created here.
+ * This is not the same question as "which tile offers Connect" - that is
+ * CONNECTABLE_CMS in lib/cms/connectable.ts, which is currently empty because
+ * no connector has been watched working on a live site. This list stays full
+ * so that an existing connection can still be tested and reconnected, and so
+ * that a direct `/connect?connect=<id>` link works while onboarding is done by
+ * hand.
+ *
+ * CONNECTABLE_CMS must always be a subset of this; `connectable.test.ts`
+ * enforces it, because a Connect button whose dialog refuses to open is worse
+ * than no button.
  */
 const CMS_TYPES: CMSType[] = [
-  "wordpress", "wordpress-plugin", "shopify", "magento", "webflow", "ghost",
+  "wordpress", "wordpress-plugin", "shopify", "magento", "webflow", "ghost", "framer",
   "wix", "notion", "hubspot", "woocommerce", "webhook", "git",
 ];
-
 export function isCmsType(value: unknown): value is CMSType {
   return typeof value === "string" && (CMS_TYPES as string[]).includes(value);
 }
@@ -317,6 +319,7 @@ export function ConnectCmsDialog({
     { value: "magento", label: "Magento" },
     { value: "webflow", label: "Webflow" },
     { value: "ghost", label: "Ghost" },
+    { value: "framer", label: "Framer" },
     { value: "wix", label: "Wix" },
     { value: "notion", label: "Notion" },
     { value: "hubspot", label: "HubSpot" },
