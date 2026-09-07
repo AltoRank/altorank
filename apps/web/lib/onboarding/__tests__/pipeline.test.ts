@@ -168,7 +168,12 @@ describe("runOnboarding", () => {
     expect(events.find((e) => e.phase === "drafting" && "status" in e && e.status !== "active"))
       .toMatchObject({
         status: "skipped",
-        detail: "This month's 7 free drafts are used. Choose a plan to keep drafting, or wait for the 1st, when the allowance resets.",
+        // `quotaExceededMessage` verbatim: this used to be a second copy of
+        // that sentence, and the paid half of it drifted into telling a paid
+        // account at its limit to upgrade "to keep drafting" - which is not
+        // what happens, since the next one bills as overage.
+        detail:
+          "This month's 7 free drafts are used. Choose a plan on the Billing page to keep going, wait for Oct 1 when the allowance resets, or self-host AltoRank free.",
       });
     expect(events.at(-1)).toEqual({ phase: "ready" });
   });
@@ -182,7 +187,9 @@ describe("runOnboarding", () => {
     quota.mockResolvedValue({ limit: 100, used: 100, remaining: 0, reason: "plan", plan: "starter" });
     const paid = await collect();
     expect(paid.find((e) => e.phase === "drafting" && "status" in e && e.status === "skipped"))
-      .toMatchObject({ detail: expect.stringContaining("This month's 100 included articles are used") });
+      .toMatchObject({ detail: expect.stringContaining("This month's included 100 articles are used") });
+    expect(paid.find((e) => e.phase === "drafting" && "status" in e && e.status === "skipped"))
+      .toMatchObject({ detail: expect.stringContaining("write one by hand") });
   });
 
   /**

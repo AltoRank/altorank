@@ -39,6 +39,25 @@ export function canManageBilling(role: string | null | undefined): boolean {
 }
 
 /**
+ * Add a site to the account.
+ *
+ * Billing-shaped rather than content-shaped, which is why it is not something
+ * an editor does: every plan sells a number of workspaces ("Up to 3
+ * workspaces"), a new one takes a slot, and every site added shares the
+ * account's monthly article allowance. When the plan is full the refusal an
+ * editor got said "Upgrade on the Billing page" - a page they can only read.
+ *
+ * The other door that creates workspaces - `createWorkspacesFromProperties`,
+ * behind Connect Search Console - has been owner/admin since it was written.
+ * `createWorkspace` had no role check at all, so a member scoped to one site
+ * could add a fourth to somebody else's account (verified 2026-09-06). Same
+ * rule now, both doors.
+ */
+export function canAddWorkspace(role: string | null | undefined): boolean {
+  return role === "owner" || role === "admin";
+}
+
+/**
  * Turn a multi-select's values into what the column stores.
  *
  * Empty means all sites, so an empty selection becomes NULL rather than an

@@ -253,18 +253,28 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
               </div>
             ) : (
               /* Nothing in this app writes the `invoices` table: the Stripe
-                 webhook handles checkout and subscription events only, and
-                 there is no `invoice.paid` case. The old empty state said
-                 they would appear after the first payment, which on the
-                 payment screen is the worst place to be wrong. Until an
-                 invoice sync exists, this points at the one place the
-                 invoices really are. */
+                 webhook syncs subscription state and clears the dunning flag
+                 on `invoice.paid`, but it stores no invoice row. The old
+                 empty state said they would appear after the first payment,
+                 which on the payment screen is the worst place to be wrong.
+                 Until an invoice sync exists, this points at the one place
+                 the invoices really are. */
               <div className="text-[13px] text-ink-3 p-[18px]">
                 {agency?.stripe_customer_id ? (
-                  <>
-                    Invoices and receipts live in the Stripe billing portal — open it with
-                    &ldquo;Invoices and billing&rdquo; above. They are not mirrored here.
-                  </>
+                  // The "Invoices and billing" button is owner-only, so an
+                  // editor reading this was told to press something that is
+                  // not on their screen.
+                  canManage ? (
+                    <>
+                      Invoices and receipts live in the Stripe billing portal — open it with
+                      &ldquo;Invoices and billing&rdquo; above. They are not mirrored here.
+                    </>
+                  ) : (
+                    <>
+                      Invoices and receipts live in the Stripe billing portal, which only the
+                      account owner can open. They are not mirrored here.
+                    </>
+                  )
                 ) : (
                   <>
                     Nothing has been billed yet. Once you are on a plan, invoices and receipts

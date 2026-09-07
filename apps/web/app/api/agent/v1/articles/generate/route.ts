@@ -8,6 +8,7 @@ import { articleMutations } from "@/lib/agent/mutations";
 import { toAgentArticle } from "@/lib/agent/records";
 import { generateArticle, slugFor } from "@/lib/content/generate";
 import { freeAllowanceUsedMessage, getQuota, quotaExceededMessage } from "@/lib/billing/quota";
+import { accountPausedMessage } from "@/lib/billing/pause";
 import type { Article } from "@/lib/types";
 
 // The model call is the long pole; same budget the generate cron has.
@@ -70,6 +71,19 @@ export const POST = withAgent(async (request, ctx) => {
   const workspace = await workspaceInAgency(ctx, workspace_id);
   if (!workspace) {
     return fail("not_found", "Workspace not found in this account.", "Call GET /workspaces and use an id from that list.");
+  }
+
+  // The account pause, ahead of the row and the `after()` that would write it.
+  // generateArticle refuses this too, but it runs after the response has been
+  // sent, so without this check the agent gets 200 and "drafting" for a draft
+  // that can never exist and only learns otherwise by polling a row into
+  // `error`. Same reason the spend gate below runs here rather than there.
+  if (workspace.paused_until && workspace.status === "paused") {
+    return fail(
+      "not_available",
+      accountPausedMessage(workspace.paused_until),
+      "The whole account is paused, so no site can be written to and nothing is being billed. Ask the human to resume it on the Billing page; do not retry until they have.",
+    );
   }
 
   // Regenerating: the target must be in this workspace and in a state that

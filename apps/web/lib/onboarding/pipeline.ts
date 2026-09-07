@@ -26,12 +26,11 @@ import { readSiteText } from "./site-text";
 import { createVoiceProfile } from "@/app/actions/voice";
 import { analyseDomain } from "@/lib/audit/domain-analysis";
 import { generateArticle } from "@/lib/content/generate";
-import { freeAllowanceUsedMessage, getQuota } from "@/lib/billing/quota";
+import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
-import { plural } from "@/lib/utils";
 import { schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
 import { fanOutDrafts } from "@/lib/content/fan-out";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
@@ -210,12 +209,13 @@ async function runPhases(
       // off the limit rather than restating a number that has already moved.
       const quota = await getQuota(supabase, workspace.agency_id);
       if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
-        settle(
-          "skipped",
-          quota.reason === "no-plan"
-            ? `${freeAllowanceUsedMessage(quota.limit)} Choose a plan to keep drafting, or wait for the 1st, when the allowance resets.`
-            : `This month's ${plural(quota.limit, "included article")} ${quota.limit === 1 ? "is" : "are"} used. Upgrade on the Billing page to keep drafting.`,
-        );
+        // The one sentence the gates share (lib/billing/quota.ts). Written out
+        // twice here, the paid half drifted: it said "Upgrade on the Billing
+        // page to keep drafting", and a paid account at its limit does not
+        // need to upgrade to keep drafting - it writes the next one by hand
+        // and bills the overage. Onboarding is the worst screen to be wrong
+        // about what the plan does, and the second copy is how it got wrong.
+        settle("skipped", quotaExceededMessage(quota));
       } else {
         const recs = await recommendKeywords(supabase, workspace.id, { limit: 25 });
         // The first day of the plan is what the person just watched get

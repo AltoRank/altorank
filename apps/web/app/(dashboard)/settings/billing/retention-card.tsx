@@ -33,15 +33,23 @@ export function RetentionCard({
   const [pending, start] = useTransition();
   const [cancelOpen, setCancelOpen] = useState(false);
 
-  function run(label: string, fn: () => Promise<unknown>) {
+  // Pause, resume and keep all return a result rather than throwing, because
+  // Next.js turns a thrown server-action message into a digest in production
+  // and these three buttons change what the account pays. A refusal here is
+  // the *only* place the person learns that, say, the sites are paused but
+  // Stripe is still collecting, so it has to arrive readable.
+  function run(label: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
     start(async () => {
-      try {
-        await fn();
-        toast.success(label);
+      const result = await fn();
+      if (!result.ok) {
+        toast.error(result.error ?? "Something went wrong.");
+        // Refresh anyway: the half that succeeded (rows paused, sites resumed)
+        // is real, and the page must show the state that actually exists.
         router.refresh();
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Something went wrong.");
+        return;
       }
+      toast.success(label);
+      router.refresh();
     });
   }
 
@@ -139,6 +147,14 @@ function CancelDialog({
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
+  // "Cancel plan — writing stops December 1" when the period end is known,
+  // and the honest shorter version when it is not: the date comes from
+  // Stripe and inventing one on the cancellation screen is the worst place
+  // to guess.
+  const endLabel = periodEnd
+    ? `Cancel plan — writing stops ${new Date(periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" })}`
+    : "Cancel plan — writing stops at the period end";
+
   function next() {
     const v = validateCancellation({ reason, detail });
     if (!v.ok) {
@@ -151,17 +167,20 @@ function CancelDialog({
 
   function confirm() {
     start(async () => {
-      try {
-        const r = await cancelPlan({ reason: reason ?? "", detail });
-        toast.success(
-          r.cancelsAt
-            ? `Cancelled. You keep access until ${new Date(r.cancelsAt).toLocaleDateString("en-US", { month: "long", day: "numeric" })}.`
-            : "Cancelled at the end of the current period.",
-        );
-        onDone();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not cancel.");
+      const r = await cancelPlan({ reason: reason ?? "", detail });
+      if (!r.ok) {
+        // Stays in the dialog on purpose: the plan was not cancelled, and
+        // closing the dialog on a failure is how someone walks away believing
+        // it was.
+        setError(r.error);
+        return;
       }
+      toast.success(
+        r.cancelsAt
+          ? `Cancelled. You keep access until ${new Date(r.cancelsAt).toLocaleDateString("en-US", { month: "long", day: "numeric" })}.`
+          : "Cancelled at the end of the current period.",
+      );
+      onDone();
     });
   }
 
@@ -229,8 +248,11 @@ function CancelDialog({
             <Button type="button" onClick={() => setStep("why")} disabled={pending}>
               Back
             </Button>
+            {/* The consequence in the label, not only in the paragraph above
+                it (outrank-teardown/13-, stage 1). "Confirm cancellation"
+                confirms a word; this one says what the click does and when. */}
             <Button variant="primary" onClick={confirm} disabled={pending}>
-              {pending ? "Cancelling…" : "Confirm cancellation"}
+              {pending ? "Cancelling…" : endLabel}
             </Button>
           </div>
         </div>

@@ -13,6 +13,7 @@ import { PausedBanner, PauseSiteControl } from "@/components/dashboard/paused-ba
 import { MetricHistory } from "@/components/dashboard/metric-history";
 import { getWorkspaceMetrics } from "@/lib/queries/metrics";
 import { getQuota } from "@/lib/billing/quota";
+import { maxAllowedPace } from "@/lib/plan/pace-options";
 import { createClient } from "@/lib/supabase/server";
 import { plural } from "@/lib/utils";
 
@@ -138,6 +139,7 @@ export default async function ClientDetailPage({ params }: Props) {
         voice={voice}
         cadence={cadence}
         planIncluded={quota.limit}
+        maxPace={maxAllowedPace(quota)}
       />
     </>
   );

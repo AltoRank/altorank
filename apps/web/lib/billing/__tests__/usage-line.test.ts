@@ -72,10 +72,30 @@ describe("usageLine, paid account", () => {
   it("mentions overage only once the included volume is gone", () => {
     const under = usageLine(quota({ limit: 100, used: 99, reason: "plan", plan: "starter" }), NOW);
     expect(under.sentence).not.toMatch(/overage/);
-    const over = usageLine(quota({ limit: 100, used: 140, reason: "plan", plan: "starter" }), NOW);
-    expect(over.sentence).toMatch(/overage/);
+    const at = usageLine(quota({ limit: 100, used: 100, reason: "plan", plan: "starter" }), NOW);
+    expect(at.sentence).toMatch(/overage/);
     // Never over 100% of the bar.
-    expect(over.fraction).toBe(1);
+    expect(at.fraction).toBe(1);
+  });
+
+  it("says what a downgrade did instead of printing 150 / 100", () => {
+    // Agency -> Managed mid-month: the 150 written under the old tier stay,
+    // and the included volume is now 100. "150 / 100" is arithmetic nobody
+    // can read - the same fault the free branch already refuses.
+    const line = usageLine(quota({ limit: 100, used: 150, reason: "plan", plan: "starter" }), NOW);
+    expect(line.figure).toBe("150");
+    expect(line.sentence).toContain("includes 100");
+    expect(line.sentence).toContain("already written stay");
+    expect(line.exhausted).toBe(true);
+    expect(line.fraction).toBe(1);
+  });
+
+  it("does not promise the scheduled writer will bill overage", () => {
+    // The cron refuses past the included volume; only a person can spend the
+    // overage (lib/content/generate.ts).
+    const at = usageLine(quota({ limit: 100, used: 100, reason: "plan", plan: "starter" }), NOW);
+    expect(at.sentence).toContain("Scheduled writing stops");
+    expect(at.sentence).toContain("by hand");
   });
 });
 
@@ -110,12 +130,20 @@ describe("quotaExceededMessage", () => {
     expect(quotaExceededMessage(quota({ used: 7 }), NOW)).not.toContain("The free draft is used");
   });
 
-  it("is unchanged for a paid plan at its limit", () => {
+  it("tells a paid account at its limit what actually stops, and when", () => {
+    // This branch is only ever read by the scheduled writer: a manual
+    // generation past the included volume bills the overage rather than
+    // refusing, so it never reaches here. It used to say "the next article is
+    // billed as overage", which is the one thing the cron will never do.
     const msg = quotaExceededMessage(
       quota({ limit: 100, used: 100, reason: "plan", plan: "starter" }),
       NOW,
     );
     expect(msg).toContain("included 100 articles");
-    expect(msg).toContain("overage");
+    expect(msg).toContain("Scheduled writing stops");
+    expect(msg).toContain("Oct 1");
+    expect(msg).not.toContain("The next article is billed as overage");
+    // The overage is still the way through, named as the human action it is.
+    expect(msg).toContain("by hand" );
   });
 });

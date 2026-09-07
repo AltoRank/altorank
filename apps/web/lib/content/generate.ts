@@ -22,6 +22,7 @@ import { scoreCitationReadiness } from "@/lib/seo/aeo-scoring";
 import { recordSpend, anthropicCost } from "@/lib/billing/spend";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recordOverageArticle } from "@/lib/billing/overage";
+import { accountPausedMessage } from "@/lib/billing/pause";
 import { spendClient } from "@/lib/billing/default-spend";
 import { setSpendReporter } from "@/lib/seo/client";
 import { fetchKnownPages } from "@/lib/linking/targets";
@@ -181,11 +182,38 @@ export async function generateArticle(
 
   const { data: workspace, error: wsError } = await supabase
     .from("workspaces")
-    .select("id, domain, ai_provider, ai_model, agency_id, language, brand_style, location_code")
+    .select("id, domain, ai_provider, ai_model, agency_id, language, brand_style, location_code, status, paused_until")
     .eq("id", workspaceId)
     .single();
 
   if (wsError || !workspace) throw new Error("Workspace not found");
+
+  /**
+   * The account pause, in the same place as the quota gate and for the same
+   * reason.
+   *
+   * Two different things set `workspaces.status = 'paused'` and they promise
+   * different amounts. "Pause this site" is deliberately "not now" for the
+   * scheduled jobs only, and every cron filters it out (lib/workspaces/pause.ts);
+   * a person who then presses Write now is asking on purpose, and is allowed.
+   *
+   * The account pause on the Billing page is the one that also carries
+   * `paused_until`, and it says something stronger: "Billing and article
+   * generation pause" (PAUSE_COPY), "Nothing is drafted or billed until then"
+   * (the retention card). Stripe keeps its half - `pause_collection` voids the
+   * invoices - and until this check nothing kept ours. The agent API wrote
+   * drafts into a paused account all the way through the pause, and Write now
+   * did too: verified 2026-09-06, POST /api/agent/v1/articles/generate on a
+   * site paused until October returned 200 and a draft.
+   *
+   * So an account that has stopped paying is an account we stop spending model
+   * and data budget on, which is the trade the pause offers in both directions.
+   * `paused_until` alone is the marker, so hand-pausing a site keeps exactly
+   * the meaning it documents.
+   */
+  if (workspace.paused_until && workspace.status === "paused") {
+    throw new Error(accountPausedMessage(workspace.paused_until as string));
+  }
 
   /**
    * The quota gate, in the one place both callers pass through.

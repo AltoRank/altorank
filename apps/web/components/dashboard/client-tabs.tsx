@@ -20,6 +20,8 @@ type ClientTabsProps = {
   /** The account's included articles a month, so the pace control can say
    *  whether a setting reaches it. Null when unmetered. */
   planIncluded: number | null;
+  /** Highest pace this account's plan allows, for the settings slider. */
+  maxPace: number;
   /** Server clock at render; see FirstDraftLive. */
   now: number;
 };
@@ -34,7 +36,7 @@ const TABS = [
   { id: "settings", label: "Settings", icon: <Icons.settings size={14} /> },
 ];
 
-export function ClientTabs({ workspace, articles, keywords, calendar, backlinks, voice, cadence, planIncluded, now }: ClientTabsProps) {
+export function ClientTabs({ workspace, articles, keywords, calendar, backlinks, voice, cadence, planIncluded, maxPace, now }: ClientTabsProps) {
   const [activeTab, setActiveTab] = useState("overview");
 
   const tabs = TABS.map((t) => {
@@ -56,7 +58,7 @@ export function ClientTabs({ workspace, articles, keywords, calendar, backlinks,
         {activeTab === "voice" && <VoiceTab voice={voice} />}
         {activeTab === "backlinks" && <BacklinksTab backlinks={backlinks} />}
         {activeTab === "settings" && (
-          <SettingsTab workspace={workspace} cadence={cadence} planIncluded={planIncluded} />
+          <SettingsTab workspace={workspace} cadence={cadence} planIncluded={planIncluded} maxPace={maxPace} />
         )}
       </div>
     </>
@@ -480,10 +482,12 @@ function SettingsTab({
   workspace,
   cadence,
   planIncluded,
+  maxPace,
 }: {
   workspace: Workspace;
   cadence: PublishingCadence | null;
   planIncluded: number | null;
+  maxPace: number;
 }) {
   return (
     <div className="max-w-lg space-y-4">
@@ -508,6 +512,7 @@ function SettingsTab({
         workspaceId={workspace.id}
         current={workspace.auto_generate_weekly_limit ?? null}
         planIncluded={planIncluded}
+        maxPace={maxPace}
       />
       <LocaleSelector workspaceId={workspace.id} currentLanguage={workspace.language} />
       <PublishingCadenceForm workspaceId={workspace.id} cadence={cadence} />
