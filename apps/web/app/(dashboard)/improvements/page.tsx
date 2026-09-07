@@ -27,7 +27,7 @@ export const metadata: Metadata = { title: "Improvements" };
 export default async function ImprovementsPage() {
   const scopeId = await getScopedWorkspaceId();
   if (!scopeId) {
-    return <div className="p-8 text-ink-3">No site yet. Add one to start finding pages to improve.</div>;
+    return <div className="p-8 text-ink-3">No workspace yet. Add one to start finding pages to improve.</div>;
   }
   const supabase = await createClient();
 

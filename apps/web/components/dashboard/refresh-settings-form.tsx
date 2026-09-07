@@ -52,7 +52,7 @@ export function RefreshSettingsForm({
             ? `Rewrites on ${days.map((d) => DAY_LABELS[d]).join(" and ")}`
             : enabled
               ? "Enabled, but no day is picked yet, so nothing will run"
-              : "Scheduled rewrites are off for this site",
+              : "Scheduled rewrites are off for this workspace",
         );
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Could not save");

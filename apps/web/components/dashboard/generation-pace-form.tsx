@@ -57,7 +57,7 @@ export function GenerationPaceForm({
         await setGenerationPace(workspaceId, pace);
         toast.success(
           pace === 0
-            ? "Generation paused for this site"
+            ? "Generation paused for this workspace"
             : `Writing up to ${pace} a week, about ${monthly} a month`,
         );
       } catch (err) {
@@ -70,9 +70,9 @@ export function GenerationPaceForm({
     <Card className="p-5" flush>
       <h3 className="text-[13px] font-medium mb-1">Writing pace</h3>
       <p className="mb-4 text-[12.5px] leading-relaxed text-ink-3">
-        How many articles a week the generator may draft for this site. Nothing publishes without
+        How many articles a week the generator may draft for this workspace. Nothing publishes without
         your approval either way, and your account&rsquo;s monthly quota still applies across all
-        your sites.
+        your workspaces.
       </p>
 
       <div className="flex items-center gap-3">
@@ -94,7 +94,7 @@ export function GenerationPaceForm({
       <div className="mt-2 flex items-baseline justify-between gap-3 text-[12px] text-ink-3">
         <span>
           {pace === 0
-            ? "This site drafts nothing until you raise it."
+            ? "This workspace drafts nothing until you raise it."
             : `About ${monthly} articles a month.`}
         </span>
         {/* Only said when there is a plan to compare against, and only as
@@ -122,7 +122,7 @@ export function GenerationPaceForm({
 
       {overPlan && (
         <p className="mt-2 m-0 text-[12px] leading-relaxed text-ink-3">
-          This site is set above what the plan includes. Nothing has been
+          This workspace is set above what the plan includes. Nothing has been
           changed; lower the pace, or raise the plan on the{" "}
           <a href="/settings/billing" className="text-accent-ink underline decoration-line underline-offset-[3px]">
             Billing page

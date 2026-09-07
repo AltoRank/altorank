@@ -89,7 +89,7 @@ export const POST = withAgent(async (request, ctx) => {
     return fail(
       "not_available",
       accountPausedMessage(workspace.paused_until),
-      "The whole account is paused, so no site can be written to and nothing is being billed. Ask the human to resume it on the Billing page; do not retry until they have.",
+      "The whole account is paused, so no workspace can be written to and nothing is being billed. Ask the human to resume it on the Billing page; do not retry until they have.",
     );
   }
 

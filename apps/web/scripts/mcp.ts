@@ -256,7 +256,7 @@ server.registerTool(
   "altorank_list_workspaces",
   {
     title: "List workspaces",
-    description: "Every site in the account, with ids for the other tools.",
+    description: "Every workspace in the account, with ids for the other tools.",
     inputSchema: {},
   },
   async () => asEnvelope(await agentRequest("/workspaces")),
@@ -266,7 +266,7 @@ server.registerTool(
   "altorank_get_workspace",
   {
     title: "Get workspace",
-    description: "One site with integration status and a `_human` block for describing its setup to a person.",
+    description: "One workspace with integration status and a `_human` block for describing its setup to a person.",
     inputSchema: workspaceArg,
   },
   async ({ workspace_id }) => asEnvelope(await agentRequest(`/workspaces/${workspace_id}`)),
@@ -520,8 +520,8 @@ server.registerTool(
 server.registerTool(
   "altorank_pause_workspace",
   {
-    title: "Pause a site",
-    description: "Stop drafting and publishing for one site until resumed. Drafts, plan and pace are untouched. Needs write scope.",
+    title: "Pause a workspace",
+    description: "Stop drafting and publishing for one workspace until resumed. Drafts, plan and pace are untouched. Needs write scope.",
     inputSchema: workspaceArg,
   },
   async ({ workspace_id }) => asEnvelope(await agentRequest(`/workspaces/${workspace_id}/pause`, { method: "POST" })),
@@ -530,8 +530,8 @@ server.registerTool(
 server.registerTool(
   "altorank_resume_workspace",
   {
-    title: "Resume a site",
-    description: "Put a hand-paused site back and re-plan its calendar from today. Cannot lift the account-wide billing pause. Needs write scope.",
+    title: "Resume a workspace",
+    description: "Put a hand-paused workspace back and re-plan its calendar from today. Cannot lift the account-wide billing pause. Needs write scope.",
     inputSchema: workspaceArg,
   },
   async ({ workspace_id }) => asEnvelope(await agentRequest(`/workspaces/${workspace_id}/resume`, { method: "POST" })),

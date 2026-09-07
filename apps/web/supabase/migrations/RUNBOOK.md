@@ -10,13 +10,15 @@ works out what is applied by looking for one distinguishing object per file.
 Verified 2026-09-05 against a fresh `supabase/postgres:15.8.1.060` container:
 files 001–061 apply cleanly in numeric order (see
 `docs/integration/MIGRATION-REPORT-2026-09-05.md` for the evidence and the
-caveats). 062–076 have not been through that container check; they are in the
+caveats). 062–077 have not been through that container check; they are in the
 pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 076.** The one-line-per-file list in §3 and the pre-flight query in §1
-both go to 076. If you add a migration, add its marker to the query in the same
+**Head is 077.** The one-line-per-file list in §3 and the pre-flight query in §1
+both go to 077. (076 and 077 came from two tracks on the same day and are
+independent of each other; either may be applied first.) If you add a
+migration, add its marker to the query in the same
 commit — the post-flight step is "every row is `t`", and a file with no row
 passes that check by being absent from it.
 
@@ -130,7 +132,8 @@ m(file, applied) as (values
   ('073_lifecycle_emails',                   to_regclass('public.idx_invites_one_pending_per_email') is not null),
   ('074_one_autonomous_draft_per_keyword',   to_regclass('public.idx_articles_one_autonomous_draft_per_keyword') is not null),
   ('075_reports_one_per_period',             to_regclass('public.idx_reports_one_per_period') is not null),
-  ('076_onboarding_runs',                    to_regclass('public.onboarding_runs') is not null)
+  ('076_onboarding_runs',                    to_regclass('public.onboarding_runs') is not null),
+  ('077_workspace_vocabulary_comments',      exists (select 1 from col where t='workspaces' and c='paused_meta' and cm like '%Pause this workspace%'))
 )
 select file, applied from m order by file;
 ```
@@ -216,7 +219,7 @@ a hosted project and on `supabase start`; it fails on a bare
 `supabase/postgres` Docker image, which only ships a stub `storage` schema.
 That is the one file that could not be exercised in the 2026-09-05 check.
 
-### Production, from 048 to 076
+### Production, from 048 to 077
 
 Only the files whose PR has merged to `main` exist in the checkout. Apply what
 is there, in order. One line per file so a failure is attributable:
@@ -251,6 +254,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 073_lifecycle_emails.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 074_one_autonomous_draft_per_keyword.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 075_reports_one_per_period.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 076_onboarding_runs.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 077_workspace_vocabulary_comments.sql
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -307,6 +311,7 @@ no code in the repo references either).
 | 060_keyword_cpc.sql | `sup-traffic-value` #80 | 001 (050 optional) | yes | see notes |
 | 061_workspace_pause_meta.sql | `sup-pace-cadence` #82 | 001 | yes | yes |
 | 076_onboarding_runs.sql | `onboarding/poll-run` (stacks on #146) | 001, **053** | yes | yes, loses run history |
+| 077_workspace_vocabulary_comments.sql | `ui/workspace-vocabulary` (stacks on #146) | 001, 052, 053, 061 | yes | yes (old wording) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -516,3 +521,25 @@ has a `workspace_id`, RLS on and a policy, so it does not appear. Pre-flight:
 `to_regclass('public.onboarding_runs') is not null`. Roll back with
 `drop table onboarding_runs;` (loses run history only; articles, keywords and
 calendar entries are untouched).
+
+## 077 — added 2026-09-07
+
+`077_workspace_vocabulary_comments.sql`: four `comment on column` statements and
+nothing else. `workspaces.auto_generate_weekly_limit`, `workspaces.paused_meta`,
+`workspaces.refresh_days` and `invites.workspace_ids` each described the
+*entity* as a "site", which POSITIONING.md settled as "workspace" on 2026-08-30.
+The rest of the schema was already right: every scoped table carries
+`workspace_id`, every account-scoped one `agency_id`, and `site_pages` is
+correctly named because its rows are pages of the customer's real website.
+
+No DDL, no rename, no data touched — only catalogue rows, so it takes no lock
+worth naming and cannot fail on existing data. Depends on 001 (workspaces,
+invites), 052 (`refresh_days`), 053 (`invites.workspace_ids`) and 061
+(`paused_meta`); if any of those columns is missing, `comment on` errors and the
+transaction rolls back, which is the intended signal. Idempotent (`comment on`
+replaces). Pre-flight: `col_description` on `workspaces.paused_meta` contains
+`Pause this workspace`. Roll back by re-applying the previous wording, which is
+in this file's git history — there is nothing else to undo.
+
+Numbering: 076 (`onboarding_runs`) and 077 came from two tracks on the same
+day. Neither depends on the other; apply in numeric order as usual.

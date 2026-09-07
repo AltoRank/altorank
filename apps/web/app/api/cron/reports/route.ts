@@ -158,7 +158,7 @@ export async function GET(request: Request) {
           }
           emailed = true;
         } else {
-          emailError = "no recipient: report_email is unset and no member can see this site";
+          emailError = "no recipient: report_email is unset and no member can see this workspace";
         }
       } catch (err) {
         // Email delivery failure is non-fatal: the report itself was generated

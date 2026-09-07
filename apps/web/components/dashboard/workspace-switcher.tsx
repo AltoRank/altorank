@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { Avatar, Icons } from "@/components/ui";
-import { PauseSiteControl } from "@/components/dashboard/paused-banner";
 import { cn } from "@/lib/utils";
 import type { Workspace } from "@/lib/types";
 import { siteSlotsLabel, siteSlotsRemaining, type SiteAllowance } from "@/lib/workspaces/slots";
@@ -109,11 +108,11 @@ export function WorkspaceSwitcher({
 
   return (
     <div className={cn(!inline && "border-b border-line px-3 py-2.5")} ref={ref}>
-      {!inline && (
-        <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-ink-3">
-          Site
-        </label>
-      )}
+      {/* The "SITE" caption that sat here is gone with the nav's group
+          headings (2026-09-07): same uppercase mono chrome, same job of
+          naming something the control below already shows. It was a <label>
+          with no htmlFor, so it labelled nothing; the button's own aria-label
+          is what a screen reader was already reading, and that is untouched. */}
       <div className="relative">
         <button
           type="button"
@@ -121,7 +120,7 @@ export function WorkspaceSwitcher({
           disabled={pending}
           aria-haspopup="listbox"
           aria-expanded={open}
-          aria-label="Choose which site to view"
+          aria-label="Choose which workspace to view"
           data-testid="workspace-switcher"
           className={cn(
             "w-full flex items-center gap-2 rounded-[7px] border border-line bg-bg py-1.5 pl-2 pr-2 text-left",
@@ -144,7 +143,7 @@ export function WorkspaceSwitcher({
         {open && (
           <div
             role="listbox"
-            aria-label="Sites"
+            aria-label="Workspaces"
             className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-[9px] border border-line bg-bg shadow-lg"
           >
             <div className="max-h-[260px] overflow-y-auto scroll py-1">
@@ -190,7 +189,7 @@ export function WorkspaceSwitcher({
                 )}
               >
                 <Icons.plus size={13} />
-                Add site
+                Add workspace
               </Link>
               <div className="mt-0.5 font-mono text-[10.5px] text-ink-3" data-testid="site-slots">
                 {siteSlotsLabel(allowance)}
@@ -200,16 +199,13 @@ export function WorkspaceSwitcher({
           </div>
         )}
       </div>
-      {/* The site's on/off switch lives with its name: pausing is about the
-          scope, not about any one page below it. */}
-      {active && !inline && (
-        <div className="mt-1 flex items-center gap-2">
-          {active.status === "paused" && (
-            <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-3">Paused</span>
-          )}
-          <PauseSiteControl workspaceId={active.id} name={active.name} status={active.status} />
-        </div>
-      )}
+      {/* Pause used to hang off the switcher here. It moved to /workspaces on
+          2026-09-07 (roster row and detail header), where the rest of a
+          workspace's controls already are: it is an account-management action
+          taken once in a while, not navigation, and sitting under the switcher
+          it was the one destructive-sounding control on every screen in the
+          app. The switcher still shows the paused state - StatusDot above -
+          so nothing about "is this site running?" got quieter. */}
     </div>
   );
 }

@@ -107,8 +107,8 @@ export function PlanCards({
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-[12.5px] text-ink-3">
-          Billing is per account, not per workspace — one plan covers every site
-          in this workspace list.
+          Billing is per account, not per workspace — one plan covers every workspace
+          in the list.
         </div>
         <div className="flex self-start rounded-[7px] border border-line p-0.5 text-[12px]">
           {(["month", "year"] as const).map((iv) => (

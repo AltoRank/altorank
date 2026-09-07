@@ -193,15 +193,15 @@ describe("subscription cancelled", () => {
 
 describe("account paused and pause ending", () => {
   it("says what a pause stops and what it keeps", () => {
-    const e = renderAccountPaused({ agencyName: "Acme", pausedUntil: "2026-11-15", siteCount: 3 });
+    const e = renderAccountPaused({ agencyName: "Acme", pausedUntil: "2026-11-15", workspaceCount: 3 });
     expect(e.subject).toBe("Paused until November 15, 2026");
-    expect(e.html).toContain("All 3 of your sites");
+    expect(e.html).toContain("All 3 of your workspaces");
     expect(e.html).toContain("kept exactly as they are");
   });
 
   it("uses the singular for one site", () => {
-    expect(renderAccountPaused({ agencyName: null, pausedUntil: "2026-11-15", siteCount: 1 }).html).toContain(
-      "Your site",
+    expect(renderAccountPaused({ agencyName: null, pausedUntil: "2026-11-15", workspaceCount: 1 }).html).toContain(
+      "Your workspace",
     );
   });
 
@@ -246,7 +246,7 @@ describe("account emails", () => {
   it("works with no name and no site yet", () => {
     const e = renderWelcome({ name: null, domain: null });
     expect(e.html).toContain("You are in<");
-    expect(e.html).toContain("Add a site");
+    expect(e.html).toContain("Add a workspace");
   });
 
   it("tells somebody their password changed and how to act if it was not them", () => {

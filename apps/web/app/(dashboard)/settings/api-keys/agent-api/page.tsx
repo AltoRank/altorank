@@ -14,17 +14,17 @@ export const metadata: Metadata = { title: "Agent API" };
  */
 const ENDPOINTS: [string, string, string][] = [
   ["GET", "/api/agent/v1/auth/whoami", "Who this key is: account, workspaces, quota."],
-  ["GET", "/api/agent/v1/workspaces", "Every site in the account."],
-  ["GET", "/api/agent/v1/workspaces/{id}", "One site, with integration status and a human-readable summary."],
-  ["GET", "/api/agent/v1/keywords?workspace_id=", "Tracked keywords for a site."],
+  ["GET", "/api/agent/v1/workspaces", "Every workspace in the account."],
+  ["GET", "/api/agent/v1/workspaces/{id}", "One workspace, with integration status and a human-readable summary."],
+  ["GET", "/api/agent/v1/keywords?workspace_id=", "Tracked keywords for a workspace."],
   ["GET", "/api/agent/v1/keywords/export?workspace_id=", "Every tracked keyword as CSV or JSON."],
-  ["POST", "/api/agent/v1/keywords/suggest", "Keyword candidates for a site (costs research credits; nothing is saved)."],
-  ["GET", "/api/agent/v1/articles?workspace_id=", "Articles for a site, each with editor_url and allowed_mutations."],
+  ["POST", "/api/agent/v1/keywords/suggest", "Keyword candidates for a workspace (costs research credits; nothing is saved)."],
+  ["GET", "/api/agent/v1/articles?workspace_id=", "Articles for a workspace, each with editor_url and allowed_mutations."],
   ["GET", "/api/agent/v1/articles/{id}", "One article and its latest generation job."],
   ["GET", "/api/agent/v1/articles/{id}/content", "The body as Markdown, HTML or Tiptap JSON."],
   ["POST", "/api/agent/v1/articles/generate", "Write a draft into the review queue. Returns immediately; poll the article."],
-  ["GET", "/api/agent/v1/readiness?workspace_id=", "The agent-readiness report for a site."],
-  ["GET", "/api/agent/v1/usage", "This month's quota and per-site article counts."],
+  ["GET", "/api/agent/v1/readiness?workspace_id=", "The agent-readiness report for a workspace."],
+  ["GET", "/api/agent/v1/usage", "This month's quota and per-workspace article counts."],
   ["GET", "/api/agent/v1/gsc/performance?workspace_id=", "Search Console clicks and impressions for a window, against the one before."],
   ["GET", "/api/agent/v1/gsc/coverage?workspace_id=", "Index coverage per page, bucketed."],
   ["GET", "/api/agent/v1/gsc/cannibalization?workspace_id=", "Queries where two or more of the site's pages compete."],
@@ -38,8 +38,8 @@ const WRITE_ENDPOINTS: [string, string, string][] = [
   ["POST", "/api/agent/v1/articles/{id}/retry-publish", "Re-run the last failed publish of an article a person already approved. The one call that reaches a CMS."],
   ["POST", "/api/agent/v1/keywords/bulk-remove", "Take planned keywords off the calendar."],
   ["POST", "/api/agent/v1/keywords/bulk-reschedule", "Move planned keywords to other days."],
-  ["POST", "/api/agent/v1/workspaces/{id}/pause", "Stop writing and publishing for one site."],
-  ["POST", "/api/agent/v1/workspaces/{id}/resume", "Put a paused site back and re-plan its calendar."],
+  ["POST", "/api/agent/v1/workspaces/{id}/pause", "Stop writing and publishing for one workspace."],
+  ["POST", "/api/agent/v1/workspaces/{id}/resume", "Put a paused workspace back and re-plan its calendar."],
 ];
 
 const CODE = "font-mono text-[11.5px] bg-panel border border-line rounded-md px-3 py-2 overflow-x-auto whitespace-pre";

@@ -91,7 +91,7 @@ export function renderDraftApproved(a: DraftApprovedEmail): RenderedEmail {
   const site = a.domain ?? "your site";
   const when = a.scheduledFor
     ? `It is queued to publish on ${dateLabel(a.scheduledFor)}.`
-    : `It joins the publishing queue and goes out on this site's next scheduled slot.`;
+    : `It joins the publishing queue and goes out on this workspace's next scheduled slot.`;
   return {
     subject: `Approved for ${site}: "${a.title}"`,
     preheader: `${a.approvedBy} approved it. ${a.scheduledFor ? "Queued to publish." : "Waiting for the next slot."}`,
@@ -217,7 +217,7 @@ export function renderRefreshReady(a: RefreshReadyEmail): RenderedEmail {
   return {
     subject: `Improvement proposed for ${site}: "${a.pageTitle}"`,
     preheader: `${a.changed} of ${a.hunks} blocks rewritten, waiting for review.`,
-    footerNote: `Sent because scheduled improvements are on for ${site}. Turn them off in that site's settings and these stop.`,
+    footerNote: `Sent because scheduled improvements are on for ${site}. Turn them off in that workspace's settings and these stop.`,
     html:
       eyebrow(site) +
       heading(a.pageTitle) +
@@ -328,7 +328,7 @@ export type AccountPausedEmail = {
   agencyName: string | null;
   /** YYYY-MM-DD, the same value written to workspaces.paused_until. */
   pausedUntil: string;
-  siteCount: number;
+  workspaceCount: number;
 };
 
 export function renderAccountPaused(a: AccountPausedEmail): RenderedEmail {
@@ -340,14 +340,14 @@ export function renderAccountPaused(a: AccountPausedEmail): RenderedEmail {
     html:
       heading(`Your account is paused until ${until}`) +
       emailParagraph(
-        `${a.siteCount === 1 ? "Your site" : `All ${a.siteCount} of your sites`} stopped drafting and publishing, and Stripe will not collect again until that date.`,
+        `${a.workspaceCount === 1 ? "Your workspace" : `All ${a.workspaceCount} of your workspaces`} stopped drafting and publishing, and Stripe will not collect again until that date.`,
       ) +
       emailParagraph(
         `Your articles, keywords, connections and settings are all kept exactly as they are. Nothing is written and nothing is charged while the pause runs.`,
       ) +
       emailButton(appLink("/settings/billing"), "End the pause early") +
       emailParagraph(
-        `On ${esc(until)} the sites go back to drafting on their own schedule and billing resumes. We will send one reminder a few days before that happens.`,
+        `On ${esc(until)} the workspaces go back to drafting on their own schedule and billing resumes. We will send one reminder a few days before that happens.`,
       ),
   };
 }
@@ -373,7 +373,7 @@ export function renderPauseEnding(a: PauseEndingEmail): RenderedEmail {
     html:
       heading(`Your pause ends on ${until}`) +
       emailParagraph(
-        `On that date your sites start drafting again on their own schedule, and Stripe collects the next invoice. That is ${esc(days)}.`,
+        `On that date your workspaces start drafting again on their own schedule, and Stripe collects the next invoice. That is ${esc(days)}.`,
       ) +
       emailParagraph(
         `If that is what you want, there is nothing to do. If it is not, the billing page is where to pause for longer or end the plan - either one is better done before the date than after it.`,
@@ -407,7 +407,7 @@ export function renderPlanChanged(a: PlanChangedEmail): RenderedEmail {
       emailParagraph(
         a.upgrade
           ? `Stripe has charged the difference for the rest of this billing period, prorated, and the new allowance applies from now.`
-          : `Stripe has credited the unused part of the old price against the next invoice. The new allowance applies from now, so a site already writing above the new pace will slow to it.`,
+          : `Stripe has credited the unused part of the old price against the next invoice. The new allowance applies from now, so a workspace already writing above the new pace will slow to it.`,
       ) +
       emailButton(appLink("/settings/billing"), "See what is included") +
       emailParagraph(`The invoice for this change is in the Stripe billing portal, linked from that page.`),
@@ -443,7 +443,7 @@ export function renderWelcome(a: WelcomeEmail): RenderedEmail {
       emailParagraph(
         site
           ? `${esc(site)} is set up. AltoRank reads the site, works out what it could realistically rank for, and writes a first draft for the best of those.`
-          : `Your account is set up. Add a site and AltoRank reads it, works out what it could realistically rank for, and writes a first draft for the best of those.`,
+          : `Your account is set up. Add a workspace and AltoRank reads it, works out what it could realistically rank for, and writes a first draft for the best of those.`,
       ) +
       emailParagraph(
         `<strong>Nothing publishes without you.</strong> Every article lands in a review queue and stays there until somebody approves it. That is the whole point of the product and there is no setting that turns it off.`,
@@ -544,7 +544,7 @@ const NOTHING_WRITTEN: Record<
 > = {
   "no-keywords": {
     subject: (site) => `Nothing is being written for ${site}`,
-    what: "There are no keywords tracked for this site, so the scheduler has nothing to choose from.",
+    what: "There are no keywords tracked for this workspace, so the scheduler has nothing to choose from.",
     fix: "Add a few keywords, or run the keyword research and accept what it suggests. The next scheduled run picks up from there.",
     cta: () => "Add keywords",
     path: "/keywords",
@@ -552,21 +552,21 @@ const NOTHING_WRITTEN: Record<
   "queue-exhausted": {
     subject: (site) => `${site} has run out of keywords to write about`,
     what:
-      "Every keyword in the queue is now covered, already ranking, or was filtered out as provider noise, so the scheduler passed over this site.",
+      "Every keyword in the queue is now covered, already ranking, or was filtered out as provider noise, so the scheduler passed over this workspace.",
     fix: "Adding keywords starts it again. The research page proposes new ones from what the site already ranks for.",
     cta: () => "Find more keywords",
     path: "/keywords",
   },
   paused: {
     subject: (site) => `${site} is paused, so nothing is being written`,
-    what: "This site is paused. Drafting and publishing are both stopped.",
-    fix: "Resuming it from the site switcher puts it back into the next scheduled run.",
+    what: "This workspace is paused. Drafting and publishing are both stopped.",
+    fix: "Resuming it from the workspace switcher puts it back into the next scheduled run.",
     cta: () => "Open the calendar",
     path: "/content",
   },
   "pace-zero": {
     subject: (site) => `${site} is set to write nothing`,
-    what: "This site's weekly pace is set to zero, which means the scheduler is meant to skip it.",
+    what: "This workspace's weekly pace is set to zero, which means the scheduler is meant to skip it.",
     fix: "Raise the pace from the calendar's plan control and it starts writing on the next run.",
     cta: () => "Set the pace",
     path: "/content",
@@ -574,13 +574,13 @@ const NOTHING_WRITTEN: Record<
 };
 
 /**
- * The email for a site the product has quietly stopped working on.
+ * The email for a workspace the product has quietly stopped working on.
  *
  * This is the failure mode an unattended writer has that a person does not: it
  * skips, records "skipped" in a cron's JSON body, and the customer sees a
  * calendar that simply stops. Every reason here is one the customer can fix in
  * about a minute, which is why it is worth an email at all - and why it is sent
- * at most once a week per site (`sendOnce`, keyed by ISO week).
+ * at most once a week per workspace (`sendOnce`, keyed by ISO week).
  */
 export function renderNothingWritten(a: NothingWrittenEmail): RenderedEmail {
   const site = a.domain ?? "your site";

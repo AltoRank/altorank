@@ -83,7 +83,7 @@ export function renderArticleDrafted(a: ArticleDraftedEmail): {
       ? `Check before publishing: "${a.keyword}" draft for ${site}`
       : `New draft for ${site}: "${a.keyword}"`,
     preheader: `${a.wordCount.toLocaleString()} words, waiting in your review queue.`,
-    footerNote: `Sent because automatic drafting is on for ${esc(site)}. Turn it off in that site's settings and these stop.`,
+    footerNote: `Sent because automatic drafting is on for ${esc(site)}. Turn it off in that workspace's settings and these stop.`,
     html:
       `<p style="margin:0 0 4px;font-size:12px;color:${EMAIL_INK_3};">${esc(site)}</p>` +
       `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.3;color:${EMAIL_INK};">${esc(a.title)}</h1>` +

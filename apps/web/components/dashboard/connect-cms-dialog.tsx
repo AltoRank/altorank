@@ -202,7 +202,7 @@ export function ConnectCmsDialog({
       // The field is no longer a `required` <select>, so nothing in the
       // browser stops a submit when there is no workspace to bind to.
       if (!workspaceId) {
-        throw new Error("Add a site before connecting a CMS to it.");
+        throw new Error("Add a workspace before connecting a CMS to it.");
       }
 
       /**

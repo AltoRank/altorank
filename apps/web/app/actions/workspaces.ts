@@ -56,7 +56,7 @@ export async function createWorkspace(formData: FormData): Promise<CreateWorkspa
   if (!canAddWorkspace(role)) {
     return {
       ok: false,
-      error: "Adding a site changes what the account pays for, so an owner or admin has to do it. Ask one of them and it takes a moment.",
+      error: "Adding a workspace changes what the account pays for, so an owner or admin has to do it. Ask one of them and it takes a moment.",
     };
   }
 

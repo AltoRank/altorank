@@ -198,7 +198,7 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
             )}
             {!refresh.enabled && (
               <Blocker
-                title="Scheduled rewrites are off for this site"
+                title="Scheduled rewrites are off for this workspace"
                 body="Candidates can be found and scheduled, but nothing runs until the schedule is switched on."
                 href="/settings/refresh"
                 cta="Open settings"

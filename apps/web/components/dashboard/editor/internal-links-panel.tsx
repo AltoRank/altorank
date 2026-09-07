@@ -53,8 +53,8 @@ export function InternalLinksPanel({ html, siteDomain, targets, wanted }: Props)
           <span className="text-ink-3">
             {" "}
             {short
-              ? `This site asks for ${wanted} per article.`
-              : `Meets the ${wanted} this site asks for.`}
+              ? `This workspace asks for ${wanted} per article.`
+              : `Meets the ${wanted} this workspace asks for.`}
           </span>
         )}
       </div>

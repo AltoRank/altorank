@@ -47,7 +47,7 @@ export function ApiKeysPanel({ keys, canManage }: { keys: ApiKeyRow[]; canManage
       <div className="flex items-start justify-between gap-4">
         <p className="text-[13px] text-ink-2 max-w-[620px]">
           Keys let coding agents and scripts read this account and create drafts for review;
-          with edits allowed they can also move the plan, edit drafts, pause a site, and
+          with edits allowed they can also move the plan, edit drafts, pause a workspace, and
           retry a publish a person already approved. They can never approve, schedule or
           publish a new post; that stays with a person in the editor.
         </p>
@@ -150,7 +150,7 @@ export function ApiKeysPanel({ keys, canManage }: { keys: ApiKeyRow[]; canManage
                   first publication are what stay with a person; a retry of
                   something already approved is not (2026-09-06). */}
               <span className="font-medium text-ink">Allow edits</span> — move or remove planned keywords,
-              find-and-replace inside drafts, pause or resume a site, and retry a publish that a
+              find-and-replace inside drafts, pause or resume a workspace, and retry a publish that a
               person already approved and that failed. Still cannot approve an article, schedule
               one, or publish anything for the first time.
             </span>
