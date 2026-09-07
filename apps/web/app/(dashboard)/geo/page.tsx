@@ -155,9 +155,9 @@ export default async function GeoPage() {
                 AI visibility is measured against a fixed set of questions a buyer
                 would actually ask. The prompt set is the measurement, so it is
                 chosen deliberately rather than generated: changing it changes the
-                number and breaks the trend line. Add prompts for a workspace and
-                enable <code className="font-mono text-[12px]">geo_tracking</code>{" "}
-                to start measuring.
+                number and breaks the trend line. Choosing the prompts and switching
+                tracking on for a site is not in the app yet; nothing here is being
+                measured until it is.
               </p>
             </div>
           </Card>

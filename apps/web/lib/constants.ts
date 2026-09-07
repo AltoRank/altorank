@@ -74,13 +74,20 @@ export const DASHBOARD_NAV: NavGroup[] = [
       { id: "backlinks", label: "Backlinks", href: "/backlinks", icon: "backlinks" },
       { id: "audits", label: "Site audits", href: "/audits", icon: "search" },
       { id: "readiness", label: "Agent readiness", href: "/readiness", icon: "sparkle" },
-      // Both were marked `soon`, which renders them as unclickable grey text
-      // with a "being built" tooltip. Both pages are built and shipped: /geo
-      // measures four engines, ranks what to do about it and dashes anything
-      // unmeasured; /reports lists reports and generates one. Labelling a
-      // working page "soon" is the same failure as labelling an unknown zero,
-      // pointed the other way, and it made both unreachable from the nav.
-      { id: "geo", label: "AI visibility", href: "/geo", icon: "trend" },
+      // /reports was marked `soon`, which renders it as unclickable grey text
+      // with a "being built" tooltip, while the page lists reports and
+      // generates one. Labelling a working page "soon" is the same failure as
+      // labelling an unknown zero, pointed the other way.
+      //
+      // /geo keeps `soon`, and the reason is the opposite one: the page
+      // renders, but `workspaces.geo_tracking` has no writer anywhere in the
+      // app (`git grep geo_tracking`: the cron reads it, /admin displays it,
+      // migration 020 declares it) and `geo_prompts` is never inserted, so a
+      // customer who followed the link found an empty state whose only
+      // instruction could not be carried out. Linking it from the sidebar
+      // would sell a measurement nobody can switch on. Remove `soon` in the
+      // same change that adds the switch.
+      { id: "geo", label: "AI visibility", href: "/geo", icon: "trend", soon: true },
       { id: "reports", label: "Reports", href: "/reports", icon: "reports" },
     ],
   },
