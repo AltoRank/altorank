@@ -7,6 +7,7 @@ import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
 import { postRankingTasks } from "@/lib/seo/serp";
 import type { Workspace, Keyword } from "@/lib/types";
+import { observedCron } from "@/lib/observability/cron";
 
 /**
  * One DataForSEO round trip per workspace, and the workspace list is not
@@ -24,7 +25,7 @@ import type { Workspace, Keyword } from "@/lib/types";
  */
 export const maxDuration = 300;
 
-export async function GET(request: Request) {
+async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
     setSpendReporter(null);
 
@@ -229,3 +230,11 @@ export async function GET(request: Request) {
     results,
   });
 }
+
+/**
+ * Every run of this job lands in `system_events` (lib/observability/cron.ts):
+ * a throw or a 5xx as an error, per-item failures as a warning, and a clean
+ * run as one `info` row — which is the only thing anywhere that proves the
+ * schedule is still firing.
+ */
+export const GET = observedCron("cron.serp", run);

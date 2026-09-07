@@ -109,6 +109,7 @@ export class WebhookAdapter implements CMSAdapter {
     return deliverWithRetry({
       send: () => fetch(this.url, { method: "POST", headers: this.headersFor(body), body }),
       what: `Webhook ${what}`,
+      endpoint: this.url,
       onDelivery: this.onDelivery,
     });
   }

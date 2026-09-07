@@ -16,7 +16,7 @@ import {
 } from "@/lib/cms/publish-mode";
 import type { Workspace, Integration, CMSConfig } from "@/lib/types";
 import type { BlogUrlDerivation } from "@/lib/cms/blog-url";
-import { pluginInstallUrl, PLUGIN_DOWNLOAD_PATH } from "@/lib/cms/wordpress-plugin";
+import { pluginInstallUrl, PLUGIN_DOWNLOAD_PATH } from "@/lib/cms/wordpress-plugin-install";
 import { parseWebflowFieldMap } from "@/lib/cms/webflow-fields";
 import { CONNECTOR_NOTES } from "@/lib/cms/connector-notes";
 import { WebflowPicker } from "./connect-cms-webflow";

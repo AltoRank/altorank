@@ -15,8 +15,10 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 080.** The one-line-per-file list in §3 and the pre-flight query in §1
-both go to 080. (076 and 077 came from two tracks on the same day and are
+**Head is 082.** The one-line-per-file list in §3 and the pre-flight query in §1
+both go to 082. **There is no 081**: it was left free for a track that never
+shipped it, and a gap is not a missing file — do not go looking for one. (076
+and 077 came from two tracks on the same day and are
 independent of each other; either may be applied first. 078 stacks on the same
 branch as 076 and does not depend on it.) If you add a
 migration, add its marker to the query in the same
@@ -137,7 +139,8 @@ m(file, applied) as (values
   ('077_workspace_vocabulary_comments',      exists (select 1 from col where t='workspaces' and c='paused_meta' and cm like '%Pause this workspace%')),
   ('078_site_pages_tech_findings',           exists (select 1 from col where t='site_pages' and c='tech_findings')),
   ('079_auto_approve',                       exists (select 1 from col where t='workspaces' and c='auto_approve')),
-  ('080_oauth_connectors',                   to_regclass('public.oauth_codes') is not null)
+  ('080_oauth_connectors',                   to_regclass('public.oauth_codes') is not null),
+  ('082_system_events',                      to_regclass('public.system_events') is not null)
 )
 select file, applied from m order by file;
 ```
@@ -262,6 +265,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 077_workspace_vocabulary_comments.
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 078_site_pages_tech_findings.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 079_auto_approve.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 080_oauth_connectors.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 082_system_events.sql
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -322,6 +326,7 @@ no code in the repo references either).
 | 078_site_pages_tech_findings.sql | `onboarding/site-crawl` (stacks on `onboarding/poll-run`) | **044**, 046 | yes | yes, loses findings only |
 | 079_auto_approve.sql | `feat/auto-approve` | 001, 003 | yes | yes, loses hold stamps and approval kinds |
 | 080_oauth_connectors.sql | `distribution/hosted-mcp` #158 | 001, **051** | yes | yes, disconnects connectors |
+| 082_system_events.sql | `round5/observability` #172 | 001 | yes | yes, loses the event log only |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -631,3 +636,45 @@ approved until the file is re-applied.
 
 Numbering: 079 (`auto_approve`) landed on `main` while this file was in review
 as 079; renamed to 080 before merge. Neither depends on the other.
+
+## 082 — added 2026-09-07
+
+`082_system_events.sql`: one new table, `system_events` (level, source,
+message, nullable `agency_id`/`workspace_id`, `context jsonb`), four indexes,
+no columns added anywhere else. It is the operational log written by
+`lib/observability/record.ts` and read by `/admin/events` and the daily
+operator digest.
+
+RLS is enabled with **no policies**, the posture 069 and 080 use: every write
+is the service role and the only reader is the operator page, which already
+reads through the service client. A customer-facing `select` policy was
+considered and left out — the rows carry raw provider error text, and the rule
+to add when an account-level feed exists is
+`agency_id in (select user_admin_agency_ids())` (owner/admin, per 072).
+
+Depends only on **001** (`agencies`, `workspaces`); both foreign keys are
+`on delete set null`, so deleting a workspace neither deletes nor blocks on the
+record that it once failed. Idempotent (`if not exists` throughout, plus
+`drop policy if exists`). Post-flight §4 step 2: the new table must show
+`rowsecurity = t` and zero policies. Pre-flight:
+`to_regclass('public.system_events')`.
+
+Two check constraints are load-bearing and the recorder enforces the same
+rules before it inserts: `level in ('info','warn','error')` and
+`char_length(source) between 1 and 120`.
+
+Numbering: this file is 082 and **081 does not exist**. It was written while
+081 looked taken by a parallel track; that track did not ship a migration, and
+renumbering after the branch was pushed would have been the riskier move —
+another session picking 082 in the meantime is a collision, a gap is only a
+gap. Nothing orders on the missing number and nothing waits for it.
+
+**Nothing reads this table to make a decision**, so it is safe to prune and
+safe to lose. There is no retention job yet; at eleven daily crons writing one
+row each plus failures, expect a few thousand rows a year. When it needs one:
+`delete from system_events where created_at < now() - interval '90 days';`
+
+Roll back with `drop table if exists system_events;` — the code keeps working.
+`recordEvent` treats a missing table as a failed insert, logs one line and
+returns false, and `/admin/events` says the log is unavailable rather than
+showing an empty table.

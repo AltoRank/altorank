@@ -9,6 +9,7 @@
 // the RLS policy from 076 is what decides who sees a run.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { recordEvent } from "@/lib/observability/record";
 import {
   initialOnboardingState,
   isRunStale,
@@ -25,6 +26,13 @@ import {
 
 export const RUN_COLUMNS =
   "id, workspace_id, status, phases, planned, keywords_found, article_id, error, started_at, updated_at, finished_at";
+
+/**
+ * The same row plus the account it belongs to. Only the operational log wants
+ * that column, and /state hands its row to the browser, so it stays out of
+ * RUN_COLUMNS rather than being shipped to every polling screen.
+ */
+export const RUN_COLUMNS_WITH_AGENCY = `${RUN_COLUMNS}, agency_id`;
 
 const ARTICLE_COLUMNS = "id, title, keyword, word_count, fact_check_verdict, status";
 
@@ -157,12 +165,15 @@ export class RunRecorder {
   async finish(): Promise<void> {
     await this.flush();
     const now = new Date().toISOString();
-    const { error } = await this.supabase
+    const status = runStatusFrom(this.state);
+    const { data, error } = await this.supabase
       .from("onboarding_runs")
-      .update({ status: runStatusFrom(this.state), finished_at: now, updated_at: now })
+      .update({ status, finished_at: now, updated_at: now })
       .eq("id", this.runId)
-      .eq("status", "running");
+      .eq("status", "running")
+      .select("workspace_id, agency_id");
     if (error) console.error(`[onboarding] run ${this.runId}: could not finish: ${error.message}`);
+    else await announceOutcome(this.supabase, this.runId, status, scopeOf(data), this.state.steps);
   }
 
   /** The worker itself threw. Everything recorded so far stays on the row. */
@@ -175,12 +186,65 @@ export class RunRecorder {
 /** Close a run as `error`, if it is still running. */
 export async function failRun(supabase: SupabaseClient, runId: string, reason: string): Promise<void> {
   const now = new Date().toISOString();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("onboarding_runs")
     .update({ status: "error", error: reason, finished_at: now, updated_at: now })
     .eq("id", runId)
-    .eq("status", "running");
+    .eq("status", "running")
+    .select("workspace_id, agency_id");
   if (error) console.error(`[onboarding] run ${runId}: could not mark error: ${error.message}`);
+  else await announceOutcome(supabase, runId, "error", scopeOf(data), null, reason);
+}
+
+/**
+ * A run that ended anywhere but `done`, written where somebody will see it.
+ *
+ * This is the failure mode the product was actually bitten by. On 2026-09-07
+ * the first real customer's setup stopped part-way; the row said `partial` and
+ * the phases said which step, and the only reason anyone found out was a hand-
+ * written query against production. Nothing was emailed, nothing was logged,
+ * and the screen the customer had closed was the only place it had ever been
+ * shown.
+ *
+ * `done` is not recorded. A successful first run is already visible as an
+ * article, a calendar and a workspace that left `setup`; a row per success
+ * would be noise in the one table that must stay readable.
+ */
+async function announceOutcome(
+  supabase: SupabaseClient,
+  runId: string,
+  status: string,
+  scope: { workspaceId: string | null; agencyId: string | null },
+  steps: readonly { phase: string; status: string; detail?: string | null }[] | null,
+  reason?: string,
+): Promise<void> {
+  if (status === "done" || status === "running") return;
+  // Which phase fell short, which is the whole question an operator has.
+  const failed = (steps ?? []).filter((s) => s.status === "failed" || s.status === "skipped");
+  const where = failed.map((s) => `${s.phase}${s.detail ? `: ${s.detail}` : ""}`);
+  await recordEvent(
+    {
+      level: status === "error" ? "error" : "warn",
+      source: "onboarding.run",
+      message:
+        status === "error"
+          ? `Onboarding failed: ${reason ?? where[0] ?? "no reason recorded"}`
+          : `Onboarding finished ${status}: ${where[0] ?? "the phases do not say which step fell short"}`,
+      agencyId: scope.agencyId,
+      workspaceId: scope.workspaceId,
+      context: { runId, status, phases: where },
+    },
+    supabase,
+  );
+}
+
+/** The ids an `update(...).select(...)` handed back, if it handed back a row. */
+function scopeOf(rows: unknown): { workspaceId: string | null; agencyId: string | null } {
+  const row = Array.isArray(rows) ? (rows[0] as Record<string, unknown> | undefined) : undefined;
+  return {
+    workspaceId: (row?.workspace_id as string | undefined) ?? null,
+    agencyId: (row?.agency_id as string | undefined) ?? null,
+  };
 }
 
 /**
@@ -199,7 +263,7 @@ export async function stampRun(
   event: OnboardingEvent,
   opts: { article?: OnboardingArticle | null; finish?: boolean } = {},
 ): Promise<boolean> {
-  const { data } = await supabase.from("onboarding_runs").select(RUN_COLUMNS).eq("id", runId).maybeSingle();
+  const { data } = await supabase.from("onboarding_runs").select(RUN_COLUMNS_WITH_AGENCY).eq("id", runId).maybeSingle();
   const run = data as OnboardingRunRow | null;
   if (!run || run.status !== "running") return false;
 
@@ -232,6 +296,17 @@ export async function stampRun(
   if (error) {
     console.error(`[onboarding] run ${runId}: could not stamp ${event.phase}: ${error.message}`);
     return false;
+  }
+  // The draft route settles most runs, so this is where a `partial` usually
+  // gets its final status. The ids come off the row we already read.
+  if (opts.finish) {
+    await announceOutcome(
+      supabase,
+      runId,
+      String(patch.status),
+      { workspaceId: run.workspace_id, agencyId: (run as { agency_id?: string }).agency_id ?? null },
+      state.steps,
+    );
   }
   return true;
 }

@@ -29,6 +29,7 @@ import {
   latestPerWorkspace,
   MAX_ARTICLES_PER_RUN,
 } from "@/lib/content/generate-queue";
+import { observedCron } from "@/lib/observability/cron";
 
 /**
  * Scheduled draft generation.
@@ -109,7 +110,7 @@ interface WorkspaceOutcome {
   emailed?: string;
 }
 
-export async function GET(request: Request) {
+async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -457,3 +458,11 @@ async function skipped(
     : undefined;
   return { workspaceId, domain, status: "skipped", detail, ...(emailed ? { emailed } : {}) };
 }
+
+/**
+ * Every run of this job lands in `system_events` (lib/observability/cron.ts):
+ * a throw or a 5xx as an error, per-item failures as a warning, and a clean
+ * run as one `info` row — which is the only thing anywhere that proves the
+ * schedule is still firing.
+ */
+export const GET = observedCron("cron.generate", run);

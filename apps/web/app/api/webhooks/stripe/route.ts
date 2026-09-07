@@ -10,6 +10,8 @@ import {
   type SelfServePlan,
 } from "@/lib/stripe";
 import { createServiceClient } from "@/lib/supabase/server";
+import { recordEvent } from "@/lib/observability/record";
+import { describe as describeError } from "@/lib/observability/event";
 import { paceOnActivation } from "@/lib/content/pace";
 import { resumePausedWorkspaces } from "@/lib/billing/resume";
 import { graceEndsAt } from "@/lib/billing/dunning";
@@ -260,11 +262,38 @@ export async function POST(request: Request) {
   try {
     event = getStripe().webhooks.constructEvent(body, sig, secret);
   } catch {
+    // Not recorded: an unsigned POST to a public URL is somebody probing, and
+    // a log full of that is a log nobody reads. A *misconfigured* secret shows
+    // up as Stripe's own delivery failures in their dashboard.
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
   const supabase = createServiceClient();
 
+  try {
+    await handleEvent(supabase, event);
+  } catch (err) {
+    // Nothing below catches anything. Until now a throw in any branch here
+    // became a 500 with a stack trace in a function log: Stripe retried it for
+    // up to three days, and if every retry failed the same way the account's
+    // plan simply never changed. The money moved and the product did not
+    // notice - the single most expensive silent failure in the app.
+    //
+    // Recorded, then rethrown unchanged: the 500 is what makes Stripe retry,
+    // and swallowing it here would turn a loud failure into a quiet one.
+    await recordEvent({
+      level: "error",
+      source: "stripe.webhook",
+      message: `${event.type} could not be processed: ${describeError(err)}`,
+      context: { eventId: event.id, eventType: event.type },
+    }, supabase);
+    throw err;
+  }
+
+  return NextResponse.json({ received: true });
+}
+
+async function handleEvent(supabase: ReturnType<typeof createServiceClient>, event: Stripe.Event): Promise<void> {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
@@ -521,6 +550,4 @@ export async function POST(request: Request) {
       break;
     }
   }
-
-  return NextResponse.json({ received: true });
 }

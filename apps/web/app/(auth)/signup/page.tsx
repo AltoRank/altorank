@@ -9,6 +9,7 @@ import { FREE_TIER_PACE } from "@/lib/content/pace";
 import { normalizeDomain, DOMAIN_PATTERN } from "@/lib/growth-plan/build";
 import { checkDomainReachable } from "@/lib/domain/reachable";
 import { SubmitButton } from "@/components/auth/submit-button";
+import { recordEvent } from "@/lib/observability/record";
 
 export const metadata: Metadata = {
   title: "Sign Up",
@@ -92,6 +93,20 @@ async function signUp(formData: FormData) {
     }
 
     if (!agencyId) {
+      // Past this point the auth user exists and the account does not: the
+      // person can sign in and lands nowhere. Every one of these three
+      // branches leaves that half-made state behind, tells the visitor a
+      // sentence and vanishes - there was no server-side trace at all, so an
+      // abandoned signup and a broken one looked identical from here.
+      //
+      // Awaited, not fired and forgotten: `redirect` throws, and the write has
+      // to have landed before it does.
+      await recordEvent({
+        level: "error",
+        source: "signup",
+        message: `The account row could not be created, so the user has no agency: ${lastError}`,
+        context: { stage: "agency", userId: data.user.id, domain },
+      });
       redirect("/signup?error=" + encodeURIComponent(`Could not set up your workspace: ${lastError}`));
     }
 
@@ -101,6 +116,13 @@ async function signUp(formData: FormData) {
       role: "owner",
     });
     if (memberError) {
+      await recordEvent({
+        level: "error",
+        source: "signup",
+        message: `The membership could not be created, so the user cannot reach their own account: ${memberError.message}`,
+        agencyId,
+        context: { stage: "member", userId: data.user.id, domain },
+      });
       redirect(
         "/signup?error=" +
           encodeURIComponent(`Could not finish setting up your account: ${memberError.message}`),
@@ -137,8 +159,20 @@ async function signUp(formData: FormData) {
         // makes in workspace settings, after they have read a draft.
       });
       // Not fatal: the account exists, and the dashboard asks for a domain if
-      // there is no workspace. Log it so a silent miss here is findable.
-      if (wsError) console.error("[signup] workspace for", domain, wsError.message);
+      // there is no workspace. Log it so a silent miss here is findable - and
+      // record it, because "findable" meant a Vercel function log nobody
+      // tails. This is the branch that decides whether a new signup gets the
+      // first draft it was promised.
+      if (wsError) {
+        console.error("[signup] workspace for", domain, wsError.message);
+        await recordEvent({
+          level: "warn",
+          source: "signup",
+          message: `The first site could not be created, so nothing will be written for this account yet: ${wsError.message}`,
+          agencyId,
+          context: { stage: "workspace", userId: data.user.id, domain },
+        });
+      }
     }
   }
 

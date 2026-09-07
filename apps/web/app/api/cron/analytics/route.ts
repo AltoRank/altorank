@@ -3,11 +3,12 @@ import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { syncWorkspaceAnalytics, type SyncableIntegration } from "@/lib/google/sync";
 import { syncBingWorkspace, type BingIntegration, type BingSyncResult } from "@/lib/bing/sync";
+import { observedCron } from "@/lib/observability/cron";
 
 /**
  * Daily cron: sync GA4 + GSC metrics for all connected workspaces, then Bing.
  */
-export async function GET(request: Request) {
+async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -70,3 +71,11 @@ export async function GET(request: Request) {
 
   return NextResponse.json({ success: true, synced: results.length + bing.length, results, bing });
 }
+
+/**
+ * Every run of this job lands in `system_events` (lib/observability/cron.ts):
+ * a throw or a 5xx as an error, per-item failures as a warning, and a clean
+ * run as one `info` row — which is the only thing anywhere that proves the
+ * schedule is still firing.
+ */
+export const GET = observedCron("cron.analytics", run);

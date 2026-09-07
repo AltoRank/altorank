@@ -7,6 +7,7 @@ import { runRefreshTask } from "@/lib/refresh/rewrite";
 import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
 import { notifyRefreshReady } from "@/lib/email/lifecycle";
 import { describeSendOutcome } from "@/lib/email/send-once";
+import { observedCron } from "@/lib/observability/cron";
 
 /**
  * The content refresh schedule.
@@ -61,7 +62,7 @@ interface Outcome {
   status: "ok" | "skipped" | "error";
 }
 
-export async function GET(request: Request) {
+async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -219,3 +220,11 @@ export async function GET(request: Request) {
     results,
   });
 }
+
+/**
+ * Every run of this job lands in `system_events` (lib/observability/cron.ts):
+ * a throw or a 5xx as an error, per-item failures as a warning, and a clean
+ * run as one `info` row — which is the only thing anywhere that proves the
+ * schedule is still firing.
+ */
+export const GET = observedCron("cron.refresh", run);

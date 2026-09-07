@@ -3,6 +3,7 @@ import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { syncSitePages, SitePagesWriteError } from "@/lib/seo/site-crawl";
 import { detectLinks } from "@/lib/linking/detect";
+import { observedCron } from "@/lib/observability/cron";
 
 /**
  * Keep each site's published pages in step with its sitemap.
@@ -30,7 +31,7 @@ const PAGES_PER_RUN = 120;
 /** A page checked in the last week is not worth re-reading. */
 const STALE_AFTER_DAYS = 7;
 
-export async function GET(request: Request) {
+async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -112,3 +113,11 @@ export async function GET(request: Request) {
 
   return NextResponse.json({ considered: workspaces?.length ?? 0, results });
 }
+
+/**
+ * Every run of this job lands in `system_events` (lib/observability/cron.ts):
+ * a throw or a 5xx as an error, per-item failures as a warning, and a clean
+ * run as one `info` row — which is the only thing anywhere that proves the
+ * schedule is still firing.
+ */
+export const GET = observedCron("cron.site_pages", run);

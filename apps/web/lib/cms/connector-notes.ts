@@ -10,7 +10,7 @@
 
 import type { CMSConfig } from "@/lib/types";
 import { SHOPIFY_REQUIRED_SCOPES } from "./shopify";
-import { MAX_ATTEMPTS } from "./delivery";
+import { MAX_ATTEMPTS } from "./retry-policy";
 
 export interface ConnectorNote {
   text: string;
