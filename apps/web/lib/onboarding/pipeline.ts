@@ -115,7 +115,13 @@ async function runPhases(
           detail: read.source === "sitemap" ? "Learned how your site writes, from its articles." : "Learned how your site writes.",
         });
       } else {
-        emit({ phase: "scanning", status: "skipped", detail: "Too little readable text on the site to learn a voice." });
+        // Phrased so it still reads correctly when `onboardingOutcome` quotes
+        // it as the root cause of a later phase - which it does, since scanning
+        // is first in PHASE_ORDER. "…to learn a voice" produced "nothing could
+        // be scheduled yet: too little readable text on the site to learn a
+        // voice", which blames scheduling on voice training. What actually
+        // stopped both is the site.
+        emit({ phase: "scanning", status: "skipped", detail: "Too little readable text on the site to learn from." });
       }
     } catch (err) {
       emit({ phase: "scanning", status: "failed", detail: message(err) });
