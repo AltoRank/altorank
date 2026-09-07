@@ -36,6 +36,7 @@ import {
 import { classifyIntent } from "@/lib/seo/intent";
 import { buildTopicalProfile, type TopicalProfile } from "@/lib/seo/topical-profile";
 import { detectPlatform, type Detection } from "@/lib/cms/detect";
+import { discoverUrls } from "@/lib/seo/site-crawl";
 import { syncBacklinks } from "@/lib/seo/backlinks";
 import { fetchDomainMetrics } from "@/lib/seo/domain-metrics";
 import { e2eStubsEnabled, stubAnalyseDomain } from "@/lib/e2e/stubs";
@@ -88,6 +89,176 @@ const ADS_FALLBACK_CAP = 40;
  */
 export function adsFallbackRoom(candidates: number, cap: number = ADS_FALLBACK_CAP): number {
   return Math.max(0, cap - candidates);
+}
+
+/**
+ * Provider rows this run must already have judged before their verdict is
+ * treated as evidence about the next provider list. One rejected row is noise.
+ */
+const MIN_FALLBACK_EVIDENCE = 5;
+
+/**
+ * Whether the ads fallback can still contribute anything, before it is bought.
+ *
+ * The relevance filter that decides whether a fallback row is stored used to
+ * run only AFTER both of the fallback's paid calls. A measured signup on a thin
+ * site therefore spent $0.105 on a hundred rows and kept none of them
+ * (round4 §4, W1): the room was there, the relevance was not, and nothing
+ * asked before paying.
+ *
+ * Relevance of a row cannot be known before it arrives. What CAN be known is
+ * how the very same filter treated the rows the cheaper sources already
+ * produced this run - the competitor gap and the seeds taken from the site's
+ * own headings. Those are better targeted than a domain-level Google Ads
+ * guess by construction, so a profile that rejected every one of them will not
+ * accept the ads list either.
+ *
+ * Deliberately conservative: with too few judged rows to learn from, the call
+ * is made. This refuses spend on evidence, it does not guess.
+ */
+export function adsFallbackWorthCalling(evidence: { judged: number; kept: number }): boolean {
+  if (evidence.judged < MIN_FALLBACK_EVIDENCE) return true;
+  return evidence.kept > 0;
+}
+
+/**
+ * Below this many sitemap URLs the sitemap is not used to judge whose page a
+ * ranking belongs to.
+ *
+ * A small or partial sitemap is normal and says nothing; a large one is the
+ * site enumerating what it considers its own content, and a ranked URL missing
+ * from it is the interesting case (see `rankedOnOwnPages`).
+ */
+export const SITEMAP_TRUST_MIN = 100;
+
+function pathOf(url: string): string | null {
+  try {
+    return (new URL(url, "https://placeholder.invalid").pathname.replace(/\/+$/, "") || "/").toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/** The paths a sitemap declares, or null when it is too small to trust. */
+export function ownPagePaths(sitemapUrls: string[]): Set<string> | null {
+  if (sitemapUrls.length <= SITEMAP_TRUST_MIN) return null;
+  const paths = new Set<string>();
+  for (const url of sitemapUrls) {
+    const path = pathOf(url);
+    if (path) paths.add(path);
+  }
+  return paths.size ? paths : null;
+}
+
+/**
+ * Ranked rows earned by pages the site itself lists.
+ *
+ * WHY: on a multi-tenant host the domain ranks for its customers' content, and
+ * the queue read that as the business's own subject matter. buttondown.com - a
+ * newsletter platform - ranks for "taffy danoff", "bald nba players" and
+ * "online casinos switzerland" through pages its subscribers wrote, and every
+ * one of them is exempt from the relevance filter because "the SERP already
+ * decided" (recommendations.ts). The plan it produced was for its tenants.
+ * Substack, Medium, github.io and any Shopify store carrying customer blogs
+ * have the same shape.
+ *
+ * A sitemap is the site saying which pages are its own. A ranking on a page it
+ * does not list is somebody else's ranking.
+ *
+ * `paths` null means the sitemap could not be trusted to answer (missing,
+ * small, or a walk that ran out of time), and then nothing is dropped: the
+ * absence of a sitemap entry is only evidence when the sitemap is complete.
+ * A row with no URL is never dropped either - it cannot be judged.
+ */
+export function rankedOnOwnPages(
+  ranked: RankedKeyword[],
+  paths: Set<string> | null,
+): RankedKeyword[] {
+  if (!paths) return ranked;
+  return ranked.filter((k) => {
+    if (!k.url) return true;
+    const path = pathOf(k.url);
+    return path === null || paths.has(path);
+  });
+}
+
+/** Wall-clock ceiling on the sitemap walk. It runs inside a 300s worker that
+ *  has already spent 60-170s here, so it gives up rather than compete. */
+const SITEMAP_WALK_MS = 12_000;
+
+/**
+ * The paths this site declares as its own, or null when it did not answer
+ * well enough to be used as evidence.
+ *
+ * Null on a quick look (no budget, and the growth plan does not store
+ * keywords), when nothing ranks (nothing to judge), when the walk ran out of
+ * time (a partial list would drop real pages), and when the sitemap is small
+ * (SITEMAP_TRUST_MIN). Never throws: no sitemap means no filtering, which is
+ * the behaviour that existed before this.
+ */
+async function ownSitemapPaths(
+  domain: string,
+  depth: "quick" | "full",
+  rankedCount: number,
+): Promise<Set<string> | null> {
+  if (depth !== "full" || rankedCount === 0) return null;
+  const deadline = Date.now() + SITEMAP_WALK_MS;
+  try {
+    const urls = await discoverUrls(domain, { timeoutMs: 6_000, maxUrls: 5_000, deadline });
+    // Out of time means the list is a prefix of the sitemap, not the sitemap.
+    if (Date.now() >= deadline) return null;
+    return ownPagePaths(urls);
+  } catch {
+    return null;
+  }
+}
+
+/** Ranked rows already on page one are the ones with nothing left to win. */
+const PAGE_ONE = 10;
+/**
+ * Most of the stored list one source may take.
+ *
+ * A site with 500 ranking terms filled all 100 slots with page-one rankings,
+ * every one of which `recommendKeywords` then marked "already ranking at
+ * position N, leave it alone". `pickNextKeyword` found nothing and the run
+ * ended "Nothing scheduled yet" - after paying for the gap and seed calls
+ * whose rows never reached the table (round4 R4-2, F2). Half the list is
+ * reserved for rows that can still be written to; page-one rankings backfill
+ * whatever is left, so a site that ranks for nothing else still gets 100.
+ */
+export const PAGE_ONE_RANKED_CAP = MAX_KEYWORDS_STORED / 2;
+
+/**
+ * Take `limit` candidates, reserving room for rows that are not already won.
+ *
+ * Order within each group is the caller's; this only defers the surplus of
+ * already-won rows to the end rather than dropping them.
+ */
+export function takeReservingSlots<T>(
+  candidates: T[],
+  limit: number,
+  isAlreadyWon: (c: T) => boolean,
+  cap: number = PAGE_ONE_RANKED_CAP,
+): T[] {
+  const kept: T[] = [];
+  const deferred: T[] = [];
+  let won = 0;
+  for (const c of candidates) {
+    if (kept.length >= limit) break;
+    if (isAlreadyWon(c)) {
+      if (won >= cap) {
+        deferred.push(c);
+        continue;
+      }
+      won++;
+    }
+    kept.push(c);
+  }
+  for (const c of deferred) {
+    if (kept.length >= limit) break;
+    kept.push(c);
+  }
+  return kept;
 }
 
 function normalizeDomain(domain: string): string {
@@ -316,8 +487,17 @@ export async function analyseDomain(options: {
       const usable = profileIsUsable(profile, domain);
       const rel = (term: string) => (usable ? scoreRelevance(term, profile).score : 1);
 
-      // (1) Ranked terms, best position first.
-      const fromRanked: DiscoveredKeyword[] = ranked
+      // (1) Ranked terms, best position first - but only the ones earned by
+      // pages the site lists as its own. See `rankedOnOwnPages`: on a
+      // multi-tenant host the rest are its customers' rankings, and they are
+      // exempt from every relevance filter downstream because the SERP already
+      // decided. The headline "N ranking keywords" above is untouched: those
+      // pages do rank on this domain. This is about whose subject matter goes
+      // into the queue.
+      const ownPages = await ownSitemapPaths(domain, depth, ranked.length);
+      const rankedOwn = rankedOnOwnPages(ranked, ownPages);
+      const rankedDropped = ranked.length - rankedOwn.length;
+      const fromRanked: DiscoveredKeyword[] = rankedOwn
         .filter((k) => k.position !== null)
         .map((k) => ({
           keyword: k.keyword,
@@ -353,6 +533,10 @@ export async function analyseDomain(options: {
       const seeds = usable && depth === "full" ? seedPhrasesFromPages(crawledPages, domain) : [];
       const seeded = seeds.length ? await discoverKeywordsFromSeeds(seeds).catch(() => []) : [];
 
+      // Position per ranked term, for the reserve rule below.
+      const positionByTerm = new Map<string, number | null>();
+      for (const k of ranked) positionByTerm.set(k.keyword.trim().toLowerCase(), k.position);
+
       const byTerm = new Map<string, { k: Sourced; rank: number }>();
       const add = (k: Sourced, rank: number) => {
         const key = k.keyword.trim().toLowerCase();
@@ -380,8 +564,25 @@ export async function analyseDomain(options: {
       // so asking for 700 to keep at most 40 cost ~6x what the kept rows do.
       let usedFallback = false;
       const room = depth === "full" && byTerm.size < MAX_KEYWORDS_STORED / 2 ? adsFallbackRoom(byTerm.size) : 0;
-      if (room > 0) {
-        const fromSite = (await discoverKeywords(domain).catch(() => [])).slice(0, room);
+      // What this profile has already done to provider rows this run. The gap
+      // and the seeds are the cheaper, better-targeted sources; if the filter
+      // took none of them, the ads list is not going to fare better.
+      const judged = [...fromGap, ...seeded];
+      const worthCalling = adsFallbackWorthCalling({
+        judged: judged.length,
+        kept: judged.filter((k) => rel(k.keyword) > 0).length,
+      });
+      if (room > 0 && worthCalling) {
+        // Relevance BEFORE the second paid call, and before the slice.
+        //
+        // Both used to run after: a measured signup bought a hundred rows for
+        // $0.0900, bought difficulty for them for $0.0146, and then dropped
+        // every one at the scoring step below (round4 §4, W1). Scoring here
+        // costs nothing - the profile is already in memory - and it means the
+        // $0.09 buys the rows that can be stored rather than the first `room`
+        // rows in the response, which on that run were all rejects.
+        const returned = await discoverKeywords(domain).catch(() => []);
+        const fromSite = returned.filter((k) => rel(k.keyword) > 0).slice(0, room);
         if (fromSite.length) {
           const kd = await fetchKeywordDifficulty(fromSite.map((k) => k.keyword)).catch(() => new Map<string, number>());
           for (const k of fromSite) {
@@ -414,7 +615,19 @@ export async function analyseDomain(options: {
           // profile says: the SERP already decided.
           .filter((c) => c.rank === 0 || !usable || c.r > 0)
           .sort((a, b) => a.rank - b.rank || b.r - a.r || b.k.volume - a.k.volume);
-        const top = scored.slice(0, MAX_KEYWORDS_STORED);
+        // Half the list is reserved for terms that can still be written to.
+        // Sorted ranked-first, a site with 500 page-one rankings filled all
+        // 100 slots with terms `recommendKeywords` then refused to write,
+        // and the run ended with an empty month (F2). The surplus page-one
+        // rows are deferred, not dropped: they backfill whatever the other
+        // sources leave, so a site that ranks for nothing else still stores
+        // 100 and the headline number is unchanged for it.
+        const alreadyWon = (c: { rank: number; k: DiscoveredKeyword }) => {
+          if (c.rank !== 0) return false;
+          const position = positionByTerm.get(c.k.keyword.trim().toLowerCase());
+          return position !== undefined && position !== null && position <= PAGE_ONE;
+        };
+        const top = takeReservingSlots(scored, MAX_KEYWORDS_STORED, alreadyWon);
         keywordsFound = top.length;
 
         const { data: existing } = await supabase
@@ -475,6 +688,9 @@ export async function analyseDomain(options: {
 
       const parts = [
         fromRanked.length ? `${fromRanked.length} it already ranks for` : "",
+        rankedDropped
+          ? `${rankedDropped} ranking${rankedDropped === 1 ? "" : "s"} on pages the sitemap does not list, left out`
+          : "",
         seeded.length ? `${seeded.length} from what its pages say` : "",
         usedFallback ? "the rest from the ads keyword tool" : "",
       ].filter(Boolean);
