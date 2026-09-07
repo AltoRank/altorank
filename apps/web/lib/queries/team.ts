@@ -1,29 +1,25 @@
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { requireAuth } from "@/lib/auth/require-auth";
 import type { AgencyMember, Invite } from "@/lib/types";
 import type { ResolvedUser } from "@/lib/team/display";
 
 export type MemberWithUser = AgencyMember & { user: ResolvedUser };
 
 export async function getAgencyMembers(): Promise<MemberWithUser[]> {
+  // The agency the rest of this page is about. This used to run its own
+  // `.limit(1).single()` with the error dropped, which had two faults at once:
+  // a failed read became `!membership` and so "No team members found" - shown
+  // to a signed-in member, who is provably a member - and with no `.order()`
+  // it picked an arbitrary agency for anyone in two, while `role` on the same
+  // page comes from `requireAuth`. `requireAuth` already resolves the agency
+  // from the scope cookie and already throws when the read fails.
+  const { agencyId } = await requireAuth();
   const supabase = await createClient();
-
-  // Get current user's agency
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return [];
-
-  const { data: membership } = await supabase
-    .from("agency_members")
-    .select("agency_id")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
-
-  if (!membership) return [];
 
   const { data, error } = await supabase
     .from("agency_members")
     .select("*")
-    .eq("agency_id", membership.agency_id)
+    .eq("agency_id", agencyId)
     .order("created_at", { ascending: true });
 
   if (error) throw new Error(error.message);
@@ -54,24 +50,14 @@ export async function getAgencyMembers(): Promise<MemberWithUser[]> {
 }
 
 export async function getPendingInvites(): Promise<Invite[]> {
+  // Same agency as the roster above, resolved the same way.
+  const { agencyId } = await requireAuth();
   const supabase = await createClient();
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return [];
-
-  const { data: membership } = await supabase
-    .from("agency_members")
-    .select("agency_id")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
-
-  if (!membership) return [];
 
   const { data, error } = await supabase
     .from("invites")
     .select("*")
-    .eq("agency_id", membership.agency_id)
+    .eq("agency_id", agencyId)
     .is("accepted_at", null)
     // The invites table has no created_at - it never did - so this ordered by
     // a column that does not exist and the Team page has thrown since the

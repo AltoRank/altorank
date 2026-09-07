@@ -34,14 +34,14 @@ export default async function ImprovementsPage() {
   const supabase = await createClient();
 
   const [
-    { data: ws },
-    { data: gsc },
+    { data: ws, error: wsError },
+    { data: gsc, error: gscError },
     destinations,
-    { data: candidates },
+    { data: candidates, error: candidatesError },
     { data: tasks },
     { data: executions },
     { data: techPages },
-    { count: pagesChecked },
+    { count: pagesChecked, error: pagesCheckedError },
   ] = await Promise.all([
       supabase
         .from("workspaces")
@@ -92,6 +92,16 @@ export default async function ImprovementsPage() {
         .eq("workspace_id", scopeId)
         .not("tech_checked_at", "is", null),
     ]);
+
+  // Every read on this page dropped its error, and three of them turn an
+  // empty result into an instruction. `gsc` empty renders "Search Console not
+  // connected" - a blocker the person cannot clear, because it is not true;
+  // `pagesChecked` null renders "Your pages have not been read yet"; an empty
+  // `candidates` explains that there are no impressions to rank pages by. A
+  // page that cannot load its data has to say that instead of inventing a
+  // reason the reader will act on.
+  const readFailure = wsError ?? gscError ?? candidatesError ?? pagesCheckedError;
+  if (readFailure) throw new Error(`could not load improvements (${readFailure.message})`);
 
   const techRows: TechPageRow[] = (techPages ?? []).map((p) => ({
     id: p.id as string,

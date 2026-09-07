@@ -69,8 +69,8 @@ export default async function DashboardLayout({
     // Exchanges are not per site: `backlink_exchanges` is keyed by agency on
     // both sides, so it stays counted across the account, which is what it
     // describes.
-    { count: backlinkCount },
-    { count: exchangeCount },
+    { count: backlinkCount, error: backlinkError },
+    { count: exchangeCount, error: exchangeError },
     initialSteps,
     simulation,
     preview,
@@ -190,8 +190,13 @@ export default async function DashboardLayout({
   const operator =
     simulation?.admin === false ? false : !customerPreview && isAdminEmail(user?.email);
 
-  const hiddenNav =
-    (backlinkCount ?? 0) === 0 && (exchangeCount ?? 0) === 0 ? ["backlinks"] : [];
+  // Backlinks is hidden at zero links, and only at a *confirmed* zero. Both
+  // counts are null when their read fails as well as when there is nothing to
+  // count, and `?? 0` collapsed those into each other - so one failed count
+  // deleted a working page from the sidebar. Unknown is not zero here either.
+  const noBacklinksKnown =
+    !backlinkError && !exchangeError && (backlinkCount ?? 0) === 0 && (exchangeCount ?? 0) === 0;
+  const hiddenNav = noBacklinksKnown ? ["backlinks"] : [];
   if (!operator) hiddenNav.push("admin");
 
   /**
