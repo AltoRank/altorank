@@ -659,7 +659,7 @@ export type SetupUnfinishedEmail = {
  */
 export function renderSetupUnfinished(a: SetupUnfinishedEmail): RenderedEmail {
   const site = a.domain ?? "your site";
-  const resume = appLink(wizardStepPath("Integration"));
+  const resume = appLink(wizardStepPath("Articles"));
   const footerNote = `Sent because setup for ${site} on AltoRank was started and not finished. This is the only email about it.`;
 
   if (a.draft) {
@@ -671,7 +671,7 @@ export function renderSetupUnfinished(a: SetupUnfinishedEmail): RenderedEmail {
         eyebrow(site) +
         heading(a.draft.title) +
         emailParagraph(
-          `You left setup at the CMS step. In the meantime we read <strong>${esc(site)}</strong> and drafted a first article` +
+          `You left setup unfinished. In the meantime we read <strong>${esc(site)}</strong> and drafted a first article` +
             (a.draft.keyword ? ` for <strong>${esc(a.draft.keyword)}</strong>` : "") +
             `.`,
         ) +

@@ -10,6 +10,8 @@ import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { GoogleConnectButton } from "@/components/dashboard/google-connect-button";
 import { BingConnectButton } from "@/components/dashboard/bing-connect-button";
 import { CmsConnectionActions } from "./cms-connection-actions";
+import { RequestIntegrationButton } from "@/components/dashboard/request-integration-button";
+import { CONNECTABLE_CMS } from "@/lib/cms/connectable";
 import { HowItWorks } from "@/components/dashboard/how-it-works";
 import { integrationsExplainer } from "@/lib/explainers";
 import type { PublishingCadence } from "@/lib/types";
@@ -23,15 +25,6 @@ const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 // The integrations that have a real OAuth flow.
 const GOOGLE_INTEGRATIONS = new Set(["gsc", "ga4"]);
-
-// CMSs the connection dialog has a credential form for. Their tiles deep-link
-// to that dialog, opened on their tab. The rest (Ahrefs, Slack, Zapier) keep a
-// disabled button, because a button that silently does nothing is worse than
-// one that says it is unavailable.
-const CONNECTABLE_CMS = new Set([
-  "wordpress", "wordpress-plugin", "shopify", "magento", "webflow", "ghost", "framer",
-  "wix", "notion", "hubspot", "woocommerce", "webhook", "git",
-]);
 
 export default async function IntegrationsPage({
   searchParams,
@@ -174,9 +167,11 @@ export default async function IntegrationsPage({
                         </Button>
                       </Link>
                     ) : (
-                      <Button size="sm" disabled className="w-full justify-center">
-                        Not available yet
-                      </Button>
+                      /* No adapter for this one. A disabled Connect told the
+                         person we do not support their stack and gave them
+                         nowhere to go; this asks them instead, and tells us
+                         which connector to build next. */
+                      <RequestIntegrationButton integrationId={i.id} integrationName={i.name} />
                     )}
                   </div>
                 ))}

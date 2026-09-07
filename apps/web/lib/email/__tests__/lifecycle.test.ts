@@ -328,13 +328,13 @@ describe("setup was never finished", () => {
   const base = { domain: "acme.com", draft: null, keywordCount: 0, unreadable: null };
   const draft = { articleId: "art-1", title: "How to choose a CRM", keyword: "best crm" };
 
-  it("with a draft: leads with the article, links to it and back to the CMS step, and says nothing publishes unapproved", () => {
+  it("with a draft: leads with the article, links to it and back to the last setup step, and says nothing publishes unapproved", () => {
     const e = renderSetupUnfinished({ ...base, draft, keywordCount: 8 });
     expect(e.subject).toBe("While you were away: a first draft for acme.com");
     expect(e.html).toContain("How to choose a CRM");
     expect(e.html).toContain("best crm");
     expect(e.html).toContain("https://app.altorank.co/content/art-1");
-    expect(e.html).toContain("https://app.altorank.co/onboarding?step=5");
+    expect(e.html).toContain("https://app.altorank.co/onboarding?step=4");
     expect(e.html).toContain("Nothing publishes until you approve it");
     expect(e.footerNote).toContain("only email about it");
   });
@@ -344,7 +344,7 @@ describe("setup was never finished", () => {
     expect(e.subject).toBe("We read acme.com while you were away");
     expect(e.html).toContain("<strong>8</strong> keywords");
     expect(e.html).toContain("No article has been written yet");
-    expect(e.html).toContain("https://app.altorank.co/onboarding?step=5");
+    expect(e.html).toContain("https://app.altorank.co/onboarding?step=4");
     expect(e.html).not.toContain("/content/");
     expect(e.html).not.toMatch(/drafted|is coming|will be written/);
   });

@@ -56,11 +56,24 @@ export interface ConnectCmsDialogProps {
   onConnected?: () => void;
 }
 
+/**
+ * The platforms this dialog can open a credential form for.
+ *
+ * This is not the same question as "which tile offers Connect" - that is
+ * CONNECTABLE_CMS in lib/cms/connectable.ts, which is currently empty because
+ * no connector has been watched working on a live site. This list stays full
+ * so that an existing connection can still be tested and reconnected, and so
+ * that a direct `/connect?connect=<id>` link works while onboarding is done by
+ * hand.
+ *
+ * CONNECTABLE_CMS must always be a subset of this; `connectable.test.ts`
+ * enforces it, because a Connect button whose dialog refuses to open is worse
+ * than no button.
+ */
 const CMS_TYPES: CMSType[] = [
   "wordpress", "wordpress-plugin", "shopify", "magento", "webflow", "ghost", "framer",
   "wix", "notion", "hubspot", "woocommerce", "webhook", "git",
 ];
-
 export function isCmsType(value: unknown): value is CMSType {
   return typeof value === "string" && (CMS_TYPES as string[]).includes(value);
 }

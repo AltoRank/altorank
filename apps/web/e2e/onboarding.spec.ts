@@ -68,8 +68,19 @@ test("a new account is walked from /dashboard to a planned first month", async (
   await page.getByLabel(/^Tone/).selectOption("friendly");
   await page.getByRole("button", { name: "Continue" }).click();
 
-  // --- Step 5: destinations, and step 4 is on disk ---------------------------
-  await expect(page.getByRole("heading", { name: "Where should we publish?" })).toBeVisible();
+  // --- Step 5: where they heard of us, asked once per account ----------------
+  //
+  // The destinations screen that used to sit here was removed: no connector has
+  // been watched working on a live site, so the wizard no longer asks for one
+  // (lib/cms/connectable.ts). Articles is now the last screen about the site.
+  //
+  // The step-4 assertion below waits on this heading first, and must keep doing
+  // so. Each screen persists on Continue, and the removed screen was acting as
+  // an accidental wait for that save; reading the table straight after the
+  // click raced it and read the row before it was written.
+  await expect(page.getByRole("heading", { name: "One last thing" })).toBeVisible();
+
+  // --- Step 4 is on disk ------------------------------------------------------
   const { data: output } = await db
     .from("workspace_output_settings")
     .select("tone, internal_links")
@@ -77,11 +88,6 @@ test("a new account is walked from /dashboard to a planned first month", async (
     .maybeSingle();
   expect(output?.tone).toBe("friendly");
   expect(output?.internal_links).toBe(3);
-
-  await page.getByRole("button", { name: "Skip for now" }).click();
-
-  // --- Step 6: where they heard of us, asked once per account ----------------
-  await expect(page.getByRole("heading", { name: "One last thing" })).toBeVisible();
   const finish = page.getByRole("button", { name: "Finish and plan my first month" });
   // The question is optional: Finish is live before it is answered.
   await expect(finish).toBeEnabled();

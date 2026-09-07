@@ -77,6 +77,16 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 export async function checkDomainReachable(input: string): Promise<DomainReachability> {
   const domain = normaliseDomain(input);
 
+  // `E2E_STUBS` stands in for the outside world, DNS included: every e2e domain
+  // is `*.altorank.test` precisely because it resolves to nothing. Read from
+  // the environment directly rather than importing lib/e2e/stubs, which pulls
+  // the fact-checker, the tiptap converter and the crawler in behind it - a
+  // heavy graph to drag into a server action for one boolean, and enough on a
+  // cold import to blow a unit test's timeout.
+  if (process.env.E2E_STUBS === "1") {
+    return { ok: true, verdict: "live", url: `https://${domain}` };
+  }
+
   if (!HOSTNAME.test(domain)) {
     return { ok: false, verdict: "invalid", reason: "Enter a domain like acme.com" };
   }

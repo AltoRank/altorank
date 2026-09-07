@@ -36,7 +36,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   // it can be written, and until now nothing said so (P1-A1). Null when
   // unmetered, and then there is nothing to qualify.
   const quotaRead = requireAuth().then(({ agencyId, user }) => getRequestQuota(agencyId, user.email ?? null));
-  const [{ data: workspace }, { data: destinations }, { data: output }, quota, run] = await Promise.all([
+  const [{ data: workspace }, { data: output }, quota, run] = await Promise.all([
     supabase
       .from("workspaces")
       // The account's answer rides along on the workspace's own account row,
@@ -45,7 +45,6 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       .select("id, domain, business_profile, sitemap_url, blog_root_url, example_article_urls, auto_generate_weekly_limit, auto_approve, agencies(attribution_source)")
       .eq("id", scopeId)
       .single(),
-    supabase.from("integrations").select("id, name, description").eq("tag", "CMS").order("name"),
     supabase
       .from("workspace_output_settings")
       .select("tone, internal_links, table_of_contents, call_to_action, first_person, mention_similar_products, global_article_prompt")
@@ -83,7 +82,6 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
         exampleArticleUrls: (workspace.example_article_urls as string[] | null) ?? [],
       }}
       initialOutput={initialOutput}
-      destinations={destinations ?? []}
       askAttribution={!answered}
       initialStep={stepFromParam(step, SITE_STEPS.length + (answered ? 0 : 1))}
       initialRun={run}

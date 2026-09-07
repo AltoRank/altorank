@@ -9,7 +9,11 @@
 // the number for the CMS screen and must not import a client component to get
 // it.
 
-export const SITE_STEPS = ["Business", "Audience & Competitors", "Blog", "Articles", "Integration"] as const;
+// "Integration" was the fifth screen until 2026-09-07. It sent people to
+// /connect to pick a CMS, and no connector has been watched working on a live
+// site yet (see lib/cms/connectable.ts), so the screen asked for a decision the
+// product could not honour. Onboarding is concierge-run until one can.
+export const SITE_STEPS = ["Business", "Audience & Competitors", "Blog", "Articles"] as const;
 
 export type SiteStep = (typeof SITE_STEPS)[number];
 

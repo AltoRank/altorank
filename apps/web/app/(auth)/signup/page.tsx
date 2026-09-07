@@ -8,7 +8,6 @@ import { generateIndexNowKey } from "@/lib/seo/indexing";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
 import { normalizeDomain, DOMAIN_PATTERN } from "@/lib/growth-plan/build";
 import { checkDomainReachable } from "@/lib/domain/reachable";
-import { e2eStubsEnabled } from "@/lib/e2e/stubs";
 import { SubmitButton } from "@/components/auth/submit-button";
 
 export const metadata: Metadata = {
@@ -35,10 +34,7 @@ async function signUp(formData: FormData) {
   // phase - keywords, page check, plan, first draft - runs against a site that
   // is not there. Blocked here rather than discovered thirty articles later.
   // Only a name with no DNS at all is refused; see lib/domain/reachable.ts.
-  // Skipped under E2E_STUBS: see the note in app/actions/workspaces.ts.
-  const reach = e2eStubsEnabled()
-    ? ({ ok: true } as const)
-    : await checkDomainReachable(domain);
+  const reach = await checkDomainReachable(domain);
   if (!reach.ok) {
     redirect("/signup?error=" + encodeURIComponent(reach.reason) + "&domain=" + encodeURIComponent(domain));
   }
