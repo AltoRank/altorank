@@ -42,6 +42,12 @@ export interface ArticleDraftedEmail {
   /** Why this keyword, captured when it was chosen (migration 022). */
   reasons: readonly string[];
   articleId: string;
+  /**
+   * When the workspace publishes automatically: the end of the hold window,
+   * after which the draft ships on the next publish run unless held. Null or
+   * absent when every draft waits for a click (migration 079).
+   */
+  autoApproveAfter?: string | null;
 }
 
 /**
@@ -70,6 +76,10 @@ export function renderArticleDrafted(a: ArticleDraftedEmail): {
   const site = a.domain ?? "your site";
   const url = articleUrl(a.articleId);
   const warn = a.verdict === "high_risk";
+  const autoAfter = a.autoApproveAfter ? new Date(a.autoApproveAfter) : null;
+  const autoLine = autoAfter && !Number.isNaN(autoAfter.getTime())
+    ? `It publishes on its own after ${autoAfter.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC unless you hold it - open the draft and press Hold, or approve it now to skip the wait.`
+    : `It is a draft in your review queue - nothing publishes until you approve it.`;
 
   const reasons = a.reasons.length
     ? `<p style="margin:0 0 6px;font-size:12px;color:${EMAIL_INK_3};">Why this keyword</p>` +
@@ -82,14 +92,16 @@ export function renderArticleDrafted(a: ArticleDraftedEmail): {
     subject: warn
       ? `Check before publishing: "${a.keyword}" draft for ${site}`
       : `New draft for ${site}: "${a.keyword}"`,
-    preheader: `${a.wordCount.toLocaleString()} words, waiting in your review queue.`,
+    preheader: autoAfter
+      ? `${a.wordCount.toLocaleString()} words, publishes on its own unless you hold it.`
+      : `${a.wordCount.toLocaleString()} words, waiting in your review queue.`,
     footerNote: `Sent because automatic drafting is on for ${esc(site)}. Turn it off in that workspace's settings and these stop.`,
     html:
       `<p style="margin:0 0 4px;font-size:12px;color:${EMAIL_INK_3};">${esc(site)}</p>` +
       `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.3;color:${EMAIL_INK};">${esc(a.title)}</h1>` +
       emailParagraph(
         `Written for <strong>${esc(a.keyword)}</strong>. ${a.wordCount.toLocaleString()} words. ` +
-          `It is a draft in your review queue - nothing publishes until you approve it.`,
+          autoLine,
       ) +
       emailParagraph(VERDICT_LINE[a.verdict]) +
       reasons +

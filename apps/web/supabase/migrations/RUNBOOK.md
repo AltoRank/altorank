@@ -15,8 +15,8 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 078.** The one-line-per-file list in §3 and the pre-flight query in §1
-both go to 078. (076 and 077 came from two tracks on the same day and are
+**Head is 079.** The one-line-per-file list in §3 and the pre-flight query in §1
+both go to 079. (076 and 077 came from two tracks on the same day and are
 independent of each other; either may be applied first. 078 stacks on the same
 branch as 076 and does not depend on it.) If you add a
 migration, add its marker to the query in the same
@@ -135,7 +135,8 @@ m(file, applied) as (values
   ('075_reports_one_per_period',             to_regclass('public.idx_reports_one_per_period') is not null),
   ('076_onboarding_runs',                    to_regclass('public.onboarding_runs') is not null),
   ('077_workspace_vocabulary_comments',      exists (select 1 from col where t='workspaces' and c='paused_meta' and cm like '%Pause this workspace%')),
-  ('078_site_pages_tech_findings',           exists (select 1 from col where t='site_pages' and c='tech_findings'))
+  ('078_site_pages_tech_findings',           exists (select 1 from col where t='site_pages' and c='tech_findings')),
+  ('079_auto_approve',                       exists (select 1 from col where t='workspaces' and c='auto_approve'))
 )
 select file, applied from m order by file;
 ```
@@ -258,6 +259,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 075_reports_one_per_period.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 076_onboarding_runs.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 077_workspace_vocabulary_comments.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 078_site_pages_tech_findings.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 079_auto_approve.sql
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -316,6 +318,7 @@ no code in the repo references either).
 | 076_onboarding_runs.sql | `onboarding/poll-run` (stacks on #146) | 001, **053** | yes | yes, loses run history |
 | 077_workspace_vocabulary_comments.sql | `ui/workspace-vocabulary` (stacks on #146) | 001, 052, 053, 061 | yes | yes (old wording) |
 | 078_site_pages_tech_findings.sql | `onboarding/site-crawl` (stacks on `onboarding/poll-run`) | **044**, 046 | yes | yes, loses findings only |
+| 079_auto_approve.sql | `feat/auto-approve` | 001, 003 | yes | yes, loses hold stamps and approval kinds |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -576,3 +579,28 @@ a `site_pages.tech_findings` column exists. Roll back with
 `alter table site_pages drop column tech_findings, drop column tech_issue_count, drop column tech_checked_at;`
 — the next crawl recomputes everything, so nothing is lost but the last run's
 findings.
+
+## 079 — added 2026-09-07
+
+`079_auto_approve.sql`: six columns on `workspaces` (`auto_approve`,
+`auto_approve_hold_hours`, `auto_approve_min_seo`, `auto_approve_min_aeo`,
+`auto_approve_set_by`, `auto_approve_set_at`), five on `articles`
+(`approval_kind`, `held_by`, `held_at`, `auto_approve_after`,
+`auto_approve_hold_reason`), three check constraints, and one partial index
+`idx_articles_auto_approve_due`.
+
+A workspace may publish drafts without a click: after the hold window the
+publish cron runs the checks the Approve button runs (plan, fact check, audit,
+score floor) and moves the draft to the cadence queue with `approved_by` set to
+whoever turned the rule on (`lib/publishing/auto-approve.ts`). The gate in
+`lib/publishing/core.ts` is unchanged. Every existing workspace stays on manual
+review (`auto_approve default false`); only signup sets it true for the
+workspace it creates.
+
+No RLS change: both tables' policies are `for all` over the row. Depends on 001
+and 003. Idempotent throughout (`if not exists`, `drop constraint if exists` +
+`add`, `comment on`). Post-flight §4 step 2 does not list it: no new table.
+Pre-flight: `workspaces.auto_approve` exists. Roll back with
+`alter table workspaces drop column auto_approve, drop column auto_approve_hold_hours, drop column auto_approve_min_seo, drop column auto_approve_min_aeo, drop column auto_approve_set_by, drop column auto_approve_set_at; alter table articles drop column approval_kind, drop column held_by, drop column held_at, drop column auto_approve_after, drop column auto_approve_hold_reason;`
+— approvals already made stay approved (the status and `approved_by` columns
+predate this file); only the record of *how* they were approved is lost.

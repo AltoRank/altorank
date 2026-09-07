@@ -5,6 +5,7 @@ import { TabRow, Icons, StatusPill, Chip, Card, SearchInput } from "@/components
 import { SetupWizard } from "@/components/dashboard/setup-wizard";
 import { PublishingCadenceForm } from "@/components/dashboard/publishing-cadence-form";
 import { GenerationPaceForm } from "@/components/dashboard/generation-pace-form";
+import { AutoApproveForm } from "@/components/dashboard/auto-approve-form";
 import { LocaleSelector } from "@/components/dashboard/locale-selector";
 import { FirstDraftLive } from "./first-draft-live";
 import type { Article, Keyword, CalendarEntry, Backlink, VoiceProfile, Workspace, PublishingCadence } from "@/lib/types";
@@ -515,6 +516,14 @@ function SettingsTab({
         maxPace={maxPace}
       />
       <LocaleSelector workspaceId={workspace.id} currentLanguage={workspace.language} />
+      <AutoApproveForm
+        workspaceId={workspace.id}
+        enabled={Boolean(workspace.auto_approve)}
+        holdHours={workspace.auto_approve_hold_hours ?? 24}
+        minSeo={workspace.auto_approve_min_seo ?? 70}
+        setByName={null}
+        hasCadence={Boolean(cadence?.enabled)}
+      />
       <PublishingCadenceForm workspaceId={workspace.id} cadence={cadence} />
     </div>
   );

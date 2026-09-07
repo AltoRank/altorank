@@ -1098,6 +1098,30 @@ export function ArticleEditor({
               hand over the file in the shape the site wants and record where
               it went. A URL is required because without one there is no
               evidence it is anywhere. */}
+          {/* An automatic approval is attributed, and says so where the
+              article is read: the rule's owner is `approved_by`, the mode is
+              `approval_kind` (migration 079). A draft waiting on its hold
+              window says when it will go, so "it published without me" is a
+              sentence nobody can say. */}
+          {article.approval_kind === "auto" && article.approved_at && (
+            <div className="mt-3 text-[12px] text-ink-3 leading-relaxed">
+              Approved automatically on {new Date(article.approved_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })},
+              under the publishing rule set in this workspace&rsquo;s settings.
+            </div>
+          )}
+          {article.status === "review" && article.auto_approve_after && !article.held_by && (
+            <div className="mt-3 text-[12px] text-ink-3 leading-relaxed">
+              Publishes on its own after {new Date(article.auto_approve_after).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} unless held.
+              {article.auto_approve_hold_reason && article.auto_approve_hold_reason !== "held by a person" && !article.auto_approve_hold_reason.startsWith("hold window") && (
+                <> Currently held: {article.auto_approve_hold_reason}.</>
+              )}
+            </div>
+          )}
+          {article.status === "review" && article.held_by && (
+            <div className="mt-3 text-[12px] text-ink-3 leading-relaxed">
+              Held by a person; it will not publish until someone approves it.
+            </div>
+          )}
           {article.status === "approved" && destinations.length === 0 && (
             <div className="mt-3 flex flex-col gap-2">
               <div className="text-[12px] text-ink-3 leading-relaxed">

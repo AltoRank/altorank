@@ -209,6 +209,89 @@ export async function setGenerationPace(workspaceId: string, requested: unknown)
   return pace;
 }
 
+/**
+ * The publishing decision for one workspace: review every draft, or publish
+ * automatically after a hold unless a person holds it (migration 079).
+ *
+ * Attributed on purpose. The caller becomes `auto_approve_set_by`, and every
+ * article the rule approves is recorded with that id as `approved_by`, so an
+ * automatic publish is traceable to a named person's decision rather than to
+ * "the system". Turning it off clears the pending hold stamps so the review
+ * cards stop promising a publish that will not come.
+ *
+ * Nothing ships without a publishing schedule, so enabling the rule on a
+ * workspace with no enabled cadence switches on a daily one at 10:00; the
+ * person can change it in the schedule card next to this one.
+ */
+export async function setAutoApprove(
+  workspaceId: string,
+  opts: { enabled: boolean; holdHours: number; minSeo: number; minAeo?: number | null },
+): Promise<{ cadenceCreated: boolean }> {
+  const { agencyId, user } = await requireAuth();
+  const supabase = await createClient();
+
+  const holdHours = Math.round(Number(opts.holdHours));
+  const minSeo = Math.round(Number(opts.minSeo));
+  const minAeo = opts.minAeo == null ? null : Math.round(Number(opts.minAeo));
+  if (!Number.isFinite(holdHours) || holdHours < 0 || holdHours > 168) throw new Error("Hold between 0 and 168 hours.");
+  if (!Number.isFinite(minSeo) || minSeo < 0 || minSeo > 100) throw new Error("SEO floor between 0 and 100.");
+  if (minAeo != null && (!Number.isFinite(minAeo) || minAeo < 0 || minAeo > 100)) throw new Error("AEO floor between 0 and 100.");
+
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("workspaces")
+    .update(
+      opts.enabled
+        ? {
+            auto_approve: true,
+            auto_approve_hold_hours: holdHours,
+            auto_approve_min_seo: minSeo,
+            auto_approve_min_aeo: minAeo,
+            auto_approve_set_by: user.id,
+            auto_approve_set_at: now,
+          }
+        : { auto_approve: false },
+    )
+    .eq("id", workspaceId)
+    // Defence in depth over RLS: the id arrives from the browser.
+    .eq("agency_id", agencyId);
+  if (error) throw new Error(error.message);
+
+  let cadenceCreated = false;
+  if (opts.enabled) {
+    const { data: cadence } = await supabase
+      .from("publishing_cadences")
+      .select("enabled")
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+    if (!cadence?.enabled) {
+      const { error: cadenceError } = await supabase.from("publishing_cadences").upsert(
+        {
+          workspace_id: workspaceId,
+          enabled: true,
+          days_of_week: [0, 1, 2, 3, 4, 5, 6],
+          publish_time: cadence ? undefined : "10:00",
+          timezone: cadence ? undefined : "Europe/Rome",
+          updated_at: now,
+        },
+        { onConflict: "workspace_id" },
+      );
+      if (cadenceError) throw new Error(cadenceError.message);
+      cadenceCreated = true;
+    }
+  } else {
+    await supabase
+      .from("articles")
+      .update({ auto_approve_after: null, auto_approve_hold_reason: null })
+      .eq("workspace_id", workspaceId)
+      .eq("status", "review");
+  }
+
+  revalidatePath(`/workspaces/${workspaceId}`);
+  revalidatePath("/review");
+  return { cadenceCreated };
+}
+
 export async function activateWorkspace(id: string) {
   const { agencyId } = await requireAuth();
   const supabase = await createClient();

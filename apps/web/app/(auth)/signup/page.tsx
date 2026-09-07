@@ -114,6 +114,15 @@ async function signUp(formData: FormData) {
         // paid default when they subscribe.
         auto_generate: true,
         auto_generate_weekly_limit: FREE_TIER_PACE,
+        // The person who typed one domain wants a blog that runs. Drafts
+        // publish on their own after a day unless held; the same checks the
+        // Approve button runs still apply, and the free tier cannot ship
+        // without a plan either way (needsPlanToShip). Attributed to them:
+        // every automatic approval is recorded under this user id.
+        auto_approve: true,
+        auto_approve_hold_hours: 24,
+        auto_approve_set_by: data.user.id,
+        auto_approve_set_at: new Date().toISOString(),
       });
       // Not fatal: the account exists, and the dashboard asks for a domain if
       // there is no workspace. Log it so a silent miss here is findable.
