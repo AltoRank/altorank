@@ -88,11 +88,15 @@ export async function getWorkspaceAudits(workspaceId: string): Promise<DomainAud
   await requireAuth();
   const supabase = await createClient();
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("domain_audits")
     .select("*")
     .eq("workspace_id", workspaceId)
     .order("started_at", { ascending: false });
 
+  // `data ?? []` on a failed read painted "Total audits 0" over a 137-word
+  // paragraph explaining that no audit has ever run - to an account whose
+  // audits simply could not be loaded.
+  if (error) throw new Error(`could not read this site's audits (${error.message})`);
   return (data ?? []) as DomainAudit[];
 }

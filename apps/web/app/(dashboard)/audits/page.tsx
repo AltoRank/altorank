@@ -24,15 +24,21 @@ export default async function AuditsPage() {
     })),
   );
 
+  // The server's clock, handed to each row so a running audit's staleness
+  // survives a reload rather than restarting from the moment the tab opened.
+  // eslint-disable-next-line react-hooks/purity
+  const now = Date.now();
+
   const allAudits = auditsByWs.flatMap((x) => x.audits);
   const completedAudits = allAudits.filter((a) => a.status === "completed");
+  // Averaged over audits that produced a score, numerator and denominator
+  // both. The numerator summed `?? 0` while the denominator counted only
+  // scored rows, so three completed audits with no score gave 0/1 = 0, which
+  // renders "—" with the delta "no audits yet" beside "Total audits 3".
+  const scoredAudits = completedAudits.filter((a) => typeof a.overall_score === "number");
   const avgScore =
-    completedAudits.length > 0
-      ? Math.round(
-          completedAudits.reduce((s, a) => s + (a.overall_score ?? 0), 0) /
-            // Average only over audits that actually produced a score.
-            Math.max(1, completedAudits.filter((a) => typeof a.overall_score === "number").length),
-        )
+    scoredAudits.length > 0
+      ? Math.round(scoredAudits.reduce((s, a) => s + a.overall_score, 0) / scoredAudits.length)
       : 0;
   const totalIssues = completedAudits.reduce((s, a) => s + a.issues.length, 0);
   const totalPages = completedAudits.reduce((s, a) => s + a.pages_crawled, 0);
@@ -123,7 +129,7 @@ export default async function AuditsPage() {
                   </thead>
                   <tbody>
                     {wsAudits.map((a) => (
-                      <AuditRow key={a.id} audit={a} />
+                      <AuditRow key={a.id} audit={a} now={now} />
                     ))}
                     {wsAudits.length === 0 && (
                       <tr>

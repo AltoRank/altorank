@@ -16,6 +16,7 @@ import { CalendarControls } from "@/components/dashboard/calendar-controls";
 import { PlannerGrid, type PlannerCell, type PlannerItem } from "@/components/dashboard/planner-grid";
 import { PlanningProvider } from "@/components/dashboard/planning-state";
 import { PlannerSlot } from "@/components/dashboard/planner-slot";
+import { GIVE_UP_MS } from "@/components/dashboard/first-draft-live";
 import type { WriteGate } from "@/components/dashboard/planner-card";
 import { PlanMonthButton } from "@/components/dashboard/plan-month-button";
 import { HowItWorks } from "@/components/dashboard/how-it-works";
@@ -156,7 +157,14 @@ export default async function CalendarPage({ searchParams }: Props) {
   const items = [...articleItems, ...improvementItems];
   const cells: PlannerCell[] = buildMonthCells(items, yearNum, monthNum, (it) => it.entry.scheduled_date);
 
-  const runningCount = items.filter((it) => it.entry.status === "run" || it.inFlight !== null).length;
+  // Bounded by the same ten minutes the cards themselves use. A draft whose
+  // run died leaves `articles.status` on 'drafting' forever, and
+  // `getDraftsInFlight` has no age filter, so a draft that died last week kept
+  // this header saying "1 running now" directly above a square reading
+  // "stopped responding" - the same page answering its own question twice.
+  const stillRunning = (it: PlannerItem) =>
+    it.inFlight !== null && now.getTime() - new Date(it.inFlight.createdAt).getTime() <= GIVE_UP_MS;
+  const runningCount = items.filter((it) => it.entry.status === "run" || stillRunning(it)).length;
   const frozenCount = articleItems.filter((it) => it.frozen !== null).length;
   const slots = capacity?.available ?? 0;
   // Nothing on any day of the month being looked at, and nothing anywhere on

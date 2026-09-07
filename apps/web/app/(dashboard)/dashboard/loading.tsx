@@ -7,9 +7,25 @@ import {
   SkeletonSoft,
   StatStripSkeleton,
   SubtitleSkeleton,
+  TableSkeleton,
 } from "@/components/ui/skeleton";
 
-/** Five stats, the recommended-actions strip, then the 8/4 and 7/5 card rows the page draws. */
+/**
+ * Five stats, the recommended-actions strip, then the card rows the page
+ * draws.
+ *
+ * "Recent articles" is `md:col-span-12` and unconditional
+ * (`dashboard/page.tsx:525`), and had no placeholder at all, so the page grew
+ * a full-width card after the skeleton had finished promising four. The strip
+ * above it was fixed at `md:grid-cols-3`; the real one is
+ * `sm:grid-cols-[repeat(var(--cols))]` with up to four columns
+ * (`recommended-actions-strip.tsx:15-18`), a different breakpoint as well as a
+ * different count.
+ *
+ * `Cannibalization` and `Keyword sources` are left out deliberately: both are
+ * conditional on data this has not read, and a skeleton may promise less than
+ * arrives but must not promise more.
+ */
 export default function DashboardLoading() {
   return (
     <>
@@ -26,7 +42,7 @@ export default function DashboardLoading() {
       <StatStripSkeleton count={5} />
       <PageBodySkeleton label="Loading the dashboard">
         <div className="mb-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Recommended actions</div>
-        <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-[repeat(3,minmax(0,1fr))]">
           {[0, 1, 2].map((i) => (
             <div key={i} className="rounded-lg border border-line bg-bg p-4">
               <Skeleton className="h-3.5 w-40" />
@@ -43,6 +59,9 @@ export default function DashboardLoading() {
           <CardSkeleton title="Needs your review" className="md:col-span-4" lines={4} />
           <CardSkeleton title="Best articles" className="md:col-span-7" lines={4} />
           <CardSkeleton title="Index coverage" className="md:col-span-5" lines={3} />
+          <CardSkeleton title="Recent articles" className="md:col-span-12" flush>
+            <TableSkeleton columns={["Title", "Keyword", "Status", "Score", "Updated"]} rows={5} numeric={[3]} />
+          </CardSkeleton>
         </div>
       </PageBodySkeleton>
     </>

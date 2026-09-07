@@ -48,10 +48,16 @@ export const getScopedWorkspaceId = cache(async function getScopedWorkspaceId(
   // RLS scopes this to the caller's agency, so a foreign id simply misses
   // the list. Oldest first, so the fallback is stable rather than whichever
   // row came back first.
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("workspaces")
     .select("id")
     .order("created_at", { ascending: true });
+  // A dropped error here becomes an empty id list, which becomes a null scope,
+  // which every page in the dashboard renders as "you have no sites yet":
+  // Articles says "No workspaces yet. Add one", Linking says "Add a workspace
+  // first", Improvements says "No workspace yet". One failed read and the app
+  // tells an account with six sites to create its first.
+  if (error) throw new Error(`workspace scope: could not read this account's sites (${error.message})`);
   const ids = ((data ?? []) as Array<{ id: string }>).map((w) => w.id);
 
   if (wanted && wanted !== "all" && ids.includes(wanted)) return wanted;

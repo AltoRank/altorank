@@ -61,8 +61,14 @@ export default async function ClientDetailPage({ params }: Props) {
 
   const liveCount = articles.filter((a) => a.status === "live").length;
   const reviewCount = articles.filter((a) => a.status === "review").length;
-  const avgScore = articles.length > 0
-    ? Math.round(articles.reduce((s, a) => s + a.seo_score, 0) / articles.length)
+  // Averaged over articles that have a score, which is what the Articles page
+  // does (articles/page.tsx). Dividing by every article put unscored drafts -
+  // `seo_score` 0 until an audit runs - in the denominator, so the same
+  // workspace showed two different numbers under the same label, and the one
+  // here fell as the person wrote more.
+  const scored = articles.filter((a) => a.seo_score > 0);
+  const avgScore = scored.length > 0
+    ? Math.round(scored.reduce((s, a) => s + a.seo_score, 0) / scored.length)
     : 0;
 
   return (

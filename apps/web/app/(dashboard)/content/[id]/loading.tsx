@@ -4,7 +4,7 @@ import { PageHeadSkeleton, Skeleton, SkeletonSoft } from "@/components/ui/skelet
 export default function ArticleEditorLoading() {
   return (
     <>
-      <PageHeadSkeleton back titleWidth="w-80" />
+      <PageHeadSkeleton back titleWidth="w-80" subtitleWidth="w-52" />
       <div
         role="status"
         aria-busy="true"

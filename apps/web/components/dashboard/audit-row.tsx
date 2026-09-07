@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { StatusPill, Icons } from "@/components/ui";
 import type { DomainAudit } from "@/lib/types";
 import { plural } from "@/lib/utils";
@@ -33,11 +34,28 @@ function scoreColor(score: number | null): string {
   return "text-red-600";
 }
 
-function auditStatus(a: DomainAudit): { status: string; label: string } {
-  if (a.status === "running") return { status: "run", label: "Running" };
+function auditStatus(a: DomainAudit, stalled: boolean): { status: string; label: string } {
+  if (a.status === "running") {
+    return stalled ? { status: "error", label: "Stopped responding" } : { status: "run", label: "Running" };
+  }
   if (a.status === "failed") return { status: "error", label: "Failed" };
   return { status: "on", label: "Completed" };
 }
+
+/** How often a running audit is asked about again. Same cadence as everywhere. */
+const POLL_MS = 3_000;
+
+/**
+ * When a `running` row stops being believed.
+ *
+ * `app/api/audit/route.ts` declares `maxDuration = 60`, so the crawl, the
+ * PageSpeed calls and the writes all happen inside a minute; five is generous
+ * for a slow one. A worker that dies mid-crawl never writes a terminal status,
+ * so without this the row would say "Running" until someone thought to check
+ * the database - and with the poll added, would keep refreshing the route
+ * forever while it did.
+ */
+const GIVE_UP_MS = 5 * 60_000;
 
 const SEVERITY_STYLE: Record<Severity, string> = {
   error: "text-red-600 border-red-600/30 bg-red-600/[0.06]",
@@ -45,15 +63,33 @@ const SEVERITY_STYLE: Record<Severity, string> = {
   info: "text-ink-3 border-line bg-panel",
 };
 
-export function AuditRow({ audit }: { audit: DomainAudit }) {
+export function AuditRow({ audit, now }: { audit: DomainAudit; now: number }) {
   const [open, setOpen] = useState(false);
+  const router = useRouter();
+
+  // The audits page never refreshed itself. `app/api/audit/route.ts` says in a
+  // comment that "the client polls getAuditStatus", and `app/actions/audit.ts`
+  // exports exactly that function - with no callers anywhere. So a crawl that
+  // takes a minute in `after()` left this row reading "Running" until the
+  // person reloaded, on the one screen whose whole content is the result.
+  //
+  // Staleness is measured against the server's clock, like `FirstDraftLive`,
+  // so a run that died twenty minutes ago still reads as dead after a reload
+  // instead of restarting its countdown.
+  const running = audit.status === "running";
+  const stalled = running && now - new Date(audit.started_at).getTime() > GIVE_UP_MS;
+  useEffect(() => {
+    if (!running || stalled) return;
+    const t = setInterval(() => router.refresh(), POLL_MS);
+    return () => clearInterval(t);
+  }, [running, stalled, router]);
 
   const date = new Date(audit.started_at).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
   });
-  const { status, label } = auditStatus(audit);
+  const { status, label } = auditStatus(audit, stalled);
   const completed = audit.status === "completed";
 
   const issues = audit.issues ?? [];

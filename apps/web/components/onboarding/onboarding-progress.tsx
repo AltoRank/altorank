@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icons } from "@/components/ui";
+import { calendarStripDays, dayFromIso, MAX_CHIPS_PER_DAY } from "@/lib/onboarding/calendar-strip";
 import {
   initialOnboardingState,
   isTerminal,
@@ -44,6 +45,30 @@ export const POLL_MS = 3_000;
 /** After two minutes the run is in the draft, where nothing changes for a while. */
 export const POLL_SLOW_MS = 10_000;
 export const POLL_BACKOFF_AFTER_MS = 2 * 60_000;
+/**
+ * Polls in a row that answered with anything but a run before the screen stops
+ * asking and says so.
+ *
+ * Terminal detection needs a successful read: a 401 from an expired session, a
+ * 500, or a row the route cannot see leaves `isTerminal` unreached, and the
+ * loop simply reschedules. The only ceiling on this screen is `RUN_STALE_MS`,
+ * which is computed server-side from `updated_at` and therefore requires the
+ * very read that is failing - so a signed-out tab sat here spinning its five
+ * step icons and printing "This takes about a minute" indefinitely.
+ *
+ * Ten is a minute of the fast cadence, which is longer than any deploy blip
+ * and far short of the minutes a draft legitimately takes.
+ */
+export const POLL_MAX_CONSECUTIVE_FAILURES = 10;
+
+/**
+ * What the screen says when it gives up watching. Deliberately about *this
+ * screen* and not about the run: the run is a row advanced by its own
+ * invocations and carries on regardless, which is the same thing
+ * `STALE_RUN_ERROR` is careful to say about a worker that died.
+ */
+export const POLL_LOST_ERROR =
+  "This screen lost contact with the server and stopped following the run. The run itself carries on; reload to pick it up.";
 
 export function OnboardingProgress({
   workspaceId,
@@ -95,6 +120,8 @@ export function OnboardingProgress({
 
     const fail = (detail: string) => setState((s) => reduceOnboarding(s, { phase: "error", detail }));
 
+    let failures = 0;
+
     const poll = async () => {
       if (cancelled) return;
       try {
@@ -103,15 +130,31 @@ export function OnboardingProgress({
           const snapshot = (await res.json()) as OnboardingRunSnapshot;
           if (cancelled) return;
           if (snapshot.run) {
+            failures = 0;
             const next = stateFromRun(snapshot.run, snapshot.article, { stale: snapshot.stale });
             setState(next);
             if (isTerminal(next)) return;
+          } else {
+            failures += 1;
           }
+        } else {
+          failures += 1;
         }
       } catch {
-        /* a missed poll is the next one's problem */
+        /* a missed poll is the next one's problem - until there are too many */
+        failures += 1;
       }
       if (cancelled) return;
+      // Without this the screen had no way to stop. Everything that decides a
+      // run is over is read out of a successful response, so a session that
+      // expired mid-run, or a route that started answering 500, left five
+      // spinners turning and "This takes about a minute" on screen for as long
+      // as the tab was open. The run itself is unaffected either way: it is a
+      // row advanced by its own invocations, and this only ever watched it.
+      if (failures >= POLL_MAX_CONSECUTIVE_FAILURES) {
+        fail(POLL_LOST_ERROR);
+        return;
+      }
       timer = setTimeout(poll, Date.now() - startedAt > POLL_BACKOFF_AFTER_MS ? POLL_SLOW_MS : POLL_MS);
     };
 
@@ -181,6 +224,7 @@ export function OnboardingProgress({
       </ol>
 
       <CalendarStrip
+        planned={state.planned}
         drafting={drafting?.status === "active"}
         article={state.article}
         skipped={drafting?.status === "skipped" || drafting?.status === "failed"}
@@ -223,55 +267,88 @@ function StepRow({ step }: { step: OnboardingStep }) {
 }
 
 /**
- * Seven days, today marked, and the square for today filling in.
+ * The zone and locale every date on this screen is read in.
  *
- * A skeleton while the draft is being written, then the real chip. The dates
- * are real so the strip reads as the calendar it is a preview of, and the chip
- * sits on today because that is when the draft was created - the same rule
- * lib/queries/calendar.ts uses to place a `drafting` article.
+ * UTC because the plan's dates are UTC. `en-US` and not the ambient locale
+ * because this renders on the server first: Node's ICU default and the
+ * browser's locale disagree ("18 Sept" against "Sep 18"), and React throws a
+ * hydration mismatch on the difference. Every other date in the dashboard is
+ * formatted the same way - `planner-grid.tsx:79` is the same call on the same
+ * `YYYY-MM-DD` shape.
+ */
+const DATE_LOCALE = "en-US";
+const DAY_LABEL: Intl.DateTimeFormatOptions = { weekday: "short", timeZone: "UTC" };
+const MONTH_DAY: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", timeZone: "UTC" };
+
+/**
+ * A week of the plan, with what is planned on each day.
+ *
+ * This took `{ drafting, article }` and nothing else, and gated every content
+ * branch on `i === 1`, so seven squares could only ever fill one: a run that
+ * planned seven articles across 09-07…09-13 drew those exact dates as empty
+ * boxes, immediately above a SCHEDULED list that named all seven. The plan was
+ * already in this component's own state - `OnboardingState.planned`, written
+ * by the planning phase - so nothing had to be fetched to fix it, only passed
+ * one level down.
+ *
+ * The window is the plan's own first week rather than an offset from today
+ * (which showed yesterday and five days the plan might never reach); the days
+ * past it are counted in a footnote rather than dropped. `calendarStripDays`
+ * holds that arithmetic, in UTC, because the plan's dates are UTC and the list
+ * below prints them raw.
+ *
+ * The pulsing skeleton stays, but only on the draft actually in flight: the
+ * first entry of the plan, which is the one the pipeline hands to the writer.
+ * Every other planned term is a plain chip, which is what it is - scheduled,
+ * not being written.
  */
 function CalendarStrip({
+  planned,
   drafting,
   article,
   skipped,
   skippedReason,
 }: {
+  planned: OnboardingState["planned"];
   drafting: boolean;
   article: OnboardingState["article"];
   skipped: boolean;
   skippedReason?: string;
 }) {
-  const today = new Date();
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(today.getDate() - 1 + i);
-    return d;
-  });
+  const { days, beyond, lastDate, draftDate } = calendarStripDays(planned);
 
   return (
     <div>
       <div className="mb-1.5 text-[11px] uppercase tracking-wide text-ink-3">Your calendar</div>
       <div className="grid grid-cols-7 gap-1" role="presentation">
-        {days.map((d, i) => {
-          const isToday = i === 1;
+        {days.map((day) => {
+          const d = dayFromIso(day.date);
+          const isDraftDay = day.date === draftDate;
+          // The draft's own square shows the draft - as a skeleton while it is
+          // written, then as the article - and the plan's term for that day is
+          // what the skeleton stands for, so it is not repeated beside it.
+          const showsDraft = isDraftDay && (article !== null || drafting);
+          const rest = showsDraft ? day.terms.slice(1) : day.terms;
+          const chips = rest.slice(0, showsDraft ? MAX_CHIPS_PER_DAY - 1 : MAX_CHIPS_PER_DAY);
+          const more = rest.length - chips.length;
           return (
             <div
-              key={d.toISOString()}
+              key={day.date}
               className={`flex min-h-[64px] flex-col rounded-md border px-1.5 py-1 ${
-                isToday ? "border-accent/40 bg-accent/5" : "border-line bg-panel"
+                day.isToday ? "border-accent/40 bg-accent/5" : "border-line bg-panel"
               }`}
             >
-              <div className={`text-[10px] ${isToday ? "font-semibold text-accent-ink" : "text-ink-3"}`}>
-                {d.toLocaleDateString(undefined, { weekday: "short" })}
-                <span className="ml-1 font-mono">{d.getDate()}</span>
+              <div className={`text-[10px] ${day.isToday ? "font-semibold text-accent-ink" : "text-ink-3"}`}>
+                {d.toLocaleDateString(DATE_LOCALE, DAY_LABEL)}
+                <span className="ml-1 font-mono">{d.getUTCDate()}</span>
               </div>
-              {isToday && drafting && !article && (
+              {isDraftDay && drafting && !article && (
                 <div className="mt-1.5 flex flex-col gap-1" aria-hidden>
                   <div className="h-2 w-full animate-pulse rounded-full bg-panel-2" />
                   <div className="h-2 w-3/4 animate-pulse rounded-full bg-panel-2" style={{ animationDelay: "140ms" }} />
                 </div>
               )}
-              {isToday && article && (
+              {isDraftDay && article && (
                 <div
                   className="mt-1.5 truncate rounded-sm bg-accent/15 px-1 py-0.5 text-[10.5px] leading-tight text-accent-ink"
                   title={article.title}
@@ -279,10 +356,26 @@ function CalendarStrip({
                   {article.keyword}
                 </div>
               )}
+              {chips.map((term) => (
+                <div
+                  key={term}
+                  className="mt-1 truncate rounded-sm bg-panel-2 px-1 py-0.5 text-[10.5px] leading-tight text-ink-2"
+                  title={term}
+                >
+                  {term}
+                </div>
+              ))}
+              {more > 0 && <div className="mt-1 px-1 text-[10px] leading-tight text-ink-3">+{more}</div>}
             </div>
           );
         })}
       </div>
+      {beyond > 0 && lastDate && (
+        <p className="m-0 mt-2 text-[12px] text-ink-3">
+          and {beyond} more on the calendar through{" "}
+          {dayFromIso(lastDate).toLocaleDateString(DATE_LOCALE, MONTH_DAY)}.
+        </p>
+      )}
       {article && (
         <p className="m-0 mt-2 text-[12px] text-ink-2">
           First draft is in your review queue

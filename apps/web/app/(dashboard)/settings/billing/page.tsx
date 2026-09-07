@@ -46,7 +46,7 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
   // below are computed from them afterwards rather than between them. Awaited
   // one after the other they were five round trips on the page people open
   // when they are about to pay.
-  const [{ data: agency }, { data: invoices }, simulation, preview, quota, { data: pausedRows }] =
+  const [{ data: agency, error: agencyError }, { data: invoices }, simulation, preview, quota, { data: pausedRows }] =
     await Promise.all([
       supabase
         .from("agencies")
@@ -79,6 +79,15 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
         .order("paused_until", { ascending: false })
         .limit(1),
     ]);
+  // The `?? "starter"` and `?? "inactive"` below are a sensible default for an
+  // account with no row yet and a lie for an account whose row would not load:
+  // a Managed customer was shown "Starter plan - inactive" and a ladder
+  // inviting them to buy what they already pay for, on the one page whose job
+  // is to state what they are paying for. A preview or simulation still
+  // overrides, because those are deliberate.
+  if (agencyError && !preview?.plan && !simulation?.plan) {
+    throw new Error(`could not read this account's plan (${agencyError.message})`);
+  }
   const pausedUntil = (pausedRows?.[0]?.paused_until as string | undefined) ?? null;
 
   const plan = (preview?.plan ?? simulation?.plan ?? agency?.plan ?? "starter") as PlanTier;

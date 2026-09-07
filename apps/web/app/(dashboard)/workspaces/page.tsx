@@ -35,10 +35,14 @@ function matchesQuery(fields: (string | null | undefined)[], q: string): boolean
 export default async function ClientsPage({ searchParams }: Props) {
   const params = await searchParams;
 
-  const [workspaces, allArticles] = await Promise.all([
-    getWorkspaces(params.status),
+  const [allWorkspaces, allArticles] = await Promise.all([
+    // Unfiltered: the status chip is applied below, in memory, so the header
+    // count keeps describing the account rather than the chip. Filtering to
+    // "Paused" used to make the page assert the account had two sites.
+    getWorkspaces(),
     getArticles(),
   ]);
+  const workspaces = params.status ? allWorkspaces.filter((w) => w.status === params.status) : allWorkspaces;
   const { agencyId, user, role } = await requireAuth();
   const allowance = await getWorkspaceAllowance(await createClient(), agencyId, user.email);
 
@@ -58,7 +62,7 @@ export default async function ClientsPage({ searchParams }: Props) {
     <>
       <PageHead
         title="Workspaces"
-        subtitle={<><StatusPill status="on" label={plural(workspaces.length, "workspace")} /><span>{plural(totalLive, "article")} published</span></>}
+        subtitle={<><StatusPill status="on" label={plural(allWorkspaces.length, "workspace")} /><span>{plural(totalLive, "article")} published</span></>}
         actions={
           <ClientActions
             allowance={{ limit: allowance.limit, remaining: allowance.remaining, used: allowance.used, noPlan: allowance.reason === "no-plan" }}
@@ -131,14 +135,23 @@ export default async function ClientsPage({ searchParams }: Props) {
                   </ClientRow>
                 );
               })}
-              {workspaces.length === 0 && (
+              {/* Gated on what the table draws, not on what the account
+                  owns. Rows map over `shown` while this tested `workspaces`,
+                  so a search matching nothing rendered column headers over an
+                  empty box: no rows, no message, no way to tell a filter from
+                  a broken page. */}
+              {shown.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-3.5 py-10 text-center text-ink-3">
-                    <span className="inline-block max-w-[56ch] leading-[1.6]">
-                      No sites yet. Add workspace above takes a name and a domain, and the first analysis starts on its
-                      own: agent readiness, a crawl of the site&rsquo;s pages, PageSpeed, and the keywords it already
-                      ranks for. Everything else in the app is about one of these.
-                    </span>
+                    {allWorkspaces.length === 0 ? (
+                      <span className="inline-block max-w-[56ch] leading-[1.6]">
+                        No sites yet. Add workspace above takes a name and a domain, and the first analysis starts on its
+                        own: agent readiness, a crawl of the site&rsquo;s pages, PageSpeed, and the keywords it already
+                        ranks for. Everything else in the app is about one of these.
+                      </span>
+                    ) : (
+                      <>No workspace matches these filters.</>
+                    )}
                   </td>
                 </tr>
               )}

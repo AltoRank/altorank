@@ -96,19 +96,25 @@ export async function getQuota(
   }
   // Agency-wide, never the caller's slice of it: see agency-client.ts.
   const counting = agencyCountingClient(supabase);
-  const { data: workspaceRows } = await counting
+  const { data: workspaceRows, error: workspaceError } = await counting
     .from("workspaces")
     .select("id")
     .eq("agency_id", agencyId);
+  // A failed read used to become an empty list, which became `used = 0`, which
+  // the usage meter printed as "0 used" - a measurement, from nothing. The
+  // house rule is that an unknown is never a zero, and a quota is the one
+  // number the app makes decisions on.
+  if (workspaceError) throw new Error(`quota: could not read this account's sites (${workspaceError.message})`);
   const workspaceIds = (workspaceRows ?? []).map((w) => w.id);
 
   let used = 0;
   if (workspaceIds.length) {
-    const { count } = await counting
+    const { count, error: usedError } = await counting
       .from("articles")
       .select("id", { count: "exact", head: true })
       .in("workspace_id", workspaceIds)
       .gte("created_at", monthStart());
+    if (usedError) throw new Error(`quota: could not count this month's articles (${usedError.message})`);
     used = count ?? 0;
   }
 
@@ -135,11 +141,23 @@ export async function getQuota(
     return { limit: null, used, remaining: null, reason: "self-host", plan: null };
   }
 
-  const { data: agency } = await counting
+  // The read that decides whether this account is entitled to anything. Its
+  // error was dropped, so a transient failure demoted a paying customer to the
+  // free tier for the length of the request: `planEntitled({})` is false, and
+  // that propagates to the sidebar usage bar, the "rank tracking runs for
+  // accounts on a plan" banner on Keywords, the New-article gate and the
+  // calendar's write gate. A refusal derived from a failed read is not a
+  // refusal, and this one asks the customer to buy what they already have.
+  //
+  // `maybeSingle`, not `single`: an agency row that genuinely does not exist
+  // is a different fact from a read that failed, and it keeps the fallback the
+  // rest of this function was written against.
+  const { data: agency, error: agencyError } = await counting
     .from("agencies")
     .select("plan, plan_status, payment_failed_at")
     .eq("id", agencyId)
-    .single();
+    .maybeSingle();
+  if (agencyError) throw new Error(`quota: could not read this account's plan (${agencyError.message})`);
 
   // `past_due` inside the grace window counts as paid: a card that failed at
   // renewal is Stripe's to retry for a week, and locking approve and publish

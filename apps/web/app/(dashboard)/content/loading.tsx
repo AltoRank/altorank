@@ -23,7 +23,10 @@ export default function ContentLoading() {
             <Skeleton className="h-[30px] w-36 rounded-[7px]" />
           </div>
         </div>
-        <CalendarSkeleton weeks={5} filled={8} />
+        {/* No `weeks`: hardcoding five reflowed the grid whenever the real
+            month needed six rows, which is the one thing a month skeleton is
+            for. CalendarSkeleton computes it from the month itself. */}
+        <CalendarSkeleton filled={8} />
       </PageBodySkeleton>
     </>
   );

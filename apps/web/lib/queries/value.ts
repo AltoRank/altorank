@@ -52,7 +52,12 @@ export async function getTrafficValue(
     .select("workspace_id, query, clicks")
     .eq("source", "gsc")
     .gte("metric_date", start)
-    .not("query", "is", null);
+    // Query rows, and only query rows. `.not("query","is",null)` also matches
+    // the (query, page) shape the sync writes alongside them, so both the euro
+    // figure and the "covers X% of N clicks" line under it were about twice
+    // what Search Console reported (lib/gsc/analysis.ts).
+    .not("query", "is", null)
+    .is("page_url", null);
   if (workspaceId) metricQuery = metricQuery.eq("workspace_id", workspaceId);
 
   const [{ data: keywords }, { data: metrics }] = await Promise.all([keywordQuery, metricQuery]);
@@ -108,6 +113,10 @@ export async function getArticleValue(
     .eq("workspace_id", workspaceId)
     .eq("article_id", articleId)
     .eq("source", "gsc")
+    // Page rows, as the docstring above says. An article id is stamped on the
+    // page shape *and* on the (query, page) shape, so an `article_id` filter
+    // alone doubled every article's traffic value.
+    .is("query", null)
     .gte("metric_date", start);
 
   const keywordQuery = keyword
