@@ -33,6 +33,4 @@ export function preflight(origin: string | null) {
   return new NextResponse(null, { status: 204, headers: corsHeaders(origin) });
 }
 
-export function clientIp(headers: Headers): string {
-  return headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-}
+export { clientIp } from "@/lib/tools/client-ip";

@@ -1,6 +1,7 @@
 "use server";
 
 import { headers } from "next/headers";
+import { clientIp } from "@/lib/tools/client-ip";
 import { z } from "zod";
 import { generateBrief } from "@/lib/tools/generate-brief";
 import { checkToolRateLimit } from "@/lib/tools/rate-limit";
@@ -28,7 +29,7 @@ export async function generateBriefAction(
   formData: FormData,
 ): Promise<BriefActionState> {
   const h = await headers();
-  const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = clientIp(h);
 
   if (!checkToolRateLimit(TOOL.slug, ip, TOOL.rateLimit, TOOL.rateWindowMs)) {
     return {

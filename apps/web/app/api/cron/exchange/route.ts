@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { cronSecretFrom } from "@/lib/cron-auth";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 
 /**
@@ -11,8 +11,7 @@ import { createServiceClient } from "@/lib/supabase/server";
  * verification (verifyExchange), not a timer.
  */
 export async function GET(request: Request) {
-  const cronSecret = cronSecretFrom(request);
-  if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
+  if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

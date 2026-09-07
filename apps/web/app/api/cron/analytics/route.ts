@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { cronSecretFrom } from "@/lib/cron-auth";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { syncWorkspaceAnalytics, type SyncableIntegration } from "@/lib/google/sync";
 import { syncBingWorkspace, type BingIntegration, type BingSyncResult } from "@/lib/bing/sync";
@@ -8,8 +8,7 @@ import { syncBingWorkspace, type BingIntegration, type BingSyncResult } from "@/
  * Daily cron: sync GA4 + GSC metrics for all connected workspaces, then Bing.
  */
 export async function GET(request: Request) {
-  const cronSecret = cronSecretFrom(request);
-  if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
+  if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
