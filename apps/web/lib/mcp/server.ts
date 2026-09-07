@@ -132,6 +132,7 @@ server.registerTool(
   "altorank_check_readiness",
   {
     title: "Check agent readiness",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description:
       "Run the nine agent-readiness checks against a domain: AI-crawler rules in " +
       "robots.txt, sitemap, structured data, Organization schema, machine-readable " +
@@ -158,6 +159,7 @@ server.registerTool(
   "altorank_propose_schema",
   {
     title: "Propose JSON-LD schema",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description:
       "Draft Organization / FAQPage / Product JSON-LD for a page, built only from " +
       "evidence found on the page itself. Every field carries provenance (source + " +
@@ -191,6 +193,7 @@ server.registerTool(
   "altorank_generate_machine_readable",
   {
     title: "Generate machine-readable content",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description:
       "Convert a page to Markdown and build a starter llms.txt for the site. The " +
       "content boundary prefers <main>, then the longest <article>, then " +
@@ -227,6 +230,7 @@ server.registerTool(
   "altorank_readiness_report",
   {
     title: "Full readiness report",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description:
       "The whole loop in one call: run the checks, generate every artifact the " +
       "failures need (JSON-LD, llms.txt), and attach a placement instruction to " +
@@ -256,6 +260,7 @@ server.registerTool(
   "altorank_whoami",
   {
     title: "Who am I (account preflight)",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description:
       "Which AltoRank account this key opens, its workspaces and this month's drafting quota. " +
       "Run first. Needs ALTORANK_API_KEY.",
@@ -268,6 +273,7 @@ server.registerTool(
   "altorank_list_workspaces",
   {
     title: "List workspaces",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: "Every workspace in the account, with ids for the other tools.",
     inputSchema: {},
   },
@@ -278,6 +284,7 @@ server.registerTool(
   "altorank_get_workspace",
   {
     title: "Get workspace",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: "One workspace with integration status and a `_human` block for describing its setup to a person.",
     inputSchema: workspaceArg,
   },
@@ -288,6 +295,7 @@ server.registerTool(
   "altorank_list_keywords",
   {
     title: "List keywords",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: "Tracked keywords for a workspace, each with allowed_mutations. Difficulty null means unmeasured.",
     inputSchema: {
       ...workspaceArg,
@@ -303,6 +311,7 @@ server.registerTool(
   "altorank_suggest_keywords",
   {
     title: "Suggest keywords",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description:
       "Keyword candidates for a workspace, from seed phrases or from the site itself. Spends research " +
       "credits: ask the human before calling. Nothing is saved.",
@@ -320,6 +329,7 @@ server.registerTool(
   "altorank_list_articles",
   {
     title: "List articles",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: "Articles for a workspace with status, editor_url and allowed_mutations.",
     inputSchema: {
       ...workspaceArg,
@@ -335,6 +345,7 @@ server.registerTool(
   "altorank_get_article",
   {
     title: "Get article",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: "One article and its latest generation job. This is how you poll a draft you started.",
     inputSchema: { article_id: z.string().uuid() },
   },
@@ -345,6 +356,7 @@ server.registerTool(
   "altorank_get_article_content",
   {
     title: "Get article content",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: "The article body as markdown (default), html or tiptap JSON. Read-only.",
     inputSchema: { article_id: z.string().uuid(), format: z.enum(["markdown", "html", "tiptap"]).optional() },
   },
@@ -356,6 +368,7 @@ server.registerTool(
   "altorank_generate_draft",
   {
     title: "Generate a draft",
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description:
       "Write an article draft into the human's review queue. Returns immediately with the article id; poll " +
       "altorank_get_article until status is review, then hand the human editor_url. Costs quota: agree the " +
@@ -377,6 +390,7 @@ server.registerTool(
   "altorank_usage",
   {
     title: "Usage and quota",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: "This month's drafting quota and per-workspace article counts. limit null means unmetered.",
     inputSchema: {},
   },
@@ -394,6 +408,7 @@ server.registerTool(
   "altorank_gsc_performance",
   {
     title: "Search Console performance",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description:
       "Clicks and impressions over the window vs the window before, daily series, top pages and queries in positions 4-15 " +
       "(opportunities). From the stored nightly sync. Returns ok:false when Search Console is not connected - that is no data, not zero.",
@@ -406,6 +421,7 @@ server.registerTool(
   "altorank_gsc_cannibalization",
   {
     title: "Search Console cannibalisation",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: "Queries where two or more of the site's pages compete, with the page Google prefers and a merge/differentiate suggestion per loser.",
     inputSchema: {
       ...workspaceArg,
@@ -422,6 +438,7 @@ server.registerTool(
   "altorank_gsc_coverage",
   {
     title: "Index coverage",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description:
       "Every known page bucketed indexed / not_indexed / unknown from stored URL Inspection verdicts and search impressions. " +
       "\"unknown\" is a real bucket, not \"not indexed\".",
@@ -434,6 +451,7 @@ server.registerTool(
   "altorank_gsc_url_inspection",
   {
     title: "URL inspection (stored)",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description:
       "Google's last stored verdict for one URL on the site, plus whether it was served in search. Does not call Google; " +
       "a fresh inspection is the human's click in the editor.",
@@ -450,6 +468,7 @@ server.registerTool(
   "altorank_export_keywords",
   {
     title: "Export keywords",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: "Every tracked keyword with volume, difficulty, cpc, status and planned_for as rows (JSON). Empty numbers are unmeasured, not 0.",
     inputSchema: { ...workspaceArg, status: z.string().optional() },
   },
@@ -460,6 +479,7 @@ server.registerTool(
   "altorank_reschedule_keywords",
   {
     title: "Reschedule planned keywords",
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     description:
       "Move planned (unwritten) keywords to other days: either items [{keyword_id, date}] or keyword_ids + shift_days. " +
       "Same write as dragging on the planner. Skips keywords that are not on the plan or already written, with the reason. Needs write scope.",
@@ -477,6 +497,7 @@ server.registerTool(
   "altorank_remove_keywords_from_plan",
   {
     title: "Remove keywords from the plan",
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     description:
       "Take planned keywords off the calendar. The keywords stay tracked (marked excluded so the planner does not re-add them); " +
       "nothing is deleted. Same as the planner's Remove. Needs write scope.",
@@ -497,6 +518,7 @@ server.registerTool(
   "altorank_replace_in_article",
   {
     title: "Find and replace in a draft",
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     description:
       "Find-and-replace in one draft's title and body. Preview by default (hits with before → after excerpts); preview_only:false writes. " +
       "Never changes status: refused on approved, scheduled or live articles. Needs write scope.",
@@ -509,6 +531,7 @@ server.registerTool(
   "altorank_bulk_replace_in_articles",
   {
     title: "Find and replace across drafts",
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     description:
       "The same find-and-replace across up to 10 editable drafts in a workspace (or the given article_ids). Preview by default. " +
       "Approved, scheduled and live articles are skipped with the reason. Needs write scope.",
@@ -521,6 +544,7 @@ server.registerTool(
   "altorank_retry_publish",
   {
     title: "Retry a failed publish",
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description:
       "Re-run the last FAILED publish of an article a human already approved, through the same connection. Refused unless the last " +
       "attempt failed and the article is still approved; this is not a publish call and cannot publish a draft. Needs write scope.",
@@ -533,6 +557,7 @@ server.registerTool(
   "altorank_pause_workspace",
   {
     title: "Pause a workspace",
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: "Stop drafting and publishing for one workspace until resumed. Drafts, plan and pace are untouched. Needs write scope.",
     inputSchema: workspaceArg,
   },
@@ -543,6 +568,7 @@ server.registerTool(
   "altorank_resume_workspace",
   {
     title: "Resume a workspace",
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: "Put a hand-paused workspace back and re-plan its calendar from today. Cannot lift the account-wide billing pause. Needs write scope.",
     inputSchema: workspaceArg,
   },
