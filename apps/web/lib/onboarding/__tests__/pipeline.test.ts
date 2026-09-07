@@ -34,6 +34,8 @@ const plan = vi.fn(async () => [] as unknown[]);
 vi.mock("../plan", () => ({ schedulePlan: () => plan(), fulfilPlannedEntry: vi.fn(async () => undefined) }));
 const fanOut = vi.fn(() => ({ dispatched: 0 }));
 vi.mock("@/lib/content/fan-out", () => ({ fanOutDrafts: (...a: unknown[]) => fanOut(...(a as [])) }));
+const detect = vi.fn(async () => ({ found: 0, added: 0 }));
+vi.mock("@/lib/linking/detect", () => ({ detectLinks: (...a: unknown[]) => detect(...(a as [])) }));
 
 import { runOnboarding } from "../pipeline";
 import type { OnboardingEvent } from "../events";
@@ -75,6 +77,8 @@ beforeEach(() => {
   for (const m of [scrape, voice, analyse, generate, quota, recommend, pick, creds, setSpendReporter, recordSpendByDefault]) m.mockReset();
   fanOut.mockReset();
   fanOut.mockReturnValue({ dispatched: 0 });
+  detect.mockReset();
+  detect.mockResolvedValue({ found: 0, added: 0 });
   // Both of these are set per-test by the fan-out cases, and a leak into the
   // thin client below shows up as "not is not a function" three tests later.
   plan.mockReset();
@@ -93,6 +97,30 @@ beforeEach(() => {
 });
 
 describe("runOnboarding", () => {
+  it("fills the link pool from the site's own sources before the first draft is written", async () => {
+    const order: string[] = [];
+    detect.mockImplementation(async () => { order.push("detect"); return { found: 28, added: 28 }; });
+    generate.mockImplementation(async () => {
+      order.push("generate");
+      return { articleId: "a1", title: "T", wordCount: 1200, factCheck: { verdict: "clean" } };
+    });
+    await collect();
+    expect(order).toEqual(["detect", "generate"]);
+    expect(detect).toHaveBeenCalledWith(expect.anything(), "ws1");
+  });
+
+  it("still writes the draft when the sitemap cannot be read", async () => {
+    detect.mockRejectedValue(new Error("Could not fetch the sitemap."));
+    const events = await collect();
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(phases(events)).toContain("drafting:done");
+  });
+
+  it("does not look for a link pool when there is no domain", async () => {
+    await runOnboarding(client(0), { ...WS, domain: null }, () => undefined);
+    expect(detect).not.toHaveBeenCalled();
+  });
+
   it("emits every boundary of a full run, in order, ending in ready", async () => {
     const events = await collect();
     expect(phases(events)).toEqual([

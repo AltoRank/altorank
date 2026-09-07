@@ -52,7 +52,9 @@ describe("Markdown export round trip", () => {
     );
     const body = (s: string) => s.slice(s.indexOf("\n---\n", 4)).trim();
     expect(body(fromExport)).toBe(body(fromGit.contents));
-    // And both are the raw converter's output, no second pass in between.
-    expect(body(fromExport)).toContain(htmlToMarkdown(html, "https://www.site.test").markdown.trim());
+    // And both are the raw converter's output, no second pass in between -
+    // in its rendered form, where an image keeps its URL.
+    expect(body(fromExport)).toContain(htmlToMarkdown(html, "https://www.site.test", { images: "linked" }).markdown.trim());
+    expect(body(fromGit.contents)).toContain("![A warehouse floor](https://cdn.example.com/hero.webp)");
   });
 });

@@ -26,11 +26,12 @@ import { accountPausedMessage } from "@/lib/billing/pause";
 import { spendClient } from "@/lib/billing/default-spend";
 import { setSpendReporter } from "@/lib/seo/client";
 import { fetchKnownPages } from "@/lib/linking/targets";
-import { anthropicModel } from "@/lib/ai/models";
+import { anthropicModel, openaiImageModel } from "@/lib/ai/models";
+import { GenerationTruncatedError } from "@/lib/ai/errors";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
 import { generateImage } from "@/lib/ai/image-generator";
 import { outputFromRow, resolveFeaturedImage, type OutputSettingsRow } from "@/lib/onboarding/output-settings";
-import { uploadImageBuffer } from "@/lib/storage/images";
+import { imageWriter, uploadImageBuffer } from "@/lib/storage/images";
 import {
   existingInternalLinks,
   fetchLinkTargets,
@@ -42,7 +43,7 @@ import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research"
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { getLocale } from "@/lib/seo/locales";
-import type { ArticleBrief, RefreshContext, VoiceRules } from "@/lib/ai/types";
+import type { ArticleBrief, RefreshContext, SiteContext, VoiceRules } from "@/lib/ai/types";
 import { classifyKeyword, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { parseStoredQuestions } from "@/lib/keywords/questions";
 import { e2eStubsEnabled, stubGenerateArticle } from "@/lib/e2e/stubs";
@@ -196,12 +197,37 @@ export class ConcurrentGenerationError extends Error {
   }
 }
 
-/** The URL slug a new article gets from its title or keyword. Shared with the agent API, which creates the row before this runs. */
+/**
+ * The URL slug a new article gets from its title or keyword. Shared with the
+ * agent API, which creates the row before this runs.
+ *
+ * Accented letters are folded to their base letter before anything is
+ * dropped. The old `[^a-z0-9]` pass deleted them outright, so an Italian
+ * keyword like "città d'arte" published at `/citt-d-arte` and "perché" at
+ * `/perch`: a slug missing letters from the keyword it was meant to carry,
+ * on the locales the product is sold into first. Same fold as the heading
+ * ids in lib/content/enrich/html.ts, so an anchor and a slug agree.
+ */
 export function slugFor(text: string): string {
   return text
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
+}
+
+/** The three fields of `workspaces.business_profile` a writer can use, or undefined when there is nothing to say. */
+export function siteContextFrom(profile: unknown): SiteContext | undefined {
+  if (!profile || typeof profile !== "object") return undefined;
+  const p = profile as { name?: unknown; description?: unknown; audiences?: unknown };
+  const name = typeof p.name === "string" ? p.name.trim() : "";
+  const description = typeof p.description === "string" ? p.description.trim() : "";
+  if (!name && !description) return undefined;
+  const audiences = Array.isArray(p.audiences)
+    ? p.audiences.filter((a): a is string => typeof a === "string" && a.trim().length > 0).map((a) => a.trim())
+    : [];
+  return { name: name || null, description: description || null, audiences };
 }
 
 /** A rewrite of a page the product did not write has no article id. */
@@ -229,7 +255,7 @@ export async function generateArticle(
 
   const { data: workspace, error: wsError } = await supabase
     .from("workspaces")
-    .select("id, domain, ai_provider, ai_model, agency_id, language, brand_style, location_code, status, paused_until")
+    .select("id, domain, ai_provider, ai_model, agency_id, language, brand_style, location_code, status, paused_until, business_profile")
     .eq("id", workspaceId)
     .single();
 
@@ -315,8 +341,16 @@ export async function generateArticle(
         mentionSimilarProducts: outputSettings.mentionSimilarProducts,
         emojis: outputSettings.emojis,
         customInstructions: outputSettings.globalArticlePrompt || null,
+        faq: outputSettings.faqSchema,
       }
     : undefined;
+
+  // Who the site is, for the prompt. The wizard writes `business_profile`
+  // (name, description, audiences) and until now only the closing CTA read
+  // it: the writer was briefed on the keyword and the SERP and not on the
+  // business the article was for. Absent on installs from before 048, or
+  // when the wizard was skipped; the prompt then says nothing, as before.
+  const site = siteContextFrom(workspace.business_profile);
 
   // The keyword as an object: what the owner said about this article in
   // particular. By id when the plan supplies one, else by term within the
@@ -602,6 +636,7 @@ export async function generateArticle(
         .map((t) => ({ title: t.title, keyword: t.keyword })),
       output,
       brief,
+      site,
       refreshOf: refreshOf
         ? {
             existingHtml: refreshOf.existingHtml,
@@ -799,8 +834,19 @@ export async function generateArticle(
           workspace.brand_style as Record<string, unknown> | undefined,
           { style: featured.style, titleCover: featured.titleCover, brandColor: outputSettings.brandColor },
         );
+        // Never metered before: the section images wrote a row, the hero did
+        // not. Cost stays null, as for the section images - the images
+        // endpoint reports no price.
+        void recordSpend(spendDb, {
+          provider: "openai",
+          operation: `${openaiImageModel()} (featured image)`,
+          costUsd: null,
+          workspaceId,
+          articleId: article.id,
+          runId: job.id,
+        });
         featuredImageUrl = await uploadImageBuffer(
-          supabase,
+          imageWriter(supabase),
           imageResult.data,
           `${workspaceId}/${article.id}.${imageResult.extension}`,
           imageResult.contentType,
@@ -935,6 +981,24 @@ export async function generateArticle(
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown generation error";
+
+    // A run cut off at the ceiling is billed for every token it produced,
+    // thinking included. The row it would have written on success is written
+    // here instead, so the ledger and the dashboard's spend figures show the
+    // failed call rather than a quiet gap.
+    if (err instanceof GenerationTruncatedError) {
+      const model = anthropicModel("content");
+      await recordSpend(spendClient() ?? supabase, {
+        provider: "anthropic",
+        operation: model,
+        costUsd: anthropicCost(model, err.inputTokens, err.outputTokens),
+        inputTokens: err.inputTokens,
+        outputTokens: err.outputTokens,
+        workspaceId,
+        articleId: article.id ?? null,
+        runId: job.id,
+      });
+    }
 
     // A run that created the row marks it errored - the row exists only
     // because of this run. A run that was writing into an article the user

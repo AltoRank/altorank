@@ -8,6 +8,7 @@ import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { resumeExpiredPauses } from "@/lib/billing/resume";
 import { billingEnabled, getStripe } from "@/lib/stripe";
 import { generateArticle, ConcurrentGenerationError } from "@/lib/content/generate";
+import { sweepStaleDrafts } from "@/lib/content/stale-drafts";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
 import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
 import { readFrozenEntries } from "@/lib/plan/frozen";
@@ -169,6 +170,13 @@ export async function GET(request: Request) {
 
     const workspaceId = ws.id as string;
     const domain = (ws.domain as string | null) ?? null;
+    // A draft whose run died holds its keyword until something says it is
+    // not being written (lib/content/stale-drafts.ts). Once a day is enough.
+    try {
+      await sweepStaleDrafts(supabase, workspaceId);
+    } catch {
+      // Best effort; the run below does not depend on it.
+    }
     // Falls back to the same number the column now defaults to (042), so a
     // row written before that migration is not quietly held at the old 2.
     const limit = (ws.auto_generate_weekly_limit as number) ?? PAID_DEFAULT_PACE;

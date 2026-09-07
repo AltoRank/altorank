@@ -63,6 +63,10 @@ export class GhostAdapter implements CMSAdapter {
               html: article.html,
               status: article.publishMode === "draft" ? "draft" : "published",
               meta_description: article.metaDescription ?? "",
+              // Ghost takes an absolute URL and serves it as the post's hero
+              // and og:image. Left out until now, so every Ghost post went up
+              // without the featured image the product had just generated.
+              ...(article.featuredImageUrl ? { feature_image: article.featuredImageUrl } : {}),
               tags: article.tags?.map((t) => ({ name: t })) ?? [],
             },
           ],
@@ -104,6 +108,7 @@ export class GhostAdapter implements CMSAdapter {
               title: article.title,
               html: article.html,
               meta_description: article.metaDescription ?? "",
+              ...(article.featuredImageUrl ? { feature_image: article.featuredImageUrl } : {}),
               updated_at: updatedAt,
             },
           ],

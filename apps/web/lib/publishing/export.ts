@@ -31,7 +31,7 @@ export type ExportableArticle = {
  * link the writer made to /pricing survives being pasted into another host.
  */
 export function renderArticleMarkdown(article: ExportableArticle, siteUrl: string): string {
-  const { markdown } = htmlToMarkdown(article.html, siteUrl);
+  const { markdown } = htmlToMarkdown(article.html, siteUrl, { images: "linked" });
   const frontmatter = buildFrontmatter({
     title: article.title,
     description: article.metaDescription ?? undefined,

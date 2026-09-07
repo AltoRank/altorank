@@ -125,6 +125,7 @@ describe("WebhookAdapter contract", () => {
           image_url: "https://img/x.png",
           slug: "title",
           tags: ["t1"],
+          schema: [],
         },
       ],
     });

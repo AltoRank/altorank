@@ -39,7 +39,10 @@
 //     "created_at":       "2026-09-04T10:00:00.000Z",
 //     "image_url":        "https://..." | null,   featured image
 //     "slug":             "kebab-case",
-//     "tags":             ["..."]
+//     "tags":             ["..."],
+//     "schema":           [{ "@type": "BlogPosting", ... }, { "@type": "FAQPage", ... }]
+//                         JSON-LD objects for the page; `content_html` does
+//                         not carry them, so place them in <head> or the body
 //   }
 //
 // Response: any 2xx. If the body is JSON with `id` and/or `url`, they are
@@ -71,6 +74,7 @@ export function webhookArticle(article: PublishPayload) {
     image_url: article.featuredImageUrl ?? null,
     slug: article.slug,
     tags: article.tags ?? [],
+    schema: article.structuredData ?? [],
   };
 }
 

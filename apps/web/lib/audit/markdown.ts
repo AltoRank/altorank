@@ -143,7 +143,22 @@ export function extractMainContent(html: string): ExtractedContent {
  * final pass, and `decode` collapses `\s+`, which would eat the newlines that
  * separate every block from the next.
  */
-function inline(s: string, baseUrl: string): string {
+/**
+ * How an <img> is written.
+ *
+ *   alt-only  `![alt]` - the audit's reader view, where alt text is the only
+ *             part of an image an agent can read and a URL is noise.
+ *   linked    `![alt](absolute src)` - a document that will be rendered:
+ *             the Markdown a git adapter commits, a webhook consumer stores,
+ *             a person exports. Until 2026-09-07 every one of those used the
+ *             audit form, so a static site built from a git publish, and an
+ *             Export as MD, carried every body image as bare alt text glued
+ *             to its caption ("![Sketch illustrating X]What is X?"), with
+ *             the URL gone.
+ */
+export type MarkdownImages = "alt-only" | "linked";
+
+function inline(s: string, baseUrl: string, images: MarkdownImages = "alt-only"): string {
   return decodeEntities(
     s
       .replace(/<(strong|b)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_, __, t: string) =>
@@ -159,8 +174,13 @@ function inline(s: string, baseUrl: string): string {
         const url = absoluteUrl(href, baseUrl);
         return url ? `[${text}](${url})` : text;
       })
-      // Alt text is the only part of an image an agent can read.
-      .replace(/<img\b[^>]*alt=["']([^"']+)["'][^>]*>/gi, (_, alt: string) => `![${alt}]`)
+      .replace(/<img\b[^>]*>/gi, (tag: string) => {
+        const alt = tag.match(/\balt=["']([^"']*)["']/i)?.[1] ?? "";
+        if (images === "alt-only") return alt ? `![${alt}]` : "";
+        const raw = tag.match(/\bsrc=["']([^"']*)["']/i)?.[1]?.trim() ?? "";
+        const src = raw ? absoluteUrl(raw, baseUrl) : "";
+        return src ? `![${alt}](${src})` : alt ? `![${alt}]` : "";
+      })
       .replace(/<br\s*\/?>/gi, "\n")
       .replace(/<[^>]+>/g, ""),
   )
@@ -176,19 +196,22 @@ function inline(s: string, baseUrl: string): string {
  * Without that, sibling cards built from unsemantic nested divs concatenate into
  * one unreadable run, which is the common shape of a modern marketing page.
  */
-export function htmlToMarkdown(html: string, baseUrl: string): MarkdownResult {
+export function htmlToMarkdown(html: string, baseUrl: string, opts: { images?: MarkdownImages } = {}): MarkdownResult {
+  const images = opts.images ?? "alt-only";
   const title = decode(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "") || undefined;
   const extracted = extractMainContent(html);
   let s = extracted.html;
 
-  s = s.replace(/<\/(div|section|article|li|tr|details|p|h[1-6])>/gi, "\n$&");
+  // figure/figcaption too: a caption is its own line, not the tail of the image.
+  s = s.replace(/<\/(div|section|article|li|tr|details|p|h[1-6]|figure|figcaption)>/gi, "\n$&");
+  s = s.replace(/<figcaption\b/gi, "\n$&");
 
   s = s.replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_, t: string) =>
     `\n\n\`\`\`\n${decode(t.replace(/<[^>]+>/g, "")).trim()}\n\`\`\`\n\n`);
 
   s = s.replace(/<table\b[^>]*>([\s\S]*?)<\/table>/gi, (_, table: string) => {
     const rows = [...table.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
-      .map((m) => [...m[1].matchAll(/<(t[hd])\b[^>]*>([\s\S]*?)<\/\1>/gi)].map((c) => inline(c[2], baseUrl)))
+      .map((m) => [...m[1].matchAll(/<(t[hd])\b[^>]*>([\s\S]*?)<\/\1>/gi)].map((c) => inline(c[2], baseUrl, images)))
       .filter((r) => r.length);
     if (!rows.length) return "";
     const width = Math.max(...rows.map((r) => r.length));
@@ -199,20 +222,20 @@ export function htmlToMarkdown(html: string, baseUrl: string): MarkdownResult {
   });
 
   s = s.replace(/<(h[1-6])\b[^>]*>([\s\S]*?)<\/\1>/gi, (_, tag: string, t: string) => {
-    const text = inline(t, baseUrl);
+    const text = inline(t, baseUrl, images);
     return text ? `\n\n${"#".repeat(Number(tag[1]))} ${text}\n\n` : "";
   });
   s = s.replace(/<li\b[^>]*>([\s\S]*?)<\/li>/gi, (_, t: string) => {
-    const text = inline(t, baseUrl);
+    const text = inline(t, baseUrl, images);
     return text ? `\n- ${text}` : "";
   });
   s = s.replace(/<(p|summary|blockquote)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_, tag: string, t: string) => {
-    const text = inline(t, baseUrl);
+    const text = inline(t, baseUrl, images);
     if (!text) return "";
     return tag.toLowerCase() === "blockquote" ? `\n\n> ${text}\n\n` : `\n\n${text}\n\n`;
   });
 
-  const markdown = inline(s, baseUrl)
+  const markdown = inline(s, baseUrl, images)
     .split("\n")
     .map((line) => line.trimEnd())
     // Source HTML is deeply indented; leading whitespace would turn ordinary
