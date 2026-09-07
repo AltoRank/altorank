@@ -10,13 +10,13 @@ works out what is applied by looking for one distinguishing object per file.
 Verified 2026-09-05 against a fresh `supabase/postgres:15.8.1.060` container:
 files 001–061 apply cleanly in numeric order (see
 `docs/integration/MIGRATION-REPORT-2026-09-05.md` for the evidence and the
-caveats). 062–074 have not been through that container check; they are in the
+caveats). 062–075 have not been through that container check; they are in the
 pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 074.** The one-line-per-file list in §3 and the pre-flight query in §1
-both go to 074. If you add a migration, add its marker to the query in the same
+**Head is 075.** The one-line-per-file list in §3 and the pre-flight query in §1
+both go to 075. If you add a migration, add its marker to the query in the same
 commit — the post-flight step is "every row is `t`", and a file with no row
 passes that check by being absent from it.
 
@@ -128,7 +128,8 @@ m(file, applied) as (values
   ('071_billing_past_due',                   exists (select 1 from col where t='agencies' and c='payment_failed_at')),
   ('072_tenant_authz_hardening',             exists (select 1 from pg_trigger where tgname='agencies_guard_privileged_columns')),
   ('073_lifecycle_emails',                   to_regclass('public.idx_invites_one_pending_per_email') is not null),
-  ('074_one_autonomous_draft_per_keyword',   to_regclass('public.idx_articles_one_autonomous_draft_per_keyword') is not null)
+  ('074_one_autonomous_draft_per_keyword',   to_regclass('public.idx_articles_one_autonomous_draft_per_keyword') is not null),
+  ('075_reports_one_per_period',             to_regclass('public.idx_reports_one_per_period') is not null)
 )
 select file, applied from m order by file;
 ```
@@ -214,7 +215,7 @@ a hosted project and on `supabase start`; it fails on a bare
 `supabase/postgres` Docker image, which only ships a stub `storage` schema.
 That is the one file that could not be exercised in the 2026-09-05 check.
 
-### Production, from 048 to 074
+### Production, from 048 to 075
 
 Only the files whose PR has merged to `main` exist in the checkout. Apply what
 is there, in order. One line per file so a failure is attributable:
@@ -247,6 +248,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 071_billing_past_due.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 072_tenant_authz_hardening.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 073_lifecycle_emails.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 074_one_autonomous_draft_per_keyword.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 075_reports_one_per_period.sql
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -483,3 +485,13 @@ where `status = 'drafting' and generated_autonomously`. The second of two overla
 drafts already share a keyword — the file's header has the query that finds them. Pre-flight:
 `to_regclass('public.idx_articles_one_autonomous_draft_per_keyword') is not null`. Roll back
 with `drop index idx_articles_one_autonomous_draft_per_keyword;`.
+
+## 075 — added 2026-09-07
+
+`075_reports_one_per_period.sql`: unique index `idx_reports_one_per_period` on
+`reports (workspace_id, period)`. `lib/reports/generate.ts` has always upserted on
+`onConflict: "workspace_id,period"`, and without this index PostgREST refuses every
+upsert, so `cron/reports` never wrote a row. Depends on 001. Idempotent
+(`create unique index if not exists`). Pre-flight:
+`to_regclass('public.idx_reports_one_per_period') is not null`. Roll back with
+`drop index idx_reports_one_per_period;`.
