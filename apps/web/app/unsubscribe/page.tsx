@@ -20,11 +20,24 @@ import {
  * and the category to a server secret, so this cannot be used to silence
  * somebody else's mail.
  *
- * It is a preferences page, not a dead end: the link's own category is turned
- * off on arrival - a person who pressed "stop" has already decided, and making
- * them press a second button is a dark pattern with an apology attached - and
- * everything else optional is listed with a switch, including the one just
- * turned off, so an accidental click is one press from undone.
+ * The GET only asks. It used to be the unsubscribe itself, on the reasoning
+ * that somebody who pressed "stop" has already decided and a second button is a
+ * dark pattern with an apology attached. That reasoning holds for a person and
+ * fails for the inbox they are in: Microsoft Defender Safe Links, Proofpoint URL
+ * Defense, Mimecast and Barracuda all fetch every link in an inbound message
+ * before the recipient sees it, so on a corporate tenant the opt-out fired
+ * before anybody read the mail. The auditor reproduced it by accident with one
+ * `curl` while checking the link resolved. For a product selling to agencies on
+ * Microsoft 365 that is not theoretical, and a scanner deciding what mail
+ * somebody receives is worse than one extra press.
+ *
+ * So the write lives on the POST - the server action behind these buttons - and
+ * the confirm is one press on a page that names the category and the address.
+ * Gmail's one-click button is unaffected: RFC 8058 sends that to
+ * POST /api/unsubscribe, which is where the RFC puts it and where it stays.
+ *
+ * It is a preferences page, not a dead end: everything optional is listed with
+ * a switch, so a change is one press from undone.
  *
  * The required categories are named at the bottom, with the reason they have
  * no switch. Leaving them off the page entirely would make the list read as a
@@ -58,20 +71,13 @@ export default async function UnsubscribePage(props: Props) {
   const { email, category } = parsed;
   const supabase = createServiceClient();
 
-  // Arriving here IS the unsubscribe. `done` marks the follow-up renders after
-  // a switch was toggled, so a refresh does not re-apply the original link's
-  // category over a choice the person has since changed.
-  if (!sp.done) {
-    try {
-      await unsubscribeAddress(supabase, email, category);
-    } catch {
-      // A write that failed is reported by the list below being unchanged
-      // rather than by an error page; the switches still work.
-    }
-  }
-
+  // Nothing is written here. A GET is a read, and this URL is fetched by link
+  // scanners before the recipient has seen the message.
   const off = new Set(await readUnsubscribed(supabase, email).catch(() => []));
   const allOff = off.has(ALL_OPTIONAL);
+  // `done` marks the render after a switch was toggled, so the page says
+  // "Saved" rather than asking again for something already decided.
+  const alreadyOff = allOff || off.has(category);
 
   async function toggle(formData: FormData) {
     "use server";
@@ -104,16 +110,37 @@ export default async function UnsubscribePage(props: Props) {
     </>
   );
 
-  const stopped =
+  const label =
     category === ALL_OPTIONAL
-      ? "Every optional email is off."
-      : `${EMAIL_CATEGORIES[category as EmailCategory].label} emails are off.`;
+      ? "every optional email"
+      : `${EMAIL_CATEGORIES[category as EmailCategory].label} emails`;
 
   return (
-    <Shell title="Email preferences">
-      <p className="text-[14px] leading-relaxed text-ink-2">
-        {sp.done ? "Saved." : stopped} We will not send them to <strong>{email}</strong> again.
-      </p>
+    <Shell title={sp.done || alreadyOff ? "Email preferences" : `Stop ${label}?`}>
+      {sp.done || alreadyOff ? (
+        <p className="text-[14px] leading-relaxed text-ink-2">
+          {sp.done ? "Saved." : `${label[0]!.toUpperCase()}${label.slice(1)} are already off.`} Nothing
+          else changed for <strong>{email}</strong>.
+        </p>
+      ) : (
+        <>
+          <p className="text-[14px] leading-relaxed text-ink-2">
+            Press the button and we stop sending {label} to <strong>{email}</strong>. Nothing has
+            changed yet.
+          </p>
+          <form action={toggle}>
+            {hidden}
+            <input type="hidden" name="category" value={category} />
+            <input type="hidden" name="wanted" value="0" />
+            <button
+              type="submit"
+              className="w-full rounded-[8px] bg-ink px-4 py-2.5 text-[13px] font-medium text-bg hover:opacity-90 cursor-pointer"
+            >
+              Stop {label}
+            </button>
+          </form>
+        </>
+      )}
 
       <div className="rounded-[10px] border border-line divide-y divide-line">
         {optionalCategories().map((c) => {
