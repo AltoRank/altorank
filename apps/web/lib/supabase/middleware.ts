@@ -14,10 +14,10 @@ import { afterSignIn } from "@/lib/auth/next-path";
 // decides otherwise here, in one place, on purpose.
 //
 // Exported because a list nobody can read is a list nobody can check. Every
-// page directory sitting directly under `app/` - outside every route group - is
-// there precisely because it has no session to belong to, and
-// `__tests__/public-routes.test.ts` reads that directory and fails if one of
-// them is missing here. /hold was missing for as long as it existed.
+// page sitting outside every route group under `app/` is there precisely
+// because it has no session to belong to, and
+// `__tests__/public-routes.test.ts` reads the filesystem and fails if one of
+// them is not served here. /hold was missing for as long as it existed.
 export const PUBLIC_PREFIXES = [
   "/signin",
   "/signup",
@@ -40,14 +40,21 @@ export const PUBLIC_PREFIXES = [
   // report inbox uses may have no account at all. The HMAC in the URL is
   // what authorises it (lib/email/unsubscribe.ts).
   "/unsubscribe",
-  // The "Hold this one" link from a drafted email, on the same terms as
-  // /unsubscribe: the HMAC in the URL is what authorises it
+  // The "Hold this one" link from a drafted email, on exactly the same terms
+  // as /unsubscribe: the HMAC in the URL is what authorises it
   // (lib/publishing/hold-link.ts), binding the article to the address the mail
-  // went to. It is missing here that made the approval gate's escape hatch a
+  // went to. It was missing here that made the approval gate's escape hatch a
   // bounce to /signin on production, so the draft published on schedule while
   // the reader looked at a password field - and the signed token rode into the
   // sign-in URL, into history and into any referrer that page emits.
   "/hold",
+  // OAuth discovery for the hosted MCP endpoint (RFC 8414 / 9728). An MCP
+  // client reads these before anyone has signed in; that is their purpose.
+  "/.well-known",
+  // The connector consent screen. It handles the signed-out case itself,
+  // by sending the person to /signin with a `next` back to the exact
+  // request, which a blanket redirect here would drop on the floor.
+  "/oauth/authorize",
 ] as const;
 
 /** Whether the middleware serves this path to a request with no session. */
@@ -113,8 +120,9 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Redirect authenticated users away from auth pages, honouring the same
-  // `next` - somebody already signed in who opens a mailed link should land on
-  // the article, not be told to go to the dashboard and find it.
+  // `next` - somebody already signed in who opens a mailed link, or who was
+  // sent here by the connector consent screen, should land on the page they
+  // asked for rather than be told to go to the dashboard and find it.
   if (user && (path === "/signin" || path === "/signup")) {
     const target = afterSignIn(request.nextUrl.searchParams.get("next"));
     return NextResponse.redirect(new URL(target, request.nextUrl.origin));

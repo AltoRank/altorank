@@ -29,7 +29,13 @@ export function TooltipContent({
       <TooltipPrimitive.Content
         sideOffset={sideOffset}
         className={cn(
-          "z-50 overflow-hidden rounded-[6px] border border-line bg-ink px-2 py-1",
+          // Above the overlay tier, not below it. Dialogs and drawers sit at
+          // z-[200]/[201] and the sidebar at z-[200]; at z-50 this rendered
+          // behind all three, so a tooltip opened from a planner card was
+          // painted over by the sidebar and looked clipped. A tooltip must
+          // also be readable from inside a dialog or drawer, so it belongs
+          // above them rather than beside them.
+          "z-[300] overflow-hidden rounded-[6px] border border-line bg-ink px-2 py-1",
           "text-[12px] font-medium text-bg shadow-md",
           "animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out",
           "data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",

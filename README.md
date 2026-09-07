@@ -19,9 +19,10 @@ Read this before you invest time in it.
 - **No paying customers, no case studies.** Nothing here has a growth figure
   attached to it, and that is on purpose.
 - **The CLI is not packaged.** `npm run cli` from `apps/web` drives the whole
-  agent API (`apps/web/scripts/cli.ts`), and `apps/web/scripts/SKILL.md` is the
+  agent API (`apps/web/scripts/cli.ts`), and `skills/altorank/SKILL.md` is the
   skill file a coding agent reads. There is no published npm binary yet, so
-  today it runs from a checkout rather than from `npx`.
+  today it runs from a checkout rather than from `npx`. (The skill itself does
+  install with `npx`; see below.)
 - **The hosted dashboard is what runs today.** It works locally against your own
   Supabase and your own API keys.
 
@@ -72,6 +73,27 @@ WordPress plugin — a second, recommended route to WordPress that installs a
 plugin and takes a per-site token instead of an application password
 (`apps/web/lib/cms/wordpress-plugin.ts`), which is why WordPress appears twice.
 
+## Install the skill
+
+```bash
+npx skills add AltoRank/altorank
+```
+
+That puts `skills/altorank/SKILL.md` where Claude Code, Cursor, Codex, Copilot,
+Windsurf, Gemini CLI, Cline and the other agents the
+[skills CLI](https://github.com/vercel-labs/skills) supports will read it. The
+skill teaches an agent to drive the agent API (`/api/agent/v1`): preflight the
+key, check a site's readiness, list or suggest keywords, generate a draft into
+a human's review queue, edit a draft by find-and-replace, move the content
+plan. It never publishes, approves or deletes; the API has no such calls.
+
+It needs an API key, created at `/settings/api-keys` in the dashboard and
+exported as `ALTORANK_API_KEY`. Self-hosted installs also set
+`ALTORANK_BASE_URL`. `skills/altorank/commands/` holds five thin slash
+commands for the common calls; the skills CLI does not register slash commands,
+so copy them into `.claude/commands/` (Claude Code) or your agent's equivalent
+if you want them.
+
 ## Running it
 
 Requires Node 22+, and a Supabase project (local via Docker, or hosted).
@@ -106,6 +128,27 @@ and from `apps/web`:
 npm run cli -- --help        # the agent API from a shell; auth with ALTORANK_API_KEY
 npm run readiness -- <domain>  # the agent-readiness checks on their own
 ```
+
+### Hosted MCP endpoint
+
+The same tools are served at `/api/mcp` (Streamable HTTP) by the running app,
+so an MCP client adds one URL as a connector instead of running the stdio
+server: `https://app.altorank.co/api/mcp` on the hosted install, or your own
+origin when you self-host. Authentication is a bearer token, either an API key
+from `/settings/api-keys` or the token the built-in OAuth flow issues:
+
+- discovery at `/.well-known/oauth-authorization-server` and
+  `/.well-known/oauth-protected-resource/api/mcp`
+- dynamic client registration at `/api/oauth/register` (public clients, PKCE
+  S256 only)
+- consent at `/oauth/authorize`, owner or admin only, write scope opt-in
+- token at `/api/oauth/token`, authorization-code grant, no refresh token
+
+The token a connector receives is an `api_keys` row (migration 080), so it is
+listed, expires and is revoked on `/settings/api-keys` like any other key.
+Claude Code registers it with
+`claude mcp add --transport http altorank https://app.altorank.co/api/mcp`;
+ChatGPT and Claude.ai take the same URL as a custom connector.
 
 Neither the CLI nor the MCP server can approve an article or delete anything —
 not by configuration, but because the agent API has no such call and no `DELETE`
@@ -145,7 +188,7 @@ apps/web/               the engine and dashboard (Next.js)
   lib/geo/              AI-answer visibility
   scripts/mcp.ts        MCP server
   scripts/cli.ts        CLI over /api/agent/v1
-  scripts/SKILL.md      the skill file a coding agent reads
+skills/altorank/        the skill file a coding agent reads (`npx skills add AltoRank/altorank`)
 docker/                 container setup for self-hosting
 tools/agent-readiness/  standalone agent-readiness scanner
 ```

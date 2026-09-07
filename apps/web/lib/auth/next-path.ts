@@ -2,7 +2,9 @@
 // Where to send somebody after they sign in
 // ---------------------------------------------------------------------------
 //
-// Eight of the twenty-four emails this product sends end in "open the draft",
+// Two callers, one rule. A connector's consent screen (`/oauth/authorize`)
+// sends a signed-out person here first and wants them back afterwards; and
+// eight of the twenty-four emails this product sends end in "open the draft",
 // "review the proposed changes", "open the review queue". Every one of those
 // links is auth-gated, and the middleware used to answer them by cloning the
 // URL and overwriting only the pathname:
@@ -29,10 +31,15 @@ export const DEFAULT_AFTER_SIGN_IN = "/dashboard";
  *
  * Accepts only a same-origin relative reference: one leading `/`, no scheme, no
  * authority. Rejects absolute URLs, protocol-relative `//host`, the backslash
- * variants browsers normalise into them, control characters (a header-splitting
- * newline among them), and a bounce back to the auth pages themselves.
+ * and percent-encoded variants browsers normalise into them, control characters
+ * (a header-splitting newline among them), and a bounce back to the auth pages
+ * themselves.
+ *
+ * Takes `unknown` because one caller reads it out of a `FormData`, where the
+ * value is a `File` as easily as a string. The `typeof` guard below is the
+ * check; the parameter type only saves every caller a cast.
  */
-export function safeNextPath(raw: string | null | undefined): string | null {
+export function safeNextPath(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const value = raw.trim();
   if (!value || value.length > 2048) return null;
@@ -64,6 +71,6 @@ export function safeNextPath(raw: string | null | undefined): string | null {
 }
 
 /** The validated `next`, or the dashboard. */
-export function afterSignIn(raw: string | null | undefined): string {
+export function afterSignIn(raw: unknown): string {
   return safeNextPath(raw) ?? DEFAULT_AFTER_SIGN_IN;
 }

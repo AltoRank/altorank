@@ -59,6 +59,10 @@ function fakeSupabase() {
 const sitemap = (urls: string[]) =>
   `<?xml version="1.0"?><urlset>${urls.map((u) => `<loc>${u}</loc>`).join("")}</urlset>`;
 
+/** A sitemap index: every <loc> is itself a sitemap, which is how it is told apart. */
+const sitemapIndex = (children: string[]) =>
+  `<?xml version="1.0"?><sitemapindex>${children.map((u) => `<loc>${u}</loc>`).join("")}</sitemapindex>`;
+
 afterEach(() => vi.restoreAllMocks());
 
 describe("robots.txt", () => {
@@ -149,6 +153,88 @@ describe("budget", () => {
   it("has a default budget, so a caller that forgets one still cannot hang", () => {
     expect(DEFAULTS.budgetMs).toBeGreaterThan(0);
     expect(DEFAULTS.budgetMs).toBeLessThanOrEqual(300_000);
+  });
+
+  // -------------------------------------------------------------------------
+  // Discovery, not just the page loop
+  // -------------------------------------------------------------------------
+  //
+  // The two tests above serve their sitemap instantly and put the delay on the
+  // pages, so they only ever exercised the deadline inside the page loop. The
+  // sitemap-index walk runs BEFORE that loop and used to be bounded only by
+  // the per-request timeout: 20 children x 10 s x up to 3 roots is about 210
+  // seconds of unbudgeted work on an onboarding worker whose ceiling is 300
+  // and which has already spent 61-174 s in analyseDomain. Nothing caught it
+  // because nothing had ever made discovery slow.
+
+  it("abandons a slow sitemap index inside the budget instead of walking all of it", async () => {
+    const children = Array.from({ length: 20 }, (_, i) => `https://x.co/sitemap-${i}.xml`);
+    const routes: Record<string, { body?: string; type?: string; delayMs?: number }> = {
+      "https://x.co/sitemap.xml": { body: sitemapIndex(children), type: "text/xml" },
+    };
+    // Each child is slow, the way a real sitemap index on a slow host is.
+    children.forEach((child, i) => {
+      routes[child] = {
+        body: sitemap([`https://x.co/blog/c${i}`]),
+        type: "text/xml",
+        delayMs: 40,
+      };
+    });
+    for (let i = 0; i < children.length; i++) routes[`https://x.co/blog/c${i}`] = { body: PAGE };
+    const net = serve(routes);
+    try {
+      const db = fakeSupabase();
+      const startedAt = Date.now();
+      const r = await syncSitePages(db.client, "ws1", "x.co", {
+        techChecks: true,
+        concurrency: 1,
+        budgetMs: 150,
+      });
+      const elapsed = Date.now() - startedAt;
+
+      // Walking all 20 children is 800 ms of delay alone. Inside the budget
+      // plus a generous allowance for the in-flight request and the machine.
+      expect(elapsed).toBeLessThan(600);
+      const childrenFetched = net.seen.filter((u) => /sitemap-\d+\.xml$/.test(u)).length;
+      expect(childrenFetched).toBeGreaterThan(0);
+      expect(childrenFetched).toBeLessThan(children.length);
+
+      // And the run still COMPLETES: a discovery that ran out of time returns
+      // what it found, it does not throw, so the caller gets a summary and the
+      // onboarding row is settled rather than left `running` forever.
+      expect(r.robotsBlocked).toBe(false);
+      // It says it did not read the whole site, rather than reporting a
+      // complete crawl of however few URLs it managed to discover.
+      expect(r.truncated).toBe(true);
+    } finally { net.restore(); }
+  });
+
+  it("still returns the URLs it discovered before the clock ran out", async () => {
+    // The first child is fast and the rest are slow, so there is something to
+    // keep. Abandoning discovery must not throw away the part that landed.
+    const children = Array.from({ length: 20 }, (_, i) => `https://x.co/sitemap-${i}.xml`);
+    const routes: Record<string, { body?: string; type?: string; delayMs?: number }> = {
+      "https://x.co/sitemap.xml": { body: sitemapIndex(children), type: "text/xml" },
+    };
+    children.forEach((child, i) => {
+      routes[child] = {
+        body: sitemap([`https://x.co/blog/c${i}`]),
+        type: "text/xml",
+        delayMs: i === 0 ? 0 : 300,
+      };
+    });
+    for (let i = 0; i < children.length; i++) routes[`https://x.co/blog/c${i}`] = { body: PAGE };
+    const net = serve(routes);
+    try {
+      const db = fakeSupabase();
+      const r = await syncSitePages(db.client, "ws1", "x.co", {
+        techChecks: true,
+        concurrency: 1,
+        budgetMs: 200,
+      });
+      expect(r.discovered).toBeGreaterThan(0);
+      expect(r.discovered).toBeLessThan(children.length);
+    } finally { net.restore(); }
   });
 });
 

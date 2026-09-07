@@ -18,7 +18,7 @@ async function signIn(formData: FormData) {
   // rather than trusted: it arrives in a URL, and a redirect target read out of
   // a URL is an open redirect unless something refuses `//evil.com` and its
   // relatives (lib/auth/next-path.ts).
-  const next = safeNextPath(formData.get("next") as string | null);
+  const next = safeNextPath(formData.get("next"));
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {

@@ -46,6 +46,8 @@ export type RequestOptions = {
   method?: "GET" | "POST";
   body?: unknown;
   apiKey?: string | null;
+  /** Overrides ALTORANK_BASE_URL; the hosted MCP route uses it to call its own deployment. */
+  baseUrl?: string;
   query?: Record<string, string | number | undefined | null>;
 };
 
@@ -54,7 +56,7 @@ export async function agentRequest<T = unknown>(path: string, opts: RequestOptio
   if (!key) return fail("unauthorized", "No API key configured.", GUIDANCE.missingKey);
   if (!looksLikeApiKey(key)) return fail("unauthorized", "Configured API key is malformed.", GUIDANCE.malformedKey);
 
-  const url = new URL(`${resolveBaseUrl()}/api/agent/v1${path}`);
+  const url = new URL(`${(opts.baseUrl ?? resolveBaseUrl()).replace(/\/+$/, "")}/api/agent/v1${path}`);
   for (const [k, v] of Object.entries(opts.query ?? {})) {
     if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
   }

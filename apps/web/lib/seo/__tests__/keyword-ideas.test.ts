@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseKeywordIdea, dedupePermutations } from "../keywords";
+import { parseKeywordIdea, dedupePermutations, type DiscoveredKeyword } from "../keywords";
 import { runAuditChecks } from "@/lib/audit/checks";
 
 describe("parseKeywordIdea", () => {
@@ -19,8 +19,8 @@ describe("tls_chain audit issue", () => {
 });
 
 describe("dedupePermutations", () => {
-  const k = (keyword: string, volume: number) =>
-    ({ keyword, volume, difficulty: 0, cpc: 0, competition: 0, intent: "info" }) as never;
+  const k = (keyword: string, volume: number): DiscoveredKeyword =>
+    ({ keyword, volume, difficulty: 0, cpc: 0, competition: 0, intent: "info" });
 
   // The real shape, from one live keyword_suggestions call on "seo content":
   // nine phrasings of one idea, all at 1,300 a month. Each is individually

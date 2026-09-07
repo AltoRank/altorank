@@ -57,6 +57,16 @@ describe("WordPressPluginAdapter", () => {
     });
   });
 
+  it("publish() hands the plugin the workspace's IndexNow key, and omits it when there is none", async () => {
+    mockFetch.mockResolvedValueOnce(Response.json({ id: 1, url: "https://example.com/a", status: "publish" }, { status: 201 }));
+    await adapter.publish({ id: "art-2", title: "A", html: "<p>a</p>", slug: "a", indexNowKey: "k1234567" });
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toMatchObject({ indexnow_key: "k1234567" });
+
+    mockFetch.mockResolvedValueOnce(Response.json({ id: 2, url: "https://example.com/b", status: "publish" }, { status: 201 }));
+    await adapter.publish({ id: "art-3", title: "B", html: "<p>b</p>", slug: "b", indexNowKey: null });
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body)).not.toHaveProperty("indexnow_key");
+  });
+
   it("publish() reports when the site held the post as a draft", async () => {
     mockFetch.mockResolvedValueOnce(
       Response.json({ id: 13, url: "https://example.com/?p=13", status: "draft" }, { status: 201 }),

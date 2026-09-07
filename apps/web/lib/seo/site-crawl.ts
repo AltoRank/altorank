@@ -200,20 +200,38 @@ export function locsIn(xml: string): string[] {
 /**
  * Every page URL the site declares, from robots.txt to sitemap to sitemap
  * index. One level of index nesting, which is all anyone uses.
+ *
+ * `deadline` is a wall-clock stop, in `Date.now()` terms, and it is not
+ * optional in practice: this walk is sequential and every fetch in it is
+ * bounded only by `timeoutMs`. One Yoast-style `sitemap_index.xml` on a slow
+ * host is up to 20 child sitemaps at 10 s each, times up to three roots -
+ * about 210 seconds before a single page has been fetched. `syncSitePages`
+ * used to compute its budget and then consult it only inside the page loop,
+ * so all of that ran outside it, on an onboarding worker with 300 seconds
+ * that had already spent 61-174 s in `analyseDomain`. Past 300 s Vercel kills
+ * the invocation, the `onboarding_runs` row stays `running`, and the progress
+ * screen polls forever - the exact failure the poll-based rewrite removed.
+ *
+ * Out of time returns what has been found so far rather than throwing: a
+ * partial sitemap is a partial crawl, which is the outcome the page loop's
+ * own deadline already produces and which `truncated` already describes. The
+ * nightly cron/site-pages picks up the rest.
  */
 export async function discoverUrls(
   domain: string,
-  opts: { timeoutMs?: number; maxUrls?: number; declaredSitemaps?: string[] } = {},
+  opts: { timeoutMs?: number; maxUrls?: number; declaredSitemaps?: string[]; deadline?: number } = {},
 ): Promise<string[]> {
   const timeoutMs = opts.timeoutMs ?? DEFAULTS.timeoutMs;
   const maxUrls = opts.maxUrls ?? 5000;
   const origin = domain.startsWith("http") ? domain : `https://${domain}`;
+  const outOfTime = () => opts.deadline !== undefined && Date.now() >= opts.deadline;
 
   // The caller may already hold robots.txt (syncSitePages reads it for its
   // Disallow rules), and its Sitemap lines come with it, so the file is not
   // fetched a second time.
   const declared: string[] = [...(opts.declaredSitemaps ?? [])];
   if (!opts.declaredSitemaps) {
+    if (outOfTime()) return [];
     const robots = await bodyOf(`${origin}/robots.txt`, timeoutMs);
     for (const line of (robots ?? "").split("\n")) {
       const m = /^\s*sitemap:\s*(\S+)/i.exec(line);
@@ -226,6 +244,7 @@ export async function discoverUrls(
 
   const urls = new Set<string>();
   for (const root of roots) {
+    if (outOfTime()) break;
     const body = await bodyOf(root, timeoutMs);
     if (!body) continue;
     const locs = locsIn(body);
@@ -233,6 +252,8 @@ export async function discoverUrls(
     // An index lists sitemaps; a sitemap lists pages. All-XML means index.
     if (nested.length && nested.length === locs.length) {
       for (const child of nested.slice(0, 20)) {
+        // Checked before the fetch, not after: the point is not to start one.
+        if (outOfTime()) break;
         const childBody = await bodyOf(child, timeoutMs);
         if (childBody) for (const u of locsIn(childBody)) urls.add(u);
         if (urls.size >= maxUrls) break;
@@ -738,7 +759,14 @@ export async function syncSitePages(
   const all = await discoverUrls(domain, {
     timeoutMs: opts.timeoutMs,
     declaredSitemaps: robots.source === "fetched" ? robots.sitemaps : undefined,
+    // The same budget the page loop below obeys. Discovery is the half that
+    // runs first and used not to have it: see discoverUrls.
+    deadline,
   });
+  // Whether the sitemap walk gave up early. Recorded here rather than inferred
+  // later, because a discovery that stopped at 8 of 400 URLs then fetches all
+  // 8 and would otherwise report a complete crawl of an eight-page site.
+  const discoveryTruncated = Date.now() >= deadline;
   const filtered = opts.only ? all.filter((u) => u.includes(opts.only!)) : all;
   const allowed = filtered.filter((u) => isAllowed(robots, u));
   const disallowed = filtered.length - allowed.length;
@@ -792,7 +820,8 @@ export async function syncSitePages(
   // asked here, over what this run actually read - which is the whole site
   // when it fitted inside the cap and the budget, and a subset otherwise.
   // `truncated` says which, and the surfaces that render this say so too.
-  const truncated = pages.length < urls.length || urls.length < allowed.length;
+  const truncated =
+    discoveryTruncated || pages.length < urls.length || urls.length < allowed.length;
   if (techChecks) {
     const dupes = duplicateFindings(
       pages.map((p) => ({ url: p.url, title: p.title, metaDescription: p.meta_description, status: p.status })),
