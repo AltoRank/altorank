@@ -31,6 +31,27 @@ export const MUTATION_LIMIT = 30;
 export const MUTATION_WINDOW_MS = 60_000;
 const MUTATION_SLUG = "agent-mutations";
 
+/**
+ * A third window, for the routes that spend money at a third party.
+ *
+ * `mutation` is about the shape of the account: a write that a looping agent
+ * could repeat until the month is unrecognisable. Spend is a different
+ * question and it is not answered by the same number. `POST /keywords/suggest`
+ * writes nothing at all - it is a read by every definition the envelope uses -
+ * and each call is one or two paid DataForSEO lookups. Marking it `mutation`
+ * would be a lie in the audit trail *and* the wrong ceiling: 30 paid lookups a
+ * minute per key is 43,200 a day, and it would throttle real writes on the
+ * same budget as research.
+ *
+ * So: its own window, tighter, and orthogonal. 10 a minute per key still
+ * covers an agent researching a roster of sites one after another - the
+ * lookups themselves take seconds - and stops a loop before the bill notices.
+ * A route may declare both; each window is taken and reported separately.
+ */
+export const SPEND_LIMIT = 10;
+export const SPEND_WINDOW_MS = 60_000;
+const SPEND_SLUG = "agent-spend";
+
 export type AgentHandler<P> = (
   request: NextRequest,
   ctx: AgentContext,
@@ -54,9 +75,34 @@ export function envelopeResponse(
   return NextResponse.json(envelope, { status, headers });
 }
 
+/**
+ * Take one of the secondary windows and describe it in headers.
+ *
+ * The headers are prefixed rather than replaced so they sit beside the per-key
+ * read headers instead of overwriting them: a client that watches
+ * `X-RateLimit-Remaining` is watching the 120/min, and the narrower window it
+ * just spent from is a different number with a different name.
+ */
+function takeWindow(
+  keyId: string,
+  slug: string,
+  limit: number,
+  windowMs: number,
+  headerInfix: string,
+): { headers: Record<string, string>; allowed: boolean; retryAfter: number } {
+  const state = takeToolRateLimit(slug, keyId, limit, windowMs);
+  const headers = Object.fromEntries(
+    Object.entries(toolRateLimitHeaders(state)).map(([k, v]) => [
+      k === "Retry-After" ? k : k.replace("X-RateLimit-", `X-RateLimit-${headerInfix}-`),
+      v,
+    ]),
+  );
+  return { headers, allowed: state.allowed, retryAfter: Math.max(1, Math.ceil((state.resetAt - Date.now()) / 1000)) };
+}
+
 export function withAgent<P = Record<string, never>>(
   handler: AgentHandler<P>,
-  options: { scope?: ApiKeyScope; mutation?: boolean } = {},
+  options: { scope?: ApiKeyScope; mutation?: boolean; spend?: boolean } = {},
 ) {
   return async (request: NextRequest, route?: { params: Promise<P> }): Promise<NextResponse> => {
     const auth = await authenticateAgentRequest(request, options.scope ?? "read");
@@ -64,15 +110,26 @@ export function withAgent<P = Record<string, never>>(
 
     let extraHeaders: Record<string, string> = {};
     if (options.mutation) {
-      const m = takeToolRateLimit(MUTATION_SLUG, auth.ctx.key.id, MUTATION_LIMIT, MUTATION_WINDOW_MS);
-      // Prefixed so they sit beside, not over, the per-key read headers.
-      extraHeaders = Object.fromEntries(
-        Object.entries(toolRateLimitHeaders(m)).map(([k, v]) => [k === "Retry-After" ? k : k.replace("X-RateLimit-", "X-RateLimit-Mutations-"), v]),
-      );
+      const m = takeWindow(auth.ctx.key.id, MUTATION_SLUG, MUTATION_LIMIT, MUTATION_WINDOW_MS, "Mutations");
+      extraHeaders = { ...extraHeaders, ...m.headers };
       if (!m.allowed) {
-        const retryAfter = Math.max(1, Math.ceil((m.resetAt - Date.now()) / 1000));
         return envelopeResponse(
-          fail("rate_limited", `Too many mutations for this API key (${MUTATION_LIMIT}/min).`, GUIDANCE.rateLimited(retryAfter)),
+          fail("rate_limited", `Too many mutations for this API key (${MUTATION_LIMIT}/min).`, GUIDANCE.rateLimited(m.retryAfter)),
+          auth.ctx.rate,
+          extraHeaders,
+        );
+      }
+    }
+    if (options.spend) {
+      const s = takeWindow(auth.ctx.key.id, SPEND_SLUG, SPEND_LIMIT, SPEND_WINDOW_MS, "Spend");
+      extraHeaders = { ...extraHeaders, ...s.headers };
+      if (!s.allowed) {
+        return envelopeResponse(
+          fail(
+            "rate_limited",
+            `Too many paid lookups for this API key (${SPEND_LIMIT}/min).`,
+            `${GUIDANCE.rateLimited(s.retryAfter)} This endpoint bills a third party per call, so its window is narrower than the read limit. Reuse the candidates you already have rather than asking again.`,
+          ),
           auth.ctx.rate,
           extraHeaders,
         );

@@ -77,4 +77,9 @@ export const POST = withAgent(async (request, ctx) => {
       ? "These are candidates, not saved keywords. Show the human the top few with volume and difficulty (null = unmeasured), agree on one, then POST /articles/generate with it."
       : "No candidates came back. Try seeds closer to what the site actually sells, or tell the human the research source returned nothing for this locale.",
   );
-}, { scope: "read" });
+// `spend: true`: nothing is written, so this is a read by every definition the
+// envelope uses - and every call is one or two paid DataForSEO lookups. It sat
+// outside both windows, so any key at all (DEFAULT_SCOPES includes "read")
+// could loop it 120 times a minute and bill us for each. Its own narrower
+// window rather than the mutation one: see lib/agent/http.ts.
+}, { scope: "read", spend: true });
