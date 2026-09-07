@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { afterSignIn } from "@/lib/auth/next-path";
 
 // Everything is private unless it is on this list.
 //
@@ -93,16 +94,30 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (!user && !isPublicPath(path)) {
+    // Carry the destination, not the query that happened to be on it. This
+    // used to clone the URL and overwrite only the pathname, so
+    // `/articles?status=review` became `/signin?status=review`: the query
+    // survived and the destination did not, and a reader who followed "Read
+    // the draft" from an email signed in and landed on the dashboard with no
+    // idea which article it was about. Eight of the twenty-four emails end in
+    // a link like that.
+    //
+    // Clearing the search first also stops a signed link's parameters riding
+    // into the sign-in URL, where they sit in history and in any referrer the
+    // page emits.
     const url = request.nextUrl.clone();
+    url.search = "";
     url.pathname = "/signin";
+    url.searchParams.set("next", `${path}${request.nextUrl.search}`);
     return NextResponse.redirect(url);
   }
 
-  // Redirect authenticated users away from auth pages
+  // Redirect authenticated users away from auth pages, honouring the same
+  // `next` - somebody already signed in who opens a mailed link should land on
+  // the article, not be told to go to the dashboard and find it.
   if (user && (path === "/signin" || path === "/signup")) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
-    return NextResponse.redirect(url);
+    const target = afterSignIn(request.nextUrl.searchParams.get("next"));
+    return NextResponse.redirect(new URL(target, request.nextUrl.origin));
   }
 
   return supabaseResponse;
