@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseWorkspaceIds, accessLabel, canEditMember, canManageMembers, canManageBilling, INVITABLE_ROLES } from "../access";
+import { parseWorkspaceIds, accessLabel, canEditMember, canManageMembers, canManageBilling, canAddWorkspace, INVITABLE_ROLES } from "../access";
 
 describe("workspace access", () => {
   const allowed = ["a", "b", "c"];
@@ -43,5 +43,25 @@ describe("roles", () => {
     expect(canEditMember(owner, admin)).toBe(true);
     expect(canEditMember(editor, editor)).toBe(false);
     expect(canEditMember(editor, { userId: "x", role: "editor" })).toBe(false);
+  });
+});
+
+describe("canAddWorkspace", () => {
+  // Adding a site takes a plan slot and starts drawing on the account's
+  // monthly article allowance, so it belongs with the other actions an editor
+  // is told they cannot take. `createWorkspace` had no role check at all: a
+  // member scoped to one site could add a fourth to somebody else's account,
+  // then read "Upgrade on the Billing page" - a page they can only look at.
+  it("is owner and admin, matching the Search Console door that also creates sites", () => {
+    expect(canAddWorkspace("owner")).toBe(true);
+    expect(canAddWorkspace("admin")).toBe(true);
+    expect(canAddWorkspace("editor")).toBe(false);
+    expect(canAddWorkspace(null)).toBe(false);
+    expect(canAddWorkspace(undefined)).toBe(false);
+  });
+
+  it("is not the billing rule: an admin adds sites but does not pay", () => {
+    expect(canAddWorkspace("admin")).toBe(true);
+    expect(canManageBilling("admin")).toBe(false);
   });
 });

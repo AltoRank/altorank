@@ -42,6 +42,12 @@ vi.mock("@/lib/billing/workspaces", async () => {
   return { ...real, getWorkspaceAllowance: allowance };
 });
 vi.mock("@/lib/queries/agency", () => ({ ensureAgency: async () => "agency-1" }));
+// The role gate in front of everything else: adding a site takes a plan slot,
+// so it is owner/admin like the Search Console door that also creates sites.
+const { requireAuth } = vi.hoisted(() => ({
+  requireAuth: vi.fn(async () => ({ agencyId: "agency-1", role: "owner", user: { id: "u1", email: "a@b.co" } })),
+}));
+vi.mock("@/lib/auth/require-auth", () => ({ requireAuth }));
 vi.mock("@/lib/seo/indexing", () => ({ generateIndexNowKey: () => "key" }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
@@ -62,6 +68,8 @@ beforeEach(() => {
   inserted.mockClear();
   allowance.mockClear();
   allowance.mockResolvedValue(PLAN_ALLOWANCE);
+  requireAuth.mockClear();
+  requireAuth.mockResolvedValue({ agencyId: "agency-1", role: "owner", user: { id: "u1", email: "a@b.co" } });
 });
 
 describe("createWorkspace", () => {
@@ -120,5 +128,30 @@ describe("createWorkspace", () => {
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error.length).toBeGreaterThan(10);
     }
+  });
+});
+
+describe("createWorkspace, who may", () => {
+  it("refuses an editor in a sentence, and writes nothing", async () => {
+    // This action had no role check at all, so a member scoped to a single
+    // site could add a fourth site to somebody else's account - taking a plan
+    // slot and starting it on the shared monthly quota - while the Team page
+    // told them editors "cannot manage billing".
+    requireAuth.mockResolvedValue({ agencyId: "agency-1", role: "editor", user: { id: "u2", email: "e@b.co" } });
+    const result = await create({ name: "Acme", domain: "acme.com" });
+    expect(result).toEqual({
+      ok: false,
+      error:
+        "Adding a site changes what the account pays for, so an owner or admin has to do it. Ask one of them and it takes a moment.",
+    });
+    expect(inserted).not.toHaveBeenCalled();
+    // Refused before the allowance is even read: this is not "the plan is
+    // full", and offering an upgrade would point at a page they cannot buy on.
+    expect(allowance).not.toHaveBeenCalled();
+  });
+
+  it("lets an admin add one", async () => {
+    requireAuth.mockResolvedValue({ agencyId: "agency-1", role: "admin", user: { id: "u3", email: "a2@b.co" } });
+    await expect(create({ name: "Acme", domain: "acme.com" })).resolves.toMatchObject({ ok: true });
   });
 });

@@ -55,3 +55,16 @@ export function formatPauseDate(pausedUntilDate: string): string {
     timeZone: "UTC",
   });
 }
+
+/**
+ * Why a draft was refused while the account pause is on.
+ *
+ * The pause is a two-sided deal - PAUSE_COPY says "Billing and article
+ * generation pause", the retention card says "Nothing is drafted or billed
+ * until then" - and until 2026-09-06 only Stripe's side was kept. So the
+ * refusal names both halves, and the way out, which is one button on the
+ * Billing page rather than anything to do with the plan.
+ */
+export function accountPausedMessage(pausedUntilDate: string): string {
+  return `This account is paused until ${formatPauseDate(pausedUntilDate)}: nothing is drafted and nothing is billed until then. Resume it on the Billing page to start writing again — your articles, keywords and settings are exactly as you left them.`;
+}

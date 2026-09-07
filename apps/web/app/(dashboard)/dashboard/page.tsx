@@ -40,6 +40,7 @@ import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { requireAuth } from "@/lib/auth/require-auth";
+import { canAddWorkspace } from "@/lib/team/access";
 import { getWorkspaceAllowance } from "@/lib/billing/workspaces";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -87,9 +88,13 @@ export default async function DashboardPage() {
   // <ClientActions /> bare, which pins `atLimit` to false (P0-O3). Chained
   // rather than awaited here so it joins the read below instead of preceding
   // it - it needs the agency id, nothing else on this page needs it.
-  const allowanceRead = requireAuth().then(({ agencyId, user }) =>
+  // The role rides along: "Add workspace" is owner/admin, so an editor gets
+  // the sentence naming who can rather than a button that refuses.
+  const authRead = requireAuth();
+  const allowanceRead = authRead.then(({ agencyId, user }) =>
     getWorkspaceAllowance(gscSupabase, agencyId, user.email),
   );
+  const viewerRole = (await authRead).role;
 
   const now = new Date();
   const [workspaces, allArticles, recent, gscRows, keywords, { count: gscCount }, bing, cmsRes, { count: plannedEntries }, yields, profileRes, health, knownPages, shareFacts, value, allowance] =
@@ -218,7 +223,8 @@ export default async function DashboardPage() {
               />
             )}
             <ClientActions
-              allowance={{ limit: allowance.limit, remaining: allowance.remaining, noPlan: allowance.reason === "no-plan" }}
+              allowance={{ limit: allowance.limit, remaining: allowance.remaining, used: allowance.used, noPlan: allowance.reason === "no-plan" }}
+              canAdd={canAddWorkspace(viewerRole)}
             />
           </>
         }

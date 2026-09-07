@@ -10,7 +10,19 @@ import { OnboardingProgress } from "@/components/onboarding/onboarding-progress"
 
 type OnboardStep = "idle" | "creating";
 
-export function ClientActions({ allowance }: { allowance?: { limit: number | null; remaining: number | null; noPlan: boolean } }) {
+export function ClientActions({
+  allowance,
+  canAdd = true,
+}: {
+  allowance?: { limit: number | null; remaining: number | null; noPlan: boolean; used?: number };
+  /**
+   * False for an editor. Adding a site takes a plan slot and starts drawing on
+   * the account's shared article quota, so it is owner/admin like every other
+   * allowance-spending action (lib/team/access.ts). The server refuses it
+   * either way; this is so the refusal does not arrive after a filled-in form.
+   */
+  canAdd?: boolean;
+}) {
   const atLimit = allowance ? allowance.remaining !== null && allowance.remaining <= 0 : false;
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<OnboardStep>("idle");
@@ -56,6 +68,16 @@ export function ClientActions({ allowance }: { allowance?: { limit: number | nul
     }
   }
 
+  if (!canAdd) {
+    // Nothing rather than a disabled button with an upgrade link: an editor
+    // cannot buy the upgrade either, so the only true thing to say is who can.
+    return (
+      <span className="text-[11.5px] text-ink-3">
+        Owners and admins add sites.
+      </span>
+    );
+  }
+
   return (
     <>
       {atLimit ? (
@@ -65,9 +87,14 @@ export function ClientActions({ allowance }: { allowance?: { limit: number | nul
             Add workspace
           </Button>
           <Link href="/settings/billing" className="text-[11.5px] text-accent-ink underline decoration-line underline-offset-[3px]">
+            {/* A downgrade leaves more sites than the tier allows and removes
+                none of them, so `used` can be past `limit`. "All 3 are in use"
+                above a list of five is a sentence the page can see is false. */}
             {allowance?.noPlan
               ? "One workspace before choosing a plan. Choose a plan for more sites"
-              : `All ${allowance?.limit} workspaces on this plan are in use. Upgrade for more`}
+              : allowance?.limit !== null && allowance?.limit !== undefined && (allowance.used ?? 0) > allowance.limit
+                ? `This plan includes ${allowance.limit} workspaces and ${allowance.used} are in use. None removed — upgrade for more`
+                : `All ${allowance?.limit} workspaces on this plan are in use. Upgrade for more`}
           </Link>
         </div>
       ) : (

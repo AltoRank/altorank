@@ -7,6 +7,7 @@ import { ClientActions } from "@/components/dashboard/client-actions";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { createClient } from "@/lib/supabase/server";
 import { getWorkspaceAllowance } from "@/lib/billing/workspaces";
+import { canAddWorkspace } from "@/lib/team/access";
 import { ClientFilters } from "@/components/dashboard/client-filters";
 import { ClientRow } from "@/components/dashboard/client-row";
 import { plural } from "@/lib/utils";
@@ -37,7 +38,7 @@ export default async function ClientsPage({ searchParams }: Props) {
     getWorkspaces(params.status),
     getArticles(),
   ]);
-  const { agencyId, user } = await requireAuth();
+  const { agencyId, user, role } = await requireAuth();
   const allowance = await getWorkspaceAllowance(await createClient(), agencyId, user.email);
 
   const wsCounts = new Map<string, { total: number; live: number }>();
@@ -57,7 +58,12 @@ export default async function ClientsPage({ searchParams }: Props) {
       <PageHead
         title="Workspaces"
         subtitle={<><StatusPill status="on" label={plural(workspaces.length, "workspace")} /><span>{plural(totalLive, "article")} published</span></>}
-        actions={<ClientActions allowance={{ limit: allowance.limit, remaining: allowance.remaining, noPlan: allowance.reason === "no-plan" }} />}
+        actions={
+          <ClientActions
+            allowance={{ limit: allowance.limit, remaining: allowance.remaining, used: allowance.used, noPlan: allowance.reason === "no-plan" }}
+            canAdd={canAddWorkspace(role)}
+          />
+        }
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">

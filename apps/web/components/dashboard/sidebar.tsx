@@ -31,7 +31,17 @@ type SidebarProps = {
   /** From agency_members. Null hides the line rather than asserting "Owner". */
   role?: string | null;
   /** Metered article usage. Null (unmetered) renders no bar. */
-  quota?: { used: number; limit: number; noPlan: boolean } | null;
+  /**
+   * The month's counter, already rendered by `usageLine` (lib/billing/usage-line.ts).
+   *
+   * `figure` and `fraction` arrive computed rather than as `used`/`limit`,
+   * because this meter used to do the arithmetic itself and got it wrong in
+   * exactly the way that file exists to prevent: a downgrade keeps the month's
+   * real count while the included volume drops, so an account that wrote 150
+   * under Agency and moved to Managed read "150 / 100" here - on every screen -
+   * beside a Billing page that had already learned to say what happened.
+   */
+  quota?: { figure: string; fraction: number; noPlan: boolean; limit: number } | null;
   /** How many sites the plan allows, for the switcher's Add row. Null renders a dash. */
   siteAllowance?: SiteAllowance;
 };
@@ -340,15 +350,15 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
                 went 1 -> 7 on 2026-09-06 and left this reading "Free draft"
                 above "0 / 7". */}
             <span>{quota.noPlan ? plural(quota.limit, "free draft") : "Articles this month"}</span>
-            <span className="font-mono tabular-nums">{`${quota.used} / ${quota.limit}`}</span>
+            <span className="font-mono tabular-nums">{quota.figure}</span>
           </div>
           <div className="h-1 rounded-full bg-panel-2 overflow-hidden">
             <div
               className={cn(
                 "h-full rounded-full",
-                quota.used >= quota.limit ? "bg-err" : "bg-accent",
+                quota.fraction >= 1 ? "bg-err" : "bg-accent",
               )}
-              style={{ width: `${Math.min(100, (quota.used / Math.max(1, quota.limit)) * 100)}%` }}
+              style={{ width: `${Math.min(100, quota.fraction * 100)}%` }}
             />
           </div>
           {quota.noPlan && (
