@@ -33,7 +33,7 @@ export interface LinkCheck {
   checkedAt: string;
 }
 
-export type LinkFetcher = (url: string) => Promise<{ status: number }>;
+export type LinkFetcher = (url: string) => Promise<{ status: number; finalUrl?: string }>;
 
 export interface VerifyOptions {
   fetcher?: LinkFetcher;
@@ -86,7 +86,10 @@ export const defaultFetcher = (timeoutMs: number): LinkFetcher => async (url) =>
       });
       // Drain nothing: a GET body is not needed, and closing early is fine.
       if (method === "GET") void res.body?.cancel().catch(() => undefined);
-      return { status: res.status };
+      // `res.url` is where we ended up, which is not always where we asked to
+      // go. A citation that 301s to a section index is a soft 404: status 200,
+      // and none of the claim it was cited for. See `redirectedToIndex`.
+      return { status: res.status, finalUrl: res.url || undefined };
     } finally {
       clearTimeout(timer);
     }
@@ -94,6 +97,31 @@ export const defaultFetcher = (timeoutMs: number): LinkFetcher => async (url) =>
   const head = await attempt("HEAD");
   return RETRY_WITH_GET.has(head.status) ? attempt("GET") : head;
 };
+
+/**
+ * True when a redirect landed on an ancestor of what was asked for - the shape
+ * a site uses when a page is retired: `/research/what-is-cvc/` -> `/research/`.
+ * The status is 200 and the link "works", but the claim it was cited for is
+ * not on the page that answered. A redirect that keeps the same depth (http to
+ * https, a trailing slash, a locale prefix, a renamed slug) is not this.
+ */
+export function redirectedToIndex(requested: string, finalUrl: string | undefined): boolean {
+  if (!finalUrl) return false;
+  let from: URL, to: URL;
+  try {
+    from = new URL(requested);
+    to = new URL(finalUrl);
+  } catch {
+    return false;
+  }
+  const segs = (u: URL) => u.pathname.split("/").filter(Boolean);
+  const a = segs(from);
+  const b = segs(to);
+  // Only shrinking counts, and only when what is left is a prefix of what was
+  // asked for. `/a/b/c` -> `/a` is an index; `/a/b/c` -> `/a/b/d` is a rename.
+  if (b.length >= a.length) return false;
+  return b.every((seg, i) => seg === a[i]);
+}
 
 function describe(err: unknown): string {
   const e = err as { name?: string; message?: string; cause?: { code?: string } };
@@ -131,13 +159,24 @@ export async function verifyOutboundLinks(
       return;
     }
     try {
-      const { status } = await fetcher(url);
-      const ok = status >= 200 && status < 400;
+      const { status, finalUrl } = await fetcher(url);
+      const soft404 = status >= 200 && status < 400 && redirectedToIndex(url, finalUrl);
+      const ok = status >= 200 && status < 400 && !soft404;
       checks.push({
         url,
         status,
         ok,
-        reason: ok ? undefined : DEAD_STATUSES.has(status) ? `HTTP ${status}, page gone` : `HTTP ${status}, could not verify`,
+        reason: ok
+          ? undefined
+          : soft404
+            ? `redirected to ${finalUrl}, which is not the page cited`
+            : DEAD_STATUSES.has(status)
+              ? `HTTP ${status}, page gone`
+              : `HTTP ${status}, could not verify`,
+        // NOT unwrapped. A dead link is noise; a link that resolves to the
+        // wrong page is a claim to re-check, and unwrapping it would leave the
+        // sentence asserting the same thing with nothing attached at all. The
+        // reviewer sees `ok: false` and the reason in the audit tab.
         removed: DEAD_STATUSES.has(status),
         checkedAt,
       });

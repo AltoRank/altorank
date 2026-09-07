@@ -168,8 +168,17 @@ export function cardActions(state: PlannerCardState): CardActions {
     case "improving":
     case "improved":
       return { ...NONE, openImprovement: true };
+    // The interview stays offered after the draft exists. It used to be
+    // `planned` only, and on the free tier FREE_TIER_PACE writes the whole
+    // visible plan within a minute - so every card was already `in_review`
+    // and the questions, generated for each keyword, were never reachable at
+    // all. An answer still earns its keep here: it goes into a Regenerate or
+    // a Rewrite of this article, and into anything written about the keyword
+    // later. Not offered once the article is live, where the record is the
+    // published page.
     case "in_review":
     case "approved":
+      return { ...NONE, openDraft: true, questions: true };
     case "scheduled":
     case "failed":
       return { ...NONE, openDraft: true };

@@ -79,9 +79,15 @@ export function usageLine(quota: Quota, now: Date = new Date()): UsageLine {
     }
 
     if (exhausted) {
+      // FREE_TIER_PACE deliberately spends the whole free allowance inside the
+      // first week, so this is the state a brand-new account reaches on day
+      // one - the first thing it read about itself was a full red bar and
+      // "Choose a plan", as though something had gone wrong. Nothing has: the
+      // drafts are written and waiting to be read. Say that first; the plan is
+      // what publishing them needs, which is the next sentence, not the first.
       return {
         figure: `${used} / ${limit}`,
-        sentence: `free drafts used this month. Choose a plan to generate more, or wait until ${reset}, when they reset. Self-hosting is free and unmetered.`,
+        sentence: `free drafts written and waiting in review — read them in Content. A plan is what approving or publishing them needs; more drafts arrive ${reset}, when the free allowance resets. Self-hosting is free and unmetered.`,
         fraction: 1,
         exhausted: true,
       };

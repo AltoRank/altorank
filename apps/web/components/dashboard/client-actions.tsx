@@ -12,8 +12,15 @@ type OnboardStep = "idle" | "creating";
 export function ClientActions({
   allowance,
   canAdd = true,
+  prefillDomain = null,
 }: {
   allowance?: { limit: number | null; remaining: number | null; noPlan: boolean; used?: number };
+  /**
+   * A domain the person already gave us and we failed to keep: signup writes
+   * it to `user_metadata.pending_domain` when its workspace insert fails, so
+   * the dialog opens with it filled in rather than leaving them to retype it.
+   */
+  prefillDomain?: string | null;
   /**
    * False for an editor. Adding a site takes a plan slot and starts drawing on
    * the account's shared article quota, so it is owner/admin like every other
@@ -23,7 +30,7 @@ export function ClientActions({
   canAdd?: boolean;
 }) {
   const atLimit = allowance ? allowance.remaining !== null && allowance.remaining <= 0 : false;
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(Boolean(prefillDomain) && !atLimit);
   const [step, setStep] = useState<OnboardStep>("idle");
   // The refusal, rendered. This used to be a console.error and nothing else,
   // so the workspace limit, a duplicate domain and a malformed domain all
@@ -131,6 +138,7 @@ export function ClientActions({
               name="name"
               required
               disabled={pending}
+              defaultValue={prefillDomain ?? undefined}
               placeholder="Acme Corp"
               className="px-3 py-2 rounded-lg border border-line bg-panel text-[13px] text-ink placeholder:text-ink-3 outline-none focus:border-accent transition-colors disabled:opacity-50"
             />
@@ -142,6 +150,7 @@ export function ClientActions({
               name="domain"
               required
               disabled={pending}
+              defaultValue={prefillDomain ?? undefined}
               placeholder="acme.com"
               className="px-3 py-2 rounded-lg border border-line bg-panel text-[13px] text-ink placeholder:text-ink-3 outline-none focus:border-accent transition-colors disabled:opacity-50"
             />

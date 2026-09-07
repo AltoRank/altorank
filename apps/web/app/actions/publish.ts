@@ -7,6 +7,7 @@ import type { ArticleResearch } from "@/lib/seo/research";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { needsPlanToShip, CHOOSE_PLAN_MESSAGE } from "@/lib/billing/quota";
+import { refuse, type Refusable } from "@/lib/actions/refusal";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";
 import { decryptConfig } from "@/lib/crypto";
 import { publishArticleCore, PublishError, type PublishContext } from "@/lib/publishing/core";
@@ -26,7 +27,7 @@ import type { CMSConfig } from "@/lib/types";
 export async function publishArticle(articleId: string, destinationId?: string | null) {
   const { user, agencyId } = await requireAuth();
   const supabase = await createClient();
-  if (await needsPlanToShip(supabase, agencyId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
+  if (await needsPlanToShip(supabase, agencyId, user.email)) return refuse(CHOOSE_PLAN_MESSAGE, "needs a plan to ship");
 
   // Fetch workspace_id up front so we can log to publish_log on BOTH the success
   // and the error path — closing the manual-publish audit gap fully (the cron
@@ -93,15 +94,16 @@ async function runAndLog(
  * publishArticleCore refuses anything not approved, so this is the editorial
  * checkpoint. Records who approved + when (the sign-off).
  */
-export async function approveArticle(articleId: string) {
+export async function approveArticle(articleId: string): Promise<Refusable> {
   const { user, agencyId } = await requireAuth();
   const supabase = await createClient();
   // The free draft can be read, edited and rewritten; it cannot ship without
   // a plan. This is the one paywall in the product and it sits exactly where
   // the value is, not at signup.
-  if (await needsPlanToShip(supabase, agencyId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
+  if (await needsPlanToShip(supabase, agencyId, user.email)) return refuse(CHOOSE_PLAN_MESSAGE, "needs a plan to ship");
 
-  await refuseUnsourcedFigures(supabase, articleId);
+  const unsourced = await refuseUnsourcedFigures(supabase, articleId);
+  if (unsourced) return refuse(unsourced, "approve: unsourced figure");
 
   const { data, error } = await supabase
     .from("articles")
@@ -118,7 +120,7 @@ export async function approveArticle(articleId: string) {
     .select("id")
     .single();
 
-  if (error || !data) throw new Error("Article must be in review to approve");
+  if (error || !data) return refuse("Article must be in review to approve", "approve: wrong status");
 
   // The sign-off is the one editorial moment somebody else needs to hear
   // about: after it the article ships on its own, and a colleague who was
@@ -128,6 +130,7 @@ export async function approveArticle(articleId: string) {
 
   revalidatePath("/articles");
   revalidatePath(`/content/${articleId}`);
+  return {};
 }
 
 /**
@@ -142,13 +145,13 @@ export async function approveArticle(articleId: string) {
 async function refuseUnsourcedFigures(
   supabase: Awaited<ReturnType<typeof createClient>>,
   articleId: string,
-) {
+): Promise<string | null> {
   const { data: article } = await supabase
     .from("articles")
     .select("content, research")
     .eq("id", articleId)
     .single();
-  if (!article?.content) return;
+  if (!article?.content) return null;
 
   const html = tiptapToHtml(article.content as Record<string, unknown>);
   const report = factCheckArticle(html, (article.research as ArticleResearch | null) ?? undefined);
@@ -158,8 +161,9 @@ async function refuseUnsourcedFigures(
     .update({ fact_checks: report, fact_check_verdict: report.verdict })
     .eq("id", articleId);
 
-  const blocker = approvalBlocker(report);
-  if (blocker) throw new Error(blocker);
+  // Returned, not thrown: this is the one editorial refusal the reviewer must
+  // be able to read in full - it names the figure that has no source.
+  return approvalBlocker(report) ?? null;
 }
 
 /**
@@ -171,12 +175,12 @@ async function refuseUnsourcedFigures(
  * live. Ours are not. Returns the ids that actually moved, so the caller can
  * say "3 of 4 approved" when one was edited under it.
  */
-export async function approveArticles(articleIds: string[]): Promise<string[]> {
+export async function approveArticles(articleIds: string[]): Promise<Refusable<{ approved: string[] }>> {
   const { user, agencyId } = await requireAuth();
   const supabase = await createClient();
-  if (await needsPlanToShip(supabase, agencyId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
+  if (await needsPlanToShip(supabase, agencyId, user.email)) return refuse(CHOOSE_PLAN_MESSAGE, "needs a plan to ship");
   const requested = [...new Set(articleIds)].filter(Boolean);
-  if (!requested.length) return [];
+  if (!requested.length) return { approved: [] };
 
   // Same gate as the single approve, per article. A refused draft simply does
   // not move, and the caller's "3 of 4 approved" already covers that outcome.
@@ -205,13 +209,13 @@ export async function approveArticles(articleIds: string[]): Promise<string[]> {
     .eq("status", "review")
     .select("id");
 
-  if (error) throw new Error(error.message);
+  if (error) return refuse("Those drafts could not be approved. Nothing changed; try again in a moment.", `approveArticles: ${error.message}`);
   // One email per article, not one per click: the recipient cares about the
   // article, and `sent_emails` is keyed by it either way.
   for (const row of data ?? []) await announceDraftApproved(row.id as string, user);
   revalidatePath("/articles");
   for (const row of data ?? []) revalidatePath(`/content/${row.id}`);
-  return (data ?? []).map((r) => r.id as string);
+  return { approved: (data ?? []).map((r) => r.id as string) };
 }
 
 /**
@@ -219,7 +223,7 @@ export async function approveArticles(articleIds: string[]): Promise<string[]> {
  * in review, but the rule skips it until a person approves or archives it by
  * hand (migration 079). Recorded, like the approval it prevents.
  */
-export async function holdArticle(articleId: string) {
+export async function holdArticle(articleId: string): Promise<Refusable> {
   const { user } = await requireAuth();
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -234,13 +238,14 @@ export async function holdArticle(articleId: string) {
     .eq("status", "review")
     .select("id")
     .single();
-  if (error || !data) throw new Error("Only a draft in review can be held");
+  if (error || !data) return refuse("Only a draft in review can be held", "hold: wrong status");
   revalidatePath("/review");
   revalidatePath(`/content/${articleId}`);
+  return {};
 }
 
 /** Lift a hold so the workspace rule may approve the draft again. */
-export async function releaseHold(articleId: string) {
+export async function releaseHold(articleId: string): Promise<Refusable> {
   await requireAuth();
   const supabase = await createClient();
   const { error } = await supabase
@@ -251,13 +256,14 @@ export async function releaseHold(articleId: string) {
   if (error) throw new Error(error.message);
   revalidatePath("/review");
   revalidatePath(`/content/${articleId}`);
+  return {};
 }
 
 /**
  * Send an approved article back for changes (approved → review), clearing the
  * sign-off so it must be re-approved before it can publish.
  */
-export async function requestChanges(articleId: string) {
+export async function requestChanges(articleId: string): Promise<Refusable> {
   const { user } = await requireAuth();
   const supabase = await createClient();
 
@@ -280,9 +286,10 @@ export async function requestChanges(articleId: string) {
 
   revalidatePath("/articles");
   revalidatePath(`/content/${articleId}`);
+  return {};
 }
 
-export async function unpublishArticle(articleId: string) {
+export async function unpublishArticle(articleId: string): Promise<Refusable> {
   await requireAuth();
   const supabase = await createClient();
 
@@ -292,7 +299,7 @@ export async function unpublishArticle(articleId: string) {
     .eq("id", articleId)
     .single();
 
-  if (!article?.external_id) throw new Error("Article has no external ID");
+  if (!article?.external_id) return refuse("This article was never published, so there is nothing to take down.", "unpublish: no external id");
 
   const { data: wsIntegrations } = await supabase
     .from("workspace_integrations")
@@ -323,6 +330,7 @@ export async function unpublishArticle(articleId: string) {
 
   revalidatePath("/articles");
   revalidatePath(`/content/${articleId}`);
+  return {};
 }
 
 /**
@@ -337,7 +345,7 @@ export async function unpublishArticle(articleId: string) {
 export async function retryPublish(articleId: string) {
   const { user, agencyId } = await requireAuth();
   const supabase = await createClient();
-  if (await needsPlanToShip(supabase, agencyId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
+  if (await needsPlanToShip(supabase, agencyId, user.email)) return refuse(CHOOSE_PLAN_MESSAGE, "needs a plan to ship");
 
   const result = await retryPublishCore(supabase, articleId, "manual");
   revalidatePath("/articles");
@@ -360,13 +368,13 @@ export async function retryPublish(articleId: string) {
  * is no evidence the article is anywhere, and marking it live would be the same
  * class of fiction as a fabricated metric.
  */
-export async function markPublishedManually(articleId: string, publishedUrl: string) {
+export async function markPublishedManually(articleId: string, publishedUrl: string): Promise<Refusable> {
   const { user } = await requireAuth();
   const supabase = await createClient();
 
   const url = publishedUrl.trim();
   if (!/^https?:\/\/\S+\.\S+/.test(url)) {
-    throw new Error("Enter the full URL the article now lives at, including https://");
+    return refuse("Enter the full URL the article now lives at, including https://", "manual publish: bad url");
   }
 
   const { data: article } = await supabase
@@ -375,10 +383,11 @@ export async function markPublishedManually(articleId: string, publishedUrl: str
     .eq("id", articleId)
     .single();
 
-  if (!article) throw new Error("Article not found");
+  if (!article) return refuse("That article no longer exists.", "manual publish: missing");
   if (article.status !== "approved") {
-    throw new Error(
+    return refuse(
       `Only an approved article can be marked published (current status: ${article.status}).`,
+      "manual publish: wrong status",
     );
   }
 
@@ -430,4 +439,5 @@ export async function markPublishedManually(articleId: string, publishedUrl: str
 
   revalidatePath(`/content/${articleId}`);
   revalidatePath("/articles");
+  return {};
 }

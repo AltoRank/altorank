@@ -140,9 +140,39 @@ async function signUp(formData: FormData) {
         // states as an ALWAYS ON card. Enabling it is a choice the person
         // makes in workspace settings, after they have read a draft.
       });
-      // Not fatal: the account exists, and the dashboard asks for a domain if
-      // there is no workspace. Log it so a silent miss here is findable.
-      if (wsError) console.error("[signup] workspace for", domain, wsError.message);
+      // This used to be a `console.error` and nothing else, and it fired on a
+      // real signup: the account was created, the workspace was not, and the
+      // confirmation email pointed at /onboarding, which bounces to
+      // /workspaces - so the new customer landed on "No sites yet" with the
+      // domain they had typed thrown away.
+      if (wsError) {
+        console.error("[signup] workspace for", domain, wsError.message);
+        // One retry, because the common causes are transient. The row carries
+        // no unique key on `domain`, so a duplicate is not what fails here.
+        const { error: retryError } = await admin.from("workspaces").insert({
+          agency_id: agencyId,
+          name: domain,
+          domain,
+          initials: domain.slice(0, 2).toUpperCase(),
+          color: "av-c1",
+          indexnow_key: generateIndexNowKey(),
+          auto_generate: true,
+          auto_generate_weekly_limit: FREE_TIER_PACE,
+        });
+        if (retryError) {
+          console.error("[signup] workspace retry for", domain, retryError.message);
+          // Keep the domain where it survives the confirmation round trip:
+          // the auth user's own metadata. `/workspaces` reads it and prefills
+          // Add workspace, so the person finishes the job in one click
+          // instead of retyping what they already gave us.
+          // `name` is the only key signup writes (auth-emails.ts passes
+          // `{ data: { name } }`), and it is re-sent here because GoTrue
+          // replaces `user_metadata` rather than merging into it.
+          await admin.auth.admin
+            .updateUserById(data.user.id, { user_metadata: { name, pending_domain: domain } })
+            .catch((e: unknown) => console.error("[signup] pending_domain", e));
+        }
+      }
     }
   }
 

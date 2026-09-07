@@ -156,7 +156,7 @@ export function ArticleHistory({
                   {r.date ? formatDate(r.date) : "—"}
                 </td>
                 <td className="px-3.5 py-3 border-b border-line-soft" onClick={(e) => e.stopPropagation()}>
-                  <ArticleRowMenu articleId={r.id} currentStatus={r.status} canPublish={r.canPublish} canRetry={r.canRetry} held={r.held} autoApprove={Boolean(r.autoApproveAfter)} />
+                  <ArticleRowMenu articleId={r.id} currentStatus={r.status} title={r.title} canPublish={r.canPublish} canRetry={r.canRetry} held={r.held} autoApprove={Boolean(r.autoApproveAfter)} />
                 </td>
               </tr>
             ))}

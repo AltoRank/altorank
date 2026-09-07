@@ -1,5 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+
+/** Header carrying the request pathname to server components. */
+export const PATHNAME_HEADER = "x-altorank-pathname";
 import { afterSignIn } from "@/lib/auth/next-path";
 
 // Everything is private unless it is on this list.
@@ -63,6 +66,12 @@ export function isPublicPath(path: string): boolean {
 }
 
 export async function updateSession(request: NextRequest) {
+  // The pathname, forwarded as a request header so a server component can see
+  // which route it is rendering. A layout cannot read the path any other way,
+  // and `app/(dashboard)/layout.tsx` needs it to keep the onboarding redirect
+  // off /settings (a past-due customer must always be able to reach Billing).
+  request.headers.set(PATHNAME_HEADER, request.nextUrl.pathname);
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(

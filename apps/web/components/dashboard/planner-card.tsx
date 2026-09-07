@@ -343,8 +343,10 @@ export function PlannerCard({
       {/* The badge on the hover row is a number behind a glyph you have to find
           first, and the interview behind it is the one thing on this card that
           changes what gets written. So it also says itself, in words, with no
-          hovering - on the planned card only, the one state that can still use
-          an answer. Its own line, because at this size it is two of them. */}
+          hovering - in every state that can still use an answer, which is
+          `planned` and, since the free tier writes its whole plan in a
+          minute, a draft still in review or approved. Its own line, because
+          at this size it is two of them. */}
       {keyword && actions.questions && unanswered > 0 && (
         <Tooltip>
           <TooltipTrigger asChild>

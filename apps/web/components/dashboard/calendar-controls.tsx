@@ -34,11 +34,11 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
     )}
     <div className="flex items-center gap-2 mb-4 flex-wrap">
       <div className="flex items-center gap-2 ml-2">
-        <IconButton ghost onClick={() => navigateMonth(-1)}>
+        <IconButton ghost aria-label="Previous month" onClick={() => navigateMonth(-1)}>
           <Icons.arrowLeft size={14} />
         </IconButton>
         <span className="font-medium text-sm">{monthLabel}</span>
-        <IconButton ghost onClick={() => navigateMonth(1)}>
+        <IconButton ghost aria-label="Next month" onClick={() => navigateMonth(1)}>
           <Icons.arrow size={14} />
         </IconButton>
       </div>

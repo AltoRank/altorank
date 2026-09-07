@@ -104,6 +104,7 @@ export function RefreshSettingsForm({
             type="button"
             role="switch"
             aria-checked={enabled}
+            aria-label="Enable scheduled rewrites"
             onClick={toggleEnabled}
             className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer ${enabled ? "bg-accent" : "bg-panel-2"}`}
           >

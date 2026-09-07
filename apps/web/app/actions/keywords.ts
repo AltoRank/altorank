@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { z } from "zod";
+import { canAddToPlan, addToPlanBlockedReason } from "@/lib/keywords/lifecycle";
 
 const createKeywordSchema = z.object({
   workspace_id: z.string().uuid(),
@@ -29,9 +30,32 @@ export async function createKeyword(formData: FormData) {
   revalidatePath("/keywords");
 }
 
-export async function updateKeywordStatus(id: string, status: string) {
+/**
+ * Returns `{ error }` rather than throwing: a thrown server-action message is
+ * replaced with a hex digest in a production build, and this one is read by a
+ * toast. `{ ok: true }` on success.
+ */
+export async function updateKeywordStatus(id: string, status: string): Promise<{ ok?: true; error?: string }> {
   const supabase = await createClient();
+
+  // Refuse the backwards write server-side too. The button hides itself for a
+  // keyword the plan already owns, but the action is reachable on its own and
+  // the row can change between render and click.
+  if (status === "planned") {
+    const { data: current, error: readError } = await supabase
+      .from("keywords")
+      .select("status")
+      .eq("id", id)
+      .maybeSingle();
+    if (readError) return { error: readError.message };
+    if (!current) return { error: "That keyword no longer exists." };
+    if (!canAddToPlan(current.status as string)) {
+      return { error: addToPlanBlockedReason(current.status as string) };
+    }
+  }
+
   const { error } = await supabase.from("keywords").update({ status }).eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) return { error: error.message };
   revalidatePath("/keywords");
+  return { ok: true };
 }

@@ -226,7 +226,13 @@ function pathWords(url: string): string {
 function tokenize(text: string): string[] {
   return text
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, "")
+    // Split on punctuation, never delete it. Deleting turned the model's own
+    // hyphenated placeholders - `innovation-theater`, the shape it writes them
+    // in about half the time - into one token `innovationtheater`, which
+    // overlaps nothing and scored 0.000 against the target `innovation
+    // theater`. Every such placeholder was then unwrapped to plain text, so
+    // the article read fine and the link engine looked like it had never run.
+    .replace(/[^a-z0-9]+/g, " ")
     .split(/\s+/)
     .filter((w) => w.length > 1);
 }

@@ -11,6 +11,7 @@ import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table
 import Placeholder from "@tiptap/extension-placeholder";
 import { enrichmentNodes } from "@/components/dashboard/editor/enrichment-nodes";
 import { toast } from "sonner";
+import { wasRefused } from "@/lib/actions/refusal";
 import { Icons } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -477,6 +478,7 @@ export function ArticleEditor({
     setPublishing(true);
     try {
       const result = await publishArticle(article.id, destination?.id);
+      if (wasRefused(result)) { toast.error(result.refused); return; }
       toast.success(
         result.publishMode === "draft"
           ? `Saved as a draft on ${destination?.label ?? "the CMS"}`
@@ -497,6 +499,7 @@ export function ArticleEditor({
     setPublishing(true);
     try {
       const result = await retryPublish(article.id);
+      if (wasRefused(result)) { toast.error(result.refused); return; }
       toast.success(
         result.publishMode === "draft" ? "Saved as a draft this time" : "Published this time",
         result?.url ? { description: result.url } : undefined,
@@ -566,7 +569,8 @@ export function ArticleEditor({
   const handleApprove = useCallback(async () => {
     setPublishing(true);
     try {
-      await approveArticle(article.id);
+      const res = await approveArticle(article.id);
+      if (wasRefused(res)) { toast.error(res.refused); return; }
       toast.success("Article approved — ready to publish");
       router.refresh();
     } catch (err) {
@@ -579,7 +583,8 @@ export function ArticleEditor({
   const handleHold = useCallback(async () => {
     setPublishing(true);
     try {
-      await holdArticle(article.id);
+      const res = await holdArticle(article.id);
+      if (wasRefused(res)) { toast.error(res.refused); return; }
       toast.success("Held. It waits for someone to approve it.");
       router.refresh();
     } catch (err) {
@@ -592,7 +597,8 @@ export function ArticleEditor({
   const handleReleaseHold = useCallback(async () => {
     setPublishing(true);
     try {
-      await releaseHold(article.id);
+      const res = await releaseHold(article.id);
+      if (wasRefused(res)) { toast.error(res.refused); return; }
       toast.success("Released. The rule may publish it after its hold.");
       router.refresh();
     } catch (err) {
@@ -605,7 +611,8 @@ export function ArticleEditor({
   const handleRequestChanges = useCallback(async () => {
     setPublishing(true);
     try {
-      await requestChanges(article.id);
+      const res = await requestChanges(article.id);
+      if (wasRefused(res)) { toast.error(res.refused); return; }
       toast.success("Sent back for changes");
       router.refresh();
     } catch (err) {
@@ -1182,7 +1189,8 @@ export function ArticleEditor({
                   setPublishing(true);
                   setManualError(null);
                   try {
-                    await markPublishedManually(article.id, manualUrl);
+                    const res = await markPublishedManually(article.id, manualUrl);
+                    if (wasRefused(res)) { setManualError(res.refused); return; }
                     router.refresh();
                   } catch (err) {
                     setManualError(err instanceof Error ? err.message : "Could not record it");

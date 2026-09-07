@@ -1,9 +1,10 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { createClient } from "@/lib/supabase/server";
+import { PATHNAME_HEADER } from "@/lib/supabase/middleware";
 import { OnboardingProvider } from "@/components/onboarding/onboarding-provider";
 import { WorkspaceProvider } from "@/components/dashboard/workspace-context";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -99,6 +100,12 @@ export default async function DashboardLayout({
    * so asking the database for this one row again was a second round trip for
    * data already in hand.
    */
+  // Set by the middleware on every request; absent only if this layout is
+  // rendered outside one (it is not, in this app). Treated as "not settings"
+  // when missing, which keeps the previous behaviour rather than opening it.
+  const pathname = (await headers()).get(PATHNAME_HEADER) ?? "";
+  const isSettingsRoute = pathname === "/settings" || pathname.startsWith("/settings/");
+
   let wizardDone = true;
   if (scopeId) {
     const ws = workspaces.find((w) => w.id === scopeId) as
@@ -110,7 +117,13 @@ export default async function DashboardLayout({
       | undefined;
     if (ws && !ws.onboarded_at && !ws.onboarding_skipped_at) {
       wizardDone = false;
-      if (!ws.business_profile) redirect("/onboarding");
+      // `/settings` is exempt. This redirect covered every route, so an
+      // account that added a second site could not reach /settings/billing to
+      // update a failed card - the dunning banner never rendered either,
+      // because the wizard replaced the page that carries it. Onboarding is
+      // the right destination for the product surfaces; it is the wrong one
+      // for the page you fix your payment on.
+      if (!ws.business_profile && !isSettingsRoute) redirect("/onboarding");
     }
   }
 

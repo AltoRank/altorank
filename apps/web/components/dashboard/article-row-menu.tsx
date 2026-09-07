@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { wasRefused } from "@/lib/actions/refusal";
 import { IconButton } from "@/components/ui/button";
 import { Icons } from "@/components/ui";
 import { updateArticle, deleteArticle } from "@/app/actions/articles";
@@ -12,6 +13,8 @@ import { publishArticle, retryPublish, holdArticle, releaseHold } from "@/app/ac
 interface ArticleRowMenuProps {
   articleId: string;
   currentStatus: string;
+  /** The article's title, so the trigger has an accessible name per row. */
+  title?: string;
   /**
    * The article's workspace has a CMS connected, so "Publish now" can go out
    * from this row. Without one the item still appears for an approved article
@@ -32,7 +35,7 @@ interface ArticleRowMenuProps {
 /** Tallest the menu gets, with the status submenu open. */
 const MENU_MAX_HEIGHT = 280;
 
-export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, canRetry = false, held = false, autoApprove = false }: ArticleRowMenuProps) {
+export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, canRetry = false, held = false, autoApprove = false, title }: ArticleRowMenuProps) {
   const [open, setOpen] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -110,6 +113,7 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, c
     setPublishing(true);
     try {
       const result = await publishArticle(articleId);
+      if (wasRefused(result)) { toast.error(result.refused); return; }
       toast.success("Published", result?.url ? { description: result.url } : undefined);
       setOpen(false);
       router.refresh();
@@ -124,6 +128,7 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, c
     setPublishing(true);
     try {
       const result = await retryPublish(articleId);
+      if (wasRefused(result)) { toast.error(result.refused); return; }
       toast.success(
         result.publishMode === "draft" ? "Saved as a draft this time" : "Published this time",
         result?.url ? { description: result.url } : undefined,
@@ -160,6 +165,10 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, c
       <div ref={buttonRef} className="inline-flex">
       <IconButton
         ghost
+        // One unnamed 30x30 button per row is what a screen reader met here.
+        aria-label={title ? `Actions for ${title}` : "Article actions"}
+        aria-haspopup="menu"
+        aria-expanded={open}
         onClick={(e) => {
           e.stopPropagation();
           const r = buttonRef.current?.getBoundingClientRect();
@@ -245,7 +254,8 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, c
                 e.stopPropagation();
                 setBusy("hold");
                 (held ? releaseHold(articleId) : holdArticle(articleId))
-                  .then(() => {
+                  .then((res) => {
+                    if (wasRefused(res)) { toast.error(res.refused); return; }
                     toast.success(held ? "Released. The rule may publish it after its hold." : "Held. It waits for someone to approve it.");
                     setOpen(false);
                     router.refresh();

@@ -54,6 +54,16 @@ export default async function ClientsPage({ searchParams }: Props) {
 
   const totalLive = allArticles.filter((a) => a.status === "live").length;
 
+  // Signup writes `pending_domain` when it created the account but could not
+  // create the workspace for the domain the person typed. Without this they
+  // land on "No sites yet" and have to remember and retype it. Only offered
+  // while they genuinely have no workspace for it.
+  const pendingDomain = (() => {
+    const d = (user?.user_metadata as { pending_domain?: unknown } | undefined)?.pending_domain;
+    if (typeof d !== "string" || !d) return null;
+    return workspaces.some((w) => w.domain === d) ? null : d;
+  })();
+
   return (
     <>
       <PageHead
@@ -63,6 +73,7 @@ export default async function ClientsPage({ searchParams }: Props) {
           <ClientActions
             allowance={{ limit: allowance.limit, remaining: allowance.remaining, used: allowance.used, noPlan: allowance.reason === "no-plan" }}
             canAdd={canAddWorkspace(role)}
+            prefillDomain={pendingDomain}
           />
         }
       />
