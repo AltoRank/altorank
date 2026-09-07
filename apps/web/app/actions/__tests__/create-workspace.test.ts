@@ -17,6 +17,17 @@ let insertResult: { data: { id: string } | null; error: { message: string } | nu
 };
 const inserted = vi.fn();
 
+// The reachability check createWorkspace runs before it writes anything does a
+// real DNS lookup and a real fetch (lib/domain/reachable.ts). A unit test must
+// not depend on the network: on a runner without one, three of these time out
+// at the 5s default and the failure reads as a bug in the action rather than in
+// the harness. Mocked to "live" so these tests keep testing what they are about
+// - which refusals reach the dialog as text - and reachability keeps its own
+// tests in lib/domain/__tests__.
+vi.mock("@/lib/domain/reachable", () => ({
+  checkDomainReachable: async (d: string) => ({ ok: true, verdict: "live", url: `https://${d}` }),
+}));
+
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: { getUser: async () => ({ data: { user: { id: "u1", email: "a@b.co", user_metadata: {} } } }) },

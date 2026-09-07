@@ -29,7 +29,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readSiteText } from "./site-text";
 import { checkDomainReachable } from "@/lib/domain/reachable";
-import { e2eStubsEnabled } from "@/lib/e2e/stubs";
 import { trainVoiceProfile } from "@/lib/voice/train";
 import { analyseDomain } from "@/lib/audit/domain-analysis";
 import { generateArticle } from "@/lib/content/generate";
@@ -130,11 +129,7 @@ async function runPhases(
   // `no-dns` is the only verdict that stops the run, because it is the only
   // one that is certain: there is no host. A site behind a WAF that refuses
   // our fetch still gets its full run (lib/domain/reachable.ts explains why).
-  // `E2E_STUBS` stands in for the outside world, DNS included: every e2e domain
-  // is `*.altorank.test` precisely because it resolves to nothing, and the
-  // stubs supply what a real fetch would. Checking reachability there would
-  // block the suite from ever exercising the phases below.
-  if (domain && !e2eStubsEnabled()) {
+  if (domain) {
     const reach = await checkDomainReachable(domain);
     if (reach.verdict === "no-dns" || reach.verdict === "invalid") {
       emit({ phase: "scanning", status: "failed", detail: reach.reason });
