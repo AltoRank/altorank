@@ -45,6 +45,30 @@ export const POLL_MS = 3_000;
 /** After two minutes the run is in the draft, where nothing changes for a while. */
 export const POLL_SLOW_MS = 10_000;
 export const POLL_BACKOFF_AFTER_MS = 2 * 60_000;
+/**
+ * Polls in a row that answered with anything but a run before the screen stops
+ * asking and says so.
+ *
+ * Terminal detection needs a successful read: a 401 from an expired session, a
+ * 500, or a row the route cannot see leaves `isTerminal` unreached, and the
+ * loop simply reschedules. The only ceiling on this screen is `RUN_STALE_MS`,
+ * which is computed server-side from `updated_at` and therefore requires the
+ * very read that is failing - so a signed-out tab sat here spinning its five
+ * step icons and printing "This takes about a minute" indefinitely.
+ *
+ * Ten is a minute of the fast cadence, which is longer than any deploy blip
+ * and far short of the minutes a draft legitimately takes.
+ */
+export const POLL_MAX_CONSECUTIVE_FAILURES = 10;
+
+/**
+ * What the screen says when it gives up watching. Deliberately about *this
+ * screen* and not about the run: the run is a row advanced by its own
+ * invocations and carries on regardless, which is the same thing
+ * `STALE_RUN_ERROR` is careful to say about a worker that died.
+ */
+export const POLL_LOST_ERROR =
+  "This screen lost contact with the server and stopped following the run. The run itself carries on; reload to pick it up.";
 
 export function OnboardingProgress({
   workspaceId,
@@ -96,6 +120,8 @@ export function OnboardingProgress({
 
     const fail = (detail: string) => setState((s) => reduceOnboarding(s, { phase: "error", detail }));
 
+    let failures = 0;
+
     const poll = async () => {
       if (cancelled) return;
       try {
@@ -104,15 +130,31 @@ export function OnboardingProgress({
           const snapshot = (await res.json()) as OnboardingRunSnapshot;
           if (cancelled) return;
           if (snapshot.run) {
+            failures = 0;
             const next = stateFromRun(snapshot.run, snapshot.article, { stale: snapshot.stale });
             setState(next);
             if (isTerminal(next)) return;
+          } else {
+            failures += 1;
           }
+        } else {
+          failures += 1;
         }
       } catch {
-        /* a missed poll is the next one's problem */
+        /* a missed poll is the next one's problem - until there are too many */
+        failures += 1;
       }
       if (cancelled) return;
+      // Without this the screen had no way to stop. Everything that decides a
+      // run is over is read out of a successful response, so a session that
+      // expired mid-run, or a route that started answering 500, left five
+      // spinners turning and "This takes about a minute" on screen for as long
+      // as the tab was open. The run itself is unaffected either way: it is a
+      // row advanced by its own invocations, and this only ever watched it.
+      if (failures >= POLL_MAX_CONSECUTIVE_FAILURES) {
+        fail(POLL_LOST_ERROR);
+        return;
+      }
       timer = setTimeout(poll, Date.now() - startedAt > POLL_BACKOFF_AFTER_MS ? POLL_SLOW_MS : POLL_MS);
     };
 

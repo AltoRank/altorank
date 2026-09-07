@@ -36,11 +36,27 @@ export function ReadinessCheck({ initialDomain = "" }: { initialDomain?: string 
   // is nearly always the one already selected in the switcher.
   const [domain, setDomain] = useState(initialDomain);
   const [report, setReport] = useState<ReadinessReport | null>(null);
+  // `report.error` covers the errors `buildReadinessReport` *returns*. It
+  // cannot express the ones `checkReadiness` *throws* - the rate limit is one,
+  // "Rate limit reached - 20 checks per hour." - and with no catch here the
+  // 21st check flipped the button from "Checking…" back to "Run check" and
+  // rendered nothing at all. A refusal that looks like a no-op is the worst
+  // shape a refusal can take: the person tries again, which is the one thing
+  // that cannot work.
+  const [failure, setFailure] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const run = () => {
     if (!domain.trim()) return;
-    startTransition(async () => setReport(await checkReadiness(domain)));
+    setFailure(null);
+    startTransition(async () => {
+      try {
+        setReport(await checkReadiness(domain));
+      } catch (err) {
+        setReport(null);
+        setFailure(err instanceof Error ? err.message : "Could not run the check. Try again in a moment.");
+      }
+    });
   };
 
   const blocking = report?.result.findings.filter((f) => !f.passed && f.severity !== "low") ?? [];
@@ -74,9 +90,9 @@ export function ReadinessCheck({ initialDomain = "" }: { initialDomain?: string 
         </div>
       </Card>
 
-      {report?.error && (
+      {(failure || report?.error) && (
         <Card title="Could not check that domain">
-          <div className="text-sm text-ink-2">{report.error}</div>
+          <div className="text-sm text-ink-2">{failure ?? report?.error}</div>
         </Card>
       )}
 

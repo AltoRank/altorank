@@ -144,6 +144,18 @@ export function PlannerCard({
   // Set the moment "Write now" is pressed, cleared when the server confirms the
   // draft exists (the card reads "writing" from props) or the run settles.
   const [starting, setStarting] = useState(false);
+  /** When "Write now" was pressed, for the ceiling on the optimistic window. */
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  /**
+   * A client clock, advanced by each poll and by nothing else. It exists only
+   * to bound the two live states the server cannot date: the optimistic
+   * "writing" window before a draft row appears, and `improving`, whose task
+   * row carries `createdAt` (when the rewrite was *scheduled*, possibly a week
+   * ago) and no start time. Because it moves only while polling, a card that
+   * never polls can never age into "stalled".
+   */
+  const [elapsed, setElapsed] = useState(() => Date.now());
+  const [watchingSince] = useState(elapsed);
 
   const [instructions, setInstructions] = useState(keyword?.instructions ?? "");
   const [expectedLength, setExpectedLength] = useState(keyword?.expected_length ?? "auto");
@@ -161,7 +173,18 @@ export function PlannerCard({
   const state = starting && serverState === "planned" ? "writing" : serverState;
   const actions = cardActions(state);
   const pill = cardStatusPill(state);
-  const stalled = inFlight !== null && now - new Date(inFlight.createdAt).getTime() > GIVE_UP_MS;
+  // Two clocks, because the card reads "writing" for two different reasons.
+  // The server's `inFlight.createdAt` bounds a draft the server has confirmed
+  // and survives a reload. `startedAt` bounds the optimistic window before
+  // that confirmation: `starting` forces the state to "writing" while
+  // `inFlight` is still null, so `stalled` was false by construction, and a
+  // /write-now whose draft never matched back (a keyword mismatch in
+  // `inFlightFor`) left this card refreshing the whole route every three
+  // seconds for as long as the tab stayed open.
+  const stalled =
+    inFlight !== null
+      ? now - new Date(inFlight.createdAt).getTime() > GIVE_UP_MS
+      : elapsed - (startedAt ?? watchingSince) > GIVE_UP_MS;
 
   const label = taxonomyLabel(keyword?.article_subtype);
   const unanswered = unansweredCount(questions);
@@ -194,14 +217,23 @@ export function PlannerCard({
         ? removeInactiveEntries()
         : removePlannedEntry(entry.id);
 
-  // While a draft is in flight, ask the server again every few seconds, the
-  // way the overview does for the first draft. Stops on its own once the run
-  // has gone quiet for ten minutes.
+  // While work is in flight, ask the server again every few seconds, the way
+  // the overview does for the first draft. Stops on its own once the run has
+  // gone quiet for ten minutes.
+  //
+  // `improving` is in the condition now. The pill says "Rewriting…" for a
+  // running refresh task exactly as it says "Writing…" for a running draft,
+  // but only the draft was polled: a rewrite finished and the square went on
+  // claiming it was in progress until someone reloaded the page.
+  const live = state === "writing" || state === "improving";
   useEffect(() => {
-    if (state !== "writing" || stalled) return;
-    const t = setInterval(() => router.refresh(), POLL_MS);
+    if (!live || stalled) return;
+    const t = setInterval(() => {
+      setElapsed(Date.now());
+      router.refresh();
+    }, POLL_MS);
     return () => clearInterval(t);
-  }, [state, stalled, router]);
+  }, [live, stalled, router]);
 
   // Once the server says the draft exists, the local "starting" flag has done
   // its job. Adjusted during render rather than in an effect (react.dev:
@@ -245,6 +277,7 @@ export function PlannerCard({
     if (!writeGate.ok) return;
     setError(null);
     setStarting(true);
+    setStartedAt(Date.now());
     try {
       const res = await fetch("/api/plan/write-now", {
         method: "POST",

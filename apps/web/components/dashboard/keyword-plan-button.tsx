@@ -2,6 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { IconButton } from "@/components/ui/button";
 import { Icons } from "@/components/ui";
 import { updateKeywordStatus } from "@/app/actions/keywords";
@@ -29,9 +30,15 @@ export function KeywordPlanButton({ keywordId, currentStatus }: KeywordPlanButto
       disabled={pending}
       title="Add to plan"
       onClick={() =>
+        // A rejected action inside a transition with no catch is silent: the
+        // button un-disables, the row does not change, and nothing says why.
         startTransition(async () => {
-          await updateKeywordStatus(keywordId, "planned");
-          router.refresh();
+          try {
+            await updateKeywordStatus(keywordId, "planned");
+            router.refresh();
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Could not add this keyword to the plan.");
+          }
         })
       }
     >

@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition, useState } from "react";
+import { toast } from "sonner";
 import { generateReportAction } from "@/app/actions/reports";
 import { Button, Icons } from "@/components/ui";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
@@ -47,11 +48,17 @@ export function GenerateReportButton() {
     <form
       className="flex items-end gap-2"
       action={(fd) =>
+        // Same shape as everywhere else: without a catch, a refused report
+        // and a generated one leave the screen looking identical.
         startTransition(async () => {
           const start = fd.get("start") as string;
           const end = fd.get("end") as string;
-          await generateReportAction(target.id, start, end);
-          setShowPicker(false);
+          try {
+            await generateReportAction(target.id, start, end);
+            setShowPicker(false);
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Could not generate the report.");
+          }
         })
       }
     >
