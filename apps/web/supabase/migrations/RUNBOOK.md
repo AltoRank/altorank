@@ -10,12 +10,13 @@ works out what is applied by looking for one distinguishing object per file.
 Verified 2026-09-05 against a fresh `supabase/postgres:15.8.1.060` container:
 files 001–061 apply cleanly in numeric order (see
 `docs/integration/MIGRATION-REPORT-2026-09-05.md` for the evidence and the
-caveats). 062–071 have not been through that container check; they are in the
+caveats). 062–074 have not been through that container check; they are in the
 pre-flight query below and each is `if not exists` / `if exists` throughout, so
-re-running one is safe.
+re-running one is safe — except 072, whose `create policy` statements are not
+guarded (see its note below).
 
-**Head is 071.** The one-line-per-file list in §3 and the pre-flight query in §1
-both go to 071. If you add a migration, add its marker to the query in the same
+**Head is 074.** The one-line-per-file list in §3 and the pre-flight query in §1
+both go to 074. If you add a migration, add its marker to the query in the same
 commit — the post-flight step is "every row is `t`", and a file with no row
 passes that check by being absent from it.
 
@@ -124,7 +125,10 @@ m(file, applied) as (values
   ('068_workspace_share_token',              exists (select 1 from col where t='workspaces' and c='share_token')),
   ('069_generate_idempotency',               to_regclass('public.agent_idempotency_keys') is not null),
   ('070_google_needs_reconnect',             exists (select 1 from col where t='workspace_integrations' and c='needs_reconnect')),
-  ('071_billing_past_due',                   exists (select 1 from col where t='agencies' and c='payment_failed_at'))
+  ('071_billing_past_due',                   exists (select 1 from col where t='agencies' and c='payment_failed_at')),
+  ('072_tenant_authz_hardening',             exists (select 1 from pg_trigger where tgname='agencies_guard_privileged_columns')),
+  ('073_lifecycle_emails',                   to_regclass('public.idx_invites_one_pending_per_email') is not null),
+  ('074_one_autonomous_draft_per_keyword',   to_regclass('public.idx_articles_one_autonomous_draft_per_keyword') is not null)
 )
 select file, applied from m order by file;
 ```
@@ -210,7 +214,7 @@ a hosted project and on `supabase start`; it fails on a bare
 `supabase/postgres` Docker image, which only ships a stub `storage` schema.
 That is the one file that could not be exercised in the 2026-09-05 check.
 
-### Production, from 048 to 071
+### Production, from 048 to 074
 
 Only the files whose PR has merged to `main` exist in the checkout. Apply what
 is there, in order. One line per file so a failure is attributable:
@@ -240,6 +244,9 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 068_workspace_share_token.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 069_generate_idempotency.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 070_google_needs_reconnect.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 071_billing_past_due.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 072_tenant_authz_hardening.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 073_lifecycle_emails.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 074_one_autonomous_draft_per_keyword.sql
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -265,17 +272,15 @@ where n.nspname = 'public' and c.relkind = 'r'
        or not exists (select 1 from pg_policy p where p.polrelid = c.oid));
 ```
 
-Expected: zero rows. (`public_checks`, `growth_plans`, `admin_impersonations`
-and `agent_idempotency_keys` (069) have RLS on with zero policies by design —
-service-role only — and have no `workspace_id`, so they do not appear.)
-
-If you run this against a **shared local stack** rather than production, expect
-rows for tables no migration here creates. On 2026-09-06 the local database
-carried `sent_emails`, `email_preferences` and `webhook_deliveries`, none of
-them from a file in this directory and none referenced by any code in the repo;
-`sent_emails` has a `workspace_id` with RLS on and no policy, so it is returned
-by this query. That is the check working, on a table this repo does not own.
-Confirm a row is one of ours (`grep -l <table> *.sql`) before acting on it.
+Expected: exactly one row, `sent_emails` (073) — it carries a `workspace_id`
+with RLS on and no policy **by design**, service-role only, the same shape as
+`agent_idempotency_keys` (069). `public_checks`, `growth_plans`,
+`admin_impersonations`, `agent_idempotency_keys` (069) and `email_preferences`
+(073) are the same shape but have no `workspace_id`, so they do not appear.
+Anything else in the result is a table with a real gap. Confirm a row is one of
+ours (`grep -l <table> *.sql`) before acting on it: a **shared local stack**
+carries tables no file here creates (on 2026-09-06, `webhook_deliveries`, which
+no code in the repo references either).
 
 3. Smoke the app: sign in, open a workspace, open Settings, load the planner.
 
@@ -425,6 +430,31 @@ Search Console tab, the dashboard's Search Console blocks and the agent's `sync`
 `exists (select 1 from col where t='workspace_integrations' and c='needs_reconnect')`. Roll back with
 `alter table workspace_integrations drop column needs_reconnect, drop column last_sync_error;`.
 
+## 072 — added 2026-09-06
+
+`072_tenant_authz_hardening.sql`: least privilege on the agency-scoped tables.
+`api_keys` INSERT/UPDATE/DELETE and `invites` SELECT move to owner/admin
+(`user_admin_agency_ids()`, from 053); the member-wide `backlink_credits`
+INSERT policy is dropped (only the service role settles an exchange);
+`workspaces` DELETE becomes admin-only; and a `BEFORE UPDATE` trigger on
+`agencies` (`agencies_guard_privileged_columns`) raises `42501` when a
+signed-in user (`auth.uid()` not null) changes `plan`, `plan_status`,
+`stripe_*`, `current_period_end`, `cancels_at`, `payment_failed_at` or
+`api_key`, and when a non-admin changes name/slug/branding/`report_email`.
+**Consequence for the app:** every write to those billing columns must go
+through `createServiceClient()` — the Stripe webhook already does, and
+`app/actions/billing.ts` / `retention.ts` were moved to it in the same
+integration branch. Depends on 053 (`user_admin_agency_ids`,
+`user_can_access_workspace`) and 071 (`payment_failed_at`). No data change.
+**Not safe to re-run**: the `create policy` statements have no `if not exists`,
+so a second apply stops on `policy "API keys visible to agency members" …
+already exists` (harmless under `-1`, nothing changes). Pre-flight:
+`exists (select 1 from pg_trigger where tgname='agencies_guard_privileged_columns')`.
+Roll back with `drop trigger agencies_guard_privileged_columns on agencies;
+drop function agencies_guard_privileged_columns();` and re-create the 001/053
+policies it dropped (`API keys by agency`, `Credits insert scoped to agency`,
+`Invites visible to agency members`, `Workspaces deleted by access`).
+
 ## 073 — added 2026-09-06
 
 `073_lifecycle_emails.sql`: adds `sent_emails` (a send is claimed here *before* it leaves,
@@ -432,7 +462,24 @@ keyed by type + subject + recipient, and the claim is released if the send fails
 retried Stripe webhook or a re-run cron cannot mail the same fact twice), `email_preferences`
 (keyed by address rather than user id, because the monthly report may go to a shared inbox)
 and a partial unique index giving one pending invite per address. Depends on 001 and 010.
-Idempotent; no data change. Pre-flight:
-`to_regclass('public.sent_emails') is not null`. Note that `sent_emails` and
-`email_preferences` already exist on the local dev stack from an earlier hand-run, so the
-detection query above returns true there before this file is applied.
+Idempotent; the only data change is collapsing pre-existing duplicate pending invites.
+Pre-flight: `to_regclass('public.idx_invites_one_pending_per_email') is not null` — the
+index, not the table, because `sent_emails` and `email_preferences` already existed on the
+local dev stack from an earlier hand-run and would report the file as applied before it was.
+Roll back with `drop index idx_invites_one_pending_per_email; drop table sent_emails,
+email_preferences;` — every lifecycle email becomes re-sendable and every opt-out is lost.
+This file was `072_lifecycle_emails.sql` on its branch until 2026-09-07; it was renumbered
+because 072 is the tenant hardening file above.
+
+## 074 — added 2026-09-06
+
+`074_one_autonomous_draft_per_keyword.sql`: partial unique index
+`idx_articles_one_autonomous_draft_per_keyword` on `articles (workspace_id, keyword)`
+where `status = 'drafting' and generated_autonomously`. The second of two overlapping
+`cron/generate` runs fails its insert with `23505`, which `lib/content/generate.ts` maps to
+`ConcurrentGenerationError` and the cron skips. Hand-written articles are
+`generated_autonomously = false` and never collide. Depends on 001. Idempotent
+(`create unique index if not exists`); fails to create only if two in-flight autonomous
+drafts already share a keyword — the file's header has the query that finds them. Pre-flight:
+`to_regclass('public.idx_articles_one_autonomous_draft_per_keyword') is not null`. Roll back
+with `drop index idx_articles_one_autonomous_draft_per_keyword;`.
