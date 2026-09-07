@@ -123,9 +123,13 @@ async function emailPaymentFailed(
   try {
     // The window the customer actually has, counted from the recorded start -
     // which is the earlier of this failure and one already on the row.
-    const episodeStart = agency.payment_failed_at ?? failedAt.toISOString();
+    const episodeStart = isoKey(agency.payment_failed_at) ?? failedAt.toISOString();
     const ends = graceEndsAt(episodeStart);
     if (!ends) return;
+    // The window is already over - the account has lapsed, or the episode
+    // predates this email existing. "You have until <a date last week>" is
+    // not a warning; the Billing page already says lapsed.
+    if (ends.getTime() <= Date.now()) return;
     await notifyPaymentFailed(
       supabase,
       agency.id,
@@ -140,6 +144,19 @@ async function emailPaymentFailed(
   } catch (err) {
     console.error(`[stripe] payment-failed email for ${agency.id}: ${err instanceof Error ? err.message : err}`);
   }
+}
+
+/**
+ * The same instant, as the string the ledger and the change checks key on.
+ *
+ * PostgREST renders a timestamptz as `2026-09-07T06:58:46+00:00`; `Date#toISOString`
+ * gives `2026-09-07T06:58:46.000Z`. Comparing or keying on the raw strings
+ * makes "unchanged" look changed and one dunning episode look like two.
+ */
+function isoKey(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const t = Date.parse(value);
+  return Number.isNaN(t) ? value : new Date(t).toISOString();
 }
 
 /** Where a tier sits on the ladder, so a switch can be called up or down. */
@@ -408,7 +425,7 @@ export async function POST(request: Request) {
        * to say why.
        */
       const cancelsAt = updates.cancels_at as string | null;
-      if (before && event.type === "customer.subscription.updated" && cancelsAt && before.cancels_at !== cancelsAt) {
+      if (before && event.type === "customer.subscription.updated" && cancelsAt && isoKey(before.cancels_at) !== cancelsAt) {
         try {
           await notifySubscriptionCancelled(
             supabase,
