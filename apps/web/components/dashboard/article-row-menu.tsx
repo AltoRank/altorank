@@ -70,11 +70,29 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, c
     };
   }, [open]);
 
+  /**
+   * Which item is mid-flight, so the menu can say so. Status change and
+   * delete used to await their action with no pending state and no catch:
+   * the menu sat there looking idle, a second click queued a second call,
+   * and a failure (RLS, a row already gone) vanished into the console while
+   * the row stayed exactly as it was. Every branch now disables its item,
+   * relabels it, and reports a failure where the person is looking.
+   */
+  const [busy, setBusy] = useState<"status" | "delete" | null>(null);
+
   async function handleStatusChange(status: string) {
-    await updateArticle(articleId, { status });
-    setOpen(false);
-    setShowStatusMenu(false);
-    router.refresh();
+    if (busy) return;
+    setBusy("status");
+    try {
+      await updateArticle(articleId, { status });
+      setOpen(false);
+      setShowStatusMenu(false);
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not change the status");
+    } finally {
+      setBusy(null);
+    }
   }
 
   // Approved and connected: publish from here, through the workspace's
@@ -117,13 +135,22 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, c
   }
 
   async function handleDelete() {
+    if (busy) return;
     if (!confirm("Delete this article? This cannot be undone.")) return;
-    await deleteArticle(articleId);
-    setOpen(false);
-    router.refresh();
+    setBusy("delete");
+    try {
+      await deleteArticle(articleId);
+      setOpen(false);
+      toast.success("Article deleted");
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not delete the article");
+    } finally {
+      setBusy(null);
+    }
   }
 
-  const menuItemClass = "w-full text-left px-3 py-2 text-[13px] hover:bg-panel-2 transition-colors cursor-pointer";
+  const menuItemClass = "w-full text-left px-3 py-2 text-[13px] hover:bg-panel-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-progress";
 
   return (
     <div className="relative" ref={ref}>
@@ -198,22 +225,26 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, c
           )}
           <button
             className={menuItemClass}
+            disabled={busy !== null}
+            aria-busy={busy === "status" || undefined}
             onClick={(e) => {
               e.stopPropagation();
               setShowStatusMenu(!showStatusMenu);
             }}
           >
-            Change status &rsaquo;
+            {busy === "status" ? "Changing status…" : <>Change status &rsaquo;</>}
           </button>
           <div className="border-t border-line my-1" />
           <button
             className={`${menuItemClass} text-[var(--err)]`}
+            disabled={busy !== null}
+            aria-busy={busy === "delete" || undefined}
             onClick={(e) => {
               e.stopPropagation();
-              handleDelete();
+              void handleDelete();
             }}
           >
-            Delete
+            {busy === "delete" ? "Deleting…" : "Delete"}
           </button>
 
           {showStatusMenu && (
@@ -225,9 +256,10 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, c
                 <button
                   key={s}
                   className={`${menuItemClass} ${s === currentStatus ? "font-medium text-accent-ink" : ""}`}
+                  disabled={busy !== null}
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleStatusChange(s);
+                    void handleStatusChange(s);
                   }}
                 >
                   {s.charAt(0).toUpperCase() + s.slice(1)}
