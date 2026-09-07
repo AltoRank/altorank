@@ -56,8 +56,19 @@ export interface ConnectCmsDialogProps {
   onConnected?: () => void;
 }
 
+/**
+ * The platforms this dialog will open for. Must agree with CONNECTABLE_CMS in
+ * lib/cms/connectable.ts, which decides whether the tile on /connect offers
+ * Connect or Request integration; `connectable.test.ts` fails if they drift.
+ *
+ * `framer` is absent from both: the adapter has never been exercised against a
+ * live project and was written against a REST surface Framer does not have
+ * (its Server API is a WebSocket SDK). The CMSType union below still carries
+ * it, and so do the form branch and toConfig, so any connection made before
+ * this keeps rendering and publishing - it simply cannot be created here.
+ */
 const CMS_TYPES: CMSType[] = [
-  "wordpress", "wordpress-plugin", "shopify", "magento", "webflow", "ghost", "framer",
+  "wordpress", "wordpress-plugin", "shopify", "magento", "webflow", "ghost",
   "wix", "notion", "hubspot", "woocommerce", "webhook", "git",
 ];
 
@@ -306,7 +317,6 @@ export function ConnectCmsDialog({
     { value: "magento", label: "Magento" },
     { value: "webflow", label: "Webflow" },
     { value: "ghost", label: "Ghost" },
-    { value: "framer", label: "Framer" },
     { value: "wix", label: "Wix" },
     { value: "notion", label: "Notion" },
     { value: "hubspot", label: "HubSpot" },
