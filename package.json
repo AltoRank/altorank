@@ -2,7 +2,8 @@
   "name": "altorank",
   "private": true,
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "packages/altorank-cli"
   ],
   "scripts": {
     "dev": "npm run dev -w apps/web",

@@ -1,0 +1,39 @@
+{
+  "name": "altorank",
+  "version": "0.1.0",
+  "description": "Command-line client for the AltoRank agent API. Every command prints one JSON envelope; nothing here publishes, approves or deletes.",
+  "license": "AGPL-3.0-only",
+  "bin": {
+    "altorank": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "prepublishOnly": "node build.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.7"
+  },
+  "keywords": [
+    "altorank",
+    "seo",
+    "cli",
+    "agent",
+    "search-console"
+  ],
+  "homepage": "https://github.com/AltoRank/altorank/tree/main/packages/altorank-cli#readme",
+  "bugs": {
+    "url": "https://github.com/AltoRank/altorank/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AltoRank/altorank",
+    "directory": "packages/altorank-cli"
+  }
+}
