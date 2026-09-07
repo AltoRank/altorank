@@ -114,15 +114,27 @@ test("a new account is walked from /dashboard to a planned first month", async (
   expect(entries?.length).toBe(planned);
 
   // The first draft: written for day one of the plan, waiting in review.
+  //
+  // Not `length === 1`. The free week is written in parallel (#121), so the
+  // fan-out lands six more, and this assertion only ever passed because the
+  // fan-out's self-invocation silently failed under the e2e server - it was
+  // green for the wrong reason. Day one is identified by its calendar entry,
+  // not by an index into an unordered select.
   const { data: articles } = await db.from("articles").select("id, status, keyword, generated_autonomously").eq("workspace_id", ws.id);
-  expect(articles?.length).toBe(1);
-  expect(articles?.[0].status).toBe("review");
-  expect(articles?.[0].generated_autonomously).toBe(true);
+  expect(articles?.length).toBeGreaterThan(0);
+  // Everything onboarding writes is autonomous and waits for a yes; the gate
+  // is the product, so no draft may arrive in any other state.
+  for (const a of articles!) {
+    expect(a.status).toBe("review");
+    expect(a.generated_autonomously).toBe(true);
+  }
   const first = entries![0];
   expect(first.scheduled_date).toBe(todayUtc());
-  expect(first.keyword).toBe(articles?.[0].keyword);
-  expect(first.article_id).toBe(articles?.[0].id);
   expect(first.status).toBe("scheduled");
+  expect(first.article_id).not.toBeNull();
+  const dayOneArticle = articles!.find((a) => a.id === first.article_id);
+  expect(dayOneArticle, "day one's calendar entry points at an article that exists").toBeTruthy();
+  expect(dayOneArticle!.keyword).toBe(first.keyword);
 
   // --- The plan, on the calendar ------------------------------------------------
   await page.getByRole("button", { name: "Open my plan" }).click();
@@ -142,5 +154,7 @@ test("a new account is walked from /dashboard to a planned first month", async (
   // the entry's (lib/plan/card-state.ts).
   const dayOne = page.locator("div.text-xs", { has: page.getByText(first.keyword as string, { exact: true }) }).first();
   await expect(dayOne).toContainText("In review");
-  await expect(dayOne.getByRole("link", { name: "Open draft" })).toHaveAttribute("href", `/content/${articles?.[0].id}`);
+  // Day one's own article, not `articles[0]`: the select is unordered and the
+  // free week's fan-out puts six siblings beside it.
+  await expect(dayOne.getByRole("link", { name: "Open draft" })).toHaveAttribute("href", `/content/${first.article_id}`);
 });
