@@ -17,6 +17,13 @@ export const maxDuration = 300;
 const bodySchema = z.object({
   workspace_id: z.uuid(),
   keyword: z.string().trim().min(2).max(200),
+  /**
+   * The keyword row the draft is briefed from, when the agent has one (from
+   * GET /keywords). Without it the brief is looked up by term with an
+   * ilike match, which finds the wrong row when two terms differ only in
+   * case or a plural, and finds nothing for a term typed fresh.
+   */
+  keyword_id: z.uuid().optional(),
   title: z.string().trim().min(2).max(200).optional(),
   /** Regenerate into an existing draft instead of creating a new row. */
   article_id: z.uuid().optional(),
@@ -58,10 +65,10 @@ export const POST = withAgent(async (request, ctx) => {
     return fail(
       "invalid_request",
       body.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
-      "Send { workspace_id, keyword, title?, article_id?, allow_overage? }.",
+      "Send { workspace_id, keyword, keyword_id?, title?, article_id?, allow_overage? }.",
     );
   }
-  const { workspace_id, keyword, title, article_id, allow_overage } = body.data;
+  const { workspace_id, keyword, keyword_id, title, article_id, allow_overage } = body.data;
   const keyRead = idempotencyKeyFrom(request, parsed.body);
   if (!keyRead.ok) {
     return fail("invalid_request", keyRead.message, "Send an Idempotency-Key of up to 200 printable characters, e.g. a UUID you generate per intended draft.");
@@ -84,6 +91,21 @@ export const POST = withAgent(async (request, ctx) => {
       accountPausedMessage(workspace.paused_until),
       "The whole account is paused, so no site can be written to and nothing is being billed. Ask the human to resume it on the Billing page; do not retry until they have.",
     );
+  }
+
+  // A keyword id names a row in *this* workspace or it names nothing: a
+  // keyword from another site would brief the draft with the wrong
+  // instructions and, on insert, point articles.keyword_id across tenants.
+  if (keyword_id) {
+    const { data: kw } = await ctx.supabase
+      .from("keywords")
+      .select("id")
+      .eq("id", keyword_id)
+      .eq("workspace_id", workspace.id)
+      .maybeSingle();
+    if (!kw) {
+      return fail("not_found", "keyword_id is not a keyword of this workspace.", "Use an id from GET /keywords?workspace_id= for the same workspace, or omit keyword_id.");
+    }
   }
 
   // Regenerating: the target must be in this workspace and in a state that
@@ -169,6 +191,7 @@ export const POST = withAgent(async (request, ctx) => {
         title: title || keyword,
         slug: slugFor(title || keyword),
         keyword,
+        keyword_id: keyword_id ?? null,
         status: "drafting",
         ai_provider: workspace.ai_provider || "claude",
         generated_autonomously: false,
@@ -190,6 +213,7 @@ export const POST = withAgent(async (request, ctx) => {
         supabase: ctx.supabase,
         workspaceId: workspace.id,
         keyword,
+        keywordId: keyword_id,
         title,
         articleId: targetId,
         callerEmail: null,
@@ -225,7 +249,10 @@ export const POST = withAgent(async (request, ctx) => {
       `Draft started; it takes about two minutes. Poll poll_url every 30-60s until status is review, then send the human editor_url. It will not publish itself and you cannot publish it.${idemKey ? "" : " Next time send an Idempotency-Key: if this call had timed out you would have had no safe way to retry it."}`,
     ),
   };
-}, { scope: "generate" });
+// `mutation: true`: this route writes a row and starts a model call, and it
+// sat outside the per-key mutation limiter that every other write has, so a
+// looping agent could open drafts as fast as the read limit allowed.
+}, { scope: "generate", mutation: true });
 
 /** A duplicate arrived in the one-statement window between claim and row. */
 function inFlight() {

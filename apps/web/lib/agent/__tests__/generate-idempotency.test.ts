@@ -37,6 +37,8 @@ vi.mock("next/server", async (importOriginal) => ({
 const AGENCY = "agency-1";
 const WS = "11111111-1111-4111-8111-111111111111";
 const KEY = "altorank_live_" + "G".repeat(40);
+const KW_OURS = "66666666-6666-4666-8666-666666666666";
+const KW_THEIRS = "77777777-7777-4777-8777-777777777777";
 
 function seed(): Seed {
   const now = new Date().toISOString();
@@ -44,6 +46,10 @@ function seed(): Seed {
     api_keys: [{ id: "key-gen", agency_id: AGENCY, name: "gen", scopes: ["read", "generate"], expires_at: null, revoked_at: null, last_used_at: now, key_hash: hashApiKey(KEY) }],
     workspaces: [{ id: WS, agency_id: AGENCY, name: "Acme", domain: "acme.com", status: "on", ai_provider: "claude", created_at: now }],
     articles: [],
+    keywords: [
+      { id: KW_OURS, workspace_id: WS, term: "acme widgets", status: "planned", created_at: now },
+      { id: KW_THEIRS, workspace_id: "22222222-2222-4222-8222-222222222222", term: "acme widgets", status: "planned", created_at: now },
+    ],
     agent_idempotency_keys: [],
   };
 }
@@ -163,5 +169,41 @@ describe("POST /articles/generate idempotency", () => {
     expect(b.data.replayed).toBe(false);
     expect(b.data.article_id).not.toBe(a.data.article_id);
     expect(db.tables.agent_idempotency_keys.map((k) => k.article_id)).toEqual([b.data.article_id]);
+  });
+});
+
+describe("POST /articles/generate keyword_id and the mutation limiter", () => {
+  it("briefs the draft from the named keyword row and writes it on the article", async () => {
+    // Without keyword_id the brief is looked up by an ilike on the term,
+    // which finds the wrong row when two terms differ only in case or a
+    // plural. The agent already holds the id from GET /keywords.
+    const { POST } = await import("@/app/api/agent/v1/articles/generate/route");
+    const { generateArticle } = await import("@/lib/content/generate");
+    const res = await POST(generate({ keyword_id: KW_OURS }));
+    expect(res.status).toBe(202);
+    expect(drafts()[0].keyword_id).toBe(KW_OURS);
+    await afterCalls[0]();
+    expect(vi.mocked(generateArticle).mock.calls.at(-1)?.[0]).toMatchObject({ keywordId: KW_OURS, workspaceId: WS });
+  });
+
+  it("refuses a keyword_id from another workspace before any row is written", async () => {
+    const { POST } = await import("@/app/api/agent/v1/articles/generate/route");
+    const res = await POST(generate({ keyword_id: KW_THEIRS }));
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error.code).toBe("not_found");
+    expect(body.agent_guidance).toMatch(/GET \/keywords/);
+    expect(drafts()).toHaveLength(0);
+    expect(afterCalls).toHaveLength(0);
+  });
+
+  it("counts against the per-key mutation limit like every other write", async () => {
+    // It sat outside the limiter: a looping agent could open drafts as fast
+    // as the read limit allowed, each one a row and a model call.
+    const { POST } = await import("@/app/api/agent/v1/articles/generate/route");
+    const res = await POST(generate({}));
+    expect(res.status).toBe(202);
+    expect(res.headers.get("X-RateLimit-Mutations-Limit")).not.toBeNull();
+    expect(res.headers.get("X-RateLimit-Mutations-Remaining")).not.toBeNull();
   });
 });
