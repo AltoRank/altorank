@@ -148,9 +148,21 @@ export interface GenerateArticleResult {
   aeoScore: number;
 }
 
-/** The URL slug a new article gets from its title or keyword. Shared with the agent API, which creates the row before this runs. */
+/**
+ * The URL slug a new article gets from its title or keyword. Shared with the
+ * agent API, which creates the row before this runs.
+ *
+ * Accented letters are folded to their base letter before anything is
+ * dropped. The old `[^a-z0-9]` pass deleted them outright, so an Italian
+ * keyword like "città d'arte" published at `/citt-d-arte` and "perché" at
+ * `/perch`: a slug missing letters from the keyword it was meant to carry,
+ * on the locales the product is sold into first. Same fold as the heading
+ * ids in lib/content/enrich/html.ts, so an anchor and a slug agree.
+ */
 export function slugFor(text: string): string {
   return text
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
