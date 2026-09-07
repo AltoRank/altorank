@@ -30,9 +30,24 @@ function renderMarks(text: string, marks?: { type: string; attrs?: Record<string
       case "italic":
         result = `<em>${result}</em>`;
         break;
-      case "link":
-        result = `<a href="${escapeAttr(String(mark.attrs?.href ?? ""))}">${result}</a>`;
+      case "link": {
+        // `target` and `rel` are decided once, in lib/ai/tiptap.ts: an
+        // external citation opens in a new tab and is nofollowed, an internal
+        // link (a relative path, or the site's own domain) carries neither.
+        // This renderer used to emit `href` alone, so every published article
+        // shipped its citations followed and same-tab, whatever the editor
+        // showed. A relative path never gets them: the editor's Link
+        // extension stamps its defaults on a hand-added link, and a
+        // nofollowed link to the site's own page is worse than a bare one.
+        const href = String(mark.attrs?.href ?? "");
+        const relative = !/^[a-z][a-z0-9+.-]*:/i.test(href);
+        const attr = (name: "target" | "rel") => {
+          const v = mark.attrs?.[name];
+          return !relative && typeof v === "string" && v.trim() ? ` ${name}="${escapeAttr(v.trim())}"` : "";
+        };
+        result = `<a href="${escapeAttr(href)}"${attr("target")}${attr("rel")}>${result}</a>`;
         break;
+      }
       case "code":
         result = `<code>${result}</code>`;
         break;
