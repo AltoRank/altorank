@@ -135,6 +135,8 @@ describe("canSpend — refused", () => {
     getQuota.mockResolvedValue(
       freeTier(FREE_DRAFTS, { dunning: { state: "lapsed", graceEndsAt: "2026-09-01T00:00:00.000Z" } }),
     );
+    // Only once the free allowance is gone too: see the ordering note in
+    // spend-gate.ts. The test below pins the other half of that rule.
     const d = await canSpend(client(), "a", { action: "refresh" });
     expect(d.allowed).toBe(false);
     if (d.allowed) return;
@@ -145,6 +147,19 @@ describe("canSpend — refused", () => {
     // Offering Checkout to somebody who already has a subscription is how an
     // account ends up paying twice (2026-09-06).
     expect(d.message).not.toMatch(/choose a plan/i);
+  });
+
+  it("honours the free tier a lapsed card is told it has fallen back to", async () => {
+    // The dunning banner says "the account is on the free tier until the card
+    // is updated". An account with drafts left really does keep them, or the
+    // banner is describing a product that refuses everything.
+    getQuota.mockResolvedValue(
+      freeTier(2, { dunning: { state: "lapsed", graceEndsAt: "2026-09-01T00:00:00.000Z" } }),
+    );
+    expect(await canSpend(client(), "a", { action: "draft" })).toMatchObject({
+      allowed: true,
+      reason: "free-allowance",
+    });
   });
 
   it("a cancelled subscription falls back to the free allowance, which its history has spent", async () => {

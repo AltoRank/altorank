@@ -184,9 +184,24 @@ export async function canSpend(
     };
   }
 
-  // From here the account has no entitled plan. Three shapes, three sentences.
+  // From here the account has no entitled plan.
+  //
+  // The free allowance is checked before the lapsed card, and the order is the
+  // product's own promise: the dunning banner says "your plan is on hold and
+  // the account is on the free tier until the card is updated", so an account
+  // that still has free drafts really does keep them. In practice this changes
+  // nothing for a real customer - somebody who was paying has written hundreds
+  // of articles and their one-time seven went long ago - but the alternative
+  // is a banner that says "free tier" over a product that refuses everything.
   const remaining = quota.remaining ?? 0;
+  if (remaining > 0) {
+    return { allowed: true, reason: "free-allowance", quota, message: null };
+  }
 
+  // Out of allowance, and the reason there is no plan matters: a failed card
+  // is not the same news as never having subscribed, and offering Checkout to
+  // somebody who already has a subscription is how an account ends up paying
+  // twice (2026-09-06).
   if (quota.dunning?.state === "lapsed") {
     return {
       allowed: false,
@@ -194,10 +209,6 @@ export async function canSpend(
       quota,
       message: pastDueMessage(action, quota),
     };
-  }
-
-  if (remaining > 0) {
-    return { allowed: true, reason: "free-allowance", quota, message: null };
   }
 
   return {
