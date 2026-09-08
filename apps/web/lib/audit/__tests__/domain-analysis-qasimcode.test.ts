@@ -239,6 +239,32 @@ describe("the qasimcode signup", () => {
     expect(allSeeds.length).toBeLessThanOrEqual(5);
   });
 
+  it("takes the profile the wizard passes in, and reads it when nobody passes one", async () => {
+    // #180 wired `options.profile` through the signup. Every other caller -
+    // `cron/analyze` re-analysing a workspace nightly - has none in hand and
+    // needs the same seeds and the same subject test.
+    const { client } = fakeSupabase(null);
+    await analyseDomain({
+      domain: "qasimcode.com",
+      supabase: client,
+      workspaceId: "ws1",
+      profile: { ...BUSINESS_PROFILE, name: "Qasimcode", language: "English", country: "Global (English)" },
+    });
+    expect(seeds.mock.calls.flatMap((c) => c[0] as string[]).some((x) => x.startsWith("dental clinic "))).toBe(true);
+  });
+
+  it("reserves seed slots for the audiences instead of concatenating them", async () => {
+    // `discoverKeywordsFromSeeds` slices to 5. #180 concatenated
+    // [...headingSeeds, ...profileSeeds] and the heading seeder returns up to
+    // 8, so on any site with readable headings the audience seeds fell off the
+    // end of the slice and were never bought at all.
+    await analyse();
+    const audienceSeedsBought = seeds.mock.calls
+      .flatMap((c) => c[0] as string[])
+      .filter((x) => /^(dental clinic|beauty studio|therapy practice) /.test(x));
+    expect(audienceSeedsBought.length).toBeGreaterThan(0);
+  });
+
   it("buys the audience expansion at a lower volume floor than the page seeds", async () => {
     // The whole point of an audience term is that it is small enough to win.
     await analyse();

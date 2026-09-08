@@ -28,23 +28,25 @@ const PROFILE = {
   ],
 };
 
-describe("keyNouns — the tie-break", () => {
-  it("prefers where the phrase appears over where it sorts", () => {
+describe("categoryOf — after #180", () => {
+  it("no longer answers with the payment terms", () => {
     // Every pair in a 3-sentence positioning paragraph occurs exactly once, so
     // the count separated nothing and `localeCompare` decided everything:
     // qasimcode.com's category came out as "agreed upfront", from the closing
     // clause about payment terms, and every audience playbook read "best
     // agreed upfront for medical and dental clinics".
-    const nouns = keyNouns(BUSINESS.description, 6, "qasimcode.com");
+    const nouns = keyNouns(BUSINESS.description, 8);
+    expect(nouns).toContain("appointment-based websites");
     expect(nouns).not.toContain("agreed upfront");
-    expect(nouns.indexOf("appointment-based websites")).toBeLessThan(
-      nouns.indexOf("online booking"),
-    );
+    expect(categoryOf(BUSINESS, "qasimcode.com")).not.toContain("agreed");
+    expect(categoryOf(BUSINESS, "qasimcode.com")).not.toContain("qasimcode");
   });
 
-  it("never returns the business's own name", () => {
-    expect(keyNouns(BUSINESS.description, 6, "qasimcode.com").join(" ")).not.toContain("qasimcode");
-    expect(categoryOf(BUSINESS, "qasimcode.com")).not.toContain("qasimcode");
+  it("is still a phrase from prose, which is why the seeds do not use it", () => {
+    // "appointment-based websites" is a fair category and a terrible seed:
+    // `keyword_suggestions` returns only phrases CONTAINING it, and nothing
+    // contains "appointment-based". `categoryHead` below answers "website".
+    expect(categoryOf(BUSINESS, "qasimcode.com")).toBe("appointment-based websites");
   });
 });
 
