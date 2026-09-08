@@ -33,15 +33,17 @@ const pipeline = (result: { pendingDraft: typeof PENDING | null }, extra: Onboar
   }) as unknown as typeof runOnboarding;
 
 let dispatch: ReturnType<typeof vi.fn>;
+let announce: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   dispatch = vi.fn(() => ({ request: Promise.resolve(new Response("{}", { status: 200 })) }));
+  announce = vi.fn(async () => "1 draft, emailed 1");
 });
 
 describe("executeRun", () => {
   it("claims the row and persists every phase before dispatching the draft, then leaves it running", async () => {
     const d = db();
     const run = pipeline({ pendingDraft: PENDING }, [{ phase: "drafting", status: "active", detail: 'Writing "seo agent" now.' }]);
-    const r = await executeRun("r1", { supabase: d.client, run, dispatch: dispatch as never, canDispatch: () => true });
+    const r = await executeRun("r1", { supabase: d.client, run, dispatch: dispatch as never, announce: announce as never, canDispatch: () => true });
     await r.keepAlive;
 
     expect(r.outcome).toBe("awaiting-draft");
@@ -62,7 +64,7 @@ describe("executeRun", () => {
   it("finishes the row itself when there is no draft to dispatch", async () => {
     const d = db();
     const run = pipeline({ pendingDraft: null }, [{ phase: "drafting", status: "skipped", detail: "No keyword clear enough to write to yet." }, { phase: "ready" }]);
-    const r = await executeRun("r1", { supabase: d.client, run, dispatch: dispatch as never, canDispatch: () => true });
+    const r = await executeRun("r1", { supabase: d.client, run, dispatch: dispatch as never, announce: announce as never, canDispatch: () => true });
     expect(r.outcome).toBe("ran");
     expect(dispatch).not.toHaveBeenCalled();
     const row = d.tables.onboarding_runs[0] as unknown as OnboardingRunRow;
@@ -73,7 +75,7 @@ describe("executeRun", () => {
   it("runs the draft inline when the install cannot self-invoke", async () => {
     const d = db();
     const run = pipeline({ pendingDraft: null }, [{ phase: "drafting", status: "done", detail: "Wrote 1,200 words.", article: { id: "a1", title: "T", keyword: "seo agent", wordCount: 1200, verdict: "clean" } }, { phase: "ready" }]);
-    const r = await executeRun("r1", { supabase: d.client, run, dispatch: dispatch as never, canDispatch: () => false });
+    const r = await executeRun("r1", { supabase: d.client, run, dispatch: dispatch as never, announce: announce as never, canDispatch: () => false });
     expect(run).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.any(Function), { firstDraft: "inline" });
     expect(r.outcome).toBe("ran");
     const row = d.tables.onboarding_runs[0] as unknown as OnboardingRunRow;
@@ -88,7 +90,7 @@ describe("executeRun", () => {
       emit(EVENTS[1]);
       throw new Error("Supabase unreachable");
     }) as unknown as typeof runOnboarding;
-    const r = await executeRun("r1", { supabase: d.client, run, dispatch: dispatch as never, canDispatch: () => true });
+    const r = await executeRun("r1", { supabase: d.client, run, dispatch: dispatch as never, announce: announce as never, canDispatch: () => true });
     expect(r.outcome).toBe("failed");
     const row = d.tables.onboarding_runs[0] as unknown as OnboardingRunRow;
     expect(row.status).toBe("error");
@@ -99,7 +101,7 @@ describe("executeRun", () => {
   it("a draft request that never lands closes the run as a failed draft", async () => {
     const d = db();
     dispatch.mockReturnValue({ request: Promise.reject(new Error("ECONNREFUSED")) });
-    const r = await executeRun("r1", { supabase: d.client, run: pipeline({ pendingDraft: PENDING }), dispatch: dispatch as never, canDispatch: () => true });
+    const r = await executeRun("r1", { supabase: d.client, run: pipeline({ pendingDraft: PENDING }), dispatch: dispatch as never, announce: announce as never, canDispatch: () => true });
     await r.keepAlive;
     const row = d.tables.onboarding_runs[0] as unknown as OnboardingRunRow;
     expect(row.status).toBe("partial");
@@ -109,7 +111,7 @@ describe("executeRun", () => {
   it("a draft request the route refused closes the run too, unless the route already settled it", async () => {
     const d = db();
     dispatch.mockReturnValue({ request: Promise.resolve(new Response("{}", { status: 404 })) });
-    const r = await executeRun("r1", { supabase: d.client, run: pipeline({ pendingDraft: PENDING }), dispatch: dispatch as never, canDispatch: () => true });
+    const r = await executeRun("r1", { supabase: d.client, run: pipeline({ pendingDraft: PENDING }), dispatch: dispatch as never, announce: announce as never, canDispatch: () => true });
     await r.keepAlive;
     expect(d.tables.onboarding_runs[0]).toMatchObject({ status: "partial" });
 
@@ -121,7 +123,7 @@ describe("executeRun", () => {
         return new Response("{}", { status: 500 });
       })(),
     });
-    const r2 = await executeRun("r1", { supabase: d2.client, run: pipeline({ pendingDraft: PENDING }), dispatch: dispatch as never, canDispatch: () => true });
+    const r2 = await executeRun("r1", { supabase: d2.client, run: pipeline({ pendingDraft: PENDING }), dispatch: dispatch as never, announce: announce as never, canDispatch: () => true });
     await r2.keepAlive;
     expect((d2.tables.onboarding_runs[0] as unknown as OnboardingRunRow).phases[0]).toMatchObject({ detail: "Model timed out." });
   });
@@ -129,8 +131,8 @@ describe("executeRun", () => {
   it("a second worker for the same run finds it claimed and leaves", async () => {
     const d = db();
     const run = pipeline({ pendingDraft: PENDING });
-    await executeRun("r1", { supabase: d.client, run, dispatch: dispatch as never, canDispatch: () => true });
-    const again = await executeRun("r1", { supabase: d.client, run, dispatch: dispatch as never, canDispatch: () => true });
+    await executeRun("r1", { supabase: d.client, run, dispatch: dispatch as never, announce: announce as never, canDispatch: () => true });
+    const again = await executeRun("r1", { supabase: d.client, run, dispatch: dispatch as never, announce: announce as never, canDispatch: () => true });
     expect(again.outcome).toBe("already-running");
     expect(run).toHaveBeenCalledTimes(1);
   });
@@ -138,15 +140,67 @@ describe("executeRun", () => {
   it("answers not-found and already-finished without running anything", async () => {
     const d = fakeDb({ onboarding_runs: [{ id: "r1", workspace_id: "ws1", status: "done", phases: [], planned: [] }] });
     const run = pipeline({ pendingDraft: null });
-    expect((await executeRun("nope", { supabase: d.client, run })).outcome).toBe("not-found");
-    expect((await executeRun("r1", { supabase: d.client, run })).outcome).toBe("already-finished");
+    expect((await executeRun("nope", { supabase: d.client, run, announce: announce as never })).outcome).toBe("not-found");
+    expect((await executeRun("r1", { supabase: d.client, run, announce: announce as never })).outcome).toBe("already-finished");
     expect(run).not.toHaveBeenCalled();
   });
 
   it("a run whose workspace is gone is closed as an error", async () => {
     const d = fakeDb({ onboarding_runs: [{ id: "r1", workspace_id: "ws-gone", status: "running", phases: [], planned: [] }] });
-    const r = await executeRun("r1", { supabase: d.client, run: pipeline({ pendingDraft: null }), canDispatch: () => true });
+    const r = await executeRun("r1", { supabase: d.client, run: pipeline({ pendingDraft: null }), canDispatch: () => true, announce: announce as never });
     expect(r.outcome).toBe("failed");
     expect(d.tables.onboarding_runs[0]).toMatchObject({ status: "error", error: "The workspace no longer exists." });
+  });
+});
+
+/**
+ * The drafts a signup produces land in seven separate invocations, so the only
+ * place that knows the whole batch is here, after `keepAlive` settles. Before
+ * this, nothing on that path sent anything at all - a real signup finished the
+ * wizard, got seven drafts inside the hour, and was never told any of it.
+ */
+describe("executeRun: announcing the batch", () => {
+  it("tells the account once, after every draft has landed", async () => {
+    const d = db();
+    let firstDraftLanded = false;
+    dispatch.mockReturnValue({
+      request: Promise.resolve().then(() => {
+        firstDraftLanded = true;
+        return new Response("{}", { status: 200 });
+      }),
+    });
+    const r = await executeRun("r1", { supabase: d.client, run: pipeline({ pendingDraft: PENDING }), dispatch: dispatch as never, canDispatch: () => true, announce: announce as never });
+
+    // Not before: the whole point is that "7 drafts are ready" is true when it is said.
+    expect(announce).not.toHaveBeenCalled();
+    await r.keepAlive;
+    expect(firstDraftLanded).toBe(true);
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith(d.client, "ws1");
+  });
+
+  it("announces the run that wrote its draft inline too", async () => {
+    const d = db();
+    const r = await executeRun("r1", { supabase: d.client, run: pipeline({ pendingDraft: null }), dispatch: dispatch as never, canDispatch: () => false, announce: announce as never });
+    await r.keepAlive;
+    expect(announce).toHaveBeenCalledTimes(1);
+  });
+
+  /** Six drafts that did land are still news, even when the seventh never started. */
+  it("announces what the fan-out wrote even when the first draft could not be dispatched", async () => {
+    const d = db();
+    dispatch.mockReturnValue({ skipped: "no-secret" });
+    const r = await executeRun("r1", { supabase: d.client, run: pipeline({ pendingDraft: PENDING }), dispatch: dispatch as never, canDispatch: () => true, announce: announce as never });
+    expect(r.outcome).toBe("failed");
+    await r.keepAlive;
+    expect(announce).toHaveBeenCalledTimes(1);
+  });
+
+  /** A mail problem must never surface as a failed onboarding run. */
+  it("does not let the email break the run", async () => {
+    const d = db();
+    announce.mockRejectedValue(new Error("Resend is down"));
+    const r = await executeRun("r1", { supabase: d.client, run: pipeline({ pendingDraft: PENDING }), dispatch: dispatch as never, canDispatch: () => true, announce: announce as never });
+    await expect(r.keepAlive).resolves.toBeUndefined();
   });
 });
