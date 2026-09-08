@@ -198,3 +198,43 @@ describe("factCheckArticle — corroboration", () => {
     expect(r.claims[0].status).toBe("unsourced");
   });
 });
+
+describe("factCheckArticle — attribution survives a dotted acronym", () => {
+  // From a real draft for qasimcode.com. The sentence names its source, links
+  // to it, and was still reported as unattributed: the split landed after
+  // "U.S." and the surviving half opened "Bureau of Labor Statistics, ...".
+  const BLS =
+    '<p>According to the U.S. Bureau of Labor Statistics, employment of web' +
+    ' developers and digital designers is projected to grow 5 percent from' +
+    ' 2025 to 2035, faster than the average for all occupations.</p>';
+
+  it("keeps the sentence whole", () => {
+    const r = factCheckArticle(BLS);
+    expect(r.claims[0].sentence).toContain("According to the U.S. Bureau of Labor Statistics");
+  });
+
+  it("credits the source the author named", () => {
+    const r = factCheckArticle(BLS);
+    // The capture stops at the first lowercase word, so it reads "U.S.
+    // Bureau" rather than the full name. Truncated is fine; absent was not.
+    expect(r.claims[0].attribution).toContain("Bureau");
+    expect(r.claims[0].status).toBe("needs_verification");
+  });
+
+  it("guards the rest of the family", () => {
+    for (const abbr of ["U.K.", "E.U.", "Ph.D.", "a.m."]) {
+      const r = factCheckArticle(`<p>According to a ${abbr} Registry report, 42% of sites fail.</p>`);
+      expect(r.claims[0].sentence).toContain(abbr);
+    }
+  });
+
+  it("still splits an ordinary sentence boundary", () => {
+    const r = factCheckArticle("<p>Yes. Some 42% of them do.</p>");
+    expect(r.claims[0].sentence).toBe("Some 42% of them do.");
+  });
+
+  it("leaves a genuinely unsourced figure alone", () => {
+    const r = factCheckArticle("<p>In the U.S., 42% of clinics do this.</p>");
+    expect(r.claims[0].status).toBe("unsourced");
+  });
+});
