@@ -317,6 +317,155 @@ export function buildPlaybookSeeds(id: PlaybookId, ctx: SeedContext): string[] {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Audience seeds for the automatic first look
+// ---------------------------------------------------------------------------
+//
+// #180 established the principle: the automatic path had never used the
+// audiences, so qasimcode.com's twenty keywords all came from n-grams of its
+// blog tag pages and not one contained "book", "appoint", "clinic", "salon",
+// "dental", "therap", "trade", "calendar" or "schedul".
+//
+// This is the seed SHAPE, which #180 left as the drawer's playbook templates
+// and which does not survive contact with the endpoint. Two measured problems:
+//
+//   too long   `keyword_suggestions` returns only phrases CONTAINING the seed.
+//              "appointment-based websites for medical and dental clinics" is
+//              seven words; nothing contains it. "dental clinic website" is
+//              three, and "dental clinic website design" contains it.
+//   never bought   `discoverKeywordsFromSeeds` slices to `maxSeeds` (5), and
+//                  #180 concatenates [...headingSeeds, ...profileSeeds]. The
+//                  heading seeder returns up to 8, so on any site with readable
+//                  headings the audience seeds fall off the end of the slice and
+//                  are never bought at all. `mergeSeeds` in domain-analysis.ts
+//                  reserves slots for them instead.
+//
+// The long tail this business can win is "dental clinic website" and "salon
+// appointment website" - three and four words, a named buyer at the end of
+// them. "website design" (49,500/mo, KD 70) is what the headings produced.
+
+/** A seed and the audience it came from, so the row can carry its provenance. */
+export interface AudienceSeed {
+  seed: string;
+  audience: string;
+}
+
+/**
+ * The head of an audience phrase: the last two content words, singularised.
+ *
+ * "Medical and dental clinics" -> "dental clinic", "Small businesses needing
+ * appointment booking" -> "appointment booking". Two words rather than the
+ * whole phrase because `keyword_suggestions` only returns phrases containing
+ * the seed, and a six-word seed returns nothing.
+ */
+export function audienceHead(audience: string): string {
+  const words = audience
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !STOP.has(w) && !/^\d+$/.test(w));
+  return words
+    .slice(-2)
+    .map((w) => (w.endsWith("ies") && w.length > 4 ? `${w.slice(0, -3)}y` : w.endsWith("s") && !w.endsWith("ss") && w.length > 3 ? w.slice(0, -1) : w))
+    .join(" ");
+}
+
+/**
+ * The one noun that names what the business sells: "website" for a studio that
+ * builds websites, so an audience becomes "dental clinic website".
+ *
+ * Taken from the crawled profile rather than the description, because the
+ * profile is already weighted - `SIGNATURE_BOOST` puts the homepage headline's
+ * words at the top - and because `categoryOf` reads the description by
+ * counting adjacent word pairs, all of which occur exactly once in three
+ * sentences, so it falls back to an alphabetical tie-break and returns "agreed
+ * upfront". Every audience playbook for qasimcode.com therefore reads "best
+ * agreed upfront for medical and dental clinics".
+ *
+ * Three conditions, in order of how much each removes:
+ *
+ *   in the description   the profile's top terms include the brand and the
+ *                        audiences; what the business SAYS it makes is in its
+ *                        own description of itself
+ *   not the brand        "qasimcode" is the strongest term in every profile
+ *   not an audience word "studios", "clinics" and "salons" are who they sell
+ *                        to, not what they sell, and they outrank "websites"
+ *
+ * Null when nothing survives, which turns audience seeding off rather than
+ * guessing.
+ */
+export interface SubjectFields {
+  description?: string | null;
+  audiences?: string[] | null;
+}
+
+export function categoryHead(
+  business: SubjectFields,
+  profile: { topTerms?: string[] | null } | null | undefined,
+  domain?: string,
+): string | null {
+  const top = profile?.topTerms ?? [];
+  if (!top.length || !business.description) return null;
+  const inDescription = new Set(
+    business.description.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean),
+  );
+  const audienceWords = new Set(
+    (business.audiences ?? [])
+      .join(" ")
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(Boolean),
+  );
+  const brand = new Set(
+    (domain ?? "")
+      .toLowerCase()
+      .replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(Boolean),
+  );
+  const singular = (w: string) =>
+    w.endsWith("ies") && w.length > 4
+      ? `${w.slice(0, -3)}y`
+      : w.endsWith("s") && !w.endsWith("ss") && w.length > 3
+        ? w.slice(0, -1)
+        : w;
+
+  for (const term of top) {
+    if (term.length < 4) continue;
+    if (brand.has(term) || STOP.has(term)) continue;
+    if (audienceWords.has(term) || audienceWords.has(singular(term))) continue;
+    if (!inDescription.has(term) && !inDescription.has(singular(term))) continue;
+    return singular(term);
+  }
+  return null;
+}
+
+/**
+ * One seed per audience: "<audience> <what we sell>".
+ *
+ * Returns [] with no audiences or no category head, which leaves the page
+ * seeds in sole possession of the budget - exactly today's behaviour.
+ */
+export function audienceSeeds(
+  business: SubjectFields | null | undefined,
+  profile: { topTerms?: string[] | null } | null | undefined,
+  domain?: string,
+): AudienceSeed[] {
+  if (!business?.audiences?.length) return [];
+  const head = categoryHead(business, profile, domain);
+  if (!head) return [];
+  const seen = new Set<string>();
+  const out: AudienceSeed[] = [];
+  for (const audience of business.audiences) {
+    const a = audienceHead(audience);
+    if (!a || a.includes(head) || seen.has(a)) continue;
+    seen.add(a);
+    out.push({ seed: `${a} ${head}`, audience });
+  }
+  return out;
+}
+
 /** The example line a playbook card shows, from the person's own profile. */
 export function playbookExamples(id: PlaybookId, ctx: SeedContext, limit = 3): string[] {
   return buildPlaybookSeeds(id, ctx).slice(0, limit);

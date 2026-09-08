@@ -82,13 +82,18 @@ const adsRow = (keyword: string, volume = 1000) => ({
 });
 
 /** Just enough client for the keyword write path. */
-function fakeSupabase() {
+function fakeSupabase(business: Record<string, unknown> | null = null) {
   const inserted: Array<Record<string, unknown>[]> = [];
   const client = {
     from(table: string) {
       return {
         select: () => ({
-          eq: async () => ({ data: [] }),
+          // `.eq(...)` is awaited for the keyword table and `.single()`d for the
+          // workspace's business profile, so it has to be both.
+          eq: () =>
+            Object.assign(Promise.resolve({ data: [] }), {
+              single: async () => ({ data: { business_profile: business } }),
+            }),
         }),
         insert(rows: Record<string, unknown>[]) {
           if (table === "keywords") inserted.push(rows);
@@ -105,8 +110,11 @@ function fakeSupabase() {
   return { client: client as never, inserted };
 }
 
-const analyse = (extra: Record<string, unknown> = {}) => {
-  const { client, inserted } = fakeSupabase();
+const analyse = (
+  extra: Record<string, unknown> = {},
+  business: Record<string, unknown> | null = null,
+) => {
+  const { client, inserted } = fakeSupabase(business);
   return analyseDomain({ domain: "x.co", supabase: client, workspaceId: "ws1", ...extra }).then((a) => ({
     analysis: a,
     stored: inserted.flat(),

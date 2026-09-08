@@ -94,3 +94,54 @@ export function relativeDifficulty(
 
   return { absolute, relative, band, reason };
 }
+
+/**
+ * A difficulty nobody wins with content alone, whatever their authority.
+ *
+ * KD is derived from the backlink profiles of the pages already in the top
+ * ten, so 90+ means those pages are the strongest documents on the web for
+ * that phrase. A site that genuinely competes there reaches this code with a
+ * ranking already attached (`source: "ranked"`, or an observed position), and
+ * those rows are exempt everywhere this is used.
+ *
+ * Named separately from the relative judgement below because it needs no
+ * authority measurement: it is the answer when there is no authority number
+ * yet, which on a first analysis run is every workspace.
+ */
+export const HOPELESS_DIFFICULTY = 90;
+
+/**
+ * KD so high the SERP is out of everyone's reach, with no authority number
+ * needed. This is the only difficulty judgement allowed to DROP a keyword;
+ * `isOutOfReach` below only stops it being written.
+ */
+export function isHopeless(difficulty: number | null | undefined): boolean {
+  return (
+    typeof difficulty === "number" &&
+    Number.isFinite(difficulty) &&
+    difficulty >= HOPELESS_DIFFICULTY
+  );
+}
+
+/**
+ * Whether a keyword is out of reach for THIS site.
+ *
+ * The gap this closes: `relativeDifficulty` has existed since 2026-09-05 and
+ * produces "unrealistic" for exactly these keywords, but nothing on the
+ * writing path ever asked it. qasimcode.com (authority 0, signed up
+ * 2026-09-07) was given twenty keywords of which five were KD 100 and eight
+ * were KD 70 or worse, and an article was written for one of the KD 100s.
+ *
+ * Out of reach is a reason not to WRITE, not a reason to hide: the keyword is
+ * still the market the customer is in, and their authority moves. The drop is
+ * `isHopeless` above, which needs no authority and so is the answer during a
+ * first run, when `workspaces.dr` is still null.
+ */
+export function isOutOfReach(
+  difficulty: number | null | undefined,
+  authority: number | null | undefined,
+): boolean {
+  if (typeof difficulty !== "number" || !Number.isFinite(difficulty)) return false;
+  if (isHopeless(difficulty)) return true;
+  return relativeDifficulty(difficulty, authority).band === "unrealistic";
+}

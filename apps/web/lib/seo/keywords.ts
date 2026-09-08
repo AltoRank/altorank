@@ -4,6 +4,7 @@
 
 import { post } from "./client";
 import { classifyIntent } from "./intent";
+import { normalizeTarget } from "./recommendations";
 import type { KeywordIntent } from "@/lib/types";
 
 /** Shape returned by the keywords-for-site DataForSEO endpoint (trimmed). */
@@ -381,6 +382,46 @@ export function dedupePermutations<T extends { keyword: string; volume: number }
 }
 
 /**
+ * The second pass: one keyword per TARGET, not per phrasing.
+ *
+ * `dedupePermutations` above compares the words as typed, so it collapses
+ * "seo for agency" and "agency for seo" and nothing else. `normalizeTarget`
+ * folds plurals, gerunds, agent nouns and a silent final "e" as well, which is
+ * what makes "website design", "website about design" and "website design
+ * websites" one query - and it is already the key `recommendKeywords` collapses
+ * the queue on, so a row this drops was going to be merged into another one
+ * the moment anybody looked at it.
+ *
+ * Ordered by volume, then by the shorter phrasing, matching the rule above:
+ * the winner is the way people most often type it.
+ *
+ * Not merged into `dedupePermutations`: the brief path uses that one to
+ * de-duplicate related keywords for a single article, where "content writing"
+ * and "content writer" are two headings worth having.
+ */
+export function dedupeTargets<T extends { keyword: string; volume: number }>(
+  keywords: T[],
+): T[] {
+  const best = new Map<string, T>();
+  for (const k of keywords) {
+    const key = normalizeTarget(k.keyword);
+    if (!key) continue;
+    const prev = best.get(key);
+    if (
+      !prev ||
+      k.volume > prev.volume ||
+      (k.volume === prev.volume && k.keyword.length < prev.keyword.length)
+    ) {
+      best.set(key, k);
+    }
+  }
+  return [...best.values()];
+}
+
+/** A discovered keyword plus the seed whose call returned it. */
+export type SeededKeyword = DiscoveredKeyword & { seed: string };
+
+/**
  * Expand seeds into keywords that actually contain them.
  *
  * Was keyword_ideas, which expands by product *category* rather than by
@@ -408,7 +449,7 @@ export async function discoverKeywordsFromSeeds(
     /** Drop long-tail noise server-side. */
     minVolume?: number;
   },
-): Promise<DiscoveredKeyword[]> {
+): Promise<SeededKeyword[]> {
   const clean = [
     ...new Set(
       seeds.map((s) => s.trim().toLowerCase()).filter((s) => s.length >= 3),
@@ -440,9 +481,9 @@ export async function discoverKeywordsFromSeeds(
     ),
   );
 
-  const out: DiscoveredKeyword[] = [];
+  const out: SeededKeyword[] = [];
   const seen = new Set<string>();
-  for (const response of responses) {
+  for (const [i, response] of responses.entries()) {
     if (!response) continue;
     for (const task of response.tasks ?? []) {
       for (const result of task.result ?? []) {
@@ -454,7 +495,11 @@ export async function discoverKeywordsFromSeeds(
           const parsed = parseKeywordIdea(item, options?.languageCode ?? "en");
           if (!parsed || seen.has(parsed.keyword.toLowerCase())) continue;
           seen.add(parsed.keyword.toLowerCase());
-          out.push(parsed);
+          // Which seed paid for this row. Responses are in `clean` order, so
+          // the index is the seed - and without it the dashboard cannot say
+          // whether the audiences the customer typed produced anything, which
+          // is the only way to know the seeding change worked.
+          out.push({ ...parsed, seed: clean[i] });
         }
       }
     }

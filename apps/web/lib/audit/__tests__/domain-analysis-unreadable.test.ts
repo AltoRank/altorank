@@ -67,7 +67,12 @@ const junk = ["ry domain", "explam", "www example com minecraft", "fb history su
 function supabase() {
   return {
     from: (table: string) => ({
-      select: () => ({ eq: async () => ({ data: [] }) }),
+      select: () => ({
+        eq: () =>
+          Object.assign(Promise.resolve({ data: [] }), {
+            single: async () => ({ data: { business_profile: null } }),
+          }),
+      }),
       insert: (rows: unknown) => {
         insert(table, rows);
         return { select: async () => ({ data: [] }) };
