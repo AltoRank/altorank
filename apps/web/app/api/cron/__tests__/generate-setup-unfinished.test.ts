@@ -50,6 +50,12 @@ vi.mock("@/lib/seo/recommendations", () => ({
 }));
 vi.mock("@/lib/onboarding/plan", () => ({ duePlannedKeyword: async () => null, fulfilPlannedEntry: async () => {} }));
 vi.mock("@/lib/billing/quota", () => ({ getQuota: async () => ({ limit: null, remaining: null }), quotaExceededMessage: () => "quota" }));
+// The cron asks the spend gate before it asks the quota (a lapsed card, a
+// cancelled subscription and a paused account all stop it, not just an empty
+// allowance). This fixture is an entitled account.
+vi.mock("@/lib/billing/spend-gate", () => ({
+  canSpend: async () => ({ allowed: true, reason: "plan", quota: { limit: null, remaining: null }, message: null }),
+}));
 vi.mock("@/lib/billing/resume", () => ({ resumeExpiredPauses: async () => [], isoDay: (d: Date) => d.toISOString().slice(0, 10) }));
 vi.mock("@/lib/stripe", () => ({ billingEnabled: false, getStripe: () => null }));
 vi.mock("@/lib/content/generate", () => ({

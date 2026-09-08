@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button, Dialog } from "@/components/ui";
 import { createVoiceProfile, retrainVoice } from "@/app/actions/voice";
 import { VoiceManualEditor } from "./voice-manual-editor";
@@ -27,11 +28,20 @@ export function VoiceCardButton({ workspaceId, trained, hasSample, profileId, ru
     try {
       const fd = new FormData(e.currentTarget);
       const sampleText = fd.get("sample_text") as string;
-      await createVoiceProfile(workspaceId, sampleText);
+      // Both calls here used to end at `console.error`, so a refusal - out of
+      // free drafts, account paused, card past due - was a dialog that closed
+      // on nothing. The billing outcome travels as data because a thrown
+      // server-action message is a hex digest in production.
+      const res = await createVoiceProfile(workspaceId, sampleText);
+      if (!res.ok) {
+        toast.error(res.error, { duration: 12_000 });
+        return;
+      }
       setOpen(false);
       router.refresh();
     } catch (err) {
       console.error(err);
+      toast.error(err instanceof Error ? err.message : "Voice training failed.");
     } finally {
       setPending(false);
     }
@@ -40,10 +50,15 @@ export function VoiceCardButton({ workspaceId, trained, hasSample, profileId, ru
   async function handleRetrain() {
     setPending(true);
     try {
-      await retrainVoice(workspaceId);
+      const res = await retrainVoice(workspaceId);
+      if (!res.ok) {
+        toast.error(res.error, { duration: 12_000 });
+        return;
+      }
       router.refresh();
     } catch (err) {
       console.error(err);
+      toast.error(err instanceof Error ? err.message : "Voice training failed.");
     } finally {
       setPending(false);
     }

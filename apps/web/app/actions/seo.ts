@@ -10,14 +10,35 @@ import { scoreArticle } from "@/lib/seo/scoring";
 import { fetchKnownPages } from "@/lib/linking/targets";
 import type { Workspace, Keyword, Article } from "@/lib/types";
 import { buildRankingRows } from "@/lib/seo/rankings";
+import { canSpend } from "@/lib/billing/spend-gate";
+import type { BillingOutcome } from "@/lib/billing/failure";
+
+// Every export below buys DataForSEO data, and none of them was gated: a free
+// account whose drafts were spent could re-run discovery, re-check every
+// keyword's position and re-pull backlinks as often as it liked.
+//
+// The refusal is returned, not thrown. Next.js replaces a thrown server-action
+// message with an opaque digest in production (lib/billing/failure.ts), and
+// "your account is out of free drafts" arriving as a hex string is the one
+// thing a paywall must not do. `BillingOutcome` is the shape the billing
+// actions already settled on for exactly this.
 
 // ---------------------------------------------------------------------------
 // runKeywordResearch
 // ---------------------------------------------------------------------------
 
-export async function runKeywordResearch(workspaceId: string) {
-  await requireAuth();
+export async function runKeywordResearch(
+  workspaceId: string,
+): Promise<BillingOutcome<{ discovered: number }>> {
+  const { agencyId, user } = await requireAuth();
   const supabase = await createClient();
+
+  const gate = await canSpend(supabase, agencyId, {
+    userEmail: user.email ?? undefined,
+    workspaceId,
+    action: "keyword-research",
+  });
+  if (!gate.allowed) return { ok: false, error: gate.message };
 
   // Fetch workspace to get domain
   const { data: workspace, error: wsError } = await supabase
@@ -80,16 +101,27 @@ export async function runKeywordResearch(workspaceId: string) {
 
   revalidatePath("/keywords");
 
-  return { discovered: keywords.length };
+  return { ok: true, discovered: keywords.length };
 }
 
 // ---------------------------------------------------------------------------
 // checkSerpPositions
 // ---------------------------------------------------------------------------
 
-export async function checkSerpPositions(workspaceId: string) {
-  await requireAuth();
+export async function checkSerpPositions(
+  workspaceId: string,
+): Promise<BillingOutcome<{ checked: number }>> {
+  const { agencyId, user } = await requireAuth();
   const supabase = await createClient();
+
+  // One paid SERP call per keyword row in the workspace, uncapped: the single
+  // most expensive button an unpaid account could press.
+  const gate = await canSpend(supabase, agencyId, {
+    userEmail: user.email ?? undefined,
+    workspaceId,
+    action: "serp-lookup",
+  });
+  if (!gate.allowed) return { ok: false, error: gate.message };
 
   // Fetch workspace domain
   const { data: workspace, error: wsError } = await supabase
@@ -118,7 +150,7 @@ export async function checkSerpPositions(workspaceId: string) {
   }
 
   const keywords = (keywordsData ?? []) as Keyword[];
-  if (keywords.length === 0) return { checked: 0 };
+  if (keywords.length === 0) return { ok: true, checked: 0 };
 
   const terms = keywords.map((k) => k.term);
 
@@ -146,16 +178,26 @@ export async function checkSerpPositions(workspaceId: string) {
 
   revalidatePath("/keywords");
 
-  return { checked: rankingRows.length };
+  return { ok: true, checked: rankingRows.length };
 }
 
 // ---------------------------------------------------------------------------
 // fetchBacklinks
 // ---------------------------------------------------------------------------
 
-export async function fetchBacklinks(workspaceId: string) {
-  await requireAuth();
+export async function fetchBacklinks(
+  workspaceId: string,
+): Promise<BillingOutcome<Awaited<ReturnType<typeof syncBacklinks>>>> {
+  const { agencyId, user } = await requireAuth();
   const supabase = await createClient();
+
+  const gate = await canSpend(supabase, agencyId, {
+    userEmail: user.email ?? undefined,
+    workspaceId,
+    action: "backlink-lookup",
+  });
+  if (!gate.allowed) return { ok: false, error: gate.message };
+
   const { data: workspace, error: wsError } = await supabase
     .from("workspaces")
     .select("id, domain")
@@ -166,7 +208,7 @@ export async function fetchBacklinks(workspaceId: string) {
 
   const result = await syncBacklinks(supabase, workspaceId, workspace.domain as string);
   revalidatePath("/backlinks");
-  return result;
+  return { ok: true, ...result };
 }
 
 // ---------------------------------------------------------------------------

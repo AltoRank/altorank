@@ -59,27 +59,31 @@ describe("entitledToScheduledWork", () => {
 const APP_DIR = join(__dirname, "..", "..", "..");
 const CRON_DIR = join(APP_DIR, "app", "api", "cron");
 
-/** Paid routes that deliberately run without the gate, and why. */
-const UNGATED: Record<string, string> = {
-  analyze:
-    "the free front-door audit: `first_analysed_at` bounds it to once per workspace " +
-    "for the life of the workspace, and PLAN_WORKSPACE_LIMITS caps a no-plan agency " +
-    "at one workspace, so this is one first look per account and cannot repeat",
-  generate:
-    "the free tier IS drafts: getQuota grants a no-plan agency FREE_DRAFTS a month and " +
-    "generateArticle refuses past it, so the gate here would be a second, stricter " +
-    "rule contradicting the published free tier",
-  "serp-collect":
-    "reads answers to tasks cron/serp already posted and paid for; the entitlement " +
-    "decision was made at post time, and skipping the collection would bin work " +
-    "already bought",
-  "site-pages":
-    "free by construction - plain GETs. The one paid path (the JS render at " +
-    "site-crawl.ts `renderFallback`) has no caller that sets it",
-};
+/**
+ * Paid routes that deliberately run without a gate, and why.
+ *
+ * Empty since 2026-09-07. It used to hold all four of `analyze`, `generate`,
+ * `serp-collect` and `site-pages`, each with a reason that had stopped being
+ * true: the free allowance refilled every month, so "the free tier IS drafts"
+ * described a subscription nobody paid for; `analyze` is once per workspace
+ * but a lapsed account can still add workspaces; `site-pages` costs no
+ * provider money but takes the one crawl slot a night from a paying site; and
+ * `serp-collect`'s money is indeed already spent, so it now filters between
+ * the free listing call and the per-task fetches rather than not at all.
+ */
+const UNGATED: Record<string, string> = {};
 
-/** The gate must stay reachable from the route's own source. */
-const GATE = "entitledToScheduledWork(";
+/**
+ * The gate must stay reachable from the route's own source. Either form
+ * counts: `entitledToScheduledWork` is "no plan means no scheduled work" and
+ * `canSpend` is the wider question that also covers a paused account, a
+ * cancelled one and a card past its grace window. A cron that delivers the
+ * free allowance itself (generate) must use the second, or it would refuse
+ * the drafts the free tier promises.
+ */
+const GATES = ["entitledToScheduledWork(", "canSpend("];
+const GATE = GATES[0];
+const gated = (src: string) => GATES.some((g) => src.includes(g));
 
 function routes(): string[] {
   return readdirSync(CRON_DIR).filter((d) => existsSync(join(CRON_DIR, d, "route.ts")));
@@ -135,7 +139,7 @@ describe("the paid crons gate on entitledToScheduledWork", () => {
   it("every cron that can spend provider money asks first", () => {
     const missing = paid
       .filter(({ route }) => !(route in UNGATED))
-      .filter(({ route }) => !readFileSync(join(CRON_DIR, route, "route.ts"), "utf8").includes(GATE));
+      .filter(({ route }) => !gated(readFileSync(join(CRON_DIR, route, "route.ts"), "utf8")));
 
     expect(
       missing.map((m) => m.route),
@@ -145,7 +149,9 @@ describe("the paid crons gate on entitledToScheduledWork", () => {
             missing.map((m) => `  app/api/cron/${m.route}/route.ts  (spends at ${m.site.replace(APP_DIR, "")})`).join("\n") +
             `\n\nCall entitledToScheduledWork(await getQuota(supabase, agencyId, null)) per\n` +
             `workspace before buying anything - as app/api/cron/serp/route.ts does - or\n` +
-            `list the route in UNGATED with the reason it is free.\n`,
+            `canSpend(supabase, agencyId, { userEmail: null, workspaceId, action }) when the\n` +
+            `job also delivers the free allowance, as app/api/cron/generate/route.ts does -\n` +
+            `or list the route in UNGATED with the reason it is free.\n`,
     ).toEqual([]);
   });
 
@@ -155,7 +161,7 @@ describe("the paid crons gate on entitledToScheduledWork", () => {
     const stale = Object.keys(UNGATED).filter((route) => {
       const file = join(CRON_DIR, route, "route.ts");
       if (!existsSync(file)) return true;
-      return readFileSync(file, "utf8").includes(GATE) || !paid.some((p) => p.route === route);
+      return gated(readFileSync(file, "utf8")) || !paid.some((p) => p.route === route);
     });
     expect(
       stale,

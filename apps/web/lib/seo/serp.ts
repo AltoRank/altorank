@@ -175,14 +175,33 @@ export type CollectedRanking = {
  * finds nothing. Tasks with a tag we did not write are left alone - the
  * account may have other queued work.
  */
-export async function collectRankingTasks(): Promise<CollectedRanking[]> {
+export async function collectRankingTasks(options?: {
+  /**
+   * Which of the workspaces named in the ready list to actually fetch.
+   * Called once with every workspace id in the batch and returns the ones to
+   * keep, so an account that is no longer entitled costs no further calls.
+   * Omitted means keep everything, which is what a self-hosted install wants.
+   */
+  keep?: (workspaceIds: string[]) => Promise<Set<string>>;
+}): Promise<CollectedRanking[]> {
   const ready = await get<ReadyTask>("/serp/google/organic/tasks_ready");
-  const ours: Array<{ id: string; workspaceId: string; keywordId: string }> = [];
+  let ours: Array<{ id: string; workspaceId: string; keywordId: string }> = [];
   for (const task of ready.tasks ?? []) {
     for (const r of task.result ?? []) {
       const decoded = decodeRankTag(r.tag);
       if (decoded && r.id) ours.push({ id: r.id, ...decoded });
     }
+  }
+
+  // The filter runs here, between the one cheap listing call and the per-task
+  // fetches, because that is the only place it saves anything: the SERP itself
+  // was paid for at task_post, and dropping a result we have already bought
+  // would waste it rather than save it. What this avoids is one HTTP round
+  // trip per task for an account whose entitlement lapsed inside the twenty
+  // minutes between posting and collecting.
+  if (options?.keep) {
+    const wanted = await options.keep([...new Set(ours.map((t) => t.workspaceId))]);
+    ours = ours.filter((t) => wanted.has(t.workspaceId));
   }
 
   const out: CollectedRanking[] = [];

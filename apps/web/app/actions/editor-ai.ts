@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { rewriteField, type MicroAction, type MicroField } from "@/lib/ai/micro";
+import { canSpend } from "@/lib/billing/spend-gate";
 import { generateImage } from "@/lib/ai/image-generator";
 import { outputFromRow, resolveFeaturedImage, type OutputSettingsRow } from "@/lib/onboarding/output-settings";
 import { uploadImageBuffer } from "@/lib/storage/images";
@@ -62,9 +63,16 @@ export async function rewriteFieldAction(input: {
   outline?: string[];
 }): Promise<MicroActionResult> {
   try {
-    await requireAuth();
+    const { agencyId, user } = await requireAuth();
     const parsed = microSchema.parse(input);
-    const { article } = await loadArticle(parsed.articleId);
+    const { article, supabase } = await loadArticle(parsed.articleId);
+    // A model call per press of Rewrite, on any draft, forever.
+    const gate = await canSpend(supabase, agencyId, {
+      userEmail: user.email ?? undefined,
+      workspaceId: article.workspace_id as string,
+      action: "draft",
+    });
+    if (!gate.allowed) return { ok: false, error: gate.message };
     const result = await rewriteField({
       field: parsed.field,
       action: parsed.action,
@@ -106,9 +114,16 @@ export async function regenerateImageAction(input: {
   instruction?: string;
 }): Promise<ImageProposalResult> {
   try {
-    await requireAuth();
+    const { agencyId, user } = await requireAuth();
     const parsed = regenerateSchema.parse(input);
     const { article, workspace, supabase } = await loadArticle(parsed.articleId);
+    // An OpenAI image per press.
+    const gate = await canSpend(supabase, agencyId, {
+      userEmail: user.email ?? undefined,
+      workspaceId: workspace.id as string,
+      action: "draft",
+    });
+    if (!gate.allowed) return { ok: false, error: gate.message };
 
     // The same presets generation used, so a regenerated image matches its
     // neighbours: the body preset beside a paragraph, the featured preset for

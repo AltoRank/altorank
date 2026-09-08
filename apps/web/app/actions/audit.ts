@@ -6,13 +6,28 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { appUrl } from "@/lib/app-url";
 import type { DomainAudit } from "@/lib/types";
+import { canSpend } from "@/lib/billing/spend-gate";
+import type { BillingOutcome } from "@/lib/billing/failure";
 
 /**
  * Start a domain audit by calling the audit API route.
  */
-export async function startDomainAudit(workspaceId: string): Promise<string> {
-  await requireAuth();
+export async function startDomainAudit(
+  workspaceId: string,
+): Promise<BillingOutcome<{ auditId: string }>> {
+  const { agencyId, user } = await requireAuth();
   const supabase = await createClient();
+
+  // A re-crawl is up to 40 page fetches plus a PageSpeed run, and /api/audit
+  // is where the money is actually spent - so the gate is here AND there. This
+  // one exists to refuse in words; that one exists because the route is a URL
+  // and anyone signed in can POST to it.
+  const gate = await canSpend(supabase, agencyId, {
+    userEmail: user.email ?? undefined,
+    workspaceId,
+    action: "site-audit",
+  });
+  if (!gate.allowed) return { ok: false, error: gate.message };
 
   // Create the audit record
   const { data: audit, error } = await supabase
@@ -62,7 +77,7 @@ export async function startDomainAudit(workspaceId: string): Promise<string> {
   }
 
   revalidatePath("/audits");
-  return audit.id;
+  return { ok: true, auditId: audit.id as string };
 }
 
 /**

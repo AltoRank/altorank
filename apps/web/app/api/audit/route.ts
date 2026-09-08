@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { canSpend } from "@/lib/billing/spend-gate";
 import { crawlSite, usablePages } from "@/lib/audit/crawler";
 import { runAuditChecks, calculateAuditScore } from "@/lib/audit/checks";
 import { fetchPageSpeed } from "@/lib/audit/pagespeed";
@@ -94,6 +95,24 @@ export async function POST(request: NextRequest) {
 
   if (!auditCheck) {
     return NextResponse.json({ error: "Audit not found" }, { status: 404 });
+  }
+
+  // The crawl and its PageSpeed run cost money, and this route is a URL: the
+  // gate in `startDomainAudit` refuses the button, this one refuses the POST.
+  // 402 rather than 403, and the sentence travels in `error` so a caller that
+  // renders it is telling the truth about why.
+  const gate = await canSpend(supabase, member.agency_id as string, {
+    userEmail: user.email ?? undefined,
+    workspaceId,
+    action: "site-audit",
+  });
+  if (!gate.allowed) {
+    await supabase
+      .from("domain_audits")
+      .update({ status: "failed", completed_at: new Date().toISOString() })
+      .eq("id", auditId)
+      .eq("workspace_id", workspaceId);
+    return NextResponse.json({ error: gate.message, reason: gate.reason }, { status: 402 });
   }
 
   // Fetch workspace domain

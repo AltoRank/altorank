@@ -5,6 +5,7 @@ import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { duePlannedKeyword, fulfilPlannedEntry } from "@/lib/onboarding/plan";
 import { profileIsUsable } from "@/lib/seo/topical-profile";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
+import { canSpend } from "@/lib/billing/spend-gate";
 import { resumeExpiredPauses } from "@/lib/billing/resume";
 import { billingEnabled, getStripe } from "@/lib/stripe";
 import { generateArticle, ConcurrentGenerationError } from "@/lib/content/generate";
@@ -211,8 +212,23 @@ async function run(request: Request) {
       }
 
       // Out of quota is a state, not an error. A no-plan account whose free
-      // draft is used would otherwise log an "error" every morning until it
+      // drafts are used would otherwise log an "error" every morning until it
       // paid; the honest word is "skipped", with the reason the queue shows.
+      //
+      // The gate answers the whole question - free allowance spent, card past
+      // due beyond the grace window, subscription cancelled, account paused -
+      // in one sentence, so this cron stops for all four rather than only the
+      // first. The quota is still read for the paid branch below, which is a
+      // volume limit and not an entitlement.
+      const spend = await canSpend(supabase, ws.agency_id as string, {
+        userEmail: null,
+        workspaceId,
+        action: "scheduled-work",
+      });
+      if (!spend.allowed) {
+        results.push({ workspaceId, domain, status: "skipped", detail: spend.message });
+        continue;
+      }
       const quota = await getQuota(supabase, ws.agency_id as string, null);
       if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
         results.push({ workspaceId, domain, status: "skipped", detail: quotaExceededMessage(quota) });

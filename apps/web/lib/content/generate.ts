@@ -486,6 +486,32 @@ export async function generateArticle(
         throw new Error(quotaExceededMessage(after));
       }
     }
+
+    // The free allowance is one-time (migration 083), so it needs a counter a
+    // delete cannot walk backwards: seven drafts, delete them, seven more,
+    // forever. `getQuota` reads the larger of this column and the live
+    // article count, so this is a floor rather than the sole truth and a
+    // missed increment cannot hand out an eighth draft - but recording it is
+    // what makes the allowance actually one-time.
+    //
+    // Only on the free tier: a paid account's limit is its plan's monthly
+    // volume and this column is never read for it. Best effort, and after the
+    // article exists: losing a generated draft to a bookkeeping failure would
+    // be the worse trade.
+    if (quota.reason === "no-plan") {
+      try {
+        await supabase
+          .from("agencies")
+          // `quota.used` is already the larger of the stored counter and the
+          // live count, so this only ever moves the column forward. Two
+          // concurrent drafts can write the same number; the live count is
+          // what catches that, which is exactly the job it is kept for.
+          .update({ free_drafts_used: quota.used + 1 })
+          .eq("id", billedAgencyId);
+      } catch {
+        // The live count still floors it; see getQuota.
+      }
+    }
   }
 
   const { data: job, error: jobError } = await supabase

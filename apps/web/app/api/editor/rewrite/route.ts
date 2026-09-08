@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
+import { canSpend } from "@/lib/billing/spend-gate";
 import { anthropicModel } from "@/lib/ai/models";
 import {
   buildRewriteArticlePrompt,
@@ -50,11 +51,35 @@ export async function POST(request: NextRequest) {
   // RLS decides whether this user can read the article; a miss is a 404.
   const { data: article } = await supabase
     .from("articles")
-    .select("id, title, keyword")
+    .select("id, title, keyword, workspace_id")
     .eq("id", articleId)
     .single();
   if (!article) {
     return Response.json({ error: "Article not found" }, { status: 404 });
+  }
+
+  // A 24,000-token Sonnet call, streamed, once per press. Nothing stopped an
+  // account with no plan from pressing it. The agency comes from the
+  // membership rather than the article, because this route never resolved one.
+  const { data: member } = await supabase
+    .from("agency_members")
+    .select("agency_id")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!member) {
+    return Response.json({ error: "No agency membership" }, { status: 403 });
+  }
+  const gate = await canSpend(supabase, member.agency_id as string, {
+    userEmail: user.email ?? undefined,
+    workspaceId: article.workspace_id as string,
+    action: "draft",
+  });
+  if (!gate.allowed) {
+    // 402 and the sentence, not a silent empty stream: the editor renders
+    // `error` from this response verbatim.
+    return Response.json({ error: gate.message, reason: gate.reason }, { status: 402 });
   }
 
   const encoder = new TextEncoder();

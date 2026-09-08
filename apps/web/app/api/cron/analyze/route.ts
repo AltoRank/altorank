@@ -3,6 +3,7 @@ import { isAuthorizedCron } from "@/lib/cron-auth";
 import { setSpendReporter } from "@/lib/seo/client";
 import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
+import { canSpend } from "@/lib/billing/spend-gate";
 import { analyseDomain } from "@/lib/audit/domain-analysis";
 import {
   PROFILE_MAX_AGE_DAYS,
@@ -61,7 +62,7 @@ async function run(request: Request) {
 
   const { data: pending, error } = await supabase
     .from("workspaces")
-    .select("id, domain, language, location_code")
+    .select("id, domain, agency_id, language, location_code")
     .is("first_analysed_at", null)
     .not("domain", "is", null)
     .neq("status", "paused")
@@ -75,6 +76,23 @@ async function run(request: Request) {
   for (const ws of pending ?? []) {
     const workspaceId = ws.id as string;
     const domain = ws.domain as string;
+
+    // The first look is the most expensive thing a workspace ever buys
+    // (~$0.20 of DataForSEO plus a PageSpeed run), and this cron was the one
+    // spending path with no billing check at all. `canSpend` rather than
+    // `entitledToScheduledWork`: a brand-new free account is inside its
+    // allowance and must still get its first look - the whole free tier
+    // depends on it. What this stops is an account whose allowance is gone,
+    // or whose card lapsed, adding a fresh domain for another free analysis.
+    const spend = await canSpend(supabase, ws.agency_id as string, {
+      userEmail: null,
+      workspaceId,
+      action: "site-audit",
+    });
+    if (!spend.allowed) {
+      results.push({ workspaceId, domain, status: "skipped", detail: spend.message });
+      continue;
+    }
 
     setSpendReporter(({ operation, costUsd }) => {
       void recordSpend(supabase, {

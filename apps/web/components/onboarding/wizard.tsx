@@ -145,6 +145,7 @@ export function OnboardingWizard({
   // Null profile and not yet asked = we are about to read the site.
   const [reading, setReading] = useState(initialProfile === null);
   const [readFailure, setReadFailure] = useState<InferenceReason | null>(null);
+  const [readFailureMessage, setReadFailureMessage] = useState<string | null>(null);
   const [discovery, setDiscovery] = useState<SiteDiscovery | null | "pending">(initialSite.sitemapUrl || initialSite.blogRootUrl ? null : "pending");
   // A run found on load is resumed; otherwise Finish starts one.
   const [resumed] = useState(() => (initialRun && shouldResumeRun(initialRun, Date.now()) ? initialRun : null));
@@ -178,11 +179,15 @@ export function OnboardingWizard({
         if (cancelled) return;
         setProfile(r.profile ?? EMPTY_PROFILE);
         setReadFailure(r.profile ? null : r.reason);
+        // A billing refusal names this account's own state, so it travels as
+        // a sentence rather than as a key into the copy map.
+        setReadFailureMessage(r.profile ? null : r.message ?? null);
       })
       .catch(() => {
         if (cancelled) return;
         setProfile(EMPTY_PROFILE);
         setReadFailure("model_failed");
+        setReadFailureMessage(null);
       })
       .finally(() => !cancelled && setReading(false));
     return () => {
@@ -294,8 +299,10 @@ export function OnboardingWizard({
             patch={patch}
             domain={domain}
             failure={readFailure}
+            failureMessage={readFailureMessage}
             onRetry={() => {
               setReadFailure(null);
+              setReadFailureMessage(null);
               setReading(true);
             }}
           />
@@ -429,6 +436,9 @@ const FAILURE_COPY: Record<InferenceReason, string> = {
   unreadable:
     "We could not read enough of this site to describe it. That usually means the page is built with JavaScript, or it blocks crawlers. Fill this in by hand, or try again.",
   model_failed: "The site was read but the proposal failed. Try again, or fill this in by hand.",
+  // Never rendered: `needs_plan` always carries its own sentence, because the
+  // reason depends on the account (out of free drafts, paused, card declined).
+  needs_plan: "",
 };
 
 function BusinessStep({
@@ -436,12 +446,15 @@ function BusinessStep({
   patch,
   domain,
   failure,
+  failureMessage,
   onRetry,
 }: {
   profile: BusinessProfile;
   patch: (p: Partial<BusinessProfile>) => void;
   domain: string;
   failure: InferenceReason | null;
+  /** Set when the refusal carries its own sentence (see InferenceResult). */
+  failureMessage: string | null;
   onRetry: () => void;
 }) {
   return (
@@ -450,14 +463,16 @@ function BusinessStep({
         title="About your business"
         sub={
           failure
-            ? `We could not fill this in from ${domain}.`
+            ? failure === "needs_plan"
+              ? "This needs a plan."
+              : `We could not fill this in from ${domain}.`
             : "Based on your website, we've filled this in. Check it and correct anything wrong."
         }
       />
       {failure && (
         <div className="mb-4 flex items-start justify-between gap-4 rounded-[10px] border border-line bg-panel p-4">
-          <p className="m-0 text-[12.5px] leading-[1.6] text-ink-2">{FAILURE_COPY[failure]}</p>
-          {failure !== "no_model" && (
+          <p className="m-0 text-[12.5px] leading-[1.6] text-ink-2">{failureMessage ?? FAILURE_COPY[failure]}</p>
+          {failure !== "no_model" && failure !== "needs_plan" && (
             <Button size="sm" onClick={onRetry}>
               Try again
             </Button>

@@ -46,7 +46,9 @@ export function AutocompleteButton({
       try {
         const r = await proposeProfile(workspaceId);
         if (!r.profile) {
-          toast.error(FAILURE[r.reason] ?? "Nothing could be proposed.");
+          // `message` wins when it is there: the billing refusal names this
+          // account's actual state, which the static map cannot.
+          toast.error(r.message ?? FAILURE[r.reason] ?? "Nothing could be proposed.", { duration: 12_000 });
           return;
         }
         const { profile: next, filled } = fillEmptyProfile(profile, r.profile, section);

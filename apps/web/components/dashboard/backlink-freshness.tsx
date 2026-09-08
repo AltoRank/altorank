@@ -59,6 +59,12 @@ export function BacklinkFreshness({
                 start(async () => {
                   try {
                     const r = await fetchBacklinks(workspaceId);
+                    // The billing refusal travels as data (a thrown message is
+                    // a digest in production), so it is read, not caught.
+                    if (!r.ok) {
+                      toast.error(r.error);
+                      return;
+                    }
                     toast.success(
                       `${r.fetched} referring domains` +
                         (r.total !== null ? ` of ${r.total.toLocaleString()} links` : "") +

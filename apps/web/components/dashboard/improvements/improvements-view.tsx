@@ -384,8 +384,13 @@ function CandidateItem({ candidate: c }: { candidate: CandidateRow }) {
               disabled={pending}
               onClick={() =>
                 act("Brief written", async () => {
-                  const text = await generateBrief(c.id);
-                  setBrief(text);
+                  const res = await generateBrief(c.id);
+                  // A billing refusal arrives as data, not as a throw: a
+                  // thrown server-action message is a digest in production.
+                  // `act` reports a throw, so re-throwing here keeps one path
+                  // for "it did not work" while carrying our own sentence.
+                  if (!res.ok) throw new Error(res.error);
+                  setBrief(res.text);
                 })
               }
             >

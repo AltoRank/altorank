@@ -15,19 +15,31 @@
 //                                      would be absurd.
 //   Cloud, active plan                 the tier's included volume, per
 //                                      calendar month.
-//   Cloud, no active plan              FREE_DRAFTS - a week's worth - per
-//                                      calendar month, indefinitely. This was
-//                                      zero, then one, and became seven on
-//                                      2026-09-06 (#119). It is a standing
-//                                      free tier, not a trial: nothing expires
-//                                      and the count refills on the 1st.
+//   Cloud, no active plan              FREE_DRAFTS - a week's worth - ONCE.
+//                                      This was zero, then one, then seven a
+//                                      calendar month refilling forever
+//                                      (2026-09-06, #119), and is now seven
+//                                      for the life of the account
+//                                      (2026-09-07, migration 083). A standing
+//                                      monthly allowance is a free tier the
+//                                      product cannot afford: a signup costs
+//                                      about $1.93 in provider calls, and
+//                                      seven a month forever is that bill
+//                                      every month against no revenue.
 //   Operator accounts                  unlimited, so dogfooding does not eat
 //                                      a customer-shaped quota.
 //
-// Counting is by articles *created* this calendar month across the agency's
-// workspaces, cron and manual alike: generation is the metered cost either
-// way. Deletes free quota back; that is acceptable at this scale and honest
-// in both directions.
+// Two different counts, because the two limits mean different things:
+//
+//   plan limit    articles *created* this calendar month across the agency's
+//                 workspaces, cron and manual alike. Deletes free quota back;
+//                 that is acceptable at this scale and honest in both
+//                 directions, because the counter refills anyway.
+//   free tier     `agencies.free_drafts_used`, a durable counter that a delete
+//                 cannot walk backwards, floored by the live all-time article
+//                 count so a generation path that forgets to increment it
+//                 cannot hand out an unrecorded free draft. Against a
+//                 one-time allowance, delete-to-refill would be unbounded.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { billingEnabled, PLAN_ARTICLE_LIMITS, type PlanTier } from "@/lib/stripe";
@@ -54,7 +66,31 @@ export type Quota = {
    * Undefined on the paths that never read the agency row.
    */
   dunning?: DunningInfo | null;
+  /**
+   * How many articles this calendar month, kept beside `used` because on the
+   * free tier `used` is the lifetime count and this is not. The only reader
+   * is the copy that has to explain a mid-month lock (see
+   * `spentUnderOldMonthlyRule`): an account that took seven in August and
+   * seven in September has one free draft left under the rule it signed up
+   * under and none under this one, and being told which is the difference
+   * between a changed price and a broken button.
+   */
+  monthUsed?: number;
 };
+
+/**
+ * True when this account still had free drafts under the old monthly rule and
+ * has none under the one-time one.
+ *
+ * The lock is correct - the allowance is one-time now - but arriving at it
+ * mid-month, with the counter visibly not at seven, needs a sentence saying
+ * the rule changed. Everything that refuses a free-tier action asks this.
+ */
+export function spentUnderOldMonthlyRule(q: Quota): boolean {
+  if (q.reason !== "no-plan" || q.limit === null) return false;
+  if (q.monthUsed === undefined) return false;
+  return q.monthUsed < q.limit && q.used >= q.limit;
+}
 
 function monthStart(): string {
   const now = new Date();
@@ -62,10 +98,11 @@ function monthStart(): string {
 }
 
 /**
- * The 1st of next month, UTC: the moment `used` starts again.
+ * The 1st of next month, UTC: the moment a *plan's* included volume starts
+ * again.
  *
- * The counter above is the whole reason the allowance refills, so the date
- * lives beside it rather than in the copy that quotes it.
+ * Free drafts do not reset any more (migration 083), so nothing on the
+ * `no-plan` path may quote this date. It is the paid tier's reset only.
  */
 export function nextResetDate(now: Date = new Date()): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
@@ -108,14 +145,30 @@ export async function getQuota(
   const workspaceIds = (workspaceRows ?? []).map((w) => w.id);
 
   let used = 0;
+  let everUsed = 0;
   if (workspaceIds.length) {
-    const { count, error: usedError } = await counting
-      .from("articles")
-      .select("id", { count: "exact", head: true })
-      .in("workspace_id", workspaceIds)
-      .gte("created_at", monthStart());
+    const [
+      { count: thisMonth, error: usedError },
+      { count: ever, error: everError },
+    ] = await Promise.all([
+      counting
+        .from("articles")
+        .select("id", { count: "exact", head: true })
+        .in("workspace_id", workspaceIds)
+        .gte("created_at", monthStart()),
+      // Every article the agency has ever had. Only the free tier reads this,
+      // and only as a floor under the stored counter below.
+      counting
+        .from("articles")
+        .select("id", { count: "exact", head: true })
+        .in("workspace_id", workspaceIds),
+    ]);
+    // Same house rule as the read above: an unknown is never a zero, and on
+    // the free tier a silent zero here would hand out an eighth free draft.
     if (usedError) throw new Error(`quota: could not count this month's articles (${usedError.message})`);
-    used = count ?? 0;
+    if (everError) throw new Error(`quota: could not count this account's articles (${everError.message})`);
+    used = thisMonth ?? 0;
+    everUsed = ever ?? 0;
   }
 
   // The operator bypass is the single biggest difference between what we see
@@ -154,7 +207,7 @@ export async function getQuota(
   // rest of this function was written against.
   const { data: agency, error: agencyError } = await counting
     .from("agencies")
-    .select("plan, plan_status, payment_failed_at")
+    .select("plan, plan_status, payment_failed_at, free_drafts_used")
     .eq("id", agencyId)
     .maybeSingle();
   if (agencyError) throw new Error(`quota: could not read this account's plan (${agencyError.message})`);
@@ -177,8 +230,8 @@ export async function getQuota(
   }
 
   if (!active || !plan) {
-    // A week of drafts before the paywall - FREE_DRAFTS, seven since
-    // 2026-09-06, and one before that. The first outside signup (2026-09-02)
+    // A week of drafts before the paywall - FREE_DRAFTS, once. The first
+    // outside signup (2026-09-02)
     // created a workspace, ran an audit and left within seven minutes; the
     // only place a plan was ever mentioned was a quota error behind a button
     // they never pressed. A draft in the review queue, with its fact-check
@@ -194,7 +247,23 @@ export async function getQuota(
     // being paid for is not this field's answer - `dunning` carries the tier a
     // lapsed subscription would come back to, and the Billing page reads the
     // row itself for that.
-    return { limit: FREE_DRAFTS, used, remaining: Math.max(0, FREE_DRAFTS - used), reason: "no-plan", plan: null, dunning };
+    //
+    // The free tier's counter is the stored one, floored by the all-time
+    // article count. `free_drafts_used` is what a delete cannot walk back; the
+    // count is what catches a writer that forgot to increment it. Reading
+    // both and taking the larger means neither a delete nor a missed
+    // increment can hand out an eighth free draft. `monthUsed` rides along so
+    // the copy can explain a lock that lands mid-month (migration 083).
+    const freeUsed = Math.max((agency?.free_drafts_used as number | null) ?? 0, everUsed);
+    return {
+      limit: FREE_DRAFTS,
+      used: freeUsed,
+      remaining: Math.max(0, FREE_DRAFTS - freeUsed),
+      reason: "no-plan",
+      plan: null,
+      dunning,
+      monthUsed: used,
+    };
   }
 
   const limit = PLAN_ARTICLE_LIMITS[plan];
@@ -234,41 +303,57 @@ export function entitledToScheduledWork(q: Quota): boolean {
  * Onboarding writes the first inline; cron/generate writes the rest at the
  * site's pace, which FREE_TIER_PACE raises to match so they land in that week
  * rather than over seven of them.
+ *
+ * One-time since 2026-09-07 (migration 083): these seven are the whole free
+ * tier, not seven a month.
  */
 export const FREE_DRAFTS = 7;
 
 /**
- * "This month's 7 free drafts are used." - counted off the limit, never typed.
+ * "All 7 free drafts are used." - counted off the limit, never typed.
  *
  * FREE_DRAFTS went 1 -> 7 on 2026-09-06 and nine user-facing strings still
  * said "the free draft"; one of them rendered "the free tier includes 7
  * draft". Every one of them now goes through here or through `plural`, so the
  * next change to the constant changes the copy with it.
+ *
+ * It said "This month's 7 free drafts are used" until 2026-09-07, which was
+ * true while the count refilled on the 1st. It no longer does, and a sentence
+ * that says "this month's" is a promise that next month is different.
  */
 export function freeAllowanceUsedMessage(limit: number = FREE_DRAFTS): string {
-  return `This month's ${freeAllowanceUsedClause(limit)}.`;
+  return `All ${freeAllowanceUsedClause(limit)}.`;
 }
 
 /**
  * The same fact as a clause, for a sentence that has already started:
- * "Inactive: this month's 7 free drafts are used."
+ * "Inactive: all 7 free drafts are used."
  */
 export function freeAllowanceUsedClause(limit: number = FREE_DRAFTS): string {
   return `${plural(limit, "free draft")} ${limit === 1 ? "is" : "are"} used`;
 }
 
+/**
+ * The sentence that explains a lock arriving mid-month.
+ *
+ * Only for an account that still had drafts under the old monthly rule. It is
+ * the difference between "the price changed and here is what changed" and a
+ * button that stopped working for no stated reason. Empty for everyone else,
+ * so callers can append it unconditionally.
+ */
+export function freeAllowanceRuleChangeNote(q: Quota): string {
+  if (!spentUnderOldMonthlyRule(q)) return "";
+  return ` The free drafts used to refill on the 1st; since 2026-09-07 they are ${plural(q.limit ?? FREE_DRAFTS, "one-time draft")} for the account, and yours have been written.`;
+}
+
 /** Message for the moment generation is refused. Says what to do, not just no. */
 export function quotaExceededMessage(q: Quota, now: Date = new Date()): string {
   if (q.reason === "no-plan") {
-    // The reset is part of the answer: `used` is counted from monthStart(), so
-    // waiting is a real third option beside paying and self-hosting - and the
-    // date says how long, which "the 1st" alone does not.
-    const resets = nextResetDate(now).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      timeZone: "UTC",
-    });
-    return `${freeAllowanceUsedMessage(q.limit ?? FREE_DRAFTS)} Choose a plan on the Billing page to keep going, wait for ${resets} when the allowance resets, or self-host AltoRank free.`;
+    // No reset date on this branch any more. Waiting used to be a real third
+    // option beside paying and self-hosting; it is not, and naming a date the
+    // counter will not honour is the worst of the three things this sentence
+    // could do.
+    return `${freeAllowanceUsedMessage(q.limit ?? FREE_DRAFTS)} Choose a plan on the Billing page to keep going, or self-host AltoRank free.${freeAllowanceRuleChangeNote(q)}`;
   }
   // Only the scheduled writer ever reads this branch: a manual generation past
   // the included volume does not refuse, it bills the overage

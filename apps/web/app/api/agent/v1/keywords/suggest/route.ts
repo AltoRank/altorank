@@ -4,6 +4,7 @@ import { fail, ok } from "@/lib/agent/envelope";
 import { workspaceInAgency } from "@/lib/agent/data";
 import { discoverKeywords, discoverKeywordsFromSeeds } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
+import { canSpend } from "@/lib/billing/spend-gate";
 
 export const maxDuration = 60;
 
@@ -43,6 +44,24 @@ export const POST = withAgent(async (request, ctx) => {
       "not_available",
       "Keyword research is not configured on this install.",
       "This AltoRank has no DataForSEO credentials. Tell the human; keyword suggestions need them.",
+    );
+  }
+
+  // Two DataForSEO look-ups of up to 200 rows. This route is declared `read`,
+  // and a read scope buying provider data was the one hole on the whole agent
+  // and MCP surface: `altorank_suggest_keywords` spent money for an account
+  // with no plan, from a key that is not allowed to write anything.
+  // `null` for the address is right here: an API key is nobody's session.
+  const gate = await canSpend(ctx.supabase, ctx.agencyId, {
+    userEmail: null,
+    workspaceId: workspace.id,
+    action: "keyword-research",
+  });
+  if (!gate.allowed) {
+    return fail(
+      "quota_exceeded",
+      gate.message,
+      "Do not retry. Tell the human what this says and let them decide; a plan is chosen on the Billing page, not by an agent.",
     );
   }
 

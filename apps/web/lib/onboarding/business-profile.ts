@@ -64,7 +64,7 @@ const PROMPT = [
   "  Return [] rather than guessing if the category is unclear.",
 ].join("\n");
 
-export type InferenceReason = "ok" | "no_model" | "unreadable" | "model_failed";
+export type InferenceReason = "ok" | "no_model" | "unreadable" | "model_failed" | "needs_plan";
 
 export interface InferenceResult {
   profile: BusinessProfile | null;
@@ -72,6 +72,13 @@ export interface InferenceResult {
   reason: InferenceReason;
   /** Which read of the site produced the text the model saw. */
   source: SiteTextSource;
+  /**
+   * The exact sentence to show, when the reason alone does not carry it.
+   * `needs_plan` is the only producer: the billing gate's refusal names the
+   * account's state ("out of free drafts", "paused until 3 October", "the
+   * card was declined"), which a static copy map cannot.
+   */
+  message?: string;
 }
 
 /**

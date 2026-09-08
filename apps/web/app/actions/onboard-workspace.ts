@@ -60,7 +60,13 @@ export async function scrapeAndTrainVoice(workspaceId: string): Promise<VoiceRes
   try {
     const text = await scrapeWebsiteText(workspace.domain);
     if (text && text.split(/\s+/).length > 50) {
-      await createVoiceProfile(workspaceId, text);
+      // The gate inside `createVoiceProfile` can refuse, and "trained" would
+      // then be a claim about work that did not happen.
+      const res = await createVoiceProfile(workspaceId, text);
+      if (!res.ok) {
+        console.warn("[onboard] Voice training refused:", res.error);
+        return "skipped";
+      }
       return "trained";
     }
     return "skipped";

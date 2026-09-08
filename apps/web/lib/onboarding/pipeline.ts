@@ -145,6 +145,18 @@ async function runPhases(
   }
 
   // --- Phase 1: read the site, learn its voice ----------------------------
+  //
+  // Whether this phase finds readable text decides what the rest of the run
+  // can do, and it used to decide nothing at all: example.com was told
+  // "Skipped reading your site - too little readable text on the site to
+  // learn from" and then given 100 keywords, a 30-day calendar and seven
+  // written drafts, for $1.63 (R4-4-blank-flow.md, B1). Two filters should
+  // have caught it and both were bypassed precisely because there was no
+  // profile. That is fixed where it belongs, in `analyseDomain`: with no
+  // usable profile it stores no keywords and says so on its keywords layer,
+  // `keywordsFound` stays 0, and phases 4 and 5 below already know what to do
+  // with that - skip, and say why. Phase 0 stops the adjacent case, a domain
+  // with no DNS at all.
   emit({ phase: "scanning", status: "active" });
   if (!domain) {
     emit({ phase: "scanning", status: "skipped", detail: "No domain on this workspace yet." });
@@ -194,13 +206,21 @@ async function runPhases(
         locationCode: workspace.location_code ?? undefined,
       });
       keywordsFound = analysis.keywordsFound;
+      // "Nothing rankable found for this site yet" is only true when we were
+      // able to look. When the site could not be read, `analyseDomain` stores
+      // nothing on purpose and says why on its keywords layer - quoting that
+      // is the difference between "your site has no demand" and "we could not
+      // read your site", which are not the same news.
+      const why = analysis.layers.find((l) => l.id === "keywords" && l.status === "unavailable")?.detail;
       emit({
         phase: "keywords",
         status: keywordsFound > 0 ? "done" : "skipped",
         detail:
           keywordsFound > 0
             ? `Found ${keywordsFound.toLocaleString()} keyword${keywordsFound === 1 ? "" : "s"} worth tracking.`
-            : "Nothing rankable found for this site yet.",
+            : why
+              ? `${why.charAt(0).toUpperCase()}${why.slice(1)}. Add a keyword by hand from Keywords, or connect Search Console, and the plan can be built from there.`
+              : "Nothing rankable found for this site yet.",
         keywordsFound,
       });
     } catch (err) {

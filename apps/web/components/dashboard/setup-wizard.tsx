@@ -79,7 +79,15 @@ export function SetupWizard({ workspace, voice, keywords, articleCount = 0 }: Se
   async function handleDiscoverKeywords() {
     setRunning("keywords");
     try {
-      const { discovered } = await runKeywordResearch(workspace.id);
+      const res = await runKeywordResearch(workspace.id);
+      // A refusal comes back as data, not as a throw: a thrown server-action
+      // message is a hex digest in production, and the whole point of the
+      // billing block is the sentence it carries.
+      if (!res.ok) {
+        setResult("keywords", { ok: false, message: res.error });
+        return;
+      }
+      const discovered = res.discovered;
       setResult("keywords", { ok: true, message: `Discovered ${discovered} keyword${discovered !== 1 ? "s" : ""}` });
       startTransition(() => router.refresh());
     } catch (err) {
