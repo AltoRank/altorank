@@ -108,13 +108,21 @@ export interface DraftBatchEmail {
   cmsConnected?: boolean;
 }
 
-/** "6 clean" / "1 to check", and how alarmed the cell should look. */
+/**
+ * What the fact check found, and how alarmed the cell should look.
+ *
+ * Phrased as a result, not an instruction: the check is automatic, run on
+ * every draft in `lib/content/generate.ts` before anyone sees it, and its
+ * verdict already gates approval (`approvalBlocker`). "1 to check" read like a
+ * job the reader had been given; "1 unsourced figure" is what we actually
+ * found.
+ */
 function factCheckStat(drafts: readonly BatchDraft[]): EmailStat {
   const risky = drafts.filter((d) => d.verdict === "high_risk").length;
   const review = drafts.filter((d) => d.verdict === "review").length;
-  if (risky) return { label: "Fact check", value: `${risky} to check`, tone: "err" };
-  if (review) return { label: "Fact check", value: `${review} worth a look`, tone: "warn" };
-  return { label: "Fact check", value: "All clean", tone: "ok" };
+  if (risky) return { label: "Fact check", value: `${risky} unsourced ${risky === 1 ? "figure" : "figures"}`, tone: "err" };
+  if (review) return { label: "Fact check", value: `${review} to confirm`, tone: "warn" };
+  return { label: "Fact check", value: "All sourced", tone: "ok" };
 }
 
 /**
@@ -173,7 +181,7 @@ export function renderDraftBatch(b: DraftBatchEmail): {
 
   return {
     subject: risky
-      ? `${n} drafts for ${site}, ${risky === 1 ? "one" : risky} to check before publishing`
+      ? `${n} drafts for ${site}, ${risky === 1 ? "one" : risky} with a figure to confirm`
       : `${n} drafts are ready for ${site}`,
     preheader: b.autoApproveAfter
       ? `${words.toLocaleString()} words across ${n} keywords, publishing on their own unless you hold them.`

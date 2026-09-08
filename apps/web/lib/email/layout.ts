@@ -15,6 +15,11 @@ export const EMAIL_INK_2 = "#4A4A4A";
 export const EMAIL_INK_3 = "#8A8A8A";
 export const EMAIL_LINE = "#E6E5E2";
 export const EMAIL_BG = "#FAF9F7";
+/** The mark's tile and glyph, from public/brand/altorank-mark.svg. */
+export const EMAIL_MARK_BG = "#1A1815";
+export const EMAIL_MARK_INK = "#FDFCFA";
+/** 40x40 render of brand/altorank-mark.svg on its tile; see BRAND_MARK. */
+const MARK_PNG = "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";
 
 // ---------------------------------------------------------------------------
 // The dashboard's vocabulary, in the two things email understands
@@ -38,6 +43,23 @@ export const EMAIL_WARN_INK = "#754B00";
 export const EMAIL_ERR_SOFT = "#FFE9E6";
 export const EMAIL_ERR_INK = "#90302E";
 export const EMAIL_MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace";
+
+/**
+ * The wordmark's glyph: the mark from `public/brand/altorank-mark.svg` on its
+ * tile, rasterised once at 2x and inlined as a data URI.
+ *
+ * This layout ships no *remote* images on purpose - nothing to be blocked, and
+ * no fetch that reports when a message was opened. A data URI keeps both
+ * properties: it travels inside the message and asks the network for nothing.
+ * Inline `<svg>` would have been smaller but Gmail strips it, and the CSS
+ * triangle this replaced was a solid wedge, not the notched peak the brand
+ * actually uses - close enough to look like the logo, wrong enough to be the
+ * only surface drawing its own.
+ *
+ * The `<img>` carries the dark tile as its background, so a client that drops
+ * data URIs still shows a mark-shaped tile rather than a broken-image icon.
+ */
+const BRAND_MARK = `<img src="data:image/png;base64,${MARK_PNG}" width="20" height="20" alt="" style="display:inline-block;width:20px;height:20px;border-radius:5px;background:${EMAIL_MARK_BG};vertical-align:-4px;margin-right:8px;">`;
 
 export const LEGAL_FOOTER = "SUPALABS SRL, Italy · VAT 04596950248";
 
@@ -208,7 +230,7 @@ ${preheader}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid ${EMAIL_LINE};border-radius:12px;">
       <tr><td style="padding:24px 32px 0;">
         <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;letter-spacing:-0.01em;color:${EMAIL_INK};">
-          <span style="display:inline-block;width:18px;height:18px;border-radius:5px;background:${EMAIL_ACCENT};vertical-align:-3px;margin-right:8px;"></span>AltoRank
+          ${BRAND_MARK}AltoRank
         </div>
       </td></tr>
       <tr><td style="padding:20px 32px 8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${EMAIL_INK};">

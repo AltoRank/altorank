@@ -82,7 +82,7 @@ describe("renderArticleDrafted", () => {
     expect(html).toContain("Words");
     expect(html).toContain("1,132");
     expect(html).toContain("Fact check");
-    expect(html).toContain("Clean");
+    expect(html).toContain("All sourced");
   });
 
   it("shows the keyword's figures when they were looked up", () => {

@@ -128,9 +128,9 @@ const VERDICT_LINE: Record<FactCheckReport["verdict"], string> = {
 
 /** The verdict as the dashboard shows a status: a short word and a colour. */
 export const VERDICT_PILL: Record<FactCheckReport["verdict"], { label: string; tone: EmailTone }> = {
-  clean: { label: "Clean", tone: "ok" },
-  review: { label: "Worth a look", tone: "warn" },
-  high_risk: { label: "Check a figure", tone: "err" },
+  clean: { label: "All sourced", tone: "ok" },
+  review: { label: "One to confirm", tone: "warn" },
+  high_risk: { label: "Unsourced figure", tone: "err" },
 };
 
 /** A figure the product measured, or "—" when it did not. Never a stand-in zero. */

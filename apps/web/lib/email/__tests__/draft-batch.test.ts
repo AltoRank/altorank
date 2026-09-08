@@ -108,8 +108,8 @@ describe("renderDraftBatch", () => {
       ...BATCH,
       drafts: [{ ...BATCH.drafts[0]!, verdict: "high_risk" as const }, BATCH.drafts[1]!],
     });
-    expect(risky.subject).toBe("3 drafts for example.test, one to check before publishing");
-    expect(risky.html).toContain("Check a figure");
+    expect(risky.subject).toBe("3 drafts for example.test, one with a figure to confirm");
+    expect(risky.html).toContain("Unsourced figure");
   });
 
   it("adds up the words and the searches, and leaves searches out when nothing measured any", () => {
