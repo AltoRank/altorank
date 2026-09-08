@@ -53,6 +53,8 @@ interface WorkerWorkspace {
   language: string | null;
   location_code: number | null;
   auto_generate_weekly_limit: number | null;
+  /** Seeds the keyword phase from the business, not only from page headings. */
+  business_profile?: unknown;
 }
 
 export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise<ExecuteResult> {
@@ -80,7 +82,7 @@ export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise
 
   const { data: ws } = await supabase
     .from("workspaces")
-    .select("id, domain, agency_id, language, location_code, auto_generate_weekly_limit")
+    .select("id, domain, agency_id, language, location_code, auto_generate_weekly_limit, business_profile")
     .eq("id", run.workspace_id)
     .maybeSingle();
   const workspace = ws as WorkerWorkspace | null;
