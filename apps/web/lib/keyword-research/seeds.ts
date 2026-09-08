@@ -160,6 +160,14 @@ export function keyNouns(text: string, limit = 6): string[] {
   if (!words.length) return [];
 
   const pairs = new Map<string, number>();
+  // Where each phrase first appears. A one-paragraph description mentions
+  // almost every pair exactly once, so frequency ties for all of them and the
+  // tie-break decides the answer. Alphabetical order made "agreed upfront" the
+  // category of a business whose first clause reads "builds appointment-based
+  // websites for clinics" - and the playbooks then asked for "agreed upfront
+  // for medical and dental clinics". Position is the signal: a description
+  // says what the business does before it says how it is priced.
+  const firstAt = new Map<string, number>();
   const singles = new Map<string, number>();
   for (let i = 0; i < words.length; i++) {
     singles.set(words[i], (singles.get(words[i]) ?? 0) + 1);
@@ -172,18 +180,27 @@ export function keyNouns(text: string, limit = 6): string[] {
     if (a.length > 2 && b.length > 2 && !STOP.has(a) && !STOP.has(b) && !/^\d+$/.test(a) && !/^\d+$/.test(b)) {
       const key = `${a} ${b}`;
       pairs.set(key, (pairs.get(key) ?? 0) + 1);
+      if (!firstAt.has(key)) firstAt.set(key, i);
     }
   }
 
   const out: string[] = [];
   const covered = new Set<string>();
-  for (const [pair, n] of [...pairs.entries()].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))) {
+  const earliest = (k: string) => firstAt.get(k) ?? Number.MAX_SAFE_INTEGER;
+  for (const [pair, n] of [...pairs.entries()].sort(
+    (x, y) => y[1] - x[1] || earliest(x[0]) - earliest(y[0]) || x[0].localeCompare(y[0]),
+  )) {
     if (n < 1) break;
     if (out.length >= limit) break;
     out.push(pair);
     for (const w of pair.split(" ")) covered.add(w);
   }
-  for (const [word] of [...singles.entries()].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))) {
+  const firstWordAt = new Map<string, number>();
+  words.forEach((w, i) => { if (!firstWordAt.has(w)) firstWordAt.set(w, i); });
+  const earliestWord = (k: string) => firstWordAt.get(k) ?? Number.MAX_SAFE_INTEGER;
+  for (const [word] of [...singles.entries()].sort(
+    (x, y) => y[1] - x[1] || earliestWord(x[0]) - earliestWord(y[0]) || x[0].localeCompare(y[0]),
+  )) {
     if (out.length >= limit) break;
     if (covered.has(word)) continue;
     out.push(word);
@@ -191,9 +208,41 @@ export function keyNouns(text: string, limit = 6): string[] {
   return out.slice(0, limit);
 }
 
-/** The category a business belongs to, from its profile, in a few words. */
-export function categoryOf(profile: Pick<BusinessProfile, "description">): string | null {
-  const nouns = keyNouns(profile.description, 3);
+/**
+ * Words that open a description's main clause without naming its subject.
+ * "Qasimcode builds appointment-based websites" - the category is the third
+ * and fourth words, and a pair starting with the verb ("builds
+ * appointment-based") reads as nonsense inside "<category> for <audience>".
+ */
+const LEADING_VERBS = new Set([
+  "builds", "build", "building", "makes", "make", "making", "creates", "create", "creating",
+  "provides", "provide", "providing", "offers", "offer", "offering", "delivers", "deliver",
+  "delivering", "designs", "design", "designing", "sells", "sell", "selling", "helps", "help",
+  "helping", "gives", "give", "runs", "run", "running", "powers", "power", "powering",
+  "is", "are", "was", "were", "specialises", "specializes", "specialising", "specializing",
+]);
+
+/**
+ * The category a business belongs to, from its profile, in a few words.
+ *
+ * `brand` is dropped when known: the description almost always opens with the
+ * company's own name, and "<brand> builds" is neither a category nor something
+ * anybody searches for. It fed the playbooks "qasimcode builds for medical and
+ * dental clinics".
+ */
+export function categoryOf(
+  profile: Pick<BusinessProfile, "description">,
+  brand?: string | null,
+): string | null {
+  const brandTokens = new Set(
+    (brand ?? "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((t) => t.length > 2),
+  );
+  const usable = (n: string) => {
+    const [first, ...rest] = n.split(" ");
+    if (brandTokens.has(first) || rest.some((w) => brandTokens.has(w))) return false;
+    return !LEADING_VERBS.has(first);
+  };
+  const nouns = keyNouns(profile.description, 8).filter(usable);
   const pair = nouns.find((n) => n.includes(" "));
   return pair ?? nouns[0] ?? null;
 }
@@ -233,7 +282,7 @@ function unique(seeds: string[]): string[] {
 export function buildPlaybookSeeds(id: PlaybookId, ctx: SeedContext): string[] {
   const competitors = ctx.profile.competitors.map(competitorName).filter(Boolean);
   const audiences = ctx.profile.audiences.map(clean).filter(Boolean);
-  const category = ctx.category ?? categoryOf(ctx.profile);
+  const category = ctx.category ?? categoryOf(ctx.profile, ctx.brand);
   const brand = clean(ctx.brand);
 
   switch (id) {

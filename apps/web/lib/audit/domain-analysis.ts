@@ -23,6 +23,8 @@ import { runAuditChecks, calculateAuditScore } from "./checks";
 import { fetchPageSpeedDetailed } from "./pagespeed";
 import { discoverKeywords, discoverKeywordsFromSeeds, fetchKeywordDifficulty, type DiscoveredKeyword, storedCpc } from "@/lib/seo/keywords";
 import { profileIsUsable, seedPhrasesFromPages, scoreRelevance } from "@/lib/seo/topical-profile";
+import { buildPlaybookSeeds, brandFromDomain } from "@/lib/keyword-research/seeds";
+import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { dedupePermutations } from "@/lib/seo/keywords";
@@ -74,6 +76,44 @@ export interface DomainAnalysis {
 
 /** A discovered keyword plus, for a gap row, the rival that holds it. */
 type Sourced = DiscoveredKeyword & { competitor?: string };
+
+/**
+ * Seeds built from what the business says it does, and who it says it is for.
+ *
+ * The two audience playbooks only ("<category> for <audience>" and
+ * "best <category> for <audience>"): they are the ones whose output a small
+ * site can realistically rank for, and they name the buyer, which is what the
+ * generic heading seeds never do. Competitor playbooks are left to the
+ * research drawer - on a new site the gap call already covers that ground, and
+ * an "alternatives" page is a decision rather than a default.
+ *
+ * Capped, because every seed is a row in one paid expansion call.
+ */
+function audienceSeeds(profile: BusinessProfile, domain: string, limit = 8): string[] {
+  const ctx = { brand: brandFromDomain(domain), profile };
+  const seeds = [
+    ...buildPlaybookSeeds("use_case", ctx),
+    ...buildPlaybookSeeds("best_of", ctx),
+  ];
+  return [...new Set(seeds)].slice(0, limit);
+}
+
+/**
+ * The audience seed a discovered term came from, if any.
+ *
+ * `discoverKeywordsFromSeeds` returns expansions, not the seed, so provenance
+ * is recovered by containment: "appointment-based websites for dental clinics"
+ * expanding to "websites for dental clinics" still names its audience. Falling
+ * back to null just labels the row `profile`, which is what it was before.
+ */
+function seedOf(term: string, seeds: Set<string>): string | null {
+  const t = term.toLowerCase();
+  for (const seed of seeds) {
+    const audience = seed.split(" for ").slice(1).join(" for ").trim();
+    if (audience && t.includes(audience)) return audience;
+  }
+  return null;
+}
 
 /** Bounded so a first look cannot become an hour-long crawl of a huge site. */
 const MAX_PAGES = 40;
@@ -291,6 +331,20 @@ export async function analyseDomain(options: {
    * first look inside the app can never disagree about a domain (2026-09-02).
    */
   depth?: "quick" | "full";
+  /**
+   * What the wizard learned about the business, when a workspace has it.
+   *
+   * Until 2026-09-08 this never crossed the boundary: the keyword phase seeded
+   * itself from page headings alone (`seedPhrasesFromPages`), so the model's
+   * own reading of the company - the description, and every audience the
+   * person confirmed - could never propose a candidate. Measured on
+   * qasimcode.com, whose profile says "appointment-based websites for clinics,
+   * salons, studios and trades, with online booking": not one of its 20 stored
+   * keywords contained book, appoint, clinic, salon, dental, therapy, trade or
+   * calendar. The relevance filter downstream can only reject; it cannot
+   * introduce "salon booking website" when nothing proposed it.
+   */
+  profile?: BusinessProfile | null;
   /** The workspace's search market, e.g. 2380 for Italy. Paired with `locale`. */
   locationCode?: number;
 }): Promise<DomainAnalysis> {
@@ -570,7 +624,27 @@ export async function analyseDomain(options: {
           competitor: k.competitor,
         }));
 
-        const seeds = usable && depth === "full" ? seedPhrasesFromPages(crawledPages, domain) : [];
+        // Two kinds of seed, both fed to the same expansion call.
+        //
+        //   headings  what the site literally says. Cheap and often generic:
+        //             the n-gram filter drops any phrase carrying a stopword,
+        //             so "Websites for Clinics" and "taking bookings by phone"
+        //             leave nothing behind, and bare pairs like "website
+        //             design" are what survive. The better the copy, the
+        //             thinner the seeds.
+        //   profile   what the business actually sells, to whom. The audience
+        //             playbooks already existed for the research drawer
+        //             (lib/keyword-research/seeds.ts) and were simply never
+        //             called from here, so the long tail this business can win
+        //             - "appointment-based websites for medical and dental
+        //             clinics" - was reachable by hand and not automatically.
+        const headingSeeds = usable && depth === "full" ? seedPhrasesFromPages(crawledPages, domain) : [];
+        const profileSeeds =
+          usable && depth === "full" && options.profile
+            ? audienceSeeds(options.profile, domain)
+            : [];
+        const fromAudience = new Set(profileSeeds);
+        const seeds = [...new Set([...headingSeeds, ...profileSeeds])];
         const seeded = seeds.length ? await discoverKeywordsFromSeeds(seeds).catch(() => []) : [];
 
         // Position per ranked term, for the reserve rule below.
@@ -698,8 +772,21 @@ export async function analyseDomain(options: {
               // The finer provenance the dashboard rolls up: which competitor,
               // or that it came from the site's own pages ("profile").
               source_type:
-                c.rank === 0 ? "ranked" : c.rank === 1 ? "competitor" : c.rank === 2 ? "profile" : "ads",
-              source_ref: c.rank === 1 ? c.k.competitor ?? null : c.rank === 2 ? "profile" : null,
+                c.rank === 0
+                  ? "ranked"
+                  : c.rank === 1
+                    ? "competitor"
+                    : c.rank === 2
+                      ? seedOf(c.k.keyword, fromAudience)
+                        ? "audience"
+                        : "profile"
+                      : "ads",
+              source_ref:
+                c.rank === 1
+                  ? c.k.competitor ?? null
+                  : c.rank === 2
+                    ? seedOf(c.k.keyword, fromAudience) ?? "profile"
+                    : null,
             }));
           if (rows.length) {
             const { data: inserted } = await supabase.from("keywords").insert(rows).select("id, term");

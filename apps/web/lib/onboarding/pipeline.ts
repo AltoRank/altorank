@@ -31,6 +31,7 @@ import { readSiteText } from "./site-text";
 import { checkDomainReachable } from "@/lib/domain/reachable";
 import { trainVoiceProfile } from "@/lib/voice/train";
 import { analyseDomain } from "@/lib/audit/domain-analysis";
+import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { generateArticle } from "@/lib/content/generate";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
@@ -79,6 +80,8 @@ interface Workspace {
   language: string | null;
   location_code?: number | null;
   auto_generate_weekly_limit?: number | null;
+  /** Optional: the caller may not have selected it. Absent means seed from headings alone. */
+  business_profile?: unknown;
 }
 
 /**
@@ -204,6 +207,9 @@ async function runPhases(
         locale: workspace.language ?? "en",
         // Paired with the locale, or DataForSEO rejects the combination.
         locationCode: workspace.location_code ?? undefined,
+        // What the wizard learned, so the keyword phase can seed from the
+        // business and its audiences and not only from page headings.
+        profile: (workspace.business_profile as BusinessProfile | null) ?? null,
       });
       keywordsFound = analysis.keywordsFound;
       // "Nothing rankable found for this site yet" is only true when we were

@@ -46,7 +46,13 @@ export async function onboardWorkspace(workspaceId: string): Promise<OnboardResu
 
   await runOnboarding(
     supabase,
-    { id: workspace.id, domain: workspace.domain, agency_id: workspace.agency_id, language: workspace.language ?? null },
+    {
+      id: workspace.id,
+      domain: workspace.domain,
+      agency_id: workspace.agency_id,
+      language: workspace.language ?? null,
+      business_profile: (workspace as { business_profile?: unknown }).business_profile ?? null,
+    },
     collect,
   );
 
