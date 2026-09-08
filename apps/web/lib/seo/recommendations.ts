@@ -25,8 +25,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { KeywordIntent } from "@/lib/types";
-import { scoreRelevance, type TopicalProfile } from "./topical-profile";
-import { relativeDifficulty } from "./difficulty";
+import { scoreRelevance, subjectVocabulary, type TopicalProfile } from "./topical-profile";
+import { relativeDifficulty, isOutOfReach } from "./difficulty";
 
 export type RecommendedAction = "write" | "refresh" | "skip";
 
@@ -197,6 +197,9 @@ const GSC_LOOKBACK_DAYS = 90;
 /** Words that carry no targeting signal, so two terms differing only by these are one target. */
 const STOPWORDS = new Set([
   "a", "an", "the", "for", "and", "or", "of", "to", "in", "on", "with", "is", "are", "my", "your",
+  // "website about design" and "website design" are one results page.
+  // qasimcode.com was given both, and both were scheduled.
+  "about",
 ]);
 
 /**
@@ -241,6 +244,19 @@ export function normalizeTarget(term: string): string {
           ? t.slice(0, -2)
           : t,
     )
+    // A silent final "e", after the folds above so they have already run.
+    // Without it the folds only half-work and the halves never meet:
+    // "websites" folded to "websit" while "website" stayed "website", and
+    // "creating" folded to "creat" while "create" stayed "create". So
+    // qasimcode.com kept "website design" and "website design websites" as two
+    // targets, and "create business websites" and "creating business websites"
+    // as two more - four calendar slots for two queries.
+    .map((t) => (t.endsWith("e") && t.length > 4 ? t.slice(0, -1) : t))
+    // One target, not one target per repetition. "business ideas for small
+    // businesses" folds to business/idea/small/business, which is the same
+    // query as "idea for small businesses" said twice; both were stored, both
+    // were scheduled.
+    .filter((t, i, all) => all.indexOf(t) === i)
     .sort()
     .join(" ");
 }
@@ -285,6 +301,19 @@ function volumeScore(volume: number): number {
  * as "easy" would float every unmeasured keyword to the top, which is the same
  * failure as rendering a null difficulty as a green zero.
  */
+/**
+ * What an out-of-reach keyword keeps, rather than zero.
+ *
+ * `relativeDifficulty` saturates: at authority 0 every KD from 45 to 100 maps
+ * to relative 100, so `1 - relative/100` was exactly 0 and multiplied the
+ * whole score away. Twelve of qasimcode.com's twenty keywords scored 0.0 and
+ * were therefore in arbitrary order - insertion order, since the sort is
+ * stable - so the plan picked among KD 56, KD 86 and KD 100 by whichever row
+ * the provider had returned first. Order has to survive even when the answer
+ * is "none of these".
+ */
+const UNWINNABLE_FLOOR = 0.02;
+
 function winnability(difficulty: number | null, volume = 0, authority?: number | null): number {
   if (difficulty === null) return 0.6;
   // Judged against this site when we know its authority. KD is absolute - it
@@ -296,7 +325,7 @@ function winnability(difficulty: number | null, volume = 0, authority?: number |
     const { relative } = relativeDifficulty(difficulty, authority);
     if (relative !== null) {
       if (difficulty === 0 && volume >= 1000) return 0.6;
-      return 1 - relative / 100;
+      return Math.max(UNWINNABLE_FLOOR, 1 - relative / 100);
     }
   }
   // Difficulty 0 on a term with real volume is the provider saying "not
@@ -353,11 +382,22 @@ export async function recommendKeywords(
   // different industry.
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("topical_profile, dr")
+    .select("topical_profile, dr, business_profile")
     .eq("id", workspaceId)
     .single();
 
   const profile = (workspace?.topical_profile as TopicalProfile | null) ?? null;
+  // The wizard's answers, which say what the business sells in words the crawl
+  // cannot supply: the competitors it names have no reason to appear in its own
+  // headings, and neither do the audiences it has not written a page for yet.
+  const subject = subjectVocabulary(
+    workspace?.business_profile as {
+      description?: string | null;
+      audiences?: string[] | null;
+      competitors?: string[] | null;
+    } | null,
+    profile,
+  );
   // Null when never measured, which relativeDifficulty treats as "do not
   // judge" rather than "zero authority".
   const authority = (workspace?.dr as number | null) ?? null;
@@ -514,7 +554,7 @@ export async function recommendKeywords(
     const proven = k.source === "ranked" || position !== null;
     const relevance = proven
       ? { score: 1, matched: [], unmatched: [], reason: "the site already ranks for this" }
-      : scoreRelevance(k.term as string, profile);
+      : scoreRelevance(k.term as string, profile, subject);
     // Squared, so a half-relevant term (one word of two on the site) is
     // worth a quarter of a fully on-topic one, not half. Volume differences
     // are logarithmic here; relevance has to be able to outvote them.
@@ -542,6 +582,27 @@ export async function recommendKeywords(
     } else if (relevance.matched.length > 0) {
       reasons.push(
         `on-topic: ${relevance.matched.slice(0, 4).join(", ")} already appear on the site`,
+      );
+    }
+
+    // --- Reachability -------------------------------------------------------
+    // A keyword the site cannot rank for is not a thing to write; it is a
+    // thing to come back to after the authority exists. `relativeDifficulty`
+    // has said so since 2026-09-05 and nothing on the writing path asked it:
+    // qasimcode.com (authority 0) had a KD 100 term drafted on its first day.
+    //
+    // Demoted to `skip` rather than hidden, exactly as `suspect` is. The
+    // keywords page still shows the row, with the reason, and a human who
+    // disagrees can queue it by hand - but `pickNextKeyword` and `buildPlan`
+    // both filter on `action === "write"`, so nothing unattended takes it.
+    // `refresh` is left alone: a page that already exists and already ranks is
+    // not subject to a judgement about winning from nothing.
+    if (action === "write" && !proven && isOutOfReach(difficulty, authority)) {
+      action = "skip";
+      reasons.push(
+        authority === null
+          ? `difficulty ${difficulty} is out of reach for any site without existing authority`
+          : relativeDifficulty(difficulty, authority).reason,
       );
     }
 

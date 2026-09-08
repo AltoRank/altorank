@@ -402,9 +402,67 @@ const GENERIC_MATCH = new Set([
   "why", "how", "what", "when", "where", "who", "top", "big", "small", "real",
 ]);
 
+/**
+ * What the business says it sells, from the profile the customer confirmed.
+ *
+ * The vocabulary a site uses and the subject it is about are not the same
+ * thing, and until now only the first was ever tested. qasimcode.com builds
+ * booking websites for clinics and salons; because its pages also name the
+ * markets it serves, its 403-term profile contains "countries", "other" and
+ * "states". "do other countries have states" therefore scored a perfect 1.00 -
+ * every content word really is on the site - reached the top of the queue at
+ * difficulty 14, and was the first article the product ever wrote for that
+ * customer.
+ *
+ * No weighting of the crawled vocabulary can fix that, because the seed that
+ * produced the keyword was drawn from the same vocabulary: the filter is being
+ * asked to reject a term using the evidence that generated it. The way out is
+ * a second, independent statement of the subject, and there already is one -
+ * the wizard's business profile, which the person read and corrected.
+ *
+ * Four sources, all of them the customer's own words:
+ *
+ *   description   what they say they do
+ *   audiences     who they say they sell to
+ *   competitors   who they say they are up against, so "calendly pricing" is
+ *                 on-subject even though the site never writes "calendly"
+ *   topTerms      the head of the crawled profile, dominated by the homepage
+ *                 headline, so a product line the description forgot still
+ *                 counts
+ *
+ * Returns an empty set when there is no profile, and an empty set disables the
+ * check: a workspace that never ran the wizard keeps exactly today's
+ * behaviour.
+ */
+const SUBJECT_TOP_TERMS = 10;
+
+export function subjectVocabulary(
+  business: { description?: string | null; audiences?: string[] | null; competitors?: string[] | null } | null | undefined,
+  profile?: TopicalProfile | null,
+): Set<string> {
+  const out = new Set<string>();
+  if (!business) return out;
+  const add = (text: string | null | undefined) => {
+    for (const t of tokenize(text ?? "")) out.add(t);
+  };
+  add(business.description);
+  for (const a of business.audiences ?? []) add(a);
+  // Domains, so "acuityscheduling.com" has to lose its suffix to match the
+  // "acuityscheduling" a searcher types.
+  for (const c of business.competitors ?? []) add(domainTokens(c).join(" "));
+  if (!out.size) return out;
+  for (const t of (profile?.topTerms ?? []).slice(0, SUBJECT_TOP_TERMS)) out.add(t);
+  return out;
+}
+
 export function scoreRelevance(
   keyword: string,
   profile: TopicalProfile | null | undefined,
+  /**
+   * The subject test above. Omitted or empty means "not stated", which is not
+   * the same as "nothing matches it" and is treated as no test at all.
+   */
+  subject?: ReadonlySet<string> | null,
 ): RelevanceScore {
   if (!profile || !Object.keys(profile.terms).length) {
     return {
@@ -452,12 +510,38 @@ export function scoreRelevance(
     return best;
   };
 
+  /** Is this word one the customer used to describe their own business? */
+  const inSubject = (token: string): boolean => {
+    if (!subject?.size) return false;
+    if (subject.has(token)) return true;
+    for (const term of subject) {
+      if (
+        (term.length > 4 && token.startsWith(term.slice(0, Math.max(4, term.length - 2)))) ||
+        (token.length > 4 && term.startsWith(token.slice(0, Math.max(4, token.length - 2))))
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  /**
+   * What a word scores on the customer's say-so alone.
+   *
+   * Half, not full: they named it, but the site does not write about it yet,
+   * which is exactly the position a competitor's brand or an audience they
+   * have no page for is in. Those are the terms worth writing, so they must
+   * not be vetoed - and they are not yet proven, so they must not outrank a
+   * word the site has actually built pages around.
+   */
+  const SUBJECT_STRENGTH = 0.5;
+
   const matched: string[] = [];
   const unmatched: string[] = [];
   let total = 0;
 
   for (const token of tokens) {
-    const strength = strengthOf(token);
+    const strength = Math.max(strengthOf(token), inSubject(token) ? SUBJECT_STRENGTH : 0);
     total += strength;
     // Below a token of real signal, treat it as absent for reporting: a word
     // that only matched site furniture is not evidence of relevance.
@@ -469,11 +553,61 @@ export function scoreRelevance(
   // that qualify a topic rather than name one ("best", "management",
   // "pricing", "software") are free, or "warehouse management system" would
   // fail on "management".
-  const foreign = unmatched.filter((t) => !QUALIFIERS.has(t) && strengthOf(t) === 0);
-  const score = foreign.length ? 0 : total / tokens.length;
+  //
+  // A word from the business profile is not foreign either, and this used to
+  // be the reason the whole competitor and audience half of the keyword
+  // playbooks could never produce a stored row: qasimcode.com named six
+  // competitors and six audiences, and "acuityscheduling pricing" and "speech
+  // therapy practice website" both scored 0 because the words are not in the
+  // site's own headings. Of course they are not - that is what a gap is.
+  const foreign = unmatched.filter(
+    (t) => !QUALIFIERS.has(t) && strengthOf(t) === 0 && !inSubject(t),
+  );
+  if (foreign.length) {
+    return {
+      score: 0,
+      matched,
+      unmatched,
+      reason: `${unmatched.map((t) => `"${t}"`).join(", ")} ${unmatched.length === 1 ? "does" : "do"} not appear anywhere on the site`,
+    };
+  }
+
+  // Every word being somewhere on the site is not the same as the keyword
+  // being about the site. `QUALIFIERS` knows that "best" and "pricing" carry
+  // no subject, but it cannot know that "countries" carries no subject *for
+  // this particular site*, which is the whole question. The customer's own
+  // description, audiences and competitors can.
+  //
+  // A floor, not a score: one word of the query has to name something the
+  // business said it does. Everything after that is still decided by the
+  // crawled vocabulary as before.
+  if (subject && subject.size) {
+    const onSubject = tokens.some((t) => {
+      if (subject.has(t)) return true;
+      // Same stem tolerance as strengthOf, so "clinics" finds "clinic".
+      for (const term of subject) {
+        if (
+          (term.length > 4 && t.startsWith(term.slice(0, Math.max(4, term.length - 2)))) ||
+          (t.length > 4 && term.startsWith(t.slice(0, Math.max(4, t.length - 2))))
+        ) {
+          return true;
+        }
+      }
+      return false;
+    });
+    if (!onSubject) {
+      return {
+        score: 0,
+        matched,
+        unmatched,
+        reason:
+          "none of these words names anything this business says it does, sells or competes with",
+      };
+    }
+  }
 
   return {
-    score,
+    score: total / tokens.length,
     matched,
     unmatched,
     reason: unmatched.length

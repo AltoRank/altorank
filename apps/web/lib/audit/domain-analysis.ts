@@ -22,12 +22,13 @@ import { crawlSite, usablePages } from "./crawler";
 import { runAuditChecks, calculateAuditScore } from "./checks";
 import { fetchPageSpeedDetailed } from "./pagespeed";
 import { discoverKeywords, discoverKeywordsFromSeeds, fetchKeywordDifficulty, type DiscoveredKeyword, storedCpc } from "@/lib/seo/keywords";
-import { profileIsUsable, seedPhrasesFromPages, scoreRelevance } from "@/lib/seo/topical-profile";
-import { buildPlaybookSeeds, brandFromDomain } from "@/lib/keyword-research/seeds";
+import { profileIsUsable, seedPhrasesFromPages, scoreRelevance, subjectVocabulary } from "@/lib/seo/topical-profile";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
+import { audienceSeeds, type AudienceSeed } from "@/lib/keyword-research/seeds";
+import { isOutOfReach } from "@/lib/seo/difficulty";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
-import { dedupePermutations } from "@/lib/seo/keywords";
+import { dedupePermutations, dedupeTargets } from "@/lib/seo/keywords";
 import { fetchCompetitorGap } from "@/lib/seo/keyword-gap";
 import {
   fetchRankedKeywords,
@@ -75,44 +76,52 @@ export interface DomainAnalysis {
 }
 
 /** A discovered keyword plus, for a gap row, the rival that holds it. */
-type Sourced = DiscoveredKeyword & { competitor?: string };
+type Sourced = DiscoveredKeyword & { competitor?: string; seed?: string };
+
+/** The wizard's answers, as `analyseDomain` needs them. */
+type BusinessProfileFields = {
+  description?: string | null;
+  audiences?: string[] | null;
+  competitors?: string[] | null;
+};
 
 /**
- * Seeds built from what the business says it does, and who it says it is for.
- *
- * The two audience playbooks only ("<category> for <audience>" and
- * "best <category> for <audience>"): they are the ones whose output a small
- * site can realistically rank for, and they name the buyer, which is what the
- * generic heading seeds never do. Competitor playbooks are left to the
- * research drawer - on a new site the gap call already covers that ground, and
- * an "alternatives" page is a decision rather than a default.
- *
- * Capped, because every seed is a row in one paid expansion call.
+ * Seeds one first look may buy. `discoverKeywordsFromSeeds` bills one call per
+ * seed, so this is the spend, and it is the same number the seeded expansion
+ * has always used - the audiences take slots from the page seeds rather than
+ * adding to them.
  */
-function audienceSeeds(profile: BusinessProfile, domain: string, limit = 8): string[] {
-  const ctx = { brand: brandFromDomain(domain), profile };
-  const seeds = [
-    ...buildPlaybookSeeds("use_case", ctx),
-    ...buildPlaybookSeeds("best_of", ctx),
-  ];
-  return [...new Set(seeds)].slice(0, limit);
-}
+const MAX_SEEDS = 5;
+/** Of those, how many the audiences may claim. */
+const MAX_AUDIENCE_SEEDS = 3;
+/**
+ * Volume floor for an audience seed's expansion.
+ *
+ * The page-seed path drops anything under 100 a month, which is right for
+ * "website design" and wrong for "dental clinic website": the whole reason a
+ * domain with no authority is given an audience term is that it is small
+ * enough to win. 49,500 searches at KD 70 is worth nothing to a site at
+ * authority 0; 40 searches at KD 12 is worth something.
+ */
+const AUDIENCE_MIN_VOLUME = 10;
 
 /**
- * The audience seed a discovered term came from, if any.
- *
- * `discoverKeywordsFromSeeds` returns expansions, not the seed, so provenance
- * is recovered by containment: "appointment-based websites for dental clinics"
- * expanding to "websites for dental clinics" still names its audience. Falling
- * back to null just labels the row `profile`, which is what it was before.
+ * Audience seeds first, page seeds for whatever is left, never more than the
+ * budget. Returned separately so each group can be bought with its own volume
+ * floor without changing the number of calls.
  */
-function seedOf(term: string, seeds: Set<string>): string | null {
-  const t = term.toLowerCase();
-  for (const seed of seeds) {
-    const audience = seed.split(" for ").slice(1).join(" for ").trim();
-    if (audience && t.includes(audience)) return audience;
-  }
-  return null;
+export function mergeSeeds(
+  audience: AudienceSeed[],
+  fromPages: string[],
+  budget: number = MAX_SEEDS,
+): { audience: AudienceSeed[]; pages: string[] } {
+  const take = Math.min(MAX_AUDIENCE_SEEDS, budget, audience.length);
+  const chosen = audience.slice(0, take);
+  const used = new Set(chosen.map((a) => a.seed));
+  return {
+    audience: chosen,
+    pages: fromPages.filter((s) => !used.has(s)).slice(0, Math.max(0, budget - take)),
+  };
 }
 
 /** Bounded so a first look cannot become an hour-long crawl of a huge site. */
@@ -532,6 +541,83 @@ export async function analyseDomain(options: {
   // Reordered 2026-09-02. Before this, (3) was the primary source and (1) was
   // fetched for a headline and thrown away, so the strongest signal in the
   // product never reached the queue that decides what gets written.
+  //
+  // --- Authority, measured BEFORE the keywords rather than after -----------
+  //
+  // The same call, in the same run, moved thirty lines up. It used to sit
+  // below, which meant that on a first analysis - every signup - the keyword
+  // filters ran with `workspaces.dr` still null and could not ask whether a
+  // keyword was reachable for this particular site. qasimcode.com was given
+  // five KD 100 keywords and eight at KD 70 or worse on a domain whose
+  // authority this run measured, eleven seconds later, as 0.
+  //
+  // The layer is built here and pushed in its original position below, so the
+  // run screen still reads readiness, crawl, keywords, authority.
+  let authority: number | null = null;
+  let traffic: number | null = null;
+  let referringDomains: number | null = null;
+  let authorityLayer: AnalysisLayer | null = null;
+  if (hasDataForSeo) {
+    try {
+      // Location travels with language or the pair is rejected. This passed
+      // the workspace's language and let the location default to the United
+      // States, so an Italian site asked for Italian results in the US and
+      // DataForSEO answered "Invalid Field: 'language_code'" - which reads
+      // like the field is wrong rather than the combination. Traffic was
+      // therefore null on every non-English workspace (2026-09-04).
+      const m = await fetchDomainMetrics(domain, {
+        languageCode: options.locale ?? "en",
+        locationCode: options.locationCode,
+      });
+      authority = m.authority;
+      traffic = m.traffic;
+      referringDomains = m.referringDomains;
+      if (supabase && workspaceId && (m.authority !== null || m.traffic !== null)) {
+        await supabase
+          .from("workspaces")
+          .update({
+            ...(m.authority !== null ? { dr: m.authority } : {}),
+            ...(m.traffic !== null ? { traffic: m.traffic } : {}),
+          })
+          .eq("id", workspaceId);
+      }
+      authorityLayer = {
+        id: "authority",
+        status: m.authority === null && m.traffic === null ? "unavailable" : "ok",
+        detail:
+          m.authority === null && m.traffic === null
+            ? "no authority or traffic estimate returned for this domain"
+            : `authority ${m.authority ?? "—"}, ${m.traffic?.toLocaleString() ?? "—"} organic visits a month`,
+      };
+    } catch (err) {
+      authorityLayer = { id: "authority", status: "failed", detail: err instanceof Error ? err.message : "authority lookup failed" };
+    }
+  }
+
+  // What the person confirmed in the wizard: what they sell, who to, and
+  // against whom.
+  //
+  // `options.profile` is the signup path (#180 wired it through the wizard).
+  // The fallback read is for every other caller - `cron/analyze` re-analyses a
+  // workspace nightly and has no profile in hand, and it needs the subject test
+  // as much as the first run does. Null on a workspace that skipped the wizard,
+  // which disables that test rather than failing it.
+  let business: BusinessProfileFields | null = options.profile ?? null;
+  if (!business && supabase && workspaceId) {
+    try {
+      const { data } = await supabase
+        .from("workspaces")
+        .select("business_profile")
+        .eq("id", workspaceId)
+        .single();
+      business = (data?.business_profile as BusinessProfileFields | null) ?? null;
+    } catch {
+      // Nothing here throws. A workspace whose profile cannot be read gets the
+      // page-seed-only behaviour it had before this existed.
+      business = null;
+    }
+  }
+
   let keywordsFound = 0;
   if (!hasDataForSeo) {
     layers.push({
@@ -578,7 +664,8 @@ export async function analyseDomain(options: {
           });
           return;
         }
-        const rel = (term: string) => scoreRelevance(term, profile).score;
+        const subject = subjectVocabulary(business, profile);
+        const rel = (term: string) => scoreRelevance(term, profile, subject).score;
 
 
         // (1) Ranked terms, best position first - but only the ones earned by
@@ -624,28 +711,53 @@ export async function analyseDomain(options: {
           competitor: k.competitor,
         }));
 
-        // Two kinds of seed, both fed to the same expansion call.
+        // The seed budget, split between what the site says and who it says it
+        // sells to.
         //
-        //   headings  what the site literally says. Cheap and often generic:
-        //             the n-gram filter drops any phrase carrying a stopword,
-        //             so "Websites for Clinics" and "taking bookings by phone"
-        //             leave nothing behind, and bare pairs like "website
-        //             design" are what survive. The better the copy, the
-        //             thinner the seeds.
-        //   profile   what the business actually sells, to whom. The audience
-        //             playbooks already existed for the research drawer
-        //             (lib/keyword-research/seeds.ts) and were simply never
-        //             called from here, so the long tail this business can win
-        //             - "appointment-based websites for medical and dental
-        //             clinics" - was reachable by hand and not automatically.
-        const headingSeeds = usable && depth === "full" ? seedPhrasesFromPages(crawledPages, domain) : [];
-        const profileSeeds =
-          usable && depth === "full" && options.profile
-            ? audienceSeeds(options.profile, domain)
-            : [];
-        const fromAudience = new Set(profileSeeds);
-        const seeds = [...new Set([...headingSeeds, ...profileSeeds])];
-        const seeded = seeds.length ? await discoverKeywordsFromSeeds(seeds).catch(() => []) : [];
+        // Page seeds alone are how qasimcode.com got its keyword list. They are
+        // n-grams of headings, and headings contain more than the business:
+        // "other countries" came out of a page listing the markets the studio
+        // works in, keyword_suggestions faithfully expanded it, and the first
+        // article the product ever wrote for that customer was "Do Other
+        // Countries Have States? Full 2026 Breakdown". Nothing downstream could
+        // catch it, because the filter judging the keyword was built from the
+        // same headings that produced the seed.
+        //
+        // The audiences are an independent statement of the subject, typed and
+        // confirmed by the person. They are also where the winnable long tail
+        // is: "dental clinic website" and "salon appointment website" exist
+        // because the customer named dental clinics and salons, and neither
+        // could ever have come out of an n-gram of a blog tag page.
+        //
+        // Budget-neutral. `discoverKeywordsFromSeeds` bills one call per seed
+        // and already caps at MAX_SEEDS; the audiences take slots from the page
+        // seeds rather than adding to them, so a signup costs exactly what it
+        // costs today.
+        const seeds =
+          usable && depth === "full"
+            ? mergeSeeds(
+                audienceSeeds(business, profile, domain),
+                seedPhrasesFromPages(crawledPages, domain),
+                MAX_SEEDS,
+              )
+            : { audience: [], pages: [] };
+        const audienceBySeed = new Map(seeds.audience.map((a) => [a.seed, a.audience]));
+        const [seededFromAudiences, seededFromPages] = await Promise.all([
+          seeds.audience.length
+            ? discoverKeywordsFromSeeds(seeds.audience.map((a) => a.seed), {
+                languageCode: options.locale ?? "en",
+                locationCode: options.locationCode,
+                minVolume: AUDIENCE_MIN_VOLUME,
+              }).catch(() => [])
+            : Promise.resolve([]),
+          seeds.pages.length
+            ? discoverKeywordsFromSeeds(seeds.pages, {
+                languageCode: options.locale ?? "en",
+                locationCode: options.locationCode,
+              }).catch(() => [])
+            : Promise.resolve([]),
+        ]);
+        const seeded = [...seededFromAudiences, ...seededFromPages];
 
         // Position per ranked term, for the reserve rule below.
         const positionByTerm = new Map<string, number | null>();
@@ -712,8 +824,19 @@ export async function analyseDomain(options: {
         // keyword_suggestions is the worst offender but keywords_for_site emits
         // the same shape: altorank.co came back with "seo for agency", "agency
         // for seo" and "seo agent" as three separate rows at 27,100 each.
+        //
+        // Two passes, because `permutationKey` and `normalizeTarget` disagree
+        // about what one query is and both are right about part of it.
+        // `permutationKey` keeps the words as typed, so it collapses "seo for
+        // agency" and "agency for seo" but not "website design" and "website
+        // design websites". `normalizeTarget` folds plurals, gerunds, agent
+        // nouns and a silent final "e", which is what makes those one target -
+        // and it is already what `recommendKeywords` collapses on, so anything
+        // it merges downstream was a wasted row here anyway. qasimcode.com
+        // stored twenty rows that are thirteen queries; four of them were
+        // "website design" and two more were "create"/"creating".
         const candidatesAll = [...byTerm.values()];
-        const deduped = dedupePermutations(candidatesAll.map((c) => c.k));
+        const deduped = dedupeTargets(dedupePermutations(candidatesAll.map((c) => c.k)));
         const keep = new Set(deduped.map((k) => k.keyword));
         const candidates = candidatesAll.filter((c) => keep.has(c.k.keyword));
         // Overwritten below with what actually passes the quality and relevance
@@ -728,6 +851,13 @@ export async function analyseDomain(options: {
             // A term the site ranks for is on-topic by definition, whatever the
             // profile says: the SERP already decided.
             .filter((c) => c.rank === 0 || c.r > 0)
+            // Reachable for THIS site. Difficulty had no vote in what was
+            // stored - the sort below is rank, then relevance, then volume -
+            // so qasimcode.com (authority 0) was given five KD 100 keywords
+            // and eight more at KD 70 or worse, and a KD 100 term was drafted
+            // on its first day. A term the SERP already puts this domain on is
+            // exempt: the ranking is the measurement, and it beats the model.
+            .filter((c) => c.rank === 0 || !isOutOfReach(c.k.difficulty, authority))
             .sort((a, b) => a.rank - b.rank || b.r - a.r || b.k.volume - a.k.volume);
           // Half the list is reserved for terms that can still be written to.
           // Sorted ranked-first, a site with 500 page-one rankings filled all
@@ -771,13 +901,17 @@ export async function analyseDomain(options: {
                 c.rank === 0 ? "ranked" : c.rank === 1 ? "gap" : c.rank === 2 ? "ideas" : "ads",
               // The finer provenance the dashboard rolls up: which competitor,
               // or that it came from the site's own pages ("profile").
+              // A seeded row says WHICH seed bought it, so the dashboard's
+              // per-source yield can answer the question this round was
+              // opened on: did the audiences the customer typed produce
+              // anything the site's own headings did not?
               source_type:
                 c.rank === 0
                   ? "ranked"
                   : c.rank === 1
                     ? "competitor"
                     : c.rank === 2
-                      ? seedOf(c.k.keyword, fromAudience)
+                      ? audienceBySeed.has(c.k.seed ?? "")
                         ? "audience"
                         : "profile"
                       : "ads",
@@ -785,7 +919,7 @@ export async function analyseDomain(options: {
                 c.rank === 1
                   ? c.k.competitor ?? null
                   : c.rank === 2
-                    ? seedOf(c.k.keyword, fromAudience) ?? "profile"
+                    ? audienceBySeed.get(c.k.seed ?? "") ?? "profile"
                     : null,
             }));
           if (rows.length) {
@@ -818,7 +952,10 @@ export async function analyseDomain(options: {
           rankedDropped
             ? `${rankedDropped} ranking${rankedDropped === 1 ? "" : "s"} on pages the sitemap does not list, left out`
             : "",
-          seeded.length ? `${seeded.length} from what its pages say` : "",
+          seededFromAudiences.length
+            ? `${seededFromAudiences.length} from the audiences you named`
+            : "",
+          seededFromPages.length ? `${seededFromPages.length} from what its pages say` : "",
           usedFallback ? "the rest from the ads keyword tool" : "",
         ].filter(Boolean);
         layers.push({
@@ -837,49 +974,9 @@ export async function analyseDomain(options: {
   }
 
   // --- Authority and traffic ------------------------------------------------
-  // The workspace header reads "Authority —" and "— organic /mo" until these
-  // are measured. Only the manual onboarding action ever fetched them, so a
-  // workspace analysed by the cron never had either (2026-09-02). Nulls stay
-  // null: an unmeasured number is not a zero.
-  let authority: number | null = null;
-  let traffic: number | null = null;
-  let referringDomains: number | null = null;
-  if (hasDataForSeo) {
-    try {
-      // Location travels with language or the pair is rejected. This passed
-      // the workspace's language and let the location default to the United
-      // States, so an Italian site asked for Italian results in the US and
-      // DataForSEO answered "Invalid Field: 'language_code'" - which reads
-      // like the field is wrong rather than the combination. Traffic was
-      // therefore null on every non-English workspace (2026-09-04).
-      const m = await fetchDomainMetrics(domain, {
-        languageCode: options.locale ?? "en",
-        locationCode: options.locationCode,
-      });
-      authority = m.authority;
-      traffic = m.traffic;
-      referringDomains = m.referringDomains;
-      if (supabase && workspaceId && (m.authority !== null || m.traffic !== null)) {
-        await supabase
-          .from("workspaces")
-          .update({
-            ...(m.authority !== null ? { dr: m.authority } : {}),
-            ...(m.traffic !== null ? { traffic: m.traffic } : {}),
-          })
-          .eq("id", workspaceId);
-      }
-      layers.push({
-        id: "authority",
-        status: m.authority === null && m.traffic === null ? "unavailable" : "ok",
-        detail:
-          m.authority === null && m.traffic === null
-            ? "no authority or traffic estimate returned for this domain"
-            : `authority ${m.authority ?? "—"}, ${m.traffic?.toLocaleString() ?? "—"} organic visits a month`,
-      });
-    } catch (err) {
-      layers.push({ id: "authority", status: "failed", detail: err instanceof Error ? err.message : "authority lookup failed" });
-    }
-  }
+  // Measured above, before the keyword phase, so the reachability filter has a
+  // number to judge against on a first run. Reported here, where it always was.
+  if (authorityLayer) layers.push(authorityLayer);
 
   // --- Who links here -------------------------------------------------------
   // Only when there is a workspace to store into; the sales-side "check any
