@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { Icons } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { billingHref } from "@/lib/billing/upgrade-link";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { PausedBanner } from "@/components/dashboard/paused-banner";
 import { applyArticlesPlan, getArticlesPlanState, previewArticlesPlan, type ArticlesPlanState } from "@/app/actions/plan";
@@ -101,6 +103,14 @@ function PlanPanel({ workspaceId, onDone }: { workspaceId: string; onDone: () =>
   // clear it.
   const [preview, setPreview] = useState<{ key: string; sentence: string; planned: number } | null>(null);
   const [pending, start] = useTransition();
+  /**
+   * Zero is not a pace, it is a stop: nothing further is written for this site
+   * until somebody comes back here. It sits in the same list as "3 a week" and
+   * applied on the same button, which made "off" one misclick away from a site
+   * that quietly stops producing. Every other value here is reversible by
+   * picking another; the consequence of this one is that nobody notices.
+   */
+  const [confirmOff, setConfirmOff] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,6 +171,14 @@ function PlanPanel({ workspaceId, onDone }: { workspaceId: string; onDone: () =>
   }
 
   function apply() {
+    if (pace === 0 && state && state.pace !== 0) {
+      setConfirmOff(true);
+      return;
+    }
+    void runApply();
+  }
+
+  function runApply() {
     start(async () => {
       try {
         const r = await applyArticlesPlan(workspaceId, pace, days);
@@ -220,11 +238,15 @@ function PlanPanel({ workspaceId, onDone }: { workspaceId: string; onDone: () =>
                         a rule; this row already says "about 108 articles a
                         month" beside it, and the fact that matters is that the
                         plan does not cover that. (outrank-teardown, item 2.) */}
+                    {/* The price, in the control that asks for it. This row
+                        argued for an upgrade and named no figure, so the only
+                        way to learn what it cost was to follow the link. */}
                     <Link
-                      href="/settings/billing"
+                      href={billingHref("/content")}
                       className="shrink-0 text-[11.5px] text-accent-ink underline decoration-line underline-offset-[3px]"
                     >
-                      More than your plan includes — {o.needsPlanLabel} covers it
+                      More than your plan includes — {o.needsPlanLabel}
+                      {o.needsPlanPrice ? `, ${o.needsPlanPrice}` : ""} covers it
                     </Link>
                   </div>
                 )}
@@ -263,6 +285,17 @@ function PlanPanel({ workspaceId, onDone }: { workspaceId: string; onDone: () =>
           {pending ? "Applying…" : "Apply"}
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={confirmOff}
+        onOpenChange={setConfirmOff}
+        title="Stop writing for this site?"
+        body="No new articles are drafted for it until you set a pace again. Everything already written stays exactly where it is, and nothing already published changes."
+        confirmLabel="Stop writing for this site"
+        pendingLabel="Stopping…"
+        destructive
+        onConfirm={runApply}
+      />
     </div>
   );
 }

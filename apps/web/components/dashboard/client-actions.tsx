@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { Button, Icons, Dialog } from "@/components/ui";
 import { useOnboarding } from "@/components/onboarding/use-onboarding";
 import { createWorkspace } from "@/app/actions/workspaces";
+import { fromEntryPrice, planMonthlyPrice } from "@/lib/billing/plan-prices";
+import { billingHref } from "@/lib/billing/upgrade-link";
 
 type OnboardStep = "idle" | "creating";
 
@@ -96,15 +98,15 @@ export function ClientActions({
             <Icons.plus size={14} />
             Add workspace
           </Button>
-          <Link href="/settings/billing" className="text-[11.5px] text-accent-ink underline decoration-line underline-offset-[3px]">
+          <Link href={billingHref("/dashboard")} className="text-[11.5px] text-accent-ink underline decoration-line underline-offset-[3px]">
             {/* A downgrade leaves more sites than the tier allows and removes
                 none of them, so `used` can be past `limit`. "All 3 are in use"
                 above a list of five is a sentence the page can see is false. */}
             {allowance?.noPlan
-              ? "One workspace before choosing a plan. Choose a plan for more workspaces"
+              ? `One workspace before choosing a plan. Choose a plan for more workspaces — ${fromEntryPrice()}`
               : allowance?.limit !== null && allowance?.limit !== undefined && (allowance.used ?? 0) > allowance.limit
-                ? `This plan includes ${allowance.limit} workspaces and ${allowance.used} are in use. None removed — upgrade for more`
-                : `All ${allowance?.limit} workspaces on this plan are in use. Upgrade for more`}
+                ? `This plan includes ${allowance.limit} workspaces and ${allowance.used} are in use. None removed — upgrade for more, ${planMonthlyPrice("growth")}`
+                : `All ${allowance?.limit} workspaces on this plan are in use. Upgrade for more — ${planMonthlyPrice("growth")}`}
           </Link>
         </div>
       ) : (

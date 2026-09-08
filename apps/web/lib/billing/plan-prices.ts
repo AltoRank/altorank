@@ -43,6 +43,18 @@ export const PLAN_YEARLY_PRICES: Record<PlanTier, string> = {
   scale: "Let's talk",
 };
 
+/**
+ * Included articles per calendar month, by tier. Restates the pricing page's
+ * feature list (src/data/pricing.ts in AltoRank/altorank-marketing) - change
+ * them together; nothing across the two repositories enforces it.
+ * `scale` is sales-led: null means no metered ceiling here.
+ */
+export const PLAN_ARTICLE_LIMITS: Record<PlanTier, number | null> = {
+  starter: 100,
+  growth: 400,
+  scale: null,
+};
+
 /** The cheapest rung anyone can buy without talking to us. */
 export const ENTRY_PLAN: SelfServePlan = "starter";
 
@@ -62,4 +74,18 @@ export function planMonthlyPrice(tier: PlanTier): string {
  */
 export function fromEntryPrice(): string {
   return `from ${planMonthlyPrice(ENTRY_PLAN)}`;
+}
+
+/**
+ * The cheapest tier whose included volume covers `monthly`; "scale" when none
+ * does. Lives here rather than beside the pace list because two controls need
+ * it - the calendar's pace rows and the workspace pace slider - and both must
+ * quote the same price for the same number.
+ */
+export function planNeededFor(monthly: number): PlanTier {
+  for (const tier of ["starter", "growth"] as const) {
+    const limit = PLAN_ARTICLE_LIMITS[tier];
+    if (limit === null || monthly <= limit) return tier;
+  }
+  return "scale";
 }

@@ -45,6 +45,12 @@ export interface HistoryRow {
   canPublish: boolean;
   /** The last publish failed, so the row menu offers "Retry publish" instead of a fresh publish (#83). */
   canRetry: boolean;
+  /**
+   * The site "Publish now" would write to, for the confirmation's button.
+   * Publishing from a list row puts an article on a live customer site with
+   * one click, so the label has to name where it lands. Null when unknown.
+   */
+  publishTarget: string | null;
   /** Search Console clicks attributed to the article over the last 30 days; null when nobody measured (#84). */
   clicks: number | null;
   /** Index coverage for a published URL, from URL inspection or from being served in search (#84). Null when not published. */
@@ -61,6 +67,7 @@ export interface HistoryRow {
 export interface HistoryRowExtras {
   canPublish: boolean;
   canRetry?: boolean;
+  publishTarget?: string | null;
   clicks?: number | null;
   index?: HistoryRow["index"];
 }
@@ -87,6 +94,7 @@ export function toHistoryRow(a: Article, extras: HistoryRowExtras): HistoryRow {
     imageUrl: a.featured_image_url ?? null,
     canPublish: extras.canPublish,
     canRetry: extras.canRetry ?? false,
+    publishTarget: extras.publishTarget ?? null,
     clicks: extras.clicks ?? null,
     index: extras.index ?? null,
     autoApproveAfter: a.status === "review" ? (a.auto_approve_after ?? null) : null,

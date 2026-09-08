@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { setGenerationPace } from "@/app/actions/workspaces";
 import { monthlyFromPace } from "@/lib/content/pace";
+import { PLAN_LABELS, planMonthlyPrice, planNeededFor } from "@/lib/billing/plan-prices";
 
 /**
  * The control behind "at the pace you set per site".
@@ -124,8 +125,13 @@ export function GenerationPaceForm({
         <p className="mt-2 m-0 text-[12px] leading-relaxed text-ink-3">
           This workspace is set above what the plan includes. Nothing has been
           changed; lower the pace, or raise the plan on the{" "}
+          {/* The tier that actually covers this number, and what it costs.
+              "Raise the plan" named neither, so the trade-off the slider is
+              asking about - this many articles for this much money - could
+              only be resolved on another screen. */}
           <a href="/settings/billing" className="text-accent-ink underline decoration-line underline-offset-[3px]">
-            Billing page
+            Billing page — {PLAN_LABELS[planNeededFor(monthly)]}
+            {planNeededFor(monthly) === "scale" ? "" : `, ${planMonthlyPrice(planNeededFor(monthly))}`} covers {monthly} a month
           </a>
           .
         </p>

@@ -4,9 +4,10 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button, Card, Dialog } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { pauseAccount, resumeAccount, cancelPlan, keepPlan } from "@/app/actions/retention";
-import { PAUSE_MONTHS, PAUSE_COPY, formatPauseDate, pauseIsOver, type PauseMonths } from "@/lib/billing/pause";
+import { PAUSE_MONTHS, PAUSE_COPY, formatPauseDate, pausedUntil as pausedUntilDate, pauseIsOver, type PauseMonths } from "@/lib/billing/pause";
 import { CANCEL_REASONS, cancellationSummary, validateCancellation } from "@/lib/billing/cancellation";
 import { inputClass } from "@/components/settings/fields";
 
@@ -32,6 +33,13 @@ export function RetentionCard({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [cancelOpen, setCancelOpen] = useState(false);
+  /**
+   * A pause is one button and it reaches every workspace on the account and
+   * Stripe's collection with it. Cancelling - the smaller of the two, since it
+   * runs to the period end - already takes a survey and a confirmation, while
+   * three buttons beside it stopped everything instantly and unannounced.
+   */
+  const [confirmPause, setConfirmPause] = useState<PauseMonths | null>(null);
 
   // Pause, resume and keep all return a result rather than throwing, because
   // Next.js turns a thrown server-action message into a digest in production
@@ -79,13 +87,7 @@ export function RetentionCard({
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             {PAUSE_MONTHS.map((m) => (
-              <Button
-                key={m}
-                onClick={() =>
-                  run(`Paused for ${m} ${m === 1 ? "month" : "months"}.`, () => pauseAccount(m as PauseMonths))
-                }
-                disabled={pending}
-              >
+              <Button key={m} onClick={() => setConfirmPause(m as PauseMonths)} disabled={pending}>
                 Pause {m} {m === 1 ? "month" : "months"}
               </Button>
             ))}
@@ -116,6 +118,31 @@ export function RetentionCard({
           </>
         )}
       </Card>
+
+      {/* The date is computed here, not guessed: the same function the action
+          writes to every workspace and hands Stripe as `resumes_at`, so the
+          button says the day the account actually comes back. */}
+      <ConfirmDialog
+        open={confirmPause !== null}
+        onOpenChange={(v) => !v && setConfirmPause(null)}
+        title="Pause the whole account?"
+        body={
+          confirmPause === null
+            ? ""
+            : `Every workspace on this account stops being written for, and Stripe stops collecting, until ${formatPauseDate(pausedUntilDate(new Date(), confirmPause))}. Your articles, keywords and settings are kept, and you can end the pause early from this page.`
+        }
+        confirmLabel={
+          confirmPause === null
+            ? "Pause"
+            : `Pause everything until ${formatPauseDate(pausedUntilDate(new Date(), confirmPause))}`
+        }
+        pendingLabel="Pausing…"
+        onConfirm={() => {
+          const months = confirmPause;
+          if (months === null) return;
+          run(`Paused for ${months} ${months === 1 ? "month" : "months"}.`, () => pauseAccount(months));
+        }}
+      />
 
       <CancelDialog
         open={cancelOpen}

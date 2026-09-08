@@ -7,6 +7,7 @@ import { Button, Icons, Dialog } from "@/components/ui";
 import { useOnboarding } from "@/components/onboarding/use-onboarding";
 import type { Workspace, Article } from "@/lib/types";
 import { suggestKeywords, type KeywordSuggestion } from "@/app/actions/recommendations";
+import { fromEntryPrice } from "@/lib/billing/plan-prices";
 
 interface ArticleActionsProps {
   /** One workspace (detail page) or all of them (the global Articles page). */
@@ -169,7 +170,7 @@ export function ArticleActions({
         <Link href="/settings/billing?return=%2Farticles" title={writeBlocked}>
           <Button variant="accent">
             <Icons.sparkle size={14} />
-            Choose a plan to write more
+            Choose a plan to write more — {fromEntryPrice()}
           </Button>
         </Link>
       ) : (

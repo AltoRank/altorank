@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { IconButton } from "@/components/ui/button";
 import { Icons } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { updateArticle, deleteArticle } from "@/app/actions/articles";
 import { publishArticle, retryPublish, holdArticle, releaseHold } from "@/app/actions/publish";
 
@@ -20,6 +21,12 @@ interface ArticleRowMenuProps {
    */
   canPublish?: boolean;
   /**
+   * Where "Publish now" would send it, for the confirmation. A row menu is a
+   * one-click distance from a live customer site, so the site is named in the
+   * button that does it.
+   */
+  publishTarget?: string | null;
+  /**
    * The article's last publish attempt failed. "Retry publish" replaces
    * "Publish now": same article, same connection, one more log row.
    */
@@ -32,8 +39,14 @@ interface ArticleRowMenuProps {
 /** Tallest the menu gets, with the status submenu open. */
 const MENU_MAX_HEIGHT = 280;
 
-export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, canRetry = false, held = false, autoApprove = false }: ArticleRowMenuProps) {
+export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, publishTarget = null, canRetry = false, held = false, autoApprove = false }: ArticleRowMenuProps) {
   const [open, setOpen] = useState(false);
+  /**
+   * Publishing writes to a live site and cannot be taken back by closing a
+   * menu, so it asks first. Delete already did; publish - the one item here
+   * that changes something outside this product - did not.
+   */
+  const [confirmPublish, setConfirmPublish] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -183,6 +196,20 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, c
       </IconButton>
       </div>
 
+      <ConfirmDialog
+        open={confirmPublish}
+        onOpenChange={setConfirmPublish}
+        title="Publish this article?"
+        body={
+          publishTarget
+            ? `It goes out to ${publishTarget} now. Taking it down again means unpublishing it from the editor, and anyone who saw it in the meantime saw it.`
+            : "It goes out to the connected site now. Taking it down again means unpublishing it from the editor, and anyone who saw it in the meantime saw it."
+        }
+        confirmLabel={publishTarget ? `Publish to ${publishTarget} now` : "Publish to the live site now"}
+        pendingLabel="Publishing…"
+        onConfirm={handlePublish}
+      />
+
       {open && anchor && createPortal(
         <div
           ref={ref}
@@ -220,7 +247,12 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, c
               disabled={publishing}
               onClick={(e) => {
                 e.stopPropagation();
-                void handlePublish();
+                // Nothing to confirm when the item only opens the editor.
+                if (!canPublish) {
+                  void handlePublish();
+                  return;
+                }
+                setConfirmPublish(true);
               }}
             >
               {publishing ? "Publishing…" : canPublish ? "Publish now" : "Publish…"}

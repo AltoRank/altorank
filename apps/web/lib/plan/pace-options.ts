@@ -15,7 +15,13 @@
 
 import { FREE_TIER_PACE, MAX_PACE, monthlyFromPace } from "@/lib/content/pace";
 import type { Quota } from "@/lib/billing/quota";
-import { PLAN_ARTICLE_LIMITS, PLAN_LABELS, type PlanTier } from "@/lib/stripe";
+import {
+  PLAN_ARTICLE_LIMITS,
+  PLAN_LABELS,
+  planMonthlyPrice,
+  planNeededFor,
+  type PlanTier,
+} from "@/lib/billing/plan-prices";
 
 /** Articles a week. 14 and 21 are two and three a day. */
 export const PACE_OPTIONS = [1, 2, 3, 5, 7, 14, 21] as const;
@@ -36,6 +42,12 @@ export interface PaceOption {
   needsPlan: PlanTier | null;
   /** Display name of that tier, for "Needs the Managed plan". */
   needsPlanLabel: string | null;
+  /**
+   * What that tier costs, e.g. "€69/mo". The row argued for a plan without
+   * ever naming its price, so the only way to learn what the upgrade cost was
+   * to follow the link and find out.
+   */
+  needsPlanPrice: string | null;
 }
 
 export function describePace(pace: number): string {
@@ -46,14 +58,9 @@ export function describePace(pace: number): string {
   return `${pace} a week`;
 }
 
-/** The cheapest tier whose included volume covers `monthly`; null when none is needed. */
-export function planNeededFor(monthly: number): PlanTier {
-  for (const tier of ["starter", "growth"] as const) {
-    const limit = PLAN_ARTICLE_LIMITS[tier];
-    if (limit === null || monthly <= limit) return tier;
-  }
-  return "scale";
-}
+/** The cheapest tier whose included volume covers `monthly`. Re-exported from
+ * lib/billing/plan-prices.ts, where the limits it reads now live. */
+export { planNeededFor };
 
 /**
  * Is `pace` within what the account pays for?
@@ -132,6 +139,7 @@ export function paceOptions(quota: Pick<Quota, "limit" | "reason">): PaceOption[
       allowed,
       needsPlan,
       needsPlanLabel: needsPlan ? PLAN_LABELS[needsPlan] : null,
+      needsPlanPrice: needsPlan ? planMonthlyPrice(needsPlan) : null,
     };
   });
 }

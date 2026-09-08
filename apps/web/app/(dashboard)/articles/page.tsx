@@ -116,6 +116,7 @@ export default async function ArticlesPage({ searchParams }: Props) {
     const bucket = a.published_url ? coverageBucket(inspection, servedArticles.has(a.id)) : null;
     return toHistoryRow(a, {
       canPublish: cmsWorkspaces.has(a.workspace_id),
+      publishTarget: wsMap.get(a.workspace_id)?.domain ?? null,
       canRetry: canRetryPublish(lastPublishes.get(a.id), a.status),
       clicks: clicksByArticle.has(a.id) ? clicksByArticle.get(a.id)! : null,
       index: bucket

@@ -17,6 +17,8 @@ import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { entitledToScheduledWork } from "@/lib/billing/quota";
+import { fromEntryPrice } from "@/lib/billing/plan-prices";
+import { billingHref } from "@/lib/billing/upgrade-link";
 
 export const metadata: Metadata = { title: "Keywords" };
 
@@ -177,8 +179,11 @@ export default async function KeywordsPage({ searchParams }: Props) {
           <div className="mb-4 rounded-[9px] border border-line bg-panel px-4 py-3 text-[13px] text-ink-3">
             Nightly rank tracking runs for accounts on a plan. Until then positions, the AI-visibility sweep and the
             backlink pass do not run, so “Tracked pos.” stays “—”.{" "}
-            <Link href="/settings/billing" className="text-accent-ink underline decoration-line underline-offset-[3px]">
-              Choose a plan
+            <Link
+              href={billingHref("/keywords")}
+              className="text-accent-ink underline decoration-line underline-offset-[3px]"
+            >
+              Choose a plan, {fromEntryPrice()}
             </Link>
             .
           </div>

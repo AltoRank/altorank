@@ -60,6 +60,7 @@ export const stripeTaxEnabled = process.env.STRIPE_TAX_ENABLED === "true";
  * caller keeps its import path.
  */
 export {
+  PLAN_ARTICLE_LIMITS,
   PLAN_LABELS,
   PLAN_PRICES,
   PLAN_YEARLY_PRICES,
@@ -122,18 +123,6 @@ export function planForPriceId(priceId: string | null | undefined): SelfServePla
 export function isSelfServePlan(plan: unknown): plan is SelfServePlan {
   return plan === "starter" || plan === "growth";
 }
-
-/**
- * Included articles per calendar month, by tier. Restates the pricing page's
- * feature list (src/data/pricing.ts in AltoRank/altorank-marketing) - change
- * them together; nothing across the two repositories enforces it.
- * `scale` is sales-led: null means no metered ceiling here.
- */
-export const PLAN_ARTICLE_LIMITS: Record<PlanTier, number | null> = {
-  starter: 100,
-  growth: 400,
-  scale: null,
-};
 
 /** One line on who each rung is for. Mirrors `desc` in the pricing data. */
 export const PLAN_TAGLINES: Record<PlanTier, string> = {
