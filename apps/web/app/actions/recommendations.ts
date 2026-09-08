@@ -6,7 +6,8 @@ import { recommendKeywords } from "@/lib/seo/recommendations";
 
 export type KeywordSuggestion = {
   term: string;
-  volume: number;
+  /** Null when nobody measured it (a keyword typed in by hand). */
+  volume: number | null;
   difficulty: number | null;
   intent: string;
   action: "write" | "refresh" | "skip";

@@ -263,7 +263,7 @@ function KeywordsTab({ keywords }: { keywords: Keyword[] }) {
                 <tr key={k.id} className="hover:[&>td]:bg-panel">
                   <td className="px-3.5 py-3 border-b border-line-soft font-mono text-[13px] font-medium">{k.term}</td>
                   <td className="px-3.5 py-3 border-b border-line-soft"><Chip label={k.intent} soft /></td>
-                  <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{k.volume.toLocaleString()}</td>
+                  <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">{typeof k.volume === "number" ? k.volume.toLocaleString() : <span className="text-ink-4">—</span>}</td>
                   <td className="px-3.5 py-3 border-b border-line-soft">
                     <div className="flex items-center gap-2 justify-end">
                       <div className="w-[60px] h-[5px] bg-panel-2 rounded-full overflow-hidden">

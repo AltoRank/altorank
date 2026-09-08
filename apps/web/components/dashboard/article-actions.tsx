@@ -246,7 +246,7 @@ export function ArticleActions({
                         </span>
                       </span>
                       <span className="shrink-0 font-mono text-[11px] text-ink-2">
-                        {s.volume.toLocaleString()}/mo
+                        {s.volume === null ? "volume unknown" : `${s.volume.toLocaleString()}/mo`}
                         {s.difficulty !== null ? ` · KD ${s.difficulty}` : ""}
                       </span>
                     </button>

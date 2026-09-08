@@ -302,7 +302,12 @@ async function planFor(
   const takenIds = new Set(existing.map((e) => e.keyword_id).filter(Boolean) as string[]);
   const takenTerms = new Set(existing.map((e) => (e.keyword ?? "").toLowerCase()).filter(Boolean));
 
-  const recs = (await recommendKeywords(supabase, workspaceId, { limit: 80 })).filter(
+  // The limit is applied after scoring, across every action. At 80 a site
+  // that already ranks for 80+ terms filled the list with "skip: already
+  // ranking" rows and the one writable keyword scored below them was never
+  // seen (buttondown.com, 2026-09-07: 99 skips, 2 hand-added terms, 1
+  // planned). Ask for the whole set; the planner filters to writable itself.
+  const recs = (await recommendKeywords(supabase, workspaceId, { limit: 1000 })).filter(
     (r) => !excluded.has(r.keywordId) && !takenIds.has(r.keywordId) && !takenTerms.has(r.term.toLowerCase()),
   );
 
