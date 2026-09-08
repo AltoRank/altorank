@@ -15,7 +15,9 @@ import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
 import { readFrozenEntries } from "@/lib/plan/frozen";
 import { agencyRecipients } from "@/lib/email/agency-recipients";
 import { sendArticleDraftedEmails } from "@/lib/email/article-emails";
+import { sweepUnannouncedDrafts } from "@/lib/email/draft-batch";
 import { describeSendOutcome } from "@/lib/email/send-once";
+import { getDestinations } from "@/lib/publishing/destinations";
 import { holdUrl } from "@/lib/publishing/hold-link";
 import {
   announceNothingWritten,
@@ -376,6 +378,15 @@ async function run(request: Request) {
           continue;
         }
         const to = await agencyRecipients(supabase, ws.agency_id as string, workspaceId);
+        // Whether there is anywhere to publish to, so the mail can say the one
+        // honest thing about a site that has connected nothing. Never fatal:
+        // undefined leaves the line out rather than guessing.
+        let cmsConnected: boolean | undefined;
+        try {
+          cmsConnected = (await getDestinations(supabase, workspaceId)).length > 0;
+        } catch {
+          cmsConnected = undefined;
+        }
         const out = await sendArticleDraftedEmails(
           supabase,
           to,
@@ -387,6 +398,12 @@ async function run(request: Request) {
             verdict: result.factCheck.verdict,
             reasons: next.reasons,
             articleId: result.articleId,
+            // Already read for the selection above, so the stat row costs
+            // nothing extra. Null where the provider measured nothing, which
+            // the mail renders as "—" rather than a zero.
+            volume: next.volume,
+            difficulty: next.difficulty,
+            cmsConnected,
             autoApproveAfter,
             holdUrlFor: autoApproveAfter ? (to) => holdUrl(result.articleId, to) : undefined,
           },
@@ -439,12 +456,20 @@ async function run(request: Request) {
   // setup stopped. A site that did get a draft was told at that moment.
   const setupNotices = await sweepUnfinishedSetups(supabase);
 
+  // Drafts sitting in review that nobody has been told about. The signup
+  // fan-out announces its own batch from `after()` on the onboarding worker,
+  // and `after()` is work a serverless platform may cut short; this is what
+  // notices. It writes nothing when every draft has already been announced,
+  // which is the normal case, because the loop above announces its own.
+  const unannounced = await sweepUnannouncedDrafts(supabase);
+
   return NextResponse.json({
     checked: workspaces?.length ?? 0,
     pausesResumed: resumed,
     pauseReminders,
     pausedNotices,
     setupNotices,
+    unannounced,
     generated: results.filter((r) => r.status === "generated").length,
     skipped: results.filter((r) => r.status === "skipped").length,
     errors: results.filter((r) => r.status === "error").length,

@@ -17,6 +17,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
 import { canSelfInvoke, dispatchFirstDraft } from "@/lib/content/fan-out";
+import { announceDraftBatch } from "@/lib/email/draft-batch";
 import { runOnboarding } from "./pipeline";
 import { RunRecorder, RUN_COLUMNS, stampRun } from "./run-store";
 import type { OnboardingRunRow } from "./events";
@@ -32,9 +33,10 @@ export type ExecuteOutcome =
 export interface ExecuteResult {
   outcome: ExecuteOutcome;
   /**
-   * Requests this run fired and did not wait for: the first draft, the
-   * fan-out. Never rejects. The route hands it to `after()` so the function
-   * is not frozen with them still in its socket buffer.
+   * Requests this run fired and did not wait for - the first draft, the
+   * fan-out - followed by the one email that tells the account what they all
+   * wrote. Never rejects. The route hands it to `after()` so the function is
+   * not frozen with them still in its socket buffer.
    */
   keepAlive: Promise<void>;
 }
@@ -44,6 +46,33 @@ export interface ExecuteDeps {
   run?: typeof runOnboarding;
   dispatch?: typeof dispatchFirstDraft;
   canDispatch?: () => boolean;
+  announce?: typeof announceDraftBatch;
+}
+
+/**
+ * Tell the account about everything this run wrote, once all of it has landed.
+ *
+ * This is the join point and there is not a better one. Each draft is written
+ * by its own invocation of /api/internal/draft, which knows about one draft and
+ * cannot see the other six; `keepAlive` is the only place that settles when the
+ * whole batch has answered, which is what makes "7 drafts are ready" a true
+ * sentence rather than a race. One digest, not seven mails
+ * (lib/email/draft-batch.ts).
+ *
+ * Chained onto `keepAlive` rather than awaited, so the route's response still
+ * goes out immediately and the platform holds the instance open for both. If it
+ * is cut short anyway - `after()` has no guarantee - `sweepUnannouncedDrafts`
+ * in cron/generate catches the workspace on its next pass.
+ */
+function announceWhenSettled(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  keepAlive: Promise<void>,
+  announce: typeof announceDraftBatch,
+): Promise<void> {
+  return keepAlive
+    .then(() => announce(supabase, workspaceId))
+    .then(() => undefined, () => undefined);
 }
 
 interface WorkerWorkspace {
@@ -104,10 +133,15 @@ export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise
   // Every phase is on the row before anything else may write to it.
   await recorder.flush();
 
+  const announce = deps.announce ?? announceDraftBatch;
+
   const pending = result.pendingDraft;
   if (!pending) {
     await recorder.finish();
-    return { outcome: "ran", keepAlive: result.fanOutSettled };
+    return {
+      outcome: "ran",
+      keepAlive: announceWhenSettled(supabase, workspace.id, result.fanOutSettled, announce),
+    };
   }
 
   const sent = (deps.dispatch ?? dispatchFirstDraft)({
@@ -125,7 +159,11 @@ export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise
     // two calls gets here. Close the run honestly rather than leave it
     // spinning for a draft nobody will write.
     await stampRun(supabase, runId, { phase: "drafting", status: "failed", detail: "The draft could not be started on this install." }, { finish: true });
-    return { outcome: "failed", keepAlive: result.fanOutSettled };
+    // The fan-out may still have landed six drafts; they are still news.
+    return {
+      outcome: "failed",
+      keepAlive: announceWhenSettled(supabase, workspace.id, result.fanOutSettled, announce),
+    };
   }
 
   // The draft route stamps the row itself, on success and on its own
@@ -154,6 +192,11 @@ export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise
 
   return {
     outcome: "awaiting-draft",
-    keepAlive: Promise.all([draft, result.fanOutSettled]).then(() => undefined),
+    keepAlive: announceWhenSettled(
+      supabase,
+      workspace.id,
+      Promise.all([draft, result.fanOutSettled]).then(() => undefined),
+      announce,
+    ),
   };
 }

@@ -71,6 +71,62 @@ describe("renderArticleDrafted", () => {
   it("says how to stop the emails", () => {
     expect(renderArticleDrafted(base).footerNote).toContain("automatic drafting is on");
   });
+
+  /**
+   * The redesign, and the part of it that is a claim rather than a colour: a
+   * figure in the stat row is a measurement, so it is only there when
+   * something measured it.
+   */
+  it("puts the word count and the verdict in the stat row", () => {
+    const html = renderArticleDrafted(base).html;
+    expect(html).toContain("Words");
+    expect(html).toContain("1,132");
+    expect(html).toContain("Fact check");
+    expect(html).toContain("All sourced");
+  });
+
+  it("shows the keyword's figures when they were looked up", () => {
+    const html = renderArticleDrafted({ ...base, volume: 27100, difficulty: 19 }).html;
+    expect(html).toContain("27,100");
+    expect(html).toContain("/mo");
+    expect(html).toContain("Difficulty");
+    expect(html).toContain(">19<");
+  });
+
+  /**
+   * Rule 5 of the house: a keyword typed in by hand carries a null volume all
+   * the way through, and a 0 there would read as "nobody searches for this".
+   */
+  it("renders an unmeasured figure as a dash, and leaves the cell out entirely when nobody looked", () => {
+    const looked = renderArticleDrafted({ ...base, volume: null, difficulty: null }).html;
+    expect(looked).toContain("Searches");
+    expect(looked).toContain("—");
+    expect(looked).not.toContain(">0<");
+
+    const didNot = renderArticleDrafted(base).html;
+    expect(didNot).not.toContain("Searches");
+    expect(didNot).not.toContain("Difficulty");
+  });
+
+  it("says nothing publishes without approval, or when it publishes anyway", () => {
+    expect(renderArticleDrafted(base).html).toContain("Nothing publishes until you approve it");
+    const auto = renderArticleDrafted({ ...base, autoApproveAfter: "2026-09-10T12:00:00.000Z" });
+    expect(auto.html).toContain("2026, 12:00 UTC");
+    expect(auto.html).not.toContain("Nothing publishes until");
+  });
+
+  it("points at connecting a CMS only when there is nothing to publish to", () => {
+    expect(renderArticleDrafted({ ...base, cmsConnected: false }).html).toContain("Nothing is connected to publish to yet");
+    expect(renderArticleDrafted({ ...base, cmsConnected: true }).html).not.toContain("Nothing is connected");
+    expect(renderArticleDrafted(base).html).not.toContain("Nothing is connected");
+  });
+
+  /** No image means nothing blocked, nothing tracked, and the same mail in a dark inbox. */
+  it("carries no image and no remote font", () => {
+    const html = renderArticleDrafted(base).html;
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("fonts.googleapis");
+  });
 });
 
 /**
