@@ -148,3 +148,147 @@ describe("fetchRelatedKeywords", () => {
     expect(out[0].searchVolume).toBe(59);
   });
 });
+
+// ---------------------------------------------------------------------------
+// One task for the whole week
+// ---------------------------------------------------------------------------
+//
+// The endpoint is billed per task and takes up to 20 keywords. A signup writes
+// seven drafts and bought seven tasks: $0.63 of a $1.929 signup for thirteen
+// usable rows (round4 §4, W2). The fan-out knows all seven keywords before it
+// dispatches, so one task serves the week.
+//
+// A multi-seed response has never been observed on this account, so both
+// plausible layouts are covered here: the API grouping rows per seed, and the
+// flat merged pool a one-seed call returns today.
+
+const { fetchRelatedKeywordsBatch, MAX_SEEDS_PER_TASK } = await import("../brief-data");
+
+/** The merged layout: rows ARE `result`, with nothing naming their seed. */
+function respondMerged(rows: Array<{ keyword: string; search_volume: number }>) {
+  post.mockResolvedValue({
+    tasks: [{ result: rows.map((r) => ({ ...r, competition_index: 10 })) }],
+  });
+}
+
+/** The grouped layout: one `result` entry per seed, each with its own items. */
+function respondGrouped(groups: Record<string, Array<{ keyword: string; search_volume: number }>>) {
+  post.mockResolvedValue({
+    tasks: [
+      {
+        result: Object.entries(groups).map(([keyword, rows]) => ({
+          keyword,
+          items: rows.map((r) => ({ ...r, competition_index: 10 })),
+        })),
+      },
+    ],
+  });
+}
+
+describe("fetchRelatedKeywordsBatch", () => {
+  it("buys one task for seven keywords instead of seven", async () => {
+    respondMerged([{ keyword: "newsletter pricing", search_volume: 500 }]);
+    await fetchRelatedKeywordsBatch(
+      ["paid newsletter", "newsletter tools", "email list", "substack fees",
+       "newsletter seo", "rss to email", "newsletter analytics"],
+      LOCALE,
+    );
+    expect(post).toHaveBeenCalledTimes(1);
+    const [endpoint, body] = post.mock.calls[0] as [string, Array<{ keywords: string[] }>];
+    expect(endpoint).toBe("/keywords_data/google_ads/keywords_for_keywords/live");
+    expect(body[0].keywords).toHaveLength(7);
+  });
+
+  it("uses the API's own grouping when the payload carries one", async () => {
+    respondGrouped({
+      "paid newsletter": [{ keyword: "paid newsletter platform", search_volume: 900 }],
+      "email list": [{ keyword: "email list building", search_volume: 800 }],
+    });
+    const out = await fetchRelatedKeywordsBatch(["paid newsletter", "email list"], LOCALE);
+    expect(out.get("paid newsletter")!.map((k) => k.keyword)).toEqual(["paid newsletter platform"]);
+    expect(out.get("email list")!.map((k) => k.keyword)).toEqual(["email list building"]);
+  });
+
+  it("splits a merged pool back to the seed whose words each row contains", async () => {
+    respondMerged([
+      { keyword: "paid newsletter platform", search_volume: 900 },
+      { keyword: "best paid newsletter", search_volume: 700 },
+      { keyword: "email list building", search_volume: 800 },
+      { keyword: "grow an email list", search_volume: 600 },
+    ]);
+    const out = await fetchRelatedKeywordsBatch(["paid newsletter", "email list"], LOCALE);
+    expect(out.get("paid newsletter")!.map((k) => k.keyword)).toEqual([
+      "paid newsletter platform",
+      "best paid newsletter",
+    ]);
+    expect(out.get("email list")!.map((k) => k.keyword)).toEqual([
+      "email list building",
+      "grow an email list",
+    ]);
+  });
+
+  it("drops a row that belongs to no seed rather than giving it to all of them", async () => {
+    // The writer sees twenty of these. A term with nothing to do with the
+    // keyword is worse than a short list, so an unattributable row is not
+    // spread across every draft to pad it out.
+    respondMerged([
+      { keyword: "paid newsletter platform", search_volume: 900 },
+      { keyword: "bald nba players", search_volume: 90000 },
+    ]);
+    const out = await fetchRelatedKeywordsBatch(["paid newsletter", "email list"], LOCALE);
+    expect(out.get("paid newsletter")!.map((k) => k.keyword)).toEqual(["paid newsletter platform"]);
+    expect(out.get("email list")).toEqual([]);
+  });
+
+  it("reports a seed the task answered nothing for, and does not re-buy it", async () => {
+    // Measured: `fairnote` got 0 rows for its own $0.09. Zero is an answer.
+    respondMerged([{ keyword: "paid newsletter platform", search_volume: 900 }]);
+    const out = await fetchRelatedKeywordsBatch(["paid newsletter", "fairnote"], LOCALE);
+    expect(out.get("fairnote")).toEqual([]);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers every key it was asked for, even when the task returns nothing at all", async () => {
+    post.mockResolvedValue({ tasks: [{ result: null }] });
+    const out = await fetchRelatedKeywordsBatch(["a term", "another term"], LOCALE);
+    expect([...out.keys()]).toEqual(["a term", "another term"]);
+    expect(out.get("a term")).toEqual([]);
+  });
+
+  it("sends one seed once, and answers both callers that asked for it", async () => {
+    respondMerged([{ keyword: "paid newsletter platform", search_volume: 900 }]);
+    const out = await fetchRelatedKeywordsBatch(["Paid Newsletter", "paid newsletter", "  "], LOCALE);
+    const [, body] = post.mock.calls[0] as [string, Array<{ keywords: string[] }>];
+    expect(body[0].keywords).toEqual(["Paid Newsletter"]);
+    expect(out.get("paid newsletter")!.map((k) => k.keyword)).toEqual(["paid newsletter platform"]);
+    expect(out.get("Paid Newsletter")!.map((k) => k.keyword)).toEqual(["paid newsletter platform"]);
+    expect(out.has("  ")).toBe(false);
+  });
+
+  it("chunks at the endpoint's own ceiling rather than sending a task it will reject", async () => {
+    respondMerged([{ keyword: "anything", search_volume: 1 }]);
+    const seeds = Array.from({ length: MAX_SEEDS_PER_TASK + 1 }, (_, i) => `seed ${i}`);
+    await fetchRelatedKeywordsBatch(seeds, LOCALE);
+    expect(post).toHaveBeenCalledTimes(2);
+    const first = (post.mock.calls[0] as [string, Array<{ keywords: string[] }>])[1][0].keywords;
+    const second = (post.mock.calls[1] as [string, Array<{ keywords: string[] }>])[1][0].keywords;
+    expect(first).toHaveLength(MAX_SEEDS_PER_TASK);
+    expect(second).toHaveLength(1);
+  });
+
+  it("still keeps one phrasing per idea and caps each seed's list at 30", async () => {
+    respondMerged([
+      ...duplicateFamily("paid", "newsletter", 1900),
+      ...Array.from({ length: 40 }, (_, i) => ({
+        keyword: `paid newsletter idea ${i}`,
+        search_volume: 100 + i,
+      })),
+    ]);
+    const out = await fetchRelatedKeywordsBatch(["paid newsletter", "email list"], LOCALE);
+    const terms = out.get("paid newsletter")!.map((k) => k.keyword);
+    expect(terms).toHaveLength(30);
+    // The twelve phrasings of the seed collapse to one row, exactly as they do
+    // on a single-keyword call; batching does not change that rule.
+    expect(terms.filter((t) => t.split(" ").length === 2)).toHaveLength(1);
+  });
+});

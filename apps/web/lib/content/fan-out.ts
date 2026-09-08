@@ -23,11 +23,22 @@
  * `cron/generate` picks it up on its next pass, exactly as it did before.
  */
 import { isAuthorizedCron } from "@/lib/cron-auth";
+import type { RelatedKeyword } from "@/lib/seo/brief-data";
 
 /** One draft to write: the keyword, and the plan entry it belongs to. */
 export interface FanOutTarget {
   keywordId: string;
   term: string;
+  /**
+   * This term's share of the run's one related-keyword lookup.
+   *
+   * `keywords_for_keywords` is billed per task and accepts twenty seeds, so
+   * the caller buys the week in one task and carries each draft's rows here
+   * rather than letting six invocations buy six more tasks - $0.63 of a
+   * measured $1.929 signup (round4 §4, W2). Omitted means "nobody looked",
+   * and the draft pays for its own lookup as it always did.
+   */
+  relatedKeywords?: RelatedKeyword[];
 }
 
 export interface FanOutResult {
@@ -111,7 +122,16 @@ export function fanOutDrafts(
     // The rejection is swallowed on purpose: a dispatch that never lands
     // leaves the plan entry for the cron, which is the same place it would
     // have been written before this existed.
-    selfInvoke("/api/internal/draft", { workspaceId, keywordId: target.keywordId, keyword: target.term }, how).then(
+    selfInvoke(
+      "/api/internal/draft",
+      {
+        workspaceId,
+        keywordId: target.keywordId,
+        keyword: target.term,
+        ...(target.relatedKeywords ? { relatedKeywords: target.relatedKeywords } : {}),
+      },
+      how,
+    ).then(
       () => undefined,
       () => undefined,
     ),
@@ -126,6 +146,8 @@ export interface FirstDraftDispatch {
   keyword: string;
   keywordId: string | null;
   selection?: { reasons: string[]; score: number; difficulty: number | null; volume: number | null };
+  /** See FanOutTarget.relatedKeywords: the first draft gets its share too. */
+  relatedKeywords?: RelatedKeyword[];
 }
 
 /**
