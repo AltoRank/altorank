@@ -185,6 +185,18 @@ export function ArticleEditor({
   // why it exists, its scores, the fact check, research and publishing. "audit"
   // is what it is missing, computed from the text on screen.
   const [sidebarTab, setSidebarTab] = useState<"draft" | "audit">("draft");
+  /**
+   * Which of the three panes a narrow screen is showing.
+   *
+   * From `md` up all three are columns of one grid and this is ignored. Below
+   * it there is no room for three columns of anything readable, so they become
+   * one pane at a time behind a segmented control - the same three panes, one
+   * tap apart, rather than a 1,273px canvas panned sideways with the only
+   * button that matters off the right-hand edge.
+   *
+   * Opens on "Review": on a phone this screen is read, and read to decide.
+   */
+  const [mobilePane, setMobilePane] = useState<"rewrite" | "draft" | "review">("review");
   // The document as HTML, refreshed shortly after each edit so the audit tracks
   // what is on screen rather than what was saved at generation time. The
   // persisted scores go stale the moment a reviewer starts editing; this does
@@ -655,10 +667,45 @@ export function ArticleEditor({
 
   return (
     <EditorAiContext.Provider value={aiContext}>
-    {/* Below md the three panes keep their desktop widths and the wrapper
-        scrolls sideways; the page itself never does. */}
-    <div className="flex-1 min-h-0 flex flex-col overflow-x-auto md:overflow-x-visible">
-    <div className="flex-1 grid min-h-0 min-w-[960px] md:min-w-0" style={{ gridTemplateColumns: `${reviewingRewrite ? 440 : 280}px 1fr 340px` }}>
+    <div className="flex-1 min-h-0 flex flex-col">
+    {/* The narrow-screen switcher. Three panes, one at a time, and the one
+        that carries Approve is the one it opens on. Hidden from md up, where
+        all three are columns and switching would mean hiding a pane the
+        screen has room for. */}
+    <div className="md:hidden shrink-0 border-b border-line bg-bg" role="tablist" aria-label="Editor panes">
+      <div className="flex">
+        {([
+          { id: "rewrite", label: "Rewrite" },
+          { id: "draft", label: "Draft" },
+          { id: "review", label: "Review" },
+        ] as const).map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            role="tab"
+            aria-selected={mobilePane === p.id}
+            onClick={() => setMobilePane(p.id)}
+            className={`min-h-[44px] flex-1 border-b-2 px-3 text-[13px] transition-colors ${
+              mobilePane === p.id ? "border-ink font-medium text-ink" : "border-transparent text-ink-3"
+            }`}
+          >
+            {p.label}
+            {p.id === "review" && auditOpen > 0 && (
+              <span className="ml-1.5 rounded-full bg-panel-2 px-1.5 font-mono text-[10.5px] font-medium text-ink-2">
+                {auditOpen}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+    {/* One column below md, the three the desktop always had from md up. The
+        widths ride in a custom property because a media query cannot reach an
+        inline `gridTemplateColumns`, and the pane width is computed. */}
+    <div
+      className="flex-1 grid min-h-0 grid-cols-1 md:[grid-template-columns:var(--editor-cols)]"
+      style={{ "--editor-cols": `${reviewingRewrite ? 440 : 280}px 1fr 340px` } as React.CSSProperties}
+    >
       {/* Rewrite panel: the whole-article proposal, reviewed hunk by hunk.
           It gets more room while a review is open so blocks read as prose. */}
       <RewritePanel
@@ -666,13 +713,13 @@ export function ArticleEditor({
         getHtml={getHtml}
         onReplace={replaceBody}
         onReviewingChange={setReviewingRewrite}
-        className="border-r border-line"
+        className={`md:border-r md:border-line ${mobilePane === "rewrite" ? "" : "max-md:hidden"}`}
       />
 
       {/* Editor pane */}
-      <div className="border-r border-line flex flex-col min-h-0">
+      <div className={`md:border-r md:border-line flex flex-col min-h-0 ${mobilePane === "draft" ? "" : "max-md:hidden"}`}>
         {/* Header: mode, formatting (Editor mode only), changes, export, save */}
-        <div className="sticky top-0 z-[2] flex gap-0.5 items-center px-6 py-2.5 bg-bg border-b border-line">
+        <div className="sticky top-0 z-[2] flex flex-wrap gap-0.5 items-center px-3 py-2.5 md:flex-nowrap md:px-6 bg-bg border-b border-line">
           <div className="mr-3 inline-flex rounded-[7px] border border-line bg-panel p-0.5" role="tablist" aria-label="Mode">
             {(["review", "editor"] as const).map((m) => (
               <button
@@ -747,7 +794,7 @@ export function ArticleEditor({
 
         {/* Editor mode: the typed-edit session's two buttons. */}
         {editing && (
-          <div className="flex items-center gap-2 border-b border-line bg-panel px-6 py-1.5 text-[12px] text-ink-3">
+          <div className="flex flex-wrap items-center gap-2 border-b border-line bg-panel px-3 py-1.5 md:flex-nowrap md:px-6 text-[12px] text-ink-3">
             <Icons.edit size={12} />
             <span>Editing directly. Click a link to edit its URL; alt text sits under each image.</span>
             <div className="flex-1" />
@@ -762,7 +809,7 @@ export function ArticleEditor({
 
         {/* Document */}
         <div ref={documentRef} className="relative flex-1 overflow-y-auto scroll">
-          <div className="max-w-[720px] mx-auto px-8 py-8 pb-20">
+          <div className="max-w-[720px] mx-auto px-4 py-6 pb-20 md:px-8 md:py-8">
             <MetaFields
               articleId={article.id}
               title={title}
@@ -782,8 +829,9 @@ export function ArticleEditor({
         </div>
       </div>
 
-      {/* Right sidebar — SEO panel */}
-      <aside className="bg-panel overflow-y-auto scroll flex flex-col min-h-0">
+      {/* Right sidebar — SEO panel. On a phone it is not a sidebar at all: it
+          is the "Review" pane, full width, and it is where Approve lives. */}
+      <aside className={`bg-panel overflow-y-auto scroll flex flex-col min-h-0 ${mobilePane === "review" ? "" : "max-md:hidden"}`}>
         {/* Two tabs, two questions. "Draft" is why this exists and whether it
             ships; "Audit" is what it is missing. The audit count on the tab is
             the number of open items, so a reviewer on the first tab can see
@@ -798,7 +846,7 @@ export function ArticleEditor({
           ]}
         />
 
-        <div className="p-6">
+        <div className="p-4 md:p-6">
         {sidebarTab === "audit" && <AuditPanel audit={audit} onLocate={locateInEditor} />}
 
         {sidebarTab === "draft" && (
@@ -1007,7 +1055,7 @@ export function ArticleEditor({
                   )}
                   <Button
                     size="sm"
-                    className="w-full justify-center mt-2"
+                    className="w-full justify-center mt-2 max-md:min-h-[44px] max-md:text-[14px]"
                     onClick={handleRetry}
                     disabled={publishing}
                   >
@@ -1020,7 +1068,7 @@ export function ArticleEditor({
                   {!retryable && (
                     <Button
                       size="sm"
-                      className="w-full justify-center mt-3"
+                      className="w-full justify-center mt-3 max-md:min-h-[44px] max-md:text-[14px]"
                       onClick={handlePublish}
                       disabled={publishing}
                     >
@@ -1031,7 +1079,7 @@ export function ArticleEditor({
                   )}
                   <button
                     type="button"
-                    className="w-full text-center mt-2 text-[12px] text-ink-3 hover:text-ink transition-colors disabled:opacity-50"
+                    className="w-full text-center mt-2 text-[12px] text-ink-3 hover:text-ink transition-colors disabled:opacity-50 max-md:min-h-[44px]"
                     onClick={handleRequestChanges}
                     disabled={publishing}
                   >
@@ -1096,7 +1144,7 @@ export function ArticleEditor({
             <>
               <Button
                 size="sm"
-                className="w-full justify-center mt-3"
+                className="w-full justify-center mt-3 max-md:min-h-[44px] max-md:text-[14px]"
                 onClick={handleApprove}
                 disabled={publishing}
               >
@@ -1143,7 +1191,7 @@ export function ArticleEditor({
                   <> Currently not approved: {article.auto_approve_hold_reason}.</>
                 )}
               </div>
-              <Button size="sm" variant="ghost" className="justify-center" disabled={publishing} onClick={handleHold}>
+              <Button size="sm" variant="ghost" className="justify-center max-md:min-h-[44px]" disabled={publishing} onClick={handleHold}>
                 Hold this one
               </Button>
             </div>
@@ -1154,7 +1202,7 @@ export function ArticleEditor({
                 Held by a person; it will not publish until someone approves it.
               </div>
               {article.auto_approve_after && (
-                <Button size="sm" variant="ghost" className="justify-center" disabled={publishing} onClick={handleReleaseHold}>
+                <Button size="sm" variant="ghost" className="justify-center max-md:min-h-[44px]" disabled={publishing} onClick={handleReleaseHold}>
                   Release the hold
                 </Button>
               )}
@@ -1176,7 +1224,7 @@ export function ArticleEditor({
               />
               <Button
                 size="sm"
-                className="justify-center"
+                className="justify-center max-md:min-h-[44px]"
                 disabled={publishing || !manualUrl.trim()}
                 onClick={async () => {
                   setPublishing(true);
