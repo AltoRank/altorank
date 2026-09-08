@@ -26,7 +26,7 @@ import { profileIsUsable, seedPhrasesFromPages, scoreRelevance, subjectVocabular
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { audienceSeeds, type AudienceSeed } from "@/lib/keyword-research/seeds";
-import { isOutOfReach } from "@/lib/seo/difficulty";
+import { isOutOfReach, isHopeless } from "@/lib/seo/difficulty";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { dedupePermutations, dedupeTargets } from "@/lib/seo/keywords";
 import { fetchCompetitorGap } from "@/lib/seo/keyword-gap";
@@ -851,14 +851,37 @@ export async function analyseDomain(options: {
             // A term the site ranks for is on-topic by definition, whatever the
             // profile says: the SERP already decided.
             .filter((c) => c.rank === 0 || c.r > 0)
-            // Reachable for THIS site. Difficulty had no vote in what was
-            // stored - the sort below is rank, then relevance, then volume -
-            // so qasimcode.com (authority 0) was given five KD 100 keywords
-            // and eight more at KD 70 or worse, and a KD 100 term was drafted
-            // on its first day. A term the SERP already puts this domain on is
-            // exempt: the ranking is the measurement, and it beats the model.
-            .filter((c) => c.rank === 0 || !isOutOfReach(c.k.difficulty, authority))
-            .sort((a, b) => a.rank - b.rank || b.r - a.r || b.k.volume - a.k.volume);
+            // Difficulty had no vote at all in what was stored: the sort was
+            // rank, then relevance, then volume. qasimcode.com (authority 0)
+            // was given five KD 100 keywords and eight more at KD 70 or worse,
+            // and one of the KD 100s was drafted on its first day.
+            //
+            // Two different judgements, and only the first belongs here.
+            //
+            // Hopeless is absolute and is dropped: at KD 90+ the top ten are
+            // the strongest documents on the web for the phrase, and no
+            // authority this product's customers have makes that a plan.
+            //
+            // Out of reach is relative to this site, and is NOT dropped. A
+            // keyword the customer cannot win today is still the market they
+            // are in, it is worth seeing on the keywords page, and their
+            // authority moves. `recommendKeywords` marks it `skip` with the
+            // reason, which is what keeps the unattended writer off it - the
+            // same treatment a `suspect` term gets. It only loses the tie-break
+            // for the hundred slots, so a reachable term takes the place of an
+            // unreachable one of the same relevance.
+            //
+            // A term the SERP already puts this domain on is exempt from both:
+            // the ranking is the measurement and it beats the model.
+            .filter((c) => c.rank === 0 || !isHopeless(c.k.difficulty))
+            .sort(
+              (a, b) =>
+                a.rank - b.rank ||
+                b.r - a.r ||
+                Number(isOutOfReach(a.k.difficulty, authority)) -
+                  Number(isOutOfReach(b.k.difficulty, authority)) ||
+                b.k.volume - a.k.volume,
+            );
           // Half the list is reserved for terms that can still be written to.
           // Sorted ranked-first, a site with 500 page-one rankings filled all
           // 100 slots with terms `recommendKeywords` then refused to write,

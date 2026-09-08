@@ -111,22 +111,37 @@ export function relativeDifficulty(
 export const HOPELESS_DIFFICULTY = 90;
 
 /**
- * Whether a keyword is out of reach for this site.
+ * KD so high the SERP is out of everyone's reach, with no authority number
+ * needed. This is the only difficulty judgement allowed to DROP a keyword;
+ * `isOutOfReach` below only stops it being written.
+ */
+export function isHopeless(difficulty: number | null | undefined): boolean {
+  return (
+    typeof difficulty === "number" &&
+    Number.isFinite(difficulty) &&
+    difficulty >= HOPELESS_DIFFICULTY
+  );
+}
+
+/**
+ * Whether a keyword is out of reach for THIS site.
  *
  * The gap this closes: `relativeDifficulty` has existed since 2026-09-05 and
  * produces "unrealistic" for exactly these keywords, but nothing on the
- * storage path ever asked it. qasimcode.com (authority 0, signed up
+ * writing path ever asked it. qasimcode.com (authority 0, signed up
  * 2026-09-07) was given twenty keywords of which five were KD 100 and eight
  * were KD 70 or worse, and an article was written for one of the KD 100s.
  *
- * Unmeasured authority is not an excuse to store anything: `HOPELESS_DIFFICULTY`
- * still applies, because no amount of authority makes KD 100 a content plan.
+ * Out of reach is a reason not to WRITE, not a reason to hide: the keyword is
+ * still the market the customer is in, and their authority moves. The drop is
+ * `isHopeless` above, which needs no authority and so is the answer during a
+ * first run, when `workspaces.dr` is still null.
  */
 export function isOutOfReach(
   difficulty: number | null | undefined,
   authority: number | null | undefined,
 ): boolean {
   if (typeof difficulty !== "number" || !Number.isFinite(difficulty)) return false;
-  if (difficulty >= HOPELESS_DIFFICULTY) return true;
+  if (isHopeless(difficulty)) return true;
   return relativeDifficulty(difficulty, authority).band === "unrealistic";
 }

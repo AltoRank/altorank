@@ -148,4 +148,39 @@ describe("normalizeTarget — cannibalisation", () => {
     expect(normalizeTarget("thing")).toBe("thing");
     expect(normalizeTarget("string")).toBe("string");
   });
+
+  it("folds a silent final e, so the singular meets its own plural", () => {
+    // The plural fold produced "websit" from "websites" while "website" stayed
+    // whole, so the two halves of the same fold never met. qasimcode.com was
+    // given "website design", "website about design" and "website design
+    // websites" as three targets, and all three were scheduled.
+    const a = normalizeTarget("website design");
+    expect(normalizeTarget("website about design")).toBe(a);
+    expect(normalizeTarget("website design websites")).toBe(a);
+    expect(normalizeTarget("create business websites")).toBe(
+      normalizeTarget("creating business websites"),
+    );
+    expect(normalizeTarget("guide")).toBe(normalizeTarget("guides"));
+  });
+
+  it("counts a repeated word once", () => {
+    // "business ideas for small businesses" is "idea for small businesses"
+    // said twice. Both were stored, both were scheduled.
+    expect(normalizeTarget("business ideas for small businesses")).toBe(
+      normalizeTarget("idea for small businesses"),
+    );
+    expect(normalizeTarget("ideas on small businesses")).toBe(
+      normalizeTarget("idea for small businesses"),
+    );
+  });
+
+  it("still keeps genuinely different queries apart after the extra folds", () => {
+    expect(normalizeTarget("website design")).not.toBe(normalizeTarget("website hosting"));
+    expect(normalizeTarget("dental clinic website")).not.toBe(
+      normalizeTarget("beauty salon website"),
+    );
+    // A word that merely ends in "e" is not a plural of anything.
+    expect(normalizeTarget("code")).toBe("code");
+    expect(normalizeTarget("site")).toBe("site");
+  });
 });
