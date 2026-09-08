@@ -362,6 +362,27 @@ const INTENT_WEIGHT: Record<KeywordIntent, number> = {
  */
 const SINGLE_WORD_PENALTY = 0.5;
 
+/**
+ * How much a keyword that names an audience the customer confirmed is worth
+ * over one that merely uses the site's vocabulary.
+ *
+ * Relevance cannot separate these two. Measured on qasimcode.com, a studio
+ * selling booking websites to clinics and salons: "website design service"
+ * (6,600/mo) and "best dental clinic website" (210/mo) both score a flat 1.0,
+ * because every word of both appears on the site. Volume then decides, and
+ * `volumeScore` is logarithmic - 38.2 against 23.2 - so the generic term wins
+ * and the first article we wrote them was "Website Design Service in 2026:
+ * Compare Your Options" rather than anything about a dental clinic.
+ *
+ * The signal that separates them is not in the text: it is that the person
+ * told us, in the wizard, who they sell to. `source_type = 'audience'` records
+ * exactly that, and nothing was reading it. 1.75 is the smallest multiplier
+ * that lets a term naming a confirmed buyer outrank a generic one roughly an
+ * order of magnitude larger, which is the trade this product exists to make -
+ * a smaller, winnable, on-topic article beats a bigger one about the category.
+ */
+const AUDIENCE_BOOST = 1.75;
+
 export async function recommendKeywords(
   supabase: SupabaseClient,
   workspaceId: string,
@@ -371,7 +392,7 @@ export async function recommendKeywords(
 
   const { data: keywords, error } = await supabase
     .from("keywords")
-    .select("id, term, volume, difficulty, intent, status, source")
+    .select("id, term, volume, difficulty, intent, status, source, source_type, source_ref")
     .eq("workspace_id", workspaceId);
 
   if (error) throw new Error(`Could not read keywords: ${error.message}`);
@@ -560,6 +581,15 @@ export async function recommendKeywords(
     // are logarithmic here; relevance has to be able to outvote them.
     if (!proven) {
       score *= RELEVANCE_FLOOR + (1 - RELEVANCE_FLOOR) * relevance.score * relevance.score;
+    }
+    // Named the buyer, not just the category. Applies to proven rows too: a
+    // term the site already ranks for AND that names a confirmed audience is
+    // the best row in the table, and the `proven` branch above would otherwise
+    // flatten it to the same 1.0 as every other ranking term.
+    if (k.source_type === "audience") {
+      score *= AUDIENCE_BOOST;
+      const who = typeof k.source_ref === "string" && k.source_ref.trim() ? k.source_ref.trim() : null;
+      reasons.push(who ? `names ${who}, an audience you told us you sell to` : "names an audience you told us you sell to");
     }
     if ((k.term as string).trim().split(/\s+/).length === 1) {
       score *= SINGLE_WORD_PENALTY;
