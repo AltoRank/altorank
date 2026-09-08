@@ -26,6 +26,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { KeywordIntent } from "@/lib/types";
 import { scoreRelevance, subjectVocabulary, type TopicalProfile } from "./topical-profile";
+import { commercialFit } from "./commercial-fit";
 import { relativeDifficulty, isOutOfReach } from "./difficulty";
 
 export type RecommendedAction = "write" | "refresh" | "skip";
@@ -411,14 +412,12 @@ export async function recommendKeywords(
   // The wizard's answers, which say what the business sells in words the crawl
   // cannot supply: the competitors it names have no reason to appear in its own
   // headings, and neither do the audiences it has not written a page for yet.
-  const subject = subjectVocabulary(
-    workspace?.business_profile as {
-      description?: string | null;
-      audiences?: string[] | null;
-      competitors?: string[] | null;
-    } | null,
-    profile,
-  );
+  const business = workspace?.business_profile as {
+    description?: string | null;
+    audiences?: string[] | null;
+    competitors?: string[] | null;
+  } | null;
+  const subject = subjectVocabulary(business, profile);
   // Null when never measured, which relativeDifficulty treats as "do not
   // judge" rather than "zero authority".
   const authority = (workspace?.dr as number | null) ?? null;
@@ -627,6 +626,25 @@ export async function recommendKeywords(
     // both filter on `action === "write"`, so nothing unattended takes it.
     // `refresh` is left alone: a page that already exists and already ranks is
     // not subject to a judgement about winning from nothing.
+    // Every filter above asks whether the keyword is *about* this business.
+    // This one asks whether it is *for* it. "Running a business without
+    // websites" is on-topic by vocabulary, winnable at KD 0, real at 1,600 a
+    // month, and informational by intent - and it was written for a studio
+    // that sells websites (2026-09-08). Whoever searches it has decided not to
+    // buy. `proven` is no defence here: a term the site already ranks for can
+    // still be one it should not be writing more about.
+    const fit = commercialFit(k.term as string, subject, business?.description ?? null);
+    if (fit.fit === "absence") {
+      if (action === "write") action = "skip";
+      score *= 0.1;
+      reasons.push(fit.reason);
+    } else if (fit.fit === "substitute") {
+      // A penalty, not a refusal: "free" is only misaligned because this
+      // business charges, and a reviewer may still want the traffic.
+      score *= 0.4;
+      reasons.push(fit.reason);
+    }
+
     if (action === "write" && !proven && isOutOfReach(difficulty, authority)) {
       action = "skip";
       reasons.push(
