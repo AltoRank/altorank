@@ -13,6 +13,8 @@ import {
   type RefreshOutcome,
 } from "@/lib/audit/profile-refresh";
 import { monthlyTarget, schedulePlan } from "@/lib/onboarding/plan";
+import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
+import { topUpKeywords, type TopUpOutcome } from "@/lib/keyword-research/top-up";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
 import { observedCron } from "@/lib/observability/cron";
 
@@ -174,6 +176,11 @@ async function run(request: Request) {
   // entry a person placed - and bounded by the same 60 cap as the planner.
   const toppedUp = await topUpPlans(supabase);
 
+  // Keep the pool full, not just the calendar. Discovery runs once per
+  // workspace ever, so a site that has written its way through its twenty
+  // keywords answers "no keyword qualifies" forever and quietly stops.
+  const pools = await refillEmptyPools(supabase);
+
   return NextResponse.json({
     pending: pending?.length ?? 0,
     analysed: results.filter((r) => r.status === "analysed").length,
@@ -181,10 +188,85 @@ async function run(request: Request) {
     profileMaxAgeDays: PROFILE_MAX_AGE_DAYS,
     profilesRefreshed: refreshed.filter((r) => r.status === "refreshed").length,
     plansToppedUp: toppedUp.filter((t) => t.added > 0).length,
+    poolsRefilled: pools.filter((p) => p.inserted > 0).length,
     results,
     refreshed,
     toppedUp,
+    pools,
   });
+}
+
+/** How many pools one run will refill: each is a crawl-free provider call. */
+const POOL_REFILL_BATCH = 3;
+
+type PoolRefill = TopUpOutcome & { workspaceId: string; domain: string | null };
+
+/**
+ * Refill the pool of any workspace that has run out of keywords worth writing.
+ *
+ * Exhaustion is asked the same way the generate cron asks it - run the
+ * recommender, then `pickNextKeyword` - so this fires exactly when generation
+ * would otherwise report "no keyword qualifies", and never on a workspace that
+ * still has something to write.
+ *
+ * Gated on spend, like every other paid path. An account that has used its free
+ * allowance does not get its pool refilled: buying more keywords for a site
+ * that cannot write them is spending on a customer who has not converted.
+ */
+async function refillEmptyPools(
+  supabase: ReturnType<typeof createServiceClient>,
+): Promise<PoolRefill[]> {
+  const out: PoolRefill[] = [];
+  const { data: workspaces } = await supabase
+    .from("workspaces")
+    .select("id, domain, agency_id, language, location_code")
+    .eq("auto_generate", true)
+    .not("first_analysed_at", "is", null)
+    .neq("status", "paused");
+
+  for (const ws of workspaces ?? []) {
+    if (out.length >= POOL_REFILL_BATCH) break;
+    const workspaceId = ws.id as string;
+
+    let exhausted = false;
+    try {
+      const recs = await recommendKeywords(supabase, workspaceId, { limit: 1000 });
+      exhausted = pickNextKeyword(recs) === null;
+    } catch {
+      // A recommender that cannot run is not evidence of an empty pool.
+      continue;
+    }
+    if (!exhausted) continue;
+
+    const spend = await canSpend(supabase, ws.agency_id as string, {
+      userEmail: null,
+      workspaceId,
+      action: "keyword-research",
+    });
+    if (!spend.allowed) {
+      out.push({
+        workspaceId,
+        domain: (ws.domain as string | null) ?? null,
+        candidates: 0,
+        priced: 0,
+        inserted: 0,
+        bySource: { ideas: 0, playbook: 0 },
+        reason: spend.message ?? "not entitled to keyword research",
+      });
+      continue;
+    }
+
+    setSpendReporter(({ operation, costUsd }) => {
+      void recordSpend(supabase, { provider: "dataforseo", operation, costUsd, workspaceId });
+    });
+    const outcome = await topUpKeywords(supabase, workspaceId, {
+      locale: (ws.language as string) ?? "en",
+      locationCode: (ws.location_code as number | null) ?? undefined,
+    });
+    setSpendReporter(null);
+    out.push({ ...outcome, workspaceId, domain: (ws.domain as string | null) ?? null });
+  }
+  return out;
 }
 
 type TopUp = { workspaceId: string; queued: number; target: number; added: number; error?: string };
