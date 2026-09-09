@@ -24,6 +24,9 @@ import { getOperatorPreview } from "@/lib/auth/preview";
 import { PLAN_LABELS } from "@/lib/stripe";
 import { PreviewBanner } from "@/components/dashboard/preview-banner";
 import { PaymentFailedBanner } from "@/components/dashboard/payment-failed-banner";
+import { RunFailedBanner } from "@/components/dashboard/run-failed-banner";
+import { latestRun } from "@/lib/onboarding/run-store";
+import { failedRunNotice } from "@/lib/onboarding/events";
 import { canManageBilling } from "@/lib/team/access";
 
 export default async function DashboardLayout({
@@ -75,6 +78,9 @@ export default async function DashboardLayout({
     simulation,
     preview,
     customerPreview,
+    // The scoped site's last setup run, for the banner below: a run that
+    // fell short used to be visible only on the screen that ran it.
+    runSnapshot,
   ] = await Promise.all([
     getWorkspaces(),
     scopedArticles,
@@ -87,6 +93,7 @@ export default async function DashboardLayout({
     getSimulation(),
     getOperatorPreview(),
     inCustomerPreview(),
+    scopeId ? latestRun(supabase, scopeId) : Promise.resolve(null),
   ]);
 
   /**
@@ -115,6 +122,11 @@ export default async function DashboardLayout({
   }
 
   const meta = user?.user_metadata ?? {};
+
+  // Only once the wizard is done: before that the person is on the run
+  // screen itself, which says the same thing with more room.
+  const scopedWorkspace = scopeId ? workspaces.find((w) => w.id === scopeId) : undefined;
+  const runNotice = wizardDone ? failedRunNotice(runSnapshot) : null;
 
   const accountId = user ? await ensureAccount(user.id, meta, user.email) : null;
 
@@ -224,6 +236,16 @@ export default async function DashboardLayout({
       {/* A failing renewal, until the card works. Read off the quota already
           computed for the sidebar: the same account row decides both. */}
       {quota?.dunning && <PaymentFailedBanner dunning={quota.dunning} canManage={canManageBilling(role)} />}
+      {/* The scoped site's setup run fell short and nothing came of it. Says
+          why, in the run's own words, and offers the retry the run screen
+          offers - because the person is here now, not there. */}
+      {runNotice && scopeId && (
+        <RunFailedBanner
+          workspaceId={scopeId}
+          siteLabel={scopedWorkspace?.domain ?? scopedWorkspace?.name ?? "this site"}
+          notice={runNotice}
+        />
+      )}
       {impersonation && (
         <ImpersonationBanner
           operatorEmail={impersonation.operatorEmail}

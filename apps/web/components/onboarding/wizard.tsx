@@ -648,6 +648,12 @@ function RunScreen({
 }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState | null>(null);
+  // Bumped by "Try again". `OnboardingProgress` starts a run on mount and
+  // never again, so a retry is a remount with no run to resume: the mount
+  // effect POSTs /start, which creates a fresh row (the last one is finished)
+  // and polls it. Nothing on the old attempt is touched - its phases are on
+  // their own tables and its row keeps its status.
+  const [attempt, setAttempt] = useState(0);
   const finished = Boolean(state && (state.ready || state.error));
   const planned = state?.planned ?? [];
   // Where "Finish" actually leads, decided by what the run produced. It used
@@ -691,7 +697,14 @@ function RunScreen({
 
         <div className="mx-auto max-w-[640px]">
           <div className="rounded-[10px] border border-line bg-panel p-5">
-            <OnboardingProgress workspaceId={workspaceId} domain={domain} autoNavigate={false} onState={setState} initialRun={initialRun} />
+            <OnboardingProgress
+              key={attempt}
+              workspaceId={workspaceId}
+              domain={domain}
+              autoNavigate={false}
+              onState={setState}
+              initialRun={attempt === 0 ? initialRun : null}
+            />
             {planned.length > 0 && (
               <div className="mt-5">
                 <div className="mb-1.5 text-[11px] uppercase tracking-wide text-ink-3">Scheduled</div>
@@ -729,11 +742,27 @@ function RunScreen({
                 calendar the header just promised. `OnboardingProgress` prints
                 the same sentence, so this only adds the part the button needs
                 to be honest about. */}
-            {outcome?.tone === "partial" && !outcome.produced && (
-              <p className="m-0 mt-2.5 text-[12px] leading-[1.55] text-ink-3">
-                Add a keyword by hand from Keywords, or connect Search Console, and the plan can be
-                built from there.
-              </p>
+            {outcome && (outcome.tone === "error" || (outcome.tone === "partial" && !outcome.produced)) && (
+              <div className="mt-3 flex flex-wrap items-center gap-3 rounded-[8px] border border-warn bg-warn-soft px-3 py-2.5">
+                <p className="m-0 min-w-0 flex-1 text-[12px] leading-[1.55] text-warn-ink">
+                  {/* A run that fell short is a thing to retry, right here,
+                      not a job to hand the person. The old text only said
+                      "add a keyword by hand", which is the last resort, not
+                      the first. */}
+                  Nothing was set up yet. Trying again is free to try; if the site still cannot be read,
+                  add a keyword by hand from Keywords or connect Search Console and the plan can be built
+                  from there.
+                </p>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setState(null);
+                    setAttempt((a) => a + 1);
+                  }}
+                >
+                  Try again
+                </Button>
+              </div>
             )}
           </div>
 
