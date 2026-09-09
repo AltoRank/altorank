@@ -153,7 +153,8 @@ export default async function DashboardLayout({
   // `workspaces` is RLS-scoped to this agency, so its length is the count.
   const siteAllowance = siteAllowanceFrom(quota, workspaces.length);
 
-  const userName = (meta.name as string) || user?.email || "Account";
+  const profileName = typeof meta.name === "string" ? meta.name : undefined;
+  const userName = profileName || user?.email || "Account";
   const userInitials = (userName.match(/[A-Za-z0-9]/)?.[0] ?? "A").toUpperCase();
   const role = membership?.role ?? null;
 
@@ -238,6 +239,9 @@ export default async function DashboardLayout({
           hidden={hiddenNav}
           userName={userName}
           userInitials={userInitials}
+          userId={user?.id}
+          userEmail={user?.email}
+          userProfileName={profileName}
           memberCount={memberCount ?? undefined}
           role={role}
           quota={

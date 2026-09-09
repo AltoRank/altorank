@@ -35,8 +35,9 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   // wizard promises a thirty-day plan; on the free tier only the first week of
   // it can be written, and until now nothing said so (P1-A1). Null when
   // unmetered, and then there is nothing to qualify.
-  const quotaRead = requireAuth().then(({ agencyId, user }) => getRequestQuota(agencyId, user.email ?? null));
-  const [{ data: workspace }, { data: output }, quota, run] = await Promise.all([
+  const authRead = requireAuth();
+  const quotaRead = authRead.then(({ agencyId, user }) => getRequestQuota(agencyId, user.email ?? null));
+  const [{ data: workspace }, { data: output }, quota, run, auth] = await Promise.all([
     supabase
       .from("workspaces")
       // The account's answer rides along on the workspace's own account row,
@@ -55,6 +56,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
     // the run screen rather than on step 1. Same read /api/onboard/state
     // serves the polling; through the user's client, so RLS decides.
     latestRun(supabase, scopeId),
+    authRead,
   ]);
   if (!workspace) redirect("/workspaces");
 
@@ -68,6 +70,9 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   return (
     <OnboardingWizard
       workspaceId={workspace.id}
+      userId={auth.user.id}
+      userEmail={auth.user.email ?? undefined}
+      userProfileName={typeof auth.user.user_metadata.name === "string" ? auth.user.user_metadata.name : undefined}
       domain={workspace.domain ?? ""}
       // The same fallback the planner uses (app/actions/plan.ts) and the
       // same default the column carries since migration 042. This said 1,

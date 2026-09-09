@@ -9,6 +9,7 @@ import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { WorkspaceAccessPicker } from "@/components/settings/workspace-access-picker";
 import { INVITABLE_ROLES, ROLE_LABEL, EDITOR_LIMITS_COPY } from "@/lib/team/access";
 import { inputClass } from "@/components/settings/fields";
+import posthog from "posthog-js";
 
 /**
  * Invite, with a role and a choice of sites.
@@ -52,6 +53,10 @@ export function InviteMemberForm() {
                     { duration: 10_000 },
                   );
                 }
+                posthog.capture("team_invite_created", {
+                  role: fd.get("role") as string,
+                  workspace_access_count: access.length,
+                });
                 formRef.current?.reset();
                 setAccess([]);
                 setOpen(false);

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { generateReportAction } from "@/app/actions/reports";
 import { Button, Icons } from "@/components/ui";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
+import posthog from "posthog-js";
 
 /**
  * Which workspace gets reported on is a choice, not an accident. This took a
@@ -55,6 +56,7 @@ export function GenerateReportButton() {
           const end = fd.get("end") as string;
           try {
             await generateReportAction(target.id, start, end);
+            posthog.capture("report_generated", { workspace_id: target.id });
             setShowPicker(false);
           } catch (err) {
             toast.error(err instanceof Error ? err.message : "Could not generate the report.");

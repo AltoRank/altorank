@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { Icons } from "@/components/ui/icons";
 import { Avatar } from "@/components/ui/avatar";
 import { signOut } from "@/app/actions/auth";
+import posthog from "posthog-js";
 
 type Item =
   | { kind: "link"; label: string; href: string; icon: keyof typeof Icons }
@@ -20,6 +21,9 @@ type Item =
 type AccountMenuProps = {
   userName: string;
   userInitials: string;
+  userId?: string;
+  userEmail?: string;
+  userProfileName?: string;
   /** Second line under the name; null renders nothing rather than a guess. */
   subtitle: string | null;
   collapsed: boolean;
@@ -44,6 +48,9 @@ type AccountMenuProps = {
 export function AccountMenu({
   userName,
   userInitials,
+  userId,
+  userEmail,
+  userProfileName,
   subtitle,
   collapsed,
   openGuide,
@@ -53,6 +60,18 @@ export function AccountMenu({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuId = useId();
   const pathname = usePathname();
+  const identifiedUserId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!userId || identifiedUserId.current === userId) return;
+    if (identifiedUserId.current) posthog.reset();
+
+    posthog.identify(userId, {
+      ...(userEmail ? { email: userEmail } : {}),
+      ...(userProfileName ? { name: userProfileName } : {}),
+    });
+    identifiedUserId.current = userId;
+  }, [userEmail, userId, userProfileName]);
 
   // Close on route change; the menu is a launcher, not a place to stay.
   // Derived during render rather than in an effect so there is no extra pass.
@@ -114,7 +133,10 @@ export function AccountMenu({
     {
       kind: "action",
       label: "Log out",
-      onSelect: () => signOut(),
+      onSelect: () => {
+        posthog.reset();
+        signOut();
+      },
       icon: "signOut",
     },
   ];

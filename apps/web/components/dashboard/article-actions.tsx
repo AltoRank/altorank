@@ -7,6 +7,7 @@ import { Button, Icons, Dialog } from "@/components/ui";
 import { useOnboarding } from "@/components/onboarding/use-onboarding";
 import type { Workspace, Article } from "@/lib/types";
 import { suggestKeywords, type KeywordSuggestion } from "@/app/actions/recommendations";
+import posthog from "posthog-js";
 
 interface ArticleActionsProps {
   /** One workspace (detail page) or all of them (the global Articles page). */
@@ -125,6 +126,7 @@ export function ArticleActions({
       if (!articleId) throw new Error("The stream ended without a draft.");
 
       onboarding?.completeStep("generate-article");
+      posthog.capture("article_generated", { workspace_id: workspace.id });
       setOpen(false);
       router.push(`/content/${articleId}`);
     } catch (err) {

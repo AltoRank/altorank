@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { startDomainAudit } from "@/app/actions/audit";
 import { Button, Icons } from "@/components/ui";
+import posthog from "posthog-js";
 
 /**
  * `startDomainAudit` goes to some trouble to fail well: it marks the audit row
@@ -36,6 +37,7 @@ export function StartAuditButton({ workspaceId }: { workspaceId: string }) {
               toast.error(res.error, { duration: 12_000 });
               return;
             }
+            posthog.capture("audit_started", { workspace_id: workspaceId });
             router.refresh();
           } catch (err) {
             toast.error(err instanceof Error ? err.message : "Could not start the audit.");

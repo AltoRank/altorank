@@ -8,6 +8,12 @@ const nextConfig: NextConfig = {
   // normal `next dev`) refuses to start. The e2e config sets NEXT_DIST_DIR so
   // its server builds into its own directory; unset everywhere else.
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
+  // `E2E_STUBS` is a server-only flag everywhere else, but the PostHog client
+  // hook has to see it: it throws on a missing key in development so a local
+  // misconfiguration is loud, and the e2e runner is a development server with
+  // no key by design. Mirroring it under a NEXT_PUBLIC_ name is what gets it
+  // into the client bundle.
+  env: { NEXT_PUBLIC_E2E_STUBS: process.env.E2E_STUBS ?? "" },
   // Emits a self-contained server bundle with only the node_modules actually
   // reached, which is what makes the self-host image small enough to be worth
   // shipping. Vercel ignores this and uses its own adapter, so it is safe here.
