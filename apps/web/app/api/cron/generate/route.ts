@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
-import { duePlannedKeyword, fulfilPlannedEntry } from "@/lib/onboarding/plan";
+import { closeCoveredEntries, duePlannedKeyword, fulfilPlannedEntry } from "@/lib/onboarding/plan";
 import { profileIsUsable } from "@/lib/seo/topical-profile";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { canSpend } from "@/lib/billing/spend-gate";
@@ -262,6 +262,15 @@ async function run(request: Request) {
       const recommendations = await recommendKeywords(supabase, workspaceId, { limit: 1000 });
       // The calendar is a promise. If the plan says today is "<term>", write
       // that, and fall back to the live queue only when nothing is due.
+      // Retire entries the live queue already covered, or the plan writes the
+      // same keyword a second time on its scheduled day. Housekeeping: a
+      // failure here must not cost this workspace its draft, so it is reported
+      // and stepped over rather than thrown.
+      try {
+        await closeCoveredEntries(supabase, workspaceId);
+      } catch (err) {
+        console.warn("[cron/generate] could not close covered calendar entries:", err);
+      }
       const due = await duePlannedKeyword(supabase, workspaceId);
 
       // A due entry the plan cannot pay for is inactive, and the calendar says
@@ -281,8 +290,29 @@ async function run(request: Request) {
           continue;
         }
       }
-      const planned = due ? recommendations.find((r) => r.term === due.term) ?? null : null;
+      // The plan is a promise about a date, not a licence to write anything.
+      //
+      // `pickNextKeyword` is where the quality bar lives: it writes only what
+      // the recommender marked `write`, so out-of-reach terms, provider noise
+      // and keywords that argue against what the business sells never reach a
+      // draft. A due entry used to skip that check entirely - whatever the
+      // calendar named got written, however the recommender had judged it.
+      // "business without websites" was queued for qasimcode.com and would
+      // have been written despite `commercialFit` refusing it.
+      //
+      // So a refused plan entry falls back to the live queue, and the slot is
+      // still filled: the person was promised an article today, and the honest
+      // way to keep that is a keyword worth writing.
+      const plannedRec = due ? recommendations.find((r) => r.term === due.term) ?? null : null;
+      const planned = plannedRec?.action === "write" ? plannedRec : null;
+      const refusedPlan = due && plannedRec && !planned ? plannedRec : null;
       const next = planned ?? pickNextKeyword(recommendations);
+
+      // Said out loud in the run log: a plan quietly overruled is the kind of
+      // thing that is only ever noticed months later, from the calendar.
+      const overruled = refusedPlan
+        ? ` (the plan asked for "${refusedPlan.term}", refused: ${refusedPlan.reasons[0] ?? "not writable"})`
+        : "";
 
       if (!next) {
         results.push(
@@ -326,7 +356,17 @@ async function run(request: Request) {
       // Counted here, not before the call: a generation that threw consumed
       // time but produced nothing, and the bound is on articles written.
       written += 1;
-      if (due && planned) await fulfilPlannedEntry(supabase, due.entryId, result.articleId);
+      // Whichever keyword was written, today's slot is spent. Closing the
+      // entry either way stops the plan asking for the same day again, and
+      // rewrites it to the keyword actually used when the plan was overruled.
+      if (due) {
+        await fulfilPlannedEntry(
+          supabase,
+          due.entryId,
+          result.articleId,
+          planned ? undefined : { term: next.term, keywordId: next.keywordId },
+        );
+      }
 
       // Workspaces that publish automatically: stamp when the hold window
       // ends, so the review card and the email below can say it and the
@@ -373,7 +413,7 @@ async function run(request: Request) {
             status: "generated",
             keyword: next.term,
             articleId: result.articleId,
-            detail: `${result.wordCount} words, fact check ${result.factCheck.verdict}, chosen because ${next.reasons[0]}${notified}`,
+            detail: `${result.wordCount} words, fact check ${result.factCheck.verdict}, chosen because ${next.reasons[0]}${overruled}${notified}`,
           });
           continue;
         }
@@ -420,7 +460,7 @@ async function run(request: Request) {
         status: "generated",
         keyword: next.term,
         articleId: result.articleId,
-        detail: `${result.wordCount} words, fact check ${result.factCheck.verdict}, chosen because ${next.reasons[0]}${notified}`,
+        detail: `${result.wordCount} words, fact check ${result.factCheck.verdict}, chosen because ${next.reasons[0]}${overruled}${notified}`,
       });
     } catch (err) {
       // Two runs overlapped and the other one got there first (migration 074).
