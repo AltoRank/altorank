@@ -40,6 +40,7 @@ import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { fetchTermMetrics, type TermMetrics } from "./metrics";
 import { MIN_VOLUME } from "./funnel";
 import { buildPlaybookSeeds, brandFromDomain, type PlaybookId } from "./seeds";
+import { resolveCategory } from "./category";
 import { isOutOfReach } from "@/lib/seo/difficulty";
 import { commercialFit } from "@/lib/seo/commercial-fit";
 import { scoreRelevance, subjectVocabulary, type TopicalProfile } from "@/lib/seo/topical-profile";
@@ -113,10 +114,13 @@ export function harvestFromResearch(rows: ResearchRow[]): string[] {
 export function playbookCandidates(
   profile: BusinessProfile | null | undefined,
   domain: string,
+  /** The category the market searches for (`resolveCategory`); the description's first guess otherwise. */
+  category?: string | null,
 ): string[] {
   if (!profile) return [];
   const ctx = {
     brand: brandFromDomain(domain),
+    category: category ?? undefined,
     profile: {
       description: profile.description ?? "",
       audiences: profile.audiences ?? [],
@@ -220,9 +224,15 @@ export async function topUpKeywords(
     .not("research", "is", null);
 
   const harvested = harvestFromResearch((articles ?? []) as ResearchRow[]);
+  const businessForCategory = (ws.business_profile as BusinessProfile | null) ?? null;
+  const category = await resolveCategory(businessForCategory, brandFromDomain(String(ws.domain ?? "")), {
+    languageCode: options.locale ?? "en",
+    locationCode: options.locationCode,
+  });
   const playbook = playbookCandidates(
-    (ws.business_profile as BusinessProfile | null) ?? null,
+    businessForCategory,
     String(ws.domain ?? ""),
+    category.priced ? category.category : null,
   );
   // Which list a term came from, for provenance. Harvest wins a tie: it is the
   // one we have already paid for.

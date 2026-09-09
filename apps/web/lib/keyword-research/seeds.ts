@@ -234,6 +234,33 @@ export function categoryOf(
   profile: Pick<BusinessProfile, "description">,
   brand?: string | null,
 ): string | null {
+  return categoryCandidates(profile, brand)[0] ?? null;
+}
+
+/**
+ * Every phrase the description offers as the category, best guess first.
+ *
+ * One guess was the problem. packhub.io's description opens "PackHub is a
+ * scan-driven packout solution for fulfillment teams", so the category
+ * became "scan-driven packout" - the company's own coinage, which nobody has
+ * ever typed into a search box. Every playbook seed built on it ("scan-driven
+ * packout for 3pl providers", "what is scan-driven packout") priced at zero,
+ * the profile bought nothing, and the ads fallback filled the pool with
+ * Microsoft Teams. qasimcode.com's "appointment-based websites" was the same
+ * shape.
+ *
+ * The order is the description's own - pairs where the business says what it
+ * does, then single nouns - and is deliberately NOT second-guessed here: an
+ * earlier version demoted hyphenated pairs as likely coinages and promoted
+ * "clinics salons" over "appointment-based websites", which is worse. Which
+ * of these the market actually uses is a question only search volume answers,
+ * and that is `pickCategory`'s job.
+ */
+export function categoryCandidates(
+  profile: Pick<BusinessProfile, "description">,
+  brand?: string | null,
+  limit = 8,
+): string[] {
   const brandTokens = new Set(
     (brand ?? "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((t) => t.length > 2),
   );
@@ -242,9 +269,30 @@ export function categoryOf(
     if (brandTokens.has(first) || rest.some((w) => brandTokens.has(w))) return false;
     return !LEADING_VERBS.has(first);
   };
-  const nouns = keyNouns(profile.description, 8).filter(usable);
-  const pair = nouns.find((n) => n.includes(" "));
-  return pair ?? nouns[0] ?? null;
+  const nouns = keyNouns(profile.description, limit).filter(usable);
+  const pairs = nouns.filter((n) => n.includes(" "));
+  const singles = nouns.filter((n) => !n.includes(" "));
+  return [...pairs, ...singles].slice(0, limit);
+}
+
+/**
+ * The candidate the market searches for, given what a provider said about
+ * each. Highest volume wins; the description's own order breaks ties; a list
+ * nobody priced falls back to the first guess, which is what `categoryOf`
+ * always returned.
+ */
+export function pickCategory(
+  candidates: readonly string[],
+  metrics: ReadonlyMap<string, { volume: number | null }>,
+  minVolume = 50,
+): string | null {
+  let best: { term: string; volume: number } | null = null;
+  for (const term of candidates) {
+    const v = metrics.get(term.toLowerCase())?.volume ?? null;
+    if (v === null || v < minVolume) continue;
+    if (!best || v > best.volume) best = { term, volume: v };
+  }
+  return best?.term ?? candidates[0] ?? null;
 }
 
 export interface SeedContext {
@@ -451,13 +499,25 @@ export function audienceSeeds(
   business: SubjectFields | null | undefined,
   profile: { topTerms?: string[] | null } | null | undefined,
   domain?: string,
+  /**
+   * The category to build on, when the caller has one the market actually
+   * searches (`resolveCategory`). Without it the head is the profile's top
+   * term that also appears in the description - which for packhub.io was
+   * "pack", from a tagline that repeats it, so every audience seed read
+   * "shopify fulfillment pack".
+   */
+  head?: string | null,
 ): AudienceSeed[] {
   if (!business?.audiences?.length) return [];
-  const head = categoryHead(business, profile, domain);
-  if (!head) return [];
+  const chosen = head?.trim().toLowerCase() || categoryHead(business, profile, domain);
+  if (!chosen) return [];
+  return audienceSeedsFor(business, chosen);
+}
+
+function audienceSeedsFor(business: SubjectFields, head: string): AudienceSeed[] {
   const seen = new Set<string>();
   const out: AudienceSeed[] = [];
-  for (const audience of business.audiences) {
+  for (const audience of business.audiences ?? []) {
     const a = audienceHead(audience);
     if (!a || a.includes(head) || seen.has(a)) continue;
     seen.add(a);

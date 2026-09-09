@@ -25,7 +25,8 @@ import { discoverKeywords, discoverKeywordsFromSeeds, fetchKeywordDifficulty, ty
 import { profileIsUsable, seedPhrasesFromPages, scoreRelevance, subjectVocabulary } from "@/lib/seo/topical-profile";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
-import { audienceSeeds, type AudienceSeed } from "@/lib/keyword-research/seeds";
+import { audienceSeeds, brandFromDomain, type AudienceSeed } from "@/lib/keyword-research/seeds";
+import { resolveCategory } from "@/lib/keyword-research/category";
 import { isOutOfReach, isHopeless } from "@/lib/seo/difficulty";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { dedupePermutations, dedupeTargets } from "@/lib/seo/keywords";
@@ -45,7 +46,7 @@ import { fetchDomainMetrics } from "@/lib/seo/domain-metrics";
 import { e2eStubsEnabled, stubAnalyseDomain } from "@/lib/e2e/stubs";
 
 export interface AnalysisLayer {
-  id: "readiness" | "crawl" | "pagespeed" | "platform" | "keywords" | "ranked_keywords" | "backlinks" | "authority";
+  id: "readiness" | "crawl" | "pagespeed" | "platform" | "keywords" | "ranked_keywords" | "backlinks" | "authority" | "category";
   status: "ok" | "unavailable" | "failed";
   detail: string;
 }
@@ -808,10 +809,29 @@ export async function analyseDomain(options: {
         // and already caps at MAX_SEEDS; the audiences take slots from the page
         // seeds rather than adding to them, so a signup costs exactly what it
         // costs today.
+        // Which of the description's phrases the market searches for, priced
+        // once (about a cent). The first guess was the tagline both times it
+        // was measured, and a tagline seeds nothing.
+        const category =
+          usable && depth === "full" && business
+            ? await resolveCategory(business, brandFromDomain(domain), {
+                languageCode: options.locale ?? "en",
+                locationCode: options.locationCode,
+              })
+            : null;
+        if (category) {
+          layers.push({
+            id: "category",
+            status: category.priced ? "ok" : "unavailable",
+            detail: category.priced
+              ? `"${category.category}", ${category.volume?.toLocaleString()} searches/mo, of ${category.candidates.length} phrases the description offered`
+              : `none of the ${category.candidates.length} phrases the description offered has search volume; seeding from "${category.category ?? "nothing"}"`,
+          });
+        }
         const seeds =
           usable && depth === "full"
             ? mergeSeeds(
-                audienceSeeds(business, profile, domain),
+                audienceSeeds(business, profile, domain, category?.priced ? category.category : null),
                 seedPhrasesFromPages(crawledPages, domain),
                 MAX_SEEDS,
               )
