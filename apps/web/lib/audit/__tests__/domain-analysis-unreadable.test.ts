@@ -22,6 +22,7 @@ const difficulty = vi.fn();
 const seeds = vi.fn();
 const gap = vi.fn();
 const insert = vi.fn();
+const update = vi.fn();
 
 vi.mock("@/lib/e2e/stubs", () => ({ e2eStubsEnabled: () => false, stubAnalyseDomain: vi.fn() }));
 vi.mock("../agent-readiness", () => ({ recordingFetcher: () => Object.assign(async () => ({ status: 0, headers: {}, body: "" }), { resources: new Map() }), runAgentReadiness: async () => ({ error: "not run in this test", score: 0, findings: [] }) }));
@@ -77,15 +78,22 @@ function supabase() {
         insert(table, rows);
         return { select: async () => ({ data: [] }) };
       },
-      update: () => ({ eq: async () => ({}) }),
+      update: (patch: Record<string, unknown>) => {
+        update(table, patch);
+        return { eq: async () => ({}) };
+      },
     }),
   } as never;
 }
 
+/** The last patch written to `workspaces`. */
+const workspacePatch = () =>
+  (update.mock.calls.filter((c) => c[0] === "workspaces").at(-1)?.[1] ?? {}) as Record<string, unknown>;
+
 const insertedTables = () => insert.mock.calls.map((c) => c[0] as string);
 
 beforeEach(() => {
-  for (const m of [ranked, discover, difficulty, seeds, gap, insert]) m.mockReset();
+  for (const m of [ranked, discover, difficulty, seeds, gap, insert, update]) m.mockReset();
   ranked.mockResolvedValue(junk);
   discover.mockResolvedValue([]);
   seeds.mockResolvedValue([]);
@@ -102,6 +110,20 @@ describe("a site with no readable text", () => {
     // The audit row itself is still written: the analysis happened and its
     // result is "nothing could be judged", which is a finding, not a failure.
     expect(insertedTables()).toContain("domain_audits");
+  });
+
+  it("counts the run as an attempt, and settles it: nothing fetched is not a blip", async () => {
+    // This file's crawler returns no pages at all, which the crawl layer
+    // reports as "blocked, redirected off-domain, or JavaScript-rendered" -
+    // a reason tomorrow will not change. That is a look, and it is stamped,
+    // with the attempt on record. The transient case, where the stamp is
+    // withheld and the attempts are bounded, is pinned in
+    // domain-analysis-crawl-retry.test.ts and first-look.test.ts.
+    const a = await analyseDomain({ domain: "example.com", supabase: supabase(), workspaceId: "w" });
+    expect(a.firstLook).toEqual({ attempts: 1, settled: true, reason: "unreachable" });
+    const patch = workspacePatch();
+    expect(patch.analysis_attempts).toBe(1);
+    expect(patch.first_analysed_at).toEqual(expect.any(String));
   });
 
   it("buys nothing else either: no gap, no seeded expansion, no ads fallback", async () => {

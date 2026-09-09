@@ -100,6 +100,25 @@ describe("analyseDomain — a crawl that keeps failing for a transient reason", 
     const a = await run();
     expect(a.pagesCrawled).toBe(0);
   });
+
+  it("counts the run as one attempt, so the nightly retries are bounded", async () => {
+    // Three in-run tries are one look that did not happen. The cron passes
+    // the count back in; see lib/audit/first-look.ts for the bound.
+    const a = await run();
+    expect(a.firstLook).toEqual({ attempts: 1, settled: false, reason: "retry" });
+  });
+
+  it("stamps the look once the attempts are spent: a host that times out every night is not retried for ever", async () => {
+    const a = await analyseDomain({
+      domain: "packhub.io",
+      supabase: supabase(),
+      workspaceId: "ws1",
+      crawlRetryDelaysMs: [0, 0],
+      analysisAttempts: 3,
+    });
+    expect(a.firstLook).toEqual({ attempts: 4, settled: true, reason: "gave-up" });
+    expect(stamped()).toBe(true);
+  });
 });
 
 describe("analyseDomain — a crawl that fails for a reason that will not change", () => {

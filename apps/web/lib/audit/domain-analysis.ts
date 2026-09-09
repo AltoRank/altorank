@@ -19,6 +19,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordingFetcher, runAgentReadiness, type ReadinessResult } from "./agent-readiness";
 import { crawlSite, usablePages, type CrawlOptions } from "./crawler";
+import { decideFirstLook, firstLookPatch, type FirstLookDecision } from "./first-look";
 import { runAuditChecks, calculateAuditScore } from "./checks";
 import { fetchPageSpeedDetailed } from "./pagespeed";
 import { discoverKeywords, discoverKeywordsFromSeeds, fetchKeywordDifficulty, type DiscoveredKeyword, storedCpc } from "@/lib/seo/keywords";
@@ -74,6 +75,12 @@ export interface DomainAnalysis {
   layers: AnalysisLayer[];
   /** One-line summary for a human skimming the workspace. */
   headline: string;
+  /**
+   * What this run did to the workspace's first-look state. Only set when the
+   * analysis was persisted (a `supabase` + `workspaceId` caller); undefined
+   * for the read-only callers that pass neither.
+   */
+  firstLook?: FirstLookDecision;
 }
 
 /** A discovered keyword plus, for a gap row, the rival that holds it. */
@@ -471,6 +478,12 @@ export async function analyseDomain(options: {
   maxPages?: number;
   /** How long to wait once when a host rate-bans the crawl. Tests pass 0. */
   rateBanWaitMs?: number;
+  /**
+   * `workspaces.analysis_attempts` as the caller read it, so a run that reads
+   * nothing can count itself. See lib/audit/first-look.ts. Omitted by callers
+   * that run once per workspace (onboarding), which is the same as 0.
+   */
+  analysisAttempts?: number;
 }): Promise<DomainAnalysis> {
   // E2E_STUBS: fixture keywords, no crawl, no provider, nothing measured (lib/e2e/stubs.ts).
   if (e2eStubsEnabled()) return stubAnalyseDomain(options);
@@ -1259,26 +1272,37 @@ export async function analyseDomain(options: {
     });
 
     // `first_analysed_at` means "we have looked". A crawl that got nothing for
-    // a transient reason is not a look, and stamping it anyway is what made
-    // packhub.io's blip permanent: cron/analyze selects on this column being
+    // a transient reason is not a look, and stamping it anyway is what made a
+    // signup's blip permanent: cron/analyze selects on this column being
     // null, so the stamp was also the decision never to try again. Left null,
     // the next cron slot does the first look properly. A domain that cannot
     // be looked at - no DNS, a bad certificate, an HTTP refusal - is stamped
     // as before, because the answer tomorrow would be the same and the run
     // would buy the same provider calls to hear it.
+    //
+    // "Left null" is bounded, though: lib/audit/first-look.ts counts the
+    // attempts, and a host that times out on every nightly look is stamped
+    // after MAX_ANALYSIS_ATTEMPTS rather than retried until somebody reads the
+    // cron log. The count comes from the caller (`options.analysisAttempts`):
+    // the cron is the only repeated caller and it selects the column; the
+    // onboarding run is by definition the first attempt and passes nothing.
     const crawlLayer = layers.find((l) => l.id === "crawl");
     const crawlReason = crawlLayer?.status === "failed" ? crawlLayer.detail : null;
     // A host that rate-banned the crawl before it read a page has not been
-    // looked at either: the nightly pass, which arrives alone and unhurried,
-    // gets the first look instead.
-    const looked =
-      crawlLayer?.status === "ok" ||
-      (!isTransientCrawlFailure(crawlReason) && !(crawlRateLimited && pagesCrawled === 0));
+    // looked at either: that is a blip on the same terms as a timeout, and
+    // the nightly pass, which arrives alone and unhurried, gets a bounded
+    // number of further looks (lib/audit/first-look.ts).
+    const firstLook = decideFirstLook({
+      attemptsBefore: options.analysisAttempts ?? 0,
+      pagesCrawled,
+      failedForGood:
+        crawlReason !== null && !isTransientCrawlFailure(crawlReason) && !(crawlRateLimited && pagesCrawled === 0),
+    });
 
     await supabase
       .from("workspaces")
       .update({
-        ...(looked ? { first_analysed_at: now } : {}),
+        ...firstLookPatch(firstLook, now),
         // The timestamp on every run, so the editor can tell "we fetched the
         // site and found no CMS we can post to" from "nobody has looked yet";
         // those used to be the same null and got the same "connect a CMS"
@@ -1291,6 +1315,8 @@ export async function analyseDomain(options: {
         ...(profile ? { topical_profile: profile } : {}),
       })
       .eq("id", workspaceId);
+
+    analysis.firstLook = firstLook;
   }
 
   return analysis;
