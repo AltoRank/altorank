@@ -40,6 +40,8 @@ export function PlanCards({
   returnTo,
   canManage,
   cancelHandledBelow = false,
+  trialEligible = false,
+  trialEndsLabel = null,
 }: {
   plans: PlanCard[];
   /** The tier actually being paid for, or null when nothing is. */
@@ -76,6 +78,13 @@ export function PlanCards({
    * than offering a second, shorter door to the same place.
    */
   cancelHandledBelow?: boolean;
+  /**
+   * Whether choosing a hosted plan here opens the seven-day card trial.
+   * True until the account has had its one trial (lib/billing/trial.ts).
+   */
+  trialEligible?: boolean;
+  /** "Trial ends in 3 days" while the current plan is a trial, else null. */
+  trialEndsLabel?: string | null;
 }) {
   const [pending, start] = useTransition();
   const locked = canManage === false;
@@ -219,7 +228,7 @@ export function PlanCards({
                     disabled={pending}
                     className="w-full justify-center"
                   >
-                    {isActive ? `Switch to ${p.label}` : `Choose ${p.label}`}
+                    {isActive ? `Switch to ${p.label}` : trialEligible ? `Try ${p.label} free for 7 days` : `Choose ${p.label}`}
                   </Button>
                 )}
               </div>
@@ -249,12 +258,18 @@ export function PlanCards({
               end. Your workspaces, articles and history stay readable afterwards.
             </>
           )
+        ) : trialEligible ? (
+          <>
+            Seven days free with a card, then the plan price. Cancel from this
+            page before the trial ends and nothing is charged.
+          </>
         ) : (
           <>
-            No trial. Nothing is charged until you choose a plan here, and you
-            can cancel it yourself from this page.
+            Nothing is charged until you choose a plan here, and you can cancel
+            it yourself from this page.
           </>
         )}{" "}
+        {trialEndsLabel ? <>{trialEndsLabel}; the first charge is then, and cancelling before it costs nothing.{" "}</> : null}
         Every feature is also in the open-source build — the paid rungs cover
         hosting, model and data costs, volume and support, not unlocks.
       </p>

@@ -36,6 +36,8 @@ import { appLink } from "@/lib/app-url";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_2, EMAIL_INK_3 } from "./layout";
 import { formatGraceDate } from "@/lib/billing/dunning";
 import { FREE_DRAFTS } from "@/lib/billing/quota";
+import { TRIAL_DAYS } from "@/lib/stripe";
+import { formatTrialDate } from "@/lib/billing/trial";
 import { wizardStepPath } from "@/lib/onboarding/steps";
 import { sendOnce, type RenderedEmail, type SendOnceOutcome } from "./send-once";
 
@@ -416,6 +418,68 @@ export function renderPlanChanged(a: PlanChangedEmail): RenderedEmail {
   };
 }
 
+export type TrialStartedEmail = {
+  planLabel: string;
+  /** "€69/mo" style. */
+  planPrice: string;
+  /** ISO end of the trial. */
+  endsAt: string;
+};
+
+/**
+ * The card was taken. Says the one thing that matters about a card trial -
+ * the date of the first charge - and where to stop it before then. Sent from
+ * the checkout webhook, once per subscription.
+ */
+export function renderTrialStarted(a: TrialStartedEmail): RenderedEmail {
+  const ends = formatTrialDate(a.endsAt);
+  return {
+    subject: `Your ${TRIAL_DAYS}-day trial of ${a.planLabel} has started`,
+    preheader: `First charge on ${ends} unless you cancel before then.`,
+    footerNote: `Sent because you manage billing for this AltoRank account.`,
+    html:
+      heading(`You are on ${a.planLabel}, free until ${ends}`) +
+      emailParagraph(
+        `Approve and publish are open, and the schedule keeps writing at the plan's pace. Your card is on file and <strong>the first charge, ${esc(a.planPrice)}, is on ${esc(ends)}</strong>.`,
+      ) +
+      emailParagraph(
+        `If you would rather not be charged, cancel from the Billing page before that date. It takes one confirmation, nothing is charged, and your articles stay readable.`,
+      ) +
+      emailButton(appLink("/articles?status=review"), "Open my drafts") +
+      emailParagraph(`We will email you three days before the trial ends.`),
+  };
+}
+
+export type TrialEndingEmail = {
+  planLabel: string;
+  planPrice: string;
+  /** ISO end of the trial, or null when Stripe did not say. */
+  endsAt: string | null;
+};
+
+/**
+ * Three days out. Stripe's `customer.subscription.trial_will_end`, relayed
+ * in our words: the date, the amount, and the button that stops it. Not sent
+ * when a cancellation is already scheduled.
+ */
+export function renderTrialEnding(a: TrialEndingEmail): RenderedEmail {
+  const ends = a.endsAt ? formatTrialDate(a.endsAt) : "in three days";
+  return {
+    subject: `Your trial ends ${a.endsAt ? `on ${ends}` : ends}`,
+    preheader: `${a.planPrice} on ${ends} unless you cancel first.`,
+    footerNote: `Sent because you manage billing for this AltoRank account.`,
+    html:
+      heading(`${a.planLabel} starts billing ${a.endsAt ? `on ${ends}` : ends}`) +
+      emailParagraph(
+        `Your ${TRIAL_DAYS}-day trial is nearly over. On ${esc(ends)} the card on file is charged <strong>${esc(a.planPrice)}</strong> and the plan continues as it is now.`,
+      ) +
+      emailParagraph(
+        `To keep going there is nothing to do. To stop, cancel from the Billing page before then: one confirmation, no charge, and everything already written stays readable.`,
+      ) +
+      emailButton(appLink("/settings/billing"), "Open billing"),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Account
 // ---------------------------------------------------------------------------
@@ -460,7 +524,7 @@ export function renderWelcome(a: WelcomeEmail): RenderedEmail {
       ) +
       emailButton(appLink("/dashboard"), "Open the dashboard") +
       emailParagraph(
-        `Your first ${FREE_DRAFTS} articles are free and nothing is charged until you choose a plan - there is no trial running out and no card on file. When the schedule writes a draft for you we will email you about it; you can turn those off from any of them.`,
+        `Your first ${FREE_DRAFTS} articles are free to read, and no card is on file until you start the ${TRIAL_DAYS}-day trial that lets you approve and publish them. When the schedule writes a draft for you we will email you about it; you can turn those off from any of them.`,
       ),
   };
 }
@@ -935,6 +999,36 @@ export async function notifyPlanChanged(
     to,
     { type: "plan_changed", subjectId: `${accountId}:${changeKey}`, category: "billing", accountId },
     () => renderPlanChanged(data),
+  );
+}
+
+export async function notifyTrialStarted(
+  supabase: SupabaseClient,
+  agencyId: string,
+  data: TrialStartedEmail,
+  subscriptionId: string,
+): Promise<SendOnceOutcome> {
+  const to = await agencyBillingRecipients(supabase, agencyId);
+  return sendOnce(
+    supabase,
+    to,
+    { type: "trial_started", subjectId: `${agencyId}:${subscriptionId}`, category: "billing", agencyId },
+    () => renderTrialStarted(data),
+  );
+}
+
+export async function notifyTrialEnding(
+  supabase: SupabaseClient,
+  agencyId: string,
+  data: TrialEndingEmail,
+  subscriptionId: string,
+): Promise<SendOnceOutcome> {
+  const to = await agencyBillingRecipients(supabase, agencyId);
+  return sendOnce(
+    supabase,
+    to,
+    { type: "trial_ending", subjectId: `${agencyId}:${subscriptionId}`, category: "billing", agencyId },
+    () => renderTrialEnding(data),
   );
 }
 

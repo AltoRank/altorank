@@ -48,7 +48,7 @@ export function renderConfirmSignup(url: string, email: string) {
       `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">Confirm your email</h1>` +
       emailParagraph("One click and your account is live. Your workspace is already set up; the first thing you will see is what your site ranks for.") +
       emailButton(url, "Confirm my email") +
-      emailParagraph("The link expires in 24 hours. Nothing is charged: there is no trial and no card on file until you choose a plan.") +
+      emailParagraph("The link expires in 24 hours. Nothing is charged and no card is asked for until you have read your first drafts.") +
       fallbackLine(url),
   };
 }

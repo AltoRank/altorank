@@ -57,6 +57,7 @@ import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
 import { onboardingOutcome, shouldResumeRun, type OnboardingRunSnapshot, type OnboardingState } from "@/lib/onboarding/events";
 import { freeAllowanceClause } from "@/lib/onboarding/copy";
+import { TrialOffer } from "@/components/billing/trial-offer";
 import { SITE_STEPS, stepFromParam, stepIndex } from "@/lib/onboarding/steps";
 import posthog from "posthog-js";
 
@@ -79,6 +80,7 @@ export function OnboardingWizard({
   domain,
   weeklyLimit,
   freeDrafts,
+  trialEligible = false,
   initialProfile,
   initialSite,
   initialOutput,
@@ -103,6 +105,12 @@ export function OnboardingWizard({
    * time the calendar is opened. Nothing said so (P1-A1).
    */
   freeDrafts: number | null;
+  /**
+   * Whether the run screen may end with the card ask. True on a fresh cloud
+   * account; false on self-host, for operators, and once the account has had
+   * its trial (lib/billing/trial.ts).
+   */
+  trialEligible?: boolean;
   initialProfile: BusinessProfile | null;
   initialSite: SiteDetails;
   initialOutput: OutputSettings;
@@ -303,7 +311,7 @@ export function OnboardingWizard({
   }
 
   if (running) {
-    return <RunScreen workspaceId={workspaceId} domain={domain} weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} initialRun={resumed} />;
+    return <RunScreen workspaceId={workspaceId} domain={domain} weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} trialEligible={trialEligible} initialRun={resumed} />;
   }
 
   if (reading || !profile) return <ReadingSite domain={domain} />;
@@ -638,12 +646,14 @@ function RunScreen({
   domain,
   weeklyLimit,
   freeDrafts,
+  trialEligible,
   initialRun,
 }: {
   workspaceId: string;
   domain: string;
   weeklyLimit: number;
   freeDrafts: number | null;
+  trialEligible: boolean;
   initialRun: OnboardingRunSnapshot | null;
 }) {
   const router = useRouter();
@@ -765,6 +775,18 @@ function RunScreen({
               </div>
             )}
           </div>
+
+          {/* The card ask, and only now: the drafts above exist, the person
+              has seen what the product wrote for them, and what the trial
+              buys is the next step (approve, publish, keep the schedule
+              writing). Reading the draft first stays the other button. Not
+              shown when the run produced nothing to read, because a trial
+              offered over an empty plan asks for a card against nothing. */}
+          {finished && trialEligible && (planned.length > 0 || draft) && (
+            <div className="mt-4">
+              <TrialOffer returnTo={next.href} secondary={{ href: next.href, label: `${next.label} first` }} />
+            </div>
+          )}
 
         </div>
       </div>

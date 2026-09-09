@@ -80,6 +80,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       // article a week" for a site the planner would schedule seven for.
       weeklyLimit={workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE}
       freeDrafts={quota.reason === "no-plan" ? Math.max(0, quota.remaining ?? 0) : null}
+      trialEligible={quota.reason === "no-plan" && Boolean(quota.trialEligible)}
       initialProfile={(workspace.business_profile as BusinessProfile | null) ?? null}
       initialSite={{
         sitemapUrl: workspace.sitemap_url ?? "",

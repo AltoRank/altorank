@@ -245,3 +245,29 @@ describe("a Stripe refusal reaches the person who pressed the button", () => {
   // per call so a rotated id takes effect on the next webhook - so a test
   // cannot unset one after importing the action.
 });
+
+describe("the seven-day card trial", () => {
+  it("adds trial days and insists on a card for a first subscription", async () => {
+    await choose("starter");
+    expect(checkoutCreate.mock.calls[0][0]).toMatchObject({
+      payment_method_collection: "always",
+      subscription_data: {
+        trial_period_days: 7,
+        trial_settings: { end_behavior: { missing_payment_method: "cancel" } },
+      },
+    });
+  });
+
+  it("does not trial an account that already had one", async () => {
+    agencyRow = {
+      stripe_customer_id: "cus_1",
+      stripe_subscription_id: null,
+      plan_status: "canceled",
+      trial_ends_at: "2026-09-16T00:00:00Z",
+    };
+    await choose("starter");
+    const args = checkoutCreate.mock.calls[0][0];
+    expect(args.payment_method_collection).toBeUndefined();
+    expect(args.subscription_data.trial_period_days).toBeUndefined();
+  });
+});

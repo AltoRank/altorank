@@ -2,7 +2,8 @@
 
 import { requireAuth } from "@/lib/auth/require-auth";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { getStripe, PLAN_PRICE_IDS, stripeTaxEnabled } from "@/lib/stripe";
+import { getStripe, PLAN_PRICE_IDS, stripeTaxEnabled, TRIAL_DAYS } from "@/lib/stripe";
+import { trialEligible } from "@/lib/billing/trial";
 import type { SelfServePlan, BillingInterval } from "@/lib/stripe";
 import { subscriptionSwitchable } from "@/lib/billing/plan-switch";
 import { billingFailure, type BillingRedirect } from "@/lib/billing/failure";
@@ -48,7 +49,7 @@ export async function createCheckoutSession(
 
   const { data: account } = await supabase
     .from("accounts")
-    .select("stripe_customer_id, stripe_subscription_id, plan_status")
+    .select("stripe_customer_id, stripe_subscription_id, plan_status, trial_ends_at")
     .eq("id", accountId)
     .single();
 
@@ -80,6 +81,14 @@ export async function createCheckoutSession(
   // would do to the amount that arrives.
   const addTax = stripeTaxEnabled && (await priceIsTaxExclusive(getStripe(), priceId));
 
+  // The seven-day trial, on a first subscription only. `payment_method_collection:
+  // "always"` is the whole point: Stripe's default for a trial is
+  // `if_required`, which skips the card and then pauses the subscription on
+  // day eight, and `missing_payment_method: "cancel"` is the matching belt for
+  // a card that somehow was not saved. An account that already trialed pays
+  // from today (lib/billing/trial.ts).
+  const withTrial = trialEligible(account);
+
   let session;
   try {
     session = await getStripe().checkout.sessions.create({
@@ -87,6 +96,7 @@ export async function createCheckoutSession(
       line_items: [{ price: priceId, quantity: 1 }],
       customer: account?.stripe_customer_id ?? undefined,
       client_reference_id: accountId,
+      ...(withTrial ? { payment_method_collection: "always" as const } : {}),
       // metadata on both the session and the subscription so the webhook can map
       // any subscription event back to the account regardless of which fires first.
       //
@@ -96,7 +106,15 @@ export async function createCheckoutSession(
       // can never leave the account on the `starter` column default while the
       // customer is paying for Agency (2026-09-06).
       metadata: { account_id: accountId, plan, interval },
-      subscription_data: { metadata: { account_id: accountId, plan, interval } },
+      subscription_data: {
+        metadata: { account_id: accountId, plan, interval },
+        ...(withTrial
+          ? {
+              trial_period_days: TRIAL_DAYS,
+              trial_settings: { end_behavior: { missing_payment_method: "cancel" as const } },
+            }
+          : {}),
+      },
       // VAT, added at checkout rather than folded into the price.
       //
       // Nothing here handled tax before, so exactly EUR 69 / EUR 199 was charged
