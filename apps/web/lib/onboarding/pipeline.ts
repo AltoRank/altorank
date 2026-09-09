@@ -234,9 +234,16 @@ async function runPhases(
             ? `Found ${keywordsFound.toLocaleString()} keyword${keywordsFound === 1 ? "" : "s"} worth tracking.`
             : willRetry
               ? `We could not reach your site just now (${crawlFailed}). The next look is already scheduled; keywords and the plan will follow without you doing anything.`
-              : why
-                ? `${why.charAt(0).toUpperCase()}${why.slice(1)}. Add a keyword by hand from Keywords, or connect Search Console, and the plan can be built from there.`
-                : "Nothing rankable found for this site yet.",
+              : crawlFailed
+                // The crawl failed for a reason that will not clear on its own.
+                // Say the reason - it is the one fact that lets anyone act, and
+                // the version that hid it behind "too little readable text" cost
+                // a day of guessing about packhub.io. The run row is the only
+                // place this reason is persisted.
+                ? `Your site could not be read (${crawlFailed}). Add a keyword by hand from Keywords, or connect Search Console, and the plan can be built from there.`
+                : why
+                  ? `${why.charAt(0).toUpperCase()}${why.slice(1)}. Add a keyword by hand from Keywords, or connect Search Console, and the plan can be built from there.`
+                  : "Nothing rankable found for this site yet.",
         keywordsFound,
       });
     } catch (err) {
