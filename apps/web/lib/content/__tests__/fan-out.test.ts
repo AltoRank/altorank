@@ -4,6 +4,7 @@ import {
   MAX_ARTICLES_PER_RUN,
   OBSERVED_SECONDS_PER_ARTICLE,
   RUN_BUDGET_SECONDS,
+  roomForAnother,
 } from "../generate-queue";
 
 const targets = (n: number) =>
@@ -61,12 +62,12 @@ describe("fanOutDrafts", () => {
   });
 
   it("the arithmetic this exists for: a week does not fit in one invocation", () => {
-    // Why fan out at all. Two sequential drafts fit in a 300s function and
-    // three do not, which is why cron/generate caps at two - so seven can only
-    // be fast if they are seven invocations.
-    expect(OBSERVED_SECONDS_PER_ARTICLE * MAX_ARTICLES_PER_RUN).toBeLessThan(RUN_BUDGET_SECONDS);
-    expect(OBSERVED_SECONDS_PER_ARTICLE * (MAX_ARTICLES_PER_RUN + 1)).toBeGreaterThan(RUN_BUDGET_SECONDS);
-    // And one fan-out draft is comfortably inside its own budget.
+    // Why fan out at all. One draft fits in a 300s function; at today's 209s
+    // a second does not, so seven can only be fast if they are seven
+    // invocations. The cron's count cap stays at two as a ceiling; the clock
+    // (`roomForAnother`) is what actually decides.
     expect(OBSERVED_SECONDS_PER_ARTICLE).toBeLessThan(RUN_BUDGET_SECONDS);
+    expect(OBSERVED_SECONDS_PER_ARTICLE * MAX_ARTICLES_PER_RUN).toBeGreaterThan(RUN_BUDGET_SECONDS);
+    expect(roomForAnother(OBSERVED_SECONDS_PER_ARTICLE * 1000, OBSERVED_SECONDS_PER_ARTICLE * 1000)).toBe(false);
   });
 });
