@@ -48,7 +48,7 @@ vi.mock("@/lib/seo/recommendations", () => ({
   ],
   pickNextKeyword: (recs: { action: string; quality: string }[]) => recs.find((r) => r.action === "write" && r.quality === "ok") ?? null,
 }));
-vi.mock("@/lib/onboarding/plan", () => ({ duePlannedKeyword: async () => null, fulfilPlannedEntry: async () => {} }));
+vi.mock("@/lib/onboarding/plan", () => ({ duePlannedKeyword: async () => null, fulfilPlannedEntry: async () => {}, closeCoveredEntries: async () => 0 }));
 vi.mock("@/lib/billing/quota", () => ({ getQuota: async () => ({ limit: null, remaining: null }), quotaExceededMessage: () => "quota" }));
 // The cron asks the spend gate before it asks the quota (a lapsed card, a
 // cancelled subscription and a paused account all stop it, not just an empty

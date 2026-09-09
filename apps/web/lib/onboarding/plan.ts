@@ -496,17 +496,88 @@ export async function duePlannedKeyword(
   return { entryId: data.id as string, keywordId: (data.keyword_id as string | null) ?? null, term: data.keyword as string };
 }
 
-/** Mark a planned entry as written, and its keyword as drafting. */
-export async function fulfilPlannedEntry(supabase: SupabaseClient, entryId: string, articleId: string): Promise<void> {
+/**
+ * Mark a planned entry as written, and its keyword as drafting.
+ *
+ * `wrote` is what the run actually produced. It differs from the entry's own
+ * keyword when the plan named a term the recommender now refuses - out of
+ * reach, provider noise, or arguing against what the business sells - and the
+ * run wrote the best available keyword into that day's slot instead. The entry
+ * is rewritten to say so, because a calendar that still shows the refused term
+ * beside the article is lying about what happened.
+ */
+export async function fulfilPlannedEntry(
+  supabase: SupabaseClient,
+  entryId: string,
+  articleId: string,
+  wrote?: { term: string; keywordId: string | null },
+): Promise<void> {
+  const patch: Record<string, unknown> = { article_id: articleId, status: "scheduled" };
+  if (wrote) {
+    patch.keyword = wrote.term;
+    if (wrote.keywordId) patch.keyword_id = wrote.keywordId;
+  }
   const { data } = await supabase
     .from("calendar_entries")
-    .update({ article_id: articleId, status: "scheduled" })
+    .update(patch)
     .eq("id", entryId)
     .select("keyword_id")
     .maybeSingle();
   if (data?.keyword_id) {
     await supabase.from("keywords").update({ status: "drafting" }).eq("id", data.keyword_id);
   }
+}
+
+/**
+ * Close queued entries whose keyword has already been written.
+ *
+ * `duePlannedKeyword` only skips entries carrying an `article_id`, and only
+ * the planned path ever sets one. An article the live queue picked for a term
+ * that also sits in the calendar leaves that entry open, so the plan comes
+ * back for the same keyword on its scheduled day and writes it a second time.
+ * qasimcode.com had two of these queued on 2026-09-09, each for a keyword it
+ * had already published.
+ *
+ * Attaches the existing article and returns how many entries it closed.
+ */
+export async function closeCoveredEntries(
+  supabase: SupabaseClient,
+  workspaceId: string,
+): Promise<number> {
+  const { data: open } = await supabase
+    .from("calendar_entries")
+    .select("id, keyword_id, keyword")
+    .eq("workspace_id", workspaceId)
+    .eq("status", "queue")
+    .is("article_id", null);
+  const entries = (open ?? []) as { id: string; keyword_id: string | null; keyword: string | null }[];
+  if (entries.length === 0) return 0;
+
+  const { data: written } = await supabase
+    .from("articles")
+    .select("id, keyword_id, keyword")
+    .eq("workspace_id", workspaceId);
+  const articles = (written ?? []) as { id: string; keyword_id: string | null; keyword: string | null }[];
+  if (articles.length === 0) return 0;
+
+  const byKeywordId = new Map<string, string>();
+  const byTerm = new Map<string, string>();
+  for (const a of articles) {
+    if (a.keyword_id && !byKeywordId.has(a.keyword_id)) byKeywordId.set(a.keyword_id, a.id);
+    const term = a.keyword?.trim().toLowerCase();
+    if (term && !byTerm.has(term)) byTerm.set(term, a.id);
+  }
+
+  let closed = 0;
+  for (const e of entries) {
+    const articleId =
+      (e.keyword_id ? byKeywordId.get(e.keyword_id) : undefined) ??
+      byTerm.get(e.keyword?.trim().toLowerCase() ?? "");
+    if (!articleId) continue;
+    await fulfilPlannedEntry(supabase, e.id, articleId);
+    closed += 1;
+  }
+  return closed;
 }
 
 // ---------------------------------------------------------------------------
