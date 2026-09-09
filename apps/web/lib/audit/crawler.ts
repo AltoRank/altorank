@@ -7,6 +7,36 @@ import { fetchLenient, isTlsChainError } from "./lenient-fetch";
 const CRAWLER_UA =
   "Mozilla/5.0 (compatible; AltoRank-Auditor/1.0; +https://altorank.co; site audit)";
 
+/**
+ * The request shape the wizard's site reader uses, which some hosts admit
+ * when they refuse the one above.
+ *
+ * packhub.io, 2026-09-09: from Vercel, this crawler and the readiness check
+ * got HTTP 403 on every page, in the same invocation in which the wizard's
+ * reader - "AltoRankBot/1.0 (content analysis)", no "Mozilla/5.0
+ * (compatible; ...)" prefix - had just read the homepage. From a residential
+ * address every agent got 200. That is the common bot-management rule:
+ * datacenter address plus a "compatible;" agent string is treated as a scraper,
+ * a plain product token is not. Two onboarding runs declared the site
+ * unreadable on the strength of it. A 403 for this crawler is therefore tried
+ * once more the way the reader asks, before it is believed.
+ */
+export const FALLBACK_UA = "AltoRankBot/1.0 (content analysis)";
+
+/** Statuses a bot rule returns; anything else is the site's real answer. */
+const REFUSED = new Set([403, 406, 429]);
+
+async function fetchPage(url: string, signal: AbortSignal): Promise<Response> {
+  const res = await fetch(url, { signal, headers: { "User-Agent": CRAWLER_UA }, redirect: "follow" });
+  if (!REFUSED.has(res.status)) return res;
+  const again = await fetch(url, {
+    signal,
+    headers: { "User-Agent": FALLBACK_UA, Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8" },
+    redirect: "follow",
+  });
+  return again.ok ? again : res;
+}
+
 export function describeFetchError(err: unknown): string {
   const e = err as { name?: string; message?: string; cause?: { code?: string } };
   const code = e?.cause?.code;
@@ -71,11 +101,7 @@ export async function crawlSite(
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
 
-      const res = await fetch(item.url, {
-        signal: controller.signal,
-        headers: { "User-Agent": CRAWLER_UA },
-        redirect: "follow",
-      });
+      const res = await fetchPage(item.url, controller.signal);
 
       clearTimeout(timeout);
       const loadTimeMs = Date.now() - start;
