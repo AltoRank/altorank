@@ -5,6 +5,7 @@ import {
   latestPerWorkspace,
   MAX_ARTICLES_PER_RUN,
   OBSERVED_SECONDS_PER_ARTICLE,
+  roomForAnother,
   RUN_BUDGET_SECONDS,
 } from "./generate-queue";
 
@@ -79,20 +80,28 @@ describe("orderByStaleness", () => {
 });
 
 describe("MAX_ARTICLES_PER_RUN", () => {
-  it("fits inside the function's budget at the measured cost of a draft", () => {
-    // The guard this file exists for. The cap was 3 on an estimate; the first
-    // production run measured a draft at 103 seconds, which makes 3 about 310
-    // against a 300-second function. Raising the cap without also raising
-    // maxDuration or making a draft cheaper should fail here rather than time
-    // out mid-write and leave a row stuck in `drafting`.
-    expect(MAX_ARTICLES_PER_RUN * OBSERVED_SECONDS_PER_ARTICLE).toBeLessThan(RUN_BUDGET_SECONDS);
+  it("one draft fits inside the function's budget at the measured cost", () => {
+    // The guard this file exists for, in its current shape. The cap was 3 on
+    // an estimate, then 2 on a 103-second measurement; on 2026-09-09 a draft
+    // measured 209 seconds and the second of a run was killed under the
+    // 300-second wall. So the count is a ceiling and `roomForAnother` - the
+    // clock - is the bound. A draft that no longer fits at all should fail here
+    // rather than time out on every run.
+    expect(OBSERVED_SECONDS_PER_ARTICLE).toBeLessThan(RUN_BUDGET_SECONDS);
   });
 
-  it("leaves enough headroom for a draft that runs slower than the average", () => {
-    // 103s is one sample. A cap that only just fits would overrun on any draft
-    // above the mean, so require room for a 40% slower one.
-    const slowest = OBSERVED_SECONDS_PER_ARTICLE * 1.4;
-    expect(MAX_ARTICLES_PER_RUN * slowest).toBeLessThan(RUN_BUDGET_SECONDS);
+  it("the clock refuses a second draft the budget cannot hold", () => {
+    // Exactly the run that was killed: 209s spent, last draft 209s.
+    expect(roomForAnother(OBSERVED_SECONDS_PER_ARTICLE * 1000, OBSERVED_SECONDS_PER_ARTICLE * 1000)).toBe(false);
+  });
+
+  it("leaves headroom for a draft that runs slower than the observation", () => {
+    // The reserve carries a 20% margin over the slower of last-draft and
+    // observation, so a run never starts a draft it can only just fit.
+    const budget = RUN_BUDGET_SECONDS * 1000;
+    const reserve = OBSERVED_SECONDS_PER_ARTICLE * 1000 * 1.2;
+    expect(roomForAnother(budget - reserve + 1, null)).toBe(false);
+    expect(roomForAnother(budget - reserve, null)).toBe(true);
   });
 
   it("agrees with the maxDuration the route actually declares", () => {
@@ -108,9 +117,11 @@ describe("MAX_ARTICLES_PER_RUN", () => {
     expect(Number(declared)).toBe(RUN_BUDGET_SECONDS);
   });
 
-  it("still writes more than one article per run", () => {
-    // Four runs a day at one each would be 4 a day, under the 100 a month the
-    // plan sells once several sites share the schedule.
+  it("still allows more than one article per run when the clock permits", () => {
+    // The count is a ceiling, not a promise: at today's 209s a run writes one
+    // and the clock refuses a second. Throughput beyond that is fan-out's job
+    // (lib/content/fan-out.ts), which is why a week of drafts is seven
+    // invocations rather than one bigger number here.
     expect(MAX_ARTICLES_PER_RUN).toBeGreaterThan(1);
   });
 });

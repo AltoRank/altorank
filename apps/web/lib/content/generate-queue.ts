@@ -15,8 +15,36 @@
  * skipped at their weekly limit, which costs a query each). Call it 103
  * seconds a draft: research, the model call, the fact check and the scoring
  * passes.
+ *
+ * Re-measured 2026-09-09, 18:49:39 to 18:53:08 UTC: 209 seconds. The draft
+ * now opens every cited page (#186) and checks every outbound link, and the
+ * model call itself is slower than it was in September's first week. The
+ * second draft of that run was started with 91 seconds left and killed at the
+ * 300-second wall, leaving a `drafting` row at zero words and a job that said
+ * `running` for the ten minutes it took the sweeper to notice.
  */
-export const OBSERVED_SECONDS_PER_ARTICLE = 103;
+export const OBSERVED_SECONDS_PER_ARTICLE = 209;
+
+/**
+ * Is there time left in this invocation to start another draft?
+ *
+ * A count was the wrong shape for this bound. Two drafts fit in five minutes
+ * only while a draft took 103 seconds; the day one took 209, the second was
+ * started anyway and the function was killed under it. What the run actually
+ * knows is how long its LAST draft took, which is the best estimate of the
+ * next, so that is what it reserves - never less than the recorded
+ * observation, because a draft that was quick is no promise the next is, and
+ * with a margin, because a kill costs a whole draft and a skip costs nothing:
+ * the next run is hours away and starts where this one stopped.
+ */
+export function roomForAnother(
+  elapsedMs: number,
+  lastDraftMs: number | null,
+  budgetMs: number = RUN_BUDGET_SECONDS * 1000,
+): boolean {
+  const expect = Math.max(lastDraftMs ?? 0, OBSERVED_SECONDS_PER_ARTICLE * 1000);
+  return budgetMs - elapsedMs >= expect * 1.2;
+}
 
 /**
  * The route's `maxDuration`, restated so the cap can be checked against it.

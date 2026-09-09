@@ -31,6 +31,7 @@ import {
   orderByStaleness,
   latestPerWorkspace,
   MAX_ARTICLES_PER_RUN,
+  roomForAnother,
 } from "@/lib/content/generate-queue";
 import { observedCron } from "@/lib/observability/cron";
 
@@ -163,6 +164,8 @@ async function run(request: Request) {
   const queue = orderByStaleness(workspaces ?? [], latestPerWorkspace(recent ?? []));
 
   let written = 0;
+  const runStart = Date.now();
+  let lastDraftMs: number | null = null;
 
   for (const ws of queue) {
     if (written >= MAX_ARTICLES_PER_RUN) {
@@ -171,6 +174,18 @@ async function run(request: Request) {
         domain: (ws.domain as string | null) ?? null,
         status: "skipped",
         detail: `run limit reached (${MAX_ARTICLES_PER_RUN}); the next run starts here`,
+      });
+      continue;
+    }
+    // The count above is the ceiling; the clock is the bound. A draft started
+    // without the time to finish is killed at the function limit and leaves a
+    // zero-word row for the sweeper - worse than not starting at all.
+    if (written > 0 && !roomForAnother(Date.now() - runStart, lastDraftMs)) {
+      results.push({
+        workspaceId: ws.id as string,
+        domain: (ws.domain as string | null) ?? null,
+        status: "skipped",
+        detail: `out of time this run (last draft took ${Math.round((lastDraftMs ?? 0) / 1000)}s); the next run starts here`,
       });
       continue;
     }
@@ -329,6 +344,7 @@ async function run(request: Request) {
         continue;
       }
 
+      const draftStart = Date.now();
       const result = await generateArticle({
         supabase,
         workspaceId,
@@ -356,6 +372,7 @@ async function run(request: Request) {
       // Counted here, not before the call: a generation that threw consumed
       // time but produced nothing, and the bound is on articles written.
       written += 1;
+      lastDraftMs = Date.now() - draftStart;
       // Whichever keyword was written, today's slot is spent. Closing the
       // entry either way stops the plan asking for the same day again, and
       // rewrites it to the keyword actually used when the plan was overruled.
