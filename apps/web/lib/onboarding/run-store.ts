@@ -32,7 +32,7 @@ export const RUN_COLUMNS =
  * that column, and /state hands its row to the browser, so it stays out of
  * RUN_COLUMNS rather than being shipped to every polling screen.
  */
-export const RUN_COLUMNS_WITH_AGENCY = `${RUN_COLUMNS}, agency_id`;
+export const RUN_COLUMNS_WITH_AGENCY = `${RUN_COLUMNS}, account_id`;
 
 const ARTICLE_COLUMNS = "id, title, keyword, word_count, fact_check_verdict, status";
 
@@ -73,7 +73,7 @@ export async function latestRun(
  */
 export async function startRun(
   supabase: SupabaseClient,
-  workspace: { id: string; agency_id: string },
+  workspace: { id: string; account_id: string },
   now = Date.now(),
 ): Promise<{ runId: string; created: boolean }> {
   const live = async () => {
@@ -98,7 +98,7 @@ export async function startRun(
 
   const { data, error } = await supabase
     .from("onboarding_runs")
-    .insert({ workspace_id: workspace.id, agency_id: workspace.agency_id })
+    .insert({ workspace_id: workspace.id, account_id: workspace.account_id })
     .select("id")
     .single();
   if (data) return { runId: (data as { id: string }).id, created: true };
@@ -171,7 +171,7 @@ export class RunRecorder {
       .update({ status, finished_at: now, updated_at: now })
       .eq("id", this.runId)
       .eq("status", "running")
-      .select("workspace_id, agency_id");
+      .select("workspace_id, account_id");
     if (error) console.error(`[onboarding] run ${this.runId}: could not finish: ${error.message}`);
     else await announceOutcome(this.supabase, this.runId, status, scopeOf(data), this.state.steps);
   }
@@ -191,7 +191,7 @@ export async function failRun(supabase: SupabaseClient, runId: string, reason: s
     .update({ status: "error", error: reason, finished_at: now, updated_at: now })
     .eq("id", runId)
     .eq("status", "running")
-    .select("workspace_id, agency_id");
+    .select("workspace_id, account_id");
   if (error) console.error(`[onboarding] run ${runId}: could not mark error: ${error.message}`);
   else await announceOutcome(supabase, runId, "error", scopeOf(data), null, reason);
 }
@@ -214,7 +214,7 @@ async function announceOutcome(
   supabase: SupabaseClient,
   runId: string,
   status: string,
-  scope: { workspaceId: string | null; agencyId: string | null },
+  scope: { workspaceId: string | null; accountId: string | null },
   steps: readonly { phase: string; status: string; detail?: string | null }[] | null,
   reason?: string,
 ): Promise<void> {
@@ -230,7 +230,7 @@ async function announceOutcome(
         status === "error"
           ? `Onboarding failed: ${reason ?? where[0] ?? "no reason recorded"}`
           : `Onboarding finished ${status}: ${where[0] ?? "the phases do not say which step fell short"}`,
-      agencyId: scope.agencyId,
+      accountId: scope.accountId,
       workspaceId: scope.workspaceId,
       context: { runId, status, phases: where },
     },
@@ -239,11 +239,11 @@ async function announceOutcome(
 }
 
 /** The ids an `update(...).select(...)` handed back, if it handed back a row. */
-function scopeOf(rows: unknown): { workspaceId: string | null; agencyId: string | null } {
+function scopeOf(rows: unknown): { workspaceId: string | null; accountId: string | null } {
   const row = Array.isArray(rows) ? (rows[0] as Record<string, unknown> | undefined) : undefined;
   return {
     workspaceId: (row?.workspace_id as string | undefined) ?? null,
-    agencyId: (row?.agency_id as string | undefined) ?? null,
+    accountId: (row?.account_id as string | undefined) ?? null,
   };
 }
 
@@ -304,7 +304,7 @@ export async function stampRun(
       supabase,
       runId,
       String(patch.status),
-      { workspaceId: run.workspace_id, agencyId: (run as { agency_id?: string }).agency_id ?? null },
+      { workspaceId: run.workspace_id, accountId: (run as { account_id?: string }).account_id ?? null },
       state.steps,
     );
   }

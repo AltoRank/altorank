@@ -26,7 +26,7 @@ export default async function BacklinksPage({ searchParams }: Props) {
   const scopeId = await getScopedWorkspaceId();
   const params = await searchParams;
 
-  const { agencyId } = await requireAuth();
+  const { accountId } = await requireAuth();
   const [workspaces, allBacklinks, openRequests] = await Promise.all([
     getWorkspaces(),
     // Unfiltered. `getBacklinks` applies the status chip in SQL, and every
@@ -36,9 +36,9 @@ export default async function BacklinksPage({ searchParams }: Props) {
     // when you filter is describing the filter.
     getBacklinks(params.workspace ?? scopeId ?? undefined),
     // Other accounts' open requests. Reads with the service role behind a
-    // fixed column list, because RLS scopes a member to rows their agency is
+    // fixed column list, because RLS scopes a member to rows their account is
     // already part of, which an unclaimed request never is.
-    getOpenRequests(agencyId),
+    getOpenRequests(accountId),
   ]);
 
   const wsMap = new Map<string, Workspace>(workspaces.map((w) => [w.id, w]));

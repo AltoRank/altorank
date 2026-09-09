@@ -84,7 +84,7 @@ const ALL_SHAPES_SUM = DAY.reduce((s, r) => s + ((r.clicks as number) ?? 0), 0);
 
 const TABLES: Record<string, Row[]> = {
   analytics_metrics: DAY,
-  workspaces: [{ id: "w1", domain: "x.test", dr: 12, agency_id: "ag1", agencies: { remove_branding: false } }],
+  workspaces: [{ id: "w1", domain: "x.test", dr: 12, account_id: "ag1", accounts: { remove_branding: false } }],
   articles: [{ id: "art1", workspace_id: "w1", status: "live" }],
   calendar_entries: [],
   workspace_integrations: [{ id: "i1", workspace_id: "w1", integration_id: "gsc" }],

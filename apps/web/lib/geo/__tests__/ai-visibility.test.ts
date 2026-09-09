@@ -27,7 +27,7 @@ describe("toDomain", () => {
 
 describe("mentionsBrand", () => {
   it("finds the brand regardless of case", () => {
-    expect(mentionsBrand("Tools like altorank help agencies.", "AltoRank")).toBe(true);
+    expect(mentionsBrand("Tools like altorank help accounts.", "AltoRank")).toBe(true);
   });
 
   it("does not fire on a brand embedded inside a longer word", () => {

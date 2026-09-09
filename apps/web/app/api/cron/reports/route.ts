@@ -51,7 +51,7 @@ async function run(request: Request) {
   // monthly PDF about a month in which nothing was meant to happen.
   const { data: workspaces, error: workspacesError } = await supabase
     .from("workspaces")
-    .select("id, name, agency_id")
+    .select("id, name, account_id")
     .neq("status", "paused");
 
   // `generated: 0` must mean there was nothing to generate, not that the
@@ -64,9 +64,9 @@ async function run(request: Request) {
     return NextResponse.json({ success: true, generated: 0 });
   }
 
-  // Cache agency info to avoid repeated queries
-  const agencyCache = new Map<string, { name: string; reportEmail: string | null }>();
-  // The plan gate, once per agency: every site on an account gets the same
+  // Cache account info to avoid repeated queries
+  const accountCache = new Map<string, { name: string; reportEmail: string | null }>();
+  // The plan gate, once per account: every site on an account gets the same
   // answer and the quota read is two queries.
   const entitled = new Map<string, boolean>();
 
@@ -87,11 +87,11 @@ async function run(request: Request) {
     // and geo apply (entitledToScheduledWork). Until 2026-09-07 this was the
     // one cron without it, so a free account with seven drafts and no plan
     // still got a monthly report generated and stored.
-    if (!entitled.has(ws.agency_id)) {
-      const quota = await getQuota(supabase, ws.agency_id as string, null);
-      entitled.set(ws.agency_id, entitledToScheduledWork(quota));
+    if (!entitled.has(ws.account_id)) {
+      const quota = await getQuota(supabase, ws.account_id as string, null);
+      entitled.set(ws.account_id, entitledToScheduledWork(quota));
     }
-    if (!entitled.get(ws.agency_id)) {
+    if (!entitled.get(ws.account_id)) {
       results.push({ workspaceId: ws.id, name: ws.name, skipped: "no plan" });
       continue;
     }
@@ -108,26 +108,26 @@ async function run(request: Request) {
       let emailed = false;
       let emailError: string | undefined;
       try {
-        if (!agencyCache.has(ws.agency_id)) {
-          const { data: agency, error: agencyError } = await supabase
-            .from("agencies")
+        if (!accountCache.has(ws.account_id)) {
+          const { data: account, error: accountError } = await supabase
+            .from("accounts")
             .select("name, report_email")
-            .eq("id", ws.agency_id)
+            .eq("id", ws.account_id)
             .single();
-          // Without this the catch below reads a failed lookup as "this agency
+          // Without this the catch below reads a failed lookup as "this account
           // set no report email" and silently skips delivery forever.
-          if (agencyError) throw new Error(`agency lookup: ${agencyError.message}`);
-          agencyCache.set(ws.agency_id, {
-            name: agency?.name ?? "Your workspace",
-            reportEmail: agency?.report_email ?? null,
+          if (accountError) throw new Error(`account lookup: ${accountError.message}`);
+          accountCache.set(ws.account_id, {
+            name: account?.name ?? "Your workspace",
+            reportEmail: account?.report_email ?? null,
           });
         }
 
-        const agencyInfo = agencyCache.get(ws.agency_id)!;
+        const accountInfo = accountCache.get(ws.account_id)!;
         // The configured address, or - since it is NULL by default and most
         // accounts never set it - the members who can see this site. Before
         // this the report went to nobody and the run said success.
-        const recipients = await reportRecipients(supabase, ws.agency_id, ws.id, agencyInfo.reportEmail);
+        const recipients = await reportRecipients(supabase, ws.account_id, ws.id, accountInfo.reportEmail);
 
         if (recipients.length) {
           // Get quick stats for the email
@@ -155,7 +155,7 @@ async function run(request: Request) {
             recipients,
             {
               workspaceName: ws.name,
-              agencyName: agencyInfo.name,
+              accountName: accountInfo.name,
               period: `${startDate} to ${endDate}`,
               reportUrl: url,
               highlights: {
@@ -163,7 +163,7 @@ async function run(request: Request) {
                 keywordsTracked: keywordCount ?? 0,
               },
             },
-            { agencyId: ws.agency_id, workspaceId: ws.id },
+            { accountId: ws.account_id, workspaceId: ws.id },
           );
           emailed = out.sent > 0;
           if (out.failed) emailError = out.lastError ?? "email failed";

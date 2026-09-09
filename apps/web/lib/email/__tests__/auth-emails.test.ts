@@ -135,7 +135,7 @@ describe("sendSignupConfirmation", () => {
     expect(deleteUser).toHaveBeenCalledWith("u1");
   });
 
-  /** An unconfirmed user who already has an agency came from an earlier, sent attempt: keep them. */
+  /** An unconfirmed user who already has an account came from an earlier, sent attempt: keep them. */
   it("keeps a user who already holds a membership", async () => {
     generateLink.mockResolvedValue({
       data: { properties: { hashed_token: "h" }, user: { id: "u1" } },

@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeAll } from "vitest";
 // A refusal derived from a failed read is not a refusal
 // ---------------------------------------------------------------------------
 //
-// `getQuota` dropped the error from its `agencies` read and fell through to
+// `getQuota` dropped the error from its `accounts` read and fell through to
 // `planEntitled({})`, which is false. So a transient failure demoted a paying
 // customer to the free tier for the length of the request - and that answer is
 // what the sidebar usage bar, the Keywords rank-tracking banner, the
@@ -15,18 +15,18 @@ import { describe, it, expect, vi, beforeAll } from "vitest";
 // became an empty id list, which became `used = 0` - a measurement, from a
 // read that did not happen.
 
-vi.mock("@/lib/billing/agency-client", () => ({
-  agencyCountingClient: (c: unknown) => c,
+vi.mock("@/lib/billing/account-client", () => ({
+  accountCountingClient: (c: unknown) => c,
 }));
 vi.mock("@/lib/auth/admin", () => ({ isAdminEmail: () => false }));
-vi.mock("@/lib/billing/operator-agency", () => ({ agencyHasOperator: async () => false }));
+vi.mock("@/lib/billing/operator-account", () => ({ accountHasOperator: async () => false }));
 vi.mock("@/lib/dev/simulation", () => ({ getSimulation: async () => null }));
 vi.mock("@/lib/billing/operator-preview", () => ({
   inCustomerPreview: async () => false,
   getOperatorPreview: async () => null,
 }));
 
-// `getQuota` returns "self-host" before it ever reads the agency row when
+// `getQuota` returns "self-host" before it ever reads the account row when
 // Stripe is unconfigured, which is every test process by default. The paths
 // under test are the metered ones.
 beforeAll(() => {
@@ -64,7 +64,7 @@ function clientFailingOn(table: string) {
 describe("getQuota with a read it could not make", () => {
   it("refuses to answer rather than calling a paying account free", async () => {
     const { getQuota } = await import("../quota");
-    await expect(getQuota(clientFailingOn("agencies") as never, "ag1", "owner@example.test")).rejects.toThrow(
+    await expect(getQuota(clientFailingOn("accounts") as never, "ag1", "owner@example.test")).rejects.toThrow(
       /could not read this account's plan/,
     );
   });

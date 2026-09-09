@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 //
 // The cron knows an article id and a workspace id; the email needs a domain, a
-// title, an agency and a published URL. Rather than have each call site
+// title, an account and a published URL. Rather than have each call site
 // assemble that (and disagree about it), the call sites say what happened and
 // this reads the rest.
 //
@@ -29,11 +29,11 @@ type ArticleRow = {
   cms: string | null;
   workspace_id: string;
   indexing_status: { urlVerified?: string } | null;
-  workspaces: { domain: string | null; agency_id: string } | null;
+  workspaces: { domain: string | null; account_id: string } | null;
 };
 
 const ARTICLE_COLUMNS =
-  "id, title, status, published_url, cms, workspace_id, indexing_status, workspaces(domain, agency_id)";
+  "id, title, status, published_url, cms, workspace_id, indexing_status, workspaces(domain, account_id)";
 
 async function loadArticle(supabase: SupabaseClient, articleId: string): Promise<ArticleRow | null> {
   const { data } = await supabase.from("articles").select(ARTICLE_COLUMNS).eq("id", articleId).maybeSingle();
@@ -70,7 +70,7 @@ export async function announceArticlePublished(supabase: SupabaseClient, article
 
     const out = await notifyArticlePublished(
       supabase,
-      { agencyId: article.workspaces.agency_id, workspaceId: article.workspace_id },
+      { accountId: article.workspaces.account_id, workspaceId: article.workspace_id },
       {
         domain: article.workspaces.domain,
         title: article.title ?? "Your article",
@@ -110,7 +110,7 @@ export async function announcePublishFailed(
 
     const out = await notifyPublishFailed(
       supabase,
-      { agencyId: article.workspaces.agency_id, workspaceId: opts.workspaceId },
+      { accountId: article.workspaces.account_id, workspaceId: opts.workspaceId },
       {
         domain: article.workspaces.domain,
         title: article.title ?? "Your article",

@@ -36,7 +36,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
 
   const { data: invite } = await admin
     .from("invites")
-    .select("id, agency_id, email, role, workspace_ids, expires_at")
+    .select("id, account_id, email, role, workspace_ids, expires_at")
     .eq("token", token)
     .is("accepted_at", null)
     .maybeSingle();
@@ -66,14 +66,14 @@ export default async function InvitePage({ params }: InvitePageProps) {
     );
   }
 
-  const { error: memberError } = await admin.from("agency_members").insert({
-    agency_id: invite.agency_id,
+  const { error: memberError } = await admin.from("account_members").insert({
+    account_id: invite.account_id,
     user_id: user.id,
     role: invite.role,
     workspace_ids: invite.workspace_ids,
   });
 
-  // 23505 is the unique (agency_id, user_id): already a member. The invite is
+  // 23505 is the unique (account_id, user_id): already a member. The invite is
   // still consumed so the link cannot be replayed.
   if (memberError && memberError.code !== "23505") {
     return <Notice title="Something went wrong">{memberError.message}</Notice>;

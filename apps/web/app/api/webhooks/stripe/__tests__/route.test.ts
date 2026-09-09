@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 //
 // The bug these exist for: `checkout.session.completed` wrote the customer id,
 // the subscription id and plan_status and never wrote `plan`. Because
-// agencies.plan is `not null default 'starter'`, a EUR 199 Agency buyer stayed
+// accounts.plan is `not null default 'starter'`, a EUR 199 Agency buyer stayed
 // on Managed's row - badged "Managed plan" and metered at 100 articles instead
 // of 400. Every assertion below is about which columns reach the database.
 
@@ -16,13 +16,13 @@ type Filter = [string, string, unknown];
 /** Every `.update(row).eq(col, val)` this request made, per table. */
 const writes: { table: string; row: Row; col: string; val: unknown; filters: Filter[] }[] = [];
 let workspaceRows: Row[] = [];
-/** The one agency row any single-row read of `agencies` returns; null = no match. */
-let agencyRow: Row | null = null;
+/** The one account row any single-row read of `accounts` returns; null = no match. */
+let accountRow: Row | null = null;
 
 /**
  * A chainable fake of the PostgREST builder: filters are recorded, the
- * terminal `await` resolves. Reads of `agencies` with `.single()` /
- * `.maybeSingle()` return `agencyRow`; reads of `workspaces` return
+ * terminal `await` resolves. Reads of `accounts` with `.single()` /
+ * `.maybeSingle()` return `accountRow`; reads of `workspaces` return
  * `workspaceRows`; updates are recorded and, when `.select()`ed, report
  * `workspaceRows` back as the touched rows.
  */
@@ -40,7 +40,7 @@ function query(table: string, op: "select" | "update", row?: Row) {
         writes.push({ table, row: row!, col: filters[0]?.[0], val: filters[0]?.[2], filters });
         return resolve({ data: workspaceRows, error: null });
       }
-      if (table === "agencies") return resolve({ data: single ? agencyRow : agencyRow ? [agencyRow] : [] });
+      if (table === "accounts") return resolve({ data: single ? accountRow : accountRow ? [accountRow] : [] });
       return resolve({ data: workspaceRows });
     },
   };
@@ -90,9 +90,9 @@ async function deliver(event: unknown) {
   return POST(post());
 }
 
-/** The one row written to `agencies`. */
-function agencyWrite(): { row: Row; col: string; val: unknown } {
-  const found = writes.filter((w) => w.table === "agencies");
+/** The one row written to `accounts`. */
+function accountWrite(): { row: Row; col: string; val: unknown } {
+  const found = writes.filter((w) => w.table === "accounts");
   expect(found).toHaveLength(1);
   return found[0];
 }
@@ -104,7 +104,7 @@ function checkoutCompleted(overrides: Record<string, unknown> = {}) {
       object: {
         customer: "cus_1",
         subscription: "sub_1",
-        metadata: { agency_id: "agency-1", plan: "growth", interval: "month" },
+        metadata: { account_id: "account-1", plan: "growth", interval: "month" },
         ...overrides,
       },
     },
@@ -125,7 +125,7 @@ function subscriptionEvent(
         customer: "cus_1",
         status: "active",
         items: { data: [{ price: { id: GROWTH } }] },
-        metadata: { agency_id: "agency-1" },
+        metadata: { account_id: "account-1" },
         cancel_at_period_end: false,
         pause_collection: null,
         ...overrides,
@@ -144,7 +144,7 @@ function invoiceEvent(type: "payment_failed" | "paid", overrides: Record<string,
         id: "in_1",
         customer: "cus_1",
         created: 1_789_000_000,
-        parent: { subscription_details: { subscription: "sub_1", metadata: { agency_id: "agency-1" } } },
+        parent: { subscription_details: { subscription: "sub_1", metadata: { account_id: "account-1" } } },
         ...overrides,
       },
     },
@@ -154,7 +154,7 @@ function invoiceEvent(type: "payment_failed" | "paid", overrides: Record<string,
 beforeEach(() => {
   writes.length = 0;
   workspaceRows = [];
-  agencyRow = null;
+  accountRow = null;
   constructEvent.mockReset();
   retrieveSubscription.mockReset();
   retrieveSubscription.mockResolvedValue({ items: { data: [{ price: { id: GROWTH } }] } });
@@ -170,9 +170,9 @@ describe("checkout.session.completed", () => {
     const res = await deliver(checkoutCompleted());
     expect(res.status).toBe(200);
 
-    const { row, col, val } = agencyWrite();
+    const { row, col, val } = accountWrite();
     expect(col).toBe("id");
-    expect(val).toBe("agency-1");
+    expect(val).toBe("account-1");
     // The regression: without this the row stays on 'starter' and the account
     // is metered at 100 articles rather than Agency's 400.
     expect(row.plan).toBe("growth");
@@ -183,39 +183,39 @@ describe("checkout.session.completed", () => {
 
   it("writes starter when starter is what was bought", async () => {
     retrieveSubscription.mockResolvedValue({ items: { data: [{ price: { id: STARTER } }] } });
-    await deliver(checkoutCompleted({ metadata: { agency_id: "agency-1", plan: "starter" } }));
-    expect(agencyWrite().row.plan).toBe("starter");
+    await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "starter" } }));
+    expect(accountWrite().row.plan).toBe("starter");
   });
 
   it("resolves a yearly price to its tier", async () => {
     retrieveSubscription.mockResolvedValue({ items: { data: [{ price: { id: GROWTH_YEARLY } }] } });
-    await deliver(checkoutCompleted({ metadata: { agency_id: "agency-1", plan: "growth" } }));
-    expect(agencyWrite().row.plan).toBe("growth");
+    await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "growth" } }));
+    expect(accountWrite().row.plan).toBe("growth");
   });
 
   it("prefers the subscription's price over the session's metadata hint", async () => {
     // Metadata says Managed, the money says Agency. The money wins.
     retrieveSubscription.mockResolvedValue({ items: { data: [{ price: { id: GROWTH } }] } });
-    await deliver(checkoutCompleted({ metadata: { agency_id: "agency-1", plan: "starter" } }));
-    expect(agencyWrite().row.plan).toBe("growth");
+    await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "starter" } }));
+    expect(accountWrite().row.plan).toBe("growth");
   });
 
   it("falls back to the metadata hint when the subscription read fails", async () => {
     retrieveSubscription.mockRejectedValue(new Error("stripe down"));
     await deliver(checkoutCompleted());
-    expect(agencyWrite().row.plan).toBe("growth");
+    expect(accountWrite().row.plan).toBe("growth");
   });
 
   it("falls back to the metadata hint when the price id is not one we sell", async () => {
     retrieveSubscription.mockResolvedValue({ items: { data: [{ price: { id: "price_legacy" } }] } });
     await deliver(checkoutCompleted());
-    expect(agencyWrite().row.plan).toBe("growth");
+    expect(accountWrite().row.plan).toBe("growth");
   });
 
   it("leaves plan alone rather than guessing when nothing resolves", async () => {
     retrieveSubscription.mockResolvedValue({ items: { data: [{ price: { id: "price_legacy" } }] } });
-    await deliver(checkoutCompleted({ metadata: { agency_id: "agency-1" } }));
-    const { row } = agencyWrite();
+    await deliver(checkoutCompleted({ metadata: { account_id: "account-1" } }));
+    const { row } = accountWrite();
     expect(row).not.toHaveProperty("plan");
     // Still records the purchase, so the later subscription event can find it.
     expect(row.plan_status).toBe("active");
@@ -223,24 +223,24 @@ describe("checkout.session.completed", () => {
 
   it("ignores a metadata plan that is not a tier we sell", async () => {
     retrieveSubscription.mockRejectedValue(new Error("stripe down"));
-    await deliver(checkoutCompleted({ metadata: { agency_id: "agency-1", plan: "enterprise" } }));
-    expect(agencyWrite().row).not.toHaveProperty("plan");
+    await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "enterprise" } }));
+    expect(accountWrite().row).not.toHaveProperty("plan");
   });
 
-  it("accepts client_reference_id when the session carries no agency metadata", async () => {
+  it("accepts client_reference_id when the session carries no account metadata", async () => {
     await deliver(
-      checkoutCompleted({ metadata: { plan: "growth" }, client_reference_id: "agency-2" }),
+      checkoutCompleted({ metadata: { plan: "growth" }, client_reference_id: "account-2" }),
     );
-    expect(agencyWrite().val).toBe("agency-2");
+    expect(accountWrite().val).toBe("account-2");
   });
 
-  it("writes nothing when the session names no agency", async () => {
+  it("writes nothing when the session names no account", async () => {
     await deliver(checkoutCompleted({ metadata: {}, client_reference_id: null }));
     expect(writes).toHaveLength(0);
   });
 
   it("raises each site to the pace the purchased tier starts at", async () => {
-    // The tier decides the target: a site that bought Agency (growth) starts at
+    // The tier decides the target: a site that bought Account (growth) starts at
     // 21 a week. Before PLAN_DEFAULT_PACE every tier started at 7, so a customer
     // paying for 400 articles a month defaulted to about 30.
     workspaceRows = [
@@ -264,7 +264,7 @@ describe("checkout.session.completed", () => {
 describe("customer.subscription.created", () => {
   it("is handled at all: it used to fall through the switch", async () => {
     await deliver(subscriptionEvent("created"));
-    const { row } = agencyWrite();
+    const { row } = accountWrite();
     expect(row.plan).toBe("growth");
     expect(row.plan_status).toBe("active");
     expect(row.stripe_customer_id).toBe("cus_1");
@@ -276,7 +276,7 @@ describe("customer.subscription.created", () => {
     // this against checkout.session.completed, so writing past_due here could
     // knock a live account backwards.
     await deliver(subscriptionEvent("created", { status: "incomplete" }));
-    const { row } = agencyWrite();
+    const { row } = accountWrite();
     expect(row).not.toHaveProperty("plan_status");
     expect(row.plan).toBe("growth");
   });
@@ -285,10 +285,10 @@ describe("customer.subscription.created", () => {
     await deliver(
       subscriptionEvent("created", {
         items: { data: [{ price: { id: "price_legacy" } }] },
-        metadata: { agency_id: "agency-1", plan: "starter" },
+        metadata: { account_id: "account-1", plan: "starter" },
       }),
     );
-    expect(agencyWrite().row.plan).toBe("starter");
+    expect(accountWrite().row.plan).toBe("starter");
   });
 });
 
@@ -297,7 +297,7 @@ describe("customer.subscription.updated / deleted", () => {
     await deliver(
       subscriptionEvent("updated", { current_period_end: 1_800_000_000, status: "past_due" }),
     );
-    const { row } = agencyWrite();
+    const { row } = accountWrite();
     expect(row.plan).toBe("growth");
     expect(row.plan_status).toBe("past_due");
     expect(row.current_period_end).toBe(new Date(1_800_000_000 * 1000).toISOString());
@@ -308,25 +308,36 @@ describe("customer.subscription.updated / deleted", () => {
     await deliver(
       subscriptionEvent("updated", { cancel_at_period_end: true, cancel_at: 1_800_000_000 }),
     );
-    expect(agencyWrite().row.cancels_at).toBe(new Date(1_800_000_000 * 1000).toISOString());
+    expect(accountWrite().row.cancels_at).toBe(new Date(1_800_000_000 * 1000).toISOString());
 
     writes.length = 0;
     await deliver(subscriptionEvent("deleted"));
-    const { row } = agencyWrite();
+    const { row } = accountWrite();
     expect(row.plan_status).toBe("canceled");
     expect(row.cancels_at).toBeNull();
   });
 
-  it("matches on the stored subscription id when metadata has no agency", async () => {
+  it("matches on the stored subscription id when metadata has no account", async () => {
     await deliver(subscriptionEvent("updated", { metadata: {} }));
-    const { col, val } = agencyWrite();
+    const { col, val } = accountWrite();
     expect(col).toBe("stripe_subscription_id");
     expect(val).toBe("sub_1");
   });
 
+  it("still resolves a subscription whose metadata carries the pre-085 key", async () => {
+    // Stripe metadata is a snapshot taken at purchase. Every subscription
+    // created before `agencies` became `accounts` (085, 2026-09-09) says
+    // `agency_id`, and Stripe never rewrites it; the webhook must read both
+    // keys for as long as one of those subscriptions is alive.
+    await deliver(subscriptionEvent("updated", { metadata: { agency_id: "account-1" } }));
+    const { col, val } = accountWrite();
+    expect(col).toBe("id");
+    expect(val).toBe("account-1");
+  });
+
   it("does not write the ids on an update, only on a create", async () => {
     await deliver(subscriptionEvent("updated"));
-    expect(agencyWrite().row).not.toHaveProperty("stripe_customer_id");
+    expect(accountWrite().row).not.toHaveProperty("stripe_customer_id");
   });
 
   it("follows the price after a plan switch, even when the metadata hint is stale", async () => {
@@ -335,31 +346,31 @@ describe("customer.subscription.updated / deleted", () => {
     await deliver(
       subscriptionEvent("updated", {
         items: { data: [{ price: { id: GROWTH_YEARLY } }] },
-        metadata: { agency_id: "agency-1", plan: "starter" },
+        metadata: { account_id: "account-1", plan: "starter" },
       }),
     );
-    expect(agencyWrite().row.plan).toBe("growth");
+    expect(accountWrite().row.plan).toBe("growth");
   });
 
   it("falls back to the hint only when the price is not one we sell", async () => {
     await deliver(
       subscriptionEvent("updated", {
         items: { data: [{ price: { id: "price_legacy" } }] },
-        metadata: { agency_id: "agency-1", plan: "starter" },
+        metadata: { account_id: "account-1", plan: "starter" },
       }),
     );
-    expect(agencyWrite().row.plan).toBe("starter");
+    expect(accountWrite().row.plan).toBe("starter");
   });
 
   it("clears the failed-payment mark when the subscription is active again", async () => {
     await deliver(subscriptionEvent("updated"));
-    expect(agencyWrite().row.payment_failed_at).toBeNull();
+    expect(accountWrite().row.payment_failed_at).toBeNull();
   });
 
   it("starts the grace window when the subscription goes past due without an invoice event", async () => {
-    agencyRow = { id: "agency-1", plan_status: "active", payment_failed_at: null };
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null };
     await deliver(subscriptionEvent("updated", { status: "past_due" }));
-    const rows = writes.filter((w) => w.table === "agencies");
+    const rows = writes.filter((w) => w.table === "accounts");
     expect(rows).toHaveLength(2);
     expect(rows[0].row.plan_status).toBe("past_due");
     expect(rows[0].row).not.toHaveProperty("payment_failed_at");
@@ -367,9 +378,9 @@ describe("customer.subscription.updated / deleted", () => {
   });
 
   it("keeps the first failure's timestamp on a later past_due update", async () => {
-    agencyRow = { id: "agency-1", plan_status: "past_due", payment_failed_at: "2026-09-01T00:00:00.000Z" };
+    accountRow = { id: "account-1", plan_status: "past_due", payment_failed_at: "2026-09-01T00:00:00.000Z" };
     await deliver(subscriptionEvent("updated", { status: "past_due" }));
-    expect(writes.filter((w) => w.table === "agencies")).toHaveLength(1);
+    expect(writes.filter((w) => w.table === "accounts")).toHaveLength(1);
   });
 
   it("does not report a paused subscription as a failed payment", async () => {
@@ -377,9 +388,9 @@ describe("customer.subscription.updated / deleted", () => {
     // the dashboard. Mapped to past_due with no payment_failed_at, dunning
     // read it as "lapsed" and the account saw "Payment failed" for a card
     // that never failed (PM-C-P2-1).
-    agencyRow = { id: "agency-1", plan_status: "active", payment_failed_at: null };
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null };
     await deliver(subscriptionEvent("updated", { status: "paused" }));
-    const rows = writes.filter((w) => w.table === "agencies");
+    const rows = writes.filter((w) => w.table === "accounts");
     expect(rows).toHaveLength(1);
     expect(rows[0].row.plan_status).toBe("inactive");
     expect(rows[0].row).not.toHaveProperty("payment_failed_at");
@@ -398,20 +409,20 @@ describe("the account pause ending on Stripe's side", () => {
     expect(resumed).toHaveLength(1);
     expect(resumed[0].row).toEqual({ status: "on", paused_until: null });
     expect(resumed[0].filters).toEqual([
-      ["agency_id", "eq", "agency-1"],
+      ["account_id", "eq", "account-1"],
       ["status", "eq", "paused"],
       ["paused_until", "not is", null],
     ]);
   });
 
-  it("finds the agency by subscription id when the metadata has none", async () => {
-    agencyRow = { id: "agency-9" };
+  it("finds the account by subscription id when the metadata has none", async () => {
+    accountRow = { id: "account-9" };
     await deliver(
       subscriptionEvent("updated", { metadata: {}, pause_collection: null }, { pause_collection: { behavior: "void" } }),
     );
     const resumed = writes.filter((w) => w.table === "workspaces");
     expect(resumed).toHaveLength(1);
-    expect(resumed[0].filters[0]).toEqual(["agency_id", "eq", "agency-9"]);
+    expect(resumed[0].filters[0]).toEqual(["account_id", "eq", "account-9"]);
   });
 
   it("leaves a pause alone on an ordinary update that merely carries pause_collection: null", async () => {
@@ -436,11 +447,11 @@ describe("the account pause ending on Stripe's side", () => {
 
 describe("invoice.payment_failed", () => {
   it("marks the plan past due from the failed invoice's time", async () => {
-    agencyRow = { id: "agency-1", plan_status: "active", payment_failed_at: null };
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null };
     await deliver(invoiceEvent("payment_failed"));
-    const { row, col, val } = agencyWrite();
+    const { row, col, val } = accountWrite();
     expect(col).toBe("id");
-    expect(val).toBe("agency-1");
+    expect(val).toBe("account-1");
     expect(row).toEqual({
       plan_status: "past_due",
       payment_failed_at: new Date(1_789_000_000 * 1000).toISOString(),
@@ -448,7 +459,7 @@ describe("invoice.payment_failed", () => {
   });
 
   it("is idempotent: a retry of the same run keeps the first failure's timestamp", async () => {
-    agencyRow = { id: "agency-1", plan_status: "past_due", payment_failed_at: "2026-09-01T00:00:00.000Z" };
+    accountRow = { id: "account-1", plan_status: "past_due", payment_failed_at: "2026-09-01T00:00:00.000Z" };
     await deliver(invoiceEvent("payment_failed"));
     expect(writes).toHaveLength(0);
   });
@@ -456,21 +467,21 @@ describe("invoice.payment_failed", () => {
   it("does not turn an account that never paid into a past-due one", async () => {
     // A first checkout whose card bounced: `checkout.session.completed`
     // never fired, the row is inactive, and it stays so.
-    agencyRow = { id: "agency-1", plan_status: "inactive", payment_failed_at: null };
+    accountRow = { id: "account-1", plan_status: "inactive", payment_failed_at: null };
     await deliver(invoiceEvent("payment_failed"));
-    const { row } = agencyWrite();
+    const { row } = accountWrite();
     expect(row).not.toHaveProperty("plan_status");
     expect(row).toHaveProperty("payment_failed_at");
   });
 
   it("matches by customer when the invoice names no subscription", async () => {
-    agencyRow = { id: "agency-1", plan_status: "active", payment_failed_at: null };
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null };
     await deliver(invoiceEvent("payment_failed", { parent: null }));
-    expect(agencyWrite().row.plan_status).toBe("past_due");
+    expect(accountWrite().row.plan_status).toBe("past_due");
   });
 
-  it("writes nothing for an invoice no agency owns", async () => {
-    agencyRow = null;
+  it("writes nothing for an invoice no account owns", async () => {
+    accountRow = null;
     await deliver(invoiceEvent("payment_failed"));
     expect(writes).toHaveLength(0);
   });
@@ -478,24 +489,24 @@ describe("invoice.payment_failed", () => {
 
 describe("invoice.paid", () => {
   it("reinstates a past-due plan and clears the mark", async () => {
-    agencyRow = { id: "agency-1", plan_status: "past_due", payment_failed_at: "2026-09-01T00:00:00.000Z" };
+    accountRow = { id: "account-1", plan_status: "past_due", payment_failed_at: "2026-09-01T00:00:00.000Z" };
     await deliver(invoiceEvent("paid"));
-    expect(agencyWrite().row).toEqual({ payment_failed_at: null, plan_status: "active" });
+    expect(accountWrite().row).toEqual({ payment_failed_at: null, plan_status: "active" });
   });
 
   it("only clears the mark on an already-active plan, and is safe to replay", async () => {
-    agencyRow = { id: "agency-1", plan_status: "active", payment_failed_at: null };
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null };
     await deliver(invoiceEvent("paid"));
-    expect(agencyWrite().row).toEqual({ payment_failed_at: null });
+    expect(accountWrite().row).toEqual({ payment_failed_at: null });
     writes.length = 0;
     await deliver(invoiceEvent("paid"));
-    expect(agencyWrite().row).toEqual({ payment_failed_at: null });
+    expect(accountWrite().row).toEqual({ payment_failed_at: null });
   });
 
   it("leaves a first purchase to checkout.session.completed", async () => {
-    agencyRow = { id: "agency-1", plan_status: "inactive", payment_failed_at: null };
+    accountRow = { id: "account-1", plan_status: "inactive", payment_failed_at: null };
     await deliver(invoiceEvent("paid"));
-    expect(agencyWrite().row).not.toHaveProperty("plan_status");
+    expect(accountWrite().row).not.toHaveProperty("plan_status");
   });
 });
 

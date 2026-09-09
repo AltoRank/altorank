@@ -5,7 +5,7 @@
 // The behaviour behind the Pause/Resume buttons (app/actions/workspaces.ts)
 // and the agent API's POST /workspaces/{id}/pause and /resume, on a plain
 // SupabaseClient so both doors run the same code. Every write names the
-// agency as well as the id: the agent API holds a service-role client with no
+// account as well as the id: the agent API holds a service-role client with no
 // RLS behind it, and the cookie client's id arrives from the browser.
 //
 // Pausing touches nothing but status and paused_meta. Drafts stay in review,
@@ -27,7 +27,7 @@ export type PauseOutcome = {
 
 export async function pauseWorkspace(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   workspaceId: string,
   /** The user who asked, or null when an API key did. */
   by: string | null,
@@ -36,7 +36,7 @@ export async function pauseWorkspace(
     .from("workspaces")
     .select("id, status, paused_meta")
     .eq("id", workspaceId)
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .maybeSingle();
   if (readError) throw new Error(readError.message);
   if (!ws) throw new Error("That site is not in your account.");
@@ -51,7 +51,7 @@ export async function pauseWorkspace(
     .from("workspaces")
     .update({ status: "paused", paused_meta: meta })
     .eq("id", workspaceId)
-    .eq("agency_id", agencyId);
+    .eq("account_id", accountId);
   if (error) throw new Error(error.message);
   return { changed: true, meta };
 }
@@ -75,14 +75,14 @@ export type ResumeOutcome = {
  */
 export async function resumeWorkspace(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   workspaceId: string,
 ): Promise<ResumeOutcome> {
   const { data: ws, error: readError } = await supabase
     .from("workspaces")
     .select("id, status, paused_meta, auto_generate_weekly_limit")
     .eq("id", workspaceId)
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .maybeSingle();
   if (readError) throw new Error(readError.message);
   if (!ws) throw new Error("That site is not in your account.");
@@ -96,7 +96,7 @@ export async function resumeWorkspace(
     .from("workspaces")
     .update({ status: previous, paused_meta: null })
     .eq("id", workspaceId)
-    .eq("agency_id", agencyId);
+    .eq("account_id", accountId);
   if (error) throw new Error(error.message);
 
   let replanned: number | null = null;

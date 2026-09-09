@@ -77,7 +77,7 @@ export const KEYWORDS: DemoKeyword[] = [
   { k: "slo for startups", vol: 1400, diff: 35, intent: "info", ws: "Axiom", status: "scheduled" },
   { k: "creator economy stack", vol: 3200, diff: 48, intent: "info", ws: "Moonb", status: "drafting" },
   { k: "seo rapport klient", vol: 410, diff: 14, intent: "info", ws: "Vækster", status: "shipped" },
-  { k: "webflow seo agencies", vol: 1800, diff: 46, intent: "commercial", ws: "Parallel Co", status: "new" },
+  { k: "webflow seo accounts", vol: 1800, diff: 46, intent: "commercial", ws: "Parallel Co", status: "new" },
   { k: "butter fat index", vol: 210, diff: 9, intent: "info", ws: "Kerrigold", status: "error" },
 ];
 
@@ -131,7 +131,7 @@ export const CALENDAR = (() => {
   const TITLES = [
     "twitter monetization 2026", "founder-led content", "done-for-you pricing", "kontinuerlig seo b2b",
     "creator economy stack", "cheap observability", "grass fed butter chef", "agency retainer template",
-    "ghost vs substack 2026", "slo for startups", "seo rapport klient", "webflow seo agencies",
+    "ghost vs substack 2026", "slo for startups", "seo rapport klient", "webflow seo accounts",
     "founder story pages", "pricing page teardowns", "link-building for b2b",
   ];
   for (let i = 0; i < 30; i++) {

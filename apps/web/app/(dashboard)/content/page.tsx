@@ -83,7 +83,7 @@ export default async function CalendarPage({ searchParams }: Props) {
     ? await Promise.all([
         getPlannerKeywords(scopeId, entries.map((e) => e.keyword_id).filter((id): id is string => Boolean(id))),
         getPlannerArticleStates(scopeId, entries.map((e) => e.article_id).filter((id): id is string => Boolean(id))),
-        scopedWs ? getRequestQuota(scopedWs.agency_id, auth.user?.email ?? null) : Promise.resolve(null),
+        scopedWs ? getRequestQuota(scopedWs.account_id, auth.user?.email ?? null) : Promise.resolve(null),
       ])
     : [[], new Map(), null];
   const kwById = new Map<string, PlannerKeyword>(keywordRows.map((k) => [k.id, k]));

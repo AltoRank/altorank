@@ -40,22 +40,22 @@ export async function POST(request: NextRequest) {
   const workspaceId = body.workspaceId;
   if (!workspaceId) return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
 
-  const { data: workspace } = await supabase.from("workspaces").select("id, agency_id").eq("id", workspaceId).single();
+  const { data: workspace } = await supabase.from("workspaces").select("id, account_id").eq("id", workspaceId).single();
   if (!workspace) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
 
   // Membership, not just existence: RLS would hide a foreign workspace, but the
   // 404 above cannot tell "not yours" from "not there", and onboarding writes.
   const { data: membership } = await supabase
-    .from("agency_members")
+    .from("account_members")
     .select("id")
-    .eq("agency_id", workspace.agency_id)
+    .eq("account_id", workspace.account_id)
     .eq("user_id", user.id)
     .single();
   if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { runId, created } = await startRun(createServiceClient(), {
     id: workspace.id as string,
-    agency_id: workspace.agency_id as string,
+    account_id: workspace.account_id as string,
   });
   if (created) after(() => dispatchWorker(runId));
 

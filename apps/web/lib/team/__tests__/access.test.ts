@@ -6,7 +6,7 @@ describe("workspace access", () => {
   it("empty means all sites, stored as null", () => {
     expect(parseWorkspaceIds([], allowed)).toBeNull();
   });
-  it("keeps only the agency's own ids, once each", () => {
+  it("keeps only the account's own ids, once each", () => {
     expect(parseWorkspaceIds(["b", "zzz", "b", 3, null], allowed)).toEqual(["b"]);
   });
   it("a selection made only of foreign ids collapses to all sites rather than none", () => {

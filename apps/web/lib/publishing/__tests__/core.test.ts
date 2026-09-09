@@ -217,7 +217,7 @@ describe("publishArticleCore", () => {
         return {
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({ data: { agency_id: null, indexnow_key: "k" } }),
+              single: vi.fn().mockResolvedValue({ data: { account_id: null, indexnow_key: "k" } }),
             }),
           }),
         };

@@ -36,27 +36,27 @@ const PLAN_CARDS: PlanCard[] = TIERS.map((tier) => ({
 
 export default async function BillingPage(props: { searchParams?: Promise<{ return?: string; upgraded?: string }> }) {
   const returnTo = (await props.searchParams)?.return;
-  const { agencyId, user, role } = await requireAuth();
+  const { accountId, user, role } = await requireAuth();
   const supabase = await createClient();
   // Editors and admins read this page; only the owner changes what it pays.
   const canManage = canManageBilling(role);
 
-  // Five independent reads. Each needs only the agency and user requireAuth
+  // Five independent reads. Each needs only the account and user requireAuth
   // just returned; none consumes another's result, and the plan and status
   // below are computed from them afterwards rather than between them. Awaited
   // one after the other they were five round trips on the page people open
   // when they are about to pay.
-  const [{ data: agency, error: agencyError }, { data: invoices }, simulation, preview, quota, { data: pausedRows }] =
+  const [{ data: account, error: accountError }, { data: invoices }, simulation, preview, quota, { data: pausedRows }] =
     await Promise.all([
       supabase
-        .from("agencies")
+        .from("accounts")
         .select("plan, plan_status, current_period_end, stripe_customer_id, stripe_subscription_id, cancels_at, payment_failed_at")
-        .eq("id", agencyId)
+        .eq("id", accountId)
         .single(),
       supabase
         .from("invoices")
         .select("number, period, articles, amount, status, pdf_url")
-        .eq("agency_id", agencyId)
+        .eq("account_id", accountId)
         .order("created_at", { ascending: false })
         .limit(12),
       // Dev-only: the simulator cookie can stand in for a plan the local DB
@@ -67,13 +67,13 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
       // and takes precedence: if an operator asked to see the Managed screens,
       // showing them their real row instead answers a question they did not ask.
       getOperatorPreview(),
-      getQuota(supabase, agencyId, user.email ?? null),
+      getQuota(supabase, accountId, user.email ?? null),
       // The account pause writes the same date on every workspace; one row is
       // enough to know it is on. Rows paused by hand carry no date.
       supabase
         .from("workspaces")
         .select("paused_until")
-        .eq("agency_id", agencyId)
+        .eq("account_id", accountId)
         .eq("status", "paused")
         .not("paused_until", "is", null)
         .order("paused_until", { ascending: false })
@@ -85,29 +85,29 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
   // inviting them to buy what they already pay for, on the one page whose job
   // is to state what they are paying for. A preview or simulation still
   // overrides, because those are deliberate.
-  if (agencyError && !preview?.plan && !simulation?.plan) {
-    throw new Error(`could not read this account's plan (${agencyError.message})`);
+  if (accountError && !preview?.plan && !simulation?.plan) {
+    throw new Error(`could not read this account's plan (${accountError.message})`);
   }
   const pausedUntil = (pausedRows?.[0]?.paused_until as string | undefined) ?? null;
 
-  const plan = (preview?.plan ?? simulation?.plan ?? agency?.plan ?? "starter") as PlanTier;
+  const plan = (preview?.plan ?? simulation?.plan ?? account?.plan ?? "starter") as PlanTier;
   // The preview overrides the plan, so it has to override the status with it.
   // Reading the real row here produced "Managed plan · inactive" beside a card
   // badged "Your plan" - two contradictory answers to the same question, on
   // the screen whose whole job is to state what you are paying for.
-  const status = preview?.plan ? "active" : (agency?.plan_status ?? "inactive");
+  const status = preview?.plan ? "active" : (account?.plan_status ?? "inactive");
 
   // A failing renewal is its own state, not "no plan": the tier is still the
   // one being paid for and the fix is the card. The ladder is replaced by
   // the one action that helps, because "Choose Managed" to a Managed
   // customer opened a second Checkout and a second subscription.
-  const dunning = preview?.plan || simulation?.plan ? null : dunningInfo(agency ?? {});
+  const dunning = preview?.plan || simulation?.plan ? null : dunningInfo(account ?? {});
 
   const isActive =
     Boolean(preview?.plan) || Boolean(simulation?.plan) || status === "active" || status === "trialing";
   // Owner only, like every other change to what the account pays, and only
   // when there is a subscription to pause or end.
-  const showRetention = canManage && isActive && Boolean(agency?.stripe_subscription_id);
+  const showRetention = canManage && isActive && Boolean(account?.stripe_subscription_id);
   const euros = (n: number | string | null) =>
     new Intl.NumberFormat("en-IE", {
       style: "currency",
@@ -117,8 +117,8 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
 
   const usage = usageLine(quota);
 
-  const renews = agency?.current_period_end
-    ? new Date(agency.current_period_end).toLocaleDateString("en-US", {
+  const renews = account?.current_period_end
+    ? new Date(account.current_period_end).toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
         year: "numeric",
@@ -196,8 +196,8 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
                    already once presented that default as a purchase. */
                 currentTier={isActive ? plan : null}
                 isActive={isActive}
-                hasCustomer={!!agency?.stripe_customer_id}
-                hasSubscription={!!agency?.stripe_subscription_id}
+                hasCustomer={!!account?.stripe_customer_id}
+                hasSubscription={!!account?.stripe_subscription_id}
                 returnTo={returnTo}
                 canManage={canManage}
                 cancelHandledBelow={showRetention}
@@ -213,8 +213,8 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
           {showRetention && (
             <RetentionCard
               pausedUntil={pausedUntil}
-              cancelsAt={agency?.cancels_at ?? null}
-              periodEnd={agency?.current_period_end ?? null}
+              cancelsAt={account?.cancels_at ?? null}
+              periodEnd={account?.current_period_end ?? null}
             />
           )}
 
@@ -269,7 +269,7 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
                  Until an invoice sync exists, this points at the one place
                  the invoices really are. */
               <div className="text-[13px] text-ink-3 p-[18px]">
-                {agency?.stripe_customer_id ? (
+                {account?.stripe_customer_id ? (
                   // The "Invoices and billing" button is owner-only, so an
                   // editor reading this was told to press something that is
                   // not on their screen.

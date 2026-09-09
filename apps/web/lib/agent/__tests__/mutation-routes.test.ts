@@ -19,7 +19,7 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => db,
 }));
 
-const AGENCY = "agency-1";
+const ACCOUNT = "account-1";
 const WS = "11111111-1111-4111-8111-111111111111";
 const OTHER_WS = "22222222-2222-4222-8222-222222222222";
 const ART_REVIEW = "33333333-3333-4333-8333-333333333333";
@@ -39,12 +39,12 @@ function seed(extra: Partial<Seed> = {}): Seed {
   const now = new Date().toISOString();
   return {
     api_keys: [
-      { id: "key-write", agency_id: AGENCY, name: "writer", scopes: ["read", "generate", "write"], expires_at: null, revoked_at: null, last_used_at: now, key_hash: hashApiKey(WRITE_KEY) },
-      { id: "key-read", agency_id: AGENCY, name: "reader", scopes: ["read", "generate"], expires_at: null, revoked_at: null, last_used_at: now, key_hash: hashApiKey(READ_KEY) },
+      { id: "key-write", account_id: ACCOUNT, name: "writer", scopes: ["read", "generate", "write"], expires_at: null, revoked_at: null, last_used_at: now, key_hash: hashApiKey(WRITE_KEY) },
+      { id: "key-read", account_id: ACCOUNT, name: "reader", scopes: ["read", "generate"], expires_at: null, revoked_at: null, last_used_at: now, key_hash: hashApiKey(READ_KEY) },
     ],
     workspaces: [
-      { id: WS, agency_id: AGENCY, name: "Acme", domain: "acme.com", status: "on", paused_meta: null, paused_until: null, auto_generate_weekly_limit: 2, language: "en", location_code: 2840, created_at: now },
-      { id: OTHER_WS, agency_id: "agency-2", name: "Not ours", domain: "other.com", status: "on", paused_meta: null, paused_until: null, created_at: now },
+      { id: WS, account_id: ACCOUNT, name: "Acme", domain: "acme.com", status: "on", paused_meta: null, paused_until: null, auto_generate_weekly_limit: 2, language: "en", location_code: 2840, created_at: now },
+      { id: OTHER_WS, account_id: "account-2", name: "Not ours", domain: "other.com", status: "on", paused_meta: null, paused_until: null, created_at: now },
     ],
     articles: [
       { id: ART_REVIEW, workspace_id: WS, title: "Acme guide", slug: "acme-guide", keyword: "acme", status: "review", content: body("Acme guide"), word_count: 9, seo_score: 70, created_at: now, updated_at: now },

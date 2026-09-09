@@ -40,7 +40,7 @@ type EventRow = {
   level: Level;
   source: string;
   message: string;
-  agency_id: string | null;
+  account_id: string | null;
   workspace_id: string | null;
   context: Record<string, unknown> | null;
 };
@@ -104,7 +104,7 @@ export default async function AdminEventsPage({
 
   let query = admin
     .from("system_events")
-    .select("id, created_at, level, source, message, agency_id, workspace_id, context")
+    .select("id, created_at, level, source, message, account_id, workspace_id, context")
     .order("created_at", { ascending: false })
     .limit(PAGE_SIZE);
   if (level) query = query.eq("level", level);

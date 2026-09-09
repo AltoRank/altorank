@@ -76,7 +76,7 @@ export interface RunOnboardingResult {
 interface Workspace {
   id: string;
   domain: string | null;
-  agency_id: string;
+  account_id: string;
   language: string | null;
   location_code?: number | null;
   auto_generate_weekly_limit?: number | null;
@@ -348,7 +348,7 @@ async function runPhases(
       // gets FREE_DRAFTS a calendar month - seven since 2026-09-06, not one -
       // and onboarding is where the first of them is spent. The message counts
       // off the limit rather than restating a number that has already moved.
-      const quota = await getQuota(supabase, workspace.agency_id);
+      const quota = await getQuota(supabase, workspace.account_id);
       if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
         // The one sentence the gates share (lib/billing/quota.ts). Written out
         // twice here, the paid half drifted: it said "Upgrade on the Billing

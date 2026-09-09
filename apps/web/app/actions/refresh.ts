@@ -142,14 +142,14 @@ export async function saveBrief(candidateId: string, text: string): Promise<void
  * Overwrites whatever is there, which is what a "Regenerate" button means.
  */
 export async function generateBrief(candidateId: string): Promise<BillingOutcome<{ text: string }>> {
-  const { agencyId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth();
   const candidate = await ownCandidate(candidateId);
   const supabase = await createClient();
 
   // The scheduled twin of this call is gated twice over (setRefreshSettings
   // and cron/refresh). Pressing "Generate brief" is the same model call with
   // no gate at all, which made the paywall on scheduled rewrites a formality.
-  const gate = await canSpend(supabase, agencyId, {
+  const gate = await canSpend(supabase, accountId, {
     userEmail: user.email ?? undefined,
     workspaceId: candidate.workspace_id,
     action: "refresh",
@@ -293,10 +293,10 @@ export async function setRefreshSettings(
   workspaceId: string,
   settings: { enabled: boolean; days: number[] },
 ): Promise<void> {
-  const { agencyId } = await requireAuth();
+  const { accountId } = await requireAuth();
   const parsed = settingsSchema.parse(settings);
   const supabase = await createClient();
-  if (parsed.enabled && (await needsPlanToShip(supabase, agencyId))) {
+  if (parsed.enabled && (await needsPlanToShip(supabase, accountId))) {
     throw new Error(SCHEDULED_REWRITES_NEED_PLAN);
   }
   const { error } = await supabase
@@ -304,7 +304,7 @@ export async function setRefreshSettings(
     .update({ refresh_enabled: parsed.enabled, refresh_days: [...new Set(parsed.days)].sort() })
     .eq("id", workspaceId)
     // Defence in depth over RLS: the id arrives from the browser.
-    .eq("agency_id", agencyId);
+    .eq("account_id", accountId);
   if (error) throw new Error(error.message);
   revalidatePath("/settings/refresh");
   revalidatePath(IMPROVEMENTS);

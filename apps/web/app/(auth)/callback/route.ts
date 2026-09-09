@@ -71,8 +71,8 @@ async function sendWelcome(userId: string): Promise<void> {
   try {
     const admin = createServiceClient();
     const { data: member } = await admin
-      .from("agency_members")
-      .select("agency_id")
+      .from("account_members")
+      .select("account_id")
       .eq("user_id", userId)
       .limit(1)
       .maybeSingle();
@@ -80,11 +80,11 @@ async function sendWelcome(userId: string): Promise<void> {
     // email about them rather than about the product.
     let domain: string | null = null;
     let name: string | null = null;
-    if (member?.agency_id) {
+    if (member?.account_id) {
       const { data: workspace } = await admin
         .from("workspaces")
         .select("domain")
-        .eq("agency_id", member.agency_id as string)
+        .eq("account_id", member.account_id as string)
         .order("created_at", { ascending: true })
         .limit(1)
         .maybeSingle();

@@ -38,7 +38,7 @@ export async function shareCardFactsWith(supabase: SupabaseClient, workspaceId: 
     await Promise.all([
       supabase
         .from("workspaces")
-        .select("id, domain, dr, agency_id, agencies(remove_branding)")
+        .select("id, domain, dr, account_id, accounts(remove_branding)")
         .eq("id", workspaceId)
         .maybeSingle(),
       supabase
@@ -67,7 +67,7 @@ export async function shareCardFactsWith(supabase: SupabaseClient, workspaceId: 
         // them counts the same click up to four times (lib/gsc/analysis.ts).
         // This number is printed on a public share card and burned into its
         // OG image as "Search clicks, 28 days", which is the worst place in
-        // the product to be four times too high: it is the figure an agency
+        // the product to be four times too high: it is the figure an account
         // puts in front of its own client.
         .is("query", null)
         .is("page_url", null)
@@ -77,7 +77,7 @@ export async function shareCardFactsWith(supabase: SupabaseClient, workspaceId: 
 
   const gscConnected = (gscCount ?? 0) > 0;
   const rows = (clickRows ?? []) as Array<{ clicks: number | null }>;
-  const agency = ws.agencies as unknown as { remove_branding: boolean | null } | null;
+  const account = ws.accounts as unknown as { remove_branding: boolean | null } | null;
 
   return {
     domain: ws.domain ?? "",
@@ -90,6 +90,6 @@ export async function shareCardFactsWith(supabase: SupabaseClient, workspaceId: 
     planned: planned ?? 0,
     gscConnected,
     clicks28d: gscConnected && rows.length > 0 ? rows.reduce((s, r) => s + (r.clicks ?? 0), 0) : null,
-    removeBranding: Boolean(agency?.remove_branding),
+    removeBranding: Boolean(account?.remove_branding),
   };
 }

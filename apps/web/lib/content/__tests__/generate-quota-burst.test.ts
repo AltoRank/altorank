@@ -44,7 +44,7 @@ function client() {
   const single = async () => ({
     data: {
       id: "ws1",
-      agency_id: "agency1",
+      account_id: "agency1",
       domain: "example.test",
       ai_provider: null,
       ai_model: null,

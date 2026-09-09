@@ -78,7 +78,7 @@ function announceWhenSettled(
 interface WorkerWorkspace {
   id: string;
   domain: string | null;
-  agency_id: string;
+  account_id: string;
   language: string | null;
   location_code: number | null;
   auto_generate_weekly_limit: number | null;
@@ -111,7 +111,7 @@ export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise
 
   const { data: ws } = await supabase
     .from("workspaces")
-    .select("id, domain, agency_id, language, location_code, auto_generate_weekly_limit, business_profile")
+    .select("id, domain, account_id, language, location_code, auto_generate_weekly_limit, business_profile")
     .eq("id", run.workspace_id)
     .maybeSingle();
   const workspace = ws as WorkerWorkspace | null;

@@ -34,7 +34,7 @@ vi.mock("next/server", async (importOriginal) => ({
   },
 }));
 
-const AGENCY = "agency-1";
+const ACCOUNT = "account-1";
 const WS = "11111111-1111-4111-8111-111111111111";
 const KEY = "altorank_live_" + "G".repeat(40);
 const KW_OURS = "66666666-6666-4666-8666-666666666666";
@@ -43,8 +43,8 @@ const KW_THEIRS = "77777777-7777-4777-8777-777777777777";
 function seed(): Seed {
   const now = new Date().toISOString();
   return {
-    api_keys: [{ id: "key-gen", agency_id: AGENCY, name: "gen", scopes: ["read", "generate"], expires_at: null, revoked_at: null, last_used_at: now, key_hash: hashApiKey(KEY) }],
-    workspaces: [{ id: WS, agency_id: AGENCY, name: "Acme", domain: "acme.com", status: "on", ai_provider: "claude", created_at: now }],
+    api_keys: [{ id: "key-gen", account_id: ACCOUNT, name: "gen", scopes: ["read", "generate"], expires_at: null, revoked_at: null, last_used_at: now, key_hash: hashApiKey(KEY) }],
+    workspaces: [{ id: WS, account_id: ACCOUNT, name: "Acme", domain: "acme.com", status: "on", ai_provider: "claude", created_at: now }],
     articles: [],
     keywords: [
       { id: KW_OURS, workspace_id: WS, term: "acme widgets", status: "planned", created_at: now },
@@ -96,7 +96,7 @@ describe("POST /articles/generate idempotency", () => {
     expect(afterCalls).toHaveLength(1);
     expect(quota).toHaveBeenCalledTimes(1);
     expect(db.tables.agent_idempotency_keys).toEqual([
-      expect.objectContaining({ agency_id: AGENCY, key: "draft-1", article_id: a.data.article_id }),
+      expect.objectContaining({ account_id: ACCOUNT, key: "draft-1", article_id: a.data.article_id }),
     ]);
   });
 

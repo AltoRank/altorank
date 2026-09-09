@@ -6,7 +6,7 @@
 // plain SupabaseClient so the server action (app/actions/plan.ts) and the
 // agent API (app/api/agent/v1/keywords/bulk-*) run the same code. Every write
 // names the workspace as well as the row: the service-role client the agent
-// API holds has no RLS behind it, and the cookie client's RLS is agency-wide,
+// API holds has no RLS behind it, and the cookie client's RLS is account-wide,
 // so in neither case is the id alone enough. See AGENTS.md.
 //
 // Only an entry with no article can be moved or removed. Once written, the

@@ -6,7 +6,7 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { detectLinks, type DetectResult, type SourceKind } from "@/lib/linking/detect";
 
 // Every action names its workspace and RLS confines it to the caller's
-// agency, so a foreign id misses rather than widens. `requireAuth` is for the
+// account, so a foreign id misses rather than widens. `requireAuth` is for the
 // session itself: an anonymous call must fail before it reaches the database.
 
 const KINDS: SourceKind[] = ["sitemap", "blog_root", "manual_url"];

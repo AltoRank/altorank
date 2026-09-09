@@ -18,7 +18,7 @@ const created: Record<string, unknown>[] = [];
 let customerId: string | null = null;
 
 vi.mock("@/lib/auth/require-auth", () => ({
-  requireAuth: async () => ({ agencyId: "agency-1", userId: "user-1" }),
+  requireAuth: async () => ({ accountId: "account-1", userId: "user-1" }),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -108,9 +108,9 @@ describe("createCheckoutSession: VAT, when STRIPE_TAX_ENABLED", () => {
     expect(created[0].automatic_tax).toEqual({ enabled: true });
   });
 
-  it("still maps the agency and tier for the webhook", async () => {
+  it("still maps the account and tier for the webhook", async () => {
     await createCheckoutSession("growth", "month");
-    expect(created[0].metadata).toMatchObject({ agency_id: "agency-1", plan: "growth" });
+    expect(created[0].metadata).toMatchObject({ account_id: "account-1", plan: "growth" });
   });
 });
 
@@ -127,10 +127,10 @@ describe("createCheckoutSession: VAT, when the flag is off (the default)", () =>
     expect(created[0].customer_update).toBeUndefined();
   });
 
-  it("still maps the agency and tier for the webhook", async () => {
+  it("still maps the account and tier for the webhook", async () => {
     taxOn = false;
     await createCheckoutSession("growth", "year");
-    expect(created[0].metadata).toMatchObject({ agency_id: "agency-1", plan: "growth" });
+    expect(created[0].metadata).toMatchObject({ account_id: "account-1", plan: "growth" });
   });
 
   it("is off unless the env var is exactly the string true", async () => {

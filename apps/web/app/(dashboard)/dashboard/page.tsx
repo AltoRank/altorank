@@ -87,12 +87,12 @@ export default async function DashboardPage() {
   // Workspaces page has always passed this; the Dashboard rendered
   // <ClientActions /> bare, which pins `atLimit` to false (P0-O3). Chained
   // rather than awaited here so it joins the read below instead of preceding
-  // it - it needs the agency id, nothing else on this page needs it.
+  // it - it needs the account id, nothing else on this page needs it.
   // The role rides along: "Add workspace" is owner/admin, so an editor gets
   // the sentence naming who can rather than a button that refuses.
   const authRead = requireAuth();
-  const allowanceRead = authRead.then(({ agencyId, user }) =>
-    getWorkspaceAllowance(gscSupabase, agencyId, user.email),
+  const allowanceRead = authRead.then(({ accountId, user }) =>
+    getWorkspaceAllowance(gscSupabase, accountId, user.email),
   );
   const viewerRole = (await authRead).role;
 

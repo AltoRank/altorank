@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { withAgent, readJson } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
-import { workspaceInAgency } from "@/lib/agent/data";
+import { workspaceInAccount } from "@/lib/agent/data";
 import { discoverKeywords, discoverKeywordsFromSeeds } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { canSpend } from "@/lib/billing/spend-gate";
@@ -35,7 +35,7 @@ export const POST = withAgent(async (request, ctx) => {
     );
   }
 
-  const workspace = await workspaceInAgency(ctx, body.data.workspace_id);
+  const workspace = await workspaceInAccount(ctx, body.data.workspace_id);
   if (!workspace) {
     return fail("not_found", "Workspace not found in this account.", "Call GET /workspaces and use an id from that list.");
   }
@@ -52,7 +52,7 @@ export const POST = withAgent(async (request, ctx) => {
   // and MCP surface: `altorank_suggest_keywords` spent money for an account
   // with no plan, from a key that is not allowed to write anything.
   // `null` for the address is right here: an API key is nobody's session.
-  const gate = await canSpend(ctx.supabase, ctx.agencyId, {
+  const gate = await canSpend(ctx.supabase, ctx.accountId, {
     userEmail: null,
     workspaceId: workspace.id,
     action: "keyword-research",

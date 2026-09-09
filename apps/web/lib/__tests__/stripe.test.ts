@@ -4,7 +4,7 @@ import { planForPriceId, isSelfServePlan, PLAN_ARTICLE_LIMITS, PLAN_PRICES } fro
 // The inverse of PLAN_PRICE_IDS, which is how the webhook learns what a
 // customer bought. Getting it wrong is a revenue bug in both directions: a
 // price that resolves to the wrong tier meters the wrong ceiling, and a price
-// that resolves to nothing leaves agencies.plan on its 'starter' default.
+// that resolves to nothing leaves accounts.plan on its 'starter' default.
 
 const ENV = { ...process.env };
 

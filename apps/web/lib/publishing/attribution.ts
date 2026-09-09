@@ -55,7 +55,7 @@ export const ATTRIBUTION_ANCHOR = "AltoRank";
 /**
  * True when this article should carry the line.
  *
- * `removeBranding` is the agency's own white-label switch, which paid plans
+ * `removeBranding` is the account's own white-label switch, which paid plans
  * own outright. It cannot turn the line off on the free tier: otherwise the
  * setting is the gate and free is simply white-label with extra steps.
  */
@@ -66,7 +66,7 @@ export function shouldAttribute(quota: Quota, removeBranding: boolean): boolean 
 }
 
 /**
- * Whether the agency belongs to an operator, asked of the agency rather than
+ * Whether the account belongs to an operator, asked of the account rather than
  * of whoever triggered the publish.
  *
  * `getQuota` answers "operator" from the *caller's* address, which is right on
@@ -80,15 +80,15 @@ export function shouldAttribute(quota: Quota, removeBranding: boolean): boolean 
  * admin call fails, and false is the right answer there anyway, because
  * `getQuota` has already resolved the signed-in operator itself.
  */
-export async function isOperatorAgency(
+export async function isOperatorAccount(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
 ): Promise<boolean> {
   try {
     const { data: members } = await supabase
-      .from("agency_members")
+      .from("account_members")
       .select("user_id")
-      .eq("agency_id", agencyId);
+      .eq("account_id", accountId);
     for (const m of members ?? []) {
       const { data } = await supabase.auth.admin.getUserById(m.user_id as string);
       if (isAdminEmail(data?.user?.email)) return true;

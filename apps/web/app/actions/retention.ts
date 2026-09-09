@@ -11,7 +11,7 @@ import { billingFailure, type BillingOutcome } from "@/lib/billing/failure";
 import { createServiceClient } from "@/lib/supabase/server";
 import { notifyAccountPaused } from "@/lib/email/lifecycle";
 
-// `agencies.cancels_at` is a billing column. Migration 072 guards it with a
+// `accounts.cancels_at` is a billing column. Migration 072 guards it with a
 // trigger that raises 42501 for any signed-in user - owner included - because
 // the only thing that legitimately sets it is the subscription state at
 // Stripe. These two actions have just told Stripe, so the write is made as
@@ -28,16 +28,16 @@ import { notifyAccountPaused } from "@/lib/email/lifecycle";
 // server-action message in production, so a refused pause or cancellation
 // reached the person as a hex string. See lib/billing/failure.ts.
 
-async function ownerAgency() {
-  const { agencyId, user } = await requireAuth(["owner"]);
+async function ownerAccount() {
+  const { accountId, user } = await requireAuth(["owner"]);
   const supabase = await createClient();
-  const { data: agency } = await supabase
-    .from("agencies")
+  const { data: account } = await supabase
+    .from("accounts")
     .select("id, name, plan, stripe_subscription_id, current_period_end")
-    .eq("id", agencyId)
+    .eq("id", accountId)
     .single();
-  if (!agency) throw new Error("No account found.");
-  return { supabase, agency, user };
+  if (!account) throw new Error("No account found.");
+  return { supabase, account, user };
 }
 
 /**
@@ -48,20 +48,20 @@ async function ownerAgency() {
  */
 export async function pauseAccount(months: unknown): Promise<BillingOutcome<{ pausedUntil: string }>> {
   if (!isPauseMonths(months)) return { ok: false, error: "Choose 1, 2 or 3 months." };
-  const { supabase, agency } = await ownerAgency();
+  const { supabase, account } = await ownerAccount();
   const until = pausedUntil(new Date(), months);
 
   const { data: paused, error } = await supabase
     .from("workspaces")
     .update({ status: "paused", paused_until: until })
-    .eq("agency_id", agency.id)
+    .eq("account_id", account.id)
     .neq("status", "paused")
     .select("id");
   if (error) return billingFailure(error, "The workspaces could not be paused");
 
-  if (billingEnabled && agency.stripe_subscription_id) {
+  if (billingEnabled && account.stripe_subscription_id) {
     try {
-      await getStripe().subscriptions.update(agency.stripe_subscription_id, {
+      await getStripe().subscriptions.update(account.stripe_subscription_id, {
         pause_collection: { behavior: "void", resumes_at: resumesAtUnix(until) },
       });
     } catch (err) {
@@ -84,8 +84,8 @@ export async function pauseAccount(months: unknown): Promise<BillingOutcome<{ pa
   //
   // Never fatal: the pause is already written on both sides.
   try {
-    await notifyAccountPaused(createServiceClient(), agency.id, {
-      agencyName: (agency.name as string | null) ?? null,
+    await notifyAccountPaused(createServiceClient(), account.id, {
+      accountName: (account.name as string | null) ?? null,
       pausedUntil: until,
       workspaceCount: (paused ?? []).length,
     });
@@ -109,17 +109,17 @@ export async function pauseAccount(months: unknown): Promise<BillingOutcome<{ pa
  * (lib/billing/resume.ts). This button is for ending the pause early.
  */
 export async function resumeAccount(): Promise<BillingOutcome> {
-  const { supabase, agency } = await ownerAgency();
+  const { supabase, account } = await ownerAccount();
 
   try {
-    await resumePausedWorkspaces(supabase, agency.id);
+    await resumePausedWorkspaces(supabase, account.id);
   } catch (err) {
     return billingFailure(err, "The workspaces could not be resumed");
   }
 
-  if (billingEnabled && agency.stripe_subscription_id) {
+  if (billingEnabled && account.stripe_subscription_id) {
     try {
-      await liftStripePause(getStripe(), agency.stripe_subscription_id);
+      await liftStripePause(getStripe(), account.stripe_subscription_id);
     } catch (err) {
       // Writing is back either way; Stripe resumes on `resumes_at` by itself,
       // and the generate cron lifts the rows again if it has to
@@ -141,7 +141,7 @@ export async function resumeAccount(): Promise<BillingOutcome> {
 /**
  * Cancel at period end, after the survey. The feedback row is written first
  * and stays even if Stripe refuses; the subscription is then told to stop
- * renewing and `agencies.cancels_at` records the date the page has to state.
+ * renewing and `accounts.cancels_at` records the date the page has to state.
  * Nothing about the workspaces changes: access continues to that date, and
  * the articles stay readable and exportable afterwards.
  */
@@ -151,9 +151,9 @@ export async function cancelPlan(answers: {
 }): Promise<BillingOutcome<{ cancelsAt: string | null }>> {
   const v = validateCancellation(answers);
   if (!v.ok) return { ok: false, error: v.error };
-  const { supabase, agency, user } = await ownerAgency();
+  const { supabase, account, user } = await ownerAccount();
 
-  if (!agency.stripe_subscription_id) {
+  if (!account.stripe_subscription_id) {
     return { ok: false, error: "There is no active subscription to cancel." };
   }
 
@@ -164,20 +164,20 @@ export async function cancelPlan(answers: {
   const { data: feedback, error: fbError } = await supabase
     .from("cancellation_feedback")
     .insert({
-      agency_id: agency.id,
+      account_id: account.id,
       user_id: user.id,
       reason: v.reason,
       detail: v.detail,
-      plan: agency.plan,
+      plan: account.plan,
     })
     .select("id")
     .single();
   if (fbError) return billingFailure(fbError, "The cancellation could not be recorded");
 
-  let cancelsAt: string | null = agency.current_period_end ?? null;
+  let cancelsAt: string | null = account.current_period_end ?? null;
   if (billingEnabled) {
     try {
-      const sub = await getStripe().subscriptions.update(agency.stripe_subscription_id, {
+      const sub = await getStripe().subscriptions.update(account.stripe_subscription_id, {
         cancel_at_period_end: true,
       });
       if (sub.cancel_at) cancelsAt = new Date(sub.cancel_at * 1000).toISOString();
@@ -194,7 +194,7 @@ export async function cancelPlan(answers: {
     }
   }
 
-  const { error } = await createServiceClient().from("agencies").update({ cancels_at: cancelsAt }).eq("id", agency.id);
+  const { error } = await createServiceClient().from("accounts").update({ cancels_at: cancelsAt }).eq("id", account.id);
   if (error) return billingFailure(error, "The cancellation date could not be saved");
 
   revalidatePath("/settings/billing");
@@ -203,17 +203,17 @@ export async function cancelPlan(answers: {
 
 /** Undo a pending cancellation. The plan renews as before. */
 export async function keepPlan(): Promise<BillingOutcome> {
-  const { agency } = await ownerAgency();
-  if (billingEnabled && agency.stripe_subscription_id) {
+  const { account } = await ownerAccount();
+  if (billingEnabled && account.stripe_subscription_id) {
     try {
-      await getStripe().subscriptions.update(agency.stripe_subscription_id, { cancel_at_period_end: false });
+      await getStripe().subscriptions.update(account.stripe_subscription_id, { cancel_at_period_end: false });
     } catch (err) {
       // Stripe still holds the cancellation, so clearing `cancels_at` here
       // would hide a plan that really is ending.
       return billingFailure(err, "The cancellation could not be undone");
     }
   }
-  const { error } = await createServiceClient().from("agencies").update({ cancels_at: null }).eq("id", agency.id);
+  const { error } = await createServiceClient().from("accounts").update({ cancels_at: null }).eq("id", account.id);
   if (error) return billingFailure(error, "The cancellation could not be undone");
   revalidatePath("/settings/billing");
   return { ok: true };

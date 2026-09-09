@@ -8,9 +8,9 @@
 // because the reader is an agent that has to explain the failure to a person.
 //
 // The lookup runs on the service role: there is no user session to build an
-// RLS client from, and the key itself is the credential. That puts the agency
+// RLS client from, and the key itself is the credential. That puts the account
 // boundary on this module and on lib/agent/data.ts rather than on the
-// database, so every read there filters by the agency the key resolved to.
+// database, so every read there filters by the account the key resolved to.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -19,10 +19,10 @@ import { fail, GUIDANCE, type FailEnvelope } from "./envelope";
 import { agentRateLimiter, type RateLimitDecision } from "./rate-limit";
 
 export type AgentContext = {
-  /** Service-role client. Every query MUST filter by `agencyId`. */
+  /** Service-role client. Every query MUST filter by `accountId`. */
   supabase: SupabaseClient;
   key: { id: string; name: string; scopes: string[]; expires_at: string | null; last_used_at: string | null };
-  agencyId: string;
+  accountId: string;
   rate: RateLimitDecision;
 };
 
@@ -52,7 +52,7 @@ export async function authenticateAgentRequest(
   const supabase = createServiceClient();
   const { data: row } = await supabase
     .from("api_keys")
-    .select("id, agency_id, name, scopes, expires_at, last_used_at, revoked_at")
+    .select("id, account_id, name, scopes, expires_at, last_used_at, revoked_at")
     .eq("key_hash", hashApiKey(raw))
     .maybeSingle();
 
@@ -99,7 +99,7 @@ export async function authenticateAgentRequest(
     ctx: {
       supabase,
       key: { id: row.id, name: row.name, scopes, expires_at: row.expires_at, last_used_at: row.last_used_at },
-      agencyId: row.agency_id,
+      accountId: row.account_id,
       rate,
     },
   };

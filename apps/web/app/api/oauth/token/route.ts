@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
   // Same notice a hand-made key sends: the other owners and admins learn a
   // credential now exists, and which connector holds it. Value not included.
   await announceApiKeyCreated({
-    agencyId: outcome.key.agencyId,
+    accountId: outcome.key.accountId,
     keyId: outcome.key.id,
     keyName: `${client.client_name} (connector)`,
     prefix: outcome.key.prefix,

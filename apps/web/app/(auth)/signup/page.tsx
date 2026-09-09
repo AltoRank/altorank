@@ -56,10 +56,10 @@ async function signUp(formData: FormData) {
   // Create the account record + membership using the service role (the user's
   // session is not confirmed yet).
   //
-  // The table is called `agencies` and keeps that name: it is the tenant row,
+  // The table is called `accounts` and keeps that name: it is the tenant row,
   // and one of those holds a workspace per site or per client. The word only
   // has to be right where a person reads it, and "Could not create your
-  // agency" reads as a broken product to the solo founder the signup form is
+  // account" reads as a broken product to the solo founder the signup form is
   // now written for.
   if (data.user) {
     const admin = createServiceClient();
@@ -67,32 +67,32 @@ async function signUp(formData: FormData) {
       name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") ||
       "workspace";
 
-    // `agencies.slug` is UNIQUE and the slug comes straight from the agency
+    // `accounts.slug` is UNIQUE and the slug comes straight from the account
     // name, so the second person to sign up as "Acme" collided. The insert
-    // error was discarded, leaving that user with an account but no agency and
+    // error was discarded, leaving that user with an account but no account and
     // no membership. Retry with a suffix instead, and fail loudly if we still
     // cannot place them.
-    let agencyId: string | null = null;
+    let accountId: string | null = null;
     let lastError = "";
 
-    for (let attempt = 0; attempt < 5 && !agencyId; attempt++) {
+    for (let attempt = 0; attempt < 5 && !accountId; attempt++) {
       const slug = attempt === 0 ? base : `${base}-${Math.random().toString(36).slice(2, 8)}`;
-      const { data: agency, error: agencyError } = await admin
-        .from("agencies")
+      const { data: account, error: accountError } = await admin
+        .from("accounts")
         .insert({ name, slug })
         .select("id")
         .single();
 
-      if (agency) {
-        agencyId = agency.id;
+      if (account) {
+        accountId = account.id;
         break;
       }
-      lastError = agencyError?.message ?? "unknown error";
+      lastError = accountError?.message ?? "unknown error";
       // 23505 is unique_violation: the slug is taken, so try another.
-      if (agencyError?.code !== "23505") break;
+      if (accountError?.code !== "23505") break;
     }
 
-    if (!agencyId) {
+    if (!accountId) {
       // Past this point the auth user exists and the account does not: the
       // person can sign in and lands nowhere. Every one of these three
       // branches leaves that half-made state behind, tells the visitor a
@@ -104,14 +104,14 @@ async function signUp(formData: FormData) {
       await recordEvent({
         level: "error",
         source: "signup",
-        message: `The account row could not be created, so the user has no agency: ${lastError}`,
-        context: { stage: "agency", userId: data.user.id, domain },
+        message: `The account row could not be created, so the user has no account: ${lastError}`,
+        context: { stage: "account", userId: data.user.id, domain },
       });
       redirect("/signup?error=" + encodeURIComponent(`Could not set up your workspace: ${lastError}`));
     }
 
-    const { error: memberError } = await admin.from("agency_members").insert({
-      agency_id: agencyId,
+    const { error: memberError } = await admin.from("account_members").insert({
+      account_id: accountId,
       user_id: data.user.id,
       role: "owner",
     });
@@ -120,7 +120,7 @@ async function signUp(formData: FormData) {
         level: "error",
         source: "signup",
         message: `The membership could not be created, so the user cannot reach their own account: ${memberError.message}`,
-        agencyId,
+        accountId,
         context: { stage: "member", userId: data.user.id, domain },
       });
       redirect(
@@ -131,7 +131,7 @@ async function signUp(formData: FormData) {
 
     if (DOMAIN_PATTERN.test(domain)) {
       const { error: wsError } = await admin.from("workspaces").insert({
-        agency_id: agencyId,
+        account_id: accountId,
         name: domain,
         domain,
         initials: domain.slice(0, 2).toUpperCase(),
@@ -169,7 +169,7 @@ async function signUp(formData: FormData) {
           level: "warn",
           source: "signup",
           message: `The first site could not be created, so nothing will be written for this account yet: ${wsError.message}`,
-          agencyId,
+          accountId,
           context: { stage: "workspace", userId: data.user.id, domain },
         });
       }

@@ -12,7 +12,7 @@ import { appLink } from "@/lib/app-url";
  * on a phone. What makes that safe is the signature in the URL
  * (lib/publishing/hold-link.ts), which binds the article id to the address the
  * mail was sent to, so it cannot hold a draft on an account the holder is not
- * on - and the address is then checked against the article's agency before
+ * on - and the address is then checked against the article's account before
  * anything is written.
  *
  * The hold is recorded against the person: `held_by` is the member whose
@@ -43,7 +43,7 @@ export default async function HoldPage(props: Props) {
   const supabase = createServiceClient();
   const { data: article } = await supabase
     .from("articles")
-    .select("id, title, status, held_by, workspace_id, workspaces(agency_id, domain)")
+    .select("id, title, status, held_by, workspace_id, workspaces(account_id, domain)")
     .eq("id", parsed.articleId)
     .maybeSingle();
 
@@ -56,16 +56,16 @@ export default async function HoldPage(props: Props) {
   }
 
   const ws = (Array.isArray(article.workspaces) ? article.workspaces[0] : article.workspaces) as
-    | { agency_id: string; domain: string | null }
+    | { account_id: string; domain: string | null }
     | null;
 
-  // The link's address must belong to a member of the article's agency. The
+  // The link's address must belong to a member of the article's account. The
   // addresses live in auth.users, which PostgREST does not expose, so this is
-  // the same walk agencyRecipients makes, in reverse: one lookup per member
+  // the same walk accountRecipients makes, in reverse: one lookup per member
   // until the address matches.
   let holder: string | null = null;
   if (ws) {
-    const { data: members } = await supabase.from("agency_members").select("user_id").eq("agency_id", ws.agency_id);
+    const { data: members } = await supabase.from("account_members").select("user_id").eq("account_id", ws.account_id);
     for (const m of members ?? []) {
       const { data } = await supabase.auth.admin.getUserById(m.user_id as string);
       if (data?.user?.email?.trim().toLowerCase() === parsed.email) {

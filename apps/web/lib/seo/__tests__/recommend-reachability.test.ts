@@ -70,7 +70,7 @@ const ROWS: Row[] = [
   { id: "a", term: "business building websites", volume: 2900, difficulty: 100 },
   { id: "b", term: "website design", volume: 49500, difficulty: 70 },
   { id: "c", term: "small business websites", volume: 2400, difficulty: 39 },
-  { id: "d", term: "website design agency", volume: 1200, difficulty: 28 },
+  { id: "d", term: "website design account", volume: 1200, difficulty: 28 },
 ];
 
 describe("recommendKeywords — reachability", () => {
@@ -79,7 +79,7 @@ describe("recommendKeywords — reachability", () => {
     const byTerm = new Map(recs.map((r) => [r.term, r]));
     expect(byTerm.get("business building websites")?.action).toBe("skip");
     expect(byTerm.get("website design")?.action).toBe("skip");
-    expect(byTerm.get("website design agency")?.action).toBe("write");
+    expect(byTerm.get("website design account")?.action).toBe("write");
   });
 
   it("says why, in the row the reviewer reads", async () => {
@@ -97,7 +97,7 @@ describe("recommendKeywords — reachability", () => {
     // Before: every KD 45+ row scored 0.0, the twelve were tied, and the pick
     // was the provider's response order.
     const next = pickNextKeyword(await recommendKeywords(client(ROWS, 0), "ws1"));
-    expect(next?.term).toBe("website design agency");
+    expect(next?.term).toBe("website design account");
   });
 
   it("orders the unwinnable rows among themselves instead of flattening them to zero", async () => {

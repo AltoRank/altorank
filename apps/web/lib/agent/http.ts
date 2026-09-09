@@ -93,7 +93,7 @@ export function withAgent<P = Record<string, never>>(
       // The 5xx an agent sees. Every other agent-API failure is a deliberate
       // envelope with a code and guidance; this branch is the one nobody
       // planned for, and until now the only trace of it was a console line in
-      // whichever function happened to serve the request. The key's own agency
+      // whichever function happened to serve the request. The key's own account
       // is on the row, so "this customer's agent has been failing all week" is
       // a query rather than a support ticket.
       await recordEvent(
@@ -101,7 +101,7 @@ export function withAgent<P = Record<string, never>>(
           level: "error",
           source: "agent.api",
           message: `${request.method} ${request.nextUrl.pathname}: ${message}`,
-          agencyId: auth.ctx.agencyId,
+          accountId: auth.ctx.accountId,
           // `label`, not `keyName`: the recorder redacts any context key whose
           // name looks like a credential, and this is the human label the
           // customer typed, which is exactly what makes the row useful.

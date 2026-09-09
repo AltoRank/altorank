@@ -62,9 +62,9 @@ export async function writePlannedEntryNow(
 
   // Beyond the plan's allowance, in scheduled order? Then it is inactive and
   // the calendar says so; the same quota the writer's gate will consult.
-  const { data: ws } = await supabase.from("workspaces").select("agency_id").eq("id", workspaceId).maybeSingle();
-  if (ws?.agency_id) {
-    const quota = await getQuota(supabase, ws.agency_id as string, callerEmail);
+  const { data: ws } = await supabase.from("workspaces").select("account_id").eq("id", workspaceId).maybeSingle();
+  if (ws?.account_id) {
+    const quota = await getQuota(supabase, ws.account_id as string, callerEmail);
     const frozen = await readFrozenEntries(supabase, workspaceId, quota);
     if (frozen.ids.has(entry.id as string)) throw new Error(frozen.reason ?? "This keyword is inactive under the current plan.");
   }

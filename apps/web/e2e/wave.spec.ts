@@ -271,7 +271,7 @@ test("an API key is shown once on creation and can be revoked", async ({ page, s
   const { data: rows } = await db
     .from("api_keys")
     .select("id, name, prefix, key_hash, revoked_at, created_by")
-    .eq("agency_id", signedIn.agencyId);
+    .eq("account_id", signedIn.accountId);
   expect(rows?.length).toBe(1);
   const row = rows![0];
   expect(row.name).toBe(name);

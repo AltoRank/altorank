@@ -24,9 +24,9 @@ import type { CMSConfig } from "@/lib/types";
  * falls back to where the article already went, then to the first connection.
  */
 export async function publishArticle(articleId: string, destinationId?: string | null) {
-  const { user, agencyId } = await requireAuth();
+  const { user, accountId } = await requireAuth();
   const supabase = await createClient();
-  if (await needsPlanToShip(supabase, agencyId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
+  if (await needsPlanToShip(supabase, accountId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
 
   // Fetch workspace_id up front so we can log to publish_log on BOTH the success
   // and the error path — closing the manual-publish audit gap fully (the cron
@@ -94,12 +94,12 @@ async function runAndLog(
  * checkpoint. Records who approved + when (the sign-off).
  */
 export async function approveArticle(articleId: string) {
-  const { user, agencyId } = await requireAuth();
+  const { user, accountId } = await requireAuth();
   const supabase = await createClient();
   // The free draft can be read, edited and rewritten; it cannot ship without
   // a plan. This is the one paywall in the product and it sits exactly where
   // the value is, not at signup.
-  if (await needsPlanToShip(supabase, agencyId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
+  if (await needsPlanToShip(supabase, accountId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
 
   await refuseUnsourcedFigures(supabase, articleId);
 
@@ -172,9 +172,9 @@ async function refuseUnsourcedFigures(
  * say "3 of 4 approved" when one was edited under it.
  */
 export async function approveArticles(articleIds: string[]): Promise<string[]> {
-  const { user, agencyId } = await requireAuth();
+  const { user, accountId } = await requireAuth();
   const supabase = await createClient();
-  if (await needsPlanToShip(supabase, agencyId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
+  if (await needsPlanToShip(supabase, accountId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
   const requested = [...new Set(articleIds)].filter(Boolean);
   if (!requested.length) return [];
 
@@ -335,9 +335,9 @@ export async function unpublishArticle(articleId: string) {
  * already has an external id (lib/publishing/core.ts says how).
  */
 export async function retryPublish(articleId: string) {
-  const { user, agencyId } = await requireAuth();
+  const { user, accountId } = await requireAuth();
   const supabase = await createClient();
-  if (await needsPlanToShip(supabase, agencyId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
+  if (await needsPlanToShip(supabase, accountId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
 
   const result = await retryPublishCore(supabase, articleId, "manual");
   revalidatePath("/articles");

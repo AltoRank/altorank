@@ -6,7 +6,7 @@
 //
 // One action per screen, plus propose and finish. Each is scoped to one
 // workspace and checks that the caller owns it - the wizard is reachable with
-// a workspace id in the URL, and RLS narrows to the agency, not to the site.
+// a workspace id in the URL, and RLS narrows to the account, not to the site.
 //
 // Every screen now writes somewhere. The first version saved the business
 // profile and let the sitemap, blog, and article settings evaporate on
@@ -38,7 +38,7 @@ async function assertWorkspace(workspaceId: string) {
     .select("id, domain, name, business_profile")
     .eq("id", workspaceId)
     .single();
-  // RLS already scopes to the agency; this turns a foreign id into an error
+  // RLS already scopes to the account; this turns a foreign id into an error
   // rather than a silent no-op that looks like a save. Only "no rows"
   // (PGRST116) means that, though: a timeout or pool restart is reported as
   // what it is, not as an ownership problem.
@@ -57,8 +57,8 @@ export async function proposeProfile(workspaceId: string): Promise<InferenceResu
   // One model call per press, and "Try again" is right there on the screen.
   // A new account is inside its free allowance and never sees this; a lapsed
   // one that comes back to add a site does.
-  const { agencyId, user } = await requireAuth();
-  const gate = await canSpend(supabase, agencyId, {
+  const { accountId, user } = await requireAuth();
+  const gate = await canSpend(supabase, accountId, {
     userEmail: user.email ?? undefined,
     workspaceId,
     action: "keyword-research",

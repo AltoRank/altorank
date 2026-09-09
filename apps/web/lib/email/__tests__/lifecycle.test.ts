@@ -138,7 +138,7 @@ describe("refresh proposal ready", () => {
 describe("payment failed", () => {
   const failedAt = "2026-09-01T10:00:00.000Z";
   const base = {
-    agencyName: "Acme Agency",
+    accountName: "Acme Account",
     planLabel: "Managed",
     graceEndsAt: graceEndsAt(failedAt)!.toISOString(),
     amount: "€69.00",
@@ -170,7 +170,7 @@ describe("payment failed", () => {
 describe("subscription cancelled", () => {
   it("names the end date and offers the undo", () => {
     const e = renderSubscriptionCancelled({
-      agencyName: "Acme",
+      accountName: "Acme",
       planLabel: "Agency",
       endsAt: "2026-12-01T00:00:00Z",
     });
@@ -180,38 +180,38 @@ describe("subscription cancelled", () => {
   });
 
   it("stays honest when Stripe gave no date", () => {
-    const e = renderSubscriptionCancelled({ agencyName: null, planLabel: "Managed", endsAt: null });
+    const e = renderSubscriptionCancelled({ accountName: null, planLabel: "Managed", endsAt: null });
     expect(e.subject).toBe("Your plan is set to end");
     expect(e.html).toContain("end of the period you have paid for");
   });
 
   /** The retention screen already asked. Asking again here is the dark pattern. */
   it("makes no discount offer", () => {
-    const html = renderSubscriptionCancelled({ agencyName: null, planLabel: "Managed", endsAt: null }).html;
+    const html = renderSubscriptionCancelled({ accountName: null, planLabel: "Managed", endsAt: null }).html;
     expect(html).not.toMatch(/discount|% off|special offer/i);
   });
 });
 
 describe("account paused and pause ending", () => {
   it("says what a pause stops and what it keeps", () => {
-    const e = renderAccountPaused({ agencyName: "Acme", pausedUntil: "2026-11-15", workspaceCount: 3 });
+    const e = renderAccountPaused({ accountName: "Acme", pausedUntil: "2026-11-15", workspaceCount: 3 });
     expect(e.subject).toBe("Paused until November 15, 2026");
     expect(e.html).toContain("All 3 of your workspaces");
     expect(e.html).toContain("kept exactly as they are");
   });
 
   it("uses the singular for one site", () => {
-    expect(renderAccountPaused({ agencyName: null, pausedUntil: "2026-11-15", workspaceCount: 1 }).html).toContain(
+    expect(renderAccountPaused({ accountName: null, pausedUntil: "2026-11-15", workspaceCount: 1 }).html).toContain(
       "Your workspace",
     );
   });
 
   /** A pause ends by itself at Stripe too, so the first sign would be a charge. */
   it("warns before billing resumes, in days", () => {
-    expect(renderPauseEnding({ agencyName: null, pausedUntil: "2026-11-15", daysLeft: 3 }).subject).toBe(
+    expect(renderPauseEnding({ accountName: null, pausedUntil: "2026-11-15", daysLeft: 3 }).subject).toBe(
       "Your pause ends in 3 days",
     );
-    expect(renderPauseEnding({ agencyName: null, pausedUntil: "2026-11-15", daysLeft: 1 }).subject).toBe(
+    expect(renderPauseEnding({ accountName: null, pausedUntil: "2026-11-15", daysLeft: 1 }).subject).toBe(
       "Your pause ends tomorrow",
     );
   });

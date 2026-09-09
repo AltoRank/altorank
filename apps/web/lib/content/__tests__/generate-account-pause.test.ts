@@ -40,7 +40,7 @@ function client(row: Record<string, unknown>) {
           single: async () => ({
             data: {
               id: "ws1",
-              agency_id: "agency1",
+              account_id: "agency1",
               ai_provider: null,
               ai_model: null,
               language: null,

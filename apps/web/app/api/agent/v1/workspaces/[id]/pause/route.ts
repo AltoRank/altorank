@@ -1,6 +1,6 @@
 import { withAgent, appBaseUrl } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
-import { workspaceInAgency } from "@/lib/agent/data";
+import { workspaceInAccount } from "@/lib/agent/data";
 import { toAgentWorkspace } from "@/lib/agent/records";
 import { pauseWorkspace } from "@/lib/workspaces/pause";
 
@@ -14,13 +14,13 @@ import { pauseWorkspace } from "@/lib/workspaces/pause";
  * paused site. This is not the account-wide billing pause.
  */
 export const POST = withAgent<{ id: string }>(async (request, ctx, { id }) => {
-  const workspace = await workspaceInAgency(ctx, id);
+  const workspace = await workspaceInAccount(ctx, id);
   if (!workspace) return fail("not_found", "Workspace not found in this account.", "Call GET /workspaces and use an id from that list.");
 
   // `by` is a user id in the dashboard; an API key is nobody, so null. The
   // key's name is returned so the agent can say who did it.
-  const { changed, meta } = await pauseWorkspace(ctx.supabase, ctx.agencyId, workspace.id, null);
-  const after = await workspaceInAgency(ctx, workspace.id);
+  const { changed, meta } = await pauseWorkspace(ctx.supabase, ctx.accountId, workspace.id, null);
+  const after = await workspaceInAccount(ctx, workspace.id);
   return ok(
     {
       workspace: after ? toAgentWorkspace(after, appBaseUrl(request)) : null,

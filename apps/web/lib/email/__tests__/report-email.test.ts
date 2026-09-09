@@ -19,13 +19,13 @@ afterAll(() => {
 
 const base = {
   workspaceName: "Alpha",
-  agencyName: "Email Audit",
+  accountName: "Email Audit",
   period: "2026-08-01 to 2026-08-31",
   reportUrl: "https://storage.example/report.pdf?token=abc",
   highlights: { articlesPublished: 4, keywordsTracked: 37 },
 };
 
-const scope = { agencyId: "ag-1", workspaceId: "ws-1" };
+const scope = { accountId: "ag-1", workspaceId: "ws-1" };
 
 beforeEach(() => {
   sendTransactionalEmail.mockReset();
@@ -39,9 +39,9 @@ describe("renderMonthlyReport", () => {
     );
   });
 
-  it("escapes the workspace and agency names, both of them customer input", () => {
+  it("escapes the workspace and account names, both of them customer input", () => {
     const r = renderMonthlyReport(
-      { ...base, workspaceName: "<script>alert(1)</script>", agencyName: '"><img src=x>' },
+      { ...base, workspaceName: "<script>alert(1)</script>", accountName: '"><img src=x>' },
       "a@x.co",
     );
     expect(r.html).not.toContain("<script>");
@@ -114,7 +114,7 @@ describe("sendMonthlyReportEmails", () => {
       email_type: "monthly_report",
       subject_id: "ws-1:2026-08-01 to 2026-08-31",
       recipient: "a@x.co",
-      agency_id: "ag-1",
+      account_id: "ag-1",
       workspace_id: "ws-1",
     });
   });

@@ -5,11 +5,11 @@
 // /api/agent/v1 authenticates a bearer key and then runs every query on the
 // SERVICE ROLE, because a key is not a Supabase session and there is no RLS to
 // resolve. That moves the whole tenancy boundary into lib/agent/data.ts and
-// the route handlers: if one of them names a row by id and forgets the agency,
+// the route handlers: if one of them names a row by id and forgets the account,
 // the database will happily hand over another customer's article.
 //
 // So these tests import the real route handlers - the exported GET and POST -
-// and call them with agency A's key and agency B's ids. They also pin the
+// and call them with account A's key and account B's ids. They also pin the
 // credential rules the same module owns: a revoked key stops working on the
 // next request, an expired key never worked, and a key without the `write`
 // scope cannot mutate.
@@ -93,24 +93,24 @@ async function seed(): Promise<Fixture> {
   const admin = createClient(ENV!.url, ENV!.service, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  await admin.from("agencies").delete().in("slug", SLUGS);
+  await admin.from("accounts").delete().in("slug", SLUGS);
 
-  const { data: agencies, error } = await admin
-    .from("agencies")
+  const { data: accounts, error } = await admin
+    .from("accounts")
     .insert([
       { name: "Agent Iso A", slug: SLUGS[0] },
       { name: "Agent Iso B", slug: SLUGS[1] },
     ])
     .select("id, slug");
-  if (error || !agencies) throw new Error(`agencies: ${error?.message}`);
-  const agencyA = agencies.find((a) => a.slug === SLUGS[0])!.id as string;
-  const agencyB = agencies.find((a) => a.slug === SLUGS[1])!.id as string;
+  if (error || !accounts) throw new Error(`accounts: ${error?.message}`);
+  const accountA = accounts.find((a) => a.slug === SLUGS[0])!.id as string;
+  const accountB = accounts.find((a) => a.slug === SLUGS[1])!.id as string;
 
   const { data: workspaces, error: wsErr } = await admin
     .from("workspaces")
     .insert([
-      { agency_id: agencyA, name: "Agent A", domain: "agent-iso-a.test", initials: "AA", color: "av-c1" },
-      { agency_id: agencyB, name: "Agent B", domain: "agent-iso-b.test", initials: "AB", color: "av-c1" },
+      { account_id: accountA, name: "Agent A", domain: "agent-iso-a.test", initials: "AA", color: "av-c1" },
+      { account_id: accountB, name: "Agent B", domain: "agent-iso-b.test", initials: "AB", color: "av-c1" },
     ])
     .select("id, domain");
   if (wsErr || !workspaces) throw new Error(`workspaces: ${wsErr?.message}`);
@@ -133,10 +133,10 @@ async function seed(): Promise<Fixture> {
   const { data: keys, error: keyErr } = await admin
     .from("api_keys")
     .insert([
-      { agency_id: agencyA, name: "full", key_hash: full.hash, prefix: full.prefix, scopes: ["read", "generate", "write"] },
-      { agency_id: agencyA, name: "read only", key_hash: readOnly.hash, prefix: readOnly.prefix, scopes: ["read"] },
+      { account_id: accountA, name: "full", key_hash: full.hash, prefix: full.prefix, scopes: ["read", "generate", "write"] },
+      { account_id: accountA, name: "read only", key_hash: readOnly.hash, prefix: readOnly.prefix, scopes: ["read"] },
       {
-        agency_id: agencyA,
+        account_id: accountA,
         name: "revoked",
         key_hash: revoked.hash,
         prefix: revoked.prefix,
@@ -144,7 +144,7 @@ async function seed(): Promise<Fixture> {
         revoked_at: new Date().toISOString(),
       },
       {
-        agency_id: agencyA,
+        account_id: accountA,
         name: "expired",
         key_hash: expired.hash,
         prefix: expired.prefix,
@@ -168,13 +168,13 @@ async function seed(): Promise<Fixture> {
   };
 }
 
-describe.skipIf(!LIVE)("agent API: agency A's key against agency B", () => {
+describe.skipIf(!LIVE)("agent API: account A's key against account B", () => {
   beforeAll(async () => {
     fx = await seed();
   }, 60_000);
 
   afterAll(async () => {
-    if (fx?.admin) await fx.admin.from("agencies").delete().in("slug", SLUGS);
+    if (fx?.admin) await fx.admin.from("accounts").delete().in("slug", SLUGS);
   }, 30_000);
 
   it("GET /workspaces lists only its own account", async () => {
@@ -275,7 +275,7 @@ describe.skipIf(!LIVE)("agent API: the key itself", () => {
   }, 60_000);
 
   afterAll(async () => {
-    if (fx?.admin) await fx.admin.from("agencies").delete().in("slug", SLUGS);
+    if (fx?.admin) await fx.admin.from("accounts").delete().in("slug", SLUGS);
   }, 30_000);
 
   it("refuses a revoked key", async () => {

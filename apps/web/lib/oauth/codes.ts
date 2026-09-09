@@ -40,7 +40,7 @@ export type IssueCodeInput = {
   redirectUri: string;
   codeChallenge: string;
   scopes: ApiKeyScope[];
-  agencyId: string;
+  accountId: string;
   userId: string;
 };
 
@@ -52,7 +52,7 @@ export async function issueCode(supabase: SupabaseClient, input: IssueCodeInput,
     redirect_uri: input.redirectUri,
     code_challenge: input.codeChallenge,
     scopes: input.scopes,
-    agency_id: input.agencyId,
+    account_id: input.accountId,
     user_id: input.userId,
     expires_at: new Date(now.getTime() + CODE_TTL_MS).toISOString(),
   });
@@ -73,7 +73,7 @@ export type ExchangeOutcome =
   | {
       ok: true;
       token: { access_token: string; token_type: "bearer"; expires_in: number; scope: string };
-      key: { id: string; agencyId: string; userId: string; prefix: string; scopes: ApiKeyScope[]; expiresAt: string };
+      key: { id: string; accountId: string; userId: string; prefix: string; scopes: ApiKeyScope[]; expiresAt: string };
     }
   | { ok: false; error: "invalid_grant" | "invalid_request"; description: string };
 
@@ -82,7 +82,7 @@ export async function exchangeCode(supabase: SupabaseClient, input: ExchangeInpu
 
   const { data: row } = await supabase
     .from("oauth_codes")
-    .select("code_hash, client_id, redirect_uri, code_challenge, scopes, agency_id, user_id, expires_at, used_at")
+    .select("code_hash, client_id, redirect_uri, code_challenge, scopes, account_id, user_id, expires_at, used_at")
     .eq("code_hash", sha256Hex(input.code))
     .maybeSingle();
 
@@ -111,7 +111,7 @@ export async function exchangeCode(supabase: SupabaseClient, input: ExchangeInpu
   const { data: key, error } = await supabase
     .from("api_keys")
     .insert({
-      agency_id: row.agency_id,
+      account_id: row.account_id,
       name: `${input.clientName} (connector)`,
       key_hash: generated.hash,
       prefix: generated.prefix,
@@ -132,6 +132,6 @@ export async function exchangeCode(supabase: SupabaseClient, input: ExchangeInpu
       expires_in: Math.floor((new Date(expiresAt).getTime() - now.getTime()) / 1000),
       scope: scopes.join(" "),
     },
-    key: { id: key.id as string, agencyId: row.agency_id, userId: row.user_id, prefix: generated.prefix, scopes, expiresAt },
+    key: { id: key.id as string, accountId: row.account_id, userId: row.user_id, prefix: generated.prefix, scopes, expiresAt },
   };
 }

@@ -1,6 +1,6 @@
 import { withAgent } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
-import { workspaceInAgency } from "@/lib/agent/data";
+import { workspaceInAccount } from "@/lib/agent/data";
 import { buildReadinessReport } from "@/lib/audit/readiness-report";
 
 // Several fetches against a third-party site; the dashboard gives it the same.
@@ -18,7 +18,7 @@ export const GET = withAgent(async (request, ctx) => {
   const workspaceId = q.get("workspace_id");
 
   if (workspaceId) {
-    const workspace = await workspaceInAgency(ctx, workspaceId);
+    const workspace = await workspaceInAccount(ctx, workspaceId);
     if (!workspace) {
       return fail("not_found", "Workspace not found in this account.", "Call GET /workspaces and use an id from that list.");
     }

@@ -4,7 +4,7 @@
 //
 // Kept out of app/actions/publish.ts because of the client it needs. The
 // approve action runs on a cookie-bound Supabase client, where `auth.admin`
-// throws - and `agencyRecipients` resolves addresses through
+// throws - and `accountRecipients` resolves addresses through
 // `auth.admin.getUserById`. So the notification uses the service client, while
 // the approval itself stays under RLS as it must.
 //
@@ -27,7 +27,7 @@ type ApprovedRow = {
   keyword: string | null;
   scheduled_at: string | null;
   workspace_id: string;
-  workspaces: { domain: string | null; agency_id: string } | null;
+  workspaces: { domain: string | null; account_id: string } | null;
 };
 
 /** How the account knows this person: their name if they gave one, else their address. */
@@ -49,7 +49,7 @@ export async function announceDraftApproved(
     const supabase = createServiceClient();
     const { data } = await supabase
       .from("articles")
-      .select("id, title, keyword, scheduled_at, workspace_id, workspaces(domain, agency_id)")
+      .select("id, title, keyword, scheduled_at, workspace_id, workspaces(domain, account_id)")
       .eq("id", articleId)
       .maybeSingle();
     if (!data) return "";
@@ -62,7 +62,7 @@ export async function announceDraftApproved(
 
     const out = await notifyDraftApproved(
       supabase,
-      { agencyId: workspace.agency_id, workspaceId: row.workspace_id },
+      { accountId: workspace.account_id, workspaceId: row.workspace_id },
       {
         domain: workspace.domain,
         title: row.title ?? "Your article",
@@ -71,7 +71,7 @@ export async function announceDraftApproved(
         approvedBy: actorName(user),
         // Only a date the article itself carries. The workspace cadence knows
         // a weekday and a time, not a date, and guessing one on an email that
-        // an agency may forward to a client is the wrong place to be wrong.
+        // an account may forward to a client is the wrong place to be wrong.
         scheduledFor: row.scheduled_at,
       },
     );

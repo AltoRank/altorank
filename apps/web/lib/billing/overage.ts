@@ -14,22 +14,22 @@ import { OVERAGE_CENTS, type Quota } from "@/lib/billing/quota";
  */
 export async function recordOverageArticle(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   quota: Quota,
 ): Promise<void> {
   if (quota.plan !== "starter" && quota.plan !== "growth") return;
   const cents = OVERAGE_CENTS[quota.plan];
 
   try {
-    const { data: agency } = await supabase
-      .from("agencies")
+    const { data: account } = await supabase
+      .from("accounts")
       .select("stripe_customer_id")
-      .eq("id", agencyId)
+      .eq("id", accountId)
       .single();
-    if (!agency?.stripe_customer_id) return;
+    if (!account?.stripe_customer_id) return;
 
     await getStripe().invoiceItems.create({
-      customer: agency.stripe_customer_id,
+      customer: account.stripe_customer_id,
       amount: cents,
       currency: "eur",
       description: "Additional article beyond the monthly included volume",

@@ -2,7 +2,7 @@ import { after } from "next/server";
 import { z } from "zod";
 import { withAgent, readJson, appBaseUrl } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
-import { articleInAgency, workspaceInAgency } from "@/lib/agent/data";
+import { articleInAccount, workspaceInAccount } from "@/lib/agent/data";
 import { bindIdempotencyKey, claimIdempotencyKey, idempotencyKeyFrom, releaseIdempotencyKey } from "@/lib/agent/idempotency";
 import { articleMutations } from "@/lib/agent/mutations";
 import { toAgentArticle } from "@/lib/agent/records";
@@ -75,7 +75,7 @@ export const POST = withAgent(async (request, ctx) => {
   }
   const idemKey = keyRead.key;
 
-  const workspace = await workspaceInAgency(ctx, workspace_id);
+  const workspace = await workspaceInAccount(ctx, workspace_id);
   if (!workspace) {
     return fail("not_found", "Workspace not found in this account.", "Call GET /workspaces and use an id from that list.");
   }
@@ -111,7 +111,7 @@ export const POST = withAgent(async (request, ctx) => {
   // Regenerating: the target must be in this workspace and in a state that
   // allows it. The same rule the record advertises, enforced.
   if (article_id) {
-    const existing = await articleInAgency(ctx, article_id);
+    const existing = await articleInAccount(ctx, article_id);
     if (!existing || existing.workspace_id !== workspace.id) {
       return fail("not_found", "Article not found in this workspace.", "Use an id from GET /articles?workspace_id= for the same workspace.");
     }
@@ -126,13 +126,13 @@ export const POST = withAgent(async (request, ctx) => {
   // pass it a second time. A refusal below releases the claim: the human's
   // "yes" to overage should make the same key work, not replay a refusal.
   if (idemKey) {
-    const claim = await claimIdempotencyKey(ctx.supabase, ctx.agencyId, idemKey);
+    const claim = await claimIdempotencyKey(ctx.supabase, ctx.accountId, idemKey);
     if (claim.state === "replay") {
-      const existing = claim.article_id ? await articleInAgency(ctx, claim.article_id) : null;
+      const existing = claim.article_id ? await articleInAccount(ctx, claim.article_id) : null;
       if (claim.article_id && !existing) {
         // Bound to an article that is gone: nothing to replay, start over.
-        await releaseIdempotencyKey(ctx.supabase, ctx.agencyId, idemKey);
-        const again = await claimIdempotencyKey(ctx.supabase, ctx.agencyId, idemKey);
+        await releaseIdempotencyKey(ctx.supabase, ctx.accountId, idemKey);
+        const again = await claimIdempotencyKey(ctx.supabase, ctx.accountId, idemKey);
         if (again.state === "replay") return inFlight();
       } else if (!existing) {
         return inFlight();
@@ -157,12 +157,12 @@ export const POST = withAgent(async (request, ctx) => {
     }
   }
   const release = async () => {
-    if (idemKey) await releaseIdempotencyKey(ctx.supabase, ctx.agencyId, idemKey);
+    if (idemKey) await releaseIdempotencyKey(ctx.supabase, ctx.accountId, idemKey);
   };
 
   // Spend gate, before any row is written. Null caller: a key is nobody's
   // session, the same contract the cron uses.
-  const quota = await getQuota(ctx.supabase, ctx.agencyId, null);
+  const quota = await getQuota(ctx.supabase, ctx.accountId, null);
   if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
     if (quota.reason === "no-plan") {
       await release();
@@ -205,7 +205,7 @@ export const POST = withAgent(async (request, ctx) => {
     articleRowId = (created as Article).id;
   }
   const targetId = articleRowId;
-  if (idemKey) await bindIdempotencyKey(ctx.supabase, ctx.agencyId, idemKey, targetId);
+  if (idemKey) await bindIdempotencyKey(ctx.supabase, ctx.accountId, idemKey, targetId);
 
   after(async () => {
     try {
@@ -231,7 +231,7 @@ export const POST = withAgent(async (request, ctx) => {
     }
   });
 
-  const row = await articleInAgency(ctx, targetId);
+  const row = await articleInAccount(ctx, targetId);
   const record = row ? toAgentArticle({ ...row, status: "drafting" }, appBaseUrl(request)) : null;
 
   return {

@@ -8,7 +8,7 @@ import { getValidAccessToken } from "@/lib/google/oauth";
 import { decryptConfig } from "@/lib/crypto";
 import type { CMSConfig } from "@/lib/types";
 import { getQuota } from "@/lib/billing/quota";
-import { appendAttribution, isOperatorAgency, shouldAttribute } from "@/lib/publishing/attribution";
+import { appendAttribution, isOperatorAccount, shouldAttribute } from "@/lib/publishing/attribution";
 import { chooseDestination, toDestinations, type IntegrationRow } from "@/lib/publishing/destinations";
 import { settleExchangeForArticle } from "@/lib/seo/exchange";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -200,7 +200,7 @@ async function pushToDestination(
   try {
     const { data: ws } = await supabase
       .from("workspaces")
-      .select("agency_id, domain, language, business_profile, indexnow_key, agency:agencies(remove_branding)")
+      .select("account_id, domain, language, business_profile, indexnow_key, account:accounts(remove_branding)")
       .eq("id", article.workspace_id)
       .single();
     indexNowKey = typeof ws?.indexnow_key === "string" ? ws.indexnow_key : null;
@@ -208,14 +208,14 @@ async function pushToDestination(
     const profileName = (ws?.business_profile as { name?: unknown } | null)?.name;
     publisherName = (typeof profileName === "string" && profileName.trim()) || String(ws?.domain ?? "").replace(/^https?:\/\//, "");
     language = typeof ws?.language === "string" ? ws.language : null;
-    if (ws?.agency_id) {
-      const quota = await getQuota(supabase, ws.agency_id);
+    if (ws?.account_id) {
+      const quota = await getQuota(supabase, ws.account_id);
       const removeBranding =
-        (ws.agency as { remove_branding?: boolean } | null)?.remove_branding ?? false;
+        (ws.account as { remove_branding?: boolean } | null)?.remove_branding ?? false;
       if (
         shouldAttribute(quota, removeBranding) &&
-        // Crons carry no caller, so the operator check has to ask the agency.
-        !(await isOperatorAgency(supabase, ws.agency_id))
+        // Crons carry no caller, so the operator check has to ask the account.
+        !(await isOperatorAccount(supabase, ws.account_id))
       ) {
         html = appendAttribution(html);
       }

@@ -63,11 +63,11 @@ export async function rewriteFieldAction(input: {
   outline?: string[];
 }): Promise<MicroActionResult> {
   try {
-    const { agencyId, user } = await requireAuth();
+    const { accountId, user } = await requireAuth();
     const parsed = microSchema.parse(input);
     const { article, supabase } = await loadArticle(parsed.articleId);
     // A model call per press of Rewrite, on any draft, forever.
-    const gate = await canSpend(supabase, agencyId, {
+    const gate = await canSpend(supabase, accountId, {
       userEmail: user.email ?? undefined,
       workspaceId: article.workspace_id as string,
       action: "draft",
@@ -114,11 +114,11 @@ export async function regenerateImageAction(input: {
   instruction?: string;
 }): Promise<ImageProposalResult> {
   try {
-    const { agencyId, user } = await requireAuth();
+    const { accountId, user } = await requireAuth();
     const parsed = regenerateSchema.parse(input);
     const { article, workspace, supabase } = await loadArticle(parsed.articleId);
     // An OpenAI image per press.
-    const gate = await canSpend(supabase, agencyId, {
+    const gate = await canSpend(supabase, accountId, {
       userEmail: user.email ?? undefined,
       workspaceId: workspace.id as string,
       action: "draft",

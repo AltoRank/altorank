@@ -28,7 +28,7 @@ export default async function ReportsPage() {
     <>
       <PageHead
         title="Reports"
-        /* Not "your logo and colour": nothing writes agencies.logo_url, so the
+        /* Not "your logo and colour": nothing writes accounts.logo_url, so the
            report only ever carries the accent colour and the workspace
            initials. Logo upload is still unbuilt (2026-09-06). */
         subtitle={<span>Monthly PDF reports, in your accent colour</span>}

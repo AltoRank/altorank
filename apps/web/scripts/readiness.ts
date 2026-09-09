@@ -13,7 +13,7 @@
  * concern that varies by CMS and often has no API at all.
  *
  * So v1 does the two things it can do honestly: it generates the exact artifact
- * and it says precisely where the artifact goes. An agency does not care whether
+ * and it says precisely where the artifact goes. An account does not care whether
  * a fix arrived over an API or as a ten-minute paste with instructions; they
  * care that someone produced the right fix for all fifteen clients and proved it
  * worked afterwards. Pretending to auto-publish what we cannot write would be

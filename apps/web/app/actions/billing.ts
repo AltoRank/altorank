@@ -35,7 +35,7 @@ export async function createCheckoutSession(
    */
   returnTo?: string,
 ): Promise<BillingRedirect> {
-  const { agencyId } = await requireAuth(["owner"]);
+  const { accountId } = await requireAuth(["owner"]);
   const supabase = await createClient();
 
   const priceId = PLAN_PRICE_IDS[plan][interval];
@@ -46,16 +46,16 @@ export async function createCheckoutSession(
     };
   }
 
-  const { data: agency } = await supabase
-    .from("agencies")
+  const { data: account } = await supabase
+    .from("accounts")
     .select("stripe_customer_id, stripe_subscription_id, plan_status")
-    .eq("id", agencyId)
+    .eq("id", accountId)
     .single();
 
-  if (agency && subscriptionSwitchable(agency)) {
+  if (account && subscriptionSwitchable(account)) {
     try {
-      await switchSubscriptionPrice(agency.stripe_subscription_id as string, priceId, {
-        agencyId,
+      await switchSubscriptionPrice(account.stripe_subscription_id as string, priceId, {
+        accountId,
         plan,
         interval,
       });
@@ -70,8 +70,8 @@ export async function createCheckoutSession(
     // this was a silent no-op and the page kept saying the old tier until the
     // webhook landed. Stripe has already accepted the switch by this line, so
     // a refusal here is worth a log line, not a failed action.
-    const { error } = await createServiceClient().from("agencies").update({ plan }).eq("id", agencyId);
-    if (error) console.error(`[billing] switch: plan not written for ${agencyId}: ${error.message}`);
+    const { error } = await createServiceClient().from("accounts").update({ plan }).eq("id", accountId);
+    if (error) console.error(`[billing] switch: plan not written for ${accountId}: ${error.message}`);
     return { ok: true, url: `${appUrl()}/settings/billing?status=switched` };
   }
 
@@ -85,18 +85,18 @@ export async function createCheckoutSession(
     session = await getStripe().checkout.sessions.create({
       mode: "subscription",
       line_items: [{ price: priceId, quantity: 1 }],
-      customer: agency?.stripe_customer_id ?? undefined,
-      client_reference_id: agencyId,
+      customer: account?.stripe_customer_id ?? undefined,
+      client_reference_id: accountId,
       // metadata on both the session and the subscription so the webhook can map
-      // any subscription event back to the agency regardless of which fires first.
+      // any subscription event back to the account regardless of which fires first.
       //
       // `plan` rides along as the webhook's fallback for the tier. The price on
       // the subscription is authoritative and the webhook prefers it; this is
       // what it falls back to when the subscription read fails, so a checkout
       // can never leave the account on the `starter` column default while the
       // customer is paying for Agency (2026-09-06).
-      metadata: { agency_id: agencyId, plan, interval },
-      subscription_data: { metadata: { agency_id: agencyId, plan, interval } },
+      metadata: { account_id: accountId, plan, interval },
+      subscription_data: { metadata: { account_id: accountId, plan, interval } },
       // VAT, added at checkout rather than folded into the price.
       //
       // Nothing here handled tax before, so exactly EUR 69 / EUR 199 was charged
@@ -120,7 +120,7 @@ export async function createCheckoutSession(
         ? {
             automatic_tax: { enabled: true },
             tax_id_collection: { enabled: true },
-            ...(agency?.stripe_customer_id
+            ...(account?.stripe_customer_id
               ? { customer_update: { address: "auto" as const, name: "auto" as const } }
               : {}),
           }
@@ -153,7 +153,7 @@ export async function createCheckoutSession(
 async function switchSubscriptionPrice(
   subscriptionId: string,
   priceId: string,
-  meta: { agencyId: string; plan: SelfServePlan; interval: BillingInterval },
+  meta: { accountId: string; plan: SelfServePlan; interval: BillingInterval },
 ): Promise<void> {
   const stripe = getStripe();
   const sub = await stripe.subscriptions.retrieve(subscriptionId);
@@ -164,7 +164,7 @@ async function switchSubscriptionPrice(
   await stripe.subscriptions.update(subscriptionId, {
     items: [{ id: item.id, price: priceId }],
     proration_behavior: "create_prorations",
-    metadata: { agency_id: meta.agencyId, plan: meta.plan, interval: meta.interval },
+    metadata: { account_id: meta.accountId, plan: meta.plan, interval: meta.interval },
   });
 }
 
@@ -190,32 +190,32 @@ export type PortalFlow = "manage" | "cancel" | "payment_method";
  * readable.
  */
 export async function createBillingPortalSession(flow: PortalFlow = "manage"): Promise<BillingRedirect> {
-  const { agencyId } = await requireAuth(["owner"]);
+  const { accountId } = await requireAuth(["owner"]);
   const supabase = await createClient();
 
-  const { data: agency } = await supabase
-    .from("agencies")
+  const { data: account } = await supabase
+    .from("accounts")
     .select("stripe_customer_id, stripe_subscription_id")
-    .eq("id", agencyId)
+    .eq("id", accountId)
     .single();
 
-  if (!agency?.stripe_customer_id) {
+  if (!account?.stripe_customer_id) {
     return { ok: false, error: "There is no billing account yet — choose a plan first." };
   }
 
   const returnUrl = `${appUrl()}/settings/billing`;
-  const base = { customer: agency.stripe_customer_id, return_url: returnUrl };
+  const base = { customer: account.stripe_customer_id, return_url: returnUrl };
 
   try {
     if (flow === "cancel") {
-      if (!agency.stripe_subscription_id) {
+      if (!account.stripe_subscription_id) {
         return { ok: false, error: "There is no active subscription to cancel." };
       }
       const session = await getStripe().billingPortal.sessions.create({
         ...base,
         flow_data: {
           type: "subscription_cancel",
-          subscription_cancel: { subscription: agency.stripe_subscription_id },
+          subscription_cancel: { subscription: account.stripe_subscription_id },
           after_completion: { type: "redirect", redirect: { return_url: `${returnUrl}?status=cancelled` } },
         },
       });

@@ -1,31 +1,31 @@
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
-import type { AgencyMember, Invite } from "@/lib/types";
+import type { AccountMember, Invite } from "@/lib/types";
 import type { ResolvedUser } from "@/lib/team/display";
 
-export type MemberWithUser = AgencyMember & { user: ResolvedUser };
+export type MemberWithUser = AccountMember & { user: ResolvedUser };
 
-export async function getAgencyMembers(): Promise<MemberWithUser[]> {
-  // The agency the rest of this page is about. This used to run its own
+export async function getAccountMembers(): Promise<MemberWithUser[]> {
+  // The account the rest of this page is about. This used to run its own
   // `.limit(1).single()` with the error dropped, which had two faults at once:
   // a failed read became `!membership` and so "No team members found" - shown
   // to a signed-in member, who is provably a member - and with no `.order()`
-  // it picked an arbitrary agency for anyone in two, while `role` on the same
-  // page comes from `requireAuth`. `requireAuth` already resolves the agency
+  // it picked an arbitrary account for anyone in two, while `role` on the same
+  // page comes from `requireAuth`. `requireAuth` already resolves the account
   // from the scope cookie and already throws when the read fails.
-  const { agencyId } = await requireAuth();
+  const { accountId } = await requireAuth();
   const supabase = await createClient();
 
   const { data, error } = await supabase
-    .from("agency_members")
+    .from("account_members")
     .select("*")
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .order("created_at", { ascending: true });
 
   if (error) throw new Error(error.message);
-  const rows = (data ?? []) as AgencyMember[];
+  const rows = (data ?? []) as AccountMember[];
 
-  // agency_members stores a user id and nothing else about the person, and
+  // account_members stores a user id and nothing else about the person, and
   // there is no profiles table: the email lives in auth.users, which the
   // session client cannot read. This type declared `user` from the start and
   // nothing ever filled it, so every row rendered as "Member" with an "M".
@@ -50,14 +50,14 @@ export async function getAgencyMembers(): Promise<MemberWithUser[]> {
 }
 
 export async function getPendingInvites(): Promise<Invite[]> {
-  // Same agency as the roster above, resolved the same way.
-  const { agencyId } = await requireAuth();
+  // Same account as the roster above, resolved the same way.
+  const { accountId } = await requireAuth();
   const supabase = await createClient();
 
   const { data, error } = await supabase
     .from("invites")
     .select("*")
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .is("accepted_at", null)
     // The invites table has no created_at - it never did - so this ordered by
     // a column that does not exist and the Team page has thrown since the

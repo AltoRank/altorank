@@ -44,7 +44,7 @@ export default async function ClientDetailPage({ params }: Props) {
       getWorkspaceMetrics(id),
       // Only for the writing-pace control, which says whether a setting
       // reaches the volume the plan includes. Null when unmetered.
-      getQuota(supabase, workspace.agency_id),
+      getQuota(supabase, workspace.account_id),
     ]);
 
   // The clock FirstDraftLive measures a stalled draft against. It has to be

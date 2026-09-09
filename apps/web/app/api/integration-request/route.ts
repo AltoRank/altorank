@@ -34,9 +34,9 @@ const MAX_NOTE_CHARS = 500;
 
 export async function POST(request: Request) {
   let user;
-  let agencyId: string;
+  let accountId: string;
   try {
-    ({ user, agencyId } = await requireAuth());
+    ({ user, accountId } = await requireAuth());
   } catch {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
@@ -99,7 +99,7 @@ export async function POST(request: Request) {
     `${integrationName}  (${integrationId})`,
     ``,
     `Requested by: ${user.email}`,
-    `Agency:       ${agencyId}`,
+    `Account:       ${accountId}`,
     domain ? `Site:         ${domain}` : null,
     note ? `\nNote: ${note}` : null,
     ``,

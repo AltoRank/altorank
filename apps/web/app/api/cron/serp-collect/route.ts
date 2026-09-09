@@ -43,17 +43,17 @@ async function run(request: Request) {
         if (!workspaceIds.length) return new Set<string>();
         const { data: rows } = await supabase
           .from("workspaces")
-          .select("id, agency_id")
+          .select("id, account_id")
           .in("id", workspaceIds);
-        const entitledAgency = new Map<string, boolean>();
+        const entitledAccount = new Map<string, boolean>();
         const keep = new Set<string>();
         for (const row of rows ?? []) {
-          const agencyId = row.agency_id as string;
-          if (!entitledAgency.has(agencyId)) {
-            const quota = await getQuota(supabase, agencyId, null);
-            entitledAgency.set(agencyId, entitledToScheduledWork(quota));
+          const accountId = row.account_id as string;
+          if (!entitledAccount.has(accountId)) {
+            const quota = await getQuota(supabase, accountId, null);
+            entitledAccount.set(accountId, entitledToScheduledWork(quota));
           }
-          if (entitledAgency.get(agencyId)) keep.add(row.id as string);
+          if (entitledAccount.get(accountId)) keep.add(row.id as string);
         }
         skippedWorkspaces = workspaceIds.length - keep.size;
         return keep;

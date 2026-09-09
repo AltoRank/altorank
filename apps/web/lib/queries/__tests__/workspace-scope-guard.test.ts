@@ -150,7 +150,7 @@ describe("no new unscoped reads of workspace-scoped tables", () => {
       unexplained.length === 0
         ? ""
         : `\n${detail}\n\n` +
-            `RLS scopes these to the signed-in AGENCY, not to one workspace, so an\n` +
+            `RLS scopes these to the signed-in ACCOUNT, not to one workspace, so an\n` +
             `unscoped read returns every site in the account and never errors. On an\n` +
             `account with one site it looks correct, which is how seven of these\n` +
             `reached production on 2026-09-03.\n\n` +

@@ -36,14 +36,14 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   // it can be written, and until now nothing said so (P1-A1). Null when
   // unmetered, and then there is nothing to qualify.
   const authRead = requireAuth();
-  const quotaRead = authRead.then(({ agencyId, user }) => getRequestQuota(agencyId, user.email ?? null));
+  const quotaRead = authRead.then(({ accountId, user }) => getRequestQuota(accountId, user.email ?? null));
   const [{ data: workspace }, { data: output }, quota, run, auth] = await Promise.all([
     supabase
       .from("workspaces")
       // The account's answer rides along on the workspace's own account row,
       // so the question is asked of the account that owns this site, once, and
       // not again for its second site.
-      .select("id, domain, business_profile, sitemap_url, blog_root_url, example_article_urls, auto_generate_weekly_limit, auto_approve, agencies(attribution_source)")
+      .select("id, domain, business_profile, sitemap_url, blog_root_url, example_article_urls, auto_generate_weekly_limit, auto_approve, accounts(attribution_source)")
       .eq("id", scopeId)
       .single(),
     supabase
@@ -62,7 +62,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
 
   // A many-to-one embed comes back as one object; the untyped client can only
   // promise an array, so both shapes are read rather than one asserted.
-  const account = workspace.agencies as { attribution_source: string | null } | { attribution_source: string | null }[] | null;
+  const account = workspace.accounts as { attribution_source: string | null } | { attribution_source: string | null }[] | null;
   const answered = Boolean((Array.isArray(account) ? account[0] : account)?.attribution_source);
 
   const initialOutput = outputFromRow(output);

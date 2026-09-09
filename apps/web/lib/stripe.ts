@@ -82,7 +82,7 @@ export const PLAN_PRICE_IDS: Record<
  * this customer buy": the price on the subscription is what Stripe charges,
  * whereas anything in metadata is a hint we wrote earlier and could have got
  * wrong. The webhook resolves the tier through here before it writes
- * `agencies.plan`, because that column drives PLAN_ARTICLE_LIMITS - getting it
+ * `accounts.plan`, because that column drives PLAN_ARTICLE_LIMITS - getting it
  * wrong meters an Agency customer at Managed's 100 (2026-09-06).
  *
  * Env is read on every call rather than captured at import so a price id
@@ -218,7 +218,7 @@ export const PLAN_FEATURES: Record<PlanTier, string[]> = {
  * What breaks when one is missing:
  *   checkout.session.completed      plan_status never goes active after checkout
  *   customer.subscription.created   a subscription started outside our checkout
- *                                   is never mapped to an agency
+ *                                   is never mapped to an account
  *   customer.subscription.updated   plan changes, cancel-at-period-end and the
  *                                   period end are never recorded
  *   customer.subscription.deleted   cancellations never land; access never ends

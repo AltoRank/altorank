@@ -16,11 +16,11 @@ describe("siteContextFrom", () => {
       siteContextFrom({
         name: " AltoRank ",
         description: " SEO content platform. ",
-        audiences: [" Agencies ", "", 42, "Bloggers"],
+        audiences: [" Accounts ", "", 42, "Bloggers"],
         competitors: ["semrush.com"],
         country: "Global (English)",
       }),
-    ).toEqual({ name: "AltoRank", description: "SEO content platform.", audiences: ["Agencies", "Bloggers"] });
+    ).toEqual({ name: "AltoRank", description: "SEO content platform.", audiences: ["Accounts", "Bloggers"] });
   });
 
   it("accepts a name without a description and the reverse", () => {

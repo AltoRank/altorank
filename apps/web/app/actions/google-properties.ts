@@ -44,13 +44,13 @@ const READABLE = new Set(["siteOwner", "siteFullUser"]);
 export async function listDetectedProperties(): Promise<
   { connected: boolean; properties: DetectedProperty[]; error?: string }
 > {
-  const { agencyId } = await requireAuth();
+  const { accountId } = await requireAuth();
   const supabase = await createClient();
 
   const { data: conn } = await supabase
-    .from("agency_integrations")
+    .from("account_integrations")
     .select("tokens")
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .eq("provider", "google")
     .maybeSingle();
   const encrypted = (conn?.tokens as { encrypted?: string } | null)?.encrypted;
@@ -60,9 +60,9 @@ export async function listDetectedProperties(): Promise<
     const admin = createServiceClient();
     const accessToken = await getValidAccessToken(encrypted, async (next) => {
       await admin
-        .from("agency_integrations")
+        .from("account_integrations")
         .update({ tokens: { encrypted: next } })
-        .eq("agency_id", agencyId)
+        .eq("account_id", accountId)
         .eq("provider", "google");
     });
 
@@ -104,7 +104,7 @@ export type CreateResult =
  * plan before anything is half-created.
  */
 export async function createWorkspacesFromProperties(siteUrls: string[]): Promise<CreateResult> {
-  const { agencyId, user } = await requireAuth(["owner", "admin"]);
+  const { accountId, user } = await requireAuth(["owner", "admin"]);
   const supabase = await createClient();
 
   const { properties } = await listDetectedProperties();
@@ -113,7 +113,7 @@ export async function createWorkspacesFromProperties(siteUrls: string[]): Promis
   );
   if (!chosen.length) return { ok: true, created: 0, skipped: siteUrls.length };
 
-  const allowance = await getWorkspaceAllowance(supabase, agencyId, user.email);
+  const allowance = await getWorkspaceAllowance(supabase, accountId, user.email);
   if (allowance.remaining !== null && chosen.length > allowance.remaining) {
     return {
       ok: false,
@@ -124,9 +124,9 @@ export async function createWorkspacesFromProperties(siteUrls: string[]): Promis
   }
 
   const { data: conn } = await supabase
-    .from("agency_integrations")
+    .from("account_integrations")
     .select("tokens")
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .eq("provider", "google")
     .maybeSingle();
   const encrypted = (conn?.tokens as { encrypted?: string } | null)?.encrypted ?? null;
@@ -146,7 +146,7 @@ export async function createWorkspacesFromProperties(siteUrls: string[]): Promis
     const { data: ws, error } = await supabase
       .from("workspaces")
       .insert({
-        agency_id: agencyId,
+        account_id: accountId,
         name: p.domain,
         domain: p.domain,
         initials: p.domain.slice(0, 2).toUpperCase(),

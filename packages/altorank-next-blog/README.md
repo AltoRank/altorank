@@ -69,6 +69,6 @@ into a `"use client"` file.
 - `GET /api/blog/v1/articles?workspace_id=&page=&per_page=`
 - `GET /api/blog/v1/articles/<slug>?workspace_id=`
 
-Both take `Authorization: Bearer <api key>`. The key is the agency's API key
+Both take `Authorization: Bearer <api key>`. The key is the account's API key
 from Settings; a read-only, per-purpose key is planned (see the TODO in
 `apps/web/lib/blog-api/auth.ts`).

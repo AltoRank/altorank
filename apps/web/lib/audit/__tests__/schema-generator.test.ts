@@ -24,7 +24,7 @@ const orgOf = (html: string) =>
 
 describe("decode", () => {
   it("resolves named and numeric entities and collapses whitespace", () => {
-    expect(decode("Acme &amp; Co&#39;s\n\n  agency")).toBe("Acme & Co's agency");
+    expect(decode("Acme &amp; Co&#39;s\n\n  account")).toBe("Acme & Co's account");
   });
 
   it("resolves typographic entities, which the title splitter depends on", () => {
@@ -86,7 +86,7 @@ describe("Organization proposal", () => {
   it("prefers og:site_name and records provenance for every field", () => {
     const html = page(
       `<meta property="og:site_name" content="Acme Studio" />
-       <meta name="description" content="An agency." />
+       <meta name="description" content="An account." />
        <link rel="apple-touch-icon" href="/icon.png" />`,
       `<a href="https://www.linkedin.com/company/acme">li</a>
        <a href="tel:+390212345">call</a>`,
@@ -108,7 +108,7 @@ describe("Organization proposal", () => {
   });
 
   it("infers a name from <title> at medium confidence and warns", () => {
-    const org = orgOf(page(`<title>Acme Studio | Digital agency in Milan</title>`))!;
+    const org = orgOf(page(`<title>Acme Studio | Digital account in Milan</title>`))!;
     expect(org.jsonLd.name).toBe("Acme Studio");
     const prov = org.provenance.find((p) => p.field === "name")!;
     expect(prov.confidence).toBe("medium");
@@ -278,7 +278,7 @@ describe("renderJsonLd", () => {
   });
 });
 
-// ── name sourcing (measured against 10 live agency sites) ─────────────────────
+// ── name sourcing (measured against 10 live account sites) ─────────────────────
 
 describe("company name sourcing", () => {
   const withDomain = (html: string, url = "https://genesi.it/") =>
@@ -355,7 +355,7 @@ describe("copyright extraction boundaries (live regressions)", () => {
 
   it("rejects a runaway capture rather than emitting a sentence", () => {
     expect(extractCopyrightName(
-      "<footer>&copy; 2026 we are a full service digital agency working across many markets</footer>",
+      "<footer>&copy; 2026 we are a full service digital account working across many markets</footer>",
     )).toBeUndefined();
   });
 

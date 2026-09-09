@@ -129,8 +129,8 @@ export function extractSocialProfiles(html: string): string[] {
 /**
  * The legal/trading name out of a footer copyright line.
  *
- * Ranked above the <title> because agency titles lead with keyword phrases far
- * more often than with the brand. Measured on ten live Italian and EU agency
+ * Ranked above the <title> because account titles lead with keyword phrases far
+ * more often than with the brand. Measured on ten live Italian and EU account
  * sites: the title heuristic proposed "Realizzazione siti web" for genesi.it
  * and "OmniSearch" for netprofiler.nl, where the copyright line gave
  * "Genesi.IT S.r.l." and "Netprofiler".
@@ -200,8 +200,8 @@ function proposeOrganization(html: string, url: string): SchemaProposal {
   };
 
   // Name, in descending order of trustworthiness. Ordering is empirical: on ten
-  // live agency sites og:site_name was right 5/5, while the title heuristic was
-  // wrong 4/5 because agency titles lead with keyword phrases, not brands.
+  // live account sites og:site_name was right 5/5, while the title heuristic was
+  // wrong 4/5 because account titles lead with keyword phrases, not brands.
   //
   // Logo alt text is deliberately NOT a source. datodigitale.it's logo alt is
   // "Enel", a *client's* brand, which would have produced a confidently wrong

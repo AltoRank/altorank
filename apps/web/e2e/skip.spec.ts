@@ -25,8 +25,8 @@ test("Skip setup records the skip and the dashboard stops redirecting", async ({
   const { data } = await db.from("workspaces").select("onboarded_at, onboarding_skipped_at").eq("id", ws.id).single();
   expect(data?.onboarding_skipped_at).not.toBeNull();
   expect(data?.onboarded_at).toBeNull();
-  const { data: agency } = await db.from("agencies").select("attribution_source").eq("id", signedIn.agencyId).single();
-  expect(agency?.attribution_source).toBe("friend");
+  const { data: account } = await db.from("accounts").select("attribution_source").eq("id", signedIn.accountId).single();
+  expect(account?.attribution_source).toBe("friend");
 
   // A fresh load, not a client-side push: the layout's gate is what is tested.
   await page.goto("/dashboard");

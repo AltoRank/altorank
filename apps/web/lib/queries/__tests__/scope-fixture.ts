@@ -3,7 +3,7 @@
  * does it come back with only the site it was asked about?
  *
  * The bugs this exists to catch never threw and never leaked across accounts.
- * RLS narrows every read to the signed-in *agency*, so a query that forgot to
+ * RLS narrows every read to the signed-in *account*, so a query that forgot to
  * say which *workspace* still returned plausible rows - just too many of them,
  * and only for an account with a second site. A single-workspace fixture
  * reproduces none of that, which is exactly why it went unnoticed: with one

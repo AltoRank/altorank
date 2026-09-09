@@ -19,14 +19,14 @@ export default async function RefreshSettingsPage() {
   const { data: ws } = scopeId
     ? await supabase
         .from("workspaces")
-        .select("id, name, domain, agency_id, refresh_enabled, refresh_days")
+        .select("id, name, domain, account_id, refresh_enabled, refresh_days")
         .eq("id", scopeId)
         .maybeSingle()
     : { data: null };
 
   // The switch is gated on a plan (setRefreshSettings refuses to arm one), so
   // the page says so before the click rather than only in the error toast.
-  const needsPlan = ws ? await needsPlanToShip(supabase, ws.agency_id as string) : false;
+  const needsPlan = ws ? await needsPlanToShip(supabase, ws.account_id as string) : false;
 
   return (
     <>

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getAgencyMembers, getPendingInvites } from "@/lib/queries/team";
+import { getAccountMembers, getPendingInvites } from "@/lib/queries/team";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { Avatar, Chip, Card } from "@/components/ui";
@@ -19,7 +19,7 @@ const td = "px-3.5 py-3 border-b border-line-soft";
 export default async function TeamPage() {
   const [{ user, role }, members, invites, workspaces] = await Promise.all([
     requireAuth(),
-    getAgencyMembers(),
+    getAccountMembers(),
     getPendingInvites(),
     // The roster is account-level on purpose: access is granted per site,
     // and the picker has to list every site there is to grant.

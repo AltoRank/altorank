@@ -1,6 +1,6 @@
 import { withAgent } from "@/lib/agent/http";
 import { ok } from "@/lib/agent/envelope";
-import { agencyWorkspaces, articlesThisMonth } from "@/lib/agent/data";
+import { accountWorkspaces, articlesThisMonth } from "@/lib/agent/data";
 import { freeAllowanceUsedMessage, getQuota } from "@/lib/billing/quota";
 
 /**
@@ -10,9 +10,9 @@ import { freeAllowanceUsedMessage, getQuota } from "@/lib/billing/quota";
  * unmetered (self-hosted or operator), not zero.
  */
 export const GET = withAgent(async (_request, ctx) => {
-  const workspaces = await agencyWorkspaces(ctx);
+  const workspaces = await accountWorkspaces(ctx);
   const [quota, perWorkspace] = await Promise.all([
-    getQuota(ctx.supabase, ctx.agencyId, null),
+    getQuota(ctx.supabase, ctx.accountId, null),
     articlesThisMonth(ctx.supabase, workspaces.map((w) => w.id)),
   ]);
 

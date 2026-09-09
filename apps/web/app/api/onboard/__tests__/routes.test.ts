@@ -9,7 +9,7 @@ import { fakeDb, asUser, type FakeDb } from "@/lib/onboarding/__tests__/fake-run
 // The user client and the service client see the same rows; only `auth` and
 // the caller differ. RLS is not modelled - what is asserted here is the
 // membership check every route makes before it touches a run, which is what
-// stands between a signed-in stranger and another agency's workspace.
+// stands between a signed-in stranger and another account's workspace.
 
 let db: FakeDb;
 let user: { id: string } | null;
@@ -47,12 +47,12 @@ beforeEach(() => {
   user = { id: "u1" };
   db = fakeDb({
     workspaces: [
-      { id: "ws1", agency_id: "ag1", domain: "example.com" },
-      { id: "ws2", agency_id: "ag2", domain: "other.com" },
+      { id: "ws1", account_id: "ag1", domain: "example.com" },
+      { id: "ws2", account_id: "ag2", domain: "other.com" },
     ],
-    agency_members: [
-      { id: "m1", agency_id: "ag1", user_id: "u1" },
-      { id: "m2", agency_id: "ag2", user_id: "u2" },
+    account_members: [
+      { id: "m1", account_id: "ag1", user_id: "u1" },
+      { id: "m2", account_id: "ag2", user_id: "u2" },
     ],
   });
   process.env.CRON_SECRET = "s3cret";
@@ -67,7 +67,7 @@ describe("POST /api/onboard/start", () => {
     await Promise.all(deferred);
     expect(dispatchWorker).toHaveBeenCalledWith(body.runId);
     expect(db.tables.onboarding_runs).toHaveLength(1);
-    expect(db.tables.onboarding_runs[0]).toMatchObject({ workspace_id: "ws1", agency_id: "ag1", status: "running" });
+    expect(db.tables.onboarding_runs[0]).toMatchObject({ workspace_id: "ws1", account_id: "ag1", status: "running" });
   });
 
   it("is idempotent: a second start returns the same run and dispatches nothing", async () => {
@@ -88,7 +88,7 @@ describe("POST /api/onboard/start", () => {
     expect(db.tables.onboarding_runs).toHaveLength(0);
   });
 
-  it("another agency's member cannot start a run on this workspace", async () => {
+  it("another account's member cannot start a run on this workspace", async () => {
     user = { id: "u2" };
     const res = await start(post("/api/onboard/start", { workspaceId: "ws1" }));
     expect(res.status).toBe(403);
@@ -125,7 +125,7 @@ describe("POST /api/onboard/run", () => {
 describe("GET /api/onboard/state", () => {
   beforeEach(() => {
     db.tables.onboarding_runs.push({
-      id: "r1", workspace_id: "ws1", agency_id: "ag1", status: "running",
+      id: "r1", workspace_id: "ws1", account_id: "ag1", status: "running",
       phases: [{ phase: "scanning", status: "done", detail: "Learned how your site writes." }], planned: [],
       keywords_found: null, article_id: null, error: null,
       started_at: "2026-09-07T10:00:00Z", updated_at: new Date().toISOString(), finished_at: null,
@@ -150,7 +150,7 @@ describe("GET /api/onboard/state", () => {
     expect(body.article).toEqual({ id: "a1", title: "T", keyword: "seo agent", word_count: 1200, fact_check_verdict: "clean", status: "review" });
   });
 
-  it("another agency's member gets nothing: 403 here, and RLS would hide the row anyway", async () => {
+  it("another account's member gets nothing: 403 here, and RLS would hide the row anyway", async () => {
     user = { id: "u2" };
     const res = await state(get("/api/onboard/state?workspaceId=ws1"));
     expect(res.status).toBe(403);

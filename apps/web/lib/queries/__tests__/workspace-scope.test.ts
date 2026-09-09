@@ -4,7 +4,7 @@
  *
  * On 2026-09-03 seven surfaces answered no. None of them threw, none leaked
  * across accounts, and none were visible on an account with a single site -
- * RLS quietly supplied *agency* scope where the page meant *workspace* scope,
+ * RLS quietly supplied *account* scope where the page meant *workspace* scope,
  * so the sidebar read "4" beside a list of 2. See
  * `lib/queries/__tests__/scope-fixture.ts` for why the fixture always holds
  * two workspaces.

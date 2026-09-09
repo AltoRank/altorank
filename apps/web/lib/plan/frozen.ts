@@ -109,7 +109,7 @@ export async function readUnwrittenEntries(supabase: SupabaseClient, workspaceId
 
 /**
  * The frozen entries of one workspace. Pass the quota already computed for
- * this caller: the cron's quota (`getQuota(service, agencyId, null)`) and a
+ * this caller: the cron's quota (`getQuota(service, accountId, null)`) and a
  * signed-in operator's differ on purpose, and this must not reach a different
  * verdict from the gate that writes. Reads nothing for an unmetered account.
  */

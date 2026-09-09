@@ -67,12 +67,12 @@ export default async function AuthorizePage(props: { searchParams: Promise<Param
     redirect(`/signin?next=${encodeURIComponent(here.pathname + here.search)}`);
   }
 
-  let agencyName = "";
+  let accountName = "";
   let canDecide = true;
   try {
-    const { agencyId } = await requireAuth(["owner", "admin"]);
-    const { data: agency } = await supabase.from("agencies").select("name").eq("id", agencyId).single();
-    agencyName = agency?.name ?? "your account";
+    const { accountId } = await requireAuth(["owner", "admin"]);
+    const { data: account } = await supabase.from("accounts").select("name").eq("id", accountId).single();
+    accountName = account?.name ?? "your account";
   } catch {
     canDecide = false;
   }
@@ -94,7 +94,7 @@ export default async function AuthorizePage(props: { searchParams: Promise<Param
         <h1 className="text-2xl font-semibold tracking-tight">Connect {client.client_name}</h1>
         <p className="mt-2 text-sm text-ink-3">
           {client.client_name} wants to use {APP_NAME}
-          {agencyName ? ` for ${agencyName}` : ""} on your behalf.
+          {accountName ? ` for ${accountName}` : ""} on your behalf.
         </p>
       </div>
 

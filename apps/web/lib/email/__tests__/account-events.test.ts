@@ -11,7 +11,7 @@ let emails: Record<string, string> = {};
 vi.mock("@/lib/supabase/server", () => ({
   createServiceClient: () => ({
     from(table: string) {
-      if (table === "agency_members") {
+      if (table === "account_members") {
         return { select: () => ({ eq: async () => ({ data: members, error: null }) }) };
       }
       if (table === "email_preferences") {
@@ -89,7 +89,7 @@ describe("announcePasswordChanged", () => {
 
 describe("announceApiKeyCreated", () => {
   const key = {
-    agencyId: "ag-1",
+    accountId: "ag-1",
     keyId: "key-1",
     keyName: "CI",
     prefix: "alto_ab12",

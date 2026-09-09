@@ -1,6 +1,6 @@
 import { withAgent, appBaseUrl } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
-import { workspaceInAgency } from "@/lib/agent/data";
+import { workspaceInAccount } from "@/lib/agent/data";
 import { toAgentWorkspace } from "@/lib/agent/records";
 import { resumeWorkspace } from "@/lib/workspaces/pause";
 
@@ -16,7 +16,7 @@ export const maxDuration = 60;
  * the account's pause and is the human's on the Billing page.
  */
 export const POST = withAgent<{ id: string }>(async (request, ctx, { id }) => {
-  const workspace = await workspaceInAgency(ctx, id);
+  const workspace = await workspaceInAccount(ctx, id);
   if (!workspace) return fail("not_found", "Workspace not found in this account.", "Call GET /workspaces and use an id from that list.");
   if (workspace.status === "paused" && workspace.paused_until) {
     return fail(
@@ -26,8 +26,8 @@ export const POST = withAgent<{ id: string }>(async (request, ctx, { id }) => {
     );
   }
 
-  const { changed, status, replanned } = await resumeWorkspace(ctx.supabase, ctx.agencyId, workspace.id);
-  const after = await workspaceInAgency(ctx, workspace.id);
+  const { changed, status, replanned } = await resumeWorkspace(ctx.supabase, ctx.accountId, workspace.id);
+  const after = await workspaceInAccount(ctx, workspace.id);
   return ok(
     { workspace: after ? toAgentWorkspace(after, appBaseUrl(request)) : null, changed, status, replanned },
     !changed

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { withAgent, readJson } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
-import { workspaceInAgency } from "@/lib/agent/data";
+import { workspaceInAccount } from "@/lib/agent/data";
 import { bulkRemove } from "@/lib/plan/entries";
 import { PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
 
@@ -29,7 +29,7 @@ export const POST = withAgent(async (request, ctx) => {
       `Send { workspace_id, keyword_ids: [...] } (max ${PLAN_MAX_ENTRIES}).`,
     );
   }
-  const workspace = await workspaceInAgency(ctx, body.data.workspace_id);
+  const workspace = await workspaceInAccount(ctx, body.data.workspace_id);
   if (!workspace) return fail("not_found", "Workspace not found in this account.", "Call GET /workspaces and use an id from that list.");
 
   const outcomes = await bulkRemove(ctx.supabase, workspace.id, [...new Set(body.data.keyword_ids)]);

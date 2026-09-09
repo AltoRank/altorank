@@ -381,7 +381,7 @@ async function verifyPendingPublishes(
       /**
        * Never confirmed. The commit succeeded and the Markdown is in the repo,
        * so the content is not lost - but we cannot say where it is, and an
-       * agency showing a client a link that 404s is worse than showing none.
+       * account showing a client a link that 404s is worse than showing none.
        * Back to review, with the URL cleared rather than left as a bad claim.
        */
       await supabase

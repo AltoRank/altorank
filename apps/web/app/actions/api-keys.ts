@@ -33,7 +33,7 @@ export type CreatedApiKey = {
 };
 
 export async function createApiKey(formData: FormData): Promise<CreatedApiKey> {
-  const { user, agencyId } = await requireAuth(["owner", "admin"]);
+  const { user, accountId } = await requireAuth(["owner", "admin"]);
   const parsed = createSchema.parse({
     name: formData.get("name"),
     expires_in_days: formData.get("expires_in_days") ?? "never",
@@ -48,7 +48,7 @@ export async function createApiKey(formData: FormData): Promise<CreatedApiKey> {
   const { data, error } = await supabase
     .from("api_keys")
     .insert({
-      agency_id: agencyId,
+      account_id: accountId,
       name: parsed.name,
       key_hash: generated.hash,
       prefix: generated.prefix,
@@ -65,7 +65,7 @@ export async function createApiKey(formData: FormData): Promise<CreatedApiKey> {
   // owners and admins who did not create it are exactly who should hear about
   // it - and the one who did gets the record. The value is not in the email.
   await announceApiKeyCreated({
-    agencyId,
+    accountId,
     keyId: data.id as string,
     keyName: parsed.name,
     prefix: generated.prefix,
@@ -80,13 +80,13 @@ export async function createApiKey(formData: FormData): Promise<CreatedApiKey> {
 }
 
 export async function revokeApiKey(id: string): Promise<void> {
-  const { agencyId } = await requireAuth(["owner", "admin"]);
+  const { accountId } = await requireAuth(["owner", "admin"]);
   const supabase = await createClient();
   const { error } = await supabase
     .from("api_keys")
     .update({ revoked_at: new Date().toISOString() })
     .eq("id", id)
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .is("revoked_at", null);
   if (error) throw new Error(error.message);
   revalidatePath("/settings/api-keys");

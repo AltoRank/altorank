@@ -45,7 +45,7 @@ export interface SystemEvent {
   source: string;
   /** One line a person can read. */
   message: string;
-  agencyId?: string | null;
+  accountId?: string | null;
   workspaceId?: string | null;
   context?: Record<string, unknown> | null;
 }
@@ -181,7 +181,7 @@ export function buildEventRow(event: SystemEvent): Record<string, unknown> {
     level,
     source,
     message,
-    agency_id: isUuid(event.agencyId) ? event.agencyId : null,
+    account_id: isUuid(event.accountId) ? event.accountId : null,
     workspace_id: isUuid(event.workspaceId) ? event.workspaceId : null,
     context,
   };

@@ -85,7 +85,7 @@ describe("usageLine, paid account", () => {
   });
 
   it("says what a downgrade did instead of printing 150 / 100", () => {
-    // Agency -> Managed mid-month: the 150 written under the old tier stay,
+    // Account -> Managed mid-month: the 150 written under the old tier stay,
     // and the included volume is now 100. "150 / 100" is arithmetic nobody
     // can read - the same fault the free branch already refuses.
     const line = usageLine(quota({ limit: 100, used: 150, reason: "plan", plan: "starter" }), NOW);

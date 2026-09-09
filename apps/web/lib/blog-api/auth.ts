@@ -4,18 +4,18 @@
 //
 // packages/altorank-next-blog pulls published articles into a Next.js site
 // through GET /api/blog/v1/articles. The caller is a build server, not a
-// person, so there is no session: it sends the agency's API key as a bearer
+// person, so there is no session: it sends the account's API key as a bearer
 // token and names the workspace it wants.
 //
-// TODO(api-keys): this reads `agencies.api_key`, the single per-account key
+// TODO(api-keys): this reads `accounts.api_key`, the single per-account key
 // that Settings rotates. Track B is adding an `api_keys` table with scoped,
 // read-only keys; when it lands, resolve the key there and require the `blog`
 // scope, so a key that can only read articles cannot also drive generation.
 //
 // Everything here runs with the service client, because an API key is not a
 // Supabase session and RLS has nothing to resolve. That makes the two checks
-// below the whole boundary: the key must name an agency, and the workspace
-// must belong to that agency. Nothing is read before both hold.
+// below the whole boundary: the key must name an account, and the workspace
+// must belong to that account. Nothing is read before both hold.
 
 import { NextResponse } from "next/server";
 import { apiKeyState, hashApiKey, looksLikeApiKey } from "@/lib/agent/api-keys";
@@ -49,34 +49,34 @@ export async function authenticateBlogRequest(request: Request): Promise<BlogAut
 
   // Scoped keys (settings → API keys) first; the legacy single account key
   // stays accepted until every install has rotated to a scoped one.
-  let agency: { id: string } | null = null;
+  let account: { id: string } | null = null;
   if (looksLikeApiKey(key)) {
     const { data: row } = await supabase
       .from("api_keys")
-      .select("agency_id, revoked_at, expires_at, scopes")
+      .select("account_id, revoked_at, expires_at, scopes")
       .eq("key_hash", hashApiKey(key))
       .maybeSingle();
     if (row && apiKeyState(row) === "active") {
       const scopes = (row.scopes as string[] | null) ?? [];
       if (scopes.length && !scopes.includes("read")) return deny(403, "This key cannot read articles");
-      agency = { id: row.agency_id as string };
+      account = { id: row.account_id as string };
     }
   }
-  if (!agency) {
+  if (!account) {
     const { data: legacy } = await supabase
-      .from("agencies")
+      .from("accounts")
       .select("id")
       .eq("api_key", key)
       .maybeSingle();
-    agency = legacy ? { id: legacy.id as string } : null;
+    account = legacy ? { id: legacy.id as string } : null;
   }
-  if (!agency) return deny(401, "Invalid API key");
+  if (!account) return deny(401, "Invalid API key");
 
   const { data: workspace } = await supabase
     .from("workspaces")
     .select("id, domain")
     .eq("id", workspaceId)
-    .eq("agency_id", agency.id)
+    .eq("account_id", account.id)
     .maybeSingle();
   if (!workspace) return deny(404, "Workspace not found for this API key");
 

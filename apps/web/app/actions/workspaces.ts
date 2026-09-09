@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { ensureAgency } from "@/lib/queries/agency";
+import { ensureAccount } from "@/lib/queries/account";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { canAddWorkspace } from "@/lib/team/access";
 import { z } from "zod";
@@ -86,16 +86,16 @@ export async function createWorkspace(formData: FormData): Promise<CreateWorkspa
   const reach = await checkDomainReachable(parsed.data.domain);
   if (!reach.ok) return { ok: false, error: reach.reason };
 
-  // Get or create user's agency
+  // Get or create user's account
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Your session has expired. Sign in again." };
 
-  const agencyId = await ensureAgency(user.id, user.user_metadata ?? {}, user.email);
+  const accountId = await ensureAccount(user.id, user.user_metadata ?? {}, user.email);
 
   // Workspaces are limited per plan (one before choosing one). Articles are
   // the meter; this stops a free account from running fifty crawls and
   // fifty free drafts under fifty domains.
-  const allowance = await getWorkspaceAllowance(supabase, agencyId, user.email);
+  const allowance = await getWorkspaceAllowance(supabase, accountId, user.email);
   if (allowance.remaining !== null && allowance.remaining <= 0) {
     return { ok: false, error: workspaceLimitMessage(allowance) };
   }
@@ -103,7 +103,7 @@ export async function createWorkspace(formData: FormData): Promise<CreateWorkspa
   const { data: dup } = await supabase
     .from("workspaces")
     .select("id, name")
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .ilike("domain", parsed.data.domain)
     .maybeSingle();
   if (dup) {
@@ -112,7 +112,7 @@ export async function createWorkspace(formData: FormData): Promise<CreateWorkspa
 
   const { data, error } = await supabase
     .from("workspaces")
-    .insert({ ...parsed.data, agency_id: agencyId, indexnow_key: generateIndexNowKey() })
+    .insert({ ...parsed.data, account_id: accountId, indexnow_key: generateIndexNowKey() })
     .select("id")
     .single();
 
@@ -131,7 +131,7 @@ export async function createWorkspace(formData: FormData): Promise<CreateWorkspa
  * settings at all: `share_token`, the unguessable value the public /share/:token
  * page treats as the whole credential (lib/queries/share.ts reads it with the
  * service role) - overwrite it with a known string and the site's report is
- * public to whoever chose it; `agency_id`, which for anyone who belongs to two
+ * public to whoever chose it; `account_id`, which for anyone who belongs to two
  * accounts moved the site and, by foreign key, its articles, keywords and
  * reports from one tenant to the other; and `plan`, `status` and
  * `auto_generate`, the columns the crons and the quota read.
@@ -146,7 +146,7 @@ const updateWorkspaceSchema = z.object({
 });
 
 export async function updateWorkspace(id: string, formData: FormData) {
-  const { agencyId } = await requireAuth();
+  const { accountId } = await requireAuth();
   const supabase = await createClient();
 
   const raw: Record<string, unknown> = {};
@@ -163,7 +163,7 @@ export async function updateWorkspace(id: string, formData: FormData) {
     .update(parsed.data)
     .eq("id", id)
     // Defence in depth over RLS: the id arrives from the browser.
-    .eq("agency_id", agencyId);
+    .eq("account_id", accountId);
 
   if (error) throw new Error(error.message);
   revalidatePath("/workspaces");
@@ -181,7 +181,7 @@ export async function updateWorkspace(id: string, formData: FormData) {
  * "not now" and "never" visible in the row.
  */
 export async function setGenerationPace(workspaceId: string, requested: unknown) {
-  const { agencyId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth();
   const pace = normalisePace(requested);
   if (pace === null) {
     throw new Error(`Pick a number of articles a week between 0 and ${MAX_PACE}.`);
@@ -196,7 +196,7 @@ export async function setGenerationPace(workspaceId: string, requested: unknown)
   // and the popover next door refused the same number with "Needs the
   // Managed plan". One setting, two answers, and the honest one only on the
   // screen that happened to check.
-  const quota = await getQuota(supabase, agencyId, user.email ?? null);
+  const quota = await getQuota(supabase, accountId, user.email ?? null);
   if (!paceAllowed(pace, quota)) {
     const needs = PLAN_LABELS[planNeededFor(monthlyFromPace(pace))];
     throw new Error(
@@ -210,7 +210,7 @@ export async function setGenerationPace(workspaceId: string, requested: unknown)
     .eq("id", workspaceId)
     // Defence in depth over RLS, and the reason this is not a bare update:
     // the id arrives from the browser.
-    .eq("agency_id", agencyId);
+    .eq("account_id", accountId);
   if (error) throw new Error(error.message);
 
   revalidatePath(`/workspaces/${workspaceId}`);
@@ -236,7 +236,7 @@ export async function setAutoApprove(
   workspaceId: string,
   opts: { enabled: boolean; holdHours: number; minSeo: number; minAeo?: number | null },
 ): Promise<{ cadenceCreated: boolean }> {
-  const { agencyId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth();
   const supabase = await createClient();
 
   const holdHours = Math.round(Number(opts.holdHours));
@@ -263,7 +263,7 @@ export async function setAutoApprove(
     )
     .eq("id", workspaceId)
     // Defence in depth over RLS: the id arrives from the browser.
-    .eq("agency_id", agencyId);
+    .eq("account_id", accountId);
   if (error) throw new Error(error.message);
 
   let cadenceCreated = false;
@@ -302,7 +302,7 @@ export async function setAutoApprove(
 }
 
 export async function activateWorkspace(id: string) {
-  const { agencyId } = await requireAuth();
+  const { accountId } = await requireAuth();
   const supabase = await createClient();
   // Activation is the opt-in. It used to set status only, so a workspace
   // activated by hand never got a draft: auto_generate stayed false and the
@@ -312,7 +312,7 @@ export async function activateWorkspace(id: string) {
     .from("workspaces")
     .update({ status: "on", auto_generate: true, auto_generate_weekly_limit: PAID_DEFAULT_PACE })
     .eq("id", id)
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .eq("status", "setup"); // guard: only transition from setup
 
   if (error) throw new Error(error.message);
@@ -327,13 +327,13 @@ export async function activateWorkspace(id: string) {
  * the message a person sees rather than a silent zero-row delete.
  */
 export async function deleteWorkspace(id: string) {
-  const { agencyId } = await requireAuth(["owner", "admin"]);
+  const { accountId } = await requireAuth(["owner", "admin"]);
   const supabase = await createClient();
   const { error } = await supabase
     .from("workspaces")
     .delete()
     .eq("id", id)
-    .eq("agency_id", agencyId);
+    .eq("account_id", accountId);
   if (error) throw new Error(error.message);
   revalidatePath("/workspaces");
 }
@@ -352,9 +352,9 @@ function revalidateSite(id: string) {
  * Nothing is written or published for a paused site until Resume.
  */
 export async function pauseWorkspace(id: string): Promise<PausedMeta> {
-  const { agencyId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth();
   const supabase = await createClient();
-  const { meta } = await pauseWorkspaceCore(supabase, agencyId, id, user.id);
+  const { meta } = await pauseWorkspaceCore(supabase, accountId, id, user.id);
   revalidateSite(id);
   return meta;
 }
@@ -364,9 +364,9 @@ export async function pauseWorkspace(id: string): Promise<PausedMeta> {
  * Same core as the agent API's POST /workspaces/{id}/resume.
  */
 export async function resumeWorkspace(id: string): Promise<{ status: string; replanned: number | null }> {
-  const { agencyId } = await requireAuth();
+  const { accountId } = await requireAuth();
   const supabase = await createClient();
-  const { status, replanned } = await resumeWorkspaceCore(supabase, agencyId, id);
+  const { status, replanned } = await resumeWorkspaceCore(supabase, accountId, id);
   revalidateSite(id);
   return { status, replanned };
 }

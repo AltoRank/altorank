@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { agencyRecipients, canSeeWorkspace } from "../agency-recipients";
+import { accountRecipients, canSeeWorkspace } from "../account-recipients";
 
 type Member = string | { user_id: string; workspace_ids: string[] | null };
 
-/** A service-role client stand-in: members by agency, emails by user id. */
+/** A service-role client stand-in: members by account, emails by user id. */
 function client(members: Member[], emails: Record<string, string | undefined>, opts: { throwOnAdmin?: boolean } = {}) {
   const rows = members.map((m) => (typeof m === "string" ? { user_id: m, workspace_ids: null } : m));
   return {
@@ -19,21 +19,21 @@ function client(members: Member[], emails: Record<string, string | undefined>, o
   } as never;
 }
 
-describe("agencyRecipients", () => {
+describe("accountRecipients", () => {
   it("resolves every member's address", async () => {
     const c = client(["u1", "u2"], { u1: "a@x.co", u2: "b@x.co" });
-    expect((await agencyRecipients(c, "ag1", "ws1")).sort()).toEqual(["a@x.co", "b@x.co"]);
+    expect((await accountRecipients(c, "ag1", "ws1")).sort()).toEqual(["a@x.co", "b@x.co"]);
   });
 
   /** One person, two memberships, one email - a duplicate reads as a bug. */
   it("deduplicates, case-insensitively", async () => {
     const c = client(["u1", "u2"], { u1: "Same@X.co", u2: "same@x.co" });
-    expect(await agencyRecipients(c, "ag1", "ws1")).toEqual(["same@x.co"]);
+    expect(await accountRecipients(c, "ag1", "ws1")).toEqual(["same@x.co"]);
   });
 
   it("skips a member with no address rather than sending to undefined", async () => {
     const c = client(["u1", "u2"], { u1: "a@x.co", u2: undefined });
-    expect(await agencyRecipients(c, "ag1", "ws1")).toEqual(["a@x.co"]);
+    expect(await accountRecipients(c, "ag1", "ws1")).toEqual(["a@x.co"]);
   });
 
   /**
@@ -42,7 +42,7 @@ describe("agencyRecipients", () => {
    */
   it("returns nobody when the client cannot read auth", async () => {
     const c = client(["u1"], { u1: "a@x.co" }, { throwOnAdmin: true });
-    expect(await agencyRecipients(c, "ag1", "ws1")).toEqual([]);
+    expect(await accountRecipients(c, "ag1", "ws1")).toEqual([]);
   });
 
   /**
@@ -60,8 +60,8 @@ describe("agencyRecipients", () => {
       ],
       { u1: "all@x.co", u2: "ws1@x.co", u3: "ws2@x.co", u4: "none@x.co" },
     );
-    expect((await agencyRecipients(c, "ag1", "ws1")).sort()).toEqual(["all@x.co", "ws1@x.co"]);
-    expect((await agencyRecipients(c, "ag1", "ws2")).sort()).toEqual(["all@x.co", "ws2@x.co"]);
+    expect((await accountRecipients(c, "ag1", "ws1")).sort()).toEqual(["all@x.co", "ws1@x.co"]);
+    expect((await accountRecipients(c, "ag1", "ws2")).sort()).toEqual(["all@x.co", "ws2@x.co"]);
   });
 
   it("canSeeWorkspace mirrors the RLS predicate", () => {
@@ -72,7 +72,7 @@ describe("agencyRecipients", () => {
     expect(canSeeWorkspace([], "ws1")).toBe(false);
   });
 
-  it("returns nobody for an agency with no members", async () => {
-    expect(await agencyRecipients(client([], {}), "ag1", "ws1")).toEqual([]);
+  it("returns nobody for an account with no members", async () => {
+    expect(await accountRecipients(client([], {}), "ag1", "ws1")).toEqual([]);
   });
 });

@@ -47,8 +47,8 @@ trace you can open with `npx playwright show-report`.
   credentials as present (so the keyword phase runs) and throws on any actual
   request, so a call that escapes the stubs fails loudly rather than quietly.
 - **Unique accounts, cleaned up.** Every test gets its own
-  `e2e+<tag>@altorank.test` user, agency and workspace(s); teardown deletes
-  the agency (cascading every workspace row) and then the user, even when the
+  `e2e+<tag>@altorank.test` user, account and workspace(s); teardown deletes
+  the account (cascading every workspace row) and then the user, even when the
   test fails.
 - **Nothing measured is invented.** Fixtures seed account structure only.
   `dr` and `traffic` stay null, the analysis stub writes keywords and nothing
@@ -103,8 +103,8 @@ that small: add a stub only for a call that leaves the machine or costs money.
 | `wizard-honesty.spec.ts` | an unreadable site shows the failure, the reason and Try again; the headline does not claim the fields were filled |
 | `skip.spec.ts` | Skip setup writes `onboarding_skipped_at` and the dashboard stops redirecting |
 | `approval-gate.spec.ts` | a draft in review has no publish control; approving moves it to `approved`; no `publish_log` row is written |
-| `scope.spec.ts` | two workspaces on one agency; keywords and calendar show only the switched-to workspace |
-| `signup.spec.ts` | an invalid domain is refused inline and creates neither an agency nor a user |
+| `scope.spec.ts` | two workspaces on one account; keywords and calendar show only the switched-to workspace |
+| `signup.spec.ts` | an invalid domain is refused inline and creates neither an account nor a user |
 
 ## CI
 

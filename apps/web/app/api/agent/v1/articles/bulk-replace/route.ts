@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { withAgent, readJson, appBaseUrl } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
-import { articleInAgency, listArticles, workspaceInAgency } from "@/lib/agent/data";
+import { articleInAccount, listArticles, workspaceInAccount } from "@/lib/agent/data";
 import { articleMutations } from "@/lib/agent/mutations";
 import { applyReplace, replaceBodySchema, type ReplaceBody } from "@/lib/agent/replace";
 import type { Article } from "@/lib/types";
@@ -34,12 +34,12 @@ export const POST = withAgent(async (request, ctx) => {
       `Send { workspace_id, find, replace, article_ids? (max ${BULK_REPLACE_MAX}), match_case?, whole_word?, preview_only? (default true) }.`,
     );
   }
-  const workspace = await workspaceInAgency(ctx, body.data.workspace_id);
+  const workspace = await workspaceInAccount(ctx, body.data.workspace_id);
   if (!workspace) return fail("not_found", "Workspace not found in this account.", "Call GET /workspaces and use an id from that list.");
 
   let targets: Article[];
   if (body.data.article_ids) {
-    const found = await Promise.all([...new Set(body.data.article_ids)].map((id) => articleInAgency(ctx, id)));
+    const found = await Promise.all([...new Set(body.data.article_ids)].map((id) => articleInAccount(ctx, id)));
     const missing = body.data.article_ids.filter((_, i) => !found[i] || found[i]?.workspace_id !== workspace.id);
     if (missing.length) {
       return fail("not_found", `Not in this workspace: ${missing.join(", ")}.`, "Use ids from GET /articles?workspace_id= for the same workspace.");

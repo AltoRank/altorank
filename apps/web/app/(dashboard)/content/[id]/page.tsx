@@ -40,7 +40,7 @@ export default async function ArticleEditorPage({ params }: Props) {
   // since each supplies the next one's id.
   const [cadence, needsPlan, destinations, integrations, linkable, knownPages, outputRow, lastPublish, value] = await Promise.all([
     getPublishingCadence(workspace.id),
-    needsPlanToShip(supabase, workspace.agency_id),
+    needsPlanToShip(supabase, workspace.account_id),
     // The connected CMSs decide whether the editor offers a Publish button.
     // `articles.cms` used to, and nothing set it for a generated draft.
     getDestinations(supabase, workspace.id),

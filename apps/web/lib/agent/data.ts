@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 //
 // The agent context holds a service-role client, so RLS is not standing behind
-// these queries. Every function here therefore names the agency, and the
+// these queries. Every function here therefore names the account, and the
 // workspace-level ones name the workspace too - the rule AGENTS.md states for
 // pages applies twice over here.
 
@@ -11,23 +11,23 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Article, GenerationJob, Keyword, Workspace } from "@/lib/types";
 import type { AgentContext } from "./auth";
 
-export async function agencyWorkspaces(ctx: AgentContext): Promise<Workspace[]> {
+export async function accountWorkspaces(ctx: AgentContext): Promise<Workspace[]> {
   const { data, error } = await ctx.supabase
     .from("workspaces")
     .select("*")
-    .eq("agency_id", ctx.agencyId)
+    .eq("account_id", ctx.accountId)
     .order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as Workspace[];
 }
 
 /** The workspace, if it belongs to the key's account. Null otherwise - the same answer for "not yours" and "not there". */
-export async function workspaceInAgency(ctx: AgentContext, workspaceId: string): Promise<Workspace | null> {
+export async function workspaceInAccount(ctx: AgentContext, workspaceId: string): Promise<Workspace | null> {
   const { data } = await ctx.supabase
     .from("workspaces")
     .select("*")
     .eq("id", workspaceId)
-    .eq("agency_id", ctx.agencyId)
+    .eq("account_id", ctx.accountId)
     .maybeSingle();
   return (data as Workspace | null) ?? null;
 }
@@ -87,12 +87,12 @@ export async function listArticles(
 }
 
 /** An article by id, only if its workspace is in the key's account. */
-export async function articleInAgency(ctx: AgentContext, articleId: string): Promise<Article | null> {
+export async function articleInAccount(ctx: AgentContext, articleId: string): Promise<Article | null> {
   const { data } = await ctx.supabase
     .from("articles")
-    .select("*, workspace:workspaces!inner(agency_id)")
+    .select("*, workspace:workspaces!inner(account_id)")
     .eq("id", articleId)
-    .eq("workspace.agency_id", ctx.agencyId)
+    .eq("workspace.account_id", ctx.accountId)
     .maybeSingle();
   if (!data) return null;
   const { workspace: _workspace, ...article } = data as Article & { workspace: unknown };

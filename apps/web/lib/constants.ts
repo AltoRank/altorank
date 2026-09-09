@@ -69,7 +69,7 @@ export const DASHBOARD_NAV: NavGroup[] = [
           { id: "linking", label: "Linking", href: "/linking", icon: "link" },
           // Under "Agency" until 2026-08-30, which is exactly backwards:
           // connecting a CMS is onboarding step 4 for a solo founder, the least
-          // agency-specific job in the product.
+          // account-specific job in the product.
           { id: "integrations", label: "Integrations", href: "/connect", icon: "integrations" },
           // The wizard's step-4 screen, permanently: nothing is onboarding-only.
           { id: "article-settings", label: "Article settings", href: "/settings/articles", icon: "settings" },
@@ -103,7 +103,7 @@ export const DASHBOARD_NAV: NavGroup[] = [
   // Named "Agency" until 2026-08-30. Billing and Settings are account chrome
   // that every tier needs, and the label made ordinary controls read as
   // features of the top rung - the exact question it prompted was "is the
-  // agency section displayed to everyone?". Team is genuinely multi-seat, but
+  // account section displayed to everyone?". Team is genuinely multi-seat, but
   // one mislabel does not earn a group of its own.
   // Team and Billing are panes inside Settings now (settings-tabs.tsx), not
   // nav entries: three sidebar items for one concept was the clutter, and

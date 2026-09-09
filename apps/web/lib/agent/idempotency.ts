@@ -5,7 +5,7 @@
 // `generate` answers 202 and writes the draft afterwards, so a timed-out
 // request looks the same as one that never arrived. Without a key the honest
 // retry is a second draft and a second quota unit. With one, the first call
-// claims (agency, key) before it writes anything, binds it to the row it
+// claims (account, key) before it writes anything, binds it to the row it
 // created, and every repeat for 24 hours is answered with that row.
 //
 // The claim is an insert on a primary key, so two concurrent firsts cannot
@@ -43,7 +43,7 @@ export function idempotencyKeyFrom(
   return { ok: true, key };
 }
 
-type KeyRow = { agency_id: string; key: string; article_id: string | null; created_at: string };
+type KeyRow = { account_id: string; key: string; article_id: string | null; created_at: string };
 
 export type IdempotencyClaim =
   | { state: "fresh" }
@@ -54,41 +54,41 @@ export function isExpired(createdAt: string, now: number = Date.now()): boolean 
   return !Number.isFinite(t) || now - t > IDEMPOTENCY_TTL_MS;
 }
 
-async function readKey(supabase: SupabaseClient, agencyId: string, key: string): Promise<KeyRow | null> {
-  const { data } = await supabase.from(TABLE).select("agency_id, key, article_id, created_at").eq("agency_id", agencyId).eq("key", key).maybeSingle();
+async function readKey(supabase: SupabaseClient, accountId: string, key: string): Promise<KeyRow | null> {
+  const { data } = await supabase.from(TABLE).select("account_id, key, article_id, created_at").eq("account_id", accountId).eq("key", key).maybeSingle();
   return (data as KeyRow | null) ?? null;
 }
 
 /**
- * Claim the key for this agency. `fresh` means this call owns it and must
+ * Claim the key for this account. `fresh` means this call owns it and must
  * bind or release it; `replay` means an earlier call within the TTL did.
  */
 export async function claimIdempotencyKey(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   key: string,
   now: number = Date.now(),
 ): Promise<IdempotencyClaim> {
-  const existing = await readKey(supabase, agencyId, key);
+  const existing = await readKey(supabase, accountId, key);
   if (existing) {
     if (!isExpired(existing.created_at, now)) return { state: "replay", article_id: existing.article_id, created_at: existing.created_at };
-    await releaseIdempotencyKey(supabase, agencyId, key);
+    await releaseIdempotencyKey(supabase, accountId, key);
   }
-  const { error } = await supabase.from(TABLE).insert({ agency_id: agencyId, key, article_id: null, created_at: new Date(now).toISOString() });
+  const { error } = await supabase.from(TABLE).insert({ account_id: accountId, key, article_id: null, created_at: new Date(now).toISOString() });
   if (!error) return { state: "fresh" };
   if (error.code !== UNIQUE_VIOLATION) throw new Error(error.message);
   // Lost the race to a concurrent first call: answer with what it made.
-  const winner = await readKey(supabase, agencyId, key);
+  const winner = await readKey(supabase, accountId, key);
   if (!winner) return { state: "fresh" };
   return { state: "replay", article_id: winner.article_id, created_at: winner.created_at };
 }
 
-export async function bindIdempotencyKey(supabase: SupabaseClient, agencyId: string, key: string, articleId: string): Promise<void> {
-  const { error } = await supabase.from(TABLE).update({ article_id: articleId }).eq("agency_id", agencyId).eq("key", key);
+export async function bindIdempotencyKey(supabase: SupabaseClient, accountId: string, key: string, articleId: string): Promise<void> {
+  const { error } = await supabase.from(TABLE).update({ article_id: articleId }).eq("account_id", accountId).eq("key", key);
   if (error) throw new Error(error.message);
 }
 
 /** Give the key back: the call it was claimed for wrote nothing. */
-export async function releaseIdempotencyKey(supabase: SupabaseClient, agencyId: string, key: string): Promise<void> {
-  await supabase.from(TABLE).delete().eq("agency_id", agencyId).eq("key", key);
+export async function releaseIdempotencyKey(supabase: SupabaseClient, accountId: string, key: string): Promise<void> {
+  await supabase.from(TABLE).delete().eq("account_id", accountId).eq("key", key);
 }

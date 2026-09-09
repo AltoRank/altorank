@@ -32,16 +32,16 @@ type TiptapDoc = { type: "doc"; content: TiptapNode[] };
 export const CREDITS_PER_ARTICLE = 1;
 
 /**
- * Get the credit balance for an agency (sum of all credits).
+ * Get the credit balance for an account (sum of all credits).
  */
 export async function getCreditBalance(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
 ): Promise<number> {
   const { data } = await supabase
     .from("backlink_credits")
     .select("amount")
-    .eq("agency_id", agencyId);
+    .eq("account_id", accountId);
 
   return (data ?? []).reduce((sum, row) => sum + row.amount, 0);
 }
@@ -51,14 +51,14 @@ export async function getCreditBalance(
  */
 export async function recordCredit(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   amount: number,
   reason: BacklinkCreditReason,
   exchangeId?: string,
   drAtTime?: number | null,
 ): Promise<void> {
   const { error } = await supabase.from("backlink_credits").insert({
-    agency_id: agencyId,
+    account_id: accountId,
     amount,
     reason,
     exchange_id: exchangeId ?? null,
@@ -373,13 +373,13 @@ export type SettlementDecision =
 
 export function settlementDecision(exchange: {
   status: string;
-  provider_agency_id: string | null;
-  requester_agency_id: string | null;
+  provider_account_id: string | null;
+  requester_account_id: string | null;
 }): SettlementDecision {
   if (exchange.status !== "placed") {
     return { settle: false, reason: `exchange is ${exchange.status}, not placed` };
   }
-  if (!exchange.provider_agency_id || !exchange.requester_agency_id) {
+  if (!exchange.provider_account_id || !exchange.requester_account_id) {
     return { settle: false, reason: "exchange has no publisher or writer" };
   }
   return { settle: true, credits: CREDITS_PER_ARTICLE };
@@ -408,15 +408,15 @@ export async function settleExchangeForArticle(
 ): Promise<SettlementOutcome | null> {
   const { data: exchange } = await admin
     .from("backlink_exchanges")
-    .select("id, status, provider_agency_id, requester_agency_id, provider_workspace_id, target_url")
+    .select("id, status, provider_account_id, requester_account_id, provider_workspace_id, target_url")
     .eq("provider_article_id", articleId)
     .maybeSingle();
   if (!exchange) return null;
 
   const decision = settlementDecision({
     status: exchange.status as string,
-    provider_agency_id: exchange.provider_agency_id as string | null,
-    requester_agency_id: exchange.requester_agency_id as string | null,
+    provider_account_id: exchange.provider_account_id as string | null,
+    requester_account_id: exchange.requester_account_id as string | null,
   });
   if (!decision.settle) return { settled: false, reason: decision.reason };
 
@@ -435,8 +435,8 @@ export async function settleExchangeForArticle(
   // The publisher pays for the article they received; the writer is credited
   // for having written it. Nothing is paid to whoever carries the link, which
   // is the reason the citation may be followed at all (migration 039).
-  await recordCredit(admin, exchange.provider_agency_id as string, -decision.credits, "receive_article", exchange.id as string, null);
-  await recordCredit(admin, exchange.requester_agency_id as string, decision.credits, "supply_article", exchange.id as string, null);
+  await recordCredit(admin, exchange.provider_account_id as string, -decision.credits, "receive_article", exchange.id as string, null);
+  await recordCredit(admin, exchange.requester_account_id as string, decision.credits, "supply_article", exchange.id as string, null);
 
   await admin
     .from("backlink_exchanges")

@@ -338,7 +338,7 @@ function winnability(difficulty: number | null, volume = 0, authority?: number |
 }
 
 /**
- * Commercial and transactional terms are worth marginally more to an agency's
+ * Commercial and transactional terms are worth marginally more to an account's
  * client than informational ones, because they sit closer to a sale. Kept small
  * deliberately: intent is a tiebreak, not a thesis, and the classifier is a
  * lexicon rather than an oracle.
@@ -681,7 +681,7 @@ export async function recommendKeywords(
 
   // Collapse variants of one target to their best-scoring representative.
   // Without this the queue shows "agency seo", "agency for seo" and "seo for
-  // agencies" as three separate opportunities worth 27,100 searches each, which
+  // accounts" as three separate opportunities worth 27,100 searches each, which
   // triple-counts a single one.
   const byTarget = new Map<string, KeywordRecommendation>();
   for (const rec of recommendations.sort((a, b) => b.score - a.score)) {

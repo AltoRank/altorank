@@ -10,9 +10,9 @@ import { describe, it, expect, vi, beforeAll } from "vitest";
  * `status = 'error'` out.
  */
 
-vi.mock("@/lib/billing/agency-client", () => ({ agencyCountingClient: (c: unknown) => c }));
+vi.mock("@/lib/billing/account-client", () => ({ accountCountingClient: (c: unknown) => c }));
 vi.mock("@/lib/auth/admin", () => ({ isAdminEmail: () => false }));
-vi.mock("@/lib/billing/operator-agency", () => ({ agencyHasOperator: async () => false }));
+vi.mock("@/lib/billing/operator-account", () => ({ accountHasOperator: async () => false }));
 vi.mock("@/lib/dev/simulation", () => ({ getSimulation: async () => null }));
 vi.mock("@/lib/billing/operator-preview", () => ({
   inCustomerPreview: async () => false,
@@ -24,7 +24,7 @@ beforeAll(() => {
 });
 
 /** Records every filter applied to each `articles` query. */
-function recordingClient(agency: Record<string, unknown>) {
+function recordingClient(account: Record<string, unknown>) {
   const articleQueries: string[][] = [];
   const chain = (name: string): Record<string, unknown> => {
     const filters: string[] = [];
@@ -36,8 +36,8 @@ function recordingClient(agency: Record<string, unknown>) {
         return q;
       };
     }
-    q.single = async () => ({ data: name === "agencies" ? agency : null, error: null });
-    q.maybeSingle = async () => ({ data: name === "agencies" ? agency : null, error: null });
+    q.single = async () => ({ data: name === "accounts" ? account : null, error: null });
+    q.maybeSingle = async () => ({ data: name === "accounts" ? account : null, error: null });
     q.then = (resolve: (v: unknown) => unknown) =>
       resolve(name === "workspaces" ? { data: [{ id: "w1" }], count: 1, error: null } : { data: [], count: 5, error: null });
     return q;

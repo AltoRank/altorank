@@ -1,6 +1,6 @@
 import { withAgent, appBaseUrl } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
-import { articleInAgency, workspaceInAgency } from "@/lib/agent/data";
+import { articleInAccount, workspaceInAccount } from "@/lib/agent/data";
 import { tiptapToHtml } from "@/lib/cms/html";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
 
@@ -13,7 +13,7 @@ type Format = "markdown" | "html" | "tiptap";
  * by default, since that is what a model reads best.
  */
 export const GET = withAgent<{ id: string }>(async (request, ctx, { id }) => {
-  const article = await articleInAgency(ctx, id);
+  const article = await articleInAccount(ctx, id);
   if (!article) {
     return fail("not_found", "Article not found in this account.", "Call GET /articles?workspace_id= and use an id from that list.");
   }
@@ -42,7 +42,7 @@ export const GET = withAgent<{ id: string }>(async (request, ctx, { id }) => {
   const html = tiptapToHtml(article.content);
   if (requested === "html") return ok({ ...base, format: "html", content: html }, guidance);
 
-  const workspace = await workspaceInAgency(ctx, article.workspace_id);
+  const workspace = await workspaceInAccount(ctx, article.workspace_id);
   const siteUrl = workspace?.domain ? `https://${workspace.domain}` : appBaseUrl(request);
   const markdown = renderArticleMarkdown(
     {

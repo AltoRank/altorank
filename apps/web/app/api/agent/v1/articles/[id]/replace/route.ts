@@ -1,6 +1,6 @@
 import { withAgent, readJson, appBaseUrl } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
-import { articleInAgency } from "@/lib/agent/data";
+import { articleInAccount } from "@/lib/agent/data";
 import { articleMutations } from "@/lib/agent/mutations";
 import { applyReplace, replaceBodySchema, type ReplaceBody } from "@/lib/agent/replace";
 
@@ -27,7 +27,7 @@ export const POST = withAgent<{ id: string }>(async (request, ctx, { id }) => {
     );
   }
 
-  const article = await articleInAgency(ctx, id);
+  const article = await articleInAccount(ctx, id);
   if (!article) return fail("not_found", "Article not found in this account.", "Call GET /articles?workspace_id= and use an id from that list.");
   const { replace } = articleMutations(article);
   if (!replace.allowed) {

@@ -18,7 +18,7 @@
  * workspace up and stops before the model.
  *
  * Idempotent on account structure, like scripts/dogfood.ts: it finds the
- * agency and workspace or creates them, and never touches an existing article.
+ * account and workspace or creates them, and never touches an existing article.
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -60,7 +60,7 @@ async function main(): Promise<void> {
 
   const { data: existingWs } = await db
     .from("workspaces")
-    .select("id, agency_id, language, location_code")
+    .select("id, account_id, language, location_code")
     .eq("domain", DOMAIN)
     .maybeSingle();
 
@@ -69,19 +69,19 @@ async function main(): Promise<void> {
   if (workspaceId) {
     console.log(`  found workspace ${workspaceId} (lang ${existingWs?.language})`);
   } else {
-    const { data: agency } = await db
-      .from("agencies")
+    const { data: account } = await db
+      .from("accounts")
       .select("id")
       .eq("slug", "altorank")
       .maybeSingle();
-    if (!agency) {
-      console.error("  no 'altorank' agency. Run `npm run dogfood` first.");
+    if (!account) {
+      console.error("  no 'altorank' account. Run `npm run dogfood` first.");
       process.exit(1);
     }
     const { data, error } = await db
       .from("workspaces")
       .insert({
-        agency_id: agency.id,
+        account_id: account.id,
         name: DOMAIN,
         domain: DOMAIN,
         initials: DOMAIN.slice(0, 2).toUpperCase(),

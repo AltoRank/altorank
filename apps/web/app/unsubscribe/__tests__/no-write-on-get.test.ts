@@ -41,7 +41,7 @@ afterAll(() => {
   delete process.env.NEXT_PUBLIC_APP_URL;
 });
 
-const EMAIL = "reader@agency.co";
+const EMAIL = "reader@account.co";
 
 function link(category: string) {
   const s = signUnsubscribe(EMAIL, category)!;

@@ -59,19 +59,19 @@ export async function POST(request: NextRequest) {
   }
 
   // A 24,000-token Sonnet call, streamed, once per press. Nothing stopped an
-  // account with no plan from pressing it. The agency comes from the
+  // account with no plan from pressing it. The account comes from the
   // membership rather than the article, because this route never resolved one.
   const { data: member } = await supabase
-    .from("agency_members")
-    .select("agency_id")
+    .from("account_members")
+    .select("account_id")
     .eq("user_id", user.id)
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
   if (!member) {
-    return Response.json({ error: "No agency membership" }, { status: 403 });
+    return Response.json({ error: "No account membership" }, { status: 403 });
   }
-  const gate = await canSpend(supabase, member.agency_id as string, {
+  const gate = await canSpend(supabase, member.account_id as string, {
     userEmail: user.email ?? undefined,
     workspaceId: article.workspace_id as string,
     action: "draft",

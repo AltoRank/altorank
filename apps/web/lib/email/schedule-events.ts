@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 //
 // Both run from the generate cron, which is the only job that touches every
-// agency on every run and therefore the only place either of these can be
+// account on every run and therefore the only place either of these can be
 // noticed at all.
 //
 //   a pause about to end   Stripe resumes collection on the date by itself.
@@ -34,14 +34,14 @@ export const PAUSE_REMINDER_DAYS = 3;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export type PauseReminderOutcome = { agencyId: string; pausedUntil: string; emailed: string };
+export type PauseReminderOutcome = { accountId: string; pausedUntil: string; emailed: string };
 
 /**
  * Remind every account whose pause lifts within the next few days.
  *
  * The window is a range, not a single day, so a cron that misses a run - or a
  * deployment that skips one - does not skip the reminder with it. `sendOnce`
- * is keyed by (agency, pause date), which is what stops four daily runs inside
+ * is keyed by (account, pause date), which is what stops four daily runs inside
  * that window from sending four emails.
  */
 export async function remindEndingPauses(
@@ -55,7 +55,7 @@ export async function remindEndingPauses(
 
     const { data, error } = await supabase
       .from("workspaces")
-      .select("agency_id, paused_until")
+      .select("account_id, paused_until")
       .eq("status", "paused")
       .not("paused_until", "is", null)
       .gte("paused_until", from)
@@ -66,23 +66,23 @@ export async function remindEndingPauses(
     // which for an account pause is the same date on all of them.
     const earliest = new Map<string, string>();
     for (const row of data ?? []) {
-      const agencyId = row.agency_id as string;
+      const accountId = row.account_id as string;
       const day = row.paused_until as string;
-      if (!earliest.has(agencyId) || day < earliest.get(agencyId)!) earliest.set(agencyId, day);
+      if (!earliest.has(accountId) || day < earliest.get(accountId)!) earliest.set(accountId, day);
     }
 
-    for (const [agencyId, pausedUntil] of earliest) {
-      const { data: agency } = await supabase.from("agencies").select("name").eq("id", agencyId).maybeSingle();
+    for (const [accountId, pausedUntil] of earliest) {
+      const { data: account } = await supabase.from("accounts").select("name").eq("id", accountId).maybeSingle();
       const daysLeft = Math.max(
         1,
         Math.round((Date.parse(`${pausedUntil}T00:00:00Z`) - Date.parse(`${isoDay(today)}T00:00:00Z`)) / DAY_MS),
       );
-      const sent = await notifyPauseEnding(supabase, agencyId, {
-        agencyName: (agency?.name as string | null) ?? null,
+      const sent = await notifyPauseEnding(supabase, accountId, {
+        accountName: (account?.name as string | null) ?? null,
         pausedUntil,
         daysLeft,
       });
-      out.push({ agencyId, pausedUntil, emailed: describeSendOutcome(sent) });
+      out.push({ accountId, pausedUntil, emailed: describeSendOutcome(sent) });
     }
   } catch (err) {
     console.error(`[pause-reminder] ${err instanceof Error ? err.message : err}`);
@@ -114,7 +114,7 @@ export function nothingWrittenReason(detail: string): NothingWrittenReason | nul
  */
 export async function announceNothingWritten(
   supabase: SupabaseClient,
-  scope: { agencyId: string; workspaceId: string; domain: string | null },
+  scope: { accountId: string; workspaceId: string; domain: string | null },
   reason: NothingWrittenReason,
   pausedUntil?: string | null,
   now: Date = new Date(),
@@ -127,7 +127,7 @@ export async function announceNothingWritten(
     if (await setupUnfinished(supabase, scope.workspaceId)) return SETUP_UNFINISHED_LINE;
     const out = await notifyNothingWritten(
       supabase,
-      { agencyId: scope.agencyId, workspaceId: scope.workspaceId },
+      { accountId: scope.accountId, workspaceId: scope.workspaceId },
       { domain: scope.domain, reason, pausedUntil },
       now,
     );
@@ -151,7 +151,7 @@ export async function announcePausedSites(supabase: SupabaseClient, now: Date = 
   try {
     const { data, error } = await supabase
       .from("workspaces")
-      .select("id, domain, agency_id, paused_until")
+      .select("id, domain, account_id, paused_until")
       .eq("auto_generate", true)
       .eq("status", "paused");
     if (error) throw new Error(error.message);
@@ -160,7 +160,7 @@ export async function announcePausedSites(supabase: SupabaseClient, now: Date = 
       const line = await announceNothingWritten(
         supabase,
         {
-          agencyId: ws.agency_id as string,
+          accountId: ws.account_id as string,
           workspaceId: ws.id as string,
           domain: (ws.domain as string | null) ?? null,
         },
@@ -257,11 +257,11 @@ export async function setupUnfinishedFacts(
  */
 export async function announceSetupUnfinished(
   supabase: SupabaseClient,
-  scope: { agencyId: string; workspaceId: string; domain: string | null },
+  scope: { accountId: string; workspaceId: string; domain: string | null },
 ): Promise<string> {
   try {
     const facts = await setupUnfinishedFacts(supabase, scope.workspaceId, scope.domain);
-    const out = await notifySetupUnfinished(supabase, { agencyId: scope.agencyId, workspaceId: scope.workspaceId }, facts);
+    const out = await notifySetupUnfinished(supabase, { accountId: scope.accountId, workspaceId: scope.workspaceId }, facts);
     return describeSendOutcome(out);
   } catch (err) {
     return `email failed (${err instanceof Error ? err.message : "unknown"})`;
@@ -284,7 +284,7 @@ export async function sweepUnfinishedSetups(supabase: SupabaseClient, now: Date 
     const before = new Date(now.getTime() - SETUP_FOLLOWUP_HOURS * 60 * 60 * 1000).toISOString();
     const { data, error } = await supabase
       .from("workspaces")
-      .select("id, domain, agency_id")
+      .select("id, domain, account_id")
       .is("onboarded_at", null)
       .is("onboarding_skipped_at", null)
       .not("first_analysed_at", "is", null)
@@ -305,7 +305,7 @@ export async function sweepUnfinishedSetups(supabase: SupabaseClient, now: Date 
     for (const ws of data ?? []) {
       if (done.has(ws.id as string)) continue;
       const line = await announceSetupUnfinished(supabase, {
-        agencyId: ws.agency_id as string,
+        accountId: ws.account_id as string,
         workspaceId: ws.id as string,
         domain: (ws.domain as string | null) ?? null,
       });

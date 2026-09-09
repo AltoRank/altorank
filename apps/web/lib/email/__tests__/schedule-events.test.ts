@@ -60,7 +60,7 @@ function client() {
         });
         return q as never;
       }
-      if (table === "agencies") {
+      if (table === "accounts") {
         const q: Record<string, unknown> = {};
         Object.assign(q, {
           select: () => q,
@@ -69,7 +69,7 @@ function client() {
         });
         return q as never;
       }
-      if (table === "agency_members") {
+      if (table === "account_members") {
         return { select: () => ({ eq: async () => ({ data: members, error: null }) }) } as never;
       }
       if (table === "email_preferences") {
@@ -131,10 +131,10 @@ describe("remindEndingPauses", () => {
   const today = new Date("2026-09-06T07:00:00Z");
 
   it("warns the owners before Stripe starts collecting again", async () => {
-    workspaceRows = [{ agency_id: "ag-1", paused_until: "2026-09-08" }];
+    workspaceRows = [{ account_id: "ag-1", paused_until: "2026-09-08" }];
     const out = await remindEndingPauses(client(), today);
 
-    expect(out).toEqual([{ agencyId: "ag-1", pausedUntil: "2026-09-08", emailed: "emailed 1" }]);
+    expect(out).toEqual([{ accountId: "ag-1", pausedUntil: "2026-09-08", emailed: "emailed 1" }]);
     expect(sends()[0].to).toBe("owner@acme.co");
     expect(sends()[0].subject).toBe("Your pause ends in 2 days");
     expect(sends()[0].html).toContain("September 8, 2026");
@@ -142,7 +142,7 @@ describe("remindEndingPauses", () => {
 
   /** Billing is owner and admin business; an editor cannot open that page. */
   it("does not tell an editor", async () => {
-    workspaceRows = [{ agency_id: "ag-1", paused_until: "2026-09-08" }];
+    workspaceRows = [{ account_id: "ag-1", paused_until: "2026-09-08" }];
     await remindEndingPauses(client(), today);
     expect(sends().some((s) => s.to === "editor@acme.co")).toBe(false);
   });
@@ -159,16 +159,16 @@ describe("remindEndingPauses", () => {
 
   it("sends one email per account, not per site", async () => {
     workspaceRows = [
-      { agency_id: "ag-1", paused_until: "2026-09-08" },
-      { agency_id: "ag-1", paused_until: "2026-09-08" },
-      { agency_id: "ag-1", paused_until: "2026-09-09" },
+      { account_id: "ag-1", paused_until: "2026-09-08" },
+      { account_id: "ag-1", paused_until: "2026-09-08" },
+      { account_id: "ag-1", paused_until: "2026-09-09" },
     ];
     await remindEndingPauses(client(), today);
     expect(sends()).toHaveLength(1);
   });
 
   it("does not repeat across the four daily runs inside the window", async () => {
-    workspaceRows = [{ agency_id: "ag-1", paused_until: "2026-09-08" }];
+    workspaceRows = [{ account_id: "ag-1", paused_until: "2026-09-08" }];
     const c = client();
     await remindEndingPauses(c, today);
     await remindEndingPauses(c, new Date("2026-09-06T13:00:00Z"));
@@ -198,7 +198,7 @@ describe("nothingWrittenReason", () => {
 });
 
 describe("announceNothingWritten", () => {
-  const scope = { agencyId: "ag-1", workspaceId: "ws-1", domain: "acme.com" };
+  const scope = { accountId: "ag-1", workspaceId: "ws-1", domain: "acme.com" };
 
   it("says which reason, and what to do about it", async () => {
     const line = await announceNothingWritten(client(), scope, "no-keywords");
@@ -241,7 +241,7 @@ describe("announceNothingWritten", () => {
 describe("announcePausedSites", () => {
   it("covers the sites the cron's own query filters out", async () => {
     workspaceRows = [
-      { id: "ws-1", domain: "acme.com", agency_id: "ag-1", paused_until: "2026-10-01", onboarded_at: "2026-08-01T00:00:00Z" },
+      { id: "ws-1", domain: "acme.com", account_id: "ag-1", paused_until: "2026-10-01", onboarded_at: "2026-08-01T00:00:00Z" },
     ];
     const lines = await announcePausedSites(client(), new Date("2026-09-07T07:00:00Z"));
 
@@ -260,7 +260,7 @@ describe("announcePausedSites", () => {
 });
 
 describe("the setup email", () => {
-  const scope = { agencyId: "ag-1", workspaceId: "ws-1", domain: "acme.com" };
+  const scope = { accountId: "ag-1", workspaceId: "ws-1", domain: "acme.com" };
   const usable = { terms: { crm: 1, sales: 1, pipeline: 1, forecast: 1 } };
 
   it("carries the draft when one is in review, to everyone scoped to the site", async () => {
@@ -339,7 +339,7 @@ describe("sweepUnfinishedSetups", () => {
   });
 
   it("tells each stalled site once and reports it", async () => {
-    workspaceRows = [{ id: "ws-1", domain: "acme.com", agency_id: "ag-1", topical_profile: null }];
+    workspaceRows = [{ id: "ws-1", domain: "acme.com", account_id: "ag-1", topical_profile: null }];
     keywordCount = 8;
     const c = client();
     expect(await sweepUnfinishedSetups(c, now)).toEqual(["acme.com: emailed 2"]);

@@ -31,11 +31,11 @@
 //
 // Two different counts, because the two limits mean different things:
 //
-//   plan limit    articles *created* this calendar month across the agency's
+//   plan limit    articles *created* this calendar month across the account's
 //                 workspaces, cron and manual alike. Deletes free quota back;
 //                 that is acceptable at this scale and honest in both
 //                 directions, because the counter refills anyway.
-//   free tier     `agencies.free_drafts_used`, a durable counter that a delete
+//   free tier     `accounts.free_drafts_used`, a durable counter that a delete
 //                 cannot walk backwards, floored by the live all-time article
 //                 count so a generation path that forgets to increment it
 //                 cannot hand out an unrecorded free draft. Against a
@@ -46,8 +46,8 @@ import { billingEnabled, PLAN_ARTICLE_LIMITS, type PlanTier } from "@/lib/stripe
 import { getSimulation } from "@/lib/dev/simulation";
 import { isAdminEmail } from "@/lib/auth/operators";
 import { inCustomerPreview } from "@/lib/auth/preview";
-import { agencyHasOperator } from "@/lib/billing/operator-agency";
-import { agencyCountingClient } from "@/lib/billing/agency-client";
+import { accountHasOperator } from "@/lib/billing/operator-account";
+import { accountCountingClient } from "@/lib/billing/account-client";
 import { dunningInfo, planEntitled, type DunningInfo } from "@/lib/billing/dunning";
 import { plural } from "@/lib/utils";
 
@@ -63,7 +63,7 @@ export type Quota = {
   /**
    * Set while a renewal is failing: `grace` keeps the paid tier's `reason:
    * "plan"`, `lapsed` is `reason: "no-plan"` with the card still unpaid.
-   * Undefined on the paths that never read the agency row.
+   * Undefined on the paths that never read the account row.
    */
   dunning?: DunningInfo | null;
   /**
@@ -109,14 +109,14 @@ export function nextResetDate(now: Date = new Date()): Date {
 }
 
 /**
- * Compute the quota for an agency. Pass the caller's Supabase client; the
- * counts themselves run agency-wide (lib/billing/agency-client.ts), because a
+ * Compute the quota for an account. Pass the caller's Supabase client; the
+ * counts themselves run account-wide (lib/billing/account-client.ts), because a
  * member scoped to some of the sites would otherwise be handed the whole
  * account's allowance again for the sites they can see.
  */
 export async function getQuota(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   userEmail?: string | null,
 ): Promise<Quota> {
   // Resolve the caller when not handed one. On the cookie client this is the
@@ -131,12 +131,12 @@ export async function getQuota(
     const { data } = await supabase.auth.getUser();
     userEmail = data.user?.email ?? null;
   }
-  // Agency-wide, never the caller's slice of it: see agency-client.ts.
-  const counting = agencyCountingClient(supabase);
+  // Account-wide, never the caller's slice of it: see account-client.ts.
+  const counting = accountCountingClient(supabase);
   const { data: workspaceRows, error: workspaceError } = await counting
     .from("workspaces")
     .select("id")
-    .eq("agency_id", agencyId);
+    .eq("account_id", accountId);
   // A failed read used to become an empty list, which became `used = 0`, which
   // the usage meter printed as "0 used" - a measurement, from nothing. The
   // house rule is that an unknown is never a zero, and a quota is the one
@@ -164,7 +164,7 @@ export async function getQuota(
         .in("workspace_id", workspaceIds)
         .neq("status", "error")
         .gte("created_at", monthStart()),
-      // Every article the agency has ever had. Only the free tier reads this,
+      // Every article the account has ever had. Only the free tier reads this,
       // and only as a floor under the stored counter below.
       counting
         .from("articles")
@@ -185,17 +185,17 @@ export async function getQuota(
   // customer preview has to lift it, or the preview would show the one screen
   // it exists to check in the one state no customer is ever in.
   //
-  // Only the bypass is dropped. Everything below runs against the real agency
+  // Only the bypass is dropped. Everything below runs against the real account
   // row, so quota is the account's actual usage, not a fixture.
   if (isAdminEmail(userEmail) && !(await inCustomerPreview())) {
     return { limit: null, used, remaining: null, reason: "operator", plan: null };
   }
 
   // Same bypass, reached the only way a cron can reach it. Without this our own
-  // agency is metered by every scheduled job: one draft a month from
+  // account is metered by every scheduled job: one draft a month from
   // cron/generate, and since scheduled work was gated on a plan, no rank
-  // tracking at all. See lib/billing/operator-agency.ts.
-  if (noSession && (await agencyHasOperator(supabase, agencyId))) {
+  // tracking at all. See lib/billing/operator-account.ts.
+  if (noSession && (await accountHasOperator(supabase, accountId))) {
     return { limit: null, used, remaining: null, reason: "operator", plan: null };
   }
 
@@ -211,23 +211,23 @@ export async function getQuota(
   // calendar's write gate. A refusal derived from a failed read is not a
   // refusal, and this one asks the customer to buy what they already have.
   //
-  // `maybeSingle`, not `single`: an agency row that genuinely does not exist
+  // `maybeSingle`, not `single`: an account row that genuinely does not exist
   // is a different fact from a read that failed, and it keeps the fallback the
   // rest of this function was written against.
-  const { data: agency, error: agencyError } = await counting
-    .from("agencies")
+  const { data: account, error: accountError } = await counting
+    .from("accounts")
     .select("plan, plan_status, payment_failed_at, free_drafts_used")
-    .eq("id", agencyId)
+    .eq("id", accountId)
     .maybeSingle();
-  if (agencyError) throw new Error(`quota: could not read this account's plan (${agencyError.message})`);
+  if (accountError) throw new Error(`quota: could not read this account's plan (${accountError.message})`);
 
   // `past_due` inside the grace window counts as paid: a card that failed at
   // renewal is Stripe's to retry for a week, and locking approve and publish
   // on day one turned "update your card" into "choose a plan" and a second
   // subscription (lib/billing/dunning.ts).
-  let active = planEntitled(agency ?? {});
-  let plan = (agency?.plan ?? null) as PlanTier | null;
-  const dunning = dunningInfo(agency ?? {});
+  let active = planEntitled(account ?? {});
+  let plan = (account?.plan ?? null) as PlanTier | null;
+  const dunning = dunningInfo(account ?? {});
 
   // Dev-only: the DevToolbar's simulated plan drives the quota too, so "what
   // does a Managed customer at 97/100 see" is testable without a live
@@ -248,7 +248,7 @@ export async function getQuota(
     // draft is free, and approving or publishing it is where the plan is
     // asked for (see requireActivePlan). Nothing is charged until they choose.
     //
-    // `plan: null`, not the column. `agencies.plan` is `not null default
+    // `plan: null`, not the column. `accounts.plan` is `not null default
     // 'starter'`, so an account that never bought anything carries "starter"
     // and every reader that trusted this field said so: GET
     // /auth/whoami answered `plan: "starter", reason: "no-plan"` and an agent
@@ -263,7 +263,7 @@ export async function getQuota(
     // both and taking the larger means neither a delete nor a missed
     // increment can hand out an eighth free draft. `monthUsed` rides along so
     // the copy can explain a lock that lands mid-month (migration 083).
-    const freeUsed = Math.max((agency?.free_drafts_used as number | null) ?? 0, everUsed);
+    const freeUsed = Math.max((account?.free_drafts_used as number | null) ?? 0, everUsed);
     return {
       limit: FREE_DRAFTS,
       used: freeUsed,
@@ -391,15 +391,15 @@ export const OVERAGE_CENTS: Record<Exclude<PlanTier, "scale">, number> = {
 
 /**
  * True when approving or publishing needs a plan first: cloud billing is on,
- * the caller is not an operator, and the agency has no active subscription.
+ * the caller is not an operator, and the account has no active subscription.
  * Self-host and operator accounts never see the gate.
  */
 export async function needsPlanToShip(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   userEmail?: string | null,
 ): Promise<boolean> {
-  const q = await getQuota(supabase, agencyId, userEmail);
+  const q = await getQuota(supabase, accountId, userEmail);
   return q.reason === "no-plan";
 }
 

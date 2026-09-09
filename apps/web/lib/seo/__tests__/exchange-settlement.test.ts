@@ -9,13 +9,13 @@ import { settleExchangeForArticle } from "../exchange";
 const EXCHANGE = {
   id: "ex1",
   status: "placed",
-  provider_agency_id: "agency-publisher",
-  requester_agency_id: "agency-writer",
+  provider_account_id: "account-publisher",
+  requester_account_id: "account-writer",
   provider_workspace_id: "ws-publisher",
   target_url: "https://writer.example/guide",
 };
 
-type Insert = { agency_id: string; amount: number; reason: string; dr_at_time: number | null };
+type Insert = { account_id: string; amount: number; reason: string; dr_at_time: number | null };
 
 function mockAdmin(exchange: Record<string, unknown> | null = EXCHANGE) {
   const credits: Insert[] = [];
@@ -69,8 +69,8 @@ describe("settleExchangeForArticle", () => {
     const out = await settleExchangeForArticle(admin as any, "a1");
 
     expect(out).toMatchObject({ settled: true, credits: 1, citation: "kept" });
-    const publisher = credits.find((c) => c.agency_id === "agency-publisher")!;
-    const writer = credits.find((c) => c.agency_id === "agency-writer")!;
+    const publisher = credits.find((c) => c.account_id === "account-publisher")!;
+    const writer = credits.find((c) => c.account_id === "account-writer")!;
     // The sign is the feature. Publisher pays, writer is paid.
     expect(publisher.amount).toBeLessThan(0);
     expect(writer.amount).toBeGreaterThan(0);

@@ -87,7 +87,7 @@ describe("maxAllowedPace", () => {
     expect(monthlyFromPace(max + 1)).toBeGreaterThan(100);
   });
 
-  it("lets Agency and unmetered accounts run to the column's ceiling", () => {
+  it("lets Account and unmetered accounts run to the column's ceiling", () => {
     expect(maxAllowedPace({ limit: 400, reason: "plan" })).toBe(MAX_PACE);
     expect(maxAllowedPace({ limit: null, reason: "self-host" })).toBe(MAX_PACE);
     expect(maxAllowedPace({ limit: null, reason: "operator" })).toBe(MAX_PACE);

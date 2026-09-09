@@ -4,7 +4,7 @@
  *
  *   npm run dogfood
  *
- * Seeds ACCOUNT STRUCTURE ONLY: a user, an agency, and a workspace pointed at a
+ * Seeds ACCOUNT STRUCTURE ONLY: a user, an account, and a workspace pointed at a
  * domain we actually own. Nothing that looks like a measurement is written.
  *
  * `workspaces.dr` and `workspaces.traffic` stay null even though the columns
@@ -60,44 +60,44 @@ async function main(): Promise<void> {
     console.log(`  found user     ${EMAIL} (password reset)`);
   }
 
-  // --- Agency --------------------------------------------------------------
-  const { data: agencyRow } = await db
-    .from("agencies")
+  // --- Account --------------------------------------------------------------
+  const { data: accountRow } = await db
+    .from("accounts")
     .select("id")
     .eq("slug", "altorank")
     .maybeSingle();
 
-  let agencyId = agencyRow?.id as string | undefined;
-  if (!agencyId) {
+  let accountId = accountRow?.id as string | undefined;
+  if (!accountId) {
     const { data, error } = await db
-      .from("agencies")
-      // `scale` because the agencies.plan check constraint still allows only
+      .from("accounts")
+      // `scale` because the accounts.plan check constraint still allows only
       // starter/growth/scale, the pre-pivot three-tier naming. The shipped
-      // ladder is four rungs (self-host / BYOK / managed / agency), so the
+      // ladder is four rungs (self-host / BYOK / managed / account), so the
       // database never got the pricing convergence. Flagged, not fixed here:
       // changing the enum touches billing and does not belong in a seed script.
       .insert({ name: "AltoRank", slug: "altorank", plan: "scale" })
       .select("id")
       .single();
-    if (error) throw new Error(`agency: ${error.message}`);
-    agencyId = data.id;
-    console.log("  created agency AltoRank");
+    if (error) throw new Error(`account: ${error.message}`);
+    accountId = data.id;
+    console.log("  created account AltoRank");
   } else {
-    console.log("  found agency   AltoRank");
+    console.log("  found account   AltoRank");
   }
 
   // --- Membership ----------------------------------------------------------
   const { data: member } = await db
-    .from("agency_members")
+    .from("account_members")
     .select("id")
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .eq("user_id", user!.id)
     .maybeSingle();
 
   if (!member) {
     const { error } = await db
-      .from("agency_members")
-      .insert({ agency_id: agencyId, user_id: user!.id, role: "owner" });
+      .from("account_members")
+      .insert({ account_id: accountId, user_id: user!.id, role: "owner" });
     if (error) throw new Error(`membership: ${error.message}`);
     console.log("  created membership (owner)");
   }
@@ -106,7 +106,7 @@ async function main(): Promise<void> {
   const { data: wsRow } = await db
     .from("workspaces")
     .select("id")
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .eq("domain", DOMAIN)
     .maybeSingle();
 
@@ -115,7 +115,7 @@ async function main(): Promise<void> {
     const { data, error } = await db
       .from("workspaces")
       .insert({
-        agency_id: agencyId,
+        account_id: accountId,
         name: DOMAIN,
         domain: DOMAIN,
         initials: DOMAIN.slice(0, 2).toUpperCase(),

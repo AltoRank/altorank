@@ -66,9 +66,9 @@ export default async function KeywordsPage({ searchParams }: Props) {
     // view" (articles/page.tsx); this page never got the same treatment.
     getKeywords(scopeId ?? undefined),
     // Whether the nightly rank tracker will ever run for this account.
-    // cron/serp refuses a no-plan agency before it checks anything, and the
+    // cron/serp refuses a no-plan account before it checks anything, and the
     // page used to promise positions regardless (P0-O5).
-    requireAuth().then(({ agencyId, user }) => getRequestQuota(agencyId, user.email ?? null)),
+    requireAuth().then(({ accountId, user }) => getRequestQuota(accountId, user.email ?? null)),
   ]);
   const rankTracking = entitledToScheduledWork(quota);
   // The chips, applied where the table can see them and the strip cannot.
@@ -169,7 +169,7 @@ export default async function KeywordsPage({ searchParams }: Props) {
           </div>
         )}
         {/* The tracker's own entitlement, said out loud. `cron/serp` skips a
-            no-plan agency with "no plan" before it looks at a single keyword -
+            no-plan account with "no plan" before it looks at a single keyword -
             and the AI-visibility sweep and the backlink pass ride in the same
             route - so on the free tier the Tracked pos. column can only ever
             be "—". */}

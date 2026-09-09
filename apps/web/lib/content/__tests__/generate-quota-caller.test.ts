@@ -4,11 +4,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * The quota gate inside generateArticle must reach the same verdict as the
  * gate its caller already ran.
  *
- * It did not. cron/generate asked `getQuota(client, agencyId, null)` - null
+ * It did not. cron/generate asked `getQuota(client, accountId, null)` - null
  * meaning "there is no session here, this is a cron" - and generateArticle
- * asked `getQuota(client, agencyId)` with the argument omitted, which means
+ * asked `getQuota(client, accountId)` with the argument omitted, which means
  * "go and resolve one". On a service client that resolves to nobody while
- * still counting as a session, so the operator's own agency came back
+ * still counting as a session, so the operator's own account came back
  * "operator, unlimited" from the first call and "no-plan, free draft used"
  * from the second. Every run logged an error for a condition the cron route
  * deliberately calls a skip.
@@ -39,7 +39,7 @@ function client() {
       select: () => ({
         eq: () => ({
           single: async () => ({
-            data: { id: "ws1", agency_id: "agency1", ai_provider: null, ai_model: null,
+            data: { id: "ws1", account_id: "agency1", ai_provider: null, ai_model: null,
                     language: null, brand_style: null, location_code: null },
             error: null,
           }),
@@ -65,8 +65,8 @@ describe("generateArticle quota gate", () => {
     ).rejects.toThrow();
 
     expect(getQuota).toHaveBeenCalledOnce();
-    const [, agencyId, caller] = getQuota.mock.calls[0];
-    expect(agencyId).toBe("agency1");
+    const [, accountId, caller] = getQuota.mock.calls[0];
+    expect(accountId).toBe("agency1");
     expect(caller).toBeNull();
   });
 

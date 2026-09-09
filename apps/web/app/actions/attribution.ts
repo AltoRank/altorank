@@ -20,17 +20,17 @@ import { parseAttribution, type Attribution } from "@/lib/attribution";
  */
 export async function saveAttribution(source: string, note: string | null = null): Promise<Attribution> {
   const answer = parseAttribution(source, note);
-  const { agencyId } = await requireAuth();
+  const { accountId } = await requireAuth();
   const supabase = await createClient();
 
   const { error } = await supabase
-    .from("agencies")
+    .from("accounts")
     .update({
       attribution_source: answer.source,
       attribution_note: answer.note,
       attribution_answered_at: new Date().toISOString(),
     })
-    .eq("id", agencyId);
+    .eq("id", accountId);
   if (error) throw new Error(error.message);
 
   revalidatePath("/settings");

@@ -89,20 +89,20 @@ async function refused(payload: CreateEmailOptions, message: string, status: num
 export async function sendInviteEmail(
   to: string,
   inviterName: string,
-  agencyName: string,
+  accountName: string,
   role: string,
   acceptUrl: string,
 ): Promise<void> {
   await deliver({
     from: fromAddress(),
     to,
-    subject: `You've been invited to join ${agencyName} on AltoRank`,
+    subject: `You've been invited to join ${accountName} on AltoRank`,
     html: emailLayout({
-      title: `Join ${agencyName} on AltoRank`,
-      preheader: `${inviterName} invited you to ${agencyName}`,
+      title: `Join ${accountName} on AltoRank`,
+      preheader: `${inviterName} invited you to ${accountName}`,
       bodyHtml:
-        `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">Join ${agencyName} on AltoRank</h1>` +
-        emailParagraph(`${inviterName} invited you to work on ${agencyName}'s SEO content. Accept to get access to the workspaces, drafts and reports.`) +
+        `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">Join ${accountName} on AltoRank</h1>` +
+        emailParagraph(`${inviterName} invited you to work on ${accountName}'s SEO content. Accept to get access to the workspaces, drafts and reports.`) +
         emailButton(acceptUrl, "Accept invitation") +
         emailParagraph(`The link works once and expires in seven days. If you were not expecting this, ignore it and nothing happens.`),
       footerNote: `Sent because ${inviterName} added ${to} to a team on AltoRank.`,
