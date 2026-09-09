@@ -181,6 +181,8 @@ const STATUS_LABEL: Record<ExtractedClaim["status"], string> = {
   unsourced: "No source",
   needs_verification: "Verify source",
   corroborated: "Seen elsewhere",
+  verified: "Source checked",
+  contradicted: "Not on cited page",
 };
 
 function ClaimRow({
@@ -192,10 +194,15 @@ function ClaimRow({
 }) {
   const [open, setOpen] = useState(false);
 
+  // A claim whose cited page was opened and carries the figure is the one
+  // row here that is not asking for anything, and should not read as a
+  // warning the reviewer still owes work on.
   const tone =
     claim.severity === "high"
       ? "border-red-300 bg-red-50"
-      : "border-amber-200 bg-amber-50";
+      : claim.severity === "low"
+        ? "border-line bg-ok-soft"
+        : "border-amber-200 bg-amber-50";
 
   return (
     <div className={`rounded-[6px] border px-2.5 py-2 ${tone}`}>
