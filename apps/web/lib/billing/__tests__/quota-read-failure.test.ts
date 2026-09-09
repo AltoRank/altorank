@@ -42,6 +42,7 @@ function clientFailingOn(table: string) {
       select: () => q,
       eq: () => q,
       in: () => q,
+      neq: () => q,
       gte: () => q,
       single: () => Promise.resolve(name === table ? { data: null, error: FAILURE } : { data: { plan: "managed", plan_status: "active" }, error: null }),
       maybeSingle: () => Promise.resolve(name === table ? { data: null, error: FAILURE } : { data: { plan: "managed", plan_status: "active" }, error: null }),

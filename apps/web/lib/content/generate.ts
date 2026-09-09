@@ -317,6 +317,8 @@ export async function generateArticle(
   // came back "no-plan, free draft used" from this call and "operator,
   // unlimited" from the identical call in cron/generate, and every run logged
   // an error the cron route had gone out of its way to call a skip.
+  // Set on the free tier below; called only once a draft exists.
+  let recordFreeDraft: (() => Promise<void>) | null = null;
   const quota = await getQuota(supabase, billedAgencyId, callerEmail);
   if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
     if (quota.reason === "no-plan" || autonomous) {
@@ -496,22 +498,31 @@ export async function generateArticle(
     // what makes the allowance actually one-time.
     //
     // Only on the free tier: a paid account's limit is its plan's monthly
-    // volume and this column is never read for it. Best effort, and after the
-    // article exists: losing a generated draft to a bookkeeping failure would
-    // be the worse trade.
+    // volume and this column is never read for it. Best effort.
+    //
+    // Recorded once the draft EXISTS - after its content is saved, or after a
+    // rewrite completes - not once its row does. This used to run here, right
+    // after the `articles` insert and before a word was generated, so a run
+    // Vercel killed at the function limit spent a free draft on a row at zero
+    // words. qasimcode.com was told "all 7 free drafts are used" with five on
+    // the account (2026-09-09). The window between the save and this write is
+    // covered by the live count `getQuota` floors with; the window between
+    // this write and the save is what was charging people for our timeouts.
     if (quota.reason === "no-plan") {
-      try {
-        await supabase
-          .from("agencies")
-          // `quota.used` is already the larger of the stored counter and the
-          // live count, so this only ever moves the column forward. Two
-          // concurrent drafts can write the same number; the live count is
-          // what catches that, which is exactly the job it is kept for.
-          .update({ free_drafts_used: quota.used + 1 })
-          .eq("id", billedAgencyId);
-      } catch {
-        // The live count still floors it; see getQuota.
-      }
+      recordFreeDraft = async () => {
+        try {
+          await supabase
+            .from("agencies")
+            // `quota.used` is already the larger of the stored counter and
+            // the live count, so this only ever moves the column forward. Two
+            // concurrent drafts can write the same number; the live count is
+            // what catches that, which is exactly the job it is kept for.
+            .update({ free_drafts_used: quota.used + 1 })
+            .eq("id", billedAgencyId);
+        } catch {
+          // The live count still floors it; see getQuota.
+        }
+      };
     }
   }
 
@@ -915,6 +926,7 @@ export async function generateArticle(
           completed_at: new Date().toISOString(),
         })
         .eq("id", job.id);
+      if (recordFreeDraft) await recordFreeDraft();
 
       return {
         articleId: article.id,
@@ -995,6 +1007,7 @@ export async function generateArticle(
         .eq("id", job.id);
       throw new Error(`Could not save the generated article: ${saveError.message}`);
     }
+    if (recordFreeDraft) await recordFreeDraft();
 
     await supabase
       .from("generation_jobs")
