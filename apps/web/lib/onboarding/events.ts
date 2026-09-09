@@ -136,6 +136,13 @@ export interface OnboardingState {
   keywordsFound: number | null;
   planned: OnboardingPlanned[];
   article: OnboardingArticle | null;
+  /**
+   * Every draft the run has written so far, first one included, in the order
+   * they were saved. Read from the workspace's articles, not from the run row
+   * (which knows only the inline first draft), so the fan-out's drafts appear
+   * here as they finish. The trial step at the end of onboarding lists them.
+   */
+  drafts: OnboardingArticle[];
   /** True once the run has emitted `ready`: the screen may hand off. */
   ready: boolean;
   error: string | null;
@@ -147,6 +154,7 @@ export function initialOnboardingState(): OnboardingState {
     keywordsFound: null,
     planned: [],
     article: null,
+    drafts: [],
     ready: false,
     error: null,
   };
@@ -171,6 +179,11 @@ export function reduceOnboarding(state: OnboardingState, event: OnboardingEvent)
     keywordsFound: event.keywordsFound ?? state.keywordsFound,
     planned: event.planned ?? state.planned,
     article: event.article ?? state.article,
+    // A draft on the wire joins the list once; a replayed event is a no-op.
+    drafts:
+      event.article && !state.drafts.some((d) => d.id === event.article!.id)
+        ? [...state.drafts, event.article]
+        : state.drafts,
   };
 }
 
@@ -218,6 +231,8 @@ export interface OnboardingRunArticle {
 export interface OnboardingRunSnapshot {
   run: OnboardingRunRow | null;
   article: OnboardingRunArticle | null;
+  /** The drafts written since the run started, oldest first. Absent on old callers. */
+  drafts?: OnboardingRunArticle[];
   /** A `running` row nothing has written to for RUN_STALE_MS: the worker died. */
   stale: boolean;
 }
@@ -267,10 +282,20 @@ const VERDICTS: readonly OnboardingArticle["verdict"][] = ["clean", "review", "h
  * live run did. `ready` is the row having left `running`; the article is
  * whatever `article_id` points at, which is set only once the draft is saved.
  */
+function toOnboardingArticle(article: OnboardingRunArticle): OnboardingArticle {
+  return {
+    id: article.id,
+    title: article.title ?? "",
+    keyword: article.keyword ?? "",
+    wordCount: article.word_count ?? 0,
+    verdict: VERDICTS.find((v) => v === article.fact_check_verdict) ?? "review",
+  };
+}
+
 export function stateFromRun(
   run: OnboardingRunRow | null,
   article: OnboardingRunArticle | null,
-  opts: { stale?: boolean } = {},
+  opts: { stale?: boolean; drafts?: OnboardingRunArticle[] } = {},
 ): OnboardingState {
   const base = initialOnboardingState();
   if (!run) return base;
@@ -281,20 +306,17 @@ export function stateFromRun(
     return p.detail === undefined ? { phase, status: p.status } : { phase, status: p.status, detail: p.detail };
   });
   const draft: OnboardingArticle | null =
-    article && run.article_id === article.id
-      ? {
-          id: article.id,
-          title: article.title ?? "",
-          keyword: article.keyword ?? "",
-          wordCount: article.word_count ?? 0,
-          verdict: VERDICTS.find((v) => v === article.fact_check_verdict) ?? "review",
-        }
-      : null;
+    article && run.article_id === article.id ? toOnboardingArticle(article) : null;
+  // The first draft leads even when the list is read from the table, and a
+  // run whose caller did not fetch the list still shows the one it knows.
+  const listed = (opts.drafts ?? []).map(toOnboardingArticle);
+  const drafts = draft && !listed.some((d) => d.id === draft.id) ? [draft, ...listed] : listed;
   return {
     steps,
     keywordsFound: run.keywords_found,
     planned: run.planned ?? [],
     article: draft,
+    drafts,
     ready: run.status !== "running",
     error: run.error ?? (opts.stale ? STALE_RUN_ERROR : null),
   };

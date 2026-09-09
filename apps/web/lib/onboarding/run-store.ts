@@ -37,6 +37,8 @@ export const RUN_COLUMNS =
 export const RUN_COLUMNS_WITH_AGENCY = `${RUN_COLUMNS}, account_id`;
 
 const ARTICLE_COLUMNS = "id, title, keyword, word_count, fact_check_verdict, status";
+/** The first draft plus the fan-out is eight at most; ten leaves room. */
+const MAX_LISTED_DRAFTS = 10;
 
 /** The most recent run for a workspace, with its draft, as /state answers it. */
 export async function latestRun(
@@ -59,7 +61,19 @@ export async function latestRun(
     const { data: row } = await supabase.from("articles").select(ARTICLE_COLUMNS).eq("id", run.article_id).maybeSingle();
     article = (row as OnboardingRunArticle | null) ?? null;
   }
-  return { run, article, stale: isRunStale(run, now) };
+  // Everything the run wrote, for the trial step's list: the inline first
+  // draft and the fan-out's, which the row never points at. Bounded by the
+  // run's start so a second run on an old workspace does not list last
+  // month's articles as this week's work.
+  const { data: rows } = await supabase
+    .from("articles")
+    .select(ARTICLE_COLUMNS)
+    .eq("workspace_id", workspaceId)
+    .gte("created_at", run.started_at)
+    .order("created_at", { ascending: true })
+    .limit(MAX_LISTED_DRAFTS);
+  const drafts = (rows as OnboardingRunArticle[] | null) ?? [];
+  return { run, article, drafts, stale: isRunStale(run, now) };
 }
 
 /**

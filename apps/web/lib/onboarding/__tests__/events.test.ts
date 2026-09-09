@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   initialOnboardingState,
   reduceOnboarding,
+  stateFromRun,
   isTerminal,
   onboardingOutcome,
   phaseLabel,
@@ -229,5 +230,37 @@ describe("onboardingOutcome", () => {
     expect(onboardingOutcome(full, true).line).toMatch(/Taking you there\.$/);
     const empty = run([{ phase: "ready" }]);
     expect(onboardingOutcome(empty, true).line).not.toMatch(/Taking you there/);
+  });
+});
+
+describe("stateFromRun: the drafts the trial step lists", () => {
+  const run = {
+    id: "run-1",
+    workspace_id: "ws-1",
+    status: "done",
+    phases: [],
+    keywords_found: 3,
+    planned: [],
+    article_id: "a-1",
+    error: null,
+    started_at: "2026-09-09T10:00:00Z",
+    updated_at: "2026-09-09T10:05:00Z",
+    finished_at: "2026-09-09T10:05:00Z",
+  } as unknown as Parameters<typeof stateFromRun>[0];
+  const first = { id: "a-1", title: "First", keyword: "one", word_count: 900, fact_check_verdict: "clean", status: "review" };
+  const second = { id: "a-2", title: "Second", keyword: "two", word_count: 1100, fact_check_verdict: "high_risk", status: "review" };
+
+  it("lists every draft the run wrote, first one included once", () => {
+    const s = stateFromRun(run, first, { drafts: [first, second] });
+    expect(s.drafts.map((d) => d.id)).toEqual(["a-1", "a-2"]);
+    expect(s.drafts[1]).toMatchObject({ title: "Second", keyword: "two", wordCount: 1100, verdict: "high_risk" });
+  });
+
+  it("still lists the first draft when the caller fetched no list", () => {
+    expect(stateFromRun(run, first).drafts.map((d) => d.id)).toEqual(["a-1"]);
+  });
+
+  it("is empty when nothing was written", () => {
+    expect(stateFromRun(run, null).drafts).toEqual([]);
   });
 });
