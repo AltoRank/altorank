@@ -22,6 +22,7 @@ import { CONNECTOR_NOTES } from "@/lib/cms/connector-notes";
 import { WebflowPicker } from "./connect-cms-webflow";
 import { WixPicker } from "./connect-cms-wix";
 import { ShopifyGuide, shopifyCredentialsFromForm } from "./connect-cms-shopify";
+import posthog from "posthog-js";
 
 type CMSType =
   | "wordpress"
@@ -249,6 +250,11 @@ export function ConnectCmsDialog({
       }
 
       await connectIntegration(workspaceId, integrationId, config, publishMode);
+      posthog.capture("cms_connected", {
+        workspace_id: workspaceId,
+        cms_type: config.type,
+        publish_mode: publishMode,
+      });
       if (config.type === "shopify" && config.clientSecret) {
         // The secret is stored encrypted and never read back into a form;
         // this is the one acknowledgement the person gets that it went in.

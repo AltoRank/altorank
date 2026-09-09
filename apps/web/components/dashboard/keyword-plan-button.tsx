@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { IconButton } from "@/components/ui/button";
 import { Icons } from "@/components/ui";
 import { updateKeywordStatus } from "@/app/actions/keywords";
+import posthog from "posthog-js";
 
 interface KeywordPlanButtonProps {
   keywordId: string;
@@ -35,6 +36,7 @@ export function KeywordPlanButton({ keywordId, currentStatus }: KeywordPlanButto
         startTransition(async () => {
           try {
             await updateKeywordStatus(keywordId, "planned");
+            posthog.capture("keyword_added_to_plan");
             router.refresh();
           } catch (err) {
             toast.error(err instanceof Error ? err.message : "Could not add this keyword to the plan.");

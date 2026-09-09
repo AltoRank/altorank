@@ -30,7 +30,7 @@
 // even on "Skip setup" because a skipped wizard is the one place a referrer
 // tells us nothing, and one click is not a wall.
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
 import {
@@ -58,6 +58,7 @@ import { OnboardingProgress } from "@/components/onboarding/onboarding-progress"
 import { onboardingOutcome, shouldResumeRun, type OnboardingRunSnapshot, type OnboardingState } from "@/lib/onboarding/events";
 import { freeAllowanceClause } from "@/lib/onboarding/copy";
 import { SITE_STEPS, stepFromParam, stepIndex } from "@/lib/onboarding/steps";
+import posthog from "posthog-js";
 
 // The question about the person, after every step about the site. Present only
 // while the account has not answered; a second workspace goes straight to plan.
@@ -72,6 +73,9 @@ function stepFromLocation(count: number): number {
 
 export function OnboardingWizard({
   workspaceId,
+  userId,
+  userEmail,
+  userProfileName,
   domain,
   weeklyLimit,
   freeDrafts,
@@ -84,6 +88,9 @@ export function OnboardingWizard({
   initialAutoApprove,
 }: {
   workspaceId: string;
+  userId: string;
+  userEmail?: string;
+  userProfileName?: string;
   domain: string;
   weeklyLimit: number;
   /**
@@ -113,7 +120,17 @@ export function OnboardingWizard({
   initialRun?: OnboardingRunSnapshot | null;
 }) {
   const router = useRouter();
+  const identifiedUserId = useRef<string | null>(null);
   const steps: string[] = askAttribution ? [...SITE_STEPS, "About you"] : [...SITE_STEPS];
+
+  useEffect(() => {
+    if (identifiedUserId.current === userId) return;
+    posthog.identify(userId, {
+      ...(userEmail ? { email: userEmail } : {}),
+      ...(userProfileName ? { name: userProfileName } : {}),
+    });
+    identifiedUserId.current = userId;
+  }, [userEmail, userId, userProfileName]);
   const last = steps.length - 1;
   // The step, mirrored into the URL.
   //
@@ -245,9 +262,11 @@ export function OnboardingWizard({
         } else if (skipping) {
           if (profile) await saveProfile(workspaceId, profile);
           await completeWizard(workspaceId, { skipped: true });
+          posthog.capture("onboarding_skipped", { workspace_id: workspaceId });
           router.push("/dashboard");
         } else {
           await completeWizard(workspaceId);
+          posthog.capture("onboarding_completed", { workspace_id: workspaceId });
           setRunning(true);
         }
       } catch (e) {
@@ -275,6 +294,7 @@ export function OnboardingWizard({
       try {
         if (profile) await saveProfile(workspaceId, profile);
         await completeWizard(workspaceId, { skipped: true });
+        posthog.capture("onboarding_skipped", { workspace_id: workspaceId });
         router.push("/dashboard");
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not skip.");

@@ -27,6 +27,9 @@ type SidebarProps = {
   hidden?: string[];
   userName?: string;
   userInitials?: string;
+  userId?: string;
+  userEmail?: string;
+  userProfileName?: string;
   memberCount?: number;
   /** From agency_members. Null hides the line rather than asserting "Owner". */
   role?: string | null;
@@ -46,7 +49,7 @@ type SidebarProps = {
   siteAllowance?: SiteAllowance;
 };
 
-export function Sidebar({ badges, hidden = [], userName = "Account", userInitials = "A", memberCount, role, quota, siteAllowance = null }: SidebarProps) {
+export function Sidebar({ badges, hidden = [], userName = "Account", userInitials = "A", userId, userEmail, userProfileName, memberCount, role, quota, siteAllowance = null }: SidebarProps) {
   const pathname = usePathname();
   // Null if the provider is ever absent; the button just does not render.
   const onboarding = useOnboarding();
@@ -402,6 +405,9 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
           <AccountMenu
             userName={userName}
             userInitials={userInitials}
+            userId={userId}
+            userEmail={userEmail}
+            userProfileName={userProfileName}
             subtitle={
               [
                 role ? role.charAt(0).toUpperCase() + role.slice(1) : null,

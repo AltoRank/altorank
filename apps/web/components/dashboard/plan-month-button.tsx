@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button, Icons } from "@/components/ui";
 import { planMonth } from "@/app/actions/plan";
 import { usePlanning } from "./planning-state";
+import posthog from "posthog-js";
 
 /**
  * "Schedule the month" for the active workspace. One server action, additive,
@@ -36,6 +37,9 @@ export function PlanMonthButton({
     setNote(null);
     try {
       const out = await planMonth();
+      if (out.planned > 0) {
+        posthog.capture("month_planned", { article_count: out.planned });
+      }
       setNote(out.planned === 0 ? "Nothing new to plan: no keyword qualifies or the plan is full." : null);
       router.refresh();
     } catch (err) {
