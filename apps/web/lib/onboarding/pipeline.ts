@@ -30,7 +30,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { readSiteText } from "./site-text";
 import { checkDomainReachable } from "@/lib/domain/reachable";
 import { trainVoiceProfile } from "@/lib/voice/train";
-import { analyseDomain } from "@/lib/audit/domain-analysis";
+import { analyseDomain, isTransientCrawlFailure } from "@/lib/audit/domain-analysis";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { generateArticle } from "@/lib/content/generate";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
@@ -218,15 +218,25 @@ async function runPhases(
       // is the difference between "your site has no demand" and "we could not
       // read your site", which are not the same news.
       const why = analysis.layers.find((l) => l.id === "keywords" && l.status === "unavailable")?.detail;
+      // When the crawl itself failed, that is the news - not the keywords
+      // layer's downstream "too little readable text", which packhub.io was
+      // shown for a site with 379 words on its homepage. Quote the crawl's
+      // own reason, and if it is the kind that clears on its own, say that the
+      // next look is scheduled rather than handing the customer the job.
+      const crawl = analysis.layers.find((l) => l.id === "crawl");
+      const crawlFailed = crawl?.status === "failed" ? crawl.detail : null;
+      const willRetry = crawlFailed !== null && isTransientCrawlFailure(crawlFailed);
       emit({
         phase: "keywords",
         status: keywordsFound > 0 ? "done" : "skipped",
         detail:
           keywordsFound > 0
             ? `Found ${keywordsFound.toLocaleString()} keyword${keywordsFound === 1 ? "" : "s"} worth tracking.`
-            : why
-              ? `${why.charAt(0).toUpperCase()}${why.slice(1)}. Add a keyword by hand from Keywords, or connect Search Console, and the plan can be built from there.`
-              : "Nothing rankable found for this site yet.",
+            : willRetry
+              ? `We could not reach your site just now (${crawlFailed}). The next look is already scheduled; keywords and the plan will follow without you doing anything.`
+              : why
+                ? `${why.charAt(0).toUpperCase()}${why.slice(1)}. Add a keyword by hand from Keywords, or connect Search Console, and the plan can be built from there.`
+                : "Nothing rankable found for this site yet.",
         keywordsFound,
       });
     } catch (err) {

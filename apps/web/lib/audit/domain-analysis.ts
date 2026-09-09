@@ -325,6 +325,67 @@ function normalizeDomain(domain: string): string {
  * needs. With them, results are persisted to `domain_audits` and discovered
  * keywords are inserted for the workspace.
  */
+/**
+ * Did every fetch fail for a reason that is likely to be different in a few
+ * seconds?
+ *
+ * packhub.io, 2026-09-09 18:38:05: ten seconds after the wizard had read the
+ * homepage from the same Vercel function, the crawl got status 0 on every
+ * page and the readiness check got nothing, while the PageSpeed and DataForSEO
+ * calls in the same invocation succeeded. The site answers in half a second
+ * and allows the crawler's user agent; a profile refresh read eight pages
+ * eleven minutes later. One attempt, a ten-second timeout, and no second try
+ * turned a blip into "too little readable text on the site", a stamped
+ * `first_analysed_at`, and a customer typing keywords by hand.
+ *
+ * A host that does not resolve, a certificate Node will not accept, or an HTTP
+ * refusal are not blips; retrying those spends time on the same answer.
+ */
+export function isTransientCrawlFailure(reason: string | null | undefined): boolean {
+  if (!reason) return false;
+  const r = reason.toLowerCase();
+  if (r.includes("host not found") || r.includes("tls certificate") || /^http \d{3}/.test(r)) return false;
+  return (
+    r.includes("timed out") ||
+    r.includes("econnreset") ||
+    r.includes("econnrefused") ||
+    r.includes("etimedout") ||
+    r.includes("eai_again") ||
+    r.includes("socket hang up") ||
+    r.includes("fetch failed")
+  );
+}
+
+/** Between attempts. Short: the wizard's minute is running while this waits. */
+export const CRAWL_RETRY_DELAYS_MS: readonly number[] = [2_000, 5_000];
+
+/**
+ * `crawlSite`, tried again when every page failed for a transient reason.
+ *
+ * Returns the pages of the last attempt and how many attempts it took, so the
+ * crawl layer can say "3 attempts" and the persist step can tell a look that
+ * happened from one that did not.
+ */
+async function crawlWithRetry(
+  baseUrl: string,
+  maxPages: number,
+  maxDepth: number,
+  delayMs: number,
+  retryDelays: readonly number[] = CRAWL_RETRY_DELAYS_MS,
+): Promise<{ fetched: Awaited<ReturnType<typeof crawlSite>>; attempts: number }> {
+  let fetched = await crawlSite(baseUrl, maxPages, maxDepth, delayMs);
+  let attempts = 1;
+  for (const wait of retryDelays) {
+    const failedEverywhere = fetched.length > 0 && usablePages(fetched).length === 0;
+    const reason = fetched.find((p) => p.error)?.error ?? null;
+    if (!failedEverywhere || !isTransientCrawlFailure(reason)) break;
+    await new Promise((r) => setTimeout(r, wait));
+    fetched = await crawlSite(baseUrl, maxPages, maxDepth, delayMs);
+    attempts += 1;
+  }
+  return { fetched, attempts };
+}
+
 export async function analyseDomain(options: {
   domain: string;
   supabase?: SupabaseClient;
@@ -356,6 +417,8 @@ export async function analyseDomain(options: {
   profile?: BusinessProfile | null;
   /** The workspace's search market, e.g. 2380 for Italy. Paired with `locale`. */
   locationCode?: number;
+  /** Waits between crawl attempts. Tests pass []; production takes the default. */
+  crawlRetryDelaysMs?: readonly number[];
 }): Promise<DomainAnalysis> {
   // E2E_STUBS: fixture keywords, no crawl, no provider, nothing measured (lib/e2e/stubs.ts).
   if (e2eStubsEnabled()) return stubAnalyseDomain(options);
@@ -390,12 +453,20 @@ export async function analyseDomain(options: {
 
   // --- Crawl + on-page checks ----------------------------------------------
   let pagesCrawled = 0;
+  let crawlAttempts = 1;
   let crawledPages: Awaited<ReturnType<typeof crawlSite>> = [];
   let auditScore: number | null = null;
   let issues: unknown[] = [];
   let profile: TopicalProfile | null = null;
   try {
-    const fetched = await crawlSite(baseUrl, depth === "quick" ? 1 : MAX_PAGES, depth === "quick" ? 0 : MAX_DEPTH, CRAWL_DELAY_MS);
+    const { fetched, attempts } = await crawlWithRetry(
+      baseUrl,
+      depth === "quick" ? 1 : MAX_PAGES,
+      depth === "quick" ? 0 : MAX_DEPTH,
+      CRAWL_DELAY_MS,
+      options.crawlRetryDelaysMs ?? CRAWL_RETRY_DELAYS_MS,
+    );
+    crawlAttempts = attempts;
     const pages = usablePages(fetched);
     crawledPages = pages;
     pagesCrawled = pages.length;
@@ -404,7 +475,11 @@ export async function analyseDomain(options: {
       // this gave www.lully.ai a 95/100 on-page score and a topical profile of
       // {"www"} from a fetch that never got a response.
       const why = fetched.find((p) => p.error)?.error ?? `HTTP ${fetched[0].status}`;
-      layers.push({ id: "crawl", status: "failed", detail: `no page could be fetched: ${why}` });
+      layers.push({
+        id: "crawl",
+        status: "failed",
+        detail: `no page could be fetched: ${why}` + (crawlAttempts > 1 ? ` (${crawlAttempts} attempts)` : ""),
+      });
     } else if (pages.length) {
       // Built here because this is the only point that holds the page content.
       // Recommendations need it on every run and must not re-crawl to get it.
@@ -1101,10 +1176,22 @@ export async function analyseDomain(options: {
       completed_at: now,
     });
 
+    // `first_analysed_at` means "we have looked". A crawl that got nothing for
+    // a transient reason is not a look, and stamping it anyway is what made
+    // packhub.io's blip permanent: cron/analyze selects on this column being
+    // null, so the stamp was also the decision never to try again. Left null,
+    // the next cron slot does the first look properly. A domain that cannot
+    // be looked at - no DNS, a bad certificate, an HTTP refusal - is stamped
+    // as before, because the answer tomorrow would be the same and the run
+    // would buy the same provider calls to hear it.
+    const crawlLayer = layers.find((l) => l.id === "crawl");
+    const crawlReason = crawlLayer?.status === "failed" ? crawlLayer.detail : null;
+    const looked = crawlLayer?.status === "ok" || !isTransientCrawlFailure(crawlReason);
+
     await supabase
       .from("workspaces")
       .update({
-        first_analysed_at: now,
+        ...(looked ? { first_analysed_at: now } : {}),
         // The timestamp on every run, so the editor can tell "we fetched the
         // site and found no CMS we can post to" from "nobody has looked yet";
         // those used to be the same null and got the same "connect a CMS"
