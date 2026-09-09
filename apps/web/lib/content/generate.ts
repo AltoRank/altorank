@@ -17,6 +17,7 @@ import { resolveProvider } from "@/lib/ai/provider";
 import { stripAiTypography } from "@/lib/ai/utils";
 import { htmlToTiptapJson } from "@/lib/ai/tiptap";
 import { factCheckArticle, type FactCheckReport } from "@/lib/ai/fact-check";
+import { verifyCitedFigures } from "@/lib/seo/citation-check";
 import { scoreArticle } from "@/lib/seo/scoring";
 import { scoreCitationReadiness } from "@/lib/seo/aeo-scoring";
 import { recordSpend, anthropicCost } from "@/lib/billing/spend";
@@ -818,7 +819,10 @@ export async function generateArticle(
       runId: job.id,
     });
 
-    const factCheck = factCheckArticle(processedHtml, research);
+    // Two passes: the first asks whether each figure is attributed, the second
+    // opens the pages the attributions point at. The second is what catches a
+    // real citation carrying a wrong number, which the first cannot see.
+    const factCheck = await verifyCitedFigures(factCheckArticle(processedHtml, research));
 
     // `scoreArticle` and its seven on-page checks have existed all along, but
     // nothing ran them at generation: only the manual `scoreArticleSeo` action
