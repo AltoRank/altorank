@@ -151,17 +151,26 @@ export async function getQuota(
       { count: thisMonth, error: usedError },
       { count: ever, error: everError },
     ] = await Promise.all([
+      // `status = 'error'` is excluded from both counts. That status is what
+      // the stale sweeper writes on a draft whose run was killed before a
+      // word was generated (lib/content/stale-drafts.ts): a row at zero
+      // words that nobody was handed. qasimcode.com was locked out of its
+      // seventh free draft by exactly one of these on 2026-09-09, with five
+      // real drafts on the account. Charging for it is charging for the
+      // platform's own timeout.
       counting
         .from("articles")
         .select("id", { count: "exact", head: true })
         .in("workspace_id", workspaceIds)
+        .neq("status", "error")
         .gte("created_at", monthStart()),
       // Every article the agency has ever had. Only the free tier reads this,
       // and only as a floor under the stored counter below.
       counting
         .from("articles")
         .select("id", { count: "exact", head: true })
-        .in("workspace_id", workspaceIds),
+        .in("workspace_id", workspaceIds)
+        .neq("status", "error"),
     ]);
     // Same house rule as the read above: an unknown is never a zero, and on
     // the free tier a silent zero here would hand out an eighth free draft.
