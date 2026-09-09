@@ -345,6 +345,10 @@ function normalizeDomain(domain: string): string {
 export function isTransientCrawlFailure(reason: string | null | undefined): boolean {
   if (!reason) return false;
   const r = reason.toLowerCase();
+  // 429 and the 5xx family are the server saying "not now": a burst limit
+  // tripped by the wizard's own reads seconds earlier, or a cold instance.
+  // Every other HTTP status is an answer, and the same one tomorrow.
+  if (/^http (429|502|503|504)\b/.test(r)) return true;
   if (r.includes("host not found") || r.includes("tls certificate") || /^http \d{3}/.test(r)) return false;
   return (
     r.includes("timed out") ||

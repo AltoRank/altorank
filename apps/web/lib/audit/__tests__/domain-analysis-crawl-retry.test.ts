@@ -110,6 +110,13 @@ describe("analyseDomain — a crawl that fails for a reason that will not change
     expect(stamped()).toBe(true);
   });
 
+  it("retries a rate limit - the wizard's own reads seconds earlier can trip one", async () => {
+    crawl.mockResolvedValueOnce([{ ...page, status: 429, error: "HTTP 429" }]).mockResolvedValueOnce([page]);
+    await run();
+    expect(crawl).toHaveBeenCalledTimes(2);
+    expect(stamped()).toBe(true);
+  });
+
   it("does not retry an HTTP refusal", async () => {
     crawl.mockResolvedValue([{ ...page, status: 403 }]);
     await run();
@@ -119,7 +126,7 @@ describe("analyseDomain — a crawl that fails for a reason that will not change
 });
 
 describe("isTransientCrawlFailure", () => {
-  it.each(["timed out after 10s", "ECONNRESET", "socket hang up", "fetch failed", "EAI_AGAIN"])("%s clears on its own", (r) => {
+  it.each(["timed out after 10s", "ECONNRESET", "socket hang up", "fetch failed", "EAI_AGAIN", "HTTP 429", "HTTP 503"])("%s clears on its own", (r) => {
     expect(isTransientCrawlFailure(r)).toBe(true);
   });
   it.each(["host not found", "TLS certificate could not be verified (CERT_HAS_EXPIRED)", "HTTP 403", "HTTP 500"])("%s does not", (r) => {
