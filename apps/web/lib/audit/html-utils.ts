@@ -22,7 +22,7 @@ const BASE_ENTITIES: Record<string, string> = {
 
 /**
  * Accented letters, which matter more than they look: the target market is
- * European agency sites and Italian markup is full of `&agrave;`, `&egrave;`
+ * European account sites and Italian markup is full of `&agrave;`, `&egrave;`
  * and `&ugrave;`. Left undecoded they surface as literal "attivit&agrave;" in
  * generated Markdown, which is exactly the kind of detail that makes output
  * look machine-mangled to the client whose site it describes.

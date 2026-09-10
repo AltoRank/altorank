@@ -78,7 +78,7 @@ async function run(request: Request) {
 
   const { data: workspaces, error } = await supabase
     .from("workspaces")
-    .select("id, domain, agency_id, refresh_days, refresh_last_analyzed_at, auto_generate_weekly_limit")
+    .select("id, domain, account_id, refresh_days, refresh_last_analyzed_at, auto_generate_weekly_limit")
     .eq("refresh_enabled", true)
     .neq("status", "paused")
     // Least recently analysed first, so a capped run rotates.
@@ -109,7 +109,7 @@ async function run(request: Request) {
     //
     // The same gate serp, geo and reports apply, for the same reason. See
     // entitledToScheduledWork.
-    const quota = await getQuota(supabase, ws.agency_id as string, null);
+    const quota = await getQuota(supabase, ws.account_id as string, null);
     if (!entitledToScheduledWork(quota)) {
       out.status = "skipped";
       out.rewrite = "no plan";
@@ -184,7 +184,7 @@ async function run(request: Request) {
               try {
                 const sent = await notifyRefreshReady(
                   supabase,
-                  { agencyId: ws.agency_id as string, workspaceId },
+                  { accountId: ws.account_id as string, workspaceId },
                   {
                     domain,
                     pageTitle: r.result.pageTitle ?? r.result.pageUrl,

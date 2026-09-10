@@ -32,7 +32,7 @@
 // and an article the cron already announced is never swept into a digest.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { agencyRecipients } from "./agency-recipients";
+import { accountRecipients } from "./account-recipients";
 import { describeSendOutcome, normalizeRecipients, sendOnce } from "./send-once";
 import {
   ARTICLE_DRAFTED,
@@ -217,7 +217,7 @@ export interface AnnounceOptions {
 
 type WorkspaceRow = {
   id: string;
-  agency_id: string;
+  account_id: string;
   domain: string | null;
   auto_approve: boolean | null;
   auto_approve_hold_hours: number | null;
@@ -259,7 +259,7 @@ export async function announceDraftBatch(
   try {
     const { data: wsRow } = await supabase
       .from("workspaces")
-      .select("id, agency_id, domain, auto_approve, auto_approve_hold_hours")
+      .select("id, account_id, domain, auto_approve, auto_approve_hold_hours")
       .eq("id", workspaceId)
       .maybeSingle();
     const ws = wsRow as WorkspaceRow | null;
@@ -295,7 +295,7 @@ export async function announceDraftBatch(
     const fresh = candidates.filter((a) => !announced.has(a.id));
     if (!fresh.length) return "no drafts to announce";
 
-    const to = await agencyRecipients(supabase, ws.agency_id, workspaceId);
+    const to = await accountRecipients(supabase, ws.account_id, workspaceId);
     if (!normalizeRecipients(to).length) return "nobody to email";
 
     // The keyword's own figures, for the stat row. One read for the batch; a
@@ -324,7 +324,7 @@ export async function announceDraftBatch(
 
     const cmsConnected = await hasDestination(supabase, workspaceId);
 
-    const scope = { agencyId: ws.agency_id, workspaceId };
+    const scope = { accountId: ws.account_id, workspaceId };
     const out =
       fresh.length === 1
         ? await sendArticleDraftedEmails(
@@ -397,7 +397,7 @@ async function claimAnnounced(
   supabase: SupabaseClient,
   articles: readonly { id: string }[],
   recipients: readonly string[],
-  scope: { agencyId: string; workspaceId: string },
+  scope: { accountId: string; workspaceId: string },
 ): Promise<void> {
   const to = normalizeRecipients(recipients);
   if (!to.length) return;
@@ -406,7 +406,7 @@ async function claimAnnounced(
       email_type: ARTICLE_DRAFTED,
       subject_id: a.id,
       recipient,
-      agency_id: scope.agencyId,
+      account_id: scope.accountId,
       workspace_id: scope.workspaceId,
     })),
   );

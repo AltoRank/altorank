@@ -140,20 +140,20 @@ export async function sendSignupConfirmation(opts: { email: string; password: st
 /**
  * Delete an auth user whose confirmation email was never sent, unless they
  * already hold a membership. `generateLink({type:"signup"})` also returns an
- * existing *unconfirmed* user, and one with an agency was set up on an
+ * existing *unconfirmed* user, and one with an account was set up on an
  * earlier attempt whose email did go out; deleting them would orphan that
- * agency. Never throws: the caller is already reporting the send failure.
+ * account. Never throws: the caller is already reporting the send failure.
  */
 async function rollbackUnsentSignup(userId: string): Promise<void> {
   const admin = createServiceClient();
   try {
     const { count, error } = await admin
-      .from("agency_members")
-      .select("agency_id", { count: "exact", head: true })
+      .from("account_members")
+      .select("account_id", { count: "exact", head: true })
       .eq("user_id", userId);
     if (error) throw new Error(error.message);
     if ((count ?? 0) > 0) {
-      console.warn(`[signup] user ${userId} kept: already a member of an agency`);
+      console.warn(`[signup] user ${userId} kept: already a member of an account`);
       return;
     }
     const { error: delError } = await admin.auth.admin.deleteUser(userId);

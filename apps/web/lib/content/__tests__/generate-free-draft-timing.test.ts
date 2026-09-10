@@ -23,12 +23,12 @@ vi.mock("@/lib/billing/quota", async (importOriginal) => ({
 
 import { generateArticle } from "../generate";
 
-const agencyUpdates: Record<string, unknown>[] = [];
+const accountUpdates: Record<string, unknown>[] = [];
 
 function client() {
   const single = async () => ({
     data: {
-      id: "ws1", agency_id: "agency1", domain: "example.test", ai_provider: null, ai_model: null,
+      id: "ws1", account_id: "agency1", domain: "example.test", ai_provider: null, ai_model: null,
       language: null, brand_style: null, location_code: null, status: "active", paused_until: null,
     },
     error: null,
@@ -47,10 +47,10 @@ function client() {
           insert: () => ({ select: () => ({ single: async () => ({ data: null, error: { message: "killed before the model" } }) }) }),
         };
       }
-      if (table === "agencies") {
+      if (table === "accounts") {
         return {
           update: (patch: Record<string, unknown>) => {
-            agencyUpdates.push(patch);
+            accountUpdates.push(patch);
             return { eq: async () => ({ error: null }) };
           },
           select: () => ({ eq: () => ({ single, maybeSingle: empty }) }),
@@ -63,7 +63,7 @@ function client() {
 }
 
 beforeEach(() => {
-  agencyUpdates.length = 0;
+  accountUpdates.length = 0;
   getQuota.mockReset().mockResolvedValue({ limit: 7, used: 5, remaining: 2, reason: "no-plan", plan: null });
 });
 
@@ -72,6 +72,6 @@ describe("generateArticle on the free tier, killed before the model", () => {
     await expect(
       generateArticle({ supabase: client(), workspaceId: "ws1", keyword: "salon booking website", autonomous: true, callerEmail: null }),
     ).rejects.toThrow();
-    expect(agencyUpdates.some((p) => "free_drafts_used" in p)).toBe(false);
+    expect(accountUpdates.some((p) => "free_drafts_used" in p)).toBe(false);
   });
 });

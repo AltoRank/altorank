@@ -334,10 +334,10 @@ between them:
 
 - `create policy` 40 times and `enable row level security` on 31 tables. The
   policies call `auth.uid()` and two SQL functions,
-  `public.user_agency_ids()` and `public.user_admin_agency_ids()`, both
+  `public.user_account_ids()` and `public.user_admin_account_ids()`, both
   `security definer` and both reading `auth.uid()`. RLS is the second line of
   defence behind the application's own scoping; take it away and every query
-  module has to enforce the agency boundary itself.
+  module has to enforce the account boundary itself.
 - Reference `auth.users` (foreign keys) or `auth.uid()` in 7 files.
 - Insert into `storage.buckets` and create a policy on `storage.objects`
   (migration 045, the `article-images` bucket).

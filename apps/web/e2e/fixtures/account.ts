@@ -2,7 +2,7 @@
 // Accounts for a test to own, and a way in that never involves a password
 // ---------------------------------------------------------------------------
 //
-// Mirrors scripts/dogfood.ts and the signup action: a user, an agency, a
+// Mirrors scripts/dogfood.ts and the signup action: a user, an account, a
 // membership and one workspace per site, with the same columns those write.
 // Nothing that looks like a measurement is seeded - `dr` and `traffic` stay
 // null - because the suite asserts what the product shows, and a fixture that
@@ -30,8 +30,8 @@ export interface WorkspaceSpec {
 export interface Account {
   email: string;
   userId: string;
-  agencyId: string;
-  agencyName: string;
+  accountId: string;
+  accountName: string;
   workspaces: { id: string; domain: string }[];
 }
 
@@ -50,27 +50,27 @@ export function admin(): SupabaseClient {
 }
 
 /**
- * Delete an agency, cascading every workspace row, retrying a transient
+ * Delete an account, cascading every workspace row, retrying a transient
  * statement timeout. The single source of truth for "remove this account's
  * data": both the abandon path in createAccount and destroyAccount use it, so
- * neither leaves an orphan agency when a cascade delete times out under load.
+ * neither leaves an orphan account when a cascade delete times out under load.
  */
-async function deleteAgency(db: SupabaseClient, agencyId: string): Promise<void> {
+async function deleteAccount(db: SupabaseClient, accountId: string): Promise<void> {
   let lastError: string | undefined;
   for (let attempt = 0; attempt < 4; attempt++) {
-    const { error } = await db.from("agencies").delete().eq("id", agencyId);
+    const { error } = await db.from("accounts").delete().eq("id", accountId);
     if (!error) return;
     lastError = error.message;
     await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
   }
-  throw new Error(`delete agency: ${lastError}`);
+  throw new Error(`delete account: ${lastError}`);
 }
 
 export async function createAccount(opts: { workspaces?: WorkspaceSpec[] } = {}): Promise<Account> {
   const db = admin();
   const tag = uniqueTag();
   const email = `e2e+${tag}@altorank.test`;
-  const agencyName = `E2E ${tag}`;
+  const accountName = `E2E ${tag}`;
 
   // GoTrue's admin API times out transiently under a cold server's load; it is
   // a queue, not a rejection, and a half-created user with no test to tear it
@@ -80,7 +80,7 @@ export async function createAccount(opts: { workspaces?: WorkspaceSpec[] } = {})
     const { data: created, error: userError } = await db.auth.admin.createUser({
       email,
       email_confirm: true,
-      user_metadata: { name: agencyName },
+      user_metadata: { name: accountName },
     });
     if (created?.user) {
       userId = created.user.id;
@@ -99,26 +99,26 @@ export async function createAccount(opts: { workspaces?: WorkspaceSpec[] } = {})
 
   // From here on, a failure removes what was already created: a half-built
   // account has no test to tear it down.
-  let agencyId: string | null = null;
+  let accountId: string | null = null;
   const abandon = async (why: string): Promise<never> => {
     // Clean up what was created before re-raising the real cause; a failure to
     // clean up must not mask why the account could not be built.
-    if (agencyId) await deleteAgency(db, agencyId).catch(() => {});
+    if (accountId) await deleteAccount(db, accountId).catch(() => {});
     await db.auth.admin.deleteUser(userId).catch(() => {});
     throw new Error(why);
   };
 
-  const { data: agency, error: agencyError } = await db
-    .from("agencies")
-    .insert({ name: agencyName, slug: `e2e-${tag}` })
+  const { data: account, error: accountError } = await db
+    .from("accounts")
+    .insert({ name: accountName, slug: `e2e-${tag}` })
     .select("id")
     .single();
-  if (agencyError || !agency) return abandon(`agency: ${agencyError?.message}`);
-  agencyId = agency.id as string;
+  if (accountError || !account) return abandon(`account: ${accountError?.message}`);
+  accountId = account.id as string;
 
   const { error: memberError } = await db
-    .from("agency_members")
-    .insert({ agency_id: agencyId, user_id: userId, role: "owner" });
+    .from("account_members")
+    .insert({ account_id: accountId, user_id: userId, role: "owner" });
   if (memberError) return abandon(`membership: ${memberError.message}`);
 
   const specs = opts.workspaces ?? [{ domain: `${tag}.altorank.test` }];
@@ -130,7 +130,7 @@ export async function createAccount(opts: { workspaces?: WorkspaceSpec[] } = {})
     const { data: ws, error: wsError } = await db
       .from("workspaces")
       .insert({
-        agency_id: agencyId,
+        account_id: accountId,
         name: spec.domain,
         domain: spec.domain,
         initials: spec.domain.slice(0, 2).toUpperCase(),
@@ -159,18 +159,18 @@ export async function createAccount(opts: { workspaces?: WorkspaceSpec[] } = {})
     workspaces.push({ id: ws.id as string, domain: ws.domain as string });
   }
 
-  return { email, userId, agencyId, agencyName, workspaces };
+  return { email, userId, accountId, accountName, workspaces };
 }
 
 /**
- * The agency first (cascades every workspace row), then the user.
+ * The account first (cascades every workspace row), then the user.
  *
  * Retried: the cascade delete can hit a statement timeout under load, and a
  * teardown that gives up leaves rows behind for the next run to trip over.
  */
 export async function destroyAccount(account: Account): Promise<void> {
   const db = admin();
-  await deleteAgency(db, account.agencyId);
+  await deleteAccount(db, account.accountId);
   // GoTrue's admin API answers "Processing this request timed out" under the
   // same load that makes the cascade delete slow; like createUser above, it is
   // a queue, not a refusal. Bounded and short, so a real failure still shows.

@@ -29,14 +29,14 @@ export async function connectBing(_prev: BingConnectState, formData: FormData): 
   if (!workspaceId) return { ok: false, error: "Choose a workspace." };
   if (!apiKey) return { ok: false, error: "Paste the API key from Bing Webmaster Tools." };
 
-  const { agencyId } = await requireAuth();
+  const { accountId } = await requireAuth();
   const supabase = await createClient();
 
   const { data: workspace } = await supabase
     .from("workspaces")
     .select("id, domain")
     .eq("id", workspaceId)
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .maybeSingle();
   if (!workspace) return { ok: false, error: "That workspace is not in your account." };
   if (!workspace.domain) return { ok: false, error: "Set the workspace's domain first; Bing sites are matched by it." };

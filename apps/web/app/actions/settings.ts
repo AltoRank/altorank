@@ -7,10 +7,10 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { announcePasswordChanged } from "@/lib/email/account-events";
 import { randomBytes } from "crypto";
 
-export async function updateAgencyProfile(formData: FormData) {
-  // Agency-level settings (incl. white-label branding / custom domain) are
-  // owner/admin only — editors shouldn't be able to rebrand the agency.
-  const { agencyId } = await requireAuth(["owner", "admin"]);
+export async function updateAccountProfile(formData: FormData) {
+  // Account-level settings (incl. white-label branding / custom domain) are
+  // owner/admin only — editors shouldn't be able to rebrand the account.
+  const { accountId } = await requireAuth(["owner", "admin"]);
   const supabase = await createClient();
 
   const updates: Record<string, unknown> = {};
@@ -24,24 +24,24 @@ export async function updateAgencyProfile(formData: FormData) {
   if (removeBranding !== null) updates.remove_branding = removeBranding === "true";
 
   const { error } = await supabase
-    .from("agencies")
+    .from("accounts")
     .update(updates)
-    .eq("id", agencyId);
+    .eq("id", accountId);
 
   if (error) throw new Error(error.message);
   revalidatePath("/settings");
 }
 
 export async function rotateApiKey() {
-  const { agencyId } = await requireAuth(["owner", "admin"]);
+  const { accountId } = await requireAuth(["owner", "admin"]);
   const supabase = await createClient();
 
   const newKey = `fr_live_sk_${randomBytes(16).toString("hex")}`;
 
   const { error } = await supabase
-    .from("agencies")
+    .from("accounts")
     .update({ api_key: newKey })
-    .eq("id", agencyId);
+    .eq("id", accountId);
 
   if (error) throw new Error(error.message);
   revalidatePath("/settings");

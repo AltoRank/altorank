@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { withAgent, readJson } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
-import { workspaceInAgency } from "@/lib/agent/data";
+import { workspaceInAccount } from "@/lib/agent/data";
 import { bulkReschedule, ISO_DATE, type RescheduleRequest } from "@/lib/plan/entries";
 import { PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
 
@@ -38,7 +38,7 @@ export const POST = withAgent(async (request, ctx) => {
       "Send { workspace_id, items: [{ keyword_id, date: YYYY-MM-DD }] } or { workspace_id, keyword_ids: [...], shift_days: n }.",
     );
   }
-  const workspace = await workspaceInAgency(ctx, body.data.workspace_id);
+  const workspace = await workspaceInAccount(ctx, body.data.workspace_id);
   if (!workspace) return fail("not_found", "Workspace not found in this account.", "Call GET /workspaces and use an id from that list.");
 
   const req: RescheduleRequest = body.data.items

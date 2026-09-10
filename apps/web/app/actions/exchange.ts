@@ -17,17 +17,17 @@ export async function createExchangeRequest(
   targetKeyword: string,
   targetTopic: string,
 ) {
-  // Derive agency from the authenticated session — never trust a caller-supplied
-  // agencyId (that was an IDOR: a user could create requests as another agency).
-  const { agencyId } = await requireAuth();
+  // Derive account from the authenticated session — never trust a caller-supplied
+  // accountId (that was an IDOR: a user could create requests as another account).
+  const { accountId } = await requireAuth();
   const supabase = await createClient();
 
-  // Verify the workspace belongs to the caller's agency (defense-in-depth over RLS).
+  // Verify the workspace belongs to the caller's account (defense-in-depth over RLS).
   const { data: workspace } = await supabase
     .from("workspaces")
     .select("id")
     .eq("id", workspaceId)
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .single();
 
   if (!workspace) throw new Error("Workspace not found or not in your account");
@@ -37,7 +37,7 @@ export async function createExchangeRequest(
   const creditsOffered = CREDITS_PER_ARTICLE;
 
   const { error } = await supabase.from("backlink_exchanges").insert({
-    requester_agency_id: agencyId,
+    requester_account_id: accountId,
     requester_workspace_id: workspaceId,
     target_url: targetUrl,
     target_keyword: targetKeyword,
@@ -93,14 +93,14 @@ export async function hostExchangeRequest(
   const workspaceId = String(formData.get("workspace_id") ?? "");
   if (!exchangeId || !workspaceId) return { ok: false, error: "Pick a workspace to publish it on." };
 
-  const { agencyId } = await requireAuth();
+  const { accountId } = await requireAuth();
   const supabase = await createClient();
 
   const { data: workspace } = await supabase
     .from("workspaces")
     .select("id, name, domain")
     .eq("id", workspaceId)
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .maybeSingle();
   if (!workspace) return { ok: false, error: "That site is not in your account." };
 
@@ -108,7 +108,7 @@ export async function hostExchangeRequest(
   // ledger going negative, and it is the only thing asking anything of a
   // publisher: writing for someone else is always allowed and is how the
   // credit is earned in the first place.
-  const balance = await getCreditBalance(supabase, agencyId);
+  const balance = await getCreditBalance(supabase, accountId);
   if (balance < CREDITS_PER_ARTICLE) {
     return {
       ok: false,
@@ -122,12 +122,12 @@ export async function hostExchangeRequest(
   const admin = createServiceClient();
   const { data: exchange } = await admin
     .from("backlink_exchanges")
-    .select("id, status, requester_agency_id, provider_agency_id, target_url, target_keyword, target_topic, expires_at")
+    .select("id, status, requester_account_id, provider_account_id, target_url, target_keyword, target_topic, expires_at")
     .eq("id", exchangeId)
     .maybeSingle();
   if (!exchange) return { ok: false, error: "That request no longer exists." };
-  if (exchange.requester_agency_id === agencyId) return { ok: false, error: "That is your own request." };
-  if (exchange.status !== "requested" || exchange.provider_agency_id) {
+  if (exchange.requester_account_id === accountId) return { ok: false, error: "That is your own request." };
+  if (exchange.status !== "requested" || exchange.provider_account_id) {
     return { ok: false, error: "Somebody else has already taken that request." };
   }
   if (exchange.expires_at && new Date(exchange.expires_at as string) < new Date()) {
@@ -168,7 +168,7 @@ export async function hostExchangeRequest(
   const { error: claimErr } = await admin
     .from("backlink_exchanges")
     .update({
-      provider_agency_id: agencyId,
+      provider_account_id: accountId,
       provider_workspace_id: workspaceId,
       relevance_score: relevance,
       status: "accepted",
@@ -177,7 +177,7 @@ export async function hostExchangeRequest(
     .eq("id", exchangeId)
     // Claim only if still unclaimed: two hosts pressing at once must not both win.
     .eq("status", "requested")
-    .is("provider_agency_id", null);
+    .is("provider_account_id", null);
   if (claimErr) return { ok: false, error: claimErr.message };
 
   /**
@@ -196,7 +196,7 @@ export async function hostExchangeRequest(
         workspaceId,
         keyword: next.term,
         autonomous: true,
-        billToAgencyId: exchange.requester_agency_id as string,
+        billToAccountId: exchange.requester_account_id as string,
         selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
       });
 
@@ -235,7 +235,7 @@ export async function hostExchangeRequest(
       console.error("[exchange] hosting failed, releasing the claim:", err instanceof Error ? err.message : err);
       await admin
         .from("backlink_exchanges")
-        .update({ provider_agency_id: null, provider_workspace_id: null, status: "requested", matched_at: null })
+        .update({ provider_account_id: null, provider_workspace_id: null, status: "requested", matched_at: null })
         .eq("id", exchangeId);
     }
   });
@@ -245,11 +245,11 @@ export async function hostExchangeRequest(
 }
 
 /**
- * Get credit balance for the current user's agency.
+ * Get credit balance for the current user's account.
  */
-export async function getAgencyCreditBalance(): Promise<number> {
-  // Balance is always the caller's own agency — derive it, don't accept it.
-  const { agencyId } = await requireAuth();
+export async function getAccountCreditBalance(): Promise<number> {
+  // Balance is always the caller's own account — derive it, don't accept it.
+  const { accountId } = await requireAuth();
   const supabase = await createClient();
-  return getCreditBalance(supabase, agencyId);
+  return getCreditBalance(supabase, accountId);
 }

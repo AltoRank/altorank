@@ -43,7 +43,7 @@ export function taxonomyLabel(subtype: string | null | undefined): string | null
   return subtype && subtype in TAXONOMY_LABELS ? TAXONOMY_LABELS[subtype as ArticleSubtype] : null;
 }
 
-const LIST_RESOURCE_WORDS = /\b(tools?|software|apps?|platforms?|plugins?|resources|services|providers|agencies|companies|vendors)\b/;
+const LIST_RESOURCE_WORDS = /\b(tools?|software|apps?|platforms?|plugins?|resources|services|providers|accounts|companies|vendors)\b/;
 const LIST_EXAMPLE_WORDS = /\b(examples?|templates?|ideas|samples?|case studies|prompts)\b/;
 
 export function classifyKeyword(term: string, intent?: KeywordIntent | null): KeywordTaxonomy {

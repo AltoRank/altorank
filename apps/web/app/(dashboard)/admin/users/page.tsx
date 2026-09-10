@@ -38,9 +38,9 @@ async function listAllUsers(admin: SupabaseClient): Promise<User[]> {
   return users;
 }
 
-type AgencyRow = { id: string; name: string; plan: PlanTier | null; plan_status: string | null };
-type MemberRow = { user_id: string; agency_id: string; role: string };
-type WorkspaceRow = { id: string; agency_id: string; domain: string | null };
+type AccountRow = { id: string; name: string; plan: PlanTier | null; plan_status: string | null };
+type MemberRow = { user_id: string; account_id: string; role: string };
+type WorkspaceRow = { id: string; account_id: string; domain: string | null };
 
 const day = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
@@ -60,11 +60,11 @@ function seenWithin(users: User[], days: number): number {
   return users.filter((u) => u.last_sign_in_at && new Date(u.last_sign_in_at).getTime() >= since).length;
 }
 
-function planLabel(agency: AgencyRow | undefined): string {
-  if (!agency) return "—";
-  const active = agency.plan_status === "active" || agency.plan_status === "trialing";
-  if (!active || !agency.plan) return "No plan";
-  return `${PLAN_LABELS[agency.plan]} · ${agency.plan_status}`;
+function planLabel(account: AccountRow | undefined): string {
+  if (!account) return "—";
+  const active = account.plan_status === "active" || account.plan_status === "trialing";
+  if (!active || !account.plan) return "No plan";
+  return `${PLAN_LABELS[account.plan]} · ${account.plan_status}`;
 }
 
 export default async function AdminUsersPage({
@@ -79,12 +79,12 @@ export default async function AdminUsersPage({
   const needle = q.trim().toLowerCase();
 
   const admin = createServiceClient();
-  const [users, { data: members }, { data: agencies }, { data: workspaces }, { data: articles }, { data: log }] =
+  const [users, { data: members }, { data: accounts }, { data: workspaces }, { data: articles }, { data: log }] =
     await Promise.all([
       listAllUsers(admin),
-      admin.from("agency_members").select("user_id, agency_id, role"),
-      admin.from("agencies").select("id, name, plan, plan_status"),
-      admin.from("workspaces").select("id, agency_id, domain"),
+      admin.from("account_members").select("user_id, account_id, role"),
+      admin.from("accounts").select("id, name, plan, plan_status"),
+      admin.from("workspaces").select("id, account_id, domain"),
       admin.from("articles").select("workspace_id"),
       admin
         .from("admin_impersonations")
@@ -93,14 +93,14 @@ export default async function AdminUsersPage({
         .limit(25),
     ]);
 
-  const agencyById = new Map((agencies ?? []).map((a) => [a.id, a as AgencyRow]));
+  const accountById = new Map((accounts ?? []).map((a) => [a.id, a as AccountRow]));
   const membersByUser = new Map<string, MemberRow[]>();
   for (const m of (members ?? []) as MemberRow[]) {
     membersByUser.set(m.user_id, [...(membersByUser.get(m.user_id) ?? []), m]);
   }
-  const workspacesByAgency = new Map<string, WorkspaceRow[]>();
+  const workspacesByAccount = new Map<string, WorkspaceRow[]>();
   for (const w of (workspaces ?? []) as WorkspaceRow[]) {
-    workspacesByAgency.set(w.agency_id, [...(workspacesByAgency.get(w.agency_id) ?? []), w]);
+    workspacesByAccount.set(w.account_id, [...(workspacesByAccount.get(w.account_id) ?? []), w]);
   }
   const articlesByWorkspace = new Map<string, number>();
   for (const a of articles ?? []) {
@@ -111,16 +111,16 @@ export default async function AdminUsersPage({
     .map((u) => {
       const memberships = membersByUser.get(u.id) ?? [];
       const primary = memberships[0];
-      const agency = primary ? agencyById.get(primary.agency_id) : undefined;
-      const ws = agency ? workspacesByAgency.get(agency.id) ?? [] : [];
+      const account = primary ? accountById.get(primary.account_id) : undefined;
+      const ws = account ? workspacesByAccount.get(account.id) ?? [] : [];
       const domains = ws.map((w) => w.domain).filter((d): d is string => Boolean(d));
       const articleCount = ws.reduce((n, w) => n + (articlesByWorkspace.get(w.id) ?? 0), 0);
       return {
         user: u,
         name: displayName(u),
-        agency,
+        account,
         role: primary?.role ?? null,
-        extraAgencies: Math.max(0, memberships.length - 1),
+        extraAccounts: Math.max(0, memberships.length - 1),
         domains,
         articleCount,
         operator: isAdminEmail(u.email),
@@ -128,7 +128,7 @@ export default async function AdminUsersPage({
     })
     .filter((r) => {
       if (!needle) return true;
-      const hay = [r.user.email, r.name, r.agency?.name, ...r.domains]
+      const hay = [r.user.email, r.name, r.account?.name, ...r.domains]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
@@ -138,7 +138,7 @@ export default async function AdminUsersPage({
 
   const confirmed = users.filter((u) => u.email_confirmed_at).length;
   const seenThisWeek = seenWithin(users, 7);
-  const paying = (agencies ?? []).filter((a) => a.plan_status === "active" || a.plan_status === "trialing").length;
+  const paying = (accounts ?? []).filter((a) => a.plan_status === "active" || a.plan_status === "trialing").length;
 
   return (
     <>
@@ -175,7 +175,7 @@ export default async function AdminUsersPage({
         stats={[
           { label: "Users", value: String(users.length), delta: `${confirmed} confirmed` },
           { label: "Seen this week", value: String(seenThisWeek), delta: "signed in within 7 days" },
-          { label: "Accounts", value: String((agencies ?? []).length), delta: `${paying} on a plan` },
+          { label: "Accounts", value: String((accounts ?? []).length), delta: `${paying} on a plan` },
           {
             label: "Workspaces",
             value: String((workspaces ?? []).length),
@@ -203,18 +203,18 @@ export default async function AdminUsersPage({
                 </span>
                 {r.name && <span className="text-[12px] text-ink-3">{r.name}</span>}
               </span>,
-              <span key="agency" className="font-sans text-[13px]">
-                {r.agency ? (
+              <span key="account" className="font-sans text-[13px]">
+                {r.account ? (
                   <>
-                    {r.agency.name}
+                    {r.account.name}
                     {r.role && <span className="text-ink-3"> · {r.role}</span>}
-                    {r.extraAgencies > 0 && <span className="text-ink-3"> +{r.extraAgencies}</span>}
+                    {r.extraAccounts > 0 && <span className="text-ink-3"> +{r.extraAccounts}</span>}
                   </>
                 ) : (
                   <span className="text-ink-3">no account</span>
                 )}
               </span>,
-              planLabel(r.agency),
+              planLabel(r.account),
               <span key="ws" className="font-sans text-[13px]" title={r.domains.join(", ")}>
                 {r.domains.length === 0 ? (
                   <span className="text-ink-3">—</span>

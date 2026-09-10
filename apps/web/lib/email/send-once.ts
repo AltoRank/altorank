@@ -32,10 +32,10 @@ import { recordEvent } from "@/lib/observability/record";
 export type LifecycleMeta = {
   /** Stable slug, e.g. "article_published". Never a subject line. */
   type: string;
-  /** What the email is about: an article id, an agency id plus a timestamp, … */
+  /** What the email is about: an article id, an account id plus a timestamp, … */
   subjectId: string;
   category: EmailCategory;
-  agencyId?: string | null;
+  accountId?: string | null;
   workspaceId?: string | null;
 };
 
@@ -121,7 +121,7 @@ export async function sendOnce(
       email_type: meta.type,
       subject_id: meta.subjectId,
       recipient,
-      agency_id: meta.agencyId ?? null,
+      account_id: meta.accountId ?? null,
       workspace_id: meta.workspaceId ?? null,
     });
 
@@ -143,7 +143,7 @@ export async function sendOnce(
           level: "error",
           source: "email.claim",
           message: `${meta.type}: could not claim the send, so nothing was sent: ${claimError.message}`,
-          agencyId: meta.agencyId ?? null,
+          accountId: meta.accountId ?? null,
           workspaceId: meta.workspaceId ?? null,
           context: { type: meta.type, subjectId: meta.subjectId, recipient, code: claimError.code },
         }, supabase);

@@ -125,7 +125,7 @@ export interface GenerateArticleOptions {
    * the service role; a caller's cookie client cannot read another tenant's
    * workspaces and would compute an empty quota.
    */
-  billToAgencyId?: string;
+  billToAccountId?: string;
   /**
    * Who is asking, for the quota check. `null` means "nobody - there is no
    * session here", which is what a cron is.
@@ -263,12 +263,12 @@ export async function generateArticle(
   // E2E_STUBS: a fixture draft through the same rows and the same review gate (lib/e2e/stubs.ts).
   if (e2eStubsEnabled()) return stubGenerateArticle(options);
   const { supabase, workspaceId, keyword, keywordId, title, autonomous, onChunk, onResearch,
-    selection, articleId, billToAgencyId, callerEmail, refreshOf,
+    selection, articleId, billToAccountId, callerEmail, refreshOf,
   } = options;
 
   const { data: workspace, error: wsError } = await supabase
     .from("workspaces")
-    .select("id, domain, ai_provider, ai_model, agency_id, language, brand_style, location_code, status, paused_until, business_profile")
+    .select("id, domain, ai_provider, ai_model, account_id, language, brand_style, location_code, status, paused_until, business_profile")
     .eq("id", workspaceId)
     .single();
 
@@ -310,21 +310,21 @@ export async function generateArticle(
    * published overage. Autonomous generation stops at the included volume:
    * a cron must never be the thing that spends a customer's money.
    */
-  const billedAgencyId = billToAgencyId ?? workspace.agency_id;
+  const billedAccountId = billToAccountId ?? workspace.account_id;
   // `callerEmail` is forwarded, not defaulted. Omitting it here asked getQuota
   // to resolve a session, and on the cron's service client that resolves to
-  // nobody *while still counting as a session* - so the operator's own agency
+  // nobody *while still counting as a session* - so the operator's own account
   // came back "no-plan, free draft used" from this call and "operator,
   // unlimited" from the identical call in cron/generate, and every run logged
   // an error the cron route had gone out of its way to call a skip.
   // Set on the free tier below; called only once a draft exists.
   let recordFreeDraft: (() => Promise<void>) | null = null;
-  const quota = await getQuota(supabase, billedAgencyId, callerEmail);
+  const quota = await getQuota(supabase, billedAccountId, callerEmail);
   if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
     if (quota.reason === "no-plan" || autonomous) {
       throw new Error(quotaExceededMessage(quota));
     }
-    await recordOverageArticle(supabase, billedAgencyId, quota);
+    await recordOverageArticle(supabase, billedAccountId, quota);
   }
 
   const { data: voiceProfile } = await supabase
@@ -417,7 +417,7 @@ export async function generateArticle(
       .select("id, status")
       .eq("id", articleId)
       // Scoped to the workspace the caller was authorised for, so an id
-      // belonging to another agency cannot be written through.
+      // belonging to another account cannot be written through.
       .eq("workspace_id", workspaceId)
       .single();
 
@@ -483,7 +483,7 @@ export async function generateArticle(
     // with no plan). A person writing past the limit is billed the overage
     // above and is not a burst.
     if (quota.limit !== null && (quota.reason === "no-plan" || autonomous)) {
-      const after = await getQuota(supabase, billedAgencyId, callerEmail);
+      const after = await getQuota(supabase, billedAccountId, callerEmail);
       if (after.limit !== null && after.used > after.limit) {
         await supabase.from("articles").delete().eq("id", created.id);
         throw new Error(quotaExceededMessage(after));
@@ -512,13 +512,13 @@ export async function generateArticle(
       recordFreeDraft = async () => {
         try {
           await supabase
-            .from("agencies")
+            .from("accounts")
             // `quota.used` is already the larger of the stored counter and
             // the live count, so this only ever moves the column forward. Two
             // concurrent drafts can write the same number; the live count is
             // what catches that, which is exactly the job it is kept for.
             .update({ free_drafts_used: quota.used + 1 })
-            .eq("id", billedAgencyId);
+            .eq("id", billedAccountId);
         } catch {
           // The live count still floors it; see getQuota.
         }

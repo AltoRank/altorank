@@ -1,6 +1,6 @@
 import { withAgent, appBaseUrl } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
-import { articleInAgency } from "@/lib/agent/data";
+import { articleInAccount } from "@/lib/agent/data";
 import { articleMutations } from "@/lib/agent/mutations";
 import { toAgentArticle } from "@/lib/agent/records";
 import { needsPlanToShip, CHOOSE_PLAN_MESSAGE } from "@/lib/billing/quota";
@@ -21,7 +21,7 @@ export const maxDuration = 120;
  * an article in review or draft is refused with what a human has to do.
  */
 export const POST = withAgent<{ id: string }>(async (request, ctx, { id }) => {
-  const article = await articleInAgency(ctx, id);
+  const article = await articleInAccount(ctx, id);
   if (!article) return fail("not_found", "Article not found in this account.", "Call GET /articles?workspace_id= and use an id from that list.");
 
   const last = await getLastPublish(ctx.supabase, article.workspace_id, article.id);
@@ -37,14 +37,14 @@ export const POST = withAgent<{ id: string }>(async (request, ctx, { id }) => {
   }
 
   // Null caller: an API key is nobody's session. Same gate the button has.
-  if (await needsPlanToShip(ctx.supabase, ctx.agencyId, null)) {
+  if (await needsPlanToShip(ctx.supabase, ctx.accountId, null)) {
     return fail("quota_exceeded", CHOOSE_PLAN_MESSAGE, "Publishing needs a plan. Ask the human to choose one on the Billing page; do not retry until they have.");
   }
 
   const base = appBaseUrl(request);
   try {
     const result = await retryPublishCore(ctx.supabase, article.id, "manual");
-    const after = await articleInAgency(ctx, article.id);
+    const after = await articleInAccount(ctx, article.id);
     return ok(
       {
         article_id: article.id,

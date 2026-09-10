@@ -150,8 +150,8 @@ export default async function ArticlesPage({ searchParams }: Props) {
   // (app/(dashboard)/content/page.tsx); this is the same gate, computed from
   // the same per-request quota. Only an exhausted free allowance is a refusal:
   // a paid plan at its limit writes as overage, like any generation.
-  const agencyId = workspaces[0]?.agency_id;
-  const quota = agencyId ? await getRequestQuota(agencyId, auth.user?.email ?? null) : null;
+  const accountId = workspaces[0]?.account_id;
+  const quota = accountId ? await getRequestQuota(accountId, auth.user?.email ?? null) : null;
   const writeBlocked =
     quota && quota.reason === "no-plan" && quota.limit !== null && (quota.remaining ?? 0) <= 0
       ? quotaExceededMessage(quota)

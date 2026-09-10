@@ -11,7 +11,7 @@
 // notice somebody has switched off is not a security notice.
 //
 // Called from server actions on cookie-bound clients, so both build their own
-// service client: `agencyRecipients` and `sent_emails` need the service role.
+// service client: `accountRecipients` and `sent_emails` need the service role.
 
 import { createServiceClient } from "@/lib/supabase/server";
 import { notifyApiKeyCreated, notifyPasswordChanged } from "./lifecycle";
@@ -42,7 +42,7 @@ export async function announcePasswordChanged(email: string | null): Promise<voi
  * in it.
  */
 export async function announceApiKeyCreated(opts: {
-  agencyId: string;
+  accountId: string;
   keyId: string;
   keyName: string;
   prefix: string;
@@ -53,7 +53,7 @@ export async function announceApiKeyCreated(opts: {
   try {
     await notifyApiKeyCreated(
       createServiceClient(),
-      opts.agencyId,
+      opts.accountId,
       {
         keyName: opts.keyName,
         prefix: opts.prefix,

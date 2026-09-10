@@ -65,7 +65,7 @@ export type FakeDraftDb = {
     articles: Row[];
     keywords: Row[];
     workspace_integrations: Row[];
-    agency_members: Row[];
+    account_members: Row[];
     sent_emails: Row[];
   };
   /** "type|subject|recipient" for every claim currently held. */
@@ -82,7 +82,7 @@ export function fakeDraftDb(seed: Partial<FakeDraftDb["tables"]> & { preferences
     articles: seed.articles ?? [],
     keywords: seed.keywords ?? [],
     workspace_integrations: seed.workspace_integrations ?? [],
-    agency_members: seed.agency_members ?? [],
+    account_members: seed.account_members ?? [],
     sent_emails: seed.sent_emails ?? [],
   };
   const preferences = seed.preferences ?? {};

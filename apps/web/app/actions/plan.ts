@@ -39,7 +39,7 @@ import {
 // Everything a person can do to a planned keyword from the calendar: tell the
 // writer something, answer its questions, move the day, take it off the plan,
 // or lay the month out. Every write names the caller's active workspace as
-// well as the row id: the id alone is enough for RLS (agency scope) and not
+// well as the row id: the id alone is enough for RLS (account scope) and not
 // enough for the page (workspace scope). See AGENTS.md.
 //
 // Nothing here publishes or approves anything.
@@ -136,8 +136,8 @@ export async function ensureKeywordQuestions(
   // only in front of the call that would write new ones.
   if (current.length > 0) return { ok: true, questions: current };
 
-  const { agencyId } = await requireAuth();
-  const gate = await canSpend(supabase, agencyId, { workspaceId, action: "draft" });
+  const { accountId } = await requireAuth();
+  const gate = await canSpend(supabase, accountId, { workspaceId, action: "draft" });
   if (!gate.allowed) return { ok: false, error: gate.message };
 
   await ensureQuestionsFor(supabase, workspaceId, [{ id: row.id, term: row.term }]);
@@ -168,9 +168,9 @@ export async function removePlannedEntry(entryId: string): Promise<void> {
  */
 export async function removeInactiveEntries(): Promise<{ removed: number }> {
   const { supabase, workspaceId } = await scoped();
-  const { data: ws } = await supabase.from("workspaces").select("agency_id").eq("id", workspaceId).maybeSingle();
+  const { data: ws } = await supabase.from("workspaces").select("account_id").eq("id", workspaceId).maybeSingle();
   if (!ws) throw new Error("That site is not in your account.");
-  const quota = await getQuota(supabase, ws.agency_id as string);
+  const quota = await getQuota(supabase, ws.account_id as string);
   const frozen = await readFrozenEntries(supabase, workspaceId, quota);
   if (frozen.ids.size === 0) return { removed: 0 };
 
@@ -244,17 +244,17 @@ export interface ArticlesPlanState {
 }
 
 async function ownWorkspace(workspaceId: string) {
-  const { agencyId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth();
   const supabase = await createClient();
   const { data: ws, error } = await supabase
     .from("workspaces")
-    .select("id, agency_id, status, auto_generate_weekly_limit, paused_meta")
+    .select("id, account_id, status, auto_generate_weekly_limit, paused_meta")
     .eq("id", workspaceId)
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!ws) throw new Error("That site is not in your account.");
-  return { supabase, agencyId, user, ws };
+  return { supabase, accountId, user, ws };
 }
 
 async function readCadence(supabase: Awaited<ReturnType<typeof createClient>>, workspaceId: string) {
@@ -267,10 +267,10 @@ async function readCadence(supabase: Awaited<ReturnType<typeof createClient>>, w
 }
 
 export async function getArticlesPlanState(workspaceId: string): Promise<ArticlesPlanState> {
-  const { supabase, agencyId, user, ws } = await ownWorkspace(workspaceId);
+  const { supabase, accountId, user, ws } = await ownWorkspace(workspaceId);
   const [cadence, quota, capacity] = await Promise.all([
     readCadence(supabase, workspaceId),
-    getQuota(supabase, agencyId, user.email ?? null),
+    getQuota(supabase, accountId, user.email ?? null),
     getPlanCapacity(supabase, workspaceId),
   ]);
   return {
@@ -321,12 +321,12 @@ export async function applyArticlesPlan(
   requestedPace: unknown,
   requestedDays: unknown,
 ): Promise<{ pace: number; days: number[]; planned: number; sentence: string }> {
-  const { supabase, agencyId, user, ws } = await ownWorkspace(workspaceId);
+  const { supabase, accountId, user, ws } = await ownWorkspace(workspaceId);
   const pace = normalisePace(requestedPace);
   if (pace === null) throw new Error(`Pick a number of articles a week between 0 and ${MAX_PACE}.`);
   const days = cleanDays(requestedDays);
 
-  const quota = await getQuota(supabase, agencyId, user.email ?? null);
+  const quota = await getQuota(supabase, accountId, user.email ?? null);
   if (!paceAllowed(pace, quota)) {
     const needs = PLAN_LABELS[planNeededFor(monthlyFromPace(pace))];
     throw new Error(`${pace} a week is about ${monthlyFromPace(pace)} a month, which needs the ${needs} plan. Choose one on the Billing page.`);
@@ -341,7 +341,7 @@ export async function applyArticlesPlan(
       .from("workspaces")
       .update({ auto_generate_weekly_limit: pace })
       .eq("id", workspaceId)
-      .eq("agency_id", agencyId);
+      .eq("account_id", accountId);
     if (error) throw new Error(error.message);
   }
 

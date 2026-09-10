@@ -1,6 +1,6 @@
 import { withAgent, appBaseUrl } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
-import { articleInAgency, latestJob } from "@/lib/agent/data";
+import { articleInAccount, latestJob } from "@/lib/agent/data";
 import { toAgentArticle } from "@/lib/agent/records";
 import { getLastPublish } from "@/lib/publishing/log";
 
@@ -11,7 +11,7 @@ import { getLastPublish } from "@/lib/publishing/log";
  * draft it asked for: status moves drafting -> review when the job completes.
  */
 export const GET = withAgent<{ id: string }>(async (request, ctx, { id }) => {
-  const article = await articleInAgency(ctx, id);
+  const article = await articleInAccount(ctx, id);
   if (!article) {
     return fail("not_found", "Article not found in this account.", "Call GET /articles?workspace_id= and use an id from that list.");
   }

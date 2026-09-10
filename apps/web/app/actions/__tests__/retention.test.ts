@@ -17,20 +17,20 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 type Row = Record<string, unknown>;
 
-let agencyRow: Row = {};
+let accountRow: Row = {};
 let workspaceUpdateError: { message: string } | null = null;
 let feedbackError: { message: string } | null = null;
-// Writes to `agencies` through the signed-in (cookie) client. Migration 072
+// Writes to `accounts` through the signed-in (cookie) client. Migration 072
 // puts a BEFORE UPDATE trigger on the table that raises 42501 for any change
 // to a billing column by a signed-in user, so this mock answers the way the
 // database does: the write is refused. Anything that lands here fails.
-const agencyWrites: Row[] = [];
-// Writes to `agencies` as AltoRank (service role), which the trigger lets
+const accountWrites: Row[] = [];
+// Writes to `accounts` as AltoRank (service role), which the trigger lets
 // through. This is where `cancels_at` has to be written.
 const serviceWrites: Row[] = [];
 const TRIGGER_REFUSAL = {
   code: "42501",
-  message: "Billing and API-key columns on an agency are set by AltoRank, not by a signed-in user",
+  message: "Billing and API-key columns on an account are set by AltoRank, not by a signed-in user",
 };
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
@@ -42,7 +42,7 @@ vi.mock("@/lib/supabase/server", () => ({
   createServiceClient: () => ({
     from: (table: string) => ({
       update: (row: Row) => {
-        if (table !== "agencies") throw new Error(`unexpected service write to ${table}`);
+        if (table !== "accounts") throw new Error(`unexpected service write to ${table}`);
         serviceWrites.push(row);
         return { eq: () => Promise.resolve({ error: null }) };
       },
@@ -69,9 +69,9 @@ vi.mock("@/lib/supabase/server", () => ({
         };
       }
       return {
-        select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: agencyRow, error: null }) }) }),
+        select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: accountRow, error: null }) }) }),
         update: (row: Row) => {
-          agencyWrites.push(row);
+          accountWrites.push(row);
           return { eq: () => Promise.resolve({ error: TRIGGER_REFUSAL }) };
         },
       };
@@ -80,7 +80,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 const { requireAuth, subUpdate } = vi.hoisted(() => ({
-  requireAuth: vi.fn(async () => ({ agencyId: "agency-1", role: "owner", user: { id: "u1" } })),
+  requireAuth: vi.fn(async () => ({ accountId: "account-1", role: "owner", user: { id: "u1" } })),
   subUpdate: vi.fn(),
 }));
 vi.mock("@/lib/auth/require-auth", () => ({ requireAuth }));
@@ -98,12 +98,12 @@ vi.mock("@/lib/billing/resume", async (importOriginal) => {
 });
 
 beforeEach(() => {
-  agencyWrites.length = 0;
+  accountWrites.length = 0;
   serviceWrites.length = 0;
   workspaceUpdateError = null;
   feedbackError = null;
-  agencyRow = {
-    id: "agency-1",
+  accountRow = {
+    id: "account-1",
     plan: "starter",
     stripe_subscription_id: "sub_1",
     current_period_end: "2026-12-01T00:00:00.000Z",
@@ -154,7 +154,7 @@ describe("cancelPlan", () => {
     expect(result.error).toContain("renew as before");
     // And `cancels_at` is not written, so the page does not show an end date
     // for a plan that is still running.
-    expect(agencyWrites).toHaveLength(0);
+    expect(accountWrites).toHaveLength(0);
   });
 
   it("keeps the survey answer even when the cancellation fails", async () => {
@@ -169,7 +169,7 @@ describe("cancelPlan", () => {
   });
 
   it("refuses in words when there is no subscription to cancel", async () => {
-    agencyRow = { ...agencyRow, stripe_subscription_id: null };
+    accountRow = { ...accountRow, stripe_subscription_id: null };
     const { cancelPlan } = await import("../retention");
     expect(await cancelPlan({ reason: "price" })).toEqual({
       ok: false,
@@ -199,7 +199,7 @@ describe("cancelPlan", () => {
     const { cancelPlan } = await import("../retention");
     const result = await cancelPlan({ reason: "price" });
     expect(result.ok).toBe(true);
-    expect(agencyWrites).toHaveLength(0);
+    expect(accountWrites).toHaveLength(0);
     expect(serviceWrites).toEqual([{ cancels_at: new Date(1796083200 * 1000).toISOString() }]);
   });
 });
@@ -211,14 +211,14 @@ describe("keepPlan", () => {
     const { keepPlan } = await import("../retention");
     const result = await keepPlan();
     expect(result.ok).toBe(false);
-    expect(agencyWrites).toHaveLength(0);
+    expect(accountWrites).toHaveLength(0);
     expect(serviceWrites).toHaveLength(0);
   });
 
   it("clears cancels_at as AltoRank once Stripe has dropped the cancellation", async () => {
     const { keepPlan } = await import("../retention");
     expect(await keepPlan()).toEqual({ ok: true });
-    expect(agencyWrites).toHaveLength(0);
+    expect(accountWrites).toHaveLength(0);
     expect(serviceWrites).toEqual([{ cancels_at: null }]);
   });
 });

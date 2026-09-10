@@ -16,11 +16,11 @@ import { isPastDueStatus } from "@/lib/billing/dunning";
  * bill again; the switch has to happen on that one. Canceled and inactive
  * rows keep a stale id, and a new Checkout is the right door for them.
  */
-export function subscriptionSwitchable(agency: {
+export function subscriptionSwitchable(account: {
   stripe_subscription_id?: string | null;
   plan_status?: string | null;
 }): boolean {
-  if (!agency.stripe_subscription_id) return false;
-  const s = agency.plan_status;
+  if (!account.stripe_subscription_id) return false;
+  const s = account.plan_status;
   return s === "active" || s === "trialing" || isPastDueStatus(s);
 }

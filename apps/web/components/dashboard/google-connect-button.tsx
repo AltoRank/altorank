@@ -7,7 +7,7 @@ import { useWorkspace } from "@/components/dashboard/workspace-context";
  * Connect button for the Google-backed integrations (Search Console, GA4).
  *
  * Scoped to the active workspace, because tokens are stored per workspace in
- * `workspace_integrations`: an agency connects each client's Search Console
+ * `workspace_integrations`: an account connects each client's Search Console
  * separately, so "connect" is meaningless without knowing which client.
  *
  * A plain link rather than a fetch: the endpoint issues a 302 to Google's

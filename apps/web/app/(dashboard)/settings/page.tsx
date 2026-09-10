@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Card } from "@/components/ui";
-import { getAgency } from "@/lib/queries/agency";
+import { getAccount } from "@/lib/queries/account";
 import { SettingsForm } from "@/components/dashboard/settings-form";
 import { PasswordForm } from "@/components/dashboard/password-form";
 import { BusinessForm } from "@/components/settings/business-form";
@@ -13,9 +13,9 @@ import { getWorkspaceSettings } from "@/lib/settings/workspace-settings";
 export const metadata: Metadata = { title: "Settings" };
 
 export default async function SettingsPage() {
-  const agency = await getAgency();
+  const account = await getAccount();
 
-  if (!agency) {
+  if (!account) {
     return <div className="p-8 text-ink-3">No account found. Please sign in.</div>;
   }
 
@@ -23,7 +23,7 @@ export default async function SettingsPage() {
   // gated on any plan. It is now, for the hosted free tier only, so the panel
   // has to read the real answer (2026-09-02).
   const supabase = await createClient();
-  const [quota, ws] = await Promise.all([getQuota(supabase, agency.id), getWorkspaceSettings()]);
+  const [quota, ws] = await Promise.all([getQuota(supabase, account.id), getWorkspaceSettings()]);
 
   return (
     <SettingsShell
@@ -35,11 +35,11 @@ export default async function SettingsPage() {
           switcher is on. */}
       {ws ? <BusinessForm workspaceId={ws.id} domain={ws.domain} initial={ws.profile} /> : <NoWorkspaceCard />}
 
-      <SettingsForm agency={agency} quotaReason={quota.reason} />
+      <SettingsForm account={account} quotaReason={quota.reason} />
 
       {/* Where the account heard of us (#79): answered once at the end of the
           wizard, changeable here. */}
-      <AttributionCard source={agency.attribution_source ?? null} note={agency.attribution_note ?? null} />
+      <AttributionCard source={account.attribution_source ?? null} note={account.attribution_note ?? null} />
 
       <Card title="Password">
         <PasswordForm />

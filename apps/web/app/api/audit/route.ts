@@ -39,7 +39,7 @@ const CRAWL_DELAY_MS = 400;
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
 
-  // Auth: verify user is logged in and belongs to an agency
+  // Auth: verify user is logged in and belongs to an account
   const {
     data: { user },
     error: authError,
@@ -50,13 +50,13 @@ export async function POST(request: NextRequest) {
   }
 
   const { data: member } = await supabase
-    .from("agency_members")
-    .select("agency_id")
+    .from("account_members")
+    .select("account_id")
     .eq("user_id", user.id)
     .single();
 
   if (!member) {
-    return NextResponse.json({ error: "No agency membership" }, { status: 403 });
+    return NextResponse.json({ error: "No account membership" }, { status: 403 });
   }
 
   let body: { auditId: string; workspaceId: string };
@@ -68,12 +68,12 @@ export async function POST(request: NextRequest) {
 
   const { auditId, workspaceId } = body;
 
-  // Verify workspace belongs to the user's agency
+  // Verify workspace belongs to the user's account
   const { data: wsCheck } = await supabase
     .from("workspaces")
     .select("id")
     .eq("id", workspaceId)
-    .eq("agency_id", member.agency_id)
+    .eq("account_id", member.account_id)
     .single();
 
   if (!wsCheck) {
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
 
   // The audit row has to be this workspace's. The id came from the request
   // body, and until 2026-09-07 every write below keyed on it alone: a member
-  // of agency A could post B's audit id with A's workspace id, kick off a
+  // of account A could post B's audit id with A's workspace id, kick off a
   // crawl of A's site, and have B's audit row overwritten with the result
   // (S-8). Checked once here, and every write below is scoped as well, so a
   // row that changes hands mid-crawl is not written either.
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
   // gate in `startDomainAudit` refuses the button, this one refuses the POST.
   // 402 rather than 403, and the sentence travels in `error` so a caller that
   // renders it is telling the truth about why.
-  const gate = await canSpend(supabase, member.agency_id as string, {
+  const gate = await canSpend(supabase, member.account_id as string, {
     userEmail: user.email ?? undefined,
     workspaceId,
     action: "site-audit",

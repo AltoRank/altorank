@@ -1,6 +1,6 @@
 import { withAgent, appBaseUrl } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
-import { integrationStatus, workspaceInAgency } from "@/lib/agent/data";
+import { integrationStatus, workspaceInAccount } from "@/lib/agent/data";
 import { toAgentWorkspace, workspaceHuman } from "@/lib/agent/records";
 
 /**
@@ -10,7 +10,7 @@ import { toAgentWorkspace, workspaceHuman } from "@/lib/agent/records";
  * can describe the setup to a person without reading column names aloud.
  */
 export const GET = withAgent<{ id: string }>(async (request, ctx, { id }) => {
-  const workspace = await workspaceInAgency(ctx, id);
+  const workspace = await workspaceInAccount(ctx, id);
   if (!workspace) {
     return fail(
       "not_found",

@@ -124,12 +124,12 @@ describe("htmlToMarkdown", () => {
   it("converts tables with a header separator row", () => {
     const html = doc(
       `<main><table><tr><th>Plan</th><th>Price</th></tr>` +
-      `<tr><td>Agency</td><td>199</td></tr></table>${filler("pad")}</main>`,
+      `<tr><td>Account</td><td>199</td></tr></table>${filler("pad")}</main>`,
     );
     const { markdown } = htmlToMarkdown(html, BASE);
     expect(markdown).toContain("| Plan | Price |");
     expect(markdown).toContain("| --- | --- |");
-    expect(markdown).toContain("| Agency | 199 |");
+    expect(markdown).toContain("| Account | 199 |");
   });
 
   it("separates sibling divs instead of running their text together", () => {

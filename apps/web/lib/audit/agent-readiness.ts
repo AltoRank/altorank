@@ -3,7 +3,7 @@
  *
  * TypeScript port of tools/agent-readiness/agent_readiness.py (the Python
  * checker was verified against Cloudflare's isitagentready.com scanner on
- * 2026-08-15 across 272 live agency sites). Scoring is identical on purpose,
+ * 2026-08-15 across 272 live account sites). Scoring is identical on purpose,
  * so numbers from the two implementations are comparable.
  *
  * This module is deliberately self-contained — no Supabase, no Next, no

@@ -2,12 +2,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isAdminEmail } from "@/lib/auth/operators";
 
 /**
- * Whether an agency is one of ours.
+ * Whether an account is one of ours.
  *
  * The operator bypass in getQuota is keyed on the signed-in address, and a
  * cron has no signed-in address - it passes null on purpose, because "a cron
  * is nobody's operator". That is right about sessions and wrong about
- * accounts: our own agency is still our own agency at three in the morning,
+ * accounts: our own account is still our own account at three in the morning,
  * and with that check unavailable every cron treated it as a stranger.
  *
  * In production that meant the operator's own workspaces got only the free
@@ -17,26 +17,26 @@ import { isAdminEmail } from "@/lib/auth/operators";
  * the one the product had quietly stopped running for.
  *
  * auth.users is not reachable through PostgREST, so membership is resolved
- * through the admin API - by id, for the handful of members an agency has,
+ * through the admin API - by id, for the handful of members an account has,
  * rather than by listing every user in the system. Cached for the life of the
  * process, which for a cron is the length of one run.
  */
 
 const cache = new Map<string, boolean>();
 
-export async function agencyHasOperator(
+export async function accountHasOperator(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
 ): Promise<boolean> {
-  const hit = cache.get(agencyId);
+  const hit = cache.get(accountId);
   if (hit !== undefined) return hit;
 
   let answer = false;
   try {
     const { data: members } = await supabase
-      .from("agency_members")
+      .from("account_members")
       .select("user_id")
-      .eq("agency_id", agencyId);
+      .eq("account_id", accountId);
 
     for (const m of members ?? []) {
       // Needs the service role. On a cookie-bound client this throws, which
@@ -52,11 +52,11 @@ export async function agencyHasOperator(
     answer = false;
   }
 
-  cache.set(agencyId, answer);
+  cache.set(accountId, answer);
   return answer;
 }
 
 /** Test seam: the cache outlives a single cron run only in tests. */
-export function clearOperatorAgencyCache(): void {
+export function clearOperatorAccountCache(): void {
   cache.clear();
 }

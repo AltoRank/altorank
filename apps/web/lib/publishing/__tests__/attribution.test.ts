@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { Quota } from "@/lib/billing/quota";
 import {
   appendAttribution,
-  isOperatorAgency,
+  isOperatorAccount,
   attributionHtml,
   shouldAttribute,
   ATTRIBUTION_ANCHOR,
@@ -56,7 +56,7 @@ describe("appendAttribution", () => {
   });
 });
 
-describe("isOperatorAgency", () => {
+describe("isOperatorAccount", () => {
   function client(email: string | null) {
     return {
       from: () => ({ select: () => ({ eq: async () => ({ data: [{ user_id: "u1" }] }) }) }),
@@ -64,12 +64,12 @@ describe("isOperatorAgency", () => {
     } as never;
   }
 
-  it("recognises an operator-owned agency", async () => {
-    expect(await isOperatorAgency(client("helloaltorank@gmail.com"), "a1")).toBe(true);
+  it("recognises an operator-owned account", async () => {
+    expect(await isOperatorAccount(client("helloaltorank@gmail.com"), "a1")).toBe(true);
   });
 
-  it("does not flag a customer agency", async () => {
-    expect(await isOperatorAgency(client("someone@example.com"), "a1")).toBe(false);
+  it("does not flag a customer account", async () => {
+    expect(await isOperatorAccount(client("someone@example.com"), "a1")).toBe(false);
   });
 
   it("answers false when the address cannot be read, rather than throwing", async () => {
@@ -78,6 +78,6 @@ describe("isOperatorAgency", () => {
       from: () => ({ select: () => ({ eq: async () => ({ data: [{ user_id: "u1" }] }) }) }),
       auth: { admin: { getUserById: async () => { throw new Error("not authorized"); } } },
     } as never;
-    expect(await isOperatorAgency(noAdmin, "a1")).toBe(false);
+    expect(await isOperatorAccount(noAdmin, "a1")).toBe(false);
   });
 });

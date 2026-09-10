@@ -19,24 +19,24 @@ export type OpenRequest = {
  *
  * Deliberately the service role with a hand-written column list, rather than a
  * wider RLS policy. `getAvailableExchanges` below cannot work and never could:
- * migration 011 lets a member see a row only where their agency is the
+ * migration 011 lets a member see a row only where their account is the
  * requester or the provider, and an unclaimed request is neither, so it has
  * always returned an empty set. That is why the exchange had no host side.
  *
  * A marketplace has to expose the request, so the fix is to expose exactly the
  * request: the URL, the topic, the keyword, the price. Not the requester's
- * agency or workspace ids, which are nobody else's business, and which a
+ * account or workspace ids, which are nobody else's business, and which a
  * policy that widened the row would have handed over with it.
  */
-export async function getOpenRequests(agencyId: string): Promise<OpenRequest[]> {
+export async function getOpenRequests(accountId: string): Promise<OpenRequest[]> {
   const admin = createServiceClient();
   const { data, error } = await admin
     .from("backlink_exchanges")
     .select("id, target_url, target_keyword, target_topic, credits_offered, created_at, expires_at")
     .eq("status", "requested")
-    .is("provider_agency_id", null)
+    .is("provider_account_id", null)
     // No self-dealing: filtered on, never selected.
-    .neq("requester_agency_id", agencyId)
+    .neq("requester_account_id", accountId)
     .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
     .order("credits_offered", { ascending: false })
     .limit(50);
@@ -53,15 +53,15 @@ export async function getOpenRequests(agencyId: string): Promise<OpenRequest[]> 
 }
 
 /**
- * Get all exchanges for an agency (as requester or provider).
+ * Get all exchanges for an account (as requester or provider).
  */
-export async function getExchanges(agencyId: string): Promise<BacklinkExchange[]> {
+export async function getExchanges(accountId: string): Promise<BacklinkExchange[]> {
   const supabase = await createClient();
 
   const { data, error } = await supabase
     .from("backlink_exchanges")
     .select("*")
-    .or(`requester_agency_id.eq.${agencyId},provider_agency_id.eq.${agencyId}`)
+    .or(`requester_account_id.eq.${accountId},provider_account_id.eq.${accountId}`)
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(error.message);
@@ -69,15 +69,15 @@ export async function getExchanges(agencyId: string): Promise<BacklinkExchange[]
 }
 
 /**
- * Get the credit ledger for an agency.
+ * Get the credit ledger for an account.
  */
-export async function getCreditsLedger(agencyId: string): Promise<BacklinkCredit[]> {
+export async function getCreditsLedger(accountId: string): Promise<BacklinkCredit[]> {
   const supabase = await createClient();
 
   const { data, error } = await supabase
     .from("backlink_credits")
     .select("*")
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(error.message);

@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------------------
 //
 // Every action names its workspace and checks the caller can see it: RLS
-// narrows to the agency, not to the site, and the drawer follows the sidebar
+// narrows to the account, not to the site, and the drawer follows the sidebar
 // switcher rather than offering a picker of its own.
 //
 // Research proposes. Only `scheduleCandidates` and `scheduleStored` write to
@@ -72,14 +72,14 @@ export interface ResearchContext {
   hints: { provider: string | null; model: string | null };
 }
 
-async function scoped(workspaceId: string): Promise<{ supabase: SupabaseClient; ws: ResearchWorkspace; agencyId: string }> {
-  const { agencyId } = await requireAuth();
+async function scoped(workspaceId: string): Promise<{ supabase: SupabaseClient; ws: ResearchWorkspace; accountId: string }> {
+  const { accountId } = await requireAuth();
   const supabase = await createClient();
   const ws = await loadResearchWorkspace(supabase, workspaceId);
-  // RLS already scopes to the agency; this turns a foreign id into an error
+  // RLS already scopes to the account; this turns a foreign id into an error
   // rather than a silent no-op that looks like a run.
   if (!ws) throw new Error("That site is not on this account.");
-  return { supabase, ws, agencyId };
+  return { supabase, ws, accountId };
 }
 
 /**
@@ -99,10 +99,10 @@ async function scoped(workspaceId: string): Promise<{ supabase: SupabaseClient; 
  */
 async function spendCheck(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   workspaceId: string,
 ): Promise<SpendDecision> {
-  return canSpend(supabase, agencyId, { workspaceId, action: "keyword-research" });
+  return canSpend(supabase, accountId, { workspaceId, action: "keyword-research" });
 }
 
 function blockedResult(kind: ResearchKind, message: string): ResearchResult {
@@ -159,33 +159,33 @@ export async function loadResearchContext(workspaceId: string): Promise<Research
 }
 
 export async function runGenerate(workspaceId: string, input: GenerateInput): Promise<ResearchResult> {
-  const { supabase, ws, agencyId } = await scoped(workspaceId);
-  const gate = await spendCheck(supabase, agencyId, workspaceId);
+  const { supabase, ws, accountId } = await scoped(workspaceId);
+  const gate = await spendCheck(supabase, accountId, workspaceId);
   if (!gate.allowed) return blockedResult("generate", gate.message);
   const instructions = await readKeywordInstructions(supabase, workspaceId);
   return researchGenerate(supabase, ws, input, { instructions });
 }
 
 export async function runPlaybook(workspaceId: string, playbook: PlaybookId): Promise<ResearchResult> {
-  const { supabase, ws, agencyId } = await scoped(workspaceId);
-  const gate = await spendCheck(supabase, agencyId, workspaceId);
+  const { supabase, ws, accountId } = await scoped(workspaceId);
+  const gate = await spendCheck(supabase, accountId, workspaceId);
   if (!gate.allowed) return blockedResult("playbook", gate.message);
   const instructions = await readKeywordInstructions(supabase, workspaceId);
   return researchPlaybook(supabase, ws, playbook, { instructions });
 }
 
 export async function runFind(workspaceId: string, term: string): Promise<ResearchResult> {
-  const { supabase, ws, agencyId } = await scoped(workspaceId);
-  const gate = await spendCheck(supabase, agencyId, workspaceId);
+  const { supabase, ws, accountId } = await scoped(workspaceId);
+  const gate = await spendCheck(supabase, accountId, workspaceId);
   if (!gate.allowed) return blockedResult("manual", gate.message);
   return researchFind(supabase, ws, term);
 }
 
 export async function runImport(workspaceId: string, text: string): Promise<ResearchResult> {
-  const { supabase, ws, agencyId } = await scoped(workspaceId);
+  const { supabase, ws, accountId } = await scoped(workspaceId);
   // Import prices every term it is handed (one keyword_overview batch), so it
   // is a paid look-up like the rest, not a plain paste.
-  const gate = await spendCheck(supabase, agencyId, workspaceId);
+  const gate = await spendCheck(supabase, accountId, workspaceId);
   if (!gate.allowed) return blockedResult("import", gate.message);
   return researchImport(supabase, ws, parseTermList(text));
 }
@@ -362,8 +362,8 @@ export async function chatResearch(
   history: ChatTurn[],
   known: ResearchCandidate[],
 ): Promise<ChatReply> {
-  const { supabase, ws, agencyId } = await scoped(workspaceId);
-  const gate = await spendCheck(supabase, agencyId, workspaceId);
+  const { supabase, ws, accountId } = await scoped(workspaceId);
+  const gate = await spendCheck(supabase, accountId, workspaceId);
   // Same shape as the model-unavailable branch below: the refusal is the
   // assistant's turn, so the person reads it in the thread they are already
   // looking at rather than watching a button do nothing.

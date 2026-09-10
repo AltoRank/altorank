@@ -2,7 +2,7 @@
  * What organic clicks would have cost to buy.
  *
  * The product measures clicks, positions and scores, and none of those is the
- * unit an agency invoices in. This is the one place that turns clicks into
+ * unit an account invoices in. This is the one place that turns clicks into
  * money, so the dashboard, the article editor and the client report all
  * agree on the number and on when there is no number.
  *

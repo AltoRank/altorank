@@ -73,9 +73,9 @@ vi.mock("@/lib/content/generate", () => ({
 }));
 vi.mock("@/lib/plan/pace-budget", () => ({ readPaceBudget: async () => ({ articlesLeft: 1 }), describePaceBudget: () => "" }));
 vi.mock("@/lib/plan/frozen", () => ({ readFrozenEntries: async () => ({ ids: new Set(), reason: null }) }));
-vi.mock("@/lib/email/agency-recipients", () => ({
-  agencyRecipients: async () => ["owner@acme.co"],
-  agencyBillingRecipients: async () => [],
+vi.mock("@/lib/email/account-recipients", () => ({
+  accountRecipients: async () => ["owner@acme.co"],
+  accountBillingRecipients: async () => [],
   userEmail: async () => null,
 }));
 vi.mock("@/lib/email/article-emails", () => ({ sendArticleDraftedEmails: async () => ({ sent: 1, skipped: 0, failed: 0 }) }));
@@ -96,7 +96,7 @@ const wrote = () => generateArticle.mock.calls[0][0] as { keyword: string; keywo
 beforeEach(() => {
   process.env.CRON_SECRET = "s";
   workspaces = [{
-    id: "ws-1", domain: "qasimcode.com", agency_id: "ag-1", auto_generate_weekly_limit: 7,
+    id: "ws-1", domain: "qasimcode.com", account_id: "ag-1", auto_generate_weekly_limit: 7,
     refresh_enabled: false, refresh_days: null,
     onboarded_at: "2026-09-07T10:00:00Z", onboarding_skipped_at: null,
   }];

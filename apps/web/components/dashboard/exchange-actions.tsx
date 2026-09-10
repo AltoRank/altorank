@@ -48,7 +48,7 @@ export function ExchangeRequestForm({ workspaces, scopedId }: Props) {
           action={(fd) =>
             startTransition(async () => {
               try {
-                // agencyId is derived server-side from the session (IDOR fix).
+                // accountId is derived server-side from the session (IDOR fix).
                 await createExchangeRequest(
                   workspaceId,
                   fd.get("url") as string,

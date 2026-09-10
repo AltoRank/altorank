@@ -22,7 +22,7 @@ export type KeywordSuggestion = {
  * held a scored, ranked list of terms it could win (2026-09-02).
  */
 export async function suggestKeywords(workspaceId: string, limit = 8): Promise<KeywordSuggestion[]> {
-  const { agencyId } = await requireAuth();
+  const { accountId } = await requireAuth();
   const supabase = await createClient();
 
   // The workspace must belong to the caller's account: this reads keyword
@@ -31,7 +31,7 @@ export async function suggestKeywords(workspaceId: string, limit = 8): Promise<K
     .from("workspaces")
     .select("id")
     .eq("id", workspaceId)
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .maybeSingle();
   if (!ws) return [];
 

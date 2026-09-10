@@ -67,11 +67,11 @@ describe("buildFrontmatter", () => {
   it("quotes strings and renders arrays and booleans", () => {
     const fm = buildFrontmatter({
       title: "Agency SEO",
-      tags: ["seo", "agencies"],
+      tags: ["seo", "accounts"],
       draft: false,
     });
     expect(fm).toContain('title: "Agency SEO"');
-    expect(fm).toContain('tags: ["seo", "agencies"]');
+    expect(fm).toContain('tags: ["seo", "accounts"]');
     expect(fm).toContain("draft: false");
     expect(fm.startsWith("---\n")).toBe(true);
   });

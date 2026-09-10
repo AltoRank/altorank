@@ -14,7 +14,7 @@
 //
 //   the Resume button        app/actions/retention.ts, rows then Stripe
 //   the generate cron        `resumeExpiredPauses`, every run, for every
-//                            agency whose date has passed
+//                            account whose date has passed
 //   the Stripe webhook       `customer.subscription.updated` reporting
 //                            `pause_collection` cleared, rows only
 //
@@ -31,18 +31,18 @@ export function isoDay(d: Date): string {
 }
 
 /**
- * Put every billing-paused workspace of the agency back to `on`. Returns
+ * Put every billing-paused workspace of the account back to `on`. Returns
  * the ids resumed; empty when nothing was paused by the account pause.
  */
 export async function resumePausedWorkspaces(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   /**
    * Only rows whose pause has ended by this day. Omitted, every billing-paused
-   * row of the agency is resumed - which is what the Resume button means, and
+   * row of the account is resumed - which is what the Resume button means, and
    * what the webhook means when Stripe reports the pause cleared.
    *
-   * `resumeExpiredPauses` passes it, because it selects an agency on the
+   * `resumeExpiredPauses` passes it, because it selects an account on the
    * strength of *one* expired row and would otherwise resume the rest with it.
    * `pauseAccount` writes the same date on every site, so today that is a
    * predicate matching its own name rather than a bug being fixed - but the
@@ -53,7 +53,7 @@ export async function resumePausedWorkspaces(
   let query = supabase
     .from("workspaces")
     .update({ status: "on", paused_until: null })
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .eq("status", "paused")
     .not("paused_until", "is", null);
   if (through) query = query.lte("paused_until", through);
@@ -72,18 +72,18 @@ export async function liftStripePause(stripe: Stripe, subscriptionId: string): P
 }
 
 export type ExpiredPauseOutcome = {
-  agencyId: string;
+  accountId: string;
   workspaces: string[];
   /** "lifted", "skipped" (no subscription), or the Stripe error message. */
   stripe: string;
 };
 
 /**
- * Resume every agency whose pause date has passed. Runs from the generate
+ * Resume every account whose pause date has passed. Runs from the generate
  * cron ahead of picking work, so a site whose month is up is back in the
  * queue on the same run rather than a day later.
  *
- * The rows are written first and Stripe second, per agency, and a Stripe
+ * The rows are written first and Stripe second, per account, and a Stripe
  * refusal is reported rather than thrown: by the time this runs Stripe has
  * normally resumed on its own, and the write that matters - the one that
  * makes the crons see the site again - is already done.
@@ -95,25 +95,25 @@ export async function resumeExpiredPauses(
 ): Promise<ExpiredPauseOutcome[]> {
   const { data: due, error } = await supabase
     .from("workspaces")
-    .select("agency_id")
+    .select("account_id")
     .eq("status", "paused")
     .not("paused_until", "is", null)
     .lte("paused_until", isoDay(today));
   if (error) throw new Error(error.message);
 
-  const agencies = [...new Set((due ?? []).map((r) => r.agency_id as string))];
+  const accounts = [...new Set((due ?? []).map((r) => r.account_id as string))];
   const outcomes: ExpiredPauseOutcome[] = [];
 
-  for (const agencyId of agencies) {
-    const workspaces = await resumePausedWorkspaces(supabase, agencyId, isoDay(today));
+  for (const accountId of accounts) {
+    const workspaces = await resumePausedWorkspaces(supabase, accountId, isoDay(today));
     let stripeOutcome = "skipped";
     if (stripe) {
-      const { data: agency } = await supabase
-        .from("agencies")
+      const { data: account } = await supabase
+        .from("accounts")
         .select("stripe_subscription_id")
-        .eq("id", agencyId)
+        .eq("id", accountId)
         .single();
-      const subscriptionId = agency?.stripe_subscription_id as string | null | undefined;
+      const subscriptionId = account?.stripe_subscription_id as string | null | undefined;
       if (subscriptionId) {
         try {
           await liftStripePause(stripe, subscriptionId);
@@ -123,7 +123,7 @@ export async function resumeExpiredPauses(
         }
       }
     }
-    outcomes.push({ agencyId, workspaces, stripe: stripeOutcome });
+    outcomes.push({ accountId, workspaces, stripe: stripeOutcome });
   }
   return outcomes;
 }

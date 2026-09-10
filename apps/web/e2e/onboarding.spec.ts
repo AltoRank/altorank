@@ -109,9 +109,9 @@ test("a new account is walked from /dashboard to a planned first month", async (
   const { data: wsDone } = await db.from("workspaces").select("onboarded_at, onboarding_skipped_at").eq("id", ws.id).single();
   expect(wsDone?.onboarded_at).not.toBeNull();
   expect(wsDone?.onboarding_skipped_at).toBeNull();
-  const { data: agency } = await db.from("agencies").select("attribution_source, attribution_answered_at").eq("id", account.agencyId).single();
-  expect(agency?.attribution_source).toBe("ai");
-  expect(agency?.attribution_answered_at).not.toBeNull();
+  const { data: accountRow } = await db.from("accounts").select("attribution_source, attribution_answered_at").eq("id", account.accountId).single();
+  expect(accountRow?.attribution_source).toBe("ai");
+  expect(accountRow?.attribution_answered_at).not.toBeNull();
 
   const { data: entries } = await db
     .from("calendar_entries")

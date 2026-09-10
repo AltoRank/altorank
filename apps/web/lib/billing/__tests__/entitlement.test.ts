@@ -147,9 +147,9 @@ describe("the paid crons gate on entitledToScheduledWork", () => {
         ? ""
         : `\nThese crons can spend provider money with no plan check:\n` +
             missing.map((m) => `  app/api/cron/${m.route}/route.ts  (spends at ${m.site.replace(APP_DIR, "")})`).join("\n") +
-            `\n\nCall entitledToScheduledWork(await getQuota(supabase, agencyId, null)) per\n` +
+            `\n\nCall entitledToScheduledWork(await getQuota(supabase, accountId, null)) per\n` +
             `workspace before buying anything - as app/api/cron/serp/route.ts does - or\n` +
-            `canSpend(supabase, agencyId, { userEmail: null, workspaceId, action }) when the\n` +
+            `canSpend(supabase, accountId, { userEmail: null, workspaceId, action }) when the\n` +
             `job also delivers the free allowance, as app/api/cron/generate/route.ts does -\n` +
             `or list the route in UNGATED with the reason it is free.\n`,
     ).toEqual([]);

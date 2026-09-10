@@ -64,9 +64,9 @@ vi.mock("@/lib/content/generate", () => ({
 }));
 vi.mock("@/lib/plan/pace-budget", () => ({ readPaceBudget: async () => ({ articlesLeft: 1 }), describePaceBudget: () => "" }));
 vi.mock("@/lib/plan/frozen", () => ({ readFrozenEntries: async () => ({ ids: new Set(), reason: null }) }));
-vi.mock("@/lib/email/agency-recipients", () => ({
-  agencyRecipients: async () => ["owner@acme.co"],
-  agencyBillingRecipients: async () => [],
+vi.mock("@/lib/email/account-recipients", () => ({
+  accountRecipients: async () => ["owner@acme.co"],
+  accountBillingRecipients: async () => [],
   userEmail: async () => null,
 }));
 vi.mock("@/lib/email/article-emails", () => ({ sendArticleDraftedEmails: (...a: unknown[]) => sendArticleDraftedEmails(...a) }));
@@ -98,7 +98,7 @@ beforeEach(() => {
 });
 
 const stalled = {
-  id: "ws-1", domain: "acme.com", agency_id: "ag-1", auto_generate_weekly_limit: 7,
+  id: "ws-1", domain: "acme.com", account_id: "ag-1", auto_generate_weekly_limit: 7,
   refresh_enabled: false, refresh_days: null, onboarded_at: null, onboarding_skipped_at: null,
 };
 
@@ -109,7 +109,7 @@ describe("cron/generate and the stalled wizard", () => {
 
     expect(body.generated).toBe(1);
     expect(generateArticle).toHaveBeenCalledTimes(1);
-    expect(announceSetupUnfinished).toHaveBeenCalledWith(expect.anything(), { agencyId: "ag-1", workspaceId: "ws-1", domain: "acme.com" });
+    expect(announceSetupUnfinished).toHaveBeenCalledWith(expect.anything(), { accountId: "ag-1", workspaceId: "ws-1", domain: "acme.com" });
     expect(sendArticleDraftedEmails).not.toHaveBeenCalled();
     expect(body.results[0].detail).toContain("setup email: emailed 1");
   });
@@ -133,7 +133,7 @@ describe("cron/generate and the stalled wizard", () => {
     expect(client).toBeTruthy();
     expect(recipients).toEqual(["owner@acme.co"]);
     expect(payload).toMatchObject({ articleId: "art-1", domain: "acme.com" });
-    expect(scope).toEqual({ agencyId: "ag-1", workspaceId: "ws-1" });
+    expect(scope).toEqual({ accountId: "ag-1", workspaceId: "ws-1" });
   });
 
   it("treats a skipped wizard as finished for this purpose", async () => {

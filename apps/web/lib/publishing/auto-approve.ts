@@ -49,9 +49,9 @@ export type AutoApproveCandidate = {
   factCheckBlocker: string | null;
   /** Titles of audit items with status `fail`. */
   auditFailures: readonly string[];
-  /** True when approving needs a plan the agency does not have. */
+  /** True when approving needs a plan the account does not have. */
   needsPlan: boolean;
-  /** True when `auto_approve_set_by` is still a member of the agency. */
+  /** True when `auto_approve_set_by` is still a member of the account. */
   ruleOwnerIsMember: boolean;
 };
 
@@ -112,7 +112,7 @@ export type AutoApproveResult = {
   detail?: string;
 };
 
-type WorkspaceRow = AutoApproveRule & { id: string; agency_id: string; domain: string | null; status: string };
+type WorkspaceRow = AutoApproveRule & { id: string; account_id: string; domain: string | null; status: string };
 
 type ArticleRow = {
   id: string;
@@ -148,7 +148,7 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
 
   const { data: wsRows, error: wsError } = await supabase
     .from("workspaces")
-    .select("id, agency_id, domain, status, auto_approve, auto_approve_hold_hours, auto_approve_min_seo, auto_approve_min_aeo, auto_approve_set_by")
+    .select("id, account_id, domain, status, auto_approve, auto_approve_hold_hours, auto_approve_min_seo, auto_approve_min_aeo, auto_approve_set_by")
     .eq("auto_approve", true)
     .eq("status", "on");
   if (wsError) throw new Error(`auto-approve: workspaces: ${wsError.message}`);
@@ -172,7 +172,7 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
     // still on the account.
     let needsPlan = false;
     try {
-      needsPlan = (await getQuota(supabase, ws.agency_id, null)).reason === "no-plan";
+      needsPlan = (await getQuota(supabase, ws.account_id, null)).reason === "no-plan";
     } catch (err) {
       out.push({ articleId: "", workspaceId: ws.id, outcome: "error", detail: `quota: ${err instanceof Error ? err.message : "unknown"}` });
       continue;
@@ -180,9 +180,9 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
     let ruleOwnerIsMember = false;
     if (ws.auto_approve_set_by) {
       const { data: member } = await supabase
-        .from("agency_members")
+        .from("account_members")
         .select("user_id")
-        .eq("agency_id", ws.agency_id)
+        .eq("account_id", ws.account_id)
         .eq("user_id", ws.auto_approve_set_by)
         .maybeSingle();
       ruleOwnerIsMember = Boolean(member);

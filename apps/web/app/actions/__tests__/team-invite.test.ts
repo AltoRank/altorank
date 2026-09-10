@@ -23,7 +23,7 @@ function builder(table: string, resolved: unknown) {
     eq: chain,
     ilike: chain,
     is: chain,
-    single: () => Promise.resolve({ data: table === "agencies" ? { name: "Acme SEO" } : null }),
+    single: () => Promise.resolve({ data: table === "accounts" ? { name: "Acme SEO" } : null }),
     maybeSingle: () => Promise.resolve({ data: resolved, error: null }),
     then: (r: (v: unknown) => unknown) => r({ data: resolved, error: insertError }),
   });
@@ -52,7 +52,7 @@ vi.mock("@/lib/supabase/server", () => ({
 
 const { requireAuth, sendInviteEmail } = vi.hoisted(() => ({
   requireAuth: vi.fn(async () => ({
-    agencyId: "agency-1",
+    accountId: "account-1",
     role: "owner",
     user: { id: "u1", email: "owner@acme.test", user_metadata: { full_name: "Owner" } },
   })),

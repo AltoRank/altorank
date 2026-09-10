@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { withAgent } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
-import { listKeywords, plannedDatesFor, workspaceInAgency } from "@/lib/agent/data";
+import { listKeywords, plannedDatesFor, workspaceInAccount } from "@/lib/agent/data";
 import { keywordsToCsv, type ExportableKeyword } from "@/lib/keywords/export";
 
 const MAX_ROWS = 5000;
@@ -21,7 +21,7 @@ export const GET = withAgent(async (request, ctx) => {
   const format = (q.get("format") ?? "json").toLowerCase();
   if (format !== "csv" && format !== "json") return fail("invalid_request", `Unknown format "${format}".`, "Use format=csv or format=json.");
 
-  const workspace = await workspaceInAgency(ctx, workspaceId);
+  const workspace = await workspaceInAccount(ctx, workspaceId);
   if (!workspace) return fail("not_found", "Workspace not found in this account.", "Call GET /workspaces and use an id from that list.");
 
   const [keywords, planned] = await Promise.all([

@@ -29,7 +29,7 @@ export interface ShareCardFacts {
   gscConnected: boolean;
   /** Clicks over the last 28 days, null when not connected or nothing synced. */
   clicks28d: number | null;
-  /** agencies.remove_branding: the account owns its white-label. */
+  /** accounts.remove_branding: the account owns its white-label. */
   removeBranding: boolean;
 }
 

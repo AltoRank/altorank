@@ -17,7 +17,7 @@ export interface OnboardingStep {
    * The message for an account the scheduled loop will not run for.
    *
    * `entitledToScheduledWork` is false for exactly one reason - no plan - and
-   * `cron/serp` refuses such an agency before it looks at a keyword, so
+   * `cron/serp` refuses such an account before it looks at a keyword, so
    * "Rank tracking starts on the next run" was a promise the only tier a new
    * signup is on never receives (P0-O5). The provider picks between the two
    * from the quota it already has.

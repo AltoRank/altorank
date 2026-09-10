@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { OnboardingProvider } from "@/components/onboarding/onboarding-provider";
 import { WorkspaceProvider } from "@/components/dashboard/workspace-context";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ensureAgency } from "@/lib/queries/agency";
+import { ensureAccount } from "@/lib/queries/account";
 import { isAdminEmail } from "@/lib/auth/operators";
 import { inCustomerPreview } from "@/lib/auth/preview";
 import { getImpersonation } from "@/lib/auth/impersonation";
@@ -41,7 +41,7 @@ export default async function DashboardLayout({
   // layout renders on every dashboard load and on every router.refresh() a
   // planner dialog triggers, and it used to make its reads one after another:
   // a dozen round trips in a row, three of them to the auth server, before the
-  // first byte of the sidebar. Only the agency-scoped reads still have to wait,
+  // first byte of the sidebar. Only the account-scoped reads still have to wait,
   // and they wait once.
   // Links belong to a site, so the Backlinks entry appears for the site that
   // has them; the sidebar's article badge counts the same site's articles.
@@ -66,7 +66,7 @@ export default async function DashboardLayout({
     {
       data: { user },
     },
-    // Exchanges are not per site: `backlink_exchanges` is keyed by agency on
+    // Exchanges are not per site: `backlink_exchanges` is keyed by account on
     // both sides, so it stays counted across the account, which is what it
     // describes.
     { count: backlinkCount, error: backlinkError },
@@ -93,7 +93,7 @@ export default async function DashboardLayout({
    * A site nobody has set up yet goes to the wizard, not to a dashboard of
    * dashes. The gate is per workspace and it is two dates, so it releases the
    * moment the wizard finishes or is skipped, and never fires twice for a
-   * second member of the same agency.
+   * second member of the same account.
    *
    * Read off the list already loaded: `getWorkspaces` selects every column,
    * so asking the database for this one row again was a second round trip for
@@ -116,7 +116,7 @@ export default async function DashboardLayout({
 
   const meta = user?.user_metadata ?? {};
 
-  const agencyId = user ? await ensureAgency(user.id, meta, user.email) : null;
+  const accountId = user ? await ensureAccount(user.id, meta, user.email) : null;
 
   /**
    * Real identity for the sidebar footer.
@@ -124,7 +124,7 @@ export default async function DashboardLayout({
    * The footer printed "User · Owner · 1 member" for every account that ever
    * signed in: the props had defaults and nothing passed them. A label that is
    * the same for everyone is not information. Name falls back to the email,
-   * which is at least true; role and member count come from agency_members.
+   * which is at least true; role and member count come from account_members.
    *
    * Metered usage for the sidebar bar rides in the same wave. Null limit
    * renders nothing: unmetered is not a number to fill a bar with. Computed
@@ -132,25 +132,25 @@ export default async function DashboardLayout({
    * (lib/queries/quota.ts).
    */
   const [{ data: membership }, { count: memberCount }, quota] = await Promise.all([
-    agencyId && user
+    accountId && user
       ? supabase
-          .from("agency_members")
+          .from("account_members")
           .select("role")
-          .eq("agency_id", agencyId)
+          .eq("account_id", accountId)
           .eq("user_id", user.id)
           .single()
       : Promise.resolve({ data: null }),
-    agencyId
+    accountId
       ? supabase
-          .from("agency_members")
+          .from("account_members")
           .select("id", { count: "exact", head: true })
-          .eq("agency_id", agencyId)
+          .eq("account_id", accountId)
       : Promise.resolve({ count: null }),
-    agencyId ? getRequestQuota(agencyId, user?.email ?? null) : Promise.resolve(null),
+    accountId ? getRequestQuota(accountId, user?.email ?? null) : Promise.resolve(null),
   ]);
   // Sites the plan allows, for the switcher's "+ Add site" row. Derived from
   // the quota above and the list already loaded rather than queried again;
-  // `workspaces` is RLS-scoped to this agency, so its length is the count.
+  // `workspaces` is RLS-scoped to this account, so its length is the count.
   const siteAllowance = siteAllowanceFrom(quota, workspaces.length);
 
   const profileName = typeof meta.name === "string" ? meta.name : undefined;
@@ -222,7 +222,7 @@ export default async function DashboardLayout({
           different true thing about why the app is behaving oddly. */}
       {preview && <PreviewBanner plan={preview.plan ? PLAN_LABELS[preview.plan] : undefined} />}
       {/* A failing renewal, until the card works. Read off the quota already
-          computed for the sidebar: the same agency row decides both. */}
+          computed for the sidebar: the same account row decides both. */}
       {quota?.dunning && <PaymentFailedBanner dunning={quota.dunning} canManage={canManageBilling(role)} />}
       {impersonation && (
         <ImpersonationBanner
@@ -286,7 +286,7 @@ export default async function DashboardLayout({
     <OnboardingProvider
       initialSteps={initialSteps}
       dismissed={dismissed}
-      // No quota at all means no agency yet, and so nothing to promise about.
+      // No quota at all means no account yet, and so nothing to promise about.
       scheduledWork={quota ? entitledToScheduledWork(quota) : true}
     >
       {content}

@@ -30,10 +30,10 @@ import type { BillingOutcome } from "@/lib/billing/failure";
 export async function runKeywordResearch(
   workspaceId: string,
 ): Promise<BillingOutcome<{ discovered: number }>> {
-  const { agencyId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth();
   const supabase = await createClient();
 
-  const gate = await canSpend(supabase, agencyId, {
+  const gate = await canSpend(supabase, accountId, {
     userEmail: user.email ?? undefined,
     workspaceId,
     action: "keyword-research",
@@ -111,12 +111,12 @@ export async function runKeywordResearch(
 export async function checkSerpPositions(
   workspaceId: string,
 ): Promise<BillingOutcome<{ checked: number }>> {
-  const { agencyId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth();
   const supabase = await createClient();
 
   // One paid SERP call per keyword row in the workspace, uncapped: the single
   // most expensive button an unpaid account could press.
-  const gate = await canSpend(supabase, agencyId, {
+  const gate = await canSpend(supabase, accountId, {
     userEmail: user.email ?? undefined,
     workspaceId,
     action: "serp-lookup",
@@ -188,10 +188,10 @@ export async function checkSerpPositions(
 export async function fetchBacklinks(
   workspaceId: string,
 ): Promise<BillingOutcome<Awaited<ReturnType<typeof syncBacklinks>>>> {
-  const { agencyId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth();
   const supabase = await createClient();
 
-  const gate = await canSpend(supabase, agencyId, {
+  const gate = await canSpend(supabase, accountId, {
     userEmail: user.email ?? undefined,
     workspaceId,
     action: "backlink-lookup",

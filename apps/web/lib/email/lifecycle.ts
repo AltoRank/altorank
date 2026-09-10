@@ -16,9 +16,9 @@
 //             by (type, subject, recipient). A retried Stripe webhook, a cron
 //             that runs four times a day and a double-submitted form all
 //             produce one email.
-//   scoped    work on a site goes to `agencyRecipients(supabase, agency,
-//             workspace)`, which honours `agency_members.workspace_ids`; money
-//             and account facts go to `agencyBillingRecipients`, which is
+//   scoped    work on a site goes to `accountRecipients(supabase, account,
+//             workspace)`, which honours `account_members.workspace_ids`; money
+//             and account facts go to `accountBillingRecipients`, which is
 //             owner/admin. An editor scoped to one client never learns about
 //             another, and never learns what the account pays.
 //   quiet on  every function returns an outcome instead of throwing. All of
@@ -31,7 +31,7 @@
 // have not measured.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { agencyRecipients, agencyBillingRecipients, userEmail } from "./agency-recipients";
+import { accountRecipients, accountBillingRecipients, userEmail } from "./account-recipients";
 import { appLink } from "@/lib/app-url";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_2, EMAIL_INK_3 } from "./layout";
 import { formatGraceDate } from "@/lib/billing/dunning";
@@ -244,7 +244,7 @@ export function renderRefreshReady(a: RefreshReadyEmail): RenderedEmail {
 // ---------------------------------------------------------------------------
 
 export type PaymentFailedEmail = {
-  agencyName: string | null;
+  accountName: string | null;
   planLabel: string;
   /** End of the 7-day window from lib/billing/dunning.ts. Same date the banner shows. */
   graceEndsAt: string;
@@ -265,7 +265,7 @@ export type PaymentFailedEmail = {
  * fixes it.
  */
 export function renderPaymentFailed(a: PaymentFailedEmail): RenderedEmail {
-  const who = a.agencyName ? `${a.agencyName}'s ` : "your ";
+  const who = a.accountName ? `${a.accountName}'s ` : "your ";
   // `formatGraceDate` rather than this file's own formatter, so the string in
   // the inbox is character-for-character the string in the dunning banner.
   const ends = formatGraceDate(a.graceEndsAt);
@@ -290,7 +290,7 @@ export function renderPaymentFailed(a: PaymentFailedEmail): RenderedEmail {
 }
 
 export type SubscriptionCancelledEmail = {
-  agencyName: string | null;
+  accountName: string | null;
   planLabel: string;
   /** When the plan actually stops, from Stripe. Null when Stripe gave no date. */
   endsAt: string | null;
@@ -327,7 +327,7 @@ export function renderSubscriptionCancelled(a: SubscriptionCancelledEmail): Rend
 }
 
 export type AccountPausedEmail = {
-  agencyName: string | null;
+  accountName: string | null;
   /** YYYY-MM-DD, the same value written to workspaces.paused_until. */
   pausedUntil: string;
   workspaceCount: number;
@@ -355,7 +355,7 @@ export function renderAccountPaused(a: AccountPausedEmail): RenderedEmail {
 }
 
 export type PauseEndingEmail = {
-  agencyName: string | null;
+  accountName: string | null;
   pausedUntil: string;
   daysLeft: number;
 };
@@ -729,10 +729,10 @@ export function isoWeek(d: Date): string {
 
 export async function notifyDraftApproved(
   supabase: SupabaseClient,
-  scope: { agencyId: string; workspaceId: string },
+  scope: { accountId: string; workspaceId: string },
   data: DraftApprovedEmail,
 ): Promise<SendOnceOutcome> {
-  const to = await agencyRecipients(supabase, scope.agencyId, scope.workspaceId);
+  const to = await accountRecipients(supabase, scope.accountId, scope.workspaceId);
   return sendOnce(
     supabase,
     to,
@@ -740,7 +740,7 @@ export async function notifyDraftApproved(
       type: "draft_approved",
       subjectId: data.articleId,
       category: "drafts",
-      agencyId: scope.agencyId,
+      accountId: scope.accountId,
       workspaceId: scope.workspaceId,
     },
     () => renderDraftApproved(data),
@@ -749,10 +749,10 @@ export async function notifyDraftApproved(
 
 export async function notifyArticlePublished(
   supabase: SupabaseClient,
-  scope: { agencyId: string; workspaceId: string },
+  scope: { accountId: string; workspaceId: string },
   data: ArticlePublishedEmail,
 ): Promise<SendOnceOutcome> {
-  const to = await agencyRecipients(supabase, scope.agencyId, scope.workspaceId);
+  const to = await accountRecipients(supabase, scope.accountId, scope.workspaceId);
   return sendOnce(
     supabase,
     to,
@@ -760,7 +760,7 @@ export async function notifyArticlePublished(
       type: "article_published",
       subjectId: data.articleId,
       category: "publishing",
-      agencyId: scope.agencyId,
+      accountId: scope.accountId,
       workspaceId: scope.workspaceId,
     },
     () => renderArticlePublished(data),
@@ -769,12 +769,12 @@ export async function notifyArticlePublished(
 
 export async function notifyPublishFailed(
   supabase: SupabaseClient,
-  scope: { agencyId: string; workspaceId: string },
+  scope: { accountId: string; workspaceId: string },
   data: PublishFailedEmail,
   /** One per failure, not one per article: a retry that fails again is news. */
   attemptKey: string,
 ): Promise<SendOnceOutcome> {
-  const to = await agencyRecipients(supabase, scope.agencyId, scope.workspaceId);
+  const to = await accountRecipients(supabase, scope.accountId, scope.workspaceId);
   return sendOnce(
     supabase,
     to,
@@ -782,7 +782,7 @@ export async function notifyPublishFailed(
       type: "publish_failed",
       subjectId: `${data.articleId}:${attemptKey}`,
       category: "publishing",
-      agencyId: scope.agencyId,
+      accountId: scope.accountId,
       workspaceId: scope.workspaceId,
     },
     () => renderPublishFailed(data),
@@ -791,10 +791,10 @@ export async function notifyPublishFailed(
 
 export async function notifyRefreshReady(
   supabase: SupabaseClient,
-  scope: { agencyId: string; workspaceId: string },
+  scope: { accountId: string; workspaceId: string },
   data: RefreshReadyEmail,
 ): Promise<SendOnceOutcome> {
-  const to = await agencyRecipients(supabase, scope.agencyId, scope.workspaceId);
+  const to = await accountRecipients(supabase, scope.accountId, scope.workspaceId);
   return sendOnce(
     supabase,
     to,
@@ -802,7 +802,7 @@ export async function notifyRefreshReady(
       type: "refresh_ready",
       subjectId: data.executionId,
       category: "improvements",
-      agencyId: scope.agencyId,
+      accountId: scope.accountId,
       workspaceId: scope.workspaceId,
     },
     () => renderRefreshReady(data),
@@ -811,27 +811,27 @@ export async function notifyRefreshReady(
 
 export async function notifyPaymentFailed(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   data: PaymentFailedEmail,
   /** `payment_failed_at`: one email per dunning episode, not per card retry. */
   episodeKey: string,
 ): Promise<SendOnceOutcome> {
-  const to = await agencyBillingRecipients(supabase, agencyId);
+  const to = await accountBillingRecipients(supabase, accountId);
   return sendOnce(
     supabase,
     to,
-    { type: "payment_failed", subjectId: `${agencyId}:${episodeKey}`, category: "billing", agencyId },
+    { type: "payment_failed", subjectId: `${accountId}:${episodeKey}`, category: "billing", accountId },
     () => renderPaymentFailed(data),
   );
 }
 
 export async function notifySubscriptionCancelled(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   data: SubscriptionCancelledEmail,
   subscriptionId: string,
 ): Promise<SendOnceOutcome> {
-  const to = await agencyBillingRecipients(supabase, agencyId);
+  const to = await accountBillingRecipients(supabase, accountId);
   return sendOnce(
     supabase,
     to,
@@ -839,7 +839,7 @@ export async function notifySubscriptionCancelled(
       type: "subscription_cancelled",
       subjectId: `${subscriptionId}:${data.endsAt ?? "no-date"}`,
       category: "billing",
-      agencyId,
+      accountId,
     },
     () => renderSubscriptionCancelled(data),
   );
@@ -847,43 +847,43 @@ export async function notifySubscriptionCancelled(
 
 export async function notifyAccountPaused(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   data: AccountPausedEmail,
 ): Promise<SendOnceOutcome> {
-  const to = await agencyBillingRecipients(supabase, agencyId);
+  const to = await accountBillingRecipients(supabase, accountId);
   return sendOnce(
     supabase,
     to,
-    { type: "account_paused", subjectId: `${agencyId}:${data.pausedUntil}`, category: "billing", agencyId },
+    { type: "account_paused", subjectId: `${accountId}:${data.pausedUntil}`, category: "billing", accountId },
     () => renderAccountPaused(data),
   );
 }
 
 export async function notifyPauseEnding(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   data: PauseEndingEmail,
 ): Promise<SendOnceOutcome> {
-  const to = await agencyBillingRecipients(supabase, agencyId);
+  const to = await accountBillingRecipients(supabase, accountId);
   return sendOnce(
     supabase,
     to,
-    { type: "pause_ending", subjectId: `${agencyId}:${data.pausedUntil}`, category: "billing", agencyId },
+    { type: "pause_ending", subjectId: `${accountId}:${data.pausedUntil}`, category: "billing", accountId },
     () => renderPauseEnding(data),
   );
 }
 
 export async function notifyPlanChanged(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   data: PlanChangedEmail,
   changeKey: string,
 ): Promise<SendOnceOutcome> {
-  const to = await agencyBillingRecipients(supabase, agencyId);
+  const to = await accountBillingRecipients(supabase, accountId);
   return sendOnce(
     supabase,
     to,
-    { type: "plan_changed", subjectId: `${agencyId}:${changeKey}`, category: "billing", agencyId },
+    { type: "plan_changed", subjectId: `${accountId}:${changeKey}`, category: "billing", accountId },
     () => renderPlanChanged(data),
   );
 }
@@ -916,26 +916,26 @@ export async function notifyPasswordChanged(
 
 export async function notifyApiKeyCreated(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   data: ApiKeyCreatedEmail,
   keyId: string,
 ): Promise<SendOnceOutcome> {
-  const to = await agencyBillingRecipients(supabase, agencyId);
+  const to = await accountBillingRecipients(supabase, accountId);
   return sendOnce(
     supabase,
     to,
-    { type: "api_key_created", subjectId: keyId, category: "account", agencyId },
+    { type: "api_key_created", subjectId: keyId, category: "account", accountId },
     () => renderApiKeyCreated(data),
   );
 }
 
 export async function notifyNothingWritten(
   supabase: SupabaseClient,
-  scope: { agencyId: string; workspaceId: string },
+  scope: { accountId: string; workspaceId: string },
   data: NothingWrittenEmail,
   now: Date = new Date(),
 ): Promise<SendOnceOutcome> {
-  const to = await agencyRecipients(supabase, scope.agencyId, scope.workspaceId);
+  const to = await accountRecipients(supabase, scope.accountId, scope.workspaceId);
   return sendOnce(
     supabase,
     to,
@@ -943,7 +943,7 @@ export async function notifyNothingWritten(
       type: "nothing_written",
       subjectId: `${scope.workspaceId}:${isoWeek(now)}`,
       category: "product",
-      agencyId: scope.agencyId,
+      accountId: scope.accountId,
       workspaceId: scope.workspaceId,
     },
     () => renderNothingWritten(data),
@@ -952,10 +952,10 @@ export async function notifyNothingWritten(
 
 export async function notifySetupUnfinished(
   supabase: SupabaseClient,
-  scope: { agencyId: string; workspaceId: string },
+  scope: { accountId: string; workspaceId: string },
   data: SetupUnfinishedEmail,
 ): Promise<SendOnceOutcome> {
-  const to = await agencyRecipients(supabase, scope.agencyId, scope.workspaceId);
+  const to = await accountRecipients(supabase, scope.accountId, scope.workspaceId);
   return sendOnce(
     supabase,
     to,
@@ -965,7 +965,7 @@ export async function notifySetupUnfinished(
       // key on - a person who did not come back after this has answered.
       subjectId: scope.workspaceId,
       category: "product",
-      agencyId: scope.agencyId,
+      accountId: scope.accountId,
       workspaceId: scope.workspaceId,
     },
     () => renderSetupUnfinished(data),

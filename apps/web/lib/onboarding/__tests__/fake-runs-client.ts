@@ -35,7 +35,7 @@ export interface FakeDb {
 
 export function fakeDb(tables: Record<string, Row[]> = {}): FakeDb {
   const db: FakeDb = { tables, updates: [], client: undefined as never };
-  for (const t of ["onboarding_runs", "workspaces", "articles", "agency_members", "calendar_entries"]) db.tables[t] ??= [];
+  for (const t of ["onboarding_runs", "workspaces", "articles", "account_members", "calendar_entries"]) db.tables[t] ??= [];
 
   function builder(table: string) {
     let op: "select" | "insert" | "update" = "select";

@@ -8,14 +8,14 @@ import type { ArticleResearch } from "./seo/research";
 import type { FactCheckReport } from "./ai/fact-check";
 import type { AttributionSource } from "./attribution";
 
-// === Account (stored as `agencies`) ===
+// === Account (stored as `accounts`) ===
 //
 // The tenant row: who is billed, who owns the workspaces, who holds the API
 // key. The table name predates the pivot and is left alone deliberately -
 // renaming it touches every query, policy and foreign key - but the thing it
 // models is an account, and "Agency" is now the name of one plan tier
 // (lib/stripe.ts), not the shape of every customer.
-export type Agency = {
+export type Account = {
   id: string;
   name: string;
   slug: string;
@@ -39,9 +39,9 @@ export type Agency = {
   created_at: string;
 };
 
-export type AgencyMember = {
+export type AccountMember = {
   id: string;
-  agency_id: string;
+  account_id: string;
   user_id: string;
   role: "owner" | "admin" | "editor";
   /** Which sites this member sees. null = every workspace, including future ones (migration 053). */
@@ -51,7 +51,7 @@ export type AgencyMember = {
 
 // === Workspace ===
 //
-// One site. An agency-tier customer has one per client, a solo customer has
+// One site. An account-tier customer has one per client, a solo customer has
 // one per project of their own; "client" was only ever true for the first.
 export type AIProviderType = "claude" | "openai";
 
@@ -75,7 +75,7 @@ export type Workspace = {
   auto_approve_set_by?: string | null;
   auto_approve_set_at?: string | null;
   id: string;
-  agency_id: string;
+  account_id: string;
   name: string;
   domain: string;
   initials: string;
@@ -299,7 +299,7 @@ export type Report = {
 // === Invoice ===
 export type Invoice = {
   id: string;
-  agency_id: string;
+  account_id: string;
   number: string;
   period: string;
   articles: number;
@@ -590,13 +590,13 @@ export type BacklinkExchangeStatus =
 
 export type BacklinkExchange = {
   id: string;
-  requester_agency_id: string;
+  requester_account_id: string;
   requester_workspace_id: string;
   target_url: string;
   target_keyword: string | null;
   target_topic: string | null;
   credits_offered: number;
-  provider_agency_id: string | null;
+  provider_account_id: string | null;
   provider_workspace_id: string | null;
   provider_article_id: string | null;
   placement_url: string | null;
@@ -624,7 +624,7 @@ export type BacklinkCreditReason =
 
 export type BacklinkCredit = {
   id: string;
-  agency_id: string;
+  account_id: string;
   amount: number;
   reason: BacklinkCreditReason;
   exchange_id: string | null;
@@ -648,10 +648,10 @@ export type AdminImpersonation = {
 // === Invite ===
 export type Invite = {
   id: string;
-  agency_id: string;
+  account_id: string;
   email: string;
   role: "owner" | "admin" | "editor";
-  /** Copied to agency_members.workspace_ids on acceptance. null = all sites. */
+  /** Copied to account_members.workspace_ids on acceptance. null = all sites. */
   workspace_ids: string[] | null;
   token: string;
   invited_by: string;
@@ -665,7 +665,7 @@ export type Invite = {
 // never selects it, so this type has no field for it.
 export type ApiKeyRow = {
   id: string;
-  agency_id: string;
+  account_id: string;
   name: string;
   prefix: string;
   scopes: string[];

@@ -18,7 +18,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { emailButton, emailParagraph, EMAIL_INK } from "./layout";
 import { sendOnce, type RenderedEmail, type SendOnceOutcome } from "./send-once";
 
-/** Workspace and agency names come from the customer; the period does not. */
+/** Workspace and account names come from the customer; the period does not. */
 const esc = (s: unknown) =>
   String(s ?? "").replace(
     /[&<>"']/g,
@@ -27,7 +27,7 @@ const esc = (s: unknown) =>
 
 export interface MonthlyReportEmail {
   workspaceName: string;
-  agencyName: string;
+  accountName: string;
   /** "2026-08-01 to 2026-08-31". */
   period: string;
   /** The signed storage URL, good for 30 days (lib/reports/storage.ts). */
@@ -50,9 +50,9 @@ export function renderMonthlyReport(r: MonthlyReportEmail, recipient: string): R
   return {
     subject: `${r.workspaceName} — SEO report for ${r.period}`,
     preheader: `${r.highlights.articlesPublished} articles published, ${r.highlights.keywordsTracked} keywords tracked`,
-    footerNote: `Sent to ${recipient} as a member of ${r.agencyName} on AltoRank.`,
+    footerNote: `Sent to ${recipient} as a member of ${r.accountName} on AltoRank.`,
     html:
-      `<p style="margin:0 0 4px;font-size:12px;color:#8A8A8A;">${esc(r.agencyName)}</p>` +
+      `<p style="margin:0 0 4px;font-size:12px;color:#8A8A8A;">${esc(r.accountName)}</p>` +
       `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">${esc(r.workspaceName)}: ${esc(r.period)}</h1>` +
       emailParagraph(
         `What moved this period. Every number is measured; where nothing was measured the report says so rather than showing a zero.`,
@@ -75,7 +75,7 @@ export async function sendMonthlyReportEmails(
   supabase: SupabaseClient,
   recipients: readonly string[],
   r: MonthlyReportEmail,
-  scope: { agencyId?: string | null; workspaceId?: string | null },
+  scope: { accountId?: string | null; workspaceId?: string | null },
 ): Promise<SendOnceOutcome> {
   return sendOnce(
     supabase,
@@ -84,7 +84,7 @@ export async function sendMonthlyReportEmails(
       type: "monthly_report",
       subjectId: `${scope.workspaceId ?? r.workspaceName}:${r.period}`,
       category: "reports",
-      agencyId: scope.agencyId ?? null,
+      accountId: scope.accountId ?? null,
       workspaceId: scope.workspaceId ?? null,
     },
     (to) => renderMonthlyReport(r, to),

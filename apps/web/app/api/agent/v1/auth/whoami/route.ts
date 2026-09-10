@@ -1,6 +1,6 @@
 import { withAgent, appBaseUrl } from "@/lib/agent/http";
 import { ok } from "@/lib/agent/envelope";
-import { agencyWorkspaces } from "@/lib/agent/data";
+import { accountWorkspaces } from "@/lib/agent/data";
 import { toAgentWorkspace } from "@/lib/agent/records";
 import { getQuota } from "@/lib/billing/quota";
 
@@ -13,22 +13,22 @@ import { getQuota } from "@/lib/billing/quota";
  */
 export const GET = withAgent(async (request, ctx) => {
   const base = appBaseUrl(request);
-  const [{ data: agency }, workspaces, quota] = await Promise.all([
-    ctx.supabase.from("agencies").select("id, name").eq("id", ctx.agencyId).single(),
-    agencyWorkspaces(ctx),
+  const [{ data: account }, workspaces, quota] = await Promise.all([
+    ctx.supabase.from("accounts").select("id, name").eq("id", ctx.accountId).single(),
+    accountWorkspaces(ctx),
     // null caller: an API key is nobody's session. Same contract as the crons.
-    getQuota(ctx.supabase, ctx.agencyId, null),
+    getQuota(ctx.supabase, ctx.accountId, null),
   ]);
 
   const data = {
     key: ctx.key,
-    // The tier being paid for, not the column. `agencies.plan` defaults to
+    // The tier being paid for, not the column. `accounts.plan` defaults to
     // "starter" and is never cleared, so an account that has bought nothing
     // answered `plan: "starter"` here beside `quota.reason: "no-plan"` - two
     // contradictory answers in one envelope, and an agent that reads the
     // first tells the human they are on Managed. `quota.plan` is null unless
     // the tier is actually entitled (lib/billing/quota.ts).
-    account: agency ? { id: agency.id, name: agency.name, plan: quota.plan } : null,
+    account: account ? { id: account.id, name: account.name, plan: quota.plan } : null,
     workspaces: workspaces.map((w) => toAgentWorkspace(w, base)),
     quota: {
       limit: quota.limit,

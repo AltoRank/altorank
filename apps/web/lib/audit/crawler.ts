@@ -1,6 +1,6 @@
 // Browser-shaped and honestly identified. A bare tool UA gets a WAF
 // challenge or a stripped page from a share of real sites (the readiness
-// checker learned this across 272 agency sites); the identifier stays so a
+// checker learned this across 272 account sites); the identifier stays so a
 // site owner can see who visited.
 import { fetchLenient, isTlsChainError } from "./lenient-fetch";
 

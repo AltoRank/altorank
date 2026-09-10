@@ -15,7 +15,7 @@ import { WINDOW_DAYS, type GscRow } from "@/lib/gsc/analysis";
 import { loadGscRowsFrom, syncHealthFrom, type SyncHealth } from "@/lib/gsc/queries";
 import type { Workspace } from "@/lib/types";
 import type { AgentContext } from "./auth";
-import { workspaceInAgency } from "./data";
+import { workspaceInAccount } from "./data";
 import { fail, type FailEnvelope } from "./envelope";
 
 export const GSC_MIN_DAYS = 7;
@@ -54,7 +54,7 @@ export async function gscScope(
   if (!workspaceId) {
     return { envelope: fail("invalid_request", "workspace_id is required.", "Pass ?workspace_id= from GET /workspaces.") };
   }
-  const workspace = await workspaceInAgency(ctx, workspaceId);
+  const workspace = await workspaceInAccount(ctx, workspaceId);
   if (!workspace) {
     return { envelope: fail("not_found", "Workspace not found in this account.", "Call GET /workspaces and use an id from that list.") };
   }

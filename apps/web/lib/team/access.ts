@@ -7,7 +7,7 @@
 // Admins can do all of that except pay. Owners pay.
 //
 // Orthogonal to the role is *which workspaces* a member sees:
-// `agency_members.workspace_ids`, NULL for every workspace (including ones added
+// `account_members.workspace_ids`, NULL for every workspace (including ones added
 // later) and an array for exactly those. The database enforces it
 // (migration 053, user_workspace_ids()); this file is the vocabulary the
 // Team page and its actions share.
@@ -62,7 +62,7 @@ export function canAddWorkspace(role: string | null | undefined): boolean {
  *
  * Empty means all workspaces, so an empty selection becomes NULL rather than an
  * empty array - an empty array would be a member who can see nothing, which
- * no form offers. Anything not in `allowed` (the agency's own workspaces) is
+ * no form offers. Anything not in `allowed` (the account's own workspaces) is
  * dropped: the ids arrive from the browser.
  */
 export function parseWorkspaceIds(values: readonly unknown[], allowed: readonly string[]): string[] | null {

@@ -10,7 +10,7 @@ import { latestRun } from "@/lib/onboarding/run-store";
 // screen asks every three seconds while a run is live (ten after two
 // minutes), and folds the answer through `stateFromRun`, the counterpart of
 // the reducer the worker wrote the row with. Read through the user's client,
-// so the 076 policy - members of the workspace's agency, and only them - is
+// so the 076 policy - members of the workspace's account, and only them - is
 // what decides whether the row is visible at all.
 
 export async function GET(request: NextRequest) {
@@ -25,13 +25,13 @@ export async function GET(request: NextRequest) {
   const workspaceId = request.nextUrl.searchParams.get("workspaceId");
   if (!workspaceId) return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
 
-  const { data: workspace } = await supabase.from("workspaces").select("id, agency_id").eq("id", workspaceId).maybeSingle();
+  const { data: workspace } = await supabase.from("workspaces").select("id, account_id").eq("id", workspaceId).maybeSingle();
   if (!workspace) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
 
   const { data: membership } = await supabase
-    .from("agency_members")
+    .from("account_members")
     .select("id")
-    .eq("agency_id", workspace.agency_id)
+    .eq("account_id", workspace.account_id)
     .eq("user_id", user.id)
     .maybeSingle();
   if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });

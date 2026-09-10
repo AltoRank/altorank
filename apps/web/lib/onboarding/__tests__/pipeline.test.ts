@@ -55,7 +55,7 @@ vi.mock("../site-assessment", () => ({ assessExistingPages: (...a: unknown[]) =>
 import { runOnboarding } from "../pipeline";
 import type { OnboardingEvent } from "../events";
 
-const WS = { id: "ws1", domain: "example.com", agency_id: "ag1", language: "en" };
+const WS = { id: "ws1", domain: "example.com", account_id: "ag1", language: "en" };
 const NEXT = { term: "seo agent", reasons: ["27,100 searches/mo"], score: 35.5, difficulty: 19, volume: 27100 };
 
 /** Enough client for the "already has a draft?" count. */

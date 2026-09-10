@@ -25,7 +25,7 @@ function client() {
         });
         return q as never;
       }
-      if (table === "agency_members") {
+      if (table === "account_members") {
         return { select: () => ({ eq: async () => ({ data: members, error: null }) }) } as never;
       }
       if (table === "email_preferences") {
@@ -63,7 +63,7 @@ const LIVE: Row = {
   cms: "wordpress",
   workspace_id: "ws-1",
   indexing_status: { urlVerified: "confirmed" },
-  workspaces: { domain: "acme.com", agency_id: "ag-1" },
+  workspaces: { domain: "acme.com", account_id: "ag-1" },
 };
 
 beforeEach(() => {

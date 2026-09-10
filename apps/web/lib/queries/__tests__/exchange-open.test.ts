@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // One thenable that records every filter the query applied, so the guarantees
 // that matter here can be asserted: no self-dealing, only unclaimed requests,
 // nothing expired, and a fixed column list that does not leak the requester's
-// agency or workspace ids.
+// account or workspace ids.
 type Call = { method: string; args: unknown[] };
 let calls: Call[] = [];
 let result: { data: unknown; error: unknown } = { data: [], error: null };
@@ -35,25 +35,25 @@ beforeEach(() => {
 describe("getOpenRequests", () => {
   it("asks only for unclaimed, unexpired requests from other accounts", async () => {
     const { getOpenRequests } = await import("../exchange");
-    await getOpenRequests("my-agency");
+    await getOpenRequests("my-account");
 
     expect(arg("eq")).toEqual(["status", "requested"]);
-    expect(arg("is")).toEqual(["provider_agency_id", null]);
+    expect(arg("is")).toEqual(["provider_account_id", null]);
     // The no-self-dealing guarantee, and it is a filter rather than a column:
     // a host must not see their own request, and must not be handed anyone
-    // else's agency id either.
-    expect(arg("neq")).toEqual(["requester_agency_id", "my-agency"]);
+    // else's account id either.
+    expect(arg("neq")).toEqual(["requester_account_id", "my-account"]);
     expect(String(arg("or")?.[0])).toContain("expires_at");
   });
 
   it("selects the request and nothing that identifies who filed it", async () => {
     const { getOpenRequests } = await import("../exchange");
-    await getOpenRequests("my-agency");
+    await getOpenRequests("my-account");
     const columns = String(arg("select")?.[0]);
     for (const wanted of ["target_url", "target_keyword", "target_topic", "credits_offered"]) {
       expect(columns).toContain(wanted);
     }
-    expect(columns).not.toContain("requester_agency_id");
+    expect(columns).not.toContain("requester_account_id");
     expect(columns).not.toContain("requester_workspace_id");
   });
 
@@ -73,7 +73,7 @@ describe("getOpenRequests", () => {
       error: null,
     };
     const { getOpenRequests } = await import("../exchange");
-    const out = await getOpenRequests("my-agency");
+    const out = await getOpenRequests("my-account");
     expect(out).toEqual([
       {
         id: "x1",
@@ -90,6 +90,6 @@ describe("getOpenRequests", () => {
   it("throws rather than reporting an empty marketplace when the query fails", async () => {
     result = { data: null, error: { message: "boom" } };
     const { getOpenRequests } = await import("../exchange");
-    await expect(getOpenRequests("my-agency")).rejects.toThrow("boom");
+    await expect(getOpenRequests("my-account")).rejects.toThrow("boom");
   });
 });

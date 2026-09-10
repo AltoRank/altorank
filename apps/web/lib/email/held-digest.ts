@@ -14,7 +14,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AutoApproveResult } from "@/lib/publishing/auto-approve";
-import { agencyRecipients } from "./agency-recipients";
+import { accountRecipients } from "./account-recipients";
 import { describeSendOutcome, sendOnce } from "./send-once";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_3 } from "./layout";
 import { articleUrl } from "./article-emails";
@@ -86,17 +86,17 @@ export async function sendHeldDigests(
   for (const [workspaceId, held] of byWorkspace) {
     try {
       const [{ data: ws }, { data: articles }] = await Promise.all([
-        supabase.from("workspaces").select("agency_id, domain").eq("id", workspaceId).maybeSingle(),
+        supabase.from("workspaces").select("account_id, domain").eq("id", workspaceId).maybeSingle(),
         supabase.from("articles").select("id, title").in("id", held.map((h) => h.articleId)),
       ]);
       if (!ws) continue;
       const titles = new Map((articles ?? []).map((a) => [a.id as string, (a.title as string) || "Untitled draft"]));
       const drafts: HeldDraft[] = held.map((h) => ({ articleId: h.articleId, title: titles.get(h.articleId) ?? "Untitled draft", reason: h.detail ?? "" }));
-      const to = await agencyRecipients(supabase, ws.agency_id as string, workspaceId);
+      const to = await accountRecipients(supabase, ws.account_id as string, workspaceId);
       const out = await sendOnce(
         supabase,
         to,
-        { type: "auto_approve_held", subjectId: `${workspaceId}:${day}`, category: "drafts", agencyId: ws.agency_id as string, workspaceId },
+        { type: "auto_approve_held", subjectId: `${workspaceId}:${day}`, category: "drafts", accountId: ws.account_id as string, workspaceId },
         () => renderHeldDigest((ws.domain as string | null) ?? null, drafts),
       );
       lines.push(`${workspaceId}: ${drafts.length} held, ${describeSendOutcome(out)}`);

@@ -18,10 +18,10 @@ const inviteMemberSchema = z.object({
   role: z.enum(INVITABLE_ROLES as unknown as [string, ...string[]]).default("editor"),
 });
 
-/** The agency's own workspace ids, for validating what a form sends back. */
-async function agencyWorkspaceIds(agencyId: string): Promise<string[]> {
+/** The account's own workspace ids, for validating what a form sends back. */
+async function accountWorkspaceIds(accountId: string): Promise<string[]> {
   const supabase = await createClient();
-  const { data } = await supabase.from("workspaces").select("id").eq("agency_id", agencyId);
+  const { data } = await supabase.from("workspaces").select("id").eq("account_id", accountId);
   return (data ?? []).map((w) => w.id as string);
 }
 
@@ -45,19 +45,19 @@ export type InviteResult = {
 };
 
 export async function inviteMember(formData: FormData): Promise<InviteResult> {
-  const { user, agencyId } = await requireAuth(["owner", "admin"]);
+  const { user, accountId } = await requireAuth(["owner", "admin"]);
 
   const supabase = await createClient();
   const parsed = inviteMemberSchema.parse({
     email: formData.get("email"),
     role: formData.get("role") ?? undefined,
   });
-  const workspaceIds = parseWorkspaceIds(formData.getAll("workspace_ids"), await agencyWorkspaceIds(agencyId));
+  const workspaceIds = parseWorkspaceIds(formData.getAll("workspace_ids"), await accountWorkspaceIds(accountId));
 
-  const { data: agency } = await supabase
-    .from("agencies")
+  const { data: account } = await supabase
+    .from("accounts")
     .select("name")
-    .eq("id", agencyId)
+    .eq("id", accountId)
     .single();
 
   const inviterName = user.user_metadata?.full_name ?? user.email ?? "A team member";
@@ -81,7 +81,7 @@ export async function inviteMember(formData: FormData): Promise<InviteResult> {
   const { data: pending } = await supabase
     .from("invites")
     .select("id, token")
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .ilike("email", parsed.email)
     .is("accepted_at", null)
     .maybeSingle();
@@ -99,7 +99,7 @@ export async function inviteMember(formData: FormData): Promise<InviteResult> {
         })
         .eq("id", pending.id)
     : await supabase.from("invites").insert({
-        agency_id: agencyId,
+        account_id: accountId,
         email: parsed.email,
         role: parsed.role,
         workspace_ids: workspaceIds,
@@ -121,7 +121,7 @@ export async function inviteMember(formData: FormData): Promise<InviteResult> {
     await sendInviteEmail(
       parsed.email,
       inviterName,
-      agency?.name ?? "your workspace",
+      account?.name ?? "your workspace",
       parsed.role,
       acceptUrl,
     );
@@ -137,26 +137,26 @@ export async function inviteMember(formData: FormData): Promise<InviteResult> {
 
 /** Take back a pending invite. The link stops working at once. */
 export async function revokeInvite(inviteId: string) {
-  const { agencyId } = await requireAuth(["owner", "admin"]);
+  const { accountId } = await requireAuth(["owner", "admin"]);
   const supabase = await createClient();
   const { error } = await supabase
     .from("invites")
     .delete()
     .eq("id", inviteId)
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .is("accepted_at", null);
   if (error) throw new Error(error.message);
   revalidatePath("/settings/team");
 }
 
-/** Load a member of the caller's agency, or throw. */
-async function loadMember(memberId: string, agencyId: string) {
+/** Load a member of the caller's account, or throw. */
+async function loadMember(memberId: string, accountId: string) {
   const supabase = await createClient();
   const { data } = await supabase
-    .from("agency_members")
+    .from("account_members")
     .select("id, user_id, role")
     .eq("id", memberId)
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .maybeSingle();
   if (!data) throw new Error("That member is not on this account.");
   return { supabase, member: data as { id: string; user_id: string; role: string } };
@@ -172,8 +172,8 @@ export async function updateMemberAccess(
   role: string,
   workspaceIds: unknown[],
 ) {
-  const { user, agencyId, role: actorRole } = await requireAuth(["owner", "admin"]);
-  const { supabase, member } = await loadMember(memberId, agencyId);
+  const { user, accountId, role: actorRole } = await requireAuth(["owner", "admin"]);
+  const { supabase, member } = await loadMember(memberId, accountId);
 
   if (!canEditMember({ userId: user.id, role: actorRole }, { userId: member.user_id, role: member.role })) {
     throw new Error("You cannot change this member.");
@@ -183,10 +183,10 @@ export async function updateMemberAccess(
   if (nextRole === "owner" && actorRole !== "owner") throw new Error("Only an owner can make someone an owner.");
 
   const { error } = await supabase
-    .from("agency_members")
+    .from("account_members")
     .update({
       role: nextRole,
-      workspace_ids: parseWorkspaceIds(workspaceIds, await agencyWorkspaceIds(agencyId)),
+      workspace_ids: parseWorkspaceIds(workspaceIds, await accountWorkspaceIds(accountId)),
     })
     .eq("id", memberId);
 
@@ -196,24 +196,24 @@ export async function updateMemberAccess(
 
 /** Kept for callers that only change the role. */
 export async function updateMemberRole(memberId: string, role: string) {
-  const { agencyId } = await requireAuth(["owner", "admin"]);
+  const { accountId } = await requireAuth(["owner", "admin"]);
   const supabase = await createClient();
   const { data: current } = await supabase
-    .from("agency_members")
+    .from("account_members")
     .select("workspace_ids")
     .eq("id", memberId)
-    .eq("agency_id", agencyId)
+    .eq("account_id", accountId)
     .maybeSingle();
   await updateMemberAccess(memberId, role, (current?.workspace_ids as string[] | null) ?? []);
 }
 
 export async function removeMember(memberId: string) {
-  const { user, agencyId, role: actorRole } = await requireAuth(["owner", "admin"]);
-  const { supabase, member } = await loadMember(memberId, agencyId);
+  const { user, accountId, role: actorRole } = await requireAuth(["owner", "admin"]);
+  const { supabase, member } = await loadMember(memberId, accountId);
   if (!canEditMember({ userId: user.id, role: actorRole }, { userId: member.user_id, role: member.role })) {
     throw new Error("You cannot remove this member.");
   }
-  const { error } = await supabase.from("agency_members").delete().eq("id", memberId);
+  const { error } = await supabase.from("account_members").delete().eq("id", memberId);
   if (error) throw new Error(error.message);
   revalidatePath("/settings/team");
 }

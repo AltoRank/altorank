@@ -4,7 +4,7 @@
  * lib/queries/__tests__/scope-fixture.ts answers one question of a read: did
  * it filter by workspace. The agent mutation routes need more - `.update()`,
  * `.delete()`, `.insert()`, `.in()`, `.is()`, `.not()`, an inner join for
- * `articleInAgency` - and a record of every write, so a test can assert that
+ * `articleInAccount` - and a record of every write, so a test can assert that
  * a preview wrote nothing and a remove stamped the keyword.
  *
  * Still deliberately dumb: filters are equality, joins are `alias_id` →
@@ -24,7 +24,7 @@ type Filter =
 
 export type Write = { table: string; op: "update" | "delete" | "insert"; patch?: Row; rows?: Row[]; filters: Filter[] };
 
-/** For dotted filter columns ("workspace.agency_id"): the related row, if any. */
+/** For dotted filter columns ("workspace.account_id"): the related row, if any. */
 function related(tables: Seed, row: Row, alias: string): Row | null {
   const fk = row[`${alias}_id`];
   if (fk === undefined) return null;

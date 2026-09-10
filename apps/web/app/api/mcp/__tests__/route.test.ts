@@ -36,7 +36,7 @@ const goodCtx = {
   ctx: {
     supabase: {},
     key: { id: "key-1", name: "ChatGPT (connector)", scopes: ["read", "generate"], expires_at: null, last_used_at: null },
-    agencyId: "agency-1",
+    accountId: "account-1",
     rate: { allowed: true, limit: 120, remaining: 119, resetAt: "2026-09-07T00:00:00Z" },
   },
 };

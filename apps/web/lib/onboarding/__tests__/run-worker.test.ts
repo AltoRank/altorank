@@ -20,8 +20,8 @@ const PENDING = { term: "seo agent", keywordId: "k1", selection: { reasons: ["r"
 
 function db() {
   return fakeDb({
-    onboarding_runs: [{ id: "r1", workspace_id: "ws1", agency_id: "ag1", status: "running", phases: [], planned: [] }],
-    workspaces: [{ id: "ws1", domain: "example.com", agency_id: "ag1", language: "en", location_code: null, auto_generate_weekly_limit: 7 }],
+    onboarding_runs: [{ id: "r1", workspace_id: "ws1", account_id: "ag1", status: "running", phases: [], planned: [] }],
+    workspaces: [{ id: "ws1", domain: "example.com", account_id: "ag1", language: "en", location_code: null, auto_generate_weekly_limit: 7 }],
   });
 }
 

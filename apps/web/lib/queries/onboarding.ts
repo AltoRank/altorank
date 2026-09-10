@@ -28,7 +28,7 @@ export async function getCompletedOnboardingSteps(): Promise<
   const supabase = await createClient();
   // The site the sidebar is scoped to. The checklist sits beside pages that
   // are all about one site, and until 2026-09-07 it counted the account: an
-  // agency's second client showed "CMS connected" and "voice trained" on the
+  // account's second client showed "CMS connected" and "voice trained" on the
   // day it was added, because the first client had done both. `null` (the
   // "all sites" view, or an operator with no scope) keeps the account-wide
   // count, which is the only honest answer there.

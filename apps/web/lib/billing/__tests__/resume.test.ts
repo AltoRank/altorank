@@ -20,7 +20,7 @@ const reads: { table: string; filters: Filter[] }[] = [];
 
 /** Rows `select` returns per table, and ids `update ... select("id")` reports. */
 let dueRows: Row[] = [];
-let agencyRows: Record<string, Row> = {};
+let accountRows: Record<string, Row> = {};
 let resumedIds: string[] = [];
 
 function query(table: string, op: "select" | "update", row?: Row) {
@@ -39,9 +39,9 @@ function query(table: string, op: "select" | "update", row?: Row) {
         return resolve({ data: resumedIds.map((id) => ({ id })), error: null });
       }
       reads.push({ table, filters });
-      if (table === "agencies") {
+      if (table === "accounts") {
         const id = filters.find((f) => f[0] === "id")?.[2] as string;
-        return resolve({ data: single ? (agencyRows[id] ?? null) : Object.values(agencyRows), error: null });
+        return resolve({ data: single ? (accountRows[id] ?? null) : Object.values(accountRows), error: null });
       }
       return resolve({ data: dueRows, error: null });
     },
@@ -63,7 +63,7 @@ beforeEach(() => {
   writes.length = 0;
   reads.length = 0;
   dueRows = [];
-  agencyRows = {};
+  accountRows = {};
   resumedIds = [];
   update.mockReset();
   update.mockResolvedValue({});
@@ -72,12 +72,12 @@ beforeEach(() => {
 describe("resumePausedWorkspaces", () => {
   it("resumes only the rows the account pause set, to `on`", async () => {
     resumedIds = ["ws-1", "ws-2"];
-    const ids = await resumePausedWorkspaces(supabase, "agency-1");
+    const ids = await resumePausedWorkspaces(supabase, "account-1");
     expect(ids).toEqual(["ws-1", "ws-2"]);
     expect(writes).toHaveLength(1);
     expect(writes[0].row).toEqual({ status: "on", paused_until: null });
     expect(writes[0].filters).toEqual([
-      ["agency_id", "eq", "agency-1"],
+      ["account_id", "eq", "account-1"],
       ["status", "eq", "paused"],
       // A site paused by hand carries no date and is left as its owner left it.
       ["paused_until", "not is", null],
@@ -100,31 +100,31 @@ describe("resumeExpiredPauses", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("resumes each agency once and tells Stripe to collect again", async () => {
-    dueRows = [{ agency_id: "agency-1" }, { agency_id: "agency-1" }, { agency_id: "agency-2" }];
-    agencyRows = {
-      "agency-1": { stripe_subscription_id: "sub_1" },
-      "agency-2": { stripe_subscription_id: null },
+  it("resumes each account once and tells Stripe to collect again", async () => {
+    dueRows = [{ account_id: "account-1" }, { account_id: "account-1" }, { account_id: "account-2" }];
+    accountRows = {
+      "account-1": { stripe_subscription_id: "sub_1" },
+      "account-2": { stripe_subscription_id: null },
     };
     resumedIds = ["ws-1"];
 
     const outcomes = await resumeExpiredPauses(supabase, stripe, today);
 
     expect(writes.map((w) => w.filters[0])).toEqual([
-      ["agency_id", "eq", "agency-1"],
-      ["agency_id", "eq", "agency-2"],
+      ["account_id", "eq", "account-1"],
+      ["account_id", "eq", "account-2"],
     ]);
     expect(update).toHaveBeenCalledTimes(1);
     expect(update).toHaveBeenCalledWith("sub_1", { pause_collection: "" });
     expect(outcomes).toEqual([
-      { agencyId: "agency-1", workspaces: ["ws-1"], stripe: "lifted" },
-      { agencyId: "agency-2", workspaces: ["ws-1"], stripe: "skipped" },
+      { accountId: "account-1", workspaces: ["ws-1"], stripe: "lifted" },
+      { accountId: "account-2", workspaces: ["ws-1"], stripe: "skipped" },
     ]);
   });
 
   it("reports a Stripe refusal after the rows are already resumed", async () => {
-    dueRows = [{ agency_id: "agency-1" }];
-    agencyRows = { "agency-1": { stripe_subscription_id: "sub_1" } };
+    dueRows = [{ account_id: "account-1" }];
+    accountRows = { "account-1": { stripe_subscription_id: "sub_1" } };
     update.mockRejectedValue(new Error("No such subscription"));
 
     const outcomes = await resumeExpiredPauses(supabase, stripe, today);
@@ -133,10 +133,10 @@ describe("resumeExpiredPauses", () => {
   });
 
   it("does not touch Stripe on a self-hosted install", async () => {
-    dueRows = [{ agency_id: "agency-1" }];
+    dueRows = [{ account_id: "account-1" }];
     await resumeExpiredPauses(supabase, null, today);
     expect(writes).toHaveLength(1);
-    expect(reads.filter((r) => r.table === "agencies")).toHaveLength(0);
+    expect(reads.filter((r) => r.table === "accounts")).toHaveLength(0);
   });
 });
 
@@ -147,14 +147,14 @@ describe("isoDay", () => {
 });
 
 describe("resumeExpiredPauses only lifts the pauses that have expired", () => {
-  it("bounds the write by the same date it selected the agency on", async () => {
-    // It selects an agency on the strength of *one* row whose date has passed,
+  it("bounds the write by the same date it selected the account on", async () => {
+    // It selects an account on the strength of *one* row whose date has passed,
     // then writes. Without the bound, that write cleared every billing-paused
-    // row of the agency - including a site paused for another three weeks.
+    // row of the account - including a site paused for another three weeks.
     // `pauseAccount` writes the same date on every site, so the two are only
     // one hand-paused site apart rather than a live bug; the predicate should
     // still mean what its name says.
-    dueRows = [{ agency_id: "agency-1" }];
+    dueRows = [{ account_id: "account-1" }];
     resumedIds = ["ws-1"];
     await resumeExpiredPauses(supabase, null, new Date("2026-10-04T00:00:00Z"));
     const workspaceWrite = writes.find((w) => w.table === "workspaces");
@@ -164,7 +164,7 @@ describe("resumeExpiredPauses only lifts the pauses that have expired", () => {
   it("still resumes everything when the button asks, which has no date", async () => {
     // The Resume button and the webhook's "Stripe says the pause is cleared"
     // both mean all of it, whatever the dates say.
-    await resumePausedWorkspaces(supabase, "agency-1");
+    await resumePausedWorkspaces(supabase, "account-1");
     const workspaceWrite = writes.find((w) => w.table === "workspaces");
     expect(workspaceWrite?.filters.map((f) => f[0])).not.toContain("paused_until_lte");
     expect(workspaceWrite?.filters.filter((f) => f[1] === "lte")).toHaveLength(0);

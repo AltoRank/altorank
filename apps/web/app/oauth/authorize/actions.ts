@@ -45,7 +45,7 @@ export async function decideAuthorization(formData: FormData): Promise<void> {
 
   // Owner or admin, same rule as making a key by hand. A member who got this
   // far sees the explanation on the page; the action just refuses.
-  const { user, agencyId } = await requireAuth(["owner", "admin"]);
+  const { user, accountId } = await requireAuth(["owner", "admin"]);
 
   const { scopes: requested } = parseScopes(String(formData.get("scope") ?? ""));
   const scopes: ApiKeyScope[] = requested.filter((s) => s !== "write" || allowWrite);
@@ -55,7 +55,7 @@ export async function decideAuthorization(formData: FormData): Promise<void> {
     redirectUri,
     codeChallenge,
     scopes,
-    agencyId,
+    accountId,
     userId: user.id,
   });
 

@@ -5,7 +5,7 @@ import { admin, uniqueTag } from "./fixtures/account";
 /**
  * Without a workspace there is nothing to onboard, so signup refuses a bad
  * domain before it creates anything. Asserted on the database, not just the
- * screen: no agency and no auth user for this attempt.
+ * screen: no account and no auth user for this attempt.
  *
  * The password field is filled with random bytes generated here and discarded;
  * the form cannot be submitted without one, and the server rejects the domain
@@ -30,7 +30,7 @@ test("signup refuses an invalid domain and creates no account", async ({ page })
   await expect(page.getByText("Check your email", { exact: false })).toHaveCount(0);
 
   const db = admin();
-  const { count } = await db.from("agencies").select("id", { count: "exact", head: true }).eq("name", name);
+  const { count } = await db.from("accounts").select("id", { count: "exact", head: true }).eq("name", name);
   expect(count).toBe(0);
   const { data: users } = await db.auth.admin.listUsers({ perPage: 1000 });
   expect(users?.users.some((u) => u.email === email)).toBe(false);

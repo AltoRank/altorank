@@ -13,7 +13,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PlanTier } from "@/lib/stripe";
 import { getQuota } from "./quota";
-import { agencyCountingClient } from "./agency-client";
+import { accountCountingClient } from "./account-client";
 
 /** null = unlimited. */
 export const PLAN_WORKSPACE_LIMITS: Record<PlanTier | "none", number | null> = {
@@ -33,16 +33,16 @@ export type WorkspaceAllowance = {
 
 export async function getWorkspaceAllowance(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   userEmail?: string | null,
 ): Promise<WorkspaceAllowance> {
-  const quota = await getQuota(supabase, agencyId, userEmail);
-  // Agency-wide: a member scoped to one site would otherwise count one site
+  const quota = await getQuota(supabase, accountId, userEmail);
+  // Account-wide: a member scoped to one site would otherwise count one site
   // and be allowed to add another on a plan that is already full.
-  const { count } = await agencyCountingClient(supabase)
+  const { count } = await accountCountingClient(supabase)
     .from("workspaces")
     .select("id", { count: "exact", head: true })
-    .eq("agency_id", agencyId);
+    .eq("account_id", accountId);
   const used = count ?? 0;
 
   if (quota.reason === "self-host" || quota.reason === "operator") {

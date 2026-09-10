@@ -31,7 +31,7 @@ type SidebarProps = {
   userEmail?: string;
   userProfileName?: string;
   memberCount?: number;
-  /** From agency_members. Null hides the line rather than asserting "Owner". */
+  /** From account_members. Null hides the line rather than asserting "Owner". */
   role?: string | null;
   /** Metered article usage. Null (unmetered) renders no bar. */
   /**

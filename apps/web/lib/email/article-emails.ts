@@ -255,7 +255,7 @@ export function renderArticleDrafted(a: ArticleDraftedEmail, recipient?: string)
 }
 
 /**
- * Tell every member of the agency, at most once each, and only those who still
+ * Tell every member of the account, at most once each, and only those who still
  * want to be told.
  *
  * This is the highest-volume email the product sends, and until now it was the
@@ -282,7 +282,7 @@ export async function sendArticleDraftedEmails(
   supabase: SupabaseClient,
   recipients: readonly string[],
   a: ArticleDraftedEmail,
-  scope?: { agencyId?: string | null; workspaceId?: string | null },
+  scope?: { accountId?: string | null; workspaceId?: string | null },
 ): Promise<SendOnceOutcome> {
   return sendOnce(
     supabase,
@@ -291,7 +291,7 @@ export async function sendArticleDraftedEmails(
       type: ARTICLE_DRAFTED,
       subjectId: a.articleId,
       category: "drafts",
-      agencyId: scope?.agencyId ?? null,
+      accountId: scope?.accountId ?? null,
       workspaceId: scope?.workspaceId ?? null,
     },
     // Rendered per recipient: the hold link is signed to the address.

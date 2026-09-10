@@ -4,7 +4,7 @@
 --        curl -X POST $URL/auth/v1/admin/users -H "apikey: $SERVICE" \
 --          -H "Authorization: Bearer $SERVICE" -H "Content-Type: application/json" \
 --          -d '{"email":"rls-full@example.test","email_confirm":true}'
---   2. Fill in the \set lines below with their ids, an agency and two of its
+--   2. Fill in the \set lines below with their ids, an account and two of its
 --      workspaces.
 --   3. docker exec -i supabase_db_altorank psql -U postgres -d postgres < this file
 --
@@ -14,20 +14,20 @@
 -- the hidden workspace is refused, adding a workspace and an invite are
 -- refused; anon sees nothing. Ran green 2026-09-04 on PG 17.6.
 
--- Seed: both users join one agency. FULL sees all of its workspaces,
+-- Seed: both users join one account. FULL sees all of its workspaces,
 -- RESTRICTED sees only ws_allowed.
-\set agency '<agency uuid>'
+\set account '<account uuid>'
 \set ws_allowed '<workspace the restricted member may see>'
-\set ws_other '<another workspace of the same agency>'
+\set ws_other '<another workspace of the same account>'
 \set full_uid '<auth.users.id created via the GoTrue admin API>'
 \set restricted_uid '<auth.users.id created via the GoTrue admin API>'
 
-insert into agency_members (agency_id, user_id, role, workspace_ids)
-values (:'agency', :'full_uid', 'editor', null)
-on conflict (agency_id, user_id) do update set workspace_ids = null;
-insert into agency_members (agency_id, user_id, role, workspace_ids)
-values (:'agency', :'restricted_uid', 'editor', array[:'ws_allowed']::uuid[])
-on conflict (agency_id, user_id) do update set workspace_ids = array[:'ws_allowed']::uuid[];
+insert into account_members (account_id, user_id, role, workspace_ids)
+values (:'account', :'full_uid', 'editor', null)
+on conflict (account_id, user_id) do update set workspace_ids = null;
+insert into account_members (account_id, user_id, role, workspace_ids)
+values (:'account', :'restricted_uid', 'editor', array[:'ws_allowed']::uuid[])
+on conflict (account_id, user_id) do update set workspace_ids = array[:'ws_allowed']::uuid[];
 
 -- One article and one keyword in each of two workspaces, so the child tables
 -- have something to hide.
@@ -45,7 +45,7 @@ union all select 'user_workspace_ids()', count(*) from user_workspace_ids()
 union all select 'articles', count(*) from articles where title like 'RLS %'
 union all select 'keywords', count(*) from keywords where term like 'rls %';
 -- Can add a site, and RETURNING works.
-insert into workspaces (agency_id, name, domain) values (:'agency', 'RLS new site', 'rls-new.test') returning id, name;
+insert into workspaces (account_id, name, domain) values (:'account', 'RLS new site', 'rls-new.test') returning id, name;
 rollback;
 
 \echo '=== RESTRICTED member (one workspace)'
@@ -70,11 +70,11 @@ rollback to savepoint s1;
 insert into articles (workspace_id, title, slug, status) values (:'ws_allowed', 'RLS ok', 'rls-ok', 'draft') returning title;
 \echo 'add a workspace (expect RLS error):'
 savepoint s2;
-insert into workspaces (agency_id, name, domain) values (:'agency', 'RLS new site', 'rls-new.test');
+insert into workspaces (account_id, name, domain) values (:'account', 'RLS new site', 'rls-new.test');
 rollback to savepoint s2;
 \echo 'invite as editor (expect RLS error):'
 savepoint s3;
-insert into invites (agency_id, email, role, token, invited_by, expires_at) values (:'agency', 'x@y.z', 'editor', 'tok', :'restricted_uid', now());
+insert into invites (account_id, email, role, token, invited_by, expires_at) values (:'account', 'x@y.z', 'editor', 'tok', :'restricted_uid', now());
 rollback to savepoint s3;
 rollback;
 

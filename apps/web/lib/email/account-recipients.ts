@@ -1,11 +1,11 @@
 // ---------------------------------------------------------------------------
-// Who to tell, for an agency
+// Who to tell, for an account
 // ---------------------------------------------------------------------------
 //
-// `agency_members` holds user ids, not addresses; the addresses live in
+// `account_members` holds user ids, not addresses; the addresses live in
 // `auth.users`, which PostgREST does not expose. So resolution goes through
 // `auth.admin.getUserById`, one call per member, exactly as
-// lib/billing/operator-agency.ts does for the operator check.
+// lib/billing/operator-account.ts does for the operator check.
 //
 // Service role only. On a cookie-bound client `auth.admin` throws, and this
 // returns nobody rather than an exception - a notification is not worth failing
@@ -14,9 +14,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Every address that should hear about work on one of this agency's sites.
+ * Every address that should hear about work on one of this account's sites.
  *
- * Scoped to the workspace, like the pages are. `agency_members.workspace_ids`
+ * Scoped to the workspace, like the pages are. `account_members.workspace_ids`
  * (053) is NULL for a member who sees every site and an array for one who
  * sees only the listed ones; RLS reads it through `user_workspace_ids()`.
  * Until 2026-09-06 this ignored it and the draft-ready mail carried site B's
@@ -28,17 +28,17 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * a duplicate send is worse than a missing one because it reads as a bug in the
  * product rather than in a mailing list.
  */
-export async function agencyRecipients(
+export async function accountRecipients(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   workspaceId: string,
 ): Promise<string[]> {
   const found = new Set<string>();
   try {
     const { data: members } = await supabase
-      .from("agency_members")
+      .from("account_members")
       .select("user_id, workspace_ids")
-      .eq("agency_id", agencyId);
+      .eq("account_id", accountId);
 
     for (const m of members ?? []) {
       if (!canSeeWorkspace(m.workspace_ids as string[] | null | undefined, workspaceId)) continue;
@@ -71,16 +71,16 @@ const BILLING_ROLES = new Set(["owner", "admin"]);
  * Billing page has no use for "your card was declined" beyond learning what
  * their client pays. Owners and admins are told; editors are not.
  */
-export async function agencyBillingRecipients(
+export async function accountBillingRecipients(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
 ): Promise<string[]> {
   const found = new Set<string>();
   try {
     const { data: members } = await supabase
-      .from("agency_members")
+      .from("account_members")
       .select("user_id, role")
-      .eq("agency_id", agencyId);
+      .eq("account_id", accountId);
 
     for (const m of members ?? []) {
       if (!BILLING_ROLES.has(String(m.role))) continue;

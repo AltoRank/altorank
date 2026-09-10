@@ -28,7 +28,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 const { requireAuth } = vi.hoisted(() => ({
-  requireAuth: vi.fn(async () => ({ agencyId: "agency-1", role: "owner", user: { id: "u1", email: "a@b.co" } })),
+  requireAuth: vi.fn(async () => ({ accountId: "account-1", role: "owner", user: { id: "u1", email: "a@b.co" } })),
 }));
 vi.mock("@/lib/auth/require-auth", () => ({ requireAuth }));
 

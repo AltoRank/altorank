@@ -45,7 +45,7 @@ async function run(request: Request) {
 
   const { data: workspaces, error } = await supabase
     .from("workspaces")
-    .select("id, name, domain, agency_id, geo_last_checked_at")
+    .select("id, name, domain, account_id, geo_last_checked_at")
     .eq("geo_tracking", true)
     .not("domain", "is", null)
     // A paused site buys nothing, and a probe is the most expensive thing here.
@@ -70,7 +70,7 @@ async function run(request: Request) {
       // engines - so it is the last place that should run unpaid. Ten prompts
       // is about $11 a month. The toggle has no UI yet; this is here before it
       // does, not after.
-      const quota = await getQuota(supabase, ws.agency_id as string, null);
+      const quota = await getQuota(supabase, ws.account_id as string, null);
       if (!entitledToScheduledWork(quota)) {
         results.push({ workspaceId, domain, status: "skipped", detail: "no active plan" });
         continue;

@@ -25,7 +25,7 @@ vi.mock("@/lib/supabase/server", () => ({
 
 // Hoisted so the mock factory, which vitest lifts above the imports, can see it.
 const { requireAuth } = vi.hoisted(() => ({
-  requireAuth: vi.fn(async () => ({ agencyId: "agency-1", role: "editor", user: { id: "u1" } })),
+  requireAuth: vi.fn(async () => ({ accountId: "account-1", role: "editor", user: { id: "u1" } })),
 }));
 vi.mock("@/lib/auth/require-auth", () => ({ requireAuth }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -45,7 +45,7 @@ beforeEach(() => {
 describe("saveAttribution", () => {
   it("writes the answer to the caller's own account row", async () => {
     await expect(save("ai")).resolves.toEqual({ source: "ai", note: null });
-    expect(eq).toHaveBeenCalledWith("id", "agency-1");
+    expect(eq).toHaveBeenCalledWith("id", "account-1");
     const row = update.mock.calls[0][0] as Record<string, unknown>;
     expect(row.attribution_source).toBe("ai");
     expect(row.attribution_note).toBeNull();

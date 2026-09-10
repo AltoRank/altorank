@@ -43,8 +43,8 @@ export default async function ClientsPage({ searchParams }: Props) {
     getArticles(),
   ]);
   const workspaces = params.status ? allWorkspaces.filter((w) => w.status === params.status) : allWorkspaces;
-  const { agencyId, user, role } = await requireAuth();
-  const allowance = await getWorkspaceAllowance(await createClient(), agencyId, user.email);
+  const { accountId, user, role } = await requireAuth();
+  const allowance = await getWorkspaceAllowance(await createClient(), accountId, user.email);
 
   const wsCounts = new Map<string, { total: number; live: number }>();
   for (const a of allArticles) {

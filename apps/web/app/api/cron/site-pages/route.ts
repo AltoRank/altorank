@@ -45,7 +45,7 @@ async function run(request: Request) {
   // ago is not crawled before anyone has confirmed its domain.
   const { data: workspaces, error } = await supabase
     .from("workspaces")
-    .select("id, domain, agency_id, last_pages_crawl_at")
+    .select("id, domain, account_id, last_pages_crawl_at")
     .not("domain", "is", null)
     .not("first_analysed_at", "is", null)
     .neq("status", "paused")
@@ -67,7 +67,7 @@ async function run(request: Request) {
     // rule as every other scheduled job (entitledToScheduledWork). Stamped
     // first, or the skipped workspace stays at the head of the queue forever
     // and no site is ever crawled again.
-    const quota = await getQuota(supabase, ws.agency_id as string, null);
+    const quota = await getQuota(supabase, ws.account_id as string, null);
     if (!entitledToScheduledWork(quota)) {
       await supabase
         .from("workspaces")

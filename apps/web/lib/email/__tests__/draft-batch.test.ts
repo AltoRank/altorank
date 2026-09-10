@@ -47,9 +47,9 @@ const draft = (i: number, over: Record<string, unknown> = {}) => ({
 function db(over: Parameters<typeof fakeDraftDb>[0] = {}) {
   return fakeDraftDb({
     workspaces: [
-      { id: "ws1", agency_id: "ag1", domain: "example.test", auto_approve: false, auto_approve_hold_hours: 24 },
+      { id: "ws1", account_id: "ag1", domain: "example.test", auto_approve: false, auto_approve_hold_hours: 24 },
     ],
-    agency_members: [{ agency_id: "ag1", user_id: "u1", workspace_ids: null }],
+    account_members: [{ account_id: "ag1", user_id: "u1", workspace_ids: null }],
     emails: { u1: "owner@example.test" },
     articles: [draft(1), draft(2), draft(3)],
     keywords: [
@@ -187,7 +187,7 @@ describe("announceDraftBatch", () => {
   it("leaves a draft the cron already announced out of the digest", async () => {
     const d = db({
       sent_emails: [
-        { email_type: "article_drafted", subject_id: "a1", recipient: "owner@example.test", agency_id: "ag1", workspace_id: "ws1" },
+        { email_type: "article_drafted", subject_id: "a1", recipient: "owner@example.test", account_id: "ag1", workspace_id: "ws1" },
       ],
     });
     await announceDraftBatch(d.client, "ws1", { now: NOW });
@@ -240,7 +240,7 @@ describe("announceDraftBatch", () => {
   });
 
   it("does not email a workspace nobody is a member of", async () => {
-    const d = db({ agency_members: [] });
+    const d = db({ account_members: [] });
     expect(await announceDraftBatch(d.client, "ws1", { now: NOW })).toBe("nobody to email");
     expect(sendTransactionalEmail).not.toHaveBeenCalled();
   });
@@ -272,7 +272,7 @@ describe("announceDraftBatch", () => {
    */
   it("starts the hold window on the drafts it announces, when the site publishes automatically", async () => {
     const d = db({
-      workspaces: [{ id: "ws1", agency_id: "ag1", domain: "example.test", auto_approve: true, auto_approve_hold_hours: 24 }],
+      workspaces: [{ id: "ws1", account_id: "ag1", domain: "example.test", auto_approve: true, auto_approve_hold_hours: 24 }],
     });
     await announceDraftBatch(d.client, "ws1", { now: NOW });
     const stamped = d.tables.articles.map((a) => a.auto_approve_after);
@@ -282,7 +282,7 @@ describe("announceDraftBatch", () => {
 
   it("leaves a hold window somebody may already be watching alone", async () => {
     const d = db({
-      workspaces: [{ id: "ws1", agency_id: "ag1", domain: "example.test", auto_approve: true, auto_approve_hold_hours: 24 }],
+      workspaces: [{ id: "ws1", account_id: "ag1", domain: "example.test", auto_approve: true, auto_approve_hold_hours: 24 }],
       articles: [draft(1, { auto_approve_after: "2026-09-08T12:00:00.000Z" }), draft(2)],
     });
     await announceDraftBatch(d.client, "ws1", { now: NOW });

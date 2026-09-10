@@ -26,7 +26,7 @@ describe("sendOnce", () => {
     expect(out).toMatchObject({ sent: 2, skipped: 0, failed: 0 });
     expect(sendTransactionalEmail).toHaveBeenCalledTimes(2);
     expect(inserted.map((r) => r.recipient)).toEqual(["a@x.co", "b@x.co"]);
-    expect(inserted[0]).toMatchObject({ email_type: "t", subject_id: "s1", agency_id: "ag1", workspace_id: "ws1" });
+    expect(inserted[0]).toMatchObject({ email_type: "t", subject_id: "s1", account_id: "ag1", workspace_id: "ws1" });
   });
 
   /** The whole point: a retried webhook or a re-run cron must not re-send. */
@@ -131,7 +131,7 @@ function meta(subjectId = "s1") {
     type: "t",
     subjectId,
     category: "publishing" as const,
-    agencyId: "ag1",
+    accountId: "ag1",
     workspaceId: "ws1",
   };
 }

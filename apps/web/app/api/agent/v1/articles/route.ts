@@ -1,6 +1,6 @@
 import { withAgent, appBaseUrl } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
-import { listArticles, workspaceInAgency } from "@/lib/agent/data";
+import { listArticles, workspaceInAccount } from "@/lib/agent/data";
 import { toAgentArticle } from "@/lib/agent/records";
 
 const MAX_LIMIT = 200;
@@ -12,7 +12,7 @@ export const GET = withAgent(async (request, ctx) => {
   if (!workspaceId) {
     return fail("invalid_request", "workspace_id is required.", "Pass ?workspace_id= from GET /workspaces.");
   }
-  const workspace = await workspaceInAgency(ctx, workspaceId);
+  const workspace = await workspaceInAccount(ctx, workspaceId);
   if (!workspace) {
     return fail("not_found", "Workspace not found in this account.", "Call GET /workspaces and use an id from that list.");
   }

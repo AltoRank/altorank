@@ -48,11 +48,11 @@ export function graceEndsAt(paymentFailedAt: string | null | undefined): Date | 
  * an open-ended grace would be a plan nobody is paying for.
  */
 export function dunningState(
-  agency: { plan_status?: string | null; payment_failed_at?: string | null },
+  account: { plan_status?: string | null; payment_failed_at?: string | null },
   now: Date = new Date(),
 ): DunningState {
-  if (!isPastDueStatus(agency.plan_status)) return "none";
-  const ends = graceEndsAt(agency.payment_failed_at);
+  if (!isPastDueStatus(account.plan_status)) return "none";
+  const ends = graceEndsAt(account.payment_failed_at);
   if (ends && now.getTime() < ends.getTime()) return "grace";
   return "lapsed";
 }
@@ -62,11 +62,11 @@ export function dunningState(
  * inside the grace window. The single answer the quota reads.
  */
 export function planEntitled(
-  agency: { plan_status?: string | null; payment_failed_at?: string | null },
+  account: { plan_status?: string | null; payment_failed_at?: string | null },
   now: Date = new Date(),
 ): boolean {
-  if (agency.plan_status === "active") return true;
-  return dunningState(agency, now) === "grace";
+  if (account.plan_status === "active") return true;
+  return dunningState(account, now) === "grace";
 }
 
 export type DunningInfo = {
@@ -77,12 +77,12 @@ export type DunningInfo = {
 
 /** The dunning facts a page needs, or null when the account is not past due. */
 export function dunningInfo(
-  agency: { plan_status?: string | null; payment_failed_at?: string | null },
+  account: { plan_status?: string | null; payment_failed_at?: string | null },
   now: Date = new Date(),
 ): DunningInfo | null {
-  const state = dunningState(agency, now);
+  const state = dunningState(account, now);
   if (state === "none") return null;
-  return { state, graceEndsAt: graceEndsAt(agency.payment_failed_at)?.toISOString() ?? null };
+  return { state, graceEndsAt: graceEndsAt(account.payment_failed_at)?.toISOString() ?? null };
 }
 
 export function formatGraceDate(iso: string): string {

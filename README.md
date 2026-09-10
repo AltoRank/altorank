@@ -221,7 +221,7 @@ rebuilding the product. If you modify the source and offer that modified version
 to others over a network, your changes have to be shared back under the same
 licence.
 
-Running an agency on it is free and unencumbered. Relaunching a modified copy as
+Running an account on it is free and unencumbered. Relaunching a modified copy as
 a closed competing service is not.
 
 ## Contributing

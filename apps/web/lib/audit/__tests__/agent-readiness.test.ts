@@ -24,7 +24,7 @@ const ldJson = (obj: unknown) =>
 /** A homepage that passes every on-page check. */
 const GOOD_HOME =
   `<html><head><title>Acme</title>` +
-  `<meta name="description" content="Acme agency" />` +
+  `<meta name="description" content="Acme account" />` +
   ldJson({ "@context": "https://schema.org", "@type": "Organization", name: "Acme" }) +
   `</head><body><h1>Acme</h1></body></html>`;
 

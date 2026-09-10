@@ -15,8 +15,8 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 082.** The one-line-per-file list in §3 and the pre-flight query in §1
-both go to 082. **There is no 081**: it was left free for a track that never
+**Head is 085.** The one-line-per-file list in §3 and the pre-flight query in §1
+both go to 085. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. (076
 and 077 came from two tracks on the same day and are
 independent of each other; either may be applied first. 078 stacks on the same
@@ -60,7 +60,7 @@ chk as (
   select conname, pg_get_constraintdef(oid) def from pg_constraint
 ),
 m(file, applied) as (values
-  ('001_initial_schema',                     to_regclass('public.agencies') is not null),
+  ('001_initial_schema',                     to_regclass('public.agencies') is not null or to_regclass('public.accounts') is not null),
   ('002_backend_additions',                  exists (select 1 from col where t='articles' and c='external_id')),
   ('003_publishing_schedule',                to_regclass('public.publishing_cadences') is not null),
   ('004_workspace_locale_and_integrations',  exists (select 1 from col where t='workspaces' and c='language')),
@@ -70,12 +70,12 @@ m(file, applied) as (values
   ('008_backlink_exchange',                  to_regclass('public.backlink_exchanges') is not null),
   ('009_domain_audits',                      to_regclass('public.domain_audits') is not null),
   ('010_invites',                            to_regclass('public.invites') is not null),
-  ('011_rls_backlinks_audits_invites',       exists (select 1 from pg_policy where polname='Exchanges visible to requester or provider agency')),
+  ('011_rls_backlinks_audits_invites',       exists (select 1 from pg_policy where polname in ('Exchanges visible to requester or provider agency','Exchanges visible to requester or provider account'))),
   ('012_tool_leads',                         to_regclass('public.tool_leads') is not null),
   ('013_approval_workflow',                  exists (select 1 from chk where conname='articles_status_check' and def like '%approved%')),
-  ('014_billing',                            exists (select 1 from col where t='agencies' and c='plan_status')),
+  ('014_billing',                            exists (select 1 from col where t in ('agencies','accounts') and c='plan_status')),
   ('015_article_research',                   exists (select 1 from col where t='articles' and c='research')),
-  ('016_fix_agency_members_rls_recursion',   to_regprocedure('public.user_admin_agency_ids()') is not null),
+  ('016_fix_agency_members_rls_recursion',   to_regprocedure('public.user_admin_agency_ids()') is not null or to_regprocedure('public.user_admin_account_ids()') is not null),
   ('017_autonomous_generation',              exists (select 1 from col where t='workspaces' and c='auto_generate')),
   ('018_domain_analysis',                    exists (select 1 from col where t='domain_audits' and c='readiness')),
   ('019_topical_profile',                    exists (select 1 from col where t='workspaces' and c='topical_profile')),
@@ -90,9 +90,9 @@ m(file, applied) as (values
   ('028_indexnow_key',                       exists (select 1 from col where t='workspaces' and c='indexnow_key')),
   ('029_growth_plans',                       to_regclass('public.growth_plans') is not null),
   ('030_admin_impersonations',               to_regclass('public.admin_impersonations') is not null),
-  ('031_workspace_domain_unique',            to_regclass('public.workspaces_agency_domain_unique') is not null),
+  ('031_workspace_domain_unique',            to_regclass('public.workspaces_agency_domain_unique') is not null or to_regclass('public.workspaces_account_domain_unique') is not null),
   ('032_backlink_detail',                    exists (select 1 from col where t='backlinks' and c='source_url')),
-  ('033_agency_google',                      to_regclass('public.agency_integrations') is not null),
+  ('033_agency_google',                      to_regclass('public.agency_integrations') is not null or to_regclass('public.account_integrations') is not null),
   ('034_workspace_metrics',                  to_regclass('public.workspace_metrics') is not null),
   ('035_keyword_source',                     exists (select 1 from col where t='keywords' and c='source')),
   ('036_keyword_source_gap',                 exists (select 1 from chk where conname='keywords_source_check' and def like '%gap%')),
@@ -118,7 +118,7 @@ m(file, applied) as (values
   ('055_linking',                            to_regclass('public.link_sources') is not null),
   ('056_wordpress_plugin',                   exists (select 1 from chk where conname='publish_log_triggered_by_check' and def like '%webhook%')),
   ('057_public_checks',                      to_regclass('public.public_checks') is not null),
-  ('058_agency_attribution',                 exists (select 1 from col where t='agencies' and c='attribution_source')),
+  ('058_agency_attribution',                 exists (select 1 from col where t in ('agencies','accounts') and c='attribution_source')),
   ('059_publish_mode_and_retry',             exists (select 1 from col where t='publish_log' and c='retry_of')),
   ('060_keyword_cpc',                        exists (select 1 from col where t='keywords' and c='cpc' and cm is not null)),
   ('061_workspace_pause_meta',               exists (select 1 from col where t='workspaces' and c='paused_meta')),
@@ -130,8 +130,8 @@ m(file, applied) as (values
   ('068_workspace_share_token',              exists (select 1 from col where t='workspaces' and c='share_token')),
   ('069_generate_idempotency',               to_regclass('public.agent_idempotency_keys') is not null),
   ('070_google_needs_reconnect',             exists (select 1 from col where t='workspace_integrations' and c='needs_reconnect')),
-  ('071_billing_past_due',                   exists (select 1 from col where t='agencies' and c='payment_failed_at')),
-  ('072_tenant_authz_hardening',             exists (select 1 from pg_trigger where tgname='agencies_guard_privileged_columns')),
+  ('071_billing_past_due',                   exists (select 1 from col where t in ('agencies','accounts') and c='payment_failed_at')),
+  ('072_tenant_authz_hardening',             exists (select 1 from pg_trigger where tgname in ('agencies_guard_privileged_columns','accounts_guard_privileged_columns'))),
   ('073_lifecycle_emails',                   to_regclass('public.idx_invites_one_pending_per_email') is not null),
   ('074_one_autonomous_draft_per_keyword',   to_regclass('public.idx_articles_one_autonomous_draft_per_keyword') is not null),
   ('075_reports_one_per_period',             to_regclass('public.idx_reports_one_per_period') is not null),
@@ -140,7 +140,8 @@ m(file, applied) as (values
   ('078_site_pages_tech_findings',           exists (select 1 from col where t='site_pages' and c='tech_findings')),
   ('079_auto_approve',                       exists (select 1 from col where t='workspaces' and c='auto_approve')),
   ('080_oauth_connectors',                   to_regclass('public.oauth_codes') is not null),
-  ('082_system_events',                      to_regclass('public.system_events') is not null)
+  ('082_system_events',                      to_regclass('public.system_events') is not null),
+  ('085_agencies_to_accounts',               to_regclass('public.accounts') is not null and to_regclass('public.agencies') is null)
 )
 select file, applied from m order by file;
 ```
@@ -266,6 +267,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 078_site_pages_tech_findings.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 079_auto_approve.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 080_oauth_connectors.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 082_system_events.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 085_agencies_to_accounts.sql
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -326,6 +328,7 @@ no code in the repo references either).
 | 078_site_pages_tech_findings.sql | `onboarding/site-crawl` (stacks on `onboarding/poll-run`) | **044**, 046 | yes | yes, loses findings only |
 | 079_auto_approve.sql | `feat/auto-approve` | 001, 003 | yes | yes, loses hold stamps and approval kinds |
 | 080_oauth_connectors.sql | `distribution/hosted-mcp` #158 | 001, **051** | yes | yes, disconnects connectors |
+| 085_agencies_to_accounts.sql | `rename/agencies-to-accounts` | 001, 016, 053, 072 | yes (every step guarded) | by renaming back; nothing is dropped |
 | 082_system_events.sql | `round5/observability` #172 | 001 | yes | yes, loses the event log only |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**

@@ -2,9 +2,9 @@ import { test, expect } from "./fixtures/test";
 import { admin, todayUtc } from "./fixtures/account";
 
 /**
- * An agency is the account; a workspace is one site. RLS only enforces the
+ * An account is the account; a workspace is one site. RLS only enforces the
  * first, so a page that forgets its workspace still renders - with the other
- * site's rows mixed in. Two sites on one agency, and the calendar and keywords
+ * site's rows mixed in. Two sites on one account, and the calendar and keywords
  * pages must show only the site the switcher is on.
  */
 test.use({ accountShape: { workspaces: [

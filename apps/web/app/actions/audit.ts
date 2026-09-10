@@ -15,14 +15,14 @@ import type { BillingOutcome } from "@/lib/billing/failure";
 export async function startDomainAudit(
   workspaceId: string,
 ): Promise<BillingOutcome<{ auditId: string }>> {
-  const { agencyId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth();
   const supabase = await createClient();
 
   // A re-crawl is up to 40 page fetches plus a PageSpeed run, and /api/audit
   // is where the money is actually spent - so the gate is here AND there. This
   // one exists to refuse in words; that one exists because the route is a URL
   // and anyone signed in can POST to it.
-  const gate = await canSpend(supabase, agencyId, {
+  const gate = await canSpend(supabase, accountId, {
     userEmail: user.email ?? undefined,
     workspaceId,
     action: "site-audit",

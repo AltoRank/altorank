@@ -53,7 +53,7 @@ function mapStatus(s: Stripe.Subscription.Status): string {
  * price id this deployment does not recognise.
  *
  * This exists because the handler used to write `stripe_customer_id`,
- * `stripe_subscription_id` and `plan_status` and *not* `plan`. `agencies.plan`
+ * `stripe_subscription_id` and `plan_status` and *not* `plan`. `accounts.plan`
  * is `not null default 'starter'`, so a EUR 199 Agency buyer sat on Managed's
  * row - badged "Managed plan" on the Billing page and metered at
  * PLAN_ARTICLE_LIMITS.starter = 100 instead of 400, which also capped the pace
@@ -97,7 +97,7 @@ export function planForSubscription(sub: Stripe.Subscription): SelfServePlan | u
   return isSelfServePlan(hint) ? hint : undefined;
 }
 
-type AgencyBillingRow = {
+type AccountBillingRow = {
   id: string;
   plan_status: string | null;
   payment_failed_at: string | null;
@@ -126,14 +126,14 @@ const AGENCY_BILLING_COLUMNS = "id, plan_status, payment_failed_at, plan, name, 
  */
 async function emailPaymentFailed(
   supabase: SupabaseClient,
-  agency: AgencyBillingRow,
+  account: AccountBillingRow,
   failedAt: Date,
   invoice?: Stripe.Invoice,
 ): Promise<void> {
   try {
     // The window the customer actually has, counted from the recorded start -
     // which is the earlier of this failure and one already on the row.
-    const episodeStart = isoKey(agency.payment_failed_at) ?? failedAt.toISOString();
+    const episodeStart = isoKey(account.payment_failed_at) ?? failedAt.toISOString();
     const ends = graceEndsAt(episodeStart);
     if (!ends) return;
     // The window is already over - the account has lapsed, or the episode
@@ -142,17 +142,17 @@ async function emailPaymentFailed(
     if (ends.getTime() <= Date.now()) return;
     await notifyPaymentFailed(
       supabase,
-      agency.id,
+      account.id,
       {
-        agencyName: agency.name ?? null,
-        planLabel: PLAN_LABELS[(agency.plan ?? "starter") as PlanTier] ?? "your",
+        accountName: account.name ?? null,
+        planLabel: PLAN_LABELS[(account.plan ?? "starter") as PlanTier] ?? "your",
         graceEndsAt: ends.toISOString(),
         amount: formatInvoiceAmount(invoice),
       },
       episodeStart,
     );
   } catch (err) {
-    console.error(`[stripe] payment-failed email for ${agency.id}: ${err instanceof Error ? err.message : err}`);
+    console.error(`[stripe] payment-failed email for ${account.id}: ${err instanceof Error ? err.message : err}`);
   }
 }
 
@@ -188,17 +188,17 @@ function formatInvoiceAmount(invoice?: Stripe.Invoice): string | null {
 }
 
 /**
- * The agency an invoice belongs to, by the ids we stored at checkout.
+ * The account an invoice belongs to, by the ids we stored at checkout.
  *
  * Stripe's invoice names its subscription under `parent.subscription_details`
  * (older API versions: a top-level `subscription`) and always its customer;
- * subscription metadata on the invoice is a snapshot of ours, so `agency_id`
+ * subscription metadata on the invoice is a snapshot of ours, so `account_id`
  * there is tried first.
  */
-async function agencyForInvoice(
+async function accountForInvoice(
   supabase: SupabaseClient,
   invoice: Stripe.Invoice,
-): Promise<AgencyBillingRow | null> {
+): Promise<AccountBillingRow | null> {
   const details = invoice.parent?.subscription_details ?? null;
   const legacy = (invoice as unknown as { subscription?: string | { id: string } | null }).subscription;
   const subscriptionId =
@@ -206,20 +206,24 @@ async function agencyForInvoice(
       ? details.subscription
       : (details?.subscription?.id ?? (typeof legacy === "string" ? legacy : (legacy?.id ?? null)));
   const customerId = typeof invoice.customer === "string" ? invoice.customer : (invoice.customer?.id ?? null);
-  const metadataAgency = details?.metadata?.agency_id ?? null;
+  // `agency_id` is the key every subscription created before 085 (2026-09-09)
+  // carries; Stripe metadata is a snapshot taken at purchase and is never
+  // rewritten by a rename on our side. Read both for as long as one of
+  // those subscriptions is alive.
+  const metadataAccount = details?.metadata?.account_id ?? details?.metadata?.agency_id ?? null;
 
   const lookups: Array<[string, string]> = [];
-  if (metadataAgency) lookups.push(["id", metadataAgency]);
+  if (metadataAccount) lookups.push(["id", metadataAccount]);
   if (subscriptionId) lookups.push(["stripe_subscription_id", subscriptionId]);
   if (customerId) lookups.push(["stripe_customer_id", customerId]);
 
   for (const [col, val] of lookups) {
     const { data } = await supabase
-      .from("agencies")
+      .from("accounts")
       .select(AGENCY_BILLING_COLUMNS)
       .eq(col, val)
       .maybeSingle();
-    if (data) return data as AgencyBillingRow;
+    if (data) return data as AccountBillingRow;
   }
   return null;
 }
@@ -232,21 +236,21 @@ async function agencyForInvoice(
  */
 async function markPaymentFailed(
   supabase: SupabaseClient,
-  agency: AgencyBillingRow,
+  account: AccountBillingRow,
   failedAt: Date,
 ): Promise<void> {
   const updates: Record<string, unknown> = {};
-  if (!agency.payment_failed_at) updates.payment_failed_at = failedAt.toISOString();
+  if (!account.payment_failed_at) updates.payment_failed_at = failedAt.toISOString();
   // A paid plan goes past due; an account that never paid does not become
   // one because its very first charge bounced.
-  if (agency.plan_status === "active" || agency.plan_status === "trialing") updates.plan_status = "past_due";
+  if (account.plan_status === "active" || account.plan_status === "trialing") updates.plan_status = "past_due";
   if (Object.keys(updates).length === 0) return;
-  await supabase.from("agencies").update(updates).eq("id", agency.id);
+  await supabase.from("accounts").update(updates).eq("id", account.id);
 }
 
 /**
  * Stripe webhook. Signature-verified, then syncs subscription state into the
- * existing agencies.{plan, plan_status, stripe_*, current_period_end} columns.
+ * existing accounts.{plan, plan_status, stripe_*, current_period_end} columns.
  * The verified event is the only trusted input — never trust unsigned fields.
  */
 export async function POST(request: Request) {
@@ -297,12 +301,13 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
-      const agencyId = session.metadata?.agency_id ?? session.client_reference_id ?? undefined;
-      if (agencyId && session.customer && session.subscription) {
+      const accountId =
+        session.metadata?.account_id ?? session.metadata?.agency_id ?? session.client_reference_id ?? undefined;
+      if (accountId && session.customer && session.subscription) {
         const plan = await planForCheckoutSession(session);
 
         await supabase
-          .from("agencies")
+          .from("accounts")
           .update({
             stripe_customer_id: String(session.customer),
             stripe_subscription_id: String(session.subscription),
@@ -313,7 +318,7 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
             // last line of defence rather than the first.
             ...(plan ? { plan } : {}),
           })
-          .eq("id", agencyId);
+          .eq("id", accountId);
 
         /**
          * Start writing at a paid pace.
@@ -331,7 +336,7 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
         const { data: sites } = await supabase
           .from("workspaces")
           .select("id, auto_generate_weekly_limit")
-          .eq("agency_id", agencyId);
+          .eq("account_id", accountId);
         for (const site of sites ?? []) {
           const next = paceOnActivation(site.auto_generate_weekly_limit as number | null, plan);
           if (next === null) continue;
@@ -396,23 +401,24 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
         updates.plan_status = status;
       }
 
-      const agencyId = sub.metadata?.agency_id;
+      // Pre-085 subscriptions carry `agency_id`; see `accountForInvoice`.
+      const accountId = sub.metadata?.account_id ?? sub.metadata?.agency_id;
 
       // Read the row before writing it. Every notice below is about a
       // *change* - the tier moved, a cancellation was scheduled - and a change
       // cannot be seen once the new value is already in the column.
       const { data: beforeRow } = await supabase
-        .from("agencies")
+        .from("accounts")
         .select(AGENCY_BILLING_COLUMNS)
-        .eq(agencyId ? "id" : "stripe_subscription_id", agencyId ?? sub.id)
+        .eq(accountId ? "id" : "stripe_subscription_id", accountId ?? sub.id)
         .maybeSingle();
-      const before = (beforeRow as AgencyBillingRow | null) ?? null;
+      const before = (beforeRow as AccountBillingRow | null) ?? null;
 
-      if (agencyId) {
-        await supabase.from("agencies").update(updates).eq("id", agencyId);
+      if (accountId) {
+        await supabase.from("accounts").update(updates).eq("id", accountId);
       } else {
         // Fall back to matching by the stored subscription id.
-        await supabase.from("agencies").update(updates).eq("stripe_subscription_id", sub.id);
+        await supabase.from("accounts").update(updates).eq("stripe_subscription_id", sub.id);
       }
 
       /**
@@ -468,7 +474,7 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
             supabase,
             before.id,
             {
-              agencyName: before.name ?? null,
+              accountName: before.name ?? null,
               planLabel: PLAN_LABELS[(before.plan ?? "starter") as PlanTier] ?? "your",
               endsAt: cancelsAt,
             },
@@ -486,7 +492,7 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
           const failedAt = new Date(event.created * 1000);
           if (before && !before.payment_failed_at) {
             await supabase
-              .from("agencies")
+              .from("accounts")
               .update({ payment_failed_at: failedAt.toISOString() })
               .eq("id", before.id);
           }
@@ -507,10 +513,10 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
         const pauseLifted =
           sub.pause_collection == null && previous != null && "pause_collection" in previous;
         if (pauseLifted) {
-          let target: string | null = agencyId ?? null;
+          let target: string | null = accountId ?? null;
           if (!target) {
             const { data: row } = await supabase
-              .from("agencies")
+              .from("accounts")
               .select("id")
               .eq("stripe_subscription_id", sub.id)
               .maybeSingle();
@@ -530,23 +536,23 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
     // clears it however many times it arrives.
     case "invoice.payment_failed": {
       const invoice = event.data.object as Stripe.Invoice;
-      const agency = await agencyForInvoice(supabase, invoice);
-      if (!agency) break;
+      const account = await accountForInvoice(supabase, invoice);
+      if (!account) break;
       const failedAt = new Date((invoice.created ?? event.created) * 1000);
-      await markPaymentFailed(supabase, agency, failedAt);
-      await emailPaymentFailed(supabase, agency, failedAt, invoice);
+      await markPaymentFailed(supabase, account, failedAt);
+      await emailPaymentFailed(supabase, account, failedAt, invoice);
       break;
     }
 
     case "invoice.paid": {
       const invoice = event.data.object as Stripe.Invoice;
-      const agency = await agencyForInvoice(supabase, invoice);
-      if (!agency) break;
+      const account = await accountForInvoice(supabase, invoice);
+      if (!account) break;
       const updates: Record<string, unknown> = { payment_failed_at: null };
       // The retry that went through reinstates the plan. An `inactive` row
       // is a first purchase and `checkout.session.completed` owns that.
-      if (agency.plan_status === "past_due" || agency.plan_status === "unpaid") updates.plan_status = "active";
-      await supabase.from("agencies").update(updates).eq("id", agency.id);
+      if (account.plan_status === "past_due" || account.plan_status === "unpaid") updates.plan_status = "active";
+      await supabase.from("accounts").update(updates).eq("id", account.id);
       break;
     }
   }

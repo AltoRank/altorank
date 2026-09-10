@@ -142,18 +142,18 @@ export interface SpendGateOptions {
 }
 
 /**
- * May this agency spend on this workspace right now, and if not, why.
+ * May this account spend on this workspace right now, and if not, why.
  *
  * Every branch carries a sentence the UI can print verbatim: what is locked,
  * why, and the way out. Never a code, never a digest, never a silent no-op.
  */
 export async function canSpend(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   options: SpendGateOptions = {},
 ): Promise<SpendDecision> {
   const action = options.action ?? "draft";
-  const quota = await getQuota(supabase, agencyId, options.userEmail);
+  const quota = await getQuota(supabase, accountId, options.userEmail);
 
   // Self-host and operator first, and before the pause: an install with no
   // Stripe key has no billing to pause, and the operator bypass exists so our

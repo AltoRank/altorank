@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 /**
  * The setup checklist counts the site the sidebar is scoped to, not the
- * account. Until 2026-09-07 an agency's second client showed "CMS connected"
+ * account. Until 2026-09-07 an account's second client showed "CMS connected"
  * and "voice trained" on the day it was added, because the first client had
  * done both.
  */

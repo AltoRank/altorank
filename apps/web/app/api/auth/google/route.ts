@@ -59,17 +59,17 @@ export async function GET(request: NextRequest) {
   if (authError || !user) return back(request, { error: "unauthorized" });
 
   const { data: member } = await supabase
-    .from("agency_members")
-    .select("agency_id")
+    .from("account_members")
+    .select("account_id")
     .eq("user_id", user.id)
     .single();
-  if (!member) return back(request, { error: "no_agency" });
+  if (!member) return back(request, { error: "no_account" });
 
   const { data: workspace } = await supabase
     .from("workspaces")
     .select("id")
     .eq("id", workspaceId)
-    .eq("agency_id", member.agency_id)
+    .eq("account_id", member.account_id)
     .single();
   if (!workspace) return back(request, { error: "workspace_not_found" });
 

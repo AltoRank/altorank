@@ -14,7 +14,7 @@ import {
   type OnboardingRunRow,
 } from "../events";
 
-const WS = { id: "ws1", agency_id: "ag1" };
+const WS = { id: "ws1", account_id: "ag1" };
 
 /** The event sequence a full run emits under the worker (pipeline.test.ts, "dispatch"). */
 const WORKER_EVENTS: OnboardingEvent[] = [
@@ -204,7 +204,7 @@ describe("startRun", () => {
     const r = await startRun(db.client, WS);
     expect(r.created).toBe(true);
     expect(db.tables.onboarding_runs).toHaveLength(1);
-    expect(db.tables.onboarding_runs[0]).toMatchObject({ id: r.runId, workspace_id: "ws1", agency_id: "ag1", status: "running", phases: [] });
+    expect(db.tables.onboarding_runs[0]).toMatchObject({ id: r.runId, workspace_id: "ws1", account_id: "ag1", status: "running", phases: [] });
   });
 
   it("is idempotent: a second start returns the running row and inserts nothing", async () => {
@@ -218,7 +218,7 @@ describe("startRun", () => {
   it("closes a stale running row as error and starts a fresh one", async () => {
     const now = Date.now();
     const db = fakeDb({
-      onboarding_runs: [{ id: "old", workspace_id: "ws1", agency_id: "ag1", status: "running", phases: [], planned: [], updated_at: new Date(now - RUN_STALE_MS - 1).toISOString() }],
+      onboarding_runs: [{ id: "old", workspace_id: "ws1", account_id: "ag1", status: "running", phases: [], planned: [], updated_at: new Date(now - RUN_STALE_MS - 1).toISOString() }],
     });
     const r = await startRun(db.client, WS, now);
     expect(r.created).toBe(true);
@@ -228,7 +228,7 @@ describe("startRun", () => {
   });
 
   it("a finished run does not block a new one", async () => {
-    const db = fakeDb({ onboarding_runs: [{ id: "done", workspace_id: "ws1", agency_id: "ag1", status: "done", phases: [], planned: [] }] });
+    const db = fakeDb({ onboarding_runs: [{ id: "done", workspace_id: "ws1", account_id: "ag1", status: "done", phases: [], planned: [] }] });
     const r = await startRun(db.client, WS);
     expect(r.created).toBe(true);
     expect(db.tables.onboarding_runs).toHaveLength(2);

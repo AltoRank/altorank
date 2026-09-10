@@ -23,8 +23,8 @@ vi.mock("@/lib/supabase/server", () => ({
     from: () => ({
       update: (row: Record<string, unknown>) => {
         updates.push(row);
-        // .eq("id", …).eq("agency_id", …): the action scopes the write to the
-        // agency as well as the id, since the id arrives from the browser.
+        // .eq("id", …).eq("account_id", …): the action scopes the write to the
+        // account as well as the id, since the id arrives from the browser.
         return { eq: () => ({ eq: () => Promise.resolve({ error: null }) }) };
       },
     }),
@@ -32,7 +32,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 const { requireAuth, getQuota } = vi.hoisted(() => ({
-  requireAuth: vi.fn(async () => ({ agencyId: "agency-1", role: "owner", user: { id: "u1", email: "a@b.co" } })),
+  requireAuth: vi.fn(async () => ({ accountId: "account-1", role: "owner", user: { id: "u1", email: "a@b.co" } })),
   getQuota: vi.fn(),
 }));
 vi.mock("@/lib/auth/require-auth", () => ({ requireAuth }));

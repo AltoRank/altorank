@@ -11,8 +11,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 type Row = Record<string, unknown>;
 
-let agencyRow: Row = {};
-// Writes made as AltoRank (service role). `agencies.plan` is guarded by
+let accountRow: Row = {};
+// Writes made as AltoRank (service role). `accounts.plan` is guarded by
 // migration 072's trigger, which refuses it to any signed-in user, so the
 // tier can only be written this way.
 const writes: { table: string; row: Row; col: string; val: unknown }[] = [];
@@ -24,7 +24,7 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     from: (table: string) => ({
       select: () => ({
-        eq: () => ({ single: () => Promise.resolve({ data: agencyRow }) }),
+        eq: () => ({ single: () => Promise.resolve({ data: accountRow }) }),
       }),
       update: (row: Row) => ({
         eq: () => {
@@ -32,7 +32,7 @@ vi.mock("@/lib/supabase/server", () => ({
           return Promise.resolve({
             error: {
               code: "42501",
-              message: "Billing and API-key columns on an agency are set by AltoRank, not by a signed-in user",
+              message: "Billing and API-key columns on an account are set by AltoRank, not by a signed-in user",
             },
           });
         },
@@ -52,7 +52,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 const { requireAuth, checkoutCreate, subRetrieve, subUpdate, portalCreate } = vi.hoisted(() => ({
-  requireAuth: vi.fn(async () => ({ agencyId: "agency-1", role: "owner", user: { id: "u1" } })),
+  requireAuth: vi.fn(async () => ({ accountId: "account-1", role: "owner", user: { id: "u1" } })),
   checkoutCreate: vi.fn(),
   subRetrieve: vi.fn(),
   subUpdate: vi.fn(),
@@ -82,7 +82,7 @@ async function choose(plan: "starter" | "growth", interval: "month" | "year" = "
 beforeEach(() => {
   writes.length = 0;
   cookieWrites.length = 0;
-  agencyRow = { stripe_customer_id: "cus_1", stripe_subscription_id: null, plan_status: "inactive" };
+  accountRow = { stripe_customer_id: "cus_1", stripe_subscription_id: null, plan_status: "inactive" };
   checkoutCreate.mockReset();
   checkoutCreate.mockResolvedValue({ url: "https://checkout.stripe.com/c/pay/cs_1" });
   subRetrieve.mockReset();
@@ -114,7 +114,7 @@ describe("first purchase", () => {
   it("opens Checkout again when the stored subscription is canceled", async () => {
     // The id is stale: Stripe will not bill it again, so there is nothing to
     // update and a new subscription is the right thing.
-    agencyRow = { stripe_customer_id: "cus_1", stripe_subscription_id: "sub_old", plan_status: "canceled" };
+    accountRow = { stripe_customer_id: "cus_1", stripe_subscription_id: "sub_old", plan_status: "canceled" };
     await choose("starter");
     expect(checkoutCreate).toHaveBeenCalledOnce();
     expect(subUpdate).not.toHaveBeenCalled();
@@ -123,7 +123,7 @@ describe("first purchase", () => {
 
 describe("plan switch on a live subscription", () => {
   beforeEach(() => {
-    agencyRow = { stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1", plan_status: "active" };
+    accountRow = { stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1", plan_status: "active" };
   });
 
   it("updates the existing item to the new price, prorated, and never opens Checkout", async () => {
@@ -137,7 +137,7 @@ describe("plan switch on a live subscription", () => {
       // item and bills both.
       items: [{ id: "si_1", price: GROWTH }],
       proration_behavior: "create_prorations",
-      metadata: { agency_id: "agency-1", plan: "growth", interval: "month" },
+      metadata: { account_id: "account-1", plan: "growth", interval: "month" },
     });
     expect(result).toEqual({
       ok: true,
@@ -150,7 +150,7 @@ describe("plan switch on a live subscription", () => {
     // client this write was a silent no-op and the Billing page kept naming
     // the old tier until the webhook landed.
     await choose("growth");
-    expect(writes).toEqual([{ table: "agencies", row: { plan: "growth" }, col: "id", val: "agency-1" }]);
+    expect(writes).toEqual([{ table: "accounts", row: { plan: "growth" }, col: "id", val: "account-1" }]);
     expect(cookieWrites).toHaveLength(0);
   });
 
@@ -160,7 +160,7 @@ describe("plan switch on a live subscription", () => {
   });
 
   it("switches in place while a renewal is failing, rather than starting a second subscription", async () => {
-    agencyRow = { stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1", plan_status: "past_due" };
+    accountRow = { stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1", plan_status: "past_due" };
     await choose("growth");
     expect(checkoutCreate).not.toHaveBeenCalled();
     expect(subUpdate).toHaveBeenCalledOnce();
@@ -210,26 +210,26 @@ describe("a Stripe refusal reaches the person who pressed the button", () => {
   });
 
   it("says so when the plan switch is refused, and does not move the tier", async () => {
-    agencyRow = { stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1", plan_status: "active" };
+    accountRow = { stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1", plan_status: "active" };
     subUpdate.mockRejectedValueOnce(new Error("card_declined"));
     const result = await choose("growth");
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected a refusal");
     expect(result.error).toContain("The plan could not be switched");
-    // The optimistic `agencies.plan` write is downstream of the Stripe call,
+    // The optimistic `accounts.plan` write is downstream of the Stripe call,
     // so a refusal must leave the customer on the tier they are paying for.
     expect(writes).toHaveLength(0);
   });
 
   it("refuses the portal in words when there is no billing account yet", async () => {
-    agencyRow = { stripe_customer_id: null, stripe_subscription_id: null };
+    accountRow = { stripe_customer_id: null, stripe_subscription_id: null };
     const { createBillingPortalSession } = await import("../billing");
     const result = await createBillingPortalSession("payment_method");
     expect(result).toEqual({ ok: false, error: "There is no billing account yet — choose a plan first." });
   });
 
   it("says the portal could not be opened rather than throwing a digest", async () => {
-    agencyRow = { stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1" };
+    accountRow = { stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1" };
     portalCreate.mockRejectedValueOnce(new Error("Invalid API Key provided: sk_test_********ess2"));
     const { createBillingPortalSession } = await import("../billing");
     const result = await createBillingPortalSession("payment_method");

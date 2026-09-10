@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
 
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("id, agency_id")
+    .select("id, account_id")
     .eq("id", workspaceId)
     .maybeSingle();
   if (!workspace) {
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
   // The same gate the cron and the onboarding pipeline use. Six requests go out
   // at once and each checks independently, so a burst cannot spend more than
   // the entitlement: the last ones to arrive find nothing remaining.
-  const quota = await getQuota(supabase, workspace.agency_id as string);
+  const quota = await getQuota(supabase, workspace.account_id as string);
   if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
     await stamp({ phase: "drafting", status: "skipped", detail: quotaExceededMessage(quota) }, { finish: true });
     return NextResponse.json({ status: "skipped", reason: "quota" }, { status: 200 });
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
       autonomous: true,
       selection,
       relatedKeywords: Array.isArray(body.relatedKeywords) ? body.relatedKeywords : undefined,
-      billToAgencyId: workspace.agency_id as string,
+      billToAccountId: workspace.account_id as string,
       // The one boundary inside the draft: research is done, the model is
       // about to write. The same sentence the inline pipeline emits, so the
       // screen reads identically whichever invocation wrote the draft.

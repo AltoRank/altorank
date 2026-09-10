@@ -22,7 +22,7 @@ export const metadata: Metadata = { title: "Operations" };
  * What the machine is costing us, per workspace and per provider.
  *
  * Reads across every account, so it is gated on an operator email rather than
- * on agency membership, and it uses the service client deliberately: the whole
+ * on account membership, and it uses the service client deliberately: the whole
  * point is the numbers RLS would hide.
  *
  * Every figure here is what a provider reported, never an estimate. A provider

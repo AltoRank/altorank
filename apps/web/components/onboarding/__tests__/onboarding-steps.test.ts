@@ -5,7 +5,7 @@ import { ONBOARDING_STEPS, stepCompletionMessage } from "../onboarding-steps";
 // P0-O5: "Rank tracking starts on the next run" - not on the free tier
 // ---------------------------------------------------------------------------
 //
-// `cron/serp` calls `entitledToScheduledWork` and refuses a no-plan agency
+// `cron/serp` calls `entitledToScheduledWork` and refuses a no-plan account
 // before it looks at a single keyword, and the AI-visibility sweep and the
 // backlink pass are in the same route. So the message a brand-new signup saw
 // after adding its first keyword described work that would never run for it.

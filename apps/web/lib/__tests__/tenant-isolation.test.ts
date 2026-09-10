@@ -2,16 +2,16 @@
 // Two real tenants, through the same endpoint the browser holds
 // ---------------------------------------------------------------------------
 //
-// AltoRank has two boundaries that look like one: an *agency* is the account,
+// AltoRank has two boundaries that look like one: an *account* is the account,
 // a *workspace* is one site, and a member can be restricted to some of the
-// sites (`agency_members.workspace_ids`). Seven wrong-number bugs came from
+// sites (`account_members.workspace_ids`). Seven wrong-number bugs came from
 // treating the second as if the first covered it.
 //
 // The dashboard talks to Supabase with the anon key and the visitor's session,
 // which means every RLS policy is a public API: whatever a page chooses to
 // query, the person on the other side can query anything else the policy
 // allows, straight at /rest/v1. So this suite does not call the pages. It
-// seeds two agencies with two sites each and a member restricted to one site,
+// seeds two accounts with two sites each and a member restricted to one site,
 // signs them in for real, and asks the database directly - which is the
 // question an attacker asks.
 //
@@ -74,8 +74,8 @@ type Fixture = {
   admin: SupabaseClient;
   /** Signed-in clients: exactly what the dashboard holds. */
   as: Record<keyof typeof PEOPLE, SupabaseClient>;
-  agencyA: string;
-  agencyB: string;
+  accountA: string;
+  accountB: string;
   /** A1 is the only site the restricted editor may see. */
   a1: string;
   a2: string;
@@ -122,23 +122,23 @@ async function seed(env: NonNullable<typeof ENV>): Promise<Fixture> {
     bOwner: await userId(admin, PEOPLE.bOwner),
   };
 
-  const { data: agencies, error: agencyErr } = await admin
-    .from("agencies")
+  const { data: accounts, error: accountErr } = await admin
+    .from("accounts")
     .insert([
       { name: "Tenant Iso A", slug: "tenant-iso-a" },
       { name: "Tenant Iso B", slug: "tenant-iso-b" },
     ])
     .select("id, slug");
-  if (agencyErr || !agencies) throw new Error(`agencies: ${agencyErr?.message}`);
-  const agencyA = agencies.find((a) => a.slug === "tenant-iso-a")!.id as string;
-  const agencyB = agencies.find((a) => a.slug === "tenant-iso-b")!.id as string;
+  if (accountErr || !accounts) throw new Error(`accounts: ${accountErr?.message}`);
+  const accountA = accounts.find((a) => a.slug === "tenant-iso-a")!.id as string;
+  const accountB = accounts.find((a) => a.slug === "tenant-iso-b")!.id as string;
 
   const { data: workspaces, error: wsErr } = await admin
     .from("workspaces")
     .insert([
-      { agency_id: agencyA, name: "A One", domain: "tenant-iso-a1.test", initials: "A1", color: "av-c1" },
-      { agency_id: agencyA, name: "A Two", domain: "tenant-iso-a2.test", initials: "A2", color: "av-c1" },
-      { agency_id: agencyB, name: "B One", domain: "tenant-iso-b1.test", initials: "B1", color: "av-c1" },
+      { account_id: accountA, name: "A One", domain: "tenant-iso-a1.test", initials: "A1", color: "av-c1" },
+      { account_id: accountA, name: "A Two", domain: "tenant-iso-a2.test", initials: "A2", color: "av-c1" },
+      { account_id: accountB, name: "B One", domain: "tenant-iso-b1.test", initials: "B1", color: "av-c1" },
     ])
     .select("id, domain");
   if (wsErr || !workspaces) throw new Error(`workspaces: ${wsErr?.message}`);
@@ -147,13 +147,13 @@ async function seed(env: NonNullable<typeof ENV>): Promise<Fixture> {
   const a2 = byDomain("tenant-iso-a2.test");
   const b1 = byDomain("tenant-iso-b1.test");
 
-  const { error: memberErr } = await admin.from("agency_members").insert([
-    { agency_id: agencyA, user_id: ids.aOwner, role: "owner", workspace_ids: null },
+  const { error: memberErr } = await admin.from("account_members").insert([
+    { account_id: accountA, user_id: ids.aOwner, role: "owner", workspace_ids: null },
     // The whole point of the fixture: an editor who may see A One and nothing else.
-    { agency_id: agencyA, user_id: ids.aEditor, role: "editor", workspace_ids: [a1] },
-    { agency_id: agencyB, user_id: ids.bOwner, role: "owner", workspace_ids: null },
+    { account_id: accountA, user_id: ids.aEditor, role: "editor", workspace_ids: [a1] },
+    { account_id: accountB, user_id: ids.bOwner, role: "owner", workspace_ids: null },
   ]);
-  if (memberErr) throw new Error(`agency_members: ${memberErr.message}`);
+  if (memberErr) throw new Error(`account_members: ${memberErr.message}`);
 
   const { data: articles, error: artErr } = await admin
     .from("articles")
@@ -171,11 +171,11 @@ async function seed(env: NonNullable<typeof ENV>): Promise<Fixture> {
     { workspace_id: b1, term: "tenant iso b1" },
   ]);
   await admin.from("api_keys").insert([
-    { agency_id: agencyA, name: "iso A", key_hash: "tenant-iso-hash-a", prefix: "altorank_live_isoA" },
-    { agency_id: agencyB, name: "iso B", key_hash: "tenant-iso-hash-b", prefix: "altorank_live_isoB" },
+    { account_id: accountA, name: "iso A", key_hash: "tenant-iso-hash-a", prefix: "altorank_live_isoA" },
+    { account_id: accountB, name: "iso B", key_hash: "tenant-iso-hash-b", prefix: "altorank_live_isoB" },
   ]);
   await admin.from("invites").insert({
-    agency_id: agencyA,
+    account_id: accountA,
     email: "tenant-iso-invitee@example.test",
     token: "tenant-iso-invite-token",
     invited_by: ids.aOwner,
@@ -189,8 +189,8 @@ async function seed(env: NonNullable<typeof ENV>): Promise<Fixture> {
       aEditor: await signIn(env.url, env.anon, PEOPLE.aEditor),
       bOwner: await signIn(env.url, env.anon, PEOPLE.bOwner),
     },
-    agencyA,
-    agencyB,
+    accountA,
+    accountB,
     a1,
     a2,
     b1,
@@ -200,8 +200,8 @@ async function seed(env: NonNullable<typeof ENV>): Promise<Fixture> {
 }
 
 async function teardown(admin: SupabaseClient): Promise<void> {
-  // Agencies cascade to workspaces, members, keys, invites and every child row.
-  await admin.from("agencies").delete().in("slug", ["tenant-iso-a", "tenant-iso-b"]);
+  // Accounts cascade to workspaces, members, keys, invites and every child row.
+  await admin.from("accounts").delete().in("slug", ["tenant-iso-a", "tenant-iso-b"]);
   const { data: list } = await admin.auth.admin.listUsers({ perPage: 1000 });
   for (const u of list?.users ?? []) {
     if (u.email && Object.values(PEOPLE).includes(u.email as (typeof PEOPLE)[keyof typeof PEOPLE])) {
@@ -223,7 +223,7 @@ describe.skipIf(!LIVE)("tenant isolation, as two signed-in accounts", () => {
 
   // --- Across accounts ------------------------------------------------------
 
-  describe("agency A cannot reach agency B", () => {
+  describe("account A cannot reach account B", () => {
     const perWorkspace = [
       "articles",
       "keywords",
@@ -281,29 +281,29 @@ describe.skipIf(!LIVE)("tenant isolation, as two signed-in accounts", () => {
       expect(error).not.toBeNull();
     });
 
-    it.each(["api_keys", "invites", "invoices", "agency_integrations", "backlink_credits"] as const)(
-      "%s: naming B's agency returns nothing",
+    it.each(["api_keys", "invites", "invoices", "account_integrations", "backlink_credits"] as const)(
+      "%s: naming B's account returns nothing",
       async (table) => {
-        const { data } = await fx.as.aOwner.from(table).select("*").eq("agency_id", fx.agencyB);
+        const { data } = await fx.as.aOwner.from(table).select("*").eq("account_id", fx.accountB);
         expect(data ?? []).toEqual([]);
       },
     );
 
-    it("agencies: B's account row is invisible and unwritable", async () => {
-      const { data } = await fx.as.aOwner.from("agencies").select("id").eq("id", fx.agencyB);
+    it("accounts: B's account row is invisible and unwritable", async () => {
+      const { data } = await fx.as.aOwner.from("accounts").select("id").eq("id", fx.accountB);
       expect(data).toEqual([]);
-      await fx.as.aOwner.from("agencies").update({ name: "taken over" }).eq("id", fx.agencyB);
-      const { data: after } = await fx.admin.from("agencies").select("name").eq("id", fx.agencyB).single();
+      await fx.as.aOwner.from("accounts").update({ name: "taken over" }).eq("id", fx.accountB);
+      const { data: after } = await fx.admin.from("accounts").select("name").eq("id", fx.accountB).single();
       expect(after?.name).toBe("Tenant Iso B");
     });
 
-    it("agency_members: B's roster is invisible, and A cannot join B", async () => {
-      const { data } = await fx.as.aOwner.from("agency_members").select("id").eq("agency_id", fx.agencyB);
+    it("account_members: B's roster is invisible, and A cannot join B", async () => {
+      const { data } = await fx.as.aOwner.from("account_members").select("id").eq("account_id", fx.accountB);
       expect(data).toEqual([]);
       const { data: me } = await fx.as.aOwner.auth.getUser();
       const { error } = await fx.as.aOwner
-        .from("agency_members")
-        .insert({ agency_id: fx.agencyB, user_id: me.user!.id, role: "owner" });
+        .from("account_members")
+        .insert({ account_id: fx.accountB, user_id: me.user!.id, role: "owner" });
       expect(error).not.toBeNull();
     });
   });
@@ -336,10 +336,10 @@ describe.skipIf(!LIVE)("tenant isolation, as two signed-in accounts", () => {
 
     it("cannot widen its own access or promote itself", async () => {
       const { data: me } = await fx.as.aEditor.auth.getUser();
-      await fx.as.aEditor.from("agency_members").update({ workspace_ids: null }).eq("user_id", me.user!.id);
-      await fx.as.aEditor.from("agency_members").update({ role: "owner" }).eq("user_id", me.user!.id);
+      await fx.as.aEditor.from("account_members").update({ workspace_ids: null }).eq("user_id", me.user!.id);
+      await fx.as.aEditor.from("account_members").update({ role: "owner" }).eq("user_id", me.user!.id);
       const { data: row } = await fx.admin
-        .from("agency_members")
+        .from("account_members")
         .select("role, workspace_ids")
         .eq("user_id", me.user!.id)
         .single();
@@ -348,12 +348,12 @@ describe.skipIf(!LIVE)("tenant isolation, as two signed-in accounts", () => {
     });
   });
 
-  // --- Least privilege on the agency-scoped tables (migration 072) -----------
+  // --- Least privilege on the account-scoped tables (migration 072) -----------
 
-  describe("agency-scoped tables are admin-only to write", () => {
-    it("an editor cannot mint an agency-wide API key", async () => {
+  describe("account-scoped tables are admin-only to write", () => {
+    it("an editor cannot mint an account-wide API key", async () => {
       const { error } = await fx.as.aEditor.from("api_keys").insert({
-        agency_id: fx.agencyA,
+        account_id: fx.accountA,
         name: "self-issued",
         key_hash: "tenant-iso-self-issued",
         prefix: "altorank_live_self",
@@ -368,7 +368,7 @@ describe.skipIf(!LIVE)("tenant isolation, as two signed-in accounts", () => {
       await fx.as.aEditor
         .from("api_keys")
         .update({ revoked_at: new Date().toISOString(), scopes: ["write"] })
-        .eq("agency_id", fx.agencyA);
+        .eq("account_id", fx.accountA);
       const { data } = await fx.admin
         .from("api_keys")
         .select("revoked_at, scopes")
@@ -389,7 +389,7 @@ describe.skipIf(!LIVE)("tenant isolation, as two signed-in accounts", () => {
       const { data: created, error: createErr } = await fx.as.aOwner
         .from("api_keys")
         .insert({
-          agency_id: fx.agencyA,
+          account_id: fx.accountA,
           name: "owner issued",
           key_hash: "tenant-iso-owner-issued",
           prefix: "altorank_live_ownr",
@@ -417,7 +417,7 @@ describe.skipIf(!LIVE)("tenant isolation, as two signed-in accounts", () => {
       for (const who of [fx.as.aEditor, fx.as.aOwner]) {
         const { error } = await who
           .from("backlink_credits")
-          .insert({ agency_id: fx.agencyA, amount: 9_999, reason: "bonus" });
+          .insert({ account_id: fx.accountA, amount: 9_999, reason: "bonus" });
         expect(error).not.toBeNull();
       }
     });
@@ -425,43 +425,43 @@ describe.skipIf(!LIVE)("tenant isolation, as two signed-in accounts", () => {
     it("nobody signed in can move the account onto a paid plan", async () => {
       for (const who of [fx.as.aEditor, fx.as.aOwner]) {
         const { error } = await who
-          .from("agencies")
+          .from("accounts")
           .update({ plan: "scale", plan_status: "active" })
-          .eq("id", fx.agencyA);
+          .eq("id", fx.accountA);
         expect(error).not.toBeNull();
       }
-      const { data } = await fx.admin.from("agencies").select("plan, plan_status").eq("id", fx.agencyA).single();
+      const { data } = await fx.admin.from("accounts").select("plan, plan_status").eq("id", fx.accountA).single();
       expect(data?.plan).toBe("starter");
       expect(data?.plan_status).toBe("inactive");
     });
 
     it("nobody signed in can set the legacy blog API key", async () => {
       const { error } = await fx.as.aOwner
-        .from("agencies")
+        .from("accounts")
         .update({ api_key: "chosen-by-the-caller" })
-        .eq("id", fx.agencyA);
+        .eq("id", fx.accountA);
       expect(error).not.toBeNull();
     });
 
     it("an editor cannot rebrand the account, but an owner can", async () => {
       const { error: refused } = await fx.as.aEditor
-        .from("agencies")
+        .from("accounts")
         .update({ name: "Renamed by an editor", remove_branding: true })
-        .eq("id", fx.agencyA);
+        .eq("id", fx.accountA);
       expect(refused).not.toBeNull();
 
       const { error: allowed } = await fx.as.aOwner
-        .from("agencies")
+        .from("accounts")
         .update({ name: "Renamed by the owner" })
-        .eq("id", fx.agencyA);
+        .eq("id", fx.accountA);
       expect(allowed).toBeNull();
     });
 
     it("a member may still answer the attribution question", async () => {
       const { error } = await fx.as.aEditor
-        .from("agencies")
+        .from("accounts")
         .update({ attribution_source: "google", attribution_answered_at: new Date().toISOString() })
-        .eq("id", fx.agencyA);
+        .eq("id", fx.accountA);
       expect(error).toBeNull();
     });
 
@@ -482,7 +482,7 @@ describe.skipIf(!LIVE)("tenant isolation, as two signed-in accounts", () => {
     const anon = createClient(ENV!.url, ENV!.anon, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    for (const table of ["workspaces", "articles", "keywords", "agencies", "api_keys", "invites"] as const) {
+    for (const table of ["workspaces", "articles", "keywords", "accounts", "api_keys", "invites"] as const) {
       const { data } = await anon.from(table).select("id").limit(1);
       expect(data ?? []).toEqual([]);
     }

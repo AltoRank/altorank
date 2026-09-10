@@ -3,26 +3,26 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
-import { updateAgencyProfile, rotateApiKey } from "@/app/actions/settings";
-import type { Agency } from "@/lib/types";
+import { updateAccountProfile, rotateApiKey } from "@/app/actions/settings";
+import type { Account } from "@/lib/types";
 
 interface SettingsFormProps {
-  agency: Agency;
+  account: Account;
   /** Why the account's quota is what it is; decides the attribution line. */
   quotaReason: "self-host" | "operator" | "plan" | "no-plan";
 }
 
-export function SettingsForm({ agency, quotaReason }: SettingsFormProps) {
+export function SettingsForm({ account, quotaReason }: SettingsFormProps) {
   // Only the hosted free tier publishes with the line. See
   // lib/publishing/attribution.ts for why the rule lives on the plan and not
   // on a toggle.
   const attributionApplies = quotaReason === "no-plan";
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [apiKey, setApiKey] = useState(agency.api_key ?? "");
+  const [apiKey, setApiKey] = useState(account.api_key ?? "");
   const [copied, setCopied] = useState(false);
   const [rotating, setRotating] = useState(false);
-  const [accentColor, setAccentColor] = useState(agency.accent_color ?? "#5763EC");
+  const [accentColor, setAccentColor] = useState(account.accent_color ?? "#5763EC");
 
   const COLORS = ["#5763EC", "#D97757", "#0F766E", "#111827"];
 
@@ -31,7 +31,7 @@ export function SettingsForm({ agency, quotaReason }: SettingsFormProps) {
     const fd = new FormData(e.currentTarget);
     fd.set("accent_color", accentColor);
     startTransition(async () => {
-      await updateAgencyProfile(fd);
+      await updateAccountProfile(fd);
       router.refresh();
     });
   }
@@ -59,18 +59,18 @@ export function SettingsForm({ agency, quotaReason }: SettingsFormProps) {
   return (
     <form onSubmit={handleSave}>
       <div className="grid grid-cols-2 gap-4">
-        {/* Agency profile */}
+        {/* Account profile */}
         <div className="bg-bg border border-line rounded-lg p-5">
           <h3 className="text-sm font-semibold mb-1">Workspace profile</h3>
           <p className="text-[12.5px] text-ink-3 mb-4">How you appear on reports and any page a client sees.</p>
           <label className={labelClass}>Workspace name</label>
-          <input name="name" className={inputClass} defaultValue={agency.name} />
+          <input name="name" className={inputClass} defaultValue={account.name} />
           <label className={labelClass}>Reporting email</label>
-          <input name="report_email" className={inputClass} defaultValue={agency.report_email ?? ""} />
+          <input name="report_email" className={inputClass} defaultValue={account.report_email ?? ""} />
           <label className={labelClass}>Logo</label>
           <div className="flex gap-2.5 items-center">
             <div className="w-12 h-12 bg-ink text-bg rounded-[10px] grid place-items-center font-mono font-semibold">
-              {agency.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
+              {account.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
             </div>
             <span className="text-[12px] text-ink-3">
               Reports use these initials for now. Logo upload is on the way.
@@ -81,7 +81,7 @@ export function SettingsForm({ agency, quotaReason }: SettingsFormProps) {
         {/* White-label */}
         <div className="bg-bg border border-line rounded-lg p-5">
           <h3 className="text-sm font-semibold mb-1">White-label</h3>
-          {/* "Your logo and" removed: nothing writes agencies.logo_url - there
+          {/* "Your logo and" removed: nothing writes accounts.logo_url - there
               is no upload anywhere - so the report template's
               `{logo_url && <Image/>}` never renders. The card said so itself
               eight lines above ("Logo upload is on the way") while promising

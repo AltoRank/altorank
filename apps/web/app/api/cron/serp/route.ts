@@ -79,7 +79,7 @@ async function run(request: Request) {
 
     // Nothing below is free, and none of it is worth buying for an account
     // that cannot ship what it produces. See entitledToScheduledWork.
-    const quota = await getQuota(supabase, ws.agency_id as string, null);
+    const quota = await getQuota(supabase, ws.account_id as string, null);
     if (!entitledToScheduledWork(quota)) {
       results.push({
         workspaceId: ws.id,

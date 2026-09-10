@@ -2,7 +2,7 @@
 // Publishing behaviour: draft or live, per connection
 // ---------------------------------------------------------------------------
 //
-// Every adapter used to publish live, unconditionally. For an agency handing a
+// Every adapter used to publish live, unconditionally. For an account handing a
 // client "one-click publishing" that is the wrong default: a draft the client
 // releases from their own CMS is recoverable, a post that went live at 03:00
 // with a wrong image is not. So a connection carries a publish_mode, chosen in

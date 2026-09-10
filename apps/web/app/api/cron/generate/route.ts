@@ -13,7 +13,7 @@ import { sweepStaleDrafts } from "@/lib/content/stale-drafts";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
 import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
 import { readFrozenEntries } from "@/lib/plan/frozen";
-import { agencyRecipients } from "@/lib/email/agency-recipients";
+import { accountRecipients } from "@/lib/email/account-recipients";
 import { sendArticleDraftedEmails } from "@/lib/email/article-emails";
 import { sweepUnannouncedDrafts } from "@/lib/email/draft-batch";
 import { describeSendOutcome } from "@/lib/email/send-once";
@@ -135,7 +135,7 @@ async function run(request: Request) {
 
   const { data: workspaces, error } = await supabase
     .from("workspaces")
-    .select("id, domain, agency_id, auto_generate_weekly_limit, refresh_enabled, refresh_days, auto_approve, auto_approve_hold_hours, onboarded_at, onboarding_skipped_at")
+    .select("id, domain, account_id, auto_generate_weekly_limit, refresh_enabled, refresh_days, auto_approve, auto_approve_hold_hours, onboarded_at, onboarding_skipped_at")
     .eq("auto_generate", true)
     .neq("status", "paused");
 
@@ -144,7 +144,7 @@ async function run(request: Request) {
   }
 
   // A pause lifts by itself, here and at Stripe. Warned a few days out, from
-  // the one job that sees every account on every run. Keyed by (agency, date),
+  // the one job that sees every account on every run. Keyed by (account, date),
   // so four runs a day inside the window still send one email.
   const pauseReminders = await remindEndingPauses(supabase);
 
@@ -237,7 +237,7 @@ async function run(request: Request) {
       // in one sentence, so this cron stops for all four rather than only the
       // first. The quota is still read for the paid branch below, which is a
       // volume limit and not an entitlement.
-      const spend = await canSpend(supabase, ws.agency_id as string, {
+      const spend = await canSpend(supabase, ws.account_id as string, {
         userEmail: null,
         workspaceId,
         action: "scheduled-work",
@@ -246,7 +246,7 @@ async function run(request: Request) {
         results.push({ workspaceId, domain, status: "skipped", detail: spend.message });
         continue;
       }
-      const quota = await getQuota(supabase, ws.agency_id as string, null);
+      const quota = await getQuota(supabase, ws.account_id as string, null);
       if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
         results.push({ workspaceId, domain, status: "skipped", detail: quotaExceededMessage(quota) });
         continue;
@@ -355,7 +355,7 @@ async function run(request: Request) {
         autonomous: true,
         // Explicitly nobody, matching the getQuota call above. Without this the
         // gate inside generateArticle resolves its own answer and can reach a
-        // different verdict for the same agency.
+        // different verdict for the same account.
         callerEmail: null,
         // Carry the rationale onto the draft. It used to reach the reviewer
         // only as reasons[0] inside an activity-log line, which is the wrong
@@ -419,7 +419,7 @@ async function run(request: Request) {
       try {
         if (setupUnfinished) {
           const line = await announceSetupUnfinished(supabase, {
-            agencyId: ws.agency_id as string,
+            accountId: ws.account_id as string,
             workspaceId,
             domain,
           });
@@ -434,7 +434,7 @@ async function run(request: Request) {
           });
           continue;
         }
-        const to = await agencyRecipients(supabase, ws.agency_id as string, workspaceId);
+        const to = await accountRecipients(supabase, ws.account_id as string, workspaceId);
         // Whether there is anywhere to publish to, so the mail can say the one
         // honest thing about a site that has connected nothing. Never fatal:
         // undefined leaves the line out rather than guessing.
@@ -464,7 +464,7 @@ async function run(request: Request) {
             autoApproveAfter,
             holdUrlFor: autoApproveAfter ? (to) => holdUrl(result.articleId, to) : undefined,
           },
-          { agencyId: ws.agency_id as string, workspaceId },
+          { accountId: ws.account_id as string, workspaceId },
         );
         notified = `, ${describeSendOutcome(out)}`;
       } catch (err) {
@@ -544,7 +544,7 @@ async function run(request: Request) {
  */
 async function skipped(
   supabase: ReturnType<typeof createServiceClient>,
-  ws: { agency_id?: unknown },
+  ws: { account_id?: unknown },
   workspaceId: string,
   domain: string | null,
   detail: string,
@@ -553,7 +553,7 @@ async function skipped(
   const emailed = reason
     ? await announceNothingWritten(
         supabase,
-        { agencyId: ws.agency_id as string, workspaceId, domain },
+        { accountId: ws.account_id as string, workspaceId, domain },
         reason,
       )
     : undefined;

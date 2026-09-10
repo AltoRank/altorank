@@ -255,17 +255,17 @@ describe("the row itself", () => {
       level: "error",
       source: "s",
       message: "m",
-      agencyId: "unknown",
+      accountId: "unknown",
       workspaceId: "",
     });
-    expect(row.agency_id).toBeNull();
+    expect(row.account_id).toBeNull();
     expect(row.workspace_id).toBeNull();
   });
 
   it("keeps a real UUID", () => {
     const id = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
-    const row = buildEventRow({ level: "error", source: "s", message: "m", agencyId: id });
-    expect(row.agency_id).toBe(id);
+    const row = buildEventRow({ level: "error", source: "s", message: "m", accountId: id });
+    expect(row.account_id).toBe(id);
   });
 
   it("says so rather than writing an empty message", () => {

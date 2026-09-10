@@ -64,16 +64,16 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Verify workspace belongs to user's agency
+    // Verify workspace belongs to user's account
     const { data: member } = await supabase
-      .from("agency_members")
-      .select("agency_id")
+      .from("account_members")
+      .select("account_id")
       .eq("user_id", user.id)
       .single();
 
     if (!member) {
       return NextResponse.redirect(
-        new URL("/connect?error=no_agency", request.url),
+        new URL("/connect?error=no_account", request.url),
       );
     }
 
@@ -84,7 +84,7 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
         .from("workspaces")
         .select("id")
         .eq("id", workspaceId)
-        .eq("agency_id", member.agency_id)
+        .eq("account_id", member.account_id)
         .single();
 
       if (!wsCheck) {
@@ -99,9 +99,9 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
 
     // One consent per account, stored whichever route was taken, so a later
     // workspace resolves its property without asking the person again.
-    await supabase.from("agency_integrations").upsert(
-      { agency_id: member.agency_id, provider: "google", tokens: { encrypted }, connected_at: new Date().toISOString() },
-      { onConflict: "agency_id,provider" },
+    await supabase.from("account_integrations").upsert(
+      { account_id: member.account_id, provider: "google", tokens: { encrypted }, connected_at: new Date().toISOString() },
+      { onConflict: "account_id,provider" },
     );
 
     // Account-level connect: there is no workspace to attach to yet, so take
@@ -150,7 +150,7 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
       const { data: siblings } = await supabase
         .from("workspaces")
         .select("id, domain")
-        .eq("agency_id", member.agency_id)
+        .eq("account_id", member.account_id)
         .not("domain", "is", null);
 
       for (const ws of siblings ?? []) {

@@ -49,7 +49,7 @@ export async function onboardWorkspace(workspaceId: string): Promise<OnboardResu
     {
       id: workspace.id,
       domain: workspace.domain,
-      agency_id: workspace.agency_id,
+      account_id: workspace.account_id,
       language: workspace.language ?? null,
       business_profile: (workspace as { business_profile?: unknown }).business_profile ?? null,
     },

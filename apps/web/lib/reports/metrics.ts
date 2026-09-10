@@ -10,7 +10,7 @@ import {
 export interface ReportData {
   period: string;
   workspace: { name: string; domain: string };
-  agency: { name: string; logo_url: string | null; accent_color: string | null; remove_branding: boolean };
+  account: { name: string; logo_url: string | null; accent_color: string | null; remove_branding: boolean };
   articlesPublished: number;
   totalKeywords: number;
   avgPosition: number;
@@ -47,7 +47,7 @@ export interface ReportData {
    * has never been measured.
    *
    * The cron has been writing `geo_results` and the dashboard has been reading
-   * them, but the client report — the one artifact an agency actually hands to
+   * them, but the client report — the one artifact an account actually hands to
    * the person paying for GEO work — showed none of it. Measuring something and
    * then omitting it from the invoice-adjacent document is the same class of
    * problem as not measuring it.
@@ -79,19 +79,19 @@ export async function aggregateReportData(
   startDate: string,
   endDate: string,
 ): Promise<ReportData> {
-  // Fetch workspace + agency
+  // Fetch workspace + account
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("name, domain, agency_id, language")
+    .select("name, domain, account_id, language")
     .eq("id", workspaceId)
     .single();
 
   if (!workspace) throw new Error("Workspace not found");
 
-  const { data: agency } = await supabase
-    .from("agencies")
+  const { data: account } = await supabase
+    .from("accounts")
     .select("name, logo_url, accent_color, remove_branding")
-    .eq("id", workspace.agency_id)
+    .eq("id", workspace.account_id)
     .single();
 
   // Articles published in period
@@ -291,11 +291,11 @@ export async function aggregateReportData(
   return {
     period: `${startDate} to ${endDate}`,
     workspace: { name: workspace.name, domain: workspace.domain },
-    agency: {
-      name: agency?.name ?? "",
-      logo_url: agency?.logo_url ?? null,
-      accent_color: agency?.accent_color ?? null,
-      remove_branding: agency?.remove_branding ?? false,
+    account: {
+      name: account?.name ?? "",
+      logo_url: account?.logo_url ?? null,
+      accent_color: account?.accent_color ?? null,
+      remove_branding: account?.remove_branding ?? false,
     },
     articlesPublished: articlesPublished ?? 0,
     totalKeywords: keywords?.length ?? 0,

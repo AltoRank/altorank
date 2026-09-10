@@ -18,12 +18,12 @@ vi.mock("@/lib/email/resend", () => ({ sendTransactionalEmail }));
 
 type Row = Record<string, unknown>;
 
-let agencyRow: Row | null = null;
+let accountRow: Row | null = null;
 let members: { user_id: string; role: string }[] = [];
 let emails: Record<string, string> = {};
 /** (email_type, subject_id, recipient) already claimed - the real primary key. */
 const claimed = new Set<string>();
-const agencyUpdates: Row[] = [];
+const accountUpdates: Row[] = [];
 
 function selectBuilder(table: string) {
   const b: Record<string, unknown> = {};
@@ -43,12 +43,12 @@ function selectBuilder(table: string) {
 function resolved(table: string, single: boolean) {
   return {
     then: (resolve: (v: unknown) => unknown) =>
-      resolve(single ? { data: table === "agencies" ? agencyRow : null, error: null } : rows(table)),
+      resolve(single ? { data: table === "accounts" ? accountRow : null, error: null } : rows(table)),
   } as never;
 }
 
 function rows(table: string) {
-  if (table === "agency_members") return { data: members, error: null };
+  if (table === "account_members") return { data: members, error: null };
   return { data: [], error: null };
 }
 
@@ -57,7 +57,7 @@ vi.mock("@/lib/supabase/server", () => ({
     from: (table: string) => ({
       select: () => selectBuilder(table),
       update: (row: Row) => {
-        if (table === "agencies") agencyUpdates.push(row);
+        if (table === "accounts") accountUpdates.push(row);
         return selectBuilder(table);
       },
       insert: async (row: Row) => {
@@ -128,7 +128,7 @@ function subscriptionEvent(overrides: Row = {}, created = 1_790_000_000) {
         customer: "cus_1",
         status: "active",
         items: { data: [{ price: { id: GROWTH } }] },
-        metadata: { agency_id: "agency-1" },
+        metadata: { account_id: "account-1" },
         cancel_at_period_end: false,
         pause_collection: null,
         ...overrides,
@@ -148,7 +148,7 @@ function invoiceFailed(overrides: Row = {}) {
         created: Date.parse("2026-09-01T10:00:00Z") / 1000,
         amount_due: 6900,
         currency: "eur",
-        parent: { subscription_details: { subscription: "sub_1", metadata: { agency_id: "agency-1" } } },
+        parent: { subscription_details: { subscription: "sub_1", metadata: { account_id: "account-1" } } },
         ...overrides,
       },
     },
@@ -170,7 +170,7 @@ afterEach(() => {
 beforeEach(() => {
   vi.resetModules();
   claimed.clear();
-  agencyUpdates.length = 0;
+  accountUpdates.length = 0;
   sendTransactionalEmail.mockReset();
   sendTransactionalEmail.mockResolvedValue(undefined);
   constructEvent.mockReset();
@@ -182,7 +182,7 @@ beforeEach(() => {
     { user_id: "u-editor", role: "editor" },
   ];
   emails = { "u-owner": "owner@acme.co", "u-admin": "admin@acme.co", "u-editor": "editor@acme.co" };
-  agencyRow = null;
+  accountRow = null;
   process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
   process.env.STRIPE_PRICE_STARTER = STARTER;
   process.env.STRIPE_PRICE_GROWTH = GROWTH;
@@ -192,12 +192,12 @@ beforeEach(() => {
 
 describe("invoice.payment_failed → the dunning email", () => {
   it("goes to the owner and admin, never to an editor", async () => {
-    agencyRow = {
-      id: "agency-1",
+    accountRow = {
+      id: "account-1",
       plan_status: "active",
       payment_failed_at: null,
       plan: "starter",
-      name: "Acme Agency",
+      name: "Acme Account",
     };
     await deliver(invoiceFailed());
 
@@ -211,7 +211,7 @@ describe("invoice.payment_failed → the dunning email", () => {
    * their inbox has been told two things by one company.
    */
   it("names the same grace date the banner shows, and the amount Stripe charged", async () => {
-    agencyRow = { id: "agency-1", plan_status: "active", payment_failed_at: null, plan: "starter", name: "Acme" };
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null, plan: "starter", name: "Acme" };
     await deliver(invoiceFailed());
 
     const [first] = sends();
@@ -227,13 +227,13 @@ describe("invoice.payment_failed → the dunning email", () => {
    * redelivers each of those until it gets a 200. One episode, one email.
    */
   it("sends once per episode however many retries arrive", async () => {
-    agencyRow = { id: "agency-1", plan_status: "active", payment_failed_at: null, plan: "starter", name: "Acme" };
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null, plan: "starter", name: "Acme" };
     await deliver(invoiceFailed());
     expect(sends()).toHaveLength(2);
 
     // The row now carries the timestamp the first failure wrote.
-    agencyRow = {
-      ...agencyRow,
+    accountRow = {
+      ...accountRow,
       plan_status: "past_due",
       payment_failed_at: new Date(Date.parse("2026-09-01T10:00:00Z")).toISOString(),
     };
@@ -242,25 +242,25 @@ describe("invoice.payment_failed → the dunning email", () => {
     expect(sends()).toHaveLength(2);
   });
 
-  it("says nothing when the invoice matches no agency", async () => {
-    agencyRow = null;
+  it("says nothing when the invoice matches no account", async () => {
+    accountRow = null;
     await deliver(invoiceFailed());
     expect(sends()).toHaveLength(0);
   });
 
   /** An email problem must not make Stripe redeliver a processed event. */
   it("still returns 200 when the send is refused", async () => {
-    agencyRow = { id: "agency-1", plan_status: "active", payment_failed_at: null, plan: "starter", name: "Acme" };
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null, plan: "starter", name: "Acme" };
     sendTransactionalEmail.mockRejectedValue(new Error("Resend refused the email"));
     const res = await deliver(invoiceFailed());
     expect(res.status).toBe(200);
-    expect(agencyUpdates.some((u) => "payment_failed_at" in u)).toBe(true);
+    expect(accountUpdates.some((u) => "payment_failed_at" in u)).toBe(true);
   });
 });
 
 describe("customer.subscription.updated → the plan-change email", () => {
   it("says which way the plan moved and what is now included", async () => {
-    agencyRow = { id: "agency-1", plan_status: "active", payment_failed_at: null, plan: "starter", name: "Acme" };
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null, plan: "starter", name: "Acme" };
     await deliver(subscriptionEvent());
 
     const [first] = sends();
@@ -270,13 +270,13 @@ describe("customer.subscription.updated → the plan-change email", () => {
   });
 
   it("says nothing when the tier did not change", async () => {
-    agencyRow = { id: "agency-1", plan_status: "active", payment_failed_at: null, plan: "growth", name: "Acme" };
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null, plan: "growth", name: "Acme" };
     await deliver(subscriptionEvent());
     expect(sends()).toHaveLength(0);
   });
 
   it("calls a move down a downgrade, with the credit explained", async () => {
-    agencyRow = { id: "agency-1", plan_status: "active", payment_failed_at: null, plan: "growth", name: "Acme" };
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null, plan: "growth", name: "Acme" };
     retrieveSubscription.mockResolvedValue({ items: { data: [{ price: { id: STARTER } }] } });
     await deliver(subscriptionEvent({ items: { data: [{ price: { id: STARTER } }] } }));
 
@@ -289,8 +289,8 @@ describe("customer.subscription.updated → the cancellation email", () => {
   const cancelAt = Date.parse("2026-12-01T00:00:00Z") / 1000;
 
   it("names the date the plan ends and offers the undo", async () => {
-    agencyRow = {
-      id: "agency-1",
+    accountRow = {
+      id: "account-1",
       plan_status: "active",
       payment_failed_at: null,
       plan: "growth",
@@ -307,8 +307,8 @@ describe("customer.subscription.updated → the cancellation email", () => {
 
   /** Several `updated` events follow one cancellation; the customer gets one. */
   it("does not repeat for an unchanged cancellation date", async () => {
-    agencyRow = {
-      id: "agency-1",
+    accountRow = {
+      id: "account-1",
       plan_status: "active",
       payment_failed_at: null,
       plan: "growth",
@@ -320,8 +320,8 @@ describe("customer.subscription.updated → the cancellation email", () => {
   });
 
   it("says nothing when the plan simply renewed", async () => {
-    agencyRow = {
-      id: "agency-1",
+    accountRow = {
+      id: "account-1",
       plan_status: "active",
       payment_failed_at: null,
       plan: "growth",

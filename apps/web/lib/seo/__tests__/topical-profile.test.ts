@@ -219,7 +219,7 @@ describe("scoreRelevance keeps numerals in the query", () => {
       title: "AltoRank — AI search visibility for agencies",
       metaDescription: "Rank in Google and in AI answers. Built for SEO agencies and their clients.",
       h1: ["Get cited by the search engines that answer"],
-      h2: ["Keyword research and rank tracking", "Agency reporting", "How Google reads your site"],
+      h2: ["Keyword research and rank tracking", "Account reporting", "How Google reads your site"],
     }),
     page({
       url: "https://altorank.co/geo",

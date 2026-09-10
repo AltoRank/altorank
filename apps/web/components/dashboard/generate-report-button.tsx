@@ -9,7 +9,7 @@ import posthog from "posthog-js";
 
 /**
  * Which workspace gets reported on is a choice, not an accident. This took a
- * single workspaceId and the page passed `workspaces[0]`, so an agency with
+ * single workspaceId and the page passed `workspaces[0]`, so an account with
  * four clients silently generated a report for whichever was created first -
  * the same first-row bug the Articles page had.
  *

@@ -64,7 +64,7 @@ async function run(request: Request) {
 
   const { data: pending, error } = await supabase
     .from("workspaces")
-    .select("id, domain, agency_id, language, location_code")
+    .select("id, domain, account_id, language, location_code")
     .is("first_analysed_at", null)
     .not("domain", "is", null)
     .neq("status", "paused")
@@ -86,7 +86,7 @@ async function run(request: Request) {
     // allowance and must still get its first look - the whole free tier
     // depends on it. What this stops is an account whose allowance is gone,
     // or whose card lapsed, adding a fresh domain for another free analysis.
-    const spend = await canSpend(supabase, ws.agency_id as string, {
+    const spend = await canSpend(supabase, ws.account_id as string, {
       userEmail: null,
       workspaceId,
       action: "site-audit",
@@ -219,7 +219,7 @@ async function refillEmptyPools(
   const out: PoolRefill[] = [];
   const { data: workspaces } = await supabase
     .from("workspaces")
-    .select("id, domain, agency_id, language, location_code")
+    .select("id, domain, account_id, language, location_code")
     .eq("auto_generate", true)
     .not("first_analysed_at", "is", null)
     .neq("status", "paused");
@@ -238,7 +238,7 @@ async function refillEmptyPools(
     }
     if (!exhausted) continue;
 
-    const spend = await canSpend(supabase, ws.agency_id as string, {
+    const spend = await canSpend(supabase, ws.account_id as string, {
       userEmail: null,
       workspaceId,
       action: "keyword-research",

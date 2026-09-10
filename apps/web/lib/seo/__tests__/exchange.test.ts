@@ -110,8 +110,8 @@ describe("verifyPlacementLive", () => {
 describe("settlementDecision", () => {
   const base = {
     status: "placed",
-    provider_agency_id: "agency-publisher",
-    requester_agency_id: "agency-writer",
+    provider_account_id: "account-publisher",
+    requester_account_id: "account-writer",
   };
 
   it("settles a placed exchange at the flat per-article price", () => {
@@ -136,8 +136,8 @@ describe("settlementDecision", () => {
   });
 
   it("refuses an exchange missing either side", () => {
-    expect(settlementDecision({ ...base, provider_agency_id: null }).settle).toBe(false);
-    expect(settlementDecision({ ...base, requester_agency_id: null }).settle).toBe(false);
+    expect(settlementDecision({ ...base, provider_account_id: null }).settle).toBe(false);
+    expect(settlementDecision({ ...base, requester_account_id: null }).settle).toBe(false);
   });
 
   it("prices a brand-new site the same as an established one", () => {

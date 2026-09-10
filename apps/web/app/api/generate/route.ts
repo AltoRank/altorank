@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
   // --- Authorise the workspace ---------------------------------------------
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("id, agency_id")
+    .select("id, account_id")
     .eq("id", workspaceId)
     .single();
 
@@ -60,9 +60,9 @@ export async function POST(request: NextRequest) {
   }
 
   const { data: membership } = await supabase
-    .from("agency_members")
+    .from("account_members")
     .select("id")
-    .eq("agency_id", workspace.agency_id)
+    .eq("account_id", workspace.account_id)
     .eq("user_id", user.id)
     .single();
 

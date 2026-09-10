@@ -165,14 +165,14 @@ describe("sendArticleDraftedEmails", () => {
   it("claims the send under the article id, so a different draft still sends", async () => {
     const { client, inserted } = db();
     await sendArticleDraftedEmails(client, ["a@x.co"], base, {
-      agencyId: "ag-1",
+      accountId: "ag-1",
       workspaceId: "ws-1",
     });
     expect(inserted[0]).toMatchObject({
       email_type: "article_drafted",
       subject_id: "a1b2",
       recipient: "a@x.co",
-      agency_id: "ag-1",
+      account_id: "ag-1",
       workspace_id: "ws-1",
     });
     const r = await sendArticleDraftedEmails(client, ["a@x.co"], { ...base, articleId: "other" });

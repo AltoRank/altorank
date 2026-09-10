@@ -52,11 +52,11 @@ vi.mock("@/lib/billing/workspaces", async () => {
   const real = await vi.importActual<typeof import("@/lib/billing/workspaces")>("@/lib/billing/workspaces");
   return { ...real, getWorkspaceAllowance: allowance };
 });
-vi.mock("@/lib/queries/agency", () => ({ ensureAgency: async () => "agency-1" }));
+vi.mock("@/lib/queries/account", () => ({ ensureAccount: async () => "account-1" }));
 // The role gate in front of everything else: adding a site takes a plan slot,
 // so it is owner/admin like the Search Console door that also creates sites.
 const { requireAuth } = vi.hoisted(() => ({
-  requireAuth: vi.fn(async () => ({ agencyId: "agency-1", role: "owner", user: { id: "u1", email: "a@b.co" } })),
+  requireAuth: vi.fn(async () => ({ accountId: "account-1", role: "owner", user: { id: "u1", email: "a@b.co" } })),
 }));
 vi.mock("@/lib/auth/require-auth", () => ({ requireAuth }));
 vi.mock("@/lib/seo/indexing", () => ({ generateIndexNowKey: () => "key" }));
@@ -80,7 +80,7 @@ beforeEach(() => {
   allowance.mockClear();
   allowance.mockResolvedValue(PLAN_ALLOWANCE);
   requireAuth.mockClear();
-  requireAuth.mockResolvedValue({ agencyId: "agency-1", role: "owner", user: { id: "u1", email: "a@b.co" } });
+  requireAuth.mockResolvedValue({ accountId: "account-1", role: "owner", user: { id: "u1", email: "a@b.co" } });
 });
 
 describe("createWorkspace", () => {
@@ -90,7 +90,7 @@ describe("createWorkspace", () => {
       workspaceId: "ws-new",
       domain: "acme.com",
     });
-    expect(inserted).toHaveBeenCalledWith(expect.objectContaining({ domain: "acme.com", agency_id: "agency-1" }));
+    expect(inserted).toHaveBeenCalledWith(expect.objectContaining({ domain: "acme.com", account_id: "account-1" }));
   });
 
   it("returns the workspace-limit message instead of throwing it", async () => {
@@ -148,7 +148,7 @@ describe("createWorkspace, who may", () => {
     // site could add a fourth site to somebody else's account - taking a plan
     // slot and starting it on the shared monthly quota - while the Team page
     // told them editors "cannot manage billing".
-    requireAuth.mockResolvedValue({ agencyId: "agency-1", role: "editor", user: { id: "u2", email: "e@b.co" } });
+    requireAuth.mockResolvedValue({ accountId: "account-1", role: "editor", user: { id: "u2", email: "e@b.co" } });
     const result = await create({ name: "Acme", domain: "acme.com" });
     expect(result).toEqual({
       ok: false,
@@ -162,7 +162,7 @@ describe("createWorkspace, who may", () => {
   });
 
   it("lets an admin add one", async () => {
-    requireAuth.mockResolvedValue({ agencyId: "agency-1", role: "admin", user: { id: "u3", email: "a2@b.co" } });
+    requireAuth.mockResolvedValue({ accountId: "account-1", role: "admin", user: { id: "u3", email: "a2@b.co" } });
     await expect(create({ name: "Acme", domain: "acme.com" })).resolves.toMatchObject({ ok: true });
   });
 });

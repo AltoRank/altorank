@@ -27,7 +27,7 @@ import {
  * Defense, Mimecast and Barracuda all fetch every link in an inbound message
  * before the recipient sees it, so on a corporate tenant the opt-out fired
  * before anybody read the mail. The auditor reproduced it by accident with one
- * `curl` while checking the link resolved. For a product selling to agencies on
+ * `curl` while checking the link resolved. For a product selling to accounts on
  * Microsoft 365 that is not theoretical, and a scanner deciding what mail
  * somebody receives is worse than one extra press.
  *

@@ -2,7 +2,7 @@
 // What to call a member on the Team page
 // ---------------------------------------------------------------------------
 //
-// agency_members holds a user id and nothing about the person; the email and
+// account_members holds a user id and nothing about the person; the email and
 // any name live in auth.users, which lib/queries/team resolves with the service
 // role. This is the last step: pick the label, and the two letters on the
 // avatar, from whatever was resolved.

@@ -97,7 +97,7 @@ export async function deliverWithRetry(opts: DeliveryOptions): Promise<Response>
   // many customer endpoints refused us this week", because publish_log is read
   // one workspace at a time from inside that workspace's dashboard.
   //
-  // No agency or workspace id here on purpose — this function is two layers
+  // No account or workspace id here on purpose — this function is two layers
   // below the one that knows them, and inventing an argument for the whole CMS
   // adapter chain to thread through would be a bigger change than the log is
   // worth. The publish_log row written at the same instant carries both.

@@ -45,7 +45,7 @@ export const getScopedWorkspaceId = cache(async function getScopedWorkspaceId(
   const wanted = explicit ?? (await cookies()).get(SCOPE_COOKIE)?.value;
   const supabase = await createClient();
 
-  // RLS scopes this to the caller's agency, so a foreign id simply misses
+  // RLS scopes this to the caller's account, so a foreign id simply misses
   // the list. Oldest first, so the fallback is stable rather than whichever
   // row came back first.
   const { data, error } = await supabase

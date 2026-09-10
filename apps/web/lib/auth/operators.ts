@@ -2,7 +2,7 @@
  * Operator accounts, by email.
  *
  * A list rather than a role column because there is exactly one operator and
- * adding a `role` to `agency_members` would imply a permission system this
+ * adding a `role` to `account_members` would imply a permission system this
  * product does not have. When there are three of these, it becomes a column.
  *
  * Env-overridable so a self-hoster is the operator of their own install rather
