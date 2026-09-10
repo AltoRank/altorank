@@ -28,6 +28,7 @@
 
 import { fetchLenient, isTlsChainError } from "./lenient-fetch";
 import { FALLBACK_UA } from "./crawler";
+import { noteRefusal, refusing, REFUSED_STATUSES } from "./host-circuit";
 
 export type ReadinessSeverity = "high" | "medium" | "low";
 
@@ -161,21 +162,25 @@ export async function fetchResource(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    // A host that has refused this run is not asked again (host-circuit.ts):
+    // the readiness check has four resources to fetch and every one of them
+    // would keep a sliding-window ban alive.
+    if (refusing(url)) return { status: 403, headers: {}, body: "" };
     let res = await fetch(url, {
       signal: controller.signal,
       headers: { "User-Agent": USER_AGENT, Accept: "*/*" },
       redirect: "follow",
     });
-    // A bot rule keyed on a "compatible;" agent from a datacenter address
-    // (packhub.io from Vercel, 2026-09-09: 403 here, 200 for the wizard's
-    // reader seconds earlier). One more try the way that reader asks.
-    if (res.status === 403 || res.status === 406 || res.status === 429) {
+    // One more try the way the wizard's reader asks - once. Refused again: the
+    // host's rule, and the run goes quiet on it.
+    if (REFUSED_STATUSES.has(res.status)) {
       const again = await fetch(url, {
         signal: controller.signal,
         headers: { "User-Agent": FALLBACK_UA, Accept: "*/*" },
         redirect: "follow",
       });
       if (again.ok) res = again;
+      else noteRefusal(url);
     }
     const body = (await res.text()).slice(0, MAX_BODY_BYTES);
     const headers: Record<string, string> = {};

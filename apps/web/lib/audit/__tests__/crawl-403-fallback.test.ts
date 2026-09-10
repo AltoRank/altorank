@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { crawlSite, usablePages, FALLBACK_UA } from "../crawler";
 import { fetchResource } from "../agent-readiness";
+import { resetHostCircuit } from "../host-circuit";
 
 /**
  * packhub.io from Vercel, 2026-09-09: HTTP 403 for the crawler and the
@@ -24,7 +25,7 @@ function serverThatRefusesCompatibleAgents() {
 }
 
 const realFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = realFetch; });
+afterEach(() => { globalThis.fetch = realFetch; resetHostCircuit(); });
 
 describe("crawlSite behind a bot rule", () => {
   let server: ReturnType<typeof serverThatRefusesCompatibleAgents>;

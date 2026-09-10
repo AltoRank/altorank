@@ -19,6 +19,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordingFetcher, runAgentReadiness, type ReadinessResult } from "./agent-readiness";
 import { crawlSite, usablePages, type CrawlOptions } from "./crawler";
+import { clearRefusal } from "./host-circuit";
 import { decideFirstLook, firstLookPatch, type FirstLookDecision } from "./first-look";
 import { runAuditChecks, calculateAuditScore } from "./checks";
 import { fetchPageSpeedDetailed } from "./pagespeed";
@@ -418,6 +419,8 @@ async function crawlWithRetry(
   if (fetched.length > 0 && usablePages(fetched).length === 0 && fetched.every(isRefused) && rateBanWaitMs !== null) {
     rateLimited = true;
     if (rateBanWaitMs > 0) await new Promise((r) => setTimeout(r, rateBanWaitMs));
+    // The window has been waited out in silence; the next request is fresh.
+    clearRefusal(baseUrl);
     fetched = await crawlSite(baseUrl, Math.min(maxPages, 6), maxDepth, Math.max(delayMs, 1_500), crawlOpts);
     attempts += 1;
     return { fetched, attempts, rateLimited };
