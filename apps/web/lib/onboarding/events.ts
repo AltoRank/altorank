@@ -373,6 +373,38 @@ function asClause(reason: string): string {
  * `handoff` is true when the screen navigates on its own, which changes the
  * sentence from a report into a hand-off.
  */
+/**
+ * What the dashboard should say about a run that fell short, or null.
+ *
+ * A run that ended `partial` with nothing to open, ended `error`, or is
+ * `running` but has stopped writing, used to leave the dashboard silent: the
+ * run screen said "partial" for twenty-five seconds and the person landed on
+ * a dashboard of dashes with no way back and nothing to press. Measured on a
+ * real signup, 2026-09-09. This is the same sentence the run screen prints
+ * (`onboardingOutcome`), so the banner and the screen cannot disagree, plus
+ * the run id the banner uses to remember a dismissal.
+ *
+ * A partial run that produced something - a calendar, a draft - is not a
+ * failure to announce: the person can open what it made, and the run screen
+ * already says what is missing.
+ */
+export interface FailedRunNotice {
+  runId: string;
+  tone: "partial" | "error";
+  line: string;
+}
+
+export function failedRunNotice(snapshot: OnboardingRunSnapshot | null): FailedRunNotice | null {
+  const run = snapshot?.run;
+  if (!run) return null;
+  if (run.status === "running" && !snapshot.stale) return null;
+  const state = stateFromRun(run, snapshot.article, { stale: snapshot.stale });
+  const outcome = onboardingOutcome(state);
+  if (outcome.tone === "error") return { runId: run.id, tone: "error", line: outcome.line };
+  if (outcome.tone === "partial" && !outcome.produced) return { runId: run.id, tone: "partial", line: outcome.line };
+  return null;
+}
+
 export function onboardingOutcome(state: OnboardingState, handoff = false): OnboardingOutcome {
   if (state.error) return { tone: "error", line: state.error, produced: false };
   if (!state.ready) {

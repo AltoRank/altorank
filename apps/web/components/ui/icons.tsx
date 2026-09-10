@@ -54,6 +54,8 @@ export const Icons = {
   caretDown: (p: IconProps = {}) => <Icon {...p}><path d="m6 9 6 6 6-6"/></Icon>,
   caretUpDown: (p: IconProps = {}) => <Icon {...p}><path d="m8 9 4-4 4 4M8 15l4 4 4-4"/></Icon>,
   bell: (p: IconProps = {}) => <Icon {...p}><path d="M6 10a6 6 0 0 1 12 0v4l2 3H4l2-3v-4Z"/><path d="M10 20a2 2 0 0 0 4 0"/></Icon>,
+  // Something that fell short and wants a decision: the setup-run banner.
+  alert: (p: IconProps = {}) => <Icon {...p}><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9.5v4.5M12 17h.01"/></Icon>,
   // Feedback, not help. They were the same icon, and the floating button
   // that sends an email looked like the one that explains the product.
   message: (p: IconProps = {}) => <Icon {...p}><path d="M4 5h16v11H9l-5 4V5Z"/></Icon>,
