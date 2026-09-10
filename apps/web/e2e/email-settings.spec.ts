@@ -20,7 +20,9 @@ test("a member switches off one category, and it lands on their own row", async 
   const db = admin();
 
   await page.goto("/settings/emails");
-  await expect(page.getByRole("heading", { name: "Emails" })).toBeVisible();
+  // `exact` because the name option matches by substring: plain "Emails" also
+  // hits the "Optional emails" card title below it.
+  await expect(page.getByRole("heading", { name: "Emails", exact: true })).toBeVisible();
 
   // Nothing is off to begin with: no row, which reads as everything on.
   const drafts = page.getByRole("switch", { name: "Drafts and approvals" });
