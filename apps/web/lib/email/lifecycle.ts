@@ -709,6 +709,56 @@ export function renderSetupUnfinished(a: SetupUnfinishedEmail): RenderedEmail {
   };
 }
 
+export type SetupFailedEmail = {
+  domain: string | null;
+  /**
+   * The run's own account of itself - the same sentence the run screen and
+   * the dashboard banner print (`onboardingOutcome` / `failedRunNotice`), so
+   * the three surfaces cannot disagree. Already a full sentence.
+   */
+  line: string;
+  /** True when the reason clears on its own and the next look is scheduled. */
+  transient: boolean;
+};
+
+/**
+ * The email for a setup run that fell short and produced nothing.
+ *
+ * The run screen said "partial" for the twenty-five seconds the run took;
+ * the person who closed the tab, or who never opened it - a run started from
+ * the dashboard's Try again lands here too - was told nothing. Measured on a
+ * real signup, 2026-09-09: forty minutes of typing keywords by hand.
+ *
+ * Says what the run said, in its words, and offers the one thing that helps.
+ * For a blip ("could not reach your site just now") the next look is already
+ * scheduled, and the email says so rather than sending the person to click.
+ * Once per site per day (`sendOnce`, keyed by workspace + UTC date): a
+ * person retrying three times in an hour sees the result on screen each
+ * time and does not need three emails about it.
+ */
+export function renderSetupFailed(a: SetupFailedEmail): RenderedEmail {
+  const site = a.domain ?? "your site";
+  const line = a.line.replace(/\s*[.!]+$/, "");
+  return {
+    subject: `Setup didn't finish for ${site}`,
+    preheader: line,
+    footerNote: `Sent because setup for ${site} on AltoRank ran and fell short. At most one of these a day.`,
+    html:
+      eyebrow(site) +
+      heading("Setup didn't finish") +
+      emailParagraph(`${esc(line)}.`) +
+      (a.transient
+        ? emailParagraph(
+            `The next look is already scheduled and needs nothing from you. If you would rather not wait, try again now: it takes about a minute and nothing publishes without your approval.`,
+          )
+        : emailParagraph(
+            `Trying again takes about a minute. If the site still cannot be read, add a keyword by hand from Keywords or connect Search Console, and the plan can be built from there.`,
+          )) +
+      emailButton(appLink("/onboarding"), a.transient ? "Try again now" : "Try again") +
+      emailParagraph(`Nothing has been written or published, and nothing is wrong with your account.`),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Senders
 // ---------------------------------------------------------------------------
@@ -969,5 +1019,34 @@ export async function notifySetupUnfinished(
       workspaceId: scope.workspaceId,
     },
     () => renderSetupUnfinished(data),
+  );
+}
+
+/** UTC calendar day, so "one a day" means the same thing in every timezone we run in. */
+function utcDay(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+export async function notifySetupFailed(
+  supabase: SupabaseClient,
+  scope: { accountId: string; workspaceId: string },
+  data: SetupFailedEmail,
+  now: Date = new Date(),
+): Promise<SendOnceOutcome> {
+  const to = await accountRecipients(supabase, scope.accountId, scope.workspaceId);
+  return sendOnce(
+    supabase,
+    to,
+    {
+      type: "setup_failed",
+      // One per site per day. Each failed run is a distinct fact, but a
+      // person retrying from the screen sees each result there; the email
+      // is for the one who left.
+      subjectId: `${scope.workspaceId}:${utcDay(now)}`,
+      category: "product",
+      accountId: scope.accountId,
+      workspaceId: scope.workspaceId,
+    },
+    () => renderSetupFailed(data),
   );
 }
