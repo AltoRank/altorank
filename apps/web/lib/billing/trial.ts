@@ -27,7 +27,7 @@ export type TrialRow = {
  * cancelled it pays from day one the second time.
  */
 export function trialEligible(account: TrialRow | null | undefined): boolean {
-  if (!agency) return true;
+  if (!account) return true;
   if (account.trial_ends_at) return false;
   if (account.stripe_subscription_id) return false;
   return account.plan_status !== "active" && account.plan_status !== "trialing";
@@ -44,7 +44,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** The running trial's facts, or null when the account is not trialing. */
 export function trialInfo(account: TrialRow | null | undefined, now: Date = new Date()): TrialInfo | null {
-  if (!agency || account.plan_status !== "trialing" || !account.trial_ends_at) return null;
+  if (!account || account.plan_status !== "trialing" || !account.trial_ends_at) return null;
   const ends = new Date(account.trial_ends_at).getTime();
   if (Number.isNaN(ends)) return null;
   return {

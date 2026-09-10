@@ -391,7 +391,7 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
           try {
             await notifyTrialStarted(
               supabase,
-              agencyId,
+              accountId,
               { planLabel: PLAN_LABELS[tier] ?? tier, planPrice: PLAN_PRICES[tier] ?? "", endsAt: trial },
               String(session.subscription),
             );
@@ -596,23 +596,24 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
     // trial; the email is deduped on the subscription anyway.
     case "customer.subscription.trial_will_end": {
       const sub = event.data.object as Stripe.Subscription;
-      const agencyId = sub.metadata?.agency_id;
+      // Pre-085 subscriptions carry `agency_id`; see `accountForInvoice`.
+      const accountId = sub.metadata?.account_id ?? sub.metadata?.agency_id;
       const { data: row } = await supabase
         .from("agencies")
         .select(AGENCY_BILLING_COLUMNS)
-        .eq(agencyId ? "id" : "stripe_subscription_id", agencyId ?? sub.id)
+        .eq(accountId ? "id" : "stripe_subscription_id", accountId ?? sub.id)
         .maybeSingle();
-      const agency = (row as AgencyBillingRow | null) ?? null;
-      if (!agency || sub.status !== "trialing" || sub.cancel_at_period_end) break;
-      const plan = planForSubscription(sub) ?? (agency.plan as PlanTier | null) ?? "starter";
+      const account = (row as AccountBillingRow | null) ?? null;
+      if (!account || sub.status !== "trialing" || sub.cancel_at_period_end) break;
+      const plan = planForSubscription(sub) ?? (account.plan as PlanTier | null) ?? "starter";
       try {
         await notifyTrialEnding(
           supabase,
-          agency.id,
+          account.id,
           {
             planLabel: PLAN_LABELS[plan] ?? plan,
             planPrice: PLAN_PRICES[plan] ?? "",
-            endsAt: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : agency.trial_ends_at ?? null,
+            endsAt: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : account.trial_ends_at ?? null,
           },
           sub.id,
         );

@@ -259,7 +259,7 @@ describe("the seven-day card trial", () => {
   });
 
   it("does not trial an account that already had one", async () => {
-    agencyRow = {
+    accountRow = {
       stripe_customer_id: "cus_1",
       stripe_subscription_id: null,
       plan_status: "canceled",

@@ -1004,30 +1004,30 @@ export async function notifyPlanChanged(
 
 export async function notifyTrialStarted(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   data: TrialStartedEmail,
   subscriptionId: string,
 ): Promise<SendOnceOutcome> {
-  const to = await agencyBillingRecipients(supabase, agencyId);
+  const to = await accountBillingRecipients(supabase, accountId);
   return sendOnce(
     supabase,
     to,
-    { type: "trial_started", subjectId: `${agencyId}:${subscriptionId}`, category: "billing", agencyId },
+    { type: "trial_started", subjectId: `${accountId}:${subscriptionId}`, category: "billing", accountId },
     () => renderTrialStarted(data),
   );
 }
 
 export async function notifyTrialEnding(
   supabase: SupabaseClient,
-  agencyId: string,
+  accountId: string,
   data: TrialEndingEmail,
   subscriptionId: string,
 ): Promise<SendOnceOutcome> {
-  const to = await agencyBillingRecipients(supabase, agencyId);
+  const to = await accountBillingRecipients(supabase, accountId);
   return sendOnce(
     supabase,
     to,
-    { type: "trial_ending", subjectId: `${agencyId}:${subscriptionId}`, category: "billing", agencyId },
+    { type: "trial_ending", subjectId: `${accountId}:${subscriptionId}`, category: "billing", accountId },
     () => renderTrialEnding(data),
   );
 }
