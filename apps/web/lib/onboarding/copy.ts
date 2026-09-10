@@ -22,5 +22,5 @@
  */
 export function freeAllowanceClause(freeDrafts: number | null): string | null {
   if (freeDrafts === null || freeDrafts <= 0) return null;
-  return `The first ${freeDrafts === 1 ? "one is" : `${freeDrafts} are`} free; a plan writes the rest.`;
+  return `The first ${freeDrafts === 1 ? "one is" : `${freeDrafts} are`} free to read; the 7-day trial writes the rest.`;
 }

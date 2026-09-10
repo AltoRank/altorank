@@ -6,8 +6,8 @@ import { buildPlan, PLAN_MAX_ENTRIES } from "../plan";
 
 describe("freeAllowanceClause", () => {
   it("qualifies the thirty-day promise with what is actually free", () => {
-    expect(freeAllowanceClause(7)).toBe("The first 7 are free; a plan writes the rest.");
-    expect(freeAllowanceClause(1)).toBe("The first one is free; a plan writes the rest.");
+    expect(freeAllowanceClause(7)).toBe("The first 7 are free to read; the 7-day trial writes the rest.");
+    expect(freeAllowanceClause(1)).toBe("The first one is free to read; the 7-day trial writes the rest.");
   });
 
   it("says nothing for an account with nothing to qualify", () => {

@@ -13,7 +13,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type Row = Record<string, unknown>;
 
-type Filter = { col: string; op: "eq" | "is" | "not-is"; val: unknown };
+type Filter = { col: string; op: "eq" | "is" | "not-is" | "gte"; val: unknown };
 
 let nextId = 1;
 
@@ -21,6 +21,7 @@ function matches(row: Row, f: Filter): boolean {
   const v = row[f.col];
   if (f.op === "is") return v === f.val;
   if (f.op === "not-is") return v !== f.val;
+  if (f.op === "gte") return String(v) >= String(f.val);
   // jsonb columns compare by value, the way `phases=eq.[]` does over the wire.
   if (v !== null && typeof v === "object") return JSON.stringify(v) === (typeof f.val === "string" ? f.val : JSON.stringify(f.val));
   return v === f.val;
@@ -101,6 +102,7 @@ export function fakeDb(tables: Record<string, Row[]> = {}): FakeDb {
       update: (p: Row) => ((op = "update"), (patch = p), (wantRows = false), q),
       eq: (col: string, val: unknown) => (filters.push({ col, op: "eq", val }), q),
       is: (col: string, val: unknown) => (filters.push({ col, op: "is", val }), q),
+      gte: (col: string, val: unknown) => (filters.push({ col, op: "gte", val }), q),
       not: (col: string, _op: string, val: unknown) => (filters.push({ col, op: "not-is", val }), q),
       order: (col: string, o?: { ascending?: boolean }) => ((order = { col, asc: o?.ascending !== false }), q),
       limit: (n: number) => ((limit = n), q),

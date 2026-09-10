@@ -536,3 +536,45 @@ describe("request handling", () => {
     expect(writes).toHaveLength(0);
   });
 });
+
+describe("the seven-day card trial", () => {
+  const TRIAL_END = 1_790_604_800; // seven days after the fixture's event time
+
+  it("records a checkout that opened a trial as trialing, with its end", async () => {
+    retrieveSubscription.mockResolvedValue({
+      status: "trialing",
+      trial_end: TRIAL_END,
+      items: { data: [{ price: { id: STARTER } }] },
+    });
+    await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "starter" } }));
+    expect(accountWrite().row).toMatchObject({
+      plan_status: "trialing",
+      plan: "starter",
+      trial_ends_at: new Date(TRIAL_END * 1000).toISOString(),
+    });
+  });
+
+  it("records a checkout with no trial as active, with no trial end", async () => {
+    await deliver(checkoutCompleted());
+    const { row } = accountWrite();
+    expect(row.plan_status).toBe("active");
+    expect(row).not.toHaveProperty("trial_ends_at");
+  });
+
+  it("stamps the trial end from a subscription event too", async () => {
+    accountRow = { id: "account-1", plan_status: "inactive", payment_failed_at: null };
+    await deliver(subscriptionEvent("created", { status: "trialing", trial_end: TRIAL_END }));
+    expect(accountWrite().row).toMatchObject({
+      plan_status: "trialing",
+      trial_ends_at: new Date(TRIAL_END * 1000).toISOString(),
+    });
+  });
+
+  it("never clears the trial end once the trial converts", async () => {
+    accountRow = { id: "account-1", plan_status: "trialing", payment_failed_at: null };
+    await deliver(subscriptionEvent("updated", { status: "active" }));
+    const { row } = accountWrite();
+    expect(row.plan_status).toBe("active");
+    expect(row).not.toHaveProperty("trial_ends_at");
+  });
+});

@@ -18,6 +18,7 @@ import { PlanCards, type PlanCard } from "./plan-cards";
 import { RetentionCard } from "./retention-card";
 import { DunningCard } from "./dunning-card";
 import { dunningInfo } from "@/lib/billing/dunning";
+import { trialEndsLabel } from "@/lib/billing/trial";
 import { SettingsTabs } from "../settings-tabs";
 import { canManageBilling } from "@/lib/team/access";
 
@@ -201,6 +202,8 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
                 returnTo={returnTo}
                 canManage={canManage}
                 cancelHandledBelow={showRetention}
+                trialEligible={Boolean(quota.trialEligible)}
+                trialEndsLabel={quota.trial ? trialEndsLabel(quota.trial) : null}
               />
             </div>
           </Card>

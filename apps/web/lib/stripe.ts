@@ -124,6 +124,18 @@ export const PLAN_ARTICLE_LIMITS: Record<PlanTier, number | null> = {
 // The `starter`/`growth` keys are persisted on subscriptions, so they stay as
 // they are; renaming them would need a migration. Only the display labels track
 // the ladder, which converged on 2026-08-15: Solo became Managed.
+/**
+ * Days of the card trial on a hosted plan. Set per checkout session rather
+ * than on the Stripe Price, so a price with no trial configured in the
+ * dashboard still trials, and a plan switch on an existing subscription
+ * (which never goes through checkout) never re-trials.
+ *
+ * The trial is offered after onboarding, once the account has read its first
+ * drafts; see lib/billing/trial.ts for who is eligible and lib/billing/quota.ts
+ * for what it unlocks.
+ */
+export const TRIAL_DAYS = 7;
+
 export const PLAN_LABELS: Record<PlanTier, string> = {
   starter: "Managed",
   growth: "Agency",
@@ -228,6 +240,7 @@ export const PLAN_FEATURES: Record<PlanTier, string[]> = {
  */
 export const REQUIRED_STRIPE_EVENTS = [
   "checkout.session.completed",
+  "customer.subscription.trial_will_end",
   "customer.subscription.created",
   "customer.subscription.updated",
   "customer.subscription.deleted",

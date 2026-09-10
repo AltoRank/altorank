@@ -50,6 +50,7 @@ import { accountHasOperator } from "@/lib/billing/operator-account";
 import { accountCountingClient } from "@/lib/billing/account-client";
 import { dunningInfo, planEntitled, type DunningInfo } from "@/lib/billing/dunning";
 import { plural } from "@/lib/utils";
+import { trialEligible, trialInfo, type TrialInfo } from "@/lib/billing/trial";
 
 export type Quota = {
   /** Null means unmetered. */
@@ -76,6 +77,19 @@ export type Quota = {
    * between a changed price and a broken button.
    */
   monthUsed?: number;
+  /**
+   * The running card trial, when the plan is one. Set beside `reason: "plan"`
+   * so the sidebar and Billing page can say when the first charge is; every
+   * gate reads `reason` and treats a trial as the paid plan it is.
+   */
+  trial?: TrialInfo | null;
+  /**
+   * Whether the account may start its one seven-day trial. True on a fresh
+   * account, false once `trial_ends_at` is stamped or a subscription exists.
+   * The surfaces that ask for a card read this to say "Start 7-day trial"
+   * rather than "Choose a plan".
+   */
+  trialEligible?: boolean;
 };
 
 /**
@@ -216,10 +230,12 @@ export async function getQuota(
   // rest of this function was written against.
   const { data: account, error: accountError } = await counting
     .from("accounts")
-    .select("plan, plan_status, payment_failed_at, free_drafts_used")
+    .select("plan, plan_status, payment_failed_at, free_drafts_used, stripe_subscription_id, trial_ends_at")
     .eq("id", accountId)
     .maybeSingle();
   if (accountError) throw new Error(`quota: could not read this account's plan (${accountError.message})`);
+  const trial = trialInfo(account ?? {});
+  const eligible = billingEnabled && trialEligible(account ?? {});
 
   // `past_due` inside the grace window counts as paid: a card that failed at
   // renewal is Stripe's to retry for a week, and locking approve and publish
@@ -272,15 +288,16 @@ export async function getQuota(
       plan: null,
       dunning,
       monthUsed: used,
+      trialEligible: eligible,
     };
   }
 
   const limit = PLAN_ARTICLE_LIMITS[plan];
   if (limit === null) {
-    return { limit: null, used, remaining: null, reason: "plan", plan, dunning };
+    return { limit: null, used, remaining: null, reason: "plan", plan, dunning, trial };
   }
 
-  return { limit, used, remaining: Math.max(0, limit - used), reason: "plan", plan, dunning };
+  return { limit, used, remaining: Math.max(0, limit - used), reason: "plan", plan, dunning, trial };
 }
 
 /**

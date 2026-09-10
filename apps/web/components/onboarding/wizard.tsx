@@ -55,8 +55,17 @@ import { SiteFields } from "@/components/settings/site-fields";
 import { ApprovalGateCard, OutputFields } from "@/components/settings/output-fields";
 import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
-import { onboardingOutcome, shouldResumeRun, type OnboardingRunSnapshot, type OnboardingState } from "@/lib/onboarding/events";
+import {
+  onboardingOutcome,
+  shouldResumeRun,
+  type OnboardingArticle,
+  type OnboardingPlanned,
+  type OnboardingRunSnapshot,
+  type OnboardingState,
+} from "@/lib/onboarding/events";
 import { freeAllowanceClause } from "@/lib/onboarding/copy";
+import { StartTrialButton } from "@/components/billing/start-trial-button";
+import { TRIAL_OFFER } from "@/lib/billing/trial";
 import { SITE_STEPS, stepFromParam, stepIndex } from "@/lib/onboarding/steps";
 import posthog from "posthog-js";
 
@@ -79,6 +88,7 @@ export function OnboardingWizard({
   domain,
   weeklyLimit,
   freeDrafts,
+  trialEligible = false,
   initialProfile,
   initialSite,
   initialOutput,
@@ -103,6 +113,12 @@ export function OnboardingWizard({
    * time the calendar is opened. Nothing said so (P1-A1).
    */
   freeDrafts: number | null;
+  /**
+   * Whether the run screen may end with the card ask. True on a fresh cloud
+   * account; false on self-host, for operators, and once the account has had
+   * its trial (lib/billing/trial.ts).
+   */
+  trialEligible?: boolean;
   initialProfile: BusinessProfile | null;
   initialSite: SiteDetails;
   initialOutput: OutputSettings;
@@ -303,7 +319,7 @@ export function OnboardingWizard({
   }
 
   if (running) {
-    return <RunScreen workspaceId={workspaceId} domain={domain} weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} initialRun={resumed} />;
+    return <RunScreen workspaceId={workspaceId} domain={domain} weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} trialEligible={trialEligible} initialRun={resumed} />;
   }
 
   if (reading || !profile) return <ReadingSite domain={domain} />;
@@ -628,6 +644,104 @@ function AttributionStep({
   );
 }
 
+/** "Sep 7" from a YYYY-MM-DD, in UTC so the day the planner wrote is the day shown. */
+function calendarDay(iso: string): string {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+const VERDICT_LABEL: Record<OnboardingArticle["verdict"], { text: string; className: string }> = {
+  clean: { text: "Fact check passed", className: "text-ok" },
+  review: { text: "Fact check: review", className: "text-warn" },
+  high_risk: { text: "Fact check: needs work", className: "text-err" },
+};
+
+/**
+ * The last step of onboarding: the card.
+ *
+ * The order is the point. The setup has just written the account's first
+ * drafts against the free allowance and the person is looking at them: title,
+ * keyword, length, fact-check verdict, and the thirty days scheduled behind
+ * them. What the trial buys is the next thing they would do with what they
+ * are looking at (approve, publish, keep writing), so the ask is made here,
+ * before the dashboard, and not from a banner they find later. The skip is a
+ * text link, not a button: the dashboard offers the trial again, but this is
+ * the screen that is meant to convert.
+ */
+function TrialStep({
+  drafts,
+  planned,
+  returnTo,
+  skipHref,
+}: {
+  drafts: OnboardingArticle[];
+  planned: OnboardingPlanned[];
+  returnTo: string;
+  skipHref: string;
+}) {
+  const router = useRouter();
+  const words = drafts.reduce((n, d) => n + d.wordCount, 0);
+  return (
+    <div className="mt-4 rounded-[10px] border border-accent/40 bg-panel p-5">
+      {drafts.length > 0 && (
+        <div className="mb-5">
+          <div className="mb-2 flex items-baseline justify-between">
+            <div className="text-[11px] uppercase tracking-wide text-ink-3">Written for you</div>
+            {words > 0 && <div className="text-[11px] text-ink-3">{words.toLocaleString("en-US")} words</div>}
+          </div>
+          <ul className="m-0 list-none divide-y divide-line p-0">
+            {drafts.map((d) => (
+              <li key={d.id} className="flex items-baseline justify-between gap-3 py-2">
+                <div className="min-w-0">
+                  <div className="truncate text-[13.5px] font-medium">{d.title || d.keyword}</div>
+                  <div className="truncate text-[12px] text-ink-3">
+                    {d.keyword}
+                    {d.wordCount > 0 ? ` · ${d.wordCount.toLocaleString("en-US")} words` : ""}
+                  </div>
+                </div>
+                <div className={`shrink-0 text-[11.5px] ${VERDICT_LABEL[d.verdict].className}`}>
+                  {VERDICT_LABEL[d.verdict].text}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {planned.length > 0 && (
+        <p className="m-0 mb-5 text-[13px] leading-[1.6] text-ink-2">
+          {/* "on the calendar", not "more": the plan counts the drafts above,
+              so a run that planned eight and wrote seven has one still to come,
+              not eight. */}
+          <strong>On your calendar:</strong> {planned.length} {planned.length === 1 ? "article" : "articles"} over
+          the next 30 days, {planned[0].date === planned[planned.length - 1].date ? "on" : "from"}{" "}
+          {calendarDay(planned[0].date)}
+          {planned[0].date === planned[planned.length - 1].date ? "" : ` to ${calendarDay(planned[planned.length - 1].date)}`}.
+          {drafts.length < planned.length
+            ? ` ${planned.length - drafts.length} of them still to write; the schedule keeps going while the trial runs.`
+            : " The schedule keeps writing after these while the trial runs."}
+        </p>
+      )}
+
+      <div className="rounded-[8px] bg-accent/5 p-4">
+        <div className="mb-1 text-[11px] uppercase tracking-wide text-accent">7-day trial</div>
+        <p className="m-0 mb-3 text-[13.5px] leading-[1.6]">
+          <strong>Approve, publish and keep writing.</strong> {TRIAL_OFFER}
+        </p>
+        <div className="flex flex-wrap items-center gap-4">
+          <StartTrialButton returnTo={returnTo} />
+          <button
+            type="button"
+            onClick={() => router.push(skipHref)}
+            className="bg-transparent p-0 text-[12.5px] text-ink-3 underline-offset-2 hover:underline"
+          >
+            Not now, I&apos;ll look around first
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * The finish: the pipeline, live, with the deferred setup offered as things to
  * do while it runs. Nothing here is a gate. The person is already invested and
@@ -638,12 +752,14 @@ function RunScreen({
   domain,
   weeklyLimit,
   freeDrafts,
+  trialEligible,
   initialRun,
 }: {
   workspaceId: string;
   domain: string;
   weeklyLimit: number;
   freeDrafts: number | null;
+  trialEligible: boolean;
   initialRun: OnboardingRunSnapshot | null;
 }) {
   const router = useRouter();
@@ -661,6 +777,13 @@ function RunScreen({
   // that scheduled nothing offered a button to an empty calendar.
   const outcome = state ? onboardingOutcome(state) : null;
   const draft = state?.article ?? null;
+  const drafts = state?.drafts ?? [];
+  // The last step of onboarding: the drafts exist, the person can see what
+  // was written for them and what is scheduled, and the card is asked now,
+  // before the dashboard. Only for an account that may still trial, and only
+  // when the run produced something to show; a run that wrote nothing has
+  // no appetizer and falls through to the plain finish.
+  const trialStep = finished && trialEligible && (drafts.length > 0 || planned.length > 0);
   const next = planned.length > 0
     ? { href: "/content", label: "Open my plan" }
     : draft
@@ -671,13 +794,26 @@ function RunScreen({
       <div className="mx-auto max-w-[860px] px-6 py-10">
         <div className="mb-8 text-center">
           <h1 className="mb-1.5 text-[22px] font-semibold">
-            {finished ? "Your content plan" : "Creating your content plan"}
+            {trialStep
+              ? `${drafts.length === 1 ? "Your first draft is" : `Your first ${drafts.length} drafts are`} written`
+              : finished
+                ? "Your content plan"
+                : "Creating your content plan"}
           </h1>
           <p className="mx-auto max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">
-            Reading {domain}, choosing keywords by volume, difficulty and fit, scheduling up to{" "}
-            {weeklyLimit >= 7 ? "one article a day" : `${weeklyLimit} a week`} for the next 30 days, and writing the
-            first one. Only keywords that pass our checks make the plan, so a new site may get fewer.{" "}
-            {freeAllowanceClause(freeDrafts) ?? ""}
+            {trialStep ? (
+              <>
+                Each one comes with its fact check and is waiting in your review queue. Start the trial to
+                approve and publish them, and to keep the schedule below writing.
+              </>
+            ) : (
+              <>
+                Reading {domain}, choosing keywords by volume, difficulty and fit, scheduling up to{" "}
+                {weeklyLimit >= 7 ? "one article a day" : `${weeklyLimit} a week`} for the next 30 days, and writing
+                the first one. Only keywords that pass our checks make the plan, so a new site may get fewer.{" "}
+                {freeAllowanceClause(freeDrafts) ?? ""}
+              </>
+            )}
             {/* True since the run left the browser's request: it is a row
                 advanced by its own invocations (/api/onboard/run, then
                 /api/internal/draft), and this screen only polls it. An
@@ -725,7 +861,7 @@ function RunScreen({
                   component aborted the SSE request and the pipeline with it;
                   the run is its own invocations now and nothing on this page
                   can cancel it. Coming back to /onboarding resumes the screen. */}
-              {finished ? (
+              {trialStep ? null : finished ? (
                 <Button variant="accent" onClick={() => router.push(next.href)}>
                   {next.label}
                 </Button>
@@ -765,6 +901,10 @@ function RunScreen({
               </div>
             )}
           </div>
+
+          {trialStep && (
+            <TrialStep drafts={drafts} planned={planned} returnTo="/articles?status=review" skipHref={next.href} />
+          )}
 
         </div>
       </div>

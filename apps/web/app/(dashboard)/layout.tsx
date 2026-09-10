@@ -15,6 +15,7 @@ import { ImpersonationBanner } from "@/components/dashboard/impersonation-banner
 import { getCompletedOnboardingSteps } from "@/lib/queries/onboarding";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { entitledToScheduledWork } from "@/lib/billing/quota";
+import { trialEndsLabel } from "@/lib/billing/trial";
 import { usageLine } from "@/lib/billing/usage-line";
 import { siteAllowanceFrom } from "@/lib/workspaces/allowance";
 import { FeedbackWidget } from "@/components/dashboard/feedback-widget";
@@ -274,6 +275,8 @@ export default async function DashboardLayout({
                   // cannot disagree with the page it links to.
                   ...(({ figure, fraction }) => ({ figure, fraction: fraction ?? 0 }))(usageLine(quota)),
                   noPlan: quota.reason === "no-plan",
+                  trialEligible: Boolean(quota.trialEligible),
+                  trialLabel: quota.trial ? trialEndsLabel(quota.trial) : null,
                   limit: quota.limit,
                 }
               : null

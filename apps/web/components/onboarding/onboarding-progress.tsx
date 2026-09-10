@@ -98,7 +98,7 @@ export function OnboardingProgress({
 }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState>(() =>
-    initialRun?.run ? stateFromRun(initialRun.run, initialRun.article, { stale: initialRun.stale }) : initialOnboardingState(),
+    initialRun?.run ? stateFromRun(initialRun.run, initialRun.article, { stale: initialRun.stale, drafts: initialRun.drafts }) : initialOnboardingState(),
   );
   // `onDone` is a fresh arrow on every parent render. Reading it through a ref
   // keeps it out of the hand-off effect's dependencies, so a parent re-render
@@ -131,7 +131,7 @@ export function OnboardingProgress({
           if (cancelled) return;
           if (snapshot.run) {
             failures = 0;
-            const next = stateFromRun(snapshot.run, snapshot.article, { stale: snapshot.stale });
+            const next = stateFromRun(snapshot.run, snapshot.article, { stale: snapshot.stale, drafts: snapshot.drafts });
             setState(next);
             if (isTerminal(next)) return;
           } else {

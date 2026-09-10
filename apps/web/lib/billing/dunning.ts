@@ -65,7 +65,11 @@ export function planEntitled(
   account: { plan_status?: string | null; payment_failed_at?: string | null },
   now: Date = new Date(),
 ): boolean {
-  if (account.plan_status === "active") return true;
+  // A trial is a paid plan whose first charge is on day eight: Stripe holds
+  // the card, and `trialing` is what it reports until then. Treating it as
+  // no-plan (the rule until 2026-09-09) would have locked approve and publish
+  // for the seven days the trial exists to open.
+  if (account.plan_status === "active" || account.plan_status === "trialing") return true;
   return dunningState(account, now) === "grace";
 }
 

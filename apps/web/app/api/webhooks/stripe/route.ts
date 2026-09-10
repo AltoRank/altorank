@@ -6,6 +6,7 @@ import {
   planForPriceId,
   PLAN_ARTICLE_LIMITS,
   PLAN_LABELS,
+  PLAN_PRICES,
   type PlanTier,
   type SelfServePlan,
 } from "@/lib/stripe";
@@ -15,7 +16,13 @@ import { describe as describeError } from "@/lib/observability/event";
 import { paceOnActivation } from "@/lib/content/pace";
 import { resumePausedWorkspaces } from "@/lib/billing/resume";
 import { graceEndsAt } from "@/lib/billing/dunning";
-import { notifyPaymentFailed, notifyPlanChanged, notifySubscriptionCancelled } from "@/lib/email/lifecycle";
+import {
+  notifyPaymentFailed,
+  notifyPlanChanged,
+  notifySubscriptionCancelled,
+  notifyTrialEnding,
+  notifyTrialStarted,
+} from "@/lib/email/lifecycle";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 function mapStatus(s: Stripe.Subscription.Status): string {
@@ -90,6 +97,30 @@ export async function planForCheckoutSession(
  * tier column has to follow the price, not the `plan` hint written when the
  * subscription was first bought.
  */
+/**
+ * The trial end on a checkout's subscription, as ISO, or null when the
+ * subscription is not trialing. Read from Stripe rather than assumed from
+ * the session, because whether checkout added trial days was decided by
+ * `trialEligible` at session creation and the subscription is the record.
+ */
+export async function trialForCheckoutSession(session: Stripe.Checkout.Session): Promise<string | null> {
+  const subscriptionId =
+    typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+  if (!subscriptionId) return null;
+  try {
+    const sub = await getStripe().subscriptions.retrieve(subscriptionId);
+    return trialEndOf(sub);
+  } catch {
+    return null;
+  }
+}
+
+/** `trial_end` as ISO when the subscription is trialing, else null. */
+export function trialEndOf(sub: Stripe.Subscription): string | null {
+  if (sub.status !== "trialing" || !sub.trial_end) return null;
+  return new Date(sub.trial_end * 1000).toISOString();
+}
+
 export function planForSubscription(sub: Stripe.Subscription): SelfServePlan | undefined {
   const fromPrice = planForPriceId(sub.items?.data?.[0]?.price?.id);
   if (fromPrice) return fromPrice;
@@ -105,10 +136,11 @@ type AccountBillingRow = {
   plan?: string | null;
   name?: string | null;
   cancels_at?: string | null;
+  trial_ends_at?: string | null;
 };
 
 /** The columns every notice below needs. Kept in one place so they agree. */
-const AGENCY_BILLING_COLUMNS = "id, plan_status, payment_failed_at, plan, name, cancels_at";
+const AGENCY_BILLING_COLUMNS = "id, plan_status, payment_failed_at, plan, name, cancels_at, trial_ends_at";
 
 /**
  * Tell the owners and admins that the renewal failed - once per episode.
@@ -305,13 +337,20 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
         session.metadata?.account_id ?? session.metadata?.agency_id ?? session.client_reference_id ?? undefined;
       if (accountId && session.customer && session.subscription) {
         const plan = await planForCheckoutSession(session);
+        const trial = await trialForCheckoutSession(session);
 
         await supabase
           .from("accounts")
           .update({
             stripe_customer_id: String(session.customer),
             stripe_subscription_id: String(session.subscription),
-            plan_status: "active",
+            // A checkout that opened a trial is `trialing`, not paid: the
+            // card is held and the first charge is on day eight. Writing
+            // `active` here (the rule until 2026-09-09) would have shown a
+            // trial as a paid plan and never counted it as the account's one
+            // trial.
+            plan_status: trial ? "trialing" : "active",
+            ...(trial ? { trial_ends_at: trial } : {}),
             // The tier the money bought. Omitted only when neither the
             // subscription's price nor the session metadata resolved to a
             // plan we sell, in which case the later subscription event is the
@@ -345,6 +384,21 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
             .update({ auto_generate_weekly_limit: next })
             .eq("id", site.id);
         }
+
+        // The card was taken: say when it is charged and where to stop that.
+        if (trial) {
+          const tier = plan ?? "starter";
+          try {
+            await notifyTrialStarted(
+              supabase,
+              accountId,
+              { planLabel: PLAN_LABELS[tier] ?? tier, planPrice: PLAN_PRICES[tier] ?? "", endsAt: trial },
+              String(session.subscription),
+            );
+          } catch (err) {
+            console.error(`[stripe] trial-started email: ${err instanceof Error ? err.message : err}`);
+          }
+        }
       }
       break;
     }
@@ -364,9 +418,13 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
       const status =
         event.type === "customer.subscription.deleted" ? "canceled" : mapStatus(sub.status);
 
+      const trialEnd = trialEndOf(sub);
       const updates: Record<string, unknown> = {
         ...(periodEnd ? { current_period_end: new Date(periodEnd * 1000).toISOString() } : {}),
         ...(plan ? { plan } : {}),
+        // Stamped while trialing and never cleared: it is the record that
+        // this account has had its one trial (lib/billing/trial.ts).
+        ...(trialEnd ? { trial_ends_at: trialEnd } : {}),
         // Paid up again, or gone: either way nothing is failing any more.
         ...(status === "active" || status === "trialing" || status === "canceled"
           ? { payment_failed_at: null }
@@ -534,6 +592,37 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
     // everywhere, that the card needs updating. Both handlers are safe to
     // replay: the first failure's timestamp is kept, and a paid invoice
     // clears it however many times it arrives.
+    // Three days before a trial's first charge. Stripe sends this once per
+    // trial; the email is deduped on the subscription anyway.
+    case "customer.subscription.trial_will_end": {
+      const sub = event.data.object as Stripe.Subscription;
+      // Pre-085 subscriptions carry `agency_id`; see `accountForInvoice`.
+      const accountId = sub.metadata?.account_id ?? sub.metadata?.agency_id;
+      const { data: row } = await supabase
+        .from("agencies")
+        .select(AGENCY_BILLING_COLUMNS)
+        .eq(accountId ? "id" : "stripe_subscription_id", accountId ?? sub.id)
+        .maybeSingle();
+      const account = (row as AccountBillingRow | null) ?? null;
+      if (!account || sub.status !== "trialing" || sub.cancel_at_period_end) break;
+      const plan = planForSubscription(sub) ?? (account.plan as PlanTier | null) ?? "starter";
+      try {
+        await notifyTrialEnding(
+          supabase,
+          account.id,
+          {
+            planLabel: PLAN_LABELS[plan] ?? plan,
+            planPrice: PLAN_PRICES[plan] ?? "",
+            endsAt: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : account.trial_ends_at ?? null,
+          },
+          sub.id,
+        );
+      } catch (err) {
+        console.error(`[stripe] trial-ending email: ${err instanceof Error ? err.message : err}`);
+      }
+      break;
+    }
+
     case "invoice.payment_failed": {
       const invoice = event.data.object as Stripe.Invoice;
       const account = await accountForInvoice(supabase, invoice);

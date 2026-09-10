@@ -17,6 +17,7 @@ import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { canRetryPublish, getLastPublishes } from "@/lib/publishing/log";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { quotaExceededMessage } from "@/lib/billing/quota";
+import { TrialOffer } from "@/components/billing/trial-offer";
 
 /** ISO date `n` days ago, for the analytics window. */
 function daysAgo(n: number): string {
@@ -152,6 +153,11 @@ export default async function ArticlesPage({ searchParams }: Props) {
   // a paid plan at its limit writes as overage, like any generation.
   const accountId = workspaces[0]?.account_id;
   const quota = accountId ? await getRequestQuota(accountId, auth.user?.email ?? null) : null;
+  // The card ask, on the page where the drafts are read. The wizard makes the
+  // same offer at the end of the run; this is for the person who closed that
+  // tab, or who arrived from the welcome email. Only while eligible, and only
+  // once there is a draft to have read.
+  const offerTrial = Boolean(quota?.reason === "no-plan" && quota.trialEligible && allArticles.length > 0);
   const writeBlocked =
     quota && quota.reason === "no-plan" && quota.limit !== null && (quota.remaining ?? 0) <= 0
       ? quotaExceededMessage(quota)
@@ -184,6 +190,12 @@ export default async function ArticlesPage({ searchParams }: Props) {
           </>
         }
       />
+
+      {offerTrial && (
+        <div className="px-6 pt-5">
+          <TrialOffer returnTo="/articles?status=review" compact />
+        </div>
+      )}
 
       <StatStrip
         stats={[

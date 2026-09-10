@@ -44,7 +44,16 @@ type SidebarProps = {
    * under Agency and moved to Managed read "150 / 100" here - on every screen -
    * beside a Billing page that had already learned to say what happened.
    */
-  quota?: { figure: string; fraction: number; noPlan: boolean; limit: number } | null;
+  quota?: {
+    figure: string;
+    fraction: number;
+    noPlan: boolean;
+    /** May start the seven-day trial: the CTA says so instead of "Choose a plan". */
+    trialEligible?: boolean;
+    /** "Trial ends in 3 days", while the plan is a trial. */
+    trialLabel?: string | null;
+    limit: number;
+  } | null;
   /** How many sites the plan allows, for the switcher's Add row. Null renders a dash. */
   siteAllowance?: SiteAllowance;
 };
@@ -386,8 +395,11 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
           </div>
           {quota.noPlan && (
             <div className="mt-2 rounded-[6px] bg-accent px-2.5 py-1.5 text-center text-[11.5px] font-medium text-white">
-              Choose a plan
+              {quota.trialEligible ? "Start 7-day trial" : "Choose a plan"}
             </div>
+          )}
+          {quota.trialLabel && (
+            <div className="mt-1.5 text-[11px] text-ink-3">{quota.trialLabel}, then the plan price</div>
           )}
         </Link>
       )}
