@@ -14,6 +14,7 @@ import {
   renderApiKeyCreated,
   renderNothingWritten,
   renderSetupUnfinished,
+  renderSetupFailed,
   isoWeek,
 } from "../lifecycle";
 import { graceEndsAt } from "@/lib/billing/dunning";
@@ -321,6 +322,34 @@ describe("isoWeek", () => {
   it("keys a week, not a day", () => {
     expect(isoWeek(new Date("2026-09-06T23:00:00Z"))).toBe(isoWeek(new Date("2026-09-02T01:00:00Z")));
     expect(isoWeek(new Date("2026-09-07T00:00:00Z"))).not.toBe(isoWeek(new Date("2026-09-06T00:00:00Z")));
+  });
+});
+
+describe("setup fell short", () => {
+  const line = "Set up, but nothing could be scheduled yet: we could not reach your site just now (timed out after 10s). The next look is already scheduled.";
+
+  it("says what the run said, in its words, and offers Try again", () => {
+    const e = renderSetupFailed({ domain: "acme.com", line, transient: false });
+    expect(e.subject).toBe("Setup didn't finish for acme.com");
+    expect(e.html).toContain("could not reach your site just now");
+    expect(e.html).toContain("https://app.altorank.co/onboarding");
+    expect(e.html).toContain("Try again");
+    expect(e.html).toContain("add a keyword by hand");
+    expect(e.footerNote).toContain("one of these a day");
+  });
+
+  it("for a blip, says the next look is scheduled instead of sending the person to click", () => {
+    const e = renderSetupFailed({ domain: "acme.com", line, transient: true });
+    expect(e.html).toContain("next look is already scheduled");
+    expect(e.html).toContain("Try again now");
+    expect(e.html).not.toContain("add a keyword by hand");
+  });
+
+  it("never claims anything was written", () => {
+    const e = renderSetupFailed({ domain: null, line: "Onboarding failed.", transient: false });
+    expect(e.subject).toBe("Setup didn't finish for your site");
+    expect(e.html).toContain("Nothing has been written or published");
+    expect(e.html).not.toMatch(/draft|is coming|will be written/);
   });
 });
 

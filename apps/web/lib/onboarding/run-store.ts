@@ -10,8 +10,10 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordEvent } from "@/lib/observability/record";
+import { notifySetupFailed } from "@/lib/email/lifecycle";
 import {
   initialOnboardingState,
+  onboardingOutcome,
   isRunStale,
   reduceOnboarding,
   runStatusFrom,
@@ -173,7 +175,10 @@ export class RunRecorder {
       .eq("status", "running")
       .select("workspace_id, account_id");
     if (error) console.error(`[onboarding] run ${this.runId}: could not finish: ${error.message}`);
-    else await announceOutcome(this.supabase, this.runId, status, scopeOf(data), this.state.steps);
+    else
+      await announceOutcome(this.supabase, this.runId, status, scopeOf(data), this.state.steps, {
+        produced: this.state.planned.length > 0 || this.state.article !== null,
+      });
   }
 
   /** The worker itself threw. Everything recorded so far stays on the row. */
@@ -193,7 +198,7 @@ export async function failRun(supabase: SupabaseClient, runId: string, reason: s
     .eq("status", "running")
     .select("workspace_id, account_id");
   if (error) console.error(`[onboarding] run ${runId}: could not mark error: ${error.message}`);
-  else await announceOutcome(supabase, runId, "error", scopeOf(data), null, reason);
+  else await announceOutcome(supabase, runId, "error", scopeOf(data), null, { reason, produced: false });
 }
 
 /**
@@ -216,9 +221,10 @@ async function announceOutcome(
   status: string,
   scope: { workspaceId: string | null; accountId: string | null },
   steps: readonly { phase: string; status: string; detail?: string | null }[] | null,
-  reason?: string,
+  opts: { reason?: string; produced: boolean },
 ): Promise<void> {
   if (status === "done" || status === "running") return;
+  const reason = opts.reason;
   // Which phase fell short, which is the whole question an operator has.
   const failed = (steps ?? []).filter((s) => s.status === "failed" || s.status === "skipped");
   const where = failed.map((s) => `${s.phase}${s.detail ? `: ${s.detail}` : ""}`);
@@ -236,6 +242,47 @@ async function announceOutcome(
     },
     supabase,
   );
+
+  // The person, not just the operator. A run that made something the person
+  // can open - a calendar, a draft - is not a failure to email about; the
+  // run screen and the dashboard say what is missing. A run that made
+  // nothing is, and until 2026-09-10 the only place it was ever said was the
+  // screen the person had closed.
+  if (opts.produced || !scope.workspaceId || !scope.accountId) return;
+  try {
+    const { data: ws } = await supabase.from("workspaces").select("domain").eq("id", scope.workspaceId).maybeSingle();
+    const facts = setupFailedFacts(status, steps, reason);
+    await notifySetupFailed(supabase, { accountId: scope.accountId, workspaceId: scope.workspaceId }, { domain: (ws?.domain as string | null) ?? null, ...facts });
+  } catch (err) {
+    // Never let the email take the run down with it: the row is already
+    // final and the event above is already recorded.
+    console.error(`[onboarding] run ${runId}: setup-failed email: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+/**
+ * What the email says, from what the run recorded. The sentence is the run
+ * screen's own (`onboardingOutcome`), so the email, the banner and the
+ * screen read the same words; `transient` is whether the crawl's reason is
+ * one that clears on its own, in which case the next look is scheduled.
+ */
+export function setupFailedFacts(
+  status: string,
+  steps: readonly { phase: string; status: string; detail?: string | null }[] | null,
+  reason?: string,
+): { line: string; transient: boolean } {
+  const state: OnboardingState = {
+    ...initialOnboardingState(),
+    steps: (steps ?? []).map((s) => ({ phase: s.phase as OnboardingState["steps"][number]["phase"], status: s.status as OnboardingState["steps"][number]["status"], ...(s.detail ? { detail: s.detail } : {}) })),
+    ready: true,
+    error: status === "error" ? (reason ?? "Onboarding failed.") : null,
+  };
+  const line = onboardingOutcome(state).line;
+  // The pipeline writes this exact clause on the keywords phase when the
+  // crawl failed for a reason that clears on its own (#191); reading the
+  // phrase keeps this module off domain-analysis and its provider clients.
+  const transient = status !== "error" && (steps ?? []).some((s) => /next look is already scheduled/i.test(s.detail ?? ""));
+  return { line, transient };
 }
 
 /** The ids an `update(...).select(...)` handed back, if it handed back a row. */
@@ -306,6 +353,7 @@ export async function stampRun(
       String(patch.status),
       { workspaceId: run.workspace_id, accountId: (run as { account_id?: string }).account_id ?? null },
       state.steps,
+      { produced: state.planned.length > 0 || Boolean(opts.article ?? run.article_id) },
     );
   }
   return true;

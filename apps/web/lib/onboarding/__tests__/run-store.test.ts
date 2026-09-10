@@ -1,6 +1,13 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fakeDb } from "./fake-runs-client";
-import { RunRecorder, latestRun, stampRun, startRun } from "../run-store";
+
+// The email a failed run sends. Mocked whole: the recipients, the ledger and
+// the transport have their own tests; here the question is only whether a run
+// that made nothing sends one and a run that made something does not.
+const notifySetupFailed = vi.fn(async (..._args: unknown[]) => ({ sent: 1, skipped: 0, failed: 0 }));
+vi.mock("@/lib/email/lifecycle", () => ({ notifySetupFailed: (...a: unknown[]) => notifySetupFailed(...a) }));
+
+import { RunRecorder, failRun, latestRun, setupFailedFacts, stampRun, startRun } from "../run-store";
 import {
   initialOnboardingState,
   isRunStale,
@@ -285,5 +292,66 @@ describe("shouldResumeRun", () => {
   it("opens the wizard when there is no run", () => {
     expect(shouldResumeRun(null, now)).toBe(false);
     expect(shouldResumeRun({ run: null, article: null, stale: false }, now)).toBe(false);
+  });
+});
+
+describe("a run that made nothing emails the account; a run that made something does not", () => {
+  beforeEach(() => notifySetupFailed.mockClear());
+
+  const partialNothing = [
+    { phase: "scanning", status: "done", detail: "Learned how your site writes." },
+    { phase: "keywords", status: "skipped", detail: "We could not reach your site just now (timed out after 10s). The next look is already scheduled; keywords and the plan will follow without you doing anything." },
+    { phase: "pages", status: "skipped", detail: "No sitemap we could read, so there were no existing pages to check." },
+    { phase: "planning", status: "skipped", detail: "Nothing to schedule until there are keywords." },
+    { phase: "drafting", status: "skipped", detail: "No keyword clear enough to write to yet." },
+  ];
+
+  it("finish(): partial with nothing produced sends once, in the run's own words, flagged transient", async () => {
+    const db = fakeDb({
+      onboarding_runs: [{ id: "r1", workspace_id: "ws1", account_id: "ag1", status: "running", phases: [], planned: [] }],
+      workspaces: [{ id: "ws1", domain: "acme.com" }],
+    });
+    const rec = new RunRecorder(db.client, "r1");
+    for (const p of partialNothing) rec.record({ phase: p.phase, status: p.status, detail: p.detail } as never);
+    await rec.finish();
+    expect(notifySetupFailed).toHaveBeenCalledTimes(1);
+    const [, scope, data] = notifySetupFailed.mock.calls[0] as unknown as [unknown, { accountId: string; workspaceId: string }, { domain: string | null; line: string; transient: boolean }];
+    expect(scope).toEqual({ accountId: "ag1", workspaceId: "ws1" });
+    expect(data.domain).toBe("acme.com");
+    expect(data.line).toContain("could not reach your site just now");
+    expect(data.transient).toBe(true);
+  });
+
+  it("finish(): a run that planned a month is not a failure to email about", async () => {
+    const db = fakeDb({ onboarding_runs: [{ id: "r1", workspace_id: "ws1", account_id: "ag1", status: "running", phases: [], planned: [] }] });
+    const rec = new RunRecorder(db.client, "r1");
+    for (const e of WORKER_EVENTS) rec.record(e);
+    await rec.finish();
+    expect(notifySetupFailed).not.toHaveBeenCalled();
+  });
+
+  it("failRun(): the worker throwing sends, with the reason, not transient", async () => {
+    const db = fakeDb({
+      onboarding_runs: [{ id: "r1", workspace_id: "ws1", account_id: "ag1", status: "running", phases: [], planned: [] }],
+      workspaces: [{ id: "ws1", domain: "acme.com" }],
+    });
+    await failRun(db.client, "r1", "The run could not be started (500).");
+    expect(notifySetupFailed).toHaveBeenCalledTimes(1);
+    const data = (notifySetupFailed.mock.calls[0] as unknown[])[2] as { line: string; transient: boolean };
+    expect(data.line).toBe("The run could not be started (500).");
+    expect(data.transient).toBe(false);
+  });
+
+  it("setupFailedFacts: the earliest reason, and transient only when the pipeline said the next look is scheduled", () => {
+    const t = setupFailedFacts("partial", partialNothing);
+    expect(t.line).toContain("could not reach your site");
+    expect(t.transient).toBe(true);
+    const d = setupFailedFacts("partial", [
+      { phase: "scanning", status: "skipped", detail: "Too little readable text on the site to learn from." },
+      { phase: "keywords", status: "skipped", detail: "Too little readable text on the site to tell an on-topic keyword from an off-topic one, so none were stored. Add a keyword by hand from Keywords." },
+    ]);
+    expect(d.line).toContain("too little readable text");
+    expect(d.transient).toBe(false);
+    expect(setupFailedFacts("error", null, "boom").line).toBe("boom");
   });
 });
