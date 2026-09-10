@@ -86,7 +86,7 @@ export async function resolveSeedHead(
   business: SubjectFields | null | undefined,
   profile: { topTerms?: string[] | null } | null | undefined,
   domain: string,
-  options: { price?: PriceTerms; languageCode?: string; locationCode?: number; maxHeads?: number } = {},
+  options: { price?: PriceTerms; languageCode?: string; locationCode?: number; maxHeads?: number; timeoutMs?: number } = {},
 ): Promise<ResolvedHead> {
   const none: ResolvedHead = { head: null, priced: false, seedVolume: 0, tried: [] };
   if (!business?.audiences?.length) return none;
@@ -106,9 +106,14 @@ export async function resolveSeedHead(
   const price: PriceTerms =
     options.price ??
     ((terms) => fetchTermMetrics(terms, { languageCode: options.languageCode, locationCode: options.locationCode }));
+  // A provider that hangs must not stall the onboarding minute: the old head
+  // is a fine answer, and a slow one is worse than no pricing at all.
   let metrics: ReadonlyMap<string, { volume: number | null }>;
   try {
-    metrics = await price(all);
+    metrics = await Promise.race([
+      price(all),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("pricing timed out")), options.timeoutMs ?? 8_000)),
+    ]);
   } catch {
     return { head: fallback, priced: false, seedVolume: 0, tried: heads.map((head) => ({ head, seedVolume: 0 })) };
   }
