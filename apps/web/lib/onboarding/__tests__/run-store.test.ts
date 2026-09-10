@@ -4,8 +4,8 @@ import { fakeDb } from "./fake-runs-client";
 // The email a failed run sends. Mocked whole: the recipients, the ledger and
 // the transport have their own tests; here the question is only whether a run
 // that made nothing sends one and a run that made something does not.
-const notifySetupFailed = vi.fn(async () => ({ sent: 1, skipped: 0, failed: 0 }));
-vi.mock("@/lib/email/lifecycle", () => ({ notifySetupFailed: (...a: unknown[]) => notifySetupFailed(...(a as [])) }));
+const notifySetupFailed = vi.fn(async (..._args: unknown[]) => ({ sent: 1, skipped: 0, failed: 0 }));
+vi.mock("@/lib/email/lifecycle", () => ({ notifySetupFailed: (...a: unknown[]) => notifySetupFailed(...a) }));
 
 import { RunRecorder, failRun, latestRun, setupFailedFacts, stampRun, startRun } from "../run-store";
 import {
@@ -337,7 +337,7 @@ describe("a run that made nothing emails the account; a run that made something 
     });
     await failRun(db.client, "r1", "The run could not be started (500).");
     expect(notifySetupFailed).toHaveBeenCalledTimes(1);
-    const data = notifySetupFailed.mock.calls[0][2] as unknown as { line: string; transient: boolean };
+    const data = (notifySetupFailed.mock.calls[0] as unknown[])[2] as { line: string; transient: boolean };
     expect(data.line).toBe("The run could not be started (500).");
     expect(data.transient).toBe(false);
   });
