@@ -2,7 +2,13 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createServiceClient } from "@/lib/supabase/server";
 import { readUnsubscribeParams } from "@/lib/email/unsubscribe";
-import { ALL_OPTIONAL, EMAIL_CATEGORIES, isEmailCategory, type EmailCategory } from "@/lib/email/categories";
+import {
+  ALL_OPTIONAL,
+  CATEGORY_HELP,
+  EMAIL_CATEGORIES,
+  isEmailCategory,
+  type EmailCategory,
+} from "@/lib/email/categories";
 import {
   optionalCategories,
   readUnsubscribed,
@@ -200,16 +206,6 @@ export default async function UnsubscribePage(props: Props) {
   );
 }
 
-const CATEGORY_HELP: Record<EmailCategory, string> = {
-  auth: "Sign-in and password links.",
-  account: "Password changes and new API keys.",
-  billing: "Payments, plan changes, pauses.",
-  drafts: "A draft was written, or approved.",
-  publishing: "An article went live, or a publish failed.",
-  improvements: "A rewrite of an existing page is waiting for review.",
-  reports: "The monthly PDF.",
-  product: "Nothing is being written for a workspace, and why.",
-};
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
