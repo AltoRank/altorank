@@ -23,18 +23,29 @@ const CRAWLER_UA =
  */
 export const FALLBACK_UA = "AltoRankBot/1.0 (content analysis)";
 
+import { noteRefusal, refusing } from "./host-circuit";
+
 /** Statuses a bot rule returns; anything else is the site's real answer. */
 const REFUSED = new Set([403, 406, 429]);
 
 async function fetchPage(url: string, signal: AbortSignal): Promise<Response> {
+  // A host that has refused this run is not asked again until the one place
+  // that waits the window out says so (lib/audit/host-circuit.ts). Knocking
+  // keeps a sliding-window ban alive.
+  if (refusing(url)) return new Response("", { status: 403, headers: { "content-type": "text/html" } });
   const res = await fetch(url, { signal, headers: { "User-Agent": CRAWLER_UA }, redirect: "follow" });
   if (!REFUSED.has(res.status)) return res;
+  // One more try the way the wizard's reader asks - once. If that is refused
+  // too, it is the host's rule and not the agent string, and the run goes
+  // quiet on this host.
   const again = await fetch(url, {
     signal,
     headers: { "User-Agent": FALLBACK_UA, Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8" },
     redirect: "follow",
   });
-  return again.ok ? again : res;
+  if (again.ok) return again;
+  noteRefusal(url);
+  return res;
 }
 
 export function describeFetchError(err: unknown): string {

@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { crawlSite, usablePages } from "../crawler";
 import { recordingFetcher } from "../agent-readiness";
+import { resetHostCircuit } from "../host-circuit";
 import { discoverUrls } from "@/lib/seo/site-crawl";
 
 /**
@@ -15,7 +16,7 @@ const HTML = (title: string, links = "") =>
   `<html><head><title>${title}</title></head><body><h1>${title}</h1><p>${"words ".repeat(120)}</p>${links}</body></html>`;
 
 const realFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = realFetch; });
+afterEach(() => { globalThis.fetch = realFetch; resetHostCircuit(); });
 
 /** A host that answers N requests, then 403s. */
 function hostWithBudget(n: number) {

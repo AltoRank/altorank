@@ -31,6 +31,7 @@ import { readSiteText } from "./site-text";
 import { checkDomainReachable } from "@/lib/domain/reachable";
 import { trainVoiceProfile } from "@/lib/voice/train";
 import { analyseDomain, isTransientCrawlFailure } from "@/lib/audit/domain-analysis";
+import { refusing } from "@/lib/audit/host-circuit";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { generateArticle } from "@/lib/content/generate";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
@@ -272,7 +273,11 @@ async function runPhases(
   // ONBOARDING_CRAWL so a 600-post blog cannot eat the worker's 300 seconds,
   // and best-effort: `assessExistingPages` never throws.
   emit({ phase: "pages", status: "active" });
-  if (!domain) {
+  if (domain && refusing(`https://${domain}/`)) {
+    // Eight more requests into a ban only extend it. The nightly pass reads
+    // the pages when the host is not counting.
+    emit({ phase: "pages", status: "skipped", detail: "The site is rate-limiting us right now; the nightly pass reads your existing pages." });
+  } else if (!domain) {
     emit({ phase: "pages", status: "skipped", detail: "No domain to read pages from." });
   } else {
     const startedAt = Date.now();
