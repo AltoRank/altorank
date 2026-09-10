@@ -5,10 +5,10 @@
 // A workspace with `auto_approve` on has asked for its drafts to ship on their
 // own. This module is the second writer of an approval, next to
 // app/actions/publish.ts's approveArticle, and it runs the same checks in the
-// same order: an active plan, no unsourced figure, no failing audit item, and
-// a score floor the workspace chose. A draft that fails any of them is not
-// approved and says why on its own row (`auto_approve_hold_reason`), so a
-// held draft is never a silent one.
+// same order: an active plan, somewhere to publish, no unsourced figure, no
+// failing audit item, and a score floor the workspace chose. A draft that
+// fails any of them is not approved and says why on its own row
+// (`auto_approve_hold_reason`), so a held draft is never a silent one.
 //
 // What it writes is `status = scheduled, scheduled_at = null`, which is what
 // addToQueue writes after a human approval: the article enters the cadence
@@ -26,6 +26,7 @@ import { tiptapToHtml } from "@/lib/cms/html";
 import { auditArticle } from "@/lib/seo/article-audit";
 import type { ArticleResearch } from "@/lib/seo/research";
 import { getQuota } from "@/lib/billing/quota";
+import { getDestinations } from "./destinations";
 
 /** The workspace columns the rule reads. */
 export type AutoApproveRule = {
@@ -51,6 +52,13 @@ export type AutoApproveCandidate = {
   auditFailures: readonly string[];
   /** True when approving needs a plan the account does not have. */
   needsPlan: boolean;
+  /**
+   * True when the workspace has at least one CMS connection to publish
+   * through. Auto-approve writes `status = scheduled`, and the publish cron
+   * takes scheduled articles straight to `publishArticleCore`, which throws
+   * "No CMS integration connected" and lands the row in `error`.
+   */
+  hasDestination: boolean;
   /** True when `auto_approve_set_by` is still a member of the account. */
   ruleOwnerIsMember: boolean;
 };
@@ -89,6 +97,20 @@ export function decideAutoApproval(
   if (holdEnds > now) return { approve: false, reason: `hold window ends ${holdEnds.toISOString()}` };
 
   if (a.needsPlan) return { approve: false, reason: "no active plan; choose one on the Billing page" };
+
+  // Nowhere to publish is not a reason to approve and find out. Auto-approve
+  // means "ship it without asking me"; with no CMS connected the ship step
+  // throws and the publish cron writes `status = error`, so the customer's
+  // first drafts would be marked failed against a decision they never made.
+  // Held in `review` instead, where connecting a CMS clears it on the next
+  // pass and approving by hand is still one click.
+  if (!a.hasDestination) {
+    return {
+      approve: false,
+      reason:
+        "no CMS connected to publish through; connect one in Integrations, or approve it yourself and record where you published it",
+    };
+  }
   if (a.factCheckBlocker) return { approve: false, reason: a.factCheckBlocker };
   if (a.auditFailures.length) return { approve: false, reason: `audit: ${a.auditFailures.join("; ")}` };
 
@@ -177,6 +199,17 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
       out.push({ articleId: "", workspaceId: ws.id, outcome: "error", detail: `quota: ${err instanceof Error ? err.message : "unknown"}` });
       continue;
     }
+    // Once per workspace, like the plan check: the same list `publishCore`
+    // resolves against, so the rule and the publish path cannot disagree about
+    // whether there is anywhere to send this.
+    let hasDestination = false;
+    try {
+      hasDestination = (await getDestinations(supabase, ws.id)).length > 0;
+    } catch (err) {
+      out.push({ articleId: "", workspaceId: ws.id, outcome: "error", detail: `destinations: ${err instanceof Error ? err.message : "unknown"}` });
+      continue;
+    }
+
     let ruleOwnerIsMember = false;
     if (ws.auto_approve_set_by) {
       const { data: member } = await supabase
@@ -217,6 +250,7 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
             factCheckBlocker: report ? approvalBlocker(report) : "draft has no content",
             auditFailures: audit ? audit.items.filter((i) => i.status === "fail").map((i) => i.label) : [],
             needsPlan,
+            hasDestination,
             ruleOwnerIsMember,
           },
           now,

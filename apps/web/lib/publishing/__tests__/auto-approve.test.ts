@@ -23,6 +23,7 @@ const clean: AutoApproveCandidate = {
   factCheckBlocker: null,
   auditFailures: [],
   needsPlan: false,
+  hasDestination: true,
   ruleOwnerIsMember: true,
 };
 
@@ -46,6 +47,33 @@ describe("decideAutoApproval", () => {
     expect(decideAutoApproval(rule, early, NOW).approve).toBe(false);
     const late = { ...clean, auto_approve_after: null, created_at: "2026-09-06T00:00:00Z" };
     expect(decideAutoApproval(rule, late, NOW).approve).toBe(true);
+  });
+
+  it("holds a draft when there is nowhere to publish it", () => {
+    // Auto-approve writes `status = scheduled`; the publish cron then takes it
+    // to publishArticleCore, which throws with no CMS connected and writes
+    // `status = error`. Held in review instead. Measured on a live account
+    // (2026-09-09): three drafts, no CMS connected, all three due to
+    // auto-approve the next day.
+    const d = decideAutoApproval(rule, { ...clean, hasDestination: false }, NOW);
+    expect(d).toMatchObject({
+      approve: false,
+      reason: expect.stringContaining("no CMS connected"),
+    });
+  });
+
+  it("checks the plan before the destination: no plan is the more basic answer", () => {
+    const d = decideAutoApproval(rule, { ...clean, needsPlan: true, hasDestination: false }, NOW);
+    expect(d).toMatchObject({ reason: expect.stringContaining("no active plan") });
+  });
+
+  it("still waits out the hold window before mentioning the missing CMS", () => {
+    const d = decideAutoApproval(
+      rule,
+      { ...clean, hasDestination: false, auto_approve_after: "2026-09-08T18:00:00Z" },
+      NOW,
+    );
+    expect(d).toMatchObject({ reason: expect.stringContaining("hold window ends") });
   });
 
   it("respects a human hold", () => {

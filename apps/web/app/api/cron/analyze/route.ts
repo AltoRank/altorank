@@ -6,6 +6,12 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { canSpend } from "@/lib/billing/spend-gate";
 import { analyseDomain } from "@/lib/audit/domain-analysis";
 import {
+  MAX_ANALYSIS_ATTEMPTS,
+  decideFirstLook,
+  firstLookPatch,
+  retryEligibleBefore,
+} from "@/lib/audit/first-look";
+import {
   PROFILE_MAX_AGE_DAYS,
   refreshTopicalProfile,
   selectStale,
@@ -34,8 +40,12 @@ import { observedCron } from "@/lib/observability/cron";
  * anything started there dies partway through a crawl. Picking the work up from
  * the database makes it restartable and survives a deploy mid-analysis.
  *
- * `first_analysed_at` is set even when layers fail, so a domain that cannot be
- * reached is not retried forever. Re-running the full analysis is still a
+ * `first_analysed_at` is set when a run reads the site, and when a run that
+ * read nothing has used up its attempts - so a domain that cannot be reached
+ * is still not retried forever, but a domain that was merely unreachable for a
+ * minute gets looked at again. See lib/audit/first-look.ts for why: two real
+ * signups were stamped `analysed` off crawls that fetched zero pages and could
+ * never be picked up again. Re-running a *completed* analysis is still a
  * manual action.
  *
  * The topical profile is the exception, and it had to become one. Nothing ever
@@ -61,13 +71,22 @@ async function run(request: Request) {
   }
 
   const supabase = createServiceClient();
+  const startedAt = new Date();
 
+  // A workspace nobody has read yet, that has attempts left, and that was not
+  // just tried. Ordered by attempts first so a retry can never take the slot
+  // of a signup that has had no look at all.
   const { data: pending, error } = await supabase
     .from("workspaces")
-    .select("id, domain, account_id, language, location_code")
+    .select("id, domain, account_id, language, location_code, analysis_attempts")
     .is("first_analysed_at", null)
+    .lt("analysis_attempts", MAX_ANALYSIS_ATTEMPTS)
+    .or(
+      `last_analysis_attempt_at.is.null,last_analysis_attempt_at.lt.${retryEligibleBefore(startedAt)}`,
+    )
     .not("domain", "is", null)
     .neq("status", "paused")
+    .order("analysis_attempts", { ascending: true })
     .order("created_at", { ascending: true })
     .limit(BATCH);
 
@@ -112,12 +131,18 @@ async function run(request: Request) {
         workspaceId,
         locale: (ws.language as string) ?? "en",
         locationCode: (ws.location_code as number | null) ?? undefined,
+        // So a run that reads nothing can count itself against the bound.
+        analysisAttempts: (ws.analysis_attempts as number | null) ?? 0,
       });
 
       results.push({
         workspaceId,
         domain,
-        status: "analysed",
+        // "analysed" only when the site was actually read. A run that fetched
+        // no page is an attempt, and saying so here is the difference between
+        // a quiet zero in the cron log and a workspace somebody can chase.
+        status: analysis.firstLook?.reason === "retry" ? "unreadable" : "analysed",
+        attempt: analysis.firstLook?.attempts ?? null,
         headline: analysis.headline,
         readinessScore: analysis.readiness?.score ?? null,
         pagesCrawled: analysis.pagesCrawled,
@@ -126,17 +151,25 @@ async function run(request: Request) {
       });
     } catch (err) {
       // analyseDomain is written not to throw, so reaching here means something
-      // outside the layers broke. Stamp the workspace anyway rather than
-      // re-crawling a broken domain on every run.
+      // outside the layers broke - and nothing was read. Count it as an
+      // attempt on the same terms as an empty crawl: retried a few times, then
+      // stamped so a permanently broken domain is left alone.
+      const decision = decideFirstLook({
+        attemptsBefore: (ws.analysis_attempts as number | null) ?? 0,
+        pagesCrawled: 0,
+        failedForGood: false,
+      });
       await supabase
         .from("workspaces")
-        .update({ first_analysed_at: new Date().toISOString() })
+        .update(firstLookPatch(decision, new Date().toISOString()))
         .eq("id", workspaceId);
 
       results.push({
         workspaceId,
         domain,
         status: "error",
+        attempt: decision.attempts,
+        willRetry: !decision.settled,
         detail: err instanceof Error ? err.message : "unknown error",
       });
     }
@@ -184,6 +217,7 @@ async function run(request: Request) {
   return NextResponse.json({
     pending: pending?.length ?? 0,
     analysed: results.filter((r) => r.status === "analysed").length,
+    unreadable: results.filter((r) => r.status === "unreadable").length,
     errors: results.filter((r) => r.status === "error").length,
     profileMaxAgeDays: PROFILE_MAX_AGE_DAYS,
     profilesRefreshed: refreshed.filter((r) => r.status === "refreshed").length,

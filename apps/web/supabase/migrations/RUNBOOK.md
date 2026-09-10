@@ -17,7 +17,9 @@ guarded (see its note below).
 
 **Head is 085.** The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
-shipped it, and a gap is not a missing file — do not go looking for one. (076
+shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
+listed here**: it shipped from another branch without a runbook entry; check it by
+hand (`accounts.free_drafts_used`) before applying 084. (076
 and 077 came from two tracks on the same day and are
 independent of each other; either may be applied first. 078 stacks on the same
 branch as 076 and does not depend on it.) If you add a
@@ -141,6 +143,7 @@ m(file, applied) as (values
   ('079_auto_approve',                       exists (select 1 from col where t='workspaces' and c='auto_approve')),
   ('080_oauth_connectors',                   to_regclass('public.oauth_codes') is not null),
   ('082_system_events',                      to_regclass('public.system_events') is not null),
+  ('084_analysis_attempts',                  exists (select 1 from col where t='workspaces' and c='analysis_attempts')),
   ('085_agencies_to_accounts',               to_regclass('public.accounts') is not null and to_regclass('public.agencies') is null)
 )
 select file, applied from m order by file;
@@ -267,6 +270,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 078_site_pages_tech_findings.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 079_auto_approve.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 080_oauth_connectors.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 082_system_events.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 084_analysis_attempts.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 085_agencies_to_accounts.sql
 ```
 
@@ -330,6 +334,7 @@ no code in the repo references either).
 | 080_oauth_connectors.sql | `distribution/hosted-mcp` #158 | 001, **051** | yes | yes, disconnects connectors |
 | 085_agencies_to_accounts.sql | `rename/agencies-to-accounts` | 001, 016, 053, 072 | yes (every step guarded) | by renaming back; nothing is dropped |
 | 082_system_events.sql | `round5/observability` #172 | 001 | yes | yes, loses the event log only |
+| 084_analysis_attempts.sql | `fix/reanalyse-and-cms-gate` | 001 | yes | yes, but the backfill's re-queue is not undone |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
