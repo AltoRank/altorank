@@ -455,6 +455,31 @@ export function subjectVocabulary(
   return out;
 }
 
+/**
+ * What a word scores on the customer's say-so alone.
+ *
+ * Half, not full: they named it, but the site does not write about it yet,
+ * which is exactly the position a competitor's brand or an audience they
+ * have no page for is in. Those are the terms worth writing, so they must
+ * not be vetoed - and they are not yet proven, so they must not outrank a
+ * word the site has actually built pages around.
+ */
+const SUBJECT_STRENGTH = 0.5;
+
+/** Same stem tolerance as `strengthOf`, so "clinics" finds "clinic". */
+function subjectMatch(subject: ReadonlySet<string>, token: string): boolean {
+  if (subject.has(token)) return true;
+  for (const term of subject) {
+    if (
+      (term.length > 4 && token.startsWith(term.slice(0, Math.max(4, term.length - 2)))) ||
+      (token.length > 4 && term.startsWith(token.slice(0, Math.max(4, token.length - 2))))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function scoreRelevance(
   keyword: string,
   profile: TopicalProfile | null | undefined,
@@ -465,6 +490,36 @@ export function scoreRelevance(
   subject?: ReadonlySet<string> | null,
 ): RelevanceScore {
   if (!profile || !Object.keys(profile.terms).length) {
+    // No crawled vocabulary. Until 2026-09-10 this returned 1 for every term -
+    // "relevance not scored" - and the one account with no basis for judging a
+    // keyword was the one account where nothing was judged: a signup whose
+    // crawl had failed researched keywords eleven minutes before its profile
+    // existed and was handed "shipping" (KD 91), "ups shipping calculator"
+    // and a competitor's misspelt name, and wrote an article on one of them.
+    //
+    // The customer's own description, audiences and competitors are a basis.
+    // Not as good as the site - the site proves what they write about, the
+    // profile only states it - so a match is worth the same half-strength a
+    // subject word earns below, and a term that touches none of it is 0. With
+    // no subject either there is genuinely nothing to judge against, and the
+    // callers that store keywords are expected to refuse rather than guess.
+    if (subject && subject.size) {
+      const tokens = tokenizeQuery(keyword);
+      const onSubject = tokens.filter((t) => subjectMatch(subject, t));
+      return onSubject.length
+        ? {
+            score: SUBJECT_STRENGTH,
+            matched: onSubject,
+            unmatched: tokens.filter((t) => !onSubject.includes(t)),
+            reason: "no crawled vocabulary yet; judged against the business profile only",
+          }
+        : {
+            score: 0,
+            matched: [],
+            unmatched: tokens,
+            reason: "no crawled vocabulary yet, and no word of it is in the business profile",
+          };
+    }
     return {
       score: 1,
       matched: [],
@@ -511,30 +566,7 @@ export function scoreRelevance(
   };
 
   /** Is this word one the customer used to describe their own business? */
-  const inSubject = (token: string): boolean => {
-    if (!subject?.size) return false;
-    if (subject.has(token)) return true;
-    for (const term of subject) {
-      if (
-        (term.length > 4 && token.startsWith(term.slice(0, Math.max(4, term.length - 2)))) ||
-        (token.length > 4 && term.startsWith(token.slice(0, Math.max(4, token.length - 2))))
-      ) {
-        return true;
-      }
-    }
-    return false;
-  };
-
-  /**
-   * What a word scores on the customer's say-so alone.
-   *
-   * Half, not full: they named it, but the site does not write about it yet,
-   * which is exactly the position a competitor's brand or an audience they
-   * have no page for is in. Those are the terms worth writing, so they must
-   * not be vetoed - and they are not yet proven, so they must not outrank a
-   * word the site has actually built pages around.
-   */
-  const SUBJECT_STRENGTH = 0.5;
+  const inSubject = (token: string): boolean => Boolean(subject?.size) && subjectMatch(subject!, token);
 
   const matched: string[] = [];
   const unmatched: string[] = [];

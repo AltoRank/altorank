@@ -28,6 +28,8 @@ import { fetchTermMetrics, type TermMetrics } from "./metrics";
 import { withInstructions } from "./instructions";
 import { buildPlaybookSeeds, competitorName, PLAYBOOKS, type PlaybookId } from "./seeds";
 import type { CandidateSource, ResearchCandidate, ResearchKind, ResearchResult, ResearchSource } from "./types";
+import type { TopicalProfile } from "@/lib/seo/topical-profile";
+import { judgeCandidates, relevanceJudge } from "./relevance";
 
 /** What the pipeline needs to know about the site it is researching for. */
 export interface ResearchWorkspace {
@@ -37,6 +39,8 @@ export interface ResearchWorkspace {
   languageCode: string;
   locationCode: number;
   profile: BusinessProfile;
+  /** The crawled vocabulary, when the site has been read. See relevance.ts. */
+  topical: TopicalProfile | null;
 }
 
 /** The person's standing brief, prepended to every model prompt. */
@@ -219,6 +223,15 @@ export async function researchGenerate(
   const count = Math.max(1, Math.min(GENERATE_MAX, Math.floor(input.count) || GENERATE_DEFAULT));
   if (missing) return { runId: null, kind, candidates: [], funnel: emptyFunnel(), trace, note: missing };
 
+  // Before anything is bought: what the results will be judged against. A
+  // site nobody can read and a profile nobody filled in leave nothing, and a
+  // list nobody can judge is the $1.63 of nonsense the first look refuses.
+  const judge = await relevanceJudge(supabase, ws);
+  trace.push(judge.note);
+  if (judge.basis === "none") {
+    return { runId: null, kind, candidates: [], funnel: emptyFunnel(), trace, note: NOTHING_TO_JUDGE(ws.domain) };
+  }
+
   const raw: ResearchCandidate[] = [];
   const useCompetitors = input.source !== "audiences";
   const useAudiences = input.source !== "competitors";
@@ -340,8 +353,9 @@ export async function researchGenerate(
     }
   }
 
+  // Judged the way the first look judges and dropped at the same bar.
   const existing = await existingKeywords(supabase, ws.id);
-  const { candidates, funnel } = applyFunnel(raw, existing, { limit: count });
+  const { candidates, funnel } = applyFunnel(judgeCandidates(raw, judge), existing, { limit: count, dropOffTopic: true });
   trace.push(funnelTrace(funnel));
 
   const runId = await recordRun(supabase, ws.id, kind, { source: input.source, competitors: input.competitors, audiences: input.audiences, count }, { funnel });
@@ -382,12 +396,18 @@ export async function researchPlaybook(
           : "This playbook needs a business description to work from.";
     return { runId: null, kind, candidates: [], funnel: emptyFunnel(), trace, note: why };
   }
+  // Before the seeds are priced: what the results will be judged against.
+  const judge = await relevanceJudge(supabase, ws);
+  trace.push(judge.note);
+  if (judge.basis === "none") {
+    return { runId: null, kind, candidates: [], funnel: emptyFunnel(), trace, note: NOTHING_TO_JUDGE(ws.domain) };
+  }
 
   const looked = await lookupPhrases(seeds, () => meta.title, ws, { type: "playbook", ref: playbook });
   trace.push(`${meta.title}: built ${seeds.length} phrases → ${looked.filter((c) => c.volume !== null).length} had search data`);
 
   const existing = await existingKeywords(supabase, ws.id);
-  const { candidates, funnel } = applyFunnel(looked, existing);
+  const { candidates, funnel } = applyFunnel(judgeCandidates(looked, judge), existing, { dropOffTopic: true });
   trace.push(funnelTrace(funnel));
 
   const runId = await recordRun(supabase, ws.id, kind, { playbook, seeds }, { funnel });
@@ -435,12 +455,17 @@ export async function researchFind(
   // The typed term stays in the table even when the index does not know it,
   // and even when it is already tracked: hiding it would answer a different
   // question from the one asked.
-  const { candidates, funnel } = applyFunnel(raw, existing, { keepExisting: true, keepNoData: true, minVolume: 0 });
+  // Judged but never dropped: the person typed it. The verdict rides on the
+  // row (the table marks it) and, for the typed term itself, in the note.
+  const judge = await relevanceJudge(supabase, ws);
+  const { candidates, funnel } = applyFunnel(judgeCandidates(raw, judge), existing, { keepExisting: true, keepNoData: true, minVolume: 0 });
   const ordered = [...candidates].sort((a, b) => (a.term.toLowerCase() === clean.toLowerCase() ? -1 : b.term.toLowerCase() === clean.toLowerCase() ? 1 : 0));
   trace.push(funnelTrace(funnel));
+  const typed = ordered.find((c) => c.term.toLowerCase() === clean.toLowerCase());
+  const offTopic = typed?.relevance && typed.relevance.score <= 0 ? `"${clean}" looks off-topic for this site: ${typed.relevance.reason}. It is kept because you asked for it.` : null;
 
   const runId = await recordRun(supabase, ws.id, kind, { term: clean }, { funnel });
-  return { runId, kind, candidates: ordered, funnel, trace, note: ordered.length ? null : nothingNote(funnel, []) };
+  return { runId, kind, candidates: ordered, funnel, trace, note: ordered.length ? offTopic : nothingNote(funnel, []) };
 }
 
 export async function researchImport(
@@ -458,11 +483,14 @@ export async function researchImport(
   const trace = [`Looked up ${clean.length} term${clean.length === 1 ? "" : "s"} → ${looked.filter((c) => c.volume !== null).length} had search data`];
 
   const existing = await existingKeywords(supabase, ws.id);
-  const { candidates, funnel } = applyFunnel(looked, existing, { keepExisting: true, keepNoData: true, minVolume: 0 });
+  const judge = await relevanceJudge(supabase, ws);
+  const { candidates, funnel } = applyFunnel(judgeCandidates(looked, judge), existing, { keepExisting: true, keepNoData: true, minVolume: 0 });
   trace.push(funnelTrace(funnel));
+  const off = candidates.filter((c) => c.relevance && c.relevance.score <= 0).length;
+  const offNote = off ? `${off} of these look off-topic for this site (marked in the table). They are kept because you pasted them.` : null;
 
   const runId = await recordRun(supabase, ws.id, kind, { terms: clean }, { funnel });
-  return { runId, kind, candidates, funnel, trace, note: candidates.length ? null : nothingNote(funnel, []) };
+  return { runId, kind, candidates, funnel, trace, note: candidates.length ? offNote : nothingNote(funnel, []) };
 }
 
 // ---------------------------------------------------------------------------
@@ -477,8 +505,16 @@ export function isBranded(term: string, competitor: string): boolean {
   return t.includes(name) || t.replace(/\s+/g, "").includes(name.replace(/\s+/g, ""));
 }
 
+/**
+ * Refusal for a workspace nothing can judge keywords for: the site could not
+ * be read and the business profile is empty. Said before any provider call,
+ * so it costs nothing, and phrased as the two things that would change it.
+ */
+const NOTHING_TO_JUDGE = (domain: string): string =>
+  `Nothing to judge keywords against yet: ${domain || "the site"} could not be read and the business profile is empty. Describe the business in Site settings (a sentence and an audience is enough), or try again once the site is reachable.`;
+
 export function emptyFunnel(): ResearchResult["funnel"] {
-  return { found: 0, skippedNoData: 0, skippedLowVolume: 0, skippedExisting: 0, proposed: 0 };
+  return { found: 0, skippedNoData: 0, skippedLowVolume: 0, skippedExisting: 0, skippedOffTopic: 0, proposed: 0 };
 }
 
 function funnelTrace(f: ResearchResult["funnel"]): string {
@@ -518,13 +554,14 @@ export function languageCodeOf(raw: string | null | undefined): string {
 export async function loadResearchWorkspace(supabase: SupabaseClient, workspaceId: string): Promise<ResearchWorkspace | null> {
   const { data } = await supabase
     .from("workspaces")
-    .select("id, name, domain, language, location_code, business_profile")
+    .select("id, name, domain, language, location_code, business_profile, topical_profile")
     .eq("id", workspaceId)
     .maybeSingle();
   if (!data) return null;
   const profile = (data.business_profile as Partial<BusinessProfile> | null) ?? null;
   return {
     id: data.id as string,
+    topical: (data.topical_profile as TopicalProfile | null) ?? null,
     name: (data.name as string) ?? "",
     domain: (data.domain as string) ?? "",
     languageCode: languageCodeOf(data.language as string | null),

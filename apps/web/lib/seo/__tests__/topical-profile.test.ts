@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildTopicalProfile, scoreRelevance } from "../topical-profile";
+import { buildTopicalProfile, scoreRelevance, subjectVocabulary } from "../topical-profile";
 import type { CrawlResult } from "@/lib/audit/crawler";
 
 const page = (over: Partial<CrawlResult>): CrawlResult => ({
@@ -152,6 +152,25 @@ describe("scoreRelevance", () => {
     const r = scoreRelevance("anything at all", null);
     expect(r.score).toBe(1);
     expect(r.reason).toContain("no topical profile");
+  });
+
+  it("judges against the business profile alone when there is no crawled vocabulary", () => {
+    // The 2026-09-09 case: keywords researched eleven minutes before the
+    // site's profile existed were all scored 1 and stored - "shipping" at
+    // KD 91, "ups shipping calculator", a competitor's name misspelt.
+    const subject = subjectVocabulary({
+      description: "Scan-driven packout for fulfillment teams. Connects to Shopify and prints shipping labels.",
+      audiences: ["Shopify fulfillment teams", "3PL providers"],
+      competitors: ["sortly.com"],
+    });
+    const on = scoreRelevance("shopify fulfillment workflow", null, subject);
+    expect(on.score).toBe(0.5);
+    expect(on.reason).toContain("business profile only");
+    const off = scoreRelevance("ups calculator", null, subject);
+    expect(off.score).toBe(0);
+    expect(off.reason).toContain("business profile");
+    // A competitor the customer named is on-subject even with no site text.
+    expect(scoreRelevance("sortly alternatives", null, subject).score).toBe(0.5);
   });
 
   it("stays neutral for an empty profile", () => {
