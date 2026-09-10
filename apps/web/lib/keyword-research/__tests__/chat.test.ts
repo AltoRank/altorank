@@ -60,6 +60,7 @@ describe("buildChatSystem", () => {
         languageCode: "en",
         locationCode: 2840,
         profile: { name: "Cal.com", language: "English", country: "US", description: "Scheduling.", audiences: ["Sales teams"], competitors: ["calendly.com"] },
+        topical: null,
       },
       capacity: { scheduled: 12, cap: 60, slots: 48 },
       planned: [{ term: "calendly alternatives", volume: 1600, difficulty: null, date: "2026-09-10" }],

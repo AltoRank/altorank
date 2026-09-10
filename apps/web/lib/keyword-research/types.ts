@@ -40,7 +40,16 @@ export interface ResearchCandidate {
   /** Set when a keyword row already exists for this term in the workspace. */
   existingId: string | null;
   existingStatus: string | null;
+  /**
+   * How the term relates to this site, judged the way the first look judges
+   * (lib/seo/topical-profile.ts). 0 is off-topic. `basis` says what it was
+   * judged against: the site's own pages, the business profile alone (the
+   * site could not be read), or nothing (no profile either).
+   */
+  relevance?: { score: number; basis: RelevanceBasis; reason: string };
 }
+
+export type RelevanceBasis = "site" | "business" | "none";
 
 /** The count at every stage. Shown verbatim after a run. */
 export interface ResearchFunnel {
@@ -48,6 +57,8 @@ export interface ResearchFunnel {
   skippedNoData: number;
   skippedLowVolume: number;
   skippedExisting: number;
+  /** Dropped as off-topic for this site. Generate and the playbooks only. */
+  skippedOffTopic: number;
   proposed: number;
 }
 

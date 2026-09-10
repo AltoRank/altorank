@@ -127,6 +127,12 @@ export interface FunnelOptions {
    * because nobody asked about them and there is nothing to say.
    */
   keepNoData?: boolean;
+  /**
+   * Drop candidates the site's judge scored 0 - the same bar the first look
+   * uses (`rel(k) > 0` in domain-analysis.ts). Off for Find and Import: a
+   * person typed those, and hiding them would answer a different question.
+   */
+  dropOffTopic?: boolean;
 }
 
 /**
@@ -149,11 +155,16 @@ export function applyFunnel(
   let skippedExisting = 0;
   let skippedNoData = 0;
   let skippedLowVolume = 0;
+  let skippedOffTopic = 0;
   const kept: ResearchCandidate[] = [];
 
   for (const c of deduped) {
     if (c.existingId && !opts.keepExisting) {
       skippedExisting++;
+      continue;
+    }
+    if (opts.dropOffTopic && c.relevance && c.relevance.score <= 0) {
+      skippedOffTopic++;
       continue;
     }
     if (c.volume === null) {
@@ -176,7 +187,7 @@ export function applyFunnel(
 
   return {
     candidates,
-    funnel: { found, skippedNoData, skippedLowVolume, skippedExisting, proposed: candidates.length },
+    funnel: { found, skippedNoData, skippedLowVolume, skippedExisting, skippedOffTopic, proposed: candidates.length },
   };
 }
 
@@ -190,6 +201,7 @@ export function funnelLine(f: ResearchFunnel, scheduled = 0): string {
   if (f.skippedExisting) parts.push(`${f.skippedExisting} already tracked`);
   if (f.skippedNoData) parts.push(`${f.skippedNoData} skipped, no search data`);
   if (f.skippedLowVolume) parts.push(`${f.skippedLowVolume} skipped, too little volume`);
+  if (f.skippedOffTopic) parts.push(`${f.skippedOffTopic} skipped, off-topic for this site`);
   if (scheduled > 0) parts.push(`${scheduled} scheduled`);
   else parts.push(`${f.proposed} proposed`);
   return parts.join(" · ");

@@ -320,7 +320,7 @@ export async function runResearchChat(
         }
         const body = [
           result.note ? `NOTE: ${result.note}` : "",
-          `Funnel: found ${result.funnel.found}, ${result.funnel.skippedExisting} already tracked, ${result.funnel.skippedNoData} no search data, ${result.funnel.skippedLowVolume} too little volume, ${result.funnel.proposed} proposed.`,
+          `Funnel: found ${result.funnel.found}, ${result.funnel.skippedExisting} already tracked, ${result.funnel.skippedNoData} no search data, ${result.funnel.skippedLowVolume} too little volume, ${result.funnel.skippedOffTopic} off-topic for this site, ${result.funnel.proposed} proposed.`,
           candidatesForModel(result.candidates),
         ]
           .filter(Boolean)

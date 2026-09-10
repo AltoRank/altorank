@@ -80,12 +80,12 @@ describe("applyFunnel", () => {
 
   it("accounts for every row and proposes the rest, capped by limit", () => {
     const { candidates, funnel } = applyFunnel(raw, existing, { limit: 2 });
-    expect(funnel).toEqual({ found: 6, skippedNoData: 1, skippedLowVolume: 1, skippedExisting: 1, proposed: 2 });
+    expect(funnel).toEqual({ found: 6, skippedNoData: 1, skippedLowVolume: 1, skippedExisting: 1, skippedOffTopic: 0, proposed: 2 });
     expect(candidates.map((x) => x.term)).toEqual(["easy pick", "crm software"]);
   });
   it("found + drops + kept adds up before the limit", () => {
     const { funnel } = applyFunnel(raw, existing);
-    expect(funnel.found).toBe(funnel.skippedNoData + funnel.skippedLowVolume + funnel.skippedExisting + funnel.proposed);
+    expect(funnel.found).toBe(funnel.skippedNoData + funnel.skippedLowVolume + funnel.skippedExisting + funnel.skippedOffTopic + funnel.proposed);
   });
   it("keeps no-data and already-tracked rows when asked (Find and Import)", () => {
     const { candidates, funnel } = applyFunnel(raw, existing, { keepExisting: true, keepNoData: true, minVolume: 0 });
@@ -100,13 +100,13 @@ describe("applyFunnel", () => {
 
 describe("funnelLine", () => {
   it("only mentions stages that happened, and says scheduled once something is", () => {
-    expect(funnelLine({ found: 14, skippedNoData: 3, skippedLowVolume: 2, skippedExisting: 0, proposed: 9 })).toBe(
+    expect(funnelLine({ found: 14, skippedNoData: 3, skippedLowVolume: 2, skippedExisting: 0, skippedOffTopic: 0, proposed: 9 })).toBe(
       "Found 14 · 3 skipped, no search data · 2 skipped, too little volume · 9 proposed",
     );
-    expect(funnelLine({ found: 14, skippedNoData: 3, skippedLowVolume: 2, skippedExisting: 0, proposed: 9 }, 5)).toBe(
+    expect(funnelLine({ found: 14, skippedNoData: 3, skippedLowVolume: 2, skippedExisting: 0, skippedOffTopic: 0, proposed: 9 }, 5)).toBe(
       "Found 14 · 3 skipped, no search data · 2 skipped, too little volume · 5 scheduled",
     );
-    expect(funnelLine({ found: 0, skippedNoData: 0, skippedLowVolume: 0, skippedExisting: 0, proposed: 0 })).toBe("Found 0 · 0 proposed");
+    expect(funnelLine({ found: 0, skippedNoData: 0, skippedLowVolume: 0, skippedExisting: 0, skippedOffTopic: 0, proposed: 0 })).toBe("Found 0 · 0 proposed");
   });
 });
 

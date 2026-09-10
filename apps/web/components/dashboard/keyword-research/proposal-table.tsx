@@ -162,6 +162,17 @@ export function ProposalTable({ workspaceId, candidates, funnel, runId = null, k
                     <div className="text-[11px] text-ink-3 mt-0.5 flex items-center gap-1.5 flex-wrap">
                       <span>{c.origin}</span>
                       {tracked && <span className="text-ink-4">· already {c.existingStatus}</span>}
+                      {/* Find and Import keep what a person typed; this is
+                          the judge's verdict on it, not a veto. Generate and
+                          the playbooks drop these before they get here. */}
+                      {c.relevance && c.relevance.score <= 0 && (
+                        <span
+                          className="inline-flex px-1.5 rounded-full bg-warn-soft text-warn-ink text-[10.5px] font-medium"
+                          title={c.relevance.reason}
+                        >
+                          off-topic for this site
+                        </span>
+                      )}
                       {isEasyWin(c) && !state && (
                         <span className="inline-flex px-1.5 rounded-full bg-ok-soft text-ok-ink text-[10.5px] font-medium" title="Volume ≥ 100 and difficulty ≤ 30">Easy win</span>
                       )}
