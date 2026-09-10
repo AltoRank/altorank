@@ -9,7 +9,12 @@ import { admin } from "./fixtures/account";
  * signed-in person's own `email_preferences` row, and the required categories
  * are named on the page rather than quietly missing. A list of switches that
  * omits the mail somebody actually receives is worse than no list.
+ *
+ * The account needs an onboarded workspace like every other dashboard spec:
+ * (dashboard)/layout.tsx sends a workspace with no business profile to
+ * /onboarding, and a Settings tab is behind that redirect.
  */
+test.use({ accountShape: { workspaces: [{ domain: "emails.e2e.altorank.test", onboarded: true }] } });
 
 test("a member switches off one category, and it lands on their own row", async ({ page, signedIn }) => {
   const db = admin();
@@ -52,7 +57,9 @@ test("a member switches off one category, and it lands on their own row", async 
 
 test("the required categories are named, with no switch to turn them off", async ({ page, signedIn }) => {
   await page.goto("/settings/emails");
-  await expect(page.getByText(signedIn.email)).toBeVisible();
+  // The address appears inside a sentence; `.first()` keeps strict mode from
+  // failing on the paragraph and the <strong> inside it both matching.
+  await expect(page.getByText(signedIn.email).first()).toBeVisible();
 
   await expect(page.getByRole("switch", { name: "Billing" })).toHaveCount(0);
   await expect(page.getByRole("switch", { name: "Account access" })).toHaveCount(0);
