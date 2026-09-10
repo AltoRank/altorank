@@ -22,25 +22,35 @@ export function KeywordActions({ workspaces, keywords = [] }: KeywordActionsProp
   const target = active ?? workspaces[0] ?? null;
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
+  // Why the last submit was refused, shown under the field. A refusal used to
+  // go to console.error and the dialog stayed open, unchanged, as if nothing
+  // had been pressed.
+  const [error, setError] = useState<string | null>(null);
   const onboarding = useOnboarding();
   const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setPending(true);
+    setError(null);
     try {
       const fd = new FormData(e.currentTarget);
       // The workspace field is no longer a `required` <select>, so nothing in
       // the browser stops a submit when there is no workspace to bind to.
       if (!fd.get("workspace_id")) {
-        throw new Error("Add a workspace before tracking keywords for it.");
+        setError("Add a workspace before tracking keywords for it.");
+        return;
       }
-      await createKeyword(fd);
+      const result = await createKeyword(fd);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
       setOpen(false);
       onboarding?.completeStep("add-keywords");
       router.refresh();
     } catch (err) {
-      console.error(err);
+      setError(err instanceof Error ? err.message : "Could not add the keyword. Try again.");
     } finally {
       setPending(false);
     }
@@ -76,7 +86,10 @@ export function KeywordActions({ workspaces, keywords = [] }: KeywordActionsProp
 
       <Dialog
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setError(null);
+        }}
         title="Add keyword"
         description="Track a new keyword across your workspace."
       >
@@ -98,8 +111,15 @@ export function KeywordActions({ workspaces, keywords = [] }: KeywordActionsProp
               name="term"
               required
               placeholder="best crm software"
-              className="px-3 py-2 rounded-lg border border-line bg-panel text-[13px] text-ink placeholder:text-ink-3 outline-none focus:border-accent transition-colors"
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "add-keyword-error" : undefined}
+              className={`px-3 py-2 rounded-lg border bg-panel text-[13px] text-ink placeholder:text-ink-3 outline-none focus:border-accent transition-colors ${error ? "border-err" : "border-line"}`}
             />
+            {error && (
+              <span id="add-keyword-error" role="alert" className="text-[12px] text-err-ink">
+                {error}
+              </span>
+            )}
           </label>
 
           <label className="flex flex-col gap-1.5">
