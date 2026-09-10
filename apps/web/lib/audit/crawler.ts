@@ -75,11 +75,24 @@ export interface CrawlResult {
 /**
  * BFS site crawler - rate-limited, max 100 pages, depth 3.
  */
+export interface CrawlOptions {
+  /**
+   * The homepage, already fetched by the caller. packhub.io rate-bans an
+   * address after ten requests in about forty seconds (measured 2026-09-10:
+   * ten 200s, then 403 until the window passes), and the onboarding minute
+   * fetched "/" three times - the wizard's reader, the readiness check and
+   * this crawl. Handing the crawl the body the readiness check already holds
+   * is one request fewer against that budget.
+   */
+  seedHtml?: string | null;
+}
+
 export async function crawlSite(
   baseUrl: string,
   maxPages = 100,
   maxDepth = 3,
   delayMs = 500,
+  opts: CrawlOptions = {},
 ): Promise<CrawlResult[]> {
   const base = new URL(baseUrl);
   const visited = new Set<string>();
@@ -101,10 +114,26 @@ export async function crawlSite(
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
 
-      const res = await fetchPage(item.url, controller.signal);
+      const seeded = item.depth === 0 && opts.seedHtml && normalizeUrl(item.url) === normalizeUrl(base.href);
+      const res = seeded
+        ? new Response(opts.seedHtml as string, { status: 200, headers: { "content-type": "text/html" } })
+        : await fetchPage(item.url, controller.signal);
 
       clearTimeout(timeout);
       const loadTimeMs = Date.now() - start;
+
+      // A refusal after the site had been answering is the site closing the
+      // door, not a page that is missing: keep spending requests and every one
+      // of them is refused too, and the ban window only gets longer. Record it
+      // and stop; what was read is real, and the layer says why it is short.
+      if (REFUSED.has(res.status) && results.some((r) => r.status >= 200 && r.status < 400)) {
+        results.push({
+          url: item.url, status: res.status, title: "", metaDescription: "",
+          h1: [], h2: [], images: [], links: [], loadTimeMs,
+          error: `HTTP ${res.status} after ${results.length} pages: the site rate-limits crawlers`,
+        });
+        break;
+      }
 
       const contentType = res.headers.get("content-type") ?? "";
       if (!contentType.includes("text/html")) {

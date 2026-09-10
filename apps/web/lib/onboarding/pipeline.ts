@@ -40,6 +40,9 @@ import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
 import { schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
 import { fanOutDrafts, MAX_FAN_OUT } from "@/lib/content/fan-out";
+
+/** Pages the onboarding minute reads. The nightly pass reads up to forty. */
+const ONBOARDING_CRAWL_PAGES = 12;
 import { fetchRelatedKeywordsBatch, type RelatedKeyword } from "@/lib/seo/brief-data";
 import { getLocale } from "@/lib/seo/locales";
 import { detectLinks } from "@/lib/linking/detect";
@@ -210,6 +213,10 @@ async function runPhases(
         // What the wizard learned, so the keyword phase can seed from the
         // business and its audiences and not only from page headings.
         profile: (workspace.business_profile as BusinessProfile | null) ?? null,
+        // A dozen pages is a voice and a vocabulary; the nightly pass reads the
+        // rest. Every page here is one request against a host that may be
+        // counting them (packhub.io bans after ten in forty seconds).
+        maxPages: ONBOARDING_CRAWL_PAGES,
       });
       keywordsFound = analysis.keywordsFound;
       // "Nothing rankable found for this site yet" is only true when we were

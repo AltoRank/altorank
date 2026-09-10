@@ -219,7 +219,7 @@ export function locsIn(xml: string): string[] {
  */
 export async function discoverUrls(
   domain: string,
-  opts: { timeoutMs?: number; maxUrls?: number; declaredSitemaps?: string[]; deadline?: number } = {},
+  opts: { timeoutMs?: number; maxUrls?: number; declaredSitemaps?: string[]; bodies?: ReadonlyMap<string, string>; deadline?: number } = {},
 ): Promise<string[]> {
   const timeoutMs = opts.timeoutMs ?? DEFAULTS.timeoutMs;
   const maxUrls = opts.maxUrls ?? 5000;
@@ -232,7 +232,8 @@ export async function discoverUrls(
   const declared: string[] = [...(opts.declaredSitemaps ?? [])];
   if (!opts.declaredSitemaps) {
     if (outOfTime()) return [];
-    const robots = await bodyOf(`${origin}/robots.txt`, timeoutMs);
+    // Served from what the caller already fetched, against hosts that count requests.
+    const robots = opts.bodies?.get(`${origin}/robots.txt`) ?? (await bodyOf(`${origin}/robots.txt`, timeoutMs));
     for (const line of (robots ?? "").split("\n")) {
       const m = /^\s*sitemap:\s*(\S+)/i.exec(line);
       if (m) declared.push(m[1].trim());
@@ -245,7 +246,7 @@ export async function discoverUrls(
   const urls = new Set<string>();
   for (const root of roots) {
     if (outOfTime()) break;
-    const body = await bodyOf(root, timeoutMs);
+    const body = opts.bodies?.get(root) ?? (await bodyOf(root, timeoutMs));
     if (!body) continue;
     const locs = locsIn(body);
     const nested = locs.filter((u) => /\.xml(\.gz)?(\?|$)/i.test(u));

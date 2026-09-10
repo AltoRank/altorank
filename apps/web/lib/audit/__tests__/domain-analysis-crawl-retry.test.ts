@@ -16,7 +16,7 @@ const crawl = vi.fn();
 const update = vi.fn();
 
 vi.mock("@/lib/e2e/stubs", () => ({ e2eStubsEnabled: () => false, stubAnalyseDomain: vi.fn() }));
-vi.mock("../agent-readiness", () => ({ runAgentReadiness: async () => ({ error: "not run in this test", score: 0, findings: [] }) }));
+vi.mock("../agent-readiness", () => ({ recordingFetcher: () => Object.assign(async () => ({ status: 0, headers: {}, body: "" }), { resources: new Map() }), runAgentReadiness: async () => ({ error: "not run in this test", score: 0, findings: [] }) }));
 vi.mock("../crawler", async () => {
   const real = await vi.importActual<typeof import("../crawler")>("../crawler");
   return { ...real, crawlSite: (...a: unknown[]) => crawl(...a) };
@@ -55,7 +55,7 @@ function supabase() {
   } as never;
 }
 
-const run = () => analyseDomain({ domain: "packhub.io", supabase: supabase(), workspaceId: "ws1", crawlRetryDelaysMs: [0, 0] });
+const run = () => analyseDomain({ domain: "packhub.io", supabase: supabase(), workspaceId: "ws1", crawlRetryDelaysMs: [0, 0], rateBanWaitMs: 0 });
 const stamped = () => update.mock.calls.some(([t, p]) => t === "workspaces" && "first_analysed_at" in (p as object));
 const crawlLayer = (a: Awaited<ReturnType<typeof analyseDomain>>) => a.layers.find((l) => l.id === "crawl")!;
 
@@ -110,15 +110,24 @@ describe("analyseDomain — a crawl that fails for a reason that will not change
     expect(stamped()).toBe(true);
   });
 
-  it("retries a rate limit - the wizard's own reads seconds earlier can trip one", async () => {
-    crawl.mockResolvedValueOnce([{ ...page, status: 429, error: "HTTP 429" }]).mockResolvedValueOnce([page]);
-    await run();
+  it("waits the ban window out once when every page was refused, and reads on the second try", async () => {
+    crawl.mockResolvedValueOnce([{ ...page, status: 403, error: "HTTP 403" }]).mockResolvedValueOnce([page]);
+    const a = await run();
     expect(crawl).toHaveBeenCalledTimes(2);
+    expect(crawlLayer(a).status).toBe("ok");
+    expect(crawlLayer(a).detail).toContain("rate-limits");
     expect(stamped()).toBe(true);
   });
 
-  it("does not retry an HTTP refusal", async () => {
-    crawl.mockResolvedValue([{ ...page, status: 403 }]);
+  it("does not stamp a host that was still refusing after the wait", async () => {
+    crawl.mockResolvedValue([{ ...page, status: 403, error: "HTTP 403" }]);
+    await run();
+    expect(crawl).toHaveBeenCalledTimes(2);
+    expect(stamped()).toBe(false);
+  });
+
+  it("does not retry a page that is simply gone", async () => {
+    crawl.mockResolvedValue([{ ...page, status: 404 }]);
     await run();
     expect(crawl).toHaveBeenCalledTimes(1);
     expect(stamped()).toBe(true);
