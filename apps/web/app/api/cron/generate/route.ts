@@ -5,6 +5,7 @@ import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { closeCoveredEntries, duePlannedKeyword, fulfilPlannedEntry } from "@/lib/onboarding/plan";
 import { profileIsUsable } from "@/lib/seo/topical-profile";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
+import { firstDraftAwaitsReview } from "@/lib/billing/first-draft-gate";
 import { canSpend } from "@/lib/billing/spend-gate";
 import { resumeExpiredPauses } from "@/lib/billing/resume";
 import { billingEnabled, getStripe } from "@/lib/stripe";
@@ -250,6 +251,16 @@ async function run(request: Request) {
       if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
         results.push({ workspaceId, domain, status: "skipped", detail: quotaExceededMessage(quota) });
         continue;
+      }
+      // On the free allowance, the second draft waits for the first to be
+      // read (lib/billing/first-draft-gate.ts). The allowance is the
+      // customer's to spend, not this cron's.
+      if (quota.reason === "no-plan") {
+        const waiting = await firstDraftAwaitsReview(supabase, workspaceId);
+        if (waiting) {
+          results.push({ workspaceId, domain, status: "skipped", detail: waiting });
+          continue;
+        }
       }
 
       // No vocabulary, no unattended article. With nothing to judge relevance

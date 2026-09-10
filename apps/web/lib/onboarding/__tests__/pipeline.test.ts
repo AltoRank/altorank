@@ -247,34 +247,33 @@ describe("runOnboarding", () => {
    * sentence about the other six. It is a note, so it carries the status the
    * phase already settled on.
    */
-  it("does not undo the finished draft when it announces the rest of the week", async () => {
+  it("announces that the rest of the week waits for the person, and does not write it", async () => {
     plan.mockResolvedValue([
       { term: "seo agent", date: "2026-09-07", keywordId: "k1" },
       { term: "seo tools", date: "2026-09-08", keywordId: "k2" },
     ]);
-    fanOut.mockReturnValue({ dispatched: 1, settled: Promise.resolve() });
     const events: OnboardingEvent[] = [];
     await runOnboarding(richClient(0), WS, (e) => events.push(e));
-    const drafting = events.filter((e) => e.phase === "drafting");
-    const last = drafting.at(-1);
+    const last = events.filter((e) => e.phase === "drafting").at(-1);
     expect(last).toMatchObject({ status: "done" });
     expect((last as { detail: string }).detail).toBe(
-      'Wrote 1,200 words on "seo agent". Writing 1 more article now. They appear as they finish.',
+      'Wrote 1,200 words on "seo agent". 1 more article is planned. They start once you have read this one.',
     );
+    expect(fanOut).not.toHaveBeenCalled();
     expect(events.at(-1)).toEqual({ phase: "ready" });
   });
 
-  it("keeps a skipped draft skipped when the rest of the week is dispatched", async () => {
+  it("keeps a skipped draft skipped, with no note about a week that is not coming", async () => {
     plan.mockResolvedValue([
       { term: "seo agent", date: "2026-09-07", keywordId: "k1" },
       { term: "seo tools", date: "2026-09-08", keywordId: "k2" },
     ]);
-    fanOut.mockReturnValue({ dispatched: 2, settled: Promise.resolve() });
     pick.mockReturnValue(null);
     recommend.mockResolvedValue([]);
     const events: OnboardingEvent[] = [];
     await runOnboarding(richClient(0), WS, (e) => events.push(e));
     expect(events.filter((e) => e.phase === "drafting").at(-1)).toMatchObject({ status: "skipped" });
+    expect(fanOut).not.toHaveBeenCalled();
   });
 
   it("does not write a second draft into a workspace that has one", async () => {
@@ -400,30 +399,18 @@ describe("runOnboarding", () => {
      * (round4 §4, W2), so the run buys the week once and carries each draft's
      * share to the invocation that writes it.
      */
-    it("buys the week's related keywords once and gives every draft its share", async () => {
+    it("buys related keywords for the one draft it writes, not for the week", async () => {
       plan.mockResolvedValue([
         { term: "seo agent", date: "2026-09-07", keywordId: "k1" },
         { term: "seo tools", date: "2026-09-08", keywordId: "k2" },
       ]);
       recommend.mockResolvedValue([{ ...NEXT, keywordId: "k1" }]);
-      fanOut.mockReturnValue({ dispatched: 1, settled: Promise.resolve() });
-      relatedBatch.mockResolvedValue(
-        new Map([
-          ["seo agent", [{ keyword: "seo agents", searchVolume: 100, competition: null }]],
-          ["seo tools", [{ keyword: "seo toolkit", searchVolume: 90, competition: null }]],
-        ]),
-      );
-
+      relatedBatch.mockResolvedValue(new Map([["seo agent", [{ keyword: "seo agents", searchVolume: 100, competition: null }]]]));
       const { result } = await collectDispatch();
-
       expect(relatedBatch).toHaveBeenCalledTimes(1);
-      expect(relatedBatch.mock.calls[0][0]).toEqual(["seo agent", "seo tools"]);
-      expect(result.pendingDraft?.relatedKeywords).toEqual([
-        { keyword: "seo agents", searchVolume: 100, competition: null },
-      ]);
-      expect(fanOut).toHaveBeenCalledWith("ws1", [
-        { keywordId: "k2", term: "seo tools", relatedKeywords: [{ keyword: "seo toolkit", searchVolume: 90, competition: null }] },
-      ]);
+      expect(relatedBatch.mock.calls[0][0]).toEqual(["seo agent"]);
+      expect(result.pendingDraft?.relatedKeywords).toEqual([{ keyword: "seo agents", searchVolume: 100, competition: null }]);
+      expect(fanOut).not.toHaveBeenCalled();
     });
 
     it("carries on when the shared lookup fails: each draft buys its own, as before", async () => {
@@ -435,30 +422,27 @@ describe("runOnboarding", () => {
       expect(result.pendingDraft?.relatedKeywords).toBeUndefined();
     });
 
-    it("keeps the first draft out of the fan-out", async () => {
+    it("dispatches exactly one draft, the first", async () => {
       plan.mockResolvedValue([
         { term: "seo agent", date: "2026-09-07", keywordId: "k1" },
         { term: "seo tools", date: "2026-09-08", keywordId: "k2" },
       ]);
       recommend.mockResolvedValue([{ ...NEXT, keywordId: "k1" }]);
-      fanOut.mockReturnValue({ dispatched: 1, settled: Promise.resolve() });
       const { result } = await collectDispatch();
       expect(result.pendingDraft?.keywordId).toBe("k1");
-      expect(fanOut).toHaveBeenCalledWith("ws1", [{ keywordId: "k2", term: "seo tools" }]);
+      expect(fanOut).not.toHaveBeenCalled();
     });
 
-    it("carries the fan-out note on the still-active draft", async () => {
+    it("tells the still-active draft that the rest waits", async () => {
       plan.mockResolvedValue([
         { term: "seo agent", date: "2026-09-07", keywordId: "k1" },
         { term: "seo tools", date: "2026-09-08", keywordId: "k2" },
       ]);
       recommend.mockResolvedValue([{ ...NEXT, keywordId: "k1" }]);
-      fanOut.mockReturnValue({ dispatched: 1, settled: Promise.resolve() });
       const { events } = await collectDispatch();
-      expect(events.filter((e) => e.phase === "drafting").at(-1)).toMatchObject({
-        status: "active",
-        detail: 'Writing "seo agent" now. It lands in your review queue when it is done. Writing 1 more article now. They appear as they finish.',
-      });
+      const last = events.filter((e) => e.phase === "drafting").at(-1) as { detail?: string };
+      expect(last.detail).toContain("start once you have read this one");
+      expect(fanOut).not.toHaveBeenCalled();
     });
   });
 });

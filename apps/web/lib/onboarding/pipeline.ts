@@ -39,7 +39,6 @@ import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
 import { schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
-import { fanOutDrafts, MAX_FAN_OUT } from "@/lib/content/fan-out";
 
 /** Pages the onboarding minute reads. The nightly pass reads up to forty. */
 const ONBOARDING_CRAWL_PAGES = 12;
@@ -456,45 +455,29 @@ async function runPhases(
     settle("failed", message(err));
   }
 
-  // The rest of the week, in parallel.
+  // The rest of the week waits for a person.
   //
-  // One draft is ~103s and a function has 300s, so the remaining six cannot be
-  // written here. Each gets its own invocation instead, dispatched without
-  // waiting. They land in about the time one takes rather than over the day
-  // the four-a-day cron would need.
-  //
-  // Anything that does not go out - no CRON_SECRET on a self-hosted install, a
-  // request that never arrives - stays an unfulfilled plan entry, which is
-  // exactly what cron/generate already looks for.
-  let fanOutSettled: Promise<void> = Promise.resolve();
-  if (plan.length > 1) {
-    const { data: written } = await supabase
-      .from("calendar_entries")
-      .select("keyword_id")
-      .eq("workspace_id", workspace.id)
-      .not("article_id", "is", null);
-    const done = new Set((written ?? []).map((r) => r.keyword_id as string));
-    // A dispatched first draft has no article yet, so its entry still reads
-    // as unwritten here; it is the one the draft route is about to write.
-    if (pendingDraft?.keywordId) done.add(pendingDraft.keywordId);
-    const rest = plan
-      .filter((p) => p.keywordId && !done.has(p.keywordId))
-      .map((p) => ({
-        keywordId: p.keywordId as string,
-        term: p.term,
-        relatedKeywords: relatedByTerm.get(p.term),
-      }));
-    const fan = fanOutDrafts(workspace.id, rest);
-    fanOutSettled = fan.settled;
-    if (fan.dispatched > 0) {
-      const note = `Writing ${fan.dispatched} more article${fan.dispatched === 1 ? "" : "s"} now. They appear as they finish.`;
-      emit({
-        phase: "drafting",
-        // Whatever the first draft did stands. This is a note about the rest.
-        status: draftStatus,
-        detail: draftDetail ? `${draftDetail} ${note}` : note,
-      });
-    }
+  // This used to fan the remaining plan entries out as parallel draft
+  // requests, so a signup had seven articles inside five minutes. Measured on
+  // 2026-09-10 (packiyo.com, bookedin.com): the entire lifetime free
+  // allowance spent before anyone had read a word, three of the seven on one
+  // topic, two written for a buyer the business does not have. The first
+  // draft is the wow; the other six are the customer's decision to make, once
+  // they have seen what a draft looks like. cron/generate writes them at the
+  // plan's pace, and on the free allowance only after the first has been
+  // reviewed (lib/billing/first-draft-gate.ts).
+  const fanOutSettled: Promise<void> = Promise.resolve();
+  // `draftStatus` is assigned inside a closure above, which control flow
+  // does not see; the read is deliberate.
+  if (plan.length > 1 && (draftStatus as PhaseStatus) !== "skipped") {
+    const rest = plan.length - 1;
+    const note = `${rest} more ${rest === 1 ? "article is" : "articles are"} planned. They start once you have read this one.`;
+    emit({
+      phase: "drafting",
+      // Whatever the first draft did stands. This is a note about the rest.
+      status: draftStatus,
+      detail: draftDetail ? `${draftDetail} ${note}` : note,
+    });
   }
 
   // With a draft still to be written, the run is not over: the draft route
@@ -511,7 +494,7 @@ function message(err: unknown): string {
  * One `keywords_for_keywords` task for every draft this run will write.
  *
  * The seeds are the first draft's term plus the plan, capped at what actually
- * gets written now: the inline draft and MAX_FAN_OUT more. Anything past that
+ * gets written now: the inline draft. Anything past that
  * is written by `cron/generate` days later, by which time a list bought today
  * would be stale as well as unpaid-for.
  *
@@ -527,7 +510,9 @@ async function fetchWeeksRelatedKeywords(
   const terms: string[] = [];
   for (const term of [firstTerm, ...plan.map((p) => p.term)]) {
     if (term && !terms.includes(term)) terms.push(term);
-    if (terms.length >= MAX_FAN_OUT + 1) break;
+    // One draft is written now; the plan's other entries buy their own when
+    // cron/generate writes them, days later, when today's list would be stale.
+    if (terms.length >= 1) break;
   }
   if (!terms.length) return new Map();
   const loc = getLocale(workspace.language ?? "en");
