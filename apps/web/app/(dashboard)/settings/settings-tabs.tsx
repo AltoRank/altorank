@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
  * Settings in three groups, each a row of tabs: the shape Outrank uses
  * (General Settings > Business / Audience and Competitors / Search Console;
  * Articles Settings > Articles / Keywords / Blog / Improvements), re-assessed
- * 2026-09-05. Ten tabs in one row read as a flat list of unrelated screens;
+ * 2026-09-05. Eleven tabs in one row read as a flat list of unrelated screens;
  * grouped, the first six are visibly the onboarding wizard made permanent
  * (every answer given during setup has to be changeable later, in the same
  * words), and Team / Billing / API keys are visibly about the account rather
@@ -44,6 +44,7 @@ export const SETTINGS_GROUPS = [
     tabs: [
       { label: "Team", href: "/settings/team" },
       { label: "Billing", href: "/settings/billing" },
+      { label: "Emails", href: "/settings/emails" },
       { label: "API keys", href: "/settings/api-keys" },
     ],
   },

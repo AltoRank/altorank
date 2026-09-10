@@ -39,6 +39,23 @@ export const EMAIL_CATEGORIES = {
 
 export type EmailCategory = keyof typeof EMAIL_CATEGORIES;
 
+/**
+ * The one-line description under each label. Here rather than in a page so the
+ * signed-out unsubscribe page and the Settings tab cannot drift into
+ * describing the same email two different ways.
+ */
+export const CATEGORY_HELP: Record<EmailCategory, string> = {
+  auth: "Sign-in and password links.",
+  account: "Password changes and new API keys.",
+  billing: "Payments, plan changes, pauses.",
+  drafts: "A draft was written, or approved.",
+  publishing: "An article went live, or a publish failed.",
+  improvements: "A rewrite of an existing page is waiting for review.",
+  reports: "The monthly PDF.",
+  product: "Nothing is being written for a workspace, and why.",
+};
+
+
 /** The pseudo-category an "everything optional" opt-out stores. */
 export const ALL_OPTIONAL = "all";
 
