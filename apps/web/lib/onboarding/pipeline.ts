@@ -41,7 +41,7 @@ import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
 import { schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
 
 /** Pages the onboarding minute reads. The nightly pass reads up to forty. */
-const ONBOARDING_CRAWL_PAGES = 12;
+const ONBOARDING_CRAWL_PAGES = 20;
 import { fetchRelatedKeywordsBatch, type RelatedKeyword } from "@/lib/seo/brief-data";
 import { getLocale } from "@/lib/seo/locales";
 import { detectLinks } from "@/lib/linking/detect";

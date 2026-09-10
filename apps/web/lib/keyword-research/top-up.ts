@@ -40,7 +40,7 @@ import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { fetchTermMetrics, type TermMetrics } from "./metrics";
 import { MIN_VOLUME } from "./funnel";
 import { buildPlaybookSeeds, brandFromDomain, type PlaybookId } from "./seeds";
-import { resolveCategory } from "./category";
+import { resolveSeedHead } from "./category";
 import { isOutOfReach } from "@/lib/seo/difficulty";
 import { commercialFit } from "@/lib/seo/commercial-fit";
 import { scoreRelevance, subjectVocabulary, type TopicalProfile } from "@/lib/seo/topical-profile";
@@ -225,15 +225,11 @@ export async function topUpKeywords(
 
   const harvested = harvestFromResearch((articles ?? []) as ResearchRow[]);
   const businessForCategory = (ws.business_profile as BusinessProfile | null) ?? null;
-  const category = await resolveCategory(businessForCategory, brandFromDomain(String(ws.domain ?? "")), {
+  const head = await resolveSeedHead(businessForCategory, (ws.topical_profile as { topTerms?: string[] } | null) ?? null, String(ws.domain ?? ""), {
     languageCode: options.locale ?? "en",
     locationCode: options.locationCode,
   });
-  const playbook = playbookCandidates(
-    businessForCategory,
-    String(ws.domain ?? ""),
-    category.priced ? category.category : null,
-  );
+  const playbook = playbookCandidates(businessForCategory, String(ws.domain ?? ""), head.priced ? head.head : null);
   // Which list a term came from, for provenance. Harvest wins a tie: it is the
   // one we have already paid for.
   const origin = new Map<string, "ideas" | "playbook">();
