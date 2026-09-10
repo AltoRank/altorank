@@ -15,6 +15,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const crawl = vi.fn();
 const update = vi.fn();
 
+vi.mock("@/lib/keyword-research/category", () => ({ resolveSeedHead: async () => ({ head: null, priced: false, seedVolume: 0, tried: [] }) }));
 vi.mock("@/lib/e2e/stubs", () => ({ e2eStubsEnabled: () => false, stubAnalyseDomain: vi.fn() }));
 vi.mock("../agent-readiness", () => ({ recordingFetcher: () => Object.assign(async () => ({ status: 0, headers: {}, body: "" }), { resources: new Map() }), runAgentReadiness: async () => ({ error: "not run in this test", score: 0, findings: [] }) }));
 vi.mock("../crawler", async () => {

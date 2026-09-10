@@ -27,7 +27,7 @@ import { profileIsUsable, seedPhrasesFromPages, scoreRelevance, subjectVocabular
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { audienceSeeds, brandFromDomain, type AudienceSeed } from "@/lib/keyword-research/seeds";
-import { resolveCategory } from "@/lib/keyword-research/category";
+import { resolveSeedHead } from "@/lib/keyword-research/category";
 import { isOutOfReach, isHopeless } from "@/lib/seo/difficulty";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { dedupePermutations, dedupeTargets } from "@/lib/seo/keywords";
@@ -884,29 +884,30 @@ export async function analyseDomain(options: {
         // and already caps at MAX_SEEDS; the audiences take slots from the page
         // seeds rather than adding to them, so a signup costs exactly what it
         // costs today.
-        // Which of the description's phrases the market searches for, priced
-        // once (about a cent). The first guess was the tagline both times it
-        // was measured, and a tagline seeds nothing.
-        const category =
+        // The head the audience seeds are built on, chosen by how the composed
+        // seeds price (lib/keyword-research/category.ts): "dental clinic
+        // website" has volume, "dental clinic online booking" has none, and
+        // only pricing the pair can tell.
+        const head =
           usable && depth === "full" && business
-            ? await resolveCategory(business, brandFromDomain(domain), {
+            ? await resolveSeedHead(business, profile, domain, {
                 languageCode: options.locale ?? "en",
                 locationCode: options.locationCode,
               })
             : null;
-        if (category) {
+        if (head) {
           layers.push({
             id: "category",
-            status: category.priced ? "ok" : "unavailable",
-            detail: category.priced
-              ? `"${category.category}", ${category.volume?.toLocaleString()} searches/mo, of ${category.candidates.length} phrases the description offered`
-              : `none of the ${category.candidates.length} phrases the description offered has search volume; seeding from "${category.category ?? "nothing"}"`,
+            status: head.priced ? "ok" : "unavailable",
+            detail: head.priced
+              ? `seeding on "${head.head}": its audience seeds carry ${head.seedVolume.toLocaleString()} searches/mo, of ${head.tried.length} heads tried`
+              : `none of ${head.tried.length} heads composed into a seed anyone searches; seeding on "${head.head ?? "nothing"}"`,
           });
         }
         const seeds =
           usable && depth === "full"
             ? mergeSeeds(
-                audienceSeeds(business, profile, domain, category?.priced ? category.category : null),
+                audienceSeeds(business, profile, domain, head?.priced ? head.head : null),
                 seedPhrasesFromPages(crawledPages, domain),
                 MAX_SEEDS,
               )

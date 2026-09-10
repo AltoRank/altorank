@@ -26,6 +26,7 @@ const seeds = vi.fn();
 const gap = vi.fn();
 const sitemap = vi.fn();
 
+vi.mock("@/lib/keyword-research/category", () => ({ resolveSeedHead: async () => ({ head: null, priced: false, seedVolume: 0, tried: [] }) }));
 vi.mock("@/lib/e2e/stubs", () => ({ e2eStubsEnabled: () => false, stubAnalyseDomain: vi.fn() }));
 vi.mock("../agent-readiness", () => ({ recordingFetcher: () => Object.assign(async () => ({ status: 0, headers: {}, body: "" }), { resources: new Map() }), runAgentReadiness: async () => ({ error: "not run in this test", score: 0, findings: [] }) }));
 vi.mock("../pagespeed", () => ({ fetchPageSpeedDetailed: async () => ({ ok: false, kind: "unavailable", detail: "test" }) }));
