@@ -129,6 +129,26 @@ const MAX_BODY_BYTES = 1_500_000;
 export const defaultFetcher: ResourceFetcher = (url) => fetchResource(url);
 
 /**
+ * `defaultFetcher` that keeps every response, so the caller can hand the
+ * homepage to the crawl and robots.txt and the sitemap to URL discovery
+ * instead of fetching each of them again. Against a host that rate-bans after
+ * ten requests (packhub.io), those repeats were the difference between a
+ * first look and "too little readable text".
+ */
+export function recordingFetcher(timeoutMs?: number): ResourceFetcher & { resources: Map<string, FetchedResource> } {
+  const resources = new Map<string, FetchedResource>();
+  const f = (async (url: string) => {
+    const hit = resources.get(url);
+    if (hit) return hit;
+    const r = await fetchResource(url, timeoutMs);
+    resources.set(url, r);
+    return r;
+  }) as ResourceFetcher & { resources: Map<string, FetchedResource> };
+  f.resources = resources;
+  return f;
+}
+
+/**
  * One GET with the checker's User-Agent and a caller-chosen timeout. Never
  * throws; unreachable (or timed out) is {status: 0}. Split from
  * `defaultFetcher` so a caller with an overall deadline can hand each fetch

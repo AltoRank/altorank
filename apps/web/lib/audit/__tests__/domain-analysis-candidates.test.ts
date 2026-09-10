@@ -27,7 +27,7 @@ const gap = vi.fn();
 const sitemap = vi.fn();
 
 vi.mock("@/lib/e2e/stubs", () => ({ e2eStubsEnabled: () => false, stubAnalyseDomain: vi.fn() }));
-vi.mock("../agent-readiness", () => ({ runAgentReadiness: async () => ({ error: "not run in this test", score: 0, findings: [] }) }));
+vi.mock("../agent-readiness", () => ({ recordingFetcher: () => Object.assign(async () => ({ status: 0, headers: {}, body: "" }), { resources: new Map() }), runAgentReadiness: async () => ({ error: "not run in this test", score: 0, findings: [] }) }));
 vi.mock("../pagespeed", () => ({ fetchPageSpeedDetailed: async () => ({ ok: false, kind: "unavailable", detail: "test" }) }));
 vi.mock("@/lib/cms/detect", () => ({ detectPlatform: async () => null }));
 vi.mock("@/lib/seo/client", () => ({ hasDataForSEOCredentials: () => true }));

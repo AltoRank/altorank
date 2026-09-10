@@ -17,8 +17,8 @@
 // more useful than an exception, and `layers` records exactly which half.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { runAgentReadiness, type ReadinessResult } from "./agent-readiness";
-import { crawlSite, usablePages } from "./crawler";
+import { recordingFetcher, runAgentReadiness, type ReadinessResult } from "./agent-readiness";
+import { crawlSite, usablePages, type CrawlOptions } from "./crawler";
 import { runAuditChecks, calculateAuditScore } from "./checks";
 import { fetchPageSpeedDetailed } from "./pagespeed";
 import { discoverKeywords, discoverKeywordsFromSeeds, fetchKeywordDifficulty, type DiscoveredKeyword, storedCpc } from "@/lib/seo/keywords";
@@ -250,12 +250,14 @@ async function ownSitemapPaths(
   domain: string,
   depth: "quick" | "full",
   rankedCount: number,
+  /** robots.txt and sitemap bodies the readiness check already fetched. */
+  bodies?: ReadonlyMap<string, string>,
 ): Promise<Set<string> | null> {
   if (depth !== "full" || rankedCount === 0) return null;
   const maxUrls = 5_000;
   const deadline = Date.now() + SITEMAP_WALK_MS;
   try {
-    const urls = await discoverUrls(domain, { timeoutMs: 6_000, maxUrls, deadline });
+    const urls = await discoverUrls(domain, { timeoutMs: 6_000, maxUrls, deadline, bodies });
     // Both of these mean the list is a prefix of the sitemap rather than the
     // sitemap, and a prefix would drop the site's own pages as somebody
     // else's. Out of time, or stopped at the ceiling.
@@ -371,24 +373,60 @@ export const CRAWL_RETRY_DELAYS_MS: readonly number[] = [2_000, 5_000];
  * crawl layer can say "3 attempts" and the persist step can tell a look that
  * happened from one that did not.
  */
+/**
+ * How long a rate ban lasts on the one host it has been measured on:
+ * packhub.io answered 403 for about forty seconds after its tenth request,
+ * then 200 again. Waiting it out once costs less than the first look it
+ * would otherwise cost the customer.
+ */
+/** The 2xx bodies a recording fetcher holds, by URL, for callers that take bodies. */
+function recordedBodies(resources: ReadonlyMap<string, { status: number; body: string }>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [url, r] of resources) if (r.status >= 200 && r.status < 300 && r.body) out.set(url, r.body);
+  return out;
+}
+
+export const RATE_BAN_WAIT_MS = 45_000;
+
+/** A refused page: the host's rule, not the page's absence. */
+const isRefused = (p: { status: number }) => p.status === 403 || p.status === 429;
+
 async function crawlWithRetry(
   baseUrl: string,
   maxPages: number,
   maxDepth: number,
   delayMs: number,
   retryDelays: readonly number[] = CRAWL_RETRY_DELAYS_MS,
-): Promise<{ fetched: Awaited<ReturnType<typeof crawlSite>>; attempts: number }> {
-  let fetched = await crawlSite(baseUrl, maxPages, maxDepth, delayMs);
+  crawlOpts: CrawlOptions = {},
+  /** Null: never wait for a ban (the quick look). 0: retry without sleeping (tests). */
+  rateBanWaitMs: number | null = RATE_BAN_WAIT_MS,
+): Promise<{ fetched: Awaited<ReturnType<typeof crawlSite>>; attempts: number; rateLimited: boolean }> {
+  let fetched = await crawlSite(baseUrl, maxPages, maxDepth, delayMs, crawlOpts);
   let attempts = 1;
+  let rateLimited = false;
+
+  // Every page refused before one was read: the ban was already in force
+  // when the crawl began (the wizard's reader and the readiness check spent
+  // the budget). Wait the window out once, then read what a short crawl can.
+  if (fetched.length > 0 && usablePages(fetched).length === 0 && fetched.every(isRefused) && rateBanWaitMs !== null) {
+    rateLimited = true;
+    if (rateBanWaitMs > 0) await new Promise((r) => setTimeout(r, rateBanWaitMs));
+    fetched = await crawlSite(baseUrl, Math.min(maxPages, 6), maxDepth, Math.max(delayMs, 1_500), crawlOpts);
+    attempts += 1;
+    return { fetched, attempts, rateLimited };
+  }
+
   for (const wait of retryDelays) {
     const failedEverywhere = fetched.length > 0 && usablePages(fetched).length === 0;
     const reason = fetched.find((p) => p.error)?.error ?? null;
     if (!failedEverywhere || !isTransientCrawlFailure(reason)) break;
     await new Promise((r) => setTimeout(r, wait));
-    fetched = await crawlSite(baseUrl, maxPages, maxDepth, delayMs);
+    fetched = await crawlSite(baseUrl, maxPages, maxDepth, delayMs, crawlOpts);
     attempts += 1;
   }
-  return { fetched, attempts };
+  // Read some, then refused: the crawler stopped itself (crawler.ts).
+  if (usablePages(fetched).length > 0 && fetched.some((p) => isRefused(p) && /rate-limits/.test(p.error ?? ""))) rateLimited = true;
+  return { fetched, attempts, rateLimited };
 }
 
 export async function analyseDomain(options: {
@@ -424,6 +462,15 @@ export async function analyseDomain(options: {
   locationCode?: number;
   /** Waits between crawl attempts. Tests pass []; production takes the default. */
   crawlRetryDelaysMs?: readonly number[];
+  /**
+   * Pages the crawl may read this run. The onboarding minute passes a small
+   * number: a voice and a vocabulary come from a dozen pages, the nightly
+   * pass reads the rest, and every page is one request against a host that
+   * may be counting them.
+   */
+  maxPages?: number;
+  /** How long to wait once when a host rate-bans the crawl. Tests pass 0. */
+  rateBanWaitMs?: number;
 }): Promise<DomainAnalysis> {
   // E2E_STUBS: fixture keywords, no crawl, no provider, nothing measured (lib/e2e/stubs.ts).
   if (e2eStubsEnabled()) return stubAnalyseDomain(options);
@@ -434,9 +481,13 @@ export async function analyseDomain(options: {
   const layers: AnalysisLayer[] = [];
 
   // --- Agent readiness -----------------------------------------------------
+  // What readiness fetches - the homepage, robots.txt, the sitemap - the crawl
+  // and URL discovery need too. One fetcher remembers them, so a host that
+  // counts requests sees each once.
+  const recorded = recordingFetcher();
   let readiness: ReadinessResult | null = null;
   try {
-    const result = await runAgentReadiness(domain);
+    const result = await runAgentReadiness(domain, recorded);
     if (result.error) {
       layers.push({ id: "readiness", status: "failed", detail: result.error });
     } else {
@@ -459,19 +510,25 @@ export async function analyseDomain(options: {
   // --- Crawl + on-page checks ----------------------------------------------
   let pagesCrawled = 0;
   let crawlAttempts = 1;
+  let crawlRateLimited = false;
   let crawledPages: Awaited<ReturnType<typeof crawlSite>> = [];
   let auditScore: number | null = null;
   let issues: unknown[] = [];
   let profile: TopicalProfile | null = null;
   try {
-    const { fetched, attempts } = await crawlWithRetry(
+    const home = recorded.resources.get(`${baseUrl}/`) ?? recorded.resources.get(baseUrl);
+    const seedHtml = home && home.status >= 200 && home.status < 300 && /<html/i.test(home.body) ? home.body : null;
+    const { fetched, attempts, rateLimited } = await crawlWithRetry(
       baseUrl,
-      depth === "quick" ? 1 : MAX_PAGES,
+      depth === "quick" ? 1 : Math.min(options.maxPages ?? MAX_PAGES, MAX_PAGES),
       depth === "quick" ? 0 : MAX_DEPTH,
       CRAWL_DELAY_MS,
       options.crawlRetryDelaysMs ?? CRAWL_RETRY_DELAYS_MS,
+      { seedHtml },
+      depth === "quick" ? null : (options.rateBanWaitMs ?? RATE_BAN_WAIT_MS),
     );
     crawlAttempts = attempts;
+    crawlRateLimited = rateLimited;
     const pages = usablePages(fetched);
     crawledPages = pages;
     pagesCrawled = pages.length;
@@ -496,7 +553,8 @@ export async function analyseDomain(options: {
         status: "ok",
         detail:
           `${pages.length} pages crawled, ${issues.length} issues, ` +
-          (auditScore === null ? "not scored" : `score ${auditScore}/100`),
+          (auditScore === null ? "not scored" : `score ${auditScore}/100`) +
+          (crawlRateLimited ? "; the site rate-limits crawlers, so this run read fewer pages and the nightly pass reads the rest" : ""),
       });
     } else {
       layers.push({
@@ -755,7 +813,7 @@ export async function analyseDomain(options: {
         // decided. The headline "N ranking keywords" above is untouched: those
         // pages do rank on this domain. This is about whose subject matter goes
         // into the queue.
-        const ownPages = await ownSitemapPaths(domain, depth, ranked.length);
+        const ownPages = await ownSitemapPaths(domain, depth, ranked.length, recordedBodies(recorded.resources));
         const rankedOwn = rankedOnOwnPages(ranked, ownPages);
         const rankedDropped = ranked.length - rankedOwn.length;
         const fromRanked: DiscoveredKeyword[] = rankedOwn
@@ -1210,7 +1268,12 @@ export async function analyseDomain(options: {
     // would buy the same provider calls to hear it.
     const crawlLayer = layers.find((l) => l.id === "crawl");
     const crawlReason = crawlLayer?.status === "failed" ? crawlLayer.detail : null;
-    const looked = crawlLayer?.status === "ok" || !isTransientCrawlFailure(crawlReason);
+    // A host that rate-banned the crawl before it read a page has not been
+    // looked at either: the nightly pass, which arrives alone and unhurried,
+    // gets the first look instead.
+    const looked =
+      crawlLayer?.status === "ok" ||
+      (!isTransientCrawlFailure(crawlReason) && !(crawlRateLimited && pagesCrawled === 0));
 
     await supabase
       .from("workspaces")
