@@ -37,7 +37,7 @@ test("a new account is walked from /dashboard to a planned first month", async (
   await page.getByRole("button", { name: "Continue" }).click();
 
   // --- Step 2: audiences and competitors, and step 1 is on disk -------------
-  await expect(page.getByRole("heading", { name: "Who you sell to, and who you sell against" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What you sell, who buys it, and who you sell against" })).toBeVisible();
   await expect(page.getByText("Independent travel planners in Italy")).toBeVisible();
   await expect(page.getByText("tripcraft.example")).toBeVisible();
   const { data: afterProfile } = await db
