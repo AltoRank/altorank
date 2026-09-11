@@ -135,7 +135,6 @@ export function OnboardingWizard({
    */
   initialRun?: OnboardingRunSnapshot | null;
 }) {
-  const router = useRouter();
   const identifiedUserId = useRef<string | null>(null);
   const steps: string[] = askAttribution ? [...SITE_STEPS, "About you"] : [...SITE_STEPS];
 

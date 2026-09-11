@@ -225,6 +225,14 @@ async function runPhases(
       // is the difference between "your site has no demand" and "we could not
       // read your site", which are not the same news.
       const why = analysis.layers.find((l) => l.id === "keywords" && l.status === "unavailable")?.detail;
+      // What the keyword work actually did, in its own words. `analyseDomain`
+      // builds the breakdown - how many the site already ranks for, how many
+      // came from the rivals the person named, how many were dropped as things
+      // their buyers would not search - and this line used to throw it away
+      // and print "Found 14 keywords worth tracking." A person reading the log
+      // could not tell a good 14 from qasimcode.com's 14, eleven of which were
+      // a rival's name or somebody shopping for a free portfolio site.
+      const breakdown = analysis.layers.find((l) => l.id === "keywords" && l.status === "ok")?.detail;
       // When the crawl itself failed, that is the news - not the keywords
       // layer's downstream "too little readable text", which packhub.io was
       // shown for a site with 379 words on its homepage. Quote the crawl's
@@ -238,7 +246,7 @@ async function runPhases(
         status: keywordsFound > 0 ? "done" : "skipped",
         detail:
           keywordsFound > 0
-            ? `Found ${keywordsFound.toLocaleString()} keyword${keywordsFound === 1 ? "" : "s"} worth tracking.`
+            ? (breakdown ?? `Found ${keywordsFound.toLocaleString()} keyword${keywordsFound === 1 ? "" : "s"} worth tracking.`)
             : willRetry
               ? `We could not reach your site just now (${crawlFailed}). The next look is already scheduled; keywords and the plan will follow without you doing anything.`
               : crawlFailed

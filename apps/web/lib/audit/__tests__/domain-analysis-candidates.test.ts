@@ -283,7 +283,7 @@ describe("the stored hundred", () => {
     // The headline stays true: those pages do rank on this domain.
     expect(analysis.rankedKeywords).toHaveLength(40);
     expect(analysis.layers.find((l) => l.id === "keywords")?.detail).toContain(
-      "20 rankings on pages the sitemap does not list, left out",
+      "20 on pages that are not yours, left out",
     );
   });
 

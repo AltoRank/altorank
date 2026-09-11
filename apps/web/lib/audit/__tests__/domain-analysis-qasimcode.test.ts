@@ -304,7 +304,7 @@ describe("the qasimcode signup", () => {
     const { analysis } = await analyse();
     const detail = analysis.layers.find((l) => l.id === "keywords")?.detail ?? "";
     expect(detail).toContain("1 from what the 2 competitors you named rank for");
-    expect(detail).toContain("around 2 searches a buyer makes");
-    expect(detail).toContain("2 refused by the buyer test");
+    expect(detail).toContain("around the 2 things you said people buy from you");
+    expect(detail).toContain("2 dropped as not what your buyers would search");
   });
 });

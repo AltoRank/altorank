@@ -982,16 +982,16 @@ export async function analyseDomain(options: {
         const parts = [
           fromRanked.length ? `${fromRanked.length} it already ranks for` : "",
           rankedDropped
-            ? `${rankedDropped} ranking${rankedDropped === 1 ? "" : "s"} on pages the sitemap does not list, left out`
+            ? `${rankedDropped} on pages that are not yours, left out`
             : "",
           fromCompetitors.length
             ? `${fromCompetitors.length} from what ${discovered.competitorsAsked.length === 1 ? "the competitor" : `the ${discovered.competitorsAsked.length} competitors`} you named rank${discovered.competitorsAsked.length === 1 ? "s" : ""} for`
             : "",
           fromIdeas.length
-            ? `${fromIdeas.length} around ${discovered.seedsPriced} search${discovered.seedsPriced === 1 ? "" : "es"} a buyer makes`
+            ? `${fromIdeas.length} around the ${discovered.seedsPriced} thing${discovered.seedsPriced === 1 ? "" : "s"} you said people buy from you`
             : "",
           refusedByBuyerTest
-            ? `${refusedByBuyerTest} refused by the buyer test`
+            ? `${refusedByBuyerTest} dropped as not what your buyers would search`
             : "",
         ].filter(Boolean);
         layers.push({
