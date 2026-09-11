@@ -67,7 +67,7 @@ import { StartTrialButton } from "@/components/billing/start-trial-button";
 import { FirstLookReportView } from "@/components/onboarding/first-look-report";
 import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
 import { worthShowing, type TrafficRange } from "@/lib/onboarding/first-month-outlook";
-import type { BillingInterval } from "@/lib/stripe";
+import { PLAN_PRICES, PLAN_YEARLY_PRICES, type BillingInterval } from "@/lib/stripe";
 import { TRIAL_OFFER } from "@/lib/billing/trial";
 import { SITE_STEPS, stepFromParam, stepIndex } from "@/lib/onboarding/steps";
 import posthog from "posthog-js";
@@ -670,31 +670,46 @@ function TrialGateScreen({
 
         <div className="mx-auto mb-6 max-w-[640px] rounded-[10px] border border-accent/40 bg-panel p-5">
           <div className="rounded-[8px] bg-accent/5 p-4">
-            <div className="mb-2.5 flex items-center justify-between gap-3">
-              <div className="text-[11px] uppercase tracking-wide text-accent">7-day trial</div>
-              {/* Both prices, before the card rather than after it. The amount
-                  itself is Stripe's to state at checkout - a number repeated
-                  here is one that can drift out of step with the price it
-                  claims to be. */}
-              <div className="flex items-center gap-0.5 rounded-full border border-line bg-bg p-0.5">
-                {(["month", "year"] as const).map((i) => (
+            <div className="mb-3 text-[11px] uppercase tracking-wide text-accent">7-day trial</div>
+
+            {/* Two priced choices, not a pair of unlabelled pills. The first
+                version showed "Monthly | Yearly" with no amounts, which reads
+                as a view switch rather than a decision about money - and the
+                whole point of asking before the card is that the person knows
+                what the card is for. Amounts come from lib/stripe, the same
+                constants the billing page renders, so the two screens cannot
+                quote different prices for the same plan. */}
+            <div className="mb-3 grid grid-cols-2 gap-2">
+              {([
+                { id: "month" as const, label: "Monthly", price: PLAN_PRICES.starter, per: "per month", note: null },
+                { id: "year" as const, label: "Yearly", price: PLAN_YEARLY_PRICES.starter, per: "per year", note: "2 months free" },
+              ]).map((opt) => {
+                const on = interval === opt.id;
+                return (
                   <button
-                    key={i}
+                    key={opt.id}
                     type="button"
-                    onClick={() => setInterval(i)}
-                    aria-pressed={interval === i}
-                    className={`rounded-full px-2.5 py-1 text-[11.5px] transition-colors ${
-                      interval === i ? "bg-accent/15 text-ink" : "text-ink-3 hover:text-ink"
+                    onClick={() => setInterval(opt.id)}
+                    aria-pressed={on}
+                    className={`rounded-[8px] border p-3 text-left transition-colors ${
+                      on ? "border-accent bg-accent/10" : "border-line bg-bg hover:border-ink-4"
                     }`}
                   >
-                    {i === "month" ? "Monthly" : "Yearly"}
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-[12.5px] font-medium text-ink">{opt.label}</span>
+                      {opt.note && (
+                        <span className="rounded-full bg-ok-soft px-1.5 py-px text-[10.5px] text-ok-ink">{opt.note}</span>
+                      )}
+                    </div>
+                    <div className="mt-1 text-[17px] font-semibold leading-none text-ink">{opt.price}</div>
+                    <div className="mt-0.5 text-[11.5px] text-ink-3">{opt.per}</div>
                   </button>
-                ))}
-              </div>
+                );
+              })}
             </div>
-            <p className="m-0 mb-3 text-[13.5px] leading-[1.6]">
+
+            <p className="m-0 mb-3 text-[13px] leading-[1.6] text-ink-2">
               {TRIAL_OFFER}
-              {interval === "year" && " Yearly is two months free."}
             </p>
             <StartTrialButton returnTo="/dashboard" interval={interval} onError={setError} />
             {error && (
