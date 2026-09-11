@@ -66,3 +66,30 @@ export function formatTrialDate(iso: string): string {
 
 /** The one sentence the product uses for the offer, everywhere it is made. */
 export const TRIAL_OFFER = `${TRIAL_DAYS} days free with a card, then the plan price. Cancel from Billing before it ends and nothing is charged.`;
+
+/**
+ * Whether this account must start its trial before the dashboard opens.
+ *
+ * The order the product now promises: onboarding writes the first draft
+ * against the free allowance, the person reads it and the month planned
+ * behind it on the run screen, and the card is asked there - not from a
+ * banner found later. The dashboard is what the trial opens.
+ *
+ * Three accounts are never gated, and each for its own reason:
+ *
+ *   self-host   no Stripe key, so there is no trial to start and nothing to
+ *               charge. Gating here would lock an operator out of the install
+ *               they are running themselves.
+ *   operator    our own accounts, which have no plan by design.
+ *   plan        already paying, or already trialing.
+ *
+ * `TRIAL_GATE_DISABLED` turns it off without a deploy. A gate on the way into
+ * the product is the one change where being wrong locks out every account at
+ * once, so it ships with its own switch.
+ */
+export function trialGateApplies(quota: { reason?: string; trialEligible?: boolean } | null | undefined): boolean {
+  if (process.env.TRIAL_GATE_DISABLED === "1") return false;
+  if (!quota) return false;
+  if (quota.reason !== "no-plan") return false;
+  return Boolean(quota.trialEligible);
+}

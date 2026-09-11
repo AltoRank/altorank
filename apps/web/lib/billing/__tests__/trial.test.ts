@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { trialEligible, trialEndsLabel, trialInfo } from "@/lib/billing/trial";
+import { trialEligible, trialEndsLabel, trialGateApplies, trialInfo } from "@/lib/billing/trial";
 import { planEntitled } from "@/lib/billing/dunning";
 
 describe("trialEligible", () => {
@@ -38,5 +38,45 @@ describe("trialInfo", () => {
 describe("planEntitled during a trial", () => {
   it("treats trialing as the paid plan it is", () => {
     expect(planEntitled({ plan_status: "trialing" })).toBe(true);
+  });
+});
+
+describe("trialGateApplies", () => {
+  const gated = { reason: "no-plan", trialEligible: true };
+
+  it("gates an account that has never trialed and has no plan", () => {
+    expect(trialGateApplies(gated)).toBe(true);
+  });
+
+  // Each of these locks somebody out of a working product if it regresses, so
+  // each is named rather than folded into one "not gated" case.
+  it("never gates a self-hosted install", () => {
+    // No Stripe key: there is no trial to start, and the person locked out
+    // would be the operator running it.
+    expect(trialGateApplies({ reason: "self-host", trialEligible: true })).toBe(false);
+  });
+  it("never gates an operator account", () => {
+    expect(trialGateApplies({ reason: "operator", trialEligible: true })).toBe(false);
+  });
+  it("never gates an account already on a plan", () => {
+    expect(trialGateApplies({ reason: "plan", trialEligible: false })).toBe(false);
+  });
+  it("never gates an account that already had its trial", () => {
+    expect(trialGateApplies({ reason: "no-plan", trialEligible: false })).toBe(false);
+  });
+  it("does not gate when there is no quota to read", () => {
+    expect(trialGateApplies(null)).toBe(false);
+    expect(trialGateApplies(undefined)).toBe(false);
+  });
+
+  it("TRIAL_GATE_DISABLED turns it off without a deploy", () => {
+    const before = process.env.TRIAL_GATE_DISABLED;
+    process.env.TRIAL_GATE_DISABLED = "1";
+    try {
+      expect(trialGateApplies(gated)).toBe(false);
+    } finally {
+      if (before === undefined) delete process.env.TRIAL_GATE_DISABLED;
+      else process.env.TRIAL_GATE_DISABLED = before;
+    }
   });
 });
