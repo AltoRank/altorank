@@ -1,3 +1,4 @@
+import { diverseSeeds } from "./diversity";
 // ---------------------------------------------------------------------------
 // Where a new workspace's keyword candidates come from
 // ---------------------------------------------------------------------------
@@ -36,7 +37,7 @@ import { fetchRankedKeywords } from "@/lib/seo/ranked-keywords";
 import { discoverKeywordsFromSeeds, type DiscoveredKeyword } from "@/lib/seo/keywords";
 import { classifyIntent } from "@/lib/seo/intent";
 import { fetchTermMetrics } from "./metrics";
-import { competitorName, isBrandTerm } from "./seeds";
+import { isBrandTerm } from "./seeds";
 import { proposeBuyerSeeds, type BuyerSeeds, type SeedableProfile } from "./buyer-seeds";
 import type { SpendSink } from "./buyer-model";
 
@@ -62,10 +63,10 @@ export const ROWS_PER_COMPETITOR = 100;
 /** A rival's position past this is not a keyword they own. */
 export const COMPETITOR_MAX_RANK = 20;
 /** Rivals rank for a lot of tiny things; this is the noise floor. */
-export const COMPETITOR_MIN_VOLUME = 100;
-/** A seed under this a month is a phrase nobody types; it is not expanded or stored. */
+export const COMPETITOR_MIN_VOLUME = 10;
+/** A measured seed below this floor is excluded; unknown demand stays unknown. */
 export const SEED_MIN_VOLUME = 10;
-/** Seeds long-tailed, best-priced first. One `keyword_suggestions` call each. */
+/** Diverse seeds expanded in profile order. One `keyword_suggestions` call each. */
 export const MAX_EXPANDED_SEEDS = 5;
 /** Rows across all expansions; the call divides it per seed. */
 export const EXPANSION_LIMIT = 100;
@@ -105,9 +106,13 @@ export async function discoverBuyerKeywords(options: {
   const fromCompetitors: Candidate[] = [];
   const seen = new Set<string>();
   perCompetitor.forEach((rows, i) => {
+    const byPage = new Map<string, number>();
     for (const k of rows) {
       const key = k.keyword.trim().toLowerCase();
       if (!key || seen.has(key) || brand(key)) continue;
+      const page = k.url?.replace(/[?#].*$/, "");
+      if (page && (byPage.get(page) ?? 0) >= 2) continue;
+      if (page) byPage.set(page, (byPage.get(page) ?? 0) + 1);
       seen.add(key);
       fromCompetitors.push({
         keyword: k.keyword,
@@ -115,7 +120,8 @@ export async function discoverBuyerKeywords(options: {
         difficulty: k.difficulty,
         cpc: k.cpc ?? 0,
         competition: 0,
-        intent: classifyIntent(k.keyword, languageCode).intent,
+        intent: k.intent ?? classifyIntent(k.keyword, languageCode).intent,
+        sourceUrl: k.url,
         competitor: competitors[i],
       });
     }
@@ -131,16 +137,21 @@ export async function discoverBuyerKeywords(options: {
     const priced = await fetchTermMetrics(seeds.seeds, locale).catch(() => new Map());
     const live: Candidate[] = [];
     for (const [term, m] of priced) {
-      if ((m.volume ?? 0) < SEED_MIN_VOLUME || brand(term)) continue;
-      live.push({ keyword: term, volume: m.volume ?? 0, difficulty: m.difficulty, cpc: m.cpc ?? 0, competition: 0, intent: m.intent });
+      if ((m.volume !== null && m.volume < SEED_MIN_VOLUME) || brand(term)) continue;
+      live.push({ keyword: term, volume: m.volume ?? 0, difficulty: m.difficulty, cpc: m.cpc ?? 0, competition: 0, intent: m.intent, unmeasured: m.volume === null });
     }
-    live.sort((a, b) => b.volume - a.volume);
+    // The seed order covers different buying jobs; volume must not erase it.
+    const seedOrder = new Map(seeds.seeds.map((term, i) => [term, i]));
+    live.sort((a, b) => (seedOrder.get(a.keyword) ?? 99) - (seedOrder.get(b.keyword) ?? 99));
+    for (const term of seeds.seeds) {
+      if (!priced.has(term) && !brand(term)) fromIdeas.push({ keyword: term, volume: 0, difficulty: null, cpc: 0, competition: 0, intent: classifyIntent(term, languageCode).intent, unmeasured: true });
+    }
     seedsPriced = live.length;
     for (const k of live) {
       ideasSeen.add(k.keyword.toLowerCase());
       fromIdeas.push(k);
     }
-    const expand = live.slice(0, MAX_EXPANDED_SEEDS).map((k) => k.keyword);
+    const expand = diverseSeeds(live.map((k) => k.keyword), MAX_EXPANDED_SEEDS);
     const tail = expand.length
       ? await discoverKeywordsFromSeeds(expand, { ...locale, limit: EXPANSION_LIMIT, maxSeeds: MAX_EXPANDED_SEEDS, minVolume: SEED_MIN_VOLUME }).catch(() => [])
       : [];

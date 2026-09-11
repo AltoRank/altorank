@@ -180,3 +180,5 @@ describe("generateArticle, six autonomous drafts racing for two remaining", () =
     expect(jobsOpened).toBe(1);
   });
 });
+
+vi.mock("@/lib/keyword-research/opportunity", () => ({ assertAutonomousTopic: async () => ({status:"qualified",audience:"buyer",buyingJob:"job",offering:"offering",angle:"angle",reason:"reason"}) }));

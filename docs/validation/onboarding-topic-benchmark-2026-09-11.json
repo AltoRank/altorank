@@ -1,0 +1,302 @@
+[
+  {
+    "business": "Clinic website studio",
+    "seconds": 24,
+    "topics": [
+      {
+        "term": "dental website design cost",
+        "checkedAt": "2026-09-11T20:37:27.943Z",
+        "status": "qualified",
+        "reason": "Query targets dental practice owners evaluating website investment. Multiple editorial results (ranks 1, 3, 7, 8) provide pricing guidance and feature trade-offs. Article can inform buying decision by clarifying cost drivers and booking integration value.",
+        "organicUrls": [
+          "https://www.ada.org/resources/practice/practice-management/24_websitedevelopment_costs",
+          "https://www.reddit.com/r/websiteservices/comments/1l1qcrn/cost_of_an_seooptimised_dental_website_in_ny/",
+          "https://www.dentive.com/blog/dental-website-design-cost",
+          "https://delmain.co/dental-website-design/",
+          "https://www.patientgain.com/dental-website-redesign",
+          "https://whitegloveorthodontist.com/dental-website-design-cost/",
+          "https://www.flamingoagency.com/blog/dental-website-design-cost/",
+          "https://www.remedo.io/blog/dental-website-development-cost-breakdown-in-new-york",
+          "https://anglara.com/blog/dental-website-design-cost/"
+        ],
+        "audience": "Dental practice owners",
+        "buyingJob": "Evaluate website design cost and booking capability for dental practice",
+        "offering": "Fixed-price websites with online appointment booking for clinics",
+        "angle": "Dental Website Design Cost: What Booking Features Actually Add",
+        "format": "article",
+        "conversionPath": "https://qualification-fixture.example",
+        "evidenceUrls": [
+          "https://www.ada.org/resources/practice/practice-management/24_websitedevelopment_costs",
+          "https://www.dentive.com/blog/dental-website-design-cost",
+          "https://www.flamingoagency.com/blog/dental-website-design-cost/",
+          "https://www.remedo.io/blog/dental-website-development-cost-breakdown-in-new-york"
+        ]
+      },
+      {
+        "term": "how to add online booking to a salon website",
+        "checkedAt": "2026-09-11T20:37:27.945Z",
+        "status": "rejected",
+        "reason": "Results dominated by product/tool pages (Setmore, SimplyBook.me, Calendly alternatives) and plugin setup guides. Editorial articles present (ranks 2, 4, 6, 8) but insufficient to meet two-article threshold for core buying job support. Salon owner needs solution, not how-to instruction.",
+        "organicUrls": [
+          "https://www.setmore.com/industries/salon",
+          "https://squareup.com/us/en/the-bottom-line/selling-anywhere/make-booking-website",
+          "https://simplybook.me/en/scheduling-system-for-hair-and-beauty-services",
+          "https://bot2site.com/en/blog/how-to-add-online-booking-beauty-salon-website/",
+          "https://www.one.com/en-us/academy/hair-salon-booking-system/",
+          "https://www.booking-wp-plugin.com/blog/main-reasons-use-online-booking-system-hairdressing-salon/",
+          "https://www.youtube.com/watch?v=CigcQxMtgIY",
+          "https://www.radiustheme.com/how-to-set-up-online-booking-for-salon-website/"
+        ]
+      },
+      {
+        "term": "do other countries have states",
+        "checkedAt": "2026-09-11T20:37:27.945Z",
+        "status": "rejected",
+        "reason": "Geographic trivia unrelated to clinic/salon websites or appointment booking solutions."
+      }
+    ]
+  },
+  {
+    "business": "Shopify packing app",
+    "seconds": 23,
+    "topics": [
+      {
+        "term": "shopify picking and packing workflow",
+        "checkedAt": "2026-09-11T20:37:51.834Z",
+        "status": "qualified",
+        "reason": "Query dominated by editorial results on pick-and-pack workflows and strategies. Ranks 1, 3, 5, 6, 7 are articles addressing the buying job. Articles credibly support merchants evaluating fulfillment approaches before selecting software.",
+        "organicUrls": [
+          "https://www.shopify.com/blog/pick-and-pack-fulfillment",
+          "https://apps.shopify.com/ipacky",
+          "https://www.shopify.com/blog/batch-picking",
+          "https://apps.shopify.com/pick-pack",
+          "https://www.skunexus.com/blog/shopify-pick-and-pack-solution",
+          "https://www.skusavvy.com/blog/order-picking-software-for-shopify-stores",
+          "https://approosters.com/blogs/shipping-with-shopify/pick-and-pack-what-it-is-and-how-to-do-it-efficiently"
+        ],
+        "audience": "Shopify merchants fulfilling orders in-house",
+        "buyingJob": "Streamline order picking and packing workflow to reduce errors and improve fulfillment speed",
+        "offering": "Shopify picking and packing software with barcode scanning, pick lists, and packing slips",
+        "angle": "Optimize Your Shopify Pick-and-Pack Workflow: A Guide for In-House Fulfillment",
+        "format": "article",
+        "conversionPath": "https://qualification-fixture.example",
+        "evidenceUrls": [
+          "https://www.shopify.com/blog/pick-and-pack-fulfillment",
+          "https://www.shopify.com/blog/batch-picking",
+          "https://www.skunexus.com/blog/shopify-pick-and-pack-solution",
+          "https://www.skusavvy.com/blog/order-picking-software-for-shopify-stores",
+          "https://approosters.com/blogs/shipping-with-shopify/pick-and-pack-what-it-is-and-how-to-do-it-efficiently"
+        ]
+      },
+      {
+        "term": "shipstation alternatives for shopify",
+        "checkedAt": "2026-09-11T20:37:51.834Z",
+        "status": "rejected",
+        "reason": "ShipStation is postage/carrier software; this app doesn't provide shipping label purchasing or carrier integration."
+      },
+      {
+        "term": "ups tracking",
+        "checkedAt": "2026-09-11T20:37:51.834Z",
+        "status": "rejected",
+        "reason": "Consumer/shipper tracking lookup tool unrelated to in-house order picking and packing software."
+      }
+    ]
+  },
+  {
+    "business": "SEO content software",
+    "seconds": 10,
+    "topics": [
+      {
+        "term": "outrank alternatives",
+        "checkedAt": "2026-09-11T20:38:15.113Z",
+        "status": "qualified",
+        "reason": "Query dominated by editorial comparison/alternative articles (8 of 9 results). Multiple results credibly support agency buyers evaluating SEO content tools for ranking improvement and competitive positioning.",
+        "organicUrls": [
+          "https://rightblogger.com/blog/outrank-alternatives",
+          "https://www.contentmonk.io/blog/outrank-alternatives",
+          "https://upliftai.co/blog/outrank-so-alternative-review-upliftai",
+          "https://www.eesel.ai/blog/outranking-alternatives",
+          "https://www.youtube.com/watch?v=6coz903wxDI",
+          "https://www.rankup.so/academy/outrank-alternatives",
+          "https://www.rankability.com/blog/outranking-alternatives/",
+          "https://vibeseo.dev/outrank-seo-alternative",
+          "https://www.sorank.com/alternative/outrank"
+        ],
+        "audience": "Small agencies and business owners",
+        "buyingJob": "Evaluate SEO content software alternatives to improve rankings",
+        "offering": "SEO content research and publishing software (SaaS and self-hosted open-source)",
+        "angle": "Best SEO content tools for agencies: Outrank alternatives ranked",
+        "format": "article",
+        "conversionPath": "https://qualification-fixture.example",
+        "evidenceUrls": [
+          "https://rightblogger.com/blog/outrank-alternatives",
+          "https://www.contentmonk.io/blog/outrank-alternatives",
+          "https://upliftai.co/blog/outrank-so-alternative-review-upliftai",
+          "https://www.eesel.ai/blog/outranking-alternatives",
+          "https://www.rankup.so/academy/outrank-alternatives",
+          "https://www.rankability.com/blog/outranking-alternatives/",
+          "https://vibeseo.dev/outrank-seo-alternative"
+        ]
+      },
+      {
+        "term": "seo content workflow for agencies",
+        "checkedAt": "2026-09-11T20:38:15.114Z",
+        "status": "qualified",
+        "reason": "Query dominated by editorial articles (8/8 results). Ranks 1–3 and 6 are credible editorial guides on SEO workflow methodology. Agencies face real workflow coordination buying jobs; articles help evaluate structural approaches before tool selection.",
+        "organicUrls": [
+          "https://seotesting.com/blog/seo-workflow/",
+          "https://monday.com/blog/marketing/seo-workflow/",
+          "https://www.singlegrain.com/digital-marketing-strategy/seo-workflow-automation-from-research-to-ranking-with-ai/",
+          "https://www.earlyseo.com/playbooks/agency-seo-content",
+          "https://blog.frizerly.com/22983/_best_content_workflow_automation_tools_for_seo_agencies",
+          "https://planable.io/blog/seo-workflow/",
+          "https://www.slingshotapp.io/solutions/marketing/seo-workflow-software/",
+          "https://www.mediajunction.com/blog/ai-for-seo-content-a-step-by-step-workflow"
+        ],
+        "audience": "Small agencies managing SEO content operations",
+        "buyingJob": "Establishing or optimizing an SEO content workflow to coordinate keyword research, drafting, approval, and publishing at scale",
+        "offering": "SEO content research and publishing automation software; self-hosted open-source option available",
+        "angle": "SEO Content Workflow for Agencies: Plan, Draft, Publish, and Report",
+        "format": "article",
+        "conversionPath": "https://qualification-fixture.example",
+        "evidenceUrls": [
+          "https://seotesting.com/blog/seo-workflow/",
+          "https://monday.com/blog/marketing/seo-workflow/",
+          "https://www.singlegrain.com/digital-marketing-strategy/seo-workflow-automation-from-research-to-ranking-with-ai/",
+          "https://planable.io/blog/seo-workflow/"
+        ]
+      },
+      {
+        "term": "search google or type a url",
+        "checkedAt": "2026-09-11T20:38:15.114Z",
+        "status": "rejected",
+        "reason": "Generic browser/search functionality instruction, not product intent or business offering."
+      }
+    ]
+  },
+  {
+    "business": "Refillable skincare shop",
+    "seconds": 30,
+    "topics": [
+      {
+        "term": "refillable skincare packaging benefits",
+        "checkedAt": "2026-09-11T20:38:25.511Z",
+        "status": "qualified",
+        "reason": "Multiple editorial results (ranks 1, 2, 4, 6) support articles on refillable packaging benefits. Content credibly addresses buyer's decision to purchase refillable moisturizers by explaining environmental, economic, and practical advantages.",
+        "organicUrls": [
+          "https://othilapak.com/blogs/trends-insights/refillable-beauty-packaging-growth-trends-benefits/",
+          "https://apackaginggroup.com/blogs/news/how-refillable-skincare-packaging-is-shaping-the-future-of-the-beauty-industry",
+          "https://www.youtube.com/watch?v=nShE2L5Y0Iw",
+          "https://www.tech-nature.com/en/blog/future-sustainable-beauty-refillable-cosmetics",
+          "https://www.uapkg.com/advantages-of-refillable-beauty-packaging.html",
+          "https://puracy.com/blogs/eco-friendly/the-benefits-and-limitations-of-refillable-packaging?srsltid=AfmBOooM9_LNa3s-FElj5QiglfjjLCmgO2gMEazUJHKlB3gjdbB4Umwc",
+          "https://www.facebook.com/fb-answers/refillable-beauty-product-benefits/",
+          "https://www.xj-beauty.com/blog/refillable-packaging-the-future-of-sustainable-beauty",
+          "https://www.vogue.com/article/what-happened-to-refillable-beauty"
+        ],
+        "audience": "Consumers with sensitive skin considering skincare purchases",
+        "buyingJob": "Evaluate refillable moisturizer packaging before purchasing",
+        "offering": "Fragrance-free refillable moisturizers for sensitive skin",
+        "angle": "Why refillable skincare packaging benefits sensitive skin buyers",
+        "format": "article",
+        "conversionPath": "https://qualification-fixture.example",
+        "evidenceUrls": [
+          "https://othilapak.com/blogs/trends-insights/refillable-beauty-packaging-growth-trends-benefits/",
+          "https://apackaginggroup.com/blogs/news/how-refillable-skincare-packaging-is-shaping-the-future-of-the-beauty-industry",
+          "https://www.tech-nature.com/en/blog/future-sustainable-beauty-refillable-cosmetics",
+          "https://puracy.com/blogs/eco-friendly/the-benefits-and-limitations-of-refillable-packaging?srsltid=AfmBOooM9_LNa3s-FElj5QiglfjjLCmgO2gMEazUJHKlB3gjdbB4Umwc"
+        ]
+      },
+      {
+        "term": "best refillable moisturizer for sensitive skin",
+        "checkedAt": "2026-09-11T20:38:25.512Z",
+        "status": "qualified",
+        "reason": "Results 2, 5, and 7 are editorial reviews/comparisons addressing sensitive skin moisturizers. Articles credibly support purchase decisions for this audience's buying job: selecting a moisturizer matching their skin needs and values (refillability, fragrance-free).",
+        "organicUrls": [
+          "https://www.sephora.com/buy/soothing-moisturizer-for-sensitive-skin",
+          "https://www.nytimes.com/wirecutter/reviews/best-moisturizers/",
+          "https://www.reddit.com/r/ZeroWaste/comments/1llfn40/low_plastic_no_plastic_moisturiser/",
+          "https://plaineproducts.com/products/face-moisturizer?srsltid=AfmBOopK84ncjmQgYD_xMJQWfN6uRPk_UV8EW-UQhD-PfAfUteDo7X5P",
+          "https://www.byrdie.com/the-best-facial-moisturizers-346719",
+          "https://zerowastestore.com/blogs/zero-waste/7-highly-effective-zero-waste-face-moisturizers-that-provide-hydration-for-all-skin-types?srsltid=AfmBOooD9WaLlJIzILAzx5NAMZpRLuwduQCTS8ZxfG4gNA4DbVhNi_bZ",
+          "https://www.allure.com/story/face-moisturizers-for-dry-sensitive-skin",
+          "https://www.cheapism.com/cheap-moisturizer/"
+        ],
+        "audience": "Consumers with sensitive skin seeking sustainable skincare",
+        "buyingJob": "Selecting a refillable, fragrance-free moisturizer suitable for sensitive skin",
+        "offering": "Refillable fragrance-free moisturizers for sensitive skin",
+        "angle": "Best refillable moisturizers for sensitive skin: fragrance-free options",
+        "format": "article",
+        "conversionPath": "https://qualification-fixture.example",
+        "evidenceUrls": [
+          "https://www.nytimes.com/wirecutter/reviews/best-moisturizers/",
+          "https://www.byrdie.com/the-best-facial-moisturizers-346719",
+          "https://www.allure.com/story/face-moisturizers-for-dry-sensitive-skin"
+        ]
+      },
+      {
+        "term": "free printable lotion labels",
+        "checkedAt": "2026-09-11T20:38:25.512Z",
+        "status": "rejected",
+        "reason": "Searcher wants free DIY labeling tool, not this business's refillable moisturizer product."
+      }
+    ]
+  },
+  {
+    "business": "Studio web dentisti",
+    "seconds": 9,
+    "topics": [
+      {
+        "term": "quanto costa un sito web per dentisti",
+        "checkedAt": "2026-09-11T20:38:55.296Z",
+        "status": "qualified",
+        "reason": "Query targets pricing decision for dental website with booking—Studio web dentisti's core offering. Results 2, 7, and 9 are editorial articles addressing cost factors and budget ranges. Articles credibly support buyer's procurement decision.",
+        "organicUrls": [
+          "https://www.artworkstudios.it/sito-web-per-dentista.html",
+          "https://it.wix.com/blog/come-creare-un-sito-per-dentisti",
+          "https://www.daimonart.it/web-agency/sito-web-per-dentista/?srsltid=AfmBOopiVtw89uWJXettGjSwWSrEPpzNWS_mfSkKzIVfA9frImvbneIl",
+          "https://www.gabrielepantaleo.it/realizzazione-siti-web-per-dentisti-e-odontoiatri",
+          "https://beside.it/2018/05/seo-siti-web-marketing-per-dentisti-studi-medici/",
+          "https://www.odontoiatriaitalia.com/blog/?sito-web-odontoiatrico--come,-quando-e-perche-",
+          "https://www.labdesign80.it/costo-sito-web-dentisti/",
+          "https://eezyweb.it/siti-web-per-dentisti/",
+          "https://baghinluca.it/articoli/quanto-costa-sito-web-dentista"
+        ],
+        "audience": "Titolari di studi dentistici italiani",
+        "buyingJob": "Valutare il costo e il ROI di un sito web con prenotazione online per lo studio",
+        "offering": "Siti web per dentisti con prenotazione online e integrazione calendario",
+        "angle": "Costi e budget per un sito web dentistico con prenotazione online",
+        "format": "article",
+        "conversionPath": "https://qualification-fixture.example",
+        "evidenceUrls": [
+          "https://it.wix.com/blog/come-creare-un-sito-per-dentisti",
+          "https://www.labdesign80.it/costo-sito-web-dentisti/",
+          "https://baghinluca.it/articoli/quanto-costa-sito-web-dentista"
+        ]
+      },
+      {
+        "term": "prenotazione appuntamenti online studio dentistico",
+        "checkedAt": "2026-09-11T20:38:55.296Z",
+        "status": "rejected",
+        "reason": "Risultati dominati da product/service pages e marketplace di prenotazione (Doctolib, Setmore, Orisline). Solo 2 risultati editorializzati; nessuno affronta il buying job del titolare (scelta piattaforma, implementazione, integrazione sito). Un articolo non soddisfa questa ricerca orientata a conversione diretta.",
+        "organicUrls": [
+          "https://www.doctolib.it/odontoiatra",
+          "https://orisline.com/it/digital-patient-experience/",
+          "https://www.setmore.com/it/industries/dentist",
+          "https://studiodentisticogelmi.it/prenotazione-online-dentista-bergamo/",
+          "https://www.odontoiatria33.it/prodotti/23566/prenotare-online-l-appuntamento-dal-dentista-mai-stato-cosi-semplice-con-clickdoc.html",
+          "https://www.xdent.it/prenotare-il-dentista-online-non-e-mai-stato-cosi-facile/",
+          "https://www.miodottore.it/dentista/online",
+          "https://prenota.alfadocs.com/dentista",
+          "https://www.doctolib.it/odontoiatra/milano"
+        ]
+      },
+      {
+        "term": "come disegnare un dente",
+        "checkedAt": "2026-09-11T20:38:55.296Z",
+        "status": "rejected",
+        "reason": "Searcher cerca guida su disegno artistico/tecnico, non sito web o prenotazione dentistica."
+      }
+    ]
+  }
+]

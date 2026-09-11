@@ -119,3 +119,5 @@ describe("generateArticle, two runs racing for one keyword", () => {
     expect(err.message).toContain("Failed to create article");
   });
 });
+
+vi.mock("@/lib/keyword-research/opportunity", () => ({ assertAutonomousTopic: async () => ({status:"qualified",audience:"buyer",buyingJob:"job",offering:"offering",angle:"angle",reason:"reason"}) }));

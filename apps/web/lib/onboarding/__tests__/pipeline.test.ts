@@ -60,7 +60,7 @@ const NEXT = { term: "seo agent", reasons: ["27,100 searches/mo"], score: 35.5, 
 
 /** Enough client for the "already has a draft?" count. */
 const client = (existing: number) =>
-  ({ from: () => ({ select: () => ({ eq: async () => ({ count: existing }) }) }) }) as never;
+  ({ from: () => ({ select: () => ({ or: () => ({ eq: async () => ({ count: existing }) }) }) }) }) as never;
 
 async function collect(existing = 0): Promise<OnboardingEvent[]> {
   const events: OnboardingEvent[] = [];

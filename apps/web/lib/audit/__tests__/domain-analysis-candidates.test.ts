@@ -115,7 +115,7 @@ beforeEach(() => {
   pages.mockReturnValue([]);
   ranked.mockResolvedValue([]);
   discover.mockResolvedValue(nothingDiscovered());
-  fit.mockResolvedValue({ verdicts: new Map(), basis: "none" });
+  fit.mockImplementation(async (business: unknown, terms: string[]) => ({basis: "model", verdicts: new Map(terms.map((term) => [term, {keep:true,reason:"fixture buyer fit"}]))}));
   sitemap.mockResolvedValue([]);
 });
 
@@ -261,13 +261,13 @@ describe("the stored hundred", () => {
     expect(stored.filter((r) => r.source === "gap")).toHaveLength(100 - PAGE_ONE_RANKED_CAP);
   });
 
-  it("keeps striking-distance rankings out of the cap: those are the ones worth writing", async () => {
+  it("reserves room for competitor topics even when own rankings are in striking distance", async () => {
     // Position 11-20 is recommendKeywords' largest multiplier, not a term to
     // leave alone, so it is not what the reserve is protecting against.
     ranked.mockResolvedValue(Array.from({ length: 200 }, (_, i) => ({ ...wonRow(i), position: 14 })));
     discover.mockResolvedValue(rivalsRank(Array.from({ length: 60 }, (_, i) => topicalGapRow(i))));
     const { stored } = await analyse();
-    expect(stored.filter((r) => r.source === "ranked")).toHaveLength(100);
+    expect(stored.filter((r) => r.source === "ranked")).toHaveLength(50);
   });
 
   it("leaves rankings on pages the sitemap does not list out of the queue, and says so", async () => {

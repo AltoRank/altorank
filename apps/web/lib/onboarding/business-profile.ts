@@ -39,6 +39,10 @@ export interface BusinessProfile {
   offerings?: string[];
   /** Domains, not company names, so they can seed competitive research. */
   competitors: string[];
+  buyingJobs?: string[];
+  differentiators?: string[];
+  exclusions?: string[];
+  conversionUrl?: string;
 }
 
 export const EMPTY_PROFILE: BusinessProfile = {
@@ -58,7 +62,7 @@ const MAX_CHARS = 8_000;
 const PROMPT = [
   "You are reading a company's website to fill in their profile for an SEO tool.",
   "Return ONLY a JSON object, no prose, no code fence, with exactly these keys:",
-  '{"name","language","country","description","audiences","offerings","competitors"}',
+  '{"name","language","country","description","audiences","offerings","competitors","buyingJobs","differentiators","exclusions","conversionUrl"}',
   "",
   "- name: what the business calls itself.",
   "- language: the language the site is written in, in English (e.g. \"English\", \"Italian\").",
@@ -69,8 +73,12 @@ const PROMPT = [
   "  Specific beats broad: \"E-commerce teams on Shopify\" not \"businesses\".",
   "- offerings: 3-6 things people buy from it, each 2-4 words in the words a buyer would search,",
   "  not the site's slogans: \"order picking software\" not \"fulfilment reimagined\". Products, services, the job it does.",
-  "- competitors: 3-6 competitor DOMAINS (example.com), inferred from the category.",
-  "  Real, well-known products only. Never include this site's own domain.",
+  "- buyingJobs: up to 4 concrete tasks buyers need help completing, supported by the text.",
+  "- differentiators: up to 4 supported reasons to choose this business. Do not invent superiority.",
+  "- exclusions: audiences or needs explicitly not served; [] when unknown.",
+  "- conversionUrl: an observed product, pricing or contact URL on this site; empty when unknown.",
+  "- competitors: up to 3 direct competitors serving the same buyer and buying job. Verify from evidence in the text; return [] when unknown.",
+  "  Do not substitute famous software tools for a service business, or name this site's own domain.",
   "  Return [] rather than guessing if the category is unclear.",
 ].join("\n");
 
@@ -168,6 +176,10 @@ export function parseProfile(raw: string, domain: string): BusinessProfile | nul
     description: typeof parsed.description === "string" ? parsed.description : "",
     audiences: strings(parsed.audiences).slice(0, 6),
     offerings: strings(parsed.offerings).slice(0, 6),
+    buyingJobs: strings(parsed.buyingJobs).slice(0, 4),
+    differentiators: strings(parsed.differentiators).slice(0, 4),
+    exclusions: strings(parsed.exclusions).slice(0, 6),
+    conversionUrl: typeof parsed.conversionUrl === "string" ? parsed.conversionUrl : "",
     // A model asked for competitors will happily return the site itself, which
     // then seeds research against its own domain.
     competitors: strings(parsed.competitors)

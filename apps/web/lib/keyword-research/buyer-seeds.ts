@@ -33,6 +33,11 @@ export interface SeedableProfile {
   audiences?: string[] | null;
   offerings?: string[] | null;
   competitors?: string[] | null;
+  buyingJobs?: string[] | null;
+  differentiators?: string[] | null;
+  exclusions?: string[] | null;
+  conversionUrl?: string | null;
+  country?: string | null;
   language?: string | null;
 }
 
@@ -42,9 +47,9 @@ const PROMPT = [
   "or trying to solve the problem it solves, and do not yet know this business exists.",
   "",
   "Rules:",
-  "- 10 to 15 phrases, 2 to 4 words each, lowercase, in the language the site is written in.",
+  "- 10 to 15 phrases, 2 to 8 words each, lowercase, in the language the site is written in.",
   "- Product and service categories, the problems they solve, comparisons and alternatives, how-to questions a buyer asks.",
-  "- Never a brand name: not this business, not a competitor.",
+  "- Include relevant competitor alternatives, comparisons and migration searches; exclude pure brand navigation. Cover different offerings, audiences and buying jobs rather than synonyms of one category.",
   "- Never a one-word head term. \"shipping\" is not a search a buyer of a packing app makes; \"packing slip template\" is.",
   "- Nothing a consumer types for personal use unless consumers are who this business sells to.",
   "",
@@ -61,7 +66,7 @@ export function parseSeeds(raw: string | null): string[] {
     if (typeof v !== "string") continue;
     const s = v.trim().toLowerCase().replace(/\s+/g, " ");
     const words = s.split(" ").filter(Boolean);
-    if (words.length < 2 || words.length > 6 || s.length < 4) continue;
+    if (words.length < 2 || words.length > 8 || s.length < 4) continue;
     if (seen.has(s)) continue;
     seen.add(s);
     out.push(s);

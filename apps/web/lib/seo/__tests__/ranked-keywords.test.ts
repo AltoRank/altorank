@@ -30,14 +30,15 @@ describe("parseRankedItem", () => {
   it("reads keyword, position and url from the nested shape", () => {
     const r = parseRankedItem(nested)!;
     expect(r.keyword).toBe("agency seo software");
-    expect(r.position).toBe(14);
+    expect(r.position).toBe(11);
+    expect(r.absolutePosition).toBe(14);
     expect(r.url).toBe("https://example.com/blog/agency-seo-software");
     expect(r.volume).toBe(1900);
     expect(r.difficulty).toBe(42);
   });
 
-  it("prefers rank_absolute over rank_group, because that is what a human sees", () => {
-    expect(parseRankedItem(nested)!.position).toBe(14);
+  it("uses organic rank_group and preserves absolute position separately", () => {
+    expect(parseRankedItem(nested)!.position).toBe(11);
   });
 
   it("falls back to rank_group when absolute is absent", () => {
@@ -146,7 +147,7 @@ describe("buildRankedFilters", () => {
     expect(buildRankedFilters(500, 20)).toEqual([
       ["keyword_data.keyword_info.search_volume", ">", 500],
       "and",
-      ["ranked_serp_element.serp_item.rank_absolute", "<=", 20],
+      ["ranked_serp_element.serp_item.rank_group", "<=", 20],
     ]);
   });
 
@@ -155,7 +156,7 @@ describe("buildRankedFilters", () => {
       ["keyword_data.keyword_info.search_volume", ">", 500],
     ]);
     expect(buildRankedFilters(0, 20)).toEqual([
-      ["ranked_serp_element.serp_item.rank_absolute", "<=", 20],
+      ["ranked_serp_element.serp_item.rank_group", "<=", 20],
     ]);
   });
 

@@ -1,3 +1,4 @@
+import type { KeywordIntent } from "@/lib/types";
 // ---------------------------------------------------------------------------
 // What a domain already ranks for, from a third-party index
 // ---------------------------------------------------------------------------
@@ -28,8 +29,10 @@ import { post } from "./client";
 /** A keyword the target domain currently ranks for. */
 export interface RankedKeyword {
   keyword: string;
-  /** Absolute SERP position, 1-based. Null when the payload omits it. */
+  /** Organic position (rank_group), 1-based. Null when omitted. */
   position: number | null;
+  absolutePosition?: number | null;
+  intent?: KeywordIntent;
   /** The page of theirs that ranks, which is what makes the finding specific. */
   url: string | null;
   /** Monthly search volume, or null when unknown. Never coerce this to 0. */
@@ -48,6 +51,7 @@ export interface RankedKeyword {
  */
 type DFSRankedItem = {
   keyword_data?: {
+    search_intent_info?: { main_intent?: string | null } | null;
     keyword?: string | null;
     keyword_info?: {
       search_volume?: number | null;
@@ -59,6 +63,7 @@ type DFSRankedItem = {
   } | null;
   ranked_serp_element?: {
     serp_item?: {
+      type?: string;
       rank_absolute?: number | null;
       rank_group?: number | null;
       relative_url?: string | null;
@@ -101,13 +106,18 @@ export function parseRankedItem(item: DFSRankedItem): RankedKeyword | null {
 
   const serp = item.ranked_serp_element?.serp_item ?? undefined;
   // rank_absolute counts every SERP feature, rank_group counts organic blocks.
-  // Absolute is what a human sees when they scroll, so prefer it.
-  const position = num(serp?.rank_absolute) ?? num(serp?.rank_group);
+  // Organic position drives page-one and striking-distance decisions.
+  if (serp?.type && serp.type !== "organic") return null;
+  const position = num(serp?.rank_group);
+  const rawIntent = kd?.search_intent_info?.main_intent;
+  const intent: KeywordIntent | undefined = rawIntent === "informational" ? "info" : ["commercial", "transactional", "navigational"].includes(rawIntent ?? "") ? rawIntent as KeywordIntent : undefined;
   const url = (serp?.url ?? serp?.relative_url ?? null) || null;
 
   return {
     keyword,
     position,
+    absolutePosition: num(serp?.rank_absolute),
+    intent,
     url,
     volume: num(kd?.keyword_info?.search_volume),
     difficulty: num(kd?.keyword_properties?.keyword_difficulty),
@@ -136,7 +146,7 @@ export function buildRankedFilters(minVolume: number, maxRank: number): unknown[
   }
   if (maxRank > 0) {
     if (filters.length) filters.push("and");
-    filters.push(["ranked_serp_element.serp_item.rank_absolute", "<=", maxRank]);
+    filters.push(["ranked_serp_element.serp_item.rank_group", "<=", maxRank]);
   }
   return filters;
 }
@@ -176,6 +186,8 @@ export async function fetchRankedKeywords(
       {
         target: domain.replace(/^https?:\/\//, "").replace(/^www\./, ""),
         language_code: languageCode,
+        item_types: ["organic"],
+        ignore_synonyms: true,
         location_code: locationCode,
         limit,
         ...(filters.length ? { filters } : {}),
@@ -183,7 +195,7 @@ export async function fetchRankedKeywords(
         // and position is already bounded by `maxRank` when it matters.
         order_by: minVolume > 0 || maxRank > 0
           ? ["keyword_data.keyword_info.search_volume,desc"]
-          : ["ranked_serp_element.serp_item.rank_absolute,asc"],
+          : ["ranked_serp_element.serp_item.rank_group,asc"],
       },
     ],
   );

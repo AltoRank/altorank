@@ -183,3 +183,9 @@ describe("createCheckoutSession: the price must be tax-exclusive before VAT is a
     expect(created[0]).not.toHaveProperty("automatic_tax");
   });
 });
+
+// Session parameter rules are tested here; durable reservation is tested in checkout-attempt.test.ts.
+vi.mock("@/lib/billing/checkout-attempt", () => ({ createPendingCheckout: async (_account: string, params: unknown) => {
+  const { getStripe } = await import("@/lib/stripe");
+  return getStripe().checkout.sessions.create(params as never);
+} }));

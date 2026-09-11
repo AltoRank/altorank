@@ -1,3 +1,5 @@
+import { qualifyOpportunities, readOpportunity, contextKey, serpOverlap, type Opportunity } from "@/lib/keyword-research/opportunity";
+import { languageCodeOf } from "@/lib/keyword-research/locale";
 // ---------------------------------------------------------------------------
 // What to write next
 // ---------------------------------------------------------------------------
@@ -68,6 +70,7 @@ export interface KeywordRecommendation {
   quality: KeywordQuality;
   /** Why it was flagged; null when quality is `ok`. */
   qualityNote: string | null;
+  opportunity?: Opportunity;
 }
 
 /**
@@ -387,13 +390,13 @@ const AUDIENCE_BOOST = 1.75;
 export async function recommendKeywords(
   supabase: SupabaseClient,
   workspaceId: string,
-  options?: { limit?: number },
+  options?: { limit?: number; qualify?: boolean },
 ): Promise<KeywordRecommendation[]> {
   const limit = options?.limit ?? 25;
 
   const { data: keywords, error } = await supabase
     .from("keywords")
-    .select("id, term, volume, difficulty, intent, status, source, source_type, source_ref")
+    .select("id, term, volume, difficulty, intent, status, source, source_type, source_ref, source_url, opportunity")
     .eq("workspace_id", workspaceId);
 
   if (error) throw new Error(`Could not read keywords: ${error.message}`);
@@ -404,7 +407,7 @@ export async function recommendKeywords(
   // different industry.
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("topical_profile, dr, business_profile")
+    .select("topical_profile, dr, business_profile, domain, language, location_code")
     .eq("id", workspaceId)
     .single();
 
@@ -413,6 +416,8 @@ export async function recommendKeywords(
   // cannot supply: the competitors it names have no reason to appear in its own
   // headings, and neither do the audiences it has not written a page for yet.
   const business = workspace?.business_profile as {
+    name?: string | null;
+    offerings?: string[] | null;
     description?: string | null;
     audiences?: string[] | null;
     competitors?: string[] | null;
@@ -571,7 +576,7 @@ export async function recommendKeywords(
     // An observed position is the test result this is asking for, and it is
     // already in scope. Where the row came from is bookkeeping; whether Google
     // put the site on the page is evidence.
-    const proven = k.source === "ranked" || position !== null;
+    const proven = Boolean(existingArticleId && position !== null && position <= 20);
     const relevance = proven
       ? { score: 1, matched: [], unmatched: [], reason: "the site already ranks for this" }
       : scoreRelevance(k.term as string, profile, subject);
@@ -694,7 +699,32 @@ export async function recommendKeywords(
     }
   }
 
-  return [...byTarget.values()].slice(0, limit);
+  const sorted = [...byTarget.values()];
+  const context = { business, domain: workspace?.domain ?? "", languageCode: languageCodeOf(workspace?.language), locationCode: workspace?.location_code ?? 2840 };
+  const fingerprint = contextKey(context);
+  // Only explicit scheduling/generation requests buy fresh evidence. List pages
+  // consume saved briefs without triggering provider work during rendering.
+  const eligible = sorted.filter((rec) => rec.action === "write" && rec.quality === "ok");
+  const candidateRows = eligible.map((rec) => ({ ...keywords.find((k) => k.id === rec.keywordId)!, id: rec.keywordId, term: rec.term }));
+  const evidence = options?.qualify
+    ? await qualifyOpportunities(supabase, workspaceId, candidateRows, context)
+    : new Map(candidateRows.flatMap((row) => { const o = readOpportunity(row.opportunity, fingerprint); return o ? [[row.id, o] as const] : []; }));
+  const clusters: KeywordRecommendation[] = [];
+  for (const rec of eligible) {
+    const o = evidence.get(rec.keywordId);
+    rec.opportunity = o;
+    if (o?.status === "qualified") {
+      const duplicate = clusters.find((other) => serpOverlap(o.organicUrls ?? [], other.opportunity?.organicUrls ?? []) >= 0.5);
+      if (duplicate) {
+        rec.action = "skip";
+        rec.reasons.push(`Same search intent as “${duplicate.term}”; keep one article for this cluster.`);
+      } else { clusters.push(rec); rec.reasons.unshift(o.reason); }
+    } else if (options?.qualify || o) {
+      rec.action = o?.existingUrl ? "refresh" : "skip";
+      rec.reasons.unshift(o?.reason ?? "Topic qualification pending: buyer fit and live search evidence are required before automatic writing.");
+    }
+  }
+  return sorted.slice(0, limit);
 }
 
 /**

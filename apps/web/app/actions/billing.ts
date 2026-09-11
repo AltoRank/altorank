@@ -9,6 +9,8 @@ import { subscriptionSwitchable } from "@/lib/billing/plan-switch";
 import { billingFailure, type BillingRedirect } from "@/lib/billing/failure";
 import { priceIsTaxExclusive } from "@/lib/billing/tax-guard";
 
+import { createPendingCheckout } from "@/lib/billing/checkout-attempt";
+import { checkoutDestination } from "@/lib/billing/checkout-return";
 import { appUrl } from "@/lib/app-url";
 
 /**
@@ -91,7 +93,7 @@ export async function createCheckoutSession(
 
   let session;
   try {
-    session = await getStripe().checkout.sessions.create({
+    session = await createPendingCheckout(accountId, {
       mode: "subscription",
       line_items: [{ price: priceId, quantity: 1 }],
       customer: account?.stripe_customer_id ?? undefined,
@@ -143,16 +145,14 @@ export async function createCheckoutSession(
               : {}),
           }
         : {}),
-      success_url:
-        returnTo && /^\/[a-zA-Z0-9/_?=&%-]*$/.test(returnTo)
-          ? `${appUrl()}${returnTo}${returnTo.includes("?") ? "&" : "?"}upgraded=1`
-          : `${appUrl()}/settings/billing?status=success`,
-      cancel_url: `${appUrl()}/settings/billing?status=cancelled`,
+      success_url: `${appUrl()}/checkout/complete?session_id={CHECKOUT_SESSION_ID}&next=${encodeURIComponent(checkoutDestination(returnTo))}`,
+      cancel_url: `${appUrl()}/checkout/cancelled`,
     });
   } catch (err) {
     return billingFailure(err, "Checkout could not be opened");
   }
 
+  if (session.status === "complete") return { ok: true, url: `${appUrl()}/checkout/complete?session_id=${session.id}&next=${encodeURIComponent(checkoutDestination(returnTo))}` };
   if (!session.url) {
     return { ok: false, error: "Stripe did not return a checkout link. Nothing was charged; try again." };
   }
