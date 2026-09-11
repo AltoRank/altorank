@@ -30,6 +30,13 @@ export interface BusinessProfile {
   description: string;
   /** Who it sells to. Verified as chips in the wizard. */
   audiences: string[];
+  /**
+   * What people buy from it, in a buyer's words: product types, services,
+   * the job it does. The seed list for keyword research is built from these
+   * (lib/keyword-research/buyer-seeds.ts). Optional because profiles saved
+   * before 2026-09-11 have none.
+   */
+  offerings?: string[];
   /** Domains, not company names, so they can seed competitive research. */
   competitors: string[];
 }
@@ -40,6 +47,7 @@ export const EMPTY_PROFILE: BusinessProfile = {
   country: "Global (English)",
   description: "",
   audiences: [],
+  offerings: [],
   competitors: [],
 };
 
@@ -50,7 +58,7 @@ const MAX_CHARS = 8_000;
 const PROMPT = [
   "You are reading a company's website to fill in their profile for an SEO tool.",
   "Return ONLY a JSON object, no prose, no code fence, with exactly these keys:",
-  '{"name","language","country","description","audiences","competitors"}',
+  '{"name","language","country","description","audiences","offerings","competitors"}',
   "",
   "- name: what the business calls itself.",
   "- language: the language the site is written in, in English (e.g. \"English\", \"Italian\").",
@@ -59,6 +67,8 @@ const PROMPT = [
   "  Do not invent features, pricing, or customers that the text does not support.",
   "- audiences: 3-6 specific buyer segments, each a short noun phrase.",
   "  Specific beats broad: \"E-commerce teams on Shopify\" not \"businesses\".",
+  "- offerings: 3-6 things people buy from it, each 2-4 words in the words a buyer would search,",
+  "  not the site's slogans: \"order picking software\" not \"fulfilment reimagined\". Products, services, the job it does.",
   "- competitors: 3-6 competitor DOMAINS (example.com), inferred from the category.",
   "  Real, well-known products only. Never include this site's own domain.",
   "  Return [] rather than guessing if the category is unclear.",
@@ -157,6 +167,7 @@ export function parseProfile(raw: string, domain: string): BusinessProfile | nul
     country: typeof parsed.country === "string" ? parsed.country : "Global (English)",
     description: typeof parsed.description === "string" ? parsed.description : "",
     audiences: strings(parsed.audiences).slice(0, 6),
+    offerings: strings(parsed.offerings).slice(0, 6),
     // A model asked for competitors will happily return the site itself, which
     // then seeds research against its own domain.
     competitors: strings(parsed.competitors)
@@ -171,7 +182,7 @@ export type ProfileSection = "business" | "audience";
 
 const SECTION_FIELDS: Record<ProfileSection, (keyof BusinessProfile)[]> = {
   business: ["name", "language", "country", "description"],
-  audience: ["audiences", "competitors"],
+  audience: ["offerings", "audiences", "competitors"],
 };
 
 /**

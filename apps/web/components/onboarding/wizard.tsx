@@ -50,7 +50,7 @@ import type { SiteDiscovery } from "@/lib/onboarding/site-discovery";
 // The forms themselves live in components/settings: every wizard screen is
 // also a permanent Settings tab, and one copy of each form keeps them in step.
 import { BusinessFields } from "@/components/settings/business-fields";
-import { AudienceList, CompetitorList } from "@/components/settings/audience-fields";
+import { AudienceList, CompetitorList, OfferingList } from "@/components/settings/audience-fields";
 import { SiteFields } from "@/components/settings/site-fields";
 import { ApprovalGateCard, OutputFields } from "@/components/settings/output-fields";
 import { IntegrationIcon } from "@/components/dashboard/integration-icon";
@@ -526,9 +526,12 @@ function AudienceStep({ profile, patch }: { profile: BusinessProfile; patch: (p:
   return (
     <>
       <Head
-        title="Who you sell to, and who you sell against"
-        sub="These steer which keywords are worth writing for, and every keyword remembers which of them it came from. Remove anything that is not you."
+        title="What you sell, who buys it, and who you sell against"
+        sub="Keyword research starts from these three lists, and every keyword remembers which of them it came from. Remove anything that is not you."
       />
+      <div className="mb-4 rounded-[10px] border border-line bg-panel p-5">
+        <OfferingList profile={profile} patch={patch} />
+      </div>
       <div className="mb-4 rounded-[10px] border border-line bg-panel p-5">
         <AudienceList profile={profile} patch={patch} />
       </div>

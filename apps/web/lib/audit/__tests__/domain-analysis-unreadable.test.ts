@@ -18,13 +18,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const ranked = vi.fn();
 const discover = vi.fn();
-const difficulty = vi.fn();
-const seeds = vi.fn();
-const gap = vi.fn();
+const fit = vi.fn();
 const insert = vi.fn();
 const update = vi.fn();
 
-vi.mock("@/lib/keyword-research/category", () => ({ resolveSeedHead: async () => ({ head: null, priced: false, seedVolume: 0, tried: [] }) }));
 vi.mock("@/lib/e2e/stubs", () => ({ e2eStubsEnabled: () => false, stubAnalyseDomain: vi.fn() }));
 vi.mock("../agent-readiness", () => ({ recordingFetcher: () => Object.assign(async () => ({ status: 0, headers: {}, body: "" }), { resources: new Map() }), runAgentReadiness: async () => ({ error: "not run in this test", score: 0, findings: [] }) }));
 vi.mock("../crawler", () => ({ crawlSite: async () => [], usablePages: () => [] }));
@@ -33,19 +30,11 @@ vi.mock("@/lib/cms/detect", () => ({ detectPlatform: async () => null }));
 vi.mock("@/lib/seo/client", () => ({ hasDataForSEOCredentials: () => true }));
 vi.mock("@/lib/seo/backlinks", () => ({ syncBacklinks: async () => ({ fetched: 0, total: null, lost: 0 }) }));
 vi.mock("@/lib/seo/domain-metrics", () => ({ fetchDomainMetrics: async () => ({ authority: null, traffic: null, referringDomains: null }) }));
-vi.mock("@/lib/seo/keyword-gap", () => ({ fetchCompetitorGap: (...a: unknown[]) => gap(...a) }));
+vi.mock("@/lib/keyword-research/discovery", () => ({ discoverBuyerKeywords: (...a: unknown[]) => discover(...a) }));
+vi.mock("@/lib/keyword-research/buyer-fit", () => ({ judgeBuyerFit: (...a: unknown[]) => fit(...a) }));
 vi.mock("@/lib/seo/ranked-keywords", async () => {
   const real = await vi.importActual<typeof import("@/lib/seo/ranked-keywords")>("@/lib/seo/ranked-keywords");
   return { ...real, fetchRankedKeywords: (...a: unknown[]) => ranked(...a) };
-});
-vi.mock("@/lib/seo/keywords", async () => {
-  const real = await vi.importActual<typeof import("@/lib/seo/keywords")>("@/lib/seo/keywords");
-  return {
-    ...real,
-    discoverKeywords: (...a: unknown[]) => discover(...a),
-    fetchKeywordDifficulty: (...a: unknown[]) => difficulty(...a),
-    discoverKeywordsFromSeeds: (...a: unknown[]) => seeds(...a),
-  };
 });
 
 import { analyseDomain } from "../domain-analysis";
@@ -94,12 +83,10 @@ const workspacePatch = () =>
 const insertedTables = () => insert.mock.calls.map((c) => c[0] as string);
 
 beforeEach(() => {
-  for (const m of [ranked, discover, difficulty, seeds, gap, insert, update]) m.mockReset();
+  for (const m of [ranked, discover, fit, insert, update]) m.mockReset();
   ranked.mockResolvedValue(junk);
-  discover.mockResolvedValue([]);
-  seeds.mockResolvedValue([]);
-  gap.mockResolvedValue([]);
-  difficulty.mockResolvedValue(new Map());
+  discover.mockResolvedValue({ fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" }, seedsPriced: 0, competitorsAsked: [] });
+  fit.mockResolvedValue({ verdicts: new Map(), basis: "none" });
 });
 
 describe("a site with no readable text", () => {
@@ -127,13 +114,11 @@ describe("a site with no readable text", () => {
     expect(patch.first_analysed_at).toEqual(expect.any(String));
   });
 
-  it("buys nothing else either: no gap, no seeded expansion, no ads fallback", async () => {
+  it("buys nothing else either: no rival rankings, no buyer ideas, no buyer test", async () => {
     // The three paid calls all sat downstream of a filter that ran after them.
     await analyseDomain({ domain: "example.com", supabase: supabase(), workspaceId: "w" });
-    expect(gap).not.toHaveBeenCalled();
-    expect(seeds).not.toHaveBeenCalled();
     expect(discover).not.toHaveBeenCalled();
-    expect(difficulty).not.toHaveBeenCalled();
+    expect(fit).not.toHaveBeenCalled();
   });
 
   it("says why, in words the run screen can quote", async () => {
