@@ -6,6 +6,7 @@ import { sendSignupConfirmation } from "@/lib/email/auth-emails";
 import { authErrorMessage } from "@/lib/auth/errors";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
+import { accountNameFromDomain } from "@/lib/domain/account-name";
 import { normalizeDomain, DOMAIN_PATTERN } from "@/lib/growth-plan/build";
 import { checkDomainReachable } from "@/lib/domain/reachable";
 import { SubmitButton } from "@/components/auth/submit-button";
@@ -17,7 +18,6 @@ export const metadata: Metadata = {
 
 async function signUp(formData: FormData) {
   "use server";
-  const name = formData.get("name") as string;
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
   // Set when signup was reached from the homepage growth plan: the visitor has
@@ -39,6 +39,12 @@ async function signUp(formData: FormData) {
   if (!reach.ok) {
     redirect("/signup?error=" + encodeURIComponent(reach.reason) + "&domain=" + encodeURIComponent(domain));
   }
+
+  // The account's name, from the domain, because asking for both is asking
+  // the same question twice: nobody signs up as "Acme" from vitaminshop.de.
+  // The wizard overwrites the BUSINESS name minutes later from what it reads
+  // on the site, so this only has to hold the sidebar together until then.
+  const name = accountNameFromDomain(domain) || domain;
 
   // Create the auth user and send OUR confirmation email. `auth.signUp`
   // would make Supabase send its own from a dashboard template; this keeps
@@ -208,24 +214,6 @@ export default async function SignUpPage(props: {
             {searchParams.error}
           </div>
         )}
-        <div>
-          {/* Not "Workspace name". A workspace in this product is one site,
-              and this field is not that: it names the account, which is what
-              the sidebar and every invitation show, while the workspace is
-              named after the domain typed below. Someone reading "Workspace
-              name" above "Your website" is being asked the same question
-              twice in words they have no reason to know. */}
-          <label className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1.5 block">
-            Company name
-          </label>
-          <input
-            name="name"
-            type="text"
-            required
-            className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
-            placeholder="Acme"
-          />
-        </div>
         <div>
           <label className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1.5 block">
             Your website

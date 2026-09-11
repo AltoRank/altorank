@@ -76,7 +76,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   const gateShown =
     Boolean(workspace.onboarded_at || workspace.onboarding_skipped_at) &&
     (simulation?.gate === true || (quota.reason === "no-plan" && Boolean(quota.trialEligible)));
-  const [gatePlan, gateReport, gateKeywords, gateAuthority] = gateShown
+  const [gatePlan, gateReport, gateKeywords, gateWritten, gateAuthority] = gateShown
     ? await Promise.all([
         supabase
           .from("calendar_entries")
@@ -99,6 +99,24 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
           .eq("workspace_id", workspace.id)
           .eq("status", "planned")
           .then(({ data }) => (data ?? []).map((r) => ({ volume: r.volume as number | null, difficulty: r.difficulty as number | null }))),
+        // The articles the run already wrote, so the schedule can show the
+        // first one as the finished thing it is rather than as another locked
+        // row. Newest first and bounded: ordered the other way, a workspace
+        // with any history at all returns its OLDEST articles, none of which
+        // are in the month being shown, and every row renders locked.
+        supabase
+          .from("articles")
+          .select("keyword, title, word_count, status, created_at")
+          .eq("workspace_id", workspace.id)
+          .order("created_at", { ascending: false })
+          .limit(40)
+          .then(({ data }) =>
+            (data ?? []).map((r) => ({
+              keyword: (r.keyword as string | null) ?? "",
+              title: (r.title as string | null) ?? "",
+              wordCount: (r.word_count as number | null) ?? 0,
+            })),
+          ),
         supabase
           .from("workspace_metrics")
           .select("authority")
@@ -107,7 +125,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
           .limit(1)
           .then(({ data }) => (data?.[0]?.authority ?? null) as number | null),
       ])
-    : [[], null, [], null];
+    : [[], null, [], [], null];
   const gateTraffic = gateShown ? estimateFirstMonthTraffic(gateKeywords, gateAuthority) : null;
 
   const initialOutput = outputFromRow(output);
@@ -150,6 +168,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       gatePlan={gatePlan}
       gateReport={gateReport}
       gateTraffic={gateTraffic}
+      gateWritten={gateWritten}
       initialRun={run}
       initialAutoApprove={Boolean(workspace.auto_approve)}
     />

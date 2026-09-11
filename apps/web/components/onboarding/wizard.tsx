@@ -31,7 +31,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui";
+import { Button, Icons } from "@/components/ui";
 import {
   proposeProfile,
   saveProfile,
@@ -100,6 +100,7 @@ export function OnboardingWizard({
   gatePlan = [],
   gateReport = null,
   gateTraffic = null,
+  gateWritten = [],
   initialRun = null,
   initialStep = 0,
   initialAutoApprove,
@@ -152,6 +153,8 @@ export function OnboardingWizard({
   gateReport?: FirstLookReport | null;
   /** What the planned month could be worth, as a range. Null when not gated. */
   gateTraffic?: TrafficRange | null;
+  /** Articles the run already wrote, matched to the plan by keyword. */
+  gateWritten?: { keyword: string; title: string; wordCount: number }[];
   initialRun?: OnboardingRunSnapshot | null;
 }) {
   const identifiedUserId = useRef<string | null>(null);
@@ -311,7 +314,7 @@ export function OnboardingWizard({
   // There is nothing to show the progress of and nothing to set up again -
   // only the card stands between this account and the product.
   if (!running && alreadyOnboarded && trialEligible) {
-    return <TrialGateScreen domain={domain} planned={gatePlan} report={gateReport} traffic={gateTraffic} />;
+    return <TrialGateScreen domain={domain} planned={gatePlan} report={gateReport} traffic={gateTraffic} written={gateWritten} />;
   }
 
   if (running) {
@@ -645,11 +648,13 @@ function TrialGateScreen({
   planned,
   report,
   traffic,
+  written,
 }: {
   domain: string;
   planned: OnboardingPlanned[];
   report: FirstLookReport | null;
   traffic: TrafficRange | null;
+  written: { keyword: string; title: string; wordCount: number }[];
 }) {
   const [error, setError] = useState<string | null>(null);
   const [interval, setInterval] = useState<BillingInterval>("month");
@@ -775,21 +780,45 @@ function TrialGateScreen({
                   {planned.length} {planned.length === 1 ? "article" : "articles"} scheduled
                 </div>
               </div>
-              <div className="relative overflow-hidden rounded-[8px] border border-line bg-bg">
-                <ul className="m-0 max-h-[220px] list-none divide-y divide-line overflow-hidden p-0 opacity-45">
-                  {planned.slice(0, 8).map((p) => (
-                    <li key={`${p.date}-${p.term}`} className="flex items-baseline justify-between gap-3 px-3.5 py-2 text-[12.5px]">
-                      <span className="truncate">{p.term}</span>
+              {/* The first row is the article that exists: its real title, its
+                  real length, readable now. Everything under it is locked, and
+                  locked is drawn as a lock and not as a spinner - nothing is
+                  being written down there. The schedule starts when the trial
+                  does, so a progress indicator would be describing work that
+                  is not happening. */}
+              <ul className="m-0 list-none divide-y divide-line overflow-hidden rounded-[8px] border border-line bg-bg p-0">
+                {planned.slice(0, 8).map((p) => {
+                  const done = written.find(
+                    (w) => w.keyword.trim().toLowerCase() === p.term.trim().toLowerCase(),
+                  );
+                  return (
+                    <li
+                      key={`${p.date}-${p.term}`}
+                      className={`flex items-center justify-between gap-3 px-3.5 py-2.5 text-[12.5px] ${done ? "" : "opacity-55"}`}
+                    >
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span className="shrink-0 text-ok-ink">
+                          {done ? <Icons.check size={13} /> : <Icons.lock size={12} />}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-ink">{done ? done.title || p.term : p.term}</span>
+                          {done && (
+                            <span className="block truncate text-[11.5px] text-ink-3">
+                              Written{done.wordCount > 0 ? ` · ${done.wordCount.toLocaleString("en-US")} words` : ""} · waiting for your approval
+                            </span>
+                          )}
+                        </span>
+                      </div>
                       <span className="shrink-0 font-mono text-[11px] text-ink-3">{calendarDay(p.date)}</span>
                     </li>
-                  ))}
-                </ul>
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-center bg-gradient-to-t from-bg via-bg/85 to-transparent pb-3 pt-10">
-                  <span className="text-[12px] font-medium text-ink-2">
-                    Start the trial to unlock the schedule
-                  </span>
-                </div>
-              </div>
+                  );
+                })}
+              </ul>
+              <p className="m-0 mt-2 text-[12px] text-ink-2">
+                {written.length > 0
+                  ? "The rest are scheduled. They start writing when your trial does."
+                  : "These start writing when your trial does."}
+              </p>
             </div>
           )}
 
