@@ -1,5 +1,12 @@
 export interface PageSpeedResult {
   performanceScore: number;
+  /**
+   * The other three Lighthouse categories, 0-100, when the request asked
+   * for them (it does since 2026-09-11; rows stored before have none).
+   */
+  accessibilityScore?: number | null;
+  bestPracticesScore?: number | null;
+  seoScore?: number | null;
   firstContentfulPaint: number;
   largestContentfulPaint: number;
   cumulativeLayoutShift: number;
@@ -34,13 +41,23 @@ const ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
 const TIMEOUT_MS = 60_000;
 const ATTEMPTS = 2;
 
+type Category = { score?: number | null };
+
+/** A category Lighthouse did not run is null, not zero. */
+function categoryScore(c: Category | undefined): number | null {
+  return typeof c?.score === "number" ? Math.round(c.score * 100) : null;
+}
+
 function extract(lighthouse: {
-  categories?: { performance?: { score?: number | null } };
+  categories?: { performance?: Category; accessibility?: Category; "best-practices"?: Category; seo?: Category };
   audits?: Record<string, { numericValue?: number }>;
 }): PageSpeedResult {
   const audits = lighthouse.audits ?? {};
   return {
     performanceScore: Math.round((lighthouse.categories?.performance?.score ?? 0) * 100),
+    accessibilityScore: categoryScore(lighthouse.categories?.accessibility),
+    bestPracticesScore: categoryScore(lighthouse.categories?.["best-practices"]),
+    seoScore: categoryScore(lighthouse.categories?.seo),
     firstContentfulPaint: audits["first-contentful-paint"]?.numericValue ?? 0,
     largestContentfulPaint: audits["largest-contentful-paint"]?.numericValue ?? 0,
     cumulativeLayoutShift: audits["cumulative-layout-shift"]?.numericValue ?? 0,
@@ -70,9 +87,12 @@ export async function fetchPageSpeedDetailed(
   const params = new URLSearchParams({
     url,
     strategy,
-    category: "performance",
     ...(apiKey ? { key: apiKey } : {}),
   });
+  // All four categories in the one run. Lighthouse audits them together; the
+  // extra cost is seconds on Google's side, not a second request, and the
+  // onboarding report shows the four the way every speed tool does.
+  for (const c of ["performance", "accessibility", "best-practices", "seo"]) params.append("category", c);
 
   let lastTransient: PageSpeedOutcome | null = null;
 

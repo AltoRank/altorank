@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icons } from "@/components/ui";
+import { FirstLookReportView } from "./first-look-report";
+import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
 import { calendarStripDays, dayFromIso, MAX_CHIPS_PER_DAY } from "@/lib/onboarding/calendar-strip";
 import {
   initialOnboardingState,
@@ -100,6 +102,9 @@ export function OnboardingProgress({
   const [state, setState] = useState<OnboardingState>(() =>
     initialRun?.run ? stateFromRun(initialRun.run, initialRun.article, { stale: initialRun.stale, drafts: initialRun.drafts }) : initialOnboardingState(),
   );
+  // The site report, from the same snapshot the phases come from. Kept apart
+  // from the reducer: it is a thing the run measured, not a step of the run.
+  const [report, setReport] = useState<FirstLookReport | null>(initialRun?.report ?? null);
   // `onDone` is a fresh arrow on every parent render. Reading it through a ref
   // keeps it out of the hand-off effect's dependencies, so a parent re-render
   // - the workspace list refreshing after creation, for one - cannot re-run
@@ -133,6 +138,7 @@ export function OnboardingProgress({
             failures = 0;
             const next = stateFromRun(snapshot.run, snapshot.article, { stale: snapshot.stale, drafts: snapshot.drafts });
             setState(next);
+            if (snapshot.report) setReport(snapshot.report);
             if (isTerminal(next)) return;
           } else {
             failures += 1;
@@ -230,6 +236,12 @@ export function OnboardingProgress({
         skipped={drafting?.status === "skipped" || drafting?.status === "failed"}
         skippedReason={drafting?.status === "skipped" || drafting?.status === "failed" ? drafting.detail : undefined}
       />
+
+      {/* What the first look measured, to read while the draft is written.
+          It lands on the poll after the keywords phase, so for most of the
+          wait it is on the screen; once the run is over it stays as the
+          site's first report. */}
+      <FirstLookReportView report={report} domain={domain} live={!finished} />
     </div>
   );
 }

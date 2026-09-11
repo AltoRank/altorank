@@ -22,6 +22,7 @@ import { crawlSite, usablePages, type CrawlOptions } from "./crawler";
 import { clearRefusal } from "./host-circuit";
 import { decideFirstLook, firstLookPatch, type FirstLookDecision } from "./first-look";
 import { runAuditChecks, calculateAuditScore } from "./checks";
+import { pageFacts, type PageFacts } from "./page-facts";
 import { fetchPageSpeedDetailed } from "./pagespeed";
 import { type DiscoveredKeyword, storedCpc } from "@/lib/seo/keywords";
 import { profileIsUsable, scoreRelevance, subjectVocabulary } from "@/lib/seo/topical-profile";
@@ -450,12 +451,16 @@ export async function analyseDomain(options: {
   let pagesCrawled = 0;
   let crawlAttempts = 1;
   let crawlRateLimited = false;
+  let homeFacts: PageFacts | null = null;
   let auditScore: number | null = null;
   let issues: unknown[] = [];
   let profile: TopicalProfile | null = null;
   try {
     const home = recorded.resources.get(`${baseUrl}/`) ?? recorded.resources.get(baseUrl);
     const seedHtml = home && home.status >= 200 && home.status < 300 && /<html/i.test(home.body) ? home.body : null;
+    // The homepage's own account of itself, off the bytes already fetched.
+    // Persisted with the audit for the onboarding report (page-facts.ts).
+    if (seedHtml && home) homeFacts = pageFacts(seedHtml, home.headers, home.status);
     const { fetched, attempts, rateLimited } = await crawlWithRetry(
       baseUrl,
       depth === "quick" ? 1 : Math.min(options.maxPages ?? MAX_PAGES, MAX_PAGES),
@@ -524,6 +529,9 @@ export async function analyseDomain(options: {
         `CLS ${ps.result.cumulativeLayoutShift.toFixed(3)}`,
     });
   } else {
+    // Why it did not run, kept with the audit so the report can say so
+    // instead of showing an empty card.
+    pagespeed = { unavailable: ps.detail };
     layers.push({ id: "pagespeed", status: ps.kind, detail: ps.detail });
   }
 
@@ -1068,6 +1076,7 @@ export async function analyseDomain(options: {
       issues,
       pagespeed,
       readiness,
+      page_facts: homeFacts,
       // NULL when the lookup never ran, [] when it ran and found nothing. A
       // domain nobody could look up is not a domain that ranks for nothing, and
       // the report has to be able to tell those apart.
