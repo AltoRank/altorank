@@ -5,7 +5,17 @@
    Warm monochrome neutrals + indigo accent
    ============================================================ */
 
-:root {
+/* `.theme-light` carries the same palette so a subtree can be light on a dark
+   account. Onboarding uses it: setup runs before anyone has chosen a theme,
+   and a run that ends by asking for a card should not be the first thing a
+   person sees rendered in whatever their OS happened to prefer. Inside the
+   app the choice is theirs again.
+
+   One block, two selectors, rather than a copy that drifts. The dark block
+   below is more specific but only ever matches :root, so an element carrying
+   .theme-light redeclares these for itself and everything under it. */
+:root,
+.theme-light {
   /* neutrals (warm) */
   --bg:           oklch(0.995 0.002 80);
   --bg-2:         oklch(0.985 0.003 80);

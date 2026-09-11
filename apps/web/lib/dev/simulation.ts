@@ -19,6 +19,15 @@ export type Simulation = {
   plan?: PlanTier;
   /** Simulate NOT being an operator, to see the nav a customer sees. */
   admin?: boolean;
+  /**
+   * Force the trial gate on.
+   *
+   * A dev install has no STRIPE_SECRET_KEY, so its quota reason is
+   * "self-host" and the gate - which exempts self-host on purpose - can
+   * never fire there. Without this the only way to see what a gated
+   * customer sees is to put live keys on a laptop.
+   */
+  gate?: boolean;
 };
 
 export async function getSimulation(): Promise<Simulation | null> {

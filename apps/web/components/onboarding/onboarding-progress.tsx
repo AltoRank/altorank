@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Icons } from "@/components/ui";
 import { FirstLookReportView } from "./first-look-report";
 import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
 import { calendarStripDays, dayFromIso, MAX_CHIPS_PER_DAY } from "@/lib/onboarding/calendar-strip";
@@ -223,11 +222,7 @@ export function OnboardingProgress({
         </p>
       </div>
 
-      <ol className="m-0 flex list-none flex-col gap-2.5 p-0">
-        {state.steps.map((step) => (
-          <StepRow key={step.phase} step={step} />
-        ))}
-      </ol>
+      <RunLog steps={state.steps} />
 
       <CalendarStrip
         planned={state.planned}
@@ -246,35 +241,93 @@ export function OnboardingProgress({
   );
 }
 
-function StepRow({ step }: { step: OnboardingStep }) {
-  const label = phaseLabel(step);
-  const muted = step.status === "pending";
+/**
+ * The run, as a log that writes itself.
+ *
+ * Five rows with spinners said what stage the run was in and nothing about
+ * what it was doing inside one, so the longest stages - the keyword work, the
+ * draft - were a spinner for a minute and a half. A log reads as work being
+ * done, and it has room for the detail each phase already reports.
+ *
+ * Fixed height on purpose: the panel must not grow as lines arrive, or the
+ * trial ask above it walks down the page. It scrolls itself instead.
+ *
+ * Every line here is written for the person paying, not for us: what was read,
+ * what was found, what was decided. Nothing names a provider, an endpoint, a
+ * model or a table - the log is a window on the outcome, not on the plumbing.
+ */
+function RunLog({ steps }: { steps: OnboardingStep[] }) {
+  const lines = useMemo(() => {
+    const out: { text: string; kind: "cmd" | "out" }[] = [];
+    for (const step of steps) {
+      if (step.status === "pending") continue;
+      out.push({ text: phaseLabel(step), kind: "cmd" });
+      if (step.detail) out.push({ text: step.detail, kind: "out" });
+    }
+    return out;
+  }, [steps]);
+
+  // How many lines are fully written, and how much of the next one is.
+  const [done, setDone] = useState(0);
+  const [partial, setPartial] = useState("");
+  const box = useRef<HTMLDivElement | null>(null);
+  // A phase that rewrites its own detail (active -> done) can leave the
+  // cursor past the end of a now-shorter list, so the cursor is derived and
+  // never stored out of range.
+  const cursor = Math.min(done, lines.length);
+
+  useEffect(() => {
+    if (cursor >= lines.length) return;
+    const full = lines[cursor].text;
+    // Someone who asked for less motion gets the whole line on the first
+    // tick rather than a different code path.
+    const reduced =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const step = reduced ? full.length : 2;
+    let i = 0;
+    const tick = setInterval(() => {
+      i += step;
+      if (i >= full.length) {
+        clearInterval(tick);
+        setPartial("");
+        setDone(cursor + 1);
+      } else {
+        setPartial(full.slice(0, i));
+      }
+    }, 16);
+    return () => clearInterval(tick);
+  }, [cursor, lines]);
+
+  useEffect(() => {
+    const el = box.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [cursor, partial]);
+
+  const written = lines.slice(0, cursor);
+  const typing = cursor < lines.length;
   return (
-    <li className="flex items-start gap-2.5">
-      <span className="mt-[3px] flex h-4 w-4 shrink-0 items-center justify-center">
-        {step.status === "active" ? (
-          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-        ) : step.status === "done" ? (
-          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-ok-soft text-ok-ink">
-            <Icons.check size={10} />
-          </span>
-        ) : step.status === "failed" ? (
-          <span className="h-2 w-2 rounded-full bg-err-ink" />
-        ) : step.status === "skipped" ? (
-          <span className="h-2 w-2 rounded-full bg-ink-4" />
-        ) : (
-          <span className="h-2 w-2 rounded-full bg-panel-2 ring-1 ring-line" />
-        )}
-      </span>
-      <div className="min-w-0">
-        <div className={`text-[13px] ${muted ? "text-ink-3" : "text-ink"}`}>{label}</div>
-        {step.detail && (
-          <div className={`mt-0.5 text-[12px] leading-relaxed ${step.status === "failed" ? "text-err-ink" : "text-ink-3"}`}>
-            {step.detail}
-          </div>
-        )}
-      </div>
-    </li>
+    <div
+      ref={box}
+      role="log"
+      aria-live="polite"
+      aria-label="Setup progress"
+      className="h-[196px] overflow-y-auto rounded-[8px] border border-line bg-bg px-3 py-2.5 font-mono text-[11.5px] leading-[1.7]"
+    >
+      {written.map((l, i) => (
+        <div key={i} className={l.kind === "cmd" ? "text-ink" : "pl-3.5 text-ink-3"}>
+          {l.kind === "cmd" && <span className="mr-1.5 text-accent">&gt;</span>}
+          {l.text}
+        </div>
+      ))}
+      {typing && (
+        <div className={lines[cursor].kind === "cmd" ? "text-ink" : "pl-3.5 text-ink-3"}>
+          {lines[cursor].kind === "cmd" && <span className="mr-1.5 text-accent">&gt;</span>}
+          {partial}
+          <span className="ml-px inline-block h-[11px] w-[6px] translate-y-[1px] animate-pulse bg-ink-3" />
+        </div>
+      )}
+    </div>
   );
 }
 

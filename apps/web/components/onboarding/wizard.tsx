@@ -27,8 +27,7 @@
 // After it, once per account, comes the only question that is about the person:
 // where they heard of us. It is last because by then they have watched the
 // product read their site and have a reason to answer honestly; it is asked
-// even on "Skip setup" because a skipped wizard is the one place a referrer
-// tells us nothing, and one click is not a wall.
+// and one click is not a wall.
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -65,6 +64,10 @@ import {
 } from "@/lib/onboarding/events";
 import { freeAllowanceClause } from "@/lib/onboarding/copy";
 import { StartTrialButton } from "@/components/billing/start-trial-button";
+import { FirstLookReportView } from "@/components/onboarding/first-look-report";
+import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
+import { worthShowing, type TrafficRange } from "@/lib/onboarding/first-month-outlook";
+import { PLAN_PRICES, PLAN_YEARLY_PRICES, type BillingInterval } from "@/lib/stripe";
 import { TRIAL_OFFER } from "@/lib/billing/trial";
 import { SITE_STEPS, stepFromParam, stepIndex } from "@/lib/onboarding/steps";
 import posthog from "posthog-js";
@@ -93,6 +96,10 @@ export function OnboardingWizard({
   initialSite,
   initialOutput,
   askAttribution,
+  alreadyOnboarded = false,
+  gatePlan = [],
+  gateReport = null,
+  gateTraffic = null,
   initialRun = null,
   initialStep = 0,
   initialAutoApprove,
@@ -133,9 +140,20 @@ export function OnboardingWizard({
    * rather than on step 1 - which is what makes a reload mid-run land back
    * on the phases so far instead of restarting the wizard.
    */
+  /**
+   * This workspace has been through setup before. Set when the dashboard's
+   * trial gate sent the person here for the card: they must not be handed the
+   * wizard, whose Finish starts a fresh run.
+   */
+  alreadyOnboarded?: boolean;
+  /** The month already planned for this account, shown locked on the gate. */
+  gatePlan?: OnboardingPlanned[];
+  /** The analysis already run on this account's site, shown open on the gate. */
+  gateReport?: FirstLookReport | null;
+  /** What the planned month could be worth, as a range. Null when not gated. */
+  gateTraffic?: TrafficRange | null;
   initialRun?: OnboardingRunSnapshot | null;
 }) {
-  const router = useRouter();
   const identifiedUserId = useRef<string | null>(null);
   const steps: string[] = askAttribution ? [...SITE_STEPS, "About you"] : [...SITE_STEPS];
 
@@ -168,10 +186,6 @@ export function OnboardingWizard({
   const [step, setStep] = useState(initialStep);
   const [autoApprove, setAutoApproveState] = useState(initialAutoApprove);
   const [attribution, setAttribution] = useState<AttributionDraft>(EMPTY_ATTRIBUTION);
-  // Set when "Skip setup" was pressed: which screen it was pressed on, so Back
-  // returns there, and the finish goes to the dashboard rather than to a plan.
-  const [skipFrom, setSkipFrom] = useState<number | null>(null);
-  const skipping = skipFrom !== null;
   const [profile, setProfile] = useState<BusinessProfile | null>(initialProfile);
   const [site, setSite] = useState<SiteDetails>(initialSite);
   const [output, setOutput] = useState<OutputSettings>(initialOutput);
@@ -275,11 +289,6 @@ export function OnboardingWizard({
         await persist(step);
         if (step !== last) {
           goToStep(step + 1);
-        } else if (skipping) {
-          if (profile) await saveProfile(workspaceId, profile);
-          await completeWizard(workspaceId, { skipped: true });
-          posthog.capture("onboarding_skipped", { workspace_id: workspaceId });
-          router.push("/dashboard");
         } else {
           await completeWizard(workspaceId);
           posthog.capture("onboarding_completed", { workspace_id: workspaceId });
@@ -297,25 +306,12 @@ export function OnboardingWizard({
     goToStep(step + 1);
   }
 
-  function skipAll() {
-    // Skipping the site setup still passes through the one question that is
-    // about the person. It is answered with a click and finished from there.
-    if (askAttribution) {
-      setError(null);
-      setSkipFrom(step);
-      goToStep(ATTRIBUTION_STEP);
-      return;
-    }
-    start(async () => {
-      try {
-        if (profile) await saveProfile(workspaceId, profile);
-        await completeWizard(workspaceId, { skipped: true });
-        posthog.capture("onboarding_skipped", { workspace_id: workspaceId });
-        router.push("/dashboard");
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not skip.");
-      }
-    });
+
+  // Sent here by the dashboard gate, with no run recent enough to resume.
+  // There is nothing to show the progress of and nothing to set up again -
+  // only the card stands between this account and the product.
+  if (!running && alreadyOnboarded && trialEligible) {
+    return <TrialGateScreen domain={domain} planned={gatePlan} report={gateReport} traffic={gateTraffic} />;
   }
 
   if (running) {
@@ -346,8 +342,8 @@ export function OnboardingWizard({
         {step === 1 && <AudienceStep profile={profile} patch={patch} />}
         {step === 2 && <BlogStep site={site} setSite={setSite} discovery={discovery} domain={domain} />}
         {step === 3 && <ArticlesStep output={output} setOutput={setOutput} autoApprove={autoApprove} setAutoApprove={setAutoApproveState} />}
-        {step === ATTRIBUTION_STEP && <AttributionStep value={attribution} onChange={setAttribution} skipping={skipping} />}
-        {step === last && !skipping && <NextUp weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} autoApprove={autoApprove} />}
+        {step === ATTRIBUTION_STEP && <AttributionStep value={attribution} onChange={setAttribution} />}
+        {step === last && <NextUp weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} autoApprove={autoApprove} />}
         {error && <p className="mt-4 rounded-lg bg-err-soft px-3 py-2 text-[12.5px] text-err-ink">{error}</p>}
       </div>
 
@@ -358,24 +354,16 @@ export function OnboardingWizard({
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
-              onClick={() => {
-                if (skipFrom !== null) {
-                  const back = skipFrom;
-                  setSkipFrom(null);
-                  goToStep(back);
-                } else {
-                  goToStep(Math.max(0, step - 1));
-                }
-              }}
+              onClick={() => goToStep(Math.max(0, step - 1))}
               disabled={step === 0 || pending}
             >
               Back
             </Button>
             {/* Every screen can be skipped on its own: nothing typed on it is
                 saved and the next one opens. The last step has no link because
-                Finish is the way out. Skipping the whole setup is offered
-                once, on the first screen, where that decision is actually
-                made. */}
+                Finish is the way out. Skipping the setup wholesale is not
+                offered: the run is the product, and an account that skips it
+                lands on an empty dashboard with nothing to react to. */}
             {step !== last && (
               <button
                 type="button"
@@ -384,16 +372,6 @@ export function OnboardingWizard({
                 className="text-[12px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink"
               >
                 Skip this step
-              </button>
-            )}
-            {step === 0 && (
-              <button
-                type="button"
-                onClick={skipAll}
-                disabled={pending}
-                className="text-[12px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink"
-              >
-                Skip setup
               </button>
             )}
           </div>
@@ -406,9 +384,7 @@ export function OnboardingWizard({
               ? "Saving…"
               : step !== last
                 ? "Continue"
-                : skipping
-                  ? "Skip and finish"
-                  : "Finish and plan my first month"}
+                : "Finish and plan my first month"}
           </Button>
         </div>
       </div>
@@ -628,16 +604,14 @@ function NextUp({ weeklyLimit, freeDrafts, autoApprove }: { weeklyLimit: number;
 function AttributionStep({
   value,
   onChange,
-  skipping,
 }: {
   value: AttributionDraft;
   onChange: (v: AttributionDraft) => void;
-  skipping: boolean;
 }) {
   return (
     <>
       <Head
-        title={skipping ? "One thing before you go" : "One last thing"}
+        title="One last thing"
         sub="How did you hear about us? Pick the closest, or finish without answering. It is the only way we can tell whether an AI answer sent you here, which is the thing we sell."
       />
       <div className="rounded-[10px] border border-line bg-panel p-5">
@@ -659,6 +633,174 @@ const VERDICT_LABEL: Record<OnboardingArticle["verdict"], { text: string; classN
 };
 
 /**
+ * The card, for an account that is already set up.
+ *
+ * The trial ask at the end of a run has the run to point at: drafts written,
+ * a month scheduled. This one has none of that - it is what somebody sees on
+ * their second visit, or their thirtieth - so it asks plainly and says what
+ * the trial opens rather than pretending there is a setup in progress.
+ */
+function TrialGateScreen({
+  domain,
+  planned,
+  report,
+  traffic,
+}: {
+  domain: string;
+  planned: OnboardingPlanned[];
+  report: FirstLookReport | null;
+  traffic: TrafficRange | null;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [interval, setInterval] = useState<BillingInterval>("month");
+  const words = planned.length;
+  const fixable = report?.readiness?.findings.filter((f) => !f.passed && !f.inconclusive).length ?? 0;
+  const pagesToFix = report?.existingPages?.withIssues ?? 0;
+  const showTraffic = traffic !== null && worthShowing(traffic);
+  return (
+    <div className="min-h-screen bg-bg">
+      <div className="mx-auto max-w-[860px] px-6 py-10">
+        <div className="mb-6 text-center">
+          <h1 className="m-0 mb-1.5 text-[22px] font-semibold">Start your trial to continue</h1>
+          <p className="mx-auto m-0 max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">
+            {domain ? `Everything below is already done for ${domain}. ` : ""}
+            The trial opens approving, publishing and the rest of the schedule.
+          </p>
+        </div>
+
+        <div className="mx-auto mb-6 max-w-[640px] rounded-[10px] border border-accent/40 bg-panel p-5">
+          <div className="rounded-[8px] bg-accent/5 p-4">
+            <div className="mb-3 text-[11px] uppercase tracking-wide text-accent">7-day trial</div>
+
+            {/* Two priced choices, not a pair of unlabelled pills. The first
+                version showed "Monthly | Yearly" with no amounts, which reads
+                as a view switch rather than a decision about money - and the
+                whole point of asking before the card is that the person knows
+                what the card is for. Amounts come from lib/stripe, the same
+                constants the billing page renders, so the two screens cannot
+                quote different prices for the same plan. */}
+            <div className="mb-3 grid grid-cols-2 gap-2">
+              {([
+                { id: "month" as const, label: "Monthly", price: PLAN_PRICES.starter, per: "per month", note: null },
+                { id: "year" as const, label: "Yearly", price: PLAN_YEARLY_PRICES.starter, per: "per year", note: "2 months free" },
+              ]).map((opt) => {
+                const on = interval === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setInterval(opt.id)}
+                    aria-pressed={on}
+                    className={`rounded-[8px] border p-3 text-left transition-colors ${
+                      on ? "border-accent bg-accent/10" : "border-line bg-bg hover:border-ink-4"
+                    }`}
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-[12.5px] font-medium text-ink">{opt.label}</span>
+                      {opt.note && (
+                        <span className="rounded-full bg-ok-soft px-1.5 py-px text-[10.5px] text-ok-ink">{opt.note}</span>
+                      )}
+                    </div>
+                    <div className="mt-1 text-[17px] font-semibold leading-none text-ink">{opt.price}</div>
+                    <div className="mt-0.5 text-[11.5px] text-ink-3">{opt.per}</div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="m-0 mb-3 text-[13px] leading-[1.6] text-ink-2">
+              {TRIAL_OFFER}
+            </p>
+            <StartTrialButton returnTo="/dashboard" interval={interval} onError={setError} />
+            {error && (
+              <p className="m-0 mt-2.5 text-[12.5px] leading-[1.5] text-err-ink" role="alert">
+                {error}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="mx-auto flex max-w-[640px] flex-col gap-5">
+          {(showTraffic || words > 0 || fixable > 0 || pagesToFix > 0) && (
+            <div className="rounded-[8px] border border-line bg-bg p-4">
+              <div className="mb-2.5 text-[12.5px] font-medium text-ink">What a month of this looks like</div>
+              <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[12.5px] text-ink-2">
+                {words > 0 && (
+                  <li>
+                    <strong className="text-ink">{words}</strong> {words === 1 ? "article" : "articles"} written and
+                    waiting for your approval
+                  </li>
+                )}
+                {showTraffic && traffic && (
+                  <li>
+                    <strong className="text-ink">
+                      {traffic.low.toLocaleString("en-US")}–{traffic.high.toLocaleString("en-US")}
+                    </strong>{" "}
+                    organic visits a month <span className="text-ink-3">if these reach page one</span>
+                  </li>
+                )}
+                {fixable > 0 && (
+                  <li>
+                    <strong className="text-ink">{fixable}</strong> {fixable === 1 ? "thing" : "things"} stopping AI
+                    assistants reading {domain || "your site"}, each with the fix
+                  </li>
+                )}
+                {pagesToFix > 0 && (
+                  <li>
+                    <strong className="text-ink">{pagesToFix}</strong> existing {pagesToFix === 1 ? "page" : "pages"}{" "}
+                    with something to fix
+                  </li>
+                )}
+              </ul>
+              {showTraffic && traffic && (
+                /* The assumption, next to the number that rests on it. A single
+                   confident figure here would be the same mistake as the "86
+                   failed every check" line that shipped and was false. */
+                <p className="m-0 mt-2.5 text-[11.5px] leading-[1.5] text-ink-3">
+                  An estimate, not a forecast: search volume for the{" "}
+                  {traffic.counted} {traffic.counted === 1 ? "keyword" : "keywords"} planned, against typical
+                  click-through at the positions {domain || "this site"} can realistically reach.
+                  {traffic.excluded > 0 && ` ${traffic.excluded} left out as out of reach or unmeasured.`}{" "}
+                  Ranking takes months, and nothing here is promised.
+                </p>
+              )}
+            </div>
+          )}
+
+          {planned.length > 0 && (
+            <div>
+              <div className="mb-2 flex items-baseline justify-between gap-3">
+                <div className="text-[12.5px] font-medium text-ink">Your first month</div>
+                <div className="text-[11.5px] text-ink-3">
+                  {planned.length} {planned.length === 1 ? "article" : "articles"} scheduled
+                </div>
+              </div>
+              <div className="relative overflow-hidden rounded-[8px] border border-line bg-bg">
+                <ul className="m-0 max-h-[220px] list-none divide-y divide-line overflow-hidden p-0 opacity-45">
+                  {planned.slice(0, 8).map((p) => (
+                    <li key={`${p.date}-${p.term}`} className="flex items-baseline justify-between gap-3 px-3.5 py-2 text-[12.5px]">
+                      <span className="truncate">{p.term}</span>
+                      <span className="shrink-0 font-mono text-[11px] text-ink-3">{calendarDay(p.date)}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-center bg-gradient-to-t from-bg via-bg/85 to-transparent pb-3 pt-10">
+                  <span className="text-[12px] font-medium text-ink-2">
+                    Start the trial to unlock the schedule
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {report && <FirstLookReportView report={report} domain={domain} live={false} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * The last step of onboarding: the card.
  *
  * The order is the point. The setup has just written the account's first
@@ -666,27 +808,50 @@ const VERDICT_LABEL: Record<OnboardingArticle["verdict"], { text: string; classN
  * keyword, length, fact-check verdict, and the thirty days scheduled behind
  * them. What the trial buys is the next thing they would do with what they
  * are looking at (approve, publish, keep writing), so the ask is made here,
- * before the dashboard, and not from a banner they find later. The skip is a
- * text link, not a button: the dashboard offers the trial again, but this is
- * the screen that is meant to convert.
+ * before the dashboard, and not from a banner they find later. There is no
+ * skip: the schedule starts when the trial does, so a person who leaves from
+ * here has nothing running to come back to.
  */
 function TrialStep({
   drafts,
   planned,
   returnTo,
-  skipHref,
 }: {
   drafts: OnboardingArticle[];
   planned: OnboardingPlanned[];
   returnTo: string;
-  skipHref: string;
 }) {
-  const router = useRouter();
   const words = drafts.reduce((n, d) => n + d.wordCount, 0);
   return (
-    <div className="mt-4 rounded-[10px] border border-accent/40 bg-panel p-5">
+    <div className="mx-auto mb-6 max-w-[640px] rounded-[10px] border border-accent/40 bg-panel p-5">
+      {/* The ask comes first. Everything below it is the evidence for it, and
+          an earlier arrangement put the evidence on top: on a site with a full
+          report the button sat a full screen down and was never seen. */}
+      <div className="rounded-[8px] bg-accent/5 p-4">
+        <div className="mb-1 text-[11px] uppercase tracking-wide text-accent">7-day trial</div>
+        <p className="m-0 mb-3 text-[13.5px] leading-[1.6]">
+          <strong>Approve, publish and keep writing.</strong> {TRIAL_OFFER}
+        </p>
+        <StartTrialButton returnTo={returnTo} />
+      </div>
+
+      {planned.length > 0 && (
+        <p className="m-0 mt-5 text-[13px] leading-[1.6] text-ink-2">
+          {/* "on the calendar", not "more": the plan counts the drafts above,
+              so a run that planned eight and wrote seven has one still to come,
+              not eight. */}
+          <strong>On your calendar:</strong> {planned.length} {planned.length === 1 ? "article" : "articles"} over
+          the next 30 days, {planned[0].date === planned[planned.length - 1].date ? "on" : "from"}{" "}
+          {calendarDay(planned[0].date)}
+          {planned[0].date === planned[planned.length - 1].date ? "" : ` to ${calendarDay(planned[planned.length - 1].date)}`}.
+          {drafts.length < planned.length
+            ? ` ${planned.length - drafts.length} of them still to write; the schedule starts when the trial does.`
+            : " The schedule keeps writing after these once the trial starts."}
+        </p>
+      )}
+
       {drafts.length > 0 && (
-        <div className="mb-5">
+        <div className="mt-5">
           <div className="mb-2 flex items-baseline justify-between">
             <div className="text-[11px] uppercase tracking-wide text-ink-3">Written for you</div>
             {words > 0 && <div className="text-[11px] text-ink-3">{words.toLocaleString("en-US")} words</div>}
@@ -709,38 +874,6 @@ function TrialStep({
           </ul>
         </div>
       )}
-
-      {planned.length > 0 && (
-        <p className="m-0 mb-5 text-[13px] leading-[1.6] text-ink-2">
-          {/* "on the calendar", not "more": the plan counts the drafts above,
-              so a run that planned eight and wrote seven has one still to come,
-              not eight. */}
-          <strong>On your calendar:</strong> {planned.length} {planned.length === 1 ? "article" : "articles"} over
-          the next 30 days, {planned[0].date === planned[planned.length - 1].date ? "on" : "from"}{" "}
-          {calendarDay(planned[0].date)}
-          {planned[0].date === planned[planned.length - 1].date ? "" : ` to ${calendarDay(planned[planned.length - 1].date)}`}.
-          {drafts.length < planned.length
-            ? ` ${planned.length - drafts.length} of them still to write; the schedule keeps going while the trial runs.`
-            : " The schedule keeps writing after these while the trial runs."}
-        </p>
-      )}
-
-      <div className="rounded-[8px] bg-accent/5 p-4">
-        <div className="mb-1 text-[11px] uppercase tracking-wide text-accent">7-day trial</div>
-        <p className="m-0 mb-3 text-[13.5px] leading-[1.6]">
-          <strong>Approve, publish and keep writing.</strong> {TRIAL_OFFER}
-        </p>
-        <div className="flex flex-wrap items-center gap-4">
-          <StartTrialButton returnTo={returnTo} />
-          <button
-            type="button"
-            onClick={() => router.push(skipHref)}
-            className="bg-transparent p-0 text-[12.5px] text-ink-3 underline-offset-2 hover:underline"
-          >
-            Not now, I&apos;ll look around first
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -834,6 +967,10 @@ function RunScreen({
           </p>
         </div>
 
+        {trialStep && (
+          <TrialStep drafts={drafts} planned={planned} returnTo="/articles?status=review" />
+        )}
+
         <div className="mx-auto max-w-[640px]">
           <div className="rounded-[10px] border border-line bg-panel p-5">
             <OnboardingProgress
@@ -904,10 +1041,6 @@ function RunScreen({
               </div>
             )}
           </div>
-
-          {trialStep && (
-            <TrialStep drafts={drafts} planned={planned} returnTo="/articles?status=review" skipHref={next.href} />
-          )}
 
         </div>
       </div>

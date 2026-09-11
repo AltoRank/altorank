@@ -15,7 +15,7 @@ import { ImpersonationBanner } from "@/components/dashboard/impersonation-banner
 import { getCompletedOnboardingSteps } from "@/lib/queries/onboarding";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { entitledToScheduledWork } from "@/lib/billing/quota";
-import { trialEndsLabel } from "@/lib/billing/trial";
+import { trialEndsLabel, trialGateApplies, trialGateBypassed } from "@/lib/billing/trial";
 import { usageLine } from "@/lib/billing/usage-line";
 import { siteAllowanceFrom } from "@/lib/workspaces/allowance";
 import { FeedbackWidget } from "@/components/dashboard/feedback-widget";
@@ -161,6 +161,18 @@ export default async function DashboardLayout({
       : Promise.resolve({ count: null }),
     accountId ? getRequestQuota(accountId, user?.email ?? null) : Promise.resolve(null),
   ]);
+  // The card, before the dashboard.
+  //
+  // Only once the wizard is done: before that the redirect above already has
+  // the person on the run screen, which is where the ask is made. An account
+  // that is self-hosted, an operator's, or already on a plan is not gated -
+  // `trialGateApplies` says why for each.
+  // `simulation.gate` is dev-only (getSimulation returns null in production)
+  // and forces the redirect on an install with no Stripe key, which is the
+  // only way to see this flow without live keys on a laptop.
+  const gated = simulation?.gate === true || trialGateApplies(quota);
+  if (wizardDone && gated && !trialGateBypassed(user?.email)) redirect("/onboarding");
+
   // Sites the plan allows, for the switcher's "+ Add site" row. Derived from
   // the quota above and the list already loaded rather than queried again;
   // `workspaces` is RLS-scoped to this account, so its length is the count.

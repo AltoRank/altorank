@@ -14,13 +14,13 @@ import { useRouter } from "next/navigation";
 export function DevToolbar({
   simulation,
 }: {
-  simulation: { plan?: string; admin?: boolean } | null;
+  simulation: { plan?: string; admin?: boolean; gate?: boolean } | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(Boolean(simulation));
 
-  function apply(next: { plan?: string; admin?: boolean } | null) {
-    if (next === null || (next.plan === undefined && next.admin === undefined)) {
+  function apply(next: { plan?: string; admin?: boolean; gate?: boolean } | null) {
+    if (next === null || (next.plan === undefined && next.admin === undefined && next.gate === undefined)) {
       document.cookie = "dev_simulation=; path=/; max-age=0";
     } else {
       document.cookie = `dev_simulation=${encodeURIComponent(
@@ -88,6 +88,27 @@ export function DevToolbar({
         >
           <option value="">real (your email)</option>
           <option value="off">hide, like a customer</option>
+        </select>
+      </label>
+
+      {/* A dev install has no Stripe key, so its quota reads "self-host" and
+          the trial gate - which exempts self-host on purpose - can never fire
+          on its own. This forces the redirect so the gated screen, and what
+          Start trial does from it, can be seen without live keys. */}
+      <label className="mb-2 flex items-center justify-between gap-2 text-[12px] text-ink-2">
+        Trial gate
+        <select
+          value={simulation?.gate === true ? "on" : ""}
+          onChange={(e) =>
+            apply({
+              ...simulation,
+              gate: e.target.value === "on" ? true : undefined,
+            })
+          }
+          className="rounded-[6px] border border-line bg-panel px-1.5 py-1 text-[12px]"
+        >
+          <option value="">real (from quota)</option>
+          <option value="on">force, like an un-trialed account</option>
         </select>
       </label>
 
