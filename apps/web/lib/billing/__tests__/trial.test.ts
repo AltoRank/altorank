@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { trialEligible, trialEndsLabel, trialGateApplies, trialInfo } from "@/lib/billing/trial";
+import { trialEligible, trialEndsLabel, trialGateApplies, trialGateBypassed, trialInfo } from "@/lib/billing/trial";
 import { planEntitled } from "@/lib/billing/dunning";
 
 describe("trialEligible", () => {
@@ -78,5 +78,60 @@ describe("trialGateApplies", () => {
       if (before === undefined) delete process.env.TRIAL_GATE_DISABLED;
       else process.env.TRIAL_GATE_DISABLED = before;
     }
+  });
+});
+
+describe("trialGateBypassed", () => {
+  const withEnv = (value: string | undefined, run: () => void) => {
+    const before = process.env.TRIAL_GATE_BYPASS_EMAILS;
+    if (value === undefined) delete process.env.TRIAL_GATE_BYPASS_EMAILS;
+    else process.env.TRIAL_GATE_BYPASS_EMAILS = value;
+    try {
+      run();
+    } finally {
+      if (before === undefined) delete process.env.TRIAL_GATE_BYPASS_EMAILS;
+      else process.env.TRIAL_GATE_BYPASS_EMAILS = before;
+    }
+  };
+
+  it("covers every +tag of a listed address from one entry", () => {
+    withEnv("helloaltorank@gmail.com", () => {
+      expect(trialGateBypassed("helloaltorank+test@gmail.com")).toBe(true);
+      expect(trialGateBypassed("helloaltorank+anything-at-all@gmail.com")).toBe(true);
+      expect(trialGateBypassed("helloaltorank@gmail.com")).toBe(true);
+      expect(trialGateBypassed("HelloAltoRank+Caps@Gmail.com")).toBe(true);
+    });
+  });
+
+  it("does not bypass a different mailbox that merely starts the same", () => {
+    withEnv("helloaltorank@gmail.com", () => {
+      expect(trialGateBypassed("helloaltorank2@gmail.com")).toBe(false);
+      expect(trialGateBypassed("helloaltorank@example.com")).toBe(false);
+      expect(trialGateBypassed("nothelloaltorank@gmail.com")).toBe(false);
+    });
+  });
+
+  // The default for an install that is not ours: nobody is exempt.
+  it("exempts nobody when the variable is unset or empty", () => {
+    withEnv(undefined, () => expect(trialGateBypassed("helloaltorank+test@gmail.com")).toBe(false));
+    withEnv("", () => expect(trialGateBypassed("helloaltorank+test@gmail.com")).toBe(false));
+    withEnv("  ,  ", () => expect(trialGateBypassed("helloaltorank+test@gmail.com")).toBe(false));
+  });
+
+  it("ignores junk input rather than matching it", () => {
+    withEnv("helloaltorank@gmail.com", () => {
+      expect(trialGateBypassed(null)).toBe(false);
+      expect(trialGateBypassed("")).toBe(false);
+      expect(trialGateBypassed("@gmail.com")).toBe(false);
+      expect(trialGateBypassed("+test@gmail.com")).toBe(false);
+    });
+  });
+
+  it("takes a list", () => {
+    withEnv("a@x.com, b@y.com", () => {
+      expect(trialGateBypassed("a+1@x.com")).toBe(true);
+      expect(trialGateBypassed("b@y.com")).toBe(true);
+      expect(trialGateBypassed("c@z.com")).toBe(false);
+    });
   });
 });

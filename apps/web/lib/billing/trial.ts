@@ -93,3 +93,40 @@ export function trialGateApplies(quota: { reason?: string; trialEligible?: boole
   if (quota.reason !== "no-plan") return false;
   return Boolean(quota.trialEligible);
 }
+
+/**
+ * Addresses that never meet the gate, from `TRIAL_GATE_BYPASS_EMAILS`.
+ *
+ * Our own test accounts sign up as `<name>+whatever@gmail.com` and would
+ * otherwise be asked for a card on every login, which makes testing anything
+ * behind the dashboard a chore. Plus-addressing is normalised away, so one
+ * entry - the base address - covers every tag ever used with it.
+ *
+ * An environment variable and not a constant: this repo is public, and a
+ * hardcoded address would publish our test mailbox and bake a bypass nobody
+ * asked for into every install of it. Unset means nobody is exempt, which is
+ * the right default for an install that is not ours.
+ *
+ * The bypass only stops the redirect. /onboarding still renders the trial
+ * screen for these accounts, so the thing being tested stays reachable.
+ */
+function bypassBases(): string[] {
+  return (process.env.TRIAL_GATE_BYPASS_EMAILS ?? "")
+    .split(",")
+    .map((e) => normalizeEmail(e))
+    .filter(Boolean);
+}
+
+/** Lowercased, with any `+tag` removed: one entry covers every tag. */
+function normalizeEmail(email: string | null | undefined): string {
+  const trimmed = (email ?? "").trim().toLowerCase();
+  const at = trimmed.lastIndexOf("@");
+  if (at <= 0) return "";
+  const local = trimmed.slice(0, at).split("+")[0];
+  return local ? `${local}${trimmed.slice(at)}` : "";
+}
+
+export function trialGateBypassed(email: string | null | undefined): boolean {
+  const normalized = normalizeEmail(email);
+  return Boolean(normalized) && bypassBases().includes(normalized);
+}
