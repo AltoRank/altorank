@@ -47,7 +47,7 @@ test("a new account is walked from /dashboard to five qualified topics and one d
   // a wrong description has to be glanceable, not hidden behind "ready".
   const business = page.locator("details", { has: page.getByRole("heading", { name: "About your business" }) });
   await expect(business).toContainText("Nomad Atlas");
-  await business.locator("summary").click();
+  await business.locator(":scope > summary").click();
   await expect(page.getByLabel("Business name")).toHaveValue("Nomad Atlas");
   await expect(page.getByLabel("Language")).toHaveValue("Italian");
   await expect(page.getByLabel(/^Market/)).toHaveValue("Italy");
