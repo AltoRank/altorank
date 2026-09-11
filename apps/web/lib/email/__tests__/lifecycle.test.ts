@@ -363,7 +363,9 @@ describe("setup was never finished", () => {
     expect(e.html).toContain("How to choose a CRM");
     expect(e.html).toContain("best crm");
     expect(e.html).toContain("https://app.altorank.co/content/art-1");
-    expect(e.html).toContain("https://app.altorank.co/onboarding?step=4");
+    expect(e.html).toContain("https://app.altorank.co/onboarding");
+    // One screen since 2026-09-11: there is no step to deep-link to.
+    expect(e.html).not.toContain("?step=");
     expect(e.html).toContain("Nothing publishes until you approve it");
     expect(e.footerNote).toContain("only email about it");
   });
@@ -373,7 +375,9 @@ describe("setup was never finished", () => {
     expect(e.subject).toBe("We read acme.com while you were away");
     expect(e.html).toContain("<strong>8</strong> keywords");
     expect(e.html).toContain("No article has been written yet");
-    expect(e.html).toContain("https://app.altorank.co/onboarding?step=4");
+    expect(e.html).toContain("https://app.altorank.co/onboarding");
+    // One screen since 2026-09-11: there is no step to deep-link to.
+    expect(e.html).not.toContain("?step=");
     expect(e.html).not.toContain("/content/");
     expect(e.html).not.toMatch(/drafted|is coming|will be written/);
   });

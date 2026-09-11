@@ -273,7 +273,9 @@ describe("the setup email", () => {
     expect(sends().map((s) => s.to).sort()).toEqual(["editor@acme.co", "owner@acme.co"]);
     expect(sends()[0].subject).toBe("While you were away: a first draft for acme.com");
     expect(sends()[0].html).toContain("https://app.altorank.co/content/art-1");
-    expect(sends()[0].html).toContain("https://app.altorank.co/onboarding?step=4");
+    expect(sends()[0].html).toContain("https://app.altorank.co/onboarding");
+    // One screen since 2026-09-11: there is no step to deep-link to.
+    expect(sends()[0].html).not.toContain("?step=");
   });
 
   it("states only what was measured when there is no draft", async () => {

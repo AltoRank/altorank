@@ -37,12 +37,21 @@ export function OfferingList({ profile, patch }: { profile: BusinessProfile; pat
   );
 }
 
-export function AudienceList({ profile, patch }: { profile: BusinessProfile; patch: (p: Partial<BusinessProfile>) => void }) {
+export function AudienceList({
+  profile,
+  patch,
+  heading = true,
+}: {
+  profile: BusinessProfile;
+  patch: (p: Partial<BusinessProfile>) => void;
+  /** Off when the list sits under a collapsible section that already names it. */
+  heading?: boolean;
+}) {
   const doubted = doubtedAudiences(profile.audiences);
   const quote = (xs: string[]) => xs.map((x) => `“${x}”`).join(", ");
   return (
     <>
-      <CountedHeading title="Target audiences" count={profile.audiences.length} max={MAX_AUDIENCES} />
+      {heading && <CountedHeading title="Target audiences" count={profile.audiences.length} max={MAX_AUDIENCES} />}
       <ChipList
         items={profile.audiences}
         onChange={(audiences) => patch({ audiences })}

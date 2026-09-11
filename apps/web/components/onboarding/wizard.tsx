@@ -37,13 +37,11 @@ import {
   saveProfile,
   discoverSiteDetails,
   saveSiteDetails,
-  saveOutputSettings,
   completeWizard,
 } from "@/app/actions/onboarding-wizard";
-import { setAutoApprove } from "@/app/actions/workspaces";
 import { saveAttribution } from "@/app/actions/attribution";
 import { AttributionPicker, EMPTY_ATTRIBUTION, attributionComplete, type AttributionDraft } from "@/components/onboarding/attribution-picker";
-import type { OutputSettings, SiteDetails } from "@/lib/onboarding/output-settings";
+import type { SiteDetails } from "@/lib/onboarding/output-settings";
 import { EMPTY_PROFILE, type BusinessProfile, type InferenceReason } from "@/lib/onboarding/business-profile";
 import type { SiteDiscovery } from "@/lib/onboarding/site-discovery";
 // The forms themselves live in components/settings: every wizard screen is
@@ -51,7 +49,6 @@ import type { SiteDiscovery } from "@/lib/onboarding/site-discovery";
 import { BusinessFields } from "@/components/settings/business-fields";
 import { AudienceList, CompetitorList, OfferingList } from "@/components/settings/audience-fields";
 import { SiteFields } from "@/components/settings/site-fields";
-import { ApprovalGateCard, OutputFields } from "@/components/settings/output-fields";
 import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
 import {
@@ -69,19 +66,9 @@ import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
 import { worthShowing, type TrafficRange } from "@/lib/onboarding/first-month-outlook";
 import { PLAN_PRICES, PLAN_YEARLY_PRICES, type BillingInterval } from "@/lib/stripe";
 import { TRIAL_OFFER } from "@/lib/billing/trial";
-import { SITE_STEPS, stepFromParam, stepIndex } from "@/lib/onboarding/steps";
 import posthog from "posthog-js";
 
-// The question about the person, after every step about the site. Present only
-// while the account has not answered; a second workspace goes straight to plan.
-const ATTRIBUTION_STEP = SITE_STEPS.length;
 export type Destination = { id: string; name: string; description: string | null };
-
-/** The screen the address bar is asking for; see `stepFromParam`. */
-function stepFromLocation(count: number): number {
-  if (typeof window === "undefined") return 0;
-  return stepFromParam(new URLSearchParams(window.location.search).get("step"), count);
-}
 
 export function OnboardingWizard({
   workspaceId,
@@ -94,7 +81,6 @@ export function OnboardingWizard({
   trialEligible = false,
   initialProfile,
   initialSite,
-  initialOutput,
   askAttribution,
   alreadyOnboarded = false,
   gatePlan = [],
@@ -102,8 +88,6 @@ export function OnboardingWizard({
   gateTraffic = null,
   gateWritten = [],
   initialRun = null,
-  initialStep = 0,
-  initialAutoApprove,
 }: {
   workspaceId: string;
   userId: string;
@@ -129,12 +113,8 @@ export function OnboardingWizard({
   trialEligible?: boolean;
   initialProfile: BusinessProfile | null;
   initialSite: SiteDetails;
-  initialOutput: OutputSettings;
+  /** Whether the account has yet to say where it heard of us; asked once, on the trial screen. */
   askAttribution: boolean;
-  /** From `?step=`, read by the server page so a deep link paints the right screen first. */
-  initialStep?: number;
-  /** The workspace's publishing decision as saved (079); signup sets it on, "Add workspace" leaves it off. */
-  initialAutoApprove: boolean;
   /**
    * The workspace's latest onboarding run, read by the page. A run still
    * going, or one that finished in the last hour, opens on the run screen
@@ -158,7 +138,6 @@ export function OnboardingWizard({
   initialRun?: OnboardingRunSnapshot | null;
 }) {
   const identifiedUserId = useRef<string | null>(null);
-  const steps: string[] = askAttribution ? [...SITE_STEPS, "About you"] : [...SITE_STEPS];
 
   useEffect(() => {
     if (identifiedUserId.current === userId) return;
@@ -168,30 +147,8 @@ export function OnboardingWizard({
     });
     identifiedUserId.current = userId;
   }, [userEmail, userId, userProfileName]);
-  const last = steps.length - 1;
-  // The step, mirrored into the URL.
-  //
-  // It used to live only in React state, so the wizard was one history entry:
-  // pressing browser Back on step 3 left the wizard entirely and landed on the
-  // dashboard, with the screen's unsaved answers gone and - because step 1's
-  // Continue has already written a business_profile - nothing to send the
-  // person back. Reloading restarted at step 1 for the same reason.
-  //
-  // `history.pushState` with a query string is the shallow update Next
-  // documents for exactly this: no server round trip, so the component is not
-  // remounted and nothing typed is lost, and the browser's own Back now moves
-  // one screen instead of leaving. The steps that have already been passed are
-  // persisted server-side, so a reload rehydrates them from `initialProfile`,
-  // `initialSite` and `initialOutput` and puts the person back where they were.
-  // The screen itself comes from the server page, which read `?step=` - so a
-  // deep link (the follow-up email's, a reload) paints that screen first
-  // instead of the first one and a jump after hydration.
-  const [step, setStep] = useState(initialStep);
-  const [autoApprove, setAutoApproveState] = useState(initialAutoApprove);
-  const [attribution, setAttribution] = useState<AttributionDraft>(EMPTY_ATTRIBUTION);
   const [profile, setProfile] = useState<BusinessProfile | null>(initialProfile);
   const [site, setSite] = useState<SiteDetails>(initialSite);
-  const [output, setOutput] = useState<OutputSettings>(initialOutput);
   // Null profile and not yet asked = we are about to read the site.
   const [reading, setReading] = useState(initialProfile === null);
   const [readFailure, setReadFailure] = useState<InferenceReason | null>(null);
@@ -202,22 +159,6 @@ export function OnboardingWizard({
   const [running, setRunning] = useState(resumed !== null);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
-
-  /** Move to a screen and leave a history entry for the one being left. */
-  function goToStep(n: number) {
-    setStep(n);
-    if (typeof window !== "undefined") {
-      window.history.pushState(null, "", n === 0 ? window.location.pathname : `?step=${n + 1}`);
-    }
-  }
-
-  // Back and Forward. Nothing is re-fetched: the answers are in state, and
-  // the ones already saved are on the server either way.
-  useEffect(() => {
-    const sync = () => setStep(stepFromLocation(steps.length));
-    window.addEventListener("popstate", sync);
-    return () => window.removeEventListener("popstate", sync);
-  }, [steps.length]);
 
   // Read the site. A failure is a normal outcome and is shown as one. Not
   // while a run is on screen: that page has already been through this.
@@ -270,124 +211,160 @@ export function OnboardingWizard({
     setProfile((p) => (p ? { ...p, ...next } : p));
   }
 
-  /** Persist the screen being left. Each step owns one save. */
-  async function persist(s: number) {
-    if ((s === 0 || s === 1) && profile) await saveProfile(workspaceId, profile);
-    if (s === 2) await saveSiteDetails(workspaceId, site);
-    if (s === 3) {
-      await saveOutputSettings(workspaceId, output);
-      // Saved with the screen that asked it. 24h and a floor of 70 are the
-      // defaults the settings card shows; both can be changed there later.
-      await setAutoApprove(workspaceId, { enabled: autoApprove, holdHours: 24, minSeo: 70 });
-    }
-    // Optional: saved only when actually answered, never as a blank.
-    const source = attribution.source;
-    if (s === ATTRIBUTION_STEP && source && attributionComplete(attribution)) await saveAttribution(source, attribution.note);
-  }
-
-  function next() {
+  /**
+   * The one button. Saves everything on the screen, marks the wizard done and
+   * starts the run. Nothing is saved before this: the five-step version wrote
+   * each screen on Continue, so a person who closed the tab on screen three had
+   * two screens of half-checked answers on disk and a wizard that reopened on
+   * screen one anyway.
+   */
+  function finish() {
     setError(null);
     start(async () => {
       try {
-        await persist(step);
-        if (step !== last) {
-          goToStep(step + 1);
-        } else {
-          await completeWizard(workspaceId);
-          posthog.capture("onboarding_completed", { workspace_id: workspaceId });
-          setRunning(true);
-        }
+        if (profile) await saveProfile(workspaceId, profile);
+        await saveSiteDetails(workspaceId, site);
+        await completeWizard(workspaceId);
+        posthog.capture("onboarding_completed", { workspace_id: workspaceId });
+        setRunning(true);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not save this step.");
+        setError(e instanceof Error ? e.message : "Could not save this.");
       }
     });
   }
-
-  /** Leave this screen as it is - nothing typed on it is saved - and move on. */
-  function skipStep() {
-    setError(null);
-    goToStep(step + 1);
-  }
-
 
   // Sent here by the dashboard gate, with no run recent enough to resume.
   // There is nothing to show the progress of and nothing to set up again -
   // only the card stands between this account and the product.
   if (!running && alreadyOnboarded && trialEligible) {
-    return <TrialGateScreen domain={domain} planned={gatePlan} report={gateReport} traffic={gateTraffic} written={gateWritten} />;
+    return <TrialGateScreen domain={domain} planned={gatePlan} report={gateReport} traffic={gateTraffic} written={gateWritten} askAttribution={askAttribution} />;
   }
 
   if (running) {
-    return <RunScreen workspaceId={workspaceId} domain={domain} weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} trialEligible={trialEligible} initialRun={resumed} />;
+    return <RunScreen workspaceId={workspaceId} domain={domain} weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} trialEligible={trialEligible} askAttribution={askAttribution} initialRun={resumed} />;
   }
 
   if (reading || !profile) return <ReadingSite domain={domain} />;
 
+  // Which sections open. Fixed by field, not by a confidence the model reports
+  // about itself: on the two live runs that decided this, it was confident
+  // about Semrush as a rival of an open-source SEO tool and about a
+  // description of AltoRank with no "open source" in it. Offerings and
+  // competitors are always open, because both seed keyword research and both
+  // are what it gets wrong most; the rest collapse to one line of their actual
+  // content, so a wrong answer is still glanceable rather than hidden behind
+  // a tick. The blog section opens itself when nothing was found.
+  const looking = discovery === "pending";
+  const siteFound = Boolean(site.sitemapUrl || site.blogRootUrl || site.exampleArticleUrls.length);
+  const businessLine = [profile.name, firstSentence(profile.description)].filter(Boolean).join(" · ");
+  const audienceLine = profile.audiences.length ? profile.audiences.join(", ") : "None yet";
+  const siteLine = looking
+    ? `Looking for a sitemap and a blog on ${domain}…`
+    : siteFound
+      ? [
+          site.sitemapUrl ? "Found the sitemap" : null,
+          site.blogRootUrl ? "found the blog" : null,
+          site.exampleArticleUrls.length ? `${site.exampleArticleUrls.length} example ${site.exampleArticleUrls.length === 1 ? "post" : "posts"}` : null,
+        ].filter(Boolean).join(", ")
+      : `Nothing found on ${domain}. Both are optional.`;
+
   return (
     <div className="min-h-screen bg-bg">
-      <Stepper steps={steps} current={step} />
+      <div className="mx-auto max-w-[720px] px-6 pb-28 pt-10">
+        <div className="mb-6 text-center">
+          <h1 className="mb-1.5 text-[21px] font-semibold">Check what we found</h1>
+          <p className="text-[13px] text-ink-2">
+            {readFailure
+              ? readFailure === "needs_plan"
+                ? "This needs a plan."
+                : `We could not fill this in from ${domain}.`
+              : "Based on your website, we've filled this in. Two lists need your eye; the rest is a glance."}
+          </p>
+        </div>
 
-      <div className="mx-auto max-w-[720px] px-6 pb-28 pt-8">
-        {step === 0 && (
-          <BusinessStep
-            profile={profile}
-            patch={patch}
-            domain={domain}
-            failure={readFailure}
-            failureMessage={readFailureMessage}
-            onRetry={() => {
-              setReadFailure(null);
-              setReadFailureMessage(null);
-              setReading(true);
-            }}
-          />
-        )}
-        {step === 1 && <AudienceStep profile={profile} patch={patch} />}
-        {step === 2 && <BlogStep site={site} setSite={setSite} discovery={discovery} domain={domain} />}
-        {step === 3 && <ArticlesStep output={output} setOutput={setOutput} autoApprove={autoApprove} setAutoApprove={setAutoApproveState} />}
-        {step === ATTRIBUTION_STEP && <AttributionStep value={attribution} onChange={setAttribution} />}
-        {step === last && <NextUp weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} autoApprove={autoApprove} />}
+        <div className="flex flex-col gap-3">
+          <Section
+            title="About your business"
+            line={businessLine || "Nothing read yet"}
+            open={readFailure !== null || !profile.name}
+            state={readFailure || !profile.name ? "attention" : "found"}
+          >
+            {readFailure && (
+              <div className="mb-4 flex items-start justify-between gap-4 rounded-[8px] border border-line bg-bg p-4">
+                <p className="m-0 text-[12.5px] leading-[1.6] text-ink-2">{readFailureMessage ?? FAILURE_COPY[readFailure]}</p>
+                {readFailure !== "no_model" && readFailure !== "needs_plan" && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setReadFailure(null);
+                      setReadFailureMessage(null);
+                      setReading(true);
+                    }}
+                  >
+                    Try again
+                  </Button>
+                )}
+              </div>
+            )}
+            <BusinessFields profile={profile} patch={patch} />
+          </Section>
+
+          {/* The two that cost money when wrong. Always open, no tick. */}
+          <div className="rounded-[10px] border border-accent/40 bg-panel p-5">
+            <OfferingList profile={profile} patch={patch} />
+          </div>
+          <div className="rounded-[10px] border border-accent/40 bg-panel p-5">
+            <CompetitorList profile={profile} patch={patch} />
+          </div>
+
+          {/* Empty is not found. An audience list the model returned nothing
+              for opens, and says so, rather than sitting closed under a tick. */}
+          <Section
+            title="Target audiences"
+            line={audienceLine}
+            open={profile.audiences.length === 0}
+            state={profile.audiences.length ? "found" : "attention"}
+          >
+            <AudienceList profile={profile} patch={patch} heading={false} />
+          </Section>
+
+          <Section
+            title="Where your content lives"
+            line={siteLine}
+            open={!looking && !siteFound}
+            state={looking ? "looking" : siteFound ? "found" : "attention"}
+          >
+            <div className="flex flex-col gap-4">
+              <SiteFields site={site} setSite={setSite} domain={domain} />
+              <div className="flex items-center justify-between rounded-[8px] border border-line bg-bg px-4 py-3">
+                <div>
+                  <div className="text-[13px] font-medium">Connect Search Console</div>
+                  <div className="text-[12px] text-ink-3">So we skip keywords you already rank for, and can show real clicks later.</div>
+                </div>
+                {/* New tab: this screen's answers are not saved until the button below. */}
+                <a href="/connect/google" target="_blank" rel="noreferrer">
+                  <Button size="sm">Connect</Button>
+                </a>
+              </div>
+            </div>
+          </Section>
+        </div>
+
         {error && <p className="mt-4 rounded-lg bg-err-soft px-3 py-2 text-[12.5px] text-err-ink">{error}</p>}
       </div>
 
-      {/* The bar is fixed because the Articles step is long and a Continue you
-          have to scroll for reads as a dead end. */}
+      {/* Fixed, so the button is never a scroll away. One button: there is no
+          Back because there is nowhere to go back to, and no Skip because
+          nothing left on this screen is worth skipping - the settings that
+          were live in Settings with the defaults we would have picked. */}
       <div className="fixed inset-x-0 bottom-0 border-t border-line bg-panel/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[720px] items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              onClick={() => goToStep(Math.max(0, step - 1))}
-              disabled={step === 0 || pending}
-            >
-              Back
-            </Button>
-            {/* Every screen can be skipped on its own: nothing typed on it is
-                saved and the next one opens. The last step has no link because
-                Finish is the way out. Skipping the setup wholesale is not
-                offered: the run is the product, and an account that skips it
-                lands on an empty dashboard with nothing to react to. */}
-            {step !== last && (
-              <button
-                type="button"
-                onClick={skipStep}
-                disabled={pending}
-                className="text-[12px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink"
-              >
-                Skip this step
-              </button>
-            )}
-          </div>
-          <Button
-            variant="accent"
-            onClick={next}
-            disabled={pending}
-          >
-            {pending
-              ? "Saving…"
-              : step !== last
-                ? "Continue"
-                : "Finish and plan my first month"}
+        <div className="mx-auto flex max-w-[720px] items-center justify-between gap-4 px-6 py-3">
+          <p className="m-0 text-[12.5px] leading-[1.5] text-ink-2">
+            Next: keywords, a 30-day plan, and the first article written while you watch.
+            {freeAllowanceClause(freeDrafts) ? ` ${freeAllowanceClause(freeDrafts)}` : ""}
+          </p>
+          <Button variant="accent" onClick={finish} disabled={pending || reading}>
+            {pending ? "Saving…" : "Plan my first month"}
           </Button>
         </div>
       </div>
@@ -395,24 +372,102 @@ export function OnboardingWizard({
   );
 }
 
-function Stepper({ steps, current }: { steps: string[]; current: number }) {
+/** The first sentence of a description, for the collapsed line. */
+function firstSentence(text: string | null | undefined): string {
+  const t = (text ?? "").trim();
+  if (!t) return "";
+  const m = t.match(/^.*?[.!?](?=\s|$)/);
+  return (m ? m[0] : t).slice(0, 140);
+}
+
+/**
+ * A collapsible section whose closed state still shows what is inside it.
+ *
+ * `<details>`, so the browser owns the toggle and a person can open anything.
+ * The summary carries the section's actual content on one line, not a
+ * checkbox: "ready" is a claim, and the collapsed sections are the ones the
+ * model is trusted on - which is exactly where a confident wrong answer would
+ * hide behind a tick.
+ */
+function Section({
+  title,
+  line,
+  open,
+  state,
+  children,
+}: {
+  title: string;
+  line: string;
+  open: boolean;
+  state: "found" | "looking" | "attention";
+  children: React.ReactNode;
+}) {
   return (
-    <div className="border-b border-line bg-panel">
-      <div className="mx-auto flex max-w-[860px] items-center gap-2 overflow-x-auto px-6 py-4">
-        {steps.map((label, i) => (
-          <div key={label} className="flex items-center gap-2 whitespace-nowrap">
-            <span
-              className={`grid h-4 w-4 place-items-center rounded-full text-[9px] ${
-                i < current ? "bg-accent text-bg" : i === current ? "border-2 border-accent" : "border border-line"
-              }`}
-            >
-              {i < current ? "✓" : ""}
+    <details open={open} className="group rounded-[10px] border border-line bg-panel">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 [&::-webkit-details-marker]:hidden">
+        <div className="min-w-0">
+          <h2 className="m-0 text-[13.5px] font-medium text-ink">{title}</h2>
+          <p className="m-0 mt-0.5 truncate text-[12.5px] text-ink-2 group-open:hidden">{line}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 text-[11px]">
+          {state === "found" && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-ok-soft px-2 py-0.5 text-ok-ink">
+              <Icons.check size={10} /> Found
             </span>
-            <span className={`text-[12.5px] ${i <= current ? "text-ink" : "text-ink-3"}`}>{label}</span>
-            {i < steps.length - 1 && <span className="mx-1 h-px w-6 bg-line" />}
-          </div>
-        ))}
-      </div>
+          )}
+          {state === "looking" && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-line px-2 py-0.5 text-ink-3">
+              <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-accent border-t-transparent" /> Looking
+            </span>
+          )}
+          {state === "attention" && (
+            <span className="rounded-full bg-warn-soft px-2 py-0.5 text-warn-ink">Needs a look</span>
+          )}
+          <span className="text-ink-3 transition-transform group-open:rotate-180">
+            <Icons.caretDown size={12} />
+          </span>
+        </div>
+      </summary>
+      <div className="border-t border-line px-5 py-5">{children}</div>
+    </details>
+  );
+}
+
+/**
+ * The one question about the person, asked once, where it now lives: beside
+ * the trial ask. One click saves it; nothing else on the screen waits for it.
+ * The copy says why we ask, because a question with no visible reason gets
+ * the answer that closes it fastest, and the answer we most need to be true
+ * is the one about AI.
+ */
+function AttributionAsk() {
+  const [value, setValue] = useState<AttributionDraft>(EMPTY_ATTRIBUTION);
+  const [saved, setSaved] = useState(false);
+  const [, start] = useTransition();
+  function onChange(next: AttributionDraft) {
+    setValue(next);
+    if (!next.source || !attributionComplete(next)) return;
+    const source = next.source;
+    start(async () => {
+      try {
+        await saveAttribution(source, next.note);
+        setSaved(true);
+      } catch {
+        // Optional by design: a failed save is not a thing to interrupt the
+        // trial ask with.
+      }
+    });
+  }
+  if (saved) {
+    return <p className="m-0 mt-4 text-[12.5px] text-ink-3">Thanks. That is the one thing we asked about you.</p>;
+  }
+  return (
+    <div className="mt-5 border-t border-line pt-4">
+      <p className="m-0 mb-2.5 text-[12.5px] leading-[1.5] text-ink-2">
+        <strong className="font-medium text-ink">Where did you hear about us?</strong> Optional. It is the only way we can
+        tell whether an AI answer sent you here, which is the thing we sell.
+      </p>
+      <AttributionPicker value={value} onChange={onChange} columns={5} />
     </div>
   );
 }
@@ -428,19 +483,10 @@ function ReadingSite({ domain }: { domain: string }) {
         </div>
         <h1 className="mb-2 text-[22px] font-semibold">Setting up your site</h1>
         <p className="mx-auto max-w-[420px] text-[13.5px] leading-[1.6] text-ink-2">
-          We read your homepage, and your blog if the homepage is thin, to fill in what we can. The next few
-          screens are a check rather than a form. About a minute.
+          We read your homepage, and your blog if the homepage is thin, to fill in what we can. The next
+          screen is a check rather than a form. About a minute.
         </p>
       </div>
-    </div>
-  );
-}
-
-function Head({ title, sub }: { title: string; sub: React.ReactNode }) {
-  return (
-    <div className="mb-6 text-center">
-      <h1 className="mb-1.5 text-[21px] font-semibold">{title}</h1>
-      <p className="text-[13px] text-ink-2">{sub}</p>
     </div>
   );
 }
@@ -455,174 +501,6 @@ const FAILURE_COPY: Record<InferenceReason, string> = {
   // reason depends on the account (out of free drafts, paused, card declined).
   needs_plan: "",
 };
-
-function BusinessStep({
-  profile,
-  patch,
-  domain,
-  failure,
-  failureMessage,
-  onRetry,
-}: {
-  profile: BusinessProfile;
-  patch: (p: Partial<BusinessProfile>) => void;
-  domain: string;
-  failure: InferenceReason | null;
-  /** Set when the refusal carries its own sentence (see InferenceResult). */
-  failureMessage: string | null;
-  onRetry: () => void;
-}) {
-  return (
-    <>
-      <Head
-        title="About your business"
-        sub={
-          failure
-            ? failure === "needs_plan"
-              ? "This needs a plan."
-              : `We could not fill this in from ${domain}.`
-            : "Based on your website, we've filled this in. Check it and correct anything wrong."
-        }
-      />
-      {failure && (
-        <div className="mb-4 flex items-start justify-between gap-4 rounded-[10px] border border-line bg-panel p-4">
-          <p className="m-0 text-[12.5px] leading-[1.6] text-ink-2">{failureMessage ?? FAILURE_COPY[failure]}</p>
-          {failure !== "no_model" && failure !== "needs_plan" && (
-            <Button size="sm" onClick={onRetry}>
-              Try again
-            </Button>
-          )}
-        </div>
-      )}
-      <div className="rounded-[10px] border border-line bg-panel p-5">
-        <BusinessFields profile={profile} patch={patch} />
-      </div>
-    </>
-  );
-}
-
-function AudienceStep({ profile, patch }: { profile: BusinessProfile; patch: (p: Partial<BusinessProfile>) => void }) {
-  return (
-    <>
-      <Head
-        title="What you sell, who buys it, and who you sell against"
-        sub="Keyword research starts from these three lists, and every keyword remembers which of them it came from. Remove anything that is not you."
-      />
-      <div className="mb-4 rounded-[10px] border border-line bg-panel p-5">
-        <OfferingList profile={profile} patch={patch} />
-      </div>
-      <div className="mb-4 rounded-[10px] border border-line bg-panel p-5">
-        <AudienceList profile={profile} patch={patch} />
-      </div>
-      <div className="rounded-[10px] border border-line bg-panel p-5">
-        <CompetitorList profile={profile} patch={patch} />
-      </div>
-    </>
-  );
-}
-
-function BlogStep({
-  site,
-  setSite,
-  discovery,
-  domain,
-}: {
-  site: SiteDetails;
-  setSite: (s: SiteDetails) => void;
-  discovery: SiteDiscovery | null | "pending";
-  domain: string;
-}) {
-  const looking = discovery === "pending";
-  const found = discovery && discovery !== "pending" && discovery.found;
-  const sub = looking
-    ? `Looking for a sitemap and a blog on ${domain}…`
-    : found
-      ? "We found these on your site. Correct them if they are wrong."
-      : `We could not find a sitemap or a blog on ${domain}. Add them if you have them; both are optional.`;
-  return (
-    <>
-      <Head title="Where your content lives" sub={sub} />
-      <div className="flex flex-col gap-4 rounded-[10px] border border-line bg-panel p-5">
-        <SiteFields site={site} setSite={setSite} domain={domain} />
-        <div className="flex items-center justify-between rounded-[8px] border border-line bg-bg px-4 py-3">
-          <div>
-            <div className="text-[13px] font-medium">Connect Search Console</div>
-            <div className="text-[12px] text-ink-3">So we skip keywords you already rank for, and can show real clicks later.</div>
-          </div>
-          {/* New tab, for the same reason as the destination tiles below:
-              this screen's answers are not saved until Continue. */}
-          <a href="/connect/google" target="_blank" rel="noreferrer">
-            <Button size="sm">Connect</Button>
-          </a>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function ArticlesStep({
-  output,
-  setOutput,
-  autoApprove,
-  setAutoApprove,
-}: {
-  output: OutputSettings;
-  setOutput: (o: OutputSettings) => void;
-  autoApprove: boolean;
-  setAutoApprove: (v: boolean) => void;
-}) {
-  return (
-    <>
-      <Head title="How your articles should read" sub="Set once. Every draft follows these until you change them in Settings." />
-      <div className="flex flex-col gap-4 rounded-[10px] border border-line bg-panel p-5">
-        <ApprovalGateCard value={autoApprove} onChange={setAutoApprove} />
-        <OutputFields output={output} setOutput={setOutput} />
-      </div>
-    </>
-  );
-}
-
-function NextUp({ weeklyLimit, freeDrafts, autoApprove }: { weeklyLimit: number; freeDrafts: number | null; autoApprove: boolean }) {
-  const allowance = freeAllowanceClause(freeDrafts);
-  return (
-    <p className="mt-6 text-center text-[12.5px] leading-[1.6] text-ink-2">
-      Next: we read your site properly, find what to write about, schedule up to{" "}
-      <strong className="font-medium text-ink">
-        {weeklyLimit >= 7 ? "one article a day" : `${weeklyLimit} article${weeklyLimit === 1 ? "" : "s"} a week`}
-      </strong>{" "}
-      for the next 30 days (only keywords that pass our checks make the plan), and write the first one.{" "}
-      {autoApprove
-        ? "Each draft is emailed to you and publishes a day later unless you hold it."
-        : "Every draft waits in review."}
-      {allowance ? ` ${allowance}` : ""}
-    </p>
-  );
-}
-
-/**
- * The one question about the person. The copy says why we ask, because a
- * question with no visible reason gets the answer that closes it fastest, and
- * the answer we most need to be true is the one about AI.
- */
-function AttributionStep({
-  value,
-  onChange,
-}: {
-  value: AttributionDraft;
-  onChange: (v: AttributionDraft) => void;
-}) {
-  return (
-    <>
-      <Head
-        title="One last thing"
-        sub="How did you hear about us? Pick the closest, or finish without answering. It is the only way we can tell whether an AI answer sent you here, which is the thing we sell."
-      />
-      <div className="rounded-[10px] border border-line bg-panel p-5">
-        <AttributionPicker value={value} onChange={onChange} />
-      </div>
-    </>
-  );
-}
 
 /** "Sep 7" from a YYYY-MM-DD, in UTC so the day the planner wrote is the day shown. */
 function calendarDay(iso: string): string {
@@ -649,12 +527,14 @@ function TrialGateScreen({
   report,
   traffic,
   written,
+  askAttribution = false,
 }: {
   domain: string;
   planned: OnboardingPlanned[];
   report: FirstLookReport | null;
   traffic: TrafficRange | null;
   written: { keyword: string; title: string; wordCount: number }[];
+  askAttribution?: boolean;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [interval, setInterval] = useState<BillingInterval>("month");
@@ -723,6 +603,7 @@ function TrialGateScreen({
               </p>
             )}
           </div>
+          {askAttribution && <AttributionAsk />}
         </div>
 
         <div className="mx-auto flex max-w-[640px] flex-col gap-5">
@@ -845,10 +726,12 @@ function TrialStep({
   drafts,
   planned,
   returnTo,
+  askAttribution = false,
 }: {
   drafts: OnboardingArticle[];
   planned: OnboardingPlanned[];
   returnTo: string;
+  askAttribution?: boolean;
 }) {
   const words = drafts.reduce((n, d) => n + d.wordCount, 0);
   return (
@@ -863,6 +746,7 @@ function TrialStep({
         </p>
         <StartTrialButton returnTo={returnTo} />
       </div>
+      {askAttribution && <AttributionAsk />}
 
       {planned.length > 0 && (
         <p className="m-0 mt-5 text-[13px] leading-[1.6] text-ink-2">
@@ -918,6 +802,7 @@ function RunScreen({
   weeklyLimit,
   freeDrafts,
   trialEligible,
+  askAttribution = false,
   initialRun,
 }: {
   workspaceId: string;
@@ -925,6 +810,7 @@ function RunScreen({
   weeklyLimit: number;
   freeDrafts: number | null;
   trialEligible: boolean;
+  askAttribution?: boolean;
   initialRun: OnboardingRunSnapshot | null;
 }) {
   const router = useRouter();
@@ -997,7 +883,7 @@ function RunScreen({
         </div>
 
         {trialStep && (
-          <TrialStep drafts={drafts} planned={planned} returnTo="/articles?status=review" />
+          <TrialStep drafts={drafts} planned={planned} returnTo="/articles?status=review" askAttribution={askAttribution} />
         )}
 
         <div className="mx-auto max-w-[640px]">

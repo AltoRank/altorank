@@ -3,9 +3,9 @@ import { admin, signIn, todayUtc } from "./fixtures/account";
 
 /**
  * The whole first session, on fixtures: a new account is sent to the wizard,
- * every screen persists what it shows, the one question about the person is
- * asked last, finishing runs the pipeline, and the plan it produces is the one
- * the calendar then shows.
+ * the one screen shows what was read with the two lists that feed keywords
+ * open, the button saves it all and runs the pipeline, and the plan it
+ * produces is the one the calendar then shows.
  */
 test("a new account is walked from /dashboard to a planned first month", async ({ page, account }) => {
   const ws = account.workspaces[0];
@@ -28,21 +28,56 @@ test("a new account is walked from /dashboard to a planned first month", async (
   await expect(page).toHaveURL(/\/onboarding$/);
   await expect(page.getByText(`Reading ${ws.domain}…`)).toBeVisible();
 
-  // --- Step 1: the proposal, filled from the (stubbed) site ---------------
-  await expect(page.getByRole("heading", { name: "About your business" })).toBeVisible();
+  // --- One screen: what was read, with the two lists that feed keywords open --
+  //
+  // Five steps until 2026-09-11. What a person actually needs to look at
+  // before money is spent is the offerings and the competitors - both seed
+  // keyword research, and both are what the model gets wrong most - so those
+  // are open. Business, audiences and the blog are collapsed to one line each
+  // and open on a click. Article settings live in Settings with their
+  // defaults; the question about the person moved to the trial ask.
+  await expect(page.getByRole("heading", { name: "Check what we found" })).toBeVisible();
   await expect(page.getByText("Based on your website, we've filled this in.", { exact: false })).toBeVisible();
+
+  // Open by default: the two lists that seed keyword research.
+  await expect(page.getByText("slow travel itineraries italy")).toBeVisible();
+  await expect(page.getByText("tripcraft.example")).toBeVisible();
+
+  // Collapsed to a line, and the line carries the content rather than a tick:
+  // a wrong description has to be glanceable, not hidden behind "ready".
+  const business = page.locator("details", { has: page.getByRole("heading", { name: "About your business" }) });
+  await expect(business).toContainText("Nomad Atlas");
+  await business.locator("summary").click();
   await expect(page.getByLabel("Business name")).toHaveValue("Nomad Atlas");
   await expect(page.getByLabel("Language")).toHaveValue("Italian");
   await expect(page.getByLabel(/^Market/)).toHaveValue("Italy");
-  await page.getByRole("button", { name: "Continue" }).click();
 
-  // --- Step 2: audiences and competitors, and step 1 is on disk -------------
-  await expect(page.getByRole("heading", { name: "What you sell, who buys it, and who you sell against" })).toBeVisible();
-  await expect(page.getByText("Independent travel planners in Italy")).toBeVisible();
-  await expect(page.getByText("tripcraft.example")).toBeVisible();
+  const audiences = page.locator("details", { has: page.getByRole("heading", { name: "Target audiences" }) });
+  await expect(audiences).toContainText("Independent travel planners in Italy");
+
+  // The sitemap and blog were found, not guessed, and the line says so.
+  const blog = page.locator("details", { has: page.getByRole("heading", { name: "Where your content lives" }) });
+  await expect(blog).toContainText("Found");
+  await blog.locator("summary").click();
+  const sitemapUrl = `https://${ws.domain}/sitemap.xml`;
+  await expect(page.getByLabel(/^Sitemap/)).toHaveValue(sitemapUrl);
+  await expect(page.getByLabel(/^Blog address/)).toHaveValue(`https://${ws.domain}/blog/`);
+
+  // One button. It saves everything on the screen, marks the wizard done and
+  // starts the run; there is no Back and no Skip, because there is nowhere to
+  // go back to and nothing left worth skipping.
+  await page.getByRole("button", { name: "Plan my first month" }).click();
+
+  // --- The run ---------------------------------------------------------------
+  await expect(page.getByRole("heading", { name: "Creating your content plan" })).toBeVisible();
+
+  // --- Everything on the screen is on disk -------------------------------------
+  // Read after the run heading: the finish awaits its saves before it starts
+  // the run, so this heading is the wait. Reading straight after the click
+  // raced the write and read the row before it was there.
   const { data: afterProfile } = await db
     .from("workspaces")
-    .select("name, language, location_code, business_profile")
+    .select("name, language, location_code, business_profile, sitemap_url, blog_root_url")
     .eq("id", ws.id)
     .single();
   expect(afterProfile?.name).toBe("Nomad Atlas");
@@ -50,52 +85,8 @@ test("a new account is walked from /dashboard to a planned first month", async (
   expect(afterProfile?.language).toBe("it");
   expect(afterProfile?.location_code).toBe(2380);
   expect((afterProfile?.business_profile as { name: string }).name).toBe("Nomad Atlas");
-  await page.getByRole("button", { name: "Continue" }).click();
-
-  // --- Step 3: the sitemap and blog were found, not guessed ------------------
-  await expect(page.getByRole("heading", { name: "Where your content lives" })).toBeVisible();
-  await expect(page.getByText("We found these on your site.", { exact: false })).toBeVisible();
-  const sitemapUrl = `https://${ws.domain}/sitemap.xml`;
-  await expect(page.getByLabel(/^Sitemap/)).toHaveValue(sitemapUrl);
-  await expect(page.getByLabel(/^Blog address/)).toHaveValue(`https://${ws.domain}/blog/`);
-  await page.getByRole("button", { name: "Continue" }).click();
-
-  // --- Step 4: output settings -----------------------------------------------
-  await expect(page.getByRole("heading", { name: "How your articles should read" })).toBeVisible();
-  const { data: afterSite } = await db.from("workspaces").select("sitemap_url, blog_root_url").eq("id", ws.id).single();
-  expect(afterSite?.sitemap_url).toBe(sitemapUrl);
-  expect(afterSite?.blog_root_url).toBe(`https://${ws.domain}/blog/`);
-  await page.getByLabel(/^Tone/).selectOption("friendly");
-  await page.getByRole("button", { name: "Continue" }).click();
-
-  // --- Step 5: where they heard of us, asked once per account ----------------
-  //
-  // The destinations screen that used to sit here was removed: no connector has
-  // been watched working on a live site, so the wizard no longer asks for one
-  // (lib/cms/connectable.ts). Articles is now the last screen about the site.
-  //
-  // The step-4 assertion below waits on this heading first, and must keep doing
-  // so. Each screen persists on Continue, and the removed screen was acting as
-  // an accidental wait for that save; reading the table straight after the
-  // click raced it and read the row before it was written.
-  await expect(page.getByRole("heading", { name: "One last thing" })).toBeVisible();
-
-  // --- Step 4 is on disk ------------------------------------------------------
-  const { data: output } = await db
-    .from("workspace_output_settings")
-    .select("tone, internal_links")
-    .eq("workspace_id", ws.id)
-    .maybeSingle();
-  expect(output?.tone).toBe("friendly");
-  expect(output?.internal_links).toBe(3);
-  const finish = page.getByRole("button", { name: "Finish and plan my first month" });
-  // The question is optional: Finish is live before it is answered.
-  await expect(finish).toBeEnabled();
-  await page.getByRole("radio", { name: "ChatGPT or other AI" }).click();
-  await finish.click();
-
-  // --- The run ---------------------------------------------------------------
-  await expect(page.getByRole("heading", { name: "Creating your content plan" })).toBeVisible();
+  expect(afterProfile?.sitemap_url).toBe(sitemapUrl);
+  expect(afterProfile?.blog_root_url).toBe(`https://${ws.domain}/blog/`);
   const plannedLine = page.getByText(/Planned \d+ articles? over the next 30 days/);
   await expect(plannedLine).toBeVisible({ timeout: 30_000 });
   const planned = Number((await plannedLine.textContent())?.match(/Planned (\d+)/)?.[1]);
@@ -109,9 +100,10 @@ test("a new account is walked from /dashboard to a planned first month", async (
   const { data: wsDone } = await db.from("workspaces").select("onboarded_at, onboarding_skipped_at").eq("id", ws.id).single();
   expect(wsDone?.onboarded_at).not.toBeNull();
   expect(wsDone?.onboarding_skipped_at).toBeNull();
-  const { data: accountRow } = await db.from("accounts").select("attribution_source, attribution_answered_at").eq("id", account.accountId).single();
-  expect(accountRow?.attribution_source).toBe("ai");
-  expect(accountRow?.attribution_answered_at).not.toBeNull();
+  // Not asserted here any more: where the person heard of us is asked on the
+  // trial screen, one optional click, and that screen only renders for an
+  // account that can trial - the e2e server has no Stripe key, so it never
+  // does. The picker itself is covered where it lives.
 
   const { data: entries } = await db
     .from("calendar_entries")

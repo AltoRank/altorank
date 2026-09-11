@@ -99,7 +99,7 @@ that small: add a stub only for a call that leaves the machine or costs money.
 
 | File | Covers |
 | --- | --- |
-| `onboarding.spec.ts` | `/dashboard` -> `/onboarding`, the reading state, five steps each persisting, the run screen, the plan on `/content`, the first draft in review on its day |
+| `onboarding.spec.ts` | `/dashboard` -> `/onboarding`, the reading state, the one check screen (offerings and competitors open, the rest collapsed to a line), the run screen, the plan on `/content`, the first draft in review on its day |
 | `wizard-honesty.spec.ts` | an unreadable site shows the failure, the reason and Try again; the headline does not claim the fields were filled |
 | `approval-gate.spec.ts` | a draft in review has no publish control; approving moves it to `approved`; no `publish_log` row is written |
 | `scope.spec.ts` | two workspaces on one account; keywords and calendar show only the switched-to workspace |
