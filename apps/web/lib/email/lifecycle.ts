@@ -723,7 +723,7 @@ export type SetupUnfinishedEmail = {
  */
 export function renderSetupUnfinished(a: SetupUnfinishedEmail): RenderedEmail {
   const site = a.domain ?? "your site";
-  const resume = appLink(wizardStepPath("Articles"));
+  const resume = appLink(wizardStepPath());
   const footerNote = `Sent because setup for ${site} on AltoRank was started and not finished. This is the only email about it.`;
 
   if (a.draft) {

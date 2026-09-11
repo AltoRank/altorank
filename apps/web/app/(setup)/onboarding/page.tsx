@@ -6,9 +6,7 @@ import { estimateFirstMonthTraffic } from "@/lib/onboarding/first-month-outlook"
 import { createClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { OnboardingWizard } from "@/components/onboarding/wizard";
-import { SITE_STEPS, stepFromParam } from "@/lib/onboarding/steps";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
-import { outputFromRow } from "@/lib/onboarding/output-settings";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { getRequestQuota } from "@/lib/queries/quota";
@@ -25,11 +23,11 @@ export const maxDuration = 120;
  *
  * Scoped like every other page: the workspace comes from the switcher, not from
  * a query parameter, so a person with two sites sets up the one they are
- * looking at. A saved profile, site details and output settings are handed
- * back in so reopening the wizard edits rather than re-proposes.
+ * looking at. A saved profile and site details are handed back in so
+ * reopening the wizard edits rather than re-proposes. Article settings are
+ * not asked here since 2026-09-11: they live in Settings with their defaults.
  */
-export default async function OnboardingPage({ searchParams }: { searchParams: Promise<{ step?: string }> }) {
-  const { step } = await searchParams;
+export default async function OnboardingPage() {
   const scopeId = await getScopedWorkspaceId();
   if (!scopeId) redirect("/workspaces");
 
@@ -41,7 +39,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   const authRead = requireAuth();
   const quotaRead = authRead.then(({ accountId, user }) => getRequestQuota(accountId, user.email ?? null));
   const simulation = await getSimulation();
-  const [{ data: workspace }, { data: output }, quota, run, auth] = await Promise.all([
+  const [{ data: workspace }, quota, run, auth] = await Promise.all([
     supabase
       .from("workspaces")
       // The account's answer rides along on the workspace's own account row,
@@ -50,11 +48,6 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       .select("id, domain, business_profile, sitemap_url, blog_root_url, example_article_urls, auto_generate_weekly_limit, auto_approve, onboarded_at, onboarding_skipped_at, accounts(attribution_source)")
       .eq("id", scopeId)
       .single(),
-    supabase
-      .from("workspace_output_settings")
-      .select("tone, internal_links, table_of_contents, call_to_action, first_person, mention_similar_products, global_article_prompt")
-      .eq("workspace_id", scopeId)
-      .maybeSingle(),
     quotaRead,
     // The run in progress, or the one just finished, so a reload lands on
     // the run screen rather than on step 1. Same read /api/onboard/state
@@ -128,8 +121,6 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
     : [[], null, [], [], null];
   const gateTraffic = gateShown ? estimateFirstMonthTraffic(gateKeywords, gateAuthority) : null;
 
-  const initialOutput = outputFromRow(output);
-
   return (
     <OnboardingWizard
       workspaceId={workspace.id}
@@ -156,9 +147,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
         blogRootUrl: workspace.blog_root_url ?? "",
         exampleArticleUrls: (workspace.example_article_urls as string[] | null) ?? [],
       }}
-      initialOutput={initialOutput}
       askAttribution={!answered}
-      initialStep={stepFromParam(step, SITE_STEPS.length + (answered ? 0 : 1))}
       // Already through setup once. The dashboard gate sends such a person
       // here for the card, and without this they would be handed the wizard
       // from its first screen - and "Finish" at the end of it starts a whole
@@ -170,7 +159,6 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       gateTraffic={gateTraffic}
       gateWritten={gateWritten}
       initialRun={run}
-      initialAutoApprove={Boolean(workspace.auto_approve)}
     />
   );
 }
