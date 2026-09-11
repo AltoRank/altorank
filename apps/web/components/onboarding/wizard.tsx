@@ -617,27 +617,50 @@ const VERDICT_LABEL: Record<OnboardingArticle["verdict"], { text: string; classN
  * keyword, length, fact-check verdict, and the thirty days scheduled behind
  * them. What the trial buys is the next thing they would do with what they
  * are looking at (approve, publish, keep writing), so the ask is made here,
- * before the dashboard, and not from a banner they find later. The skip is a
- * text link, not a button: the dashboard offers the trial again, but this is
- * the screen that is meant to convert.
+ * before the dashboard, and not from a banner they find later. There is no
+ * skip: the schedule starts when the trial does, so a person who leaves from
+ * here has nothing running to come back to.
  */
 function TrialStep({
   drafts,
   planned,
   returnTo,
-  skipHref,
 }: {
   drafts: OnboardingArticle[];
   planned: OnboardingPlanned[];
   returnTo: string;
-  skipHref: string;
 }) {
-  const router = useRouter();
   const words = drafts.reduce((n, d) => n + d.wordCount, 0);
   return (
-    <div className="mt-4 rounded-[10px] border border-accent/40 bg-panel p-5">
+    <div className="mx-auto mb-6 max-w-[640px] rounded-[10px] border border-accent/40 bg-panel p-5">
+      {/* The ask comes first. Everything below it is the evidence for it, and
+          an earlier arrangement put the evidence on top: on a site with a full
+          report the button sat a full screen down and was never seen. */}
+      <div className="rounded-[8px] bg-accent/5 p-4">
+        <div className="mb-1 text-[11px] uppercase tracking-wide text-accent">7-day trial</div>
+        <p className="m-0 mb-3 text-[13.5px] leading-[1.6]">
+          <strong>Approve, publish and keep writing.</strong> {TRIAL_OFFER}
+        </p>
+        <StartTrialButton returnTo={returnTo} />
+      </div>
+
+      {planned.length > 0 && (
+        <p className="m-0 mt-5 text-[13px] leading-[1.6] text-ink-2">
+          {/* "on the calendar", not "more": the plan counts the drafts above,
+              so a run that planned eight and wrote seven has one still to come,
+              not eight. */}
+          <strong>On your calendar:</strong> {planned.length} {planned.length === 1 ? "article" : "articles"} over
+          the next 30 days, {planned[0].date === planned[planned.length - 1].date ? "on" : "from"}{" "}
+          {calendarDay(planned[0].date)}
+          {planned[0].date === planned[planned.length - 1].date ? "" : ` to ${calendarDay(planned[planned.length - 1].date)}`}.
+          {drafts.length < planned.length
+            ? ` ${planned.length - drafts.length} of them still to write; the schedule starts when the trial does.`
+            : " The schedule keeps writing after these once the trial starts."}
+        </p>
+      )}
+
       {drafts.length > 0 && (
-        <div className="mb-5">
+        <div className="mt-5">
           <div className="mb-2 flex items-baseline justify-between">
             <div className="text-[11px] uppercase tracking-wide text-ink-3">Written for you</div>
             {words > 0 && <div className="text-[11px] text-ink-3">{words.toLocaleString("en-US")} words</div>}
@@ -660,38 +683,6 @@ function TrialStep({
           </ul>
         </div>
       )}
-
-      {planned.length > 0 && (
-        <p className="m-0 mb-5 text-[13px] leading-[1.6] text-ink-2">
-          {/* "on the calendar", not "more": the plan counts the drafts above,
-              so a run that planned eight and wrote seven has one still to come,
-              not eight. */}
-          <strong>On your calendar:</strong> {planned.length} {planned.length === 1 ? "article" : "articles"} over
-          the next 30 days, {planned[0].date === planned[planned.length - 1].date ? "on" : "from"}{" "}
-          {calendarDay(planned[0].date)}
-          {planned[0].date === planned[planned.length - 1].date ? "" : ` to ${calendarDay(planned[planned.length - 1].date)}`}.
-          {drafts.length < planned.length
-            ? ` ${planned.length - drafts.length} of them still to write; the schedule keeps going while the trial runs.`
-            : " The schedule keeps writing after these while the trial runs."}
-        </p>
-      )}
-
-      <div className="rounded-[8px] bg-accent/5 p-4">
-        <div className="mb-1 text-[11px] uppercase tracking-wide text-accent">7-day trial</div>
-        <p className="m-0 mb-3 text-[13.5px] leading-[1.6]">
-          <strong>Approve, publish and keep writing.</strong> {TRIAL_OFFER}
-        </p>
-        <div className="flex flex-wrap items-center gap-4">
-          <StartTrialButton returnTo={returnTo} />
-          <button
-            type="button"
-            onClick={() => router.push(skipHref)}
-            className="bg-transparent p-0 text-[12.5px] text-ink-3 underline-offset-2 hover:underline"
-          >
-            Not now, I&apos;ll look around first
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -785,6 +776,10 @@ function RunScreen({
           </p>
         </div>
 
+        {trialStep && (
+          <TrialStep drafts={drafts} planned={planned} returnTo="/articles?status=review" />
+        )}
+
         <div className="mx-auto max-w-[640px]">
           <div className="rounded-[10px] border border-line bg-panel p-5">
             <OnboardingProgress
@@ -855,10 +850,6 @@ function RunScreen({
               </div>
             )}
           </div>
-
-          {trialStep && (
-            <TrialStep drafts={drafts} planned={planned} returnTo="/articles?status=review" skipHref={next.href} />
-          )}
 
         </div>
       </div>

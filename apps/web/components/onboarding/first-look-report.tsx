@@ -7,10 +7,13 @@
 //
 // Everything here is already in `domain_audits` by the time the drafting
 // phase starts (lib/onboarding/first-look-report.ts maps the row). Sections
-// are native <details>, open by default, so a person can fold what they have
-// read; nothing is fetched from this component and nothing here changes the
-// run. Numbers are judged where a threshold is a matter of record - Core Web
-// Vitals against Google's published bands - and shown plain where it is not.
+// are tabs: one panel at a time, so the report cannot push the screen's own
+// call to action below the fold. Nothing is fetched from this component and
+// nothing here changes the run. Numbers are judged where a threshold is a
+// matter of record - Core Web Vitals against Google's published bands - and
+// shown plain where it is not.
+
+import { useState } from "react";
 
 import { Icons } from "@/components/ui";
 import type { FirstLookReport, ReportSpeed } from "@/lib/onboarding/first-look-report";
@@ -87,23 +90,18 @@ function ScoreRing({ value, label, size = 44 }: { value: number | null; label: s
   );
 }
 
-function Section({ title, sub, meta, children, defaultOpen = true }: { title: string; sub?: string; meta?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean }) {
+function Section({ title, sub, meta, children }: { title: string; sub?: string; meta?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <details open={defaultOpen} className="group rounded-[8px] border border-line bg-bg">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3.5 py-2.5 [&::-webkit-details-marker]:hidden">
+    <div className="rounded-[8px] border border-line bg-bg">
+      <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
         <div className="min-w-0">
           <div className="text-[12.5px] font-medium text-ink">{title}</div>
           {sub && <div className="text-[11.5px] text-ink-3">{sub}</div>}
         </div>
-        <div className="flex shrink-0 items-center gap-2 text-[11px] text-ink-3">
-          {meta}
-          <span className="transition-transform group-open:rotate-180">
-            <Icons.caretDown size={12} />
-          </span>
-        </div>
-      </summary>
+        {meta && <div className="flex shrink-0 items-center gap-2 text-[11px] text-ink-3">{meta}</div>}
+      </div>
       <div className="border-t border-line px-3.5 py-3">{children}</div>
-    </details>
+    </div>
   );
 }
 
@@ -165,7 +163,7 @@ const ms = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)} s` : `${Math.ro
 function Speed({ speed }: { speed: ReportSpeed }) {
   if (!speed.ok) {
     return (
-      <Section title="Speed" sub="Lighthouse, mobile" meta={<Pill tone="muted">not measured</Pill>} defaultOpen={false}>
+      <Section title="Speed" sub="Lighthouse, mobile" meta={<Pill tone="muted">not measured</Pill>}>
         <p className="m-0 text-[12px] text-ink-3">{speed.detail}</p>
       </Section>
     );
@@ -269,7 +267,6 @@ function Issues({ report }: { report: FirstLookReport }) {
       title="What the crawl found"
       sub={`${report.pagesCrawled} page${report.pagesCrawled === 1 ? "" : "s"} read${report.onPageScore !== null ? `, on-page score ${report.onPageScore}` : ""}`}
       meta={<Pill tone={total === 0 ? "ok" : report.issues.some((g) => g.severity === "error") ? "err" : "warn"}>{total === 0 ? "clean" : `${total} issue${total === 1 ? "" : "s"}`}</Pill>}
-      defaultOpen={total > 0}
     >
       {total === 0 ? (
         <p className="m-0 text-[12px] text-ink-3">Nothing mechanically wrong on the pages read.</p>
@@ -296,7 +293,6 @@ function ExistingPages({ pages }: { pages: NonNullable<FirstLookReport["existing
       title="Your existing pages"
       sub={`${pages.checked} checked, ${pages.withIssues} with something to fix`}
       meta={<Pill tone={pages.withIssues === 0 ? "ok" : "warn"}>{pages.withIssues === 0 ? "clean" : `${pages.withIssues} to fix`}</Pill>}
-      defaultOpen={pages.withIssues > 0}
     >
       {pages.worst.length === 0 ? (
         <p className="m-0 text-[12px] text-ink-3">Every page checked passed its technical checks.</p>
@@ -320,6 +316,7 @@ function ExistingPages({ pages }: { pages: NonNullable<FirstLookReport["existing
 // --- The report ------------------------------------------------------------
 
 export function FirstLookReportView({ report, domain, live }: { report: FirstLookReport | null; domain: string; live: boolean }) {
+  const [active, setActive] = useState(0);
   if (!report) {
     if (!live) return null;
     return (
@@ -328,26 +325,48 @@ export function FirstLookReportView({ report, domain, live }: { report: FirstLoo
       </div>
     );
   }
-  const sections = [
-    report.readiness && <Readiness key="readiness" readiness={report.readiness} />,
-    report.speed && <Speed key="speed" speed={report.speed} />,
-    report.page && <Homepage key="page" page={report.page} />,
-    (report.pagesCrawled > 0 || report.issues.length > 0) && <Issues key="issues" report={report} />,
-    report.existingPages && <ExistingPages key="existing" pages={report.existingPages} />,
-  ].filter(Boolean);
-  if (!sections.length) return null;
+  // Label, then panel. The label is what a person scans across the row, so it
+  // is the plain-language name of the thing measured, not the section title.
+  const tabs: { id: string; label: string; node: React.ReactNode }[] = [
+    report.readiness && { id: "readiness", label: "AI readability", node: <Readiness readiness={report.readiness} /> },
+    report.speed && { id: "speed", label: "Speed", node: <Speed speed={report.speed} /> },
+    report.page && { id: "page", label: "Homepage", node: <Homepage page={report.page} /> },
+    (report.pagesCrawled > 0 || report.issues.length > 0) && { id: "issues", label: "Crawl", node: <Issues report={report} /> },
+    report.existingPages && { id: "existing", label: "Your pages", node: <ExistingPages pages={report.existingPages} /> },
+  ].filter(Boolean) as { id: string; label: string; node: React.ReactNode }[];
+  if (!tabs.length) return null;
+  // A tab that disappears between renders (the run is still filling the report
+  // in) must not leave the panel blank.
+  const current = tabs[Math.min(active, tabs.length - 1)];
   return (
     <div className="flex flex-col gap-2.5" data-testid="first-look-report">
-      <div className="flex items-baseline justify-between gap-3">
-        <div>
-          <div className="text-[12.5px] font-medium text-ink">{domain}, as we read it</div>
-          <p className="m-0 text-[11.5px] text-ink-3">
-            {live ? "Something to read while the first draft is written. " : ""}
-            Measured on the site&apos;s public pages; nothing here needed an account.
-          </p>
-        </div>
+      <div>
+        <div className="text-[12.5px] font-medium text-ink">{domain}, as we read it</div>
+        <p className="m-0 text-[11.5px] text-ink-3">
+          {live ? "Something to read while the first draft is written. " : ""}
+          Measured on the site&apos;s public pages; nothing here needed an account.
+        </p>
       </div>
-      {sections}
+      <div role="tablist" aria-label={`${domain} report`} className="-mx-1 flex flex-wrap gap-1 overflow-x-auto px-1">
+        {tabs.map((t, i) => {
+          const on = t.id === current.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              onClick={() => setActive(i)}
+              className={`shrink-0 rounded-full border px-2.5 py-1 text-[11.5px] transition-colors ${
+                on ? "border-accent/40 bg-accent/10 text-ink" : "border-line bg-bg text-ink-3 hover:text-ink"
+              }`}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+      <div role="tabpanel">{current.node}</div>
     </div>
   );
 }
