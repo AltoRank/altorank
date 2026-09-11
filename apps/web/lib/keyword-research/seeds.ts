@@ -151,6 +151,41 @@ const STOP = new Set([
  * beats "keyword" and "research" separately. Crude by design: the metrics
  * call decides which of these anyone searches.
  */
+/**
+ * Every spelling of a rival worth matching a phrase against.
+ *
+ * `competitorName` answers a different question - what to put in front of
+ * "alternatives" - and its rule that a name of three letters or fewer keeps
+ * its TLD ("cal.com", not "cal") is right for composing a seed and wrong for
+ * filtering: it made `wix` unmatchable against wix.com, and qasimcode.com
+ * stored `wix` four times over. The suffix trim is the same story from the
+ * other end: `acuity` never matched `acuityscheduling`.
+ */
+const PRODUCT_SUFFIX = /(scheduling|software|app|apps|hq|labs|io|online|digital|studio|group|agency|media|tech)$/;
+
+export function brandAliases(domain: string): string[] {
+  const host = brandFromDomain(domain);
+  const label = host.split(".").slice(0, -1).join(".") || host;
+  const head = label.replace(PRODUCT_SUFFIX, "");
+  // Three characters is the floor: below it a "name" matches half the
+  // language ("ai", "co"), and no brand is worth that many false drops.
+  return [...new Set([host, label, head])].filter((n) => n.length >= 3);
+}
+
+/**
+ * Whether a phrase is a rival's name or our own: the SERP puts a brand on its
+ * own results, and a blog on "<rival> pricing" is not a plan.
+ */
+export function isBrandTerm(term: string, domain: string, competitors: readonly string[]): boolean {
+  const t = ` ${term.toLowerCase().trim()} `;
+  const names = [domain, ...competitors]
+    .flatMap((d) => brandAliases(d))
+    .map((n) => n.trim().toLowerCase())
+    .filter(Boolean);
+  const squashed = t.replace(/\s+/g, "");
+  return names.some((n) => t.includes(` ${n} `) || squashed.includes(n.replace(/\s+/g, "")));
+}
+
 export function keyNouns(text: string, limit = 6): string[] {
   const words = text
     .toLowerCase()

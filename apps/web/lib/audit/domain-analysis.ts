@@ -29,6 +29,7 @@ import { profileIsUsable, scoreRelevance, subjectVocabulary } from "@/lib/seo/to
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { discoverBuyerKeywords } from "@/lib/keyword-research/discovery";
+import { isBrandTerm } from "@/lib/keyword-research/seeds";
 import { judgeBuyerFit } from "@/lib/keyword-research/buyer-fit";
 import { isOutOfReach, isHopeless } from "@/lib/seo/difficulty";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
@@ -761,8 +762,14 @@ export async function analyseDomain(options: {
         const ownPages = await ownSitemapPaths(domain, depth, ranked.length, recordedBodies(recorded.resources));
         const rankedOwn = rankedOnOwnPages(ranked, ownPages);
         const rankedDropped = ranked.length - rankedOwn.length;
+        // A ranking is not a licence to store a rival's name. qasimcode.com
+        // ranks somewhere for "wix" and "acuity" because its blog writes about
+        // rescuing sites off them; both were stored as things to target, and
+        // both name a competitor the person had just listed in the wizard.
+        // The brand filter applied to the other two sources, never to this one.
+        const brandNames = [...new Set((business?.competitors ?? []).map((c) => c))];
         const fromRanked: DiscoveredKeyword[] = rankedOwn
-          .filter((k) => k.position !== null)
+          .filter((k) => k.position !== null && !isBrandTerm(k.keyword, domain, brandNames))
           .map((k) => ({
             keyword: k.keyword,
             volume: k.volume ?? 0,
@@ -805,12 +812,24 @@ export async function analyseDomain(options: {
         for (const k of fromCompetitors) add(k, 1);
         for (const k of fromIdeas) add(k, 2);
 
-        // The buyer test, once, over everything the sources produced that the
-        // SERP has not already decided (a ranking is a test result; see the
-        // storage sort). One model call on the cheap tier; with no model the
-        // verdicts are empty and the vocabulary filter below stands alone.
-        const unproven = [...byTerm.values()].filter((c) => c.rank !== 0).map((c) => c.k.keyword);
-        const fit = await judgeBuyerFit(business, unproven, { spend });
+        // The buyer test, once, over EVERY candidate - including the terms the
+        // site already ranks for.
+        //
+        // Those used to be exempt, on the reasoning that a ranking is a test
+        // result the SERP already ran. That holds for a site whose pages are
+        // about what it sells, and fails for one whose blog is about the trade:
+        // qasimcode.com sells fixed-price websites to clinics and salons, and
+        // its 1,606 write-ups rank it somewhere for "wix", "web sites" and four
+        // phrasings of "free portfolio website". Ranking #80 for a phrase
+        // because you wrote about it is not evidence a buyer typed it.
+        //
+        // Ordered least-relevant first, because `MAX_JUDGED` truncates and an
+        // unjudged term is kept by default: whatever falls off the end is then
+        // the most on-topic, which is the safe half to leave unasked.
+        const toJudge = [...byTerm.values()]
+          .sort((a, b) => rel(a.k.keyword) - rel(b.k.keyword))
+          .map((c) => c.k.keyword);
+        const fit = await judgeBuyerFit(business, toJudge, { spend });
         const refusedByBuyerTest = [...fit.verdicts.values()].filter((v) => !v.keep).length;
 
         // Collapse phrasings across ALL three sources, not just the seeded one.
@@ -841,13 +860,17 @@ export async function analyseDomain(options: {
           const scored = candidates
             .filter((c) => assessKeywordQuality(c.k.keyword, allTerms).quality === "ok")
             .map((c) => ({ ...c, r: rel(c.k.keyword) }))
-            // A term the site ranks for is on-topic by definition, whatever the
-            // profile says: the SERP already decided. Everything else stands
-            // or falls on the buyer test; only with no model to ask does the
-            // word-overlap score decide, as it did until 2026-09-11.
+            // One pool, one test. Every source stands or falls on the buyer
+            // verdict. A term the site ranks for keeps its exemption from
+            // DIFFICULTY below - it demonstrably ranks, so "too hard" is moot
+            // - but no longer from relevance.
             .filter((c) => {
-              if (c.rank === 0) return true;
-              if (fit.basis !== "model") return c.r > 0;
+              // No model to ask: the only relevance signal left is word
+              // overlap with the profile, which is too crude to overrule a
+              // real ranking - so a ranked term keeps its old exemption here,
+              // and only here. A self-hosted install with no key stores what
+              // it always did.
+              if (fit.basis !== "model") return c.rank === 0 || c.r > 0;
               return fit.verdicts.get(c.k.keyword.trim().toLowerCase())?.keep !== false;
             })
             // Difficulty had no vote at all in what was stored: the sort was
@@ -873,6 +896,12 @@ export async function analyseDomain(options: {
             // A term the SERP already puts this domain on is exempt from both:
             // the ranking is the measurement and it beats the model.
             .filter((c) => c.rank === 0 || !isHopeless(c.k.difficulty))
+            // Source still leads, and that is deliberate: a striking-distance
+            // ranking is the cheapest win on the page and must not be crowded
+            // out by a merely more on-topic phrase. What made source-first
+            // wrong before was the pool, not the sort - "wix" outranked
+            // "clinic booking system" because it was in the pool at all. The
+            // buyer test above now removes it, so ordering by source is safe.
             .sort(
               (a, b) =>
                 a.rank - b.rank ||

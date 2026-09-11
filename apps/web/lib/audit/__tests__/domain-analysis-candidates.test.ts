@@ -205,6 +205,34 @@ describe("the stored hundred", () => {
     return { ...gapRow(i), keyword: `${a} ${b}` };
   };
 
+  // qasimcode.com, 2026-09-11. A studio selling fixed-price websites to
+  // clinics and salons stored `wix`, `acuity`, `web sites` and four phrasings
+  // of `free portfolio website` - every one of them arriving on the ranked
+  // path, which was exempt from both the brand filter and the buyer test
+  // because "a ranking is a test result". Its 1,606 write-ups are ABOUT those
+  // tools; nobody who typed them was shopping for a $99/mo build.
+  it("judges what the site ranks for, and drops a rival's name it ranks on", async () => {
+    ranked.mockResolvedValue([
+      { keyword: "wix", position: 80, url: "https://x.co/own/1", volume: 673000, difficulty: 68, cpc: 1, isBlogUrl: false },
+      { keyword: "free portfolio website", position: 40, url: "https://x.co/own/2", volume: 165000, difficulty: 62, cpc: 1, isBlogUrl: false },
+      { keyword: "newsletter deliverability", position: 12, url: "https://x.co/own/3", volume: 500, difficulty: 20, cpc: 1, isBlogUrl: false },
+    ]);
+    // The model keeps only the term this business's buyer would type. `wix`
+    // never reaches it: the brand filter takes that one first.
+    fit.mockResolvedValue({
+      verdicts: new Map([
+        ["free portfolio website", { keep: false }],
+        ["newsletter deliverability", { keep: true }],
+      ]),
+      basis: "model",
+    });
+    const { stored } = await analyse({}, { competitors: ["wix.com"] });
+    const terms = stored.map((r) => r.term);
+    expect(terms).toContain("newsletter deliverability");
+    expect(terms).not.toContain("wix");
+    expect(terms).not.toContain("free portfolio website");
+  });
+
   it("a site that ranks for everything still stores a hundred, all of them rankings", async () => {
     // The headline number a customer is shown must not move for this site.
     ranked.mockResolvedValue(Array.from({ length: 200 }, (_, i) => wonRow(i)));

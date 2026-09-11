@@ -36,12 +36,14 @@ import { fetchRankedKeywords } from "@/lib/seo/ranked-keywords";
 import { discoverKeywordsFromSeeds, type DiscoveredKeyword } from "@/lib/seo/keywords";
 import { classifyIntent } from "@/lib/seo/intent";
 import { fetchTermMetrics } from "./metrics";
-import { competitorName } from "./seeds";
+import { competitorName, isBrandTerm } from "./seeds";
 import { proposeBuyerSeeds, type BuyerSeeds, type SeedableProfile } from "./buyer-seeds";
 import type { SpendSink } from "./buyer-model";
 
 /** A candidate plus the rival that holds it, when one does. */
 export type Candidate = DiscoveredKeyword & { competitor?: string };
+
+export { isBrandTerm };
 
 export interface DiscoveryResult {
   fromCompetitors: Candidate[];
@@ -70,17 +72,6 @@ export const EXPANSION_LIMIT = 100;
 
 const host = (d: string) => d.replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "").toLowerCase();
 
-/**
- * Whether a phrase is a rival's name or our own: the SERP puts a brand on its
- * own results, and a blog on "<rival> pricing" is not a plan.
- */
-export function isBrandTerm(term: string, domain: string, competitors: readonly string[]): boolean {
-  const t = ` ${term.toLowerCase()} `;
-  const names = [competitorName(domain), ...competitors.map((c) => competitorName(c))]
-    .map((n) => n.trim().toLowerCase())
-    .filter((n) => n.length >= 3);
-  return names.some((n) => t.includes(` ${n} `) || t.includes(` ${n}`) || t.replace(/\s+/g, "").includes(n.replace(/\s+/g, "")));
-}
 
 export async function discoverBuyerKeywords(options: {
   domain: string;
