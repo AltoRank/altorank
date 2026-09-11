@@ -11,6 +11,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordEvent } from "@/lib/observability/record";
 import { notifySetupFailed } from "@/lib/email/lifecycle";
+import { loadFirstLookReport } from "./first-look-report";
 import {
   initialOnboardingState,
   onboardingOutcome,
@@ -73,7 +74,10 @@ export async function latestRun(
     .order("created_at", { ascending: true })
     .limit(MAX_LISTED_DRAFTS);
   const drafts = (rows as OnboardingRunArticle[] | null) ?? [];
-  return { run, article, drafts, stale: isRunStale(run, now) };
+  // The audit the keywords phase wrote, when it has. Bounded by the run's
+  // start for the same reason the drafts are.
+  const report = await loadFirstLookReport(supabase, workspaceId, run.started_at);
+  return { run, article, drafts, stale: isRunStale(run, now), report };
 }
 
 /**

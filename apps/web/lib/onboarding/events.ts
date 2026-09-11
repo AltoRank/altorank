@@ -10,6 +10,8 @@
 // component, and what lets `stateFromRun` be checked against it: a persisted
 // run must render exactly as the live stream of its events would have.
 
+import type { FirstLookReport } from "./first-look-report";
+
 export type OnboardingPhase = "scanning" | "keywords" | "pages" | "planning" | "drafting";
 
 /** Where a phase is in its life. `skipped` is a real outcome, not a failure. */
@@ -235,6 +237,12 @@ export interface OnboardingRunSnapshot {
   drafts?: OnboardingRunArticle[];
   /** A `running` row nothing has written to for RUN_STALE_MS: the worker died. */
   stale: boolean;
+  /**
+   * What the first look measured, for the screen to show while the draft is
+   * written (lib/onboarding/first-look-report.ts). Null until the keywords
+   * phase has written its audit; absent on old callers.
+   */
+  report?: FirstLookReport | null;
 }
 
 /**
