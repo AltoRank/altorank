@@ -6,10 +6,35 @@ import { doubtedAudiences } from "@/lib/onboarding/audience-check";
 
 export const MAX_AUDIENCES = 7;
 export const MAX_COMPETITORS = 7;
+export const MAX_OFFERINGS = 6;
 
 /** Domains, not names: strip a scheme and a path so "https://x.com/pricing" is "x.com". */
 export function normaliseCompetitor(c: string): string {
   return c.replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase();
+}
+
+/**
+ * What people buy, in their words. This is the seed list for keyword research:
+ * every research phrase is proposed from these, so "order picking software"
+ * here is worth more than any endpoint downstream.
+ */
+export function OfferingList({ profile, patch }: { profile: BusinessProfile; patch: (p: Partial<BusinessProfile>) => void }) {
+  const offerings = profile.offerings ?? [];
+  return (
+    <>
+      <CountedHeading title="What people buy from you" count={offerings.length} max={MAX_OFFERINGS} />
+      <ChipList
+        items={offerings}
+        onChange={(next) => patch({ offerings: next })}
+        placeholder="e.g. order picking software"
+        max={MAX_OFFERINGS}
+      />
+      <p className="mt-2 text-[11.5px] text-ink-3">
+        Products, services, the job they do, in the words a buyer would type into Google. Keyword research starts from
+        these, so “packing slip template” beats “fulfilment reimagined”.
+      </p>
+    </>
+  );
 }
 
 export function AudienceList({ profile, patch }: { profile: BusinessProfile; patch: (p: Partial<BusinessProfile>) => void }) {

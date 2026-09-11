@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fillEmptyProfile, EMPTY_PROFILE, type BusinessProfile } from "../business-profile";
+import { fillEmptyProfile, parseProfile, EMPTY_PROFILE, type BusinessProfile } from "../business-profile";
 import {
   outputFromRow,
   outputToRow,
@@ -167,5 +167,34 @@ describe("resolveFeaturedImage", () => {
     expect(resolveFeaturedImage({ imageStyle: "watercolor", featuredImageStyle: "title_cover" })).toEqual({ style: null, titleCover: true });
     expect(resolveFeaturedImage({ imageStyle: "watercolor", featuredImageStyle: "match_body" })).toEqual({ style: "watercolor", titleCover: false });
     expect(resolveFeaturedImage({ imageStyle: "watercolor", featuredImageStyle: "sketch" })).toEqual({ style: "sketch", titleCover: false });
+  });
+});
+
+describe("offerings, the buyer's words for what is sold", () => {
+  it("are parsed off the model's reply and capped at six", () => {
+    const raw = JSON.stringify({
+      name: "PackHub",
+      description: "Order picking for Shopify.",
+      audiences: ["Shopify merchants"],
+      offerings: ["order picking software", "packing slip generator", "a", "b", "c", "d", "e", "f"],
+      competitors: ["packiyo.com"],
+    });
+    const p = parseProfile(raw, "packhub.io");
+    expect(p?.offerings).toHaveLength(6);
+    expect(p?.offerings?.[0]).toBe("order picking software");
+  });
+
+  it("are an empty list, not undefined, when the reply has none", () => {
+    const p = parseProfile('{"name":"x","description":"y","audiences":[],"competitors":[]}', "x.co");
+    expect(p?.offerings).toEqual([]);
+  });
+
+  it("are filled by autocomplete on the audience screen only when empty", () => {
+    const current = { ...EMPTY_PROFILE, offerings: ["mine"] };
+    const proposed = { ...EMPTY_PROFILE, offerings: ["theirs"], audiences: ["Someone"] };
+    const { profile, filled } = fillEmptyProfile(current, proposed, "audience");
+    expect(profile.offerings).toEqual(["mine"]);
+    expect(profile.audiences).toEqual(["Someone"]);
+    expect(filled).toEqual(["audiences"]);
   });
 });

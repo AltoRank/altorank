@@ -12,6 +12,7 @@ const FIELD_LABEL: Record<keyof BusinessProfile, string> = {
   country: "market",
   description: "description",
   audiences: "audiences",
+  offerings: "offerings",
   competitors: "competitors",
 };
 

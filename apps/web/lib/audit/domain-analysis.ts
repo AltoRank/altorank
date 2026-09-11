@@ -23,16 +23,15 @@ import { clearRefusal } from "./host-circuit";
 import { decideFirstLook, firstLookPatch, type FirstLookDecision } from "./first-look";
 import { runAuditChecks, calculateAuditScore } from "./checks";
 import { fetchPageSpeedDetailed } from "./pagespeed";
-import { discoverKeywords, discoverKeywordsFromSeeds, fetchKeywordDifficulty, type DiscoveredKeyword, storedCpc } from "@/lib/seo/keywords";
-import { profileIsUsable, seedPhrasesFromPages, scoreRelevance, subjectVocabulary } from "@/lib/seo/topical-profile";
+import { type DiscoveredKeyword, storedCpc } from "@/lib/seo/keywords";
+import { profileIsUsable, scoreRelevance, subjectVocabulary } from "@/lib/seo/topical-profile";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
-import { audienceSeeds, brandFromDomain, type AudienceSeed } from "@/lib/keyword-research/seeds";
-import { resolveSeedHead } from "@/lib/keyword-research/category";
+import { discoverBuyerKeywords } from "@/lib/keyword-research/discovery";
+import { judgeBuyerFit } from "@/lib/keyword-research/buyer-fit";
 import { isOutOfReach, isHopeless } from "@/lib/seo/difficulty";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { dedupePermutations, dedupeTargets } from "@/lib/seo/keywords";
-import { fetchCompetitorGap } from "@/lib/seo/keyword-gap";
 import {
   fetchRankedKeywords,
   groupByPage,
@@ -85,99 +84,23 @@ export interface DomainAnalysis {
 }
 
 /** A discovered keyword plus, for a gap row, the rival that holds it. */
-type Sourced = DiscoveredKeyword & { competitor?: string; seed?: string };
+type Sourced = DiscoveredKeyword & { competitor?: string };
 
 /** The wizard's answers, as `analyseDomain` needs them. */
 type BusinessProfileFields = {
+  name?: string | null;
   description?: string | null;
   audiences?: string[] | null;
+  offerings?: string[] | null;
   competitors?: string[] | null;
+  language?: string | null;
 };
-
-/**
- * Seeds one first look may buy. `discoverKeywordsFromSeeds` bills one call per
- * seed, so this is the spend, and it is the same number the seeded expansion
- * has always used - the audiences take slots from the page seeds rather than
- * adding to them.
- */
-const MAX_SEEDS = 5;
-/** Of those, how many the audiences may claim. */
-const MAX_AUDIENCE_SEEDS = 3;
-/**
- * Volume floor for an audience seed's expansion.
- *
- * The page-seed path drops anything under 100 a month, which is right for
- * "website design" and wrong for "dental clinic website": the whole reason a
- * domain with no authority is given an audience term is that it is small
- * enough to win. 49,500 searches at KD 70 is worth nothing to a site at
- * authority 0; 40 searches at KD 12 is worth something.
- */
-const AUDIENCE_MIN_VOLUME = 10;
-
-/**
- * Audience seeds first, page seeds for whatever is left, never more than the
- * budget. Returned separately so each group can be bought with its own volume
- * floor without changing the number of calls.
- */
-export function mergeSeeds(
-  audience: AudienceSeed[],
-  fromPages: string[],
-  budget: number = MAX_SEEDS,
-): { audience: AudienceSeed[]; pages: string[] } {
-  const take = Math.min(MAX_AUDIENCE_SEEDS, budget, audience.length);
-  const chosen = audience.slice(0, take);
-  const used = new Set(chosen.map((a) => a.seed));
-  return {
-    audience: chosen,
-    pages: fromPages.filter((s) => !used.has(s)).slice(0, Math.max(0, budget - take)),
-  };
-}
 
 /** Bounded so a first look cannot become an hour-long crawl of a huge site. */
 const MAX_PAGES = 40;
 const MAX_DEPTH = 2;
 const CRAWL_DELAY_MS = 400;
 const MAX_KEYWORDS_STORED = 100;
-/** Ceiling on how much of a keyword list may come from keywords_for_site. */
-const ADS_FALLBACK_CAP = 40;
-
-/**
- * How many keywords_for_site rows the fallback may still add, given how many
- * candidates the better sources produced. Zero means the paid call is skipped.
- */
-export function adsFallbackRoom(candidates: number, cap: number = ADS_FALLBACK_CAP): number {
-  return Math.max(0, cap - candidates);
-}
-
-/**
- * Provider rows this run must already have judged before their verdict is
- * treated as evidence about the next provider list. One rejected row is noise.
- */
-const MIN_FALLBACK_EVIDENCE = 5;
-
-/**
- * Whether the ads fallback can still contribute anything, before it is bought.
- *
- * The relevance filter that decides whether a fallback row is stored used to
- * run only AFTER both of the fallback's paid calls. A measured signup on a thin
- * site therefore spent $0.105 on a hundred rows and kept none of them
- * (round4 §4, W1): the room was there, the relevance was not, and nothing
- * asked before paying.
- *
- * Relevance of a row cannot be known before it arrives. What CAN be known is
- * how the very same filter treated the rows the cheaper sources already
- * produced this run - the competitor gap and the seeds taken from the site's
- * own headings. Those are better targeted than a domain-level Google Ads
- * guess by construction, so a profile that rejected every one of them will not
- * accept the ads list either.
- *
- * Deliberately conservative: with too few judged rows to learn from, the call
- * is made. This refuses spend on evidence, it does not guess.
- */
-export function adsFallbackWorthCalling(evidence: { judged: number; kept: number }): boolean {
-  if (evidence.judged < MIN_FALLBACK_EVIDENCE) return true;
-  return evidence.kept > 0;
-}
 
 /**
  * Below this many sitemap URLs the sitemap is not used to judge whose page a
@@ -527,7 +450,6 @@ export async function analyseDomain(options: {
   let pagesCrawled = 0;
   let crawlAttempts = 1;
   let crawlRateLimited = false;
-  let crawledPages: Awaited<ReturnType<typeof crawlSite>> = [];
   let auditScore: number | null = null;
   let issues: unknown[] = [];
   let profile: TopicalProfile | null = null;
@@ -546,7 +468,6 @@ export async function analyseDomain(options: {
     crawlAttempts = attempts;
     crawlRateLimited = rateLimited;
     const pages = usablePages(fetched);
-    crawledPages = pages;
     pagesCrawled = pages.length;
     if (!pages.length && fetched.length) {
       // Every fetch failed. Say why, and score nothing: the first version of
@@ -843,95 +764,24 @@ export async function analyseDomain(options: {
             intent: classifyIntent(k.keyword, options.locale ?? "en").intent,
           }));
 
-        // (2) Ideas from the site's own headings. A quick run has one page of
-        // headings and no budget for a second paid lookup.
-        // (1a) What close competitors rank for and we do not. Costs one call to
-        // find out there are none, which is the answer for any site without a
-        // ranking footprint of its own - so it stops there rather than taking a
-        // content plan from whoever happened to share a keyword.
-        const gapRows = depth === "full"
-          ? await fetchCompetitorGap(domain, { languageCode: options.locale ?? "en" }).catch(() => [])
-          : [];
-        // The competitor is kept on the row: it becomes the keyword's
-        // provenance, which is what lets the dashboard say how many keywords
-        // each named rival actually produced.
-        const fromGap: Sourced[] = gapRows.map((k) => ({
-          keyword: k.keyword,
-          volume: k.volume,
-          difficulty: k.difficulty,
-          cpc: k.cpc,
-          competition: 0,
-          intent: k.intent,
-          competitor: k.competitor,
-        }));
-
-        // The seed budget, split between what the site says and who it says it
-        // sells to.
-        //
-        // Page seeds alone are how qasimcode.com got its keyword list. They are
-        // n-grams of headings, and headings contain more than the business:
-        // "other countries" came out of a page listing the markets the studio
-        // works in, keyword_suggestions faithfully expanded it, and the first
-        // article the product ever wrote for that customer was "Do Other
-        // Countries Have States? Full 2026 Breakdown". Nothing downstream could
-        // catch it, because the filter judging the keyword was built from the
-        // same headings that produced the seed.
-        //
-        // The audiences are an independent statement of the subject, typed and
-        // confirmed by the person. They are also where the winnable long tail
-        // is: "dental clinic website" and "salon appointment website" exist
-        // because the customer named dental clinics and salons, and neither
-        // could ever have come out of an n-gram of a blog tag page.
-        //
-        // Budget-neutral. `discoverKeywordsFromSeeds` bills one call per seed
-        // and already caps at MAX_SEEDS; the audiences take slots from the page
-        // seeds rather than adding to them, so a signup costs exactly what it
-        // costs today.
-        // The head the audience seeds are built on, chosen by how the composed
-        // seeds price (lib/keyword-research/category.ts): "dental clinic
-        // website" has volume, "dental clinic online booking" has none, and
-        // only pricing the pair can tell.
-        const head =
-          usable && depth === "full" && business
-            ? await resolveSeedHead(business, profile, domain, {
+        // (2) What the rivals the person named rank for, and (3) the category
+        // around what a buyer of this business types, proposed from the
+        // profile and expanded in one call (lib/keyword-research/discovery.ts
+        // says why these two replaced the competitor gap, the heading seeds
+        // and the Google Ads fallback on 2026-09-11). A quick run buys neither.
+        const spend = supabase && workspaceId ? { supabase, workspaceId } : null;
+        const discovered =
+          depth === "full"
+            ? await discoverBuyerKeywords({
+                domain,
+                business,
                 languageCode: options.locale ?? "en",
                 locationCode: options.locationCode,
+                spend,
               })
-            : null;
-        if (head) {
-          layers.push({
-            id: "category",
-            status: head.priced ? "ok" : "unavailable",
-            detail: head.priced
-              ? `seeding on "${head.head}": its audience seeds carry ${head.seedVolume.toLocaleString()} searches/mo, of ${head.tried.length} heads tried`
-              : `none of ${head.tried.length} heads composed into a seed anyone searches; seeding on "${head.head ?? "nothing"}"`,
-          });
-        }
-        const seeds =
-          usable && depth === "full"
-            ? mergeSeeds(
-                audienceSeeds(business, profile, domain, head?.priced ? head.head : null),
-                seedPhrasesFromPages(crawledPages, domain),
-                MAX_SEEDS,
-              )
-            : { audience: [], pages: [] };
-        const audienceBySeed = new Map(seeds.audience.map((a) => [a.seed, a.audience]));
-        const [seededFromAudiences, seededFromPages] = await Promise.all([
-          seeds.audience.length
-            ? discoverKeywordsFromSeeds(seeds.audience.map((a) => a.seed), {
-                languageCode: options.locale ?? "en",
-                locationCode: options.locationCode,
-                minVolume: AUDIENCE_MIN_VOLUME,
-              }).catch(() => [])
-            : Promise.resolve([]),
-          seeds.pages.length
-            ? discoverKeywordsFromSeeds(seeds.pages, {
-                languageCode: options.locale ?? "en",
-                locationCode: options.locationCode,
-              }).catch(() => [])
-            : Promise.resolve([]),
-        ]);
-        const seeded = [...seededFromAudiences, ...seededFromPages];
+            : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [] };
+        const fromCompetitors = discovered.fromCompetitors;
+        const fromIdeas = discovered.fromIdeas;
 
         // Position per ranked term, for the reserve rule below.
         const positionByTerm = new Map<string, number | null>();
@@ -944,55 +794,16 @@ export async function analyseDomain(options: {
           if (!prev || rank < prev.rank) byTerm.set(key, { k, rank });
         };
         for (const k of fromRanked) add(k, 0);
-        for (const k of fromGap) if (k.intent !== "navigational") add(k, 1);
-        for (const k of seeded) if (k.intent !== "navigational") add(k, 2);
+        for (const k of fromCompetitors) add(k, 1);
+        for (const k of fromIdeas) add(k, 2);
 
-        // (3) The Ads endpoint, only when the first two are thin.
-        //
-        // Capped, because this is the endpoint that produced every keyword we
-        // have ever had to throw away. Making the seeded source stricter made
-        // this one fire MORE often - fewer seeded results means the threshold
-        // above is met less - and it went from 0 to 71 of altorank.co's 100
-        // slots in a single run. A thin list of real keywords beats a full one
-        // padded from the source we do not trust.
-        //
-        // The room is known before the call, so the call is only made when
-        // there is some. Between 40 and 49 candidates this used to pay for
-        // keywords_for_site ($0.09 live) plus a 700-term keyword_overview
-        // (~$0.10) and then keep none of it. And difficulty is looked up only
-        // for the rows that are kept: the overview call is priced per keyword,
-        // so asking for 700 to keep at most 40 cost ~6x what the kept rows do.
-        let usedFallback = false;
-        const room = depth === "full" && byTerm.size < MAX_KEYWORDS_STORED / 2 ? adsFallbackRoom(byTerm.size) : 0;
-        // What this profile has already done to provider rows this run. The gap
-        // and the seeds are the cheaper, better-targeted sources; if the filter
-        // took none of them, the ads list is not going to fare better.
-        const judged = [...fromGap, ...seeded];
-        const worthCalling = adsFallbackWorthCalling({
-          judged: judged.length,
-          kept: judged.filter((k) => rel(k.keyword) > 0).length,
-        });
-        if (room > 0 && worthCalling) {
-          // Relevance BEFORE the second paid call, and before the slice.
-          //
-          // Both used to run after: a measured signup bought a hundred rows for
-          // $0.0900, bought difficulty for them for $0.0146, and then dropped
-          // every one at the scoring step below (round4 §4, W1). Scoring here
-          // costs nothing - the profile is already in memory - and it means the
-          // $0.09 buys the rows that can be stored rather than the first `room`
-          // rows in the response, which on that run were all rejects.
-          const returned = await discoverKeywords(domain).catch(() => []);
-          const fromSite = returned.filter((k) => rel(k.keyword) > 0).slice(0, room);
-          if (fromSite.length) {
-            const kd = await fetchKeywordDifficulty(fromSite.map((k) => k.keyword)).catch(() => new Map<string, number>());
-            for (const k of fromSite) {
-              const d = kd.get(k.keyword.toLowerCase());
-              if (typeof d === "number") k.difficulty = d;
-            }
-          }
-          for (const k of fromSite) add(k, 3);
-          usedFallback = fromSite.length > 0;
-        }
+        // The buyer test, once, over everything the sources produced that the
+        // SERP has not already decided (a ranking is a test result; see the
+        // storage sort). One model call on the cheap tier; with no model the
+        // verdicts are empty and the vocabulary filter below stands alone.
+        const unproven = [...byTerm.values()].filter((c) => c.rank !== 0).map((c) => c.k.keyword);
+        const fit = await judgeBuyerFit(business, unproven, { spend });
+        const refusedByBuyerTest = [...fit.verdicts.values()].filter((v) => !v.keep).length;
 
         // Collapse phrasings across ALL three sources, not just the seeded one.
         // keyword_suggestions is the worst offender but keywords_for_site emits
@@ -1023,8 +834,14 @@ export async function analyseDomain(options: {
             .filter((c) => assessKeywordQuality(c.k.keyword, allTerms).quality === "ok")
             .map((c) => ({ ...c, r: rel(c.k.keyword) }))
             // A term the site ranks for is on-topic by definition, whatever the
-            // profile says: the SERP already decided.
-            .filter((c) => c.rank === 0 || c.r > 0)
+            // profile says: the SERP already decided. Everything else stands
+            // or falls on the buyer test; only with no model to ask does the
+            // word-overlap score decide, as it did until 2026-09-11.
+            .filter((c) => {
+              if (c.rank === 0) return true;
+              if (fit.basis !== "model") return c.r > 0;
+              return fit.verdicts.get(c.k.keyword.trim().toLowerCase())?.keep !== false;
+            })
             // Difficulty had no vote at all in what was stored: the sort was
             // rank, then relevance, then volume. qasimcode.com (authority 0)
             // was given five KD 100 keywords and eight more at KD 70 or worse,
@@ -1089,35 +906,16 @@ export async function analyseDomain(options: {
               cpc: storedCpc(c.k.cpc),
               intent: c.k.intent ?? classifyIntent(c.k.keyword, options.locale ?? "en").intent,
               status: "new",
-              // The rank is already the provenance: 0 is ranked_keywords, 1 the
-              // seeded expansion, 2 the domain-level ads fallback. Recording it
-              // keeps the exemption made just above - a ranked term is on-topic
-              // because the SERP said so - available to the selector, which
-              // otherwise re-applies the filter this row was excused from.
-              source:
-                c.rank === 0 ? "ranked" : c.rank === 1 ? "gap" : c.rank === 2 ? "ideas" : "ads",
+              // The rank is the provenance: 0 is ranked_keywords, 1 a rival the
+              // person named, 2 the buyer-seeded ideas. Recording it keeps the
+              // exemption made just above - a ranked term is on-topic because
+              // the SERP said so - available to the selector, which otherwise
+              // re-applies the filter this row was excused from.
+              source: c.rank === 0 ? "ranked" : c.rank === 1 ? "gap" : "ideas",
               // The finer provenance the dashboard rolls up: which competitor,
-              // or that it came from the site's own pages ("profile").
-              // A seeded row says WHICH seed bought it, so the dashboard's
-              // per-source yield can answer the question this round was
-              // opened on: did the audiences the customer typed produce
-              // anything the site's own headings did not?
-              source_type:
-                c.rank === 0
-                  ? "ranked"
-                  : c.rank === 1
-                    ? "competitor"
-                    : c.rank === 2
-                      ? audienceBySeed.has(c.k.seed ?? "")
-                        ? "audience"
-                        : "profile"
-                      : "ads",
-              source_ref:
-                c.rank === 1
-                  ? c.k.competitor ?? null
-                  : c.rank === 2
-                    ? audienceBySeed.get(c.k.seed ?? "") ?? "profile"
-                    : null,
+              // or that it came from the profile's own buyer seeds.
+              source_type: c.rank === 0 ? "ranked" : c.rank === 1 ? "competitor" : "profile",
+              source_ref: c.rank === 1 ? (c.k.competitor ?? null) : null,
             }));
           if (rows.length) {
             const { data: inserted } = await supabase.from("keywords").insert(rows).select("id, term");
@@ -1149,11 +947,15 @@ export async function analyseDomain(options: {
           rankedDropped
             ? `${rankedDropped} ranking${rankedDropped === 1 ? "" : "s"} on pages the sitemap does not list, left out`
             : "",
-          seededFromAudiences.length
-            ? `${seededFromAudiences.length} from the audiences you named`
+          fromCompetitors.length
+            ? `${fromCompetitors.length} from what ${discovered.competitorsAsked.length === 1 ? "the competitor" : `the ${discovered.competitorsAsked.length} competitors`} you named rank${discovered.competitorsAsked.length === 1 ? "s" : ""} for`
             : "",
-          seededFromPages.length ? `${seededFromPages.length} from what its pages say` : "",
-          usedFallback ? "the rest from the ads keyword tool" : "",
+          fromIdeas.length
+            ? `${fromIdeas.length} around ${discovered.seedsPriced} search${discovered.seedsPriced === 1 ? "" : "es"} a buyer makes`
+            : "",
+          refusedByBuyerTest
+            ? `${refusedByBuyerTest} refused by the buyer test`
+            : "",
         ].filter(Boolean);
         layers.push({
           id: "keywords",

@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button, Card } from "@/components/ui";
 import { saveProfile } from "@/app/actions/onboarding-wizard";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
-import { AudienceList, CompetitorList } from "./audience-fields";
+import { AudienceList, CompetitorList, OfferingList } from "./audience-fields";
 import { AutocompleteButton } from "./autocomplete-button";
 
 /**
@@ -43,6 +43,9 @@ export function AudienceForm({ workspaceId, initial }: { workspaceId: string; in
           These steer which keywords are worth writing for, and every keyword remembers which of them it came
           from. Autocomplete fills only the empty list; what you typed stays.
         </p>
+        <div className="mb-4 rounded-[10px] border border-line bg-panel p-4">
+          <OfferingList profile={profile} patch={patch} />
+        </div>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="rounded-[10px] border border-line bg-panel p-4">
             <AudienceList profile={profile} patch={patch} />

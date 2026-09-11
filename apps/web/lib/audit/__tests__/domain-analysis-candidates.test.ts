@@ -21,18 +21,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const ranked = vi.fn();
 const discover = vi.fn();
-const difficulty = vi.fn();
-const seeds = vi.fn();
-const gap = vi.fn();
+const fit = vi.fn();
 const sitemap = vi.fn();
 
-vi.mock("@/lib/keyword-research/category", () => ({ resolveSeedHead: async () => ({ head: null, priced: false, seedVolume: 0, tried: [] }) }));
 vi.mock("@/lib/e2e/stubs", () => ({ e2eStubsEnabled: () => false, stubAnalyseDomain: vi.fn() }));
 vi.mock("../agent-readiness", () => ({ recordingFetcher: () => Object.assign(async () => ({ status: 0, headers: {}, body: "" }), { resources: new Map() }), runAgentReadiness: async () => ({ error: "not run in this test", score: 0, findings: [] }) }));
 vi.mock("../pagespeed", () => ({ fetchPageSpeedDetailed: async () => ({ ok: false, kind: "unavailable", detail: "test" }) }));
 vi.mock("@/lib/cms/detect", () => ({ detectPlatform: async () => null }));
 vi.mock("@/lib/seo/client", () => ({ hasDataForSEOCredentials: () => true }));
-vi.mock("@/lib/seo/keyword-gap", () => ({ fetchCompetitorGap: (...a: unknown[]) => gap(...a) }));
+vi.mock("@/lib/keyword-research/discovery", () => ({ discoverBuyerKeywords: (...a: unknown[]) => discover(...a) }));
+vi.mock("@/lib/keyword-research/buyer-fit", () => ({ judgeBuyerFit: (...a: unknown[]) => fit(...a) }));
 vi.mock("@/lib/seo/backlinks", () => ({ syncBacklinks: async () => ({ fetched: 0, total: null, lost: 0 }) }));
 vi.mock("@/lib/seo/domain-metrics", () => ({ fetchDomainMetrics: async () => ({ authority: null, traffic: null, referringDomains: null }) }));
 vi.mock("@/lib/seo/site-crawl", () => ({ discoverUrls: (...a: unknown[]) => sitemap(...a) }));
@@ -44,19 +42,9 @@ vi.mock("@/lib/seo/ranked-keywords", async () => {
   const real = await vi.importActual<typeof import("@/lib/seo/ranked-keywords")>("@/lib/seo/ranked-keywords");
   return { ...real, fetchRankedKeywords: (...a: unknown[]) => ranked(...a) };
 });
-vi.mock("@/lib/seo/keywords", async () => {
-  const real = await vi.importActual<typeof import("@/lib/seo/keywords")>("@/lib/seo/keywords");
-  return {
-    ...real,
-    discoverKeywords: (...a: unknown[]) => discover(...a),
-    fetchKeywordDifficulty: (...a: unknown[]) => difficulty(...a),
-    discoverKeywordsFromSeeds: (...a: unknown[]) => seeds(...a),
-  };
-});
 
 import {
   analyseDomain,
-  adsFallbackWorthCalling,
   ownPagePaths,
   rankedOnOwnPages,
   takeReservingSlots,
@@ -78,9 +66,9 @@ const wonRow = (i: number, url = `https://x.co/own/${1000 + i}`): RankedKeyword 
 const gapRow = (i: number) => ({
   keyword: `gap term ${1000 + i}`, volume: 900 - i, difficulty: null, cpc: 0, intent: "info" as const, competitor: "rival.co",
 });
-const adsRow = (keyword: string, volume = 1000) => ({
-  keyword, volume, difficulty: null, cpc: 0, competition: 0, intent: "info" as const,
-});
+/** What discovery returns for a site whose rivals and buyer seeds yield nothing. */
+const nothingDiscovered = () => ({ fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [] });
+const rivalsRank = (rows: unknown[]) => ({ ...nothingDiscovered(), fromCompetitors: rows, competitorsAsked: ["rival.co"] });
 
 /** Just enough client for the keyword write path. */
 function fakeSupabase(business: Record<string, unknown> | null = null) {
@@ -123,13 +111,11 @@ const analyse = (
 };
 
 beforeEach(() => {
-  for (const m of [ranked, discover, difficulty, seeds, gap, sitemap]) m.mockReset();
+  for (const m of [ranked, discover, fit, sitemap]) m.mockReset();
   pages.mockReturnValue([]);
   ranked.mockResolvedValue([]);
-  seeds.mockResolvedValue([]);
-  gap.mockResolvedValue([]);
-  discover.mockResolvedValue([]);
-  difficulty.mockResolvedValue(new Map());
+  discover.mockResolvedValue(nothingDiscovered());
+  fit.mockResolvedValue({ verdicts: new Map(), basis: "none" });
   sitemap.mockResolvedValue([]);
 });
 
@@ -195,21 +181,6 @@ describe("rankedOnOwnPages", () => {
   });
 });
 
-describe("adsFallbackWorthCalling", () => {
-  it("calls when this run has too few judged rows to have learned anything", () => {
-    expect(adsFallbackWorthCalling({ judged: 0, kept: 0 })).toBe(true);
-    expect(adsFallbackWorthCalling({ judged: 4, kept: 0 })).toBe(true);
-  });
-
-  it("refuses when the same filter has already rejected every provider row this run", () => {
-    expect(adsFallbackWorthCalling({ judged: 20, kept: 0 })).toBe(false);
-  });
-
-  it("calls when the filter kept anything at all", () => {
-    expect(adsFallbackWorthCalling({ judged: 20, kept: 1 })).toBe(true);
-  });
-});
-
 // ---------------------------------------------------------------------------
 // The same rules through analyseDomain
 // ---------------------------------------------------------------------------
@@ -245,7 +216,7 @@ describe("the stored hundred", () => {
 
   it("a site that ranks for nothing is untouched by the reserve", async () => {
     ranked.mockResolvedValue([]);
-    gap.mockResolvedValue(Array.from({ length: 60 }, (_, i) => topicalGapRow(i)));
+    discover.mockResolvedValue(rivalsRank(Array.from({ length: 60 }, (_, i) => topicalGapRow(i))));
     const { analysis, stored } = await analyse();
     expect(analysis.keywordsFound).toBe(60);
     expect(stored.every((r) => r.source === "gap")).toBe(true);
@@ -255,7 +226,7 @@ describe("the stored hundred", () => {
     // This is F2: before the reserve, all 100 slots went to page-one rankings
     // and every gap and seed row the run had already paid for was thrown away.
     ranked.mockResolvedValue(Array.from({ length: 200 }, (_, i) => wonRow(i)));
-    gap.mockResolvedValue(Array.from({ length: 60 }, (_, i) => topicalGapRow(i)));
+    discover.mockResolvedValue(rivalsRank(Array.from({ length: 60 }, (_, i) => topicalGapRow(i))));
     const { stored } = await analyse();
     expect(stored).toHaveLength(100);
     expect(stored.filter((r) => r.source === "ranked")).toHaveLength(PAGE_ONE_RANKED_CAP);
@@ -266,7 +237,7 @@ describe("the stored hundred", () => {
     // Position 11-20 is recommendKeywords' largest multiplier, not a term to
     // leave alone, so it is not what the reserve is protecting against.
     ranked.mockResolvedValue(Array.from({ length: 200 }, (_, i) => ({ ...wonRow(i), position: 14 })));
-    gap.mockResolvedValue(Array.from({ length: 60 }, (_, i) => topicalGapRow(i)));
+    discover.mockResolvedValue(rivalsRank(Array.from({ length: 60 }, (_, i) => topicalGapRow(i))));
     const { stored } = await analyse();
     expect(stored.filter((r) => r.source === "ranked")).toHaveLength(100);
   });
@@ -315,15 +286,9 @@ describe("the stored hundred", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// W1: what the ads fallback pays for
-// ---------------------------------------------------------------------------
-
 /**
- * A crawl that yields a topical profile able to judge relevance. Without one,
- * `scoreRelevance` returns 1 for everything and the filter below cannot bite -
- * which is also why the thin sites this fallback exists for are the ones it
- * wasted the most money on.
+ * A crawl that yields a topical profile able to judge relevance. Without one
+ * the site is unreadable and the spend gate stores nothing at all.
  */
 function newsletterSite() {
   const page = (url: string, title: string, h1: string, h2: string[]) => ({
@@ -336,49 +301,3 @@ function newsletterSite() {
     page("https://x.co/docs", "Publishing workflow", "Deliverability guide", ["Subscriber analytics", "Publishing workflow"]),
   ];
 }
-
-describe("the ads fallback", () => {
-  it("pays for difficulty only on the rows relevance can keep", async () => {
-    pages.mockReturnValue(newsletterSite());
-    ranked.mockResolvedValue([]);
-    discover.mockResolvedValue([
-      adsRow("newsletter publishing tools"),
-      adsRow("bald nba players", 90000),
-      adsRow("online casinos switzerland", 80000),
-      adsRow("subscriber analytics"),
-    ]);
-
-    const { stored } = await analyse();
-
-    expect(discover).toHaveBeenCalledOnce();
-    // Before this the filter ran after both calls: difficulty was bought for
-    // all four, and then all four were scored and the junk dropped.
-    const asked = difficulty.mock.calls[0]?.[0] as string[] | undefined;
-    expect(asked).toBeDefined();
-    expect(asked).not.toContain("bald nba players");
-    expect(stored.map((r) => r.term)).not.toContain("online casinos switzerland");
-  });
-
-  it("does not buy difficulty at all when nothing the ads call returned can be stored", async () => {
-    pages.mockReturnValue(newsletterSite());
-    ranked.mockResolvedValue([]);
-    discover.mockResolvedValue([adsRow("bald nba players", 90000), adsRow("online casinos switzerland", 80000)]);
-    const { stored } = await analyse();
-    expect(discover).toHaveBeenCalledOnce();
-    expect(difficulty).not.toHaveBeenCalled();
-    expect(stored).toHaveLength(0);
-  });
-
-  it("does not make the call at all once the same filter has rejected every provider row this run", async () => {
-    pages.mockReturnValue(newsletterSite());
-    ranked.mockResolvedValue([]);
-    // Twenty competitor-gap rows, none of which the profile accepts. The ads
-    // list is a domain-level guess and is not going to do better.
-    gap.mockResolvedValue(
-      Array.from({ length: 20 }, (_, i) => ({ ...gapRow(i), keyword: `unrelated casino topic ${1000 + i}` })),
-    );
-    await analyse();
-    expect(discover).not.toHaveBeenCalled();
-    expect(difficulty).not.toHaveBeenCalled();
-  });
-});

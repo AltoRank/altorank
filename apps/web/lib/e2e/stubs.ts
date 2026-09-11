@@ -80,6 +80,7 @@ export const STUB_PROFILE: BusinessProfile = {
   description:
     "Nomad Atlas publishes slow-travel itineraries for Italy, written and re-checked by editors who live along the routes. It does not sell rooms or take booking commissions, and it says when each route was last verified.",
   audiences: ["Independent travel planners in Italy", "Small tour operators publishing their own routes", "Travel bloggers who publish in Italian"],
+  offerings: ["slow travel itineraries italy", "italy train route guides", "verified walking routes"],
   competitors: ["tripcraft.example", "wanderly.example"],
 };
 
@@ -90,7 +91,7 @@ export function stubReadSiteText(domain: string, maxChars = 12_000): SiteText {
 
 export function stubInferProfile(domain: string): InferenceResult {
   if (isUnreadable(domain)) return { profile: null, reason: "unreadable", source: "none" };
-  return { profile: { ...STUB_PROFILE, audiences: [...STUB_PROFILE.audiences], competitors: [...STUB_PROFILE.competitors] }, reason: "ok", source: "static" };
+  return { profile: { ...STUB_PROFILE, audiences: [...STUB_PROFILE.audiences], offerings: [...(STUB_PROFILE.offerings ?? [])], competitors: [...STUB_PROFILE.competitors] }, reason: "ok", source: "static" };
 }
 
 export function stubDiscoverSite(domain: string): SiteDiscovery {
