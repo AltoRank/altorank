@@ -11,11 +11,15 @@ import { createClient } from "@/lib/supabase/server";
  * Auth is still required - this writes to a workspace - but the layout stops
  * there and does not fetch the counts, quota and membership the dashboard
  * layout needs.
+ *
+ * Light, always. Setup happens before anyone has chosen a theme, and it ends
+ * by asking for a card; it should look the same for everyone rather than
+ * inheriting whatever the OS preferred. The choice comes back inside the app.
  */
 export default async function SetupLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/signin");
 
-  return <div className="min-h-screen bg-bg">{children}</div>;
+  return <div className="theme-light min-h-screen bg-bg text-ink">{children}</div>;
 }

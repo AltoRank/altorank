@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getSimulation } from "@/lib/dev/simulation";
 import { loadFirstLookReport } from "@/lib/onboarding/first-look-report";
+import { estimateFirstMonthTraffic } from "@/lib/onboarding/first-month-outlook";
 import { createClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { OnboardingWizard } from "@/components/onboarding/wizard";
@@ -75,7 +76,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   const gateShown =
     Boolean(workspace.onboarded_at || workspace.onboarding_skipped_at) &&
     (simulation?.gate === true || (quota.reason === "no-plan" && Boolean(quota.trialEligible)));
-  const [gatePlan, gateReport] = gateShown
+  const [gatePlan, gateReport, gateKeywords, gateAuthority] = gateShown
     ? await Promise.all([
         supabase
           .from("calendar_entries")
@@ -89,8 +90,25 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
               .map((r) => ({ term: r.keyword as string, date: r.scheduled_date as string })),
           ),
         loadFirstLookReport(supabase, workspace.id).catch(() => null),
+        // Volume and difficulty for what is planned: already priced during the
+        // run, so the estimate costs nothing and cannot disagree with the
+        // numbers the keywords page shows for the same terms.
+        supabase
+          .from("keywords")
+          .select("volume, difficulty, status")
+          .eq("workspace_id", workspace.id)
+          .eq("status", "planned")
+          .then(({ data }) => (data ?? []).map((r) => ({ volume: r.volume as number | null, difficulty: r.difficulty as number | null }))),
+        supabase
+          .from("workspace_metrics")
+          .select("authority")
+          .eq("workspace_id", workspace.id)
+          .order("measured_on", { ascending: false })
+          .limit(1)
+          .then(({ data }) => (data?.[0]?.authority ?? null) as number | null),
       ])
-    : [[], null];
+    : [[], null, [], null];
+  const gateTraffic = gateShown ? estimateFirstMonthTraffic(gateKeywords, gateAuthority) : null;
 
   const initialOutput = outputFromRow(output);
 
@@ -131,6 +149,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       alreadyOnboarded={Boolean(workspace.onboarded_at || workspace.onboarding_skipped_at)}
       gatePlan={gatePlan}
       gateReport={gateReport}
+      gateTraffic={gateTraffic}
       initialRun={run}
       initialAutoApprove={Boolean(workspace.auto_approve)}
     />

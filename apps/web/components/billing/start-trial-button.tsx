@@ -4,6 +4,7 @@ import { useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui";
 import { createCheckoutSession } from "@/app/actions/billing";
+import type { BillingInterval } from "@/lib/stripe";
 
 /**
  * The one button that opens the trial's checkout: Managed, monthly, card
@@ -13,6 +14,7 @@ import { createCheckoutSession } from "@/app/actions/billing";
  */
 export function StartTrialButton({
   returnTo,
+  interval = "month",
   label = "Start 7-day trial",
   variant = "accent",
   className,
@@ -20,6 +22,8 @@ export function StartTrialButton({
 }: {
   /** Same-origin path to land on after the card is taken. */
   returnTo?: string;
+  /** Which price to open checkout on. Yearly is two months free (lib/stripe). */
+  interval?: BillingInterval;
   label?: string;
   variant?: "accent" | undefined;
   className?: string;
@@ -46,7 +50,7 @@ export function StartTrialButton({
           // the trial gate it is the only control on a screen the person
           // cannot leave, so a silent failure locks them out of the product.
           try {
-            const result = await createCheckoutSession("starter", "month", returnTo);
+            const result = await createCheckoutSession("starter", interval, returnTo);
             if (!result.ok) {
               onError?.(result.error);
               toast.error(result.error);

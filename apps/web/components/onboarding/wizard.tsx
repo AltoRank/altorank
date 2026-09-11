@@ -66,6 +66,8 @@ import { freeAllowanceClause } from "@/lib/onboarding/copy";
 import { StartTrialButton } from "@/components/billing/start-trial-button";
 import { FirstLookReportView } from "@/components/onboarding/first-look-report";
 import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
+import { worthShowing, type TrafficRange } from "@/lib/onboarding/first-month-outlook";
+import type { BillingInterval } from "@/lib/stripe";
 import { TRIAL_OFFER } from "@/lib/billing/trial";
 import { SITE_STEPS, stepFromParam, stepIndex } from "@/lib/onboarding/steps";
 import posthog from "posthog-js";
@@ -97,6 +99,7 @@ export function OnboardingWizard({
   alreadyOnboarded = false,
   gatePlan = [],
   gateReport = null,
+  gateTraffic = null,
   initialRun = null,
   initialStep = 0,
   initialAutoApprove,
@@ -147,6 +150,8 @@ export function OnboardingWizard({
   gatePlan?: OnboardingPlanned[];
   /** The analysis already run on this account's site, shown open on the gate. */
   gateReport?: FirstLookReport | null;
+  /** What the planned month could be worth, as a range. Null when not gated. */
+  gateTraffic?: TrafficRange | null;
   initialRun?: OnboardingRunSnapshot | null;
 }) {
   const identifiedUserId = useRef<string | null>(null);
@@ -306,7 +311,7 @@ export function OnboardingWizard({
   // There is nothing to show the progress of and nothing to set up again -
   // only the card stands between this account and the product.
   if (!running && alreadyOnboarded && trialEligible) {
-    return <TrialGateScreen domain={domain} planned={gatePlan} report={gateReport} />;
+    return <TrialGateScreen domain={domain} planned={gatePlan} report={gateReport} traffic={gateTraffic} />;
   }
 
   if (running) {
@@ -639,12 +644,19 @@ function TrialGateScreen({
   domain,
   planned,
   report,
+  traffic,
 }: {
   domain: string;
   planned: OnboardingPlanned[];
   report: FirstLookReport | null;
+  traffic: TrafficRange | null;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const [interval, setInterval] = useState<BillingInterval>("month");
+  const words = planned.length;
+  const fixable = report?.readiness?.findings.filter((f) => !f.passed && !f.inconclusive).length ?? 0;
+  const pagesToFix = report?.existingPages?.withIssues ?? 0;
+  const showTraffic = traffic !== null && worthShowing(traffic);
   return (
     <div className="min-h-screen bg-bg">
       <div className="mx-auto max-w-[860px] px-6 py-10">
@@ -656,12 +668,35 @@ function TrialGateScreen({
           </p>
         </div>
 
-        {/* The ask stays in the first screenful, above everything it unlocks. */}
         <div className="mx-auto mb-6 max-w-[640px] rounded-[10px] border border-accent/40 bg-panel p-5">
           <div className="rounded-[8px] bg-accent/5 p-4">
-            <div className="mb-1 text-[11px] uppercase tracking-wide text-accent">7-day trial</div>
-            <p className="m-0 mb-3 text-[13.5px] leading-[1.6]">{TRIAL_OFFER}</p>
-            <StartTrialButton returnTo="/dashboard" onError={setError} />
+            <div className="mb-2.5 flex items-center justify-between gap-3">
+              <div className="text-[11px] uppercase tracking-wide text-accent">7-day trial</div>
+              {/* Both prices, before the card rather than after it. The amount
+                  itself is Stripe's to state at checkout - a number repeated
+                  here is one that can drift out of step with the price it
+                  claims to be. */}
+              <div className="flex items-center gap-0.5 rounded-full border border-line bg-bg p-0.5">
+                {(["month", "year"] as const).map((i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setInterval(i)}
+                    aria-pressed={interval === i}
+                    className={`rounded-full px-2.5 py-1 text-[11.5px] transition-colors ${
+                      interval === i ? "bg-accent/15 text-ink" : "text-ink-3 hover:text-ink"
+                    }`}
+                  >
+                    {i === "month" ? "Monthly" : "Yearly"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="m-0 mb-3 text-[13.5px] leading-[1.6]">
+              {TRIAL_OFFER}
+              {interval === "year" && " Yearly is two months free."}
+            </p>
+            <StartTrialButton returnTo="/dashboard" interval={interval} onError={setError} />
             {error && (
               <p className="m-0 mt-2.5 text-[12.5px] leading-[1.5] text-err-ink" role="alert">
                 {error}
@@ -671,6 +706,52 @@ function TrialGateScreen({
         </div>
 
         <div className="mx-auto flex max-w-[640px] flex-col gap-5">
+          {(showTraffic || words > 0 || fixable > 0 || pagesToFix > 0) && (
+            <div className="rounded-[8px] border border-line bg-bg p-4">
+              <div className="mb-2.5 text-[12.5px] font-medium text-ink">What a month of this looks like</div>
+              <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[12.5px] text-ink-2">
+                {words > 0 && (
+                  <li>
+                    <strong className="text-ink">{words}</strong> {words === 1 ? "article" : "articles"} written and
+                    waiting for your approval
+                  </li>
+                )}
+                {showTraffic && traffic && (
+                  <li>
+                    <strong className="text-ink">
+                      {traffic.low.toLocaleString("en-US")}–{traffic.high.toLocaleString("en-US")}
+                    </strong>{" "}
+                    organic visits a month <span className="text-ink-3">if these reach page one</span>
+                  </li>
+                )}
+                {fixable > 0 && (
+                  <li>
+                    <strong className="text-ink">{fixable}</strong> {fixable === 1 ? "thing" : "things"} stopping AI
+                    assistants reading {domain || "your site"}, each with the fix
+                  </li>
+                )}
+                {pagesToFix > 0 && (
+                  <li>
+                    <strong className="text-ink">{pagesToFix}</strong> existing {pagesToFix === 1 ? "page" : "pages"}{" "}
+                    with something to fix
+                  </li>
+                )}
+              </ul>
+              {showTraffic && traffic && (
+                /* The assumption, next to the number that rests on it. A single
+                   confident figure here would be the same mistake as the "86
+                   failed every check" line that shipped and was false. */
+                <p className="m-0 mt-2.5 text-[11.5px] leading-[1.5] text-ink-3">
+                  An estimate, not a forecast: search volume for the{" "}
+                  {traffic.counted} {traffic.counted === 1 ? "keyword" : "keywords"} planned, against typical
+                  click-through at the positions {domain || "this site"} can realistically reach.
+                  {traffic.excluded > 0 && ` ${traffic.excluded} left out as out of reach or unmeasured.`}{" "}
+                  Ranking takes months, and nothing here is promised.
+                </p>
+              )}
+            </div>
+          )}
+
           {planned.length > 0 && (
             <div>
               <div className="mb-2 flex items-baseline justify-between gap-3">
@@ -679,10 +760,6 @@ function TrialGateScreen({
                   {planned.length} {planned.length === 1 ? "article" : "articles"} scheduled
                 </div>
               </div>
-              {/* Locked, not hidden. The plan is real and was built for this
-                  account; what the trial buys is the writing of it, so the
-                  terms stay legible through the lock rather than being
-                  blurred into a teaser of something that might not exist. */}
               <div className="relative overflow-hidden rounded-[8px] border border-line bg-bg">
                 <ul className="m-0 max-h-[220px] list-none divide-y divide-line overflow-hidden p-0 opacity-45">
                   {planned.slice(0, 8).map((p) => (
@@ -701,9 +778,6 @@ function TrialGateScreen({
             </div>
           )}
 
-          {/* Not locked. This was measured on their own public pages and it is
-              the evidence the ask rests on; hiding it would leave the gate
-              asking for a card on nothing. */}
           {report && <FirstLookReportView report={report} domain={domain} live={false} />}
         </div>
       </div>
