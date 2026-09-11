@@ -101,7 +101,6 @@ that small: add a stub only for a call that leaves the machine or costs money.
 | --- | --- |
 | `onboarding.spec.ts` | `/dashboard` -> `/onboarding`, the reading state, five steps each persisting, the run screen, the plan on `/content`, the first draft in review on its day |
 | `wizard-honesty.spec.ts` | an unreadable site shows the failure, the reason and Try again; the headline does not claim the fields were filled |
-| `skip.spec.ts` | Skip setup writes `onboarding_skipped_at` and the dashboard stops redirecting |
 | `approval-gate.spec.ts` | a draft in review has no publish control; approving moves it to `approved`; no `publish_log` row is written |
 | `scope.spec.ts` | two workspaces on one account; keywords and calendar show only the switched-to workspace |
 | `signup.spec.ts` | an invalid domain is refused inline and creates neither an account nor a user |

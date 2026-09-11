@@ -27,8 +27,7 @@
 // After it, once per account, comes the only question that is about the person:
 // where they heard of us. It is last because by then they have watched the
 // product read their site and have a reason to answer honestly; it is asked
-// even on "Skip setup" because a skipped wizard is the one place a referrer
-// tells us nothing, and one click is not a wall.
+// and one click is not a wall.
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -65,6 +64,8 @@ import {
 } from "@/lib/onboarding/events";
 import { freeAllowanceClause } from "@/lib/onboarding/copy";
 import { StartTrialButton } from "@/components/billing/start-trial-button";
+import { FirstLookReportView } from "@/components/onboarding/first-look-report";
+import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
 import { TRIAL_OFFER } from "@/lib/billing/trial";
 import { SITE_STEPS, stepFromParam, stepIndex } from "@/lib/onboarding/steps";
 import posthog from "posthog-js";
@@ -94,6 +95,8 @@ export function OnboardingWizard({
   initialOutput,
   askAttribution,
   alreadyOnboarded = false,
+  gatePlan = [],
+  gateReport = null,
   initialRun = null,
   initialStep = 0,
   initialAutoApprove,
@@ -140,6 +143,10 @@ export function OnboardingWizard({
    * wizard, whose Finish starts a fresh run.
    */
   alreadyOnboarded?: boolean;
+  /** The month already planned for this account, shown locked on the gate. */
+  gatePlan?: OnboardingPlanned[];
+  /** The analysis already run on this account's site, shown open on the gate. */
+  gateReport?: FirstLookReport | null;
   initialRun?: OnboardingRunSnapshot | null;
 }) {
   const identifiedUserId = useRef<string | null>(null);
@@ -174,8 +181,6 @@ export function OnboardingWizard({
   const [step, setStep] = useState(initialStep);
   const [autoApprove, setAutoApproveState] = useState(initialAutoApprove);
   const [attribution, setAttribution] = useState<AttributionDraft>(EMPTY_ATTRIBUTION);
-  // Set when "Skip setup" was pressed: which screen it was pressed on, so Back
-  // returns there, and the finish goes to the dashboard rather than to a plan.
   const [profile, setProfile] = useState<BusinessProfile | null>(initialProfile);
   const [site, setSite] = useState<SiteDetails>(initialSite);
   const [output, setOutput] = useState<OutputSettings>(initialOutput);
@@ -301,7 +306,7 @@ export function OnboardingWizard({
   // There is nothing to show the progress of and nothing to set up again -
   // only the card stands between this account and the product.
   if (!running && alreadyOnboarded && trialEligible) {
-    return <TrialGateScreen domain={domain} />;
+    return <TrialGateScreen domain={domain} planned={gatePlan} report={gateReport} />;
   }
 
   if (running) {
@@ -630,19 +635,76 @@ const VERDICT_LABEL: Record<OnboardingArticle["verdict"], { text: string; classN
  * their second visit, or their thirtieth - so it asks plainly and says what
  * the trial opens rather than pretending there is a setup in progress.
  */
-function TrialGateScreen({ domain }: { domain: string }) {
+function TrialGateScreen({
+  domain,
+  planned,
+  report,
+}: {
+  domain: string;
+  planned: OnboardingPlanned[];
+  report: FirstLookReport | null;
+}) {
+  const [error, setError] = useState<string | null>(null);
   return (
-    <div className="flex min-h-screen items-center justify-center bg-bg px-6">
-      <div className="w-full max-w-[440px] rounded-[10px] border border-accent/40 bg-panel p-6">
-        <h1 className="m-0 mb-1.5 text-[20px] font-semibold">Start your trial to continue</h1>
-        <p className="m-0 mb-4 text-[13.5px] leading-[1.6] text-ink-2">
-          {domain ? `Your plan for ${domain} is ready. ` : ""}
-          Approving, publishing and the rest of the schedule run on a plan.
-        </p>
-        <div className="rounded-[8px] bg-accent/5 p-4">
-          <div className="mb-1 text-[11px] uppercase tracking-wide text-accent">7-day trial</div>
-          <p className="m-0 mb-3 text-[13.5px] leading-[1.6]">{TRIAL_OFFER}</p>
-          <StartTrialButton returnTo="/dashboard" />
+    <div className="min-h-screen bg-bg">
+      <div className="mx-auto max-w-[860px] px-6 py-10">
+        <div className="mb-6 text-center">
+          <h1 className="m-0 mb-1.5 text-[22px] font-semibold">Start your trial to continue</h1>
+          <p className="mx-auto m-0 max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">
+            {domain ? `Everything below is already done for ${domain}. ` : ""}
+            The trial opens approving, publishing and the rest of the schedule.
+          </p>
+        </div>
+
+        {/* The ask stays in the first screenful, above everything it unlocks. */}
+        <div className="mx-auto mb-6 max-w-[640px] rounded-[10px] border border-accent/40 bg-panel p-5">
+          <div className="rounded-[8px] bg-accent/5 p-4">
+            <div className="mb-1 text-[11px] uppercase tracking-wide text-accent">7-day trial</div>
+            <p className="m-0 mb-3 text-[13.5px] leading-[1.6]">{TRIAL_OFFER}</p>
+            <StartTrialButton returnTo="/dashboard" onError={setError} />
+            {error && (
+              <p className="m-0 mt-2.5 text-[12.5px] leading-[1.5] text-err-ink" role="alert">
+                {error}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="mx-auto flex max-w-[640px] flex-col gap-5">
+          {planned.length > 0 && (
+            <div>
+              <div className="mb-2 flex items-baseline justify-between gap-3">
+                <div className="text-[12.5px] font-medium text-ink">Your first month</div>
+                <div className="text-[11.5px] text-ink-3">
+                  {planned.length} {planned.length === 1 ? "article" : "articles"} scheduled
+                </div>
+              </div>
+              {/* Locked, not hidden. The plan is real and was built for this
+                  account; what the trial buys is the writing of it, so the
+                  terms stay legible through the lock rather than being
+                  blurred into a teaser of something that might not exist. */}
+              <div className="relative overflow-hidden rounded-[8px] border border-line bg-bg">
+                <ul className="m-0 max-h-[220px] list-none divide-y divide-line overflow-hidden p-0 opacity-45">
+                  {planned.slice(0, 8).map((p) => (
+                    <li key={`${p.date}-${p.term}`} className="flex items-baseline justify-between gap-3 px-3.5 py-2 text-[12.5px]">
+                      <span className="truncate">{p.term}</span>
+                      <span className="shrink-0 font-mono text-[11px] text-ink-3">{calendarDay(p.date)}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-center bg-gradient-to-t from-bg via-bg/85 to-transparent pb-3 pt-10">
+                  <span className="text-[12px] font-medium text-ink-2">
+                    Start the trial to unlock the schedule
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Not locked. This was measured on their own public pages and it is
+              the evidence the ask rests on; hiding it would leave the gate
+              asking for a card on nothing. */}
+          {report && <FirstLookReportView report={report} domain={domain} live={false} />}
         </div>
       </div>
     </div>

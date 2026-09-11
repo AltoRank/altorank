@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { getSimulation } from "@/lib/dev/simulation";
+import { loadFirstLookReport } from "@/lib/onboarding/first-look-report";
 import { createClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { OnboardingWizard } from "@/components/onboarding/wizard";
@@ -37,6 +39,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   // unmetered, and then there is nothing to qualify.
   const authRead = requireAuth();
   const quotaRead = authRead.then(({ accountId, user }) => getRequestQuota(accountId, user.email ?? null));
+  const simulation = await getSimulation();
   const [{ data: workspace }, { data: output }, quota, run, auth] = await Promise.all([
     supabase
       .from("workspaces")
@@ -65,6 +68,30 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   const account = workspace.accounts as { attribution_source: string | null } | { attribution_source: string | null }[] | null;
   const answered = Boolean((Array.isArray(account) ? account[0] : account)?.attribution_source);
 
+  // What the gate screen shows behind its lock: the month this account
+  // already had planned for it, and the analysis already run on its site.
+  // Both are read only when the gate is the screen being rendered - there is
+  // no point paying for them on the way into the wizard.
+  const gateShown =
+    Boolean(workspace.onboarded_at || workspace.onboarding_skipped_at) &&
+    (simulation?.gate === true || (quota.reason === "no-plan" && Boolean(quota.trialEligible)));
+  const [gatePlan, gateReport] = gateShown
+    ? await Promise.all([
+        supabase
+          .from("calendar_entries")
+          .select("keyword, scheduled_date")
+          .eq("workspace_id", workspace.id)
+          .order("scheduled_date", { ascending: true })
+          .limit(30)
+          .then(({ data }) =>
+            (data ?? [])
+              .filter((r) => r.keyword && r.scheduled_date)
+              .map((r) => ({ term: r.keyword as string, date: r.scheduled_date as string })),
+          ),
+        loadFirstLookReport(supabase, workspace.id).catch(() => null),
+      ])
+    : [[], null];
+
   const initialOutput = outputFromRow(output);
 
   return (
@@ -80,7 +107,13 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       // article a week" for a site the planner would schedule seven for.
       weeklyLimit={workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE}
       freeDrafts={quota.reason === "no-plan" ? Math.max(0, quota.remaining ?? 0) : null}
-      trialEligible={quota.reason === "no-plan" && Boolean(quota.trialEligible)}
+      // `simulation.gate` is dev-only and forces this on too. Without it the
+      // dashboard's forced redirect lands here and renders the WIZARD: a dev
+      // install has no Stripe key, so the real quota says "self-host" and the
+      // screen the redirect exists to show would never appear. In production
+      // the two cannot disagree - trialGateApplies is only true when the
+      // quota says exactly this.
+      trialEligible={simulation?.gate === true || (quota.reason === "no-plan" && Boolean(quota.trialEligible))}
       initialProfile={(workspace.business_profile as BusinessProfile | null) ?? null}
       initialSite={{
         sitemapUrl: workspace.sitemap_url ?? "",
@@ -96,6 +129,8 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       // new run: another site read, another keyword spend, a profile
       // overwritten with whatever the model proposes today.
       alreadyOnboarded={Boolean(workspace.onboarded_at || workspace.onboarding_skipped_at)}
+      gatePlan={gatePlan}
+      gateReport={gateReport}
       initialRun={run}
       initialAutoApprove={Boolean(workspace.auto_approve)}
     />
