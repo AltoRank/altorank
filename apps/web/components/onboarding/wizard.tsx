@@ -170,8 +170,6 @@ export function OnboardingWizard({
   const [attribution, setAttribution] = useState<AttributionDraft>(EMPTY_ATTRIBUTION);
   // Set when "Skip setup" was pressed: which screen it was pressed on, so Back
   // returns there, and the finish goes to the dashboard rather than to a plan.
-  const [skipFrom, setSkipFrom] = useState<number | null>(null);
-  const skipping = skipFrom !== null;
   const [profile, setProfile] = useState<BusinessProfile | null>(initialProfile);
   const [site, setSite] = useState<SiteDetails>(initialSite);
   const [output, setOutput] = useState<OutputSettings>(initialOutput);
@@ -275,11 +273,6 @@ export function OnboardingWizard({
         await persist(step);
         if (step !== last) {
           goToStep(step + 1);
-        } else if (skipping) {
-          if (profile) await saveProfile(workspaceId, profile);
-          await completeWizard(workspaceId, { skipped: true });
-          posthog.capture("onboarding_skipped", { workspace_id: workspaceId });
-          router.push("/dashboard");
         } else {
           await completeWizard(workspaceId);
           posthog.capture("onboarding_completed", { workspace_id: workspaceId });
@@ -297,26 +290,6 @@ export function OnboardingWizard({
     goToStep(step + 1);
   }
 
-  function skipAll() {
-    // Skipping the site setup still passes through the one question that is
-    // about the person. It is answered with a click and finished from there.
-    if (askAttribution) {
-      setError(null);
-      setSkipFrom(step);
-      goToStep(ATTRIBUTION_STEP);
-      return;
-    }
-    start(async () => {
-      try {
-        if (profile) await saveProfile(workspaceId, profile);
-        await completeWizard(workspaceId, { skipped: true });
-        posthog.capture("onboarding_skipped", { workspace_id: workspaceId });
-        router.push("/dashboard");
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not skip.");
-      }
-    });
-  }
 
   if (running) {
     return <RunScreen workspaceId={workspaceId} domain={domain} weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} trialEligible={trialEligible} initialRun={resumed} />;
@@ -346,8 +319,8 @@ export function OnboardingWizard({
         {step === 1 && <AudienceStep profile={profile} patch={patch} />}
         {step === 2 && <BlogStep site={site} setSite={setSite} discovery={discovery} domain={domain} />}
         {step === 3 && <ArticlesStep output={output} setOutput={setOutput} autoApprove={autoApprove} setAutoApprove={setAutoApproveState} />}
-        {step === ATTRIBUTION_STEP && <AttributionStep value={attribution} onChange={setAttribution} skipping={skipping} />}
-        {step === last && !skipping && <NextUp weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} autoApprove={autoApprove} />}
+        {step === ATTRIBUTION_STEP && <AttributionStep value={attribution} onChange={setAttribution} />}
+        {step === last && <NextUp weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} autoApprove={autoApprove} />}
         {error && <p className="mt-4 rounded-lg bg-err-soft px-3 py-2 text-[12.5px] text-err-ink">{error}</p>}
       </div>
 
@@ -358,24 +331,16 @@ export function OnboardingWizard({
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
-              onClick={() => {
-                if (skipFrom !== null) {
-                  const back = skipFrom;
-                  setSkipFrom(null);
-                  goToStep(back);
-                } else {
-                  goToStep(Math.max(0, step - 1));
-                }
-              }}
+              onClick={() => goToStep(Math.max(0, step - 1))}
               disabled={step === 0 || pending}
             >
               Back
             </Button>
             {/* Every screen can be skipped on its own: nothing typed on it is
                 saved and the next one opens. The last step has no link because
-                Finish is the way out. Skipping the whole setup is offered
-                once, on the first screen, where that decision is actually
-                made. */}
+                Finish is the way out. Skipping the setup wholesale is not
+                offered: the run is the product, and an account that skips it
+                lands on an empty dashboard with nothing to react to. */}
             {step !== last && (
               <button
                 type="button"
@@ -384,16 +349,6 @@ export function OnboardingWizard({
                 className="text-[12px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink"
               >
                 Skip this step
-              </button>
-            )}
-            {step === 0 && (
-              <button
-                type="button"
-                onClick={skipAll}
-                disabled={pending}
-                className="text-[12px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink"
-              >
-                Skip setup
               </button>
             )}
           </div>
@@ -406,9 +361,7 @@ export function OnboardingWizard({
               ? "Saving…"
               : step !== last
                 ? "Continue"
-                : skipping
-                  ? "Skip and finish"
-                  : "Finish and plan my first month"}
+                : "Finish and plan my first month"}
           </Button>
         </div>
       </div>
@@ -628,16 +581,14 @@ function NextUp({ weeklyLimit, freeDrafts, autoApprove }: { weeklyLimit: number;
 function AttributionStep({
   value,
   onChange,
-  skipping,
 }: {
   value: AttributionDraft;
   onChange: (v: AttributionDraft) => void;
-  skipping: boolean;
 }) {
   return (
     <>
       <Head
-        title={skipping ? "One thing before you go" : "One last thing"}
+        title="One last thing"
         sub="How did you hear about us? Pick the closest, or finish without answering. It is the only way we can tell whether an AI answer sent you here, which is the thing we sell."
       />
       <div className="rounded-[10px] border border-line bg-panel p-5">
