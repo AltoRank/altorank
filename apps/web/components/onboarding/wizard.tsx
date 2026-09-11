@@ -93,6 +93,7 @@ export function OnboardingWizard({
   initialSite,
   initialOutput,
   askAttribution,
+  alreadyOnboarded = false,
   initialRun = null,
   initialStep = 0,
   initialAutoApprove,
@@ -133,6 +134,12 @@ export function OnboardingWizard({
    * rather than on step 1 - which is what makes a reload mid-run land back
    * on the phases so far instead of restarting the wizard.
    */
+  /**
+   * This workspace has been through setup before. Set when the dashboard's
+   * trial gate sent the person here for the card: they must not be handed the
+   * wizard, whose Finish starts a fresh run.
+   */
+  alreadyOnboarded?: boolean;
   initialRun?: OnboardingRunSnapshot | null;
 }) {
   const identifiedUserId = useRef<string | null>(null);
@@ -289,6 +296,13 @@ export function OnboardingWizard({
     goToStep(step + 1);
   }
 
+
+  // Sent here by the dashboard gate, with no run recent enough to resume.
+  // There is nothing to show the progress of and nothing to set up again -
+  // only the card stands between this account and the product.
+  if (!running && alreadyOnboarded && trialEligible) {
+    return <TrialGateScreen domain={domain} />;
+  }
 
   if (running) {
     return <RunScreen workspaceId={workspaceId} domain={domain} weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} trialEligible={trialEligible} initialRun={resumed} />;
@@ -607,6 +621,33 @@ const VERDICT_LABEL: Record<OnboardingArticle["verdict"], { text: string; classN
   review: { text: "Fact check: review", className: "text-warn" },
   high_risk: { text: "Fact check: needs work", className: "text-err" },
 };
+
+/**
+ * The card, for an account that is already set up.
+ *
+ * The trial ask at the end of a run has the run to point at: drafts written,
+ * a month scheduled. This one has none of that - it is what somebody sees on
+ * their second visit, or their thirtieth - so it asks plainly and says what
+ * the trial opens rather than pretending there is a setup in progress.
+ */
+function TrialGateScreen({ domain }: { domain: string }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-bg px-6">
+      <div className="w-full max-w-[440px] rounded-[10px] border border-accent/40 bg-panel p-6">
+        <h1 className="m-0 mb-1.5 text-[20px] font-semibold">Start your trial to continue</h1>
+        <p className="m-0 mb-4 text-[13.5px] leading-[1.6] text-ink-2">
+          {domain ? `Your plan for ${domain} is ready. ` : ""}
+          Approving, publishing and the rest of the schedule run on a plan.
+        </p>
+        <div className="rounded-[8px] bg-accent/5 p-4">
+          <div className="mb-1 text-[11px] uppercase tracking-wide text-accent">7-day trial</div>
+          <p className="m-0 mb-3 text-[13.5px] leading-[1.6]">{TRIAL_OFFER}</p>
+          <StartTrialButton returnTo="/dashboard" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * The last step of onboarding: the card.

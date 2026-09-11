@@ -43,7 +43,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       // The account's answer rides along on the workspace's own account row,
       // so the question is asked of the account that owns this site, once, and
       // not again for its second site.
-      .select("id, domain, business_profile, sitemap_url, blog_root_url, example_article_urls, auto_generate_weekly_limit, auto_approve, accounts(attribution_source)")
+      .select("id, domain, business_profile, sitemap_url, blog_root_url, example_article_urls, auto_generate_weekly_limit, auto_approve, onboarded_at, onboarding_skipped_at, accounts(attribution_source)")
       .eq("id", scopeId)
       .single(),
     supabase
@@ -90,6 +90,12 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       initialOutput={initialOutput}
       askAttribution={!answered}
       initialStep={stepFromParam(step, SITE_STEPS.length + (answered ? 0 : 1))}
+      // Already through setup once. The dashboard gate sends such a person
+      // here for the card, and without this they would be handed the wizard
+      // from its first screen - and "Finish" at the end of it starts a whole
+      // new run: another site read, another keyword spend, a profile
+      // overwritten with whatever the model proposes today.
+      alreadyOnboarded={Boolean(workspace.onboarded_at || workspace.onboarding_skipped_at)}
       initialRun={run}
       initialAutoApprove={Boolean(workspace.auto_approve)}
     />
