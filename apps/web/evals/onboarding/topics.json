@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "labelOrigin": "Evaluator-authored explicit offering boundaries; evaluates final task validation, not discovery recall or ranking.",
+  "cases": [
+    {
+      "id": "writer-cms",
+      "businessEvidence": "ExampleWriter sells AI article generation and editorial approval. It does not sell a CMS.",
+      "query": "best content management system",
+      "serpTitle": "How to compare content management systems",
+      "expectedSupported": false
+    },
+    {
+      "id": "writer-writing",
+      "businessEvidence": "ExampleWriter sells AI article generation and editorial approval.",
+      "query": "ai content writer",
+      "serpTitle": "How to choose an AI content writer",
+      "expectedSupported": true
+    },
+    {
+      "id": "plumber-quotes",
+      "businessEvidence": "ExamplePlumber offers leak repair and drain clearance to London homeowners.",
+      "query": "compare plumbing quotes",
+      "serpTitle": "How to compare quotes for plumbing repairs",
+      "expectedSupported": true
+    },
+    {
+      "id": "plumber-software",
+      "businessEvidence": "ExamplePlumber offers leak repair and drain clearance to London homeowners.",
+      "query": "plumbing invoicing software",
+      "serpTitle": "Best invoicing software for plumbers",
+      "expectedSupported": false
+    },
+    {
+      "id": "oil-care",
+      "businessEvidence": "ExampleGroom sells beard oils, balms and washes.",
+      "query": "how to choose beard oil",
+      "serpTitle": "How to choose beard oil for your routine",
+      "expectedSupported": true
+    },
+    {
+      "id": "oil-treatment",
+      "businessEvidence": "ExampleGroom sells conditioning beard oil. It provides no medical treatment.",
+      "query": "prescription acne treatment",
+      "serpTitle": "How to choose a prescription acne treatment",
+      "expectedSupported": false
+    },
+    {
+      "id": "analytics-export",
+      "businessEvidence": "ExampleMetrics provides website analytics and exports reports as CSV.",
+      "query": "website analytics csv export",
+      "serpTitle": "How to export website analytics to CSV",
+      "expectedSupported": true
+    },
+    {
+      "id": "analytics-ads",
+      "businessEvidence": "ExampleMetrics counts website visits and goals. It does not create or manage ad campaigns.",
+      "query": "automated ad bidding software",
+      "serpTitle": "Best automated ad bidding platforms",
+      "expectedSupported": false
+    },
+    {
+      "id": "italian-repair",
+      "businessEvidence": "EsempioBici offre riparazioni e manutenzione di biciclette a Milano.",
+      "query": "come scegliere officina bici",
+      "serpTitle": "Come scegliere un’officina per la tua bicicletta",
+      "expectedSupported": true
+    },
+    {
+      "id": "italian-accounting",
+      "businessEvidence": "EsempioBici offre riparazioni di biciclette e non vende software.",
+      "query": "software contabilità officina",
+      "serpTitle": "Come scegliere un software di contabilità per officine",
+      "expectedSupported": false
+    }
+  ]
+}

@@ -1,11 +1,15 @@
 import { beforeEach, expect, it, vi } from "vitest";
 const {ask} = vi.hoisted(()=>({ask:vi.fn()}));
 vi.mock("../buyer-model",async(original)=>({...await original<object>(),askStructured:ask}));
-import {preserveEditorialTask} from "../editorial-task";
+import {preserveEditorialTask,checkEditorialTask} from "../editorial-task";
 import type {QualificationAssessment} from "../qualification-decision";
 const organic=[{url:"https://ranking.test/tools",title:"Best SEO writing tools compared",description:"Compare pricing and editing features",rank:1,domain:"ranking.test",wordCount:null}];
 const proposed={angle:"How editorial approval reduces liability",buyingJob:"Reduce liability"} as QualificationAssessment;
 beforeEach(()=>ask.mockReset());
+it("keeps an explicit rejection distinct from a provider or schema failure",async()=>{
+  ask.mockResolvedValue("null");expect((await checkEditorialTask("seo writing tool",organic,proposed)).status).toBe("unsupported");
+  ask.mockResolvedValue(null);expect((await checkEditorialTask("seo writing tool",organic,proposed)).status).toBe("unavailable");
+});
 it("uses an independent task editor and retains its exact search evidence",async()=>{
   ask.mockResolvedValue(JSON.stringify({queryTask:"Compare SEO writing tools",sourceQuote:organic[0].title,angle:"How to compare SEO writing tools",buyingJob:"Choose an SEO writing tool",reason:"Answers the selection task"}));
   const result=await preserveEditorialTask("seo writing tool",organic,proposed);

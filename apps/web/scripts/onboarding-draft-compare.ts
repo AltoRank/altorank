@@ -12,7 +12,7 @@ async function main() {
   for (const key of ["baseline", "old-checkout", "provider-env", "out"]) if (!flag(key)) throw Error(`Missing --${key}`);
   const env = parseEnv(readFileSync(flag("provider-env")!, "utf8"));
   for (const key of Object.keys(process.env)) if (/ANTHROPIC|OPENAI|DATAFORSEO|STRIPE|RESEND|SUPABASE|E2E_STUBS/.test(key)) delete process.env[key];
-  for (const key of ["ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ANTHROPIC_CONTENT_MODEL", "ANTHROPIC_STRUCTURED_MODEL"]) if (env[key]) process.env[key] = env[key];
+  for (const key of ["ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ANTHROPIC_MODEL_STRUCTURED", "ANTHROPIC_MODEL_EDITORIAL"]) if (env[key]) process.env[key] = env[key];
   const baseline = JSON.parse(readFileSync(flag("baseline")!, "utf8"));
   const article = baseline.articles[0]; const profile = baseline.workspaces[0].business_profile;
   const keyword = baseline.keywords.find((k: { term: string }) => k.term === article.keyword);

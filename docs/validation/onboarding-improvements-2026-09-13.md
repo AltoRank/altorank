@@ -2,6 +2,8 @@
 
 **The first-draft journey is materially better supported and readable before the trial gate. Draft quality is still inconsistent: all four live samples need editorial changes. Keep PR 215 in draft; this is development evidence, not release or conversion approval.**
 
+**Subsequent calibration:** [the route and evaluation report](./onboarding-calibration-2026-09-13.md) supersedes the revision behavior and validation counts below. Automatic model rewriting is now disabled after accepted corrections failed direct inspection.
+
 Scope: business understanding → keyword identification → a choice of supported article briefs → one selected draft → full preview → trial decision. This follows the mechanism proposal and the user's explicit focus on the first result. The previous baseline is [the evaluation at commit 75102a6](./onboarding-simulation-2026-09-13.md). This report describes the subsequent implementation and its limits.
 
 ## What an ideal first result must do

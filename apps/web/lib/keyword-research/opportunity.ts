@@ -170,7 +170,7 @@ export async function qualifyOpportunities(
               if ((assessment.contradictions.length || assessment.assessment?.results.some((r) => r.format === "unknown")) && adjudications < 2 && !budget.exhausted) {
                 adjudications++;
                 const urls = assessment.assessment?.results.filter((r) => r.format === "unknown" || assessment.contradictions.some((v) => v.includes(r.url))).map((r) => r.url).slice(0, 2) ?? [];
-                const pages = await Promise.all(urls.map(readPageExtract)); extracts.push(...pages.filter((p): p is PageExtract => p !== null));
+                const pages = await Promise.all(urls.map(url => readPageExtract(url))); extracts.push(...pages.filter((p): p is PageExtract => p !== null));
                 const second = await askStructured("keyword-research/opportunity-adjudication", `${prompt}\nIndependently adjudicate using these additional extracts. Return the complete schema again. Do not approve to fill a calendar.\n${JSON.stringify({ concerns: assessment.contradictions, previous: assessment.assessment, pageExtracts: extracts })}`, { maxTokens: 2800, spend });
                 assessment = assessQualification(extractJson(second, "{", "}"), organic, businessEvidence, extracts, ownUrl);
               }

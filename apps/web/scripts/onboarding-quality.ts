@@ -22,7 +22,7 @@ async function main() {
   if (!url || !['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname)) throw new Error('Refusing a non-loopback database');
   // Clear inherited integration credentials before importing any app modules.
   for (const key of Object.keys(process.env)) if (/SUPABASE|ANTHROPIC|OPENAI|DATAFORSEO|STRIPE|RESEND|YOUTUBE|E2E_STUBS|SIMULAT/i.test(key)) delete process.env[key];
-  for (const key of ['ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL', 'ANTHROPIC_CONTENT_MODEL', 'ANTHROPIC_STRUCTURED_MODEL', 'DATAFORSEO_LOGIN', 'DATAFORSEO_PASSWORD', 'DATAFORSEO_API_KEY']) {
+  for (const key of ['ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL', 'ANTHROPIC_MODEL_STRUCTURED', 'ANTHROPIC_MODEL_EDITORIAL', 'DATAFORSEO_LOGIN', 'DATAFORSEO_PASSWORD', 'DATAFORSEO_API_KEY']) {
     if (providers[key]) process.env[key] = providers[key];
   }
   process.env.NEXT_PUBLIC_SUPABASE_URL = url;

@@ -8,6 +8,7 @@ vi.mock("../page-evidence", () => ({ readPageExtract: vi.fn(async (url: string) 
 vi.mock("@/lib/seo/brief-data", () => ({ fetchAdvancedSerp: fetchSerp }));
 import { qualifyOpportunities, readOpportunity, contextKey, serpOverlap, validArticleAngle, assertAutonomousTopic } from "../opportunity";
 import { balanceSources, diverseSeeds } from "../diversity";
+import { readPageExtract } from "../page-evidence";
 
 const context = { domain: "example.com", languageCode: "it", locationCode: 2380, business: { name: "Clinic Studio", offerings: ["clinic booking websites"], audiences: ["clinic owners"] } };
 const term = "clinic booking website costs";
@@ -29,6 +30,12 @@ beforeEach(() => {
 async function run(extra = {}) { return (await qualifyOpportunities(db, "ws", [{id:"k",term,...extra}], context)).get("k")!; }
 
 describe("topic qualification", () => {
+  it("reads complete page extracts during adjudication without passing array indices as character limits",async()=>{
+    ask.mockResolvedValueOnce(JSON.stringify({...approval,results:urls.map(url=>({url,format:"tool",quote:"A buyer guide"}))})).mockResolvedValue(JSON.stringify(approval));
+    await run();
+    expect(readPageExtract).toHaveBeenCalled();
+    for(const call of vi.mocked(readPageExtract).mock.calls)expect(call).toHaveLength(1);
+  });
   it("shares cached evidence across callers and JSONB field orders", () => {
     expect(contextKey(context)).toBe(contextKey({ business: { audiences: context.business.audiences, offerings: context.business.offerings, name: context.business.name }, locationCode: context.locationCode, languageCode: context.languageCode, domain: context.domain }));
   });

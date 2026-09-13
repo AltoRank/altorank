@@ -1,0 +1,318 @@
+{
+  "version": 1,
+  "labelOrigin": "Evaluator-authored synthetic minimal pairs derived from observed failure classes; not independent human labels. Holdout cases were authored before running comparisons and must not be used to tune prompts. Sources are fictional test facts, not real-world advice.",
+  "cases": [
+    {
+      "id": "plan-limit",
+      "split": "development",
+      "brief": {
+        "angle": "Explain the supplied facts accurately."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/plan-limit",
+          "title": "Fictional evaluation source",
+          "headings": [],
+          "text": "ExampleWriter Managed includes three sites. Agency includes unlimited sites."
+        }
+      ],
+      "html": "<p>Every ExampleWriter plan includes three sites.</p>",
+      "expectedIssues": [
+        {
+          "fragment": "Every ExampleWriter plan includes three sites.",
+          "category": "product"
+        }
+      ]
+    },
+    {
+      "id": "qualified-plan",
+      "split": "development",
+      "brief": {
+        "angle": "Explain the supplied facts accurately."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/qualified-plan",
+          "title": "Fictional evaluation source",
+          "headings": [],
+          "text": "ExampleWriter Managed includes three sites. Agency includes unlimited sites."
+        }
+      ],
+      "html": "<p>The Managed plan includes three sites; Agency supports unlimited sites.</p>",
+      "expectedIssues": []
+    },
+    {
+      "id": "meter-overreach",
+      "split": "development",
+      "brief": {
+        "angle": "Explain the supplied facts accurately."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/meter-overreach",
+          "title": "Fictional evaluation source",
+          "headings": [],
+          "text": "With appliances off and the inside valve closed, a changed meter reading indicates a possible leak between meter and inside valve. This test does not pinpoint the leak."
+        }
+      ],
+      "html": "<p>A moving meter confirms that the leak is at the property boundary and the supplier must repair it.</p>",
+      "expectedIssues": [
+        {
+          "fragment": "A moving meter confirms that the leak is at the property boundary and the supplier must repair it.",
+          "category": "qualitative"
+        }
+      ]
+    },
+    {
+      "id": "conditional-advice",
+      "split": "development",
+      "brief": {
+        "angle": "Explain the supplied facts accurately."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/conditional-advice",
+          "title": "Fictional evaluation source",
+          "headings": [],
+          "text": "ExampleWriter offers article writing and HTML export."
+        }
+      ],
+      "html": "<p>Ask whether each vendor supports the format your editor needs. Try exporting a sample article before committing.</p>",
+      "expectedIssues": []
+    },
+    {
+      "id": "care-routine",
+      "split": "development",
+      "brief": {
+        "angle": "Explain the supplied facts accurately."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/care-routine",
+          "title": "Fictional evaluation source",
+          "headings": [],
+          "text": "ExampleGroom oil is a conditioning product. Follow the directions supplied with your bottle."
+        }
+      ],
+      "html": "<p>Apply every beard oil twice a day for two weeks because skin needs fourteen days to adjust.</p>",
+      "expectedIssues": [
+        {
+          "fragment": "Apply every beard oil twice a day for two weeks because skin needs fourteen days to adjust.",
+          "category": "qualitative"
+        }
+      ]
+    },
+    {
+      "id": "attributed-outcome",
+      "split": "development",
+      "brief": {
+        "angle": "Explain the supplied facts accurately."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/attributed-outcome",
+          "title": "Fictional evaluation source",
+          "headings": [],
+          "text": "ExampleAnalytics case study: one store reported a 22 percent increase in conversion after changing its checkout."
+        }
+      ],
+      "html": "<p>According to an ExampleAnalytics case study, one store reported a 22 percent conversion increase after changing its checkout. That result is specific to that store and does not predict yours.</p>",
+      "expectedIssues": []
+    },
+    {
+      "id": "repeated-definition",
+      "split": "development",
+      "brief": {
+        "angle": "Explain the supplied facts accurately."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/repeated-definition",
+          "title": "Fictional evaluation source",
+          "headings": [],
+          "text": "ExampleMetrics records visits and completed goals."
+        }
+      ],
+      "html": "<p>ExampleMetrics records visits and completed goals.</p><p>Choose a purchase or signup as the goal you want to measure.</p><p>ExampleMetrics is a tool for recording visits and completed goals.</p>",
+      "expectedIssues": [
+        {
+          "fragment": "ExampleMetrics is a tool for recording visits and completed goals.",
+          "category": "repetition"
+        }
+      ]
+    },
+    {
+      "id": "distinct-outcomes",
+      "split": "development",
+      "brief": {
+        "angle": "Describe how to collect two readings for a later comparison."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/distinct-outcomes",
+          "title": "Fictional evaluation source",
+          "headings": [],
+          "text": "A test compares two readings taken thirty minutes apart."
+        }
+      ],
+      "html": "<p>Step one: record the reading. Expected result: a starting value to compare.</p><p>Step two: take another reading after thirty minutes. Expected result: a second value for the comparison.</p>",
+      "expectedIssues": []
+    },
+    {
+      "id": "retention-vs-backup",
+      "split": "holdout",
+      "brief": {
+        "angle": "Explain the supported facts and help a buyer decide."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/retention-vs-backup",
+          "title": "Fictional evaluation source",
+          "headings": [],
+          "text": "ExampleVault keeps deleted files for thirty days. This retention period is not a backup frequency."
+        }
+      ],
+      "html": "<p>ExampleVault backs up your files every thirty days.</p>",
+      "expectedIssues": [
+        {
+          "fragment": "ExampleVault backs up your files every thirty days.",
+          "category": "product"
+        }
+      ]
+    },
+    {
+      "id": "retention-accurate",
+      "split": "holdout",
+      "brief": {
+        "angle": "Explain the supported facts and help a buyer decide."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/retention-accurate",
+          "title": "Fictional evaluation source",
+          "headings": [],
+          "text": "ExampleVault keeps deleted files for thirty days. Backup frequency is not specified."
+        }
+      ],
+      "html": "<p>Deleted files remain recoverable for thirty days. Ask the vendor how frequently backups run; the supplied documentation does not specify it.</p>",
+      "expectedIssues": []
+    },
+    {
+      "id": "transport-vs-storage",
+      "split": "holdout",
+      "brief": {
+        "angle": "Explain the supported facts and help a buyer decide."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/transport-vs-storage",
+          "title": "Fictional evaluation source",
+          "headings": [],
+          "text": "ExampleDocs uses TLS for data in transit. Storage encryption is not described."
+        }
+      ],
+      "html": "<p>ExampleDocs encrypts every stored document because it uses TLS.</p>",
+      "expectedIssues": [
+        {
+          "fragment": "ExampleDocs encrypts every stored document because it uses TLS.",
+          "category": "product"
+        }
+      ]
+    },
+    {
+      "id": "region-exception",
+      "split": "holdout",
+      "brief": {
+        "angle": "Explain the supported facts and help a buyer decide."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/region-exception",
+          "title": "Fictional evaluation source",
+          "headings": [],
+          "text": "ExampleCourier offers same-day delivery in central Milan for orders placed before noon. Other destinations take two business days."
+        }
+      ],
+      "html": "<p>ExampleCourier delivers every order across Italy on the same day.</p>",
+      "expectedIssues": [
+        {
+          "fragment": "ExampleCourier delivers every order across Italy on the same day.",
+          "category": "product"
+        }
+      ]
+    },
+    {
+      "id": "italian-conditions",
+      "split": "holdout",
+      "brief": {
+        "angle": "Spiega come scegliere una consegna in base a zona e orario."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/italian-conditions",
+          "title": "Fictional evaluation source",
+          "headings": [],
+          "text": "EsempioCorriere: consegna in giornata nel centro di Milano per ordini entro mezzogiorno. Altrove servono due giorni lavorativi."
+        }
+      ],
+      "html": "<p>La consegna in giornata è disponibile nel centro di Milano se ordini entro mezzogiorno. Per altre destinazioni, considera due giorni lavorativi.</p>",
+      "expectedIssues": []
+    },
+    {
+      "id": "review-date",
+      "split": "holdout",
+      "brief": {
+        "angle": "Explain the supported facts and help a buyer decide."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/review-date",
+          "title": "Fictional evaluation source",
+          "headings": [],
+          "text": "An independent reviewer wrote in 2024 that ExampleCRM cost $19 per user. No current vendor pricing source is supplied."
+        }
+      ],
+      "html": "<p>ExampleCRM currently costs $19 per user, making it the cheapest current option.</p>",
+      "expectedIssues": [
+        {
+          "fragment": "ExampleCRM currently costs $19 per user, making it the cheapest current option.",
+          "category": "product"
+        }
+      ]
+    },
+    {
+      "id": "review-attribution",
+      "split": "holdout",
+      "brief": {
+        "angle": "Explain the supported facts and help a buyer decide."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/review-attribution",
+          "title": "Fictional evaluation source",
+          "headings": [],
+          "text": "An independent reviewer wrote in 2024 that ExampleCRM cost $19 per user. No current vendor pricing source is supplied."
+        }
+      ],
+      "html": "<p>A 2024 independent review reported a price of $19 per user. Confirm current terms directly with the vendor before comparing costs.</p>",
+      "expectedIssues": []
+    },
+    {
+      "id": "worked-choice",
+      "split": "holdout",
+      "brief": {
+        "angle": "Help an online store choose an export tool using a practical test."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/worked-choice",
+          "title": "Fictional evaluation source",
+          "headings": [],
+          "text": "ExampleStore needs a CSV export of order totals. Vendor capabilities have not been established."
+        }
+      ],
+      "html": "<p>For a store that reconciles orders in a spreadsheet, test whether each candidate exports the required columns. Compare a sample file with the accounting template and reject options that omit essential fields.</p>",
+      "expectedIssues": []
+    }
+  ]
+}

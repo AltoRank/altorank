@@ -1,0 +1,23 @@
+{
+  "labelOrigin": "Evaluator-labelled material errors in saved unedited onboarding drafts from 13 September 2026. A matching review flag is a detection check, not proof the draft or all other claims are correct. These cases were observed during development, not held out.",
+  "cases": [
+    {
+      "domain": "altorank.co",
+      "title": "How to choose an AI content writer tool for your needs",
+      "requiredFindingFragment": "requires the team to write the first draft themselves",
+      "reason": "The worked example rules out a named tool by claiming it cannot generate a first draft, contradicting the article's own sourced mention of its article generator."
+    },
+    {
+      "domain": "beardbrand.com",
+      "title": "How to choose beard oil: conditioning, ingredients, and scent",
+      "requiredFindingFragment": "Apply the oil daily for at least two weeks",
+      "reason": "The prescribed minimum routine and physiological adjustment explanation are not established by the supplied evidence."
+    },
+    {
+      "domain": "pimlicoplumbers.com",
+      "title": "Signs of mains water leaks and how to check for them",
+      "requiredFindingFragment": "between the meter and the property boundary",
+      "reason": "The cited meter test does not pinpoint a property-boundary location or ownership/responsibility."
+    }
+  ]
+}

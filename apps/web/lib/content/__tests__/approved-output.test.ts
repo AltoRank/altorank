@@ -39,7 +39,7 @@ it("accepts a bounded correction only after a successful recheck", async () => {
   const { reviseApprovedOutput } = await import("../approved-output");
   const original = { html:"<p>All plans include three workspaces for your client sites.</p>", report: { status:"checked", headline:"preserved", productClaims:"needs-review", qualitativeClaims:"no-issues-detected", structure:"no-issues-detected", findings:[{category:"product",text:"All plans include three workspaces for your client sites.",reason:"Limit belongs to Managed",removed:false}] } } as const;
   const input = { ...original, report:{...original.report,findings:[...original.report.findings]} };
-  ask.mockResolvedValueOnce(JSON.stringify({edits:[{index:0,html:"<p>The Managed plan includes three workspaces for client sites.</p>"}]})).mockResolvedValueOnce(JSON.stringify({productChecked:true,qualitativeChecked:true,structureChecked:true,findings:[]}));
+  ask.mockResolvedValueOnce(JSON.stringify({edits:[{index:0,html:"<p>The Managed plan includes three workspaces for client sites.</p>"}]})).mockResolvedValueOnce(JSON.stringify({productChecked:true,qualitativeChecked:true,structureChecked:true,findings:[],resolutions:[{concernIndex:0,resolved:true}]}));
   const result = await reviseApprovedOutput(input, {});
   expect(result.report.revision).toBe("accepted");
   expect(result.html).toContain("The Managed plan");
@@ -47,6 +47,36 @@ it("accepts a bounded correction only after a successful recheck", async () => {
   expect((await reviseApprovedOutput(input, {})).html).toBe(original.html);
   ask.mockResolvedValueOnce(JSON.stringify({edits:[{index:0,html:'<p>Visit <a href="https://invented.test">our new plans</a> for unlimited sites.</p>'}]}));
   expect((await reviseApprovedOutput(input, {})).html).toBe(original.html);
+});
+
+it("does not trade several original issues for one remaining error", async () => {
+  const { reviseApprovedOutput } = await import("../approved-output");
+  const sentence="Every plan includes three sites and guarantees first-place rankings.";
+  const input={html:`<p>${sentence}</p>`,report:{status:"checked" as const,headline:"preserved" as const,productClaims:"needs-review" as const,qualitativeClaims:"needs-review" as const,structure:"no-issues-detected" as const,findings:[
+    {category:"product" as const,text:sentence,reason:"Wrong plan limit",removed:false},
+    {category:"qualitative" as const,text:sentence,reason:"Unsupported ranking guarantee",removed:false},
+  ]}};
+  const replacement="Managed allows three sites and doubles your revenue.";
+  ask.mockResolvedValueOnce(JSON.stringify({edits:[{index:0,html:`<p>${replacement}</p>`}]})).mockResolvedValueOnce(JSON.stringify({productChecked:true,qualitativeChecked:true,structureChecked:true,resolutions:[{concernIndex:0,resolved:true},{concernIndex:1,resolved:true}],findings:[{category:"qualitative",passageIndex:0,reason:"New revenue guarantee"}]}));
+  const result=await reviseApprovedOutput(input,{});
+  expect(result.html).toBe(input.html);
+  expect(result.report.revision).toBe("kept-original");
+});
+
+it("requires explicit resolution of original concerns even with no new flags",async()=>{
+  ask.mockResolvedValue(JSON.stringify({productChecked:true,qualitativeChecked:true,structureChecked:true,findings:[],resolutions:[]}));
+  const result=await reviewApprovedOutput("<p>The revised article makes a narrower claim.</p>",{previousConcerns:[{category:"product",text:"The old unsupported claim.",reason:"No evidence",removed:false}]});
+  expect(result.report.status).toBe("unavailable");
+});
+
+it.each(["li","td"])("can repair an unsupported assertion in a %s without changing its container",async(tag)=>{
+  const {reviseApprovedOutput}=await import("../approved-output");
+  const text="This test confirms the exact location of the leak.";
+  const html=`<${tag}>${text}</${tag}>`;
+  const input={html,report:{status:"checked" as const,headline:"not-specified" as const,productClaims:"needs-review" as const,qualitativeClaims:"no-issues-detected" as const,structure:"no-issues-detected" as const,findings:[{category:"product" as const,text,reason:"The source does not pinpoint location",removed:false}]}};
+  ask.mockResolvedValueOnce(JSON.stringify({edits:[{index:0,html:`<${tag}>This test can indicate a leak but does not pinpoint its location.</${tag}>`}]})).mockResolvedValueOnce(JSON.stringify({productChecked:true,qualitativeChecked:true,structureChecked:true,findings:[],resolutions:[{concernIndex:0,resolved:true}]}));
+  const result=await reviseApprovedOutput(input,{});
+  expect(result.report.revision).toBe("accepted");expect(result.html).toContain(`<${tag}>`);
 });
 
 it("matches review passages containing decoded HTML entities", async () => {
