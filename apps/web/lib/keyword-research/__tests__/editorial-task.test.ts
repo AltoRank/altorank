@@ -31,3 +31,11 @@ it("requires actual evidence for the final task's offering", async () => {
   expect(await preserveEditorialTask("seo writing tool",organic,proposed,undefined,"AI content writing")).not.toBeNull();
   expect(await preserveEditorialTask("seo writing tool",organic,proposed,undefined,"CMS hosting")).toBeNull();
 });
+it("requires explicit buyer and offering fit instead of accepting a wider catalog capability",async()=>{
+  const response={queryTask:"Compare HIPAA scheduling platforms",sourceIndex:0,angle:"How to compare HIPAA scheduling platforms",buyingJob:"Select a HIPAA platform",reason:"Compliance selection",businessFit:{supported:true,quote:"HIPAA scheduling"}};
+  const focus={primaryBuyer:"Small teams and startups",priorityOffering:"Team scheduling software"};
+  const run=()=>checkEditorialTask("hipaa scheduling",organic,proposed,undefined,"HIPAA scheduling","editorial",focus);
+  ask.mockResolvedValue(JSON.stringify(response));expect((await run()).status).toBe("unavailable");
+  ask.mockResolvedValue(JSON.stringify({...response,focusFit:{buyer:false,offering:true,reason:"Healthcare compliance is outside the selected buyer focus"}}));expect((await run()).status).toBe("unsupported");
+  ask.mockResolvedValue(JSON.stringify({...response,focusFit:{buyer:true,offering:true,reason:"The confirmed healthcare buyer needs this offering"}}));expect((await run()).status).toBe("supported");
+});

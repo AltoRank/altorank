@@ -693,7 +693,7 @@ async function generateArticleInContext(options: GenerateArticleOptions): Promis
       .filter((q): q is typeof q & { answer: string } => Boolean(q.answer))
       .map((q) => ({ question: q.question, answer: q.answer }));
     const expectedLength = keywordRow?.expected_length ?? "auto";
-    const { collectTaskEvidence, taskWritingGuide } = await import("./draft-evidence");
+    const { collectTaskEvidence, taskWritingGuide, retrievedCitationPages } = await import("./draft-evidence");
     const taskEvidence = topicBrief ? await collectTaskEvidence(
       workspace.business_profile as BusinessFocus,
       topicBrief.conversionPath,
@@ -797,6 +797,7 @@ async function generateArticleInContext(options: GenerateArticleOptions): Promis
     // same list is handed to the scorer below so it cannot count what this
     // step would have removed.
     const knownPages: { url: string }[] = [
+      ...retrievedCitationPages(sourceEvidence),
       ...linkTargets,
       ...(await fetchKnownPages(supabase, workspaceId, article.id ?? undefined)),
       ...existingInternalLinks(refreshOf?.existingHtml, workspace.domain),

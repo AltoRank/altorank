@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const { ask, judge, fetchSerp, available } = vi.hoisted(() => ({ ask: vi.fn(), judge: vi.fn(), fetchSerp: vi.fn(), available: vi.fn(() => true) }));
 vi.mock("../buyer-model", async (original) => ({ ...await original<object>(), modelAvailable: available, askStructured: ask }));
-vi.mock("../editorial-task", () => ({ preserveEditorialTask: async (_query: string, _organic: unknown, a: {angle:string;buyingJob:string;editorial:{reason:string}}) => ({angle:a.angle,buyingJob:a.buyingJob,reason:a.editorial.reason}) }));
+vi.mock("../editorial-task", () => ({ checkEditorialTask: async (_query: string, _organic: unknown, a: {angle:string;buyingJob:string;editorial:{reason:string}}) => ({status:"supported",task:{angle:a.angle,buyingJob:a.buyingJob,reason:a.editorial.reason}}) }));
 vi.mock("../buyer-fit", () => ({ judgeBuyerFit: judge }));
 vi.mock("@/lib/seo/client", () => ({ hasDataForSEOCredentials: available }));
 vi.mock("../page-evidence", () => ({ readPageExtract: vi.fn(async (url: string) => ({ url, title: "Clinic booking", headings: ["Costs"], text: "Booking website costs and package options for clinic owners." })) }));

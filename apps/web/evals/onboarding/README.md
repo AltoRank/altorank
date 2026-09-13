@@ -6,7 +6,7 @@ These are executable development checks for the keyword-to-first-draft experienc
 
 - `claims.json`: 16 synthetic passage cases, derived from failure classes seen in four live businesses. Eight development cases and eight initially reserved cases, with correct/incorrect minimal pairs. Includes Italian, plan limits, conditional advice, attribution, repetition and unsupported inferences.
 - `full-drafts.json`: three known material errors in saved complete drafts. Passage matching is only a locator; the finding reason must be checked manually against the labelled defect.
-- `topics.json`: 10 explicit business/task boundaries, including Italian. Tests the final task/offer relationship, not keyword discovery or ranking. An unavailable result is never counted as a correct rejection.
+- `topics.json`: 13 explicit business/task boundaries, including Italian. Tests the final task/offer relationship and confirmed buyer focus, not keyword discovery or ranking. `--case-prefix=confirmed-focus` selects the three focused cases. An unavailable result is never counted as a correct rejection.
 - Labels are evaluator-authored, not independent human labels. A quoted fictional source is the test's ground truth; it is not real-world advice. No expected label is sent to the model.
 
 The original passage grading incorrectly treated a correctly detected error under another category as both a miss and a false positive. Current grading measures detection independently and reports category errors separately. Development excerpt briefs were also narrowed so a two-step excerpt was not incorrectly asked to fulfill a whole buying guide. The discarded initial run is documented in the validation report.
@@ -63,3 +63,11 @@ npx tsx scripts/onboarding-claim-score.ts --results=/tmp/control/results.json --
 ```
 
 Positive scores locate a finding; independently inspect its reason. Negative controls require checked-passage coverage and no flagged claim in that passage. Neither score is a whole-article factual grade. The implementation and results are in `docs/validation/onboarding-claims-2026-09-13.md` at the repository root.
+
+## First-draft evidence and delivery regressions
+
+The live Cal.com retest exposed stripped publisher citations, dropped capability evidence, an unfulfilled comparison promise and buyer-focus drift. Generation now admits successfully retrieved URLs to the internal citation check, shares approved source quotations with claim verification, and reads up to three product pages plus three search sources. One evidence-planning call can select up to six additional observed references, prioritizing missing competitor pricing when the task needs it. Previously observed quotation-only sources do not establish current URL reachability.
+
+Page reads remain bounded to six seconds and two megabytes, extract the main content before truncating text, and retain useful navigation references such as pricing pages. Claim packets are bounded to 20 sources, 13,500 characters per source and 120,000 characters total; call/concurrency/deadline ceilings are unchanged. The larger packet accommodates fuller comparison evidence and at most eight short approved quotations, with a corresponding model-cost tradeoff.
+
+Final topic validation requires an explicit buyer/offer focus decision when that focus is supplied. Unsupported tasks are rejected; missing decisions remain pending. Opportunity version 6 invalidates pre-focus cached qualification. Review checks whether section promises actually deliver their stated comparison; a single publisher calculation cannot satisfy a three-tool worked example. These checks expose failures; automatic rewriting remains disabled.

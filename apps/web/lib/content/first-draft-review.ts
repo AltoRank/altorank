@@ -1,5 +1,6 @@
 import { reviewApprovedOutput, type EditorialReview, type ReviewOptions } from "./approved-output";
 import { verifyDraftClaims, type ClaimVerification } from "./claim-verification";
+import { withCapabilityEvidence } from "./draft-evidence";
 import type { PageExtract } from "@/lib/keyword-research/page-evidence";
 
 /** Add source-backed claim findings without treating an incomplete check as clean. */
@@ -19,9 +20,10 @@ export function attachClaimVerification(report: EditorialReview, claims: ClaimVe
 }
 
 export async function reviewFirstDraft(html: string, options: ReviewOptions & {evidence:PageExtract[]}) {
+  const evidence = withCapabilityEvidence(options.evidence, options.profile);
   const [editorial,claims]=await Promise.all([
-    reviewApprovedOutput(html,options),
-    verifyDraftClaims(html,{evidence:options.evidence,brief:options.brief,spend:options.spend}),
+    reviewApprovedOutput(html,{...options,evidence}),
+    verifyDraftClaims(html,{evidence,brief:options.brief,spend:options.spend}),
   ]);
   return {...editorial,report:attachClaimVerification(editorial.report,claims)};
 }

@@ -26,13 +26,13 @@ async function main() {
   const models = {structured:anthropicModel("structured"),editorial:anthropicModel("editorial")};
   if (process.argv.includes("--topics")) {
     const {checkEditorialTask}=await import("@/lib/keyword-research/editorial-task");
-    const fixtures=JSON.parse(readFileSync(resolve("evals/onboarding/topics.json"),"utf8")) as {labelOrigin:string;cases:Array<{id:string;businessEvidence:string;query:string;serpTitle:string;expectedSupported:boolean}>};
+    const fixtures=JSON.parse(readFileSync(resolve("evals/onboarding/topics.json"),"utf8")) as {labelOrigin:string;cases:Array<{id:string;businessEvidence:string;query:string;serpTitle:string;expectedSupported:boolean;focus?:{primaryBuyer:string;priorityOffering:string};proposedAudience?:string}>};
     const out=resolve(flag("out")!);mkdirSync(out,{recursive:true});
     const results:unknown[]=[];
-    for(let repeat=0;repeat<2;repeat++)for(const c of fixtures.cases){
+    for(let repeat=0;repeat<2;repeat++)for(const c of fixtures.cases.filter(c=>!flag("case-prefix")||c.id.startsWith(flag("case-prefix")!))){
       const calls:ModelObservation[]=[];
-      const proposed={results:[],buyer:{relevant:true,reason:"Proposal under test"},product:{supported:true,quote:c.businessEvidence,reason:"Proposal under test"},editorial:{achievable:true,reason:"Proposal under test"},audience:"The business's buyers",buyingJob:c.query,offering:"The business offering",angle:c.serpTitle,conversionPath:"https://business.example"};
-      const prediction=await withModelObserver(event=>calls.push(event),()=>checkEditorialTask(c.query,[{title:c.serpTitle,description:c.serpTitle,domain:"search.example",url:"https://search.example/guide",rank:1,wordCount:null}],proposed,undefined,c.businessEvidence,flag("topic-tier")==="editorial"?"editorial":"structured"),{includeResponse:true});
+      const proposed={results:[],buyer:{relevant:true,reason:"Proposal under test"},product:{supported:true,quote:c.businessEvidence,reason:"Proposal under test"},editorial:{achievable:true,reason:"Proposal under test"},audience:c.proposedAudience??"The business's buyers",buyingJob:c.query,offering:"The business offering",angle:c.serpTitle,conversionPath:"https://business.example"};
+      const prediction=await withModelObserver(event=>calls.push(event),()=>checkEditorialTask(c.query,[{title:c.serpTitle,description:c.serpTitle,domain:"search.example",url:"https://search.example/guide",rank:1,wordCount:null}],proposed,undefined,c.businessEvidence,flag("topic-tier")==="editorial"?"editorial":"structured",c.focus),{includeResponse:true});
       const passed=prediction.status!=="unavailable"&&(prediction.status==="supported")===c.expectedSupported;
       results.push({id:c.id,repeat,expectedSupported:c.expectedSupported,prediction,passed,calls});
       writeFileSync(`${out}/results.json`,JSON.stringify({scope:fixtures.labelOrigin,models,results},null,2)+"\n");

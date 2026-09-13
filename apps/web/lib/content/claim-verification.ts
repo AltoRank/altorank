@@ -83,7 +83,7 @@ export async function verifyDraftClaims(html: string, options: { evidence?: Page
   const passages = claimPassages(html);
   const sources = options.evidence ?? [];
   const report: ClaimVerification = { status: "unavailable", totalPassages: passages.length, checkedPassages: [], claims: [], sources: sources.map(s => ({url:s.url,title:s.title})), failures: [], modelCalls: [] };
-  if (!passages.length || passages.join(" ").length > 24000 || sources.length > 8 || sources.some(s => typeof s.text !== "string" || s.text.length > 9000)) {
+  if (!passages.length || passages.join(" ").length > 24000 || sources.length > 20 || sources.some(s => typeof s.text !== "string" || s.text.length > 13500) || sources.reduce((sum, source) => sum + source.text.length, 0) > 120000) {
     report.failures.push("The article or evidence exceeded the claim-check input limits."); return report;
   }
   if (!sources.length) { report.failures.push("No source excerpts were available for claim verification."); return report; }

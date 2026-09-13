@@ -35,6 +35,7 @@ const PROMPT = [
   "this business or need what it does. For each phrase decide: is the person typing it into Google plausibly someone",
   "this business directly serves with an actual offering? Sharing an audience or an industry is insufficient.",
   "",
+  "When FIRST priority buyer or offering is supplied, keep only tasks directly serving that focus. Wider catalog capabilities and audiences do not override it; specialist verticals require an explicit focus relationship.",
   "Reject a phrase when:",
   "- the searcher wants a consumer tool, calculator or lookup this business does not provide (a warehouse app is not a postage calculator);",
   "- the searcher has decided NOT to buy this kind of product (\"free\", \"without software\", \"do it yourself\" when the business sells the software);",

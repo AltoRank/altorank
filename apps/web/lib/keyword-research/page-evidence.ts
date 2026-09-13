@@ -1,7 +1,8 @@
 import { fetchSite } from "@/lib/audit/lenient-fetch";
 import { currentResearchBudget } from "@/lib/seo/request-context";
+import { extractMainContent } from "@/lib/audit/markdown";
 import { stripTags } from "@/lib/audit/html-utils";
-export interface PageExtract { url: string; resolvedUrl?: string; title: string; headings: string[]; text: string; links?: Array<{url:string;label:string}>; }
+export interface PageExtract { provenance?: "profile-quote"; url: string; resolvedUrl?: string; title: string; headings: string[]; text: string; links?: Array<{url:string;label:string}>; }
 /** Public, bounded page read. Inaccessible content is unknown, never approval. */
 export async function readPageExtract(url: string, maxChars = 4500, options: {includeLinks?:boolean} = {}): Promise<PageExtract | null> {
   try {
@@ -12,17 +13,18 @@ export async function readPageExtract(url: string, maxChars = 4500, options: {in
     const reader = response.body.getReader();
     let html = ""; const decoder = new TextDecoder(); let bytes = 0;
     try {
-      while (bytes < 750_000) {
+      while (bytes < 2_000_000) {
         const { value, done } = await reader.read(); if (done) break;
-        bytes += value.length; html += decoder.decode(value, { stream: true });
+        const chunk = value.subarray(0, 2_000_000 - bytes);
+        bytes += chunk.length; html += decoder.decode(chunk, { stream: true });
       }
     } finally { await reader.cancel(); }
     const plain = stripTags;
     const title = plain(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "");
     const headings = [...html.matchAll(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi)].slice(0, 15).map((m) => plain(m[1]));
-    const text = plain(html.replace(/<(script|style|nav|footer|header)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")).slice(0, maxChars);
+    const text = plain(extractMainContent(html).html).slice(0, maxChars);
     const links: Array<{url:string;label:string}> = [];
-    const linkBody = html.replace(/<(script|style|nav|footer|header)\b[^>]*>[\s\S]*?<\/\1>/gi, " ");
+    const linkBody = html.replace(/<(script|style|footer)\b[^>]*>[\s\S]*?<\/\1>/gi, " ");
     for (const match of options.includeLinks ? linkBody.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi) : []) {
       try {
         const target = new URL(match[1], response.url || url);

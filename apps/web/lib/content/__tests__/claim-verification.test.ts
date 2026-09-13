@@ -61,3 +61,11 @@ it("does not approve duplicate decisions or whitespace-only encoded evidence",()
   const emptyQuote=JSON.stringify({passages:[{passageIndex:0,claims:[{...claim,verdict:"supported",evidence:[{sourceIndex:0,quote:"&#32;"}]}]}]});
   expect(validateClaimBatch(emptyQuote,[0],[claim.quote],evidence).checkedPassages).toEqual([]);
 });
+it("checks the expanded comparison packet and still bounds total evidence size",async()=>{
+  ask.mockResolvedValue(JSON.stringify({passages:[{passageIndex:0,claims:[]}]}));
+  const sources=Array.from({length:11},(_,i)=>({...evidence[0],url:`https://vendor${i}.test`,text:"x".repeat(9000)}));
+  expect((await verifyDraftClaims("<p>Compare the options.</p>",{evidence:sources})).status).toBe("checked");
+  ask.mockClear();
+  expect((await verifyDraftClaims("<p>Compare the options.</p>",{evidence:[...sources,sources[0],sources[0],sources[0]]})).status).toBe("unavailable");
+  expect(ask).not.toHaveBeenCalled();
+});

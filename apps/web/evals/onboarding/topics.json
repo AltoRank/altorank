@@ -62,15 +62,51 @@
       "id": "italian-repair",
       "businessEvidence": "EsempioBici offre riparazioni e manutenzione di biciclette a Milano.",
       "query": "come scegliere officina bici",
-      "serpTitle": "Come scegliere un’officina per la tua bicicletta",
+      "serpTitle": "Come scegliere un\u2019officina per la tua bicicletta",
       "expectedSupported": true
     },
     {
       "id": "italian-accounting",
       "businessEvidence": "EsempioBici offre riparazioni di biciclette e non vende software.",
-      "query": "software contabilità officina",
-      "serpTitle": "Come scegliere un software di contabilità per officine",
+      "query": "software contabilit\u00e0 officina",
+      "serpTitle": "Come scegliere un software di contabilit\u00e0 per officine",
       "expectedSupported": false
+    },
+    {
+      "id": "confirmed-focus-healthcare-drift",
+      "businessEvidence": "CalExample offers team scheduling with shared availability, payments and collective events. Organizations offers HIPAA compliance for healthcare practices.",
+      "query": "hipaa compliant scheduling platform",
+      "serpTitle": "Compare HIPAA compliant scheduling platforms for healthcare practices",
+      "expectedSupported": false,
+      "focus": {
+        "primaryBuyer": "Small teams and startups",
+        "priorityOffering": "Team scheduling software"
+      },
+      "proposedAudience": "Healthcare providers and compliance officers"
+    },
+    {
+      "id": "confirmed-focus-team-payments",
+      "businessEvidence": "CalExample offers team scheduling with shared availability, payments and collective events. Organizations offers HIPAA compliance for healthcare practices.",
+      "query": "scheduling software with payment processing",
+      "serpTitle": "Scheduling software with payments compared for small teams",
+      "expectedSupported": true,
+      "focus": {
+        "primaryBuyer": "Small teams and startups",
+        "priorityOffering": "Team scheduling software"
+      },
+      "proposedAudience": "Small teams and startups"
+    },
+    {
+      "id": "confirmed-focus-healthcare-explicit",
+      "businessEvidence": "CalExample offers team scheduling with shared availability, payments and collective events. Organizations offers HIPAA compliance for healthcare practices.",
+      "query": "hipaa compliant scheduling platform",
+      "serpTitle": "Compare HIPAA compliant scheduling platforms for healthcare practices",
+      "expectedSupported": true,
+      "focus": {
+        "primaryBuyer": "Healthcare practices and compliance officers",
+        "priorityOffering": "HIPAA-compliant patient scheduling"
+      },
+      "proposedAudience": "Healthcare providers and compliance officers"
     }
   ]
 }
