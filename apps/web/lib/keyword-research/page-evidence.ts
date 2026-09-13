@@ -33,9 +33,13 @@ export async function readPageExtract(url: string, maxChars = 4500, options: {in
         if (/\/(?:login|signin|signup|sign-in|sign-up|privacy|terms|cart|checkout)(?:\/|$)/i.test(target.pathname)) continue;
         const label = plain(match[2]).slice(0, 100);
         if (label && !links.some(link => link.url === target.href)) links.push({url:target.href,label});
-        if (links.length >= 80) break;
+        if (links.length >= 400) break;
       } catch { /* Ignore malformed source links. */ }
     }
-    return text.length >= 120 ? { url, ...(response.url ? {resolvedUrl:response.url} : {}), title, headings, text, ...(options.includeLinks?{links}:{}) } : null;
+    // Large product menus can put pricing beyond the first 80 links. Keep
+    // observed pricing references before trimming the bounded candidate list.
+    const priority = (link: {url:string;label:string}) => /pricing|plans|prezzi|tarifs|preise|precios/i.test(`${link.label} ${new URL(link.url).pathname}`) ? 1 : 0;
+    const selectedLinks = links.sort((a,b)=>priority(b)-priority(a)).slice(0,80);
+    return text.length >= 120 ? { url, ...(response.url ? {resolvedUrl:response.url} : {}), title, headings, text, ...(options.includeLinks?{links:selectedLinks}:{}) } : null;
   } catch { return null; }
 }

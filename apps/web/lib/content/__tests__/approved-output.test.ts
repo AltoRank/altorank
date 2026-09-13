@@ -94,3 +94,9 @@ it("attaches exact existing passages by index and rejects invented indices", asy
   ask.mockResolvedValue(JSON.stringify({productChecked:true,qualitativeChecked:true,structureChecked:true,findings:[{...finding,passageIndex:20}]}));
   expect((await reviewApprovedOutput(html,{})).report.status).toBe("unavailable");
 });
+it("reviews decoded visible entities rather than reporting valid HTML escaping as an article defect",async()=>{
+  ask.mockResolvedValue(JSON.stringify({productChecked:true,qualitativeChecked:true,structureChecked:true,findings:[],resolutions:[]}));
+  await reviewApprovedOutput('<p>Settings &gt; Conditions: l&#x27;attivit&agrave; &amp; forms.</p>',{});
+  const payload=JSON.parse(ask.mock.calls[0][1].split('\n').at(-1));
+  expect(payload.article[0].text).toBe("Settings > Conditions: l'attività & forms.");
+});

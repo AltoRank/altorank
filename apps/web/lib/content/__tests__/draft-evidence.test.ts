@@ -51,3 +51,9 @@ it("can retrieve missing pricing for multiple vendors in one bounded planning ro
   ask.mockResolvedValue(JSON.stringify({task:"comparison",requirements:[],linkIndices:[0,1,2,3,4,5,0]}));
   expect((await collectTaskEvidence(null,undefined,["https://review.test/list"],{})).plan.status).toBe("unavailable");
 });
+it("can follow an observed vendor homepage to its primary pricing page once",async()=>{
+  read.mockImplementation(async(url:string)=>({url,title:"Source",headings:[],text:"Supported product information.",links:url==="https://review.test/list"?[{url:"https://vendor.test/",label:"Vendor"}]:url==="https://vendor.test/"?[{url:"https://vendor.test/pricing",label:"Pricing"}]:[]}));
+  ask.mockResolvedValueOnce(JSON.stringify({task:"comparison",requirements:["Which plan includes logic?"],linkIndices:[0]})).mockResolvedValueOnce(JSON.stringify({linkIndices:[0]}));
+  const result=await collectTaskEvidence(null,undefined,["https://review.test/list"],{});
+  expect(result.plan.retrievedUrls).toEqual(["https://vendor.test/","https://vendor.test/pricing"]);expect(ask).toHaveBeenCalledTimes(2);expect(read).toHaveBeenCalledTimes(3);
+});

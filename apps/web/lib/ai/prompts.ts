@@ -329,7 +329,7 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
           `Ensure the content is thorough and provides genuine value to the reader. ` +
           `Do not pad to reach the target: stop when the topic is covered.`
         : `Target approximately ${targetWordCount} words. ` +
-          (research
+          (research && !prompt.targetWordCount
             ? `This length is derived from the live SERP: ${research.wordCountBasis}. `
             : "") +
           `Ensure the content is thorough and provides genuine value to the reader. ` +
@@ -574,9 +574,9 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
         "Every unattributed figure is flagged for human review before publishing.",
       "- Do not attribute claims to named companies, people or publications " +
         "unless the claim is genuinely theirs.",
-      "- Prefer a qualitative statement you know to be true over a quantitative " +
-        'one you are guessing at. "Most sites get this wrong" is publishable; ' +
-        '"73% of sites get this wrong" is not, unless you can name the source.',
+      "- Qualitative generalizations need evidence too: most users, biggest buyer " +
+        "surprise, usually fails and saves hours are factual claims, not safe " +
+        "substitutes for missing statistics. Omit them unless supplied evidence supports them.",
       "- If the topic genuinely needs a figure you do not have, write the " +
         "sentence without it rather than filling the gap.",
     ].join("\n"),
@@ -670,6 +670,7 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       "- Every paragraph should deliver value.",
       "- Organize around the reader's decision or task, not one repetitive section per product feature. Group related criteria and explain concrete tradeoffs, checks or next steps.",
       "- A how-to-compare article must demonstrate a worked decision: a concrete brief, test or scenario, what to inspect, and how the result changes the choice. Clearly label hypothetical examples; never invent hands-on testing. Use unnamed hypothetical options when actual product capabilities are unverified; labelling a scenario hypothetical does not justify inventing features or limitations for named products. A best-products article needs sourced named options and reasons for each use case, not just a category glossary. Specific current product features, prices, plan limits and exclusions need supplied first-party evidence; secondary reviews only establish what that reviewer reported. Never treat a review date as proof of current vendor terms. If evidence cannot support a ranking, say so and provide a useful selection method.",
+      "- Do not infer a named tool's interface location, evaluation order or failure behavior from how similar tools work. Recommend checking the behavior without inventing an expected result. Do not rank a publisher ahead of competitors merely because its documentation was easier to retrieve. An evidence gap is not a product disadvantage.",
       "- Tables must contain supported facts or explicitly labelled evaluation criteria. Never invent typical capabilities, speeds or limits for broad vendor categories. Preserve plan, date, region and other conditions around sourced facts.",
       "- Use supplied source extracts for factual claims. A citation must support the exact claim, not merely discuss the same subject. A community homepage or whole subreddit does not establish consensus. Avoid medical prescriptions and universal care schedules unsupported by an appropriate primary source.",
       "- Include background facts or statistics only when they change that decision. Omit generic adoption numbers, market-size trivia and long definitions used to fill space.",

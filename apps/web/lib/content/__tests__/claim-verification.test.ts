@@ -69,3 +69,17 @@ it("checks the expanded comparison packet and still bounds total evidence size",
   expect((await verifyDraftClaims("<p>Compare the options.</p>",{evidence:[...sources,sources[0],sources[0],sources[0]]})).status).toBe("unavailable");
   expect(ask).not.toHaveBeenCalled();
 });
+it("splits a truncated assignment once and retains complete checked coverage",async()=>{
+  ask.mockImplementation(async(_op:string,prompt:string,options:{observe:(event:unknown)=>void})=>{
+    const {assignedPassages}=JSON.parse(prompt.split("\n").at(-1)!);
+    if(assignedPassages.length===4){options.observe({status:"truncated"});return null;}
+    return JSON.stringify({passages:assignedPassages.map((p:{passageIndex:number})=>({passageIndex:p.passageIndex,claims:[]}))});
+  });
+  const result=await verifyDraftClaims("<p>Ask about export.</p>".repeat(4),{evidence});
+  expect(result.status).toBe("checked");expect(result.checkedPassages).toEqual([0,1,2,3]);expect(ask).toHaveBeenCalledTimes(3);
+});
+it("does not repeatedly split a truncated retry or exceed eight calls",async()=>{
+  ask.mockImplementation(async(_op:string,_prompt:string,options:{observe:(event:unknown)=>void})=>{options.observe({status:"truncated"});return null;});
+  const result=await verifyDraftClaims("<p>Ask about export.</p>".repeat(70),{evidence});
+  expect(result.status).toBe("unavailable");expect(ask.mock.calls.length).toBeLessThanOrEqual(8);expect(result.failures.length).toBeGreaterThan(0);
+});

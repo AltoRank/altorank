@@ -711,14 +711,24 @@ async function generateArticleInContext(options: GenerateArticleOptions): Promis
       articleSubtype: shape.article_subtype,
       expectedLength,
     };
-    const targetWordCount = targetWordCountFor(expectedLength, research.recommendedWordCount);
+    const researchedWordCount = targetWordCountFor(expectedLength, research.recommendedWordCount);
+    // The writer and downstream scoring must agree on the preview's target.
+    const targetWordCount = options.verifySourceClaims && expectedLength === "auto"
+      ? Math.min(1200, researchedWordCount ?? 1200) : researchedWordCount;
 
     const generator = provider.streamArticle({
       keyword,
       title: approvedTitle,
       voiceRules,
       language: locale.label,
-      research,
+      // The selected preview answers the approved task. Broader SEO expansion
+      // and AI-overview gaps otherwise introduce unrelated product sections
+      // (observed in Tally's first draft). Retain full research on the article.
+      research: options.verifySourceClaims ? {
+        ...research, relatedKeywords: [], adjacentQueries: [], aiOverview: null,
+        competitors: [],
+      } : research,
+      ...(options.verifySourceClaims && expectedLength === "auto" ? {targetWordCount} : {}),
       internalLinkTargets: linkTargets
         .slice(0, 20)
         .map((t) => ({ title: t.title, keyword: t.keyword })),

@@ -1,3 +1,4 @@
+import { stripTags } from "@/lib/audit/html-utils";
 import { askStructured, extractJson } from "@/lib/keyword-research/buyer-model";
 import { supportedCapabilities, type BusinessFocus } from "@/lib/onboarding/profile-focus";
 import type { SpendSink, ModelObservation } from "@/lib/keyword-research/buyer-model";
@@ -26,9 +27,7 @@ const reviewSchema = {
     resolutions:{type:"array",items:{type:"object",additionalProperties:false,required:["concernIndex","resolved"],properties:{concernIndex:{type:"integer"},resolved:{type:"boolean"}}}},
   },
 };
-const reviewText = (html: string) => html.replace(/<[^>]+>/g, " ")
-  .replace(/&amp;/g, "&").replace(/&nbsp;|&#160;/g, " ").replace(/&quot;/g, '\"').replace(/&#39;|&apos;/g, "'")
-  .replace(/\s+/g, " ").trim();
+const reviewText = stripTags;
 export function enforceApprovedTitle(html: string, title?: string): string {
   return title ? html.replace(/<h1\b[^>]*>[\s\S]*?<\/h1>/gi, `<h1>${escape(title)}</h1>`) : html;
 }

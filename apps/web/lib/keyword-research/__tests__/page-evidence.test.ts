@@ -14,3 +14,9 @@ it("keeps failed or insufficient retrieval unknown",async()=>{
   fetch.mockResolvedValue(new Response("not found",{status:404}));expect(await readPageExtract("https://calendar.test/missing")).toBeNull();
   fetch.mockResolvedValue(new Response("<main>short</main>"));expect(await readPageExtract("https://calendar.test")).toBeNull();
 });
+it("retains pricing after a large product menu while keeping eighty candidates",async()=>{
+  const menu=Array.from({length:100},(_,i)=>`<a href="/feature-${i}">Feature ${i}</a>`).join("");
+  fetch.mockResolvedValue(new Response(`<nav>${menu}<a href="/pricing">Pricing</a></nav><main><p>${"Product capabilities. ".repeat(20)}</p></main>`));
+  const page=await readPageExtract("https://vendor.test/",9000,{includeLinks:true});
+  expect(page?.links).toHaveLength(80);expect(page?.links?.[0]).toEqual({url:"https://vendor.test/pricing",label:"Pricing"});
+});
