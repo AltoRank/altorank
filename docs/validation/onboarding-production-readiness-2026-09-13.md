@@ -79,7 +79,7 @@ The whole-article reviewer found no structural or product issues. The passage ve
 
 Manual inspection also found small issues the automated checks missed: the hypothetical budget branches omit exactly $5,000; a Jotform redirect is attributed to a review excerpt that documents page skipping but not redirect behavior; and repeated definition/source-excerpt narration could be tightened. These are targeted first-draft edits, but the missed and false warnings mean the check display is not yet reliably prioritizing them.
 
-## Release decision
+## Earlier release decision, before the trial/dashboard follow-up
 
 The keyword → choice → saved full preview → unpaid return path is implemented and exercised. The final sample clears a useful-first-draft bar, with the limitations above. It does **not** establish consistent, compelling first-draft quality across businesses, and the quality checker still needs validation/reliability work. Keep PR 215 in draft rather than describing this as an unqualified production-readiness pass.
 
@@ -87,7 +87,7 @@ The remaining release work is concrete:
 
 1. Validate the bounded recovery/adjudication implemented below across full drafts. Partial coverage and model errors still occur; do not suppress warnings merely because another reviewer stayed silent. Retain the captured false positive and missed attribution/boundary examples as regressions, with clean controls.
 2. Run the final flow on a held-out set of materially different businesses and obtain independent human labels for topic usefulness, duplicate choices, factual edits, task completeness and whether the first draft is compelling enough to continue. The proposal suggested 8–10 businesses; this has not been completed.
-3. Verify the deployed worker deadlines and required migrations before release. Email delivery, images and hosted sandbox billing/webhooks remain separately unverified. These are not explanations for the text-quality gap.
+3. Verify the deployed worker deadlines and required migrations before release. Email delivery and images remained unverified. Hosted sandbox billing/webhooks were subsequently exercised as described below. These are not explanations for the text-quality gap.
 
 No production configuration or data was changed. No merge, deployment, payment or publication occurred.
 
@@ -101,3 +101,43 @@ The [three live-provider controls](./onboarding-production-readiness-2026-09-13/
 The [full stored-article replay](./onboarding-production-readiness-2026-09-13/recovery-full-draft.json) remained partial at 49/51 passages: its recovery call exhausted the shared deadline and retained the original warning. The stored HTML has different passage boundaries from the live generator's 36-passage input, so these counts cannot be compared as a coverage improvement. Bounded recovery is implemented, but this full-article result remains a release limitation.
 
 After the recovery changes, all 3,312 local tests across 327 files passed with two workers. Two earlier full-suite attempts hit unrelated local database/import timeouts under heavier concurrency; these were not assertion regressions and are not hidden by the successful bounded-concurrency run. The test timeouts were not raised. Production build/TypeScript, changed-file lint and whitespace validation also passed. CI on `ec372d2` passed build and all 17 browser tests; the latest recovery-commit status is available in the [PR checks](https://github.com/AltoRank/altorank/pull/215/checks).
+
+
+## Trial gate, dashboard and first-month preparation follow-up
+
+The gate now shows the customer's domain, confirmed buyer/offering, saved preview, supported planned topics, qualification reasons and measured keyword demand where available. It states Managed's 100-article calendar-month allowance, the current month's usage including the preview, and the remaining allowance after activation. Capacity is not presented as a promise of 100 useful topics or a traffic forecast. Monthly and yearly prices retain the seven-day/card/tax/cancellation terms.
+
+Checkout now lands on the dashboard. Its first section leads with the exact onboarding article and a review/edit action, followed by actual planned dates, ready/writing/needs-attention states and account-wide usage. The existing empty analytics move below this. Readers can open the other ready drafts, adjust the plan, review evidence, approve, connect a CMS or export, then connect Search Console to measure results. The editor carries retrieved citation pages into its link audit, avoiding a false warning for the already-read pricing page; score captions describe on-page quality and citation readiness, not predictions of ranking or citation.
+
+Activation creates one durable first-month run per workspace. It preserves custom cadence and the first draft. The next thirty days are filled only with qualified tasks, bounded by cadence, the existing 60-entry calendar cap and available account quota. Each article is prepared in a separate invocation, sequentially per workspace, independently of its publication date. Database leases prevent duplicate workers; interrupted work is recovered by the dashboard or generation cron; saved articles are attached instead of regenerated after a lost response. Paused writing, lost entitlement and exhausted allowance block new work. Two automatic attempts are followed by a visible manual retry. Generated articles remain in review.
+
+Two additional fixes came from the real sandbox test: activation database errors now fail the webhook for redelivery; and a definitive Stripe request rejection releases its reservation. Ambiguous Stripe/network outcomes retain their idempotency key, and cancellation resolves the same attempt before closing it. Repeated activation does not overwrite a cadence the customer changed later.
+
+### Hosted sandbox evidence
+
+The fresh Plausible onboarding run produced 35 candidate keywords, two first choices and a 1,396-word preview in 237 seconds after selection. It cost $1.56 including discovery. The automated claim check covered 44/44 passages and reported two editorial findings. The complete preview was readable before the gate.
+
+With the local production build and an isolated Stripe sandbox product, the actual hosted monthly checkout accepted Stripe's test card and activated a seven-day Managed trial at EUR 69/month. The application and Stripe both reported `trialing`; the first dashboard and sidebar agreed on 1/100 used and 99 remaining. The dashboard's first action opened the original article ID. The annual option opened a EUR 690/year checkout with the same trial terms, and cancelling it returned to the saved Tally draft without a subscription.
+
+The pre-group-persistence Plausible preparation run then completed four further drafts: 1,601, 1,476, 1,293 and 958 words. Each remained in review; none was published. Completed generation jobs took roughly 165, 244, 249 and 112 seconds, all inside 300 seconds locally. Local timing does not itself verify the deployed runtime. The sandbox account's checkout branding belongs to the existing test account; this does not validate the production Stripe branding or price configuration. Email and image providers were deliberately absent.
+
+After preparation, the dashboard account had five articles used and 95 remaining. A hash comparison confirmed that the onboarding preview content was unchanged. Total recorded provider spend for discovery, the preview and this first-month run was $5.80. The [sanitized trial and month results](./onboarding-production-readiness-2026-09-13/trial-first-month-flow.json) preserve the final state.
+
+The first-month expansion exposed a semantic-overlap issue: comparing new tasks alone could bring back earlier synonyms. Top-ups now include existing tasks, and initial grouping decisions are persisted with the qualification evidence. Two replays without those historical keys still admitted an overlapping comparison; a replay that first stored the current grouping then expanded the month added only the distinct funnel-analysis task and reintroduced no covered task. This establishes consistency with the recorded grouping, not independent human agreement with every grouping decision.
+
+### Verification and remaining limits
+
+- Full local unit suite: 3,329 tests across 328 files passed with two workers; the final repeat-activation regression and related tests also passed (68 tests).
+- The full standard browser suite passed all 17 tests without retries in 2.1 minutes.
+- The gate-enabled browser test passed without retries in 41.3 seconds. It covers complete onboarding, preview before the gate, unpaid-dashboard redirect, signed subscription activation, duplicate events, completion of remaining drafts, original-draft identity, dashboard reload and mobile-width rendering. Stripe's hosted form was tested separately above; fixture events are not claimed as payment tests.
+- A real local database check raced twelve lease claims and got one winner. Cross-account RLS, service-only claim privileges, expired lease recovery and retry of an expired terminal lease passed.
+- Independent code review found a terminal-lease interruption gap and a false successful retry response; both were fixed, and the follow-up review reported no findings in those bounded files. A later topic-group review found that timestamp-less legacy evidence could be overwritten by a concurrent grouping save. The write now compares the entire JSONB snapshot; a real database regression verifies both successful legacy writes and preservation of newer qualification. The related 15 unit tests pass.
+- The first billing browser-test attempts exposed test adaptation issues (a self-host-only button, then a title omitted from the fixture's select). They were corrected without increasing timeouts. A stale Next dev cache returned 404 before tests began; a clean cache resolved it. A build attempted beside a dev test encountered a partially rewritten generated route type; build verification is run after the browser server stops. That serial build then caught a missing required `qualityNote` field in a planner anchor; the field was added before the final rebuild.
+
+The preview is useful but still needs targeted editorial edits. The Plausible comparison combines one plan's retention with another plan's features, uses one nonresponsive comparison-table cell, and makes an inconsistent statement about feature-based pricing. The checker caught the first two, not every weakness. First-month topic diversity remains a qualitative judgment, and the broader independently labelled 8–10-business holdout has not been completed. The mechanical flow and truthful handoff are substantially stronger; no conversion uplift or consistently publication-ready article quality is claimed.
+
+Apply migration 092 before deploying these changes (090 and 091 are also required by the earlier work). Configure the worker URL/secret and the deployment's actual Stripe prices/webhook. No production schema change, real payment, publishing, merge or deployment was performed. The draft PR remains reviewable without treating uncompleted editorial validation as a passed check.
+
+Final browser follow-up found and fixed a contradictory “Nothing is scheduled” recommendation after every planned draft was ready: the dashboard now counts upcoming calendar entries with saved drafts. The gate-enabled onboarding regression passed again without retries in 37.7 seconds, including an assertion against that contradiction. Four redeliveries of the original sandbox checkout/subscription events left five articles, one preparation run and the custom two-per-week cadence unchanged. A final quota-boundary regression verifies that completing the month with zero allowance remaining is marked ready, with no further generation (11 first-month tests passed).
+
+The final production build (including TypeScript), changed-file lint and whitespace checks passed after the dashboard and quota-boundary corrections.

@@ -686,3 +686,8 @@ Roll back with `drop table if exists system_events;` — the code keeps working.
 `recordEvent` treats a missing table as a failed insert, logs one line and
 returns false, and `/admin/events` says the log is unavailable rather than
 showing an empty table.
+
+
+### 092 — First-month preparation
+
+Apply `092_first_month_preparation.sql` before deploying the trial-to-dashboard changes. It adds workspace-scoped read policies on `first_month_runs` and `first_month_jobs`, and service-role-only claim/retry functions. `CRON_SECRET` and `NEXT_PUBLIC_APP_URL` must point workers at this deployment. Stripe activation persists the entitlement and durable run before dispatch; duplicate events preserve existing runs. `/api/internal/first-month` accepts one leased step and returns 202 before background work starts. Each article remains in review. `/api/cron/generate` and dashboard refreshes rescue interrupted dispatches after a ten-minute lease. Two automatic attempts per planning step or draft, then an explicit retry in the dashboard. Preparation stops on exhausted quota, a paused site or lost entitlement. This prepares drafts ahead of their dates; it does not publish them.

@@ -24,3 +24,17 @@ it("never promotes unqualified candidates or pays for a single option",async()=>
   expect(await distinctOnboardingTopics([{...recs[0],opportunity:undefined}])).toEqual([]);
   expect(await distinctOnboardingTopics([recs[0]])).toEqual([recs[0]]);expect(ask).not.toHaveBeenCalled();
 });
+it("remembers rejected synonyms when the month is extended later",async()=>{
+  const inputs=structuredClone(recs);
+  ask.mockResolvedValue('{"groups":[[0,1],[2]]}');
+  const updates:Array<{id:string;taskKey:string}>=[];
+  const snapshots:unknown[]=[];
+  const originalEvidence=inputs.map(rec=>structuredClone(rec.opportunity));
+  const db={from(){let opportunity:{taskKey:string};let id="";const q={update:(value:{opportunity:{taskKey:string}})=>{opportunity=value.opportunity;return q;},eq:(key:string,value:string)=>{if(key==="id")id=value;if(key==="opportunity")snapshots.push(JSON.parse(value));return q;},then:(resolve:(value:unknown)=>unknown)=>{updates.push({id,taskKey:opportunity.taskKey});return resolve({error:null});}};return q;}};
+  await distinctOnboardingTopics(inputs,{supabase:db as never,workspaceId:"site-a"});
+  expect(updates).toEqual([{id:"0",taskKey:"0"},{id:"1",taskKey:"0"},{id:"2",taskKey:"2"}]);
+  expect(snapshots).toEqual(originalEvidence);
+  ask.mockClear();
+  expect(await distinctOnboardingTopics(inputs.slice(0,2))).toEqual([inputs[0]]);
+  expect(ask).not.toHaveBeenCalled();
+});

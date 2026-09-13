@@ -1,3 +1,4 @@
+import { retrievedCitationPages } from "@/lib/content/draft-evidence";
 import type { Metadata } from "next";
 import { getArticle } from "@/lib/queries/articles";
 import { getWorkspace } from "@/lib/queries/workspaces";
@@ -103,7 +104,7 @@ export default async function ArticleEditorPage({ params }: Props) {
         integrations={integrations}
         linkableArticles={linkable.length}
         linkTargets={linkable}
-        knownPages={knownPages}
+        knownPages={[...knownPages, ...retrievedCitationPages(article.research?.draftSources ?? [])]}
         internalLinksWanted={(outputRow.data?.internal_links as number | undefined) ?? null}
         lastPublish={lastPublish}
         value={value}

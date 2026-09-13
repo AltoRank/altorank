@@ -1,0 +1,198 @@
+{
+  "observedAt": "2026-09-13T20:28:46.926Z",
+  "previewContentUnchanged": true,
+  "account": {
+    "plan": "starter",
+    "status": "trialing",
+    "trialEndsAt": "2026-09-20T20:09:56+00:00"
+  },
+  "first_month_runs": [
+    {
+      "starts_on": "2026-09-13",
+      "status": "ready",
+      "planned": true,
+      "message": null,
+      "planning_attempts": 1,
+      "lease_until": null
+    }
+  ],
+  "first_month_jobs": [
+    {
+      "id": "2e372fda-bfc1-434d-ac1d-d46df5b7939d",
+      "entry_id": "a043acd6-0d9c-4a4d-bcf6-da7daaef57af",
+      "status": "ready",
+      "attempts": 1,
+      "article_id": "154a4a93-9205-4e46-b04d-4aafdec96b3b"
+    },
+    {
+      "id": "820b3042-4387-476f-817c-f2b672add437",
+      "entry_id": "376c5ba8-b2b5-4074-810d-33e03c7c2c51",
+      "status": "ready",
+      "attempts": 1,
+      "article_id": "93c2e766-f7f1-4aea-8478-86c7a6f07b76"
+    },
+    {
+      "id": "41ce36d9-4124-4a53-b3ba-d7fb7bf3facf",
+      "entry_id": "95f24697-426f-4c71-9abc-4ecbe4aa38b7",
+      "status": "ready",
+      "attempts": 1,
+      "article_id": "26754ca5-181d-47b4-8d23-f88883925a4c"
+    },
+    {
+      "id": "6b05a709-5429-4b30-b3d8-c5866055b789",
+      "entry_id": "d4f9b1eb-c044-4f0f-ae85-7befcb1512f7",
+      "status": "ready",
+      "attempts": 1,
+      "article_id": "c52906f1-5b54-4162-a7c1-f0143a4e0db0"
+    }
+  ],
+  "calendar_entries": [
+    {
+      "id": "083ce13b-7dee-4477-a5e5-d9db0e42359b",
+      "keyword": "website traffic monitoring tool",
+      "scheduled_date": "2026-09-13",
+      "article_id": "e2f8984e-1e79-45d9-881c-b2046c95a182",
+      "status": "scheduled"
+    },
+    {
+      "id": "a043acd6-0d9c-4a4d-bcf6-da7daaef57af",
+      "keyword": "track revenue from website traffic",
+      "scheduled_date": "2026-09-17",
+      "article_id": "154a4a93-9205-4e46-b04d-4aafdec96b3b",
+      "status": "scheduled"
+    },
+    {
+      "id": "376c5ba8-b2b5-4074-810d-33e03c7c2c51",
+      "keyword": "compare google analytics vs alternatives",
+      "scheduled_date": "2026-09-20",
+      "article_id": "93c2e766-f7f1-4aea-8478-86c7a6f07b76",
+      "status": "scheduled"
+    },
+    {
+      "id": "95f24697-426f-4c71-9abc-4ecbe4aa38b7",
+      "keyword": "real time website visitor analytics",
+      "scheduled_date": "2026-09-24",
+      "article_id": "26754ca5-181d-47b4-8d23-f88883925a4c",
+      "status": "scheduled"
+    },
+    {
+      "id": "d4f9b1eb-c044-4f0f-ae85-7befcb1512f7",
+      "keyword": "how to track website conversions",
+      "scheduled_date": "2026-09-27",
+      "article_id": "c52906f1-5b54-4162-a7c1-f0143a4e0db0",
+      "status": "scheduled"
+    }
+  ],
+  "articles": [
+    {
+      "id": "e2f8984e-1e79-45d9-881c-b2046c95a182",
+      "title": "How to choose a website traffic monitoring tool: features and tradeoffs to compare",
+      "keyword": "website traffic monitoring tool",
+      "status": "review",
+      "word_count": 1396
+    },
+    {
+      "id": "c52906f1-5b54-4162-a7c1-f0143a4e0db0",
+      "title": "How to set up website conversion tracking without complex code or setup",
+      "keyword": "how to track website conversions",
+      "status": "review",
+      "word_count": 958
+    },
+    {
+      "id": "154a4a93-9205-4e46-b04d-4aafdec96b3b",
+      "title": "How to track revenue from your website traffic on your own site",
+      "keyword": "track revenue from website traffic",
+      "status": "review",
+      "word_count": 1601
+    },
+    {
+      "id": "93c2e766-f7f1-4aea-8478-86c7a6f07b76",
+      "title": "How to compare Google Analytics alternatives: privacy, simplicity, and features that matter",
+      "keyword": "compare google analytics vs alternatives",
+      "status": "review",
+      "word_count": 1476
+    },
+    {
+      "id": "26754ca5-181d-47b4-8d23-f88883925a4c",
+      "title": "Real-time website visitor analytics: how to compare tools and what to look for",
+      "keyword": "real time website visitor analytics",
+      "status": "review",
+      "word_count": 1293
+    }
+  ],
+  "generation_jobs": [
+    {
+      "article_id": "93c2e766-f7f1-4aea-8478-86c7a6f07b76",
+      "status": "completed",
+      "created_at": "2026-09-13T20:12:53.976963+00:00",
+      "completed_at": "2026-09-13T20:17:03.382+00:00"
+    },
+    {
+      "article_id": "26754ca5-181d-47b4-8d23-f88883925a4c",
+      "status": "completed",
+      "created_at": "2026-09-13T20:17:03.656843+00:00",
+      "completed_at": "2026-09-13T20:21:07.312+00:00"
+    },
+    {
+      "article_id": "c52906f1-5b54-4162-a7c1-f0143a4e0db0",
+      "status": "completed",
+      "created_at": "2026-09-13T20:21:07.556364+00:00",
+      "completed_at": "2026-09-13T20:22:59.568+00:00"
+    },
+    {
+      "article_id": "e2f8984e-1e79-45d9-881c-b2046c95a182",
+      "status": "completed",
+      "created_at": "2026-09-13T19:47:00.07955+00:00",
+      "completed_at": "2026-09-13T19:50:47.914+00:00"
+    },
+    {
+      "article_id": "154a4a93-9205-4e46-b04d-4aafdec96b3b",
+      "status": "completed",
+      "created_at": "2026-09-13T20:10:08.918907+00:00",
+      "completed_at": "2026-09-13T20:12:53.619+00:00"
+    }
+  ],
+  "stripe": {
+    "dueToday": 0,
+    "livemode": false,
+    "status": "trialing",
+    "trialDays": 7,
+    "amount": 6900,
+    "currency": "eur",
+    "interval": "month"
+  },
+  "scope": "Hosted Stripe test checkout and local production-build webhook/dashboard on 2026-09-13. This generation run preceded the subsequent persistent task-group correction.",
+  "checks": {
+    "monthlyHostedTrial": true,
+    "annualCheckout690Euro": true,
+    "annualCancelledWithoutSubscription": true,
+    "rejectedCheckoutRecovery": true,
+    "samePreviewId": "e2f8984e-1e79-45d9-881c-b2046c95a182",
+    "initialQuota": {
+      "used": 1,
+      "limit": 100,
+      "remaining": 99
+    },
+    "publicationCount": 0,
+    "finalQuota": {
+      "used": 5,
+      "limit": 100,
+      "remaining": 95
+    },
+    "originalEventRedelivery": {
+      "originalSandboxEventsRedelivered": 4,
+      "articles": 5,
+      "runs": 1,
+      "customWeeklyPace": 2,
+      "unchanged": true
+    },
+    "finalProductionDashboard": {
+      "sameOriginalDraft": true,
+      "readyAdditionalDrafts": 4,
+      "used": 5,
+      "limit": 100,
+      "remaining": 95
+    }
+  },
+  "providerCostUsd": 5.802592
+}

@@ -97,6 +97,13 @@ jobs:
           E2E_STUBS: "1"
         run: npm run e2e
 
+      - name: Run onboarding with the trial gate enabled
+        working-directory: apps/web
+        env:
+          E2E_BILLING: "1"
+          E2E_BASE_URL: "http://localhost:3111"
+        run: npm run e2e -- onboarding.spec.ts
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

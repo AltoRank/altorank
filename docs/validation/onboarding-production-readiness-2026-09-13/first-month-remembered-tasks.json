@@ -1,0 +1,21 @@
+{
+  "scope": "Live semantic grouping against the two existing Plausible onboarding tasks; reused original source evidence",
+  "existing": [
+    "track revenue from website traffic",
+    "website traffic monitoring tool"
+  ],
+  "additional": [
+    {
+      "term": "funnel analysis for conversions",
+      "date": "2026-09-20"
+    }
+  ],
+  "currentChoices": [
+    "compare google analytics vs alternatives",
+    "real time website visitor analytics",
+    "track revenue from website traffic",
+    "funnel analysis for conversions"
+  ],
+  "rememberedTasks": true,
+  "reintroducedCoveredTask": false
+}

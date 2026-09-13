@@ -111,3 +111,5 @@ that small: add a stub only for a call that leaves the machine or costs money.
 it starts Supabase with the CLI (which applies the migrations), exports the
 local keys, installs Chromium and runs the suite with `E2E_STUBS=1`. The
 report is uploaded on failure. Pushes to `main` do not wait on it yet.
+
+The same onboarding spec also runs with `E2E_BILLING=1 E2E_BASE_URL=http://localhost:3111 npm run e2e -- onboarding.spec.ts`. It enables the real trial gate with a nonfunctional fixture Stripe key, delivers a signed fixture subscription event, checks duplicate activation, and waits for all supported first-month jobs to finish. It also checks the same draft on the dashboard after reload and at mobile width. This test does not claim to exercise Stripe's hosted payment form; that is a separate sandbox check. No real provider keys are used by this lane.

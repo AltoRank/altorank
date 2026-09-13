@@ -1,3 +1,5 @@
+import { FirstMonthPanel } from "@/components/onboarding/first-month-panel";
+import { getRequestQuota } from "@/lib/queries/quota";
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
@@ -78,8 +80,10 @@ export default async function DashboardPage() {
   let plannedQuery = gscSupabase
     .from("calendar_entries")
     .select("id", { count: "exact", head: true })
-    .eq("status", "queue")
-    .is("article_id", null);
+    // Ready drafts still occupy the plan. Counting only unwritten entries
+    // falsely calls a fully prepared first month an empty calendar.
+    .in("status", ["queue", "scheduled"])
+    .gte("scheduled_date", new Date().toISOString().slice(0, 10));
   if (scopeId) plannedQuery = plannedQuery.eq("workspace_id", scopeId);
 
   // The workspace allowance, so "Add workspace" can be disabled with its
@@ -94,7 +98,8 @@ export default async function DashboardPage() {
   const allowanceRead = authRead.then(({ accountId, user }) =>
     getWorkspaceAllowance(gscSupabase, accountId, user.email),
   );
-  const viewerRole = (await authRead).role;
+  const { role: viewerRole, accountId, user } = await authRead;
+  const quota = await getRequestQuota(accountId, user.email ?? null);
 
   const now = new Date();
   const [workspaces, allArticles, recent, gscRows, keywords, { count: gscCount }, bing, cmsRes, { count: plannedEntries }, yields, profileRes, health, knownPages, shareFacts, value, allowance] =
@@ -254,6 +259,8 @@ export default async function DashboardPage() {
         }
       />
 
+      {scopeId && <FirstMonthPanel workspaceId={scopeId} quota={quota} role={viewerRole} now={now} />}
+
       <StatStrip
         stats={[
           { label: "Articles published", value: `${totalLive}`, unit: ` / ${totalArticles}`, delta: `${totalLive} live`, deltaType: "pos" },
@@ -394,7 +401,7 @@ export default async function DashboardPage() {
                     <div key={item.id} className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-[7px] hover:bg-panel">
                       {w && <Avatar initials={w.initials} color={w.color} size="sm" />}
                       <div className="flex-1 min-w-0">
-                        <div className="text-[13px] truncate">{item.title}</div>
+                        <Link href={`/content/${item.id}`} className="block text-[13px] truncate hover:text-accent">{item.title}</Link>
                         <div className="font-mono text-[10.5px] text-ink-3">{w?.domain ?? "—"}</div>
                       </div>
                       <StatusPill status={item.status} />

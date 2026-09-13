@@ -77,9 +77,10 @@ export interface PlanOptions {
    * existing entry - including ones a person moved - and only appends, from the
    * day after the last one, until the month holds what the pace promises. The
    * cron uses `top-up`; a plan someone has edited must not be rewritten under
-   * them.
+   * them. `fill-month` preserves those entries while filling unused slots
+   * inside the thirty-day window beginning at `from`.
    */
-  mode?: "replace" | "top-up";
+  mode?: "replace" | "top-up" | "fill-month";
   maxEntries?: number;
   distinctTasks?: boolean;
   onProgress?: NonNullable<Parameters<typeof recommendKeywords>[2]>["onProgress"];
@@ -102,7 +103,7 @@ async function planFor(
   // not count against the cap and its keywords are free to be planned again.
   const existing = mode === "replace" ? all.filter((e) => e.status !== "queue" || e.article_id) : all;
   const room = PLAN_MAX_ENTRIES - existing.length;
-  if (room <= 0) return { plan: [], recs: [] };
+  if (room <= 0 || opts.maxEntries === 0) return { plan: [], recs: [] };
 
   const { data: excludedRows } = await supabase
     .from("keywords")
@@ -122,19 +123,39 @@ async function planFor(
     (r) => !excluded.has(r.keywordId) && !takenIds.has(r.keywordId) && !takenTerms.has(r.term.toLowerCase()),
   );
 
-  if (opts.distinctTasks && !e2eStubsEnabled()) recs = await distinctOnboardingTopics(recs, {supabase,workspaceId});
+  if (opts.distinctTasks && !e2eStubsEnabled()) {
+    // Existing drafts and accepted topics get first priority in a semantic
+    // group. Otherwise topping up reintroduces a synonym rejected during the
+    // first-choice pass merely because its SERP URLs differ.
+    const covered = existing.length ? await supabase.from("keywords").select("id, term, opportunity")
+      .eq("workspace_id", workspaceId).in("id", [...takenIds]) : { data: [], error: null };
+    if (covered.error) throw covered.error;
+    const anchors = (covered.data ?? []).map((keyword) => ({
+      keywordId: keyword.id, term: keyword.term, opportunity: keyword.opportunity,
+      action: "write", quality: "ok", qualityNote: null, volume: null, difficulty: null, intent: "info",
+      score: 0, reasons: [], existingArticleId: null, currentPosition: null, impressions: null,
+    } as KeywordRecommendation));
+    recs = (await distinctOnboardingTopics([...anchors, ...recs], {supabase,workspaceId}))
+      .filter((rec) => !takenIds.has(rec.keywordId));
+  }
 
   let start = opts.from ?? new Date();
   let maxEntries = Math.min(room, opts.maxEntries ?? room);
   if (mode === "top-up") {
     const unwritten = existing.filter((e) => !e.article_id).length;
-    maxEntries = Math.min(room, Math.max(0, monthlyTarget(weeklyLimit) - unwritten));
+    maxEntries = Math.min(maxEntries, Math.max(0, monthlyTarget(weeklyLimit) - unwritten));
     if (maxEntries === 0) return { plan: [], recs };
     const last = existing.map((e) => e.scheduled_date).sort().at(-1);
     if (last) {
       const next = new Date(new Date(`${last}T00:00:00Z`).getTime() + DAY_MS);
       if (next > start) start = next;
     }
+  }
+
+  if (mode === "fill-month") {
+    const end = isoDate(new Date(start.getTime() + 30 * DAY_MS));
+    const inMonth = existing.filter((e) => e.scheduled_date >= isoDate(start) && e.scheduled_date < end);
+    maxEntries = Math.min(maxEntries, Math.max(0, monthlyTarget(weeklyLimit) - inMonth.length));
   }
 
   const plan = buildPlan(recs, {
@@ -331,12 +352,13 @@ export async function fulfilPlannedEntry(
     patch.keyword = wrote.term;
     if (wrote.keywordId) patch.keyword_id = wrote.keywordId;
   }
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("calendar_entries")
     .update(patch)
     .eq("id", entryId)
     .select("keyword_id")
     .maybeSingle();
+  if (error) throw new Error(error.message);
   if (data?.keyword_id) {
     await supabase.from("keywords").update({ status: "drafting" }).eq("id", data.keyword_id);
   }

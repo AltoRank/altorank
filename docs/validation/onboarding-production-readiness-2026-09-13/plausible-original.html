@@ -1,0 +1,89 @@
+<h1>How to choose a website traffic monitoring tool: features and tradeoffs to compare</h1>
+<p>A website traffic monitoring tool is software that tracks who visits your site, where they came from, and what they do once they land, usually through a small script that reports to a live dashboard. Choosing one means weighing four tradeoffs: how fast the data updates, whether it tracks conversions and behavior beyond raw pageviews, how it handles cookies and consent, and what traffic volume each pricing tier actually covers. This guide walks through each tradeoff and works through a concrete comparison.</p>
+<p><strong>Contents</strong></p>
+<ul>
+<li><p><a href="#how-can-i-monitor-my-website-traffic">How can I monitor my website traffic?</a></p>
+</li>
+<li><p><a href="#what-should-real-time-monitoring-actually-show-you">What should real-time monitoring actually show you?</a></p>
+</li>
+<li><p><a href="#which-visitor-behavior-features-should-be-standard">Which visitor behavior features should be standard?</a></p>
+</li>
+<li><p><a href="#how-does-privacy-and-data-handling-affect-your-choice">How does privacy and data handling affect your choice?</a></p>
+</li>
+<li><p><a href="#comparing-three-real-options-against-the-same-criteria">Comparing three real options against the same criteria</a></p>
+</li>
+<li><p><a href="#what-s-a-good-free-tool-for-checking-traffic-on-a-site-that-isn">What's a good free tool for checking traffic on a site that isn't mine?</a></p>
+</li>
+<li><p><a href="#making-the-decision">Making the decision</a></p>
+</li>
+</ul>
+<h2 id="how-can-i-monitor-my-website-traffic">How can I monitor my website traffic?</h2>
+<p>Monitoring is a repeatable habit, not a one-time install. The steps are the same regardless of which tool you pick:</p>
+<ol>
+<li><p><strong>Add the tracking script to every page.</strong> Most tools give you one script tag to paste into your site's header or theme, no tag manager required for basic pageview tracking.</p>
+</li>
+<li><p><strong>Watch the live view during launches and campaigns.</strong> A real-time dashboard lets you catch a <a href="https://plausible.io/blog/spike-in-website-traffic">spike in website traffic</a> from a mention or a launch, or a sudden <a href="https://plausible.io/blog/drop-in-website-traffic">drop in website traffic</a> from a broken deploy, while it's still happening.</p>
+</li>
+<li><p><strong>Turn key actions into goals.</strong> Signups, purchases, downloads and form completions only matter if the tool can attach them to the traffic source that produced them.</p>
+</li>
+<li><p><strong>Segment by source, page, device or location.</strong> Aggregate totals hide where growth or decline is coming from; segments show which channel or page is doing the work.</p>
+</li>
+<li><p><strong>Set up recurring reports.</strong> A weekly email or Slack summary means you don't have to log in daily just to confirm things are stable.</p>
+</li>
+</ol>
+<h2 id="what-should-real-time-monitoring-actually-show-you">What should real-time monitoring actually show you?</h2>
+<p>&quot;Real-time&quot; means different things depending on the vendor. Two questions matter: how often the dashboard refreshes, and whether you have to reload the page to see new visits. Plausible's real-time dashboard uses the same metrics as the main dashboard and updates every 30 seconds without a manual refresh, which is useful for watching a product launch or an ad campaign land. When you evaluate any tool, run a simple test: open the live view in one tab, visit your own site from another device or a private window, and time how long it takes the count to move. That test tells you more than any spec sheet.</p>
+<h2 id="which-visitor-behavior-features-should-be-standard">Which visitor behavior features should be standard?</h2>
+<p>Pageviews alone don't tell you whether traffic did anything useful. Before you commit, check whether a tool covers these without add-on software:</p>
+<ul>
+<li><p><strong>Goals and conversions.</strong> Plausible lets you turn any page into a goal and automatically tracks file downloads, form completions and external link clicks, with custom events and revenue tracking layered on top.</p>
+</li>
+<li><p><strong>Funnels and user journeys.</strong> Funnels measure drop-off across a fixed sequence of steps you define, while <a href="https://plausible.io/blog/website-journey-analytics">journey analytics</a> show the paths visitors actually took, including ones you didn't predict.</p>
+</li>
+<li><p><strong>Scroll depth.</strong> Plausible tracks scroll depth from 1 to 100 percent automatically on every page, with no tag manager setup, so you can build a scroll goal without writing code.</p>
+</li>
+<li><p><strong>AI and search traffic.</strong> As AI assistants send more visits, it's worth checking whether a tool separates <a href="https://plausible.io/blog/ai-referral-traffic-and-optimization">AI referral traffic</a> like ChatGPT or Perplexity from regular search, and whether it connects to Search Console for organic query data.</p>
+</li>
+<li><p><strong>Campaign tracking.</strong> UTM parameters should group automatically into channels like Paid Search or Affiliates, not require you to build your own taxonomy from scratch.</p>
+</li>
+</ul>
+<p>As Laura Roeder, founder at Paperbell, put it about Plausible: &quot;I've been super happy with Plausible. All the conversion tracking we need, it has every report we use.&quot; That's the bar to measure any tool against: does it answer what you actually need, without extra configuration.</p>
+<h2 id="how-does-privacy-and-data-handling-affect-your-choice">How does privacy and data handling affect your choice?</h2>
+<p>Cookie-based tracking forces a consent banner, and visitors who decline aren't counted at all. That's a direct hit to the accuracy of your numbers, not just a compliance checkbox. Plausible collects no personal data and uses no cookies or persistent identifiers, so no consent banner is required, and all visitor data is processed on servers owned and operated by European companies. Matomo, by contrast, collects personal data and uses cookies by default for features like session recordings and heatmaps, which means a consent banner is required unless you manually reconfigure it (anonymizing IPs, disabling cookies, masking form inputs). Cloudflare Web Analytics also avoids cookies and personal data by design, but it's a closed-source feature of a CDN business rather than a dedicated analytics product, so you can't inspect how it handles data the way you can with open-source code.</p>
+<h2 id="comparing-three-real-options-against-the-same-criteria">Comparing three real options against the same criteria</h2>
+<p>Say you run a small e-commerce site and want to track checkout completions, compare this quarter's traffic to the same quarter last year, and avoid a cookie banner. Here's how three sourced options stack up on the criteria that matter for that job:</p>
+<table>
+<tr><th><p>Criteria</p>
+</th><th><p>Plausible</p>
+</th><th><p>Matomo</p>
+</th><th><p>Cloudflare Web Analytics</p>
+</th></tr>
+<tr><td><p>Cookies or consent banner required</p>
+</td><td><p>No</p>
+</td><td><p>Yes by default (configurable to reduce)</p>
+</td><td><p>No</p>
+</td></tr>
+<tr><td><p>Open source</p>
+</td><td><p>Yes</p>
+</td><td><p>Yes</p>
+</td><td><p>No, closed source</p>
+</td></tr>
+<tr><td><p>Custom events and UTM campaign tracking</p>
+</td><td><p>Yes, with automatic channel grouping</p>
+</td><td><p>Broad reporting depth, includes visitor-level views</p>
+</td><td><p>Not supported; it doesn't log query strings</p>
+</td></tr>
+<tr><td><p>Report style</p>
+</td><td><p>One focused dashboard with essential metrics</p>
+</td><td><p>Dozens of reports across multiple sections</p>
+</td><td><p>Basic overview: pageviews, visits, referrers, devices</p>
+</td></tr>
+</table>
+<p>For the checkout scenario above, Cloudflare Web Analytics is ruled out immediately: it keeps only six months of history and can't track a custom &quot;purchase completed&quot; event, so year-over-year comparison and conversion tracking are both off the table. <strong>Cloudflare also aggregates larger historical reports down to roughly 10% of original volume after seven days, meaning older totals become estimates rather than direct counts.</strong> Matomo can technically do everything you need, but its depth (dozens of reports, visitor-level data) means more setup and more privacy configuration to strip out cookies before you're consent-banner-free. Plausible fits the brief directly: goals and revenue tracking for checkout events, funnels for the checkout sequence, and data retention starting at 3 years on the Starter plan, without a consent banner. Matomo's own pricing wasn't part of the pages we drew from here, so check that directly against your traffic volume before deciding.</p>
+<p>On pricing, Plausible's plans scale with traffic rather than features: Starter starts at $9/month for up to 10,000 monthly pageviews with one site and 3 years of retention, Growth is $14/month for up to 3 sites and team management, and Business is $19/month with 5 years of retention plus funnels, user journeys and ecommerce revenue attribution. Yearly billing includes two months free. Enterprise pricing is custom for 10 or more sites.</p>
+<h2 id="what-s-a-good-free-tool-for-checking-traffic-on-a-site-that-isn">What's a good free tool for checking traffic on a site that isn't mine?</h2>
+<p>That's a different job from monitoring your own site: you're estimating someone else's traffic, not measuring real visits with a script you control. <a href="https://www.semrush.com/website/" target="_blank" rel="noopener noreferrer nofollow">Semrush's free Website Traffic Checker</a> gives an estimated monthly traffic figure for any domain or URL, along with organic versus paid traffic splits, top pages, top keywords and referring domains. Because it's modeled from external data rather than a script installed on that site, treat the numbers as estimates for competitive research and benchmarking, not as a substitute for your own analytics. If you want to <a href="https://plausible.io/blog/check-website-traffic">check website traffic</a> for a competitor before a partnership or a market comparison, that's exactly the job this kind of free tool is built for, according to <a href="https://www.semrush.com/website/" target="_blank" rel="noopener noreferrer nofollow">Semrush's own description of the tool</a>.</p>
+<h2 id="making-the-decision">Making the decision</h2>
+<p>Start from the job, not the feature list. If you need to monitor your own site's real visitors, conversions and campaigns without a consent banner, weigh real-time refresh speed, retention length, and whether goals and funnels come standard against how much report depth you actually plan to use. If the job is sizing up someone else's traffic instead, a free estimator like Semrush's traffic checker answers a different question entirely. Match the tool to the job first, and the pricing tier will follow naturally from your traffic volume.</p>
+<h2 id="learn-more-about-plausible-analytics">Learn more about Plausible Analytics</h2>
+<p>This article is published by Plausible Analytics. Visit <a href="https://plausible.io/pricing">plausible.io</a>.</p>

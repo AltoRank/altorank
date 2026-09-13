@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { extractLinks, findKnownPage, isSiteRoot } from "@/lib/seo/links";
+import { extractLinks, findKnownPage, isKnownPage, isSiteRoot } from "@/lib/seo/links";
 import type { LinkTarget } from "@/lib/seo/link-resolver";
 
 // ---------------------------------------------------------------------------
@@ -20,11 +20,12 @@ type Props = {
   siteDomain: string | null;
   /** The pool this draft was offered, from `fetchLinkTargets`. */
   targets: LinkTarget[];
+  knownPages?: { url: string }[];
   /** `workspace_output_settings.internal_links`. Null when the site never set one. */
   wanted: number | null;
 };
 
-export function InternalLinksPanel({ html, siteDomain, targets, wanted }: Props) {
+export function InternalLinksPanel({ html, siteDomain, targets, knownPages, wanted }: Props) {
   // "Is this a page in the pool?" is answered by lib/seo/links.ts, the same
   // way the generator's unwrap step, the scorer and the audit answer it. This
   // panel used to carry its own copy of the URL normalisation, which is how
@@ -36,9 +37,10 @@ export function InternalLinksPanel({ html, siteDomain, targets, wanted }: Props)
         .map((l) => ({
           ...l,
           target: findKnownPage(l.href, siteDomain, targets),
+          known: isKnownPage(l.href, siteDomain, knownPages ?? targets),
           root: isSiteRoot(l.href, siteDomain),
         })),
-    [html, siteDomain, targets],
+    [html, siteDomain, targets, knownPages],
   );
 
   const short = wanted !== null && links.length < wanted;
@@ -69,7 +71,7 @@ export function InternalLinksPanel({ html, siteDomain, targets, wanted }: Props)
               <div className="text-[11.5px] text-ink-3 truncate" title={l.href}>
                 {l.target ? l.target.title : l.root ? "This site's home page" : l.href}
               </div>
-              {!l.target && !l.root && (
+              {!l.known && !l.root && (
                 <div className="text-[11px] text-warn-ink mt-0.5">
                   Not a page in the link pool. Check it exists.
                 </div>

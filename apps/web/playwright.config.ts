@@ -49,7 +49,7 @@ export default defineConfig({
       E2E_STUBS: "1",
       // Own build directory, so this server can start beside a plain `next dev`
       // of the same checkout (Next 16 locks `.next/dev` per process).
-      NEXT_DIST_DIR: ".next-e2e",
+      NEXT_DIST_DIR: process.env.E2E_BILLING === "1" ? ".next-e2e-billing" : ".next-e2e",
       // The onboarding run and the fan-out call this server back over HTTP
       // (lib/content/fan-out.ts); a base URL pointing at another dev server
       // would run the worker there, against whatever database it has.
@@ -62,7 +62,9 @@ export default defineConfig({
       DATAFORSEO_API_KEY: "",
       DATAFORSEO_LOGIN: "",
       DATAFORSEO_PASSWORD: "",
-      STRIPE_SECRET_KEY: "",
+      STRIPE_SECRET_KEY: process.env.E2E_BILLING === "1" ? "sk_test_fixture_only" : "",
+      STRIPE_WEBHOOK_SECRET: process.env.E2E_BILLING === "1" ? "whsec_fixture_only" : "",
+      CRON_SECRET: process.env.E2E_BILLING === "1" ? "first-month-fixture-secret" : (process.env.CRON_SECRET ?? ""),
       RESEND_API_KEY: "",
     },
   },

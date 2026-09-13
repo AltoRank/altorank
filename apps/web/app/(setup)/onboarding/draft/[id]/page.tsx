@@ -1,3 +1,5 @@
+import { PLAN_ARTICLE_LIMITS } from "@/lib/stripe";
+import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import Link from "next/link";
 import { TrialOffer } from "@/components/billing/trial-offer";
 import { getRequestQuota } from "@/lib/queries/quota";
@@ -48,11 +50,16 @@ export default async function DraftPreview({ params }: { params: Promise<{ id: s
   if (!workspaceId) redirect("/onboarding");
   const { id } = await params;
   const supabase = await createClient();
-  const { data: workspace } = await supabase.from("workspaces").select("id").eq("id", workspaceId).eq("account_id", accountId).maybeSingle();
+  const { data: workspace } = await supabase.from("workspaces").select("id, domain, business_profile").eq("id", workspaceId).eq("account_id", accountId).maybeSingle();
   if (!workspace) notFound();
   const { data: article } = await supabase.from("articles").select("id, title, content, keyword, word_count, status, research, fact_checks").eq("workspace_id", workspaceId).eq("id", id).in("status", ["review", "approved", "scheduled", "live"]).maybeSingle();
   if (!article?.content) notFound();
   const quota = await getRequestQuota(accountId, user.email ?? null);
+  const { data: planned } = await supabase.from("calendar_entries").select("keyword_id, keyword, article_id").eq("workspace_id", workspaceId).in("status", ["queue", "scheduled"]).order("scheduled_date").limit(60);
+  const topicIds = (planned ?? []).map((entry) => entry.keyword_id).filter(Boolean);
+  const { data: topics } = topicIds.length ? await supabase.from("keywords").select("id, term, volume, opportunity").eq("workspace_id", workspaceId).in("id", topicIds) : { data: [] };
+  const supported = (topics ?? []).filter((topic) => topic.opportunity?.status === "qualified");
+  const profile = workspace.business_profile as BusinessProfile | null;
   const review = (article.research as { editorialReview?: import("@/lib/content/approved-output").EditorialReview } | null)?.editorialReview;
   const figures = article.fact_checks as { verdict?: string; claims?: unknown[] } | null;
   return <main className="mx-auto min-w-0 max-w-3xl break-words px-6 py-10">
@@ -70,7 +77,20 @@ export default async function DraftPreview({ params }: { params: Promise<{ id: s
       <p>Structure: {review?.structure?.replaceAll("-", " ") ?? "not checked"}.</p>
       {review?.findings.map((finding, i) => <div key={i} className="mt-3"><p>{finding.removed ? "Removed" : "Needs review"}: {finding.reason}</p><blockquote className="mt-1 border-l-2 border-line pl-3 text-ink-3">{finding.text}</blockquote></div>)}
     </section>
-    {quota.trialEligible && quota.reason === "no-plan" && <section className="mt-8" aria-label="Continue with your draft"><h2 className="mb-3 text-xl font-semibold">Keep writing for your business</h2><p className="mb-4 text-sm text-ink-2">Your draft is saved. Start a trial to edit, approve and publish, and continue with your next articles.</p><TrialOffer canBuy={role === "owner"} returnTo={`/content/${article.id}`} /></section>}
+    {quota.trialEligible && quota.reason === "no-plan" && <section className="mt-8 rounded-xl border border-accent/30 bg-panel p-5 sm:p-6" aria-label="Continue with your draft">
+      <p className="text-xs uppercase tracking-wide text-ink-3">Your next 30 days · {workspace.domain}</p>
+      <h2 className="mb-3 mt-2 text-2xl font-semibold">Turn this first draft into a plan for your business</h2>
+      <p className="mb-4 text-sm text-ink-2">Your article is saved. Start your trial to edit and approve it, and prepare the other supported topics for your first month.</p>
+      {profile?.primaryBuyer && <p className="text-sm"><strong>Your audience:</strong> {profile.primaryBuyer}{profile.priorityOffering ? ` · ${profile.priorityOffering}` : ""}</p>}
+      <div className="my-4 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border border-line p-3"><strong className="text-lg">1 saved draft</strong><p className="mt-1 text-sm text-ink-2">The same article opens in your dashboard, with its sources and review notes.</p></div>
+        <div className="rounded-lg border border-line p-3"><strong className="text-lg">{supported.length} supported {supported.length === 1 ? "topic" : "topics"} in your plan</strong><p className="mt-1 text-sm text-ink-2">Including the first draft. We expand the month only where buyer fit and search evidence support another useful article.</p></div>
+      </div>
+      {supported.length > 0 && <ul className="mb-4 divide-y divide-line">{supported.slice(0, 5).map((topic) => <li key={topic.id} className="py-3"><p className="text-sm font-medium">{topic.opportunity?.angle || topic.term}</p><p className="mt-1 text-xs text-ink-2">{topic.opportunity?.reason}</p>{typeof topic.volume === "number" && <p className="mt-1 text-xs text-ink-3">{topic.volume.toLocaleString()} estimated searches/month for “{topic.term}” in your selected market · keyword demand, not traffic to your site</p>}</li>)}</ul>}
+      <p className="mb-2 text-sm"><strong>Managed includes {PLAN_ARTICLE_LIMITS.starter} articles per calendar month across your account, starting during the trial.</strong> {quota.monthUsed ?? quota.used} already used this month, including your saved draft; {Math.max(0, (PLAN_ARTICLE_LIMITS.starter ?? 100) - (quota.monthUsed ?? quota.used))} available after activation.</p>
+      <p className="mb-4 text-sm text-ink-2">Preparation follows your cadence and available allowance. Review each draft before publishing. Search demand identifies an opportunity; rankings, visits and sales are outcomes to measure after publishing, not guaranteed results.</p>
+      <TrialOffer canBuy={role === "owner"} returnTo="/dashboard" />
+    </section>}
     <Link href="/onboarding" className="mt-8 inline-block text-accent">Back to your article ideas</Link>
   </main>;
 }

@@ -2,6 +2,13 @@ import type Stripe from "stripe";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getStripe } from "@/lib/stripe";
 
+/** A definitive request rejection created no session. Network failures and
+ * server errors are ambiguous and must retain the same idempotency key. */
+export function checkoutWasRejected(error: unknown): boolean {
+  const value = error as { type?: string; statusCode?: number } | null;
+  return value?.type === "StripeInvalidRequestError" && value.statusCode === 400;
+}
+
 export async function createPendingCheckout(accountId: string, parameters: Stripe.Checkout.SessionCreateParams): Promise<Stripe.Checkout.Session> {
   const db = createServiceClient();
   const expires = Math.floor(Date.now() / 1000) + 3600;
@@ -28,7 +35,16 @@ export async function createPendingCheckout(accountId: string, parameters: Strip
   }
   const held = attempt.parameters as Stripe.Checkout.SessionCreateParams;
   if (held.line_items?.[0]?.price !== parameters.line_items?.[0]?.price) throw new Error("A checkout for another plan is already open. Cancel that checkout before choosing a different plan.");
-  const session = await getStripe().checkout.sessions.create(held, { idempotencyKey: `checkout:${attempt.id}` });
+  let session: Stripe.Checkout.Session;
+  try {
+    session = await getStripe().checkout.sessions.create(held, { idempotencyKey: `checkout:${attempt.id}` });
+  } catch (error) {
+    if (checkoutWasRejected(error)) {
+      const removed = await db.from("billing_checkout_attempts").delete().eq("account_id", accountId).eq("id", attempt.id).is("stripe_session_id", null);
+      if (removed.error) throw new Error("Checkout was rejected but could not be cleared. Please retry.");
+    }
+    throw error;
+  }
   const saved = await db.from("billing_checkout_attempts").update({ stripe_session_id: session.id }).eq("account_id", accountId).eq("id", attempt.id);
   if (saved.error) throw new Error("Checkout was created but could not be saved. Retry to resume the same checkout.");
   return session;

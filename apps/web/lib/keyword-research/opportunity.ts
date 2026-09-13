@@ -16,6 +16,8 @@ import { getLocale } from "@/lib/seo/locales";
 export const OPPORTUNITY_VERSION = 6;
 export const QUALIFICATION_LIMIT = 25;
 export interface Opportunity {
+  /** Persisted grouping of synonymous editorial tasks within this evidence context. */
+  taskKey?: string;
   version: number;
   context: string;
   checkedAt: string;
