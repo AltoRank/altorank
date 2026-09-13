@@ -26,6 +26,12 @@ async function globalSetup(): Promise<void> {
     for (const path of ["/dashboard", "/keywords", "/content", "/articles", "/onboarding"]) {
       await page.goto(path, { waitUntil: "load" }).catch(() => {});
     }
+    // Page navigation does not compile the POST-only worker routes. Their
+    // first compilation was still inside onboarding's completion timeout.
+    // Empty requests compile them but cannot create a run or draft.
+    for (const path of ["/api/onboard/start", "/api/onboard/choose", "/api/onboard/run", "/api/internal/draft"]) {
+      await page.request.post(path, { data: {}, timeout: 90_000 }).catch(() => {});
+    }
     // The editor route carries a param; compile it on the warm-up workspace.
     const { admin } = await import("./fixtures/account");
     const { data: art } = await admin()
