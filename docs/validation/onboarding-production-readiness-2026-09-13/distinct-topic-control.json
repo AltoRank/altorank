@@ -1,0 +1,75 @@
+{
+  "scope": "Saved-input task overlap replay; not independent human labels.",
+  "topics": [
+    {
+      "query": "scheduling software with payment processing",
+      "angle": "How to compare scheduling software with payment processing",
+      "buyingJob": "Evaluate scheduling tools that accept payments and prevent double bookings for small teams"
+    },
+    {
+      "query": "group scheduling with availability",
+      "angle": "Group Scheduling Tools Compared: Polls vs. Calendar-Based Availability Apps",
+      "buyingJob": "Coordinate group availability and prevent scheduling conflicts across team members"
+    }
+  ],
+  "results": [
+    {
+      "repeat": 0,
+      "keptIndices": [
+        0,
+        1
+      ],
+      "calls": [
+        {
+          "operation": "onboarding/distinct-tasks",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "6d1aeb5d4be907b1b54b4dc5d474838e4dc321d581476da26a7ebee0928aaf64",
+          "elapsedMs": 1364,
+          "status": "complete",
+          "inputTokens": 640,
+          "outputTokens": 16,
+          "costUsd": 0.00216
+        }
+      ],
+      "validPartition": true,
+      "groups": [
+        [
+          0
+        ],
+        [
+          1
+        ]
+      ]
+    },
+    {
+      "repeat": 1,
+      "keptIndices": [
+        0,
+        1
+      ],
+      "calls": [
+        {
+          "operation": "onboarding/distinct-tasks",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "6d1aeb5d4be907b1b54b4dc5d474838e4dc321d581476da26a7ebee0928aaf64",
+          "elapsedMs": 1283,
+          "status": "complete",
+          "inputTokens": 640,
+          "outputTokens": 16,
+          "costUsd": 0.00216
+        }
+      ],
+      "validPartition": true,
+      "groups": [
+        [
+          0
+        ],
+        [
+          1
+        ]
+      ]
+    }
+  ]
+}

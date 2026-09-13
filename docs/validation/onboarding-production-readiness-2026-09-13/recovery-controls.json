@@ -1,0 +1,161 @@
+{
+  "scope": "Three evaluator-authored passage controls, full frozen evidence packet from the focused Tally run. Development regression, not independent labels or a whole-draft quality grade.",
+  "html": "<p>Jotform's homepage cites \"150+ integrations\" for connecting to marketing, CRM, and storage apps.</p>\n<p>The WPForms review says Jotform puts its rules under Settings \u2192 Conditions and supports skipping to specific pages.</p>\n<p>The WPForms review says Jotform supports redirecting high-budget leads to an external booking URL.</p>",
+  "expectedVerdicts": [
+    "supported",
+    "supported",
+    "unsupported"
+  ],
+  "claimVerification": {
+    "status": "checked",
+    "totalPassages": 3,
+    "checkedPassages": [
+      0,
+      1,
+      2
+    ],
+    "claims": [
+      {
+        "quote": "Jotform's homepage cites \"150+ integrations\" for connecting to marketing, CRM, and storage apps.",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Matches Jotform homepage integration count and use cases listed in source.",
+        "evidence": [
+          {
+            "sourceIndex": 6,
+            "quote": "Automatically send form submissions to email marketing services, project management boards, CRMs, cloud storage apps, and more with Jotform\u2019s 150+ integrations."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 0
+      },
+      {
+        "quote": "The WPForms review says Jotform puts its rules under Settings \u2192 Conditions and supports skipping to specific pages.",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Directly matches WPForms review description of Jotform's conditional logic location and action types.",
+        "evidence": [
+          {
+            "sourceIndex": 4,
+            "quote": "JotForm puts them under Settings \u00bb Conditions at the form level."
+          },
+          {
+            "sourceIndex": 4,
+            "quote": "you can show or hide fields, skip to specific pages, change the email recipient, calculate values, or update form values dynamically"
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 1
+      },
+      {
+        "quote": "The WPForms review says Jotform supports redirecting high-budget leads to an external booking URL.",
+        "category": "product",
+        "verdict": "unsupported",
+        "reason": "Source lists Jotform's action types but never mentions redirecting high-budget leads to an external booking URL.",
+        "evidence": [],
+        "contradiction": "",
+        "passageIndex": 2
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://tally.so/pricing",
+        "title": "Tally Pricing | Free Form Builder with Unlimited Responses"
+      },
+      {
+        "url": "https://tally.so/features",
+        "title": "Explore all Tally features for free online forms and surveys"
+      },
+      {
+        "url": "https://tally.so/",
+        "title": "Tally - Create Beautiful Forms for Free | Unlimited Forms & Submissions"
+      },
+      {
+        "url": "https://tally.so/help/conditional-form-logic",
+        "title": "Create Conditional Logic Forms | Free Form Builder | Tally"
+      },
+      {
+        "url": "https://wpforms.com/best-form-builders-with-conditional-logic/",
+        "title": "7 Best Form Builders With Conditional Logic"
+      },
+      {
+        "url": "https://wpforms.com/pricing/",
+        "title": "WPForms Pricing and Plans"
+      },
+      {
+        "url": "https://www.jotform.com/?utm_source=wp-beginner&utm_campaign=jf1&utm_medium=blog",
+        "title": "Jotform: Free Online Form Builder | Create Forms in Seconds"
+      },
+      {
+        "url": "https://www.zoho.com/forms/",
+        "title": "Free Form Builder | Create Online Forms For Free"
+      },
+      {
+        "url": "https://www.zoho.com/forms/",
+        "title": "Free Form Builder | Create Online Forms For Free"
+      },
+      {
+        "url": "https://www.gravityforms.com/",
+        "title": "Gravity Forms | The Best WordPress Form Plugin | Form Builder"
+      },
+      {
+        "url": "https://www.typeform.com/?ps_partner_key=c3llZGJhbGtoaQ&ps_xid=NStL9GLtwPqeIq&gsxid=NStL9GLtwPqeIq&gspk=c3llZGJhbGtoaQ",
+        "title": "Form Builder with AI Automation | Typeform"
+      },
+      {
+        "url": "https://www.jotform.com/pricing/",
+        "title": "Jotform Features and Pricing | Jotform"
+      }
+    ],
+    "failures": [],
+    "modelCalls": [
+      {
+        "operation": "article/claim-verification",
+        "model": "claude-sonnet-5",
+        "thinking": "adaptive-medium",
+        "promptHash": "52506f8a1069a0273fe0022330ee625715c9611caa4770f6304a9a6b70c3eb21",
+        "elapsedMs": 8279,
+        "status": "complete",
+        "inputTokens": 29745,
+        "outputTokens": 913,
+        "costUsd": 0.10293
+      },
+      {
+        "operation": "article/claim-verification",
+        "model": "claude-sonnet-5",
+        "thinking": "adaptive-medium",
+        "promptHash": "38b75bc932c3a450ee4324e1779b81c958e7a1f8715aa3578722a6874e197f87",
+        "elapsedMs": 5670,
+        "status": "complete",
+        "inputTokens": 29288,
+        "outputTokens": 599,
+        "costUsd": 0.096849
+      }
+    ]
+  },
+  "providerCostUsd": 0.19977899999999998,
+  "modelCalls": [
+    {
+      "operation": "article/claim-verification",
+      "model": "claude-sonnet-5",
+      "thinking": "adaptive-medium",
+      "promptHash": "52506f8a1069a0273fe0022330ee625715c9611caa4770f6304a9a6b70c3eb21",
+      "elapsedMs": 8279,
+      "status": "complete",
+      "inputTokens": 29745,
+      "outputTokens": 913,
+      "costUsd": 0.10293
+    },
+    {
+      "operation": "article/claim-verification",
+      "model": "claude-sonnet-5",
+      "thinking": "adaptive-medium",
+      "promptHash": "38b75bc932c3a450ee4324e1779b81c958e7a1f8715aa3578722a6874e197f87",
+      "elapsedMs": 5670,
+      "status": "complete",
+      "inputTokens": 29288,
+      "outputTokens": 599,
+      "costUsd": 0.096849
+    }
+  ]
+}

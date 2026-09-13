@@ -1,0 +1,248 @@
+{
+  "scope": "Saved-topic local route replay with fresh live generation; discovery is reused, not a new holdout.",
+  "article": {
+    "title": "How to compare form builders with conditional logic: key criteria and tradeoffs",
+    "keyword": "form builder with conditional logic",
+    "word_count": 2143,
+    "status": "review",
+    "published_at": null
+  },
+  "articleCount": 1,
+  "finishedAt": "2026-09-13T19:21:40.918+00:00",
+  "topics": [
+    {
+      "term": "form builder with conditional logic",
+      "angle": "How to compare form builders with conditional logic: key criteria and tradeoffs",
+      "audience": "Small business owners and marketing teams evaluating form builders"
+    },
+    {
+      "term": "embed form on website easily",
+      "angle": "How to embed a form on your website without coding",
+      "audience": "Small business owners and marketing teams"
+    }
+  ],
+  "review": {
+    "status": "unavailable",
+    "checkedPassages": 48,
+    "totalPassages": 51,
+    "failures": [
+      "Batch 2: Passage 28: a claim or evidence quote could not be verified.",
+      "Batch 2: Passage 29: a claim or evidence quote could not be verified.",
+      "Batch 2: Passage 33: a claim or evidence quote could not be verified."
+    ],
+    "findings": [
+      {
+        "text": "Calculations follow a similar split. Tally's calculated fields are part of the same free conditional logic system, with no separate paywall . WPForms bundles its Calculations addon into the Pro plan rather than Basic, according to its own pricing page. Jotform's formula capability is described in that same WPForms comparison as \"widget only,\" which is worth confirming directly if a live, editable formula engine (rather than a static widget) is what your quote calculator needs.",
+        "reason": "Jotform's 'widget only' formula claim is misattributed to the WPForms comparison; it actually comes from Tally's own Jotform comparison page.",
+        "removed": false,
+        "category": "product",
+        "severity": "material"
+      },
+      {
+        "text": "Payments. Tally lists payment collection as one of its input blocks, and its conditional logic documentation states you can show or hide \"any block,\" which by that same logic includes a payment block, letting you reveal a checkout field only for respondents who choose a paid option. WPForms ties conditional logic on payment fields specifically to its Pro tier, where the Stripe Pro, Square Pro, or PayPal Commerce integrations let the price shown, or whether a payment field appears at all, change based on earlier answers.",
+        "reason": "Claims conditional logic can specifically show/hide a Tally payment block based on prior answers; no source confirms this combination, only general 'any block' wording.",
+        "removed": false,
+        "category": "product",
+        "severity": "material"
+      },
+      {
+        "text": "What about Elementor, Squarespace, and other website-builder forms?",
+        "reason": "Heading promises coverage of Elementor, Squarespace, Ninja Forms and JetFormBuilder but the section provides no actual named comparison, only generic self-testing advice.",
+        "removed": false,
+        "category": "qualitative",
+        "severity": "material"
+      },
+      {
+        "text": "Yes, with no limit on the number of conditions, per Tally's pricing page",
+        "reason": "Attributes the 'no limit on conditions' detail to Tally's pricing page, but that specific wording is from the conditional-logic help page.",
+        "removed": false,
+        "category": "qualitative",
+        "severity": "editorial"
+      },
+      {
+        "text": "Settings &gt; Conditions, at the form level",
+        "reason": "Unrendered HTML entity '&gt;' appears in the table cell instead of a proper '>' character.",
+        "removed": false,
+        "category": "qualitative",
+        "severity": "editorial"
+      },
+      {
+        "text": "Jotform's formula capability is described in that same WPForms comparison as \"widget only,\"",
+        "reason": "The 'widget only' description appears in Tally's Jotform comparison page, not the WPForms comparison article cited.",
+        "removed": false,
+        "category": "product",
+        "severity": "material"
+      },
+      {
+        "text": "which by that same logic includes a payment block, letting you reveal a checkout field only for respondents who choose a paid option",
+        "reason": "Sources describe generic block hiding but do not confirm payment blocks specifically support this behavior.",
+        "removed": false,
+        "category": "product",
+        "severity": "material"
+      },
+      {
+        "text": "Tally's documented action list centers on notifications, page jumps, and redirects",
+        "reason": "Tally's six documented logic actions do not include email notifications as an action type.",
+        "removed": false,
+        "category": "product",
+        "severity": "material"
+      },
+      {
+        "text": "Elementor's form widget, Ninja Forms as a WordPress plugin, JetFormBuilder, and Squarespace's native form blocks all get asked about separately",
+        "reason": "No source discusses these named products' conditional logic capabilities",
+        "removed": false,
+        "category": "product",
+        "severity": "material"
+      },
+      {
+        "text": "basic field-level show/hide and multi-step branching are sometimes gated separately even within the same plugin",
+        "reason": "No source establishes this specific gating pattern for any plugin",
+        "removed": false,
+        "category": "qualitative",
+        "severity": "material"
+      }
+    ],
+    "modelCalls": [
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.192987,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 57858,
+        "operation": "article/approved-output-review",
+        "promptHash": "fa81c1657b0db1f2eb75db7c9e58fd9cc7b753e183df4a0d68673c162a930134",
+        "inputTokens": 36944,
+        "outputTokens": 5477
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.121665,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 10833,
+        "operation": "article/claim-verification",
+        "promptHash": "f30d2b7ebc8011c3929d6ff679e0107b3feefca3acbd9a8a852dc5c1fc3a46cd",
+        "inputTokens": 34810,
+        "outputTokens": 1149
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.12306,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 9664,
+        "operation": "article/claim-verification",
+        "promptHash": "e09e6f25e90dd0224ff1ea03a99f48edcc0b6964a2a19099616b36c6b1cae733",
+        "inputTokens": 35265,
+        "outputTokens": 1151
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.184938,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 40190,
+        "operation": "article/claim-verification",
+        "promptHash": "89a965bcd0ca0691db2a111037e477b0352ce8e61106a29c014b00475e55ca81",
+        "inputTokens": 35506,
+        "outputTokens": 5228
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.195693,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 47236,
+        "operation": "article/claim-verification",
+        "promptHash": "b445e236b27982af490410e5072a27335d9f850b8d04b4d08379d7fcf0eace59",
+        "inputTokens": 35456,
+        "outputTokens": 5955
+      }
+    ]
+  },
+  "evidencePlan": {
+    "task": "comparison",
+    "status": "planned",
+    "requirements": [
+      "What are the core conditional logic capabilities (show/hide, branching, calculations, routing) available in each form builder?",
+      "What is the pricing for conditional logic features across free, starter, and professional tiers for each builder?",
+      "Which form builders offer conditional logic on advanced features like payments, email routing, and multi-page navigation?",
+      "How do setup complexity and user experience differ when configuring conditional logic rules across builders?"
+    ],
+    "selectedUrls": [
+      "https://tally.so/help/tally-a-free-typeform-alternative",
+      "https://tally.so/help/tally-a-free-jotform-alternative",
+      "https://tally.so/help/tally-a-free-paperform-alternative",
+      "https://wpforms.com/pricing/",
+      "https://wpforms.com/refer/formidable-pro/",
+      "https://wpforms.com/refer/jotform/",
+      "https://tally.so/help/plans-and-pricing"
+    ],
+    "retrievedUrls": [
+      "https://tally.so/help/tally-a-free-typeform-alternative",
+      "https://tally.so/help/tally-a-free-jotform-alternative",
+      "https://tally.so/help/tally-a-free-paperform-alternative",
+      "https://wpforms.com/pricing/",
+      "https://www.jotform.com/?utm_source=wp-beginner&utm_campaign=jf1&utm_medium=blog",
+      "https://tally.so/help/plans-and-pricing"
+    ]
+  },
+  "sources": [
+    {
+      "url": "https://tally.so/pricing",
+      "characters": 4974,
+      "sha256": "13bbf87b66ce320ff5e115591641d67316fe502ef495c4ae7f75bb45f5f25603"
+    },
+    {
+      "url": "https://tally.so/features",
+      "characters": 6613,
+      "sha256": "24ec612b008e833d4a6f3cf6b8923a6e3b48aeacf90e1713910135831cd30483"
+    },
+    {
+      "url": "https://tally.so/",
+      "characters": 8123,
+      "sha256": "e41c2e3ac50cee9f701891a15d4b0584816e7346a78f7d1c6ded8f5c7754908b"
+    },
+    {
+      "url": "https://tally.so/help/conditional-form-logic",
+      "characters": 8924,
+      "sha256": "766d8f4e9611e961cb457792ae539219f44d03e329f634dc614f53c4134afd02"
+    },
+    {
+      "url": "https://wpforms.com/best-form-builders-with-conditional-logic/",
+      "characters": 9000,
+      "sha256": "9895bc5466f4a7220b4b44c6380ce83cee6c9f8693b250ce6c4ee51fa368cda3"
+    },
+    {
+      "url": "https://tally.so/help/tally-a-free-typeform-alternative",
+      "characters": 9000,
+      "sha256": "c17fdef9e85da4c7fa26098ffb667277583e5b6d1c5c96232984969ea092a01e"
+    },
+    {
+      "url": "https://tally.so/help/tally-a-free-jotform-alternative",
+      "characters": 9000,
+      "sha256": "8526bf52f5951c8ee7b050d0fab251f2d863fde3f83ae49ba7e9f25ee3f12e3d"
+    },
+    {
+      "url": "https://tally.so/help/tally-a-free-paperform-alternative",
+      "characters": 9000,
+      "sha256": "935bed2cce7b1fad97d527ea12c084b685f70d7ed25fb104302305995303f53a"
+    },
+    {
+      "url": "https://wpforms.com/pricing/",
+      "characters": 9000,
+      "sha256": "ba14b76837ef7acb717f18748de25f92b5bf112b16cc59ecfbfd4ea9ec215485"
+    },
+    {
+      "url": "https://www.jotform.com/?utm_source=wp-beginner&utm_campaign=jf1&utm_medium=blog",
+      "characters": 1016,
+      "sha256": "b18c294ffb780fc5924e27972d5b66990792d41246df095b25423a57e8affaac"
+    },
+    {
+      "url": "https://tally.so/help/plans-and-pricing",
+      "characters": 1876,
+      "sha256": "b72d8489f3144a1099bb09a195e9e8a922ba34f0cb7516c1a77b234d8474ffd1"
+    }
+  ],
+  "recordedCostUsd": 1.2546380000000001
+}

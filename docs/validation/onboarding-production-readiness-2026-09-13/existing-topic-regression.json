@@ -1,0 +1,579 @@
+{
+  "scope": "Evaluator-authored explicit offering boundaries; evaluates final task validation, not discovery recall or ranking.",
+  "models": {
+    "structured": "claude-haiku-4-5-20251001",
+    "editorial": "claude-sonnet-5"
+  },
+  "results": [
+    {
+      "id": "writer-cms",
+      "repeat": 0,
+      "expectedSupported": false,
+      "prediction": {
+        "status": "unsupported"
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "82bdfbb33ab2eccbc1e94b6a64e6683ad3551de1e1c5bf07a965f0cda7bc8c2e",
+          "elapsedMs": 1635,
+          "status": "complete",
+          "inputTokens": 1250,
+          "outputTokens": 71,
+          "costUsd": 0.004815
+        }
+      ]
+    },
+    {
+      "id": "writer-writing",
+      "repeat": 0,
+      "expectedSupported": true,
+      "prediction": {
+        "status": "supported",
+        "task": {
+          "status": "supported",
+          "queryTask": "Compare and choose an AI content writer tool based on criteria and tradeoffs",
+          "sourceIndex": 0,
+          "angle": "How to choose an AI content writer",
+          "buyingJob": "Evaluate and select an AI content writer tool that fits content needs",
+          "reason": "Directly matches the query's intent to compare AI content writer options using selection criteria, without veering into unrelated workflow topics.",
+          "businessFit": {
+            "supported": true,
+            "quote": "ExampleWriter sells AI article generation and editorial approval."
+          },
+          "sourceQuote": "How to choose an AI content writer"
+        }
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "cc508502b5474b1cd11fd6da2b664ca2427788dee240c3fd32ad3d585c8e02d4",
+          "elapsedMs": 2536,
+          "status": "complete",
+          "inputTokens": 1248,
+          "outputTokens": 182,
+          "costUsd": 0.006474
+        }
+      ]
+    },
+    {
+      "id": "plumber-quotes",
+      "repeat": 0,
+      "expectedSupported": true,
+      "prediction": {
+        "status": "supported",
+        "task": {
+          "status": "supported",
+          "queryTask": "Help homeowners compare plumbing repair quotes by understanding criteria and pricing factors",
+          "sourceIndex": 0,
+          "angle": "How to compare quotes for plumbing repairs",
+          "buyingJob": "Evaluate and compare multiple plumbing repair quotes before choosing a plumber",
+          "reason": "Searcher wants guidance on evaluating plumbing quotes; a plumbing repair provider can explain what drives pricing and what to check when comparing offers.",
+          "businessFit": {
+            "supported": true,
+            "quote": "ExamplePlumber offers leak repair and drain clearance to London homeowners."
+          },
+          "sourceQuote": "How to compare quotes for plumbing repairs"
+        }
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "294ff5488c6c4c5fde45fbb3e43ddb9ea9ee240f54c4aa914d0bdaf6d8ecb185",
+          "elapsedMs": 2777,
+          "status": "complete",
+          "inputTokens": 1277,
+          "outputTokens": 215,
+          "costUsd": 0.007056
+        }
+      ]
+    },
+    {
+      "id": "plumber-software",
+      "repeat": 0,
+      "expectedSupported": false,
+      "prediction": {
+        "status": "unsupported"
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "34b8569b885c9268024ebdf092ead5832cbdb06a97c703a58999890bd5512ce2",
+          "elapsedMs": 1596,
+          "status": "complete",
+          "inputTokens": 1268,
+          "outputTokens": 81,
+          "costUsd": 0.005019
+        }
+      ]
+    },
+    {
+      "id": "oil-care",
+      "repeat": 0,
+      "expectedSupported": true,
+      "prediction": {
+        "status": "supported",
+        "task": {
+          "status": "supported",
+          "queryTask": "How to choose the right beard oil based on hair/skin type, ingredients, scent and fit for routine",
+          "sourceIndex": 0,
+          "angle": "How to choose beard oil for your routine",
+          "buyingJob": "Compare beard oil options by ingredients, skin/hair type, and scent to pick the right one",
+          "reason": "Directly answers the query by giving selection criteria (skin type, ingredients, scent, routine fit) for choosing beard oil, matching the observed result's focus.",
+          "businessFit": {
+            "supported": true,
+            "quote": "ExampleGroom sells beard oils, balms and washes."
+          },
+          "sourceQuote": "How to choose beard oil for your routine"
+        }
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "bb7ec22091207bbfd0523765962821314c561642727e71f505c9cbc039eea128",
+          "elapsedMs": 2517,
+          "status": "complete",
+          "inputTokens": 1259,
+          "outputTokens": 210,
+          "costUsd": 0.006927
+        }
+      ]
+    },
+    {
+      "id": "oil-treatment",
+      "repeat": 0,
+      "expectedSupported": false,
+      "prediction": {
+        "status": "unsupported"
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "1d529cbe5d2f919bad41b0d252ef9292e435a2c107ff2c21c43699ad929b402b",
+          "elapsedMs": 1492,
+          "status": "complete",
+          "inputTokens": 1270,
+          "outputTokens": 80,
+          "costUsd": 0.00501
+        }
+      ]
+    },
+    {
+      "id": "analytics-export",
+      "repeat": 0,
+      "expectedSupported": true,
+      "prediction": {
+        "status": "supported",
+        "task": {
+          "status": "supported",
+          "queryTask": "Instructions for exporting website analytics data to CSV format",
+          "sourceIndex": 0,
+          "angle": "How to export website analytics to CSV",
+          "buyingJob": "Export website analytics data as a CSV file for reporting or further analysis",
+          "reason": "The query seeks a how-to for exporting analytics as CSV; this headline directly instructs on that exact task.",
+          "businessFit": {
+            "supported": true,
+            "quote": "ExampleMetrics provides website analytics and exports reports as CSV"
+          },
+          "sourceQuote": "How to export website analytics to CSV"
+        }
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "0a1208c3ba618ee4e69980a1cf06be71b9876359afea52fe8918459499381ab4",
+          "elapsedMs": 2201,
+          "status": "complete",
+          "inputTokens": 1258,
+          "outputTokens": 174,
+          "costUsd": 0.006384
+        }
+      ]
+    },
+    {
+      "id": "analytics-ads",
+      "repeat": 0,
+      "expectedSupported": false,
+      "prediction": {
+        "status": "unsupported"
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "eb8967f5dad9ea9eb5bda16e3ad6862cb3e36d08f9ad15ed2e6118ab1a9d5192",
+          "elapsedMs": 1547,
+          "status": "complete",
+          "inputTokens": 1270,
+          "outputTokens": 70,
+          "costUsd": 0.00486
+        }
+      ]
+    },
+    {
+      "id": "italian-repair",
+      "repeat": 0,
+      "expectedSupported": true,
+      "prediction": {
+        "status": "supported",
+        "task": {
+          "status": "supported",
+          "queryTask": "Guida alla scelta di un'officina per la manutenzione/riparazione della propria bicicletta",
+          "sourceIndex": 0,
+          "angle": "Come scegliere un'officina per la tua bicicletta: criteri e cosa valutare",
+          "buyingJob": "Scegliere un'officina affidabile per riparare o manutenere la propria bici",
+          "reason": "Risponde direttamente alla ricerca fornendo criteri pratici per valutare e scegliere un'officina bici, in linea con il servizio offerto.",
+          "businessFit": {
+            "supported": true,
+            "quote": "EsempioBici offre riparazioni e manutenzione di biciclette a Milano"
+          },
+          "sourceQuote": "Come scegliere un\u2019officina per la tua bicicletta"
+        }
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "2f8f11ec4fd8045470d463916bb5aab05de9d2909ee1e739f3c64f1f466c52d2",
+          "elapsedMs": 2828,
+          "status": "complete",
+          "inputTokens": 1291,
+          "outputTokens": 235,
+          "costUsd": 0.007398
+        }
+      ]
+    },
+    {
+      "id": "italian-accounting",
+      "repeat": 0,
+      "expectedSupported": false,
+      "prediction": {
+        "status": "unsupported"
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "35147b55f8a5d10c43e65035665f08870019b6807202673f3b59e0286803a3ba",
+          "elapsedMs": 2058,
+          "status": "complete",
+          "inputTokens": 1273,
+          "outputTokens": 77,
+          "costUsd": 0.004974
+        }
+      ]
+    },
+    {
+      "id": "writer-cms",
+      "repeat": 1,
+      "expectedSupported": false,
+      "prediction": {
+        "status": "unsupported"
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "82bdfbb33ab2eccbc1e94b6a64e6683ad3551de1e1c5bf07a965f0cda7bc8c2e",
+          "elapsedMs": 1614,
+          "status": "complete",
+          "inputTokens": 1250,
+          "outputTokens": 77,
+          "costUsd": 0.004905
+        }
+      ]
+    },
+    {
+      "id": "writer-writing",
+      "repeat": 1,
+      "expectedSupported": true,
+      "prediction": {
+        "status": "supported",
+        "task": {
+          "status": "supported",
+          "queryTask": "Compare and select an AI content writer tool based on criteria and tradeoffs",
+          "sourceIndex": 0,
+          "angle": "How to choose an AI content writer",
+          "buyingJob": "Evaluate and select an AI content writing tool that fits content needs",
+          "reason": "Matches the query intent to compare AI content writer options using selection criteria rather than promoting a single vendor's features.",
+          "businessFit": {
+            "supported": true,
+            "quote": "ExampleWriter sells AI article generation and editorial approval."
+          },
+          "sourceQuote": "How to choose an AI content writer"
+        }
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "cc508502b5474b1cd11fd6da2b664ca2427788dee240c3fd32ad3d585c8e02d4",
+          "elapsedMs": 2364,
+          "status": "complete",
+          "inputTokens": 1248,
+          "outputTokens": 177,
+          "costUsd": 0.006399
+        }
+      ]
+    },
+    {
+      "id": "plumber-quotes",
+      "repeat": 1,
+      "expectedSupported": true,
+      "prediction": {
+        "status": "supported",
+        "task": {
+          "status": "supported",
+          "queryTask": "How to compare quotes for plumbing repairs",
+          "sourceIndex": 0,
+          "angle": "How to compare plumbing repair quotes: what to check and questions to ask",
+          "buyingJob": "Help a homeowner evaluate and compare multiple plumbing repair quotes before choosing a plumber",
+          "reason": "Explains criteria for comparing plumbing repair quotes, directly matching the searcher's task of evaluating offers before hiring a plumber.",
+          "businessFit": {
+            "supported": true,
+            "quote": "ExamplePlumber offers leak repair and drain clearance to London homeowners"
+          },
+          "sourceQuote": "How to compare quotes for plumbing repairs"
+        }
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "294ff5488c6c4c5fde45fbb3e43ddb9ea9ee240f54c4aa914d0bdaf6d8ecb185",
+          "elapsedMs": 2670,
+          "status": "complete",
+          "inputTokens": 1277,
+          "outputTokens": 209,
+          "costUsd": 0.006966
+        }
+      ]
+    },
+    {
+      "id": "plumber-software",
+      "repeat": 1,
+      "expectedSupported": false,
+      "prediction": {
+        "status": "unsupported"
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "34b8569b885c9268024ebdf092ead5832cbdb06a97c703a58999890bd5512ce2",
+          "elapsedMs": 1720,
+          "status": "complete",
+          "inputTokens": 1268,
+          "outputTokens": 88,
+          "costUsd": 0.005124
+        }
+      ]
+    },
+    {
+      "id": "oil-care",
+      "repeat": 1,
+      "expectedSupported": true,
+      "prediction": {
+        "status": "supported",
+        "task": {
+          "status": "supported",
+          "queryTask": "How to choose the right beard oil based on criteria like hair type, skin sensitivity, scent, and ingredients",
+          "sourceIndex": 0,
+          "angle": "How to choose beard oil for your routine",
+          "buyingJob": "Learn what criteria matter when selecting a beard oil suited to their beard and skin",
+          "reason": "Directly addresses the searcher's need to understand selection criteria for beard oil, matching the observed result's focus on choosing oil for one's routine.",
+          "businessFit": {
+            "supported": true,
+            "quote": "ExampleGroom sells beard oils, balms and washes"
+          },
+          "sourceQuote": "How to choose beard oil for your routine"
+        }
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "bb7ec22091207bbfd0523765962821314c561642727e71f505c9cbc039eea128",
+          "elapsedMs": 2581,
+          "status": "complete",
+          "inputTokens": 1259,
+          "outputTokens": 206,
+          "costUsd": 0.006867
+        }
+      ]
+    },
+    {
+      "id": "oil-treatment",
+      "repeat": 1,
+      "expectedSupported": false,
+      "prediction": {
+        "status": "unsupported"
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "1d529cbe5d2f919bad41b0d252ef9292e435a2c107ff2c21c43699ad929b402b",
+          "elapsedMs": 1736,
+          "status": "complete",
+          "inputTokens": 1270,
+          "outputTokens": 91,
+          "costUsd": 0.005175
+        }
+      ]
+    },
+    {
+      "id": "analytics-export",
+      "repeat": 1,
+      "expectedSupported": true,
+      "prediction": {
+        "status": "supported",
+        "task": {
+          "status": "supported",
+          "queryTask": "How to export website analytics data to CSV",
+          "sourceIndex": 0,
+          "angle": "How to export website analytics to CSV",
+          "buyingJob": "Export website analytics reports to CSV for further analysis or sharing",
+          "reason": "Answers the how-to task directly by explaining the CSV export process for website analytics data.",
+          "businessFit": {
+            "supported": true,
+            "quote": "ExampleMetrics provides website analytics and exports reports as CSV."
+          },
+          "sourceQuote": "How to export website analytics to CSV"
+        }
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "0a1208c3ba618ee4e69980a1cf06be71b9876359afea52fe8918459499381ab4",
+          "elapsedMs": 2021,
+          "status": "complete",
+          "inputTokens": 1258,
+          "outputTokens": 159,
+          "costUsd": 0.006159
+        }
+      ]
+    },
+    {
+      "id": "analytics-ads",
+      "repeat": 1,
+      "expectedSupported": false,
+      "prediction": {
+        "status": "unsupported"
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "eb8967f5dad9ea9eb5bda16e3ad6862cb3e36d08f9ad15ed2e6118ab1a9d5192",
+          "elapsedMs": 1627,
+          "status": "complete",
+          "inputTokens": 1270,
+          "outputTokens": 73,
+          "costUsd": 0.004905
+        }
+      ]
+    },
+    {
+      "id": "italian-repair",
+      "repeat": 1,
+      "expectedSupported": true,
+      "prediction": {
+        "status": "supported",
+        "task": {
+          "status": "supported",
+          "queryTask": "Guidare l'utente nella scelta di un'officina per la riparazione/manutenzione della propria bicicletta",
+          "sourceIndex": 0,
+          "angle": "Come scegliere un'officina per la tua bicicletta: criteri e cosa valutare",
+          "buyingJob": "Scegliere un'officina affidabile per riparazione e manutenzione bici",
+          "reason": "La ricerca vuole criteri pratici per valutare e confrontare officine bici; l'articolo risponde con i fattori da considerare nella scelta.",
+          "businessFit": {
+            "supported": true,
+            "quote": "EsempioBici offre riparazioni e manutenzione di biciclette a Milano"
+          },
+          "sourceQuote": "Come scegliere un\u2019officina per la tua bicicletta"
+        }
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "2f8f11ec4fd8045470d463916bb5aab05de9d2909ee1e739f3c64f1f466c52d2",
+          "elapsedMs": 2885,
+          "status": "complete",
+          "inputTokens": 1291,
+          "outputTokens": 238,
+          "costUsd": 0.007443
+        }
+      ]
+    },
+    {
+      "id": "italian-accounting",
+      "repeat": 1,
+      "expectedSupported": false,
+      "prediction": {
+        "status": "unsupported"
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "35147b55f8a5d10c43e65035665f08870019b6807202673f3b59e0286803a3ba",
+          "elapsedMs": 1735,
+          "status": "complete",
+          "inputTokens": 1273,
+          "outputTokens": 91,
+          "costUsd": 0.005184
+        }
+      ]
+    }
+  ]
+}

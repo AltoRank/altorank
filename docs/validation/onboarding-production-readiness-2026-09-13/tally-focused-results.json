@@ -1,0 +1,204 @@
+{
+  "scope": "Saved-topic local route replay with fresh live generation; discovery is reused, not a new holdout.",
+  "article": {
+    "title": "How to compare form builders with conditional logic: key criteria and tradeoffs",
+    "keyword": "form builder with conditional logic",
+    "word_count": 1372,
+    "status": "review",
+    "published_at": null
+  },
+  "articleCount": 1,
+  "finishedAt": "2026-09-13T19:32:54.598+00:00",
+  "topics": [
+    {
+      "term": "form builder with conditional logic",
+      "angle": "How to compare form builders with conditional logic: key criteria and tradeoffs",
+      "audience": "Small business owners and marketing teams evaluating form builders"
+    },
+    {
+      "term": "embed form on website easily",
+      "angle": "How to embed a form on your website without coding",
+      "audience": "Small business owners and marketing teams"
+    }
+  ],
+  "review": {
+    "status": "unavailable",
+    "checkedPassages": 29,
+    "totalPassages": 36,
+    "failures": [
+      "Batch 2: Passage 28: a claim or evidence quote could not be verified.",
+      "Batch 2: Passage 31: a claim or evidence quote could not be verified.",
+      "Batch 1: Passage 15: a claim or evidence quote could not be verified.",
+      "Batch 1: Passage 17: a claim or evidence quote could not be verified.",
+      "Batch 1: Passage 18: a claim or evidence quote could not be verified.",
+      "Batch 1: Passage 19: a claim or evidence quote could not be verified.",
+      "Batch 1: Passage 25: a claim or evidence quote could not be verified."
+    ],
+    "findings": [
+      {
+        "text": "Jotform's homepage cites \"150+ integrations\" for connecting to marketing, CRM, and storage apps",
+        "reason": "Jotform homepage source cites '150+ integrations' via a pricing page context, not the homepage text provided; homepage text doesn't state a number.",
+        "removed": false,
+        "category": "product",
+        "severity": "material"
+      }
+    ],
+    "modelCalls": [
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.152202,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 32555,
+        "operation": "article/approved-output-review",
+        "promptHash": "8e7dd120d499f6a27e4a0909fa532817c10834f37ffa9f48f15fd5f844fb6f75",
+        "inputTokens": 35954,
+        "outputTokens": 2956
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.107442,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 4159,
+        "operation": "article/claim-verification",
+        "promptHash": "3608bb06a7b2c9335cfa09bf5294b6130125cb6a0845c26cc7855058b72ac175",
+        "inputTokens": 33559,
+        "outputTokens": 451
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.126963,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 13714,
+        "operation": "article/claim-verification",
+        "promptHash": "b740820830fd8748077aad0e1e935f8a6be9c11ae7582ddf87a042761fe33023",
+        "inputTokens": 33651,
+        "outputTokens": 1734
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.147078,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 22721,
+        "operation": "article/claim-verification",
+        "promptHash": "7c902d397948027d01b43de94332c30c9f4dc09910869da141fff312ed1cef1b",
+        "inputTokens": 34081,
+        "outputTokens": 2989
+      }
+    ]
+  },
+  "evidencePlan": {
+    "task": "comparison",
+    "status": "planned",
+    "requirements": [
+      "What are the pricing models for conditional logic form builders (free tiers, paid plans, and cost per feature)?",
+      "Which conditional logic capabilities does each form builder support (show/hide fields, page jumps, calculated fields, conditional routing)?",
+      "What are the platform requirements and deployment options for each form builder (WordPress plugin, web-based SaaS, self-hosted)?",
+      "Which integrations with external tools (CRM, email, spreadsheets, automation platforms) does each form builder offer for conditional logic workflows?"
+    ],
+    "selectedUrls": [
+      "https://wpforms.com/pricing/",
+      "https://wpforms.com/refer/jotform/",
+      "https://wpforms.com/refer/zoho-forms/",
+      "https://www.zoho.com/forms/",
+      "https://www.gravityforms.com/",
+      "https://wpforms.com/refer/typeform/",
+      "https://www.jotform.com/pricing/"
+    ],
+    "retrievedUrls": [
+      "https://wpforms.com/pricing/",
+      "https://www.jotform.com/?utm_source=wp-beginner&utm_campaign=jf1&utm_medium=blog",
+      "https://www.zoho.com/forms/",
+      "https://www.zoho.com/forms/",
+      "https://www.gravityforms.com/",
+      "https://www.typeform.com/?ps_partner_key=c3llZGJhbGtoaQ&ps_xid=NStL9GLtwPqeIq&gsxid=NStL9GLtwPqeIq&gspk=c3llZGJhbGtoaQ",
+      "https://www.jotform.com/pricing/"
+    ]
+  },
+  "sources": [
+    {
+      "url": "https://tally.so/pricing",
+      "characters": 4974,
+      "sha256": "13bbf87b66ce320ff5e115591641d67316fe502ef495c4ae7f75bb45f5f25603"
+    },
+    {
+      "url": "https://tally.so/features",
+      "characters": 6613,
+      "sha256": "24ec612b008e833d4a6f3cf6b8923a6e3b48aeacf90e1713910135831cd30483"
+    },
+    {
+      "url": "https://tally.so/",
+      "characters": 8123,
+      "sha256": "e41c2e3ac50cee9f701891a15d4b0584816e7346a78f7d1c6ded8f5c7754908b"
+    },
+    {
+      "url": "https://tally.so/help/conditional-form-logic",
+      "characters": 8924,
+      "sha256": "766d8f4e9611e961cb457792ae539219f44d03e329f634dc614f53c4134afd02"
+    },
+    {
+      "url": "https://wpforms.com/best-form-builders-with-conditional-logic/",
+      "characters": 9000,
+      "sha256": "9895bc5466f4a7220b4b44c6380ce83cee6c9f8693b250ce6c4ee51fa368cda3"
+    },
+    {
+      "url": "https://wpforms.com/pricing/",
+      "characters": 9000,
+      "sha256": "ba14b76837ef7acb717f18748de25f92b5bf112b16cc59ecfbfd4ea9ec215485"
+    },
+    {
+      "url": "https://www.jotform.com/?utm_source=wp-beginner&utm_campaign=jf1&utm_medium=blog",
+      "characters": 1016,
+      "sha256": "b18c294ffb780fc5924e27972d5b66990792d41246df095b25423a57e8affaac"
+    },
+    {
+      "url": "https://www.zoho.com/forms/",
+      "characters": 9000,
+      "sha256": "e26c4b849ddbe36e16465b3cd69bd2abeae0812636daa10aa1b7cc8f25e61ef5"
+    },
+    {
+      "url": "https://www.zoho.com/forms/",
+      "characters": 9000,
+      "sha256": "e26c4b849ddbe36e16465b3cd69bd2abeae0812636daa10aa1b7cc8f25e61ef5"
+    },
+    {
+      "url": "https://www.gravityforms.com/",
+      "characters": 4824,
+      "sha256": "30f0bea0d05274fc2848bda3568d27c9d12f88ae753494d85bf370bb488ad9fa"
+    },
+    {
+      "url": "https://www.typeform.com/?ps_partner_key=c3llZGJhbGtoaQ&ps_xid=NStL9GLtwPqeIq&gsxid=NStL9GLtwPqeIq&gspk=c3llZGJhbGtoaQ",
+      "characters": 3462,
+      "sha256": "03433cfc676819a55bf33449a0cbcd91c046cbb77d7990ca813346572d5ed516"
+    },
+    {
+      "url": "https://www.jotform.com/pricing/",
+      "characters": 9000,
+      "sha256": "e50635437ebf5fe1bb5a4beb0ad3e01fbdcb7d59f1e9526031de27403d8fdef2"
+    }
+  ],
+  "recordedCostUsd": 0.8799679999999999,
+  "codeCommit": "ec372d2",
+  "selectionToCompletionSeconds": 149.925,
+  "browserChecks": {
+    "selectedTopicGenerated": true,
+    "completePreviewBeforeTrial": true,
+    "previewReload": true,
+    "unpaidDashboardReturnsToSavedOnboarding": true,
+    "oneUnpublishedReviewArticle": true
+  },
+  "manualAssessment": {
+    "firstDraft": "Useful comparison needing targeted edits; not evidence of consistent release quality.",
+    "automatedFinding": "False positive: captured Jotform homepage contains the exact 150+ integrations claim.",
+    "remaining": [
+      "Seven passage verification responses failed quote validation.",
+      "Jotform redirect attribution is not established by the cited WPForms review excerpt.",
+      "Hypothetical budget branches exclude exactly $5,000.",
+      "Repeated definition and references to excerpts reviewed could be tightened."
+    ],
+    "holdout": false
+  }
+}

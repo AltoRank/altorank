@@ -12,12 +12,92 @@ This work addresses the failures in the [fresh Cal.com flow](./onboarding-live-f
 
 ## Checks completed before the live run
 
-Production build and TypeScript passed. Changed-file lint passed. The full suite passed 3,283 tests across 324 files; the additional reviewer-evidence handoff test passed separately (3,284 tests across 325 files in total).
+On the intermediate code commit `acb039b`, production build and TypeScript passed, changed-file lint passed, and the full local suite passed 3,297 tests across 327 files. CI build and unit tests passed; the browser retry and subsequent clean run are recorded below.
 
 The existing task/offer regression passed 20/20 live-provider checks. New focused cases passed 6/6 after making the required response shape explicit: reject healthcare drift for a startup buyer, accept team payment scheduling, and accept healthcare when explicitly selected. An earlier run returned 5/6 because one supported response omitted its focus decision; it was correctly kept unavailable.
 
 A fresh-source review of the old Cal.com article now identifies the missing competitor prices and the promised three-tool comparison that only calculates Cal.com's cost. An old-draft claim replay remained partial and found new source mismatches; it is not a quality pass. Its evidence packet differed from the original, so findings cannot be interpreted as a controlled precision comparison.
 
-## Fresh flow and release decision
+## Fresh Cal.com run
 
-A new local account is running the production build with real Anthropic, DataForSEO and public retrieval. Final flow results and the resulting release decision will be recorded after completion. No merge, deployment, payment or publication is authorized by this report.
+Commit `90312e5` produced 47 candidates, three focused choices and one 1,708-word draft. Planning took approximately 167 seconds; selection to completion took 187 seconds, including review. All 46 passages received valid claim-check responses. Recorded provider cost was approximately $1.40. Verified publisher pricing citations survived. Topic reload, complete preview before trial, preview reload and unpaid-dashboard return passed; exactly one unpublished article remained.
+
+The [unchanged generated article](./onboarding-production-readiness-2026-09-13/cal-original.html) now works through a real Cal.com/Calendly decision using sourced plan differences. Current primary pricing pages support the quoted CRM-plan and team-price distinctions. [Cal.com pricing](https://cal.com/pricing), [Calendly pricing](https://calendly.com/pricing).
+
+The sample still needed editing: a proposed round-robin test incorrectly treated one busy host as proof that the remaining slot must disappear; generic savings and compliance claims lacked support; a workflow tier claim needed qualification. The reviewer also falsely called an actual linked cross-reference a missing link because it received only plain text. These findings are not hidden by the complete-passage count.
+
+The three choices answered nearly the same selection task. The subsequent first-choice planner now performs a bounded semantic overlap check, retaining one ranked representative per buyer task. Live replay collapsed those three synonyms in both runs, while retaining the separate payment-scheduling and group-availability controls in both runs. All four replies were complete valid partitions, not the one-topic fallback.
+
+The subsequent writer/reviewer instructions distinguish all-host availability from any-available routing, avoid unsupported time-saving quantities and specialist diversions, and provide the reviewer the article's actual link metadata. The new regression passed 6/6: two detections of the invalid routing test, two clean corrected controls and two correctly accepted linked-reading controls. These are development cases, not independent human approvals.
+
+## Independent review and final run
+
+The no-mistakes wrapper could not complete review because its Claude OAuth session had expired. Retrying reproduced the authentication failure. A separate Codex review completed and found that the opportunity-version bump could discard duplicate-coverage evidence for already planned or published topics. The fix separates historical coverage from fresh candidate eligibility, with a regression for version, focus and age changes. A follow-up independent Codex review of the final changes found no further correctness, security or maintainability regressions and explicitly checked workspace scoping. The wrapper itself did not pass; the completed standalone review is the fallback evidence.
+
+## Fresh Tally run and follow-up
+
+The fresh Tally run on `acb039b` found 47 candidates and produced two distinct, focused choices: comparing conditional-logic form builders and embedding a form. The two choices persisted after reload, and no article existed before selection. Planning took about 197 seconds; the chosen 1,733-word draft completed in 207 seconds. Recorded provider cost was $1.42. It remained unpublished in review.
+
+The [original saved article](./onboarding-production-readiness-2026-09-13/tally-original.html) and [results](./onboarding-production-readiness-2026-09-13/tally-results.json) preserve the failed quality sample. Its useful comparison criteria were weakened by unsupported interface/evaluation-order claims, an unsourced buyer-surprise assertion, third-party competitor prices and a recommendation based on which vendor's documentation was available. The automated review showed seven findings, including duplicates across review methods. A truncated claim batch left 37/51 passages checked. This was not a publication-ready sample.
+
+The source pipeline could find vendor homepages through reviews but stopped before following those homepages to their own pricing or documentation. A bounded follow-up now permits three further reads, with twelve retrieved pages total. Observed pricing links survive the 80-link cap even after a large product menu. A direct live evidence replay retrieved original WPForms and Formidable pricing, rather than relying solely on the reviewer's prices.
+
+A conflicting general writer instruction explicitly permitted unsourced “most sites” claims. It is removed. Final instructions also prohibit inventing product-interface/evaluation-order details and treating missing competitor evidence as a product disadvantage. Truncated claim batches can split once within the existing eight-call/three-concurrent/90-second limits. Other incomplete responses remain partial. An offline replay of the stored Tiptap article had 62/69 valid passage responses; its rendering creates different passage boundaries from the generation HTML, so it is not a controlled 51-passage coverage comparison or a quality pass.
+
+The automated locator initially missed wrapped draft links. Screenshot inspection showed the link text on two lines; clicking the visible linked text opened the preview. The same miss occurred with an ordinary anchor, so the temporary navigation change was reverted rather than attributing an automation hit-target problem to client routing.
+
+The follow-up local suite passed 3,301 tests across 327 files, production build/TypeScript and changed-file lint. CI on `87257ed` passed all 17 browser tests on their first attempt after warming the POST worker routes before timed assertions. The prior run's one retry remains recorded; the timeout was not increased.
+
+The final Tally generation replay uses its saved profile and qualified choices in an isolated local account, with fresh live evidence, writing, reviews and persistence through the actual choice route. This tests the fixes against the observed failure, not an unseen discovery holdout.
+
+Signup/email delivery, image generation, real checkout/webhooks, publishing and deployed runtime limits remain outside these local text-flow tests. No production data changes, payment, merge or deployment occurred.
+
+
+### First Tally replay
+
+The first saved-topic replay produced a [2,143-word draft](./onboarding-production-readiness-2026-09-13/tally-replay-original.html) in 238 seconds, recording $1.25 for fresh generation/review (discovery was reused). The core Tally/WPForms choice is now based on actual plan differences rather than source availability. The complete preview and trial placement were inspected. Source checks covered 48/51 passages; three provenance failures stayed partial.
+
+The ten displayed findings are not ten independently confirmed errors. The Jotform source attribution and notification-action wording need correction. The payment-block inference is disputed: the supplied documentation says “any block,” and the reviewer may be demanding unnecessary specificity. The entity-rendering warning was a false positive: the browser showed `>`, while the whole-article reviewer saw `&gt;`. Review now uses the shared HTML decoder, with a regression. Broader unneeded website-builder sections still weakened focus, and the draft reused an older blog price despite a current vendor pricing page in its packet.
+
+The subsequent selected-preview writer omits broad keyword expansion, AI-overview and competitor-list prompts while retaining the full saved research and approved brief/source packet. Its automatic length target is capped at 1,200 words, with the same target passed to scoring; explicit user length choices remain intact. Pricing instructions prioritize current vendor terms over blog snapshots and omit exact costs when discounts or conflicting terms cannot be resolved. This is scoped to the selected first draft's source-verification path.
+
+
+## Final code verification
+
+Code commit `ec372d2` passes 3,303 tests across 327 files, production build/TypeScript, changed-file lint and whitespace validation. A further independent review identified that an explicit length target could still be accompanied by contradictory SERP-derived length guidance. The prompt now omits that guidance when an explicit target is supplied, with a regression test. The source-verification writer and scorer receive the same target.
+
+
+## Final focused Tally replay
+
+On `ec372d2`, the saved-topic route replay produced the [unchanged 1,372-word draft](./onboarding-production-readiness-2026-09-13/tally-focused-original.html) in 150 seconds from selection, with $0.88 recorded for generation/review. [Sanitized results](./onboarding-production-readiness-2026-09-13/tally-focused-results.json) include the source hashes, review coverage, findings and browser checks. Fresh discovery is not included in that time or cost. The earlier fresh Tally discovery took 197 seconds and offered two distinct choices from 47 candidates.
+
+The final article stays on the buyer's comparison task, evaluates three named products against shared criteria, distinguishes free and paid logic access, and includes a concrete lead-qualification example. The irrelevant website-builder sections, invented notification-action list and conflicting exact prices seen earlier are absent. It is a useful first draft requiring targeted edits, rather than a broad rewrite. This assessment is by the implementing agent on a development example, not independent human validation or a controlled improvement estimate.
+
+Full browser inspection confirmed the entire article appears before the trial offer, survives reload, and remains available after an unpaid dashboard visit returns to onboarding. Exactly one unpublished article remained in review. No checkout or publishing was performed.
+
+The whole-article reviewer found no structural or product issues. The passage verifier returned valid results for 29/36 passages, leaving seven quote-validation failures explicitly partial. Its one displayed warning was a false positive: the stored Jotform homepage excerpt actually says “CRMs, cloud storage apps, and more with Jotform’s 150+ integrations.” The checker claimed the number was absent from that homepage. Exact quote validation protects response provenance but does not establish the accuracy or completeness of model judgments.
+
+Manual inspection also found small issues the automated checks missed: the hypothetical budget branches omit exactly $5,000; a Jotform redirect is attributed to a review excerpt that documents page skipping but not redirect behavior; and repeated definition/source-excerpt narration could be tightened. These are targeted first-draft edits, but the missed and false warnings mean the check display is not yet reliably prioritizing them.
+
+## Release decision
+
+The keyword → choice → saved full preview → unpaid return path is implemented and exercised. The final sample clears a useful-first-draft bar, with the limitations above. It does **not** establish consistent, compelling first-draft quality across businesses, and the quality checker still needs validation/reliability work. Keep PR 215 in draft rather than describing this as an unqualified production-readiness pass.
+
+The remaining release work is concrete:
+
+1. Validate the bounded recovery/adjudication implemented below across full drafts. Partial coverage and model errors still occur; do not suppress warnings merely because another reviewer stayed silent. Retain the captured false positive and missed attribution/boundary examples as regressions, with clean controls.
+2. Run the final flow on a held-out set of materially different businesses and obtain independent human labels for topic usefulness, duplicate choices, factual edits, task completeness and whether the first draft is compelling enough to continue. The proposal suggested 8–10 businesses; this has not been completed.
+3. Verify the deployed worker deadlines and required migrations before release. Email delivery, images and hosted sandbox billing/webhooks remain separately unverified. These are not explanations for the text-quality gap.
+
+No production configuration or data was changed. No merge, deployment, payment or publication occurred.
+
+
+## Bounded verification recovery
+
+The final follow-up adds a single targeted second pass using only unused capacity within the existing eight-call, three-concurrent and 90-second ceilings. It rechecks invalid responses and unsupported claims. Exact original claim identities must survive: neither omission nor fabricated evidence can erase an initial finding or an initial evidence-validation failure. An independent review found the invalid-evidence omission edge case; it was fixed with a regression, and the follow-up review reported no findings. Untraceable original claims remain partial.
+
+The [three live-provider controls](./onboarding-production-readiness-2026-09-13/recovery-controls.json), using the complete frozen source packet, correctly accepted the Jotform integration count and page-skip attribution, and retained the unsupported redirect attribution. All three passages were checked in two calls. This is a development regression, not proof of reviewer accuracy across articles.
+
+The [full stored-article replay](./onboarding-production-readiness-2026-09-13/recovery-full-draft.json) remained partial at 49/51 passages: its recovery call exhausted the shared deadline and retained the original warning. The stored HTML has different passage boundaries from the live generator's 36-passage input, so these counts cannot be compared as a coverage improvement. Bounded recovery is implemented, but this full-article result remains a release limitation.
+
+After the recovery changes, all 3,312 local tests across 327 files passed with two workers. Two earlier full-suite attempts hit unrelated local database/import timeouts under heavier concurrency; these were not assertion regressions and are not hidden by the successful bounded-concurrency run. The test timeouts were not raised. Production build/TypeScript, changed-file lint and whitespace validation also passed. CI on `ec372d2` passed build and all 17 browser tests; the latest recovery-commit status is available in the [PR checks](https://github.com/AltoRank/altorank/pull/215/checks).

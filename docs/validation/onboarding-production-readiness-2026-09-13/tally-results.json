@@ -1,0 +1,204 @@
+{
+  "scope": "Fresh live-provider local onboarding on acb039b, before follow-up evidence/retry/prompt/link changes.",
+  "article": {
+    "title": "How to compare form builders with conditional logic: key criteria and tradeoffs",
+    "keyword": "form builder with conditional logic",
+    "word_count": 1733,
+    "status": "review",
+    "published_at": null
+  },
+  "articleCount": 1,
+  "finishedAt": "2026-09-13T19:12:15.109+00:00",
+  "topics": [
+    {
+      "term": "form builder with conditional logic",
+      "angle": "How to compare form builders with conditional logic: key criteria and tradeoffs",
+      "audience": "Small business owners and marketing teams evaluating form builders"
+    },
+    {
+      "term": "embed form on website easily",
+      "angle": "How to embed a form on your website without coding",
+      "audience": "Small business owners and marketing teams"
+    }
+  ],
+  "review": {
+    "status": "unavailable",
+    "checkedPassages": 37,
+    "totalPassages": 51,
+    "failures": [
+      "Batch 2: Missing or invalid passage response."
+    ],
+    "findings": [
+      {
+        "text": "Free vs. paid gating. Is conditional logic included in the free plan, or does it require an upgrade? This is the single biggest cost surprise buyers report across the category.",
+        "reason": "Claims 'biggest cost surprise buyers report across the category' without any survey or source evidence for this generalization.",
+        "removed": false,
+        "category": "qualitative",
+        "severity": "material"
+      },
+      {
+        "text": "Add a second, potentially conflicting rule. If two rules could both apply to the same answer, check which one wins, since rule order or priority can override what you expect.",
+        "reason": "Asserts rule order/priority can silently override conflicting rules, a mechanism not described in any supplied Tally documentation.",
+        "removed": false,
+        "category": "qualitative",
+        "severity": "material"
+      },
+      {
+        "text": "This same sequence explains most \"conditional logic isn't working\" complaints across builders, JotForm included: a rule placed above a narrower one in the evaluation order can quietly override it, a condition references the wrong field after a form was edited, or a form was never tested against every answer combination. Working through the five steps above before you publish catches these before a real respondent does.",
+        "reason": "Claims this sequence 'explains most conditional logic isn't working complaints' and repeats the unsupported rule-order-override mechanism as fact.",
+        "removed": false,
+        "category": "qualitative",
+        "severity": "material"
+      },
+      {
+        "text": "This is the single biggest cost surprise buyers report across the category.",
+        "reason": "No source data supports this claim about buyer surprise being the single biggest issue.",
+        "removed": false,
+        "category": "qualitative",
+        "severity": "material"
+      },
+      {
+        "text": "Logic panel tied to individual blocks, per the WPForms review",
+        "reason": "WPForms review does not describe where Typeform's logic panel is located beyond the table label.",
+        "removed": false,
+        "category": "product",
+        "severity": "material"
+      },
+      {
+        "text": "a rule placed above a narrower one in the evaluation order can quietly override it",
+        "reason": "No source establishes rule evaluation order as a cause of conditional logic failures.",
+        "removed": false,
+        "category": "qualitative",
+        "severity": "material"
+      },
+      {
+        "text": "In a WordPress page builder like Elementor, conditional logic for a form widget usually sits in a separate settings tab tied to that specific form module, not the general page editor.",
+        "reason": "No source describes Elementor's conditional logic UI or settings location.",
+        "removed": false,
+        "category": "product",
+        "severity": "material"
+      }
+    ],
+    "modelCalls": [
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.119274,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 31050,
+        "operation": "article/approved-output-review",
+        "promptHash": "1ec5d07e926e0a93c5086f52c4a6c243df003e9e351151066294cd8f6ed144e7",
+        "inputTokens": 25678,
+        "outputTokens": 2816
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.094695,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 13411,
+        "operation": "article/claim-verification",
+        "promptHash": "e9c98fd6b41c3768a14576cc3bbf72233db83c52b3a041b3ef88e39e6ebdc41f",
+        "inputTokens": 23945,
+        "outputTokens": 1524
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.084522,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 6579,
+        "operation": "article/claim-verification",
+        "promptHash": "7b6de810e3e0061232f63f56deb6274d1fd9e7f2d180d750cbffc9caa6531be3",
+        "inputTokens": 24019,
+        "outputTokens": 831
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.115719,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 24114,
+        "operation": "article/claim-verification",
+        "promptHash": "b214254ac4925ecfe30a5572b00011462174caa56c54d1ee5e24eb07fd256836",
+        "inputTokens": 24058,
+        "outputTokens": 2903
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "truncated",
+        "costUsd": 0.16311,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 52683,
+        "operation": "article/claim-verification",
+        "promptHash": "5e4b7fe6fd77d0b0d45e228df2873c3ef37f6bfb2cd8df42bc1d4cba51f083c7",
+        "inputTokens": 24370,
+        "outputTokens": 6000
+      }
+    ]
+  },
+  "evidencePlan": {
+    "task": "comparison",
+    "status": "planned",
+    "requirements": [
+      "What conditional logic capabilities does each form builder offer (show/hide fields, page jumps, routing, calculations)?",
+      "What are the current pricing plans and costs for conditional logic features across Tally, JotForm, Typeform, and Formidable Forms?",
+      "Which form builders include conditional logic in free plans versus paid tiers?",
+      "How do setup complexity and user experience differ when creating conditional logic rules across these platforms?"
+    ],
+    "selectedUrls": [
+      "https://wpforms.com/refer/jotform/",
+      "https://wpforms.com/refer/zoho-forms/",
+      "https://wpforms.com/refer/formidable-pro/",
+      "https://wpforms.com/refer/typeform/"
+    ],
+    "retrievedUrls": [
+      "https://www.jotform.com/?utm_source=wp-beginner&utm_campaign=jf1&utm_medium=blog",
+      "https://www.zoho.com/forms/",
+      "https://www.typeform.com/?ps_partner_key=c3llZGJhbGtoaQ&ps_xid=Ac4apVqSmAufRw&gsxid=Ac4apVqSmAufRw&gspk=c3llZGJhbGtoaQ"
+    ]
+  },
+  "sources": [
+    {
+      "url": "https://tally.so/pricing",
+      "characters": 4974,
+      "sha256": "13bbf87b66ce320ff5e115591641d67316fe502ef495c4ae7f75bb45f5f25603"
+    },
+    {
+      "url": "https://tally.so/features",
+      "characters": 6613,
+      "sha256": "24ec612b008e833d4a6f3cf6b8923a6e3b48aeacf90e1713910135831cd30483"
+    },
+    {
+      "url": "https://tally.so/",
+      "characters": 8123,
+      "sha256": "e41c2e3ac50cee9f701891a15d4b0584816e7346a78f7d1c6ded8f5c7754908b"
+    },
+    {
+      "url": "https://tally.so/help/conditional-form-logic",
+      "characters": 8924,
+      "sha256": "766d8f4e9611e961cb457792ae539219f44d03e329f634dc614f53c4134afd02"
+    },
+    {
+      "url": "https://wpforms.com/best-form-builders-with-conditional-logic/",
+      "characters": 9000,
+      "sha256": "9895bc5466f4a7220b4b44c6380ce83cee6c9f8693b250ce6c4ee51fa368cda3"
+    },
+    {
+      "url": "https://www.jotform.com/?utm_source=wp-beginner&utm_campaign=jf1&utm_medium=blog",
+      "characters": 1016,
+      "sha256": "b18c294ffb780fc5924e27972d5b66990792d41246df095b25423a57e8affaac"
+    },
+    {
+      "url": "https://www.zoho.com/forms/",
+      "characters": 9000,
+      "sha256": "e26c4b849ddbe36e16465b3cd69bd2abeae0812636daa10aa1b7cc8f25e61ef5"
+    },
+    {
+      "url": "https://www.typeform.com/?ps_partner_key=c3llZGJhbGtoaQ&ps_xid=Ac4apVqSmAufRw&gsxid=Ac4apVqSmAufRw&gspk=c3llZGJhbGtoaQ",
+      "characters": 3462,
+      "sha256": "03433cfc676819a55bf33449a0cbcd91c046cbb77d7990ca813346572d5ed516"
+    }
+  ],
+  "recordedCostUsd": 1.4236739999999999
+}

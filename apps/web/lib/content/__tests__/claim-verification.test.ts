@@ -83,3 +83,59 @@ it("does not repeatedly split a truncated retry or exceed eight calls",async()=>
   const result=await verifyDraftClaims("<p>Ask about export.</p>".repeat(70),{evidence});
   expect(result.status).toBe("unavailable");expect(ask.mock.calls.length).toBeLessThanOrEqual(8);expect(result.failures.length).toBeGreaterThan(0);
 });
+
+it("recovers invalid evidence once without accepting fabricated quotes",async()=>{
+  const supported={...claim,quote:"Managed includes three sites.",verdict:"supported"};
+  ask.mockResolvedValueOnce(JSON.stringify({passages:[{passageIndex:0,claims:[{...supported,evidence:[{sourceIndex:0,quote:"Fabricated source."}]}]}]}));
+  ask.mockResolvedValueOnce(JSON.stringify({passages:[{passageIndex:0,claims:[supported]}]}));
+  const result=await verifyDraftClaims(`<p>${supported.quote}</p>`,{evidence});
+  expect(result.status).toBe("checked");expect(result.failures).toEqual([]);expect(result.claims).toEqual([{...supported,passageIndex:0}]);expect(ask).toHaveBeenCalledTimes(2);
+});
+it("adjudicates a false unsupported finding with validated source evidence",async()=>{
+  const quote="Managed includes three sites.";
+  ask.mockResolvedValueOnce(JSON.stringify({passages:[{passageIndex:0,claims:[{...claim,quote,evidence:[],reason:"No site count was supplied."}]}]}));
+  ask.mockResolvedValueOnce(JSON.stringify({passages:[{passageIndex:0,claims:[{...claim,quote,verdict:"supported",reason:"The plan source states this count."}]}]}));
+  const result=await verifyDraftClaims(`<p>${quote}</p>`,{evidence});
+  expect(result.status).toBe("checked");expect(result.claims).toHaveLength(1);expect(result.claims[0].verdict).toBe("supported");
+});
+it.each([
+  [],
+  [{...claim,verdict:"supported",evidence:[]}],
+  [{...claim,verdict:"supported",evidence:[{sourceIndex:0,quote:"All plans include three sites."}]}],
+])("cannot erase a prior finding through omission or invalid recovery evidence %#",async claims=>{
+  ask.mockResolvedValueOnce(JSON.stringify({passages:[{passageIndex:0,claims:[claim]}]}));
+  ask.mockResolvedValueOnce(JSON.stringify({passages:[{passageIndex:0,claims}]}));
+  const result=await verifyDraftClaims(`<p>${claim.quote}</p>`,{evidence});
+  expect(result.claims).toEqual([{...claim,passageIndex:0}]);expect(ask).toHaveBeenCalledTimes(2);
+});
+it("retains failure for another batch when only one missing assignment is recovered",async()=>{
+  ask.mockImplementation(async(_op:string,prompt:string)=>{
+    const {assignedPassages}=JSON.parse(prompt.split("\n").at(-1)!);
+    if(!prompt.startsWith("Recheck"))return null;
+    if(assignedPassages[0].passageIndex<14)return JSON.stringify({passages:assignedPassages.map((p:{passageIndex:number})=>({passageIndex:p.passageIndex,claims:[]}))});
+    return null;
+  });
+  const result=await verifyDraftClaims("<p>Ask the vendor.</p>".repeat(28),{evidence});
+  expect(result.status).toBe("partial");expect(result.failures).toContain("Batch 1: Missing or invalid passage response.");expect(ask.mock.calls.length).toBeLessThanOrEqual(8);
+});
+it("does not spend a ninth call on invalid responses",async()=>{
+  ask.mockResolvedValue(null);
+  const result=await verifyDraftClaims("<p>Ask the vendor.</p>".repeat(112),{evidence});
+  expect(result.status).toBe("unavailable");expect(ask).toHaveBeenCalledTimes(8);
+});
+it("does not start recovery after the original deadline",async()=>{
+  const now=vi.spyOn(Date,"now").mockReturnValue(0);
+  ask.mockImplementation(async()=>{now.mockReturnValue(90001);return null;});
+  try {
+    const result=await verifyDraftClaims("<p>Ask the vendor.</p>",{evidence});
+    expect(result.status).toBe("unavailable");expect(ask).toHaveBeenCalledTimes(1);
+  } finally {now.mockRestore();}
+});
+
+it("does not repair invalid initial provenance by omitting the original claim",async()=>{
+  const bad={...claim,evidence:[{sourceIndex:0,quote:"Fabricated evidence."}]};
+  ask.mockResolvedValueOnce(JSON.stringify({passages:[{passageIndex:0,claims:[bad]}]}));
+  ask.mockResolvedValueOnce(JSON.stringify({passages:[{passageIndex:0,claims:[]}]}));
+  const result=await verifyDraftClaims(`<p>${claim.quote}</p>`,{evidence});
+  expect(result.status).toBe("unavailable");expect(result.checkedPassages).toEqual([]);expect(result.failures).toHaveLength(1);
+});
