@@ -33,6 +33,11 @@ export interface SeedableProfile {
   audiences?: string[] | null;
   offerings?: string[] | null;
   competitors?: string[] | null;
+  buyingJobs?: string[] | null;
+  differentiators?: string[] | null;
+  exclusions?: string[] | null;
+  conversionUrl?: string | null;
+  country?: string | null;
   language?: string | null;
 }
 
@@ -42,9 +47,10 @@ const PROMPT = [
   "or trying to solve the problem it solves, and do not yet know this business exists.",
   "",
   "Rules:",
-  "- 10 to 15 phrases, 2 to 4 words each, lowercase, in the language the site is written in.",
+  "- 10 to 15 phrases, 2 to 8 words each, lowercase, in the language the site is written in.",
+  "- At least five must be established 2-4 word categories or tasks buyers actually search. Use ordinary market vocabulary, not strings assembled from the product's feature list. Keep audience and differentiator detail for article qualification, not every seed.",
   "- Product and service categories, the problems they solve, comparisons and alternatives, how-to questions a buyer asks.",
-  "- Never a brand name: not this business, not a competitor.",
+  "- Include relevant competitor alternatives, comparisons and migration searches; exclude pure brand navigation. Cover different offerings, audiences and buying jobs rather than synonyms of one category.",
   "- Never a one-word head term. \"shipping\" is not a search a buyer of a packing app makes; \"packing slip template\" is.",
   "- Nothing a consumer types for personal use unless consumers are who this business sells to.",
   "",
@@ -61,7 +67,7 @@ export function parseSeeds(raw: string | null): string[] {
     if (typeof v !== "string") continue;
     const s = v.trim().toLowerCase().replace(/\s+/g, " ");
     const words = s.split(" ").filter(Boolean);
-    if (words.length < 2 || words.length > 6 || s.length < 4) continue;
+    if (words.length < 2 || words.length > 8 || s.length < 4) continue;
     if (seen.has(s)) continue;
     seen.add(s);
     out.push(s);
@@ -91,4 +97,24 @@ export async function proposeBuyerSeeds(
   }
   const seeds = seedsFromProfile(business);
   return { seeds, basis: seeds.length ? "profile" : "none" };
+}
+
+/** One bounded recovery pass when exact phrases have too little measured demand. */
+export async function recoverBuyerSeeds(
+  business: SeedableProfile | null,
+  attempted: string[],
+  options: { spend?: SpendSink | null } = {},
+): Promise<string[]> {
+  if (!business || !modelAvailable()) return [];
+  const raw = await askStructured("keyword-research/seed-recovery", [
+    "The exact keyword seeds below have almost no search-volume data. Recover discovery by naming the established market categories this business belongs to.",
+    "Return ONLY a JSON array of 5-8 NEW category searches, 2-4 plain words each, in the business language. Use words a buyer already knows before seeing this product.",
+    "These are broad inputs to keyword expansion, NOT article titles or final recommendations. It is correct to omit the product's special differentiators, audience modifiers and workflows. Buyer fit and editorial relevance are checked separately AFTER expansion.",
+    "For example: an AI writing product with mandatory approvals belongs to 'ai writing tools' or 'content planning tools'; a clinic web-design studio belongs to 'medical website design'; a coach scheduling app belongs to 'personal trainer software'. Use examples only if they fit this business.",
+    "Do not coin a new category, concatenate features, or use hyphenated compounds to squeeze in a longer phrase. Avoid pure brand searches, careers and unrelated industries. Do not repeat attempted seeds.",
+    `BUSINESS\n${JSON.stringify({ description: business.description, audiences: business.audiences, offerings: business.offerings, language: business.language })}`,
+    `ALREADY ATTEMPTED\n${JSON.stringify(attempted)}`,
+  ].join("\n\n"), { maxTokens: 400, spend: options.spend });
+  const previous = new Set(attempted);
+  return parseSeeds(raw).filter((s) => (s.match(/[\p{L}\p{N}]+/gu)?.length ?? 0) <= 4 && !previous.has(s)).slice(0, 8);
 }

@@ -1,3 +1,4 @@
+import type { Opportunity } from "@/lib/keyword-research/opportunity";
 // ---------------------------------------------------------------------------
 // The shape of onboarding, as it happens
 // ---------------------------------------------------------------------------
@@ -81,7 +82,7 @@ export const PHASE_LABELS: Record<OnboardingPhase, Record<PhaseStatus, string>> 
   planning: {
     pending: "Schedule your first month",
     active: "Scheduling your first month",
-    done: "Scheduled your first month",
+    done: "Prepared your first articles",
     skipped: "Nothing scheduled yet",
     failed: "Could not schedule your first month",
   },
@@ -101,6 +102,7 @@ export function phaseLabel(step: OnboardingStep): string {
 
 /** A draft, reduced to what the calendar chip and the redirect need. */
 export interface OnboardingPlanned {
+  brief?: Opportunity;
   term: string;
   /** YYYY-MM-DD */
   date: string;

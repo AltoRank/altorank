@@ -9,6 +9,11 @@ const recommend = vi.fn();
 const pick = vi.fn();
 const creds = vi.fn();
 
+// Reachability has its own tests; pipeline fixtures must not depend on public DNS.
+vi.mock("@/lib/domain/reachable", () => ({
+  checkDomainReachable: async () => ({ ok: true, verdict: "live", url: "https://example.com" }),
+}));
+
 vi.mock("../site-text", () => ({ readSiteText: async (...a: unknown[]) => { const text = (await scrape(...a)) as string; return { text, source: text ? "static" : "none", chars: text.length }; } }));
 vi.mock("@/lib/voice/train", () => ({ trainVoiceProfile: (...a: unknown[]) => voice(...a) }));
 vi.mock("@/lib/audit/domain-analysis", () => ({ analyseDomain: (...a: unknown[]) => analyse(...a) }));
@@ -60,7 +65,7 @@ const NEXT = { term: "seo agent", reasons: ["27,100 searches/mo"], score: 35.5, 
 
 /** Enough client for the "already has a draft?" count. */
 const client = (existing: number) =>
-  ({ from: () => ({ select: () => ({ eq: async () => ({ count: existing }) }) }) }) as never;
+  ({ from: () => ({ select: () => ({ or: () => ({ eq: async () => ({ count: existing }) }) }) }) }) as never;
 
 async function collect(existing = 0): Promise<OnboardingEvent[]> {
   const events: OnboardingEvent[] = [];

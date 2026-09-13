@@ -49,7 +49,6 @@ import type { SiteDiscovery } from "@/lib/onboarding/site-discovery";
 import { BusinessFields } from "@/components/settings/business-fields";
 import { AudienceList, CompetitorList, OfferingList } from "@/components/settings/audience-fields";
 import { SiteFields } from "@/components/settings/site-fields";
-import { IntegrationIcon } from "@/components/dashboard/integration-icon";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
 import {
   onboardingOutcome,
@@ -60,12 +59,11 @@ import {
   type OnboardingState,
 } from "@/lib/onboarding/events";
 import { freeAllowanceClause } from "@/lib/onboarding/copy";
-import { StartTrialButton } from "@/components/billing/start-trial-button";
+import { TopicBriefs } from "./topic-briefs";
+import { TrialOffer } from "@/components/billing/trial-offer";
+import Link from "next/link";
 import { FirstLookReportView } from "@/components/onboarding/first-look-report";
 import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
-import { worthShowing, type TrafficRange } from "@/lib/onboarding/first-month-outlook";
-import { PLAN_PRICES, PLAN_YEARLY_PRICES, type BillingInterval } from "@/lib/stripe";
-import { TRIAL_OFFER } from "@/lib/billing/trial";
 import posthog from "posthog-js";
 
 export type Destination = { id: string; name: string; description: string | null };
@@ -76,16 +74,15 @@ export function OnboardingWizard({
   userEmail,
   userProfileName,
   domain,
-  weeklyLimit,
   freeDrafts,
   trialEligible = false,
+  canBuy = false,
   initialProfile,
   initialSite,
   askAttribution,
   alreadyOnboarded = false,
   gatePlan = [],
   gateReport = null,
-  gateTraffic = null,
   gateWritten = [],
   initialRun = null,
 }: {
@@ -111,6 +108,7 @@ export function OnboardingWizard({
    * its trial (lib/billing/trial.ts).
    */
   trialEligible?: boolean;
+  canBuy?: boolean;
   initialProfile: BusinessProfile | null;
   initialSite: SiteDetails;
   /** Whether the account has yet to say where it heard of us; asked once, on the trial screen. */
@@ -131,10 +129,8 @@ export function OnboardingWizard({
   gatePlan?: OnboardingPlanned[];
   /** The analysis already run on this account's site, shown open on the gate. */
   gateReport?: FirstLookReport | null;
-  /** What the planned month could be worth, as a range. Null when not gated. */
-  gateTraffic?: TrafficRange | null;
   /** Articles the run already wrote, matched to the plan by keyword. */
-  gateWritten?: { keyword: string; title: string; wordCount: number }[];
+  gateWritten?: { id: string; keyword: string; title: string; wordCount: number }[];
   initialRun?: OnboardingRunSnapshot | null;
 }) {
   const identifiedUserId = useRef<string | null>(null);
@@ -163,7 +159,7 @@ export function OnboardingWizard({
   // Read the site. A failure is a normal outcome and is shown as one. Not
   // while a run is on screen: that page has already been through this.
   useEffect(() => {
-    if (!reading || running) return;
+    if (!reading || running || alreadyOnboarded) return;
     let cancelled = false;
     proposeProfile(workspaceId)
       .then((r) => {
@@ -184,12 +180,12 @@ export function OnboardingWizard({
     return () => {
       cancelled = true;
     };
-  }, [reading, running, workspaceId]);
+  }, [reading, running, workspaceId, alreadyOnboarded]);
 
   // Look for the sitemap and blog in the background while step 1 is on screen,
   // so step 3 opens with an answer rather than a spinner.
   useEffect(() => {
-    if (discovery !== "pending" || running) return;
+    if (discovery !== "pending" || running || alreadyOnboarded) return;
     let cancelled = false;
     discoverSiteDetails(workspaceId)
       .then((d) => {
@@ -205,7 +201,7 @@ export function OnboardingWizard({
     return () => {
       cancelled = true;
     };
-  }, [discovery, running, workspaceId]);
+  }, [discovery, running, workspaceId, alreadyOnboarded]);
 
   function patch(next: Partial<BusinessProfile>) {
     setProfile((p) => (p ? { ...p, ...next } : p));
@@ -237,11 +233,11 @@ export function OnboardingWizard({
   // There is nothing to show the progress of and nothing to set up again -
   // only the card stands between this account and the product.
   if (!running && alreadyOnboarded && trialEligible) {
-    return <TrialGateScreen domain={domain} planned={gatePlan} report={gateReport} traffic={gateTraffic} written={gateWritten} askAttribution={askAttribution} />;
+    return <TrialGateScreen canBuy={canBuy} onRetry={() => setRunning(true)} domain={domain} planned={gatePlan} report={gateReport} written={gateWritten} askAttribution={askAttribution} />;
   }
 
   if (running) {
-    return <RunScreen workspaceId={workspaceId} domain={domain} weeklyLimit={weeklyLimit} freeDrafts={freeDrafts} trialEligible={trialEligible} askAttribution={askAttribution} initialRun={resumed} />;
+    return <RunScreen canBuy={canBuy} workspaceId={workspaceId} domain={domain} freeDrafts={freeDrafts} trialEligible={trialEligible} askAttribution={askAttribution} initialRun={resumed} />;
   }
 
   if (reading || !profile) return <ReadingSite domain={domain} />;
@@ -364,7 +360,7 @@ export function OnboardingWizard({
             {freeAllowanceClause(freeDrafts) ? ` ${freeAllowanceClause(freeDrafts)}` : ""}
           </p>
           <Button variant="accent" onClick={finish} disabled={pending || reading}>
-            {pending ? "Saving…" : "Plan my first month"}
+            {pending ? "Saving…" : "Plan my first articles"}
           </Button>
         </div>
       </div>
@@ -523,106 +519,50 @@ const VERDICT_LABEL: Record<OnboardingArticle["verdict"], { text: string; classN
  */
 function TrialGateScreen({
   domain,
+  canBuy,
+  onRetry,
   planned,
   report,
-  traffic,
   written,
   askAttribution = false,
 }: {
   domain: string;
+  canBuy: boolean;
+  onRetry: () => void;
   planned: OnboardingPlanned[];
   report: FirstLookReport | null;
-  traffic: TrafficRange | null;
-  written: { keyword: string; title: string; wordCount: number }[];
+  written: { id: string; keyword: string; title: string; wordCount: number }[];
   askAttribution?: boolean;
 }) {
-  const [error, setError] = useState<string | null>(null);
-  const [interval, setInterval] = useState<BillingInterval>("month");
-  const words = planned.length;
+  const words = written.length;
   const fixable = report?.readiness?.findings.filter((f) => !f.passed && !f.inconclusive).length ?? 0;
   const pagesToFix = report?.existingPages?.withIssues ?? 0;
-  const showTraffic = traffic !== null && worthShowing(traffic);
   return (
     <div className="min-h-screen bg-bg">
       <div className="mx-auto max-w-[860px] px-6 py-10">
         <div className="mb-6 text-center">
-          <h1 className="m-0 mb-1.5 text-[22px] font-semibold">Start your trial to continue</h1>
+          <h1 className="m-0 mb-1.5 text-[22px] font-semibold">{written.length ? "Read your draft, then start your trial" : "Your first draft needs another attempt"}</h1>
           <p className="mx-auto m-0 max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">
-            {domain ? `Everything below is already done for ${domain}. ` : ""}
-            The trial opens approving, publishing and the rest of the schedule.
+            {written.length ? "Read your finished draft before deciding. The trial opens approving, publishing and the rest of the schedule." : "Retry preparation to get a draft you can read before entering a card."}
           </p>
         </div>
 
         <div className="mx-auto mb-6 max-w-[640px] rounded-[10px] border border-accent/40 bg-panel p-5">
-          <div className="rounded-[8px] bg-accent/5 p-4">
-            <div className="mb-3 text-[11px] uppercase tracking-wide text-accent">7-day trial</div>
-
-            {/* Two priced choices, not a pair of unlabelled pills. The first
-                version showed "Monthly | Yearly" with no amounts, which reads
-                as a view switch rather than a decision about money - and the
-                whole point of asking before the card is that the person knows
-                what the card is for. Amounts come from lib/stripe, the same
-                constants the billing page renders, so the two screens cannot
-                quote different prices for the same plan. */}
-            <div className="mb-3 grid grid-cols-2 gap-2">
-              {([
-                { id: "month" as const, label: "Monthly", price: PLAN_PRICES.starter, per: "per month", note: null },
-                { id: "year" as const, label: "Yearly", price: PLAN_YEARLY_PRICES.starter, per: "per year", note: "2 months free" },
-              ]).map((opt) => {
-                const on = interval === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setInterval(opt.id)}
-                    aria-pressed={on}
-                    className={`rounded-[8px] border p-3 text-left transition-colors ${
-                      on ? "border-accent bg-accent/10" : "border-line bg-bg hover:border-ink-4"
-                    }`}
-                  >
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-[12.5px] font-medium text-ink">{opt.label}</span>
-                      {opt.note && (
-                        <span className="rounded-full bg-ok-soft px-1.5 py-px text-[10.5px] text-ok-ink">{opt.note}</span>
-                      )}
-                    </div>
-                    <div className="mt-1 text-[17px] font-semibold leading-none text-ink">{opt.price}</div>
-                    <div className="mt-0.5 text-[11.5px] text-ink-3">{opt.per}</div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <p className="m-0 mb-3 text-[13px] leading-[1.6] text-ink-2">
-              {TRIAL_OFFER}
-            </p>
-            <StartTrialButton returnTo="/dashboard" interval={interval} onError={setError} />
-            {error && (
-              <p className="m-0 mt-2.5 text-[12.5px] leading-[1.5] text-err-ink" role="alert">
-                {error}
-              </p>
-            )}
-          </div>
+          {written.length > 0 ? <TrialOffer canBuy={canBuy} /> : <div className="rounded-lg border border-line p-4">
+            <p className="mb-3 text-sm">Your first draft is not ready. You can retry preparation before entering a card.</p>
+            <Button variant="accent" onClick={onRetry}>Retry first draft</Button>
+          </div>}
           {askAttribution && <AttributionAsk />}
         </div>
 
         <div className="mx-auto flex max-w-[640px] flex-col gap-5">
-          {(showTraffic || words > 0 || fixable > 0 || pagesToFix > 0) && (
+          {(words > 0 || fixable > 0 || pagesToFix > 0) && (
             <div className="rounded-[8px] border border-line bg-bg p-4">
-              <div className="mb-2.5 text-[12.5px] font-medium text-ink">What a month of this looks like</div>
+              <div className="mb-2.5 text-[12.5px] font-medium text-ink">Prepared for your review</div>
               <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[12.5px] text-ink-2">
                 {words > 0 && (
                   <li>
-                    <strong className="text-ink">{words}</strong> {words === 1 ? "article" : "articles"} written and
-                    waiting for your approval
-                  </li>
-                )}
-                {showTraffic && traffic && (
-                  <li>
-                    <strong className="text-ink">
-                      {traffic.low.toLocaleString("en-US")}–{traffic.high.toLocaleString("en-US")}
-                    </strong>{" "}
-                    organic visits a month <span className="text-ink-3">if these reach page one</span>
+                    <strong className="text-ink">{words}</strong> {words === 1 ? "article" : "articles"} ready to read
                   </li>
                 )}
                 {fixable > 0 && (
@@ -638,25 +578,14 @@ function TrialGateScreen({
                   </li>
                 )}
               </ul>
-              {showTraffic && traffic && (
-                /* The assumption, next to the number that rests on it. A single
-                   confident figure here would be the same mistake as the "86
-                   failed every check" line that shipped and was false. */
-                <p className="m-0 mt-2.5 text-[11.5px] leading-[1.5] text-ink-3">
-                  An estimate, not a forecast: search volume for the{" "}
-                  {traffic.counted} {traffic.counted === 1 ? "keyword" : "keywords"} planned, against typical
-                  click-through at the positions {domain || "this site"} can realistically reach.
-                  {traffic.excluded > 0 && ` ${traffic.excluded} left out as out of reach or unmeasured.`}{" "}
-                  Ranking takes months, and nothing here is promised.
-                </p>
-              )}
             </div>
           )}
 
+          {written.filter((w) => !planned.some((p) => p.term.toLowerCase() === w.keyword.toLowerCase())).map((w) => <Link className="text-accent underline" key={w.id} href={`/onboarding/draft/${w.id}`}>Read draft: {w.title}</Link>)}
           {planned.length > 0 && (
             <div>
               <div className="mb-2 flex items-baseline justify-between gap-3">
-                <div className="text-[12.5px] font-medium text-ink">Your first month</div>
+                <div className="text-[12.5px] font-medium text-ink">Your first articles</div>
                 <div className="text-[11.5px] text-ink-3">
                   {planned.length} {planned.length === 1 ? "article" : "articles"} scheduled
                 </div>
@@ -682,7 +611,7 @@ function TrialGateScreen({
                           {done ? <Icons.check size={13} /> : <Icons.lock size={12} />}
                         </span>
                         <span className="min-w-0">
-                          <span className="block truncate text-ink">{done ? done.title || p.term : p.term}</span>
+                          <span className="block text-ink">{done ? <Link className="text-accent underline" href={`/onboarding/draft/${done.id}`}>{done.title || p.term} · Read draft</Link> : p.term}</span>
                           {done && (
                             <span className="block truncate text-[11.5px] text-ink-3">
                               Written{done.wordCount > 0 ? ` · ${done.wordCount.toLocaleString("en-US")} words` : ""} · waiting for your approval
@@ -703,6 +632,7 @@ function TrialGateScreen({
             </div>
           )}
 
+          <TopicBriefs planned={planned} />
           {report && <FirstLookReportView report={report} domain={domain} live={false} />}
         </div>
       </div>
@@ -724,11 +654,13 @@ function TrialGateScreen({
  */
 function TrialStep({
   drafts,
+  canBuy,
   planned,
   returnTo,
   askAttribution = false,
 }: {
   drafts: OnboardingArticle[];
+  canBuy: boolean;
   planned: OnboardingPlanned[];
   returnTo: string;
   askAttribution?: boolean;
@@ -739,13 +671,7 @@ function TrialStep({
       {/* The ask comes first. Everything below it is the evidence for it, and
           an earlier arrangement put the evidence on top: on a site with a full
           report the button sat a full screen down and was never seen. */}
-      <div className="rounded-[8px] bg-accent/5 p-4">
-        <div className="mb-1 text-[11px] uppercase tracking-wide text-accent">7-day trial</div>
-        <p className="m-0 mb-3 text-[13.5px] leading-[1.6]">
-          <strong>Approve, publish and keep writing.</strong> {TRIAL_OFFER}
-        </p>
-        <StartTrialButton returnTo={returnTo} />
-      </div>
+      <TrialOffer canBuy={canBuy} returnTo={returnTo} />
       {askAttribution && <AttributionAsk />}
 
       {planned.length > 0 && (
@@ -753,8 +679,7 @@ function TrialStep({
           {/* "on the calendar", not "more": the plan counts the drafts above,
               so a run that planned eight and wrote seven has one still to come,
               not eight. */}
-          <strong>On your calendar:</strong> {planned.length} {planned.length === 1 ? "article" : "articles"} over
-          the next 30 days, {planned[0].date === planned[planned.length - 1].date ? "on" : "from"}{" "}
+          <strong>On your calendar:</strong> {planned.length} {planned.length === 1 ? "article" : "articles"}, {planned[0].date === planned[planned.length - 1].date ? "on" : "from"}{" "}
           {calendarDay(planned[0].date)}
           {planned[0].date === planned[planned.length - 1].date ? "" : ` to ${calendarDay(planned[planned.length - 1].date)}`}.
           {drafts.length < planned.length
@@ -763,6 +688,7 @@ function TrialStep({
         </p>
       )}
 
+      <TopicBriefs planned={planned} />
       {drafts.length > 0 && (
         <div className="mt-5">
           <div className="mb-2 flex items-baseline justify-between">
@@ -773,7 +699,7 @@ function TrialStep({
             {drafts.map((d) => (
               <li key={d.id} className="flex items-baseline justify-between gap-3 py-2">
                 <div className="min-w-0">
-                  <div className="truncate text-[13.5px] font-medium">{d.title || d.keyword}</div>
+                  <Link className="text-[13.5px] font-medium text-accent underline" href={`/onboarding/draft/${d.id}`}>{d.title || d.keyword} · Read draft</Link>
                   <div className="truncate text-[12px] text-ink-3">
                     {d.keyword}
                     {d.wordCount > 0 ? ` · ${d.wordCount.toLocaleString("en-US")} words` : ""}
@@ -798,16 +724,16 @@ function TrialStep({
  */
 function RunScreen({
   workspaceId,
+  canBuy,
   domain,
-  weeklyLimit,
   freeDrafts,
   trialEligible,
   askAttribution = false,
   initialRun,
 }: {
   workspaceId: string;
+  canBuy: boolean;
   domain: string;
-  weeklyLimit: number;
   freeDrafts: number | null;
   trialEligible: boolean;
   askAttribution?: boolean;
@@ -834,7 +760,7 @@ function RunScreen({
   // before the dashboard. Only for an account that may still trial, and only
   // when the run produced something to show; a run that wrote nothing has
   // no appetizer and falls through to the plain finish.
-  const trialStep = finished && trialEligible && (drafts.length > 0 || planned.length > 0);
+  const trialStep = finished && trialEligible && drafts.length > 0;
   const next = planned.length > 0
     ? { href: "/content", label: "Open my plan" }
     : draft
@@ -859,10 +785,9 @@ function RunScreen({
               </>
             ) : (
               <>
-                Reading {domain}, choosing keywords by volume, difficulty and fit, scheduling up to{" "}
-                {weeklyLimit >= 7 ? "one article a day" : `${weeklyLimit} a week`} for the next 30 days, and writing
-                the first one. Only keywords that pass our checks make the plan, so a new site may get fewer.{" "}
-                {freeAllowanceClause(freeDrafts) ?? ""}
+                Reading {domain}, checking buyer needs and live search results, preparing up to five specific article ideas, and writing
+                the first one. Only topics with supporting evidence make the plan, so your site may get fewer.{" "}
+                {freeAllowanceClause(freeDrafts === null ? null : Math.min(1, freeDrafts)) ?? ""}
               </>
             )}
             {/* True since the run left the browser's request: it is a row
@@ -882,8 +807,12 @@ function RunScreen({
           </p>
         </div>
 
+        {finished && trialEligible && drafts.length === 0 && <div className="mx-auto mb-6 max-w-[640px] rounded-lg border border-line p-4">
+          <p className="mb-3">Your first draft is not ready yet. Retry preparation before deciding on a trial.</p>
+          <Button onClick={() => { setState(null); setAttempt((a) => a + 1); }}>Retry first draft</Button>
+        </div>}
         {trialStep && (
-          <TrialStep drafts={drafts} planned={planned} returnTo="/articles?status=review" askAttribution={askAttribution} />
+          <TrialStep canBuy={canBuy} drafts={drafts} planned={planned} returnTo="/articles?status=review" askAttribution={askAttribution} />
         )}
 
         <div className="mx-auto max-w-[640px]">

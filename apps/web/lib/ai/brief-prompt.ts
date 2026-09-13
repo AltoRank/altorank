@@ -40,7 +40,7 @@ Guidelines:
 - Include H3s only where a section genuinely needs sub-topics
 - Key points should be actionable and specific to the topic
 - LSI keywords: pick the 10-15 most relevant from the provided list, prefer those with higher search volume
-- FAQs: include 4-6, drawn from "People Also Ask" data when available, plus topic-relevant questions
+- FAQs: include up to 6 only when they help the reader's task. Use the relevance-reviewed questions when supplied; do not add adjacent subjects to fill a quota.
 - Word count target: base on competitor average, rounded up slightly (aim to be comprehensive)
 - Competitor insights: what do top results do well? What angles are they missing?`;
 

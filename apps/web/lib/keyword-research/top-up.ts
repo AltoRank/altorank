@@ -184,7 +184,7 @@ export interface KeepOptions {
  * declines to judge it, and `recommendKeywords` will weigh it later.
  */
 export function worthStoring(m: TermMetrics, opts: KeepOptions): boolean {
-  if (m.volume === null || m.volume < MIN_VOLUME) return false;
+  if (m.volume !== null && m.volume < MIN_VOLUME) return false;
   if (isOutOfReach(m.difficulty, opts.authority)) return false;
   const fit = commercialFit(m.term, opts.subject, opts.description);
   return fit.fit !== "absence";
@@ -261,6 +261,8 @@ export async function topUpKeywords(
   const authority = typeof ws.dr === "number" ? ws.dr : null;
 
   const topical = (ws.topical_profile as TopicalProfile | null) ?? null;
+  // Retain absent measurements as unknown; automatic writing still requires live evidence.
+  for (const term of candidates) if (!metrics.has(term.toLowerCase())) metrics.set(term.toLowerCase(), { term, volume: null, difficulty: null, cpc: null, intent: "info" });
   const keep = rankForStorage(
     [...metrics.values()].filter((m) => worthStoring(m, { authority, subject, description })),
     (term) => scoreRelevance(term, topical, subject).score,

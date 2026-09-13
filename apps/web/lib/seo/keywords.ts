@@ -43,6 +43,8 @@ type KeywordsForSiteResult = DFSKeywordItem & {
 
 export type DiscoveredKeyword = {
   keyword: string;
+  sourceUrl?: string | null;
+  unmeasured?: boolean;
   volume: number;
   /**
    * Organic ranking difficulty, 0-100, or null when unknown.
@@ -473,6 +475,7 @@ export async function discoverKeywordsFromSeeds(
             language_code: options?.languageCode ?? "en",
             location_code: options?.locationCode ?? 2840,
             limit: perSeed,
+            ignore_synonyms: true,
             filters: [["keyword_info.search_volume", ">", minVolume]],
             order_by: ["keyword_info.search_volume,desc"],
           },

@@ -264,7 +264,7 @@ async function refillEmptyPools(
 
     let exhausted = false;
     try {
-      const recs = await recommendKeywords(supabase, workspaceId, { limit: 1000 });
+      const recs = await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true });
       exhausted = pickNextKeyword(recs) === null;
     } catch {
       // A recommender that cannot run is not evidence of an empty pool.
