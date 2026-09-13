@@ -7,7 +7,7 @@ import { admin, signIn, todayUtc } from "./fixtures/account";
  * open, the button saves it all and runs the pipeline, and the plan it
  * produces is the one the calendar then shows.
  */
-test("a new account is walked from /dashboard to a planned first month", async ({ page, account }) => {
+test("a new account is walked from /dashboard to five qualified topics and one draft", async ({ page, account }) => {
   const ws = account.workspaces[0];
   const db = admin();
 
@@ -47,7 +47,7 @@ test("a new account is walked from /dashboard to a planned first month", async (
   // a wrong description has to be glanceable, not hidden behind "ready".
   const business = page.locator("details", { has: page.getByRole("heading", { name: "About your business" }) });
   await expect(business).toContainText("Nomad Atlas");
-  await business.locator("summary").click();
+  await business.locator(":scope > summary").click();
   await expect(page.getByLabel("Business name")).toHaveValue("Nomad Atlas");
   await expect(page.getByLabel("Language")).toHaveValue("Italian");
   await expect(page.getByLabel(/^Market/)).toHaveValue("Italy");
@@ -66,7 +66,7 @@ test("a new account is walked from /dashboard to a planned first month", async (
   // One button. It saves everything on the screen, marks the wizard done and
   // starts the run; there is no Back and no Skip, because there is nowhere to
   // go back to and nothing left worth skipping.
-  await page.getByRole("button", { name: "Plan my first month" }).click();
+  await page.getByRole("button", { name: "Plan my first articles" }).click();
 
   // --- The run ---------------------------------------------------------------
   await expect(page.getByRole("heading", { name: "Creating your content plan" })).toBeVisible();
@@ -87,10 +87,11 @@ test("a new account is walked from /dashboard to a planned first month", async (
   expect((afterProfile?.business_profile as { name: string }).name).toBe("Nomad Atlas");
   expect(afterProfile?.sitemap_url).toBe(sitemapUrl);
   expect(afterProfile?.blog_root_url).toBe(`https://${ws.domain}/blog/`);
-  const plannedLine = page.getByText(/Planned \d+ articles? over the next 30 days/);
+  const plannedLine = page.getByText(/Prepared \d+ articles? for your calendar/);
   await expect(plannedLine).toBeVisible({ timeout: 30_000 });
-  const planned = Number((await plannedLine.textContent())?.match(/Planned (\d+)/)?.[1]);
+  const planned = Number((await plannedLine.textContent())?.match(/Prepared (\d+)/)?.[1]);
   expect(planned).toBeGreaterThan(0);
+  expect(planned).toBeLessThanOrEqual(5);
   // Worded from the run's own outcome since #P0-O2: the old fixed sentence was
   // printed whether or not anything reached the calendar.
   await expect(
@@ -114,13 +115,9 @@ test("a new account is walked from /dashboard to a planned first month", async (
 
   // The first draft: written for day one of the plan, waiting in review.
   //
-  // Not `length === 1`. The free week is written in parallel (#121), so the
-  // fan-out lands six more, and this assertion only ever passed because the
-  // fan-out's self-invocation silently failed under the e2e server - it was
-  // green for the wrong reason. Day one is identified by its calendar entry,
-  // not by an index into an unordered select.
+  // Onboarding writes exactly one preview; the rest waits for review/trial.
   const { data: articles } = await db.from("articles").select("id, status, keyword, generated_autonomously").eq("workspace_id", ws.id);
-  expect(articles?.length).toBeGreaterThan(0);
+  expect(articles).toHaveLength(1);
   // Everything onboarding writes is autonomous and waits for a yes; the gate
   // is the product, so no draft may arrive in any other state.
   for (const a of articles!) {

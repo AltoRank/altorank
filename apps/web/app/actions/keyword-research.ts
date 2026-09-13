@@ -266,6 +266,8 @@ export interface ScheduleReport {
   capacity: PlanCapacity;
   /** Terms that were already on the calendar and were left alone. */
   alreadyPlanned: number;
+  scheduledTerms?: string[];
+  refusedReasons?: string[];
 }
 
 /**
@@ -289,7 +291,9 @@ export async function scheduleCandidates(
   runId: string | null,
   kind: ResearchKind = "manual",
 ): Promise<ScheduleReport> {
-  const { supabase } = await scoped(workspaceId);
+  const { supabase, accountId } = await scoped(workspaceId);
+  const gate = await spendCheck(supabase, accountId, workspaceId);
+  if (!gate.allowed) throw new Error(gate.message);
   if (!candidates.length) {
     return { scheduled: 0, refused: 0, alreadyPlanned: 0, capacity: await readCapacity(supabase, workspaceId) };
   }
@@ -308,7 +312,7 @@ export async function scheduleCandidates(
   }
   revalidatePath("/keywords");
   revalidatePath("/content");
-  return { scheduled: outcome.scheduled.length, refused: outcome.refused.length, alreadyPlanned: Math.max(0, alreadyPlanned), capacity: outcome.capacity };
+  return { scheduled: outcome.scheduled.length, refused: outcome.refused.length, alreadyPlanned: Math.max(0, alreadyPlanned), capacity: outcome.capacity, scheduledTerms: outcome.scheduled.map((p) => p.term), refusedReasons: Object.values(outcome.reasons ?? {}) };
 }
 
 /** Keep the chosen candidates without scheduling them. */
@@ -333,7 +337,9 @@ export async function storeCandidates(
 
 /** Schedule keywords already on the Stored shelf. */
 export async function scheduleStored(workspaceId: string, keywordIds: string[]): Promise<ScheduleReport> {
-  const { supabase } = await scoped(workspaceId);
+  const { supabase, accountId } = await scoped(workspaceId);
+  const gate = await spendCheck(supabase, accountId, workspaceId);
+  if (!gate.allowed) throw new Error(gate.message);
   const outcome = await scheduleKeywords(supabase, workspaceId, keywordIds);
   await decorateScheduled(supabase, workspaceId, outcome.scheduled.map((p) => p.keywordId));
   revalidatePath("/keywords");
@@ -343,6 +349,8 @@ export async function scheduleStored(workspaceId: string, keywordIds: string[]):
     refused: outcome.refused.length,
     alreadyPlanned: Math.max(0, keywordIds.length - outcome.scheduled.length - outcome.refused.length),
     capacity: outcome.capacity,
+    scheduledTerms: outcome.scheduled.map((p) => p.term),
+    refusedReasons: Object.values(outcome.reasons ?? {}),
   };
 }
 

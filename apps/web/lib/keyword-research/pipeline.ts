@@ -21,7 +21,7 @@ import { fetchRankedKeywords } from "@/lib/seo/ranked-keywords";
 import { discoverKeywordsFromSeeds } from "@/lib/seo/keywords";
 import { classifyIntent } from "@/lib/seo/intent";
 import { hasDataForSEOCredentials, hasModelCredentials, modelUnavailableNote, providerUnavailableNote } from "./availability";
-import { LOCALES } from "@/lib/seo/locales";
+import { languageCodeOf } from "./locale";
 import { applyFunnel, MIN_VOLUME, type ExistingKeyword } from "./funnel";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { fetchTermMetrics, type TermMetrics } from "./metrics";
@@ -355,7 +355,7 @@ export async function researchGenerate(
 
   // Judged the way the first look judges and dropped at the same bar.
   const existing = await existingKeywords(supabase, ws.id);
-  const { candidates, funnel } = applyFunnel(judgeCandidates(raw, judge), existing, { limit: count, dropOffTopic: true });
+  const { candidates, funnel } = applyFunnel(judgeCandidates(raw, judge), existing, { limit: count, dropOffTopic: true, keepNoData: true });
   trace.push(funnelTrace(funnel));
 
   const runId = await recordRun(supabase, ws.id, kind, { source: input.source, competitors: input.competitors, audiences: input.audiences, count }, { funnel });
@@ -407,7 +407,7 @@ export async function researchPlaybook(
   trace.push(`${meta.title}: built ${seeds.length} phrases → ${looked.filter((c) => c.volume !== null).length} had search data`);
 
   const existing = await existingKeywords(supabase, ws.id);
-  const { candidates, funnel } = applyFunnel(judgeCandidates(looked, judge), existing, { dropOffTopic: true });
+  const { candidates, funnel } = applyFunnel(judgeCandidates(looked, judge), existing, { dropOffTopic: true, keepNoData: true });
   trace.push(funnelTrace(funnel));
 
   const runId = await recordRun(supabase, ws.id, kind, { playbook, seeds }, { funnel });
@@ -542,13 +542,7 @@ function nothingNote(f: ResearchResult["funnel"], notes: string[]): string {
  * 40501 Invalid Field. Accept a key, a language code or a label; fall back to
  * English rather than fail the run.
  */
-export function languageCodeOf(raw: string | null | undefined): string {
-  const v = (raw ?? "").trim().toLowerCase();
-  if (!v) return "en";
-  if (LOCALES[v]) return LOCALES[v].languageCode;
-  const hit = Object.values(LOCALES).find((e) => e.label.toLowerCase() === v || e.languageCode.toLowerCase() === v);
-  return hit?.languageCode ?? "en";
-}
+export { languageCodeOf } from "./locale";
 
 /** Read the workspace as the pipeline needs it, or null when it is not on this account. */
 export async function loadResearchWorkspace(supabase: SupabaseClient, workspaceId: string): Promise<ResearchWorkspace | null> {
@@ -567,10 +561,12 @@ export async function loadResearchWorkspace(supabase: SupabaseClient, workspaceI
     languageCode: languageCodeOf(data.language as string | null),
     locationCode: (data.location_code as number | null) ?? 2840,
     profile: {
+      ...profile,
       name: profile?.name ?? (data.name as string) ?? "",
       language: profile?.language ?? "English",
       country: profile?.country ?? "Global (English)",
       description: profile?.description ?? "",
+      offerings: Array.isArray(profile?.offerings) ? profile.offerings.filter((a): a is string => typeof a === "string") : [],
       audiences: Array.isArray(profile?.audiences) ? profile.audiences.filter((a): a is string => typeof a === "string") : [],
       competitors: Array.isArray(profile?.competitors) ? profile.competitors.filter((c): c is string => typeof c === "string") : [],
     },

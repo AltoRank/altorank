@@ -330,15 +330,15 @@ async function runPhases(
     emit({ phase: "planning", status: "skipped", detail: "Nothing to schedule until there are keywords." });
   } else {
     try {
-      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE);
+      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, { maxEntries: 5 });
       emit({
         phase: "planning",
         status: plan.length > 0 ? "done" : "skipped",
         detail:
           plan.length > 0
-            ? `Planned ${plan.length} article${plan.length === 1 ? "" : "s"} over the next 30 days. Drag, drop or delete any of them.`
+            ? `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has a buyer and supporting search evidence.`
             : "No keyword clear enough to plan yet.",
-        planned: plan.map((p) => ({ term: p.term, date: p.date })),
+        planned: plan.map((p) => ({ term: p.term, date: p.date, brief: p.brief })),
       });
     } catch (err) {
       emit({ phase: "planning", status: "failed", detail: message(err) });
@@ -361,11 +361,12 @@ async function runPhases(
   /** Each planned term's share of the run's one related-keyword lookup. */
   let relatedByTerm = new Map<string, RelatedKeyword[]>();
   try {
-    // Not if one already exists: this pipeline can be re-run, and a second
-    // identical draft is worse than none.
+    // A failed or empty article is not a preview. Keep active writes protected,
+    // but allow a retry when no readable first draft exists.
     const { count } = await supabase
       .from("articles")
       .select("id", { count: "exact", head: true })
+      .or("status.eq.drafting,and(status.in.(review,approved,scheduled,live),content.not.is.null,word_count.gt.0)")
       .eq("workspace_id", workspace.id);
     if (count && count > 0) {
       settle("skipped", "This workspace already has a draft.");
@@ -387,7 +388,7 @@ async function runPhases(
         // Not 25: the list is cut after scoring across every action, and a
         // site with 25 page-one rankings filled it with skips before any
         // writable term appeared (lib/onboarding/plan.ts has the same note).
-        const recs = await recommendKeywords(supabase, workspace.id, { limit: 1000 });
+        const recs = await recommendKeywords(supabase, workspace.id, { limit: 1000, qualify: true });
         // The first day of the plan is what the person just watched get
         // scheduled; writing anything else would contradict the calendar.
         const first = plan[0];

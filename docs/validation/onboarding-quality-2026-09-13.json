@@ -1,0 +1,919 @@
+[
+  {
+    "case": "italian",
+    "domain": "fitsuite.co",
+    "scope": "Live profile, discovery, buyer fit, SERP qualification and generateArticle with local persistence. No browser, payment, CMS publishing or image-provider test.",
+    "selectionPolicy": "First qualified candidate among first twelve buyer-approved discovery results, measured candidates first; no handpicked replacement",
+    "seedCount": 15,
+    "measuredSeeds": 1,
+    "seedRecovery": {
+      "attempted": true,
+      "seeds": [
+        "gestione clienti fitness",
+        "programmazione allenamenti",
+        "tracciamento progressi clienti",
+        "comunicazione allenatore cliente",
+        "pianificazione nutrizionale",
+        "app allenamenti branded",
+        "consolidamento strumenti coaching",
+        "gestione online palestra"
+      ],
+      "measured": 0
+    },
+    "candidateCount": 23,
+    "qualification": [
+      {
+        "term": "gestione clienti fitness",
+        "status": "qualified",
+        "reason": "Two editorial results (ranks 2 and 4) support buyer's guide/comparison format. Rank 2 is explicit comparison ('Quale Scegliere'). Rank 4 explains CRM value for fitness. Query seeks software selection; article can guide coaches on gym/fitness client management tool evaluation.",
+        "angle": "Gestionale palestra e personal trainer: criteri di scelta"
+      },
+      {
+        "term": "programmazione allenamenti",
+        "status": "rejected",
+        "reason": "Query is informational/educational, not a buying decision. Results dominated by how-to guides and general fitness education, not software selection or tool comparison. No evidence that readers are comparing coaching platforms or evaluating software solutions.",
+        "angle": null
+      },
+      {
+        "term": "crm personal trainer",
+        "status": "qualified",
+        "reason": "Query shows strong buying intent for CRM software. Results 1, 4, 6, and 7 are editorial articles comparing/reviewing CRM options for personal trainers. Multiple results support that an article addressing CRM selection criteria helps this buyer's decision.",
+        "angle": "5 CRM solutions for personal trainers: features and tradeoffs"
+      },
+      {
+        "term": "tracciamento progressi clienti",
+        "status": "qualified",
+        "reason": "Query seeks client progress tracking—a core FitSuite job. Results 3 and 8 are editorial (feature overview and software comparison). Article on selecting a progress-tracking tool with criteria (automation, client apps, compliance) would satisfy this buyer's decision.",
+        "angle": "Come scegliere software tracciamento progressi clienti: guida per coach"
+      },
+      {
+        "term": "pianificazione nutrizionale",
+        "status": "rejected",
+        "reason": "Query 'pianificazione nutrizionale' is a broad informational search dominated by general nutrition education and consumer meal-planning content (ranks 1, 3, 8, 9). No results show coach/trainer software selection, tool comparison, or how fitness professionals choose nutrition planning platforms. Result 2 mentions 'strumenti digitali' but is a time-management article for nutritionists, not a buying",
+        "angle": null
+      },
+      {
+        "term": "comunicazione allenatore cliente",
+        "status": "rejected",
+        "reason": "Query dominated by soft skills and coaching philosophy content, not buying intent for communication tools. No editorial comparisons, reviews, or buyer guides for coach-client messaging platforms observed. Results focus on communication techniques, not platform selection or tool alternatives.",
+        "angle": null
+      },
+      {
+        "term": "gestione online palestra",
+        "status": "qualified",
+        "reason": "Query seeks gym management software. Results 6 and 8 are editorial comparisons/guides naming multiple options with evaluation criteria. FitSuite's integrated platform (client management, workout programming, nutrition, branded app, progress tracking) directly addresses the buying job. Article can help gym owners evaluate consolidation alternatives.",
+        "angle": "Best gym management software: compare features and pricing"
+      },
+      {
+        "term": "consolidamento strumenti coaching",
+        "status": "rejected",
+        "reason": "Query targets coaching methodology and soft skills (GROW model, active listening, feedback techniques), not software selection. No results support platform consolidation or tool replacement decisions. Results are overwhelmingly educational content about coaching practices, not comparative buyer guides for coaching software.",
+        "angle": null
+      },
+      {
+        "term": "app allenamenti branded",
+        "status": "qualified",
+        "reason": "Query targets coaches seeking branded workout apps. Results 3 and 4 are editorial guides comparing branded fitness app options and selection criteria. FitSuite's included branded app directly satisfies this buying job.",
+        "angle": "Guida alla scelta: app allenamenti branded per trainer"
+      },
+      {
+        "term": "software gestione clienti personal trainer",
+        "status": "qualified",
+        "reason": "Query matches FitSuite's core buying job (client management for personal trainers). Result #3 is an editorial comparison of 15+ tools; result #4 is a Capterra directory listing with comparative context. Both support a buyer's guide article evaluating options. An article comparing personal trainer management software with selection criteria would credibly help this buyer's decision.",
+        "angle": "I migliori software di gestione clienti per personal trainer: guida alla scelta"
+      },
+      {
+        "term": "piattaforma allenamenti online",
+        "status": "rejected",
+        "reason": "Query targets end-user fitness consumers (\"piattaforma allenamenti online\"), not coaches/trainers buying software. Results dominated by consumer fitness apps and workout platforms (Fixfit, Buddyfit, Adidas Training, Sabeda). FitSuite is B2B coach/gym-management software. No editorial buyer's guide for coaches selecting coaching platforms observed.",
+        "angle": null
+      },
+      {
+        "term": "app fitness per clienti",
+        "status": "rejected",
+        "reason": "Query is navigational product search. Results dominated by product landing pages (ranks 1–5) and consumer fitness apps (rank 8), not editorial buyer guides. Rank 7 is a comparison, but ranks 1–5 are service/tool pages, not articles supporting a coach's buying decision.",
+        "angle": null
+      }
+    ],
+    "title": "5 CRM solutions for personal trainers: features and tradeoffs",
+    "words": 1672,
+    "draftSeconds": 142.906,
+    "factCheck": {
+      "claims": [
+        {
+          "id": "0-statistic-4",
+          "kind": "statistic",
+          "figures": [
+            "4%"
+          ],
+          "status": "verified",
+          "severity": "low",
+          "text": "4%",
+          "sentence": "Conformità dei dati : il Regolamento generale sulla protezione dei dati prevede sanzioni fino a 20 milioni di euro o al 4% del fatturato globale annuo, a seconda di quale importo sia più alto, secondo il testo ufficiale dell' Articolo 83 del GDPR .",
+          "attribution": null,
+          "sourceUrl": "https://gdpr-info.eu/art-83-gdpr/",
+          "note": "Every figure in this sentence appears on the page it cites (https://gdpr-info.eu/art-83-gdpr/). That the page carries the number is not proof the number is right, but the citation is real."
+        }
+      ],
+      "counts": {
+        "high": 0,
+        "medium": 0,
+        "low": 1,
+        "total": 1
+      },
+      "verdict": "review",
+      "summary": "1 claim to verify before publishing."
+    },
+    "questions": {
+      "status": "qualified",
+      "kept": [
+        "Qual è il miglior software per personal trainer?",
+        "Qual è un buon software per la gestione di una palestra?",
+        "Qual è la migliore app per personal trainer?"
+      ],
+      "decisions": [
+        {
+          "question": "Qual è il miglior software per personal trainer?",
+          "keep": true,
+          "reason": "Directly supports the article's task of selecting a CRM solution. A reader asking this question seeks exactly what the article delivers: comparison of CRM options for personal trainers."
+        },
+        {
+          "question": "Quanto costa un'ora con un personal trainer?",
+          "keep": false,
+          "reason": "Pricing for personal training services is unrelated to the buying job of selecting CRM software. This is consumer advice about trainer rates, not professional software selection."
+        },
+        {
+          "question": "Qual è un buon software per la gestione di una palestra?",
+          "keep": true,
+          "reason": "Relevant to gym owners in the target audience who need to consolidate gym/studio management. Supports the CRM selection decision for this buyer segment."
+        },
+        {
+          "question": "Qual è la migliore app per personal trainer?",
+          "keep": true,
+          "reason": "Supports CRM selection for personal trainers. App functionality is a key evaluation criterion when choosing between CRM solutions, particularly for coaches managing remote clients."
+        }
+      ]
+    },
+    "regressionQuestions": null,
+    "recoveryProbe": null,
+    "error": null
+  },
+  {
+    "case": "italian-final",
+    "domain": "fitsuite.co",
+    "scope": "Live profile, discovery, buyer fit, SERP qualification and generateArticle with local persistence. No browser, payment, CMS publishing or image-provider test.",
+    "selectionPolicy": "Explicit keyword regression replay; not discovery evidence",
+    "seedCount": null,
+    "measuredSeeds": null,
+    "seedRecovery": null,
+    "candidateCount": null,
+    "qualification": [
+      {
+        "term": "crm personal trainer",
+        "status": "qualified",
+        "reason": "Query dominates editorial comparisons and buyer guides (ranks 1, 6, 7). At least two results (qomodo.me, folk.app, trainerize.com) are editorial articles comparing CRM options for personal trainers. Articles credibly support buying decision: trainers need to evaluate platforms against criteria like all-in-one consolidation, client management, workout planning, and nutrition tools—core to FitSuite'",
+        "angle": "I 5 migliori CRM per personal trainer: confronto funzionalità e costi"
+      }
+    ],
+    "title": "I 5 migliori CRM per personal trainer: confronto funzionalità e costi",
+    "words": 1835,
+    "draftSeconds": 253.714,
+    "factCheck": {
+      "claims": [
+        {
+          "id": "0-statistic-4",
+          "kind": "statistic",
+          "figures": [
+            "4%"
+          ],
+          "status": "contradicted",
+          "severity": "high",
+          "text": "4%",
+          "sentence": "Una violazione può comportare sanzioni fino al 4% del fatturato globale annuo o 20 milioni di euro, secondo l' Articolo 83 dello stesso regolamento.",
+          "attribution": null,
+          "sourceUrl": "https://eur-lex.europa.eu/legal-content/IT/TXT/?uri=CELEX%3A32016R0679",
+          "note": "The cited page loaded and does not contain \"4%\". Open https://eur-lex.europa.eu/legal-content/IT/TXT/?uri=CELEX%3A32016R0679, correct the figure to what it actually says, or cut it."
+        }
+      ],
+      "counts": {
+        "high": 1,
+        "medium": 0,
+        "low": 0,
+        "total": 1
+      },
+      "verdict": "high_risk",
+      "summary": "1 figure the cited page does not contain to correct or remove."
+    },
+    "questions": {
+      "status": "qualified",
+      "kept": [
+        "Qual è il miglior software per personal trainer?",
+        "Qual è un buon software per la gestione di una palestra?",
+        "Qual è la migliore app per personal trainer?"
+      ],
+      "decisions": [
+        {
+          "question": "Qual è il miglior software per personal trainer?",
+          "keep": true,
+          "reason": "Directly matches article intent. Readers evaluating CRM platforms need to understand which software is considered best—this question frames the comparison and buying decision the article addresses."
+        },
+        {
+          "question": "Quanto costa un'ora con un personal trainer?",
+          "keep": false,
+          "reason": "Pricing personal training services (consumer/client perspective) is unrelated to selecting a CRM platform (business/trainer perspective). Different audience, different job, different decision."
+        },
+        {
+          "question": "Qual è un buon software per la gestione di una palestra?",
+          "keep": true,
+          "reason": "Relevant to gym owners and studio managers in the approved audience. Gym management software overlaps with personal trainer CRM needs (client management, scheduling, communication). Supports the buying decision for multi-user/multi-coach environments."
+        },
+        {
+          "question": "Qual è la migliore app per personal trainer?",
+          "keep": true,
+          "reason": "Supports platform evaluation. Trainers choosing a CRM need to assess client-facing app quality and features. Relevant to the buying job of consolidating tools and communicating with clients outside WhatsApp."
+        }
+      ]
+    },
+    "regressionQuestions": null,
+    "recoveryProbe": null,
+    "error": null
+  },
+  {
+    "case": "recovery-probe",
+    "domain": "altorank.co",
+    "scope": "Live recovery replay from saved failed seed set and exact keyword overview; no draft generated",
+    "selectionPolicy": "First qualified candidate among first twelve buyer-approved discovery results, measured candidates first; no handpicked replacement",
+    "seedCount": null,
+    "measuredSeeds": null,
+    "seedRecovery": null,
+    "candidateCount": null,
+    "qualification": [],
+    "title": null,
+    "words": null,
+    "draftSeconds": null,
+    "factCheck": null,
+    "questions": null,
+    "regressionQuestions": null,
+    "recoveryProbe": {
+      "attempted": [
+        "ai generated content fact checking",
+        "seo content creation tools for agencies",
+        "chatgpt content readability checker",
+        "ai overviews optimization software",
+        "editorial approval workflow for teams",
+        "multi client content management platform",
+        "ai assistant citeable content generation",
+        "technical seo content analysis",
+        "content research and topic planning tools",
+        "ai content publishing approval system",
+        "perplexity ai search optimization",
+        "seo agencies white label reporting",
+        "fact checking ai generated articles",
+        "content management system publishing integration",
+        "ai content quality assurance platform"
+      ],
+      "seeds": [
+        "seo content writing software",
+        "ai content management platform",
+        "content approval workflow tools",
+        "technical seo audit tools",
+        "content strategy software",
+        "agency content management",
+        "ai writing assistant tools"
+      ],
+      "metrics": [
+        {
+          "term": "ai writing assistant tools",
+          "volume": 50,
+          "difficulty": 33,
+          "cpc": 12.41,
+          "intent": "commercial"
+        },
+        {
+          "term": "content strategy software",
+          "volume": 30,
+          "difficulty": 13,
+          "cpc": null,
+          "intent": "commercial"
+        },
+        {
+          "term": "seo content writing software",
+          "volume": 110,
+          "difficulty": 10,
+          "cpc": null,
+          "intent": "commercial"
+        },
+        {
+          "term": "technical seo audit tools",
+          "volume": 210,
+          "difficulty": 78,
+          "cpc": null,
+          "intent": "commercial"
+        }
+      ]
+    },
+    "error": null
+  },
+  {
+    "case": "saas",
+    "domain": "altorank.co",
+    "scope": "Live profile, discovery, buyer fit, SERP qualification and generateArticle with local persistence. No browser, payment, CMS publishing or image-provider test.",
+    "selectionPolicy": "First qualified candidate among first twelve buyer-approved discovery results, measured candidates first; no handpicked replacement",
+    "seedCount": 15,
+    "measuredSeeds": 2,
+    "seedRecovery": {
+      "attempted": true,
+      "seeds": [
+        "ai content workflow software",
+        "seo content publishing platform",
+        "multi-site content management",
+        "content performance tracking software",
+        "fact-checking content generation",
+        "agency content operations platform"
+      ],
+      "measured": 0
+    },
+    "candidateCount": 21,
+    "qualification": [
+      {
+        "term": "seo article writing tool",
+        "status": "rejected",
+        "reason": "Query dominated by product/tool comparison pages. No editorial articles supporting buying decision for editorial control or AI readability auditing—AltoRank's core differentiation. Results focus on feature comparison, not workflow or governance challenges.",
+        "angle": null
+      },
+      {
+        "term": "ai content workflow software",
+        "status": "rejected",
+        "reason": "Query dominated by broad workflow automation and tool comparison content. Results focus on general AI workflow builders, project management, and automation platforms—not editorial approval workflows for AI-generated content. No observed results support AltoRank's specific buying job: maintaining editorial control and brand safety while publishing AI-assisted SEO content at scale.",
+        "angle": null
+      },
+      {
+        "term": "agency content management system",
+        "status": "rejected",
+        "reason": "Results dominated by broad CMS category guides and product pages (ranks 1-2, 5-6, 9). Comparison/review articles (3-4, 7-8) address tool selection, not a specific buying job an editorial article could solve. Query is navigation-focused: searcher needs CMS category definition or product comparison, not editorial guidance on content operations.",
+        "angle": null
+      },
+      {
+        "term": "seo content publishing platform",
+        "status": "qualified",
+        "reason": "Query targets SEO content publishing platforms. Ranks 2, 5, and 6 are editorial articles comparing/evaluating publishing tools for SEO. An article on editorial control + AI-assisted publishing directly serves buying decision for content teams evaluating platforms.",
+        "angle": "Editorial Control in AI-Assisted SEO Publishing: Maintaining Brand Safety at Scale"
+      },
+      {
+        "term": "content performance tracking software",
+        "status": "rejected",
+        "reason": "Query is dominated by broad educational comparisons and tool roundups (ranks 1-9 are all 'best tools' or 'metrics guides'). No observed results demonstrate how an editorial article about content performance tracking would satisfy this buyer's decision. AltoRank's core value—editorial-gated AI content generation—is orthogonal to content performance tracking software selection.",
+        "angle": null
+      },
+      {
+        "term": "multi-site content management",
+        "status": "rejected",
+        "reason": "Query dominated by product/service pages (CMS platforms). Results show 7+ product features and documentation pages; only 2 editorial articles. Articles address general multisite CMS selection, not AltoRank's specific job: AI-assisted SEO content generation with mandatory editorial approval across client sites. An article on this topic would not satisfy this navigation-heavy, product-comparison que",
+        "angle": null
+      },
+      {
+        "term": "agency content operations platform",
+        "status": "rejected",
+        "reason": "Query dominated by broad platform comparisons and product pages (ranks 2, 4, 6, 7, 9). Editorial results (ranks 1, 3, 5, 8) are definitional guides to content operations as a category, not buyer decision support for agency-specific SEO content generation with editorial control. An article cannot credibly help this buying job.",
+        "angle": null
+      },
+      {
+        "term": "ai content generation for seo",
+        "status": "qualified",
+        "reason": "Multiple editorial results (Neil Patel, Salesforce, SEO.com, Whatagraph, Typeface) address AI content generation for SEO with strategic guidance on human oversight and implementation. Articles credibly inform buying decisions for agencies and teams evaluating AI-assisted content workflows.",
+        "angle": "How to implement AI content generation for SEO without sacrificing editorial control"
+      },
+      {
+        "term": "fact-checking content generation",
+        "status": "rejected",
+        "reason": "Query dominated by academic research, journalism methodology, and fact-checking tools. No observed editorial results address content generation workflows, editorial approval gates, or publishing platforms. Results support fact-checking theory, not buying decision for AI content generation with editorial control.",
+        "angle": null
+      },
+      {
+        "term": "multi-client content management platform",
+        "status": "rejected",
+        "reason": "Query dominated by broad CMS/WCM product pages and comparisons. No editorial articles support SEO content generation with editorial approval as a buying job. Results address general content management, not AI-assisted SEO publishing workflows.",
+        "angle": null
+      },
+      {
+        "term": "ai readability audit for websites",
+        "status": "rejected",
+        "reason": "Query dominated by tool/product pages (ranks 1-5, 7-8) offering free audits. Only 2 editorial results (ranks 6, 9) exist; rank 6 is a general checklist, rank 9 a case study. An article wouldn't satisfy this navigation-heavy, tool-comparison query where buyers seek immediate audit access, not buying guidance.",
+        "angle": null
+      },
+      {
+        "term": "editorial approval workflow software",
+        "status": "qualified",
+        "reason": "Multiple editorial workflow articles (ranks 4, 8) support buying decision for content leaders. AltoRank's mandatory named-person approval gate directly addresses the core job: maintaining editorial control over AI-generated content at scale.",
+        "angle": "How to build editorial approval workflows for AI-generated content"
+      }
+    ],
+    "title": "Editorial Control in AI-Assisted SEO Publishing: Maintaining Brand Safety at Scale",
+    "words": 1899,
+    "draftSeconds": 164.014,
+    "factCheck": {
+      "claims": [
+        {
+          "id": "0-money-20",
+          "kind": "money",
+          "figures": [
+            "$20"
+          ],
+          "status": "needs_verification",
+          "severity": "medium",
+          "text": "$20",
+          "sentence": "OpenAI's ChatGPT reached 100 million monthly active users within roughly two months of its public launch, according to a Reuters report citing a UBS analyst note, and a ChatGPT Plus subscription currently costs $20 a month according to OpenAI's pricing page .",
+          "attribution": "OpenAI's",
+          "sourceUrl": "https://www.reuters.com/technology/chatgpt-sets-record-fastest-growing-user-base-analyst-note-2023-02-01/",
+          "note": "Attributed to OpenAI's. Confirm the source exists and actually says this before publishing."
+        }
+      ],
+      "counts": {
+        "high": 0,
+        "medium": 1,
+        "low": 0,
+        "total": 1
+      },
+      "verdict": "review",
+      "summary": "1 claim to verify before publishing."
+    },
+    "questions": {
+      "status": "qualified",
+      "kept": [
+        "Can ChatGPT do SEO?"
+      ],
+      "decisions": [
+        {
+          "question": "What is the best platform for SEO?",
+          "keep": false,
+          "reason": "Too broad and generic. Asks for platform recommendation without the specific buying job context (editorial control, AI-assisted publishing, multi-client management). Would require rewriting to be useful."
+        },
+        {
+          "question": "Can a beginner do SEO?",
+          "keep": false,
+          "reason": "Jobseeker/skill-building intent. Article targets content operations leaders and agencies making platform purchasing decisions, not individuals learning SEO fundamentals. Misaligned audience and job."
+        },
+        {
+          "question": "Can ChatGPT do SEO?",
+          "keep": true,
+          "reason": "Directly supports the buying decision. Helps readers evaluate whether AI can actually perform SEO content generation—a prerequisite understanding before selecting a platform like AltoRank that wraps AI with editorial controls."
+        },
+        {
+          "question": "Is SEO dead now with AI?",
+          "keep": false,
+          "reason": "Existential debate rather than practical implementation question. Doesn't help readers evaluate or select an editorial control platform. Consumer-level concern, not a business buying decision."
+        }
+      ]
+    },
+    "regressionQuestions": null,
+    "recoveryProbe": null,
+    "error": null
+  },
+  {
+    "case": "saas-final",
+    "domain": "altorank.co",
+    "scope": "Live profile, discovery, buyer fit, SERP qualification and generateArticle with local persistence. No browser, payment, CMS publishing or image-provider test.",
+    "selectionPolicy": "First qualified candidate among first twelve buyer-approved discovery results, measured candidates first; no handpicked replacement",
+    "seedCount": 15,
+    "measuredSeeds": 0,
+    "seedRecovery": {
+      "attempted": true,
+      "seeds": [
+        "multi-client workflow coordination",
+        "draft-to-publish content pipeline"
+      ],
+      "measured": 0
+    },
+    "candidateCount": 17,
+    "qualification": [
+      {
+        "term": "draft-to-publish content pipeline",
+        "status": "qualified",
+        "reason": "Query targets content teams building draft-to-publish workflows. Results 1–3 are editorial guides covering pipeline stages including draft, review/approval, and publish. AltoRank's editorial approval workflow, AI drafting, and integrated publishing directly address this buying job.",
+        "angle": "Build a draft-to-publish content pipeline with editorial approval"
+      },
+      {
+        "term": "multi-client workflow coordination",
+        "status": "rejected",
+        "reason": "Query seeks general multi-client workflow coordination; results are broad how-to guides and adjacent tools (project management, client portals). None are editorial articles about SEO content approval workflows specific to agencies. AltoRank's core buying job is AI content approval with editorial gates—not generic client management. Results do not support an article that preserves this specific tas",
+        "angle": null
+      },
+      {
+        "term": "ai content generation with approval workflow",
+        "status": "qualified",
+        "reason": "Query targets editorial approval workflows for AI content—core AltoRank job. Results 2, 4, 6, 9 are editorial articles on content approval processes. Multiple results support a selection/implementation guide helping buyers evaluate approval workflow solutions.",
+        "angle": "How to build AI content approval workflows that balance speed and quality control"
+      },
+      {
+        "term": "technical seo readability checker",
+        "status": "rejected",
+        "reason": "Query is dominated by tool/checker landing pages (7 of 9 results). No editorial articles observed. Search intent is navigational product discovery, not a buying decision article would resolve. AltoRank's readability feature is one component; the query does not signal need for content strategy, comparison, or approval workflow guidance.",
+        "angle": null
+      },
+      {
+        "term": "content approval management software",
+        "status": "pending",
+        "reason": "Buyer fit or search evidence could not be confirmed. Retry research before scheduling.",
+        "angle": null
+      },
+      {
+        "term": "seo article writer with fact checking",
+        "status": "qualified",
+        "reason": "Query seeks AI article writing with fact-checking. Results 2, 3, and 5 are editorial articles on fact-checking SEO content and comparing AI writers with built-in fact-checking. AltoRank's integrated fact-checking and source review directly address this buying job. Article can help evaluate solutions.",
+        "angle": "Best AI SEO Writers With Built-In Fact-Checking: Compare Tools"
+      },
+      {
+        "term": "ai writing tool for agencies",
+        "status": "qualified",
+        "reason": "Query targets agencies selecting AI writing tools. Results 4 and 9 are editorial comparisons addressing agency-specific needs (multi-client workflows, approval controls, brand voice). Article can credibly guide this buyer's selection decision.",
+        "angle": "Best AI writing tools for agencies: approval workflows & multi-client workspaces"
+      },
+      {
+        "term": "multi-client content management platform",
+        "status": "rejected",
+        "reason": "Query is navigational product search. Results are dominated by CMS/platform landing pages and broad comparison guides (Acquia, Adobe, Gartner reviews, monday.com). No editorial articles address AltoRank's specific differentiator: AI-assisted content generation with editorial approval workflow and workspace isolation for agencies. An article would need to justify why approval gates and fact-checkin",
+        "angle": null
+      },
+      {
+        "term": "editorial workflow for content teams",
+        "status": "rejected",
+        "reason": "Query seeks general editorial workflow guidance, not AI-assisted SEO content generation with approval controls. Results are broad process guides, not comparative or selection-focused. AltoRank's differentiation (AI + editorial gate + fact-checking) requires a more specific buying job than this navigational query preserves.",
+        "angle": null
+      },
+      {
+        "term": "chatgpt alternative for seo content",
+        "status": "qualified",
+        "reason": "Query seeks ChatGPT alternatives for SEO content generation. Top 3 results are editorial comparison articles (Hootsuite, ViralSEO, Search Engine Land) directly matching search intent. AltoRank's editorial approval workflow and SEO-focused content generation address a core buyer decision: which tool maintains quality control while automating content creation.",
+        "angle": "ChatGPT Alternatives for SEO: Tools With Editorial Control"
+      },
+      {
+        "term": "content research and planning tool",
+        "status": "rejected",
+        "reason": "Query seeks general content planning tools. AltoRank's core strength is editorial approval workflow + AI content generation, not standalone research/planning. Results dominated by broad tool comparisons and how-to guides; no editorial article supports AltoRank's specific editorial-gate or multi-workspace approval differentiation. Adjacent fit only.",
+        "angle": null
+      },
+      {
+        "term": "ai assisted blog writing",
+        "status": "rejected",
+        "reason": "Results dominated by product pages (Grammarly, Copy.ai, Jasper), Reddit navigation, and general how-to articles. Only 2 editorial comparisons present (Medium roundup, AIOSEO ranking). Query intent is tool selection, but AltoRank's differentiator—editorial approval workflow with named approver and audit trails—is not a primary buying criterion in observed results. An article could help, but results",
+        "angle": null
+      }
+    ],
+    "title": "Build a draft-to-publish content pipeline with editorial approval",
+    "words": 970,
+    "draftSeconds": 88.251,
+    "factCheck": {
+      "claims": [],
+      "counts": {
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "total": 0
+      },
+      "verdict": "clean",
+      "summary": "No unsourced figures or evidence claims found."
+    },
+    "questions": {
+      "status": "empty",
+      "kept": [],
+      "decisions": []
+    },
+    "regressionQuestions": null,
+    "recoveryProbe": null,
+    "error": null
+  },
+  {
+    "case": "saas-qualified-final",
+    "domain": "altorank.co",
+    "scope": "Controlled replay of saved profile and discovered candidates through live qualification and finished draft; discovery not rerun",
+    "selectionPolicy": "First qualified candidate in unchanged saved candidate order",
+    "seedCount": null,
+    "measuredSeeds": null,
+    "seedRecovery": null,
+    "candidateCount": null,
+    "qualification": [
+      {
+        "term": "content approval workflow",
+        "status": "qualified",
+        "reason": "Query seeks editorial workflow guidance. Results 3, 4, 6, 7 are editorial articles on content approval workflows and best practices. AltoRank's editorial gate directly solves this buyer's job. Article can credibly inform workflow selection.",
+        "angle": "Content approval workflow: implementation guide for editorial teams"
+      },
+      {
+        "term": "seo article writer",
+        "status": "rejected",
+        "reason": "Query dominated by product landing pages (ranks 1–6, 9) and service listings. Only rank 8 is editorial; it's a general tool roundup, not a buying guide with evaluation criteria. No observed results support a selection article that would credibly help this buyer choose between approval-workflow solutions.",
+        "angle": null
+      },
+      {
+        "term": "ai overview optimization",
+        "status": "rejected",
+        "reason": "Query intent is optimization tactics, not editorial approval workflow. Results are dominated by how-to guides and best-practices articles. AltoRank's core differentiator—editorial gates—doesn't solve the dominant search job. A buyer searching 'ai overview optimization' needs tactical SEO advice, not content workflow software.",
+        "angle": null
+      },
+      {
+        "term": "ai search visibility",
+        "status": "rejected",
+        "reason": "Query dominated by product/tool landing pages (ranks 1–5, 8). Observed editorial results (6–7) are adjacent how-tos about tracking, not buying guides for selection. No editorial comparisons or reviews of AI visibility solutions support a purchase decision.",
+        "angle": null
+      },
+      {
+        "term": "technical seo audit",
+        "status": "rejected",
+        "reason": "Query is dominated by technical SEO audit tool landing pages (ranks 2-6, 9). No observed editorial articles support buying guidance. AltoRank's AI-assistant readability audit is a subset feature, not the dominant search intent. Buyer job is running audits, not selecting tools.",
+        "angle": null
+      },
+      {
+        "term": "seo agency tools",
+        "status": "rejected",
+        "reason": "Query is broad category navigation dominated by general SEO tool roundups. No observed results address editorial workflow, content approval, or AI readability—AltoRank's core differentiators. An article on these topics would not satisfy 'seo agency tools' search intent.",
+        "angle": null
+      },
+      {
+        "term": "editorial workflow software",
+        "status": "qualified",
+        "reason": "Query seeks editorial workflow software. Results 1, 7, and 8 are editorial articles covering workflow software categories, features, and solutions. Article can help buyer evaluate AltoRank's approval gate and multi-workspace capabilities against alternatives.",
+        "angle": "Best editorial workflow software with approval gates for content teams"
+      },
+      {
+        "term": "seo article writer software",
+        "status": "rejected",
+        "reason": "Query targets product comparison; results are dominated by editorial buyer guides (ranks 1, 3, 6, 7, 8, 9) that compare multiple SEO writing tools. AltoRank's core differentiator—editorial approval workflow—is not a primary buying criterion in this broad software-selection context. Buyers comparing 'SEO article writer software' need feature parity across tools, not approval-gate workflow guidance.",
+        "angle": null
+      },
+      {
+        "term": "white label seo reporting",
+        "status": "rejected",
+        "reason": "Query targets white-label reporting tools, not editorial content. SERP dominated by product pages (ranks 1–5, 7) and tool comparisons (6, 8–9). Buyer needs reporting platform selection, not an article. AltoRank's white-label feature is one capability within a content-generation platform, not a standalone reporting tool.",
+        "angle": null
+      },
+      {
+        "term": "best seo agency tools",
+        "status": "rejected",
+        "reason": "Generic comparison shopping without specific problem; lacks intent for AltoRank's editorial workflow focus.",
+        "angle": null
+      },
+      {
+        "term": "tools for seo agency reddit",
+        "status": "rejected",
+        "reason": "Community research query, not direct purchase intent for AltoRank's specific offering.",
+        "angle": null
+      },
+      {
+        "term": "ai search visibility tools",
+        "status": "pending",
+        "reason": "Buyer fit or search evidence could not be confirmed. Retry research before scheduling.",
+        "angle": null
+      }
+    ],
+    "title": "Content approval workflow: implementation guide for editorial teams",
+    "words": 2021,
+    "draftSeconds": 155.763,
+    "factCheck": {
+      "claims": [
+        {
+          "id": "0-money-15",
+          "kind": "money",
+          "figures": [
+            "$15"
+          ],
+          "status": "verified",
+          "severity": "low",
+          "text": "$15",
+          "sentence": "For teams already inside Microsoft 365, SharePoint content approval or a Power Automate approval flow (documented at Microsoft Learn's guide to creating and testing an approval workflow) can route content to named approvers without adding another tool, though Power Automate's per-user plan is listed at $15 per user per month on Microsoft's Power Automate pricing page , which matters if you're w...",
+          "attribution": null,
+          "sourceUrl": "https://www.microsoft.com/en-us/power-platform/products/power-automate/pricing",
+          "note": "Every figure in this sentence appears on the page it cites (https://www.microsoft.com/en-us/power-platform/products/power-automate/pricing). That the page carries the number is not proof the number is right, but the citation is real."
+        }
+      ],
+      "counts": {
+        "high": 0,
+        "medium": 0,
+        "low": 1,
+        "total": 1
+      },
+      "verdict": "review",
+      "summary": "1 claim to verify before publishing."
+    },
+    "questions": {
+      "status": "qualified",
+      "kept": [
+        "What is a good workflow for content creators?",
+        "How to create an approval workflow?",
+        "What is an approval workflow?"
+      ],
+      "decisions": [
+        {
+          "question": "What are the 5 steps of workflow?",
+          "keep": false,
+          "reason": "Generic workflow steps unrelated to content approval. The question addresses general workflow methodology, not editorial approval processes or the reader's task of implementing content approval gates."
+        },
+        {
+          "question": "What is a good workflow for content creators?",
+          "keep": true,
+          "reason": "Directly supports the reader's task. Content creators need to understand workflow best practices to implement approval processes effectively. Answers would inform how editorial teams structure content operations."
+        },
+        {
+          "question": "How to create an approval workflow?",
+          "keep": true,
+          "reason": "Core practical implementation question. Directly addresses the article's primary task—implementing a content approval workflow. Essential for readers setting up editorial gates and approval systems."
+        },
+        {
+          "question": "What is an approval workflow?",
+          "keep": true,
+          "reason": "Foundational definition question. Ensures readers understand what approval workflows are before implementation. Answers would define the approval gates and editorial controls central to the article's scope."
+        }
+      ]
+    },
+    "regressionQuestions": null,
+    "recoveryProbe": null,
+    "error": null
+  },
+  {
+    "case": "saas-recovery",
+    "domain": "altorank.co",
+    "scope": "Live profile, discovery, buyer fit, SERP qualification and generateArticle with local persistence. No browser, payment, CMS publishing or image-provider test.",
+    "selectionPolicy": "First qualified candidate among first twelve buyer-approved discovery results, measured candidates first; no handpicked replacement",
+    "seedCount": 15,
+    "measuredSeeds": 8,
+    "seedRecovery": {
+      "attempted": false,
+      "seeds": [],
+      "measured": 0
+    },
+    "candidateCount": 28,
+    "qualification": [
+      {
+        "term": "ai overview optimization",
+        "status": "rejected",
+        "reason": "Query is dominated by editorial guides on AI Overview optimization tactics. AltoRank's core job—technical readability auditing and editorial approval workflow—does not match the buying decision these results support. Readers need optimization strategies and best practices, not a content operations platform. An article about AltoRank would be adjacent traffic, not a substitute for tactical SEO guid",
+        "angle": null
+      },
+      {
+        "term": "content approval workflow",
+        "status": "rejected",
+        "reason": "Query is generic workflow education, not SEO content creation. Results dominated by general approval tools (Power Automate, Hootsuite, Adobe) and workflow best-practices articles. No editorial results address AI-assisted SEO content generation with approval gates—AltoRank's core differentiation. Article would not satisfy this search intent.",
+        "angle": null
+      },
+      {
+        "term": "seo article writer",
+        "status": "rejected",
+        "reason": "Query dominated by product landing pages and tool comparisons. Only 1 editorial result (Medium comparison at rank 7) observed. AltoRank's editorial approval workflow differentiator requires a buyer guide comparing approval-first platforms, not general SEO writer reviews. Insufficient editorial support for article angle.",
+        "angle": null
+      },
+      {
+        "term": "seo agency tools",
+        "status": "rejected",
+        "reason": "Query is dominated by broad tool comparisons and rankings. Results are listicles naming 6-24 tools without editorial depth on selection criteria, tradeoffs, or workflow fit. No evidence that an article on AltoRank's specific editorial approval or multi-workspace workflow would satisfy this search. Buyer fit does not establish editorial relevance.",
+        "angle": null
+      },
+      {
+        "term": "technical seo audit",
+        "status": "rejected",
+        "reason": "Query dominated by product landing pages (Semrush, Neilpatel, Seomator, Siteimprove, Seobility) and how-to articles. No editorial comparisons, reviews, or buying guides observed. AltoRank's AI-readability audit is a differentiated feature, but query shows intent for general technical SEO audit tools, not AI-specific readability checking. Article would not satisfy this search.",
+        "angle": null
+      },
+      {
+        "term": "ai search visibility",
+        "status": "rejected",
+        "reason": "Results dominated by product landing pages and tool comparisons (ranks 1-5). Only 2 editorial results (ranks 6-7) exist, both addressing tracking/monitoring—not AltoRank's core job of generating AI-readable content with editorial control. Query intent is tool discovery, not buying guidance for content creation workflow.",
+        "angle": null
+      },
+      {
+        "term": "editorial workflow software",
+        "status": "rejected",
+        "reason": "Query is broad category navigation. Results are dominated by product landing pages and general 'how editorial workflows work' essays (ranks 1, 4, 8). Comparison/guide results (ranks 7, 9) lack AI-readability or editorial-gate angle. AltoRank's differentiator—AI assistant readability + editorial approval—is not the buying job here; the job is generic workflow software selection. An article on AltoR",
+        "angle": null
+      },
+      {
+        "term": "white label seo reporting",
+        "status": "rejected",
+        "reason": "Query is navigational product search. All 9 results are product landing pages or tool comparisons from vendors. No editorial article supports the buying decision with criteria, tradeoffs, or selection guidance. AltoRank's white-label reporting is a feature, not the core offering for this intent.",
+        "angle": null
+      },
+      {
+        "term": "seo article writer software",
+        "status": "rejected",
+        "reason": "Query dominated by product comparison and tool roundup articles (ranks 1, 3, 6, 7, 8, 9). No observed results support editorial content addressing AltoRank's core differentiator: human editorial approval gates and AI readability auditing. The buyer fit (in-house teams with editorial control) requires an article on editorial workflows or AI content governance, not general SEO writing tool compariso",
+        "angle": null
+      },
+      {
+        "term": "tools for seo agency reddit",
+        "status": "rejected",
+        "reason": "Generic comparison/discovery query; lacks specific buying intent for AltoRank's core offering.",
+        "angle": null
+      },
+      {
+        "term": "ai search visibility tools",
+        "status": "rejected",
+        "reason": "Query dominates with product comparison/alternatives articles (8 of 8 results are tool roundups or trackers). AltoRank is a content generation + approval workflow tool, not primarily a monitoring/tracking tool. The observed editorial format (comparisons) does not align with AltoRank's core buying job (generate SEO content with editorial control before publishing). An article matching this query wo",
+        "angle": null
+      },
+      {
+        "term": "best seo agency tools",
+        "status": "rejected",
+        "reason": "Query dominated by broad tool roundups lacking editorial depth on AltoRank's core differentiation (AI readability + editorial approval workflows). No observed results focus on content operations, approval gates, or AI assistant readability—the buying jobs AltoRank solves. A generic tool list does not satisfy this buyer's decision.",
+        "angle": null
+      }
+    ],
+    "title": null,
+    "words": null,
+    "draftSeconds": null,
+    "factCheck": null,
+    "questions": null,
+    "regressionQuestions": null,
+    "recoveryProbe": null,
+    "error": "No qualified topic; refusing to invent a replacement"
+  },
+  {
+    "case": "service",
+    "domain": "qasimcode.com",
+    "scope": "Live profile, discovery, buyer fit, SERP qualification and generateArticle with local persistence. No browser, payment, CMS publishing or image-provider test.",
+    "selectionPolicy": "Explicit keyword regression replay; not discovery evidence",
+    "seedCount": null,
+    "measuredSeeds": null,
+    "seedRecovery": null,
+    "candidateCount": null,
+    "qualification": [
+      {
+        "term": "therapy practice website",
+        "status": "qualified",
+        "reason": "Results dominated by editorial comparisons and guides (ranks 2, 4, 6, 8) addressing therapy practice website selection. Articles credibly support buying decision for speech therapists evaluating website solutions.",
+        "angle": "How Speech Therapists Can Choose a Website Platform With Built-In Online Booking"
+      }
+    ],
+    "title": "How Speech Therapists Can Choose a Website Platform With Built-In Online Booking",
+    "words": 1908,
+    "draftSeconds": 212.644,
+    "factCheck": {
+      "claims": [],
+      "counts": {
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "total": 0
+      },
+      "verdict": "clean",
+      "summary": "No unsourced figures or evidence claims found."
+    },
+    "questions": {
+      "status": "qualified",
+      "kept": [
+        "How can I create a website for my therapy practice?",
+        "What is the best therapy website?"
+      ],
+      "decisions": [
+        {
+          "question": "What is the 2 year rule in therapy?",
+          "keep": false,
+          "reason": "Clinical/regulatory question unrelated to website platform selection or online booking implementation. Relevant to therapy practice compliance but not the buying job of choosing a website platform."
+        },
+        {
+          "question": "How can I create a website for my therapy practice?",
+          "keep": true,
+          "reason": "Directly addresses the core buying job. Speech therapists evaluating platforms need practical implementation guidance on website creation as foundational context for platform selection."
+        },
+        {
+          "question": "Can ChatGPT do therapy?",
+          "keep": false,
+          "reason": "Technology question unrelated to website platforms or booking systems. Does not support the buying decision of selecting a website platform with built-in online booking for a therapy practice."
+        },
+        {
+          "question": "What is the best therapy website?",
+          "keep": true,
+          "reason": "Directly relevant to platform evaluation. Helps intended reader compare options and understand criteria for assessing therapy practice websites, supporting the buying job of choosing the right platform."
+        }
+      ]
+    },
+    "regressionQuestions": {
+      "status": "qualified",
+      "kept": [
+        "How much does a therapist website cost?",
+        "How do I add online booking to my therapy website?"
+      ],
+      "decisions": [
+        {
+          "question": "Can ChatGPT do therapy?",
+          "keep": false,
+          "reason": "Clinical question about AI therapy capability. Not relevant to the buying job of selecting and building a website platform with online booking. Different intent and audience."
+        },
+        {
+          "question": "What is the 2 year rule in therapy?",
+          "keep": false,
+          "reason": "Clinical/legal question about therapy practice rules. Not relevant to website selection or implementation. Outside the buying decision scope."
+        },
+        {
+          "question": "How much does a therapist website cost?",
+          "keep": true,
+          "reason": "Direct cost evaluation question supporting the buying decision. Reader needs pricing information to compare website solutions for their therapy practice."
+        },
+        {
+          "question": "How do I add online booking to my therapy website?",
+          "keep": true,
+          "reason": "Practical implementation question. Directly supports the buying job of selecting a platform with built-in online booking and understanding how to integrate it with their practice."
+        }
+      ]
+    },
+    "recoveryProbe": null,
+    "error": null
+  }
+]

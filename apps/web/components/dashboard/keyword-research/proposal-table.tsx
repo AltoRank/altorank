@@ -87,13 +87,13 @@ export function ProposalTable({ workspaceId, candidates, funnel, runId = null, k
         setScheduledCount((n) => n + r.scheduled);
         setDone((prev) => {
           const next = new Map(prev);
-          actionable.forEach((c, i) => next.set(c.term, i < r.scheduled + r.alreadyPlanned ? "scheduled" : "refused"));
+          actionable.forEach((c) => next.set(c.term, r.scheduledTerms?.includes(c.term) || c.existingStatus === "planned" ? "scheduled" : "refused"));
           return next;
         });
         onCapacity?.(r.capacity);
         const parts = [`${r.scheduled} scheduled`];
         if (r.alreadyPlanned) parts.push(`${r.alreadyPlanned} already on the calendar`);
-        if (r.refused) parts.push(`${r.refused} refused: the calendar holds ${r.capacity.cap} keywords and it is full`);
+        if (r.refused) parts.push(`${r.refused} not scheduled: ${r.refusedReasons?.[0] ?? "the calendar is full"}`);
         setMessage(parts.join(" · "));
       } else {
         const r = await storeCandidates(workspaceId, actionable, kind);

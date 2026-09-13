@@ -1,3 +1,5 @@
+import { balanceSources } from "@/lib/keyword-research/diversity";
+import { languageCodeOf } from "@/lib/keyword-research/locale";
 // ---------------------------------------------------------------------------
 // First-look analysis for a domain nobody has connected yet
 // ---------------------------------------------------------------------------
@@ -582,7 +584,7 @@ export async function analyseDomain(options: {
     });
   } else {
     try {
-      ranked = await fetchRankedKeywords(domain);
+      ranked = await fetchRankedKeywords(domain, { languageCode: languageCodeOf(options.locale), locationCode: options.locationCode });
       rankedLayerRan = true;
       rankedPages = groupByPage(ranked).size;
       const close = strikingDistance(ranked);
@@ -650,7 +652,7 @@ export async function analyseDomain(options: {
       // like the field is wrong rather than the combination. Traffic was
       // therefore null on every non-English workspace (2026-09-04).
       const m = await fetchDomainMetrics(domain, {
-        languageCode: options.locale ?? "en",
+        languageCode: languageCodeOf(options.locale),
         locationCode: options.locationCode,
       });
       authority = m.authority;
@@ -776,7 +778,8 @@ export async function analyseDomain(options: {
             difficulty: k.difficulty,
             cpc: k.cpc ?? 0,
             competition: 0,
-            intent: classifyIntent(k.keyword, options.locale ?? "en").intent,
+            intent: k.intent ?? classifyIntent(k.keyword, options.locale ?? "en").intent,
+            sourceUrl: k.url,
           }));
 
         // (2) What the rivals the person named rank for, and (3) the category
@@ -790,7 +793,7 @@ export async function analyseDomain(options: {
             ? await discoverBuyerKeywords({
                 domain,
                 business,
-                languageCode: options.locale ?? "en",
+                languageCode: languageCodeOf(options.locale),
                 locationCode: options.locationCode,
                 spend,
               })
@@ -823,11 +826,10 @@ export async function analyseDomain(options: {
         // phrasings of "free portfolio website". Ranking #80 for a phrase
         // because you wrote about it is not evidence a buyer typed it.
         //
-        // Ordered least-relevant first, because `MAX_JUDGED` truncates and an
-        // unjudged term is kept by default: whatever falls off the end is then
-        // the most on-topic, which is the safe half to leave unasked.
+        // Judge all candidates in bounded batches, strongest lexical matches
+        // first. Missing decisions cannot enter the automatic writing pool.
         const toJudge = [...byTerm.values()]
-          .sort((a, b) => rel(a.k.keyword) - rel(b.k.keyword))
+          .sort((a, b) => rel(b.k.keyword) - rel(a.k.keyword))
           .map((c) => c.k.keyword);
         const fit = await judgeBuyerFit(business, toJudge, { spend });
         const refusedByBuyerTest = [...fit.verdicts.values()].filter((v) => !v.keep).length;
@@ -860,19 +862,8 @@ export async function analyseDomain(options: {
           const scored = candidates
             .filter((c) => assessKeywordQuality(c.k.keyword, allTerms).quality === "ok")
             .map((c) => ({ ...c, r: rel(c.k.keyword) }))
-            // One pool, one test. Every source stands or falls on the buyer
-            // verdict. A term the site ranks for keeps its exemption from
-            // DIFFICULTY below - it demonstrably ranks, so "too hard" is moot
-            // - but no longer from relevance.
-            .filter((c) => {
-              // No model to ask: the only relevance signal left is word
-              // overlap with the profile, which is too crude to overrule a
-              // real ranking - so a ranked term keeps its old exemption here,
-              // and only here. A self-hosted install with no key stores what
-              // it always did.
-              if (fit.basis !== "model") return c.rank === 0 || c.r > 0;
-              return fit.verdicts.get(c.k.keyword.trim().toLowerCase())?.keep !== false;
-            })
+            // Rankings are provenance, not proof of buyer fit or attainability.
+            .filter((c) => fit.verdicts.get(c.k.keyword.trim().toLowerCase())?.keep === true)
             // Difficulty had no vote at all in what was stored: the sort was
             // rank, then relevance, then volume. qasimcode.com (authority 0)
             // was given five KD 100 keywords and eight more at KD 70 or worse,
@@ -895,7 +886,7 @@ export async function analyseDomain(options: {
             //
             // A term the SERP already puts this domain on is exempt from both:
             // the ranking is the measurement and it beats the model.
-            .filter((c) => c.rank === 0 || !isHopeless(c.k.difficulty))
+            .filter((c) => !isHopeless(c.k.difficulty))
             // Source still leads, and that is deliberate: a striking-distance
             // ranking is the cheapest win on the page and must not be crowded
             // out by a merely more on-topic phrase. What made source-first
@@ -904,7 +895,6 @@ export async function analyseDomain(options: {
             // buyer test above now removes it, so ordering by source is safe.
             .sort(
               (a, b) =>
-                a.rank - b.rank ||
                 b.r - a.r ||
                 Number(isOutOfReach(a.k.difficulty, authority)) -
                   Number(isOutOfReach(b.k.difficulty, authority)) ||
@@ -922,7 +912,7 @@ export async function analyseDomain(options: {
             const position = positionByTerm.get(c.k.keyword.trim().toLowerCase());
             return position !== undefined && position !== null && position <= PAGE_ONE;
           };
-          const top = takeReservingSlots(scored, MAX_KEYWORDS_STORED, alreadyWon);
+          const top = takeReservingSlots(balanceSources(scored, (c) => c.rank), MAX_KEYWORDS_STORED, alreadyWon);
           keywordsFound = top.length;
 
           const { data: existing } = await supabase
@@ -938,24 +928,23 @@ export async function analyseDomain(options: {
             .map((c) => ({
               workspace_id: workspaceId,
               term: c.k.keyword,
-              volume: c.k.volume,
+              volume: c.k.unmeasured ? null : c.k.volume,
               difficulty: c.k.difficulty,
               cpc: storedCpc(c.k.cpc),
               intent: c.k.intent ?? classifyIntent(c.k.keyword, options.locale ?? "en").intent,
               status: "new",
-              // The rank is the provenance: 0 is ranked_keywords, 1 a rival the
-              // person named, 2 the buyer-seeded ideas. Recording it keeps the
-              // exemption made just above - a ranked term is on-topic because
-              // the SERP said so - available to the selector, which otherwise
-              // re-applies the filter this row was excused from.
+              // Retain discovery provenance without granting quality exemptions.
               source: c.rank === 0 ? "ranked" : c.rank === 1 ? "gap" : "ideas",
               // The finer provenance the dashboard rolls up: which competitor,
               // or that it came from the profile's own buyer seeds.
               source_type: c.rank === 0 ? "ranked" : c.rank === 1 ? "competitor" : "profile",
               source_ref: c.rank === 1 ? (c.k.competitor ?? null) : null,
+              source_url: c.k.sourceUrl ?? null,
+              buyer_fit: fit.verdicts.get(c.k.keyword.trim().toLowerCase()) ?? null,
             }));
           if (rows.length) {
-            const { data: inserted } = await supabase.from("keywords").insert(rows).select("id, term");
+            const { data: inserted, error: insertError } = await supabase.from("keywords").insert(rows).select("id, term");
+            if (insertError) throw new Error(`Could not store keyword candidates: ${insertError.message}`);
             for (const r of inserted ?? []) seen.set((r.term as string).toLowerCase(), r.id as string);
           }
 
@@ -980,6 +969,8 @@ export async function analyseDomain(options: {
         }
 
         const parts = [
+          `${fit.verdicts.size}/${toJudge.length} buyer decisions confirmed`,
+          toJudge.length > fit.verdicts.size ? `${toJudge.length - fit.verdicts.size} unresolved candidates left out` : "",
           fromRanked.length ? `${fromRanked.length} it already ranks for` : "",
           rankedDropped
             ? `${rankedDropped} on pages that are not yours, left out`
@@ -996,7 +987,7 @@ export async function analyseDomain(options: {
         ].filter(Boolean);
         layers.push({
           id: "keywords",
-          status: "ok",
+          status: toJudge.length > 0 && fit.verdicts.size === 0 ? "failed" : "ok",
           detail: `${keywordsFound} keywords found: ${parts.join(", ") || "none"}`,
         });
       })();

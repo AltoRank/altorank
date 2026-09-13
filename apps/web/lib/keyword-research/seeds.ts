@@ -173,8 +173,7 @@ export function brandAliases(domain: string): string[] {
 }
 
 /**
- * Whether a phrase is a rival's name or our own: the SERP puts a brand on its
- * own results, and a blog on "<rival> pricing" is not a plan.
+ * Reject pure brand navigation. Other mentions need a buyer/format judgement.
  */
 export function isBrandTerm(term: string, domain: string, competitors: readonly string[]): boolean {
   const t = ` ${term.toLowerCase().trim()} `;
@@ -182,8 +181,19 @@ export function isBrandTerm(term: string, domain: string, competitors: readonly 
     .flatMap((d) => brandAliases(d))
     .map((n) => n.trim().toLowerCase())
     .filter(Boolean);
-  const squashed = t.replace(/\s+/g, "");
-  return names.some((n) => t.includes(` ${n} `) || squashed.includes(n.replace(/\s+/g, "")));
+  // A brand mention is not navigation when the search evaluates a purchase.
+  const evaluative = /\b(alternatives?|vs|versus|compar\w*|pricing|prices?|costs?|reviews?|integration\w*|migration|migrate|prezz\w*|costo|confront\w*|alternative\w*|avis|prix|kosten|vergleich\w*)\b/iu;
+  if (evaluative.test(t)) return false;
+  const tokens = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(/\s+/);
+  const query = tokens(t);
+  return names.some((name) => {
+    const alias = tokens(name);
+    return query.some((_, i) => {
+      if (!alias.every((word, j) => query[i + j] === word)) return false;
+      const remaining = [...query.slice(0, i), ...query.slice(i + alias.length)];
+      return remaining.every((word) => /^(login|log|in|signin|sign|support|help|homepage|website|official|account|dashboard|contact|accedi|accesso|assistenza|connexion|anmelden)$/.test(word));
+    });
+  });
 }
 
 export function keyNouns(text: string, limit = 6): string[] {

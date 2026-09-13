@@ -127,11 +127,11 @@ describe("worthStoring — the filter that makes this worth doing", () => {
   });
 
   it("refuses a term nobody searches", () => {
-    expect(worthStoring(metric({ term: "dental clinic website", volume: 10, difficulty: 3 }), opts)).toBe(false);
+    expect(worthStoring(metric({ term: "dental clinic website", volume: 5, difficulty: 3 }), opts)).toBe(false);
   });
 
-  it("refuses a term whose volume was never measured, rather than reading it as zero", () => {
-    expect(worthStoring(metric({ term: "dental clinic website", volume: null, difficulty: 3 }), opts)).toBe(false);
+  it("retains unknown-volume terms for later live qualification", () => {
+    expect(worthStoring(metric({ term: "dental clinic website", volume: null, difficulty: 3 }), opts)).toBe(true);
   });
 
   it("keeps a term whose difficulty is unknown, for the recommender to weigh", () => {

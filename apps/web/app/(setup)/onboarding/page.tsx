@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getSimulation } from "@/lib/dev/simulation";
 import { loadFirstLookReport } from "@/lib/onboarding/first-look-report";
-import { estimateFirstMonthTraffic } from "@/lib/onboarding/first-month-outlook";
 import { createClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { OnboardingWizard } from "@/components/onboarding/wizard";
@@ -27,7 +26,8 @@ export const maxDuration = 120;
  * reopening the wizard edits rather than re-proposes. Article settings are
  * not asked here since 2026-09-11: they live in Settings with their defaults.
  */
-export default async function OnboardingPage() {
+export default async function OnboardingPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
+  const { status } = await searchParams;
   const scopeId = await getScopedWorkspaceId();
   if (!scopeId) redirect("/workspaces");
 
@@ -69,29 +69,20 @@ export default async function OnboardingPage() {
   const gateShown =
     Boolean(workspace.onboarded_at || workspace.onboarding_skipped_at) &&
     (simulation?.gate === true || (quota.reason === "no-plan" && Boolean(quota.trialEligible)));
-  const [gatePlan, gateReport, gateKeywords, gateWritten, gateAuthority] = gateShown
+  const [gatePlan, gateReport, gateWritten] = gateShown
     ? await Promise.all([
         supabase
           .from("calendar_entries")
-          .select("keyword, scheduled_date")
+          .select("keyword, scheduled_date, keywords(opportunity)")
           .eq("workspace_id", workspace.id)
           .order("scheduled_date", { ascending: true })
           .limit(30)
           .then(({ data }) =>
             (data ?? [])
               .filter((r) => r.keyword && r.scheduled_date)
-              .map((r) => ({ term: r.keyword as string, date: r.scheduled_date as string })),
+              .map((r) => ({ term: r.keyword as string, date: r.scheduled_date as string, brief: ((Array.isArray(r.keywords) ? r.keywords[0] : r.keywords) as {opportunity?: import("@/lib/keyword-research/opportunity").Opportunity} | null)?.opportunity })),
           ),
         loadFirstLookReport(supabase, workspace.id).catch(() => null),
-        // Volume and difficulty for what is planned: already priced during the
-        // run, so the estimate costs nothing and cannot disagree with the
-        // numbers the keywords page shows for the same terms.
-        supabase
-          .from("keywords")
-          .select("volume, difficulty, status")
-          .eq("workspace_id", workspace.id)
-          .eq("status", "planned")
-          .then(({ data }) => (data ?? []).map((r) => ({ volume: r.volume as number | null, difficulty: r.difficulty as number | null }))),
         // The articles the run already wrote, so the schedule can show the
         // first one as the finished thing it is rather than as another locked
         // row. Newest first and bounded: ordered the other way, a workspace
@@ -99,30 +90,29 @@ export default async function OnboardingPage() {
         // are in the month being shown, and every row renders locked.
         supabase
           .from("articles")
-          .select("keyword, title, word_count, status, created_at")
+          .select("id, keyword, title, word_count, status, created_at")
+          .in("status", ["review", "approved", "scheduled", "live"])
+          .not("content", "is", null)
+          .gt("word_count", 0)
           .eq("workspace_id", workspace.id)
           .order("created_at", { ascending: false })
           .limit(40)
           .then(({ data }) =>
             (data ?? []).map((r) => ({
+              id: r.id as string,
               keyword: (r.keyword as string | null) ?? "",
               title: (r.title as string | null) ?? "",
               wordCount: (r.word_count as number | null) ?? 0,
             })),
           ),
-        supabase
-          .from("workspace_metrics")
-          .select("authority")
-          .eq("workspace_id", workspace.id)
-          .order("measured_on", { ascending: false })
-          .limit(1)
-          .then(({ data }) => (data?.[0]?.authority ?? null) as number | null),
       ])
-    : [[], null, [], [], null];
-  const gateTraffic = gateShown ? estimateFirstMonthTraffic(gateKeywords, gateAuthority) : null;
+    : [[], null, []];
 
   return (
+    <>
+    {status === "cancelled" && <p role="status" className="p-4 text-center text-sm">Checkout was cancelled. Your draft and plan are saved; you can read them and return to trial options.</p>}
     <OnboardingWizard
+      canBuy={auth.role === "owner"}
       workspaceId={workspace.id}
       userId={auth.user.id}
       userEmail={auth.user.email ?? undefined}
@@ -156,9 +146,9 @@ export default async function OnboardingPage() {
       alreadyOnboarded={Boolean(workspace.onboarded_at || workspace.onboarding_skipped_at)}
       gatePlan={gatePlan}
       gateReport={gateReport}
-      gateTraffic={gateTraffic}
       gateWritten={gateWritten}
       initialRun={run}
     />
+    </>
   );
 }

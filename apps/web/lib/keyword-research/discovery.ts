@@ -1,43 +1,16 @@
-// ---------------------------------------------------------------------------
-// Where a new workspace's keyword candidates come from
-// ---------------------------------------------------------------------------
-//
-// Two sources, both of which work for the site that actually signs up: a new
-// domain with no rankings of its own.
-//
-//   competitors   what the rivals the person named in the wizard rank for
-//                 today, top twenty, real volume. `ranked_keywords` on each,
-//                 up to three. The previous source found rivals through
-//                 DataForSEO's `competitors_domain`, which needs the site's
-//                 OWN rankings to find anyone - so for every new domain it
-//                 returned nobody, and the competitor list the wizard
-//                 collected was never read.
-//
-//   buyer seeds   the phrases a buyer types, proposed from the business
-//                 profile (`buyer-seeds.ts`), priced in one `keyword_overview`
-//                 call, and the ones that price long-tailed with
-//                 `keyword_suggestions`. The seed is the discovery; the
-//                 suggestion call only returns phrases containing it, which
-//                 is on-topic by construction when the seed is. Replaces
-//                 heading n-grams as seeds and the Google Ads
-//                 `keywords_for_site` fallback, which between them produced
-//                 every keyword set this product has had to throw away.
-//
-// Measured 2026-09-11 before choosing: Labs `keyword_ideas` on the same seeds
-// matched on shared words and led with "shopify", "police scanner app" and
-// "anti virus scanning" at $0.017 a call. The overview priced five seeds for
-// $0.012 and the suggestions on "packing slip template" were six rows, all of
-// them the phrase.
-//
-// What the site already ranks for stays where it was, in `analyseDomain`: it
-// is measured per page and feeds the striking-distance rule there.
+import { diverseSeeds } from "./diversity";
+// Discovery combines named competitors' rankings with buyer-category seeds.
+// Exact metrics guide expansion but absence from the index is not zero demand.
+// Weak coverage gets one short-category recovery pass and at most five total
+// suggestions probes. Buyer fit and live editorial SERP qualification run later:
+// a measured keyword is still only a candidate, never approval to write.
 
 import { fetchRankedKeywords } from "@/lib/seo/ranked-keywords";
 import { discoverKeywordsFromSeeds, type DiscoveredKeyword } from "@/lib/seo/keywords";
 import { classifyIntent } from "@/lib/seo/intent";
 import { fetchTermMetrics } from "./metrics";
-import { competitorName, isBrandTerm } from "./seeds";
-import { proposeBuyerSeeds, type BuyerSeeds, type SeedableProfile } from "./buyer-seeds";
+import { isBrandTerm } from "./seeds";
+import { proposeBuyerSeeds, recoverBuyerSeeds, type BuyerSeeds, type SeedableProfile } from "./buyer-seeds";
 import type { SpendSink } from "./buyer-model";
 
 /** A candidate plus the rival that holds it, when one does. */
@@ -53,6 +26,9 @@ export interface DiscoveryResult {
   seedsPriced: number;
   /** Which competitors were read, for the run's trace. */
   competitorsAsked: string[];
+  /** Recovery and expansion evidence; missing metrics never imply zero demand. */
+  seedRecovery: { attempted: boolean; seeds: string[]; measured: number };
+  expandedSeeds: string[];
 }
 
 /** Rivals a first look reads. Each is one `ranked_keywords` task. */
@@ -62,10 +38,10 @@ export const ROWS_PER_COMPETITOR = 100;
 /** A rival's position past this is not a keyword they own. */
 export const COMPETITOR_MAX_RANK = 20;
 /** Rivals rank for a lot of tiny things; this is the noise floor. */
-export const COMPETITOR_MIN_VOLUME = 100;
-/** A seed under this a month is a phrase nobody types; it is not expanded or stored. */
+export const COMPETITOR_MIN_VOLUME = 10;
+/** A measured seed below this floor is excluded; unknown demand stays unknown. */
 export const SEED_MIN_VOLUME = 10;
-/** Seeds long-tailed, best-priced first. One `keyword_suggestions` call each. */
+/** Diverse seeds expanded in profile order. One `keyword_suggestions` call each. */
 export const MAX_EXPANDED_SEEDS = 5;
 /** Rows across all expansions; the call divides it per seed. */
 export const EXPANSION_LIMIT = 100;
@@ -105,9 +81,13 @@ export async function discoverBuyerKeywords(options: {
   const fromCompetitors: Candidate[] = [];
   const seen = new Set<string>();
   perCompetitor.forEach((rows, i) => {
+    const byPage = new Map<string, number>();
     for (const k of rows) {
       const key = k.keyword.trim().toLowerCase();
       if (!key || seen.has(key) || brand(key)) continue;
+      const page = k.url?.replace(/[?#].*$/, "");
+      if (page && (byPage.get(page) ?? 0) >= 2) continue;
+      if (page) byPage.set(page, (byPage.get(page) ?? 0) + 1);
       seen.add(key);
       fromCompetitors.push({
         keyword: k.keyword,
@@ -115,42 +95,68 @@ export async function discoverBuyerKeywords(options: {
         difficulty: k.difficulty,
         cpc: k.cpc ?? 0,
         competition: 0,
-        intent: classifyIntent(k.keyword, languageCode).intent,
+        intent: k.intent ?? classifyIntent(k.keyword, languageCode).intent,
+        sourceUrl: k.url,
         competitor: competitors[i],
       });
     }
   });
 
-  // The seeds themselves, priced. A seed anyone searches is a candidate in
-  // its own right - "packing slip template" at 1,300 a month is the article -
-  // and only those are worth a long-tail call.
   const fromIdeas: Candidate[] = [];
-  const ideasSeen = new Set<string>();
+  const seedRecovery = { attempted: false, seeds: [] as string[], measured: 0 };
+  let expandedSeeds: string[] = [];
   let seedsPriced = 0;
   if (seeds.seeds.length) {
     const priced = await fetchTermMetrics(seeds.seeds, locale).catch(() => new Map());
-    const live: Candidate[] = [];
-    for (const [term, m] of priced) {
-      if ((m.volume ?? 0) < SEED_MIN_VOLUME || brand(term)) continue;
-      live.push({ keyword: term, volume: m.volume ?? 0, difficulty: m.difficulty, cpc: m.cpc ?? 0, competition: 0, intent: m.intent });
+    const measured = (terms: string[]) => terms.filter((term) => {
+      const m = priced.get(term);
+      return m?.volume != null && m.volume >= SEED_MIN_VOLUME && !brand(term);
+    });
+    // One extra model call and one overview batch, only when coverage is weak.
+    // All candidates still pass buyer fit and live editorial SERP qualification.
+    if (measured(seeds.seeds).length < 3) {
+      seedRecovery.attempted = true;
+      seedRecovery.seeds = await recoverBuyerSeeds(options.business, seeds.seeds, { spend: options.spend });
+      if (seedRecovery.seeds.length) {
+        const recovered = await fetchTermMetrics(seedRecovery.seeds, locale).catch(() => new Map());
+        for (const [term, metric] of recovered) priced.set(term, metric);
+        seedRecovery.measured = measured(seedRecovery.seeds).length;
+      }
     }
-    live.sort((a, b) => b.volume - a.volume);
+    const allSeeds = [...seeds.seeds, ...seedRecovery.seeds];
+    const live = measured(allSeeds);
     seedsPriced = live.length;
-    for (const k of live) {
-      ideasSeen.add(k.keyword.toLowerCase());
-      fromIdeas.push(k);
+    // Missing overview data does not prevent a bounded suggestions probe.
+    // Prefer short recovery categories when none were measured; never probe a
+    // seed whose volume was explicitly measured below the floor.
+    const unknown = [...seedRecovery.seeds, ...seeds.seeds].filter((term) =>
+      !brand(term) && priced.get(term)?.volume == null,
+    );
+    const knownExpansion = diverseSeeds(live, MAX_EXPANDED_SEEDS);
+    expandedSeeds = [...knownExpansion, ...diverseSeeds(unknown, MAX_EXPANDED_SEEDS - knownExpansion.length)]
+      .slice(0, MAX_EXPANDED_SEEDS);
+    const ideas = new Map<string, Candidate>();
+    for (const term of [...live, ...unknown]) {
+      const m = priced.get(term);
+      ideas.set(term, {
+        keyword: term, volume: m?.volume ?? 0, difficulty: m?.difficulty ?? null,
+        cpc: m?.cpc ?? 0, competition: 0,
+        intent: m?.intent ?? classifyIntent(term, languageCode).intent,
+        unmeasured: m?.volume == null,
+      });
     }
-    const expand = live.slice(0, MAX_EXPANDED_SEEDS).map((k) => k.keyword);
-    const tail = expand.length
-      ? await discoverKeywordsFromSeeds(expand, { ...locale, limit: EXPANSION_LIMIT, maxSeeds: MAX_EXPANDED_SEEDS, minVolume: SEED_MIN_VOLUME }).catch(() => [])
+    const tail = expandedSeeds.length
+      ? await discoverKeywordsFromSeeds(expandedSeeds, { ...locale, limit: EXPANSION_LIMIT, maxSeeds: MAX_EXPANDED_SEEDS, minVolume: SEED_MIN_VOLUME }).catch(() => [])
       : [];
     for (const k of tail) {
       const key = k.keyword.trim().toLowerCase();
-      if (!key || ideasSeen.has(key) || brand(key)) continue;
-      ideasSeen.add(key);
-      fromIdeas.push({ keyword: k.keyword, volume: k.volume, difficulty: k.difficulty, cpc: k.cpc, competition: k.competition, intent: k.intent });
+      if (!key || brand(key)) continue;
+      // A suggestions measurement replaces an unknown overview candidate.
+      if (!ideas.has(key) || (ideas.get(key)?.unmeasured && !k.unmeasured)) ideas.set(key, k);
     }
+    // Measured discovery comes first; a missing metric remains explicit.
+    fromIdeas.push(...[...ideas.values()].sort((a, b) => Number(Boolean(a.unmeasured)) - Number(Boolean(b.unmeasured))));
   }
 
-  return { fromCompetitors, fromIdeas, seeds, seedsPriced, competitorsAsked: competitors };
+  return { fromCompetitors, fromIdeas, seeds, seedsPriced, competitorsAsked: competitors, seedRecovery, expandedSeeds };
 }

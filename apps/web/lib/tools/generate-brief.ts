@@ -14,6 +14,7 @@ import { getLocale } from "@/lib/seo/locales";
 import type { ContentBrief } from "./types";
 
 import { anthropicModel } from "@/lib/ai/models";
+import { selectArticleQuestions } from "@/lib/ai/article-questions";
 
 export async function generateBrief(
   keyword: string,
@@ -37,6 +38,10 @@ export async function generateBrief(
     keywordsResult.status === "fulfilled" ? keywordsResult.value : [];
 
   // Build prompt and call Claude
+  if (serpData) {
+    const selection = await selectArticleQuestions(serpData.peopleAlsoAsk, { keyword, language: loc.label });
+    serpData.peopleAlsoAsk = selection.kept;
+  }
   const { system, user } = buildBriefPrompt(keyword, serpData, relatedKeywords);
 
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });

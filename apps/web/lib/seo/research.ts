@@ -57,6 +57,8 @@ export interface ArticleResearch {
   intent: IntentClassification;
   competitors: CompetitorPage[];
   peopleAlsoAsk: string[];
+  /** Original questions and relevance decisions, retained for review. */
+  questionSelection?: import("@/lib/ai/article-questions").QuestionSelection;
   /** Google's own AI answer for this query and who it cites. null when the SERP
    *  shows none, which is common and is not a failure. */
   aiOverview: AiOverview | null;
@@ -348,6 +350,8 @@ async function fetchGscSignals(
 export async function gatherArticleResearch(options: {
   keyword: string;
   locale?: string;
+  /** The workspace's market can differ from the language's default country. */
+  locationCode?: number;
   supabase?: SupabaseClient;
   workspaceId?: string;
   /**
@@ -370,7 +374,7 @@ export async function gatherArticleResearch(options: {
   const loc = getLocale(locale ?? "en");
   const localeParam = {
     languageCode: loc.languageCode,
-    locationCode: loc.locationCode,
+    locationCode: options.locationCode ?? loc.locationCode,
   };
 
   const hasDataForSeo = hasDataForSEOCredentials();

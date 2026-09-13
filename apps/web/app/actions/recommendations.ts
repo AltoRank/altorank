@@ -37,7 +37,7 @@ export async function suggestKeywords(workspaceId: string, limit = 8): Promise<K
 
   const recs = await recommendKeywords(supabase, workspaceId, { limit: limit * 3 });
   return recs
-    .filter((r) => r.quality === "ok" && r.action !== "skip")
+    .filter((r) => r.quality === "ok" && (r.action === "refresh" || r.opportunity?.status === "qualified"))
     .slice(0, limit)
     .map((r) => ({
       term: r.term,

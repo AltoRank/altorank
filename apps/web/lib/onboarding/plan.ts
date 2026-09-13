@@ -1,3 +1,5 @@
+import { languageCodeOf } from "@/lib/keyword-research/locale";
+import { qualifyOpportunities, serpOverlap, type Opportunity } from "@/lib/keyword-research/opportunity";
 // ---------------------------------------------------------------------------
 // The first thirty days, scheduled
 // ---------------------------------------------------------------------------
@@ -30,6 +32,7 @@ export const PLAN_HORIZON_DAYS = 30;
 export const PLAN_MAX_ENTRIES = 60;
 
 export interface PlannedEntry {
+  brief?: Opportunity;
   keywordId: string;
   term: string;
   /** ISO date, YYYY-MM-DD, in UTC. */
@@ -80,7 +83,7 @@ export function monthlyTarget(weeklyLimit: number): number {
  * rather than two chips on every square.
  */
 export function buildPlan(
-  recommendations: Pick<KeywordRecommendation, "keywordId" | "term" | "action" | "quality">[],
+  recommendations: Pick<KeywordRecommendation, "keywordId" | "term" | "action" | "quality" | "opportunity">[],
   opts: {
     weeklyLimit: number;
     from?: Date;
@@ -117,7 +120,7 @@ export function buildPlan(
       taken.set(date, left - 1);
       continue;
     }
-    out.push({ keywordId: usable[k].keywordId, term: usable[k].term, date });
+    out.push({ keywordId: usable[k].keywordId, term: usable[k].term, date, ...(usable[k].opportunity ? { brief: usable[k].opportunity } : {}) });
     k++;
   }
   return out;
@@ -272,6 +275,7 @@ export interface PlanOptions {
    * them.
    */
   mode?: "replace" | "top-up";
+  maxEntries?: number;
 }
 
 /**
@@ -307,12 +311,12 @@ async function planFor(
   // ranking" rows and the one writable keyword scored below them was never
   // seen (buttondown.com, 2026-09-07: 99 skips, 2 hand-added terms, 1
   // planned). Ask for the whole set; the planner filters to writable itself.
-  const recs = (await recommendKeywords(supabase, workspaceId, { limit: 1000 })).filter(
+  const recs = (await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true })).filter(
     (r) => !excluded.has(r.keywordId) && !takenIds.has(r.keywordId) && !takenTerms.has(r.term.toLowerCase()),
   );
 
   let start = opts.from ?? new Date();
-  let maxEntries = room;
+  let maxEntries = Math.min(room, opts.maxEntries ?? room);
   if (mode === "top-up") {
     const unwritten = existing.filter((e) => !e.article_id).length;
     maxEntries = Math.min(room, Math.max(0, monthlyTarget(weeklyLimit) - unwritten));
@@ -631,6 +635,7 @@ export interface ScheduleOutcome {
   scheduled: PlannedEntry[];
   /** Keyword ids that did not fit under the cap. Reported, never dropped quietly. */
   refused: string[];
+  reasons?: Record<string, string>;
   capacity: { scheduled: number; cap: number; slots: number };
 }
 
@@ -650,7 +655,7 @@ export async function scheduleKeywords(
   const wanted = [...new Set(keywordIds.filter(Boolean))];
 
   const [{ data: ws }, { data: planned }] = await Promise.all([
-    supabase.from("workspaces").select("auto_generate_weekly_limit").eq("id", workspaceId).maybeSingle(),
+    supabase.from("workspaces").select("auto_generate_weekly_limit, business_profile, domain, language, location_code").eq("id", workspaceId).maybeSingle(),
     supabase
       .from("calendar_entries")
       .select("keyword_id, scheduled_date")
@@ -674,14 +679,27 @@ export async function scheduleKeywords(
 
   const { data: keywords, error: kwError } = await supabase
     .from("keywords")
-    .select("id, term")
+    .select("id, term, source_url, opportunity")
     .eq("workspace_id", workspaceId)
     .in("id", fits);
   if (kwError) throw new Error(kwError.message);
   const terms = new Map((keywords ?? []).map((k) => [k.id as string, k.term as string]));
 
   const weekly = (ws?.auto_generate_weekly_limit as number | null) ?? 1;
-  const ids = fits.filter((id) => terms.has(id));
+  const qualified = await qualifyOpportunities(supabase, workspaceId, keywords ?? [], { domain: ws?.domain ?? "", business: ws?.business_profile ?? null, languageCode: languageCodeOf(ws?.language), locationCode: ws?.location_code ?? 2840 });
+  const reasons: Record<string, string> = {};
+  const accepted: Opportunity[] = [];
+  const ids = fits.filter((id) => {
+    const evidence = qualified.get(id);
+    const duplicate = evidence && accepted.some((other) => serpOverlap(evidence.organicUrls ?? [], other.organicUrls ?? []) >= 0.5);
+    if (!terms.has(id) || evidence?.status !== "qualified" || duplicate) {
+      refused.push(id);
+      reasons[id] = duplicate ? "Another selected article covers the same search intent." : evidence?.reason ?? "Buyer fit and search evidence are still pending.";
+      return false;
+    }
+    accepted.push(evidence);
+    return true;
+  });
   const dates = nextOpenDates(occupied, Math.max(1, weekly), ids.length, fromDate);
   const scheduled: PlannedEntry[] = ids.slice(0, dates.length).map((id, i) => ({ keywordId: id, term: terms.get(id)!, date: dates[i] }));
 
@@ -704,5 +722,5 @@ export async function scheduleKeywords(
   }
 
   const total = existingCount + scheduled.length;
-  return { scheduled, refused, capacity: { scheduled: total, cap: PLAN_MAX_ENTRIES, slots: Math.max(0, PLAN_MAX_ENTRIES - total) } };
+  return { scheduled, refused, reasons, capacity: { scheduled: total, cap: PLAN_MAX_ENTRIES, slots: Math.max(0, PLAN_MAX_ENTRIES - total) } };
 }

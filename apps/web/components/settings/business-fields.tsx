@@ -55,6 +55,18 @@ export function BusinessFields({
           placeholder="What you sell, to whom, and what sets it apart."
         />
       </Field>
+      <details>
+        <summary className="cursor-pointer text-sm text-ink-2">Buying goals and product details</summary>
+        <div className="mt-4 flex flex-col gap-4">
+          {([{key:"buyingJobs",label:"What buyers need to accomplish"},{key:"differentiators",label:"What sets your offering apart"},{key:"exclusions",label:"Needs or customers you do not serve"}] as const).map(({key,label}) =>
+            <Field key={key} label={label} hint="One item per line. Only include claims you can support.">
+              <textarea rows={3} className={inputClass} value={(profile[key] ?? []).join("\n")} onChange={(e) => patch({[key]:e.target.value.split("\n")})} />
+            </Field>)}
+          <Field label="Where an interested buyer should go" hint="Your product, pricing, booking or contact page.">
+            <input className={inputClass} value={profile.conversionUrl ?? ""} onChange={(e) => patch({conversionUrl:e.target.value})} placeholder="https://example.com/contact" />
+          </Field>
+        </div>
+      </details>
     </div>
   );
 }

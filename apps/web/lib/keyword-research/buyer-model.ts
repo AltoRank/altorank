@@ -24,8 +24,8 @@ export function modelAvailable(): boolean {
 
 /**
  * One structured call. Returns the text of the reply, or null when there is
- * no key or the call failed. Never throws: research that cannot ask the model
- * falls back to the heuristics it had before the model existed.
+ * no key or the call failed. Callers preserve the missing decision; automatic
+ * writing must never interpret it as approval.
  */
 export async function askStructured(
   operation: string,
@@ -83,6 +83,12 @@ export function describeBusiness(business: {
   audiences?: string[] | null;
   offerings?: string[] | null;
   competitors?: string[] | null;
+  buyingJobs?: string[] | null;
+  differentiators?: string[] | null;
+  exclusions?: string[] | null;
+  conversionUrl?: string | null;
+  country?: string | null;
+  language?: string | null;
 }): string {
   const lines: string[] = [];
   if (business.name?.trim()) lines.push(`Name: ${business.name.trim()}`);
@@ -90,5 +96,11 @@ export function describeBusiness(business: {
   if (business.offerings?.length) lines.push(`What people buy from it: ${business.offerings.join("; ")}`);
   if (business.audiences?.length) lines.push(`Who buys: ${business.audiences.join("; ")}`);
   if (business.competitors?.length) lines.push(`Competitors: ${business.competitors.join(", ")}`);
+  if (business.buyingJobs?.length) lines.push(`Buying jobs: ${business.buyingJobs.join("; ")}`);
+  if (business.differentiators?.length) lines.push(`Supported differences: ${business.differentiators.join("; ")}`);
+  if (business.exclusions?.length) lines.push(`Not served: ${business.exclusions.join("; ")}`);
+  if (business.conversionUrl) lines.push(`Conversion page: ${business.conversionUrl}`);
+  if (business.language) lines.push(`Language: ${business.language}`);
+  if (business.country) lines.push(`Market: ${business.country}`);
   return lines.join("\n");
 }

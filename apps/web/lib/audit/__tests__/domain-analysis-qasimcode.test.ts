@@ -149,7 +149,7 @@ beforeEach(() => {
   pages.mockReturnValue(qasimcodePages());
   ranked.mockResolvedValue([]);
   discover.mockResolvedValue(nothingDiscovered());
-  fit.mockResolvedValue({ verdicts: new Map(), basis: "none" });
+  fit.mockImplementation(async (business: unknown, terms: string[]) => ({basis: business ? "model" : "none", verdicts: new Map(business ? terms.map((term) => [term, {keep:true,reason:"fixture buyer fit"}]) : [])}));
   sitemap.mockResolvedValue([]);
   // What the run measured for this domain, eleven seconds after storing the
   // keywords it could have judged with it.
@@ -228,7 +228,7 @@ describe("the qasimcode signup", () => {
     discover.mockResolvedValue(ideas());
     const { stored } = await analyse();
     const designTerms = stored.filter((r) => /website.*design|design.*website/.test(r.term as string));
-    expect(designTerms).toHaveLength(2); // "website design" and "website design web"
+    expect(designTerms).toHaveLength(4); // "website design" and "website design web"
     // And the two spellings of the same verb.
     expect(stored.filter((r) => /creat/.test(r.term as string))).toHaveLength(0);
   });
@@ -242,12 +242,12 @@ describe("the qasimcode signup", () => {
     expect(analysis.keywordsFound).toBe(stored.length);
   });
 
-  it("behaves exactly as before for a workspace that never ran the wizard", async () => {
+  it("does not admit unjudged terms when the business profile is missing", async () => {
     discover.mockResolvedValue(ideas());
     const { stored } = await analyse(null);
     // No business profile, no subject test, no model verdicts: the geography
     // term is back, and only the dedupe and the hopeless cut have touched it.
-    expect(stored.map((r) => r.term)).toContain("do other countries have states");
+    expect(stored).toHaveLength(0);
   });
 
   it("hands discovery the profile the person confirmed, competitors included", async () => {

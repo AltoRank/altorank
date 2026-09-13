@@ -38,7 +38,7 @@ export function StoredTab({ workspaceId, ctx, onCapacity, onChanged }: StoredTab
       const r = await scheduleStored(workspaceId, [...selected]);
       onCapacity(r.capacity);
       const parts = [`${r.scheduled} scheduled`];
-      if (r.refused) parts.push(`${r.refused} refused: the calendar holds ${r.capacity.cap} keywords and it is full`);
+      if (r.refused) parts.push(`${r.refused} not scheduled: ${r.refusedReasons?.[0] ?? "the calendar is full"}`);
       setMessage(parts.join(" · "));
       setSelected(new Set());
       onChanged();

@@ -13,7 +13,7 @@ import { computeCapacity } from "@/lib/plan/capacity";
 import type { PlanCapacity, ResearchCandidate, ResearchFunnel } from "./types";
 
 /** Below this the term is real but not worth an article slot. */
-export const MIN_VOLUME = 50;
+export const MIN_VOLUME = 10;
 
 /** Search volume and difficulty at which a keyword is a plausible quick win. */
 export const EASY_WIN_MIN_VOLUME = 100;

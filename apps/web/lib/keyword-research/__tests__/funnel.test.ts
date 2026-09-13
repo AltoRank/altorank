@@ -80,7 +80,7 @@ describe("applyFunnel", () => {
 
   it("accounts for every row and proposes the rest, capped by limit", () => {
     const { candidates, funnel } = applyFunnel(raw, existing, { limit: 2 });
-    expect(funnel).toEqual({ found: 6, skippedNoData: 1, skippedLowVolume: 1, skippedExisting: 1, skippedOffTopic: 0, proposed: 2 });
+    expect(funnel).toEqual({ found: 6, skippedNoData: 1, skippedLowVolume: 0, skippedExisting: 1, skippedOffTopic: 0, proposed: 2 });
     expect(candidates.map((x) => x.term)).toEqual(["easy pick", "crm software"]);
   });
   it("found + drops + kept adds up before the limit", () => {
