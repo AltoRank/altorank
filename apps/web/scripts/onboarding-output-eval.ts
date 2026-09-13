@@ -41,6 +41,11 @@ async function main(){
     if(process.argv.includes("--evidence-only"))return;
     const options={title:article.title,profile,brief,evidence:evidence.sources};
     const html=flag("draft-html")?readFileSync(flag("draft-html")!,"utf8"):article.html??tiptapToHtml(article.content);
+    if(process.argv.includes("--claims-only")){
+      const {verifyDraftClaims}=await import("@/lib/content/claim-verification");
+      result.claimVerification=await verifyDraftClaims(html,{brief,evidence:evidence.sources});
+      save();return;
+    }
     const reviewed=await reviewApprovedOutput(html,options);
     result.originalReview=reviewed.report;
     const labelled=JSON.parse(readFileSync(resolve("evals/onboarding/full-drafts.json"),"utf8")) as {cases:Array<{domain:string;title:string;requiredFindingFragment:string;reason:string}>};

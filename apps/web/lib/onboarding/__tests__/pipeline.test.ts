@@ -192,6 +192,7 @@ describe("runOnboarding", () => {
     generate.mockImplementation(async () => { order.push("generate"); return { articleId: "a1", title: "T", wordCount: 1, factCheck: { verdict: "clean" } }; });
     await runOnboarding(client(0), WS, (e) => { if (e.phase === "ready") order.push("ready"); });
     expect(order).toEqual(["generate", "ready"]);
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({verifySourceClaims:true}));
   });
 
   /**

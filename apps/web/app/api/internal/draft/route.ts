@@ -109,6 +109,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await generateArticle({
+      verifySourceClaims: Boolean(runId),
       supabase,
       workspaceId,
       keyword,

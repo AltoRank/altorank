@@ -2,6 +2,8 @@
 
 **Keyword task checks improved on the labelled cases. Full-draft factual quality is still not dependable. Automatic model rewriting is disabled in production generation; PR 215 remains a draft.**
 
+**Follow-up:** [claim-level source checks and full-article controls](./onboarding-claims-2026-09-13.md) are now implemented. Automatic rewriting remains disabled.
+
 This continues the [first-onboarding assessment](./onboarding-improvements-2026-09-13.md), covering keyword identification and the chosen first draft before the trial gate. The route, evidence and evaluation changes below are implemented. They do not establish that the first draft is good enough for release or that onboarding conversion improves.
 
 ## What changed

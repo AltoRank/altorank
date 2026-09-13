@@ -1,5 +1,6 @@
 import { fetchSite } from "@/lib/audit/lenient-fetch";
 import { currentResearchBudget } from "@/lib/seo/request-context";
+import { stripTags } from "@/lib/audit/html-utils";
 export interface PageExtract { url: string; resolvedUrl?: string; title: string; headings: string[]; text: string; links?: Array<{url:string;label:string}>; }
 /** Public, bounded page read. Inaccessible content is unknown, never approval. */
 export async function readPageExtract(url: string, maxChars = 4500, options: {includeLinks?:boolean} = {}): Promise<PageExtract | null> {
@@ -16,7 +17,7 @@ export async function readPageExtract(url: string, maxChars = 4500, options: {in
         bytes += value.length; html += decoder.decode(value, { stream: true });
       }
     } finally { await reader.cancel(); }
-    const plain = (s: string) => s.replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+    const plain = stripTags;
     const title = plain(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "");
     const headings = [...html.matchAll(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi)].slice(0, 15).map((m) => plain(m[1]));
     const text = plain(html.replace(/<(script|style|nav|footer|header)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")).slice(0, maxChars);

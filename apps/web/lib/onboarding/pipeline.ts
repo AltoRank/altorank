@@ -441,6 +441,7 @@ async function runPhases(
           settle("active", `Writing "${next.term}" now. It lands in your review queue when it is done.`);
         } else {
           const result = await generateArticle({
+            verifySourceClaims: true,
             supabase,
             workspaceId: workspace.id,
             keyword: next.term,

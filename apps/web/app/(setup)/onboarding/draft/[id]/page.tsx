@@ -62,11 +62,13 @@ export default async function DraftPreview({ params }: { params: Promise<{ id: s
     <article className="leading-7">{body(article.content as Node)}</article>
     <section className="mb-6 rounded-lg border border-line p-4 text-sm" aria-label="Draft checks">
       <h2 className="mb-2 font-semibold">What was checked</h2>
+      {review?.claimVerification && <p>{review.claimVerification.status === "checked" ? "Claims were compared with the collected source excerpts. This is an automated check, not independent factual approval." : "Some source checks could not finish. Review the flagged claims and their sources before publishing."}</p>}
+      {review?.claimVerification && <p>A source gap does not necessarily mean a claim is false.</p>}
       <p>Numbers and citations: {figures?.verdict === "clean" ? "No issues detected by targeted checks; this is not a comprehensive factual approval." : "Review the cited evidence before publishing."}</p>
       <p>Product claims: {review?.productClaims?.replaceAll("-", " ") ?? "not checked"}.</p>
       <p>Qualitative claims: {review?.qualitativeClaims?.replaceAll("-", " ") ?? "not checked"}.</p>
       <p>Structure: {review?.structure?.replaceAll("-", " ") ?? "not checked"}.</p>
-      {review?.findings.map((finding, i) => <p key={i} className="mt-2">{finding.removed ? "Removed" : "Needs review"}: {finding.reason}</p>)}
+      {review?.findings.map((finding, i) => <div key={i} className="mt-3"><p>{finding.removed ? "Removed" : "Needs review"}: {finding.reason}</p><blockquote className="mt-1 border-l-2 border-line pl-3 text-ink-3">{finding.text}</blockquote></div>)}
     </section>
     {quota.trialEligible && quota.reason === "no-plan" && <section className="mt-8" aria-label="Continue with your draft"><h2 className="mb-3 text-xl font-semibold">Keep writing for your business</h2><p className="mb-4 text-sm text-ink-2">Your draft is saved. Start a trial to edit, approve and publish, and continue with your next articles.</p><TrialOffer canBuy={role === "owner"} returnTo={`/content/${article.id}`} /></section>}
     <Link href="/onboarding" className="mt-8 inline-block text-accent">Back to your article ideas</Link>

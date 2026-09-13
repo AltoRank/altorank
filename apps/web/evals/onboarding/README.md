@@ -50,3 +50,16 @@ The experimental reviser handles up to six paragraphs/list items/table cells, pr
 **Automatic revision is disabled in production generation.** A real accepted correction retained a material comparison error and changed acceptable wording. The offline reviser remains available for calibration; a lower finding count or an `accepted` status is not the release metric.
 
 The product bar remains: relevant first choices, a useful answer to the chosen task, no material unsupported claims found in independent review, and only light editing needed. Measure latency/cost on stable infrastructure and conversion with actual users separately.
+
+## Claim-level full-article checks
+
+Use `onboarding-output-eval.ts` with `--claims-only` to run the bounded claim verifier instead of the whole-article review/revision. Combine it with `--cached-evidence` to hold sources fixed. `--draft-html` can select a controlled article. This makes real provider calls; it does not write to the database.
+
+`full-draft-controls.json` records four evaluator-authored corrected passages in three complete saved articles. It is a development negative-control set, not human approval or a complete rewrite. The scorer requires a corrected passage to have been checked before absence of a flag can pass:
+
+```sh
+npx tsx scripts/onboarding-claim-score.ts --results=/tmp/onboarding-output/results.json --html=/tmp/original.html --out=/tmp/score.json --business=altorank
+npx tsx scripts/onboarding-claim-score.ts --results=/tmp/control/results.json --html=/tmp/control.html --out=/tmp/control-score.json --business=altorank --control
+```
+
+Positive scores locate a finding; independently inspect its reason. Negative controls require checked-passage coverage and no flagged claim in that passage. Neither score is a whole-article factual grade. The implementation and results are in `docs/validation/onboarding-claims-2026-09-13.md` at the repository root.

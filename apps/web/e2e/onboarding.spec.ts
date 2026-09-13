@@ -142,6 +142,12 @@ test("a new account is walked from /dashboard to five qualified topics and one d
   await expect(page).toHaveURL(/\/onboarding\/draft\//);
   await expect(page.locator("article")).toBeVisible();
   await expect(page.getByRole("region", { name: "Draft checks" })).toBeVisible();
+  // A partly unavailable source check must remain visible after persistence.
+  const {data: savedDraft}=await db.from("articles").select("research").eq("workspace_id",ws.id).eq("id",dayOneArticle!.id).single();
+  await db.from("articles").update({research:{...savedDraft?.research,editorialReview:{status:"unavailable",headline:"preserved",productClaims:"needs-review",qualitativeClaims:"not-checked",structure:"no-issues-detected",claimVerification:{status:"partial"},findings:[{category:"product",text:"Every plan supports unlimited sites.",reason:"The source limits this feature to one plan.",removed:false}]}}}).eq("workspace_id",ws.id).eq("id",dayOneArticle!.id);
+  await page.reload();
+  await expect(page.getByText("Some source checks could not finish.",{exact:false})).toBeVisible();
+  await expect(page.getByText("Every plan supports unlimited sites.",{exact:true})).toBeVisible();
   await page.goto("/content");
 
   const now = new Date();

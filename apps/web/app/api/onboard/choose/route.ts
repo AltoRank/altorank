@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
         const outcome = await response.json();
         if (outcome.status !== "generated") throw new Error("The draft was not generated. Check your available draft allowance before retrying.");
       } else {
-        const draft = await generateArticle({ supabase: db, workspaceId, keyword: topic.term, keywordId: topic.keywordId, autonomous: true });
+        const draft = await generateArticle({ supabase: db, workspaceId, keyword: topic.term, keywordId: topic.keywordId, autonomous: true, verifySourceClaims: true });
         const { data: entry } = await db.from("calendar_entries").select("id").eq("workspace_id", workspaceId).eq("keyword_id", topic.keywordId).is("article_id", null).maybeSingle();
         if (entry) await fulfilPlannedEntry(db, entry.id, draft.articleId);
         await stampRun(db, run.id, { phase: "drafting", status: "done", detail: `Wrote ${draft.wordCount} words for your review.` }, { finish: true, article: { id: draft.articleId, title: draft.title, keyword: topic.term, wordCount: draft.wordCount, verdict: draft.factCheck.verdict } });

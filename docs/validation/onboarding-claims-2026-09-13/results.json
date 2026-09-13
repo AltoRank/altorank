@@ -1,0 +1,3016 @@
+{
+  "date": "2026-09-13",
+  "scope": "Saved full-draft development replays with fixed evidence. Evaluator-authored labels and corrections, not independent human review. Source quotes are hashed in this public summary; raw source and response text remain in local replay files. Runs preceded the final parser change preserving valid passages when another passage is omitted; target findings/control scores are unchanged.",
+  "recordedExperimentCostUsd": 5.270295,
+  "runs": [
+    {
+      "business": "altorank",
+      "variant": "original",
+      "score": {
+        "domain": "altorank.co",
+        "control": false,
+        "scope": "Evaluator-authored development controls. This scores specific targets, not the whole article or independent human quality.",
+        "verificationStatus": "partial",
+        "checkedPassages": 62,
+        "totalPassages": 64,
+        "checks": [
+          {
+            "text": "requires the team to write the first draft themselves",
+            "passageIndices": [
+              58
+            ],
+            "checked": false,
+            "findings": [
+              {
+                "quote": "An SEO-focused editor like Surfer passes steps 1 and 2 but requires the team to write the first draft themselves before optimizing it, which doesn't remove drafting time",
+                "reason": "Sources state Surfer has an add-on AI content generator that creates articles, contradicting the claim it requires manual first drafts",
+                "verdict": "contradicted"
+              }
+            ],
+            "locatorPassed": true,
+            "requiresIndependentReasonReview": true
+          }
+        ]
+      },
+      "verification": {
+        "status": "partial",
+        "totalPassages": 64,
+        "checkedPassages": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55,
+          56,
+          57,
+          59,
+          60,
+          61,
+          62,
+          63
+        ],
+        "claims": [
+          {
+            "quote": "A tool built to spit out an Instagram caption in ten seconds solves a different problem than one built to research a keyword, draft a 1,500-word article with sources, and publish it to a WordPress site.",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "No source establishes a specific ten-second Instagram caption speed or 1,500-word sourced WordPress workflow as a real comparison.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 13
+          },
+          {
+            "quote": "Skipping this step is the single most common reason teams end up paying for features they never touch, like a creative-writing story generator when the actual job is search-optimized blog content.",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "No source establishes this is the most common reason for mispurchases.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 16
+          },
+          {
+            "quote": "Some products, like Surfer , focus on optimizing a draft against top-ranking pages with a keyword and content score system",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches source description of Surfer's content editor and scoring system.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "ccd9cbfa480911b94002ef5bdaf56ec3197f64068715d3608c2d1be5c853f55e",
+                "quoteCharacters": 383
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 19
+          },
+          {
+            "quote": "AltoRank's workflow, for example, starts by researching topics and comparing search results before a draft is written, so the keyword work and the writing stay in the same place rather than being reconciled by hand afterward.",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Source describes AltoRank's workflow as starting with topic research and comparing search results before drafting.",
+            "evidence": [
+              {
+                "sourceIndex": 1,
+                "quoteSha256": "d4686ea71ebe07edbf087430f7fffd6c2dffbd66b4bc877ac8ae64d553c2a9a7",
+                "quoteCharacters": 185
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 20
+          },
+          {
+            "quote": "Reword, reviewed by 27 Best AI Writing Tools in 2026 (Tested & Reviewed) , addresses this by asking users to define their topic and audience per project and by learning from Google Search Console data and prior edits over time.",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches source description of Reword's per-project setup and learning from Search Console and edits.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "b1b98e39f8c6b268942ab0f86cfd4a8e39bac3e30c0008752b697c19f0b34a51",
+                "quoteCharacters": 282
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 23
+          },
+          {
+            "quote": "AltoRank builds this kind of profile directly from content you've already published, keeping tone, preferred language, and audience attached to every draft rather than re-specified each time.",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches source description of AltoRank's voice profile built from published writing.",
+            "evidence": [
+              {
+                "sourceIndex": 1,
+                "quoteSha256": "fe0c78e0705e8190bb25015b82d7121dfe2a8c30ff98984f4e353cca8d51a5c9",
+                "quoteCharacters": 122
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 24
+          },
+          {
+            "quote": "Some general-purpose assistants, such as Grammarly , are built for polishing existing text rather than generating and sourcing new claims, which is a different job entirely.",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Source describes Grammarly solely as a tool for polishing/proofreading existing writing, not content generation.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "c5d5455b0b55f1f53adb46ff777d6560e2660ffcafd368f45c1b3640066de5f8",
+                "quoteCharacters": 227
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 27
+          },
+          {
+            "quote": "Rytr starts at $9 a month for 100k characters",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches source pricing detail exactly.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "b48ff72452480c9fe44edc1aacf043639d656561f983e0547663cc08a43d9365",
+                "quoteCharacters": 67
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 39
+          },
+          {
+            "quote": "Reword starts at $39 a month for three users and three projects",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches source's stated Reword pricing terms.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "30d2edacf36f87d3b5905520c0643f89d721afba4e515506a33d4f92b7abe935",
+                "quoteCharacters": 99
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 39
+          },
+          {
+            "quote": "Surfer starts at $69 a month for two seats and 180 keyword analyses",
+            "category": "product",
+            "verdict": "unsupported",
+            "reason": "Source ties $69 price to annual billing; passage omits that condition, implying it's a flat monthly rate.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 39
+          },
+          {
+            "quote": "with add-ons like its article generator priced separately",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Source confirms content generator and audit tool are separate add-ons.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "db302d5d17875b7de297e710325c11cec30d81bf1ac3edc506b23b9b3cbc7658",
+                "quoteCharacters": 73
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 39
+          },
+          {
+            "quote": "HubSpot's AI writing tools are bundled into its Starter plans from $20 a month",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches source's HubSpot starting price and Starter plan bundling.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "64622ed33b1d7c0fb48510a4e7e0dd72300426fe1037ccae7b8c47403db97145",
+                "quoteCharacters": 123
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 39
+          },
+          {
+            "quote": "pricing scales with contacts and hub combinations rather than article volume",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "Source does not explicitly state pricing scales with contacts and hub combinations; this is an inference beyond what's stated.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 39
+          },
+          {
+            "quote": "Reword All-round writing assistance Learns from your Search Console data and prior edits over time $39/mo, 14-day trial",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches source description of Reword's features and pricing",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "30d2edacf36f87d3b5905520c0643f89d721afba4e515506a33d4f92b7abe935",
+                "quoteCharacters": 99
+              },
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "d7b47730953fc06dc1045d3bf0ffd124138d2a59bc4d26e68148028135f2a7b8",
+                "quoteCharacters": 48
+              },
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "b1f024c875d18f8a2ec81c418d6064c6a05087de722b847f20d80a25f52827f3",
+                "quoteCharacters": 52
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 50
+          },
+          {
+            "quote": "Surfer SEO writing support Content editor scores drafts against top-ranking competitors $69/mo",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches source description of Surfer's scoring feature and starting price",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "99a1fb44ebf7199af35966db9ee306dccbb110a07b3dff78a5689de83f3db9c4",
+                "quoteCharacters": 57
+              },
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "dec5d3023aef62e855132cb0c2c88001f9e775f147688f5e09eefa506fd1b3a6",
+                "quoteCharacters": 77
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 51
+          },
+          {
+            "quote": "Rytr All-round text generation 40+ templates and 30+ supported languages $9/mo, free plan available",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches source description of Rytr's templates, languages, price and free plan",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "91394cb9a8722c6027a4f07ab6d8cc7ffa4e7e758a05271f92f585c8f1c6b579",
+                "quoteCharacters": 121
+              },
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "27e1ea20ea6bb5a743a2dce6ac76305ec5c2833db2c88e19d971f2b8ca01e381",
+                "quoteCharacters": 43
+              },
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "1ed8407fb255b2bd04c9f1350fca4a185cf0d7de315463f4354d1a2917e7a008",
+                "quoteCharacters": 28
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 52
+          },
+          {
+            "quote": "Grammarly Grammar, spelling, and tone checking Real-time suggestions across Google Docs, Microsoft Office, and browsers Free tier available",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches source description of Grammarly's features and free tier availability",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "d10ff4539c1c8e7a62017bbf65145fc0b4aec16c4aed224f2db38742bca0b7a6",
+                "quoteCharacters": 119
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "3487159ebb6fc887ec2c191c5f0745a2c37607c4fa27512cd90d10c53b3fa159",
+                "quoteCharacters": 75
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "56c831e03157ed0970cd86e43fc0752f810a59817a2b0ddc1d45759e25a2596b",
+                "quoteCharacters": 87
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 53
+          },
+          {
+            "quote": "Copy.ai Marketing copy and content ideas 90+ templates for blogs, emails, and ads Free plan up to 2,000 words/mo",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches Kontent.ai review claims about Copy.ai templates and free word limit",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "2c0fe540f301c7ee994778cbca33b91199cd94533a6312a8b9637c39cd3133c5",
+                "quoteCharacters": 170
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "1f9c8b1b5196c9fb889f83ea059c556a7d137614f7657fd239d1a82877ea2631",
+                "quoteCharacters": 64
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 54
+          },
+          {
+            "quote": "An SEO-focused editor like Surfer passes steps 1 and 2 but requires the team to write the first draft themselves before optimizing it, which doesn't remove drafting time",
+            "category": "product",
+            "verdict": "contradicted",
+            "reason": "Sources state Surfer has an add-on AI content generator that creates articles, contradicting the claim it requires manual first drafts",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "e4d981abfe6eb71ce3600fe01138554d0b5470f0fc226165d793eb5dd9fb2acd",
+                "quoteCharacters": 65
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 58
+          },
+          {
+            "quote": "A workspace that combines research, a voice profile trained on the brand's existing product pages, and a Shopify publishing path clears steps 2 through 5 in one place, at the cost of being metered on article volume",
+            "category": "product",
+            "verdict": "unsupported",
+            "reason": "This is a hypothetical composite tool in the worked example, not a verifiable named-product capability claim about Shopify publishing specifically",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 58
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://altorank.co/pricing/",
+            "title": "Pricing: Self-Host Free, Managed €69, Agency €199 | AltoRank"
+          },
+          {
+            "url": "https://altorank.co/",
+            "title": "AltoRank | SEO content for your next customers"
+          },
+          {
+            "url": "https://www.emailvendorselection.com/best-ai-writing-tools/",
+            "title": "27 Best AI Writing Tools in 2026 (Tested & Reviewed)"
+          },
+          {
+            "url": "https://kontent.ai/blog/top-ai-tools-for-content-writers/",
+            "title": "AI writing tools comparison with examples | Kontent.ai"
+          },
+          {
+            "url": "https://www.copy.ai/tools",
+            "title": "Free AI Writing Generator & Tools"
+          },
+          {
+            "url": "https://altorank.co/reports/ai-readability-2026/",
+            "title": "AI Readability Report 2026: 6 of 274 agencies pass all nine | AltoRank"
+          },
+          {
+            "url": "https://www.emailvendorselection.com/go/jasper-ai/",
+            "title": "Put AI agents to work for marketing | Jasper"
+          },
+          {
+            "url": "https://www.emailvendorselection.com/go/copyai/",
+            "title": "Future proof your business with GTM AI"
+          }
+        ],
+        "failures": [
+          "Batch 3: Passage 40: a claim or evidence quote could not be verified.",
+          "Batch 4: Passage 58: a claim or evidence quote could not be verified."
+        ],
+        "modelCalls": [
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "c7c6325bc1492d31b8b9c36e433a0a3b14492991aee300ca35c2d58c6dc56260",
+            "elapsedMs": 4380,
+            "status": "complete",
+            "inputTokens": 28787,
+            "outputTokens": 399,
+            "costUsd": 0.092346
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "b1bef44193ee0e5a9542d60c2691aefaf045bcde26c090abb9733dca447357e7",
+            "elapsedMs": 11485,
+            "status": "complete",
+            "inputTokens": 29158,
+            "outputTokens": 1473,
+            "costUsd": 0.109569
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "75e924fea8ed5639a7022986c93e0dabc847679e82e5d248814e2fed95a29f0b",
+            "elapsedMs": 20579,
+            "status": "complete",
+            "inputTokens": 29320,
+            "outputTokens": 2306,
+            "costUsd": 0.12255
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "07f284da2b8e4fb5dd6bad50063c01ede5ac80a6e37425241ce69195a93cf673",
+            "elapsedMs": 7769,
+            "status": "complete",
+            "inputTokens": 29024,
+            "outputTokens": 911,
+            "costUsd": 0.100737
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "43c908fcb8f86e8d0d618edbab260b210546793d8ef747d942c9534478f36c2b",
+            "elapsedMs": 27397,
+            "status": "complete",
+            "inputTokens": 29467,
+            "outputTokens": 3195,
+            "costUsd": 0.136326
+          }
+        ]
+      },
+      "calls": [
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "c7c6325bc1492d31b8b9c36e433a0a3b14492991aee300ca35c2d58c6dc56260",
+          "elapsedMs": 4380,
+          "status": "complete",
+          "inputTokens": 28787,
+          "outputTokens": 399,
+          "costUsd": 0.092346
+        },
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "b1bef44193ee0e5a9542d60c2691aefaf045bcde26c090abb9733dca447357e7",
+          "elapsedMs": 11485,
+          "status": "complete",
+          "inputTokens": 29158,
+          "outputTokens": 1473,
+          "costUsd": 0.109569
+        },
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "75e924fea8ed5639a7022986c93e0dabc847679e82e5d248814e2fed95a29f0b",
+          "elapsedMs": 20579,
+          "status": "complete",
+          "inputTokens": 29320,
+          "outputTokens": 2306,
+          "costUsd": 0.12255
+        },
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "07f284da2b8e4fb5dd6bad50063c01ede5ac80a6e37425241ce69195a93cf673",
+          "elapsedMs": 7769,
+          "status": "complete",
+          "inputTokens": 29024,
+          "outputTokens": 911,
+          "costUsd": 0.100737
+        },
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "43c908fcb8f86e8d0d618edbab260b210546793d8ef747d942c9534478f36c2b",
+          "elapsedMs": 27397,
+          "status": "complete",
+          "inputTokens": 29467,
+          "outputTokens": 3195,
+          "costUsd": 0.136326
+        }
+      ],
+      "recordedCostUsd": 0.561528
+    },
+    {
+      "business": "altorank",
+      "variant": "controlled-correction",
+      "score": {
+        "domain": "altorank.co",
+        "control": true,
+        "scope": "Evaluator-authored development controls. This scores specific targets, not the whole article or independent human quality.",
+        "verificationStatus": "partial",
+        "checkedPassages": 49,
+        "totalPassages": 64,
+        "checks": [
+          {
+            "text": "Run the same brief through each candidate. Check whether the selected plan includes keyword research and article generation, try the review workflow, and test the required Shopify publishing path. Calculate the cost at the hypothetical team's 40-article monthly pace, including any additional subscriptions. Choose based on the observed results of those tests.",
+            "passageIndices": [
+              58
+            ],
+            "checked": true,
+            "findings": [],
+            "locatorPassed": true,
+            "requiresIndependentReasonReview": false
+          }
+        ]
+      },
+      "verification": {
+        "status": "partial",
+        "totalPassages": 64,
+        "checkedPassages": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          54,
+          55,
+          56,
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63
+        ],
+        "claims": [
+          {
+            "quote": "A tool built to spit out an Instagram caption in ten seconds solves a different problem than one built to research a keyword, draft a 1,500-word article with sources, and publish it to a WordPress site.",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "No source establishes a specific named tool generating an Instagram caption in ten seconds versus a 1,500-word sourced WordPress article.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 13
+          },
+          {
+            "quote": "AltoRank's workflow, for example, starts by researching topics and comparing search results before a draft is written, so the keyword work and the writing stay in the same place rather than being reconciled by hand afterward.",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches AltoRank's described workflow of research, comparison, then drafting.",
+            "evidence": [
+              {
+                "sourceIndex": 1,
+                "quoteSha256": "dae40c3f8a02d79ea7d7da611a6471d064d217a7692049bc2d89174994cf3931",
+                "quoteCharacters": 163
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 20
+          },
+          {
+            "quote": "Reword, reviewed by 27 Best AI Writing Tools in 2026 (Tested & Reviewed) , addresses this by asking users to define their topic and audience per project and by learning from Google Search Console data and prior edits over time.",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches the source's description of Reword's per-project topic/audience setup and learning from Search Console and edits.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "b1b98e39f8c6b268942ab0f86cfd4a8e39bac3e30c0008752b697c19f0b34a51",
+                "quoteCharacters": 282
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 23
+          },
+          {
+            "quote": "AltoRank builds this kind of profile directly from content you've already published, keeping tone, preferred language, and audience attached to every draft rather than re-specified each time.",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches source description of AltoRank's brand voice profile built from published writing.",
+            "evidence": [
+              {
+                "sourceIndex": 1,
+                "quoteSha256": "fe0c78e0705e8190bb25015b82d7121dfe2a8c30ff98984f4e353cca8d51a5c9",
+                "quoteCharacters": 122
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 24
+          },
+          {
+            "quote": "Some general-purpose assistants, such as Grammarly , are built for polishing existing text rather than generating and sourcing new claims, which is a different job entirely.",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches source describing Grammarly as a tool for polishing/proofreading existing text, not generating sourced claims.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "c5d5455b0b55f1f53adb46ff777d6560e2660ffcafd368f45c1b3640066de5f8",
+                "quoteCharacters": 227
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 27
+          },
+          {
+            "quote": "Rytr starts at $9 a month for 100k characters",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches source pricing detail exactly.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "b48ff72452480c9fe44edc1aacf043639d656561f983e0547663cc08a43d9365",
+                "quoteCharacters": 67
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 39
+          },
+          {
+            "quote": "Reword starts at $39 a month for three users and three projects",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches source pricing detail for users and projects.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "30d2edacf36f87d3b5905520c0643f89d721afba4e515506a33d4f92b7abe935",
+                "quoteCharacters": 99
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 39
+          },
+          {
+            "quote": "Surfer starts at $69 a month for two seats and 180 keyword analyses",
+            "category": "product",
+            "verdict": "unsupported",
+            "reason": "Source ties the $69 price to annual billing; article omits that condition, changing the claim's scope.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "fab205038989d269fab9db8f38cd1021a721b08d25bef1b727d4fc560bd4a5a2",
+                "quoteCharacters": 109
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 39
+          },
+          {
+            "quote": "with add-ons like its article generator priced separately",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Source confirms article generator and audit tool are separate add-ons.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "db302d5d17875b7de297e710325c11cec30d81bf1ac3edc506b23b9b3cbc7658",
+                "quoteCharacters": 73
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 39
+          },
+          {
+            "quote": "HubSpot's AI writing tools are bundled into its Starter plans from $20 a month, per the same review, but pricing scales with contacts and hub combinations rather than article volume",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Source states $20/mo price tied to 1,000 contacts and Starter plans across Hubs, matching the paraphrase.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "64622ed33b1d7c0fb48510a4e7e0dd72300426fe1037ccae7b8c47403db97145",
+                "quoteCharacters": 123
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 39
+          },
+          {
+            "quote": "Copy.ai Marketing copy and content ideas 90+ templates for blogs, emails, and ads Free plan up to 2,000 words/mo",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches source description of Copy.ai's templates and free plan limit.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "2c0fe540f301c7ee994778cbca33b91199cd94533a6312a8b9637c39cd3133c5",
+                "quoteCharacters": 170
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "1f9c8b1b5196c9fb889f83ea059c556a7d137614f7657fd239d1a82877ea2631",
+                "quoteCharacters": 64
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 54
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://altorank.co/pricing/",
+            "title": "Pricing: Self-Host Free, Managed €69, Agency €199 | AltoRank"
+          },
+          {
+            "url": "https://altorank.co/",
+            "title": "AltoRank | SEO content for your next customers"
+          },
+          {
+            "url": "https://www.emailvendorselection.com/best-ai-writing-tools/",
+            "title": "27 Best AI Writing Tools in 2026 (Tested & Reviewed)"
+          },
+          {
+            "url": "https://kontent.ai/blog/top-ai-tools-for-content-writers/",
+            "title": "AI writing tools comparison with examples | Kontent.ai"
+          },
+          {
+            "url": "https://www.copy.ai/tools",
+            "title": "Free AI Writing Generator & Tools"
+          },
+          {
+            "url": "https://altorank.co/reports/ai-readability-2026/",
+            "title": "AI Readability Report 2026: 6 of 274 agencies pass all nine | AltoRank"
+          },
+          {
+            "url": "https://www.emailvendorselection.com/go/jasper-ai/",
+            "title": "Put AI agents to work for marketing | Jasper"
+          },
+          {
+            "url": "https://www.emailvendorselection.com/go/copyai/",
+            "title": "Future proof your business with GTM AI"
+          }
+        ],
+        "failures": [
+          "Batch 1: Passage 19: a claim or evidence quote could not be verified.",
+          "Batch 3: Missing or incomplete assigned passages."
+        ],
+        "modelCalls": [
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "3bd86393274e2c9ac29fdb4a49b20f919e762e5ba60e13b254a9a4f366362d51",
+            "elapsedMs": 4320,
+            "status": "complete",
+            "inputTokens": 28663,
+            "outputTokens": 399,
+            "costUsd": 0.091974
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "5d65c56419b6a790a940b316587ce500c132d9cfe36894900688c25bcc1d8877",
+            "elapsedMs": 10233,
+            "status": "complete",
+            "inputTokens": 29343,
+            "outputTokens": 1271,
+            "costUsd": 0.107094
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "7c6725408ee85b9f23d5d952234408e20262928beb415d84437d0ee6981824af",
+            "elapsedMs": 4676,
+            "status": "complete",
+            "inputTokens": 28776,
+            "outputTokens": 401,
+            "costUsd": 0.092343
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "fdbce78819755de3afb4a20eaba5777c81b071364696865564c003a55242e1f8",
+            "elapsedMs": 26740,
+            "status": "complete",
+            "inputTokens": 29196,
+            "outputTokens": 3081,
+            "costUsd": 0.133803
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "b1b2ae58a0fdd46285daeac53767db6942b22c9330461bbee9a441a351e2e8e1",
+            "elapsedMs": 60007,
+            "status": "unavailable"
+          }
+        ]
+      },
+      "calls": [
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "3bd86393274e2c9ac29fdb4a49b20f919e762e5ba60e13b254a9a4f366362d51",
+          "elapsedMs": 4320,
+          "status": "complete",
+          "inputTokens": 28663,
+          "outputTokens": 399,
+          "costUsd": 0.091974
+        },
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "5d65c56419b6a790a940b316587ce500c132d9cfe36894900688c25bcc1d8877",
+          "elapsedMs": 10233,
+          "status": "complete",
+          "inputTokens": 29343,
+          "outputTokens": 1271,
+          "costUsd": 0.107094
+        },
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "7c6725408ee85b9f23d5d952234408e20262928beb415d84437d0ee6981824af",
+          "elapsedMs": 4676,
+          "status": "complete",
+          "inputTokens": 28776,
+          "outputTokens": 401,
+          "costUsd": 0.092343
+        },
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "fdbce78819755de3afb4a20eaba5777c81b071364696865564c003a55242e1f8",
+          "elapsedMs": 26740,
+          "status": "complete",
+          "inputTokens": 29196,
+          "outputTokens": 3081,
+          "costUsd": 0.133803
+        },
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "b1b2ae58a0fdd46285daeac53767db6942b22c9330461bbee9a441a351e2e8e1",
+          "elapsedMs": 60007,
+          "status": "unavailable"
+        }
+      ],
+      "recordedCostUsd": 0.425214
+    },
+    {
+      "business": "beardbrand",
+      "variant": "original",
+      "score": {
+        "domain": "beardbrand.com",
+        "control": false,
+        "scope": "Evaluator-authored development controls. This scores specific targets, not the whole article or independent human quality.",
+        "verificationStatus": "partial",
+        "checkedPassages": 39,
+        "totalPassages": 40,
+        "checks": [
+          {
+            "text": "Apply the oil daily for at least two weeks",
+            "passageIndices": [
+              32
+            ],
+            "checked": true,
+            "findings": [
+              {
+                "quote": "Apply the oil daily for at least two weeks before judging it.",
+                "reason": "No source specifies a two-week trial period for judging beard oil performance.",
+                "verdict": "unsupported"
+              }
+            ],
+            "locatorPassed": true,
+            "requiresIndependentReasonReview": true
+          }
+        ]
+      },
+      "verification": {
+        "status": "partial",
+        "totalPassages": 40,
+        "checkedPassages": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          36,
+          37,
+          38,
+          39
+        ],
+        "claims": [
+          {
+            "quote": "Reviewer Steve Huff, who says he has spent thousands of dollars testing beard oils and butters from more than a dozen brands, reported that some formulas made his beard feel like straw and caused rashes under sensitive skin from certain fragrance oils",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches Huff's reported spending, testing scope, straw-like feel, and rash complaints.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "9f75d1ebb9db2d80fd3bed9de3ee9034613b79f6942883b0678483390c176c52",
+                "quoteCharacters": 125
+              },
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "483895fd089dce39c86037f5aec4344c07f05ffa101717c7aad24f997e4b2215",
+                "quoteCharacters": 93
+              },
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "ce07f104f43faca1ad91db66b3958cd214536ee20680d8901ab9f99c5b6c9c8f",
+                "quoteCharacters": 92
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 8
+          },
+          {
+            "quote": "GQ's grooming tester Adam Hurly flagged a related, narrower issue: pumpkin seed oil, a common carrier oil, can be slightly pore-clogging for people with acne-prone skin , even though he didn't personally have problems with it.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "GQ reviewer states pumpkin seed oil can be pore-clogging for acne-prone skin but he had no issues.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "26951987463d0c64e311442245f71d5f546e634b09fba3679b1d776e053a6b55",
+                "quoteCharacters": 196
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 8
+          },
+          {
+            "quote": "Coarse, wiry, or flyaway hair calls for a heavier oil blend. Flaky or itchy skin underneath the beard calls for a lighter, fast-absorbing oil so it doesn't sit on the surface and clog pores.",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "No source establishes this specific pairing of hair/skin condition to oil weight and pore-clogging effect.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 11
+          },
+          {
+            "quote": "Jojoba oil Mimics skin's natural sebum, absorbs quickly Beardbrand Utility Beard Oil, Pura d'Or Beard Oil",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "GQ source lists jojoba oil as key ingredient in both named products.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "c509b4d90a4ae6de44f712803424a6ebe5cc7e202eda93f1c07177cb17c4c004",
+                "quoteCharacters": 80
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "4b3e3ec46447f3b83de97f57774778caefb50f879160a94b233258dbcfd603c2",
+                "quoteCharacters": 74
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 16
+          },
+          {
+            "quote": "Argan oil Adds vitamin E, softens coarse hair Honest Amish Classic, Horace Lemon & Mint, Pura d'Or",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "GQ ingredient lists confirm argan oil in all three named products; vitamin E/softening effect not explicitly attributed to argan but is a general descriptor.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "d4337b1e1030874c2bb9f882138351a6b23c72256ff8b027c66e6fa199d777db",
+                "quoteCharacters": 86
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "39ce70f536d65a288fba64cefc0fecada64dd6702a40e15a1c7a1558c62c0840",
+                "quoteCharacters": 96
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "4b3e3ec46447f3b83de97f57774778caefb50f879160a94b233258dbcfd603c2",
+                "quoteCharacters": 74
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 17
+          },
+          {
+            "quote": "Pumpkin seed oil Earthy scent, tones skin (can be pore-clogging for acne-prone skin) Honest Amish Classic Beard Oil",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "GQ source confirms pumpkin seed oil in Honest Amish and its pore-clogging concern for acne-prone skin.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "0d28a5d2287df57dcdc5880c1793d390329ae044edc7aa0aea1ba632a5abc0da",
+                "quoteCharacters": 114
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "b6b67d77a83d202b33091a1901f640bfb3da593cce1987557535bcf42cd443f7",
+                "quoteCharacters": 72
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 18
+          },
+          {
+            "quote": "Kalahari melon & marula oil Fast-absorbing, leaves less greasy feel Jack Black Beard Oil",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "GQ source confirms these oils in Jack Black product and describes fast absorption/less greasy feel.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "eb6a3499ec91945597387b32ece2d0b45bbc8d60d91bea69d99b0e366b34f33b",
+                "quoteCharacters": 225
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 19
+          },
+          {
+            "quote": "Castor, abyssinian & babassu oil Heavier coat, doubles as pre-shave lubricant Beardbrand Utility Beard Oil",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "GQ source lists these oils in Beardbrand Utility Beard Oil and notes it works as a pre-shave lubricant.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "c509b4d90a4ae6de44f712803424a6ebe5cc7e202eda93f1c07177cb17c4c004",
+                "quoteCharacters": 80
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "de2a55f94272b301f9aad56ff859bc7b36d349945120971cc9cd9c70cca7e533",
+                "quoteCharacters": 49
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 20
+          },
+          {
+            "quote": "No carrier oil or essential oil has been shown in published research to make hair grow faster from the follicle; genetics and hormones drive that.",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "No source in the packet addresses published research on hair growth causation.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 23
+          },
+          {
+            "quote": "What a good oil for beard hair does is coat each strand and calm the skin underneath, which reduces breakage and split ends, so an existing beard looks fuller and healthier faster.",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "No source establishes this specific physiological mechanism or the 'faster' claim.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 23
+          },
+          {
+            "quote": "Some brands, like Beardbrand , price beard oil between $29 and $42",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Beardbrand site lists beard oil price range matching this figure.",
+            "evidence": [
+              {
+                "sourceIndex": 0,
+                "quoteSha256": "16c5733bc86d49418b8a015a024d9cbe7c7154d9e1344c624debff46cf4c71dd",
+                "quoteCharacters": 49
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 26
+          },
+          {
+            "quote": "build the formula around a named fragrance rather than a neutral \"unscented\" base",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Beardbrand product listings are organized entirely around named fragrances (e.g., Fox Hunt, Temple Smoke).",
+            "evidence": [
+              {
+                "sourceIndex": 0,
+                "quoteSha256": "a0afc0297b66280a6215faab6b5ba0d09fc776fd361b1b2d91b01382c23debb8",
+                "quoteCharacters": 50
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 26
+          },
+          {
+            "quote": "If you have a large or thick beard, budget-friendly oils sold in larger bottles help you use enough product without rationing it, since underuse is a common reason oil seems to \"not work.\"",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "No source establishes that underuse is a common reason beard oil 'seems to not work'.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 29
+          },
+          {
+            "quote": "Apply the oil daily for at least two weeks before judging it.",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "No source specifies a two-week trial period for judging beard oil performance.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 32
+          },
+          {
+            "quote": "Skin and hair need time to adjust, and a fair comparison against your last product requires more than a single application.",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "No source supports this physiological adjustment claim or the comparison requirement.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 32
+          },
+          {
+            "quote": "GQ's 2026 testing named Honest Amish Classic Beard Oil its best overall pick for value and a pure oil recipe",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "GQ names Honest Amish best overall, cost-effective, and a pure oil recipe.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "390ee17694a4c5cf27c78e0388b1ff18a430d47409570c7ddd6795ffa9e104b9",
+                "quoteCharacters": 54
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "5a6c4b356ddb9a7405241dea8d1dd8b63cbf00c7045a17d57b343fe1523bd7ed",
+                "quoteCharacters": 52
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 35
+          },
+          {
+            "quote": "and Beardbrand's Utility Beard Oil its pick for multipurpose use thanks to a heavier blend that doubles as a pre-shave lubricant and hair or skin oil",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "GQ names Beardbrand Utility Oil best multipurpose, heavier and usable as pre-shave and on hair/skin.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "cc6cc2d2362fce25bd681b0c91b1c7c40691bd0222cbc76bc4ea8725409371c2",
+                "quoteCharacters": 57
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "5dcaf68d4e9fa62d199c5ac2487436e776bc4a1d9ce1fdb5d3652d0428212474",
+                "quoteCharacters": 100
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "7dde5a351ec1955dc14443ba0908ac09baadabe5689c47af689cf8e063a3c856",
+                "quoteCharacters": 59
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 35
+          },
+          {
+            "quote": "Independent reviewer Steve Huff, after testing formulas from more than a dozen companies, settled on a bird-oil-based blend as his personal favorite for beard softness and scent longevity , a preference driven by his own sensitive skin.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Steve Huff reports testing many brands and settling on a bird-oil brand for softness and scent, tied to his sensitive skin.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "b2a937c4e8b04b2a24f9e4fcfc6ddd26df73b86237c822b289c4f164129a2066",
+                "quoteCharacters": 180
+              },
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "299c65db4af5770f04279309570d665a4c6fc25bff005861ac7277a8b2ab3fba",
+                "quoteCharacters": 64
+              },
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "632fa55d34de631b2b20a0e77ea7183db00266ece56562d5f7120bbb80ddeb0e",
+                "quoteCharacters": 80
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 35
+          },
+          {
+            "quote": "Treat any growth claim with skepticism, patch-test if you're acne-prone, and give a new oil two full weeks before deciding it isn't working.",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "No source specifies a two-week testing period for beard oil.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 37
+          },
+          {
+            "quote": "Once those boxes are checked, the remaining choice is personal preference, whether that's a pure, unscented recipe or a fragrance-forward option like the ones Beardbrand builds its beard oil line around.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Beardbrand is described as fragrance-focused, supporting the characterization of its oil line as fragrance-forward.",
+            "evidence": [
+              {
+                "sourceIndex": 0,
+                "quoteSha256": "2173f1d47c4ce8e7166dead1facbd32ecf278009ec3f9d775c18dea3e63b1ea0",
+                "quoteCharacters": 66
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 37
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://beardbrand.com",
+            "title": "Beard Products – Beardbrand"
+          },
+          {
+            "url": "https://beardbrand.com/products/custom-mens-cologne-set",
+            "title": "Custom Men&#39;s Cologne Set | Alcohol-Free Cologne &ndash; Beardbrand"
+          },
+          {
+            "url": "https://www.stevehuffphoto.com/the-best-beard-oil-on-earth-four-brands-my-reviews/",
+            "title": "The Best Beard Butter and Oil on Earth. My #1 Fave for 2026 |"
+          },
+          {
+            "url": "https://www.gq.com/story/best-beard-oil",
+            "title": "15 Best Beard Oil of 2026 for Softer, Smoother Scruff | GQ"
+          },
+          {
+            "url": "https://beardbrand.com/",
+            "title": "Beard Products – Beardbrand"
+          },
+          {
+            "url": "https://beardbrand.com/collections/mens-cologne",
+            "title": "Men’s Cologne | Alcohol-Free Cologne &ndash; Beardbrand"
+          },
+          {
+            "url": "https://beardbrand.com/collections/utility-beard-softener",
+            "title": "Utility Beard Softener: Conditioner for Beard and Hair &ndash; Beardbrand"
+          }
+        ],
+        "failures": [
+          "Batch 2: Passage 35: a claim or evidence quote could not be verified."
+        ],
+        "modelCalls": [
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "c74bc04c4ecb50d946165a3f78eefbc978cd5a4f4f47b859cfc74d175a942f52",
+            "elapsedMs": 14812,
+            "status": "complete",
+            "inputTokens": 33852,
+            "outputTokens": 1756,
+            "costUsd": 0.127896
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "c60e55489984afc7740710207788acdf2808a9c38a8bb860a2e49cd5b8cfd127",
+            "elapsedMs": 15316,
+            "status": "complete",
+            "inputTokens": 34048,
+            "outputTokens": 1975,
+            "costUsd": 0.131769
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "cf3e9460c9599c033a00dab9b3059ec6fabebaa65fc6baa1ff8ae332fba69e3c",
+            "elapsedMs": 36448,
+            "status": "complete",
+            "inputTokens": 33964,
+            "outputTokens": 4415,
+            "costUsd": 0.168117
+          }
+        ]
+      },
+      "calls": [
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "c74bc04c4ecb50d946165a3f78eefbc978cd5a4f4f47b859cfc74d175a942f52",
+          "elapsedMs": 14812,
+          "status": "complete",
+          "inputTokens": 33852,
+          "outputTokens": 1756,
+          "costUsd": 0.127896
+        },
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "c60e55489984afc7740710207788acdf2808a9c38a8bb860a2e49cd5b8cfd127",
+          "elapsedMs": 15316,
+          "status": "complete",
+          "inputTokens": 34048,
+          "outputTokens": 1975,
+          "costUsd": 0.131769
+        },
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "cf3e9460c9599c033a00dab9b3059ec6fabebaa65fc6baa1ff8ae332fba69e3c",
+          "elapsedMs": 36448,
+          "status": "complete",
+          "inputTokens": 33964,
+          "outputTokens": 4415,
+          "costUsd": 0.168117
+        }
+      ],
+      "recordedCostUsd": 0.427782
+    },
+    {
+      "business": "beardbrand",
+      "variant": "controlled-correction",
+      "score": {
+        "domain": "beardbrand.com",
+        "control": true,
+        "scope": "Evaluator-authored development controls. This scores specific targets, not the whole article or independent human quality.",
+        "verificationStatus": "partial",
+        "checkedPassages": 25,
+        "totalPassages": 40,
+        "checks": [
+          {
+            "text": "Follow the product's instructions and compare how it feels on your beard and skin. Record what you like and dislike so you can compare it with your previous product.",
+            "passageIndices": [
+              32
+            ],
+            "checked": true,
+            "findings": [],
+            "locatorPassed": true,
+            "requiresIndependentReasonReview": false
+          },
+          {
+            "text": "Choose a beard oil by reviewing its ingredient list, comparing the available scent options, and considering your own experience with the product. Treat growth claims with skepticism and check the product's instructions. The final scent and texture choice is personal preference.",
+            "passageIndices": [
+              37
+            ],
+            "checked": true,
+            "findings": [],
+            "locatorPassed": true,
+            "requiresIndependentReasonReview": false
+          }
+        ]
+      },
+      "verification": {
+        "status": "partial",
+        "totalPassages": 40,
+        "checkedPassages": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          36,
+          37,
+          38,
+          39
+        ],
+        "claims": [
+          {
+            "quote": "Reviewer Steve Huff, who says he has spent thousands of dollars testing beard oils and butters from more than a dozen brands, reported that some formulas made his beard feel like straw",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches Huff's own account of spending and negative experience with some brands.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "b267046811b00550681621b988ab5cb2191c7e741cad401afe1c019a496f7e72",
+                "quoteCharacters": 93
+              },
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "42ae4e350afc206cd7a65c7dde0984f774f17ef3a1ad6a7e4f47c04f57c39555",
+                "quoteCharacters": 92
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 8
+          },
+          {
+            "quote": "caused rashes under sensitive skin from certain fragrance oils",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Huff describes rashes from fragrance oils in some brands.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "76ec0924e6a833a04ea24c98fb6de97e9b9c8099323eb82dbc8fc60be44d0a11",
+                "quoteCharacters": 91
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 8
+          },
+          {
+            "quote": "GQ's grooming tester Adam Hurly flagged a related, narrower issue: pumpkin seed oil, a common carrier oil, can be slightly pore-clogging for people with acne-prone skin , even though he didn't personally have problems with it.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches GQ reviewer's stated concern about pumpkin seed oil and his own lack of issues.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "26951987463d0c64e311442245f71d5f546e634b09fba3679b1d776e053a6b55",
+                "quoteCharacters": 196
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 8
+          },
+          {
+            "quote": "A stubble or short beard needs only a few drops; a longer beard absorbs more oil and benefits from a slightly heavier blend so it reaches the skin instead of just coating the surface hair.",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "No source establishes this dosage/blend-weight relationship to beard length.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 29
+          },
+          {
+            "quote": "budget-friendly oils sold in larger bottles help you use enough product without rationing it",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "No source states this general claim about budget oils and larger bottles preventing rationing.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 29
+          },
+          {
+            "quote": "since underuse is a common reason oil seems to \"not work.\"",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "Causal explanation for perceived product failure is not supported by any source.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 29
+          },
+          {
+            "quote": "GQ's 2026 testing named Honest Amish Classic Beard Oil its best overall pick for value and a pure oil recipe",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "GQ source names Honest Amish best overall and describes it as a pure oil recipe.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "390ee17694a4c5cf27c78e0388b1ff18a430d47409570c7ddd6795ffa9e104b9",
+                "quoteCharacters": 54
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "ba604bc7840a6eadb4e179413d6e01c15cfc234d98d3d949353da4db4649ed05",
+                "quoteCharacters": 102
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 35
+          },
+          {
+            "quote": "and Beardbrand's Utility Beard Oil its pick for multipurpose use thanks to a heavier blend that doubles as a pre-shave lubricant and hair or skin oil",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "GQ source names Beardbrand Utility Oil as best multipurpose and describes heavier blend and multi-use.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "cc6cc2d2362fce25bd681b0c91b1c7c40691bd0222cbc76bc4ea8725409371c2",
+                "quoteCharacters": 57
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "5dcaf68d4e9fa62d199c5ac2487436e776bc4a1d9ce1fdb5d3652d0428212474",
+                "quoteCharacters": 100
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "7dde5a351ec1955dc14443ba0908ac09baadabe5689c47af689cf8e063a3c856",
+                "quoteCharacters": 59
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 35
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://beardbrand.com",
+            "title": "Beard Products – Beardbrand"
+          },
+          {
+            "url": "https://beardbrand.com/products/custom-mens-cologne-set",
+            "title": "Custom Men&#39;s Cologne Set | Alcohol-Free Cologne &ndash; Beardbrand"
+          },
+          {
+            "url": "https://www.stevehuffphoto.com/the-best-beard-oil-on-earth-four-brands-my-reviews/",
+            "title": "The Best Beard Butter and Oil on Earth. My #1 Fave for 2026 |"
+          },
+          {
+            "url": "https://www.gq.com/story/best-beard-oil",
+            "title": "15 Best Beard Oil of 2026 for Softer, Smoother Scruff | GQ"
+          },
+          {
+            "url": "https://beardbrand.com/",
+            "title": "Beard Products – Beardbrand"
+          },
+          {
+            "url": "https://beardbrand.com/collections/mens-cologne",
+            "title": "Men’s Cologne | Alcohol-Free Cologne &ndash; Beardbrand"
+          },
+          {
+            "url": "https://beardbrand.com/collections/utility-beard-softener",
+            "title": "Utility Beard Softener: Conditioner for Beard and Hair &ndash; Beardbrand"
+          }
+        ],
+        "failures": [
+          "Batch 2: Passage 35: a claim or evidence quote could not be verified.",
+          "Batch 1: Missing or incomplete assigned passages."
+        ],
+        "modelCalls": [
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "cfcd13f07826208bcc0f276b3c136f27d87c790f0816db10bdbdf73b1822eb35",
+            "elapsedMs": 16593,
+            "status": "complete",
+            "inputTokens": 33745,
+            "outputTokens": 1880,
+            "costUsd": 0.129435
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "3cfd3e81e271ceea87050c2d022a882852fa2dab4376c70637571be3a21e336b",
+            "elapsedMs": 36079,
+            "status": "complete",
+            "inputTokens": 33750,
+            "outputTokens": 4122,
+            "costUsd": 0.16308
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "65a5317c69193789304efb2a08b909666577d5a16aa4720a55068a0282c82a0a",
+            "elapsedMs": 50245,
+            "status": "truncated",
+            "inputTokens": 33941,
+            "outputTokens": 6000,
+            "costUsd": 0.191823
+          }
+        ]
+      },
+      "calls": [
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "cfcd13f07826208bcc0f276b3c136f27d87c790f0816db10bdbdf73b1822eb35",
+          "elapsedMs": 16593,
+          "status": "complete",
+          "inputTokens": 33745,
+          "outputTokens": 1880,
+          "costUsd": 0.129435
+        },
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "3cfd3e81e271ceea87050c2d022a882852fa2dab4376c70637571be3a21e336b",
+          "elapsedMs": 36079,
+          "status": "complete",
+          "inputTokens": 33750,
+          "outputTokens": 4122,
+          "costUsd": 0.16308
+        },
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "65a5317c69193789304efb2a08b909666577d5a16aa4720a55068a0282c82a0a",
+          "elapsedMs": 50245,
+          "status": "truncated",
+          "inputTokens": 33941,
+          "outputTokens": 6000,
+          "costUsd": 0.191823
+        }
+      ],
+      "recordedCostUsd": 0.48433799999999994
+    },
+    {
+      "business": "pimlico",
+      "variant": "original",
+      "score": {
+        "domain": "pimlicoplumbers.com",
+        "control": false,
+        "scope": "Evaluator-authored development controls. This scores specific targets, not the whole article or independent human quality.",
+        "verificationStatus": "partial",
+        "checkedPassages": 38,
+        "totalPassages": 41,
+        "checks": [
+          {
+            "text": "between the meter and the property boundary",
+            "passageIndices": [
+              26
+            ],
+            "checked": true,
+            "findings": [
+              {
+                "quote": "continued movement confirms the leak sits between the meter and the property boundary, on the section the water company may be responsible for rather than you",
+                "reason": "Source does not establish this responsibility/location conclusion for external meter box test",
+                "verdict": "unsupported"
+              }
+            ],
+            "locatorPassed": true,
+            "requiresIndependentReasonReview": true
+          }
+        ]
+      },
+      "verification": {
+        "status": "partial",
+        "totalPassages": 41,
+        "checkedPassages": [
+          0,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40
+        ],
+        "claims": [
+          {
+            "quote": "A mains water leak is a break or crack in the pipe that carries water from the street main into your home",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source description of a leak on the incoming mains pipe running from the street to the property.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "b2f5f90d99c52d0fb04ac8104372490f16235de6e3e3531d3a2384f82fd23f17",
+                "quoteCharacters": 62
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 1
+          },
+          {
+            "quote": "mains water leak detection starts with a simple meter test before any specialist equipment gets involved",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "No source states the meter test is universally the first step before any specialist equipment is used.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 1
+          },
+          {
+            "quote": "this kind of leak can push up your water bill",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Source confirms mains leaks lead to high water bills.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "d6c06f561b9d9a728f9db0b2ad2ffd70599686cd1b70410a2c03c2fc19deb35e",
+                "quoteCharacters": 111
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 1
+          },
+          {
+            "quote": "wash out paving",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "Source links leaks to subsidence via washed-out soil/granular material, not specifically paving washing out.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 1
+          },
+          {
+            "quote": "The \"mains\" supply is the pipe running from the water company's main in the street, through your meter (if you have one), up to the internal stopcock inside your property.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source's description of the mains supply covering the incoming external supply through to the internal cold supply.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "e7578abe80b7ea866cfd63e6894e2b468cb97c8cb00a07b43992950022cf9e2b",
+                "quoteCharacters": 97
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 10
+          },
+          {
+            "quote": "A leak anywhere along that run, whether under the pavement, your front garden, or beneath your floor before the stopcock, counts as a mains water leak rather than a leak on your internal plumbing.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Consistent with source's scope covering both external and internal cold supply before it splits to fixtures.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "e7578abe80b7ea866cfd63e6894e2b468cb97c8cb00a07b43992950022cf9e2b",
+                "quoteCharacters": 97
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 10
+          },
+          {
+            "quote": "The Leak Detection Company notes that this covers both the incoming external supply and the internal cold supply pipe up to the point where it splits off to taps and appliances",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Faithful paraphrase of the source's stated scope of coverage.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "e7578abe80b7ea866cfd63e6894e2b468cb97c8cb00a07b43992950022cf9e2b",
+                "quoteCharacters": 97
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 10
+          },
+          {
+            "quote": "A water bill that's noticeably higher than usual with no change in how you use water",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source signs of a mains leak involving unexplained water bill/usage increase.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "30a0e00b5530adc5e084cf3d5cffb2a9c048e5de00750f9bc2bc905a103d7103",
+                "quoteCharacters": 152
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "3391d24f9ac626f461ee8b97b17adc1a07e9f205a23d840e9e972c25d7dbe34e",
+                "quoteCharacters": 54
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 13
+          },
+          {
+            "quote": "Low or dropping water pressure across every tap in the house, not just one",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source's low pressure sign for mains leaks",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "faadb8c4f54211219c8ef9c39274e2ab4e78ba483dd8b8840e3b577b65d476a8",
+                "quoteCharacters": 110
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 14
+          },
+          {
+            "quote": "Damp or unusually lush, boggy patches in the garden, driveway, or paving during dry weather",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source's pooling/boggy area sign",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "f3058511868601f90fd8d2c2754724254db888d745e84592117cf9cad6f04bd7",
+                "quoteCharacters": 139
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 15
+          },
+          {
+            "quote": "Damp patches, mould, or blown plaster on internal walls or floors that have appeared or worsened recently",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source description of damp/water damage sign",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "12ad097aa0ded0f4eb42349ea70f238390bf0a73c32446f663af046a86637a50",
+                "quoteCharacters": 293
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 16
+          },
+          {
+            "quote": "A hissing, knocking, or bubbling sound near where the supply enters the property, especially if it stops when the stopcock is turned off",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source's hissing/knocking/bubbling sign description",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "19ca69fa76f44031677fead98801d115b4b9c6c3715f0aa88ee69c255744a950",
+                "quoteCharacters": 196
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 17
+          },
+          {
+            "quote": "A formal Section 75 notice from your water supplier under the Water Industry Act 1991, which gives you a set window, usually seven to fourteen days, to repair a suspected leak",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source's Section 75 notice description and timeframe",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "973ff77dff8cd2590bb16d6e27251cf993644e810df66b7d31a9d0ef32e24236",
+                "quoteCharacters": 357
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 18
+          },
+          {
+            "quote": "Turn off every tap and water-using appliance in the property. Expected result: no water should be moving through the system while you take readings.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source's meter test instructions",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "4e6efa0c1b27f8f5e1b2111f208c3073ac141e88e0139f404caf18568fdb825c",
+                "quoteCharacters": 79
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 21
+          },
+          {
+            "quote": "Find your internal stopcock, usually under the kitchen sink, and turn it off. Expected result: this isolates your indoor plumbing so you're testing the supply pipe on its own.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches Thames Water stopcock location and isolation test",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "86a13d1318c6003d19fa23540b92478fe7a361f9b07ac540d6bcbb9989fa23e3",
+                "quoteCharacters": 65
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 22
+          },
+          {
+            "quote": "Locate your water meter and record the reading, including all dials. Expected result: you have a fixed baseline number.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source's meter reading step",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "24913423818c9cc9571ef0bea8e7759f325667c2b1203bef56e3f95e16a99f64",
+                "quoteCharacters": 78
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 23
+          },
+          {
+            "quote": "Wait 30 minutes to an hour without using any water, then read the meter again.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source's wait time window for second reading",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "67b3efdefc8bcc9d3bd6c0a288f7cd88cd3655490bcdb0098cbbd9b9ff18b330",
+                "quoteCharacters": 69
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 24
+          },
+          {
+            "quote": "Thames Water's guidance uses the same 30-minute window to isolate leaks between the meter and the stop valve",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches Thames Water's 30-minute meter test method and scope",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "4f9afb05cfe536ace675dd67efa54c86a8d5b97e628acb3aa5b24982ed9e3edf",
+                "quoteCharacters": 196
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 24
+          },
+          {
+            "quote": "If the second reading is higher, or the meter's flow indicator is still spinning, water is passing through with nothing turned on, which points to a leak on the supply pipe.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source's description of differing readings and spinning flow indicator as leak signs",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "51bc6fe0c5abfa846c51ac979abb40b4e4ec275c795c85e3182035e46ca8bdfa",
+                "quoteCharacters": 173
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 25
+          },
+          {
+            "quote": "continued movement confirms the leak sits between the meter and the property boundary, on the section the water company may be responsible for rather than you",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "Source does not establish this responsibility/location conclusion for external meter box test",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 26
+          },
+          {
+            "quote": "Specialist non-invasive tools commonly used for this include acoustic microphones that listen for the sound of escaping water through soil or concrete, tracer gas pumped through the empty pipe to find where it escapes at the surface, thermal imaging to spot temperature differences caused by water saturation, dye tracing, and moisture mapping across floors and walls.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source list of non-destructive leak detection technologies.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "8f792536ada810ef4cd1b506e6aa0afb5ab63ed617c390ce7a9a9f7b1f354853",
+                "quoteCharacters": 209
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 29
+          },
+          {
+            "quote": "These techniques narrow a leak down to a specific point before anyone digs or lifts flooring, which limits the disruption compared with excavating along the whole pipe route.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Source confirms non-invasive detection avoids destructive investigation before locating leak.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "c59134a994b07ca00b1c216b31838a598b5849029a2ef555e5204cc4ac094b4b",
+                "quoteCharacters": 140
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 29
+          },
+          {
+            "quote": "Meter and stopcock test Whether a leak exists between the meter and your stopcock Confirms a leak but not its exact location",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source guidance on meter test scope between meter and stop valve.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "652551b3d0666c2517b8a528270c852451af7621b1f1375e9583778eb051953d",
+                "quoteCharacters": 91
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 32
+          },
+          {
+            "quote": "Visual and audible checks Damp patches, pooling, or hissing that suggest where a leak has been running Some leaks run silently underground with no surface sign",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "No source states that some mains leaks produce no surface sign at all.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 33
+          },
+          {
+            "quote": "Acoustic, tracer gas or thermal detection The precise point along the pipe where the leak sits Requires a specialist engineer and dedicated equipment",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source claim these are specialist tools used by trained engineers.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "cf31b247972bedcc59f9a491df64154a838b90d3502933876cbf4cf667dd979a",
+                "quoteCharacters": 142
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 34
+          },
+          {
+            "quote": "A plug-in or battery water leak detector placed near a washing machine, boiler, or under a sink is useful for catching an internal appliance leak early, but it won't detect a leak on the buried supply pipe outside those rooms.",
+            "category": "product",
+            "verdict": "unsupported",
+            "reason": "No source discusses plug-in/battery leak detectors or their capability limits.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 36
+          },
+          {
+            "quote": "There's no single UK-wide figure for what that costs, since it depends on how deep and how long the pipe run is, whether it sits under hard standing, and how far the leak has to be traced",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Source confirms cost depends on these variable factors and no fixed figure is given.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "79264c77405822f518162c3ccdc8f959d1e7f901b311abecbdc1666036dae49a",
+                "quoteCharacters": 108
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 36
+          },
+          {
+            "quote": "the next step is arranging a repair before the water company's deadline passes",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source description of a repair deadline following a Section 75-type notice.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "782a69ced3bfbd365f289c17766b32982ad62bc4e8bc430589078c2e445d0e8b",
+                "quoteCharacters": 134
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 38
+          },
+          {
+            "quote": "Pimlico Plumbers lists damp and leak detection alongside its wider plumbing work",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Site lists 'Damp & Leak Detection' as a plumbing service.",
+            "evidence": [
+              {
+                "sourceIndex": 4,
+                "quoteSha256": "45538e2afb672723a1bf2a78462393565dd9afcb5dfe82613a86de6c9b63c7ab",
+                "quoteCharacters": 186
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 38
+          },
+          {
+            "quote": "operates a 24/7 emergency plumber service that aims to respond to call-outs within an hour, subject to availability",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches source's stated 24/7 emergency service and 1-hour response goal, subject to availability.",
+            "evidence": [
+              {
+                "sourceIndex": 5,
+                "quoteSha256": "41a59e447fb51e17ac19bddd2dae42a4a5e2f8469d60239c829df92a6686380d",
+                "quoteCharacters": 216
+              },
+              {
+                "sourceIndex": 1,
+                "quoteSha256": "ad3578c1dc87b372c6e4a1d0e96be4958ac4da601ce304251ea27b3043722ebc",
+                "quoteCharacters": 81
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 38
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://pimlicoplumbers.com",
+            "title": "Pimlico | Plumbing, Heating & Electrical Services in London"
+          },
+          {
+            "url": "https://pimlicoplumbers.com/",
+            "title": "Pimlico | Plumbing, Heating & Electrical Services in London"
+          },
+          {
+            "url": "https://www.theleakdetectioncompany.co.uk/mains-water-leaks/",
+            "title": "Mains Pipe Water Leak 💧 - The Leak Detection Company"
+          },
+          {
+            "url": "https://www.thameswater.co.uk/help/water-and-waste-help/leaks/leaks-at-home/identifying-leaks",
+            "title": "Identifying leaks | Water and waste help | Thames Water"
+          },
+          {
+            "url": "https://www.pimlicoplumbers.com/services/plumbing/",
+            "title": "Local Plumbers in London | Pimlico Plumbers"
+          },
+          {
+            "url": "https://www.pimlicoplumbers.com/services/plumbing/emergency/",
+            "title": "Emergency Plumbers London | 1 Hour Response Time"
+          },
+          {
+            "url": "https://www.pimlicoplumbers.com/services/plumbing/repairs/",
+            "title": "Plumbing Repairs London | 1 Hour Response Time"
+          }
+        ],
+        "failures": [
+          "Batch 1: Passage 25: a claim or evidence quote could not be verified.",
+          "Batch 0: Passage 1: a claim or evidence quote could not be verified.",
+          "Batch 0: Passage 10: a claim or evidence quote could not be verified."
+        ],
+        "modelCalls": [
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "a0181e354ec63722dbb4b29427fd34ee9cc6af56472d4bc851bfc942911d2f2f",
+            "elapsedMs": 15069,
+            "status": "complete",
+            "inputTokens": 25862,
+            "outputTokens": 1980,
+            "costUsd": 0.107286
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "2fec13bb0b681f7d0d67f7c17839ee5da0e1db5dcfb9a54a50eb1a99ad1379ce",
+            "elapsedMs": 17014,
+            "status": "complete",
+            "inputTokens": 25652,
+            "outputTokens": 2257,
+            "costUsd": 0.110811
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "e36b5e53d77fd9dbc4efe804658ce1c86e6f9743113f5509019a2d85e82c32cc",
+            "elapsedMs": 33556,
+            "status": "complete",
+            "inputTokens": 25519,
+            "outputTokens": 3861,
+            "costUsd": 0.134472
+          }
+        ]
+      },
+      "calls": [
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "a0181e354ec63722dbb4b29427fd34ee9cc6af56472d4bc851bfc942911d2f2f",
+          "elapsedMs": 15069,
+          "status": "complete",
+          "inputTokens": 25862,
+          "outputTokens": 1980,
+          "costUsd": 0.107286
+        },
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "2fec13bb0b681f7d0d67f7c17839ee5da0e1db5dcfb9a54a50eb1a99ad1379ce",
+          "elapsedMs": 17014,
+          "status": "complete",
+          "inputTokens": 25652,
+          "outputTokens": 2257,
+          "costUsd": 0.110811
+        },
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "e36b5e53d77fd9dbc4efe804658ce1c86e6f9743113f5509019a2d85e82c32cc",
+          "elapsedMs": 33556,
+          "status": "complete",
+          "inputTokens": 25519,
+          "outputTokens": 3861,
+          "costUsd": 0.134472
+        }
+      ],
+      "recordedCostUsd": 0.352569
+    },
+    {
+      "business": "pimlico",
+      "variant": "controlled-correction",
+      "score": {
+        "domain": "pimlicoplumbers.com",
+        "control": true,
+        "scope": "Evaluator-authored development controls. This scores specific targets, not the whole article or independent human quality.",
+        "verificationStatus": "checked",
+        "checkedPassages": 41,
+        "totalPassages": 41,
+        "checks": [
+          {
+            "text": "Follow the supplier's meter and inside stop-valve test. If the readings differ, the cited Thames Water instructions indicate a leak somewhere between the meter and the inside stop valve. Ask the supplier to clarify responsibility for any repair.",
+            "passageIndices": [
+              26
+            ],
+            "checked": true,
+            "findings": [],
+            "locatorPassed": true,
+            "requiresIndependentReasonReview": false
+          }
+        ]
+      },
+      "verification": {
+        "status": "checked",
+        "totalPassages": 41,
+        "checkedPassages": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40
+        ],
+        "claims": [
+          {
+            "quote": "A mains water leak is a break or crack in the pipe that carries water from the street main into your home",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "No source defines a mains leak this specifically as a break or crack in the supply pipe.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 1
+          },
+          {
+            "quote": "mains water leak detection starts with a simple meter test before any specialist equipment gets involved",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "Sources list the meter test as one sign among several, not as the mandated first step before specialist tools.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 1
+          },
+          {
+            "quote": "can push up your water bill",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Sources confirm mains leaks raise water bills.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "d6c06f561b9d9a728f9db0b2ad2ffd70599686cd1b70410a2c03c2fc19deb35e",
+                "quoteCharacters": 111
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 1
+          },
+          {
+            "quote": "wash out paving",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "Sources mention cracks/potholes in paving or subsidence from washed-out soil, not paving being washed out directly.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 1
+          },
+          {
+            "quote": "soak floors or walls without a single dripping tap in sight",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Sources confirm damp/water damage on floors and walls as a hidden-leak sign.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "5e64ed66243849e1ee5936d1a58cbea17bab20b24ab46b0fc7595975cc5aee9a",
+                "quoteCharacters": 156
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 1
+          },
+          {
+            "quote": "The \"mains\" supply is the pipe running from the water company's main in the street, through your meter (if you have one), up to the internal stopcock inside your property.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches the description of the mains supply covering the incoming supply up to the internal system.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "e7578abe80b7ea866cfd63e6894e2b468cb97c8cb00a07b43992950022cf9e2b",
+                "quoteCharacters": 97
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 10
+          },
+          {
+            "quote": "A leak anywhere along that run, whether under the pavement, your front garden, or beneath your floor before the stopcock, counts as a mains water leak rather than a leak on your internal plumbing.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Consistent with the source's coverage of external and internal cold supply as part of the mains leak scope.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "e7578abe80b7ea866cfd63e6894e2b468cb97c8cb00a07b43992950022cf9e2b",
+                "quoteCharacters": 97
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 10
+          },
+          {
+            "quote": "The Leak Detection Company notes that this covers both the incoming external supply and the internal cold supply pipe up to the point where it splits off to taps and appliances, which is why detection often has to work through floors or hard standing rather than exposed pipework.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Directly reflects the source's description of covered supply and the need for non-invasive detection through floors/hard standing.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "8a39471dcfaa16fe4ac64ac5ddad8d54b5d20f7b9db6d7b2baedc612321448ed",
+                "quoteCharacters": 238
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 10
+          },
+          {
+            "quote": "A water bill that's noticeably higher than usual with no change in how you use water",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source's listed sign of unexplained water bill increase without changed usage.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "30a0e00b5530adc5e084cf3d5cffb2a9c048e5de00750f9bc2bc905a103d7103",
+                "quoteCharacters": 152
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 13
+          },
+          {
+            "quote": "Low or dropping water pressure across every tap in the house, not just one",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches described sign of mains leak in sources.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "faadb8c4f54211219c8ef9c39274e2ab4e78ba483dd8b8840e3b577b65d476a8",
+                "quoteCharacters": 110
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "8257190106badf1f4dfb676e30cee7d50f1031c25bd358f072dea62311ad85f3",
+                "quoteCharacters": 40
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 14
+          },
+          {
+            "quote": "Damp or unusually lush, boggy patches in the garden, driveway, or paving during dry weather",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches described visible signs of mains leaks.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "f3058511868601f90fd8d2c2754724254db888d745e84592117cf9cad6f04bd7",
+                "quoteCharacters": 139
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "b0f50ee05c307a1341a93742231e9339cc68b15234cc3451110e57a5f1b271ea",
+                "quoteCharacters": 52
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 15
+          },
+          {
+            "quote": "Damp patches, mould, or blown plaster on internal walls or floors that have appeared or worsened recently",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Directly matches source description of damp/water damage signs.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "12ad097aa0ded0f4eb42349ea70f238390bf0a73c32446f663af046a86637a50",
+                "quoteCharacters": 293
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 16
+          },
+          {
+            "quote": "A hissing, knocking, or bubbling sound near where the supply enters the property, especially if it stops when the stopcock is turned off",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source description of audible leak signs.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "19ca69fa76f44031677fead98801d115b4b9c6c3715f0aa88ee69c255744a950",
+                "quoteCharacters": 196
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 17
+          },
+          {
+            "quote": "A formal Section 75 notice from your water supplier under the Water Industry Act 1991, which gives you a set window, usually seven to fourteen days, to repair a suspected leak",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source's description of Section 75 notice timeframe.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "973ff77dff8cd2590bb16d6e27251cf993644e810df66b7d31a9d0ef32e24236",
+                "quoteCharacters": 357
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 18
+          },
+          {
+            "quote": "Work through these steps in order.",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "Sources describe the meter test steps but do not assert a mandatory strict order for the checks.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 20
+          },
+          {
+            "quote": "Turn off every tap and water-using appliance in the property.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source instruction to turn off all appliances before testing.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "395a6ec587bce7273992bbf3a2e181bf986dc55863421539bee30a656ab626e0",
+                "quoteCharacters": 50
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 21
+          },
+          {
+            "quote": "Find your internal stopcock, usually under the kitchen sink, and turn it off.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source instruction to turn off inside stop valve, typically located under the sink.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "86a13d1318c6003d19fa23540b92478fe7a361f9b07ac540d6bcbb9989fa23e3",
+                "quoteCharacters": 65
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 22
+          },
+          {
+            "quote": "Locate your water meter and record the reading, including all dials.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source instruction on recording meter reading with all dials.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "d445c1aef22e7aac0b58d7471b55dbbe21500ca7a9ed73dbb6f903c84d64a30c",
+                "quoteCharacters": 72
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 23
+          },
+          {
+            "quote": "Wait 30 minutes to an hour without using any water, then read the meter again.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source's described wait period before taking a second meter reading.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "67b3efdefc8bcc9d3bd6c0a288f7cd88cd3655490bcdb0098cbbd9b9ff18b330",
+                "quoteCharacters": 69
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 24
+          },
+          {
+            "quote": "Thames Water's guidance uses the same 30-minute window to isolate leaks between the meter and the stop valve",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches Thames Water's stated 30-minute wait and stop valve isolation logic.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "4f9afb05cfe536ace675dd67efa54c86a8d5b97e628acb3aa5b24982ed9e3edf",
+                "quoteCharacters": 196
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 24
+          },
+          {
+            "quote": "if they match, there's unlikely to be a leak between the meter and your stopcock.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source conclusion that matching readings indicate no leak.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "74361d44a08d87a1a907bc3f08deb986c2d490cff91d930f98cd259a27fcb2c3",
+                "quoteCharacters": 53
+              },
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "0b56845ae951330d3b4aa7035f81d5102fee6a75c53699b99a2072616e49ce97",
+                "quoteCharacters": 56
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 25
+          },
+          {
+            "quote": "If the second reading is higher, or the meter's flow indicator is still spinning, water is passing through with nothing turned on, which points to a leak on the supply pipe.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source descriptions of differing readings and spinning flow indicator signaling a leak.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "03d42b5db5e2231d70293e6fc9f548c6be0d00d42dcfab0d652bb9dbf4982b11",
+                "quoteCharacters": 80
+              },
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "4c9c9c073d107326182b142e585ec2b6f14e5a80f6768d66e0d0f36b937d12e5",
+                "quoteCharacters": 92
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 25
+          },
+          {
+            "quote": "If the readings differ, the cited Thames Water instructions indicate a leak somewhere between the meter and the inside stop valve.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Directly matches Thames Water's stated conclusion for differing meter readings.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "652551b3d0666c2517b8a528270c852451af7621b1f1375e9583778eb051953d",
+                "quoteCharacters": 91
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 26
+          },
+          {
+            "quote": "Specialist non-invasive tools commonly used for this include acoustic microphones that listen for the sound of escaping water through soil or concrete, tracer gas pumped through the empty pipe to find where it escapes at the surface, thermal imaging to spot temperature differences caused by water saturation, dye tracing, and moisture mapping across floors and walls.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches source list of non-invasive detection technologies used by leak detection companies.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "8f792536ada810ef4cd1b506e6aa0afb5ab63ed617c390ce7a9a9f7b1f354853",
+                "quoteCharacters": 209
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 29
+          },
+          {
+            "quote": "These techniques narrow a leak down to a specific point before anyone digs or lifts flooring, which limits the disruption compared with excavating along the whole pipe route.",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Consistent with source's description of non-invasive detection avoiding destructive investigation.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "c59134a994b07ca00b1c216b31838a598b5849029a2ef555e5204cc4ac094b4b",
+                "quoteCharacters": 140
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 29
+          },
+          {
+            "quote": "Meter and stopcock test Whether a leak exists between the meter and your stopcock Confirms a leak but not its exact location",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Matches Thames Water's description of meter test identifying a leak between meter and stop valve without pinpointing location.",
+            "evidence": [
+              {
+                "sourceIndex": 3,
+                "quoteSha256": "ced5cc34e8e4a2a9367e9aaed357e945793a367d7d67eb7f60ebbe8d7829dfce",
+                "quoteCharacters": 148
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 32
+          },
+          {
+            "quote": "Visual and audible checks Damp patches, pooling, or hissing that suggest where a leak has been running Some leaks run silently underground with no surface sign",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "No source states that some leaks run silently underground with no surface sign.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 33
+          },
+          {
+            "quote": "Acoustic, tracer gas or thermal detection The precise point along the pipe where the leak sits Requires a specialist engineer and dedicated equipment",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Source confirms these are specialist high-tech methods used by trained engineers with specific equipment.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "f56ec3dc4a7b43e218fc4e517877ddb5782a6a411b03122fdfce1183fc18e87c",
+                "quoteCharacters": 168
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 34
+          },
+          {
+            "quote": "A plug-in or battery water leak detector placed near a washing machine, boiler, or under a sink is useful for catching an internal appliance leak early, but it won't detect a leak on the buried supply pipe outside those rooms.",
+            "category": "product",
+            "verdict": "unsupported",
+            "reason": "No source discusses plug-in/battery leak detectors or their limitations for buried supply pipes.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 36
+          },
+          {
+            "quote": "There's no single UK-wide figure for what that costs, since it depends on how deep and how long the pipe run is, whether it sits under hard standing, and how far the leak has to be traced",
+            "category": "qualitative",
+            "verdict": "supported",
+            "reason": "Source confirms cost varies and factors like pipe depth/length affect detection duration and requires a call for pricing.",
+            "evidence": [
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "79264c77405822f518162c3ccdc8f959d1e7f901b311abecbdc1666036dae49a",
+                "quoteCharacters": 108
+              },
+              {
+                "sourceIndex": 2,
+                "quoteSha256": "a012975e4d2469a70494cda5986eb88d1f45261cecb97c61d87cf748d3722196",
+                "quoteCharacters": 256
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 36
+          },
+          {
+            "quote": "Pimlico Plumbers lists damp and leak detection alongside its wider plumbing work",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Pimlico's site lists Damp & Leak Detection as a plumbing service category.",
+            "evidence": [
+              {
+                "sourceIndex": 4,
+                "quoteSha256": "45538e2afb672723a1bf2a78462393565dd9afcb5dfe82613a86de6c9b63c7ab",
+                "quoteCharacters": 186
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 38
+          },
+          {
+            "quote": "operates a 24/7 emergency plumber service that aims to respond to call-outs within an hour, subject to availability",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches Pimlico's stated emergency plumbing service and response time claim.",
+            "evidence": [
+              {
+                "sourceIndex": 5,
+                "quoteSha256": "41a59e447fb51e17ac19bddd2dae42a4a5e2f8469d60239c829df92a6686380d",
+                "quoteCharacters": 216
+              },
+              {
+                "sourceIndex": 0,
+                "quoteSha256": "ad3578c1dc87b372c6e4a1d0e96be4958ac4da601ce304251ea27b3043722ebc",
+                "quoteCharacters": 81
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 38
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://pimlicoplumbers.com",
+            "title": "Pimlico | Plumbing, Heating & Electrical Services in London"
+          },
+          {
+            "url": "https://pimlicoplumbers.com/",
+            "title": "Pimlico | Plumbing, Heating & Electrical Services in London"
+          },
+          {
+            "url": "https://www.theleakdetectioncompany.co.uk/mains-water-leaks/",
+            "title": "Mains Pipe Water Leak 💧 - The Leak Detection Company"
+          },
+          {
+            "url": "https://www.thameswater.co.uk/help/water-and-waste-help/leaks/leaks-at-home/identifying-leaks",
+            "title": "Identifying leaks | Water and waste help | Thames Water"
+          },
+          {
+            "url": "https://www.pimlicoplumbers.com/services/plumbing/",
+            "title": "Local Plumbers in London | Pimlico Plumbers"
+          },
+          {
+            "url": "https://www.pimlicoplumbers.com/services/plumbing/emergency/",
+            "title": "Emergency Plumbers London | 1 Hour Response Time"
+          },
+          {
+            "url": "https://www.pimlicoplumbers.com/services/plumbing/repairs/",
+            "title": "Plumbing Repairs London | 1 Hour Response Time"
+          }
+        ],
+        "failures": [],
+        "modelCalls": [
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "a5e0a49ee7221572c30033c4bc02ee67856b3b811ddef4cd958d9a500313409d",
+            "elapsedMs": 15719,
+            "status": "complete",
+            "inputTokens": 25871,
+            "outputTokens": 2001,
+            "costUsd": 0.107628
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "ff9309b2cb8012ee5456208df46557df16d1959723592f03d1471448938bdb27",
+            "elapsedMs": 32179,
+            "status": "complete",
+            "inputTokens": 25528,
+            "outputTokens": 3707,
+            "costUsd": 0.132189
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "acf30a9854722a6fd0eb1b78829d6f4ff3d5bfca8ab77974d7fb616a7b8d6cb2",
+            "elapsedMs": 40705,
+            "status": "complete",
+            "inputTokens": 25670,
+            "outputTokens": 5172,
+            "costUsd": 0.15459
+          }
+        ]
+      },
+      "calls": [
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "a5e0a49ee7221572c30033c4bc02ee67856b3b811ddef4cd958d9a500313409d",
+          "elapsedMs": 15719,
+          "status": "complete",
+          "inputTokens": 25871,
+          "outputTokens": 2001,
+          "costUsd": 0.107628
+        },
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "ff9309b2cb8012ee5456208df46557df16d1959723592f03d1471448938bdb27",
+          "elapsedMs": 32179,
+          "status": "complete",
+          "inputTokens": 25528,
+          "outputTokens": 3707,
+          "costUsd": 0.132189
+        },
+        {
+          "operation": "article/claim-verification",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "acf30a9854722a6fd0eb1b78829d6f4ff3d5bfca8ab77974d7fb616a7b8d6cb2",
+          "elapsedMs": 40705,
+          "status": "complete",
+          "inputTokens": 25670,
+          "outputTokens": 5172,
+          "costUsd": 0.15459
+        }
+      ],
+      "recordedCostUsd": 0.394407
+    }
+  ]
+}

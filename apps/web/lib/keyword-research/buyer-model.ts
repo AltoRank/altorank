@@ -34,6 +34,7 @@ export interface ModelObservation {
 export interface StructuredOptions {
   maxTokens: number; spend?: SpendSink | null; tier?: ModelTier;
   schema?: Record<string, unknown>;
+  timeoutMs?: number;
   observe?: (event: ModelObservation) => void;
 }
 const observations = new AsyncLocalStorage<{observer:(event:ModelObservation)=>void;includeResponse:boolean}>();
@@ -83,7 +84,7 @@ export async function askStructured(
       ...(mediumThinking ? {thinking:{type:"adaptive" as const}} : editorial ? {thinking:{type:"disabled" as const}} : {}),
       ...((mediumThinking || options.schema) ? {output_config:{...(mediumThinking?{effort:"medium" as const}:{}),...(options.schema?{format:{type:"json_schema" as const,schema:options.schema}}:{})}} : {}),
       messages: [{ role: "user", content: prompt }],
-    }, { signal: providerSignal(options.tier === "editorial" ? 60_000 : 25_000) });
+    }, { signal: providerSignal(Math.max(1, Math.min(options.timeoutMs ?? Infinity, options.tier === "editorial" ? 60_000 : 25_000))) });
     const inputTokens = response.usage?.input_tokens ?? 0;
     const outputTokens = response.usage?.output_tokens ?? 0;
     const cost = anthropicCost(model, inputTokens, outputTokens);

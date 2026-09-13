@@ -4,6 +4,7 @@ import type { SpendSink, ModelObservation } from "@/lib/keyword-research/buyer-m
 import type { ModelTier } from "@/lib/ai/models";
 import { compactDraftTask } from "./draft-evidence";
 export interface EditorialReview {
+  claimVerification?: import("./claim-verification").ClaimVerification;
   status: "checked" | "unavailable";
   unavailableReason?: string;
   revision?: "accepted" | "kept-original";

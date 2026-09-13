@@ -1,0 +1,36 @@
+{
+  "scope": "Evaluator-authored controlled corrections inside the same saved full articles. These are negative controls for specific claims, not independent human labels or fully approved drafts. Labels and replacements are never sent to the verifier.",
+  "cases": [
+    {
+      "business": "altorank",
+      "replacements": [
+        {
+          "before": "<p>Running that brief through the steps above: a general text generator like Rytr passes step 1 (it can produce 40 drafts a month cheaply) but fails step 2, since keyword research isn't built in and would need a separate subscription. An SEO-focused editor like Surfer passes steps 1 and 2 but requires the team to write the first draft themselves before optimizing it, which doesn't remove drafting time. A workspace that combines research, a voice profile trained on the brand's existing product pages, and a Shopify publishing path clears steps 2 through 5 in one place, at the cost of being metered on article volume, which the team needs to weigh against its 40-article monthly pace under step 7's pricing comparison.</p>",
+          "after": "<p>Run the same brief through each candidate. Check whether the selected plan includes keyword research and article generation, try the review workflow, and test the required Shopify publishing path. Calculate the cost at the hypothetical team’s 40-article monthly pace, including any additional subscriptions. Choose based on the observed results of those tests.</p>"
+        }
+      ]
+    },
+    {
+      "business": "beardbrand",
+      "replacements": [
+        {
+          "before": "<p>Apply the oil daily for at least two weeks before judging it. Skin and hair need time to adjust, and a fair comparison against your last product requires more than a single application.</p>",
+          "after": "<p>Follow the product’s instructions and compare how it feels on your beard and skin. Record what you like and dislike so you can compare it with your previous product.</p>"
+        },
+        {
+          "before": "<p>Choosing the best beard oil for men comes down to matching carrier oils to your skin's tolerance, sizing the blend to your beard length, and picking a scent you won't get tired of wearing daily. Treat any growth claim with skepticism, patch-test if you're acne-prone, and give a new oil two full weeks before deciding it isn't working. Once those boxes are checked, the remaining choice is personal preference, whether that's a pure, unscented recipe or a fragrance-forward option like the ones Beardbrand builds its beard oil line around.</p>",
+          "after": "<p>Choose a beard oil by reviewing its ingredient list, comparing the available scent options, and considering your own experience with the product. Treat growth claims with skepticism and check the product’s instructions. The final scent and texture choice is personal preference.</p>"
+        }
+      ]
+    },
+    {
+      "business": "pimlico",
+      "replacements": [
+        {
+          "before": "<li><strong>Check the external meter box for a slowly turning flow dial even with the stopcock closed.</strong> Expected result: continued movement confirms the leak sits between the meter and the property boundary, on the section the water company may be responsible for rather than you.</li>",
+          "after": "<li><strong>Follow the supplier’s meter and inside stop-valve test.</strong> If the readings differ, the cited Thames Water instructions indicate a leak somewhere between the meter and the inside stop valve. Ask the supplier to clarify responsibility for any repair.</li>"
+        }
+      ]
+    }
+  ]
+}

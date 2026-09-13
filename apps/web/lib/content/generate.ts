@@ -82,6 +82,8 @@ export function needsKeywordFactsLookup(facts: KeywordFacts): boolean {
 }
 
 export interface GenerateArticleOptions {
+  /** The selected onboarding draft gets bounded claim-by-claim source checks. */
+  verifySourceClaims?: boolean;
   supabase: SupabaseClient;
   workspaceId: string;
   keyword: string;
@@ -871,7 +873,9 @@ async function generateArticleInContext(options: GenerateArticleOptions): Promis
     // Full-draft evals found accepted revisions that retained real errors and
     // changed supported wording. Keep the experimental reviser in the offline
     // harness until it beats the original under independent review.
-    const reviewedOutput = await reviewApprovedOutput(processedHtml, reviewOptions);
+    const reviewedOutput = options.verifySourceClaims
+      ? await (await import("./first-draft-review")).reviewFirstDraft(processedHtml, reviewOptions)
+      : await reviewApprovedOutput(processedHtml, reviewOptions);
     processedHtml = reviewedOutput.html;
     articleResult.wordCount = processedHtml.replace(/<[^>]+>/g, " ").trim().split(/\s+/).filter(Boolean).length;
     research.editorialReview = reviewedOutput.report;

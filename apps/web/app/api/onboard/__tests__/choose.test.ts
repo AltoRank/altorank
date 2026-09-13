@@ -28,6 +28,7 @@ it("claims one saved choice and attaches the generated article to its calendar e
   expect(afters).toHaveLength(1); expect(generate).not.toHaveBeenCalled();
   await afters[0]();
   expect(generate).toHaveBeenCalledTimes(1);
+  expect(generate).toHaveBeenCalledWith(expect.objectContaining({workspaceId:"ws1",verifySourceClaims:true}));
   expect(fulfil).toHaveBeenCalledWith(db.client,"c1","a1");
   expect(db.tables.onboarding_runs[0]).toMatchObject({status:"done",article_id:"a1"});
   expect(db.tables.workspaces[0].onboarded_at).toBeTruthy();
