@@ -101,7 +101,7 @@ export async function startRun(
       .from("onboarding_runs")
       .select("id, status, updated_at")
       .eq("workspace_id", workspace.id)
-      .eq("status", "running")
+      .in("status", ["running", "awaiting_choice"])
       .maybeSingle();
     return (data as Pick<OnboardingRunRow, "id" | "status" | "updated_at"> | null) ?? null;
   };

@@ -121,7 +121,7 @@ describe("reducer parity", () => {
     for (const e of WORKER_EVENTS) rec.record(e);
     await rec.flush();
     const persisted = stateFromRun(db.tables.onboarding_runs[0] as unknown as OnboardingRunRow, null);
-    expect(persisted).toEqual(streamed);
+    expect(persisted).toEqual({ ...streamed, runId: db.tables.onboarding_runs[0].id, awaitingChoice: false });
   });
 
   it("and once the draft route has stamped the draft and the run is over", async () => {
@@ -139,12 +139,12 @@ describe("reducer parity", () => {
     expect(row.status).toBe("done");
     expect(row.article_id).toBe("a1");
     const persisted = stateFromRun(row, ARTICLE_ROW);
-    expect(persisted).toEqual(streamed);
+    expect(persisted).toEqual({ ...streamed, runId: db.tables.onboarding_runs[0].id, awaitingChoice: false });
   });
 
   it("a row with nothing written yet is the first frame", () => {
     const row = { id: "r1", workspace_id: "ws1", status: "running", phases: [], planned: [], keywords_found: null, article_id: null, error: null, started_at: "", updated_at: "", finished_at: null } as OnboardingRunRow;
-    expect(stateFromRun(row, null)).toEqual(initialOnboardingState());
+    expect(stateFromRun(row, null)).toEqual({ ...initialOnboardingState(), runId: row.id, awaitingChoice: false });
   });
 
   it("does not show a draft the row does not point at", () => {
@@ -354,4 +354,15 @@ describe("a run that made nothing emails the account; a run that made something 
     expect(d.transient).toBe(false);
     expect(setupFailedFacts("error", null, "boom").line).toBe("boom");
   });
+});
+
+it("persists supported brief previews across polling before a calendar exists", async () => {
+  const db = fakeDb({onboarding_runs:[{id:"progress-run",workspace_id:"ws1",status:"running",phases:[],planned:[]}]});
+  const recorder = new RunRecorder(db.client,"progress-run");
+  const briefs = [{term:"Compare booking software",date:"",keywordId:"k1"}];
+  recorder.record({phase:"planning",status:"active",detail:"First supported brief ready",briefs});
+  await recorder.flush();
+  const state = stateFromRun(db.tables.onboarding_runs[0] as unknown as OnboardingRunRow,null);
+  expect(state.steps.find((s) => s.phase === "planning")?.briefs).toEqual(briefs);
+  expect(state.planned).toEqual([]); expect(state.ready).toBe(false);
 });

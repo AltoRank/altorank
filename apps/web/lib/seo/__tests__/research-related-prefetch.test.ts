@@ -61,3 +61,13 @@ describe("gatherArticleResearch related keywords", () => {
     expect(research.layers.find((l) => l.id === "related_keywords")?.detail).toBe("1 related keywords");
   });
 });
+
+it("reuses qualification SERPs only for the same query, locale and freshness window", async () => {
+  const saved = {query:"practice website", languageCode:"en", locationCode:2826, fetchedAt:new Date().toISOString(), data:{organic:[],peopleAlsoAsk:["What should I compare?"],aiOverview:null}};
+  const research = await gatherArticleResearch({keyword:saved.query,locale:"en",locationCode:2826,qualifiedSerp:saved});
+  expect(serp).not.toHaveBeenCalled(); expect(research.peopleAlsoAsk).toEqual(saved.data.peopleAlsoAsk);
+  await gatherArticleResearch({keyword:saved.query,locale:"en",locationCode:2840,qualifiedSerp:saved});
+  expect(serp).toHaveBeenCalledTimes(1);
+  await gatherArticleResearch({keyword:saved.query,locale:"en",locationCode:2826,qualifiedSerp:{...saved,fetchedAt:new Date(Date.now()-16*60_000).toISOString()}});
+  expect(serp).toHaveBeenCalledTimes(2);
+});

@@ -36,9 +36,10 @@ import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { generateArticle } from "@/lib/content/generate";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
-import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
+import { hasDataForSEOCredentials, withSpendReporter } from "@/lib/seo/client";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
+import { serpOverlap, type Opportunity } from "@/lib/keyword-research/opportunity";
 import { schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
 
 /** Pages the onboarding minute reads. The nightly pass reads up to forty. */
@@ -53,7 +54,7 @@ export type Emit = (event: OnboardingEvent) => void;
 
 export interface RunOnboardingOptions {
   /** See the header: `inline` awaits the draft here, `dispatch` returns it. */
-  firstDraft?: "inline" | "dispatch";
+  firstDraft?: "inline" | "dispatch" | "choose";
 }
 
 /** The first draft, chosen and gated but not yet written, for the caller to dispatch. */
@@ -66,6 +67,7 @@ export interface PendingDraft {
 }
 
 export interface RunOnboardingResult {
+  awaitingChoice?: boolean;
   /** Set only under `firstDraft: "dispatch"`, and only when there is a draft to write. */
   pendingDraft: PendingDraft | null;
   /**
@@ -111,21 +113,16 @@ export async function runOnboarding(
   // pipeline is the signed-in user's, and provider_spend refuses its inserts.
   // generateArticle arms its own, finer reporter (article and run) for the
   // draft and clears it after; the finally clears ours however the run ends.
-  setSpendReporter(({ operation, costUsd }) => {
-    recordSpendByDefault({ provider: "dataforseo", operation, costUsd, workspaceId: workspace.id });
-  });
-  try {
-    return await runPhases(supabase, workspace, emit, options.firstDraft ?? "inline");
-  } finally {
-    setSpendReporter(null);
-  }
+  return withSpendReporter(({ operation, costUsd }) => {
+    void recordSpendByDefault({ provider: "dataforseo", operation, costUsd, workspaceId: workspace.id });
+  }, () => runPhases(supabase, workspace, emit, options.firstDraft ?? "inline"));
 }
 
 async function runPhases(
   supabase: SupabaseClient,
   workspace: Workspace,
   emit: Emit,
-  firstDraft: "inline" | "dispatch",
+  firstDraft: "inline" | "dispatch" | "choose",
 ): Promise<RunOnboardingResult> {
   const domain = workspace.domain;
 
@@ -164,7 +161,9 @@ async function runPhases(
   // with that - skip, and say why. Phase 0 stops the adjacent case, a domain
   // with no DNS at all.
   emit({ phase: "scanning", status: "active" });
-  if (!domain) {
+  if (firstDraft === "choose" && workspace.business_profile) {
+    emit({ phase: "scanning", status: "done", detail: "Using the business focus you confirmed. Voice preparation follows your topic choice." });
+  } else if (!domain) {
     emit({ phase: "scanning", status: "skipped", detail: "No domain on this workspace yet." });
   } else {
     try {
@@ -216,7 +215,8 @@ async function runPhases(
         // A dozen pages is a voice and a vocabulary; the nightly pass reads the
         // rest. Every page here is one request against a host that may be
         // counting them (packhub.io bans after ten in forty seconds).
-        maxPages: ONBOARDING_CRAWL_PAGES,
+        maxPages: firstDraft === "choose" ? 3 : ONBOARDING_CRAWL_PAGES,
+        ...(firstDraft === "choose" ? { deferPageSpeed: true } : {}),
       });
       keywordsFound = analysis.keywordsFound;
       // "Nothing rankable found for this site yet" is only true when we were
@@ -281,7 +281,9 @@ async function runPhases(
   // ONBOARDING_CRAWL so a 600-post blog cannot eat the worker's 300 seconds,
   // and best-effort: `assessExistingPages` never throws.
   emit({ phase: "pages", status: "active" });
-  if (domain && refusing(`https://${domain}/`)) {
+  if (firstDraft === "choose") {
+    emit({ phase: "pages", status: "skipped", detail: "Relevant existing pages are checked during topic research; the full page review is available after setup." });
+  } else if (domain && refusing(`https://${domain}/`)) {
     // Eight more requests into a ban only extend it. The nightly pass reads
     // the pages when the host is not counting.
     emit({ phase: "pages", status: "skipped", detail: "The site is rate-limiting us right now; the nightly pass reads your existing pages." });
@@ -314,7 +316,7 @@ async function runPhases(
   // cost) into link_targets, which is the pool generateArticle offers the
   // writer. Best effort: a sitemap that cannot be read is a draft without
   // internal links, not a failed onboarding.
-  if (domain) {
+  if (domain && firstDraft !== "choose") {
     try {
       const pool = await detectLinks(supabase, workspace.id);
       if (pool.added > 0) console.log(`[onboarding] link pool: ${pool.added} page(s) from the site's own sources`);
@@ -330,7 +332,18 @@ async function runPhases(
     emit({ phase: "planning", status: "skipped", detail: "Nothing to schedule until there are keywords." });
   } else {
     try {
-      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, { maxEntries: 5 });
+      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, { maxEntries: 5, ...(firstDraft === "choose" ? {
+        onProgress: (items: Array<{id: string; term: string}>, results: Map<string, Opportunity>) => {
+          const kept: Opportunity[] = [];
+          const briefs = items.flatMap((item) => {
+            const brief = results.get(item.id);
+            if (brief?.status !== "qualified" || kept.some((other) => serpOverlap(brief.organicUrls ?? [], other.organicUrls ?? []) >= 0.5)) return [];
+            kept.push(brief);
+            return [{keywordId:item.id,term:item.term,date:"",brief}];
+          }).slice(0,5);
+          if (briefs.length) emit({phase:"planning",status:"active",detail:`${briefs.length} supported brief${briefs.length === 1 ? "" : "s"} ready to read. Checking the remaining candidates.`,briefs});
+        },
+      } : {}) });
       emit({
         phase: "planning",
         status: plan.length > 0 ? "done" : "skipped",
@@ -338,11 +351,16 @@ async function runPhases(
           plan.length > 0
             ? `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has a buyer and supporting search evidence.`
             : "No keyword clear enough to plan yet.",
-        planned: plan.map((p) => ({ term: p.term, date: p.date, brief: p.brief })),
+        planned: plan.map((p) => ({ keywordId: p.keywordId, term: p.term, date: p.date, brief: p.brief })),
       });
     } catch (err) {
       emit({ phase: "planning", status: "failed", detail: message(err) });
     }
+  }
+
+  if (firstDraft === "choose" && plan.length) {
+    emit({ phase: "drafting", status: "pending", detail: "Choose the article you want to read first." });
+    return { pendingDraft: null, awaitingChoice: true, fanOutSettled: Promise.resolve() };
   }
 
   emit({ phase: "drafting", status: "active" });

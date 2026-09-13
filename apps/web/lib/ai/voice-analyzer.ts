@@ -33,7 +33,7 @@ export async function analyzeVoiceWithAI(
     throw new Error("ANTHROPIC_API_KEY not configured");
   }
 
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey, maxRetries: 0 });
 
   const combined = sampleTexts
     .map((t, i) => `--- Sample ${i + 1} ---\n${t}`)
@@ -46,7 +46,7 @@ export async function analyzeVoiceWithAI(
     max_tokens: 1024,
     system: ANALYSIS_PROMPT,
     messages: [{ role: "user", content: combined }],
-  });
+  }, { signal: AbortSignal.timeout(25_000) });
 
   const text =
     response.content[0].type === "text" ? response.content[0].text : "";

@@ -47,7 +47,7 @@ describe("executeRun", () => {
     await r.keepAlive;
 
     expect(r.outcome).toBe("awaiting-draft");
-    expect(run).toHaveBeenCalledWith(d.client, expect.objectContaining({ id: "ws1", domain: "example.com" }), expect.any(Function), { firstDraft: "dispatch" });
+    expect(run).toHaveBeenCalledWith(d.client, expect.objectContaining({ id: "ws1", domain: "example.com" }), expect.any(Function), { firstDraft: "choose" });
     const row = d.tables.onboarding_runs[0] as unknown as OnboardingRunRow;
     expect(row.status).toBe("running");
     expect(row.phases.map((p) => `${p.phase}:${p.status}`)).toEqual(["scanning:done", "keywords:done", "pages:pending", "planning:done", "drafting:active"]);
@@ -76,7 +76,7 @@ describe("executeRun", () => {
     const d = db();
     const run = pipeline({ pendingDraft: null }, [{ phase: "drafting", status: "done", detail: "Wrote 1,200 words.", article: { id: "a1", title: "T", keyword: "seo agent", wordCount: 1200, verdict: "clean" } }, { phase: "ready" }]);
     const r = await executeRun("r1", { supabase: d.client, run, dispatch: dispatch as never, announce: announce as never, canDispatch: () => false });
-    expect(run).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.any(Function), { firstDraft: "inline" });
+    expect(run).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.any(Function), { firstDraft: "choose" });
     expect(r.outcome).toBe("ran");
     const row = d.tables.onboarding_runs[0] as unknown as OnboardingRunRow;
     expect(row.status).toBe("done");

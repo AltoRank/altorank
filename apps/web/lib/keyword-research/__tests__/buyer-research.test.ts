@@ -175,7 +175,7 @@ describe("discoverBuyerKeywords", () => {
     });
     expect(out.competitorsAsked).toEqual(["packiyo.com", "shipstation.com", "easyship.com"]);
     expect(ranked).toHaveBeenCalledTimes(3);
-    expect(ranked.mock.calls[0][1]).toMatchObject({ limit: 100, minVolume: 10, maxRank: 20 });
+    expect(ranked.mock.calls[0][1]).toMatchObject({ limit: 40, minVolume: 10, maxRank: 20 });
     // One row survives per rival call: the two brand rows are dropped.
     expect(out.fromCompetitors.map((k) => k.keyword)).toEqual(["packing slip template", "shipstation pricing"]);
     expect(out.fromCompetitors[0].competitor).toBe("packiyo.com");

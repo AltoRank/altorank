@@ -80,6 +80,8 @@ export async function fetchAdvancedSerp(
     [
       {
         keyword,
+        device: "desktop",
+        depth: 10,
         location_code: locale.locationCode,
         language_code: locale.languageCode,
       },

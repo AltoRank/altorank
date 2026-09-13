@@ -7,8 +7,8 @@
 // remain - is arithmetic over data already fetched, so the same inputs always
 // give the same table and every count in the summary line can be tested.
 
-import { normalizeTarget } from "@/lib/seo/recommendations";
-import { PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
+import { normalizeTarget } from "./normalize-target";
+import { PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan-calendar";
 import { computeCapacity } from "@/lib/plan/capacity";
 import type { PlanCapacity, ResearchCandidate, ResearchFunnel } from "./types";
 

@@ -863,6 +863,19 @@ export function ArticleEditor({
           </SidebarSection>
         )}
 
+        {article.research?.editorialReview && <SidebarSection title="Editorial checks">
+          <div className="space-y-2 text-[12px] text-ink-2">
+            <p>Checks on the generated draft. Recheck any text you edit.</p>
+            <p>Product claims: {article.research.editorialReview.productClaims.replaceAll("-", " ")}.</p>
+            <p>Qualitative claims: {article.research.editorialReview.qualitativeClaims.replaceAll("-", " ")}.</p>
+            <p>Structure: {article.research.editorialReview.structure.replaceAll("-", " ")}.</p>
+            {article.research.editorialReview.findings.map((finding, index) => <div key={index} className="border-t border-line pt-2">
+              <p>{finding.removed ? "Removed duplicate" : "Review suggested"}: {finding.reason}</p>
+              {!finding.removed && <button type="button" className="mt-1 text-accent underline" onClick={() => locateInEditor(finding.text)}>Find this passage</button>}
+            </div>)}
+          </div>
+        </SidebarSection>}
+
         {/* Internal links: which words link where, against the configured count */}
         <SidebarSection title="Internal links">
           <InternalLinksPanel

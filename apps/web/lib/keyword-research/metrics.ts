@@ -15,12 +15,15 @@ import { post } from "@/lib/seo/client";
 import { classifyIntent } from "@/lib/seo/intent";
 import type { KeywordIntent } from "@/lib/types";
 
+export interface MetricMetadata { measuredAt: string | null; mainIntent: string | null; secondaryIntents: string[]; }
+
 export interface TermMetrics {
   term: string;
   volume: number | null;
   difficulty: number | null;
   cpc: number | null;
   intent: KeywordIntent;
+  metadata?: MetricMetadata;
 }
 
 /** Every field optional: this is an external payload we do not control. */
@@ -30,9 +33,10 @@ export type OverviewItem = {
     search_volume?: number | null;
     cpc?: number | null;
     competition?: number | null;
+    last_updated_time?: string | null;
   } | null;
   keyword_properties?: { keyword_difficulty?: number | null } | null;
-  search_intent_info?: { main_intent?: string | null } | null;
+  search_intent_info?: { main_intent?: string | null; secondary_intents?: string[] | null } | null;
 };
 
 type OverviewResult = { items?: OverviewItem[] | null; items_count?: number | null };
@@ -53,29 +57,23 @@ function mapIntent(raw: string | null | undefined, term: string, languageCode: s
   return classifyIntent(term, languageCode).intent;
 }
 
-/**
- * Map one overview row, or null when it carries no usable keyword.
- *
- * Difficulty 0 on a term with real volume is the provider saying "not
- * computed", not "free": "notion alternatives" came back at 1,600/mo with
- * keyword_difficulty 0 on the very first live call. `recommendations.ts`
- * already refuses to score that as easy; the Easy-win badge would otherwise
- * light up on exactly the terms we know least about, so it becomes unknown.
- */
+/** Preserve provider measurements, including valid zero difficulty. */
 export function parseOverviewItem(item: OverviewItem, languageCode = "en"): TermMetrics | null {
   const term = (item.keyword ?? "").trim();
   if (!term) return null;
   const volume = num(item.keyword_info?.search_volume);
-  let difficulty = num(item.keyword_properties?.keyword_difficulty);
-  // A difficulty of 0 is "not computed", whatever the volume: a live run handed the
-  // model a 720-volume term at KD 0 and it read it as "easiest". Rule 5.
-  if (difficulty === 0) difficulty = null;
+  const difficulty = num(item.keyword_properties?.keyword_difficulty);
   return {
     term,
     volume,
     difficulty,
     cpc: num(item.keyword_info?.cpc),
     intent: mapIntent(item.search_intent_info?.main_intent, term, languageCode),
+    ...(item.keyword_info?.last_updated_time || item.search_intent_info?.secondary_intents ? { metadata: {
+      measuredAt: item.keyword_info?.last_updated_time ?? null,
+      mainIntent: item.search_intent_info?.main_intent ?? null,
+      secondaryIntents: item.search_intent_info?.secondary_intents ?? [],
+    } } : {}),
   };
 }
 

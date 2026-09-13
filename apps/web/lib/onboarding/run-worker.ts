@@ -16,7 +16,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
-import { canSelfInvoke, dispatchFirstDraft } from "@/lib/content/fan-out";
+import { dispatchFirstDraft } from "@/lib/content/fan-out";
 import { announceDraftBatch } from "@/lib/email/draft-batch";
 import { runOnboarding } from "./pipeline";
 import { RunRecorder, RUN_COLUMNS, stampRun } from "./run-store";
@@ -27,6 +27,7 @@ export type ExecuteOutcome =
   | "already-running"
   | "already-finished"
   | "ran"
+  | "awaiting-choice"
   | "awaiting-draft"
   | "failed";
 
@@ -120,11 +121,11 @@ export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise
     return settled;
   }
 
-  const canDispatch = (deps.canDispatch ?? canSelfInvoke)();
+
   let result: Awaited<ReturnType<typeof runOnboarding>>;
   try {
     result = await (deps.run ?? runOnboarding)(supabase, workspace, recorder.record, {
-      firstDraft: canDispatch ? "dispatch" : "inline",
+      firstDraft: "choose",
     });
   } catch (err) {
     await recorder.fail(err instanceof Error ? err.message : "Onboarding failed.");
@@ -133,6 +134,11 @@ export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise
   // Every phase is on the row before anything else may write to it.
   await recorder.flush();
 
+  if (result.awaitingChoice) {
+    const { error } = await supabase.from("onboarding_runs").update({ status: "awaiting_choice", updated_at: new Date().toISOString() }).eq("id", runId).eq("workspace_id", workspace.id).eq("status", "running");
+    if (error) { await recorder.fail("Could not save your topic choices. Retry preparation."); return settled; }
+    return { outcome: "awaiting-choice", keepAlive: Promise.resolve() };
+  }
   const announce = deps.announce ?? announceDraftBatch;
 
   const pending = result.pendingDraft;

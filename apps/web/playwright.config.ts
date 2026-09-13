@@ -33,7 +33,7 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "npx next dev -p 3110",
+    command: `npx next dev -p ${new URL(BASE_URL).port || "3110"}`,
     // /signin answers 200 without a session; / is a redirect to the marketing site.
     url: `${BASE_URL}/signin`,
     // A server already on 3110 is reused locally, so `npm run dev:e2e` in one
@@ -53,7 +53,7 @@ export default defineConfig({
       // The onboarding run and the fan-out call this server back over HTTP
       // (lib/content/fan-out.ts); a base URL pointing at another dev server
       // would run the worker there, against whatever database it has.
-      NEXT_PUBLIC_APP_URL: `http://localhost:3110`,
+      NEXT_PUBLIC_APP_URL: BASE_URL,
       // Belt and braces: even a path the stubs miss cannot authenticate to a
       // paid provider, and the approval gate is exercised as self-host (no
       // Stripe), where approving needs no plan.
@@ -63,6 +63,7 @@ export default defineConfig({
       DATAFORSEO_LOGIN: "",
       DATAFORSEO_PASSWORD: "",
       STRIPE_SECRET_KEY: "",
+      RESEND_API_KEY: "",
     },
   },
 });

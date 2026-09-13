@@ -32,6 +32,7 @@ const setSpendReporter = vi.fn();
 vi.mock("@/lib/seo/client", () => ({
   hasDataForSEOCredentials: () => creds(),
   setSpendReporter: (fn: unknown) => setSpendReporter(fn),
+  withSpendReporter: async (fn: unknown, work: () => Promise<unknown>) => { setSpendReporter(fn); try { return await work(); } finally { setSpendReporter(null); } },
 }));
 const recordSpendByDefault = vi.fn();
 vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault: (e: unknown) => recordSpendByDefault(e) }));

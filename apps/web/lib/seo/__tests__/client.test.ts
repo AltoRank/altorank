@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 const { recordSpendByDefault } = vi.hoisted(() => ({ recordSpendByDefault: vi.fn() }));
 vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault }));
 
-import { post, hasDataForSEOCredentials, DataForSEOError } from "../client";
+import { post, hasDataForSEOCredentials, DataForSEOError, setSpendReporter } from "../client";
 
 // The shape below is copied from a real 40201 response observed on 2026-08-30
 // when the altorank@supalabs.co account was suspended: the envelope says
@@ -49,9 +49,11 @@ function respond(body: unknown, status = 200) {
 }
 
 beforeEach(() => {
+  setSpendReporter(null);
   vi.stubEnv("DATAFORSEO_API_KEY", "dGVzdDp0ZXN0");
 });
 afterEach(() => {
+  setSpendReporter(null);
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });

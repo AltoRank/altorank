@@ -1,3 +1,5 @@
+import { supportedCapabilities, type BusinessFocus } from "@/lib/onboarding/profile-focus";
+import { providerSignal, currentResearchBudget } from "@/lib/seo/request-context";
 // ---------------------------------------------------------------------------
 // The one model call shape the buyer-side research makes, and its bill
 // ---------------------------------------------------------------------------
@@ -36,23 +38,26 @@ export async function askStructured(
   if (!apiKey) return null;
   const model = anthropicModel("structured");
   try {
-    const client = new Anthropic({ apiKey });
+    const client = new Anthropic({ apiKey, maxRetries: 0 });
     const response = await client.messages.create({
       model,
       max_tokens: options.maxTokens,
       messages: [{ role: "user", content: prompt }],
-    });
+    }, { signal: providerSignal(25_000) });
+    const inputTokens = response.usage?.input_tokens ?? 0;
+    const outputTokens = response.usage?.output_tokens ?? 0;
+    const cost = anthropicCost(model, inputTokens, outputTokens);
+    const budget = currentResearchBudget();
+    if (budget) budget.costUsd += cost ?? 0;
     if (options.spend) {
-      const inputTokens = response.usage?.input_tokens ?? 0;
-      const outputTokens = response.usage?.output_tokens ?? 0;
-      await recordSpend(options.spend.supabase, {
+      await boundedAccounting(recordSpend(options.spend.supabase, {
         provider: "anthropic",
         operation,
-        costUsd: anthropicCost(model, inputTokens, outputTokens),
+        costUsd: cost,
         inputTokens,
         outputTokens,
         workspaceId: options.spend.workspaceId,
-      });
+      }));
     }
     return response.content[0]?.type === "text" ? response.content[0].text : null;
   } catch {
@@ -77,7 +82,7 @@ export function extractJson<T>(raw: string | null, open: "[" | "{", close: "]" |
 }
 
 /** The lines of a business profile the prompts share. */
-export function describeBusiness(business: {
+export function describeBusiness(business: BusinessFocus & {
   name?: string | null;
   description?: string | null;
   audiences?: string[] | null;
@@ -91,16 +96,28 @@ export function describeBusiness(business: {
   language?: string | null;
 }): string {
   const lines: string[] = [];
+  if (business.primaryBuyer) lines.push(`FIRST priority buyer: ${business.primaryBuyer}`);
+  if (business.priorityOffering) lines.push(`FIRST priority offering: ${business.priorityOffering}`);
+  lines.push(`Supported product capabilities: ${JSON.stringify(supportedCapabilities(business))}`);
   if (business.name?.trim()) lines.push(`Name: ${business.name.trim()}`);
   if (business.description?.trim()) lines.push(`What it does: ${business.description.trim()}`);
   if (business.offerings?.length) lines.push(`What people buy from it: ${business.offerings.join("; ")}`);
   if (business.audiences?.length) lines.push(`Who buys: ${business.audiences.join("; ")}`);
   if (business.competitors?.length) lines.push(`Competitors: ${business.competitors.join(", ")}`);
   if (business.buyingJobs?.length) lines.push(`Buying jobs: ${business.buyingJobs.join("; ")}`);
-  if (business.differentiators?.length) lines.push(`Supported differences: ${business.differentiators.join("; ")}`);
+  if (business.differentiators?.length) lines.push(`Site positioning (not independently verified capabilities): ${business.differentiators.join("; ")}`);
   if (business.exclusions?.length) lines.push(`Not served: ${business.exclusions.join("; ")}`);
   if (business.conversionUrl) lines.push(`Conversion page: ${business.conversionUrl}`);
   if (business.language) lines.push(`Language: ${business.language}`);
   if (business.country) lines.push(`Market: ${business.country}`);
   return lines.join("\n");
+}
+
+/** A slow accounting database cannot discard a successful model response. */
+async function boundedAccounting(work: Promise<unknown>): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([work.catch(() => { console.error("[research] Spend recording failed"); }),
+      new Promise<void>((resolve) => { timer = setTimeout(() => { console.error("[research] Spend recording exceeded deadline"); resolve(); }, 1500); })]);
+  } finally { clearTimeout(timer); }
 }

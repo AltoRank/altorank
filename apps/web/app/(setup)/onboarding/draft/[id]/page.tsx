@@ -35,12 +35,22 @@ export default async function DraftPreview({ params }: { params: Promise<{ id: s
   const supabase = await createClient();
   const { data: workspace } = await supabase.from("workspaces").select("id").eq("id", workspaceId).eq("account_id", accountId).maybeSingle();
   if (!workspace) notFound();
-  const { data: article } = await supabase.from("articles").select("id, title, content, keyword, word_count, status").eq("workspace_id", workspaceId).eq("id", id).in("status", ["review", "approved", "scheduled", "live"]).maybeSingle();
+  const { data: article } = await supabase.from("articles").select("id, title, content, keyword, word_count, status, research, fact_checks").eq("workspace_id", workspaceId).eq("id", id).in("status", ["review", "approved", "scheduled", "live"]).maybeSingle();
   if (!article?.content) notFound();
+  const review = (article.research as { editorialReview?: import("@/lib/content/approved-output").EditorialReview } | null)?.editorialReview;
+  const figures = article.fact_checks as { verdict?: string; claims?: unknown[] } | null;
   return <main className="mx-auto max-w-3xl px-6 py-10">
     <Link href="/onboarding" className="text-accent">← Back to your draft and plan</Link>
     <p className="mt-5 text-sm text-ink-3">Read-only preview · {article.word_count ?? 0} words · {article.keyword}</p>
     <h1 className="my-6 text-3xl font-semibold">{article.title}</h1>
+    <section className="mb-6 rounded-lg border border-line p-4 text-sm" aria-label="Draft checks">
+      <h2 className="mb-2 font-semibold">What was checked</h2>
+      <p>Numbers and citations: {figures?.verdict === "clean" ? "No issues detected by targeted checks; this is not a comprehensive factual approval." : "Review the cited evidence before publishing."}</p>
+      <p>Product claims: {review?.productClaims?.replaceAll("-", " ") ?? "not checked"}.</p>
+      <p>Qualitative claims: {review?.qualitativeClaims?.replaceAll("-", " ") ?? "not checked"}.</p>
+      <p>Structure: {review?.structure?.replaceAll("-", " ") ?? "not checked"}.</p>
+      {review?.findings.map((finding, i) => <p key={i} className="mt-2">{finding.removed ? "Removed" : "Needs review"}: {finding.reason}</p>)}
+    </section>
     <article className="leading-7">{body(article.content as Node)}</article>
     <Link href="/onboarding" className="mt-8 inline-block text-accent">Return to trial options</Link>
   </main>;

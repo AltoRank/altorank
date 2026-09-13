@@ -54,8 +54,8 @@ const MAX_SEEDS = 12;
 /** keyword_suggestions is one paid call per seed, so expansion is bounded. */
 const EXPAND_SEEDS = 4;
 
-export const GENERATE_DEFAULT = 5;
-export const GENERATE_MAX = 30;
+import { GENERATE_DEFAULT, GENERATE_MAX } from "./limits";
+export { GENERATE_DEFAULT, GENERATE_MAX } from "./limits";
 
 function metricsToCandidate(m: TermMetrics, origin: string): ResearchCandidate {
   return { term: m.term, volume: m.volume, difficulty: m.difficulty, cpc: m.cpc, intent: m.intent, origin, existingId: null, existingStatus: null };
@@ -279,8 +279,8 @@ export async function researchGenerate(
             suspect++;
             continue;
           }
-          // Difficulty 0 with real volume is "not computed" (see metrics.ts).
-          const difficulty = k.difficulty === 0 ? null : k.difficulty;
+          // Preserve zero: it is a valid provider difficulty.
+          const difficulty = k.difficulty;
           raw.push({
             term: k.keyword,
             volume: k.volume,
@@ -338,7 +338,7 @@ export async function researchGenerate(
             raw.push({
               term: k.keyword,
               volume: k.volume > 0 ? k.volume : null,
-              difficulty: k.difficulty === 0 ? null : k.difficulty,
+              difficulty: k.difficulty,
               cpc: k.cpc > 0 ? k.cpc : null,
               intent: k.intent,
               origin: "audience: expanded from a seed phrase",
@@ -441,7 +441,7 @@ export async function researchFind(
       .map((k) => ({
         term: k.keyword,
         volume: k.volume > 0 ? k.volume : null,
-        difficulty: k.difficulty === 0 ? null : k.difficulty,
+        difficulty: k.difficulty,
         cpc: k.cpc > 0 ? k.cpc : null,
         intent: k.intent,
         origin: `related to "${clean}"`,

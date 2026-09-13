@@ -30,7 +30,7 @@ import { type DiscoveredKeyword, storedCpc } from "@/lib/seo/keywords";
 import { profileIsUsable, scoreRelevance, subjectVocabulary } from "@/lib/seo/topical-profile";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
-import { discoverBuyerKeywords } from "@/lib/keyword-research/discovery";
+import { discoverBuyerKeywords, type DiscoveryResult } from "@/lib/keyword-research/discovery";
 import { isBrandTerm } from "@/lib/keyword-research/seeds";
 import { judgeBuyerFit } from "@/lib/keyword-research/buyer-fit";
 import { isOutOfReach, isHopeless } from "@/lib/seo/difficulty";
@@ -57,6 +57,7 @@ export interface AnalysisLayer {
 }
 
 export interface DomainAnalysis {
+  keywordResearch?: Omit<Partial<DiscoveryResult>, "fromCompetitors" | "fromIdeas">;
   domain: string;
   readiness: ReadinessResult | null;
   /** Vocabulary the site actually uses, for scoring keyword relevance. */
@@ -406,6 +407,8 @@ export async function analyseDomain(options: {
    * may be counting them.
    */
   maxPages?: number;
+  /** Onboarding can prepare briefs before the separate PageSpeed audit. */
+  deferPageSpeed?: boolean;
   /** How long to wait once when a host rate-bans the crawl. Tests pass 0. */
   rateBanWaitMs?: number;
   /**
@@ -422,6 +425,7 @@ export async function analyseDomain(options: {
   const depth = options.depth ?? "full";
   const baseUrl = `https://${domain}`;
   const layers: AnalysisLayer[] = [];
+  let keywordResearch: DomainAnalysis["keywordResearch"];
 
   // --- Agent readiness -----------------------------------------------------
   // What readiness fetches - the homepage, robots.txt, the sitemap - the crawl
@@ -518,7 +522,7 @@ export async function analyseDomain(options: {
 
   // --- PageSpeed -----------------------------------------------------------
   let pagespeed: Record<string, unknown> = {};
-  const ps = depth === "full" ? await fetchPageSpeedDetailed(baseUrl) : { ok: false as const, kind: "unavailable" as const, detail: "not run on a quick look" };
+  const ps = depth === "full" && !options.deferPageSpeed ? await fetchPageSpeedDetailed(baseUrl) : { ok: false as const, kind: "unavailable" as const, detail: options.deferPageSpeed ? "Deferred until after topic selection" : "not run on a quick look" };
   if (ps.ok) {
     // PageSpeedResult is a fixed shape; the column is jsonb, so it is stored
     // as a plain object rather than reshaped.
@@ -796,10 +800,11 @@ export async function analyseDomain(options: {
                 languageCode: languageCodeOf(options.locale),
                 locationCode: options.locationCode,
                 spend,
+                hasRankings: ranked.length > 0,
               })
             : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [] };
-        const fromCompetitors = discovered.fromCompetitors;
-        const fromIdeas = discovered.fromIdeas;
+        const {fromCompetitors, fromIdeas, ...summary} = discovered;
+        keywordResearch = summary;
 
         // Position per ranked term, for the reserve rule below.
         const positionByTerm = new Map<string, number | null>();
@@ -940,6 +945,7 @@ export async function analyseDomain(options: {
               source_type: c.rank === 0 ? "ranked" : c.rank === 1 ? "competitor" : "profile",
               source_ref: c.rank === 1 ? (c.k.competitor ?? null) : null,
               source_url: c.k.sourceUrl ?? null,
+              research_evidence: c.k.evidence ?? null,
               buyer_fit: fit.verdicts.get(c.k.keyword.trim().toLowerCase()) ?? null,
             }));
           if (rows.length) {
@@ -976,7 +982,7 @@ export async function analyseDomain(options: {
             ? `${rankedDropped} on pages that are not yours, left out`
             : "",
           fromCompetitors.length
-            ? `${fromCompetitors.length} from what ${discovered.competitorsAsked.length === 1 ? "the competitor" : `the ${discovered.competitorsAsked.length} competitors`} you named rank${discovered.competitorsAsked.length === 1 ? "s" : ""} for`
+            ? `${fromCompetitors.length} from what ${discovered.competitorsAsked.length === 1 ? "the competitor" : `the ${discovered.competitorsAsked.length} competitors`} researched rank${discovered.competitorsAsked.length === 1 ? "s" : ""} for`
             : "",
           fromIdeas.length
             ? `${fromIdeas.length} around the ${discovered.seedsPriced} thing${discovered.seedsPriced === 1 ? "" : "s"} you said people buy from you`
@@ -988,7 +994,7 @@ export async function analyseDomain(options: {
         layers.push({
           id: "keywords",
           status: toJudge.length > 0 && fit.verdicts.size === 0 ? "failed" : "ok",
-          detail: `${keywordsFound} keywords found: ${parts.join(", ") || "none"}`,
+          detail: `${keywordsFound} keywords found: ${parts.join(", ") || "none"}${"issues" in discovered && discovered.issues?.length ? `. ${discovered.issues.map((issue) => issue.message).filter((v, i, all) => all.indexOf(v) === i).join(" ")}` : ""}`,
         });
       })();
     } catch (err) {
@@ -1066,6 +1072,7 @@ export async function analyseDomain(options: {
   }
 
   const analysis: DomainAnalysis = {
+    keywordResearch,
     domain,
     authority,
     traffic,
@@ -1090,6 +1097,7 @@ export async function analyseDomain(options: {
       workspace_id: workspaceId,
       status: "completed",
       pages_crawled: pagesCrawled,
+      research_summary: keywordResearch ?? null,
       // Null stays null: an uncrawlable site has no on-page score, and storing 0
       // would make it indistinguishable from a site that scored badly.
       overall_score: auditScore ?? readiness?.score ?? null,

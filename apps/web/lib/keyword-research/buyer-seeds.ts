@@ -1,3 +1,5 @@
+import { SEED_FAMILIES, type SeedFamily } from "./evidence";
+import type { BusinessFocus } from "@/lib/onboarding/profile-focus";
 // ---------------------------------------------------------------------------
 // What a buyer types, proposed from the business profile
 // ---------------------------------------------------------------------------
@@ -23,11 +25,13 @@ export const MAX_BUYER_SEEDS = 15;
 
 export interface BuyerSeeds {
   seeds: string[];
+  families?: Record<string, SeedFamily>;
+  missingFamilies?: SeedFamily[];
   /** Where they came from, for the run's trace. */
   basis: "model" | "profile" | "none";
 }
 
-export interface SeedableProfile {
+export interface SeedableProfile extends BusinessFocus {
   name?: string | null;
   description?: string | null;
   audiences?: string[] | null;
@@ -54,7 +58,7 @@ const PROMPT = [
   "- Never a one-word head term. \"shipping\" is not a search a buyer of a packing app makes; \"packing slip template\" is.",
   "- Nothing a consumer types for personal use unless consumers are who this business sells to.",
   "",
-  "Return ONLY a JSON array of strings, no prose, no code fence.",
+  'Return ONLY a JSON array of objects {"term":string,"family":"category"|"buying-decision"|"alternatives"|"migration"|"problem"}. Cover each relevant family. Do not invent a competitor or migration need to fill a family. Prefer the primary buyer and priority offering.',
 ].join("\n");
 
 /** Exported for tests: the reply to a seed list, cleaned. */
@@ -64,8 +68,9 @@ export function parseSeeds(raw: string | null): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const v of arr) {
-    if (typeof v !== "string") continue;
-    const s = v.trim().toLowerCase().replace(/\s+/g, " ");
+    const value = typeof v === "string" ? v : v && typeof v === "object" && typeof v.term === "string" ? v.term : null;
+    if (!value) continue;
+    const s = value.trim().toLowerCase().replace(/\s+/g, " ");
     const words = s.split(" ").filter(Boolean);
     if (words.length < 2 || words.length > 8 || s.length < 4) continue;
     if (seen.has(s)) continue;
@@ -92,8 +97,17 @@ export async function proposeBuyerSeeds(
   }
   if (modelAvailable()) {
     const prompt = `${PROMPT}\n\nBUSINESS\n${describeBusiness(business)}${business.language ? `\nSite language: ${business.language}` : ""}`;
-    const seeds = parseSeeds(await askStructured("keyword-research/buyer-seeds", prompt, { maxTokens: 600, spend: options.spend }));
-    if (seeds.length) return { seeds, basis: "model" };
+    const raw = await askStructured("keyword-research/buyer-seeds", prompt, { maxTokens: 1600, spend: options.spend });
+    const seeds = parseSeeds(raw);
+    const entries = extractJson<Array<{ term?: string; family?: SeedFamily }>>(raw, "[", "]");
+    const families: Record<string, SeedFamily> = {};
+    if (Array.isArray(entries)) for (const row of entries) {
+      if (typeof row?.term === "string" && SEED_FAMILIES.includes(row.family!)) {
+        const term = row.term.trim().toLowerCase().replace(/\s+/g, " ");
+        if (seeds.includes(term)) families[term] = row.family!;
+      }
+    }
+    if (seeds.length) return { seeds, basis: "model", ...(Object.keys(families).length ? { families, missingFamilies: SEED_FAMILIES.filter((f) => !Object.values(families).includes(f)) } : {}) };
   }
   const seeds = seedsFromProfile(business);
   return { seeds, basis: seeds.length ? "profile" : "none" };
@@ -112,7 +126,7 @@ export async function recoverBuyerSeeds(
     "These are broad inputs to keyword expansion, NOT article titles or final recommendations. It is correct to omit the product's special differentiators, audience modifiers and workflows. Buyer fit and editorial relevance are checked separately AFTER expansion.",
     "For example: an AI writing product with mandatory approvals belongs to 'ai writing tools' or 'content planning tools'; a clinic web-design studio belongs to 'medical website design'; a coach scheduling app belongs to 'personal trainer software'. Use examples only if they fit this business.",
     "Do not coin a new category, concatenate features, or use hyphenated compounds to squeeze in a longer phrase. Avoid pure brand searches, careers and unrelated industries. Do not repeat attempted seeds.",
-    `BUSINESS\n${JSON.stringify({ description: business.description, audiences: business.audiences, offerings: business.offerings, language: business.language })}`,
+    `BUSINESS\n${describeBusiness(business)}`,
     `ALREADY ATTEMPTED\n${JSON.stringify(attempted)}`,
   ].join("\n\n"), { maxTokens: 400, spend: options.spend });
   const previous = new Set(attempted);

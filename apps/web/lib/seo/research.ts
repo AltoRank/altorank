@@ -52,6 +52,7 @@ export interface GscSignal {
 }
 
 export interface ArticleResearch {
+  editorialReview?: import("@/lib/content/approved-output").EditorialReview;
   keyword: string;
   language: string;
   intent: IntentClassification;
@@ -369,6 +370,7 @@ export async function gatherArticleResearch(options: {
    * the saving. `undefined` means nobody looked, and this pays for the lookup.
    */
   relatedKeywords?: RelatedKeyword[];
+  qualifiedSerp?: { query: string; languageCode: string; locationCode: number; fetchedAt: string; data: SerpData };
 }): Promise<ArticleResearch> {
   const { keyword, locale, supabase, workspaceId } = options;
   const loc = getLocale(locale ?? "en");
@@ -380,8 +382,11 @@ export async function gatherArticleResearch(options: {
   const hasDataForSeo = hasDataForSEOCredentials();
   const prefetched = options.relatedKeywords;
 
+  const saved = options.qualifiedSerp;
+  const age = saved ? Date.now() - Date.parse(saved.fetchedAt) : Infinity;
+  const reuse = saved && saved.query === keyword && saved.languageCode === localeParam.languageCode && saved.locationCode === localeParam.locationCode && age >= 0 && age < 15 * 60_000;
   const [serpResult, keywordsResult, gscResult] = await Promise.allSettled([
-    hasDataForSeo
+    reuse ? Promise.resolve(saved.data) : hasDataForSeo
       ? fetchAdvancedSerp(keyword, localeParam)
       : Promise.reject(new Error("DataForSEO credentials not configured")),
     prefetched

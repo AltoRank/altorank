@@ -37,12 +37,12 @@ import {
   saveProfile,
   discoverSiteDetails,
   saveSiteDetails,
-  completeWizard,
 } from "@/app/actions/onboarding-wizard";
 import { saveAttribution } from "@/app/actions/attribution";
 import { AttributionPicker, EMPTY_ATTRIBUTION, attributionComplete, type AttributionDraft } from "@/components/onboarding/attribution-picker";
 import type { SiteDetails } from "@/lib/onboarding/output-settings";
-import { EMPTY_PROFILE, type BusinessProfile, type InferenceReason } from "@/lib/onboarding/business-profile";
+import { EMPTY_PROFILE, type BusinessProfile } from "@/lib/onboarding/profile-fields";
+import type { InferenceReason } from "@/lib/onboarding/business-profile";
 import type { SiteDiscovery } from "@/lib/onboarding/site-discovery";
 // The forms themselves live in components/settings: every wizard screen is
 // also a permanent Settings tab, and one copy of each form keeps them in step.
@@ -218,9 +218,9 @@ export function OnboardingWizard({
     setError(null);
     start(async () => {
       try {
-        if (profile) await saveProfile(workspaceId, profile);
+        if (profile) await saveProfile(workspaceId, { ...profile, primaryBuyer: profile.primaryBuyer || profile.audiences[0] || "", priorityOffering: profile.priorityOffering || profile.offerings?.[0] || "" });
         await saveSiteDetails(workspaceId, site);
-        await completeWizard(workspaceId);
+        // The chosen draft completes setup; research alone does not enable automatic writing.
         posthog.capture("onboarding_completed", { workspace_id: workspaceId });
         setRunning(true);
       } catch (e) {
@@ -304,6 +304,20 @@ export function OnboardingWizard({
             )}
             <BusinessFields profile={profile} patch={patch} />
           </Section>
+
+          <section className="rounded-[10px] border border-accent/40 bg-panel p-5" aria-labelledby="first-focus">
+            <h2 id="first-focus" className="mb-2 text-base font-semibold">Who should your first article help?</h2>
+            <p className="mb-4 text-sm text-ink-2">Start with one buyer and one offering. We’ll keep your other audiences for later.</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="text-sm">Priority buyer<input className="mt-1 w-full rounded border border-line bg-bg p-2" list="focus-buyers" value={profile.primaryBuyer ?? profile.audiences[0] ?? ""} onChange={(e) => patch({ primaryBuyer: e.target.value })} maxLength={200} /></label>
+              <datalist id="focus-buyers">{profile.audiences.map((a) => <option key={a} value={a} />)}</datalist>
+              <label className="text-sm">Priority offering<input className="mt-1 w-full rounded border border-line bg-bg p-2" list="focus-offerings" value={profile.priorityOffering ?? profile.offerings?.[0] ?? ""} onChange={(e) => patch({ priorityOffering: e.target.value })} maxLength={200} /></label>
+              <datalist id="focus-offerings">{profile.offerings?.map((a) => <option key={a} value={a} />)}</datalist>
+              <label className="text-sm">Where should interested readers go?<input type="url" className="mt-1 w-full rounded border border-line bg-bg p-2" value={profile.conversionUrl ?? ""} placeholder={`https://${domain}/`} onChange={(e) => patch({ conversionUrl: e.target.value })} /></label>
+              <p className="self-center text-sm text-ink-2">Market: {profile.country}. Change it under “About your business”.</p>
+            </div>
+            {!!profile.capabilities?.length && <details className="mt-4 text-sm"><summary className="cursor-pointer">Check what we can say about your product</summary><p className="my-2 text-ink-2">Only evidence-backed or individually confirmed capabilities can be presented as product features.</p>{profile.capabilities.map((c, i) => <label key={i} className="my-3 flex gap-2"><input type="checkbox" checked={c.status !== "inferred"} onChange={(e) => patch({ capabilities: profile.capabilities!.map((x, j) => j === i ? { ...x, status: e.target.checked ? "confirmed" : "inferred" } : x) })} /><span>{c.claim}{c.sourceUrl && <a className="ml-2 text-accent underline" href={c.sourceUrl} target="_blank" rel="noopener noreferrer">Source</a>}</span></label>)}</details>}
+          </section>
 
           {/* The two that cost money when wrong. Always open, no tick. */}
           <div className="rounded-[10px] border border-accent/40 bg-panel p-5">
@@ -504,7 +518,7 @@ function calendarDay(iso: string): string {
 }
 
 const VERDICT_LABEL: Record<OnboardingArticle["verdict"], { text: string; className: string }> = {
-  clean: { text: "Fact check passed", className: "text-ok" },
+  clean: { text: "No issues detected by automated checks", className: "text-ok" },
   review: { text: "Fact check: review", className: "text-warn" },
   high_risk: { text: "Fact check: needs work", className: "text-err" },
 };
@@ -548,7 +562,7 @@ function TrialGateScreen({
         </div>
 
         <div className="mx-auto mb-6 max-w-[640px] rounded-[10px] border border-accent/40 bg-panel p-5">
-          {written.length > 0 ? <TrialOffer canBuy={canBuy} /> : <div className="rounded-lg border border-line p-4">
+          {written.length > 0 ? <><h2 className="mb-3 text-lg font-semibold">Written for you</h2>{written.map((draft) => <div key={draft.id} className="mb-4"><Link className="text-accent underline" href={`/onboarding/draft/${draft.id}`}>{draft.title || draft.keyword} · Read draft</Link><p className="text-sm text-ink-2">{draft.wordCount.toLocaleString()} words · Ready for your review</p></div>)}<TrialOffer canBuy={canBuy} /></> : <div className="rounded-lg border border-line p-4">
             <p className="mb-3 text-sm">Your first draft is not ready. You can retry preparation before entering a card.</p>
             <Button variant="accent" onClick={onRetry}>Retry first draft</Button>
           </div>}
@@ -671,8 +685,7 @@ function TrialStep({
       {/* The ask comes first. Everything below it is the evidence for it, and
           an earlier arrangement put the evidence on top: on a site with a full
           report the button sat a full screen down and was never seen. */}
-      <TrialOffer canBuy={canBuy} returnTo={returnTo} />
-      {askAttribution && <AttributionAsk />}
+
 
       {planned.length > 0 && (
         <p className="m-0 mt-5 text-[13px] leading-[1.6] text-ink-2">
@@ -713,6 +726,8 @@ function TrialStep({
           </ul>
         </div>
       )}
+      <div className="mt-5"><TrialOffer canBuy={canBuy} returnTo={returnTo} /></div>
+      {askAttribution && <AttributionAsk />}
     </div>
   );
 }
@@ -747,6 +762,8 @@ function RunScreen({
   // and polls it. Nothing on the old attempt is touched - its phases are on
   // their own tables and its row keeps its status.
   const [attempt, setAttempt] = useState(0);
+  const [choiceBusy, setChoiceBusy] = useState(false);
+  const [choiceError, setChoiceError] = useState<string | null>(null);
   const finished = Boolean(state && (state.ready || state.error));
   const planned = state?.planned ?? [];
   // Where "Finish" actually leads, decided by what the run produced. It used
@@ -773,6 +790,8 @@ function RunScreen({
           <h1 className="mb-1.5 text-[22px] font-semibold">
             {trialStep
               ? `${drafts.length === 1 ? "Your first draft is" : `Your first ${drafts.length} drafts are`} written`
+              : state?.awaitingChoice
+                ? "Your first article ideas"
               : finished
                 ? "Your content plan"
                 : "Creating your content plan"}
@@ -783,10 +802,12 @@ function RunScreen({
                 Each one comes with its fact check and is waiting in your review queue. Start the trial to
                 approve and publish them, and to keep the schedule below writing.
               </>
+            ) : state?.awaitingChoice ? (
+              <>Your business focus and search results support {planned.length} article ideas. Compare the briefs, then choose the draft you want to read.</>
             ) : (
               <>
-                Reading {domain}, checking buyer needs and live search results, preparing up to five specific article ideas, and writing
-                the first one. Only topics with supporting evidence make the plan, so your site may get fewer.{" "}
+                Reading {domain}, checking buyer needs and live search results, preparing up to five specific article ideas, then you choose
+                the first one to draft. Only topics with supporting evidence make the plan, so your site may get fewer.{" "}
                 {freeAllowanceClause(freeDrafts === null ? null : Math.min(1, freeDrafts)) ?? ""}
               </>
             )}
@@ -797,7 +818,7 @@ function RunScreen({
                 route stopped the pipeline when the tab went. Gone once the
                 run is over, because a screen that has said "Done." has no
                 wait left to describe. */}
-            {!finished && (
+            {!finished && !state?.awaitingChoice && (
               <>
                 {" "}
                 A few minutes. You can leave this page and come back: the run carries on without you, and this
@@ -806,6 +827,35 @@ function RunScreen({
             )}
           </p>
         </div>
+
+        {!finished && !state?.awaitingChoice && Boolean(state?.steps.find((step) => step.phase === "planning")?.briefs?.length) && <section className="mx-auto mb-6 max-w-[640px] rounded-lg border border-line p-5">
+          <p className="text-sm text-ink-2">Your first briefs are ready to read. We’re finishing the checks before you choose a draft.</p>
+          <TopicBriefs planned={state!.steps.find((step) => step.phase === "planning")!.briefs!} />
+        </section>}
+
+        {state?.awaitingChoice && <section className="mx-auto mb-6 max-w-[640px] rounded-lg border border-accent/40 bg-panel p-5">
+          <h2 className="text-lg font-semibold">Choose your first article</h2>
+          <p className="mt-2 text-sm text-ink-2">Read the buyer’s decision and evidence below. We’ll write the idea you choose.</p>
+          <TopicBriefs planned={planned} onChoose={async (topic) => {
+            setChoiceBusy(true); setChoiceError(null);
+            try {
+              const response = await fetch("/api/onboard/choose", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId, runId: state.runId, keywordId: topic.keywordId }) });
+              const result = await response.json(); if (!response.ok) throw new Error(result.error || "Could not start the draft.");
+              setState(null); setAttempt((a) => a + 1);
+            } catch (error) { setChoiceError(error instanceof Error ? error.message : "Could not start the draft."); }
+            finally { setChoiceBusy(false); }
+          }} disabled={choiceBusy} />
+          {choiceError && <p role="alert" className="text-sm text-err-ink">{choiceError}</p>}
+          <Button variant="ghost" disabled={choiceBusy} onClick={async () => {
+            setChoiceBusy(true); setChoiceError(null);
+            try {
+            const response = await fetch("/api/onboard/choose", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId, runId: state.runId, refine: true }) });
+            if (response.ok) window.location.assign("/onboarding");
+            else throw new Error("Could not reopen your business focus. Try again.");
+            } catch (error) { setChoiceError(error instanceof Error ? error.message : "Could not reopen your business focus. Try again."); }
+            finally { setChoiceBusy(false); }
+          }}>Change buyer or offering</Button>
+        </section>}
 
         {finished && trialEligible && drafts.length === 0 && <div className="mx-auto mb-6 max-w-[640px] rounded-lg border border-line p-4">
           <p className="mb-3">Your first draft is not ready yet. Retry preparation before deciding on a trial.</p>
@@ -816,7 +866,7 @@ function RunScreen({
         )}
 
         <div className="mx-auto max-w-[640px]">
-          <div className="rounded-[10px] border border-line bg-panel p-5">
+          <div className={state?.awaitingChoice ? "hidden" : "rounded-[10px] border border-line bg-panel p-5"}>
             <OnboardingProgress
               key={attempt}
               workspaceId={workspaceId}

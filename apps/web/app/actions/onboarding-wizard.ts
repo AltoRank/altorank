@@ -13,7 +13,7 @@
 // Continue, which made three of five screens theatre.
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { canSpend } from "@/lib/billing/spend-gate";
 import {
@@ -66,7 +66,7 @@ export async function proposeProfile(workspaceId: string): Promise<InferenceResu
   if (!gate.allowed) {
     return { profile: null, reason: "needs_plan", source: "none", message: gate.message };
   }
-  return inferBusinessProfileDetailed(workspace.domain);
+  return inferBusinessProfileDetailed(workspace.domain, {supabase: createServiceClient(), workspaceId});
 }
 
 /** Save the profile the person confirmed. Labels stay in the profile; codes go in the columns. */

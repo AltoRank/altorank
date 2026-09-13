@@ -87,11 +87,16 @@ test("a new account is walked from /dashboard to five qualified topics and one d
   expect((afterProfile?.business_profile as { name: string }).name).toBe("Nomad Atlas");
   expect(afterProfile?.sitemap_url).toBe(sitemapUrl);
   expect(afterProfile?.blog_root_url).toBe(`https://${ws.domain}/blog/`);
-  const plannedLine = page.getByText(/Prepared \d+ articles? for your calendar/);
-  await expect(plannedLine).toBeVisible({ timeout: 30_000 });
-  const planned = Number((await plannedLine.textContent())?.match(/Prepared (\d+)/)?.[1]);
+  await expect(page.getByRole("heading", { name: "Choose your first article" })).toBeVisible({ timeout: 30_000 });
+  const {count: planned} = await db.from("calendar_entries").select("id",{count:"exact",head:true}).eq("workspace_id",ws.id);
   expect(planned).toBeGreaterThan(0);
   expect(planned).toBeLessThanOrEqual(5);
+  const { data: beforeChoice } = await db.from("articles").select("id").eq("workspace_id", ws.id);
+  expect(beforeChoice).toHaveLength(0);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Choose your first article" })).toBeVisible();
+  await page.screenshot({path:test.info().outputPath("topic-choice.png"),fullPage:true});
+  await page.getByRole("button", { name: "Write this article" }).first().click();
   // Worded from the run's own outcome since #P0-O2: the old fixed sentence was
   // printed whether or not anything reached the calendar.
   await expect(

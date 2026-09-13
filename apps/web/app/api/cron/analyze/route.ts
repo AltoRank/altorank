@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
-import { setSpendReporter } from "@/lib/seo/client";
+import { setSpendReporter, withSpendReporter } from "@/lib/seo/client";
 import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
 import { canSpend } from "@/lib/billing/spend-gate";
@@ -349,4 +349,4 @@ async function topUpPlans(supabase: ReturnType<typeof createServiceClient>): Pro
  * run as one `info` row — which is the only thing anywhere that proves the
  * schedule is still firing.
  */
-export const GET = observedCron("cron.analyze", run);
+export const GET = observedCron("cron.analyze", (request) => withSpendReporter(null, () => run(request)));

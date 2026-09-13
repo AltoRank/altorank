@@ -1,3 +1,5 @@
+import { providerSignal, scopedSpendReporter, setScopedSpendReporter, currentResearchBudget } from "./request-context";
+export { withSpendReporter } from "./request-context";
 // ---------------------------------------------------------------------------
 // DataForSEO HTTP client
 // ---------------------------------------------------------------------------
@@ -164,15 +166,8 @@ const MAX_ATTEMPTS = 3;
  * depend on the database would break both. The app sets this once at startup;
  * everything else keeps working with it unset.
  */
-type SpendReporter = (entry: {
-  operation: string;
-  costUsd: number | null;
-}) => void;
-
-let reportSpend: SpendReporter | null = null;
-
-export function setSpendReporter(fn: SpendReporter | null): void {
-  reportSpend = fn;
+export function setSpendReporter(fn: import("./request-context").SpendReporter | null): void {
+  setScopedSpendReporter(fn);
 }
 
 /**
@@ -201,6 +196,9 @@ export function spendOperation(endpoint: string): string {
 function report(operation: string, costUsd: number | null): void {
   operation = spendOperation(operation);
   try {
+    const budget = currentResearchBudget();
+    if (budget && costUsd !== null) budget.costUsd += costUsd;
+    const reportSpend = scopedSpendReporter();
     if (reportSpend) {
       reportSpend({ operation, costUsd });
       return;
@@ -224,6 +222,7 @@ export async function post<T = unknown>(
     try {
       const res = await fetch(`${BASE_URL}${endpoint}`, {
         method: "POST",
+        signal: providerSignal(),
         headers: {
           Authorization: getAuthHeader(),
           "Content-Type": "application/json",
@@ -268,6 +267,7 @@ export async function get<T = unknown>(
   if (e2eStubsEnabled()) throw new DataForSEOError(`E2E_STUBS: refused to call DataForSEO ${endpoint}`, 0);
   const res = await fetch(`${BASE_URL}${endpoint}`, {
     method: "GET",
+        signal: providerSignal(),
     headers: {
       Authorization: getAuthHeader(),
       "Content-Type": "application/json",

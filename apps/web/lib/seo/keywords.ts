@@ -1,3 +1,5 @@
+import { parseOverviewItem, type OverviewItem } from "@/lib/keyword-research/metrics";
+import type { KeywordEvidence } from "@/lib/keyword-research/evidence";
 // ---------------------------------------------------------------------------
 // Keyword research via DataForSEO — "Keywords for Site"
 // ---------------------------------------------------------------------------
@@ -43,6 +45,7 @@ type KeywordsForSiteResult = DFSKeywordItem & {
 
 export type DiscoveredKeyword = {
   keyword: string;
+  evidence?: KeywordEvidence;
   sourceUrl?: string | null;
   unmeasured?: boolean;
   volume: number;
@@ -282,38 +285,19 @@ export async function discoverKeywords(
 // seeds DataForSEO Labs' keyword ideas with the topical profile's top terms,
 // so the queue starts from "warehouse orchestration" rather than "ai tools".
 
-type KeywordIdeasItem = {
-  keyword?: string | null;
-  keyword_info?: {
-    search_volume?: number | null;
-    cpc?: number | null;
-    competition?: number | null;
-  } | null;
-  keyword_properties?: { keyword_difficulty?: number | null } | null;
-  search_intent_info?: { main_intent?: string | null } | null;
-};
+type KeywordIdeasItem = OverviewItem;
 type KeywordIdeasResult = { items?: KeywordIdeasItem[] | null };
 
 export function parseKeywordIdea(
   item: KeywordIdeasItem,
   languageCode = "en",
 ): DiscoveredKeyword | null {
-  const keyword = (item.keyword ?? "").trim();
-  if (!keyword) return null;
-  const volume = item.keyword_info?.search_volume ?? 0;
-  return {
-    keyword,
-    volume: typeof volume === "number" ? volume : 0,
-    difficulty:
-      typeof item.keyword_properties?.keyword_difficulty === "number"
-        ? item.keyword_properties.keyword_difficulty
-        : null,
-    cpc: item.keyword_info?.cpc ?? 0,
-    competition: item.keyword_info?.competition ?? 0,
-    intent: item.search_intent_info?.main_intent
-      ? mapIntent(item.search_intent_info.main_intent)
-      : classifyIntent(keyword, languageCode).intent,
-  };
+  const parsed = parseOverviewItem(item, languageCode);
+  if (!parsed) return null;
+  return { keyword: parsed.term, volume: parsed.volume ?? 0, difficulty: parsed.difficulty,
+    cpc: parsed.cpc ?? 0, competition: item.keyword_info?.competition ?? 0, intent: parsed.intent,
+    ...(parsed.volume === null ? { unmeasured: true } : {}) };
+
 }
 
 /**
@@ -450,6 +434,7 @@ export async function discoverKeywordsFromSeeds(
     maxSeeds?: number;
     /** Drop long-tail noise server-side. */
     minVolume?: number;
+    onError?: (error: unknown, seed: string) => void;
   },
 ): Promise<SeededKeyword[]> {
   const clean = [
@@ -476,11 +461,11 @@ export async function discoverKeywordsFromSeeds(
             location_code: options?.locationCode ?? 2840,
             limit: perSeed,
             ignore_synonyms: true,
-            filters: [["keyword_info.search_volume", ">", minVolume]],
+            filters: [["keyword_info.search_volume", ">=", minVolume]],
             order_by: ["keyword_info.search_volume,desc"],
           },
         ],
-      ).catch(() => null),
+      ).catch((error: unknown) => { options?.onError?.(error, keyword); return null; }),
     ),
   );
 
@@ -502,7 +487,7 @@ export async function discoverKeywordsFromSeeds(
           // the index is the seed - and without it the dashboard cannot say
           // whether the audiences the customer typed produced anything, which
           // is the only way to know the seeding change worked.
-          out.push({ ...parsed, seed: clean[i] });
+          out.push({ ...parsed, seed: clean[i], evidence: { sources: [{source: "suggestions", seed: clean[i]}], languageCode: options?.languageCode ?? "en", locationCode: options?.locationCode ?? 2840, fetchedAt: new Date().toISOString(), metrics: { measuredAt: item.keyword_info?.last_updated_time ?? null, mainIntent: item.search_intent_info?.main_intent ?? null, secondaryIntents: item.search_intent_info?.secondary_intents ?? [] } } });
         }
       }
     }

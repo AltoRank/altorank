@@ -60,7 +60,7 @@ function client(rows: Row[]): SupabaseClient {
 }
 
 const GENERIC: Row = {
-  id: "a", term: "website design service", volume: 6600, difficulty: 0,
+  id: "a", term: "website design service", volume: 6600, difficulty: null,
   source_type: "profile", source_ref: "profile",
 };
 const AUDIENCE: Row = {

@@ -1,3 +1,4 @@
+import type { BusinessFocus } from "@/lib/onboarding/profile-focus";
 // Explicit buyer decisions for the full candidate pool. Small batches avoid
 // truncated replies; missing decisions get one retry and remain unapproved.
 
@@ -15,7 +16,7 @@ export interface FitJudgement {
   basis: "model" | "none";
 }
 
-export interface FitProfile {
+export interface FitProfile extends BusinessFocus {
   name?: string | null;
   description?: string | null;
   audiences?: string[] | null;

@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const { ask, judge, fetchSerp, available } = vi.hoisted(() => ({ ask: vi.fn(), judge: vi.fn(), fetchSerp: vi.fn(), available: vi.fn(() => true) }));
 vi.mock("../buyer-model", async (original) => ({ ...await original<object>(), modelAvailable: available, askStructured: ask }));
+vi.mock("../editorial-task", () => ({ preserveEditorialTask: async (_query: string, _organic: unknown, a: {angle:string;buyingJob:string;editorial:{reason:string}}) => ({angle:a.angle,buyingJob:a.buyingJob,reason:a.editorial.reason}) }));
 vi.mock("../buyer-fit", () => ({ judgeBuyerFit: judge }));
 vi.mock("@/lib/seo/client", () => ({ hasDataForSEOCredentials: available }));
+vi.mock("../page-evidence", () => ({ readPageExtract: vi.fn(async (url: string) => ({ url, title: "Clinic booking", headings: ["Costs"], text: "Booking website costs and package options for clinic owners." })) }));
 vi.mock("@/lib/seo/brief-data", () => ({ fetchAdvancedSerp: fetchSerp }));
 import { qualifyOpportunities, readOpportunity, contextKey, serpOverlap, validArticleAngle, assertAutonomousTopic } from "../opportunity";
 import { balanceSources, diverseSeeds } from "../diversity";
@@ -10,7 +12,11 @@ import { balanceSources, diverseSeeds } from "../diversity";
 const context = { domain: "example.com", languageCode: "it", locationCode: 2380, business: { name: "Clinic Studio", offerings: ["clinic booking websites"], audiences: ["clinic owners"] } };
 const term = "clinic booking website costs";
 const urls = ["https://one.test/guide", "https://two.test/guide", "https://three.test/guide"];
-const approval = { approve: true, reason: "Clinic owners compare the cost of a booking website", audience: "clinic owners", buyingJob: "choose a booking website", offering: "clinic booking websites", angle: "What clinics should budget for a booking website", format: "article", conversionPath: "https://example.com/contact", evidenceUrls: urls.slice(0, 2) };
+const approval = { approve: true, reason: "Clinic owners compare the cost of a booking website", audience: "clinic owners", buyingJob: "choose a booking website", offering: "clinic booking websites", angle: "What clinics should budget for a booking website", format: "article", conversionPath: "https://example.com/contact", evidenceUrls: urls.slice(0, 2),
+results: urls.map((url) => ({ url, format: "article", quote: "A buyer guide" })),
+buyer: { relevant: true, reason: "Clinic owners need booking websites" },
+product: { supported: true, quote: "clinic booking websites", reason: "The offering serves their task" },
+editorial: { achievable: true, reason: "Help compare costs and scope" }};
 const writes: unknown[] = [];
 let covered: unknown[] = [];
 const db = { from: () => ({ select: () => { const q = { eq: () => q, in: async () => ({ data: covered, error: null }) }; return q; }, update: (row: unknown) => { writes.push(row); const q = { eq: () => q, then: (resolve: (v: unknown) => unknown) => resolve({error:null}) }; return q; } }) } as never;
@@ -64,21 +70,22 @@ describe("topic qualification", () => {
   });
   it("records an article's buyer, angle, observed sources and correct market", async () => {
     const result = await run();
-    expect(result).toMatchObject({status:"qualified",audience:approval.audience,angle:approval.angle,evidenceUrls:urls.slice(0,2)});
+    expect(result).toMatchObject({status:"qualified",audience:approval.audience,angle:approval.angle,evidenceUrls:urls});
     expect(fetchSerp).toHaveBeenCalledWith(term, context);
   });
   it("does not accept invented evidence URLs", async () => {
-    ask.mockResolvedValue(JSON.stringify({...approval,evidenceUrls:["https://invented.test/a","https://invented.test/b"]}));
+    ask.mockResolvedValue(JSON.stringify({...approval,results:[{url:"https://invented.test/a",format:"article",quote:"A buyer guide"}]}));
     expect((await run()).status).toBe("pending");
   });
   it("does not treat a tool-dominated search as an approved article", async () => {
-    ask.mockResolvedValue(JSON.stringify({...approval,format:"tool"}));
+    ask.mockResolvedValue(JSON.stringify({...approval,results:urls.map(url=>({url,format:"tool",quote:"A buyer guide"}))}));
     expect((await run()).status).toBe("pending");
   });
   it("routes existing own-page targets to review instead of a new blog", async () => {
+    ask.mockResolvedValue(JSON.stringify({ ...approval, existingPage: { url: "https://www.example.com/booking", sameTask: true, quote: "Booking website costs", reason: "This page covers the same decision" } }));
     const result = await run({source_url:"https://www.example.com/booking"});
     expect(result).toMatchObject({status:"rejected",existingUrl:"https://www.example.com/booking"});
-    expect(ask).not.toHaveBeenCalled();
+    expect(ask).toHaveBeenCalled();
   });
   it("caches valid evidence but invalidates it when the business changes", async () => {
     const result = await run(); vi.clearAllMocks();
@@ -114,4 +121,26 @@ describe("candidate diversity", () => {
     expect(serpOverlap(urls,[...urls.slice(0,2),"https://four.test/a"])).toBeCloseTo(2/3);
     expect(serpOverlap(urls,urls.slice(0,1))).toBe(0);
   });
+});
+
+it("continues beyond twelve candidates until five distinct supported briefs exist", async () => {
+  const candidates = Array.from({length:24},(_,i) => ({id:`k${i}`,term:`buyer task ${i}`}));
+  judge.mockImplementation(async (_business,terms:string[]) => ({basis:"model",verdicts:new Map(terms.map((t) => [t,{keep:true,reason:"Relevant buyer"}]))}));
+  fetchSerp.mockImplementation(async (query:string) => ({organic:[1,2,3].map((rank) => ({url:`https://source${rank}.test/${query.split(" ").at(-1)}`,title:"A buyer guide",description:"Compare costs",rank})),peopleAlsoAsk:[],aiOverview:null}));
+  ask.mockImplementation(async (_operation,prompt:string) => {
+    const input=JSON.parse(prompt.split("\n").at(-1)!);
+    const index=Number(input.query.split(" ").at(-1));
+    return JSON.stringify({...approval,results:input.results.map((r:{url:string}) => ({url:r.url,format:"article",quote:"A buyer guide"})),editorial:{achievable:index>=12,reason:index>=12?"Useful comparison":"Insufficient scope"}});
+  });
+  const result=await qualifyOpportunities(db,"ws",candidates,context);
+  expect([...result.values()].filter((o) => o.status==="qualified")).toHaveLength(6);
+  expect(fetchSerp).toHaveBeenCalledTimes(18); // Finish the bounded batch containing the fifth.
+  expect(result.get("k17")?.qualificationRun).toMatchObject({checked:18,distinct:6,stopped:"sufficient"});
+});
+
+it("caps sparse research at 25 and records why it stopped", async () => {
+  judge.mockImplementation(async (_business,terms:string[]) => ({basis:"model",verdicts:new Map(terms.map((t) => [t,{keep:false,reason:"Not this buyer"}]))}));
+  const result=await qualifyOpportunities(db,"ws",Array.from({length:40},(_,i) => ({id:`k${i}`,term:`unrelated task ${i}`})),context);
+  expect(result.size).toBe(25); expect(fetchSerp).not.toHaveBeenCalled();
+  expect(result.get("k24")?.qualificationRun).toMatchObject({checked:25,distinct:0,stopped:"budget"});
 });

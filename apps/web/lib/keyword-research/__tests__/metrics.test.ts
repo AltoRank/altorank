@@ -14,22 +14,22 @@ describe("parseOverviewItem", () => {
     })!;
     expect(r).toEqual({ term: "cal.com vs calendly", volume: 210, difficulty: 12, cpc: null, intent: "navigational" });
   });
-  it("treats difficulty 0 on a real-volume term as not computed", () => {
+  it("preserves valid zero difficulty with real volume", () => {
     const r = parseOverviewItem({
       keyword: "notion alternatives",
       keyword_info: { search_volume: 1600, cpc: 10.35 },
       keyword_properties: { keyword_difficulty: 0 },
       search_intent_info: { main_intent: "informational" },
     })!;
-    expect(r.difficulty).toBeNull();
+    expect(r.difficulty).toBe(0);
     expect(r.volume).toBe(1600);
     expect(r.intent).toBe("info");
   });
-  it("treats a 0 difficulty as unmeasured whatever the volume, and falls back to the lexical intent", () => {
+  it("preserves zero difficulty and falls back to lexical intent", () => {
     // A live run handed the model a 720-volume term at KD 0 and it read "easiest".
-    // DataForSEO reports 0 when it did not compute a score, so 0 is never a measurement.
+    // Provider definition: zero is valid; confidence must not overwrite raw data.
     const r = parseOverviewItem({ keyword: "best crm for dentists", keyword_info: { search_volume: 90 }, keyword_properties: { keyword_difficulty: 0 } })!;
-    expect(r.difficulty).toBeNull();
+    expect(r.difficulty).toBe(0);
     expect(r.intent).toBe("commercial");
   });
   it("returns null without a keyword and null metrics when fields are missing", () => {
