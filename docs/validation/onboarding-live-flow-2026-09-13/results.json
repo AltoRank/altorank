@@ -1,0 +1,489 @@
+{
+  "testedCommit": "adc7eeb0fd230a037688454d7ea8f4d3a66b54a9",
+  "domain": "cal.com",
+  "environment": "local production build, live Anthropic/DataForSEO/public retrieval, local Supabase, nonworking Stripe key, image generation disabled",
+  "observedAt": "2026-09-13T18:35:50.895Z",
+  "article": {
+    "title": "How to compare scheduling software with payment processing",
+    "keyword": "scheduling software with payment processing",
+    "status": "review",
+    "word_count": 1921,
+    "published_at": null,
+    "created_at": "2026-09-13T18:29:06.46609+00:00",
+    "updated_at": "2026-09-13T18:31:46.844+00:00"
+  },
+  "finalArticleCount": 1,
+  "finalCalendarEntryCount": 3,
+  "topics": [
+    {
+      "term": "scheduling software with payment processing",
+      "angle": "How to compare scheduling software with payment processing",
+      "audience": "Small teams and startups seeking appointment management solutions",
+      "offering": "Scheduling software with integrated Stripe and PayPal payment processing, calendar cross-referencing, and team coordination features",
+      "demand": {
+        "volume": null
+      }
+    },
+    {
+      "term": "group scheduling with availability",
+      "angle": "Group Scheduling Tools Compared: Polls vs. Calendar-Based Availability Apps",
+      "audience": "Small teams and startups seeking to move beyond basic availability polling",
+      "offering": "Team scheduling software with automatic collective event coordination and calendar integration",
+      "demand": {
+        "volume": null
+      }
+    },
+    {
+      "term": "hipaa compliant scheduling platform",
+      "angle": "How to compare HIPAA-compliant scheduling platforms",
+      "audience": "Healthcare providers, compliance officers, and small health practices evaluating HIPAA-compliant scheduling solutions",
+      "offering": "Cal.com: HIPAA-compliant scheduling software with Organizations plan, supporting compliance standards and team coordination",
+      "demand": {
+        "volume": null
+      }
+    }
+  ],
+  "timeline": [
+    {
+      "observedAt": "2026-09-13T18:25:23.699Z",
+      "status": "running",
+      "candidates": null,
+      "plannedCount": 0,
+      "phases": [
+        {
+          "phase": "scanning",
+          "status": "pending",
+          "briefCount": 0
+        }
+      ]
+    },
+    {
+      "observedAt": "2026-09-13T18:25:25.728Z",
+      "status": "running",
+      "candidates": null,
+      "plannedCount": 0,
+      "phases": [
+        {
+          "phase": "scanning",
+          "status": "done",
+          "briefCount": 0
+        },
+        {
+          "phase": "keywords",
+          "status": "active",
+          "briefCount": 0
+        },
+        {
+          "phase": "pages",
+          "status": "pending",
+          "briefCount": 0
+        },
+        {
+          "phase": "planning",
+          "status": "pending",
+          "briefCount": 0
+        },
+        {
+          "phase": "drafting",
+          "status": "pending",
+          "briefCount": 0
+        }
+      ]
+    },
+    {
+      "observedAt": "2026-09-13T18:26:28.260Z",
+      "status": "running",
+      "candidates": 55,
+      "plannedCount": 0,
+      "phases": [
+        {
+          "phase": "scanning",
+          "status": "done",
+          "briefCount": 0
+        },
+        {
+          "phase": "keywords",
+          "status": "done",
+          "briefCount": 0
+        },
+        {
+          "phase": "pages",
+          "status": "skipped",
+          "briefCount": 0
+        },
+        {
+          "phase": "planning",
+          "status": "active",
+          "briefCount": 0
+        },
+        {
+          "phase": "drafting",
+          "status": "pending",
+          "briefCount": 0
+        }
+      ]
+    },
+    {
+      "observedAt": "2026-09-13T18:27:38.518Z",
+      "status": "running",
+      "candidates": 55,
+      "plannedCount": 0,
+      "phases": [
+        {
+          "phase": "scanning",
+          "status": "done",
+          "briefCount": 0
+        },
+        {
+          "phase": "keywords",
+          "status": "done",
+          "briefCount": 0
+        },
+        {
+          "phase": "pages",
+          "status": "skipped",
+          "briefCount": 0
+        },
+        {
+          "phase": "planning",
+          "status": "active",
+          "briefCount": 2
+        },
+        {
+          "phase": "drafting",
+          "status": "pending",
+          "briefCount": 0
+        }
+      ]
+    },
+    {
+      "observedAt": "2026-09-13T18:28:18.712Z",
+      "status": "running",
+      "candidates": 55,
+      "plannedCount": 0,
+      "phases": [
+        {
+          "phase": "scanning",
+          "status": "done",
+          "briefCount": 0
+        },
+        {
+          "phase": "keywords",
+          "status": "done",
+          "briefCount": 0
+        },
+        {
+          "phase": "pages",
+          "status": "skipped",
+          "briefCount": 0
+        },
+        {
+          "phase": "planning",
+          "status": "active",
+          "briefCount": 3
+        },
+        {
+          "phase": "drafting",
+          "status": "pending",
+          "briefCount": 0
+        }
+      ]
+    },
+    {
+      "observedAt": "2026-09-13T18:28:24.745Z",
+      "status": "awaiting_choice",
+      "candidates": 55,
+      "plannedCount": 3,
+      "phases": [
+        {
+          "phase": "scanning",
+          "status": "done",
+          "briefCount": 0
+        },
+        {
+          "phase": "keywords",
+          "status": "done",
+          "briefCount": 0
+        },
+        {
+          "phase": "pages",
+          "status": "skipped",
+          "briefCount": 0
+        },
+        {
+          "phase": "planning",
+          "status": "done",
+          "briefCount": 3
+        },
+        {
+          "phase": "drafting",
+          "status": "pending",
+          "briefCount": 0
+        }
+      ]
+    },
+    {
+      "observedAt": "2026-09-13T18:28:59.010Z",
+      "status": "running",
+      "candidates": 55,
+      "plannedCount": 3,
+      "phases": [
+        {
+          "phase": "scanning",
+          "status": "done",
+          "briefCount": 0
+        },
+        {
+          "phase": "keywords",
+          "status": "done",
+          "briefCount": 0
+        },
+        {
+          "phase": "pages",
+          "status": "skipped",
+          "briefCount": 0
+        },
+        {
+          "phase": "planning",
+          "status": "done",
+          "briefCount": 3
+        },
+        {
+          "phase": "drafting",
+          "status": "active",
+          "briefCount": 0
+        }
+      ]
+    },
+    {
+      "observedAt": "2026-09-13T18:31:48.052Z",
+      "status": "done",
+      "candidates": 55,
+      "plannedCount": 3,
+      "phases": [
+        {
+          "phase": "scanning",
+          "status": "done",
+          "briefCount": 0
+        },
+        {
+          "phase": "keywords",
+          "status": "done",
+          "briefCount": 0
+        },
+        {
+          "phase": "pages",
+          "status": "skipped",
+          "briefCount": 0
+        },
+        {
+          "phase": "planning",
+          "status": "done",
+          "briefCount": 3
+        },
+        {
+          "phase": "drafting",
+          "status": "done",
+          "briefCount": 0
+        }
+      ]
+    }
+  ],
+  "browserActionTimesEpochMs": {
+    "authCallback": 1789323881029,
+    "planClicked": 1789323921186,
+    "firstBriefInspected": 1789324086822,
+    "choicesReloaded": 1789324129603,
+    "writeClicked": 1789324138441,
+    "previewOpened": 1789324342600
+  },
+  "review": {
+    "status": "checked",
+    "totalPassages": 56,
+    "checkedPassages": 56,
+    "failures": [],
+    "findings": [
+      {
+        "text": "The fastest way to misjudge this category is to compare feature lists instead of behavior. Confirm processor support against the plan tier you'll actually pay for, test double-booking prevention with a real overlapping booking rather than trusting a claim, price the team you have rather than a single seat, and add the processor's own transaction fee before calling any number final. Tools like Cal.com pair Stripe payment acceptance with automatic schedule cross-referencing, and that combination of criteria, applied consistently, is what actually separates the options rather than a longer feature checklist.",
+        "reason": "The four-step comparison conclusion (processor fit, double-booking test, team pricing, fees) is restated almost verbatim in passages 57, 60, and 63.",
+        "removed": false,
+        "category": "repetition",
+        "severity": "editorial"
+      },
+      {
+        "text": "the booking page collects a card (or PayPal balance) at the moment the appointment is confirmed",
+        "reason": "No source describes generic timing mechanics of card/PayPal balance collection at confirmation moment.",
+        "removed": false,
+        "category": "qualitative",
+        "severity": "material"
+      },
+      {
+        "text": "a paid booking is a lot harder to no-show on than a free one",
+        "reason": "No source quantifies or confirms this causal no-show claim in the assigned passage's general form.",
+        "removed": false,
+        "category": "qualitative",
+        "severity": "material"
+      },
+      {
+        "text": "the processor's transaction fee is separate from the software's subscription fee, and it usually isn't waived just because you're paying for a premium plan",
+        "reason": "No source establishes that premium plans generally fail to waive processor transaction fees across vendors.",
+        "removed": false,
+        "category": "qualitative",
+        "severity": "material"
+      },
+      {
+        "text": "Square Appointments is built around Square's own payment stack rather than third-party processors",
+        "reason": "No source states Square Appointments exclusively uses Square's own processing rather than third parties.",
+        "removed": false,
+        "category": "product",
+        "severity": "material"
+      },
+      {
+        "text": "Cal.com's homepage states plainly that it handles calendar cross-referencing so users \"don't have to worry about double bookings,\"",
+        "reason": "Cal.com homepage source text provided does not contain this exact double-booking statement.",
+        "removed": false,
+        "category": "product",
+        "severity": "material"
+      },
+      {
+        "text": "its collective event type is built to check every participant's schedule automatically when a booking includes more than one host",
+        "reason": "Sources only mention 'Collective Events: Schedule events with multiple participants' without confirming automatic schedule-checking of every participant.",
+        "removed": false,
+        "category": "product",
+        "severity": "material"
+      }
+    ],
+    "modelCalls": [
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.122247,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 34245,
+        "operation": "article/approved-output-review",
+        "promptHash": "4209fbb6400ec607dfd5e4c2e9e3546b4ce489481e272fda9559d54eab7df87b",
+        "inputTokens": 24889,
+        "outputTokens": 3172
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.079173,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 4480,
+        "operation": "article/claim-verification",
+        "promptHash": "cc13bf3174cb71d9991760aa9a62521bc3d702143e4e45a506e14dc9a691e3e7",
+        "inputTokens": 24351,
+        "outputTokens": 408
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.094524,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 10465,
+        "operation": "article/claim-verification",
+        "promptHash": "e3d3f003f70ced0ef6aae834aad5c91180035a1f019e1944401d3c95bd0f7f6f",
+        "inputTokens": 24908,
+        "outputTokens": 1320
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.105852,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 15345,
+        "operation": "article/claim-verification",
+        "promptHash": "97eda55149a2d2be62e7e4298a72dbddd2ef361fa7a9a90ea00102c6f4064afb",
+        "inputTokens": 24964,
+        "outputTokens": 2064
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.105339,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 15857,
+        "operation": "article/claim-verification",
+        "promptHash": "89952de7e12fd2e940ecac178e0c9da375ad4e1c759d0c36fcb368f28b6c30b7",
+        "inputTokens": 24933,
+        "outputTokens": 2036
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.075861,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 3627,
+        "operation": "article/claim-verification",
+        "promptHash": "1e3489d58cd38e3e6a24b1e58fa5254de1225e6e68b4077c3a95ba5fe3f88b29",
+        "inputTokens": 23967,
+        "outputTokens": 264
+      }
+    ]
+  },
+  "sources": [
+    {
+      "url": "https://cal.com/pricing",
+      "title": "Pricing | Cal.com",
+      "excerptCharacters": 8579,
+      "excerptSha256": "a0175979084145bb565779734642010e4efc873286e1776e83be81c0adecbdb6"
+    },
+    {
+      "url": "https://cal.com/",
+      "title": "Cal.com | Scheduling Software for Online Bookings",
+      "excerptCharacters": 2544,
+      "excerptSha256": "37e5265ce8d20fca980ebcd33f380b040576e995f359b91816868a239246c154"
+    },
+    {
+      "url": "https://squareup.com/us/en/appointments",
+      "title": "Free Online Booking and Scheduling Software | Square",
+      "excerptCharacters": 5298,
+      "excerptSha256": "2f118c143e5b3d875e3a0ceedaf00c28175d91e4fc6d351e93c3ee5bd3ca183f"
+    },
+    {
+      "url": "https://acuityscheduling.com/",
+      "title": "Acuity Scheduling: Online Booking & Appointment Scheduling Software",
+      "excerptCharacters": 2898,
+      "excerptSha256": "eb88d289ea971d0019bc9da86fecab30541ac31ba7e2f0282433623d1a1b96d1"
+    },
+    {
+      "url": "https://www.setmore.com/features/payments/us",
+      "title": "Free Appointment Booking And Payment System | Setmore",
+      "excerptCharacters": 9000,
+      "excerptSha256": "7114f9cf2d915778581d0f279002cf7e05e81044ca47a5f3d856c9eeb39e1ebf"
+    },
+    {
+      "url": "https://cal.com/features/payments",
+      "title": "Payments | Cal.com",
+      "excerptCharacters": 4098,
+      "excerptSha256": "f7f88072bba4a6a7b9caa5c850efe84f1278b79e01d75f36ea4c6c265fdcf43a"
+    },
+    {
+      "url": "https://acuityscheduling.com/integrations",
+      "title": "Acuity Scheduling Integrations - Acuity Scheduling",
+      "excerptCharacters": 5872,
+      "excerptSha256": "519e159bb45c97eff1d21dbc17eb53f583a60ba5282bea05384ed9159aeeb3a6"
+    },
+    {
+      "url": "https://squareup.com/us/en/payments/our-fees",
+      "title": "Understanding Our Fees | Square Payments",
+      "excerptCharacters": 2035,
+      "excerptSha256": "5ccd4cfce9a0cf4090e6d34279cfc720e023e167c550e9376e859eaba3f211a9"
+    }
+  ],
+  "recordedProviderCostUsd": 1.430274,
+  "checks": {
+    "choicesSurvivedReload": true,
+    "zeroArticlesBeforeChoice": true,
+    "oneArticleAfterChoiceAndReload": true,
+    "fullPreviewBeforeTrial": true,
+    "previewSurvivedReload": true,
+    "unpaidDashboardRedirectedToOnboarding": true,
+    "sameDraftReopenedAfterRedirect": true,
+    "imageGenerationTested": false,
+    "emailSignupTested": false,
+    "checkoutTested": false,
+    "hostedRuntimeTested": false
+  }
+}
