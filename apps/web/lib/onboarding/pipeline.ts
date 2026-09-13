@@ -246,7 +246,7 @@ async function runPhases(
         status: keywordsFound > 0 ? "done" : "skipped",
         detail:
           keywordsFound > 0
-            ? (breakdown ?? `Found ${keywordsFound.toLocaleString()} keyword${keywordsFound === 1 ? "" : "s"} worth tracking.`)
+            ? (firstDraft === "choose" ? `Found ${keywordsFound.toLocaleString()} buyer-relevant keyword candidates. Checking which ones support useful articles.` : breakdown ?? `Found ${keywordsFound.toLocaleString()} keyword${keywordsFound === 1 ? "" : "s"} worth tracking.`)
             : willRetry
               ? `We could not reach your site just now (${crawlFailed}). The next look is already scheduled; keywords and the plan will follow without you doing anything.`
               : crawlFailed

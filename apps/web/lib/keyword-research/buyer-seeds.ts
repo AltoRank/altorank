@@ -54,6 +54,7 @@ const PROMPT = [
   "- 10 to 15 phrases, 2 to 8 words each, lowercase, in the language the site is written in.",
   "- At least five must be established 2-4 word categories or tasks buyers actually search. Use ordinary market vocabulary, not strings assembled from the product's feature list. Keep audience and differentiator detail for article qualification, not every seed.",
   "- Product and service categories, the problems they solve, comparisons and alternatives, how-to questions a buyer asks.",
+  "- Include at least four concrete editorial tasks: choosing between treatments/products, comparing service quotes, diagnosing a problem, care or maintenance. For local services, do not fill the list with town names or near-me searches; those usually need service pages. Do not invent coverage locations.",
   "- Include relevant competitor alternatives, comparisons and migration searches; exclude pure brand navigation. Cover different offerings, audiences and buying jobs rather than synonyms of one category.",
   "- Never a one-word head term. \"shipping\" is not a search a buyer of a packing app makes; \"packing slip template\" is.",
   "- Nothing a consumer types for personal use unless consumers are who this business sells to.",

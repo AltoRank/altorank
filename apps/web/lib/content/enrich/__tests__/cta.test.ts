@@ -27,3 +27,8 @@ describe("cta", () => {
     expect(html).not.toMatch(/free|trial|demo|€|\$|discount|book/i);
   });
 });
+
+it("uses the selected same-site conversion page and rejects external destinations", () => {
+  expect(addCallToAction("<p>Draft</p>", { domain:"example.com", conversionUrl:"https://example.com/pricing" }).html).toContain('href="https://example.com/pricing"');
+  expect(addCallToAction("<p>Draft</p>", { domain:"example.com", conversionUrl:"https://other.test/pricing" }).html).not.toContain("other.test");
+});

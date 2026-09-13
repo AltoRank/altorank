@@ -13,7 +13,7 @@ import { judgeBuyerFit, type FitProfile } from "./buyer-fit";
 import { e2eStubsEnabled, isReservedTestDomain } from "@/lib/e2e/stubs";
 import { getLocale } from "@/lib/seo/locales";
 
-export const OPPORTUNITY_VERSION = 4;
+export const OPPORTUNITY_VERSION = 5;
 export const QUALIFICATION_LIMIT = 25;
 export interface Opportunity {
   version: number;
@@ -160,6 +160,7 @@ export async function qualifyOpportunities(
                 `Write user-facing fields in ${getLocale(context.languageCode).label} (${context.languageCode}).`,
                 "Classify EVERY observed result separately. Return its supplied resultIndex and evidenceField (title, description, or page only if an extract was supplied); the server attaches the exact observed URL and quotation. Do not transcribe URLs or quotes. Comparisons, reviews, alternatives and buying guides are articles. Publishers need not share this business's differentiators. Never classify from a URL alone.",
                 "Separately assess buyer relevance, product relationship and achievable editorial angle. Product.quote must be exact supplied business evidence for the actual offering. Shared industry is insufficient. Focus first on the priority buyer and offering when supplied.",
+                "Product support means the business sells the relevant category or service. Ordinary buying guidance, maintenance advice and quote comparisons do not require proprietary research or a unique formulation. Do not require every advice detail to be a built-in feature. Local service landing-page intent still does not qualify as an article.",
                 "Preserve the searcher's task. A selection query needs options, criteria and tradeoffs, not an adjacent essay about the publisher. Do not invent capabilities. Use a specific concise headline; include a year only when it is in the query.",
                 "An own-domain ranking alone is not duplication. For existingPage inspect its title, headings and text. Decide whether it already serves the same task and quote its exact content. Missing content cannot establish either choice.",
                 'Return JSON {"results":[{"resultIndex":number,"format":"article"|"product"|"service"|"tool"|"navigation"|"unknown","evidenceField":"title"|"description"|"page"}],"buyer":{"relevant":boolean,"reason":string},"product":{"supported":boolean,"quote":string,"reason":string},"editorial":{"achievable":boolean,"reason":string},"existingPage":{"url":string,"sameTask":boolean,"quote":string,"reason":string}|null,"audience":string,"buyingJob":string,"offering":string,"angle":string,"conversionPath":string}. Headline at most 140 characters, reasons at most 240.',
@@ -177,11 +178,11 @@ export async function qualifyOpportunities(
               if (assessment.existingUrl) result.existingUrl = assessment.existingUrl;
               if (assessment.status === "qualified" && assessment.assessment) {
                 const a = assessment.assessment;
-                const task = await preserveEditorialTask(c.term, organic, a, spend);
+                const task = await preserveEditorialTask(c.term, organic, a, spend, businessEvidence);
                 if (task) { result.taskReview = task; a.angle = task.angle; a.buyingJob = task.buyingJob; result.reason = task.reason; }
                 if (!task) { result.status = "pending"; result.reason = "The headline could not be verified against the searcher’s task. Retry research."; }
                 else if (!validArticleAngle(a.angle, c.term)) { result.status = "pending"; result.reason = "The headline did not preserve the search task. Retry research."; }
-                else Object.assign(result, { audience: a.audience, buyingJob: a.buyingJob, offering: a.offering, angle: a.angle, format: "article", conversionPath: ownPage(a.conversionPath, context.domain) ? a.conversionPath : `https://${context.domain.replace(/^https?:\/\//, "")}`, evidenceUrls: assessment.evidenceUrls });
+                else Object.assign(result, { audience: a.audience, buyingJob: a.buyingJob, offering: a.offering, angle: a.angle, format: "article", conversionPath: ownPage(context.business?.conversionUrl, context.domain) ? context.business!.conversionUrl : ownPage(a.conversionPath, context.domain) ? a.conversionPath : `https://${context.domain.replace(/^https?:\/\//, "")}`, evidenceUrls: assessment.evidenceUrls });
               }
             } else result.reason = "Too few search results were available to confirm an editorial opportunity.";
           } catch (error) { result.reason = providerIssue(error).message; }

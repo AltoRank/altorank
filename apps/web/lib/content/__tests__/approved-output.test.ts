@@ -34,3 +34,33 @@ it("removes only a complete paragraph repeated verbatim", async () => {
   expect(result.html).toBe(`<p>${repeated}</p><p>Compare the results.</p>`);
   expect(result.report.structure).toBe("revised");
 });
+
+it("accepts a bounded correction only after a successful recheck", async () => {
+  const { reviseApprovedOutput } = await import("../approved-output");
+  const original = { html:"<p>All plans include three workspaces for your client sites.</p>", report: { status:"checked", headline:"preserved", productClaims:"needs-review", qualitativeClaims:"no-issues-detected", structure:"no-issues-detected", findings:[{category:"product",text:"All plans include three workspaces for your client sites.",reason:"Limit belongs to Managed",removed:false}] } } as const;
+  const input = { ...original, report:{...original.report,findings:[...original.report.findings]} };
+  ask.mockResolvedValueOnce(JSON.stringify({edits:[{index:0,html:"<p>The Managed plan includes three workspaces for client sites.</p>"}]})).mockResolvedValueOnce(JSON.stringify({productChecked:true,qualitativeChecked:true,structureChecked:true,findings:[]}));
+  const result = await reviseApprovedOutput(input, {});
+  expect(result.report.revision).toBe("accepted");
+  expect(result.html).toContain("The Managed plan");
+  ask.mockResolvedValueOnce(JSON.stringify({edits:[{index:0,html:"<p>The Managed plan includes three workspaces for client sites.</p>"}]})).mockResolvedValueOnce(null);
+  expect((await reviseApprovedOutput(input, {})).html).toBe(original.html);
+  ask.mockResolvedValueOnce(JSON.stringify({edits:[{index:0,html:'<p>Visit <a href="https://invented.test">our new plans</a> for unlimited sites.</p>'}]}));
+  expect((await reviseApprovedOutput(input, {})).html).toBe(original.html);
+});
+
+it("matches review passages containing decoded HTML entities", async () => {
+  ask.mockResolvedValue(JSON.stringify({productChecked:true,qualitativeChecked:true,structureChecked:true,findings:[{category:"product",text:"A & B support unlimited workspaces.",reason:"No plan context"}]}));
+  expect((await reviewApprovedOutput("<p>A &amp; B support unlimited workspaces.</p>",{})).report.status).toBe("checked");
+});
+
+it("attaches exact existing passages by index and rejects invented indices", async () => {
+  const finding = {category:"product",passageIndex:1,reason:"No evidence for a universal limit"};
+  ask.mockResolvedValue(JSON.stringify({productChecked:true,qualitativeChecked:true,structureChecked:true,findings:[finding]}));
+  const html = '<h1>Tool selection</h1><p>Every plan supports <strong>three workspaces</strong>.</p>';
+  const review = await reviewApprovedOutput(html,{});
+  expect(review.report.status).toBe("checked");
+  expect(review.report.findings[0].text).toBe("Every plan supports three workspaces .");
+  ask.mockResolvedValue(JSON.stringify({productChecked:true,qualitativeChecked:true,structureChecked:true,findings:[{...finding,passageIndex:20}]}));
+  expect((await reviewApprovedOutput(html,{})).report.status).toBe("unavailable");
+});

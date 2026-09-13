@@ -60,7 +60,6 @@ import {
 } from "@/lib/onboarding/events";
 import { freeAllowanceClause } from "@/lib/onboarding/copy";
 import { TopicBriefs } from "./topic-briefs";
-import { TrialOffer } from "@/components/billing/trial-offer";
 import Link from "next/link";
 import { FirstLookReportView } from "@/components/onboarding/first-look-report";
 import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
@@ -76,7 +75,6 @@ export function OnboardingWizard({
   domain,
   freeDrafts,
   trialEligible = false,
-  canBuy = false,
   initialProfile,
   initialSite,
   askAttribution,
@@ -233,11 +231,11 @@ export function OnboardingWizard({
   // There is nothing to show the progress of and nothing to set up again -
   // only the card stands between this account and the product.
   if (!running && alreadyOnboarded && trialEligible) {
-    return <TrialGateScreen canBuy={canBuy} onRetry={() => setRunning(true)} domain={domain} planned={gatePlan} report={gateReport} written={gateWritten} askAttribution={askAttribution} />;
+    return <TrialGateScreen onRetry={() => setRunning(true)} domain={domain} planned={gatePlan} report={gateReport} written={gateWritten} askAttribution={askAttribution} />;
   }
 
   if (running) {
-    return <RunScreen canBuy={canBuy} workspaceId={workspaceId} domain={domain} freeDrafts={freeDrafts} trialEligible={trialEligible} askAttribution={askAttribution} initialRun={resumed} />;
+    return <RunScreen workspaceId={workspaceId} domain={domain} freeDrafts={freeDrafts} trialEligible={trialEligible} askAttribution={askAttribution} initialRun={resumed} />;
   }
 
   if (reading || !profile) return <ReadingSite domain={domain} />;
@@ -370,8 +368,8 @@ export function OnboardingWizard({
       <div className="fixed inset-x-0 bottom-0 border-t border-line bg-panel/95 backdrop-blur">
         <div className="mx-auto flex max-w-[720px] items-center justify-between gap-4 px-6 py-3">
           <p className="m-0 text-[12.5px] leading-[1.5] text-ink-2">
-            Next: keywords, a 30-day plan, and the first article written while you watch.
-            {freeAllowanceClause(freeDrafts) ? ` ${freeAllowanceClause(freeDrafts)}` : ""}
+            Next: up to five relevant article ideas. Choose one and read your first draft before deciding on a trial.
+            {freeAllowanceClause(freeDrafts === null ? null : Math.min(1, freeDrafts)) ? ` ${freeAllowanceClause(freeDrafts === null ? null : Math.min(1, freeDrafts))}` : ""}
           </p>
           <Button variant="accent" onClick={finish} disabled={pending || reading}>
             {pending ? "Saving…" : "Plan my first articles"}
@@ -493,8 +491,8 @@ function ReadingSite({ domain }: { domain: string }) {
         </div>
         <h1 className="mb-2 text-[22px] font-semibold">Setting up your site</h1>
         <p className="mx-auto max-w-[420px] text-[13.5px] leading-[1.6] text-ink-2">
-          We read your homepage, and your blog if the homepage is thin, to fill in what we can. The next
-          screen is a check rather than a form. About a minute.
+          We read your homepage and relevant product or service pages to fill in what we can. The next
+          screen is a check rather than a form.
         </p>
       </div>
     </div>
@@ -533,7 +531,6 @@ const VERDICT_LABEL: Record<OnboardingArticle["verdict"], { text: string; classN
  */
 function TrialGateScreen({
   domain,
-  canBuy,
   onRetry,
   planned,
   report,
@@ -541,7 +538,6 @@ function TrialGateScreen({
   askAttribution = false,
 }: {
   domain: string;
-  canBuy: boolean;
   onRetry: () => void;
   planned: OnboardingPlanned[];
   report: FirstLookReport | null;
@@ -562,7 +558,7 @@ function TrialGateScreen({
         </div>
 
         <div className="mx-auto mb-6 max-w-[640px] rounded-[10px] border border-accent/40 bg-panel p-5">
-          {written.length > 0 ? <><h2 className="mb-3 text-lg font-semibold">Written for you</h2>{written.map((draft) => <div key={draft.id} className="mb-4"><Link className="text-accent underline" href={`/onboarding/draft/${draft.id}`}>{draft.title || draft.keyword} · Read draft</Link><p className="text-sm text-ink-2">{draft.wordCount.toLocaleString()} words · Ready for your review</p></div>)}<TrialOffer canBuy={canBuy} /></> : <div className="rounded-lg border border-line p-4">
+          {written.length > 0 ? <><h2 className="mb-3 text-lg font-semibold">Written for you</h2>{written.map((draft) => <div key={draft.id} className="mb-4"><Link className="text-accent underline" href={`/onboarding/draft/${draft.id}`}>{draft.title || draft.keyword} · Read draft</Link><p className="text-sm text-ink-2">{draft.wordCount.toLocaleString()} words · Ready for your review</p></div>)}<p className="text-sm text-ink-2">Read your draft first. Trial options follow the full preview.</p></> : <div className="rounded-lg border border-line p-4">
             <p className="mb-3 text-sm">Your first draft is not ready. You can retry preparation before entering a card.</p>
             <Button variant="accent" onClick={onRetry}>Retry first draft</Button>
           </div>}
@@ -668,40 +664,19 @@ function TrialGateScreen({
  */
 function TrialStep({
   drafts,
-  canBuy,
   planned,
-  returnTo,
   askAttribution = false,
 }: {
   drafts: OnboardingArticle[];
-  canBuy: boolean;
   planned: OnboardingPlanned[];
-  returnTo: string;
   askAttribution?: boolean;
 }) {
   const words = drafts.reduce((n, d) => n + d.wordCount, 0);
   return (
     <div className="mx-auto mb-6 max-w-[640px] rounded-[10px] border border-accent/40 bg-panel p-5">
-      {/* The ask comes first. Everything below it is the evidence for it, and
-          an earlier arrangement put the evidence on top: on a site with a full
-          report the button sat a full screen down and was never seen. */}
+      {/* Lead with the selected draft; the trial offer follows its full preview. */}
 
 
-      {planned.length > 0 && (
-        <p className="m-0 mt-5 text-[13px] leading-[1.6] text-ink-2">
-          {/* "on the calendar", not "more": the plan counts the drafts above,
-              so a run that planned eight and wrote seven has one still to come,
-              not eight. */}
-          <strong>On your calendar:</strong> {planned.length} {planned.length === 1 ? "article" : "articles"}, {planned[0].date === planned[planned.length - 1].date ? "on" : "from"}{" "}
-          {calendarDay(planned[0].date)}
-          {planned[0].date === planned[planned.length - 1].date ? "" : ` to ${calendarDay(planned[planned.length - 1].date)}`}.
-          {drafts.length < planned.length
-            ? ` ${planned.length - drafts.length} of them still to write; the schedule starts when the trial does.`
-            : " The schedule keeps writing after these once the trial starts."}
-        </p>
-      )}
-
-      <TopicBriefs planned={planned} />
       {drafts.length > 0 && (
         <div className="mt-5">
           <div className="mb-2 flex items-baseline justify-between">
@@ -726,7 +701,22 @@ function TrialStep({
           </ul>
         </div>
       )}
-      <div className="mt-5"><TrialOffer canBuy={canBuy} returnTo={returnTo} /></div>
+      {planned.length > 0 && (
+        <p className="m-0 mt-5 text-[13px] leading-[1.6] text-ink-2">
+          {/* "on the calendar", not "more": the plan counts the drafts above,
+              so a run that planned eight and wrote seven has one still to come,
+              not eight. */}
+          <strong>On your calendar:</strong> {planned.length} {planned.length === 1 ? "article" : "articles"}, {planned[0].date === planned[planned.length - 1].date ? "on" : "from"}{" "}
+          {calendarDay(planned[0].date)}
+          {planned[0].date === planned[planned.length - 1].date ? "" : ` to ${calendarDay(planned[planned.length - 1].date)}`}.
+          {drafts.length < planned.length
+            ? ` ${planned.length - drafts.length} of them still to write; the schedule starts when the trial does.`
+            : " The schedule keeps writing after these once the trial starts."}
+        </p>
+      )}
+
+      <TopicBriefs planned={planned} />
+      <p className="mt-5 text-sm text-ink-2">Read your draft before deciding. Trial options are at the end of the preview.</p>
       {askAttribution && <AttributionAsk />}
     </div>
   );
@@ -739,7 +729,6 @@ function TrialStep({
  */
 function RunScreen({
   workspaceId,
-  canBuy,
   domain,
   freeDrafts,
   trialEligible,
@@ -747,7 +736,6 @@ function RunScreen({
   initialRun,
 }: {
   workspaceId: string;
-  canBuy: boolean;
   domain: string;
   freeDrafts: number | null;
   trialEligible: boolean;
@@ -778,10 +766,11 @@ function RunScreen({
   // when the run produced something to show; a run that wrote nothing has
   // no appetizer and falls through to the plain finish.
   const trialStep = finished && trialEligible && drafts.length > 0;
-  const next = planned.length > 0
-    ? { href: "/content", label: "Open my plan" }
-    : draft
-      ? { href: "/review", label: "Open my first draft" }
+  const drafting = state?.steps.some(step => step.phase === "drafting" && step.status === "active");
+  const next = draft
+    ? { href: `/onboarding/draft/${draft.id}`, label: "Read my first draft" }
+    : planned.length > 0
+      ? { href: "/content", label: "Open my plan" }
       : { href: "/dashboard", label: "Open the dashboard" };
   return (
     <div className="min-h-screen bg-bg">
@@ -794,14 +783,15 @@ function RunScreen({
                 ? "Your first article ideas"
               : finished
                 ? "Your content plan"
-                : "Creating your content plan"}
+                : drafting ? "Writing your chosen article" : "Finding your first article ideas"}
           </h1>
           <p className="mx-auto max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">
             {trialStep ? (
               <>
-                Each one comes with its fact check and is waiting in your review queue. Start the trial to
-                approve and publish them, and to keep the schedule below writing.
+                Read the full draft and see how it answers your buyer’s question. Then decide whether to start a trial.
               </>
+            ) : drafting ? (
+              <>Your chosen topic is being researched, written and checked. The complete draft will be free to read here.</>
             ) : state?.awaitingChoice ? (
               <>Your business focus and search results support {planned.length} article ideas. Compare the briefs, then choose the draft you want to read.</>
             ) : (
@@ -828,7 +818,7 @@ function RunScreen({
           </p>
         </div>
 
-        {!finished && !state?.awaitingChoice && Boolean(state?.steps.find((step) => step.phase === "planning")?.briefs?.length) && <section className="mx-auto mb-6 max-w-[640px] rounded-lg border border-line p-5">
+        {!finished && !drafting && !state?.awaitingChoice && Boolean(state?.steps.find((step) => step.phase === "planning")?.briefs?.length) && <section className="mx-auto mb-6 max-w-[640px] rounded-lg border border-line p-5">
           <p className="text-sm text-ink-2">Your first briefs are ready to read. We’re finishing the checks before you choose a draft.</p>
           <TopicBriefs planned={state!.steps.find((step) => step.phase === "planning")!.briefs!} />
         </section>}
@@ -862,7 +852,7 @@ function RunScreen({
           <Button onClick={() => { setState(null); setAttempt((a) => a + 1); }}>Retry first draft</Button>
         </div>}
         {trialStep && (
-          <TrialStep canBuy={canBuy} drafts={drafts} planned={planned} returnTo="/articles?status=review" askAttribution={askAttribution} />
+          <TrialStep drafts={drafts} planned={planned} askAttribution={askAttribution} />
         )}
 
         <div className="mx-auto max-w-[640px]">

@@ -23,8 +23,8 @@ import type { BusinessProfile } from "./profile-fields";
 export { EMPTY_PROFILE, fillEmptyProfile, type BusinessProfile, type ProfileSection } from "./profile-fields";
 
 /** Enough of the site to characterise it; more than this is wasted tokens. */
-// 8k chars is plenty to describe a business and keeps the proposal under ~15 s.
-const MAX_CHARS = 8_000;
+// Reserve context for the catalog and service areas as well as positioning.
+const MAX_CHARS = 16_000;
 
 const PROMPT = [
   "You are reading a company's website to fill in their profile for an SEO tool.",
@@ -38,15 +38,15 @@ const PROMPT = [
   "  Do not invent features, pricing, or customers that the text does not support.",
   "- audiences: up to 6 evidenced buyer segments, each a short noun phrase.",
   "  Specific beats broad: \"E-commerce teams on Shopify\" not \"businesses\".",
-  "- offerings: up to 6 things people buy from it, each 2-4 words in the words a buyer would search,",
+  "- offerings: up to 10 actual products or services. Preserve distinct product types seen in navigation/catalog links as well as body copy; do not replace them with vague umbrella categories. Include evidenced service areas in description for local businesses. Each offering is 2-4 words in buyer language,",
   "  not the site's slogans: \"order picking software\" not \"fulfilment reimagined\". Products, services, the job it does.",
   "- primaryBuyer: suggest ONE evidenced audience to focus on first; priorityOffering: ONE offering for that buyer. Use empty strings when unknown.",
-  '- capabilities: up to 8 objects {claim,sourceUrl,quote}. Each is a specific product capability with a short exact supporting quote and observed SOURCE URL. Omit capabilities with no evidence; never infer compliance, integrations or roles.',
+  '- capabilities: up to 8 objects {claim,sourceUrl,quote}. Capture concrete products, services, service areas and capabilities with an exact supporting quote from a labelled SOURCE URL. Keep plan names, conditions and exceptions in both claim and quote; never turn a plan limit into a business-wide limit. Omit capabilities with no evidence; never infer compliance, integrations or roles.',
   "- buyingJobs: up to 4 concrete tasks buyers need help completing, supported by the text.",
   "- differentiators: up to 4 supported reasons to choose this business. Do not invent superiority.",
   "- exclusions: audiences or needs explicitly not served; [] when unknown.",
   "- conversionUrl: an observed product, pricing or contact URL on this site; empty when unknown.",
-  "- competitors: up to 3 direct competitors serving the same buyer and buying job. Verify from evidence in the text; return [] when unknown.",
+  "- competitors: up to 3 direct competitors serving the same buyer and buying job. Return hostnames, not brand names. The hostname must appear in the supplied text; return [] when unknown.",
   "  Do not substitute famous software tools for a service business, or name this site's own domain.",
   "  Return [] rather than guessing if the category is unclear.",
 ].join("\n");
@@ -89,7 +89,7 @@ export async function inferBusinessProfileDetailed(domain: string, spend?: Spend
   }
 
   try {
-    const raw = await askStructured("onboarding/business-profile", `${PROMPT}\n\nSITE: ${domain}\n\n${read.text}`, { maxTokens: 2200, spend });
+    const raw = await askStructured("onboarding/business-profile", `${PROMPT}\n\nSITE: ${domain}\n\n${read.text}`, { maxTokens: 3200, spend });
     const profile = parseProfile(raw ?? "", domain, read.text);
     return profile ? { profile, reason: "ok", source: read.source } : { profile: null, reason: "model_failed", source: read.source };
   } catch {
@@ -138,7 +138,7 @@ export function parseProfile(raw: string, domain: string, sourceText = ""): Busi
     country: typeof parsed.country === "string" ? parsed.country : "Global (English)",
     description: typeof parsed.description === "string" ? parsed.description : "",
     audiences: strings(parsed.audiences).slice(0, 6),
-    offerings: strings(parsed.offerings).slice(0, 6),
+    offerings: strings(parsed.offerings).slice(0, 10),
     buyingJobs: strings(parsed.buyingJobs).slice(0, 4),
     differentiators: strings(parsed.differentiators).slice(0, 4),
     exclusions: strings(parsed.exclusions).slice(0, 6),
@@ -150,7 +150,7 @@ export function parseProfile(raw: string, domain: string, sourceText = ""): Busi
     // then seeds research against its own domain.
     competitors: strings(parsed.competitors)
       .map((c) => c.replace(/^https?:\/\//, "").replace(/^www\./, "").toLowerCase())
-      .filter((c) => c !== host)
+      .filter((c) => c !== host && /^[a-z0-9.-]+\.[a-z]{2,}$/.test(c) && (!sourceText || sourceText.toLowerCase().includes(c)))
       .slice(0, 6),
   };
 }

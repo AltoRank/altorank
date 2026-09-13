@@ -80,11 +80,11 @@ export const PHASE_LABELS: Record<OnboardingPhase, Record<PhaseStatus, string>> 
     failed: "Could not check your existing pages",
   },
   planning: {
-    pending: "Schedule your first month",
-    active: "Scheduling your first month",
+    pending: "Find your first article ideas",
+    active: "Checking your article ideas",
     done: "Prepared your first articles",
     skipped: "Nothing scheduled yet",
-    failed: "Could not schedule your first month",
+    failed: "Could not prepare article ideas",
   },
   drafting: {
     pending: "Write your first draft",
@@ -450,7 +450,9 @@ export function onboardingOutcome(state: OnboardingState, handoff = false): Onbo
   if (!state.ready) {
     return {
       tone: "working",
-      line: "This takes about a minute. Nothing publishes without your approval.",
+      line: state.steps.some(step => step.phase === "drafting" && step.status === "active")
+        ? "Writing and checking your chosen article. Nothing publishes without your approval."
+        : "This can take a few minutes. Your article ideas appear as they are checked. Nothing publishes without your approval.",
       produced: false,
     };
   }

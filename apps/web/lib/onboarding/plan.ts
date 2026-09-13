@@ -228,15 +228,16 @@ export async function decoratePlannedKeywords(
   if (keywordIds.length === 0) return { classified: 0, questioned: 0 };
   const { data } = await supabase
     .from("keywords")
-    .select("id, term, intent, article_subtype, quality_questions")
+    .select("id, term, intent, article_subtype, quality_questions, opportunity")
     .eq("workspace_id", workspaceId)
     .in("id", keywordIds);
-  const rows = (data ?? []) as Array<{ id: string; term: string; intent: KeywordIntent | null; article_subtype: string | null; quality_questions: unknown }>;
+  const rows = (data ?? []) as Array<{ id: string; term: string; intent: KeywordIntent | null; article_subtype: string | null; quality_questions: unknown; opportunity?: { status?: string; angle?: string } }>;
 
   let classified = 0;
   for (const row of rows) {
     if (row.article_subtype) continue;
-    const shape = classifyKeyword(row.term, intents.get(row.id) ?? row.intent);
+    const angle = row.opportunity?.status === "qualified" ? row.opportunity.angle : null;
+    const shape = classifyKeyword(angle || row.term, intents.get(row.id) ?? row.intent);
     await supabase.from("keywords").update(shape).eq("id", row.id).eq("workspace_id", workspaceId);
     classified++;
   }

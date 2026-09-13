@@ -18,3 +18,12 @@ it("does not approve a headline when the task check is unavailable or cites inve
   ask.mockResolvedValue(JSON.stringify({queryTask:"Compare tools",sourceQuote:"An invented source",angle:"Compare tools",buyingJob:"Choose a tool",reason:"Selection"}));
   expect(await preserveEditorialTask("seo writing tool",organic,proposed)).toBeNull();
 });
+it("does not accept a corrected CMS task on audience overlap alone", async () => {
+  ask.mockResolvedValue(JSON.stringify({queryTask:"Choose a CMS",sourceQuote:organic[0].title,angle:"How to choose a CMS",buyingJob:"Choose a CMS",reason:"Helps agencies",businessFit:{supported:false,quote:"AI content writing"}}));
+  expect(await preserveEditorialTask("cms for agencies",organic,proposed,undefined,"AI content writing")).toBeNull();
+});
+it("requires actual evidence for the final task's offering", async () => {
+  ask.mockResolvedValue(JSON.stringify({queryTask:"Compare SEO writing tools",sourceQuote:organic[0].title,angle:"How to compare SEO writing tools",buyingJob:"Choose a writing tool",reason:"Helps agencies compare writing tools",businessFit:{supported:true,quote:"AI content writing"}}));
+  expect(await preserveEditorialTask("seo writing tool",organic,proposed,undefined,"AI content writing")).not.toBeNull();
+  expect(await preserveEditorialTask("seo writing tool",organic,proposed,undefined,"CMS hosting")).toBeNull();
+});

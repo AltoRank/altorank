@@ -19,6 +19,7 @@ export interface CtaOptions {
   domain?: string | null;
   /** `business_profile.name` when onboarding captured it. */
   businessName?: string | null;
+  conversionUrl?: string | null;
   language?: string | null;
 }
 
@@ -34,7 +35,11 @@ export function addCallToAction(html: string, opts: CtaOptions = {}): { html: st
 
   const labels = labelsFor(opts.language);
   const name = opts.businessName?.trim() || host;
-  const url = `https://${host}`;
+  let url = `https://${host}`;
+  try {
+    const target = new URL(opts.conversionUrl ?? "");
+    if (/^https?:$/.test(target.protocol) && normaliseDomain(target.hostname) === host && !target.username && !target.password) url = target.href;
+  } catch { /* An absent or invalid destination falls back to the known homepage. */ }
 
   const section =
     `<section class="cta">` +

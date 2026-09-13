@@ -45,7 +45,10 @@ async function main() {
   const { setSpendReporter } = await import('@/lib/seo/client');
   const { recordSpend } = await import('@/lib/billing/spend');
   const db = createClient(url, local.SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-  const accountId = randomUUID(); const workspaceId = randomUUID();
+  const resume = flag('resume-report') ? JSON.parse(readFileSync(flag('resume-report')!, 'utf8')) : null;
+  if (resume && resume.domain !== domain) throw new Error('Resume domain mismatch');
+  const accountId = randomUUID(); const workspaceId = resume?.workspaceId ?? randomUUID();
+  if (resume) { Object.assign(report, resume, { resumedAt: new Date().toISOString(), timingInvalidated: 'Local database stopped during the initial run; excludes latency comparison' }); delete report.error; }
   const checked = <T extends { error: { message: string } | null }>(r: T) => { if (r.error) throw new Error(r.error.message); return r; };
   // Read schema before spending on research. This does not touch an existing workspace.
   checked(await db.from('keywords').select('opportunity,research_evidence').limit(0));
@@ -53,11 +56,13 @@ async function main() {
   report.costLimitations = 'Provider usage is recorded per workspace; a replay reuses the saved profile and excludes its original inference cost.';
   const candidateBaseline = flag('candidate-baseline') ? JSON.parse(readFileSync(flag('candidate-baseline')!, 'utf8')) : null;
   if (candidateBaseline && candidateBaseline.domain !== domain) throw new Error('Baseline domain mismatch');
+  if (!resume) {
   checked(await db.from('accounts').insert({ id: accountId, name: 'Local quality benchmark', slug: `quality-${accountId}` }));
   checked(await db.from('workspaces').insert({ id: workspaceId, account_id: accountId, name: `Quality ${domain}`, domain, status: 'setup', language, location_code: locationCode, ai_provider: 'claude' }));
+  } else checked(await db.from('workspaces').select('id').eq('id', workspaceId).single());
   report.workspaceId = workspaceId; save();
   const spend = { supabase: db, workspaceId };
-  report.inference = candidateBaseline?.inference ?? await inferBusinessProfileDetailed(domain, spend);
+  report.inference = resume?.inference ?? candidateBaseline?.inference ?? await inferBusinessProfileDetailed(domain, spend);
   const profile = (report.inference as Awaited<ReturnType<typeof inferBusinessProfileDetailed>>).profile;
   if (!profile) throw new Error('No usable inferred business profile');
   checked(await db.from('workspaces').update({business_profile: profile}).eq('id', workspaceId));
@@ -81,6 +86,7 @@ async function main() {
     report.scope = 'Controlled replay of saved profile and discovered candidates through live qualification and finished draft; discovery not rerun';
     report.selectionPolicy = 'First qualified candidate in unchanged saved candidate order';
   } else if (flag('keyword')) terms = [{ keyword: flag('keyword')!, volume: null, difficulty: null, cpc: null }];
+  else if (resume?.analysis) { terms = []; }
   else {
     report.analysis = await analyseDomain({ domain, profile, supabase: db, workspaceId, locale: language, locationCode, maxPages: 3, deferPageSpeed: true });
     terms = [];

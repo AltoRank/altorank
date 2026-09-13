@@ -6,7 +6,7 @@ import { doubtedAudiences } from "@/lib/onboarding/audience-check";
 
 export const MAX_AUDIENCES = 7;
 export const MAX_COMPETITORS = 7;
-export const MAX_OFFERINGS = 6;
+export const MAX_OFFERINGS = 10;
 
 /** Domains, not names: strip a scheme and a path so "https://x.com/pricing" is "x.com". */
 export function normaliseCompetitor(c: string): string {

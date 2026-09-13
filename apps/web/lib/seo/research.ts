@@ -52,6 +52,7 @@ export interface GscSignal {
 }
 
 export interface ArticleResearch {
+  draftSources?: import("@/lib/keyword-research/page-evidence").PageExtract[];
   editorialReview?: import("@/lib/content/approved-output").EditorialReview;
   keyword: string;
   language: string;

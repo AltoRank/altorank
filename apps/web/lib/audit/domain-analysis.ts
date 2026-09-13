@@ -831,11 +831,13 @@ export async function analyseDomain(options: {
         // phrasings of "free portfolio website". Ranking #80 for a phrase
         // because you wrote about it is not evidence a buyer typed it.
         //
-        // Judge all candidates in bounded batches, strongest lexical matches
-        // first. Missing decisions cannot enter the automatic writing pool.
-        const toJudge = [...byTerm.values()]
-          .sort((a, b) => rel(b.k.keyword) - rel(a.k.keyword))
-          .map((c) => c.k.keyword);
+        // Bound the combined pool, including existing rankings, before model work.
+        // Balance origins so a large existing blog cannot crowd out new ideas.
+        // Unchecked candidates remain outside the automatic writing pool.
+        const toJudge = balanceSources(
+          [...byTerm.values()].sort((a, b) => rel(b.k.keyword) - rel(a.k.keyword)),
+          (c) => c.rank,
+        ).slice(0, 120).map((c) => c.k.keyword);
         const fit = await judgeBuyerFit(business, toJudge, { spend });
         const refusedByBuyerTest = [...fit.verdicts.values()].filter((v) => !v.keep).length;
 

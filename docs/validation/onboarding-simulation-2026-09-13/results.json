@@ -1,0 +1,243 @@
+{
+  "commit": "75102a6",
+  "date": "2026-09-13",
+  "scope": "One full live browser journey, two live pipeline-only cases; local persistence; no code changes, email delivery, payment, publishing or image generation tested.",
+  "altorank": {
+    "firstBriefSecondsAfterConfirm": 58.574,
+    "choiceSecondsAfterConfirm": 125.257,
+    "draftSecondsAfterChoice": 124.693,
+    "automatedStageSeconds": 249.95,
+    "words": 1593,
+    "articleCount": 1,
+    "status": "review",
+    "headline": "How to compare bulk AI content generation tools",
+    "recordedCostUsd": 0.5898970000000001,
+    "costCaveat": "Excludes the separate voice-analysis call, which does not record spend. Recorded cost is not a complete invoice total.",
+    "topics": [
+      {
+        "term": "ai content generation for seo",
+        "headline": "How to use AI content generation for SEO: strategy, tradeoffs, and execution",
+        "demand": {
+          "volume": null,
+          "evidence": {
+            "sources": [
+              {
+                "seed": "ai content generation for seo",
+                "family": "category",
+                "source": "overview"
+              }
+            ],
+            "fetchedAt": "2026-09-13T13:47:51.862Z",
+            "languageCode": "en",
+            "locationCode": 2840
+          },
+          "confidence": "unknown"
+        },
+        "reason": "The searcher needs practical guidance on using AI for SEO content—not tool selection. Result 2 directly addresses pros/cons and strategy; result 6 offers specific use cases (outlines, drafts, optimization). The proposed angle introduced 'agencies' and 'editorial control' not in the query, and positioned this as a buying decision rather than a how-to about effective application.",
+        "qualification": {
+          "calls": 26,
+          "checked": 9,
+          "costUsd": 0.07127700000000001,
+          "stopped": "sufficient",
+          "distinct": 5
+        }
+      },
+      {
+        "term": "bulk content creation tool",
+        "headline": "How to compare bulk AI content generation tools",
+        "demand": {
+          "volume": null,
+          "evidence": {
+            "sources": [
+              {
+                "seed": "bulk content creation tool",
+                "family": "category",
+                "source": "overview"
+              }
+            ],
+            "fetchedAt": "2026-09-13T13:47:51.862Z",
+            "languageCode": "en",
+            "locationCode": 2840
+          },
+          "confidence": "unknown"
+        },
+        "reason": "The searcher is evaluating tool options in this category. Result 7 supports a comparison article reviewing multiple tools (eesel, KoalaWriter, Jasper, Frase, Copy.ai, Writesonic, Writer) with hands-on assessment. The proposed angle invents a false tradeoff ('speed vs. editorial control') and promotes one vendor's differentiator rather than helping the searcher understand selection criteria across ",
+        "qualification": {
+          "calls": 26,
+          "checked": 9,
+          "costUsd": 0.07127700000000001,
+          "stopped": "sufficient",
+          "distinct": 5
+        }
+      },
+      {
+        "term": "chatgpt content approval system",
+        "headline": "How AI content approval workflows work: stages and process",
+        "demand": {
+          "volume": null,
+          "evidence": {
+            "sources": [
+              {
+                "seed": "chatgpt content approval system",
+                "family": "problem",
+                "source": "overview"
+              }
+            ],
+            "fetchedAt": "2026-09-13T13:47:51.862Z",
+            "languageCode": "en",
+            "locationCode": 2840
+          },
+          "confidence": "unknown"
+        },
+        "reason": "Result 1 directly answers what the searcher wants to know—how AI tools actually handle approval, with concrete workflow stages. This is informational, not promotional. It avoids the proposed angle's invented requirements (technical readiness checks, accountability frameworks) and editorial philosophy, staying focused on the mechanics of the process itself.",
+        "qualification": {
+          "calls": 26,
+          "checked": 9,
+          "costUsd": 0.07127700000000001,
+          "stopped": "sufficient",
+          "distinct": 5
+        }
+      },
+      {
+        "term": "content management for agencies",
+        "headline": "How to choose a CMS for agencies: Compare platforms for multi-client content management",
+        "demand": {
+          "volume": null,
+          "evidence": {
+            "sources": [
+              {
+                "seed": "content management for agencies",
+                "source": "overview"
+              }
+            ],
+            "fetchedAt": "2026-09-13T13:47:51.861Z",
+            "languageCode": "en",
+            "locationCode": 2840
+          },
+          "confidence": "unknown"
+        },
+        "reason": "Result 2 directly addresses CMS comparison for agencies with feature and efficiency focus. The proposed angle invents AI and approval workflow angles not in the query. The buying job should center on multi-client content workflows (the actual agency need), not on AI-generated content or editorial approval systems, which are publisher differentiators not search intent.",
+        "qualification": {
+          "calls": 26,
+          "checked": 9,
+          "costUsd": 0.07127700000000001,
+          "stopped": "sufficient",
+          "distinct": 5
+        }
+      },
+      {
+        "term": "content management multiple client sites",
+        "headline": "How to choose a multi-site CMS for managing multiple websites",
+        "demand": {
+          "volume": null,
+          "evidence": {
+            "sources": [
+              {
+                "seed": "content management multiple client sites",
+                "family": "buying-decision",
+                "source": "overview"
+              }
+            ],
+            "fetchedAt": "2026-09-13T13:47:51.862Z",
+            "languageCode": "en",
+            "locationCode": 2840
+          },
+          "confidence": "unknown"
+        },
+        "reason": "The query seeks a tool/platform to solve a specific operational problem (managing multiple client sites). Result 2 directly addresses CMS selection with comparison criteria. The proposed angle introduces AI and SEO claims not in the query or results, and the buying job adds editorial control/branding language that shifts focus to publisher differentiators rather than the core task of multi-site ma",
+        "qualification": {
+          "calls": 26,
+          "checked": 9,
+          "costUsd": 0.07127700000000001,
+          "stopped": "sufficient",
+          "distinct": 5
+        }
+      }
+    ],
+    "editorialReview": {
+      "status": "checked",
+      "findings": [
+        {
+          "text": "AltoRank's approach starts here: it checks whether an AI assistant can read a site at all, fixes what it can, and writes the pages that get ranked and cited, treating crawlability as a precondition rather than an afterthought.",
+          "reason": "The approved brief supports 'Checks whether AI assistants can read a site and identifies technical readability issues' but does not evidence a capability to 'fix what it can' or 'write the pages.' The brief provides only that AltoRank performs readability checks, not remediation or page generation a",
+          "removed": false,
+          "category": "product"
+        },
+        {
+          "text": "AltoRank offers both managed hosting and open source ai seo tools compared style self-hosted infrastructure, which is worth checking against any tool that only offers one option",
+          "reason": "The phrase 'open source ai seo tools compared style self-hosted infrastructure' is incoherent and does not appear in approved capabilities. The brief mentions only 'Multi-workspace support' and hosting options are not listed as an approved capability.",
+          "removed": false,
+          "category": "product"
+        },
+        {
+          "text": "a risk covered in more depth in discussions of ai content traffic drop recovery",
+          "reason": "This is a unsupported reference to external content on 'ai content traffic drop recovery' that is not part of the approved brief or AltoRank's demonstrated capabilities. It presents a risk guarantee without evidence.",
+          "removed": false,
+          "category": "qualitative"
+        },
+        {
+          "text": "What to know before you compare tools A bulk content creation tool batches article generation from keyword or topic lists, but speed means little if nobody checks the output before it publishes.",
+          "reason": "This section repeats the definition and core argument already stated in the preceding 'What to know before you compare tools' section, reiterating that review matters more than speed.",
+          "removed": false,
+          "category": "repetition"
+        },
+        {
+          "text": "A keyword-stuffed draft can still rank in Google while being functionally unreadable to the crawlers that feed AI answers.",
+          "reason": "This is a generalization about Google ranking behavior presented as established fact without citation or evidence, and goes beyond explaining AltoRank's features into unsubstantiated editorial commentary on SEO mechanics.",
+          "removed": false,
+          "category": "qualitative"
+        }
+      ],
+      "headline": "preserved",
+      "structure": "needs-review",
+      "productClaims": "needs-review",
+      "qualitativeClaims": "needs-review"
+    }
+  },
+  "additionalCases": [
+    {
+      "domain": "pimlicoplumbers.com",
+      "startedAt": "2026-09-13T13:47:23.743Z",
+      "finishedAt": "2026-09-13T13:52:44.062Z",
+      "timeBasis": "failed report last-write time",
+      "firstUsefulSeconds": null,
+      "candidates": 100,
+      "checked": 12,
+      "distinct": 0,
+      "stopped": "budget",
+      "recordedCostUsd": 0.4955319999999999,
+      "providerRows": 59,
+      "buyerFitCalls": 20,
+      "error": "No qualified topic; refusing to invent a replacement",
+      "draft": null
+    },
+    {
+      "domain": "beardbrand.com",
+      "startedAt": "2026-09-13T13:47:25.595Z",
+      "finishedAt": "2026-09-13T13:54:52.632Z",
+      "timeBasis": "harness finishedAt",
+      "firstUsefulSeconds": 286.202,
+      "candidates": 100,
+      "checked": 18,
+      "distinct": 3,
+      "stopped": "budget",
+      "recordedCostUsd": 0.8274800000000001,
+      "providerRows": 77,
+      "buyerFitCalls": 25,
+      "error": null,
+      "draft": {
+        "title": "Best beard care products by type: oils, balms, washes, and conditioners",
+        "wordCount": 1034,
+        "seconds": 103.538,
+        "editorialReview": {
+          "status": "unavailable",
+          "headline": "preserved",
+          "productClaims": "not-checked",
+          "qualitativeClaims": "not-checked",
+          "structure": "not-checked",
+          "findings": []
+        }
+      }
+    }
+  ]
+}

@@ -69,7 +69,7 @@ test("a new account is walked from /dashboard to five qualified topics and one d
   await page.getByRole("button", { name: "Plan my first articles" }).click();
 
   // --- The run ---------------------------------------------------------------
-  await expect(page.getByRole("heading", { name: "Creating your content plan" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Finding your first article ideas" })).toBeVisible();
 
   // --- Everything on the screen is on disk -------------------------------------
   // Read after the run heading: the finish awaits its saves before it starts
@@ -138,8 +138,11 @@ test("a new account is walked from /dashboard to five qualified topics and one d
   expect(dayOneArticle!.keyword).toBe(first.keyword);
 
   // --- The plan, on the calendar ------------------------------------------------
-  await page.getByRole("button", { name: "Open my plan" }).click();
-  await expect(page).toHaveURL(/\/content$/);
+  await page.getByRole("button", { name: "Read my first draft" }).click();
+  await expect(page).toHaveURL(/\/onboarding\/draft\//);
+  await expect(page.locator("article")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Draft checks" })).toBeVisible();
+  await page.goto("/content");
 
   const now = new Date();
   const thisMonth = entries!.filter((e) => {
