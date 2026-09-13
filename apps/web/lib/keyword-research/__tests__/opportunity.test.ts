@@ -59,6 +59,13 @@ describe("topic qualification", () => {
     covered = [{ id: "k", term, opportunity: approved }];
     expect((await run({ opportunity: approved })).status).toBe("qualified");
   });
+  it("preserves coverage across qualification versions, focus changes and cache expiry", async () => {
+    const approved = await run();
+    const old = {...approved, version:5, context:"older-focus", checkedAt:"2025-01-01T00:00:00Z"};
+    expect(readOpportunity(old,contextKey(context))).toBeNull();
+    covered = [{id:"published",term:"existing cost guide",opportunity:old}];
+    expect(await run()).toMatchObject({status:"rejected",duplicateOf:"published"});
+  });
   it("refuses an obsolete year copied into an evergreen headline", async () => {
     ask.mockResolvedValue(JSON.stringify({ ...approval, angle: "Clinic website costs in 2025" }));
     expect((await run()).status).toBe("pending");

@@ -255,7 +255,7 @@
           "text": "EsempioCorriere: consegna in giornata nel centro di Milano per ordini entro mezzogiorno. Altrove servono due giorni lavorativi."
         }
       ],
-      "html": "<p>La consegna in giornata è disponibile nel centro di Milano se ordini entro mezzogiorno. Per altre destinazioni, considera due giorni lavorativi.</p>",
+      "html": "<p>La consegna in giornata \u00e8 disponibile nel centro di Milano se ordini entro mezzogiorno. Per altre destinazioni, considera due giorni lavorativi.</p>",
       "expectedIssues": []
     },
     {
@@ -312,6 +312,62 @@
         }
       ],
       "html": "<p>For a store that reconciles orders in a spreadsheet, test whether each candidate exports the required columns. Compare a sample file with the accounting template and reject options that omit essential fields.</p>",
+      "expectedIssues": []
+    },
+    {
+      "id": "flow-routing-failure",
+      "split": "development",
+      "brief": {
+        "angle": "Explain the supplied test or further-reading instruction accurately."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/routing",
+          "title": "Fictional routing documentation",
+          "headings": [],
+          "text": "Collective scheduling offers a time only if every required host is available. Round robin assigns a booking to one available host; a busy host is skipped while other available hosts remain eligible."
+        }
+      ],
+      "html": "<p>To test round robin, block one host while another remains free. If the booking page still offers that slot, the software is broken.</p>",
+      "expectedIssues": [
+        {
+          "fragment": "If the booking page still offers that slot, the software is broken.",
+          "category": "qualitative"
+        }
+      ]
+    },
+    {
+      "id": "flow-routing-control",
+      "split": "development",
+      "brief": {
+        "angle": "Explain the supplied test or further-reading instruction accurately."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/routing",
+          "title": "Fictional routing documentation",
+          "headings": [],
+          "text": "Collective scheduling offers a time only if every required host is available. Round robin assigns a booking to one available host; a busy host is skipped while other available hosts remain eligible."
+        }
+      ],
+      "html": "<p>To test round robin, block one host while another remains free. The available host should remain bookable. To test collective scheduling, block a required host; a slot requiring that host should disappear.</p>",
+      "expectedIssues": []
+    },
+    {
+      "id": "flow-linked-reading",
+      "split": "development",
+      "brief": {
+        "angle": "Explain the supplied test or further-reading instruction accurately."
+      },
+      "sources": [
+        {
+          "url": "https://evidence.example/routing",
+          "title": "Fictional routing documentation",
+          "headings": [],
+          "text": "Collective scheduling offers a time only if every required host is available. Round robin assigns a booking to one available host; a busy host is skipped while other available hosts remain eligible."
+        }
+      ],
+      "html": "<p>For a separate comparison, see <a href=\"https://evidence.example/calendars\">our calendar guide</a>.</p>",
       "expectedIssues": []
     }
   ]

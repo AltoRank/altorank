@@ -1,3 +1,5 @@
+import { distinctOnboardingTopics } from "./distinct-topics";
+import { e2eStubsEnabled } from "@/lib/e2e/stubs";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 import { qualifyOpportunities, serpOverlap, type Opportunity } from "@/lib/keyword-research/opportunity";
 // ---------------------------------------------------------------------------
@@ -79,6 +81,7 @@ export interface PlanOptions {
    */
   mode?: "replace" | "top-up";
   maxEntries?: number;
+  distinctTasks?: boolean;
   onProgress?: NonNullable<Parameters<typeof recommendKeywords>[2]>["onProgress"];
 }
 
@@ -115,9 +118,11 @@ async function planFor(
   // ranking" rows and the one writable keyword scored below them was never
   // seen (buttondown.com, 2026-09-07: 99 skips, 2 hand-added terms, 1
   // planned). Ask for the whole set; the planner filters to writable itself.
-  const recs = (await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true, ...(opts.onProgress ? {onProgress: opts.onProgress} : {}) })).filter(
+  let recs = (await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true, ...(opts.onProgress ? {onProgress: opts.onProgress} : {}) })).filter(
     (r) => !excluded.has(r.keywordId) && !takenIds.has(r.keywordId) && !takenTerms.has(r.term.toLowerCase()),
   );
+
+  if (opts.distinctTasks && !e2eStubsEnabled()) recs = await distinctOnboardingTopics(recs, {supabase,workspaceId});
 
   let start = opts.from ?? new Date();
   let maxEntries = Math.min(room, opts.maxEntries ?? room);

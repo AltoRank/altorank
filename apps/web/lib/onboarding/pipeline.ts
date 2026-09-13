@@ -333,6 +333,7 @@ async function runPhases(
   } else {
     try {
       plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, { maxEntries: 5, ...(firstDraft === "choose" ? {
+        distinctTasks: true,
         onProgress: (items: Array<{id: string; term: string}>, results: Map<string, Opportunity>) => {
           const kept: Opportunity[] = [];
           const briefs = items.flatMap((item) => {

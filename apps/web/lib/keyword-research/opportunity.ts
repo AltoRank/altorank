@@ -80,6 +80,17 @@ export function canonicalPage(raw: string): string | null {
     return `${url.hostname.replace(/^www\./, "")}${url.pathname.replace(/\/$/, "")}`;
   } catch { return null; }
 }
+/** Existing content still covers its task after qualification rules, focus or
+ * cache age change. These URLs only suppress duplicates; they cannot approve a
+ * new candidate or cause a fetch. The caller scopes covered rows to the site.
+ */
+export function coveredOrganicUrls(raw: unknown): string[] {
+  if (!raw || typeof raw !== "object") return [];
+  const value = raw as {status?:unknown;organicUrls?:unknown};
+  if (value.status !== "qualified" || !Array.isArray(value.organicUrls) || !value.organicUrls.every(url=>typeof url==="string"&&canonicalPage(url))) return [];
+  return value.organicUrls;
+}
+
 export function serpOverlap(a: string[], b: string[]): number {
   const left = new Set(a.map(canonicalPage).filter(Boolean));
   const right = new Set(b.map(canonicalPage).filter(Boolean));
@@ -126,8 +137,7 @@ export async function qualifyOpportunities(
       for (const c of candidates) {
         const result = out.get(c.id); if (result?.status !== "qualified") continue;
         const duplicate = (covered ?? []).find((row) => {
-          const old = readOpportunity(row.opportunity, fingerprint);
-          return row.id !== c.id && old?.status === "qualified" && serpOverlap(result.organicUrls ?? [], old.organicUrls ?? []) >= 0.5;
+          return row.id !== c.id && serpOverlap(result.organicUrls ?? [], coveredOrganicUrls(row.opportunity)) >= 0.5;
         });
         if (duplicate) { out.set(c.id, { ...result, status: "rejected", duplicateOf: duplicate.id, reason: `An article already planned or written for “${duplicate.term}” covers this search intent.` }); continue; }
         if (!kept.some((other) => serpOverlap(result.organicUrls ?? [], other.organicUrls ?? []) >= 0.5)) kept.push(result);

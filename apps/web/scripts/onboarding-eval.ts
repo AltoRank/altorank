@@ -43,7 +43,7 @@ async function main() {
   const fixture = JSON.parse(readFileSync(resolve("evals/onboarding/claims.json"),"utf8")) as {labelOrigin:string;cases:ClaimCase[]};
   const split = flag("split") ?? "development";
   if (!["development","holdout"].includes(split)) throw Error("Invalid split");
-  const cases = fixture.cases.filter(c=>c.split===split);
+  const cases = fixture.cases.filter(c=>c.split===split&&(!flag("case-prefix")||c.id.startsWith(flag("case-prefix")!)));
   const repeats = Number(flag("repeats") ?? 2);
   if (!Number.isInteger(repeats) || repeats<1 || repeats>3) throw Error("Repeats must be 1–3");
   const variants = (flag("variants") ?? "baseline,model,prompt,combined").split(",");
