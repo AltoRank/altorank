@@ -70,9 +70,7 @@ export function buildResearchSection(research: ArticleResearch): string[] {
     sections.push(
       [
         "QUESTIONS SEARCHERS ASK (from People Also Ask):",
-        "Answer each of these somewhere in the article, using the question " +
-          "wording as an H2 or H3 where it reads naturally. Each answer should " +
-          "be self-contained enough to stand alone as a featured snippet.",
+        "Use only questions that add a distinct, useful answer to the approved article angle; do not force every question into a heading or broaden the audience to fill an FAQ quota. Each included answer should stand on its own.",
         "",
         ...research.peopleAlsoAsk.slice(0, 10).map((q) => `- ${q}`),
       ].join("\n"),
@@ -597,13 +595,13 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       "",
       "- Open by answering the question. First paragraph under 90 words, naming",
       "  the subject in the first sentence. No throat-clearing, no context-setting.",
-      "- Straight after the opening paragraph, add a block headed <h2>Key takeaways</h2>",
+      `- Straight after the opening paragraph, add a short summary block with an <h2> label written in ${language},`,
       "  with three to five <li> bullets, each one a complete, quotable sentence.",
       "  No figures in the bullets unless the same figure is sourced in the body.",
       "- Include one standalone definition of 20-70 words that starts with the",
       "  term and makes sense with nothing around it.",
-      "- Use at least three specific figures: a number, a percentage, a price, a",
-      "  duration. An adjective is not a fact.",
+      "- Use specific figures only when sourced and useful to the reader's task.",
+      "  There is no minimum number of statistics, prices or percentages to include.",
       "- Attribute every figure to a named, linked source. If you cannot source a",
       "  number, do not write the number - say plainly that no reliable figure",
       "  exists, which is itself a quotable answer.",
@@ -657,9 +655,9 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     // happened to end on questions.
     if (o.faq === true) {
       prefs.push(
-        "- End with an <h2>Frequently asked questions</h2> section: three to five <h3> questions " +
-          "people actually type about the topic, each answered in 40-80 words that stand alone. " +
-          "Do not repeat a question already used as an H2.",
+        "- When useful unanswered questions remain, end with an <h2>Frequently asked questions</h2> section: up to five <h3> questions " +
+          "that serve the approved audience and article task, each answered in 40-80 words that stand alone. " +
+          "Do not repeat a question already covered or invent adjacent topics to fill this section; omit it when nothing useful remains.",
       );
     }
     if (o.customInstructions?.trim()) prefs.push(`- Site owner's standing instructions: ${o.customInstructions.trim()}`);
@@ -671,7 +669,10 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     [
       "IMPORTANT:",
       "- Write for humans first, search engines second.",
+      `- Write every heading, summary label and answer in ${language}. Translate generic labels such as 'Key takeaways'; retain proper product names.`,
       "- Every paragraph should deliver value.",
+      "- Organize around the reader's decision or task, not one repetitive section per product feature. Group related criteria and explain concrete tradeoffs, checks or next steps.",
+      "- Include background facts or statistics only when they change that decision. Omit generic adoption numbers, market-size trivia and long definitions used to fill space.",
       "- Do NOT include any text outside of the HTML output and the meta-description tag.",
       "",
       // The generic register is the thing readers recognise as machine-written,

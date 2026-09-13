@@ -1,4 +1,5 @@
 import { assertAutonomousTopic, type Opportunity } from "@/lib/keyword-research/opportunity";
+import { selectArticleQuestions } from "@/lib/ai/article-questions";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 // ---------------------------------------------------------------------------
 // Article generation, one implementation
@@ -600,10 +601,18 @@ export async function generateArticle(
     const research = await gatherArticleResearch({
       keyword,
       locale: workspace.language ?? "en",
+      locationCode: workspace.location_code ?? undefined,
       supabase,
       workspaceId,
       relatedKeywords: options.relatedKeywords,
     });
+    const questionSelection = await selectArticleQuestions(research.peopleAlsoAsk, {
+      keyword, title: approvedTitle, language: workspace.language ?? "en",
+      business: workspace.business_profile, brief: topicBrief,
+      instructions: refreshOf?.brief ?? keywordRow?.instructions,
+    }, { spend: { supabase: spendDb, workspaceId } });
+    research.questionSelection = questionSelection;
+    research.peopleAlsoAsk = questionSelection.kept;
     onResearch?.(research);
 
     /**
@@ -670,7 +679,7 @@ export async function generateArticle(
     const shape =
       keywordRow?.article_type && keywordRow.article_subtype
         ? { article_type: keywordRow.article_type, article_subtype: keywordRow.article_subtype }
-        : classifyKeyword(keyword, research.intent.intent);
+        : classifyKeyword(topicBrief?.angle ?? keyword, research.intent.intent);
     const answers = parseStoredQuestions(keywordRow?.quality_questions)
       .filter((q): q is typeof q & { answer: string } => Boolean(q.answer))
       .map((q) => ({ question: q.question, answer: q.answer }));

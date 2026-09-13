@@ -8,6 +8,7 @@ export function balanceSources<T>(rows: T[], key: (row: T) => string | number): 
   return out;
 }
 export function diverseSeeds(terms: string[], limit: number): string[] {
+  if (limit <= 0) return [];
   const selected: string[] = [];
   const tokens = (term: string) => new Set(term.toLowerCase().split(/\s+/));
   for (const term of terms) {
