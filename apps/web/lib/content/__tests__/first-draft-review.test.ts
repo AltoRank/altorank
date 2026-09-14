@@ -16,3 +16,11 @@ it("partial checks retain genuine findings and do not present unchecked categori
 it("successful source checks cannot conceal an unavailable structure review",()=>{
   expect(attachClaimVerification({...review,status:"unavailable",structure:"not-checked"},verification).status).toBe("unavailable");
 });
+it("does not turn a nonfactual scope decision into a material warning or source approval",()=>{
+  const classified:ClaimVerification={...verification,claims:[{...verification.claims[0],category:"qualitative",verdict:"not-factual",quote:"This guide compares three options.",reason:"Article roadmap, not an external factual assertion."}]};
+  const result=attachClaimVerification(review,classified);
+  expect(result.findings).toEqual([]);
+  expect(result.claimVerification?.claims[0].verdict).toBe("not-factual");
+  const separate={category:"qualitative" as const,severity:"material" as const,text:"Other factual assertion",reason:"Independent editorial issue",removed:false};
+  expect(attachClaimVerification({...review,findings:[separate]},classified).findings).toEqual([separate]);
+});

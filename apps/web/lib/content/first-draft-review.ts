@@ -6,7 +6,7 @@ import type { PageExtract } from "@/lib/keyword-research/page-evidence";
 /** Add source-backed claim findings without treating an incomplete check as clean. */
 export function attachClaimVerification(report: EditorialReview, claims: ClaimVerification): EditorialReview {
   const findings = [...report.findings];
-  for (const claim of claims.claims.filter(c => c.verdict !== "supported")) {
+  for (const claim of claims.claims.filter(c => c.verdict === "unsupported" || c.verdict === "contradicted")) {
     if (!findings.some(f=>f.text===claim.quote && f.reason===claim.reason)) findings.push({category:claim.category,severity:"material",text:claim.quote,reason:claim.reason,removed:false});
   }
   const state = <T extends EditorialReview["productClaims"]>(category:"product"|"qualitative", current:T) => findings.some(f=>f.category===category&&!f.removed) ? "needs-review" as const : claims.status!=="checked" ? "not-checked" as const : current;

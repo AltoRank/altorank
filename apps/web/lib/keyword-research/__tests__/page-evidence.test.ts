@@ -20,3 +20,16 @@ it("retains pricing after a large product menu while keeping eighty candidates",
   const page=await readPageExtract("https://vendor.test/",9000,{includeLinks:true});
   expect(page?.links).toHaveLength(80);expect(page?.links?.[0]).toEqual({url:"https://vendor.test/pricing",label:"Pricing"});
 });
+it("retains article vendor references ahead of a large navigation menu",async()=>{
+  const menu=Array.from({length:450},(_,i)=>`<a href="/feature-${i}">Feature ${i}</a>`).join("");
+  fetch.mockResolvedValue(new Response(`<nav>${menu}<a href="/pricing">Pricing</a></nav><main><p>${"Compare the vendors on the same criteria. ".repeat(20)}</p><a href="https://other-vendor.test/">Other vendor</a></main>`));
+  const page=await readPageExtract("https://publisher.test/",9000,{includeLinks:true});
+  expect(page?.links).toContainEqual({url:"https://other-vendor.test/",label:"Other vendor"});
+  expect(page?.links?.length).toBeLessThanOrEqual(80);
+});
+it("does not treat a binary document as readable source evidence",async()=>{
+  fetch.mockResolvedValue(new Response("%PDF-1.7 " + "binary bytes ".repeat(100),{headers:{"content-type":"application/pdf"}}));
+  expect(await readPageExtract("https://vendor.test/manual.pdf")).toBeNull();
+  fetch.mockResolvedValue(new Response("%PDF-1.7 " + "binary bytes ".repeat(100)));
+  expect(await readPageExtract("https://vendor.test/manual")).toBeNull();
+});

@@ -139,3 +139,23 @@ it("does not repair invalid initial provenance by omitting the original claim",a
   const result=await verifyDraftClaims(`<p>${claim.quote}</p>`,{evidence});
   expect(result.status).toBe("unavailable");expect(result.checkedPassages).toEqual([]);expect(result.failures).toHaveLength(1);
 });
+it("keeps an explicit scope decision when recovery corrects a hypothetical false positive",async()=>{
+  const hypothetical={quote:"Imagine a team with six people.",category:"qualitative",verdict:"unsupported",reason:"No source establishes the example team size.",evidence:[],contradiction:""};
+  ask.mockResolvedValueOnce(JSON.stringify({passages:[{passageIndex:0,claims:[hypothetical]}]}));
+  ask.mockResolvedValueOnce(JSON.stringify({passages:[{passageIndex:0,claims:[{...hypothetical,verdict:"not-factual",reason:"Explicit hypothetical input, not a real-world assertion."}]}]}));
+  const result=await verifyDraftClaims(`<p>${hypothetical.quote}</p>`,{evidence});
+  expect(result.status).toBe("checked");
+  expect(result.claims).toEqual([expect.objectContaining({quote:hypothetical.quote,category:"qualitative",verdict:"not-factual"})]);
+});
+it("cannot dismiss an original product claim as nonfactual or relabel its category",async()=>{
+  ask.mockResolvedValueOnce(JSON.stringify({passages:[{passageIndex:0,claims:[claim]}]}));
+  ask.mockResolvedValueOnce(JSON.stringify({passages:[{passageIndex:0,claims:[{...claim,category:"qualitative",verdict:"not-factual",evidence:[]}]}]}));
+  const result=await verifyDraftClaims(`<p>${claim.quote}</p>`,{evidence});
+  expect(result.claims).toEqual([{...claim,passageIndex:0}]);
+});
+it("requires a traceable qualitative scope decision without evidence or contradiction",()=>{
+  for(const change of [{category:"product"},{evidence:[{sourceIndex:0,quote:evidence[0].text}]},{contradiction:"Imagine six people."},{quote:"An invented quote."}]){
+    const c={quote:"Imagine six people.",category:"qualitative",verdict:"not-factual",reason:"Hypothetical input.",evidence:[],contradiction:"",...change};
+    expect(validateClaimBatch(JSON.stringify({passages:[{passageIndex:0,claims:[c]}]}),[0],["Imagine six people."],evidence).checkedPassages).toEqual([]);
+  }
+});

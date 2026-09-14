@@ -24,7 +24,7 @@ function main(){
   if(!labels?.length)throw Error("No labelled cases match");
   const checks=labels.map(label=>{
     const indices=passages.flatMap((p,i)=>(control?p===label.text:p.includes(label.text))?[i]:[]);
-    const findings=verification.claims.filter(c=>c.verdict!=="supported"&&indices.includes(c.passageIndex)&&(control||normalize(c.quote).includes(label.text))).map(c=>({quote:c.quote,reason:c.reason,verdict:c.verdict}));
+    const findings=verification.claims.filter(c=>(c.verdict==="unsupported"||c.verdict==="contradicted")&&indices.includes(c.passageIndex)&&(control||normalize(c.quote).includes(label.text))).map(c=>({quote:c.quote,reason:c.reason,verdict:c.verdict}));
     const checked=indices.length>0&&indices.every(i=>verification.checkedPassages.includes(i));
     return {text:label.text,passageIndices:indices,checked,findings,
       // A valid finding in a partly checked passage still detects that claim;
