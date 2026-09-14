@@ -121,6 +121,7 @@ async function evaluateCase(db:SupabaseClient,item:Case,report:CaseReport,out:st
       const {startRun,stampRun}=await import("@/lib/onboarding/run-store");
       const {wakeChoicePreparation}=await import("@/lib/onboarding/choice-preparation");
       const {loadDraftPreparation}=await import("@/lib/content/draft-preparation");
+      const {loadGlobalDraftInstructions}=await import("@/lib/content/draft-instructions");
       const {generateArticle}=await import("@/lib/content/generate");
       const {fulfilPlannedEntry}=await import("@/lib/onboarding/plan");
       checked(await db.from("accounts").insert({id:accountId,name:"Local onboarding cohort evaluation",slug:`cohort-${accountId}`}));
@@ -155,7 +156,8 @@ async function evaluateCase(db:SupabaseClient,item:Case,report:CaseReport,out:st
       const selected=choices[0];report.selected=selected;
       if(!selected.keywordId||!selected.preparation)throw Error("Worker exposed a choice without source preparation.");
       const keyword=checked(await db.from("keywords").select("opportunity,instructions,plan_excluded_at").eq("workspace_id",workspaceId).eq("id",selected.keywordId).single()).data!;
-      const prepared=await loadDraftPreparation(db,{workspaceId,keywordId:selected.keywordId,keyword:selected.term,brief:keyword.opportunity,profile,domain:item.domain,language:item.language,locationCode:item.locationCode,instructions:keyword.instructions});
+      const globalInstructions=await loadGlobalDraftInstructions(db,workspaceId);
+      const prepared=await loadDraftPreparation(db,{workspaceId,keywordId:selected.keywordId,keyword:selected.term,brief:keyword.opportunity,profile,domain:item.domain,language:item.language,locationCode:item.locationCode,instructions:keyword.instructions,globalInstructions});
       if(keyword.plan_excluded_at||prepared?.status!=="ready"||prepared.context!==selected.preparation.context||prepared.createdAt!==selected.preparation.checkedAt)throw Error("The selected source packet is missing, stale or changed.");
       report.selectedPreparationContext=prepared.context;
       report.selectedPreparationCreatedAt=prepared.createdAt;

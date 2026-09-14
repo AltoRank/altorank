@@ -66,6 +66,7 @@ export default async function DraftPreview({ params }: { params: Promise<{ id: s
     <Link href="/onboarding" className="text-accent">← Back to your draft and plan</Link>
     <p className="mt-5 text-sm text-ink-3">Read-only preview · {article.word_count ?? 0} words · {article.keyword}</p>
     <h1 className="my-6 text-3xl font-semibold">{article.title}</h1>
+    {quota.trialEligible && quota.reason === "no-plan" && <a href="#trial-plan" className="mb-6 inline-block text-sm text-accent underline">See your trial plan ↓</a>}
     <article className="leading-7">{body(article.content as Node)}</article>
     <section className="mb-6 rounded-lg border border-line p-4 text-sm" aria-label="Draft checks">
       <h2 className="mb-2 font-semibold">What was checked</h2>
@@ -77,7 +78,7 @@ export default async function DraftPreview({ params }: { params: Promise<{ id: s
       <p>Structure: {review?.structure?.replaceAll("-", " ") ?? "not checked"}.</p>
       {review?.findings.map((finding, i) => <div key={i} className="mt-3"><p>{finding.removed ? "Removed" : "Needs review"}: {finding.reason}</p><blockquote className="mt-1 border-l-2 border-line pl-3 text-ink-3">{finding.text}</blockquote></div>)}
     </section>
-    {quota.trialEligible && quota.reason === "no-plan" && <section className="mt-8 rounded-xl border border-accent/30 bg-panel p-5 sm:p-6" aria-label="Continue with your draft">
+    {quota.trialEligible && quota.reason === "no-plan" && <section id="trial-plan" className="mt-8 scroll-mt-6 rounded-xl border border-accent/30 bg-panel p-5 sm:p-6" aria-label="Continue with your draft">
       <p className="text-xs uppercase tracking-wide text-ink-3">Your next 30 days · {workspace.domain}</p>
       <h2 className="mb-3 mt-2 text-2xl font-semibold">Turn this first draft into a plan for your business</h2>
       <p className="mb-4 text-sm text-ink-2">Your article is saved. Start your trial to edit and approve it, and prepare the other supported topics for your first month.</p>

@@ -28,6 +28,19 @@ it("does not count untraceable facts as answered evidence questions",()=>{
  const result=validateSourceBrief(raw([{...fact,quote:"Unlimited automation in Starter"}]),sources,plan,"Brevo");
  expect(result.facts).toHaveLength(0);expect(result.coverage[0].factIndices).toEqual([]);
 });
+it.each([true,false])("separates manufacturer attribution from readiness for the frozen task (applicable=%s)",async(applicable)=>{
+ const angle=applicable?"How to wash wool shoes, with a Merinos example":"How to wash Allbirds shoes";
+ const question=applicable?"How does Merinos advise washing its shoes?":"How does Allbirds advise washing its shoes?";
+ const procedure={...fact,subject:"Merinos",plan:"",kind:"procedure" as const,quote:"Wash in cold water.",scopeQuote:"",statement:"Wash Merinos in cold water."};
+ const promises=[{id:"p0",source:"headline" as const,quote:angle,text:angle,expectedAnswer:question,mappingReason:"The question covers the washing guidance.",requirementIndices:[0]}];
+ const task={...plan,task:"procedure" as const,requirements:[question],scope:{status:"checked" as const,requirements:[question],omitted:[],promises}};
+ const pages=[{...sources[0],url:"https://merinos.com/care",text:procedure.quote}];
+ const ask=vi.spyOn(buyerModel,"askStructured").mockResolvedValueOnce(raw([procedure])).mockResolvedValueOnce(JSON.stringify({questions:[{requirementIndex:0,answered:applicable,reason:applicable?"Manufacturer guidance for the named example.":"Merinos instructions cannot establish Allbirds care."}],promises:[{promiseId:"p0",answered:applicable,reason:applicable?"The named example is supported.":"The approved named product is not supported."}]}));
+ expect(validateSourceBrief(raw([procedure]),pages,task,"Allbirds").status).toBe("prepared");
+ const result=await prepareSourceBrief(pages,task,{angle},"Allbirds");
+ expect(ask).toHaveBeenCalledTimes(2);
+ expect(result.status).toBe(applicable?"prepared":"insufficient");
+});
 it("refuses a competitor review as primary vendor pricing evidence",()=>{
  expect(validateSourceBrief(raw([fact]),[{...sources[0],url:"https://review.test/brevo"}],plan,"Brevo").status).not.toBe("prepared");
 });
@@ -143,10 +156,35 @@ it.each(["explanation","comparison","procedure"] as const)("passes the actual %s
 });
 
 it("labels validated facts explicitly for the independent coverage reviewer",async()=>{
- const ask=vi.spyOn(buyerModel,"askStructured").mockResolvedValueOnce(raw([fact])).mockResolvedValueOnce(JSON.stringify({questions:[{requirementIndex:0,answered:true,reason:"Directly states automation."}]}));
+ const ask=vi.spyOn(buyerModel,"askStructured").mockResolvedValueOnce(raw([fact])).mockResolvedValueOnce(JSON.stringify({questions:[{requirementIndex:0,answered:true,reason:"Directly states automation."}],promises:[{promiseId:"p0",answered:true,reason:"The quote identifies the applicable plan."}]}));
  const result=await prepareSourceBrief(sources,plan,{angle:"An approved article"},"Brevo");
  expect(result.status).toBe("prepared");
  const payload=JSON.parse(ask.mock.calls[1][1].split("\n").at(-1)!);
  expect(payload.facts[0].factIndex).toBe(0);expect(payload.requirements[0].factIndices).toEqual([0]);
  expect(payload.facts[0].statement).toBeUndefined();
+});
+
+it("prepares the frozen headline promise without turning broad product positioning into extra evidence requirements",async()=>{
+ const ask=vi.spyOn(buyerModel,"askStructured").mockResolvedValueOnce(raw([fact])).mockResolvedValueOnce(JSON.stringify({questions:[{requirementIndex:0,answered:true,reason:"Directly states automation."}],promises:[{promiseId:"p0",answered:true,reason:"The quote identifies the applicable plan."}]}));
+ const promises=[{id:"p0",source:"headline" as const,quote:"automation",text:"Explain automation",expectedAnswer:"Identify the plan that includes automation.",mappingReason:"The question asks which plan includes automation.",requirementIndices:[0]}];
+ await prepareSourceBrief(sources,{...plan,scope:{status:"checked",requirements:plan.requirements,omitted:[],promises}},
+   {angle:"Explain automation",buyingJob:"Manage marketing",audience:"Small teams",instructions:"Keep the plan distinction",reason:"UNBOUNDED_QUALIFICATION_REASON",offering:"UNBOUNDED_PRODUCT_CATALOGUE",conversionPath:"UNBOUNDED_CONVERSION_COPY"},"Brevo");
+ const extraction=JSON.parse(ask.mock.calls[0][1].split("\n").at(-1)!);
+ const readiness=JSON.parse(ask.mock.calls[1][1].split("\n").at(-1)!);
+ expect(extraction.promises).toEqual(promises);
+ expect(extraction.task).toEqual({angle:"Explain automation",buyingJob:"Manage marketing",audience:"Small teams",instructions:"Keep the plan distinction"});
+ expect(readiness.task).toEqual(extraction.task);
+ expect(readiness.promises).toEqual(promises);
+ expect(ask.mock.calls[1][2].schema).toMatchObject({required:["questions","promises"],properties:{promises:{items:{required:["promiseId","answered","reason"],properties:{promiseId:{enum:["p0"]}}}}}});
+ expect(ask.mock.calls.map(c=>c[1]).join(" ")).not.toContain("UNBOUNDED_");
+});
+
+it("does not approve a broad question when its mapped headline promise remains unanswered",()=>{
+ const prepared=validateSourceBrief(raw([fact]),sources,plan,"Brevo");
+ const promises=[{id:"p0",source:"headline" as const,quote:"automation",text:"Explain automation",expectedAnswer:"Identify the plan and applicable limit.",mappingReason:"The question asks about automation availability.",requirementIndices:[0]}];
+ const questions=[{requirementIndex:0,answered:true,reason:"A plan is named."}];
+ expect(attachSourceReadiness(prepared,JSON.stringify({questions}),promises).status).toBe("unavailable");
+ expect(attachSourceReadiness(prepared,JSON.stringify({questions,promises:[{promiseId:"p0",answered:false,reason:"The required limit is not established."}]}),promises).status).toBe("insufficient");
+ expect(attachSourceReadiness(prepared,JSON.stringify({questions,promises:[{promiseId:"another",answered:true,reason:"A different answer."}]}),promises).status).toBe("unavailable");
+ expect(attachSourceReadiness(prepared,JSON.stringify({questions,promises:[{id:"p0",answered:true,reason:"Wrong wire identity."}]}),promises).status).toBe("unavailable");
 });

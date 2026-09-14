@@ -1,7 +1,7 @@
 import {expect,it,vi} from "vitest";
 const {review,claims}=vi.hoisted(()=>({review:vi.fn(),claims:vi.fn()}));
-vi.mock("../approved-output",()=>({reviewApprovedOutput:review}));
-vi.mock("../claim-verification",()=>({verifyDraftClaims:claims}));
+vi.mock("../approved-output",async importOriginal=>({...await importOriginal<typeof import("../approved-output")>(),reviewApprovedOutput:review}));
+vi.mock("../claim-verification",async importOriginal=>({...await importOriginal<typeof import("../claim-verification")>(),verifyDraftClaims:claims}));
 import {reviewFirstDraft} from "../first-draft-review";
 it("passes the same recovered profile evidence to both first-draft reviewers",async()=>{
   review.mockResolvedValue({html:"<p>Draft</p>",report:{status:"checked",findings:[],productClaims:"no-issues-detected",qualitativeClaims:"no-issues-detected"}});

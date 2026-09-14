@@ -91,6 +91,21 @@ describe("proposeBuyerSeeds", () => {
     expect(out.basis).toBe("profile");
     expect(out.seeds).toContain("order picking software");
   });
+  it("requests Italian ideas for an English homepage without rewriting the profile",async()=>{
+    const business={...PACKHUB,language:"English"};
+    ask.mockResolvedValue('["software preparazione ordini","etichette di spedizione"]');
+    expect(await proposeBuyerSeeds(business,{languageCode:"it",locationCode:2380})).toMatchObject({basis:"model",seeds:["software preparazione ordini","etichette di spedizione"]});
+    const prompt=ask.mock.calls[0][1];
+    expect(prompt).toContain("REQUESTED RESEARCH LANGUAGE: it.");
+    expect(prompt).toContain("TARGET SEARCH MARKET: DataForSEO location code 2380.");
+    expect(prompt).toContain("Language: English");
+    expect(prompt).toContain("does not override that request");
+    expect(business.language).toBe("English");
+  });
+  it("does not turn a failed Italian proposal into untranslated English homepage seeds",async()=>{
+    ask.mockResolvedValue(null);
+    expect(await proposeBuyerSeeds({...PACKHUB,language:"English"},{languageCode:"it",locationCode:2380})).toEqual({seeds:[],basis:"none"});
+  });
 
   it("has nothing to say for an empty profile", async () => {
     expect(await proposeBuyerSeeds({ name: "x" })).toEqual({ seeds: [], basis: "none" });
@@ -232,6 +247,28 @@ describe("discoverBuyerKeywords", () => {
     expect(suggest.mock.calls[0][0]).toEqual(["editorial workflow", "content planning tools", "editorial approval workflow for agencies"]);
     expect(out.fromIdeas[0].unmeasured).toBe(false);
     expect(out.fromIdeas.find(k => k.keyword === "editorial approval workflow for agencies")?.unmeasured).toBe(true);
+    for(const call of ask.mock.calls){
+      expect(call[1]).toContain("REQUESTED RESEARCH LANGUAGE: it.");
+      expect(call[1]).toContain("TARGET SEARCH MARKET: DataForSEO location code 2380.");
+    }
+  });
+  it("prices new Italian queries separately and preserves literal measured English competitor records",async()=>{
+    const italian=["software preparazione ordini","etichette di spedizione","modello distinta imballaggio"];
+    ask.mockResolvedValueOnce(JSON.stringify(italian)).mockResolvedValue("[]");
+    ranked.mockResolvedValue([rankedRow("order picking software",500)]);
+    price.mockResolvedValue(new Map([
+      ["order picking software",{volume:500,difficulty:30,cpc:1,intent:"commercial"}],
+      [italian[1],{volume:50,difficulty:10,cpc:1,intent:"commercial"}],
+      [italian[2],{volume:40,difficulty:8,cpc:1,intent:"info"}],
+    ]));
+    const out=await discoverBuyerKeywords({domain:"packhub.io",business:{...PACKHUB,language:"English",competitors:["rival.test"]},languageCode:"it",locationCode:2380});
+    expect(price).toHaveBeenCalledExactlyOnceWith(italian,{languageCode:"it",locationCode:2380});
+    expect(ranked.mock.calls[0][1]).toMatchObject({languageCode:"it",locationCode:2380});
+    expect(suggest.mock.calls[0][1]).toMatchObject({languageCode:"it",locationCode:2380});
+    expect(ask.mock.calls[0][1]).toContain("REQUESTED RESEARCH LANGUAGE: it.");
+    expect(out.fromCompetitors).toMatchObject([{keyword:"order picking software",volume:500}]);
+    expect(out.fromIdeas.find(row=>row.keyword===italian[0])).toMatchObject({keyword:italian[0],volume:0,unmeasured:true,evidence:{languageCode:"it",locationCode:2380,sources:[{source:"overview",seed:italian[0]}]}});
+    expect(out.fromIdeas.find(row=>row.keyword===italian[1])).toMatchObject({volume:50,unmeasured:false});
   });
 
   it("probes unknown demand when recovery and overview fail, and upgrades a measured suggestion without duplicating it", async () => {

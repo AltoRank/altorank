@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { factCheckArticle, approvalBlocker } from "@/lib/ai/fact-check";
+import { reuseReviewedNumbers } from "@/lib/content/numerical-review";
 import { tiptapToHtml } from "@/lib/cms/html";
 import type { ArticleResearch } from "@/lib/seo/research";
 import { createClient } from "@/lib/supabase/server";
@@ -145,13 +146,14 @@ async function refuseUnsourcedFigures(
 ) {
   const { data: article } = await supabase
     .from("articles")
-    .select("content, research")
+    .select("content, research, fact_checks")
     .eq("id", articleId)
     .single();
   if (!article?.content) return;
 
   const html = tiptapToHtml(article.content as Record<string, unknown>);
-  const report = factCheckArticle(html, (article.research as ArticleResearch | null) ?? undefined);
+  const research=(article.research as ArticleResearch | null) ?? undefined;
+  const report = reuseReviewedNumbers(html,factCheckArticle(html,research),article.fact_checks,research?.editorialReview?.claimVerification);
 
   await supabase
     .from("articles")

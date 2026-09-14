@@ -152,6 +152,9 @@ test("a new account is walked from /dashboard to five qualified topics and one d
   await expect(page.getByText("Some source checks could not finish.",{exact:false})).toBeVisible();
   await expect(page.getByText("Every plan supports unlimited sites.",{exact:true})).toBeVisible();
   if (process.env.E2E_BILLING === "1") {
+    await page.getByRole("link", {name:"See your trial plan"}).click();
+    await expect(page).toHaveURL(/#trial-plan$/);
+    await expect(page.locator("#trial-plan")).toBeInViewport();
     await expect(page.getByRole("region", { name: "Continue with your draft" })).toContainText("100 articles per calendar month");
     await expect(page.getByRole("region", { name: "Continue with your draft" })).toContainText("99 available after activation");
     await page.screenshot({path:test.info().outputPath("draft-and-trial-gate.png"),fullPage:true});

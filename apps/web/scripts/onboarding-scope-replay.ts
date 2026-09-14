@@ -10,6 +10,9 @@ import {createHash} from "node:crypto";
 import type {Opportunity} from "@/lib/keyword-research/opportunity";
 const flag=(name:string)=>process.argv.find(arg=>arg.startsWith(`--${name}=`))?.slice(name.length+3);
 async function main(){
+  // The historical prompt returns no promise map. Passing its response through
+  // the current validator would manufacture baseline failures, not a fair pair.
+  if("validateFrozenPromises" in await import("@/lib/content/evidence-scope"))throw Error("Historical paired scope replay is incompatible with the current promise contract. Use a versioned saved-input calibration; do not score the legacy schema with the current validator.");
   for(const key of ["baseline-ref","reports","provider-env","out"])if(!flag(key))throw Error(`Missing --${key}`);
   const out=resolve(flag("out")!);if(existsSync(out))throw Error("Use a fresh output directory to retain every attempt");
   const provider=parseEnv(readFileSync(flag("provider-env")!,"utf8"));

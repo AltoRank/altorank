@@ -83,7 +83,7 @@ async function discoverWithinBudget(options: { domain: string; business: Seedabl
   const brand = (term: string) => isBrandTerm(term, options.domain, competitors);
 
   const [seeds, perCompetitor] = await Promise.all([
-    proposeBuyerSeeds(options.business, { spend: options.spend }),
+    proposeBuyerSeeds(options.business, { spend: options.spend, ...locale }),
     Promise.all(
       competitors.map((c) =>
         fetchRankedKeywords(c, {
@@ -136,7 +136,7 @@ async function discoverWithinBudget(options: { domain: string; business: Seedabl
     // All candidates still pass buyer fit and live editorial SERP qualification.
     if (measured(seeds.seeds).length < 3) {
       seedRecovery.attempted = true;
-      seedRecovery.seeds = await recoverBuyerSeeds(options.business, seeds.seeds, { spend: options.spend });
+      seedRecovery.seeds = await recoverBuyerSeeds(options.business, seeds.seeds, { spend: options.spend, ...locale });
       if (seedRecovery.seeds.length) {
         const recovered = await fetchTermMetrics(seedRecovery.seeds, locale).catch((error) => { failed("overview-recovery", error); return new Map(); });
         for (const [term, metric] of recovered) priced.set(term, metric);

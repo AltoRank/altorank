@@ -5,9 +5,13 @@ const {read,ask}=vi.hoisted(()=>({read:vi.fn(),ask:vi.fn()}));
 vi.mock("@/lib/keyword-research/page-evidence",()=>({readPageExtractOutcome:read}));
 vi.mock("@/lib/keyword-research/buyer-model",()=>({askStructured:ask,extractJson:(raw:string)=>{try{return JSON.parse(raw);}catch{return null;}}}));
 vi.mock("../rendered-evidence",()=>({recoverRenderedPricing:async(sources:PageExtract[])=>sources}));
-import {collectDraftEvidence,collectTaskEvidence,withCapabilityEvidence,retrievedCitationPages} from "../draft-evidence";
+import {collectDraftEvidence,collectTaskEvidence as collectTaskEvidenceImpl,withCapabilityEvidence,retrievedCitationPages} from "../draft-evidence";
 import {unwrapUnknownInternalLinks} from "@/lib/seo/link-resolver";
+const collectTaskEvidence:typeof collectTaskEvidenceImpl=(profile,url,search,brief,spend)=>collectTaskEvidenceImpl(profile,url,search,{angle:"Approved article task",...(brief as object)},spend);
 
+function scopeResponse(value:{coverage:unknown;promises:Array<Record<string,unknown>>;questions:Array<{requirementIndex:number;essential:boolean;reason:string}>}):string {
+  return JSON.stringify({...value,questions:Object.fromEntries(value.questions.map(({requirementIndex,...q})=>[`q${requirementIndex}`,q])),promises:value.promises.map(({requirementIndices,mappingReason},index)=>({id:`p${index}`,mappingReason,questionKeys:(requirementIndices as number[]).map(i=>`q${i}`)}))});
+}
 const link=(url:string)=>({url,label:url.split("/").pop()||"Product"});
 const diagnostics=(url:string)=>({url,httpStatus:200,contentType:"text/html",bytesRead:400,bodyTruncated:false,excerptTruncated:false,extractedChars:200,strategy:"main" as const});
 function success(url:string,links:NonNullable<PageExtract["links"]>=[],overrides:Partial<PageExtract>={}):PageReadOutcome {
@@ -22,9 +26,18 @@ function failure(url:string,reason:PageReadFailureReason="http-error"):PageReadO
 type TestPlan={task:"comparison"|"procedure"|"explanation";requirements:string[];linkIndices:number[]};
 function planner(plan:TestPlan,options:{essential?:number[];followups?:number[][];scopeUnavailable?:boolean;missingCentralTask?:boolean}={}) {
   let nextFollowup=0;
-  ask.mockImplementation(async(operation:string)=>{
+  ask.mockImplementation(async(operation:string,prompt:string)=>{
     if(operation==="article/evidence-plan")return JSON.stringify(plan);
-    if(operation==="article/evidence-scope")return options.scopeUnavailable?null:JSON.stringify({coverage:{complete:!options.missingCentralTask,reason:options.missingCentralTask?"The booking steps promised by the headline are absent.":"Retained questions cover the approved task."},questions:plan.requirements.map((question,requirementIndex)=>({requirementIndex,essential:options.essential?.includes(requirementIndex)??true,reason:`Scope judgment for: ${question}`}))});
+    if(operation==="article/approved-promises") {
+      const payload=JSON.parse(prompt.split("\n").at(-1)!);
+      return JSON.stringify({promises:[{source:"headline",quote:payload.article.angle,text:"Deliver the supplied task",expectedAnswer:"Explain the approved workflow"},...(options.missingCentralTask?[{source:"headline",quote:payload.article.angle,text:"Complete the missing booking action",expectedAnswer:"Actual booking actions"}]:[])]});
+    }
+    if(operation==="article/evidence-scope") {
+      const payload=JSON.parse(prompt.split("\n").at(-1)!);
+      const essential=plan.requirements.flatMap((_,i)=>(options.essential?.includes(i)??true)?[i]:[]);
+      return options.scopeUnavailable?null:scopeResponse({coverage:{complete:!options.missingCentralTask,reason:options.missingCentralTask?"The booking steps promised by the headline are absent.":"Retained questions cover the approved task."},promises:[{source:"headline",quote:payload.article.angle,text:"Deliver the supplied task",expectedAnswer:"Explain the approved workflow",mappingReason:"The retained questions ask about that workflow",requirementIndices:essential},...(options.missingCentralTask?[{source:"headline",quote:payload.article.angle,text:"Complete the missing booking action",expectedAnswer:"Actual booking actions",mappingReason:"No supplied question asks for booking actions",requirementIndices:[]}]:[])],questions:plan.requirements.map((question,requirementIndex)=>({requirementIndex,essential:options.essential?.includes(requirementIndex)??true,reason:`Scope judgment for: ${question}`}))});
+    }
+    if(operation==="article/evidence-plan-repair")return null;
     if(operation==="article/evidence-followup")return JSON.stringify({linkIndices:options.followups?.[nextFollowup++]??[]});
     throw new Error(`Unexpected operation: ${operation}`);
   });
@@ -90,7 +103,7 @@ it("can follow an observed vendor homepage to its primary pricing page once",asy
   planner({task:"comparison",requirements:["Which plan includes logic?"],linkIndices:[0]},{followups:[[0]]});
   const result=await collectTaskEvidence(null,undefined,["https://review.test/list"],{});
   expect(result.plan.retrievedUrls).toEqual(["https://vendor.test/","https://vendor.test/pricing"]);
-  expect(ask).toHaveBeenCalledTimes(3);expect(read).toHaveBeenCalledTimes(3);
+  expect(ask).toHaveBeenCalledTimes(4);expect(read).toHaveBeenCalledTimes(3);
 });
 
 it("follows an observed manufacturer help hub to actual care instructions",async()=>{
@@ -98,7 +111,7 @@ it("follows an observed manufacturer help hub to actual care instructions",async
   planner({task:"procedure",requirements:["How should these shoes be washed?"],linkIndices:[0]},{followups:[[0]]});
   const result=await collectTaskEvidence(null,"https://brand.test/shoes",[],{});
   expect(result.plan.retrievedUrls).toEqual(["https://brand.test/help","https://brand.test/help/wash"]);
-  expect(ask).toHaveBeenCalledTimes(3);
+  expect(ask).toHaveBeenCalledTimes(4);
 });
 
 it("uses short routing pages through three follow-ups while preserving the frozen buyer task",async()=>{
@@ -148,7 +161,7 @@ it("withholds source preparation when booking steps are missing from a find-and-
   const result=await collectTaskEvidence(null,"https://fresha.test/app",[],{angle:"Find a salon and book an appointment",buyingJob:"Find and book a treatment"});
   expect(result.plan).toMatchObject({status:"unavailable",requirements:[],scope:{status:"unavailable",coverage:{complete:false}}});
   expect(read).toHaveBeenCalledTimes(1);
-  expect(ask).toHaveBeenCalledTimes(2);
+  expect(ask).toHaveBeenCalledTimes(4);
 });
 
 it("counts failed requests toward the twelve-attempt budget and retains each cause",async()=>{
@@ -185,7 +198,7 @@ it("stops source selection when the scope review is unavailable",async()=>{
   const result=await collectTaskEvidence(null,"https://vendor.test/",[],{});
   expect(result.plan).toMatchObject({status:"unavailable",selectedUrls:[],requirements:[],scope:{status:"unavailable"}});
   expect(read).toHaveBeenCalledTimes(1);
-  expect(ask).toHaveBeenCalledTimes(2);
+  expect(ask).toHaveBeenCalledTimes(3);
 });
 
 it("retains failures and skips planning when every initial source is unavailable",async()=>{
@@ -200,4 +213,33 @@ it("keeps the simpler discovery collector limited to successful evidence",async(
   const result=await collectDraftEvidence(null,"https://vendor.test/",["https://review.test/"]);
   expect(result.map(source=>source.url)).toEqual(["https://vendor.test/"]);
   expect(ask).not.toHaveBeenCalled();
+});
+
+it("repairs a missing promised metric before selecting sources and reselects only against the frozen checklist",async()=>{
+  const start="https://project.test/",metrics="https://project.test/reports",adjacent="https://project.test/integrations";
+  read.mockImplementation(async(url:string)=>success(url,url===start?[link(metrics),link(adjacent)]:[]));
+  const brief={angle:"Track project milestones, metrics and centralized progress",buyingJob:"Spot blockers in real time",offering:"Integrations and automation"};
+  const initial=["How are milestones set up?","How is project progress tracked centrally?"];
+  const fixed=[{source:"headline",quote:"milestones",text:"Set milestones",requirementIndices:[0]},{source:"headline",quote:"metrics",text:"Use progress metrics",requirementIndices:[]},{source:"headline",quote:"centralized progress",text:"Track progress centrally",requirementIndices:[1]}].map(p=>({...p,expectedAnswer:p.text,mappingReason:"The question must request this answer explicitly."}));
+  const repaired=[initial[0],"Which metrics should a small team review and what do they mean?",initial[1]];
+  let scopeChecks=0,followups=0;
+  ask.mockImplementation(async(operation:string)=>{
+    if(operation==="article/evidence-plan")return JSON.stringify({task:"procedure",requirements:initial,linkIndices:[1]});
+    if(operation==="article/approved-promises")return JSON.stringify({promises:fixed.map(({source,quote,text,expectedAnswer})=>({source,quote,text,expectedAnswer}))});
+    if(operation==="article/evidence-plan-repair")return JSON.stringify({requirements:repaired});
+    if(operation==="article/evidence-scope") {
+      const first=scopeChecks++===0;
+      const qs=first?initial:repaired;
+      return scopeResponse({coverage:{complete:!first,reason:first?"Metrics omitted":"All promises covered"},promises:first?fixed:fixed.map((p,i)=>({...p,id:`p${i}`,requirementIndices:[i]})),questions:qs.map((_,requirementIndex)=>({requirementIndex,essential:true,reason:"Core task"}))});
+    }
+    if(operation==="article/evidence-followup")return JSON.stringify({linkIndices:followups++===0?[0]:[]});
+    throw new Error(operation);
+  });
+  const result=await collectTaskEvidence(null,start,[],brief);
+  expect(result.plan).toMatchObject({task:"procedure",status:"planned",requirements:repaired,scope:{repair:"accepted",promises:[{id:"p0",requirementIndices:[0]},{id:"p1",requirementIndices:[1]},{id:"p2",requirementIndices:[2]}]}});
+  expect(read.mock.calls.map(([url])=>url)).toEqual([start,metrics]);
+  const operations=ask.mock.calls.map(([operation])=>operation);
+  expect(operations).toEqual(["article/evidence-plan","article/approved-promises","article/evidence-scope","article/evidence-plan-repair","article/evidence-scope","article/evidence-followup","article/evidence-followup"]);
+  const followup=JSON.parse(ask.mock.calls.at(-1)![1].split("\n").at(-1));
+  expect(followup.requirements).toEqual(repaired);expect(followup.brief.offering).toBeUndefined();
 });

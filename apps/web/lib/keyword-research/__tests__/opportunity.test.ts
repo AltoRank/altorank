@@ -10,14 +10,14 @@ import { qualifyOpportunities, readOpportunity, contextKey, serpOverlap, validAr
 import { balanceSources, diverseSeeds } from "../diversity";
 import { readPageExtract } from "../page-evidence";
 
-const context = { domain: "example.com", languageCode: "it", locationCode: 2380, business: { name: "Clinic Studio", offerings: ["clinic booking websites"], audiences: ["clinic owners"] } };
+const context = { domain: "example.com", languageCode: "it", locationCode: 2380, business: { name: "Clinic Studio", priorityOffering: "clinic booking websites", offerings: ["clinic booking websites"], audiences: ["clinic owners"] } };
 const term = "clinic booking website costs";
 const urls = ["https://one.test/guide", "https://two.test/guide", "https://three.test/guide"];
 const relevance={buyer:true,task:true,reason:"Clinic owners comparing booking website costs"};
 const approval = { approve: true, reason: "Clinic owners compare the cost of a booking website", audience: "clinic owners", buyingJob: "choose a booking website", offering: "clinic booking websites", angle: "What clinics should budget for a booking website", format: "article", conversionPath: "https://example.com/contact", evidenceUrls: urls.slice(0, 2),
 results: urls.map((_url,resultIndex) => ({resultIndex,format:"article",evidenceField:"description",relevance})),
 buyer: { relevant: true, reason: "Clinic owners need booking websites" },
-product: { supported: true, quote: "clinic booking websites", reason: "The offering serves their task" },
+product: { supported: true, evidenceId: "priority-offering", reason: "The offering serves their task" },
 editorial: { achievable: true, reason: "Help compare costs and scope" }};
 const writes: unknown[] = [];
 let covered: unknown[] = [];
@@ -39,7 +39,7 @@ describe("topic qualification", () => {
     for(const call of vi.mocked(readPageExtract).mock.calls)expect(call).toHaveLength(1);
   });
   it("shares cached evidence across callers and JSONB field orders", () => {
-    expect(contextKey(context)).toBe(contextKey({ business: { audiences: context.business.audiences, offerings: context.business.offerings, name: context.business.name }, locationCode: context.locationCode, languageCode: context.languageCode, domain: context.domain }));
+    expect(contextKey(context)).toBe(contextKey({ business: { audiences: context.business.audiences, offerings: context.business.offerings, name: context.business.name, priorityOffering: context.business.priorityOffering }, locationCode: context.locationCode, languageCode: context.languageCode, domain: context.domain }));
   });
   it("keeps browser fixture approvals isolated from real domains and databases", async () => {
     vi.stubEnv("E2E_STUBS", "1");
@@ -88,6 +88,39 @@ describe("topic qualification", () => {
     const result = await run();
     expect(result).toMatchObject({status:"qualified",audience:approval.audience,angle:approval.angle,evidenceUrls:urls});
     expect(fetchSerp).toHaveBeenCalledWith(term, context);
+    expect(edit.mock.calls[0][0]).toBe(term);
+    expect(edit.mock.calls[0][7]).toBe("it");
+    const input=JSON.parse(ask.mock.calls[0][1].split("\n").at(-1));
+    expect(input.productEvidence).toContainEqual({id:"priority-offering",kind:"confirmed-category",quote:"clinic booking websites",claim:"clinic booking websites"});
+    expect(result.assessment?.product).toMatchObject({evidenceId:"priority-offering",quote:"clinic booking websites"});
+  });
+  it("uses the final task check without adjudicating a peripheral best-title shopping result",async()=>{
+    ask.mockResolvedValue(JSON.stringify({...approval,results:approval.results.map((row,index)=>index===2?{...row,format:"product"}:row)}));
+    fetchSerp.mockResolvedValue({organic:urls.map((url,index)=>({url,title:index===2?"Best Clinic Booking Software":"Clinic booking software comparison",description:"A buyer guide",rank:index+1})),peopleAlsoAsk:[],aiOverview:null});
+    const result=await run();
+    expect(result.status).toBe("qualified");
+    expect(ask).toHaveBeenCalledOnce();
+    expect(readPageExtract).not.toHaveBeenCalled();
+    expect(edit).toHaveBeenCalledOnce();
+    expect(result.evidenceUrls).toEqual(urls.slice(0,2));
+  });
+  it("spends necessary format review only on a row that can complete the relevant article pair",async()=>{
+    const results=approval.results.map((row,index)=>({...row,format:index===1?"article":"unknown",relevance:index===0?{buyer:false,task:false,reason:"Developers building unrelated software"}:relevance}));
+    ask.mockResolvedValueOnce(JSON.stringify({...approval,results})).mockResolvedValue(JSON.stringify(approval));
+    expect((await run()).status).toBe("qualified");
+    expect(readPageExtract).toHaveBeenCalledExactlyOnceWith(urls[2]);
+    expect(ask.mock.calls.map(call=>call[0])).toEqual(["keyword-research/opportunity","keyword-research/opportunity-adjudication"]);
+    expect(edit).toHaveBeenCalledOnce();
+  });
+  it("retains final task rejection even after references and two article rows are valid",async()=>{
+    edit.mockResolvedValue({status:"unsupported"});
+    expect(await run()).toMatchObject({status:"rejected",reason:"This task does not fit the confirmed buyer and offering."});
+  });
+  it("does not replace absent product references with copied third-party search text",async()=>{
+    ask.mockResolvedValue(JSON.stringify({...approval,product:{supported:true,quote:"A buyer guide",reason:"Claim from a competitor"}}));
+    expect(await run()).toMatchObject({status:"pending",reason:expect.stringContaining("business evidence reference")});
+    expect(edit).not.toHaveBeenCalled();
+    expect(ask).toHaveBeenCalledOnce();
   });
   it("stores only the article indices supporting the final editor-approved angle", async () => {
     edit.mockResolvedValueOnce({status:"supported",task:{queryTask:"Compare clinic website costs",sourceQuote:"A buyer guide",angle:approval.angle,buyingJob:approval.buyingJob,reason:"Same buyer and cost decision",supportingResultIndices:[1,2]}});
@@ -107,7 +140,7 @@ describe("topic qualification", () => {
   });
   it("does not treat a tool-dominated search as an approved article", async () => {
     ask.mockResolvedValue(JSON.stringify({...approval,results:approval.results.map(row=>({...row,format:"tool"}))}));
-    expect((await run()).status).toBe("pending");
+    expect((await run()).status).toBe("rejected");
   });
   it("routes existing own-page targets to review instead of a new blog", async () => {
     ask.mockResolvedValue(JSON.stringify({ ...approval, existingPage: { url: "https://www.example.com/booking", sameTask: true, quote: "Booking website costs", reason: "This page covers the same decision" } }));

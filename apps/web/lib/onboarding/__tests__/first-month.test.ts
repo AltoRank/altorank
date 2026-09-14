@@ -7,7 +7,7 @@ vi.mock("@/lib/content/fan-out", () => ({ selfInvocation: () => ({}), selfInvoke
 vi.mock("@/lib/content/draft-preparation", async original => ({ ...await original<typeof import("@/lib/content/draft-preparation")>(), prepareDraft: prepare }));
 vi.mock("../plan", () => ({ schedulePlan: schedule, fulfilPlannedEntry: async (db: ReturnType<typeof database>, id: string, article: string) => { await db.from("calendar_entries").update({ article_id: article }).eq("id", id); } }));
 import { prepareFirstMonthStep, queueFirstMonth } from "../first-month";
-import { draftPreparationContext, type DraftPreparationInput, type DraftPreparation } from "@/lib/content/draft-preparation";
+import { DRAFT_PREPARATION_VERSION, draftPreparationContext, type DraftPreparationInput, type DraftPreparation } from "@/lib/content/draft-preparation";
 import { contextKey, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
 import { currentResearchBudget } from "@/lib/seo/request-context";
 
@@ -60,10 +60,10 @@ function input(index = 0): DraftPreparationInput {
 }
 function packet(value: DraftPreparationInput, status: DraftPreparation["status"] = "ready"): DraftPreparation {
   const question = "What limits matter to this reader?", quote = "Compare the supported writing limits before selecting a tool.";
-  return { version: 1, context: draftPreparationContext(value), createdAt: new Date().toISOString(), expiresAt: new Date(Date.now()+3600000).toISOString(), status,
+  return { version: DRAFT_PREPARATION_VERSION, context: draftPreparationContext(value), createdAt: new Date().toISOString(), expiresAt: new Date(Date.now()+3600000).toISOString(), status,
     sources: [{url:"https://publisher.test/guide", title:"Guide", headings:[], text:quote}],
-    plan: {task:"explanation", status:"planned", requirements:[question], selectedUrls:[], retrievedUrls:[]},
-    sourceBrief: {status:status==="ready"?"prepared":status, facts:[{subject:"Writing software",plan:"",kind:"explanation",statement:quote,quote,scopeQuote:quote,sourceIndex:0,url:"https://publisher.test/guide"}], coverage:[{question,factIndices:[0]}], issues:[], readiness:{status:"checked",questions:[{requirementIndex:0,answered:true,reason:"The source answers this question."}]}},
+    plan: {task:"explanation", status:"planned", requirements:[question], selectedUrls:[], retrievedUrls:[],scope:{status:"checked",requirements:[question],omitted:[],promises:[{id:"p0",source:"headline",quote:value.brief.angle!,text:value.brief.angle!,expectedAnswer:"Explain the approved reader task using the quoted evidence.",mappingReason:"The fixture question asks for the approved task.",requirementIndices:[0]}]}},
+    sourceBrief: {status:status==="ready"?"prepared":status, facts:[{subject:"Writing software",plan:"",kind:"explanation",statement:quote,quote,scopeQuote:quote,sourceIndex:0,url:"https://publisher.test/guide"}], coverage:[{question,factIndices:[0]}], issues:[], readiness:{status:"checked",questions:[{requirementIndex:0,answered:true,reason:"The source answers this question."}],promises:[{promiseId:"p0",answered:true,reason:"The quoted evidence supports the fixture promise."}]}},
   };
 }
 async function savePacket(db: ReturnType<typeof database>, value: DraftPreparationInput, status: DraftPreparation["status"] = "ready") {
@@ -218,15 +218,17 @@ describe("first-month preparation", () => {
     expect(tables.first_month_jobs[0]).toMatchObject({status:"ready",attempts:1,article_id:"article-keyword0"});
     expect(tables.articles[0]).toEqual(before[0]);
   });
-  it.each(["instructions", "expired", "task"])("refreshes a %s-mismatched packet before writing", async change => {
+  it.each(["instructions", "global-instructions", "expired", "task"])("refreshes a %s-mismatched packet before writing", async change => {
     jobs(1);
     const oldContext = tables.draft_preparations[0].payload.context;
     if (change === "instructions") tables.keywords[0].instructions = "Focus on monthly limits.";
+    if (change === "global-instructions") tables.workspace_output_settings = [{workspace_id:"site-a",global_article_prompt:"Always mention the free tier."}];
     if (change === "expired") tables.draft_preparations[0].payload.expiresAt = new Date(Date.now()-1000).toISOString();
     if (change === "task") tables.keywords[0].opportunity.angle = "How to compare export limits";
     await step();
     expect(generate).not.toHaveBeenCalled();
     expect(prepare).toHaveBeenCalledTimes(1);
+    if (change === "global-instructions") expect(prepare).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({globalInstructions:"Always mention the free tier."}),expect.anything());
     const renewedContext = tables.draft_preparations[0].payload.context;
     const renewedCreatedAt = tables.draft_preparations[0].payload.createdAt;
     if (change !== "expired") expect(renewedContext).not.toBe(oldContext);

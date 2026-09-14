@@ -10,7 +10,7 @@ async function main(){
  const {withModelObserver}=await import('@/lib/keyword-research/buyer-model');
  const input=JSON.parse(readFileSync(inputPath,'utf8'));const observations:unknown[]=[];
  const research=input.article.research;
- const result=await withModelObserver((e:unknown)=>observations.push(e),()=>process.argv.includes("--readiness-only") ? assessSourceReadiness(research.draftSourceBrief,input.selected.brief??{angle:input.article.title},input.inference?.profile?.name??input.domain) : prepareSourceBrief(research.draftSources,research.draftEvidencePlan,input.selected.brief??{angle:input.article.title},input.inference?.profile?.name??input.domain),{includeResponse:true});
+ const result=await withModelObserver((e:unknown)=>observations.push(e),()=>process.argv.includes("--readiness-only") ? assessSourceReadiness(research.draftSourceBrief,input.selected.brief??{angle:input.article.title},input.inference?.profile?.name??input.domain,undefined,research.draftEvidencePlan?.scope?.promises) : prepareSourceBrief(research.draftSources,research.draftEvidencePlan,input.selected.brief??{angle:input.article.title},input.inference?.profile?.name??input.domain),{includeResponse:true});
  writeFileSync(outPath,JSON.stringify({domain:input.domain,result,observations},null,2),{mode:0o600});
  console.log(input.domain,result.status,result.facts.length,result.issues);
 }

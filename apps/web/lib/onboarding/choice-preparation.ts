@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { draftPreparationContext, prepareDraft, readDraftPreparation, type DraftPreparationInput } from "@/lib/content/draft-preparation";
+import { loadGlobalDraftInstructions } from "@/lib/content/draft-instructions";
+import { draftPreparationContext, prepareDraft, readDraftPreparation,draftPreparationTask, type DraftPreparationInput } from "@/lib/content/draft-preparation";
 import { selfInvocation, selfInvoke, type SelfInvokeDeps } from "@/lib/content/fan-out";
 import { contextKey, readOpportunity } from "@/lib/keyword-research/opportunity";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
@@ -59,7 +60,8 @@ async function currentInput(db: SupabaseClient, workspaceId: string, choice: Onb
   const fingerprint = contextKey({domain:site.data.domain,business:profile,languageCode:languageCodeOf(site.data.language),locationCode:site.data.location_code??2840});
   const brief = readOpportunity(keyword.data.opportunity,fingerprint);
   if (!brief || brief.status!=="qualified") return null;
-  const input: DraftPreparationInput = {workspaceId,keywordId:choice.keywordId,keyword:choice.term,brief,profile,domain:site.data.domain,language:site.data.language,locationCode:site.data.location_code,instructions:keyword.data.instructions};
+  const globalInstructions = await loadGlobalDraftInstructions(db, workspaceId);
+  const input: DraftPreparationInput = {workspaceId,keywordId:choice.keywordId,keyword:choice.term,brief,profile,domain:site.data.domain,language:site.data.language,locationCode:site.data.location_code,instructions:keyword.data.instructions,globalInstructions};
   return draftPreparationContext(input) === draftPreparationContext({...input,brief:choice.brief}) ? input : null;
 }
 
@@ -95,7 +97,7 @@ export async function prepareOnboardingChoices(db: SupabaseClient, runId: string
               const packet = await (options.prepare??prepareDraft)(db,input,{retryUnavailable:true});
               const current = await currentInput(db,check.workspace_id,choice);
               if (!current || draftPreparationContext(current)!==packet.context) outcome={keywordId:choice.keywordId,status:"changed",reason:"This article or business focus changed during source preparation. Run research again."};
-              else if (!readDraftPreparation(packet,packet.context)) outcome={keywordId:choice.keywordId,status:"unavailable",reason:"The source check was incomplete. Retry research."};
+              else if (!readDraftPreparation(packet,packet.context,draftPreparationTask(current))) outcome={keywordId:choice.keywordId,status:"unavailable",reason:"The source check was incomplete. Retry research."};
               else {
                 outcome={keywordId:choice.keywordId,status:packet.status,reason:packet.status==="ready" ? "Sources support the essential answers." : packet.status==="insufficient" ? "Available sources do not answer this article's essential questions." : "Source checks could not finish. Retry research."};
                 if (packet.status==="ready") prepared.set(index,{...choice,preparation:{context:packet.context,checkedAt:packet.createdAt,requirements:packet.plan.requirements}});

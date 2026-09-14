@@ -1,11 +1,12 @@
 import {DraftReadinessError} from "@/lib/content/draft-readiness";
+import { loadGlobalDraftInstructions } from "@/lib/content/draft-instructions";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getQuota } from "@/lib/billing/quota";
 import { sweepStaleDrafts } from "@/lib/content/stale-drafts";
 import { generateArticle } from "@/lib/content/generate";
 import { paceOnActivation } from "@/lib/content/pace";
 import { selfInvocation, selfInvoke } from "@/lib/content/fan-out";
-import { draftPreparationContext, loadDraftPreparation, prepareDraft, readDraftPreparation, type DraftPreparationInput } from "@/lib/content/draft-preparation";
+import { draftPreparationContext, loadDraftPreparation, prepareDraft, readDraftPreparation,draftPreparationTask, type DraftPreparationInput } from "@/lib/content/draft-preparation";
 import { contextKey, readOpportunity } from "@/lib/keyword-research/opportunity";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 import type { FitProfile } from "@/lib/keyword-research/buyer-fit";
@@ -137,7 +138,8 @@ export async function prepareFirstMonthStep(db: SupabaseClient, workspaceId: str
       const fingerprint = contextKey({domain:site.domain, business:profile, languageCode:languageCodeOf(site.language), locationCode:site.location_code ?? 2840});
       const brief = readOpportunity(keyword.data.opportunity, fingerprint);
       if (!site.domain || keyword.data.plan_excluded_at || keyword.data.term !== entry.keyword || brief?.status !== "qualified") throw new DraftReadinessError("evidence");
-      const input: DraftPreparationInput = {workspaceId, keywordId:entry.keyword_id, keyword:entry.keyword, brief, profile, domain:site.domain, language:site.language, locationCode:site.location_code, instructions:keyword.data.instructions};
+      const globalInstructions = await loadGlobalDraftInstructions(db, workspaceId);
+      const input: DraftPreparationInput = {workspaceId, keywordId:entry.keyword_id, keyword:entry.keyword, brief, profile, domain:site.domain, language:site.language, locationCode:site.location_code, instructions:keyword.data.instructions,globalInstructions};
       const prepared = await loadDraftPreparation(db, input);
       if (prepared?.status === "insufficient") throw new DraftReadinessError("evidence");
       const saved = await db.from("first_month_jobs").update({ status: "writing", attempts }).eq("workspace_id", workspaceId).eq("id", job.id);
@@ -145,7 +147,7 @@ export async function prepareFirstMonthStep(db: SupabaseClient, workspaceId: str
       if (!prepared || prepared.status === "unavailable") {
         const researched = await withResearchBudget(new ResearchBudget(30, 180_000), () => prepareDraft(db, input, {retryUnavailable:previousAttempts > 0}));
         if (researched.status === "insufficient") throw new DraftReadinessError("evidence");
-        if (researched.status !== "ready" || !readDraftPreparation(researched, draftPreparationContext(input))) throw new DraftReadinessError("incomplete-review");
+        if (researched.status !== "ready" || !readDraftPreparation(researched, draftPreparationContext(input), draftPreparationTask(input))) throw new DraftReadinessError("incomplete-review");
         // A successful preparation is progress, not a failed writing attempt.
         // Yield even when it finished quickly: writing and review need their own
         // execution window. The next invocation rechecks focus, quota and cache.

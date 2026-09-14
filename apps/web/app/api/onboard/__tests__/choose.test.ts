@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { fakeDb, asUser, type FakeDb } from "@/lib/onboarding/__tests__/fake-runs-client";
 import {contextKey,OPPORTUNITY_VERSION} from "@/lib/keyword-research/opportunity";
-import {draftPreparationContext} from "@/lib/content/draft-preparation";
+import {DRAFT_PREPARATION_VERSION,draftPreparationContext} from "@/lib/content/draft-preparation";
 let db: FakeDb;
 let user: {id:string} | null;
 const afters: Array<() => Promise<void>> = [];
@@ -29,7 +29,18 @@ beforeEach(() => {
   preparationCreatedAt=new Date(Date.now()-1000).toISOString();
   canDispatch.mockReset().mockReturnValue(false);dispatch.mockReset();
   generate.mockResolvedValue({articleId:"a1",title:"Approved headline",wordCount:1000,factCheck:{verdict:"review"}});
-  db=fakeDb({workspaces:[{id:"ws1",domain:"example.com",account_id:"ac1",business_profile:profile,language:"en",location_code:2840}],onboarding_runs:[{id:"r1",workspace_id:"ws1",status:"awaiting_choice",phases:[],planned:[{term:"buyer task",keywordId:"k1",brief,preparation:{context:preparationContext}}]}],keywords:[{id:"k1",workspace_id:"ws1",opportunity:brief,instructions:null,plan_excluded_at:null}],draft_preparations:[{workspace_id:"ws1",keyword_id:"k1",payload:{version:1,context:preparationContext,createdAt:new Date(Date.now()-1000).toISOString(),expiresAt:new Date(Date.now()+3600000).toISOString(),status:"ready",sources:[],plan:{status:"planned",requirements:["Which tool fits?"]},sourceBrief:{status:"prepared",facts:[{quote:"Evidence"}],coverage:[{question:"Which tool fits?",factIndices:[0]}],readiness:{status:"checked",questions:[{requirementIndex:0,answered:true}]}}}}],calendar_entries:[{id:"c1",workspace_id:"ws1",keyword_id:"k1",article_id:null}]});
+  const question="Which tool fits?",quote="Shared documents support team reviews.";
+  db=fakeDb({
+    accounts:[{id:"ac1",free_drafts_used:0}],
+    workspaces:[{id:"ws1",domain:"example.com",account_id:"ac1",business_profile:profile,language:"en",location_code:2840}],
+    onboarding_runs:[{id:"r1",workspace_id:"ws1",status:"awaiting_choice",phases:[],planned:[{term:"buyer task",keywordId:"k1",brief,preparation:{context:preparationContext}}]}],
+    keywords:[{id:"k1",workspace_id:"ws1",opportunity:brief,instructions:null,plan_excluded_at:null}],
+    draft_preparations:[{workspace_id:"ws1",keyword_id:"k1",payload:{version:DRAFT_PREPARATION_VERSION,context:preparationContext,createdAt:preparationCreatedAt,expiresAt:new Date(Date.now()+3600000).toISOString(),status:"ready",
+      sources:[{url:brief.evidenceUrls[0],title:"Writing software",headings:[],text:quote}],
+      plan:{status:"planned",task:"explanation",requirements:[question],selectedUrls:[],retrievedUrls:[],scope:{status:"checked",requirements:[question],omitted:[],promises:[{id:"p0",source:"headline",quote:brief.angle,text:brief.angle,expectedAnswer:"Explain which tool fits the approved buyer task.",mappingReason:"The research question asks which tool fits.",requirementIndices:[0]}]}},
+      sourceBrief:{status:"prepared",facts:[{subject:"Writing software",plan:"",kind:"capability",statement:quote,quote,scopeQuote:quote,sourceIndex:0,url:brief.evidenceUrls[0]}],coverage:[{question,factIndices:[0]}],issues:[],readiness:{status:"checked",questions:[{requirementIndex:0,answered:true,reason:"Source supports the buyer answer."}],promises:[{promiseId:"p0",answered:true,reason:"The evidence supports the approved promise."}]}}}}],
+    calendar_entries:[{id:"c1",workspace_id:"ws1",keyword_id:"k1",article_id:null}],
+  });
   (db.tables.draft_preparations[0].payload as {createdAt:string}).createdAt=preparationCreatedAt;
   (db.tables.onboarding_runs[0].planned as Array<{preparation:{checkedAt?:string}}>)[0].preparation.checkedAt=preparationCreatedAt;
 });
@@ -62,16 +73,27 @@ it.each(["renewed-packet","missing-timestamp"])("does not claim an old choice wi
   expect(afters).toHaveLength(0);expect(generate).not.toHaveBeenCalled();expect(dispatch).not.toHaveBeenCalled();
 });
 
-it.each(["missing","expired","different-workspace","instructions","focus","malformed-brief"])("does not claim a draft with %s source preparation",async(change)=>{
+it.each(["missing","expired","different-workspace","instructions","global-instructions","focus","malformed-brief"])("does not claim a draft with %s source preparation",async(change)=>{
   if(change==="missing") db.tables.draft_preparations=[];
   if(change==="expired") (db.tables.draft_preparations[0].payload as {expiresAt:string}).expiresAt=new Date(Date.now()-1).toISOString();
   if(change==="different-workspace") db.tables.draft_preparations[0].workspace_id="ws2";
   if(change==="instructions") db.tables.keywords[0].instructions="Compare a different plan";
+  if(change==="global-instructions") db.tables.workspace_output_settings=[{workspace_id:"ws1",global_article_prompt:"Always mention the free tier."}];
   if(change==="focus") db.tables.workspaces[0].business_profile={primaryBuyer:"Enterprise admins"};
   if(change==="malformed-brief") db.tables.keywords[0].opportunity=null;
   expect((await POST(request(choice))).status).toBe(409);
   expect(db.tables.onboarding_runs[0].status).toBe("awaiting_choice");
   expect(afters).toHaveLength(0);expect(generate).not.toHaveBeenCalled();
+  expect(db.tables.accounts[0].free_drafts_used).toBe(0);
+});
+it("does not claim a prepared choice when standing instructions cannot be loaded",async()=>{
+  const from=db.client.from.bind(db.client);
+  const failed={select:()=>failed,eq:()=>failed,maybeSingle:async()=>({data:null,error:{message:"Unavailable"}})};
+  vi.spyOn(db.client,"from").mockImplementation(table=>table==="workspace_output_settings"?failed as never:from(table));
+  expect((await POST(request(choice))).status).toBe(503);
+  expect(db.tables.onboarding_runs[0].status).toBe("awaiting_choice");
+  expect(afters).toHaveLength(0);expect(generate).not.toHaveBeenCalled();expect(dispatch).not.toHaveBeenCalled();
+  expect(db.tables.accounts[0].free_drafts_used).toBe(0);
 });
 it("refuses unsigned callers, another workspace and invented topics before claiming a run", async () => {
   user=null; expect((await POST(request(choice))).status).toBe(401); user={id:"u1"};

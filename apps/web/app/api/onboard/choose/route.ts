@@ -5,6 +5,7 @@ import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { dispatchFirstDraft, canSelfInvoke } from "@/lib/content/fan-out";
 import { generateArticle } from "@/lib/content/generate";
 import { loadDraftPreparation } from "@/lib/content/draft-preparation";
+import { loadGlobalDraftInstructions } from "@/lib/content/draft-instructions";
 import { contextKey, readOpportunity } from "@/lib/keyword-research/opportunity";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 import type { BusinessFocus } from "@/lib/onboarding/profile-focus";
@@ -45,9 +46,10 @@ export async function POST(request: NextRequest) {
   if (brief?.status !== "qualified") return NextResponse.json({error:"Your business focus changed. Refresh your article ideas before choosing it."},{status:409});
   let prepared;
   try {
+    const globalInstructions = await loadGlobalDraftInstructions(db, workspaceId);
     prepared = await loadDraftPreparation(db, {workspaceId,keywordId:topic.keywordId,keyword:topic.term,
       brief,profile:workspace.business_profile as BusinessFocus,domain:workspace.domain,
-      language:workspace.language,locationCode:workspace.location_code,instructions:keyword.data.instructions});
+      language:workspace.language,locationCode:workspace.location_code,instructions:keyword.data.instructions,globalInstructions});
   } catch {
     return NextResponse.json({error:"We couldn’t load your saved sources. Try your choice again."},{status:503});
   }

@@ -1,13 +1,15 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { collectTaskEvidence, compactDraftTask, type DraftEvidencePlan } from "./draft-evidence";
+import { collectTaskEvidence, compactDraftTask, compactEvidenceTask, type DraftEvidencePlan } from "./draft-evidence";
+import { validateFrozenPromises } from "./evidence-scope";
 import { prepareSourceBrief, type SourceBrief } from "./source-brief";
 import type { PageExtract } from "@/lib/keyword-research/page-evidence";
 import type { Opportunity } from "@/lib/keyword-research/opportunity";
 import type { BusinessFocus } from "@/lib/onboarding/profile-focus";
 import { e2eStubsEnabled, isReservedTestDomain } from "@/lib/e2e/stubs";
+import { effectiveDraftInstructions } from "./draft-instructions";
 
-export const DRAFT_PREPARATION_VERSION = 1;
+export const DRAFT_PREPARATION_VERSION = 2;
 export interface DraftPreparationInput {
   workspaceId: string;
   keywordId: string;
@@ -18,6 +20,7 @@ export interface DraftPreparationInput {
   language: string | null;
   locationCode: number | null;
   instructions?: string | null;
+  globalInstructions?: string | null;
 }
 export interface DraftPreparation {
   version: number;
@@ -45,11 +48,16 @@ export function draftPreparationContext(input: DraftPreparationInput): string {
     keyword: input.keyword, brief: compactDraftTask(input.brief), qualificationVersion: input.brief.version,
     qualificationContext: input.brief.context, evidenceUrls: input.brief.evidenceUrls,
     profile: input.profile, domain: input.domain, language: input.language, locationCode: input.locationCode,
-    instructions,
+    instructions, globalInstructions: input.globalInstructions?.trim() || null,
   }))).digest("hex");
 }
 
-export function readDraftPreparation(raw: unknown, context: string, now = Date.now()): DraftPreparation | null {
+export function draftPreparationTask(input: Pick<DraftPreparationInput,"brief"|"instructions"|"globalInstructions">): Record<string,string> {
+  const instructions = effectiveDraftInstructions(input.globalInstructions, input.instructions);
+  return compactEvidenceTask({...input.brief,...(instructions?{instructions}:{})});
+}
+
+export function readDraftPreparation(raw: unknown, context: string, task: Record<string,string>, now = Date.now()): DraftPreparation | null {
   if (!raw || typeof raw !== "object") return null;
   const p = raw as DraftPreparation;
   if (p.version !== DRAFT_PREPARATION_VERSION || p.context !== context ||
@@ -59,11 +67,18 @@ export function readDraftPreparation(raw: unknown, context: string, now = Date.n
       !Array.isArray(p.sources) || !p.plan || !p.sourceBrief) return null;
   if (p.status === "ready" && (p.plan.status !== "planned" || !Array.isArray(p.plan.requirements) || !p.plan.requirements.length ||
       p.plan.requirements.some(q=>typeof q !== "string" || !q.trim()) ||
+      p.plan.scope?.status !== "checked" ||
+      !validateFrozenPromises(p.plan.scope.promises,task,p.plan.requirements.length) ||
+      JSON.stringify(p.plan.scope.requirements) !== JSON.stringify(p.plan.requirements) ||
       p.sourceBrief.status !== "prepared" || p.sourceBrief.readiness?.status !== "checked" ||
       !Array.isArray(p.sourceBrief.readiness.questions) ||
       p.sourceBrief.readiness.questions.length !== p.plan.requirements.length ||
       new Set(p.sourceBrief.readiness.questions.map(q=>q?.requirementIndex)).size !== p.plan.requirements.length ||
       p.sourceBrief.readiness.questions.some(q=>!q || q.answered !== true || !Number.isInteger(q.requirementIndex) || !p.plan.requirements[q.requirementIndex]) ||
+      !Array.isArray(p.sourceBrief.readiness.promises) ||
+      p.sourceBrief.readiness.promises.length !== p.plan.scope.promises!.length ||
+      new Set(p.sourceBrief.readiness.promises.map(p=>p?.promiseId)).size !== p.plan.scope.promises!.length ||
+      p.sourceBrief.readiness.promises.some(promise=>!promise || promise.answered !== true || !p.plan.scope!.promises!.some(p=>p.id===promise.promiseId)) ||
       !Array.isArray(p.sourceBrief.facts) || !p.sourceBrief.facts.length ||
       !Array.isArray(p.sourceBrief.coverage) || p.sourceBrief.coverage.length !== p.plan.requirements.length ||
       p.sourceBrief.coverage.some((c,i)=>!c || c.question !== p.plan.requirements[i] || !Array.isArray(c.factIndices) || !c.factIndices.length || c.factIndices.some(k=>!Number.isInteger(k) || !p.sourceBrief.facts[k])))) return null;
@@ -73,7 +88,7 @@ export function readDraftPreparation(raw: unknown, context: string, now = Date.n
 export async function loadDraftPreparation(db: SupabaseClient, input: DraftPreparationInput, expected?: {context:string;createdAt:string|undefined}): Promise<DraftPreparation | null> {
   const result = await db.from("draft_preparations").select("payload").eq("workspace_id", input.workspaceId).eq("keyword_id", input.keywordId).maybeSingle();
   if (result.error) throw new Error("Prepared article sources could not be loaded.");
-  const prepared=readDraftPreparation(result.data?.payload, draftPreparationContext(input));
+  const prepared=readDraftPreparation(result.data?.payload, draftPreparationContext(input),draftPreparationTask(input));
   // Context describes the inputs. A later check of those same inputs can
   // freeze a different source packet, so selected drafts also pin its time.
   if (expected && (!expected.createdAt || prepared?.context!==expected.context || prepared.createdAt!==expected.createdAt)) return null;
@@ -85,7 +100,8 @@ export async function prepareDraft(db: SupabaseClient, input: DraftPreparationIn
   if (cached && !(options.retryUnavailable && cached.status === "unavailable")) return cached;
   const now = Date.now();
   const context = draftPreparationContext(input);
-  const task = { ...input.brief, ...(input.instructions ? { instructions: input.instructions } : {}) };
+  const instructions = effectiveDraftInstructions(input.globalInstructions, input.instructions);
+  const task = { ...input.brief, ...(instructions ? { instructions } : {}) };
   let evidence: {sources:PageExtract[];plan:DraftEvidencePlan};
   let sourceBrief: SourceBrief;
   if (e2eStubsEnabled() && isReservedTestDomain(input.domain)) {
@@ -93,8 +109,8 @@ export async function prepareDraft(db: SupabaseClient, input: DraftPreparationIn
     // context checks, selection and quota still use the production path.
     const question = `How does this article help ${input.brief.audience}?`;
     const quote = "Use the route's verified local transport and booking instructions to plan the journey.";
-    evidence = {sources:[{url:`https://${input.domain}/guide`,title:"Fixture guide",headings:[],text:quote}],plan:{task:"explanation",status:"planned",requirements:[question],selectedUrls:[],retrievedUrls:[]}};
-    sourceBrief = {status:input.instructions?.includes("e2e:withhold-sources") ? "insufficient" : "prepared",facts:[{subject:"Nomad Atlas",plan:"",kind:"explanation",statement:quote,quote,scopeQuote:quote,sourceIndex:0,url:evidence.sources[0].url}],coverage:[{question,factIndices:[0]}],issues:[],readiness:{status:"checked",questions:[{requirementIndex:0,answered:true,reason:"Fixture evidence supports the reader task."}]}};
+    evidence = {sources:[{url:`https://${input.domain}/guide`,title:"Fixture guide",headings:[],text:quote}],plan:{task:"explanation",status:"planned",requirements:[question],selectedUrls:[],retrievedUrls:[],scope:{status:"checked",requirements:[question],omitted:[],coverage:{complete:true,reason:"Fixture promise covered."},promises:[{id:"p0",source:"headline",quote:input.brief.angle??input.keyword,text:input.brief.angle??input.keyword,expectedAnswer:"Explain the approved reader task using the quoted evidence.",mappingReason:"The fixture question asks for the approved task.",requirementIndices:[0]}]}}};
+    sourceBrief = {status:input.instructions?.includes("e2e:withhold-sources") ? "insufficient" : "prepared",facts:[{subject:"Nomad Atlas",plan:"",kind:"explanation",statement:quote,quote,scopeQuote:quote,sourceIndex:0,url:evidence.sources[0].url}],coverage:[{question,factIndices:[0]}],issues:[],readiness:{status:"checked",questions:[{requirementIndex:0,answered:true,reason:"Fixture evidence supports the reader task."}],promises:[{promiseId:"p0",answered:true,reason:"The quoted evidence supports the fixture promise."}]}};
   } else {
     evidence = await collectTaskEvidence(input.profile, input.brief.conversionPath, input.brief.evidenceUrls ?? [], task, {supabase:db,workspaceId:input.workspaceId});
     sourceBrief = await prepareSourceBrief(evidence.sources, evidence.plan, task,

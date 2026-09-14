@@ -2,6 +2,8 @@ import { beforeEach, expect, it, vi } from "vitest";
 const { ask } = vi.hoisted(() => ({ask: vi.fn()}));
 vi.mock("@/lib/keyword-research/buyer-model", () => ({askStructured: ask, extractJson: (raw: string) => { try { return JSON.parse(raw); } catch { return null; } }}));
 import { enforceApprovedTitle, reviewApprovedOutput } from "../approved-output";
+import { htmlToTiptapJson } from "@/lib/ai/tiptap";
+import { tiptapToHtml } from "@/lib/cms/html";
 beforeEach(() => ask.mockReset());
 it("preserves the approved headline with HTML escaping", () => {
   expect(enforceApprovedTitle('<h1 class="x">Changed</h1><p>Text</p>', 'Compare <A> & B')).toBe('<h1>Compare &lt;A&gt; &amp; B</h1><p>Text</p>');
@@ -99,4 +101,87 @@ it("reviews decoded visible entities rather than reporting valid HTML escaping a
   await reviewApprovedOutput('<p>Settings &gt; Conditions: l&#x27;attivit&agrave; &amp; forms.</p>',{});
   const payload=JSON.parse(ask.mock.calls[0][1].split('\n').at(-1));
   expect(payload.article[0].text).toBe("Settings > Conditions: l'attività & forms.");
+});
+
+const deliveryTitle="Track project progress: milestones, metrics and centralized tools";
+const deliveryOptions={title:deliveryTitle,brief:{angle:deliveryTitle,buyingJob:"Identify blockers in real time",reason:"Broader feature catalogue",offering:"Every coordination feature"},task:"procedure" as const,requirements:["How are milestones organized?","Which metrics are tracked and interpreted?","How is progress tracked centrally?"],promises:[
+  {id:"p0",source:"headline" as const,quote:"milestones",text:"Set milestones",expectedAnswer:"Set usable project milestones",mappingReason:"The question requests milestone setup",requirementIndices:[0]},
+  {id:"p1",source:"headline" as const,quote:"metrics",text:"Use progress metrics",expectedAnswer:"Choose and interpret progress measures",mappingReason:"The question requests concrete progress measures",requirementIndices:[1]},
+  {id:"p2",source:"headline" as const,quote:"centralized tools",text:"Track progress centrally",expectedAnswer:"Use centralized tools with correct state interpretation",mappingReason:"The question requests centralized progress tracking",requirementIndices:[2]},
+]};
+const deliveryHtml=`<h1>${deliveryTitle}</h1><p>Group work into milestones with clear due dates and task owners.</p><p>Track overdue tasks and compare completed tasks with the planned total during the team's weekly review.</p><p>Move a progress dot uphill while the approach has unknowns, then downhill when the approach is clear and work remains to execute.</p>`;
+const deliveryResponse=()=>({productChecked:true,qualitativeChecked:true,structureChecked:true,findings:[],resolutions:[],delivery:{promises:deliveryOptions.promises.map((p,i)=>({promiseId:p.id,answered:true,passageIndices:[i+1],reason:"The reader receives the promised answer."})),procedure:{executable:true,passageIndices:[1,2,3],reason:"Actions and status meaning support the next review."}}});
+it("records direct delivery for every frozen promise and an executable ongoing procedure",async()=>{
+  ask.mockResolvedValue(JSON.stringify(deliveryResponse()));
+  const result=await reviewApprovedOutput(deliveryHtml,deliveryOptions);
+  expect(result.report).toMatchObject({status:"checked",delivery:{version:1,status:"checked",procedure:{executable:true}}});
+  expect(result.report.findings).toEqual([]);
+  const payload=JSON.parse(ask.mock.calls[0][1].split("\n").at(-1));
+  expect(payload.promises).toEqual(deliveryOptions.promises);expect(payload.researchTask).toBe("procedure");
+  expect(payload.approvedBrief).toEqual({angle:deliveryTitle,buyingJob:"Identify blockers in real time"});
+  expect(ask.mock.calls[0][1]).toContain("ongoing routines need a useful next check");
+  expect(ask.mock.calls[0][1]).toContain("A reader goal such as real-time tracking is not evidence");
+});
+it("creates material delivery findings for omitted metrics even when the model findings list is empty",async()=>{
+  const response=deliveryResponse();response.delivery.promises[1]={promiseId:"p1",answered:false,passageIndices:[],reason:"It lists task-status features but never supplies a metric."};
+  ask.mockResolvedValue(JSON.stringify(response));
+  const result=await reviewApprovedOutput(deliveryHtml,deliveryOptions);
+  expect(result.report).toMatchObject({status:"checked",qualitativeClaims:"needs-review",findings:[{category:"qualitative",severity:"material",text:deliveryTitle,reason:expect.stringContaining("Unfulfilled promise (Use progress metrics)")}]});
+});
+it("holds a sourced control instruction whose essential state interpretation is missing",async()=>{
+  const response=deliveryResponse();response.delivery.procedure={executable:false,passageIndices:[3],reason:"The instruction says drag the dot but never explains how to choose its position."};
+  ask.mockResolvedValue(JSON.stringify(response));
+  const result=await reviewApprovedOutput(deliveryHtml,deliveryOptions);
+  expect(result.report).toMatchObject({status:"checked",delivery:{procedure:{executable:false}},findings:[{severity:"material",reason:expect.stringContaining("not executable")}]});
+});
+it.each(["missing","duplicate","unknown","invented-passage","heading-only","missing-procedure","invalid-reason"])("does not approve malformed or unsupported delivery coverage: %s",async(kind)=>{
+  const response=deliveryResponse();
+  if(kind==="missing")response.delivery.promises.pop();
+  if(kind==="duplicate")response.delivery.promises[1].promiseId="p0";
+  if(kind==="unknown")response.delivery.promises[1].promiseId="p9";
+  if(kind==="invented-passage")response.delivery.promises[1].passageIndices=[99];
+  if(kind==="heading-only")response.delivery.promises[1].passageIndices=[0];
+  if(kind==="missing-procedure")Object.assign(response.delivery,{procedure:null});
+  if(kind==="invalid-reason")Object.assign(response.delivery.promises[0],{reason:123});
+  ask.mockResolvedValue(JSON.stringify(response));
+  const result=await reviewApprovedOutput(deliveryHtml,deliveryOptions);
+  expect(result.report).toMatchObject({status:"unavailable",delivery:{version:1,status:"unavailable"}});
+});
+it("requires a complete current contract when essential questions are supplied",async()=>{
+  const {promises:omitted,...legacy}=deliveryOptions;void omitted;
+  const result=await reviewApprovedOutput(deliveryHtml,legacy);
+  expect(result.report.status).toBe("unavailable");expect(ask).not.toHaveBeenCalled();
+});
+it("does not demand procedure evidence for a supported explanation",async()=>{
+  const response=deliveryResponse();Object.assign(response.delivery,{procedure:null});
+  ask.mockResolvedValue(JSON.stringify(response));
+  const result=await reviewApprovedOutput(deliveryHtml,{...deliveryOptions,task:"explanation"});
+  expect(result.report).toMatchObject({status:"checked",delivery:{status:"checked"}});
+  expect(result.report.delivery?.procedure).toBeUndefined();
+});
+
+it.each([
+  ["What's included?", "What&#39;s included?"],
+  ['Compare "A" & B', "Compare &quot;A&quot; &amp; B"],
+  ["Attività dell'équipe", "Attivit&agrave; dell&#x27;&eacute;quipe"],
+])("keeps an already-correct serialized title byte-identical: %s", (title, encoded) => {
+  const html=`<h1 id="approved-title">${encoded}</h1><p>The same article.</p>`;
+  expect(enforceApprovedTitle(html,title)).toBe(html);
+});
+
+
+it.each(["&nbsp;","&#160;","&#xA0;","\u00a0","\n  "])("keeps equivalent title whitespace unchanged before and after document serialization: %s",async(space)=>{
+  const title="Compare team tools";
+  const original=`<h1 id="approved-title">Compare${space}team tools</h1><p>Use the same criteria.</p>`;
+  expect(enforceApprovedTitle(original,title)).toBe(original);
+  const saved=tiptapToHtml(htmlToTiptapJson(original) as unknown as Record<string,unknown>);
+  expect(enforceApprovedTitle(saved,title)).toBe(saved);
+  ask.mockResolvedValue(JSON.stringify({productChecked:true,qualitativeChecked:true,structureChecked:true,findings:[],resolutions:[]}));
+  const reviewed=await reviewApprovedOutput(saved,{title,preserveReviewedHtml:true});
+  expect(reviewed.html).toBe(saved);expect(reviewed.report.status).toBe("checked");
+});
+it("still replaces a changed title and does not interpret the approved title as HTML",()=>{
+  expect(enforceApprovedTitle("<h1>Compareteam tools</h1>","Compare team tools")).toBe("<h1>Compare team tools</h1>");
+  const literal="<h1>Write &amp;amp; literally</h1>";
+  expect(enforceApprovedTitle(literal,"Write &amp; literally")).toBe(literal);
 });

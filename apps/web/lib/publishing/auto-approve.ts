@@ -21,7 +21,8 @@
 // `runAutoApprovals` is the cron's entry point.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { factCheckArticle, approvalBlocker } from "@/lib/ai/fact-check";
+import { factCheckArticle, approvalBlocker, type FactCheckReport } from "@/lib/ai/fact-check";
+import { reuseReviewedNumbers } from "@/lib/content/numerical-review";
 import { tiptapToHtml } from "@/lib/cms/html";
 import { auditArticle } from "@/lib/seo/article-audit";
 import type { ArticleResearch } from "@/lib/seo/research";
@@ -147,6 +148,7 @@ type ArticleRow = {
   aeo_score: number | null;
   content: Record<string, unknown> | null;
   research: ArticleResearch | null;
+  fact_checks?: FactCheckReport | null;
   keyword: string | null;
   title: string | null;
   slug: string | null;
@@ -178,7 +180,7 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
   for (const ws of (wsRows ?? []) as WorkspaceRow[]) {
     const { data: articles, error: artError } = await supabase
       .from("articles")
-      .select("id, workspace_id, status, held_by, auto_approve_after, created_at, seo_score, aeo_score, content, research, keyword, title, slug, meta_description, featured_image_url, auto_approve_hold_reason")
+      .select("id, workspace_id, status, held_by, auto_approve_after, created_at, seo_score, aeo_score, content, research, fact_checks, keyword, title, slug, meta_description, featured_image_url, auto_approve_hold_reason")
       .eq("workspace_id", ws.id)
       .eq("status", "review")
       .is("held_by", null)
@@ -224,7 +226,7 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
     for (const article of articles as ArticleRow[]) {
       try {
         const html = article.content ? tiptapToHtml(article.content) : "";
-        const report = html ? factCheckArticle(html, article.research ?? undefined) : null;
+        const report = html ? reuseReviewedNumbers(html,factCheckArticle(html,article.research??undefined),article.fact_checks,article.research?.editorialReview?.claimVerification) : null;
         if (report) {
           await supabase
             .from("articles")

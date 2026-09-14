@@ -141,6 +141,13 @@ describe("factCheckArticle — flagging unsourced figures", () => {
 });
 
 describe("factCheckArticle — extraction correctness", () => {
+  it("retains full detector text and offsets separately from a shortened display preview", () => {
+    const lead = "Review the sample first.";
+    const sentence = `For this example, assume 30% completion while considering ${"the imaginary records and chosen denominator, ".repeat(10)}then explain the calculation.`;
+    const claim = factCheckArticle(`<h2>Example</h2><p>${lead} ${sentence}</p>`).claims[0];
+    expect(claim.sentence).toBe(`${sentence.slice(0,397)}...`);
+    expect(claim.sentenceIdentity).toEqual({ text: sentence, blockIndex: 1, start: lead.length + 1, end: lead.length + 1 + sentence.length });
+  });
   it("finds claims in every sentence, not just the first", () => {
     // Regression: the patterns are /g, and reusing one RegExp across sentences
     // carries lastIndex forward and silently skips later matches.

@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { fakeDb } from "./fake-runs-client";
 import { queueChoicePreparation, prepareOnboardingChoices, wakeChoicePreparation } from "../choice-preparation";
 import { contextKey, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
-import { draftPreparationContext, type DraftPreparation, type DraftPreparationInput } from "@/lib/content/draft-preparation";
+import { DRAFT_PREPARATION_VERSION, draftPreparationContext, type DraftPreparation, type DraftPreparationInput } from "@/lib/content/draft-preparation";
 import { currentResearchBudget } from "@/lib/seo/request-context";
 import type { OnboardingPlanned } from "../events";
 
@@ -46,7 +46,7 @@ async function queued(db:ReturnType<typeof database>) {
 }
 function packet(input:DraftPreparationInput,status:DraftPreparation["status"]="ready"): DraftPreparation {
   const quote="Small teams can compare the writing tools and their editing options.";
-  return {version:1,context:draftPreparationContext(input),createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+3600000).toISOString(),status,sources:[{url:"https://one.test/guide",title:"Writing tools",headings:[],text:quote}],plan:{task:"explanation",status:"planned",requirements:["What does the buyer need?"],selectedUrls:[],retrievedUrls:[]},sourceBrief:{status:status==="ready"?"prepared":status,facts:[{subject:"Small teams",plan:"",kind:"explanation",statement:quote,quote,scopeQuote:quote,sourceIndex:0,url:"https://one.test/guide"}],coverage:[{question:"What does the buyer need?",factIndices:[0]}],issues:[],readiness:{status:"checked",questions:[{requirementIndex:0,answered:true,reason:"Observed answers"}]}}};
+  return {version:DRAFT_PREPARATION_VERSION,context:draftPreparationContext(input),createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+3600000).toISOString(),status,sources:[{url:"https://one.test/guide",title:"Writing tools",headings:[],text:quote}],plan:{task:"explanation",status:"planned",requirements:["What does the buyer need?"],selectedUrls:[],retrievedUrls:[],scope:{status:"checked",requirements:["What does the buyer need?"],omitted:[],promises:[{id:"p0",source:"headline",quote:input.brief.angle!,text:input.brief.angle!,expectedAnswer:"Explain the approved reader task using the quoted evidence.",mappingReason:"The fixture question asks for the approved task.",requirementIndices:[0]}]}},sourceBrief:{status:status==="ready"?"prepared":status,facts:[{subject:"Small teams",plan:"",kind:"explanation",statement:quote,quote,scopeQuote:quote,sourceIndex:0,url:"https://one.test/guide"}],coverage:[{question:"What does the buyer need?",factIndices:[0]}],issues:[],readiness:{status:"checked",questions:[{requirementIndex:0,answered:true,reason:"Observed answers"}],promises:[{promiseId:"p0",answered:true,reason:"The quoted evidence supports the fixture promise."}]}}};
 }
 beforeEach(()=>{vi.clearAllMocks();how.self.mockReturnValue({baseUrl:"https://app.test",secret:"fixture",fetchImpl:fetch});how.invoke.mockResolvedValue(new Response(null,{status:202}));});
 it("saves immutable candidate choices and hides unprepared selectable plans",async()=>{
@@ -86,6 +86,30 @@ it("rechecks the current task after a concurrent edit during source collection",
   await prepareOnboardingChoices(db.client,"r1","token",{prepare});
   expect(db.tables.onboarding_runs[0]).toMatchObject({status:"partial",planned:[]});
   expect(db.tables.onboarding_choice_checks[0].results).toEqual([expect.objectContaining({status:"changed"})]);
+});
+it("withdraws a choice when standing instructions change during source preparation",async()=>{
+  const db=database(1);await queued(db);
+  db.tables.workspace_output_settings=[{workspace_id:"ws1",global_article_prompt:"Always mention the free tier."}];
+  const prepare=vi.fn(async(_db,input:DraftPreparationInput)=>{
+    expect(input.globalInstructions).toBe("Always mention the free tier.");
+    db.tables.workspace_output_settings[0].global_article_prompt="Always explain the paid plan limits.";
+    return packet(input);
+  });
+  await prepareOnboardingChoices(db.client,"r1","token",{prepare});
+  expect(prepare).toHaveBeenCalledOnce();
+  expect(db.tables.onboarding_runs[0]).toMatchObject({status:"partial",planned:[]});
+  expect(db.tables.onboarding_choice_checks[0].results).toEqual([expect.objectContaining({status:"changed"})]);
+});
+it("withholds choices before provider work when standing instructions cannot be read",async()=>{
+  const db=database(1);await queued(db);
+  const from=db.client.from.bind(db.client);
+  const failed={select:()=>failed,eq:()=>failed,maybeSingle:async()=>({data:null,error:{message:"Unavailable"}})};
+  vi.spyOn(db.client,"from").mockImplementation(table=>table==="workspace_output_settings"?failed as never:from(table));
+  const prepare=vi.fn();
+  await prepareOnboardingChoices(db.client,"r1","token",{prepare});
+  expect(prepare).not.toHaveBeenCalled();
+  expect(db.tables.onboarding_runs[0]).toMatchObject({status:"partial",planned:[]});
+  expect(db.tables.onboarding_choice_checks[0].results).toEqual([expect.objectContaining({status:"unavailable"})]);
 });
 it("rechecks already-prepared choices when a later candidate sees a focus change",async()=>{
   const db=database(3);await queued(db);

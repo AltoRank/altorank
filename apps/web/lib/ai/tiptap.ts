@@ -1,11 +1,12 @@
 import { classifyHref } from "@/lib/seo/links";
+import { Parser } from "htmlparser2";
 
 // ---------------------------------------------------------------------------
 // HTML -> Tiptap ProseMirror JSON converter
 //
 // Converts a subset of HTML produced by the AI into the JSON structure
-// that Tiptap / ProseMirror expects. We parse without a DOM library by
-// walking a simple token stream -- keeps the server dependency-free.
+// that Tiptap / ProseMirror expects. A streaming HTML parser supplies tokens;
+// our converter walks that stream without constructing a DOM tree.
 // ---------------------------------------------------------------------------
 
 type TiptapMark = {
@@ -72,46 +73,29 @@ type Token =
 
 function tokenize(html: string): Token[] {
   const tokens: Token[] = [];
-  const tagPattern = /<\/?([a-zA-Z][a-zA-Z0-9-]*)((?:\s+[^>]*?)?)\/?\s*>|([^<]+)/g;
-  let m: RegExpExecArray | null;
-
-  while ((m = tagPattern.exec(html)) !== null) {
-    if (m[3] !== undefined) {
-      // Text node
-      const text = decodeEntities(m[3]);
-      if (text) tokens.push({ kind: "text", value: text });
-    } else {
-      const raw = m[0];
-      const tag = m[1].toLowerCase();
-      if (raw.startsWith("</")) {
-        tokens.push({ kind: "close", tag });
-      } else {
-        tokens.push({ kind: "open", tag, attrs: parseAttrs(m[2] || "") });
-      }
-    }
-  }
-
+  let inertDepth = 0;
+  const parser = new Parser({
+    onopentag(tag, attrs) {
+      if (inertDepth || tag === "script" || tag === "style") { inertDepth++; return; }
+      tokens.push({ kind: "open", tag, attrs });
+    },
+    onclosetag(tag) {
+      if (inertDepth) { inertDepth--; return; }
+      tokens.push({ kind: "close", tag });
+    },
+    ontext(value) {
+      if (inertDepth || !value) return;
+      // Entity decoding may emit several callbacks for one text run. Keep
+      // that run intact, especially orphan text that becomes one paragraph.
+      const previous = tokens.at(-1);
+      if (previous?.kind === "text") previous.value += value;
+      else tokens.push({ kind: "text", value });
+    },
+  }, { decodeEntities: true, recognizeSelfClosing: true });
+  // Quotes delimit attributes, not tags; all HTML entities are decoded here
+  // exactly once. Encoded quotes remain attribute data, never new attributes.
+  parser.end(html);
   return tokens;
-}
-
-function parseAttrs(raw: string): Record<string, string> {
-  const attrs: Record<string, string> = {};
-  const attrPattern = /([a-zA-Z_:][\w:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+)))?/g;
-  let m: RegExpExecArray | null;
-  while ((m = attrPattern.exec(raw)) !== null) {
-    attrs[m[1].toLowerCase()] = m[2] ?? m[3] ?? m[4] ?? "";
-  }
-  return attrs;
-}
-
-function decodeEntities(text: string): string {
-  return text
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ");
 }
 
 // ---------------------------------------------------------------------------
@@ -272,7 +256,7 @@ function parseTokens(tokens: Token[], opts: TiptapOptions = {}): TiptapNode[] {
     }
 
     if (tag === "img") {
-      if (attrs.src) {
+      if (attrs.src && allowedArticleUrl(attrs.src, "image")) {
         result.push({
           type: "image",
           attrs: { src: attrs.src, alt: attrs.alt ?? "", title: attrs.title ?? null },
@@ -386,7 +370,7 @@ function collectInline(
       // Link
       if (openTag === "a") {
         const href = openAttrs.href || "";
-        marks.push({ type: "link", attrs: linkAttrs(href, opts) });
+        if (href && allowedArticleUrl(href, "link")) marks.push({ type: "link", attrs: linkAttrs(href, opts) });
         pos++;
         continue;
       }
@@ -426,6 +410,11 @@ function collectBlock(
   closeTag: string,
   opts: TiptapOptions = {},
 ): { nodes: TiptapNode[]; endPos: number } {
+  const { innerTokens, endPos } = collectChildTokens(tokens,start,closeTag);
+  return { nodes: parseTokens(innerTokens, opts), endPos };
+}
+
+function collectChildTokens(tokens:Token[],start:number,closeTag:string):{innerTokens:Token[];endPos:number} {
   const innerTokens: Token[] = [];
   let pos = start;
   let depth = 0;
@@ -444,7 +433,35 @@ function collectBlock(
     pos++;
   }
 
-  return { nodes: parseTokens(innerTokens, opts), endPos: pos };
+  return { innerTokens, endPos: pos };
+}
+
+/** List items and table cells accept mixed inline and block children. Wrap
+ * only direct inline runs; a nested paragraph/list must keep all its content. */
+function collectContainerContent(tokens:Token[],start:number,closeTag:string,opts:TiptapOptions):{nodes:TiptapNode[];endPos:number} {
+  const {innerTokens,endPos}=collectChildTokens(tokens,start,closeTag);
+  const blocks:Token[]=[];
+  let inline:Token[]=[];
+  const flush=()=>{
+    if(inline.some(token=>token.kind==="text"&&token.value.trim() || token.kind==="open"&&token.tag==="br")) {
+      blocks.push({kind:"open",tag:"p",attrs:{}},...inline,{kind:"close",tag:"p"});
+    }
+    inline=[];
+  };
+  for(let pos=0;pos<innerTokens.length;) {
+    const token=innerTokens[pos];
+    if(token.kind==="open"&&BLOCK_TAGS.has(token.tag)&&token.tag!=="br") {
+      flush();
+      if(["img","hr"].includes(token.tag)) {blocks.push(token);pos++;}
+      else {
+        const child=collectChildTokens(innerTokens,pos+1,token.tag);
+        blocks.push(...innerTokens.slice(pos,child.endPos));
+        pos=child.endPos;
+      }
+    } else {inline.push(token);pos++;}
+  }
+  flush();
+  return {nodes:parseTokens(blocks,opts),endPos};
 }
 
 // ---------------------------------------------------------------------------
@@ -469,11 +486,11 @@ function collectListItems(
     }
 
     if (token.kind === "open" && token.tag === "li") {
-      const { nodes: inline, endPos } = collectInline(tokens, pos + 1, "li", opts);
+      const { nodes: blocks, endPos } = collectContainerContent(tokens, pos + 1, "li", opts);
       // List items in Tiptap must contain a paragraph
       items.push({
         type: "listItem",
-        content: [createParagraph(inline)],
+        content: blocks[0]?.type==="paragraph" ? blocks : [createParagraph([]),...blocks],
       });
       pos = endPos;
       continue;
@@ -489,6 +506,15 @@ function collectListItems(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** Entity decoding must never activate a script or data URL. Parse the URL
+ * after decoding so embedded ASCII whitespace cannot disguise its scheme. */
+function allowedArticleUrl(value: string, kind: "link" | "image"): boolean {
+  try {
+    const protocol = new URL(value, "https://article.invalid").protocol;
+    return ["http:", "https:", ...(kind === "link" ? ["mailto:", "tel:", "sms:"] : [])].includes(protocol);
+  } catch { return false; }
+}
 
 /**
  * Attributes for a link mark, by where the link goes.
@@ -562,12 +588,12 @@ function collectTable(
     }
 
     if (token.kind === "open" && (token.tag === "th" || token.tag === "td")) {
-      const { nodes: inline, endPos } = collectInline(tokens, pos + 1, token.tag, opts);
+      const { nodes: blocks, endPos } = collectContainerContent(tokens, pos + 1, token.tag, opts);
       cells.push({
         type: token.tag === "th" ? "tableHeader" : "tableCell",
         attrs: { colspan: 1, rowspan: 1, colwidth: null },
         // A cell, like a list item, must wrap its content in a block node.
-        content: [createParagraph(inline)],
+        content: blocks.length ? blocks : [createParagraph([])],
       });
       pos = endPos;
       continue;

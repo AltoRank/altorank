@@ -2,6 +2,8 @@
 
 This follows the [readiness assessment](./onboarding-readiness-2026-09-14.md). The required experience is a useful, supported choice and a complete first draft before the trial gate, followed by the same draft and other supported first-month articles in the dashboard. Mechanical completion and useful prose are assessed separately.
 
+This document preserves the implementation and diagnostic record through `814e586`. The [quality-contract assessment](./onboarding-quality-contract-2026-09-14.md) records the completed eight-case cohort at that revision, subsequent mechanism corrections and current verification. In particular, the completed cohort saved no first drafts; the earlier browser and unit passes do not establish output readiness.
+
 ## Mechanism
 
 1. Keyword qualification requires article results for the confirmed buyer and task. The final headline review must identify two relevant results for that exact task. Qualification policy version 8 invalidates earlier cached decisions and overly broad topic groupings.
