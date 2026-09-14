@@ -13,11 +13,15 @@ async function main(){
  const {generateArticle}=await import('@/lib/content/generate');
  const db=createClient(local.API_URL,local.SERVICE_ROLE_KEY,{auth:{persistSession:false}});
  const workspace=await db.from('workspaces').select('account_id').eq('id',input.workspaceId).single();if(workspace.error)throw workspace.error;
+ const {withModelObserver}=await import('@/lib/keyword-research/buyer-model');
+ const observations:unknown[]=[];mkdirSync(out,{recursive:true});
  const started=Date.now();
- const draft=await generateArticle({supabase:db,workspaceId:input.workspaceId,keyword:input.selected.term,keywordId:input.selected.keywordId,autonomous:true,verifySourceClaims:true,billToAccountId:workspace.data.account_id});
+ try {
+ const draft=await withModelObserver(event=>observations.push(event),()=>generateArticle({supabase:db,workspaceId:input.workspaceId,keyword:input.selected.term,keywordId:input.selected.keywordId,autonomous:true,verifySourceClaims:true,billToAccountId:workspace.data.account_id}),{includeResponse:true});
  const article=await db.from('articles').select('*').eq('workspace_id',input.workspaceId).eq('id',draft.articleId).single();if(article.error)throw article.error;
  mkdirSync(out,{recursive:true});writeFileSync(`${out}/article.html`,draft.html,{mode:0o600});
  writeFileSync(`${out}/report.json`,JSON.stringify({scope:'Development replay of the same selected topic through production generateArticle. Fresh generation, reused discovery and voice. Not a new onboarding or checkout.',domain:input.domain,workspaceId:input.workspaceId,selected:input.selected,seconds:(Date.now()-started)/1000,article:article.data},null,2),{mode:0o600});
  console.log(input.domain,draft.wordCount,(Date.now()-started)/1000);
+ } finally {writeFileSync(`${out}/model-observations.json`,JSON.stringify(observations,null,2),{mode:0o600});}
 }
 main().catch(e=>{console.error(e.message);process.exitCode=1;});

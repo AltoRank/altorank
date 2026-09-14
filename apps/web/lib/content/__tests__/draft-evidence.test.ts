@@ -57,3 +57,9 @@ it("can follow an observed vendor homepage to its primary pricing page once",asy
   const result=await collectTaskEvidence(null,undefined,["https://review.test/list"],{});
   expect(result.plan.retrievedUrls).toEqual(["https://vendor.test/","https://vendor.test/pricing"]);expect(ask).toHaveBeenCalledTimes(2);expect(read).toHaveBeenCalledTimes(3);
 });
+it("follows an observed manufacturer help hub to actual care instructions",async()=>{
+ read.mockImplementation(async(url:string)=>({url,title:"Source",headings:[],text:"Product care information.",links:url==="https://brand.test/shoes"?[{url:"https://brand.test/help",label:"Help"}]:url==="https://brand.test/help"?[{url:"https://brand.test/help/wash",label:"Wash shoes"}]:[]}));
+ ask.mockResolvedValueOnce(JSON.stringify({task:"procedure",requirements:["How should these shoes be washed?"],linkIndices:[0]})).mockResolvedValueOnce(JSON.stringify({linkIndices:[0]}));
+ const result=await collectTaskEvidence(null,"https://brand.test/shoes",[],{});
+ expect(result.plan.retrievedUrls).toEqual(["https://brand.test/help","https://brand.test/help/wash"]);expect(ask).toHaveBeenCalledTimes(2);
+});

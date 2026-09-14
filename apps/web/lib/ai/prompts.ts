@@ -1,3 +1,4 @@
+import {buildFirstDraftPrompt} from "./first-draft-prompt";
 import type { ArticlePrompt } from "./types";
 import type { ArticleResearch } from "@/lib/seo/research";
 import { INTENT_GUIDANCE } from "@/lib/seo/intent";
@@ -253,6 +254,7 @@ export function refreshLengthBudget(existingHtml: string): { current: number; ma
 }
 
 export function buildSystemPrompt(prompt: ArticlePrompt): string {
+  if(prompt.firstDraft && !prompt.refreshOf)return buildFirstDraftPrompt(prompt);
   const {
     keyword,
     title,

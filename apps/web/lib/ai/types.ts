@@ -21,6 +21,14 @@ export interface VoiceRules {
 }
 
 export interface ArticlePrompt {
+  firstDraft?: {
+    task: "comparison"|"procedure"|"explanation";
+    comparisonType?: "vendors"|"plans"|"categories";
+    brief: Record<string,string>;
+    facts: Array<Omit<import("@/lib/content/source-brief").SourceFact,"statement"> & {url:string}>;
+    unansweredQuestions: string[];
+    instructions?: string|null;
+  };
   keyword: string;
   title?: string;
   voiceRules?: VoiceRules;

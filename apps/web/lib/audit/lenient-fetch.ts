@@ -12,7 +12,6 @@
 
 import { request as httpsRequest } from "node:https";
 import { request as httpRequest } from "node:http";
-import { isIP } from "node:net";
 
 // ---------------------------------------------------------------------------
 // Where a crawl is allowed to go
@@ -122,7 +121,7 @@ export interface LenientResponse {
  */
 export async function recoverWwwHomepage(url: string, response: Response, request: (url: string) => Promise<Response>): Promise<Response> {
   const original = new URL(url);
-  if (response.status !== 404 || original.pathname !== "/" || original.search || original.username || original.password || original.port || original.hostname.startsWith("www.") || !original.hostname.includes(".") || isIP(original.hostname.replace(/^\[|\]$/g, "")) || isPrivateHost(original.hostname)) return response;
+  if (response.status !== 404 || original.pathname !== "/" || original.search || original.username || original.password || original.port || original.hostname.startsWith("www.") || !original.hostname.includes(".") || (ipv4Parts(original.hostname) || original.hostname.includes(":")) || isPrivateHost(original.hostname)) return response;
   const alternate = new URL(original); alternate.hostname = `www.${original.hostname}`;
   try {
     assertPublicUrl(alternate.href);

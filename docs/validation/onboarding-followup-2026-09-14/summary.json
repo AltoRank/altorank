@@ -1,0 +1,89 @@
+{
+  "date": "2026-09-14",
+  "releaseReady": false,
+  "assessmentBy": "Implementing agent; not independent human labels",
+  "scope": "Latest selected-topic development controls with real sources/models and local database; discovery/voice reused. Final alias/plan-label guards and retry flag tested separately afterwards. Not a fresh full-flow cohort or conversion benchmark.",
+  "verification": {
+    "tests": {
+      "passed": 3370,
+      "files": 332,
+      "database": "Local Supabase, no skips"
+    },
+    "productionBuild": "passed",
+    "changedFileLint": {
+      "status": "passed",
+      "files": 29
+    },
+    "repositoryWideLint": "failed: generated .next-e2e bundles and existing source errors outside this follow-up diff",
+    "standardBrowser": {
+      "passed": 17,
+      "retries": 0,
+      "secondsApprox": 114
+    },
+    "trialGateBrowser": {
+      "passed": 1,
+      "retries": 0,
+      "seconds": 39.2,
+      "testSeconds": 18.7,
+      "providers": "Fixtures; signed local trial activation, no hosted payment"
+    },
+    "ci": "Pending push"
+  },
+  "cases": [
+    {
+      "domain": "brevo.com",
+      "seconds": 156.185,
+      "words": 1030,
+      "articleStatus": "review",
+      "task": "comparison",
+      "sourceBriefStatus": "prepared",
+      "reviewStatus": "unavailable",
+      "claimVerificationStatus": "partial",
+      "unresolvedMaterialFindings": 1,
+      "assessment": "material_rework",
+      "issues": [
+        "Incomplete comparison and unclear discounted-price billing context",
+        "Incorrect statement that competitor trial is unconfirmed",
+        "Partial final claim verification"
+      ],
+      "renderedPages": 0
+    },
+    {
+      "domain": "basecamp.com",
+      "seconds": 96.923,
+      "words": 1139,
+      "articleStatus": "review",
+      "task": "explanation",
+      "sourceBriefStatus": "prepared",
+      "reviewStatus": "checked",
+      "claimVerificationStatus": "checked",
+      "unresolvedMaterialFindings": 0,
+      "assessment": "targeted_edits",
+      "issues": [
+        "Source-quotation/feature-catalogue style",
+        "Overbroad workflow outcome and plan/add-on scope to review"
+      ],
+      "renderedPages": 0
+    },
+    {
+      "domain": "fresha.com",
+      "seconds": 94.712,
+      "words": 1052,
+      "articleStatus": "review",
+      "task": "explanation",
+      "sourceBriefStatus": "prepared",
+      "reviewStatus": "checked",
+      "claimVerificationStatus": "checked",
+      "unresolvedMaterialFindings": 1,
+      "assessment": "material_rework",
+      "issues": [
+        "Unsupported real-time availability claim",
+        "Consumer/professional audience drift",
+        "Distracting regional statistics"
+      ],
+      "renderedPages": 0
+    }
+  ],
+  "automaticRevision": "Disabled: offline accepted revision failed a subsequent fresh claim check",
+  "production": "No deployment, migration, publication or payment"
+}

@@ -83,6 +83,7 @@ export interface PlanOptions {
   mode?: "replace" | "top-up" | "fill-month";
   maxEntries?: number;
   distinctTasks?: boolean;
+  retryPending?: boolean;
   onProgress?: NonNullable<Parameters<typeof recommendKeywords>[2]>["onProgress"];
 }
 
@@ -119,7 +120,7 @@ async function planFor(
   // ranking" rows and the one writable keyword scored below them was never
   // seen (buttondown.com, 2026-09-07: 99 skips, 2 hand-added terms, 1
   // planned). Ask for the whole set; the planner filters to writable itself.
-  let recs = (await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true, ...(opts.onProgress ? {onProgress: opts.onProgress} : {}) })).filter(
+  let recs = (await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true, distinctTasks: opts.distinctTasks, retryPending: opts.retryPending, ...(opts.onProgress ? {onProgress: opts.onProgress} : {}) })).filter(
     (r) => !excluded.has(r.keywordId) && !takenIds.has(r.keywordId) && !takenTerms.has(r.term.toLowerCase()),
   );
 

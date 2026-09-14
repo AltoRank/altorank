@@ -20,7 +20,7 @@ product: { supported: true, quote: "clinic booking websites", reason: "The offer
 editorial: { achievable: true, reason: "Help compare costs and scope" }};
 const writes: unknown[] = [];
 let covered: unknown[] = [];
-const db = { from: () => ({ select: () => { const q = { eq: () => q, in: async () => ({ data: covered, error: null }) }; return q; }, update: (row: unknown) => { writes.push(row); const q = { eq: () => q, then: (resolve: (v: unknown) => unknown) => resolve({error:null}) }; return q; } }) } as never;
+const db = { rpc: async()=>({data:true,error:null}), from: () => ({ select: () => { const q = { eq: () => q, in: async () => ({ data: covered, error: null }) }; return q; }, update: (row: unknown) => { writes.push(row); const q = { eq: () => q, then: (resolve: (v: unknown) => unknown) => resolve({error:null}) }; return q; } }) } as never;
 beforeEach(() => {
   vi.clearAllMocks(); writes.length = 0; covered = []; available.mockReturnValue(true);
   judge.mockResolvedValue({ basis: "model", verdicts: new Map([[term, {keep:true,reason:"specific buyer need"}]]) });
@@ -157,4 +157,32 @@ it("caps sparse research at 25 and records why it stopped", async () => {
   const result=await qualifyOpportunities(db,"ws",Array.from({length:40},(_,i) => ({id:`k${i}`,term:`unrelated task ${i}`})),context);
   expect(result.size).toBe(25); expect(fetchSerp).not.toHaveBeenCalled();
   expect(result.get("k24")?.qualificationRun).toMatchObject({checked:25,distinct:0,stopped:"budget"});
+});
+
+it("continues researching when five distinct SERPs collapse to one buyer decision", async()=>{
+ const candidates=Array.from({length:12},(_,i)=>({id:`k${i}`,term:`buyer task ${i}`}));
+ judge.mockImplementation(async(_business,terms:string[])=>({basis:"model",verdicts:new Map(terms.map(t=>[t,{keep:true,reason:"Relevant"}]))}));
+ fetchSerp.mockImplementation(async(query:string)=>({organic:[1,2,3].map(rank=>({url:`https://source${rank}.test/${query.split(" ").at(-1)}`,title:"A buyer guide",description:"Compare costs",rank})),peopleAlsoAsk:[],aiOverview:null}));
+ ask.mockImplementation(async(operation:string,prompt:string)=>{
+  const input=JSON.parse(prompt.split("\n").at(-1)!);
+  if(operation==="onboarding/distinct-tasks")return JSON.stringify({groups:[input.topics.map((_:unknown,i:number)=>i)]});
+  return JSON.stringify({...approval,results:input.results.map((r:{url:string})=>({url:r.url,format:"article",quote:"A buyer guide"}))});
+ });
+ const result=await qualifyOpportunities(db,"ws",candidates,context,{distinctTasks:true});
+ expect(fetchSerp).toHaveBeenCalledTimes(12);
+ expect(result.get("k11")?.qualificationRun).toMatchObject({checked:12,distinct:1,stopped:"exhausted"});
+});
+it("an explicit onboarding retry revisits incomplete checks while ordinary reads preserve the cache",async()=>{
+ judge.mockResolvedValueOnce({basis:"model",verdicts:new Map()});
+ const pending=await run();
+ await run({opportunity:pending});expect(fetchSerp).not.toHaveBeenCalled();
+ await qualifyOpportunities(db,"ws",[{id:"k",term,opportunity:pending}],context,{distinctTasks:true});
+ expect(fetchSerp).not.toHaveBeenCalled();
+ const result=await qualifyOpportunities(db,"ws",[{id:"k",term,opportunity:pending}],context,{distinctTasks:true,retryPending:true});
+ expect(result.get("k")?.status).toBe("qualified");expect(fetchSerp).toHaveBeenCalledTimes(1);
+});
+import {decisionCoverageOrder} from "../evidence";
+it("allocates a turn to each decision family before repeated category seeds",()=>{
+ const rows=[{family:"category" as const,seed:"a"},{family:"category" as const,seed:"b"},{family:"category" as const,seed:"c"},{family:"migration" as const,seed:"switch"},{family:"problem" as const,seed:"fix"}];
+ expect(decisionCoverageOrder(rows,row=>({...row,source:"ideas"}),3).map(r=>r.family)).toEqual(["category","migration","problem"]);
 });

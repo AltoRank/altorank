@@ -29,3 +29,13 @@ export function coverageOrder<T>(items: T[], group: (item: T) => string, limit =
   }
   return result;
 }
+
+/** Balance decision families first, then seeds within each family. A category
+ * with many seed variants must not crowd out a migration or problem task. */
+export function decisionCoverageOrder<T>(items:T[], lineage:(item:T)=>KeywordLineage|undefined, limit=items.length):T[] {
+  const family=(item:T)=>lineage(item)?.family ?? lineage(item)?.source ?? "legacy";
+  const families=new Map<string,T[]>();
+  for(const item of items){const key=family(item);const rows=families.get(key)??[];rows.push(item);families.set(key,rows);}
+  const interleaved=[...families.values()].flatMap(rows=>coverageOrder(rows,item=>lineage(item)?.seed??lineage(item)?.domain??""));
+  return coverageOrder(interleaved,family,limit);
+}

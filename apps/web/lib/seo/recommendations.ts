@@ -1,4 +1,4 @@
-import { coverageOrder, type KeywordEvidence } from "@/lib/keyword-research/evidence";
+import { decisionCoverageOrder, type KeywordEvidence } from "@/lib/keyword-research/evidence";
 import { qualifyOpportunities, readOpportunity, contextKey, serpOverlap, type Opportunity } from "@/lib/keyword-research/opportunity";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 // ---------------------------------------------------------------------------
@@ -327,7 +327,7 @@ const AUDIENCE_BOOST = 1.75;
 export async function recommendKeywords(
   supabase: SupabaseClient,
   workspaceId: string,
-  options?: { limit?: number; qualify?: boolean; onProgress?: (items: Array<{id: string; term: string}>, results: Map<string, Opportunity>) => void },
+  options?: { limit?: number; qualify?: boolean; distinctTasks?: boolean; retryPending?: boolean; onProgress?: (items: Array<{id: string; term: string}>, results: Map<string, Opportunity>) => void },
 ): Promise<KeywordRecommendation[]> {
   const limit = options?.limit ?? 25;
 
@@ -642,13 +642,13 @@ export async function recommendKeywords(
   // Only explicit scheduling/generation requests buy fresh evidence. List pages
   // consume saved briefs without triggering provider work during rendering.
   const eligible = sorted.filter((rec) => rec.action === "write" && rec.quality === "ok");
-  const candidateRows = coverageOrder(eligible.map((rec) => ({ ...keywords.find((k) => k.id === rec.keywordId)!, id: rec.keywordId, term: rec.term })), (row) => {
+  const candidateRows = decisionCoverageOrder(eligible.map((rec) => ({ ...keywords.find((k) => k.id === rec.keywordId)!, id: rec.keywordId, term: rec.term })), (row) => {
     const evidence = row.research_evidence as KeywordEvidence | null;
     const source = evidence?.sources?.[0];
-    return `${source?.family ?? source?.source ?? "legacy"}:${source?.seed ?? source?.domain ?? ""}`;
+    return source;
   }, 50);
   const evidence = options?.qualify
-    ? await qualifyOpportunities(supabase, workspaceId, candidateRows, context, options.onProgress ? {onProgress: options.onProgress} : undefined)
+    ? await qualifyOpportunities(supabase, workspaceId, candidateRows, context, {onProgress: options.onProgress, distinctTasks: options.distinctTasks, retryPending: options.retryPending})
     : new Map(candidateRows.flatMap((row) => { const o = readOpportunity(row.opportunity, fingerprint); return o ? [[row.id, o] as const] : []; }));
   const clusters: KeywordRecommendation[] = [];
   for (const rec of eligible) {

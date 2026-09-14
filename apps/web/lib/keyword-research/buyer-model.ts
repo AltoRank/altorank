@@ -35,6 +35,7 @@ export interface StructuredOptions {
   maxTokens: number; spend?: SpendSink | null; tier?: ModelTier;
   schema?: Record<string, unknown>;
   timeoutMs?: number;
+  reasoning?: "disabled" | "medium";
   observe?: (event: ModelObservation) => void;
 }
 const observations = new AsyncLocalStorage<{observer:(event:ModelObservation)=>void;includeResponse:boolean}>();
@@ -64,7 +65,7 @@ export async function askStructured(
   // missed a real comparison error. Full-article judgments use measured medium
   // effort; short final-topic checks stay non-thinking. Content is separate.
   const editorial = options.tier === "editorial";
-  const reasoning = process.env.ANTHROPIC_EDITORIAL_REASONING ?? (operation.startsWith("article/") ? "medium" : "disabled");
+  const reasoning = options.reasoning ?? process.env.ANTHROPIC_EDITORIAL_REASONING ?? (operation.startsWith("article/") ? "medium" : "disabled");
   const mediumThinking = editorial && reasoning === "medium" && /^claude-(?:sonnet-5|opus-5|sonnet-4-6|opus-4-[6-8])/.test(model);
   const started = Date.now();
   // Observability must never turn a valid model result into a failed request.

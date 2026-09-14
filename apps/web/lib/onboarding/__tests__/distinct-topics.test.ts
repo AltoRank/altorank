@@ -1,6 +1,8 @@
+import {ResearchBudget,currentResearchBudget} from "@/lib/seo/request-context";
 import {beforeEach,expect,it,vi} from "vitest";
 const {ask}=vi.hoisted(()=>({ask:vi.fn()}));
-vi.mock("@/lib/keyword-research/buyer-model",async original=>({...await original<object>(),askStructured:ask}));
+let observedBudget:ResearchBudget|undefined;
+vi.mock("@/lib/keyword-research/buyer-model",()=>({askStructured:(...args:unknown[])=>{observedBudget=currentResearchBudget();return ask(...args);},extractJson:(raw:string)=>{try{return JSON.parse(raw);}catch{return null;}}}));
 import {distinctOnboardingTopics,topicRepresentatives} from "../distinct-topics";
 import type {KeywordRecommendation} from "@/lib/seo/recommendations";
 beforeEach(()=>ask.mockReset());
@@ -47,4 +49,14 @@ it("sends a large legacy snapshot in the RPC body and preserves a concurrent upd
   await distinctOnboardingTopics(inputs,{supabase:{rpc} as never,workspaceId:"site-a"});
   expect(rpc).toHaveBeenCalledWith("save_onboarding_task_group",expect.objectContaining({p_expected:inputs[0].opportunity}));
   expect(inputs.every(rec=>!rec.opportunity?.taskKey)).toBe(true);
+});
+
+it("shares the caller's qualification budget and strips transient diagnostics from the stored comparison",async()=>{
+ const budget=new ResearchBudget(65,110000);const inputs=structuredClone(recs.slice(0,2));
+ inputs[0].opportunity!.qualificationRun={checked:3,distinct:2,stopped:"exhausted",calls:8,costUsd:0.1};
+ ask.mockResolvedValue('{"groups":[[0,1]]}');
+ const rpc=vi.fn(async()=>({data:true,error:null}));
+ await distinctOnboardingTopics(inputs,{supabase:{rpc} as never,workspaceId:"site-a"},budget);
+ expect(observedBudget).toBe(budget);
+ expect(rpc).toHaveBeenCalledWith("save_onboarding_task_group",expect.objectContaining({p_expected:expect.not.objectContaining({qualificationRun:expect.anything()})}));
 });

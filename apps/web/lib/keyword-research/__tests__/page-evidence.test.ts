@@ -33,3 +33,11 @@ it("does not treat a binary document as readable source evidence",async()=>{
   fetch.mockResolvedValue(new Response("%PDF-1.7 " + "binary bytes ".repeat(100)));
   expect(await readPageExtract("https://vendor.test/manual")).toBeNull();
 });
+it("preserves plan boundaries and retrieves observed footer care links beyond a product menu",async()=>{
+ const menu=Array.from({length:500},(_,i)=>`<a href="/shoe-${i}">Shoe ${i}</a>`).join("");
+ fetch.mockResolvedValue(new Response(`<nav>${menu}</nav><main><h2>Starter</h2><p>${"Basic features. ".repeat(8)}</p><h2>Standard</h2><p>Marketing automation.</p></main><footer><a href="/care-guide">Product care guide</a><a href="/privacy">Privacy</a></footer>`));
+ const page=await readPageExtract("https://vendor.test",9000,{includeLinks:true});
+ expect(page?.text).toContain("\nStandard\nMarketing automation.");
+ expect(page?.links).toContainEqual({url:"https://vendor.test/care-guide",label:"Product care guide"});
+ expect(page?.links).not.toContainEqual({url:"https://vendor.test/privacy",label:"Privacy"});
+});

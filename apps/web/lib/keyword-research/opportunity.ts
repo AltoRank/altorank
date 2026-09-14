@@ -115,7 +115,7 @@ function ownPage(raw: string | null | undefined, domain: string): boolean {
 /** One bounded qualification path for production and evaluations. */
 export async function qualifyOpportunities(
   supabase: SupabaseClient, workspaceId: string, candidates: OpportunityCandidate[], context: OpportunityContext,
-  options: { target?: number; onProgress?: (items: OpportunityCandidate[], results: Map<string, Opportunity>) => void } = {},
+  options: { target?: number; distinctTasks?: boolean; retryPending?: boolean; onProgress?: (items: OpportunityCandidate[], results: Map<string, Opportunity>) => void } = {},
 ): Promise<Map<string, Opportunity>> {
   const budget = new ResearchBudget(65, 110_000);
   return withResearchBudget(budget, async () => {
@@ -139,18 +139,34 @@ export async function qualifyOpportunities(
       for (const c of candidates) {
         const result = out.get(c.id); if (result?.status !== "qualified") continue;
         const duplicate = (covered ?? []).find((row) => {
-          return row.id !== c.id && serpOverlap(result.organicUrls ?? [], coveredOrganicUrls(row.opportunity)) >= 0.5;
+          return row.id !== c.id && ((result.taskKey && result.taskKey === row.opportunity?.taskKey) || serpOverlap(result.organicUrls ?? [], coveredOrganicUrls(row.opportunity)) >= 0.5);
         });
         if (duplicate) { out.set(c.id, { ...result, status: "rejected", duplicateOf: duplicate.id, reason: `An article already planned or written for “${duplicate.term}” covers this search intent.` }); continue; }
-        if (!kept.some((other) => serpOverlap(result.organicUrls ?? [], other.organicUrls ?? []) >= 0.5)) kept.push(result);
+        if (!kept.some((other) => (result.taskKey && result.taskKey === other.taskKey) || serpOverlap(result.organicUrls ?? [], other.organicUrls ?? []) >= 0.5)) kept.push(result);
       }
       return kept.length;
     };
     const target = Math.max(1, Math.min(5, options.target ?? 5));
-    const pending = modelAvailable() && hasDataForSEOCredentials() ? candidates.filter((c) => !out.has(c.id)).slice(0, QUALIFICATION_LIMIT) : [];
+    const pending = modelAvailable() && hasDataForSEOCredentials() ? [...candidates.filter((c) => !out.has(c.id)), ...(options.retryPending ? candidates.filter(c=>out.get(c.id)?.status === "pending") : [])].slice(0, QUALIFICATION_LIMIT) : [];
     const spend = { supabase, workspaceId }; let checked = 0; let adjudications = 0;
     const businessEvidence = describeBusiness(context.business ?? {});
-    for (let offset = 0; offset < pending.length && !budget.exhausted && distinct() < target; offset += 3) {
+    // Count actual buyer decisions before declaring the research sufficient.
+    // Grouping shares the same call/deadline budget as qualification.
+    const semanticCount = async () => {
+      const rawCount = distinct();
+      if (!options.distinctTasks || e2eStubsEnabled() || rawCount < 2) return rawCount;
+      const {distinctOnboardingTopics} = await import("@/lib/onboarding/distinct-topics");
+      const rows = candidates.filter(c=>out.get(c.id)?.status === "qualified").map(c=>({
+        keywordId:c.id, term:c.term, action:"write" as const, quality:"ok" as const, opportunity:out.get(c.id),
+      }));
+      const grouped = await distinctOnboardingTopics(rows, spend, budget);
+      for (const row of rows) if (row.opportunity) out.set(row.keywordId,row.opportunity);
+      return grouped.length;
+    };
+    let count = distinct();
+    if (count >= target) count = await semanticCount();
+    let groupedAfterBatch = count >= target;
+    for (let offset = 0; offset < pending.length && !budget.exhausted && count < target; offset += 3) {
       const batch = pending.slice(offset, offset + 3);
       const fit = await judgeBuyerFit(context.business ? { ...context.business, language: context.languageCode } : null, batch.map((c) => c.term), { spend });
       await Promise.all(batch.map(async (c) => {
@@ -203,9 +219,12 @@ export async function qualifyOpportunities(
         const { error } = await supabase.from("keywords").update({ opportunity: result, buyer_fit: verdict ?? null }).eq("id", c.id).eq("workspace_id", workspaceId);
         if (error) throw new Error(`Could not save topic qualification: ${error.message}`); out.set(c.id, result);
       }));
-      distinct(); options.onProgress?.(candidates, out);
+      count = distinct();
+      groupedAfterBatch = count >= target;
+      if (groupedAfterBatch) count = await semanticCount();
+      options.onProgress?.(candidates, out);
     }
-    const count = distinct();
+    if (!groupedAfterBatch) count = await semanticCount();
     const summary = { checked, distinct: count, stopped: count >= target ? "sufficient" as const : budget.exhausted || checked >= QUALIFICATION_LIMIT ? "budget" as const : "exhausted" as const, calls: budget.calls, costUsd: budget.costUsd };
     for (const o of out.values()) o.qualificationRun = summary;
     console.info("[qualification]", summary); return out;
