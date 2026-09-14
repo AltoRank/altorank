@@ -326,7 +326,7 @@ export async function stampRun(
   supabase: SupabaseClient,
   runId: string,
   event: OnboardingEvent,
-  opts: { article?: OnboardingArticle | null; finish?: boolean } = {},
+  opts: { article?: OnboardingArticle | null; finish?: boolean; retryChoice?: boolean } = {},
 ): Promise<boolean> {
   const { data } = await supabase.from("onboarding_runs").select(RUN_COLUMNS_WITH_AGENCY).eq("id", runId).maybeSingle();
   const run = data as OnboardingRunRow | null;
@@ -355,7 +355,10 @@ export async function stampRun(
       article: opts.article ?? (run.article_id ? ({ id: run.article_id } as OnboardingArticle) : null),
       error: state.error,
     });
-    patch.finished_at = now;
+    // A known readiness failure keeps the approved choices actionable. Only
+    // the active run can transition back; a stale worker cannot reopen it.
+    if (opts.retryChoice && !opts.article && !run.article_id && state.planned.some(p=>p.keywordId && p.brief?.status === "qualified")) patch.status = "awaiting_choice";
+    patch.finished_at = patch.status === "awaiting_choice" ? null : now;
   }
   const { error } = await supabase.from("onboarding_runs").update(patch).eq("id", runId).eq("status", "running");
   if (error) {
@@ -364,7 +367,7 @@ export async function stampRun(
   }
   // The draft route settles most runs, so this is where a `partial` usually
   // gets its final status. The ids come off the row we already read.
-  if (opts.finish) {
+  if (opts.finish && patch.status !== "awaiting_choice") {
     await announceOutcome(
       supabase,
       runId,

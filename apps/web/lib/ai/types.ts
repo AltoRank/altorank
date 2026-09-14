@@ -22,6 +22,8 @@ export interface VoiceRules {
 
 export interface ArticlePrompt {
   firstDraft?: {
+    options?: string[];
+    requirements?: string[];
     task: "comparison"|"procedure"|"explanation";
     comparisonType?: "vendors"|"plans"|"categories";
     brief: Record<string,string>;

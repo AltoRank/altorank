@@ -1,3 +1,4 @@
+import {DraftReadinessError} from "@/lib/content/draft-readiness";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getQuota } from "@/lib/billing/quota";
 import { sweepStaleDrafts } from "@/lib/content/stale-drafts";
@@ -131,7 +132,7 @@ export async function prepareFirstMonthStep(db: SupabaseClient, workspaceId: str
   } catch (error) {
     console.error("[first-month]", error instanceof Error ? error.message : "Preparation failed");
     if (jobId) {
-      const saved = await db.from("first_month_jobs").update({ status: attempts >= 2 ? "failed" : "queued", attempts }).eq("workspace_id", workspaceId).eq("id", jobId);
+      const saved = await db.from("first_month_jobs").update({ status: attempts >= 2 || (error instanceof DraftReadinessError && !error.retryable) ? "failed" : "queued", attempts }).eq("workspace_id", workspaceId).eq("id", jobId);
       if (saved.error) throw saved.error;
       continueWork = true;
     } else {

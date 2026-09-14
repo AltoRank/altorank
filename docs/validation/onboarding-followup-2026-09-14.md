@@ -2,6 +2,8 @@
 
 This follows the [original release assessment](./onboarding-release-2026-09-14.md). It covers the first keyword choices and selected draft, the trial gate, and dashboard/month continuity. The original eight-case results remain the baseline. Repeated development replays are not fresh independent successes or a conversion benchmark.
 
+The subsequent [first-draft readiness changes](./onboarding-readiness-2026-09-14.md) address partial evidence and withheld-preview recovery, with additional real quota controls. This report preserves the earlier findings.
+
 ## Implemented
 
 - Removed the `node:net` import that made the latest homepage-recovery change fail the production browser bundle.

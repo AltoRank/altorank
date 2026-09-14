@@ -143,3 +143,8 @@ describe("first-month preparation", () => {
     expect(generate).not.toHaveBeenCalled();
   });
 });
+
+it("does not automatically regenerate a candidate with a known quality failure",async()=>{
+ const {DraftReadinessError}=await import("@/lib/content/draft-readiness");jobs(1);generate.mockRejectedValue(new DraftReadinessError("material-findings"));
+ await step();expect(tables.first_month_jobs[0]).toMatchObject({status:"failed",attempts:1});expect(tables.articles).toHaveLength(1);expect(wake).toHaveBeenCalled();
+});

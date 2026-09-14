@@ -53,3 +53,15 @@ it("preserves the saved plan and reports draft failures without completing setup
   expect(db.tables.onboarding_runs[0].phases).toContainEqual(expect.objectContaining({phase:"drafting",status:"failed"}));
   expect(db.tables.workspaces[0].onboarded_at).toBeUndefined();
 });
+
+it("a withheld draft preserves choices and returns to selection without completing onboarding", async()=>{
+ const {DraftReadinessError}=await import("@/lib/content/draft-readiness");
+ generate.mockRejectedValue(new DraftReadinessError("material-findings"));
+ await POST(request(choice));await afters[0]();
+ expect(db.tables.onboarding_runs[0]).toMatchObject({status:"awaiting_choice",finished_at:null});
+ expect(db.tables.onboarding_runs[0].phases).toContainEqual(expect.objectContaining({phase:"drafting",status:"failed",detail:expect.stringContaining("no draft allowance was used")}));
+ expect(fulfil).not.toHaveBeenCalled();expect(db.tables.workspaces[0].onboarded_at).toBeUndefined();
+ generate.mockResolvedValue({articleId:"a2",title:"Approved headline",wordCount:900,factCheck:{verdict:"review"}});
+ expect((await POST(request(choice))).status).toBe(200);await afters[1]();
+ expect(fulfil).toHaveBeenCalledTimes(1);
+});

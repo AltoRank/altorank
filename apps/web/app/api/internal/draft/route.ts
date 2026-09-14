@@ -1,3 +1,4 @@
+import {DraftReadinessError} from "@/lib/content/draft-readiness";
 /**
  * Write exactly one draft, in its own invocation.
  *
@@ -156,7 +157,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    await stamp({ phase: "drafting", status: "failed", detail }, { finish: true });
+    await stamp({ phase: "drafting", status: "failed", detail }, { finish: true, retryChoice: err instanceof DraftReadinessError });
     return NextResponse.json({ status: "error", error: detail }, { status: 500 });
   }
 }

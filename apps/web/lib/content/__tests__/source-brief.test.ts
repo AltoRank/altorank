@@ -1,5 +1,5 @@
 import {expect,it} from "vitest";
-import {validateSourceBrief,sourceBriefInstructions,type SourceFact} from "../source-brief";
+import {validateSourceBrief,attachSourceReadiness,sourceBriefInstructions,type SourceFact} from "../source-brief";
 import type {DraftEvidencePlan} from "../draft-evidence";
 const text="Starter $9 monthly. Standard Everything in Starter, plus Marketing automation and send time optimization.";
 const sources=[{url:"https://brevo.com/pricing",title:"Pricing",headings:[],text}];
@@ -67,4 +67,32 @@ it("does not count aliases on one vendor's domain as separate vendors",()=>{
 it("does not bind a Professional feature to a distinct Pro plan",()=>{
  const f={...fact,plan:"Pro",quote:"Automation included.",scopeQuote:"Professional Automation included."};
  expect(validateSourceBrief(raw([f]),[{...sources[0],text:f.scopeQuote}],plan,"Brevo").facts).toHaveLength(0);
+});
+
+it("requires every core question, not one answered question among missing ones",()=>{
+ const result=validateSourceBrief(raw([fact]),sources,{...plan,requirements:[...plan.requirements,"What does that plan cost?"]},"Brevo");
+ expect(result.status).toBe("insufficient");expect(result.coverage[1].factIndices).toEqual([]);
+});
+it("requires the same two vendors to cover every comparison criterion",()=>{
+ const pages=[...sources,{...sources[0],url:"https://acme.test/pricing",text:"Team $12 monthly. Team includes automation."}];
+ const otherPrice={...fact,subject:"Acme",plan:"Team",kind:"price" as const,sourceIndex:1,quote:"$12 monthly.",scopeQuote:"Team $12 monthly."};
+ const otherFeature={...otherPrice,kind:"capability" as const,quote:"automation.",scopeQuote:"Team includes automation."};
+ const ownPrice={...fact,kind:"price" as const,plan:"Starter",quote:"$9 monthly.",scopeQuote:"Starter $9 monthly."};
+ const facts=[fact,ownPrice,otherPrice,otherFeature];
+ const input={facts,options:[{label:"Brevo",factIndices:[0,1]},{label:"Acme",factIndices:[2,3]}],coverage:[{requirementIndex:0,factIndices:[0,3]},{requirementIndex:1,factIndices:[1]}]};
+ const comparison={...plan,task:"comparison" as const,comparisonType:"vendors" as const,requirements:["Automation?","Price?"]};
+ expect(validateSourceBrief(JSON.stringify(input),pages,comparison,"Brevo").status).toBe("insufficient");
+ input.coverage[1].factIndices.push(2);
+ const result=validateSourceBrief(JSON.stringify(input),pages,comparison,"Brevo");
+ expect(result.status).toBe("prepared");expect(result.options?.map(o=>o.label)).toEqual(["Brevo","Acme"]);
+ input.options[1].factIndices=[0,1];
+ expect(validateSourceBrief(JSON.stringify(input),pages,comparison,"Brevo").status).toBe("insufficient");
+});
+
+it("traceable quotes are not readiness when they fail to answer the essential question",()=>{
+ const brief=validateSourceBrief(raw([fact]),sources,plan,"Brevo");
+ expect(attachSourceReadiness(brief,JSON.stringify({questions:[{requirementIndex:0,answered:false,reason:"The source describes a different workflow."}]})).status).toBe("insufficient");
+ expect(attachSourceReadiness(brief,JSON.stringify({questions:[{requirementIndex:0,answered:true,reason:"The named plan explicitly includes automation."}]})).status).toBe("prepared");
+ expect(attachSourceReadiness(brief,JSON.stringify({questions:[]})).status).toBe("unavailable");
+ expect(attachSourceReadiness(brief,null).status).toBe("unavailable");
 });

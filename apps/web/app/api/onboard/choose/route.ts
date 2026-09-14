@@ -1,3 +1,4 @@
+import {DraftReadinessError} from "@/lib/content/draft-readiness";
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
       }
       await db.from("workspaces").update({ onboarded_at: new Date().toISOString(), status: "on", auto_generate: true }).eq("id", workspaceId);
     } catch (error) {
-      await stampRun(db, run.id, { phase: "drafting", status: "failed", detail: error instanceof Error ? error.message : "The chosen draft could not finish. Your topics are saved." }, { finish: true });
+      await stampRun(db, run.id, { phase: "drafting", status: "failed", detail: error instanceof Error ? error.message : "The chosen draft could not finish. Your topics are saved." }, { finish: true, retryChoice: error instanceof DraftReadinessError });
     } finally { await audit; }
   });
   return NextResponse.json({ runId: run.id });
