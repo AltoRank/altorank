@@ -102,7 +102,7 @@ jobs:
         env:
           E2E_BILLING: "1"
           E2E_BASE_URL: "http://localhost:3111"
-        run: npm run e2e -- onboarding.spec.ts
+        run: npm run e2e -- onboarding.spec.ts onboarding-recovery.spec.ts
 
       - uses: actions/upload-artifact@v4
         if: failure()

@@ -825,7 +825,7 @@ function RunScreen({
 
         {state?.awaitingChoice && <section className="mx-auto mb-6 max-w-[640px] rounded-lg border border-accent/40 bg-panel p-5">
           <h2 className="text-lg font-semibold">Choose your first article</h2>
-          {state.steps.find(s=>s.phase === "drafting" && s.status === "failed")?.detail && <p role="alert" className="mt-2 text-sm text-err-ink">{state.steps.find(s=>s.phase === "drafting" && s.status === "failed")!.detail}</p>}
+          {!choiceBusy && state.steps.find(s=>s.phase === "drafting" && s.status === "failed")?.detail && <p role="alert" className="mt-2 text-sm text-err-ink">{state.steps.find(s=>s.phase === "drafting" && s.status === "failed")!.detail}</p>}
           <p className="mt-2 text-sm text-ink-2">Read the buyer’s decision and evidence below. We’ll write the idea you choose.</p>
           <TopicBriefs planned={planned} onChoose={async (topic) => {
             setChoiceBusy(true); setChoiceError(null);
