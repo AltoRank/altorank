@@ -1,0 +1,12 @@
+{
+  "largeTaskGroupPayloadBytes": 37534,
+  "serviceOnlyTaskGroups": true,
+  "legacyTaskGroupSaved": true,
+  "concurrentQualificationPreserved": true,
+  "concurrentClaimRequests": 12,
+  "leaseWinners": 1,
+  "authenticatedCrossAccountIsolation": true,
+  "serviceOnlyClaim": true,
+  "expiredLeaseRecovered": true,
+  "expiredTerminalLeaseRetry": true
+}

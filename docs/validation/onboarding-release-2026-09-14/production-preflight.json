@@ -1,0 +1,128 @@
+{
+  "observedAt": "2026-09-14T07:04:19.320Z",
+  "scope": "Read-only current production settings; no customer rows, model requests, emails, payment or production mutations.",
+  "project": {
+    "id": "prj_jEVlxwh4bwAFKSwK3Bf2HWZr9G0G",
+    "name": "altorank-app",
+    "nodeVersion": "24.x",
+    "rootDirectory": "apps/web",
+    "resourceConfig": {
+      "fluid": true,
+      "functionDefaultRegions": [
+        "iad1"
+      ],
+      "buildMachineType": "basic",
+      "buildMachineSelection": "fixed"
+    },
+    "productionSha": "79795f626ec15d48ef9bcc74e860b33fe7ab6542"
+  },
+  "environment": {
+    "NEXT_PUBLIC_APP_URL": {
+      "present": true,
+      "type": "encrypted",
+      "readable": true
+    },
+    "NEXT_PUBLIC_SUPABASE_URL": {
+      "present": true,
+      "type": "encrypted",
+      "readable": true
+    },
+    "SUPABASE_SERVICE_ROLE_KEY": {
+      "present": true,
+      "type": "encrypted"
+    },
+    "DATABASE_URL": {
+      "present": true,
+      "type": "encrypted",
+      "readable": true
+    },
+    "CRON_SECRET": {
+      "present": true,
+      "type": "encrypted"
+    },
+    "ANTHROPIC_API_KEY": {
+      "present": true,
+      "type": "encrypted"
+    },
+    "DATAFORSEO_LOGIN": {
+      "present": true,
+      "type": "encrypted"
+    },
+    "DATAFORSEO_PASSWORD": {
+      "present": true,
+      "type": "encrypted"
+    },
+    "DATAFORSEO_API_KEY": {
+      "present": true,
+      "type": "encrypted"
+    },
+    "RESEND_API_KEY": {
+      "present": true,
+      "type": "encrypted"
+    },
+    "RESEND_FROM_EMAIL": {
+      "present": true,
+      "type": "plain"
+    },
+    "OPENAI_API_KEY": {
+      "present": true,
+      "type": "encrypted"
+    },
+    "STRIPE_SECRET_KEY": {
+      "present": true,
+      "type": "sensitive",
+      "readable": false
+    },
+    "STRIPE_WEBHOOK_SECRET": {
+      "present": true,
+      "type": "sensitive"
+    },
+    "STRIPE_PRICE_STARTER": {
+      "present": true,
+      "type": "sensitive",
+      "readable": false
+    },
+    "STRIPE_PRICE_STARTER_YEARLY": {
+      "present": true,
+      "type": "sensitive",
+      "readable": false
+    },
+    "STRIPE_PRICE_GROWTH": {
+      "present": true,
+      "type": "sensitive",
+      "readable": false
+    },
+    "STRIPE_PRICE_GROWTH_YEARLY": {
+      "present": true,
+      "type": "sensitive",
+      "readable": false
+    }
+  },
+  "prices": [],
+  "webhooks": [],
+  "appUrl": "https://app.altorank.co",
+  "deployment": {
+    "id": "dpl_377QQWCeNEYE5CMaXAqSqk3xRuHD",
+    "readyState": "READY",
+    "url": "altorank-hp58au91r-altorank.vercel.app",
+    "plan": "hobby",
+    "regions": [
+      "fra1"
+    ],
+    "functions": null,
+    "resourceConfig": {
+      "buildMachine": {
+        "defaultPurchaseType": "basic",
+        "purchaseType": "basic",
+        "machineSelectionType": "fixed",
+        "selectionSource": "plan-default",
+        "cores": 2,
+        "memory": 8192
+      }
+    }
+  },
+  "database": {
+    "status": 0,
+    "readOnlySchema": "BEGIN\n version |        name         \n---------+---------------------\n 088     | topic_qualification\n 089     | checkout_attempts\n(2 rows)\n\n first_month_runs | first_month_jobs \n------------------+------------------\n                  | \n(1 row)\n\n column_name \n-------------\n opportunity\n(1 row)\n\nCOMMIT\n"
+  }
+}

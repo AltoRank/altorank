@@ -74,4 +74,20 @@ async function main() {
   writeFileSync(`${out}/article.html`, draft.html, {mode:0o600});
   console.log('DONE', domain, draft.title, draft.wordCount, report.choiceToDraftSeconds);
 }
-main().catch(error => {report.error = error instanceof Error ? error.message : String(error);save();console.error('FAILED', report.domain, report.error);process.exitCode=1;});
+main().catch(async error => {
+  report.error = error instanceof Error ? error.message : String(error);
+  report.finishedAt = new Date().toISOString();
+  // Failed discovery still incurs provider spend; missing accounting is unknown.
+  report.spend = null;
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (report.workspaceId && url && key && ['localhost', '127.0.0.1'].includes(new URL(url).hostname)) {
+      const { createClient } = await import('@supabase/supabase-js');
+      const { data, error: spendError } = await createClient(url, key, {auth:{persistSession:false}})
+        .from('provider_spend').select('provider,operation,cost_usd').eq('workspace_id', report.workspaceId);
+      if (!spendError) report.spend = data;
+    }
+  } catch { /* Preserve the original failure; unknown spend is not zero. */ }
+  save(); console.error('FAILED', report.domain, report.error); process.exitCode = 1;
+});

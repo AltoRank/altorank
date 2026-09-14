@@ -1,0 +1,386 @@
+{
+  "scope": "Three repetitions of evaluator-authored paired controls. Synthetic source, real model. Not an independent holdout.",
+  "results": [
+    {
+      "run": 1,
+      "checks": {
+        "allChecked": true,
+        "noScopeFalseWarnings": true,
+        "falseLimitCaught": true,
+        "guaranteeCaught": true,
+        "supportedLimitNotFlagged": true
+      },
+      "verification": {
+        "status": "checked",
+        "totalPassages": 6,
+        "checkedPassages": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "claims": [
+          {
+            "quote": "This guide compares three tools and then works through a hypothetical example.",
+            "category": "qualitative",
+            "verdict": "not-factual",
+            "reason": "This is an article roadmap statement, not an external factual claim.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 0
+          },
+          {
+            "quote": "Suppose your team has six people and handles 600 conversations a month.",
+            "category": "qualitative",
+            "verdict": "not-factual",
+            "reason": "Clearly hypothetical input used for illustration, not a factual claim about a real product.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 1
+          },
+          {
+            "quote": "Acme Essentials costs $95 per month",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches vendor pricing source exactly.",
+            "evidence": [
+              {
+                "sourceIndex": 0,
+                "quote": "Acme Essentials costs $95 per month."
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 3
+          },
+          {
+            "quote": "includes unlimited AI conversations",
+            "category": "product",
+            "verdict": "contradicted",
+            "reason": "Source states a fixed monthly limit of 100 AI conversations, not unlimited.",
+            "evidence": [
+              {
+                "sourceIndex": 0,
+                "quote": "It includes ten seats and 100 AI conversations per month."
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 3
+          },
+          {
+            "quote": "Using Acme guarantees that nobody ever asks where a file is again.",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "Guaranteed behavioral outcome claim; source only says files may be attached, not that this eliminates all questions about file location.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 4
+          },
+          {
+            "quote": "Acme Essentials includes ten seats.",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches vendor source describing plan seat count.",
+            "evidence": [
+              {
+                "sourceIndex": 0,
+                "quote": "It includes ten seats and 100 AI conversations per month."
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 5
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://vendor.test/pricing",
+            "title": "Controlled vendor fixture"
+          }
+        ],
+        "failures": [],
+        "modelCalls": [
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "5b9fbefe3f92d0a696a2a1294a6252859b17b68bd8fcec6dc442980bae763b55",
+            "elapsedMs": 8930,
+            "status": "complete",
+            "inputTokens": 2535,
+            "outputTokens": 883,
+            "costUsd": 0.02085
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "bc0496105dc36d4c7446ee256dad7f4ac962df27d0a5311a174c183f7e668064",
+            "elapsedMs": 2396,
+            "status": "complete",
+            "inputTokens": 2008,
+            "outputTokens": 133,
+            "costUsd": 0.008019
+          }
+        ]
+      }
+    },
+    {
+      "run": 2,
+      "checks": {
+        "allChecked": true,
+        "noScopeFalseWarnings": true,
+        "falseLimitCaught": true,
+        "guaranteeCaught": true,
+        "supportedLimitNotFlagged": true
+      },
+      "verification": {
+        "status": "checked",
+        "totalPassages": 6,
+        "checkedPassages": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "claims": [
+          {
+            "quote": "This guide compares three tools and then works through a hypothetical example.",
+            "category": "qualitative",
+            "verdict": "not-factual",
+            "reason": "Roadmap statement describing article structure, not an external factual claim.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 0
+          },
+          {
+            "quote": "Suppose your team has six people and handles 600 conversations a month.",
+            "category": "qualitative",
+            "verdict": "not-factual",
+            "reason": "Clearly hypothetical input for an illustrative example, not a real product claim.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 1
+          },
+          {
+            "quote": "For example, attach a logo to a task called Finalize brand assets.",
+            "category": "qualitative",
+            "verdict": "not-factual",
+            "reason": "Generic illustrative example of file attachment usage, not a named-product capability claim.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 2
+          },
+          {
+            "quote": "Acme Essentials costs $95 per month",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches vendor pricing exactly.",
+            "evidence": [
+              {
+                "sourceIndex": 0,
+                "quote": "Acme Essentials costs $95 per month."
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 3
+          },
+          {
+            "quote": "includes unlimited AI conversations",
+            "category": "product",
+            "verdict": "contradicted",
+            "reason": "Vendor source states a fixed monthly cap of 100 conversations with extra cost beyond that, not unlimited.",
+            "evidence": [
+              {
+                "sourceIndex": 0,
+                "quote": "It includes ten seats and 100 AI conversations per month. Additional AI conversations cost extra."
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 3
+          },
+          {
+            "quote": "Using Acme guarantees that nobody ever asks where a file is again.",
+            "category": "qualitative",
+            "verdict": "unsupported",
+            "reason": "Source only says files may be attached to tasks; no guarantee about eliminating file-location questions is stated.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 4
+          },
+          {
+            "quote": "Acme Essentials includes ten seats.",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches vendor pricing page seat count.",
+            "evidence": [
+              {
+                "sourceIndex": 0,
+                "quote": "It includes ten seats and 100 AI conversations per month."
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 5
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://vendor.test/pricing",
+            "title": "Controlled vendor fixture"
+          }
+        ],
+        "failures": [],
+        "modelCalls": [
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "5b9fbefe3f92d0a696a2a1294a6252859b17b68bd8fcec6dc442980bae763b55",
+            "elapsedMs": 10388,
+            "status": "complete",
+            "inputTokens": 2535,
+            "outputTokens": 1015,
+            "costUsd": 0.02283
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "e923aefcaaba37434cf90bd48237efb733f2d4880851c1cef25463009683fcf9",
+            "elapsedMs": 2404,
+            "status": "complete",
+            "inputTokens": 2006,
+            "outputTokens": 127,
+            "costUsd": 0.007923
+          }
+        ]
+      }
+    },
+    {
+      "run": 3,
+      "checks": {
+        "allChecked": true,
+        "noScopeFalseWarnings": true,
+        "falseLimitCaught": true,
+        "guaranteeCaught": true,
+        "supportedLimitNotFlagged": true
+      },
+      "verification": {
+        "status": "checked",
+        "totalPassages": 6,
+        "checkedPassages": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "claims": [
+          {
+            "quote": "This guide compares three tools and then works through a hypothetical example.",
+            "category": "qualitative",
+            "verdict": "not-factual",
+            "reason": "Article roadmap statement, not an external factual claim.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 0
+          },
+          {
+            "quote": "Suppose your team has six people and handles 600 conversations a month.",
+            "category": "qualitative",
+            "verdict": "not-factual",
+            "reason": "Clearly hypothetical input for illustrative calculation, not a factual claim.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 1
+          },
+          {
+            "quote": "For example, attach a logo to a task called Finalize brand assets.",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Illustrates the documented ability to attach files to tasks.",
+            "evidence": [
+              {
+                "sourceIndex": 0,
+                "quote": "Files may be attached to tasks."
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 2
+          },
+          {
+            "quote": "Acme Essentials costs $95 per month and includes unlimited AI conversations.",
+            "category": "product",
+            "verdict": "contradicted",
+            "reason": "Source states a 100 conversation monthly limit, not unlimited.",
+            "evidence": [
+              {
+                "sourceIndex": 0,
+                "quote": "It includes ten seats and 100 AI conversations per month."
+              }
+            ],
+            "contradiction": "Acme Essentials costs $95 per month and includes unlimited AI conversations.",
+            "passageIndex": 3
+          },
+          {
+            "quote": "Using Acme guarantees that nobody ever asks where a file is again.",
+            "category": "product",
+            "verdict": "unsupported",
+            "reason": "Source confirms files can be attached but makes no guarantee about eliminating file-location questions.",
+            "evidence": [],
+            "contradiction": "",
+            "passageIndex": 4
+          },
+          {
+            "quote": "Acme Essentials includes ten seats.",
+            "category": "product",
+            "verdict": "supported",
+            "reason": "Matches documented seat count for this plan.",
+            "evidence": [
+              {
+                "sourceIndex": 0,
+                "quote": "It includes ten seats and 100 AI conversations per month."
+              }
+            ],
+            "contradiction": "",
+            "passageIndex": 5
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://vendor.test/pricing",
+            "title": "Controlled vendor fixture"
+          }
+        ],
+        "failures": [],
+        "modelCalls": [
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "5b9fbefe3f92d0a696a2a1294a6252859b17b68bd8fcec6dc442980bae763b55",
+            "elapsedMs": 9598,
+            "status": "complete",
+            "inputTokens": 2535,
+            "outputTokens": 930,
+            "costUsd": 0.021555
+          },
+          {
+            "operation": "article/claim-verification",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "cacd6b7efe6e9a1fbfc59580e8334b9178f53666fbe14938c6f78c9a5d47aed2",
+            "elapsedMs": 2991,
+            "status": "complete",
+            "inputTokens": 2000,
+            "outputTokens": 236,
+            "costUsd": 0.00954
+          }
+        ]
+      }
+    }
+  ]
+}

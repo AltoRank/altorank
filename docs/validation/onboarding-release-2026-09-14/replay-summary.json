@@ -1,0 +1,221 @@
+{
+  "scope": "Development replays after source extraction, writer scope and review classification changes. Same saved topic and workspace, new production generation. Not fresh onboardings, blinded comparisons or publication approval. Product source identical between detached eb5c1f9 and main c2e853d.",
+  "cases": [
+    {
+      "domain": "buffer.com",
+      "seconds": 185.949,
+      "words": 1089,
+      "title": "Multi-Platform Social Media Management Tools for Agencies: Comparing Collaboration Features",
+      "claimStatus": "checked",
+      "checkedPassages": 35,
+      "totalPassages": 35,
+      "findings": [
+        {
+          "text": "Statusbrew also lists a separate agency plan starting \"From $49/mo/client,\" which the page describes as including unlimited spaces, shareable calendars, and reports. The exact dollar figure for the standard Premium tier wasn't shown as a number in the page text reviewed here, so confirm the current rate directly on Statusbrew's site before budgeting a client roster against it.",
+          "reason": "Attributes 'Assignment & approval workflows' to the $49/mo/client Agency plan, but source shows this feature listed only under the Premium tier, not confirmed for Agency plan.",
+          "removed": false,
+          "category": "product",
+          "severity": "material"
+        },
+        {
+          "text": "From $49/month/client x 5 = $245/month",
+          "reason": "Cost table pairs Statusbrew's Agency plan price with a feature ('Assignment & approval workflows') only sourced from the separate Premium tier.",
+          "removed": false,
+          "category": "product",
+          "severity": "material"
+        },
+        {
+          "text": "For an agency weighing collaboration features specifically, the choice comes down to how your client relationships are structured. Buffer's per-channel Team plan fits agencies that add and drop client channels regularly and want approval workflows bundled into one flat rate per channel with unlimited team members. Planable's per-workspace model fits agencies that want a hard Required approval gate isolated by client. Statusbrew's assignment and SLA features fit agencies whose bottleneck is routing incoming messages to the right person, not just approving outgoing posts. Whichever direction fits, verify the current terms on each vendor's own pricing page before you commit a client roster to it.",
+          "reason": "Making the Call restates the same tool-fit conclusions (Buffer for churn, Planable for required gate, Statusbrew for SLA routing) already given in the comparison section.",
+          "removed": false,
+          "category": "repetition",
+          "severity": "editorial"
+        },
+        {
+          "text": "If clients need strict separation and a hard \"nothing publishes without sign-off\" rule, Planable's Required approval tier or Statusbrew's assignment workflow map more directly onto that requirement than a flat team price does.",
+          "reason": "Statusbrew's page lists 'Assignment & approval workflows' as a feature but never states it enforces a mandatory nothing-publishes-without-sign-off rule like Planable's Required tier.",
+          "removed": false,
+          "category": "qualitative",
+          "severity": "material"
+        }
+      ],
+      "evidencePlan": {
+        "task": "comparison",
+        "status": "planned",
+        "requirements": [
+          "What are the current pricing plans and costs for Hootsuite's social media management features?",
+          "What are the current pricing plans and costs for Sprout Social's team collaboration and approval workflow features?",
+          "What platform coverage does each tool offer (which social networks can be managed)?",
+          "What specific team collaboration and content approval workflow features does each tool provide?"
+        ],
+        "selectedUrls": [
+          "https://statusbrew.com/pricing",
+          "https://planable.io/pricing/"
+        ],
+        "retrievedUrls": [
+          "https://statusbrew.com/pricing",
+          "https://planable.io/pricing/"
+        ]
+      },
+      "sourceUrls": [
+        "https://buffer.com/pricing",
+        "https://buffer.com/",
+        "https://zapier.com/blog/best-social-media-management-tools/",
+        "https://learn.g2.com/best-social-media-management-tools",
+        "https://statusbrew.com/pricing",
+        "https://planable.io/pricing/"
+      ]
+    },
+    {
+      "domain": "allbirds.com",
+      "seconds": 153.377,
+      "words": 757,
+      "title": "How to care for merino wool shoes: washing, drying, and storage tips",
+      "claimStatus": "checked",
+      "checkedPassages": 39,
+      "totalPassages": 39,
+      "findings": [
+        {
+          "text": "Insoles and laces typically hold onto more sweat and grime than the upper, so washing them apart gets better results.",
+          "reason": "Source gives no reasoning about sweat/grime retention justifying separate washing of insoles/laces.",
+          "removed": false,
+          "category": "qualitative",
+          "severity": "material"
+        },
+        {
+          "text": "since these can discolor or weaken wool fibers",
+          "reason": "Source instructs avoiding bleach/brightening agents but gives no causal explanation about discoloring or weakening wool fibers.",
+          "removed": false,
+          "category": "qualitative",
+          "severity": "material"
+        },
+        {
+          "text": "storing damp wool invites musty odor and can affect shape",
+          "reason": "Source only ties odor to wearing in wet conditions, not to storing damp shoes causing musty odor/shape change.",
+          "removed": false,
+          "category": "qualitative",
+          "severity": "material"
+        },
+        {
+          "text": "prolonged heat exposure is already the reason tumble drying is discouraged",
+          "reason": "Source attributes tumble-dry warning to shrinkage risk, not explicitly to 'prolonged heat exposure' as stated.",
+          "removed": false,
+          "category": "qualitative",
+          "severity": "material"
+        },
+        {
+          "text": "Air dry at room temperature, out of direct sun",
+          "reason": "Source only instructs 'air dry only' without specifying room temperature or avoiding direct sun.",
+          "removed": false,
+          "category": "product",
+          "severity": "material"
+        },
+        {
+          "text": "Store fully dry, in a cool dry spot, shoe tree optional",
+          "reason": "Source contains no storage instructions regarding dryness, location, or shoe trees.",
+          "removed": false,
+          "category": "product",
+          "severity": "material"
+        },
+        {
+          "text": "Storing damp, leaving in hot or humid spaces",
+          "reason": "Source does not address storage conditions like dampness, heat, or humidity for stored shoes.",
+          "removed": false,
+          "category": "product",
+          "severity": "material"
+        }
+      ],
+      "evidencePlan": {
+        "task": "procedure",
+        "status": "planned",
+        "requirements": [
+          "What are the step-by-step washing instructions for merino wool shoes (machine and hand washing)?",
+          "What water temperature and cycle settings should be used when machine washing merino wool shoes?",
+          "How should merino wool shoes be dried, and what methods must be avoided?",
+          "How should merino wool shoes be stored to maintain their condition and extend lifespan?"
+        ],
+        "selectedUrls": [],
+        "retrievedUrls": []
+      },
+      "sourceUrls": [
+        "https://www.allbirds.com/",
+        "https://merinoshoes.com/pages/shoe-care?srsltid=AfmBOorEbGvA1GcjSEhhXoj36QQ3Hg_ViEq0wdKCndVoRJlC0Y-kqA_Z"
+      ]
+    },
+    {
+      "domain": "crisp.chat",
+      "seconds": 204.616,
+      "words": 1417,
+      "title": "How to choose a conversational AI platform: pricing, training, and channel coverage compared",
+      "claimStatus": "checked",
+      "checkedPassages": 46,
+      "totalPassages": 46,
+      "findings": [
+        {
+          "text": "Website chat widget on every plan; email from the Mini plan up; WhatsApp Business, Instagram DMs, SMS, Line, Viber, Messenger, Telegram, and X from the Essentials plan up, through its omnichannel inbox",
+          "reason": "Claims Messenger, Telegram and X are included from Crisp's Essentials plan, but the source only explicitly ties WhatsApp, Instagram DMs, SMS, Line and Viber to Essentials' omnichannel inbox; other channels' plan tier isn't evidenced.",
+          "removed": false,
+          "category": "product",
+          "severity": "material"
+        },
+        {
+          "text": "ElevenLabs lists a free plan among its named tiers on its agents pricing page",
+          "reason": "The ElevenLabs pricing source content did not render any plan tiers or mention of a free plan.",
+          "removed": false,
+          "category": "product",
+          "severity": "material"
+        },
+        {
+          "text": "Retell AI syncs a knowledge base to keep the agent updated automatically",
+          "reason": "Sources describe a paid knowledge base add-on/pricing but no automatic-sync behavior for Retell AI's knowledge base.",
+          "removed": false,
+          "category": "product",
+          "severity": "material"
+        }
+      ],
+      "evidencePlan": {
+        "task": "comparison",
+        "status": "planned",
+        "requirements": [
+          "What is the current pricing for Crisp, Retell AI, ElevenLabs, and at least one additional conversational AI platform for small to medium-sized support teams?",
+          "Which conversational AI platforms support omnichannel messaging (chat, email, WhatsApp, SMS, social) and what are the channel coverage differences?",
+          "What training methods does each platform require to set up AI agents (no-code builder, knowledge base integration, custom training)?",
+          "How do setup time, automation capacity (conversations per month), and included AI credits compare across platforms at comparable pricing tiers?"
+        ],
+        "selectedUrls": [
+          "https://www.retellai.com/pricing",
+          "https://elevenlabs.io/pricing",
+          "https://www.usefini.com/",
+          "https://www.retellai.com/blog/synhtflow-ai-review",
+          "https://www.retellai.com/blog/retell-ai-vs-bland-ai-choose-the-right-voice-agent-for-your-business",
+          "https://www.retellai.com/enterprise-plan",
+          "https://elevenlabs.io/pricing/agents"
+        ],
+        "retrievedUrls": [
+          "https://www.retellai.com/pricing",
+          "https://elevenlabs.io/pricing",
+          "https://www.usefini.com/",
+          "https://www.retellai.com/blog/synhtflow-ai-review",
+          "https://www.retellai.com/blog/retell-ai-vs-bland-ai-choose-the-right-voice-agent-for-your-business",
+          "https://www.retellai.com/enterprise-plan",
+          "https://elevenlabs.io/pricing/agents"
+        ]
+      },
+      "sourceUrls": [
+        "https://crisp.chat/en/pricing/",
+        "https://crisp.chat/en/",
+        "https://www.retellai.com/blog/conversational-ai-platforms",
+        "https://elevenlabs.io/conversational-ai",
+        "https://aws.amazon.com/what-is/conversational-ai/",
+        "https://www.retellai.com/pricing",
+        "https://elevenlabs.io/pricing",
+        "https://www.usefini.com/",
+        "https://www.retellai.com/blog/synhtflow-ai-review",
+        "https://www.retellai.com/blog/retell-ai-vs-bland-ai-choose-the-right-voice-agent-for-your-business",
+        "https://www.retellai.com/enterprise-plan",
+        "https://elevenlabs.io/pricing/agents",
+        "https://crisp.chat/"
+      ]
+    }
+  ]
+}
