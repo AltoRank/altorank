@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { latestRun } from "@/lib/onboarding/run-store";
+import { createWorkerClient } from "@/lib/onboarding/worker-client";
 import { wakeChoicePreparation } from "@/lib/onboarding/choice-preparation";
 
 export const maxDuration = 300;
@@ -17,6 +18,7 @@ export const maxDuration = 300;
 // what decides whether the row is visible at all.
 
 export async function GET(request: NextRequest) {
+  const deadline = Date.now() + 285_000;
   const supabase = await createClient();
 
   const {
@@ -42,7 +44,7 @@ export async function GET(request: NextRequest) {
   const now = Date.now();
   const snapshot = await latestRun(supabase, workspaceId, now, request.nextUrl.searchParams.get("runId") ?? undefined);
   if (snapshot.run?.status === "running") after(async()=>{
-    try { await wakeChoicePreparation(createServiceClient(),snapshot.run!.id); }
+    try { await wakeChoicePreparation(createWorkerClient(deadline),snapshot.run!.id,{durationMs:Math.max(0,deadline-Date.now())}); }
     catch { console.warn("[onboarding] source preparation resume interrupted"); }
   });
   return NextResponse.json(

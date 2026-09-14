@@ -1,3 +1,4 @@
+import { currentResearchBudget } from "@/lib/seo/request-context";
 import { balanceSources } from "@/lib/keyword-research/diversity";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 // ---------------------------------------------------------------------------
@@ -191,7 +192,7 @@ async function ownSitemapPaths(
 ): Promise<Set<string> | null> {
   if (depth !== "full" || rankedCount === 0) return null;
   const maxUrls = 5_000;
-  const deadline = Date.now() + SITEMAP_WALK_MS;
+  const deadline = Math.min(Date.now() + SITEMAP_WALK_MS, currentResearchBudget()?.deadline ?? Infinity);
   try {
     const urls = await discoverUrls(domain, { timeoutMs: 6_000, maxUrls, deadline, bodies });
     // Both of these mean the list is a prefix of the sitemap rather than the
@@ -409,6 +410,8 @@ export async function analyseDomain(options: {
   maxPages?: number;
   /** Onboarding can prepare briefs before the separate PageSpeed audit. */
   deferPageSpeed?: boolean;
+  /** Retain topic evidence; defer the full technical audit until after onboarding. */
+  firstChoice?: boolean;
   /** How long to wait once when a host rate-bans the crawl. Tests pass 0. */
   rateBanWaitMs?: number;
   /**
@@ -433,7 +436,9 @@ export async function analyseDomain(options: {
   // counts requests sees each once.
   const recorded = recordingFetcher();
   let readiness: ReadinessResult | null = null;
-  try {
+  if (options.firstChoice) {
+    layers.push({ id: "readiness", status: "unavailable", detail: "Deferred until after topic selection" });
+  } else try {
     const result = await runAgentReadiness(domain, recorded);
     if (result.error) {
       layers.push({ id: "readiness", status: "failed", detail: result.error });
@@ -473,9 +478,9 @@ export async function analyseDomain(options: {
       depth === "quick" ? 1 : Math.min(options.maxPages ?? MAX_PAGES, MAX_PAGES),
       depth === "quick" ? 0 : MAX_DEPTH,
       CRAWL_DELAY_MS,
-      options.crawlRetryDelaysMs ?? CRAWL_RETRY_DELAYS_MS,
-      { seedHtml },
-      depth === "quick" ? null : (options.rateBanWaitMs ?? RATE_BAN_WAIT_MS),
+      options.crawlRetryDelaysMs ?? (options.firstChoice ? [] : CRAWL_RETRY_DELAYS_MS),
+      { seedHtml, ...(options.firstChoice ? { deadline: currentResearchBudget()?.deadline } : {}) },
+      depth === "quick" || options.firstChoice ? null : (options.rateBanWaitMs ?? RATE_BAN_WAIT_MS),
     );
     crawlAttempts = attempts;
     crawlRateLimited = rateLimited;
@@ -522,7 +527,7 @@ export async function analyseDomain(options: {
 
   // --- PageSpeed -----------------------------------------------------------
   let pagespeed: Record<string, unknown> = {};
-  const ps = depth === "full" && !options.deferPageSpeed ? await fetchPageSpeedDetailed(baseUrl) : { ok: false as const, kind: "unavailable" as const, detail: options.deferPageSpeed ? "Deferred until after topic selection" : "not run on a quick look" };
+  const ps = depth === "full" && !options.deferPageSpeed && !options.firstChoice ? await fetchPageSpeedDetailed(baseUrl) : { ok: false as const, kind: "unavailable" as const, detail: options.deferPageSpeed || options.firstChoice ? "Deferred until after topic selection" : "not run on a quick look" };
   if (ps.ok) {
     // PageSpeedResult is a fixed shape; the column is jsonb, so it is stored
     // as a plain object rather than reshaped.
@@ -548,7 +553,9 @@ export async function analyseDomain(options: {
   // the question onboarding used to make the user answer from a dropdown of
   // twelve, and the site can usually answer it itself.
   let detection: Detection | null = null;
-  try {
+  if (options.firstChoice) {
+    layers.push({ id: "platform", status: "unavailable", detail: "Deferred until after topic selection" });
+  } else try {
     detection = await detectPlatform(domain);
     layers.push({
       id: "platform",
@@ -1016,7 +1023,9 @@ export async function analyseDomain(options: {
   // --- Who links here -------------------------------------------------------
   // Only when there is a workspace to store into; the sales-side "check any
   // domain" path does not need it and should not pay for it.
-  if (depth === "full" && hasDataForSeo && supabase && workspaceId) {
+  if (options.firstChoice) {
+    layers.push({ id: "backlinks", status: "unavailable", detail: "Deferred until after topic selection" });
+  } else if (depth === "full" && hasDataForSeo && supabase && workspaceId) {
     try {
       const r = await syncBacklinks(supabase, workspaceId, domain);
       layers.push({
@@ -1064,7 +1073,7 @@ export async function analyseDomain(options: {
           traffic,
           referring_domains: referringDomains,
           ranking_keywords: ranked.length || null,
-          readiness: readiness?.score ?? null,
+          ...(!options.firstChoice ? { readiness: readiness?.score ?? null } : {}),
         },
         { onConflict: "workspace_id,measured_on" },
       );
@@ -1147,13 +1156,14 @@ export async function analyseDomain(options: {
     await supabase
       .from("workspaces")
       .update({
-        ...firstLookPatch(firstLook, now),
+        // The first-choice pass leaves the full audit eligible for cron/analyze.
+        ...(!options.firstChoice ? firstLookPatch(firstLook, now) : {}),
         // The timestamp on every run, so the editor can tell "we fetched the
         // site and found no CMS we can post to" from "nobody has looked yet";
         // those used to be the same null and got the same "connect a CMS"
         // prompt. The platform itself only on a match: a blank must never
         // replace a platform the user has already confirmed.
-        detected_platform_at: now,
+        ...(!options.firstChoice ? { detected_platform_at: now } : {}),
         ...(detection ? { detected_platform: detection.platform } : {}),
         // Only overwrite when this run actually produced one, so a later crawl
         // that gets blocked does not erase a good profile.
@@ -1161,7 +1171,7 @@ export async function analyseDomain(options: {
       })
       .eq("id", workspaceId);
 
-    analysis.firstLook = firstLook;
+    if (!options.firstChoice) analysis.firstLook = firstLook;
   }
 
   return analysis;

@@ -23,15 +23,18 @@ const ranked = vi.fn();
 const discover = vi.fn();
 const fit = vi.fn();
 const sitemap = vi.fn();
+const readiness = vi.fn(async () => ({ error: "not run in this test", score: 0, findings: [] }));
+const platform = vi.fn(async () => null);
+const backlinks = vi.fn(async () => ({ fetched: 0, total: null, lost: 0 }));
 
 vi.mock("@/lib/e2e/stubs", () => ({ e2eStubsEnabled: () => false, stubAnalyseDomain: vi.fn() }));
-vi.mock("../agent-readiness", () => ({ recordingFetcher: () => Object.assign(async () => ({ status: 0, headers: {}, body: "" }), { resources: new Map() }), runAgentReadiness: async () => ({ error: "not run in this test", score: 0, findings: [] }) }));
+vi.mock("../agent-readiness", () => ({ recordingFetcher: () => Object.assign(async () => ({ status: 0, headers: {}, body: "" }), { resources: new Map() }), runAgentReadiness: (...a: unknown[]) => readiness(...(a as [])) }));
 vi.mock("../pagespeed", () => ({ fetchPageSpeedDetailed: async () => ({ ok: false, kind: "unavailable", detail: "test" }) }));
-vi.mock("@/lib/cms/detect", () => ({ detectPlatform: async () => null }));
+vi.mock("@/lib/cms/detect", () => ({ detectPlatform: (...a: unknown[]) => platform(...(a as [])) }));
 vi.mock("@/lib/seo/client", () => ({ hasDataForSEOCredentials: () => true }));
 vi.mock("@/lib/keyword-research/discovery", () => ({ discoverBuyerKeywords: (...a: unknown[]) => discover(...a) }));
 vi.mock("@/lib/keyword-research/buyer-fit", () => ({ judgeBuyerFit: (...a: unknown[]) => fit(...a) }));
-vi.mock("@/lib/seo/backlinks", () => ({ syncBacklinks: async () => ({ fetched: 0, total: null, lost: 0 }) }));
+vi.mock("@/lib/seo/backlinks", () => ({ syncBacklinks: (...a: unknown[]) => backlinks(...(a as [])) }));
 vi.mock("@/lib/seo/domain-metrics", () => ({ fetchDomainMetrics: async () => ({ authority: null, traffic: null, referringDomains: null }) }));
 vi.mock("@/lib/seo/site-crawl", () => ({ discoverUrls: (...a: unknown[]) => sitemap(...a) }));
 
@@ -73,6 +76,7 @@ const rivalsRank = (rows: unknown[]) => ({ ...nothingDiscovered(), fromCompetito
 /** Just enough client for the keyword write path. */
 function fakeSupabase(business: Record<string, unknown> | null = null) {
   const inserted: Array<Record<string, unknown>[]> = [];
+  const updates: Array<{table:string;patch:Record<string,unknown>}> = [];
   const client = {
     from(table: string) {
       return {
@@ -91,12 +95,12 @@ function fakeSupabase(business: Record<string, unknown> | null = null) {
             then: (res: (v: { data: null }) => unknown) => res({ data: null }),
           };
         },
-        update: () => ({ eq: async () => ({ data: null }) }),
+        update: (patch: Record<string,unknown>) => { updates.push({table,patch}); return { eq: async () => ({ data: null }) }; },
         upsert: async () => ({ data: null }),
       };
     },
   };
-  return { client: client as never, inserted };
+  return { client: client as never, inserted, updates };
 }
 
 const analyse = (
@@ -112,6 +116,7 @@ const analyse = (
 
 beforeEach(() => {
   for (const m of [ranked, discover, fit, sitemap]) m.mockReset();
+  for (const m of [readiness, platform, backlinks]) m.mockClear();
   pages.mockReturnValue([]);
   ranked.mockResolvedValue([]);
   discover.mockResolvedValue(nothingDiscovered());
@@ -329,3 +334,23 @@ function newsletterSite() {
     page("https://x.co/docs", "Publishing workflow", "Deliverability guide", ["Subscriber analytics", "Publishing workflow"]),
   ];
 }
+
+
+it("keeps buyer evidence in the first-choice pass and leaves the deferred full audit eligible", async () => {
+  pages.mockReturnValue([{url:"https://x.co/",status:200,title:"Team project management",metaDescription:"Manage client projects",h1:["Project management for small teams"],h2:["Plan projects and track tasks"],images:[],links:[],loadTimeMs:1}]);
+  discover.mockResolvedValue(rivalsRank([{keyword:"client project management",volume:300,difficulty:10,cpc:1,intent:"commercial",competitor:"rival.co"}]));
+  const profile = {name:"Project tool",description:"Project management for small client service teams",audiences:["Small teams"],offerings:["Project management software"]};
+  const db = fakeSupabase(profile);
+  const result = await analyseDomain({domain:"x.co",supabase:db.client,workspaceId:"ws1",profile:profile as never,firstChoice:true,maxPages:3});
+  expect(readiness).not.toHaveBeenCalled();
+  expect(platform).not.toHaveBeenCalled();
+  expect(backlinks).not.toHaveBeenCalled();
+  expect(ranked).toHaveBeenCalled();
+  expect(discover).toHaveBeenCalledWith(expect.objectContaining({domain:"x.co",business:profile}));
+  expect(fit).toHaveBeenCalled();
+  expect(result.layers.filter(layer => ["readiness","platform","pagespeed","backlinks"].includes(layer.id)).every(layer => layer.status === "unavailable")).toBe(true);
+  const workspaceWrites = db.updates.filter(write => write.table === "workspaces").map(write => write.patch);
+  expect(workspaceWrites.length).toBeGreaterThan(0);
+  expect(workspaceWrites.every(patch => !("first_analysed_at" in patch) && !("detected_platform_at" in patch))).toBe(true);
+  expect(result.firstLook).toBeUndefined();
+});

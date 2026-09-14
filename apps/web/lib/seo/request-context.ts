@@ -8,12 +8,15 @@ export class ResearchBudget {
   readonly deadline: number;
   calls = 0;
   costUsd = 0;
+  private readonly parent = context.getStore()?.budget;
   constructor(readonly maxCalls = 30, durationMs = 120_000) {
-    this.deadline = Date.now() + durationMs;
+    // A new stage may tighten its allowance, but cannot restart the request clock.
+    this.deadline = Math.min(Date.now() + durationMs, this.parent?.deadline ?? Infinity);
   }
-  get exhausted(): boolean { return this.calls >= this.maxCalls || Date.now() >= this.deadline; }
+  get exhausted(): boolean { return this.calls >= this.maxCalls || Date.now() >= this.deadline || Boolean(this.parent?.exhausted); }
   reserve(): void {
     if (this.exhausted) throw new ResearchBudgetError();
+    this.parent?.reserve();
     this.calls++;
   }
 }

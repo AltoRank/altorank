@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ResearchBudget, ResearchBudgetError, providerIssue, providerSignal, scopedSpendReporter, withResearchBudget, withSpendReporter } from "../request-context";
 
 describe("research request isolation", () => {
@@ -24,4 +24,29 @@ describe("research request isolation", () => {
     expect(providerIssue(new ResearchBudgetError()).kind).toBe("deadline");
     expect(providerIssue(new Error("bad gateway")).kind).toBe("temporary");
   });
+});
+
+
+it("child stages share the request deadline and consume its call allowance", () => {
+  vi.useFakeTimers();
+  try {
+    const parent = new ResearchBudget(2, 200);
+    withResearchBudget(parent, () => {
+      const discovery = new ResearchBudget(30, 100_000);
+      expect(discovery.deadline).toBe(parent.deadline);
+      withResearchBudget(discovery, () => providerSignal());
+      const qualification = new ResearchBudget(65, 110_000);
+      withResearchBudget(qualification, () => providerSignal());
+      expect(parent.calls).toBe(2);
+      expect(qualification.calls).toBe(1);
+      expect(() => withResearchBudget(new ResearchBudget(1, 15_000), () => providerSignal())).toThrow(ResearchBudgetError);
+    });
+    const timed = new ResearchBudget(100, 20);
+    withResearchBudget(timed, () => {
+      vi.advanceTimersByTime(20);
+      const laterStage = new ResearchBudget(65, 110_000);
+      expect(laterStage.exhausted).toBe(true);
+      expect(() => withResearchBudget(laterStage, () => providerSignal())).toThrow(ResearchBudgetError);
+    });
+  } finally { vi.useRealTimers(); }
 });

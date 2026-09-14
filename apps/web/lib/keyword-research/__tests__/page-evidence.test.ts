@@ -67,6 +67,35 @@ it("parses multiline frontend attributes before excerpting actual pricing eviden
   expect(result.page?.links).toEqual([{url:"https://vendor.test/help?topic=plans&lang=en",label:"Plan & billing help"}]);
 });
 
+it("recovers visible pricing after a self-closing tag-manager iframe inside head noscript",async()=>{
+  const pricing="The Starter plan starts at $10 per month for email campaigns. The Standard plan includes marketing automation and advanced reporting. Prices depend on the number of emails sent each month.";
+  fetch.mockResolvedValue(new Response(`<html><head><title>Pricing</title>
+    <noscript><iframe src="https://tag-manager.test/ns.html?id=site" height="0" width="0" style="display:none;visibility:hidden" /></noscript>
+    <script>window.trackingOnly = "Never source this tracking script";</script>
+    </head><body><nav><a href="/pricing">Pricing</a></nav><main><h1>Plans for your business</h1><p>${pricing}</p><a href="/help/plans">Plan help</a>
+    <noscript><p>Hidden fallback content must not become product evidence.</p></noscript>
+    <div hidden>Secret campaign implementation detail.</div></main></body></html>`,{headers:{"content-type":"text/html"}}));
+  const result=await readPageExtractOutcome("https://vendor.test/pricing",9000,{includeLinks:true});
+  expect(result).toMatchObject({status:"success",diagnostics:{strategy:"main",bodyTruncated:false}});
+  expect(result.page?.text).toContain(pricing);
+  expect(result.page?.headings).toEqual(["Plans for your business"]);
+  expect(result.page?.links).toContainEqual({url:"https://vendor.test/help/plans",label:"Plan help"});
+  expect(result.page?.text).not.toMatch(/tracking|fallback|Secret/);
+});
+
+it("does not mistake document layout classes for a navigation-only body",async()=>{
+  const article="Choose everyday shoes with a comfortable fit, suitable cushioning and a breathable upper. Compare the manufacturer's sizing and care instructions before deciding which material and size to choose.";
+  fetch.mockResolvedValue(new Response(`<html class="with-sidebar"><body class="standardnavigation-site-navigation logo-left-with-search-nav-variation default">
+    <nav>Navigation labels do not answer the article.</nav><div id="app-root"><main id="main-content"><article><h1>Choosing everyday shoes</h1><p>${article}</p>
+    <div class="newsletter-popup"><p>Subscribe now. This is not article evidence.</p></div>
+    <div aria-hidden="true">Hidden article controls.</div></article></main></div>
+    <footer>Footer navigation.</footer></body></html>`,{headers:{"content-type":"text/html"}}));
+  const result=await readPageExtractOutcome("https://publisher.test/article",9000);
+  expect(result).toMatchObject({status:"success",diagnostics:{strategy:"main"}});
+  expect(result.page?.text).toContain(article);
+  expect(result.page?.text).not.toMatch(/Navigation labels|Subscribe now|Hidden article|Footer navigation/);
+});
+
 it("keeps pricing table columns and nested card text associated with their rows",async()=>{
   fetch.mockResolvedValue(new Response(`<main><h1>Plan comparison</h1><p>These are monthly subscription prices for the same billing period and subscriber count.</p>
     <table><tr><th>Plan</th><th>Starter</th><th>Standard</th></tr>

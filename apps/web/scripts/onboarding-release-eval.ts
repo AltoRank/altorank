@@ -115,6 +115,7 @@ async function evaluateCase(db:SupabaseClient,item:Case,report:CaseReport,out:st
   try{
     await withModelObserver(event=>observations.push({...event,stage}),async()=>{
       const {inferBusinessProfileDetailed}=await import("@/lib/onboarding/business-profile");
+      const {createWorkerClient}=await import("@/lib/onboarding/worker-client");
       const {executeRun}=await import("@/lib/onboarding/run-worker");
       const {runOnboarding}=await import("@/lib/onboarding/pipeline");
       const {startRun,stampRun}=await import("@/lib/onboarding/run-store");
@@ -134,7 +135,7 @@ async function evaluateCase(db:SupabaseClient,item:Case,report:CaseReport,out:st
       checked(await db.from("workspaces").update({business_profile:profile}).eq("id",workspaceId));
       const {runId}=await startRun(db,{id:workspaceId,account_id:accountId});report.runId=runId;
       const events:OnboardingEvent[]=[];report.events=events;
-      const discovery=await timed("discovery",()=>executeRun(runId,{supabase:db,
+      const discovery=await timed("discovery",()=>executeRun(runId,{
         run:(client,workspace,emit,options)=>runOnboarding(client,workspace,event=>{events.push(event);emit(event);save();},options),
         // Exercise the production queue, then invoke its worker as a separate
         // measured stage with a fresh production budget, as hosted dispatch does.
@@ -146,7 +147,7 @@ async function evaluateCase(db:SupabaseClient,item:Case,report:CaseReport,out:st
       if(discovery.outcome!=="preparing-choices"){
         report.outcome=discovery.outcome==="ran"?"no-qualified-topics":"error";return;
       }
-      await timed("source-preparation",()=>wakeChoicePreparation(db,runId));
+      await timed("source-preparation",()=>wakeChoicePreparation(createWorkerClient(Date.now()+285_000),runId));
       const run=checked(await db.from("onboarding_runs").select("status,planned,phases").eq("workspace_id",workspaceId).eq("id",runId).single()).data!;
       const choices=(run.planned??[]) as OnboardingPlanned[];report.readyChoices=choices;
       report.timeToReadyChoicesSeconds=(Date.now()-Date.parse(report.startedAt))/1000;

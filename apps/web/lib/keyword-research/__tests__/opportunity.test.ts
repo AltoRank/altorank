@@ -179,7 +179,7 @@ it("continues researching when five distinct SERPs collapse to one buyer decisio
  fetchSerp.mockImplementation(async(query:string)=>({organic:[1,2,3].map(rank=>({url:`https://source${rank}.test/${query.split(" ").at(-1)}`,title:"A buyer guide",description:"Compare costs",rank})),peopleAlsoAsk:[],aiOverview:null}));
  ask.mockImplementation(async(operation:string,prompt:string)=>{
   const input=JSON.parse(prompt.split("\n").at(-1)!);
-  if(operation==="onboarding/distinct-tasks")return JSON.stringify({groups:[input.topics.map((_:unknown,i:number)=>i)]});
+  if(operation==="onboarding/distinct-tasks")return JSON.stringify({groups:[input.topics.map((_:unknown,i:number)=>i)],answerKinds:input.topics.map((_:unknown,topicIndex:number)=>({topicIndex,kind:"selection"}))});
   return JSON.stringify({...approval,results:input.results.map((_r:unknown,resultIndex:number)=>({resultIndex,format:"article",evidenceField:"title",relevance}))});
  });
  const result=await qualifyOpportunities(db,"ws",candidates,context,{distinctTasks:true});

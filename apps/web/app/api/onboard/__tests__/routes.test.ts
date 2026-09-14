@@ -18,6 +18,8 @@ vi.mock("@/lib/supabase/server", () => ({
   createServiceClient: () => db.client,
 }));
 
+vi.mock("@/lib/onboarding/worker-client", () => ({ createWorkerClient: () => db.client }));
+
 // `after()` needs a request scope; here it just runs the callback and the
 // test awaits what it returned.
 const deferred: Promise<unknown>[] = [];
@@ -146,7 +148,7 @@ describe("GET /api/onboard/state", () => {
     expect(body.stale).toBe(false);
     expect(body.now).toEqual(expect.any(Number));
     await Promise.all(deferred);
-    expect(wakeChoices).toHaveBeenCalledWith(db.client,"r1");
+    expect(wakeChoices).toHaveBeenCalledWith(db.client,"r1",expect.objectContaining({durationMs:expect.any(Number)}));
   });
 
   it("joins the draft once the row points at it", async () => {

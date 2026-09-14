@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { startRun } from "@/lib/onboarding/run-store";
 import { dispatchWorker } from "@/lib/onboarding/run-dispatch";
+import { createWorkerClient } from "@/lib/onboarding/worker-client";
 import { wakeChoicePreparation } from "@/lib/onboarding/choice-preparation";
 
 // ---------------------------------------------------------------------------
@@ -24,6 +25,7 @@ import { wakeChoicePreparation } from "@/lib/onboarding/choice-preparation";
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
+  const deadline = Date.now() + 285_000;
   const supabase = await createClient();
 
   const {
@@ -60,7 +62,7 @@ export async function POST(request: NextRequest) {
   });
   if (created) after(() => dispatchWorker(runId));
   else after(async()=>{
-    try { await wakeChoicePreparation(createServiceClient(),runId); }
+    try { await wakeChoicePreparation(createWorkerClient(deadline),runId,{durationMs:Math.max(0,deadline-Date.now())}); }
     catch { console.warn("[onboarding] source preparation resume interrupted"); }
   });
 

@@ -26,6 +26,7 @@
 // article and its job - so a run cut short leaves real, partial state rather
 // than nothing, and the dashboard shows whatever got done.
 
+import { ResearchBudget, withResearchBudget } from "@/lib/seo/request-context";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readSiteText } from "./site-text";
 import { checkDomainReachable } from "@/lib/domain/reachable";
@@ -55,6 +56,8 @@ export type Emit = (event: OnboardingEvent) => void;
 export interface RunOnboardingOptions {
   /** See the header: `inline` awaits the draft here, `dispatch` returns it. */
   firstDraft?: "inline" | "dispatch" | "choose";
+  /** Absolute request deadline; leaves the worker time to persist and hand off. */
+  researchDeadline?: number;
 }
 
 /** The first draft, chosen and gated but not yet written, for the caller to dispatch. */
@@ -115,7 +118,13 @@ export async function runOnboarding(
   // draft and clears it after; the finally clears ours however the run ends.
   return withSpendReporter(({ operation, costUsd }) => {
     void recordSpendByDefault({ provider: "dataforseo", operation, costUsd, workspaceId: workspace.id });
-  }, () => runPhases(supabase, workspace, emit, options.firstDraft ?? "inline"));
+  }, () => {
+    const firstDraft = options.firstDraft ?? "inline";
+    const run = () => runPhases(supabase, workspace, emit, firstDraft);
+    return firstDraft === "choose"
+      ? withResearchBudget(new ResearchBudget(160, (options.researchDeadline ?? Date.now() + 240_000) - Date.now()), run)
+      : run();
+  });
 }
 
 async function runPhases(
@@ -125,6 +134,14 @@ async function runPhases(
   firstDraft: "inline" | "dispatch" | "choose",
 ): Promise<RunOnboardingResult> {
   const domain = workspace.domain;
+
+  if (firstDraft === "choose" && !workspace.business_profile) {
+    emit({ phase: "scanning", status: "failed", detail: "Confirm your business focus before researching the first article." });
+    for (const phase of ["keywords", "pages", "planning", "drafting"] as const) {
+      emit({ phase, status: "skipped", detail: "A confirmed business focus is needed to choose relevant article topics." });
+    }
+    return { awaitingChoice: false, pendingDraft: null, fanOutSettled: Promise.resolve() };
+  }
 
   // --- Phase 0: is there a site here at all? -------------------------------
   //
@@ -202,7 +219,7 @@ async function runPhases(
     emit({ phase: "keywords", status: "skipped", detail: "Keyword research is not configured on this install." });
   } else {
     try {
-      const analysis = await analyseDomain({
+      const analyse = () => analyseDomain({
         domain,
         supabase,
         workspaceId: workspace.id,
@@ -216,8 +233,11 @@ async function runPhases(
         // rest. Every page here is one request against a host that may be
         // counting them (packhub.io bans after ten in forty seconds).
         maxPages: firstDraft === "choose" ? 3 : ONBOARDING_CRAWL_PAGES,
-        ...(firstDraft === "choose" ? { deferPageSpeed: true } : {}),
+        ...(firstDraft === "choose" ? { firstChoice: true } : {}),
       });
+      const analysis = firstDraft === "choose"
+        ? await withResearchBudget(new ResearchBudget(65, 120_000), analyse)
+        : await analyse();
       keywordsFound = analysis.keywordsFound;
       // "Nothing rankable found for this site yet" is only true when we were
       // able to look. When the site could not be read, `analyseDomain` stores
@@ -333,7 +353,7 @@ async function runPhases(
   } else {
     try {
       plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, { maxEntries: 5, ...(firstDraft === "choose" ? {
-        distinctTasks: true, retryPending: true,
+        distinctTasks: true, retryPending: true, deferQuestions: true,
         onProgress: (items: Array<{id: string; term: string}>, results: Map<string, Opportunity>) => {
           const kept: Opportunity[] = [];
           const briefs = items.flatMap((item) => {

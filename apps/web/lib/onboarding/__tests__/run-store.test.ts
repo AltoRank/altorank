@@ -378,3 +378,28 @@ it("persists supported brief previews across polling before a calendar exists", 
   expect(state.steps.find((s) => s.phase === "planning")?.briefs).toEqual(briefs);
   expect(state.planned).toEqual([]); expect(state.ready).toBe(false);
 });
+
+
+it("coalesces slow progress writes but flushes the final choice snapshot before handoff", async () => {
+  const writes: Array<Record<string, unknown>> = [];
+  let release!: () => void;
+  const firstWrite = new Promise<void>(resolve => { release = resolve; });
+  const db = {from:()=>({update:(patch:Record<string, unknown>)=>({eq:async()=>{
+    writes.push(patch);
+    if (writes.length === 1) await firstWrite;
+    return {error:null};
+  }})})};
+  const recorder = new RunRecorder(db as never,"slow-run",{coalesce:true});
+  recorder.record({phase:"scanning",status:"active"});
+  await Promise.resolve();
+  for (const event of WORKER_EVENTS) recorder.record(event);
+  expect(writes).toHaveLength(1);
+  let flushed = false;
+  const flush = recorder.flush().then(() => { flushed = true; });
+  await Promise.resolve();
+  expect(flushed).toBe(false);
+  release();
+  await flush;
+  expect(writes).toHaveLength(2);
+  expect(writes[1]).toMatchObject({keywords_found:94,planned:expect.arrayContaining([{term:"seo agent",date:"2026-09-07"}])});
+});

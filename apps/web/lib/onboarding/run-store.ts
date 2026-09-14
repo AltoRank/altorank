@@ -149,38 +149,67 @@ export async function startRun(
 export class RunRecorder {
   state: OnboardingState = initialOnboardingState();
   private queue: Promise<void> = Promise.resolve();
+  private pendingSnapshot: OnboardingState | null = null;
+  private draining = false;
+  private persistedSnapshot: OnboardingState | null = null;
   /** How many writes reached the row; for tests, and the log line. */
   writes = 0;
 
   constructor(
     private readonly supabase: SupabaseClient,
     readonly runId: string,
+    private readonly options: { coalesce?: boolean } = {},
   ) {}
 
   record = (event: OnboardingEvent): void => {
     this.state = reduceOnboarding(this.state, event);
     const snapshot = this.state;
-    this.queue = this.queue.then(() => this.write(snapshot));
+    if (!this.options.coalesce) {
+      this.queue = this.queue.then(() => this.write(snapshot));
+      return;
+    }
+    // A slow database needs the latest progress, not a backlog of obsolete spinners.
+    this.pendingSnapshot = snapshot;
+    if (this.draining) return;
+    this.draining = true;
+    this.queue = this.queue.then(async () => {
+      try {
+        while (this.pendingSnapshot) {
+          const next = this.pendingSnapshot;
+          this.pendingSnapshot = null;
+          await this.write(next);
+        }
+      } finally { this.draining = false; }
+    });
   };
 
   private async write(state: OnboardingState): Promise<void> {
-    const { error } = await this.supabase
-      .from("onboarding_runs")
-      .update({
-        phases: state.steps,
-        planned: state.planned,
-        keywords_found: state.keywordsFound,
-        ...(state.article ? { article_id: state.article.id } : {}),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", this.runId);
-    if (error) console.error(`[onboarding] run ${this.runId}: could not persist phases: ${error.message}`);
-    else this.writes += 1;
+    try {
+      const { error } = await this.supabase
+        .from("onboarding_runs")
+        .update({
+          phases: state.steps,
+          planned: state.planned,
+          keywords_found: state.keywordsFound,
+          ...(state.article ? { article_id: state.article.id } : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", this.runId);
+      if (error) console.error(`[onboarding] run ${this.runId}: could not persist phases: ${error.message}`);
+      else { this.writes += 1; this.persistedSnapshot = state; }
+    } catch (error) {
+      console.error(`[onboarding] run ${this.runId}: could not persist phases: ${error instanceof Error ? error.message : "database unavailable"}`);
+    }
   }
 
   /** Wait for every queued write. */
-  flush(): Promise<void> {
-    return this.queue;
+  async flush(options: { requireLatest?: boolean } = {}): Promise<void> {
+    await this.queue;
+    if (options.requireLatest && this.persistedSnapshot !== this.state) {
+      // Exactly one final bounded retry; handoff must never read an older plan.
+      await this.write(this.state);
+      if (this.persistedSnapshot !== this.state) throw new Error("The latest onboarding progress could not be saved.");
+    }
   }
 
   /** The run is over and nothing else will write to it. */

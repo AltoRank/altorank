@@ -72,3 +72,20 @@ it("keeps a failed scope model call unavailable",async()=>{
   ask.mockResolvedValue(null);
   expect(await checkEvidenceScope({angle:"Book an appointment"},questions)).toEqual({status:"unavailable",requirements:[],omitted:[]});
 });
+
+it("keeps qualification explanations and the wider offering out of the binding article contract",async()=>{
+  ask.mockResolvedValue(judged([true,true,false]));
+  const contract={angle:"Compare tools on price, communication and simplicity",buyingJob:"Choose a tool for project coordination",audience:"Small teams",instructions:"Also compare data retention limits"};
+  await checkEvidenceScope({...contract,reason:"Task control and support are useful product features",offering:"Everything for coordination, analytics and enterprise security",conversionPath:"https://example.test/pricing"},questions);
+  const payload=JSON.parse(ask.mock.calls[0][1].split("\n").at(-1));
+  expect(payload.brief).toEqual(contract);
+  expect(ask.mock.calls[0][1]).not.toContain("Task control and support are useful");
+});
+it.each<{brief:Record<string,string>;questions:string[];reason:string}>([
+  {brief:{angle:"Find and book an appointment",buyingJob:"Choose a salon and reserve a time"},questions:["How do I find salons?"],reason:"Booking is explicitly promised but missing"},
+  {brief:{angle:"Compare the cost of two email tools",buyingJob:"Choose an affordable email tool"},questions:["What features do the tools offer?"],reason:"Comparable costs are explicitly promised but missing"},
+  {brief:{angle:"Compare email tools on price and ease",buyingJob:"Choose a newsletter tool",instructions:"Also compare their data retention limits"},questions:["What do both tools cost?","How easy are both tools to use?"],reason:"Explicit retention instruction is missing"},
+])("preserves an unavailable result for an explicitly missing promise: $brief.angle",async({questions:proposed,reason,brief})=>{
+  ask.mockResolvedValue(JSON.stringify({coverage:{complete:false,reason},questions:proposed.map((_,requirementIndex)=>({requirementIndex,essential:true,reason:"Required but collectively incomplete"}))}));
+  expect(await checkEvidenceScope(brief,proposed)).toMatchObject({status:"unavailable",coverage:{complete:false,reason}});
+});

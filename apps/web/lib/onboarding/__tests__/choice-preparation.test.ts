@@ -169,3 +169,40 @@ it("keeps an inline fallback queued when discovery has spent the invocation budg
   const db=database();await queueChoicePreparation(db.client,"r1","ws1");how.self.mockReturnValue({skipped:"no-secret"});
   await wakeChoicePreparation(db.client,"r1",{durationMs:5000});expect(db.rpc).not.toHaveBeenCalled();
 });
+
+
+it("counts lease-loading time inside the source preparation deadline", async () => {
+  const db=database(1);await queued(db);
+  const started=Date.now();let now=started;
+  const clock=vi.spyOn(Date,"now").mockImplementation(()=>now);
+  const from=db.client.from.bind(db.client);
+  db.client.from=((table:string)=>{if(table==="onboarding_runs")now+=45_000;return from(table);}) as typeof db.client.from;
+  const prepare=vi.fn(async(_db,input:DraftPreparationInput)=>{
+    expect(currentResearchBudget()?.deadline).toBe(started+85_000);
+    expect(currentResearchBudget()!.deadline-Date.now()).toBe(40_000);
+    return packet(input);
+  });
+  try { await prepareOnboardingChoices(db.client,"r1","token",{durationMs:85_000,prepare}); }
+  finally { clock.mockRestore(); }
+  expect(prepare).toHaveBeenCalledOnce();
+});
+
+it("does not restart an inline source budget after a slow claim consumes it", async () => {
+  const db=database(1);await queueChoicePreparation(db.client,"r1","ws1");
+  Object.assign(db.tables.onboarding_choice_checks[0],{status:"queued",attempts:0,lease:null,lease_until:null});
+  how.self.mockReturnValue({skipped:"no-secret"});
+  const started=Date.now();let now=started;
+  const clock=vi.spyOn(Date,"now").mockImplementation(()=>now);
+  const rpc=db.client.rpc.bind(db.client);
+  db.client.rpc=(async(name:string,args:Record<string,unknown>)=>{
+    const result=await rpc(name,args);
+    if(name==="claim_onboarding_choices")now+=85_000;
+    return result;
+  }) as unknown as typeof db.client.rpc;
+  const from=vi.spyOn(db.client,"from");
+  try { await wakeChoicePreparation(db.client,"r1",{durationMs:85_000}); }
+  finally { clock.mockRestore(); }
+  expect(from.mock.calls.some(([table])=>table==="keywords")).toBe(false);
+  expect(db.tables.onboarding_runs[0].status).toBe("partial");
+  expect(db.tables.onboarding_choice_checks[0].results).toEqual([expect.objectContaining({status:"unavailable",reason:expect.stringContaining("time limit")})]);
+});

@@ -84,6 +84,8 @@ export interface PlanOptions {
   maxEntries?: number;
   distinctTasks?: boolean;
   retryPending?: boolean;
+  /** Owner interviews are optional and can be generated when the topic is opened. */
+  deferQuestions?: boolean;
   onProgress?: NonNullable<Parameters<typeof recommendKeywords>[2]>["onProgress"];
 }
 
@@ -232,7 +234,7 @@ export async function schedulePlan(
   // Best-effort: a plan is written even if the shape or the questions fail.
   try {
     const intents = new Map(recs.map((r) => [r.keywordId, r.intent]));
-    await decoratePlannedKeywords(supabase, workspaceId, plan.map((p) => p.keywordId), intents);
+    await decoratePlannedKeywords(supabase, workspaceId, plan.map((p) => p.keywordId), intents, { deferQuestions: opts.deferQuestions });
   } catch (err) {
     console.warn("[plan] could not decorate planned keywords:", err instanceof Error ? err.message : err);
   }
@@ -251,6 +253,7 @@ export async function decoratePlannedKeywords(
   workspaceId: string,
   keywordIds: string[],
   intents: Map<string, KeywordIntent> = new Map(),
+  options: { deferQuestions?: boolean } = {},
 ): Promise<{ classified: number; questioned: number }> {
   if (keywordIds.length === 0) return { classified: 0, questioned: 0 };
   const { data } = await supabase
@@ -269,7 +272,7 @@ export async function decoratePlannedKeywords(
     classified++;
   }
 
-  const questioned = await ensureQuestionsFor(
+  const questioned = options.deferQuestions ? 0 : await ensureQuestionsFor(
     supabase,
     workspaceId,
     rows.filter((r) => parseStoredQuestions(r.quality_questions).length === 0).map((r) => ({ id: r.id, term: r.term })),

@@ -6,7 +6,7 @@ vi.mock("@/lib/keyword-research/buyer-model",async original=>({...await original
 import {schedulePlan} from "../plan";
 it("writes only the distinct first-choice topics into the scoped calendar",async()=>{
   recommend.mockResolvedValue([0,1,2].map(i=>({keywordId:`k${i}`,term:`topic ${i}`,action:"write",quality:"ok",opportunity:{status:"qualified",angle:`Headline ${i}`,buyingJob:"Compare the tools",organicUrls:[]}})));
-  ask.mockResolvedValue('{"groups":[[0,1],[2]]}');
+  ask.mockResolvedValue('{"answerKinds":[{"topicIndex":0,"kind":"selection"},{"topicIndex":1,"kind":"selection"},{"topicIndex":2,"kind":"selection"}],"groups":[[0,1],[2]]}');
   const writes:Array<{table:string;rows:Array<{workspace_id:string;keyword_id:string}>}>=[];
   const db={rpc:async()=>({data:true,error:null}),from(table:string){const q={select:()=>q,eq:()=>q,in:()=>q,not:()=>q,is:()=>q,delete:()=>q,update:()=>q,insert:(rows:Array<{workspace_id:string;keyword_id:string}>)=>{writes.push({table,rows});return q;},then:(resolve:(r:unknown)=>unknown)=>resolve({data:[],error:null})};return q;}};
   const plan=await schedulePlan(db as never,"workspace-a",2,{maxEntries:5,distinctTasks:true});
@@ -18,7 +18,7 @@ it("writes only the distinct first-choice topics into the scoped calendar",async
 it("does not reintroduce a synonym of an existing draft when filling the month",async()=>{
   const opportunity={status:"qualified",angle:"Choose an analytics tool",buyingJob:"Compare analytics tools",organicUrls:[]};
   recommend.mockResolvedValue([{keywordId:"synonym",term:"analytics tool comparison",action:"write",quality:"ok",opportunity}, {keywordId:"distinct",term:"track purchase revenue",action:"write",quality:"ok",opportunity:{...opportunity,buyingJob:"Configure revenue tracking"}}]);
-  ask.mockResolvedValue('{"groups":[[0,1],[2]]}');
+  ask.mockResolvedValue('{"answerKinds":[{"topicIndex":0,"kind":"selection"},{"topicIndex":1,"kind":"selection"},{"topicIndex":2,"kind":"procedure"}],"groups":[[0,1],[2]]}');
   const existing={keyword_id:"written",keyword:"traffic monitoring tools",scheduled_date:"2026-09-13",article_id:"preview",status:"scheduled"};
   const db={rpc:async()=>({data:true,error:null}),from(table:string){let reading=true;let ids:string[]=[];const q={select:()=>q,eq:()=>q,in:(_key:string,value:string[])=>{ids=value;return q;},not:()=>q,is:()=>q,delete:()=>q,update:()=>{reading=false;return q;},insert:()=>{reading=false;return q;},maybeSingle:()=>q,then:(resolve:(r:unknown)=>unknown)=>resolve({data:reading&&table==="calendar_entries"?[existing]:reading&&table==="keywords"&&ids.includes("written")?[{id:"written",term:existing.keyword,opportunity}]:[],error:null})};return q;}};
   const plan=await schedulePlan(db as never,"workspace-a",2,{mode:"fill-month",from:new Date("2026-09-13T00:00:00Z"),maxEntries:5,distinctTasks:true});

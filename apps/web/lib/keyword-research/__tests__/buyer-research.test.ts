@@ -277,3 +277,17 @@ describe("discoverBuyerKeywords", () => {
     expect(out.fromCompetitors).toEqual([]);
   });
 });
+
+
+it("keeps confirmed buyer decisions but stops retries and later batches at the shared limit", async () => {
+  const {ResearchBudget,withResearchBudget,providerSignal} = await import("@/lib/seo/request-context");
+  ask.mockImplementationOnce(async () => {
+    providerSignal();
+    return '[{"t":"term zero","k":true,"r":"confirmed buyer task"}]';
+  });
+  const result = await withResearchBudget(new ResearchBudget(1), () => judgeBuyerFit(PACKHUB,["term zero",...Array.from({length:80},(_,i)=>`term ${i}`)]));
+  expect(ask).toHaveBeenCalledOnce();
+  expect(result.verdicts.size).toBe(1);
+  expect(result.verdicts.get("term zero")?.keep).toBe(true);
+  expect(result.verdicts.has("term 1")).toBe(false);
+});

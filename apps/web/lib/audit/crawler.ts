@@ -51,7 +51,7 @@ async function fetchPage(url: string, signal: AbortSignal): Promise<Response> {
 export function describeFetchError(err: unknown): string {
   const e = err as { name?: string; message?: string; cause?: { code?: string } };
   const code = e?.cause?.code;
-  if (e?.name === "AbortError") return "timed out after 10s";
+  if (e?.name === "AbortError" || e?.name === "TimeoutError") return "page request timed out";
   if (code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" || code === "CERT_HAS_EXPIRED" || code === "ERR_TLS_CERT_ALTNAME_INVALID" || code === "SELF_SIGNED_CERT_IN_CHAIN") {
     return `TLS certificate could not be verified (${code}); browsers may cope, crawlers will not`;
   }
@@ -96,6 +96,8 @@ export interface CrawlOptions {
    * is one request fewer against that budget.
    */
   seedHtml?: string | null;
+  /** Optional absolute deadline shared with the calling research stage. */
+  deadline?: number;
 }
 
 export async function crawlSite(
@@ -114,6 +116,7 @@ export async function crawlSite(
   const queue: QueueItem[] = [{ url: base.href, depth: 0 }];
 
   while (queue.length > 0 && results.length < maxPages) {
+    if (Date.now() >= (opts.deadline ?? Infinity)) break;
     const item = queue.shift()!;
     const normalizedUrl = normalizeUrl(item.url);
 
@@ -123,15 +126,14 @@ export async function crawlSite(
 
     try {
       const start = Date.now();
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
+      // Keep the signal alive through body consumption, not just response headers.
+      const signal = AbortSignal.timeout(Math.max(1, Math.min(10_000, (opts.deadline ?? Infinity) - Date.now())));
 
       const seeded = item.depth === 0 && opts.seedHtml && normalizeUrl(item.url) === normalizeUrl(base.href);
       const res = seeded
         ? new Response(opts.seedHtml as string, { status: 200, headers: { "content-type": "text/html" } })
-        : await fetchPage(item.url, controller.signal);
+        : await fetchPage(item.url, signal);
 
-      clearTimeout(timeout);
       const loadTimeMs = Date.now() - start;
 
       // A refusal after the site had been answering is the site closing the
@@ -175,17 +177,17 @@ export async function crawlSite(
 
       // Rate limit
       if (delayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        await new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.min(delayMs, (opts.deadline ?? Infinity) - Date.now()))));
       }
     } catch (err) {
       // A chain Node cannot verify (www.lully.ai serves no intermediate,
       // 2026-09-02) is a finding about the site, not a reason to see nothing.
       // Read it without verification, mark the page, and let the audit report
       // the chain as an issue.
-      if (isTlsChainError(err)) {
+      if (isTlsChainError(err) && Date.now() < (opts.deadline ?? Infinity)) {
         try {
           const start = Date.now();
-          const r = await fetchLenient(item.url, { userAgent: CRAWLER_UA, timeoutMs: 10_000 });
+          const r = await fetchLenient(item.url, { userAgent: CRAWLER_UA, timeoutMs: Math.max(1, Math.min(10_000, (opts.deadline ?? Infinity) - Date.now())) });
           const loadTimeMs = Date.now() - start;
           if ((r.headers["content-type"] ?? "").includes("text/html")) {
             const parsed = parseHtml(r.body, item.url, base.origin);

@@ -13,7 +13,7 @@ import { judgeBuyerFit, type FitProfile } from "./buyer-fit";
 import { e2eStubsEnabled, isReservedTestDomain } from "@/lib/e2e/stubs";
 import { getLocale } from "@/lib/seo/locales";
 
-export const OPPORTUNITY_VERSION = 7;
+export const OPPORTUNITY_VERSION = 8;
 export const QUALIFICATION_LIMIT = 25;
 export interface Opportunity {
   /** Persisted grouping of synonymous editorial tasks within this evidence context. */

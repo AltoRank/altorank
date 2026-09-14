@@ -65,7 +65,8 @@ async function currentInput(db: SupabaseClient, workspaceId: string, choice: Onb
 
 /** One lease owns the whole bounded source check. Ready packets survive a
  * worker interruption and are reused by the next attempt. */
-export async function prepareOnboardingChoices(db: SupabaseClient, runId: string, token: string, options: {durationMs?:number;prepare?:typeof prepareDraft} = {}): Promise<void> {
+export async function prepareOnboardingChoices(db: SupabaseClient, runId: string, token: string, options: {durationMs?:number;deadline?:number;prepare?:typeof prepareDraft} = {}): Promise<void> {
+  const deadline = Math.min(Date.now() + CHOICE_PREPARATION_MS, options.deadline ?? Date.now() + (options.durationMs ?? CHOICE_PREPARATION_MS));
   const found = await db.from("onboarding_choice_checks").select("*").eq("run_id",runId).eq("lease",token).maybeSingle();
   if (found.error) throw new Error("Source preparation lease could not be loaded.");
   const check = found.data as ChoiceCheck | null;
@@ -77,7 +78,7 @@ export async function prepareOnboardingChoices(db: SupabaseClient, runId: string
   const candidates = Array.isArray(check.candidates) ? check.candidates.slice(0,5) : [];
   const outcomes = new Map<number,ChoicePreparationResult>();
   const prepared = new Map<number,OnboardingPlanned>();
-  const budget = new ResearchBudget(30,Math.max(1,Math.min(CHOICE_PREPARATION_MS,options.durationMs??CHOICE_PREPARATION_MS)));
+  const budget = new ResearchBudget(30,Math.max(0,deadline-Date.now()));
   await withResearchBudget(budget,async()=>{
     for (let offset=0;offset<candidates.length;offset+=2) {
       await Promise.all(candidates.slice(offset,offset+2).map(async(choice,relative)=>{
@@ -140,6 +141,7 @@ export async function prepareOnboardingChoices(db: SupabaseClient, runId: string
 /** Polling may rescue a queued or expired source check, but never restarts
  * discovery or dispatches a second worker while its database lease is live. */
 export async function wakeChoicePreparation(db: SupabaseClient, runId: string, options: SelfInvokeDeps & {durationMs?:number} = {}): Promise<void> {
+  const deadline = Date.now() + Math.max(0,Math.min(CHOICE_PREPARATION_MS,options.durationMs??CHOICE_PREPARATION_MS));
   const found=await db.from("onboarding_choice_checks").select("status,lease_until").eq("run_id",runId).maybeSingle();
   if (found.error) throw new Error("Source preparation could not be resumed.");
   if (!found.data || found.data.status==="done" || (found.data.lease_until && Date.parse(found.data.lease_until)>Date.now())) return;
@@ -151,8 +153,8 @@ export async function wakeChoicePreparation(db: SupabaseClient, runId: string, o
   }
   // An almost-spent discovery request leaves the durable queue for the next
   // authenticated poll, whose invocation has a fresh budget.
-  if (options.durationMs!==undefined && options.durationMs<10_000) return;
+  if (deadline-Date.now()<10_000) return;
   const claim=await db.rpc("claim_onboarding_choices",{p_run:runId});
   if (claim.error) throw new Error("Source preparation could not be claimed.");
-  if (claim.data) await prepareOnboardingChoices(db,runId,claim.data,{durationMs:options.durationMs});
+  if (claim.data) await prepareOnboardingChoices(db,runId,claim.data,{deadline});
 }

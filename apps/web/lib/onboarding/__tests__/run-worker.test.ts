@@ -66,15 +66,15 @@ describe("executeRun", () => {
     await r.keepAlive;
 
     expect(r.outcome).toBe("awaiting-draft");
-    expect(run).toHaveBeenCalledWith(d.client, expect.objectContaining({ id: "ws1", domain: "example.com" }), expect.any(Function), { firstDraft: "choose" });
+    expect(run).toHaveBeenCalledWith(d.client, expect.objectContaining({ id: "ws1", domain: "example.com" }), expect.any(Function), { firstDraft: "choose", researchDeadline: expect.any(Number) });
     const row = d.tables.onboarding_runs[0] as unknown as OnboardingRunRow;
     expect(row.status).toBe("running");
     expect(row.phases.map((p) => `${p.phase}:${p.status}`)).toEqual(["scanning:done", "keywords:done", "pages:pending", "planning:done", "drafting:active"]);
     expect(row.keywords_found).toBe(94);
     expect(row.planned).toHaveLength(2);
-    // One write per event (the claim is separate), each in order.
+    // The final snapshot lands before dispatch; obsolete synchronous progress coalesces.
     const phaseWrites = d.updates.filter((u) => u.table === "onboarding_runs" && "phases" in u.patch);
-    expect(phaseWrites).toHaveLength(1 + EVENTS.length + 1);
+    expect(phaseWrites).toHaveLength(2);
     // The draft went out with the run id, after the last write.
     expect(dispatch).toHaveBeenCalledWith({ workspaceId: "ws1", runId: "r1", keyword: "seo agent", keywordId: "k1", selection: PENDING.selection });
     expect(dispatch.mock.invocationCallOrder[0]).toBeGreaterThan(0);
@@ -95,7 +95,7 @@ describe("executeRun", () => {
     const d = db();
     const run = pipeline({ pendingDraft: null }, [{ phase: "drafting", status: "done", detail: "Wrote 1,200 words.", article: { id: "a1", title: "T", keyword: "seo agent", wordCount: 1200, verdict: "clean" } }, { phase: "ready" }]);
     const r = await executeRun("r1", { supabase: d.client, run, dispatch: dispatch as never, announce: announce as never, canDispatch: () => false });
-    expect(run).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.any(Function), { firstDraft: "choose" });
+    expect(run).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.any(Function), { firstDraft: "choose", researchDeadline: expect.any(Number) });
     expect(r.outcome).toBe("ran");
     const row = d.tables.onboarding_runs[0] as unknown as OnboardingRunRow;
     expect(row.status).toBe("done");
@@ -222,4 +222,37 @@ describe("executeRun: announcing the batch", () => {
     const r = await executeRun("r1", { supabase: d.client, run: pipeline({ pendingDraft: PENDING }), dispatch: dispatch as never, canDispatch: () => true, announce: announce as never });
     await expect(r.keepAlive).resolves.toBeUndefined();
   });
+});
+
+
+it.each([1,2])("retries a failed final snapshot once and never queues stale choices (%i failed writes)", async failures => {
+  const d = db();
+  d.tables.onboarding_runs[0].planned = [{term:"stale topic",date:"2026-09-01"}];
+  const originalFrom = d.client.from.bind(d.client);
+  let failuresLeft = failures;
+  const client = { ...d.client, from:(table:string) => {
+    const q = originalFrom(table) as unknown as {update:(patch:Record<string,unknown>)=>unknown;then:(resolve:(value:unknown)=>unknown,reject?:(error:unknown)=>unknown)=>unknown};
+    const update = q.update.bind(q), then = q.then.bind(q);
+    let snapshot = false;
+    q.update = patch => { snapshot = table === "onboarding_runs" && Array.isArray(patch.planned) && patch.planned.length === 2; return update(patch); };
+    q.then = (resolve,reject) => snapshot && failuresLeft-- > 0
+      ? Promise.resolve({data:null,error:{message:"temporary write failure"}}).then(resolve,reject)
+      : then(resolve,reject);
+    return q;
+  }} as never;
+  const run = vi.fn(async(_s,_w,emit) => {for (const event of EVENTS) emit(event);return {awaitingChoice:true,pendingDraft:null,fanOutSettled:Promise.resolve()};}) as unknown as typeof runOnboarding;
+  const queueChoices = vi.fn(async() => { expect(d.tables.onboarding_runs[0].planned).toHaveLength(2); });
+  const wakeChoices = vi.fn(async()=>undefined);
+  const result = await executeRun("r1",{supabase:client,run,queueChoices,wakeChoices});
+  await result.keepAlive;
+  if (failures === 1) {
+    expect(result.outcome).toBe("preparing-choices");
+    expect(queueChoices).toHaveBeenCalledOnce();
+  } else {
+    expect(result.outcome).toBe("failed");
+    expect(queueChoices).not.toHaveBeenCalled();
+    expect(wakeChoices).not.toHaveBeenCalled();
+    expect(d.tables.onboarding_runs[0]).toMatchObject({status:"error",error:expect.stringContaining("Retry research")});
+    expect((await d.client.from("onboarding_runs").select("planned").eq("id","r1").maybeSingle()).data?.planned).toEqual([{term:"stale topic",date:"2026-09-01"}]);
+  }
 });

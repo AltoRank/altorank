@@ -57,7 +57,10 @@ function hidden(node: HtmlElement): boolean {
 
 function chrome(node: HtmlElement): boolean {
   return CHROME_TAGS.has(node.name) || CHROME_ROLES.has(node.attribs.role?.toLowerCase())
-    || "data-print-hide" in node.attribs || CHROME_CLASS.test(`${node.attribs.class ?? ""} ${node.attribs.id ?? ""}`);
+    || "data-print-hide" in node.attribs
+    // Body-level classes describe the page's layout, including its navigation.
+    // They cannot establish that every descendant is navigation or a sidebar.
+    || (!["html","body"].includes(node.name) && CHROME_CLASS.test(`${node.attribs.class ?? ""} ${node.attribs.id ?? ""}`));
 }
 
 /** Iterative traversal also handles deeply nested, untrusted documents. */
@@ -191,7 +194,9 @@ export async function readPageExtractOutcome(url: string, maxChars = 4500, optio
       diagnostics.strategy = "plain-text";
       text = html.split(/\r?\n/).map(line => line.replace(/\s+/g, " ").trim()).filter(Boolean).join("\n");
     } else {
-      const document = parseDocument(html, { decodeEntities: true });
+      // Marketing tag-manager snippets sometimes self-close an iframe inside
+      // noscript. Otherwise its raw-text state can swallow the real body.
+      const document = parseDocument(html, { decodeEntities: true, recognizeSelfClosing: true });
       const root = contentRoot(document.children);
       diagnostics.strategy = root.strategy;
       text = visibleText(root.nodes);

@@ -46,7 +46,7 @@ export async function FirstMonthPanel({ workspaceId, quota, role, now }: { works
     </div>}
     {quota.limit !== null && <p className="mt-4 text-sm text-ink-2"><strong>{quota.used} of {quota.limit} articles used</strong> this calendar month across your account · {quota.remaining} remaining. The saved preview counts once; starting a trial does not generate it again.</p>}
     <div className="mt-5 flex flex-wrap items-baseline justify-between gap-2"><h3 className="font-semibold">Next in your plan</h3><Link href="/content" className="text-sm text-accent underline">Adjust dates and topics</Link></div>
-    <p className="mt-1 text-sm text-ink-2">{ready} more {ready === 1 ? "draft" : "drafts"} ready · {remaining.length} more {remaining.length === 1 ? "topic" : "topics"} planned. We fill supported topics within your cadence and available allowance.</p>
+    <p className="mt-1 text-sm text-ink-2">{ready} of {remaining.length} additional planned {remaining.length === 1 ? "article" : "articles"} ready. We fill supported topics within your cadence and available allowance.</p>
     {!remaining.length && <p className="mt-3 text-sm text-ink-2">{pending ? "Checking which additional topics have enough evidence to write." : "No additional topics have enough evidence in this plan yet. Refine your business focus or research more keywords to expand it."}</p>}
     {remaining.length > 0 && <ul className="mt-3 divide-y divide-line">{remaining.map((entry) => {
       const article = byId.get(entry.article_id);
