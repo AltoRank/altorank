@@ -1,7 +1,9 @@
 #!/usr/bin/env tsx
-/** Real-provider quality benchmark. Persists ONLY to loopback Supabase.
+/** Real-provider component benchmark. Persists ONLY to loopback Supabase.
  * npx tsx scripts/onboarding-quality.ts --provider-env=/path/to/env --local-env=/path/to/local-env --out=/tmp/quality --domain=altorank.co
  * Optional --keyword=... is a labelled regression replay, never discovery evidence.
+ * Uses selected-draft source checks; does not exercise onboarding routes, prepared
+ * choice presentation, the gate, entitlement activation or dashboard continuity.
  * Provider keys are allowlisted; no billing, email, CMS or image credentials load.
  */
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -33,7 +35,6 @@ async function main() {
   const domain = flag('domain') ?? 'altorank.co'; const language = flag('language') ?? 'en';
   const locationCode = Number(flag('location') ?? (language === 'it' ? 2380 : 2840));
   report.domain = domain;
-  report.scope = 'Live profile, discovery, buyer fit, SERP qualification and generateArticle with local persistence. No browser, payment, CMS publishing or image-provider test.';
   report.selectionPolicy = flag('keyword') ? 'Explicit keyword regression replay; not discovery evidence' : 'Production domain analysis and recommendation scoring, coverage shortlist and bounded qualification; highest-ranked distinct qualified recommendation';
   const { createClient } = await import('@supabase/supabase-js');
   const { inferBusinessProfileDetailed } = await import('@/lib/onboarding/business-profile');
@@ -41,6 +42,7 @@ async function main() {
   const { recommendKeywords } = await import('@/lib/seo/recommendations');
   const { qualifyOpportunities } = await import('@/lib/keyword-research/opportunity');
   const { generateArticle } = await import('@/lib/content/generate');
+  const { DraftReadinessError } = await import('@/lib/content/draft-readiness');
   const { selectArticleQuestions } = await import('@/lib/ai/article-questions');
   const { setSpendReporter } = await import('@/lib/seo/client');
   const { recordSpend } = await import('@/lib/billing/spend');
@@ -49,6 +51,11 @@ async function main() {
   if (resume && resume.domain !== domain) throw new Error('Resume domain mismatch');
   const accountId = randomUUID(); const workspaceId = resume?.workspaceId ?? randomUUID();
   if (resume) { Object.assign(report, resume, { resumedAt: new Date().toISOString(), timingInvalidated: 'Local database stopped during the initial run; excludes latency comparison' }); delete report.error; }
+  report.scope = 'Component benchmark: live profile, discovery, buyer fit, SERP qualification and generateArticle with selected-draft source checks and local persistence. Bypasses onboarding route/choice preparation, gate, trial and dashboard; no browser, payment, CMS publishing or image-provider test.';
+  report.generationContract = 'generateArticle with verifySourceClaims:true; includes source readiness and complete draft review before saving';
+  // A resumed historical report must not retain a prior successful draft or
+  // describe SERP qualification time as time to a source-supported choice.
+  for (const key of ['article', 'outcome', 'reason', 'message', 'finishedAt', 'timeToFirstUsefulResultMs', 'firstUsefulBriefs']) delete report[key];
   const checked = <T extends { error: { message: string } | null }>(r: T) => { if (r.error) throw new Error(r.error.message); return r; };
   // Read schema before spending on research. This does not touch an existing workspace.
   checked(await db.from('keywords').select('opportunity,research_evidence').limit(0));
@@ -83,7 +90,7 @@ async function main() {
       const candidate = candidateBaseline.candidates?.find((c: { term: string }) => c.term === q.term) ?? candidateBaseline.discovery?.fromIdeas?.find((c: { keyword: string }) => c.keyword === q.term);
       return { keyword: q.term, volume: candidate?.unmeasured ? null : candidate?.volume ?? null, difficulty: candidate?.difficulty ?? null, cpc: candidate?.cpc ?? null };
     });
-    report.scope = 'Controlled replay of saved profile and discovered candidates through live qualification and finished draft; discovery not rerun';
+    report.scope = 'Component replay of saved profile and candidates through live qualification and selected-draft generation with source/readiness holds. Discovery, onboarding routes and choice preparation are not rerun.';
     report.selectionPolicy = 'First qualified candidate in unchanged saved candidate order';
   } else if (flag('keyword')) terms = [{ keyword: flag('keyword')!, volume: null, difficulty: null, cpc: null }];
   else if (resume?.analysis) { terms = []; }
@@ -99,9 +106,9 @@ async function main() {
   report.candidates = rows;
   const recommendations = replay ? null : await recommendKeywords(db, workspaceId, { limit: 1000, qualify: true, onProgress: (items, results) => {
     const briefs = items.flatMap(item => results.get(item.id)?.status === 'qualified' ? [{term:item.term,brief:results.get(item.id)}] : []);
-    if (briefs.length && report.timeToFirstUsefulResultMs === undefined) {
-      report.timeToFirstUsefulResultMs = Date.now() - Date.parse(report.startedAt as string);
-      report.firstUsefulBriefs = briefs; save();
+    if (briefs.length && report.timeToQualifiedTopicMs === undefined) {
+      report.timeToQualifiedTopicMs = Date.now() - Date.parse(report.startedAt as string);
+      report.firstQualifiedBriefs = briefs; save();
     }
   } });
   report.recommendations = recommendations;
@@ -111,7 +118,7 @@ async function main() {
   const first = recommendations?.find(r => r.action === 'write' && r.quality === 'ok' && r.opportunity?.status === 'qualified');
   const selected = recommendations ? rows.find(r => r.id === first?.keywordId) : rows.find(r => opportunities.get(r.id)?.status === 'qualified');
   if (!selected) throw new Error('No qualified topic; refusing to invent a replacement');
-  report.timeToFirstUsefulResultMs ??= Date.now() - Date.parse(report.startedAt as string);
+  report.timeToQualifiedTopicMs ??= Date.now() - Date.parse(report.startedAt as string);
   report.selected = selected; console.log('Writing', selected.term); save();
   // Live semantic regression independently replays the exact observed bad PAA.
   if (flag('keyword') === 'therapy practice website') {
@@ -121,13 +128,25 @@ async function main() {
     ], { keyword: selected.term, business: profile, brief: opportunities.get(selected.id) }, { spend }); save();
   }
   const start = Date.now();
-  const article = await generateArticle({ supabase: db, workspaceId, keyword: selected.term, keywordId: selected.id, autonomous: true, callerEmail: null,
-    onResearch: research => { report.research = research; save(); console.log('Research ready; relevant questions', research.peopleAlsoAsk.length); },
-  });
-  report.article = article; report.draftSeconds = (Date.now() - start) / 1000;
-  report.finishedAt = new Date().toISOString();
-  report.spend = checked(await db.from('provider_spend').select('provider,operation,cost_usd,input_tokens,output_tokens').eq('workspace_id', workspaceId)).data;
-  writeFileSync(`${output}/article.html`, article.html, { mode: 0o600 });
-  save(); console.log('Complete', { title: article.title, words: article.wordCount, seconds: report.draftSeconds, factCheck: article.factCheck.verdict });
+  try {
+    const article = await generateArticle({ supabase: db, workspaceId, keyword: selected.term, keywordId: selected.id, autonomous: true, verifySourceClaims: true, callerEmail: null,
+      onResearch: research => { report.research = research; save(); console.log('Research ready; relevant questions', research.peopleAlsoAsk.length); },
+    });
+    report.article = article; report.outcome = 'ready';
+    writeFileSync(`${output}/article.html`, article.html, { mode: 0o600 });
+    console.log('Complete', { title: article.title, words: article.wordCount, factCheck: article.factCheck.verdict });
+  } catch (error) {
+    report.outcome = error instanceof DraftReadinessError ? 'withheld' : 'error';
+    if (!(error instanceof DraftReadinessError)) throw error;
+    report.reason = error.reason;
+    report.message = error.message;
+    if (error.candidateHtml) writeFileSync(`${output}/withheld-candidate.html`, error.candidateHtml, { mode: 0o600 });
+    console.log('Withheld', error.reason);
+  } finally {
+    report.draftSeconds = (Date.now() - start) / 1000;
+    report.finishedAt = new Date().toISOString();
+    report.spend = checked(await db.from('provider_spend').select('provider,operation,cost_usd,input_tokens,output_tokens').eq('workspace_id', workspaceId)).data;
+    save();
+  }
 }
 main().catch(error => { report.error = error instanceof Error ? error.message : String(error); save(); console.error(report.error); process.exitCode = 1; });

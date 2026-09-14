@@ -31,6 +31,8 @@ vi.mock("@/lib/onboarding/run-dispatch", () => ({ dispatchWorker: (id: string) =
 
 const executeRun = vi.fn();
 vi.mock("@/lib/onboarding/run-worker", () => ({ executeRun: (id: string) => executeRun(id) }));
+const wakeChoices=vi.fn<(...args:unknown[])=>Promise<void>>(async()=>undefined);
+vi.mock("@/lib/onboarding/choice-preparation",()=>({wakeChoicePreparation:(...args:unknown[])=>wakeChoices(...args)}));
 
 import { POST as start } from "../start/route";
 import { POST as run } from "../run/route";
@@ -44,6 +46,7 @@ beforeEach(() => {
   deferred.length = 0;
   dispatchWorker.mockClear();
   executeRun.mockReset();
+  wakeChoices.mockClear();
   user = { id: "u1" };
   db = fakeDb({
     workspaces: [
@@ -76,6 +79,7 @@ describe("POST /api/onboard/start", () => {
     expect(second).toEqual({ runId: first.runId, existing: true });
     await Promise.all(deferred);
     expect(dispatchWorker).toHaveBeenCalledTimes(1);
+    expect(wakeChoices).toHaveBeenCalledTimes(1);
     expect(db.tables.onboarding_runs).toHaveLength(1);
   });
 
@@ -141,13 +145,17 @@ describe("GET /api/onboard/state", () => {
     expect(body.article).toBeNull();
     expect(body.stale).toBe(false);
     expect(body.now).toEqual(expect.any(Number));
+    await Promise.all(deferred);
+    expect(wakeChoices).toHaveBeenCalledWith(db.client,"r1");
   });
 
   it("joins the draft once the row points at it", async () => {
     Object.assign(db.tables.onboarding_runs[0], { status: "done", article_id: "a1" });
-    db.tables.articles.push({ id: "a1", title: "T", keyword: "seo agent", word_count: 1200, fact_check_verdict: "clean", status: "review" });
+    db.tables.articles.push({ id: "a1", workspace_id:"ws1", title: "T", keyword: "seo agent", word_count: 1200, fact_check_verdict: "clean", status: "review" });
     const body = await (await state(get("/api/onboard/state?workspaceId=ws1"))).json();
-    expect(body.article).toEqual({ id: "a1", title: "T", keyword: "seo agent", word_count: 1200, fact_check_verdict: "clean", status: "review" });
+    expect(body.article).toEqual({ id: "a1", workspace_id:"ws1", title: "T", keyword: "seo agent", word_count: 1200, fact_check_verdict: "clean", status: "review" });
+    await Promise.all(deferred);
+    expect(wakeChoices).not.toHaveBeenCalled();
   });
 
   it("another account's member gets nothing: 403 here, and RLS would hide the row anyway", async () => {
@@ -155,6 +163,8 @@ describe("GET /api/onboard/state", () => {
     const res = await state(get("/api/onboard/state?workspaceId=ws1"));
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "Forbidden" });
+    await Promise.all(deferred);
+    expect(wakeChoices).not.toHaveBeenCalled();
   });
 
   it("refuses without a session or a workspace id, and 404s an unknown workspace", async () => {

@@ -52,6 +52,7 @@ export interface GscSignal {
 }
 
 export interface ArticleResearch {
+  draftPreparation?: { context: string; createdAt: string };
   draftSources?: import("@/lib/keyword-research/page-evidence").PageExtract[];
   draftSourceBrief?: import("@/lib/content/source-brief").SourceBrief;
   draftEvidencePlan?: import("@/lib/content/draft-evidence").DraftEvidencePlan;
@@ -373,6 +374,9 @@ export async function gatherArticleResearch(options: {
    * the saving. `undefined` means nobody looked, and this pays for the lookup.
    */
   relatedKeywords?: RelatedKeyword[];
+  /** The selected task already has a supported brief; generic expansion and
+   * competitor word counts do not help answer it. */
+  focusedFirstDraft?: boolean;
   qualifiedSerp?: { query: string; languageCode: string; locationCode: number; fetchedAt: string; data: SerpData };
 }): Promise<ArticleResearch> {
   const { keyword, locale, supabase, workspaceId } = options;
@@ -383,7 +387,7 @@ export async function gatherArticleResearch(options: {
   };
 
   const hasDataForSeo = hasDataForSEOCredentials();
-  const prefetched = options.relatedKeywords;
+  const prefetched = options.focusedFirstDraft ? [] : options.relatedKeywords;
 
   const saved = options.qualifiedSerp;
   const age = saved ? Date.now() - Date.parse(saved.fetchedAt) : Infinity;
@@ -472,14 +476,14 @@ export async function gatherArticleResearch(options: {
 
   // Fill in the word counts the SERP provider does not supply. Only worth the
   // round trips when there are competitors to measure at all.
-  const { competitors, layer: lengthLayer } = rawCompetitors.length
+  const { competitors, layer: lengthLayer } = rawCompetitors.length && !options.focusedFirstDraft
     ? await measureCompetitorLengths(rawCompetitors)
     : {
         competitors: rawCompetitors,
         layer: {
           id: "competitor_length" as const,
           status: "unavailable" as const,
-          detail: "no competitors to measure",
+          detail: options.focusedFirstDraft ? "length follows the approved task; no competitor-length lookup" : "no competitors to measure",
         },
       };
   layers.push(lengthLayer);

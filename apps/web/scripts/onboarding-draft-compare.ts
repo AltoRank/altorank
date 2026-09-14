@@ -1,7 +1,9 @@
 #!/usr/bin/env tsx
-/** Controlled writer comparison. Same saved business, brief, research and links.
+/** Historical generic-writer comparison. Same saved business, brief, research and links.
  * --baseline=/path/to/live-report.json --old-checkout=/path/to/baseline --provider-env=/path/to/env --out=/tmp/compare
  * Only Anthropic credentials are read. No database writes or publishing.
+ * This intentionally exercises buildSystemPrompt without firstDraft inputs.
+ * It cannot validate the current onboarding writer, source readiness or review.
  */
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { parseEnv } from "node:util";
@@ -10,6 +12,7 @@ import { resolve } from "node:path";
 const flag = (key: string) => process.argv.find(a => a.startsWith(`--${key}=`))?.slice(key.length + 3);
 async function main() {
   for (const key of ["baseline", "old-checkout", "provider-env", "out"]) if (!flag(key)) throw Error(`Missing --${key}`);
+  console.log("Historical generic-writer comparison; does not evaluate the current selected onboarding draft flow.");
   const env = parseEnv(readFileSync(flag("provider-env")!, "utf8"));
   for (const key of Object.keys(process.env)) if (/ANTHROPIC|OPENAI|DATAFORSEO|STRIPE|RESEND|SUPABASE|E2E_STUBS/.test(key)) delete process.env[key];
   for (const key of ["ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ANTHROPIC_MODEL_STRUCTURED", "ANTHROPIC_MODEL_EDITORIAL"]) if (env[key]) process.env[key] = env[key];
@@ -41,7 +44,7 @@ async function main() {
     writeFileSync(`${out}/${label}.html`,text);
     return {label,seconds:(Date.now()-started)/1000,words:text.replace(/<[^>]+>/g," ").split(/\s+/).length,model,usage:message.usage,costUsd:anthropicCost(model,message.usage.input_tokens,message.usage.output_tokens)};
   }));
-  writeFileSync(`${out}/results.json`,JSON.stringify({scope:"One sample per prompt with identical saved inputs. Writer-only; excludes new retrieval, enrichment and corrective revision. Not a conversion experiment.",results},null,2));
+  writeFileSync(`${out}/results.json`,JSON.stringify({contract:"historical-generic-writer",scope:"One sample per generic prompt with identical saved inputs and no firstDraft source packet. Does not exercise the current selected onboarding writer, source readiness, claim review or route flow. Not a conversion experiment.",results},null,2));
   console.log(results.map(r=>({label:r.label,words:r.words,seconds:r.seconds,cost:r.costUsd})));
 }
 main().catch(e=>{console.error(e.message);process.exitCode=1;});

@@ -21,6 +21,7 @@ import { announceDraftBatch } from "@/lib/email/draft-batch";
 import { runOnboarding } from "./pipeline";
 import { RunRecorder, RUN_COLUMNS, stampRun } from "./run-store";
 import type { OnboardingRunRow } from "./events";
+import { queueChoicePreparation, wakeChoicePreparation } from "./choice-preparation";
 
 export type ExecuteOutcome =
   | "not-found"
@@ -28,6 +29,7 @@ export type ExecuteOutcome =
   | "already-finished"
   | "ran"
   | "awaiting-choice"
+  | "preparing-choices"
   | "awaiting-draft"
   | "failed";
 
@@ -48,6 +50,8 @@ export interface ExecuteDeps {
   dispatch?: typeof dispatchFirstDraft;
   canDispatch?: () => boolean;
   announce?: typeof announceDraftBatch;
+  queueChoices?: typeof queueChoicePreparation;
+  wakeChoices?: typeof wakeChoicePreparation;
 }
 
 /**
@@ -88,6 +92,7 @@ interface WorkerWorkspace {
 }
 
 export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise<ExecuteResult> {
+  const startedAt = Date.now();
   const supabase = deps.supabase ?? createServiceClient();
   const settled = { outcome: "failed" as ExecuteOutcome, keepAlive: Promise.resolve() };
 
@@ -135,9 +140,11 @@ export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise
   await recorder.flush();
 
   if (result.awaitingChoice) {
-    const { error } = await supabase.from("onboarding_runs").update({ status: "awaiting_choice", updated_at: new Date().toISOString() }).eq("id", runId).eq("workspace_id", workspace.id).eq("status", "running");
-    if (error) { await recorder.fail("Could not save your topic choices. Retry preparation."); return settled; }
-    return { outcome: "awaiting-choice", keepAlive: Promise.resolve() };
+    try { await (deps.queueChoices??queueChoicePreparation)(supabase,runId,workspace.id); }
+    catch { await recorder.fail("Could not save your topic choices for source checks. Retry preparation."); return settled; }
+    const keepAlive=(deps.wakeChoices??wakeChoicePreparation)(supabase,runId,{durationMs:Math.max(0,285_000-(Date.now()-startedAt))})
+      .catch(()=>{ console.warn("[onboarding] source preparation dispatch interrupted; the saved queue can resume on refresh"); });
+    return { outcome: "preparing-choices", keepAlive };
   }
   const announce = deps.announce ?? announceDraftBatch;
 

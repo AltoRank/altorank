@@ -32,6 +32,8 @@ import type { RelatedKeyword } from "@/lib/seo/brief-data";
 export const maxDuration = 300;
 
 interface Body {
+  expectedPreparationContext?: string;
+  expectedPreparationCreatedAt?: string;
   workspaceId?: string;
   keywordId?: string | null;
   keyword?: string;
@@ -110,6 +112,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await generateArticle({
+      expectedPreparationContext: body.expectedPreparationContext,
+      expectedPreparationCreatedAt: body.expectedPreparationCreatedAt,
       verifySourceClaims: Boolean(runId),
       supabase,
       workspaceId,

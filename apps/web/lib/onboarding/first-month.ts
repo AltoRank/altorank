@@ -5,6 +5,11 @@ import { sweepStaleDrafts } from "@/lib/content/stale-drafts";
 import { generateArticle } from "@/lib/content/generate";
 import { paceOnActivation } from "@/lib/content/pace";
 import { selfInvocation, selfInvoke } from "@/lib/content/fan-out";
+import { draftPreparationContext, loadDraftPreparation, prepareDraft, readDraftPreparation, type DraftPreparationInput } from "@/lib/content/draft-preparation";
+import { contextKey, readOpportunity } from "@/lib/keyword-research/opportunity";
+import { languageCodeOf } from "@/lib/keyword-research/locale";
+import type { FitProfile } from "@/lib/keyword-research/buyer-fit";
+import { ResearchBudget, withResearchBudget } from "@/lib/seo/request-context";
 import { schedulePlan, fulfilPlannedEntry } from "./plan";
 import { DAY_MS, isoDate } from "./plan-calendar";
 
@@ -39,8 +44,9 @@ export async function queueFirstMonth(db: SupabaseClient, accountId: string, pla
   return queued;
 }
 
-/** One bounded unit per invocation. A ten-minute database lease outlives the
- * five-minute function. Completed articles are recovered before any retry. */
+/** One bounded unit per invocation: month planning, source preparation OR writing.
+ * A ten-minute database lease outlives the five-minute function. Completed
+ * articles are recovered before any retry; source packets survive invocations. */
 export async function prepareFirstMonthStep(db: SupabaseClient, workspaceId: string, token: string): Promise<void> {
   const patch = async (values: Record<string, unknown>) => {
     const terminal = ["ready", "attention", "blocked"].includes(String(values.status));
@@ -65,15 +71,20 @@ export async function prepareFirstMonthStep(db: SupabaseClient, workspaceId: str
       await patch({ status: failed.count ? "attention" : "ready", message: failed.count ? "Some drafts need another attempt. Your completed drafts are saved." : null });
       return;
     }
-    const siteResult = await db.from("workspaces").select("account_id, auto_generate, auto_generate_weekly_limit").eq("id", workspaceId).single();
+    const siteResult = await db.from("workspaces").select("account_id, auto_generate, auto_generate_weekly_limit, domain, language, location_code, business_profile").eq("id", workspaceId).single();
     if (siteResult.error) throw siteResult.error;
     const site = siteResult.data;
-    const quota = await getQuota(db, site.account_id);
-    if (quota.reason !== "plan" || !site.auto_generate || !site.auto_generate_weekly_limit || (quota.remaining !== null && quota.remaining <= 0)) {
-      await patch({ status: "blocked", message: "Preparation is paused. Check your plan, available articles and writing pace in Settings." });
-      return;
-    }
+    const availableQuota = async () => {
+      const quota = await getQuota(db, site.account_id);
+      if (quota.reason !== "plan" || !site.auto_generate || !site.auto_generate_weekly_limit || (quota.remaining !== null && quota.remaining <= 0)) {
+        await patch({ status: "blocked", message: "Preparation is paused. Check your plan, available articles and writing pace in Settings." });
+        return null;
+      }
+      return quota;
+    };
     if (!run.planned) {
+      const quota = await availableQuota();
+      if (!quota) return;
       attempts = run.planning_attempts + 1;
       if (attempts > 2) {
         await patch({ status: "attention", message: "Research could not finish. Retry preparation when you are ready." });
@@ -105,7 +116,8 @@ export async function prepareFirstMonthStep(db: SupabaseClient, workspaceId: str
     }
     const job = next.data!;
     jobId = job.id;
-    attempts = job.attempts + 1;
+    const previousAttempts = job.attempts;
+    attempts = previousAttempts + 1;
     const entryResult = await db.from("calendar_entries").select("id, keyword_id, keyword, article_id").eq("workspace_id", workspaceId).eq("id", job.entry_id).maybeSingle();
     if (entryResult.error) throw entryResult.error;
     const entry = entryResult.data;
@@ -115,14 +127,35 @@ export async function prepareFirstMonthStep(db: SupabaseClient, workspaceId: str
     if (written.error) throw written.error;
     let articleId = written.data?.id;
     if (!articleId) {
+      // Attaching an already-saved article consumes no allowance. Only new
+      // research or writing requires an active plan, pace and available quota.
+      if (!await availableQuota()) return;
       if (attempts > 2) throw new Error("This draft did not finish after two attempts.");
-      const keyword = await db.from("keywords").select("opportunity, plan_excluded_at").eq("workspace_id", workspaceId).eq("id", entry.keyword_id).single();
+      const keyword = await db.from("keywords").select("term, opportunity, plan_excluded_at, instructions").eq("workspace_id", workspaceId).eq("id", entry.keyword_id).single();
       if (keyword.error) throw keyword.error;
-      if (keyword.data.plan_excluded_at || keyword.data.opportunity?.status !== "qualified") throw new Error("This topic needs stronger evidence before writing.");
+      const profile = (site.business_profile ?? null) as FitProfile | null;
+      const fingerprint = contextKey({domain:site.domain, business:profile, languageCode:languageCodeOf(site.language), locationCode:site.location_code ?? 2840});
+      const brief = readOpportunity(keyword.data.opportunity, fingerprint);
+      if (!site.domain || keyword.data.plan_excluded_at || keyword.data.term !== entry.keyword || brief?.status !== "qualified") throw new DraftReadinessError("evidence");
+      const input: DraftPreparationInput = {workspaceId, keywordId:entry.keyword_id, keyword:entry.keyword, brief, profile, domain:site.domain, language:site.language, locationCode:site.location_code, instructions:keyword.data.instructions};
+      const prepared = await loadDraftPreparation(db, input);
+      if (prepared?.status === "insufficient") throw new DraftReadinessError("evidence");
       const saved = await db.from("first_month_jobs").update({ status: "writing", attempts }).eq("workspace_id", workspaceId).eq("id", job.id);
       if (saved.error) throw saved.error;
+      if (!prepared || prepared.status === "unavailable") {
+        const researched = await withResearchBudget(new ResearchBudget(30, 180_000), () => prepareDraft(db, input, {retryUnavailable:previousAttempts > 0}));
+        if (researched.status === "insufficient") throw new DraftReadinessError("evidence");
+        if (researched.status !== "ready" || !readDraftPreparation(researched, draftPreparationContext(input))) throw new DraftReadinessError("incomplete-review");
+        // A successful preparation is progress, not a failed writing attempt.
+        // Yield even when it finished quickly: writing and review need their own
+        // execution window. The next invocation rechecks focus, quota and cache.
+        const yielded = await db.from("first_month_jobs").update({status:"queued", attempts:previousAttempts}).eq("workspace_id", workspaceId).eq("id", job.id);
+        if (yielded.error) throw yielded.error;
+        continueWork = true;
+        return;
+      }
       await sweepStaleDrafts(db, workspaceId);
-      const result = await generateArticle({ supabase: db, workspaceId, keywordId: entry.keyword_id, keyword: entry.keyword, autonomous: true, verifySourceClaims: true, billToAccountId: site.account_id });
+      const result = await generateArticle({ supabase: db, workspaceId, keywordId: entry.keyword_id, keyword: entry.keyword, autonomous: true, verifySourceClaims: true, expectedPreparationContext:prepared.context, expectedPreparationCreatedAt:prepared.createdAt, billToAccountId: site.account_id });
       articleId = result.articleId;
     }
     await fulfilPlannedEntry(db, entry.id, articleId);

@@ -43,7 +43,7 @@ const WORKER_EVENTS: OnboardingEvent[] = [
 /** What the draft route stamps once the draft lands. */
 const DRAFT_DONE: OnboardingEvent = { phase: "drafting", status: "done", detail: 'Wrote 1,200 words on "seo agent".' };
 const ARTICLE = { id: "a1", title: "What an SEO agent does", keyword: "seo agent", wordCount: 1200, verdict: "clean" as const };
-const ARTICLE_ROW = { id: "a1", title: "What an SEO agent does", keyword: "seo agent", word_count: 1200, fact_check_verdict: "clean", status: "review" };
+const ARTICLE_ROW = { id: "a1", workspace_id:"ws1", title: "What an SEO agent does", keyword: "seo agent", word_count: 1200, fact_check_verdict: "clean", status: "review" };
 
 describe("RunRecorder", () => {
   it("writes the row after every event, in order, with the reduced phases", async () => {
@@ -243,6 +243,18 @@ describe("startRun", () => {
 });
 
 describe("latestRun", () => {
+  it("keeps polling the chosen finished run when a newer run exists and scopes its article",async()=>{
+    const db=fakeDb({onboarding_runs:[
+      {id:"chosen",workspace_id:"ws1",status:"done",article_id:"a1",started_at:"2026-09-13",updated_at:"2026-09-13"},
+      {id:"newer",workspace_id:"ws1",status:"running",started_at:"2026-09-14",updated_at:"2026-09-14"},
+      {id:"foreign",workspace_id:"ws2",status:"done",started_at:"2026-09-14",updated_at:"2026-09-14"},
+    ],articles:[{...ARTICLE_ROW}]});
+    expect((await latestRun(db.client,"ws1",Date.now(),"chosen")).run?.id).toBe("chosen");
+    expect((await latestRun(db.client,"ws1",Date.now(),"chosen")).article?.id).toBe("a1");
+    expect((await latestRun(db.client,"ws1",Date.now(),"foreign")).run).toBeNull();
+    db.tables.articles[0].workspace_id="ws2";
+    expect((await latestRun(db.client,"ws1",Date.now(),"chosen")).article).toBeNull();
+  });
   it("returns the newest run, its draft, and whether it is stale", async () => {
     const now = Date.now();
     const db = fakeDb({

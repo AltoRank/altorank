@@ -144,6 +144,7 @@ test("a new account is walked from /dashboard to five qualified topics and one d
   await expect(page).toHaveURL(/\/onboarding\/draft\//);
   await expect(page.locator("article")).toBeVisible();
   await expect(page.getByRole("region", { name: "Draft checks" })).toBeVisible();
+  await page.screenshot({path:test.info().outputPath("first-draft-preview.png"),fullPage:true});
   // A partly unavailable source check must remain visible after persistence.
   const {data: savedDraft}=await db.from("articles").select("research").eq("workspace_id",ws.id).eq("id",dayOneArticle!.id).single();
   await db.from("articles").update({research:{...savedDraft?.research,editorialReview:{status:"unavailable",headline:"preserved",productClaims:"needs-review",qualitativeClaims:"not-checked",structure:"no-issues-detected",claimVerification:{status:"partial"},findings:[{category:"product",text:"Every plan supports unlimited sites.",reason:"The source limits this feature to one plan.",removed:false}]}}}).eq("workspace_id",ws.id).eq("id",dayOneArticle!.id);
@@ -153,6 +154,7 @@ test("a new account is walked from /dashboard to five qualified topics and one d
   if (process.env.E2E_BILLING === "1") {
     await expect(page.getByRole("region", { name: "Continue with your draft" })).toContainText("100 articles per calendar month");
     await expect(page.getByRole("region", { name: "Continue with your draft" })).toContainText("99 available after activation");
+    await page.screenshot({path:test.info().outputPath("draft-and-trial-gate.png"),fullPage:true});
     await page.goto("/dashboard");
     await expect(page).toHaveURL(/\/onboarding/);
     // Real signed webhook and persisted entitlement; Stripe card entry itself
@@ -179,9 +181,17 @@ test("a new account is walked from /dashboard to five qualified topics and one d
   await expect(month.getByRole("link", { name: "Review and edit your first draft" })).toHaveAttribute("href", `/content/${dayOneArticle!.id}`);
   await page.reload();
   await expect(month).toContainText(dayOneArticle!.title);
+  await page.screenshot({path:test.info().outputPath("first-dashboard.png"),fullPage:true});
   await expect(page.getByRole("region", { name: "Recommended actions" })).not.toContainText("Nothing is scheduled");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(month.getByRole("link", { name: "Review and edit your first draft" })).toBeVisible();
+  await expect.poll(async()=>{
+    const sidebar=await page.locator("#dashboard-sidebar").boundingBox();
+    return sidebar ? sidebar.x+sidebar.width : 0;
+  }).toBeLessThanOrEqual(1);
+  await page.screenshot({path:test.info().outputPath("first-dashboard-mobile.png"),fullPage:true});
+  await month.getByRole("link", { name: "Review and edit your first draft" }).click();
+  await expect(page).toHaveURL(new RegExp(`/content/${dayOneArticle!.id}$`));
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/content");
 

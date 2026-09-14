@@ -1,6 +1,6 @@
 import {assertPublicUrl} from "@/lib/audit/lenient-fetch";
 import {hasDataForSEOCredentials,post} from "@/lib/seo/client";
-import {ResearchBudget,withResearchBudget} from "@/lib/seo/request-context";
+import {ResearchBudget,currentResearchBudget,withResearchBudget} from "@/lib/seo/request-context";
 import type {PageExtract} from "@/lib/keyword-research/page-evidence";
 
 /** Re-read at most two observed pricing pages whose static response omitted
@@ -11,7 +11,7 @@ export async function recoverRenderedPricing(sources:PageExtract[]):Promise<Page
     try{return /\/(?:pricing|plans)(?:[/-]|$)/i.test(new URL(s.url).pathname)&&!/[\$€£]\s*\d|\d\s*(?:USD|EUR|GBP)/i.test(s.text);}catch{return false;}
   }).slice(0,2);
   if(!candidates.length)return sources;
-  const recovered=await withResearchBudget(new ResearchBudget(2,20000),()=>Promise.all(candidates.map(async source=>{
+  const recovered=await withResearchBudget(currentResearchBudget()??new ResearchBudget(2,20000),()=>Promise.all(candidates.map(async source=>{
     try {
       assertPublicUrl(source.url);
       const result=await post<{items?:Array<{status_code?:number;custom_js_response?:{url?:string;title?:string;text?:string}}>}>('/on_page/instant_pages',[{

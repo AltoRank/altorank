@@ -46,12 +46,14 @@ export async function latestRun(
   supabase: SupabaseClient,
   workspaceId: string,
   now = Date.now(),
+  runId?: string,
 ): Promise<OnboardingRunSnapshot> {
-  const { data } = await supabase
+  let query = supabase
     .from("onboarding_runs")
     .select(RUN_COLUMNS)
-    .eq("workspace_id", workspaceId)
-    .order("started_at", { ascending: false })
+    .eq("workspace_id", workspaceId);
+  if (runId) query = query.eq("id", runId);
+  const { data } = await query.order("started_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   const run = (data as OnboardingRunRow | null) ?? null;
@@ -59,7 +61,7 @@ export async function latestRun(
 
   let article: OnboardingRunArticle | null = null;
   if (run.article_id) {
-    const { data: row } = await supabase.from("articles").select(ARTICLE_COLUMNS).eq("id", run.article_id).maybeSingle();
+    const { data: row } = await supabase.from("articles").select(ARTICLE_COLUMNS).eq("workspace_id", workspaceId).eq("id", run.article_id).maybeSingle();
     article = (row as OnboardingRunArticle | null) ?? null;
   }
   // Everything the run wrote, for the trial step's list: the inline first

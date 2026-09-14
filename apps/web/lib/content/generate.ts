@@ -83,6 +83,9 @@ export function needsKeywordFactsLookup(facts: KeywordFacts): boolean {
 }
 
 export interface GenerateArticleOptions {
+  /** The source packet approved before an onboarding choice was offered. */
+  expectedPreparationContext?: string;
+  expectedPreparationCreatedAt?: string;
   /** The selected onboarding draft gets bounded claim-by-claim source checks. */
   verifySourceClaims?: boolean;
   supabase: SupabaseClient;
@@ -615,14 +618,15 @@ async function generateArticleInContext(options: GenerateArticleOptions): Promis
       workspaceId,
       relatedKeywords: options.relatedKeywords,
       qualifiedSerp: topicBrief?.serp,
+      focusedFirstDraft: options.verifySourceClaims,
     });
-    const questionSelection = await selectArticleQuestions(research.peopleAlsoAsk, {
+    const questionSelection = options.verifySourceClaims ? null : await selectArticleQuestions(research.peopleAlsoAsk, {
       keyword, title: approvedTitle, language: workspace.language ?? "en",
       business: workspace.business_profile, brief: topicBrief,
       instructions: refreshOf?.brief ?? keywordRow?.instructions,
     }, { spend: { supabase: spendDb, workspaceId } });
-    research.questionSelection = questionSelection;
-    research.peopleAlsoAsk = questionSelection.kept;
+    if (questionSelection) research.questionSelection = questionSelection;
+    research.peopleAlsoAsk = questionSelection?.kept ?? [];
     onResearch?.(research);
 
     /**
@@ -695,21 +699,36 @@ async function generateArticleInContext(options: GenerateArticleOptions): Promis
       .map((q) => ({ question: q.question, answer: q.answer }));
     const expectedLength = keywordRow?.expected_length ?? "auto";
     const { collectTaskEvidence, taskWritingGuide, retrievedCitationPages, compactDraftTask } = await import("./draft-evidence");
-    const taskEvidence = topicBrief ? await collectTaskEvidence(
+    const preparationInput = topicBrief && keywordRow ? {
+      workspaceId, keywordId:keywordRow.id, keyword, brief:topicBrief,
+      profile:workspace.business_profile as BusinessFocus, domain:workspace.domain,
+      language:workspace.language, locationCode:workspace.location_code, instructions:keywordRow.instructions,
+    } : null;
+    const preparation = await import("./draft-preparation");
+    const prepared = options.verifySourceClaims && preparationInput ? await (
+      options.expectedPreparationContext
+        ? preparation.loadDraftPreparation(spendDb,preparationInput,{context:options.expectedPreparationContext,createdAt:options.expectedPreparationCreatedAt})
+        : preparation.prepareDraft(spendDb,preparationInput)
+    ) : null;
+    if (options.expectedPreparationContext && (!prepared || prepared.status !== "ready" || prepared.context !== options.expectedPreparationContext)) {
+      throw new DraftReadinessError("incomplete-review");
+    }
+    if (prepared) research.draftPreparation = {context:prepared.context,createdAt:prepared.createdAt};
+    const taskEvidence = prepared ?? (topicBrief ? await collectTaskEvidence(
       workspace.business_profile as BusinessFocus,
       topicBrief.conversionPath,
-      research.competitors.map(c => c.url),
+      topicBrief.evidenceUrls ?? [],
       topicBrief,
       {supabase:spendDb,workspaceId},
-    ) : null;
+    ) : null);
     const sourceEvidence = taskEvidence?.sources ?? [];
     research.draftSources = sourceEvidence;
     research.draftEvidencePlan = taskEvidence?.plan;
     const { prepareSourceBrief, sourceBriefInstructions } = await import("./source-brief");
-    const sourceBrief = options.verifySourceClaims && taskEvidence
+    const sourceBrief = prepared?.sourceBrief ?? (options.verifySourceClaims && taskEvidence
       ? await prepareSourceBrief(sourceEvidence, taskEvidence.plan, topicBrief,
         (workspace.business_profile as {name?:string} | null)?.name ?? workspace.domain,
-        {supabase:spendDb,workspaceId}) : null;
+        {supabase:spendDb,workspaceId}) : null);
     research.draftSourceBrief = sourceBrief ?? undefined;
     if (sourceBrief && sourceBrief.status !== "prepared") {
       if (article.id && !articleId && !refreshOf) await supabase.from("articles")

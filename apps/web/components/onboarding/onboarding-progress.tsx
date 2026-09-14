@@ -79,6 +79,7 @@ export function OnboardingProgress({
   autoNavigate = true,
   onState,
   initialRun = null,
+  resumeRunId,
 }: {
   workspaceId: string;
   domain: string;
@@ -96,6 +97,8 @@ export function OnboardingProgress({
    * that has already finished is shown as it is and nothing is started.
    */
   initialRun?: OnboardingRunSnapshot | null;
+  /** Follow the selected run even if its draft finished before this mount. */
+  resumeRunId?: string | null;
 }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState>(() =>
@@ -121,6 +124,7 @@ export function OnboardingProgress({
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const startedAt = Date.now();
+    let watchedRunId = resumeRunId ?? initialRun?.run?.id;
 
     const fail = (detail: string) => setState((s) => reduceOnboarding(s, { phase: "error", detail }));
 
@@ -129,7 +133,7 @@ export function OnboardingProgress({
     const poll = async () => {
       if (cancelled) return;
       try {
-        const res = await fetch(`/api/onboard/state?workspaceId=${encodeURIComponent(workspaceId)}`, { cache: "no-store" });
+        const res = await fetch(`/api/onboard/state?workspaceId=${encodeURIComponent(workspaceId)}${watchedRunId ? `&runId=${encodeURIComponent(watchedRunId)}` : ""}`, { cache: "no-store" });
         if (res.ok) {
           const snapshot = (await res.json()) as OnboardingRunSnapshot;
           if (cancelled) return;
@@ -165,6 +169,7 @@ export function OnboardingProgress({
 
     (async () => {
       try {
+        if (watchedRunId) { await poll(); return; }
         const res = await fetch("/api/onboard/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -175,6 +180,8 @@ export function OnboardingProgress({
           fail(`Onboarding could not start (${res.status}).`);
           return;
         }
+        const started = await res.json();
+        watchedRunId = started.runId;
         await poll();
       } catch {
         if (!cancelled) fail("Onboarding could not start. Check the connection and reload.");
@@ -185,7 +192,7 @@ export function OnboardingProgress({
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [workspaceId, settledOnMount]);
+  }, [workspaceId, settledOnMount, resumeRunId, initialRun?.run?.id]);
 
   // Hand off once the run is over - or once the row says it stopped
   // responding. Either way the dashboard is the right place to be: it polls a

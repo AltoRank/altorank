@@ -1,5 +1,5 @@
 #!/usr/bin/env tsx
-/** Offline-input, real-model evaluation. No DB, publishing or payment calls.
+/** Synthetic claim-passage, real-model evaluation. No DB, publishing or payment calls.
  * --provider-env=/path --baseline-checkout=/path --out=/tmp/eval
  * --split=development|holdout --repeats=2 --variants=baseline,model,prompt,combined
  */
@@ -14,6 +14,7 @@ type ClaimCase = {id:string;split:string;html:string;brief:unknown;sources:unkno
 type Result = {id:string;split:string;variant:string;repeat:number;checked:boolean;passed:boolean;tp:number;fp:number;fn:number;categoryErrors:number;report:EditorialReview;calls:ModelObservation[]};
 
 async function main() {
+  if (process.argv.includes("--topics")) throw Error("Retired --topics mode: its one-SERP proposal fixture does not satisfy current per-result buyer/task support and prepared-choice contracts. Use onboarding-release-eval.ts with a prelabelled cohort for current component lifecycle results. Existing topic reports remain historical; they are not current pass rates.");
   if (!flag("provider-env") || !flag("baseline-checkout") || !flag("out")) throw Error("Require --provider-env, --baseline-checkout and --out");
   const env = parseEnv(readFileSync(flag("provider-env")!,"utf8"));
   for (const key of Object.keys(process.env)) if (/ANTHROPIC|OPENAI|DATAFORSEO|STRIPE|RESEND|SUPABASE|E2E_STUBS/.test(key)) delete process.env[key];
@@ -24,22 +25,6 @@ async function main() {
   const current = await import("@/lib/content/approved-output");
   const baseline = await import(pathToFileURL(resolve(flag("baseline-checkout")!,"apps/web/lib/content/approved-output.ts")).href) as typeof current;
   const models = {structured:anthropicModel("structured"),editorial:anthropicModel("editorial")};
-  if (process.argv.includes("--topics")) {
-    const {checkEditorialTask}=await import("@/lib/keyword-research/editorial-task");
-    const fixtures=JSON.parse(readFileSync(resolve("evals/onboarding/topics.json"),"utf8")) as {labelOrigin:string;cases:Array<{id:string;businessEvidence:string;query:string;serpTitle:string;expectedSupported:boolean;focus?:{primaryBuyer:string;priorityOffering:string};proposedAudience?:string}>};
-    const out=resolve(flag("out")!);mkdirSync(out,{recursive:true});
-    const results:unknown[]=[];
-    for(let repeat=0;repeat<2;repeat++)for(const c of fixtures.cases.filter(c=>!flag("case-prefix")||c.id.startsWith(flag("case-prefix")!))){
-      const calls:ModelObservation[]=[];
-      const proposed={results:[],buyer:{relevant:true,reason:"Proposal under test"},product:{supported:true,quote:c.businessEvidence,reason:"Proposal under test"},editorial:{achievable:true,reason:"Proposal under test"},audience:c.proposedAudience??"The business's buyers",buyingJob:c.query,offering:"The business offering",angle:c.serpTitle,conversionPath:"https://business.example"};
-      const prediction=await withModelObserver(event=>calls.push(event),()=>checkEditorialTask(c.query,[{title:c.serpTitle,description:c.serpTitle,domain:"search.example",url:"https://search.example/guide",rank:1,wordCount:null}],proposed,undefined,c.businessEvidence,flag("topic-tier")==="editorial"?"editorial":"structured",c.focus),{includeResponse:true});
-      const passed=prediction.status!=="unavailable"&&(prediction.status==="supported")===c.expectedSupported;
-      results.push({id:c.id,repeat,expectedSupported:c.expectedSupported,prediction,passed,calls});
-      writeFileSync(`${out}/results.json`,JSON.stringify({scope:fixtures.labelOrigin,models,results},null,2)+"\n");
-      console.log(c.id,repeat,prediction.status,passed?"pass":"FAIL");
-    }
-    return;
-  }
   const fixture = JSON.parse(readFileSync(resolve("evals/onboarding/claims.json"),"utf8")) as {labelOrigin:string;cases:ClaimCase[]};
   const split = flag("split") ?? "development";
   if (!["development","holdout"].includes(split)) throw Error("Invalid split");

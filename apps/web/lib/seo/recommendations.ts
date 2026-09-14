@@ -324,6 +324,18 @@ const SINGLE_WORD_PENALTY = 0.5;
  */
 const AUDIENCE_BOOST = 1.75;
 
+const COVERAGE_STATUSES = ["draft", "drafting", "review", "approved", "scheduled", "live", "error"];
+
+function hasArticleBody(node: unknown): boolean {
+  if (!node || typeof node !== "object" || Array.isArray(node)) return false;
+  const value = node as { type?: unknown; text?: unknown; content?: unknown };
+  // A saved headline, empty editor document or image metadata is not an article.
+  // Keep short authored drafts eligible instead of guessing a word-count cutoff.
+  if (value.type === "heading") return false;
+  if (value.type === "text") return typeof value.text === "string" && /[\p{L}\p{N}]/u.test(value.text);
+  return Array.isArray(value.content) && value.content.some(hasArticleBody);
+}
+
 export async function recommendKeywords(
   supabase: SupabaseClient,
   workspaceId: string,
@@ -379,8 +391,10 @@ export async function recommendKeywords(
       .order("checked_at", { ascending: false }),
     supabase
       .from("articles")
-      .select("id, keyword")
+      .select("id, keyword, status, content, approved_by")
       .eq("workspace_id", workspaceId)
+      .in("status", COVERAGE_STATUSES)
+      .not("content", "is", null)
       .not("keyword", "is", null),
     supabase
       .from("analytics_metrics")
@@ -415,7 +429,13 @@ export async function recommendKeywords(
     for (const a of (articleRes.value.data ?? []) as Array<{
       id: string;
       keyword: string | null;
+      status: string;
+      content: unknown;
+      approved_by: string | null;
     }>) {
+      // Failed generation leaves diagnostic rows. A failed CMS publication can
+      // also be `error`, but keeps its approved, substantive article to retry.
+      if (!COVERAGE_STATUSES.includes(a.status) || (a.status === "error" && !a.approved_by) || !hasArticleBody(a.content)) continue;
       if (a.keyword) articleByTerm.set(normalizeTarget(a.keyword), a.id);
     }
   }

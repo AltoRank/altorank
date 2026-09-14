@@ -1,6 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { NextRequest, NextResponse, after } from "next/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { latestRun } from "@/lib/onboarding/run-store";
+import { wakeChoicePreparation } from "@/lib/onboarding/choice-preparation";
+
+export const maxDuration = 300;
 
 // ---------------------------------------------------------------------------
 // GET /api/onboard/state?workspaceId= — the latest onboarding run, for polling
@@ -37,7 +40,11 @@ export async function GET(request: NextRequest) {
   if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const now = Date.now();
-  const snapshot = await latestRun(supabase, workspaceId, now);
+  const snapshot = await latestRun(supabase, workspaceId, now, request.nextUrl.searchParams.get("runId") ?? undefined);
+  if (snapshot.run?.status === "running") after(async()=>{
+    try { await wakeChoicePreparation(createServiceClient(),snapshot.run!.id); }
+    catch { console.warn("[onboarding] source preparation resume interrupted"); }
+  });
   return NextResponse.json(
     { ...snapshot, now },
     { headers: { "Cache-Control": "no-store" } },

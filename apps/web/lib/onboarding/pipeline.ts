@@ -342,7 +342,7 @@ async function runPhases(
             kept.push(brief);
             return [{keywordId:item.id,term:item.term,date:"",brief}];
           }).slice(0,5);
-          if (briefs.length) emit({phase:"planning",status:"active",detail:`${briefs.length} supported brief${briefs.length === 1 ? "" : "s"} ready to read. Checking the remaining candidates.`,briefs});
+          if (briefs.length) emit({phase:"planning",status:"active",detail:`${briefs.length} relevant idea${briefs.length === 1 ? "" : "s"} found. Article sources still need checking before you choose.`,briefs});
         },
       } : {}) });
       emit({
@@ -350,7 +350,7 @@ async function runPhases(
         status: plan.length > 0 ? "done" : "skipped",
         detail:
           plan.length > 0
-            ? `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has a buyer and supporting search evidence.`
+            ? firstDraft === "choose" ? `Found ${plan.length} article idea${plan.length === 1 ? "" : "s"} with relevant search evidence. Checking sources for their promised answers next.` : `Planned ${plan.length} article${plan.length === 1 ? "" : "s"} for your review.`
             : "No keyword clear enough to plan yet.",
         planned: plan.map((p) => ({ keywordId: p.keywordId, term: p.term, date: p.date, brief: p.brief })),
       });

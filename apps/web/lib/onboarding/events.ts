@@ -103,6 +103,8 @@ export function phaseLabel(step: OnboardingStep): string {
 /** A draft, reduced to what the calendar chip and the redirect need. */
 export interface OnboardingPlanned {
   brief?: Opportunity;
+  /** Small receipt; the source packet stays in service-written storage. */
+  preparation?: { context: string; checkedAt: string; requirements: string[] };
   keywordId?: string;
   term: string;
   /** YYYY-MM-DD */

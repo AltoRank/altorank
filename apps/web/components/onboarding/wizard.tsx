@@ -750,6 +750,7 @@ function RunScreen({
   // and polls it. Nothing on the old attempt is touched - its phases are on
   // their own tables and its row keeps its status.
   const [attempt, setAttempt] = useState(0);
+  const [resumeRunId, setResumeRunId] = useState<string | null>(null);
   const [choiceBusy, setChoiceBusy] = useState(false);
   const [choiceError, setChoiceError] = useState<string | null>(null);
   const finished = Boolean(state && (state.ready || state.error));
@@ -793,7 +794,7 @@ function RunScreen({
             ) : drafting ? (
               <>Your chosen topic is being researched, written and checked. The complete draft will be free to read here.</>
             ) : state?.awaitingChoice ? (
-              <>Your business focus and search results support {planned.length} article ideas. Compare the briefs, then choose the draft you want to read.</>
+              <>Your business focus, search results and available sources support {planned.length} article ideas. Compare the briefs, then choose the draft you want to read.</>
             ) : (
               <>
                 Reading {domain}, checking buyer needs and live search results, preparing up to five specific article ideas, then you choose
@@ -819,7 +820,7 @@ function RunScreen({
         </div>
 
         {!finished && !drafting && !state?.awaitingChoice && Boolean(state?.steps.find((step) => step.phase === "planning")?.briefs?.length) && <section className="mx-auto mb-6 max-w-[640px] rounded-lg border border-line p-5">
-          <p className="text-sm text-ink-2">Your first briefs are ready to read. We’re finishing the checks before you choose a draft.</p>
+          <p className="text-sm text-ink-2">These ideas match your business. We’re checking sources for their answers before you choose a draft.</p>
           <TopicBriefs planned={state!.steps.find((step) => step.phase === "planning")!.briefs!} />
         </section>}
 
@@ -832,11 +833,20 @@ function RunScreen({
             try {
               const response = await fetch("/api/onboard/choose", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId, runId: state.runId, keywordId: topic.keywordId }) });
               const result = await response.json(); if (!response.ok) throw new Error(result.error || "Could not start the draft.");
-              setState(null); setAttempt((a) => a + 1);
+              setResumeRunId(result.runId); setState(null); setAttempt((a) => a + 1);
             } catch (error) { setChoiceError(error instanceof Error ? error.message : "Could not start the draft."); }
             finally { setChoiceBusy(false); }
           }} disabled={choiceBusy} />
           {choiceError && <p role="alert" className="text-sm text-err-ink">{choiceError}</p>}
+          {choiceError && <Button variant="ghost" disabled={choiceBusy} onClick={async () => {
+            setChoiceBusy(true); setChoiceError(null);
+            try {
+              const response = await fetch("/api/onboard/choose", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId, runId: state.runId, refine: true }) });
+              if (!response.ok) throw new Error("Could not refresh your article ideas. Reload and try again.");
+              setResumeRunId(null); setState(null); setAttempt((a) => a + 1);
+            } catch (error) { setChoiceError(error instanceof Error ? error.message : "Could not refresh your article ideas."); }
+            finally { setChoiceBusy(false); }
+          }}>Refresh article ideas</Button>}
           <Button variant="ghost" disabled={choiceBusy} onClick={async () => {
             setChoiceBusy(true); setChoiceError(null);
             try {
@@ -850,7 +860,7 @@ function RunScreen({
 
         {finished && trialEligible && drafts.length === 0 && <div className="mx-auto mb-6 max-w-[640px] rounded-lg border border-line p-4">
           <p className="mb-3">Your first draft is not ready yet. Retry preparation before deciding on a trial.</p>
-          <Button onClick={() => { setState(null); setAttempt((a) => a + 1); }}>Retry first draft</Button>
+          <Button onClick={() => { setResumeRunId(null); setState(null); setAttempt((a) => a + 1); }}>Retry first draft</Button>
         </div>}
         {trialStep && (
           <TrialStep drafts={drafts} planned={planned} askAttribution={askAttribution} />
@@ -865,6 +875,7 @@ function RunScreen({
               autoNavigate={false}
               onState={setState}
               initialRun={attempt === 0 ? initialRun : null}
+              resumeRunId={resumeRunId}
             />
             {planned.length > 0 && (
               <div className="mt-5">
@@ -917,6 +928,7 @@ function RunScreen({
                 <Button
                   size="sm"
                   onClick={() => {
+                    setResumeRunId(null);
                     setState(null);
                     setAttempt((a) => a + 1);
                   }}

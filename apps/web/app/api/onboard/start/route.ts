@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { startRun } from "@/lib/onboarding/run-store";
 import { dispatchWorker } from "@/lib/onboarding/run-dispatch";
+import { wakeChoicePreparation } from "@/lib/onboarding/choice-preparation";
 
 // ---------------------------------------------------------------------------
 // POST /api/onboard/start — begin (or find) the onboarding run for a workspace
@@ -58,6 +59,10 @@ export async function POST(request: NextRequest) {
     account_id: workspace.account_id as string,
   });
   if (created) after(() => dispatchWorker(runId));
+  else after(async()=>{
+    try { await wakeChoicePreparation(createServiceClient(),runId); }
+    catch { console.warn("[onboarding] source preparation resume interrupted"); }
+  });
 
   return NextResponse.json({ runId, existing: !created });
 }

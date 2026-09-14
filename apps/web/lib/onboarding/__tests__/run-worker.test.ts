@@ -40,6 +40,25 @@ beforeEach(() => {
 });
 
 describe("executeRun", () => {
+  it("queues source checks before making any discovered topic selectable",async()=>{
+    const d=db();
+    const run=vi.fn(async(_s,_w,emit)=>{
+      for(const event of EVENTS)emit(event);
+      return {awaitingChoice:true,pendingDraft:null,fanOutSettled:Promise.resolve()};
+    }) as unknown as typeof runOnboarding;
+    const queueChoices=vi.fn(async()=>{
+      expect(d.tables.onboarding_runs[0].planned).toHaveLength(2);
+      expect(d.tables.onboarding_runs[0].status).toBe("running");
+    });
+    const wakeChoices=vi.fn(async()=>undefined);
+    const result=await executeRun("r1",{supabase:d.client,run,queueChoices,wakeChoices,dispatch:dispatch as never});
+    await result.keepAlive;
+    expect(result.outcome).toBe("preparing-choices");
+    expect(queueChoices).toHaveBeenCalledWith(d.client,"r1","ws1");
+    expect(wakeChoices).toHaveBeenCalledWith(d.client,"r1",{durationMs:expect.any(Number)});
+    expect(d.tables.onboarding_runs[0].status).toBe("running");
+    expect(dispatch).not.toHaveBeenCalled();
+  });
   it("claims the row and persists every phase before dispatching the draft, then leaves it running", async () => {
     const d = db();
     const run = pipeline({ pendingDraft: PENDING }, [{ phase: "drafting", status: "active", detail: 'Writing "seo agent" now.' }]);

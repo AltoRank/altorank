@@ -159,3 +159,71 @@ it("requires a traceable qualitative scope decision without evidence or contradi
     expect(validateClaimBatch(JSON.stringify({passages:[{passageIndex:0,claims:[c]}]}),[0],["Imagine six people."],evidence).checkedPassages).toEqual([]);
   }
 });
+
+const bookingEvidence=[{url:"https://booklane.example/app",title:"Booklane customer app",headings:[],text:"Find local salons with the Booklane app."}];
+const bookingHtml="<h2>Booking with Booklane</h2><p>Select a treatment, choose an available time slot, then confirm the appointment.</p>";
+const emptyAssignments=(prompt:string)=>JSON.parse(prompt.split("\n").at(-1)!).assignedPassages.map((p:{passageIndex:number})=>({passageIndex:p.passageIndex,claims:[]}));
+
+it("rechecks an omitted named-product procedure inside the existing claim budget",async()=>{
+  ask.mockImplementation(async(_op:string,prompt:string)=>{
+    if(!prompt.startsWith("Recheck"))return JSON.stringify({passages:emptyAssignments(prompt)});
+    expect(prompt).toContain("omittedAssertionPassages");
+    return JSON.stringify({passages:[{passageIndex:1,claims:[{quote:"Select a treatment, choose an available time slot, then confirm the appointment.",category:"product",verdict:"unsupported",reason:"The app description does not establish this booking procedure.",evidence:[],contradiction:""}]}]});
+  });
+  const result=await verifyDraftClaims(bookingHtml,{evidence:bookingEvidence});
+  expect(ask).toHaveBeenCalledTimes(2);
+  expect(result.status).toBe("checked");
+  expect(result.claims).toEqual([expect.objectContaining({passageIndex:1,category:"product",verdict:"unsupported"})]);
+});
+
+it("does not declare a nominated procedure checked when recovery omits it again",async()=>{
+  ask.mockImplementation(async(_op:string,prompt:string)=>JSON.stringify({passages:emptyAssignments(prompt)}));
+  const result=await verifyDraftClaims(bookingHtml,{evidence:bookingEvidence});
+  expect(ask).toHaveBeenCalledTimes(2);
+  expect(result.status).toBe("partial");
+  expect(result.checkedPassages).toEqual([0]);
+  expect(result.failures.join(" ")).toContain("assertion");
+});
+
+it("accepts explicit nonfactual scope without inventing a missing product claim",async()=>{
+  const advice="Ask Booklane whether you can select a preferred therapist before booking.";
+  ask.mockImplementation(async(_op:string,prompt:string)=>{
+    if(!prompt.startsWith("Recheck"))return JSON.stringify({passages:emptyAssignments(prompt)});
+    return JSON.stringify({passages:[{passageIndex:0,claims:[{quote:advice,category:"qualitative",verdict:"not-factual",reason:"A suggestion to ask about a capability; it does not assert the capability exists.",evidence:[],contradiction:""}]}]});
+  });
+  const result=await verifyDraftClaims(`<p>${advice}</p>`,{evidence:bookingEvidence});
+  expect(ask).toHaveBeenCalledTimes(2);
+  expect(result.status).toBe("checked");
+  expect(result.failures).toEqual([]);
+  expect(result.claims).toEqual([expect.objectContaining({quote:advice,verdict:"not-factual"})]);
+});
+
+it("does not nominate ordinary advice or a hypothetical customer's inputs",async()=>{
+  ask.mockImplementation(async(_op:string,prompt:string)=>JSON.stringify({passages:emptyAssignments(prompt)}));
+  const html="<h2>Booklane for a freelancer</h2><p>Imagine a freelancer with three clients and a busy week.</p><p>Compare your options and ask the vendor about its limits.</p>";
+  expect((await verifyDraftClaims(html,{evidence:bookingEvidence})).status).toBe("checked");
+  expect(ask).toHaveBeenCalledTimes(1);
+});
+
+it("does not exempt named-product capabilities inside a hypothetical example",async()=>{
+  ask.mockImplementation(async(_op:string,prompt:string)=>JSON.stringify({passages:emptyAssignments(prompt)}));
+  const result=await verifyDraftClaims("<p>Imagine using Booklane: it automatically reschedules all your appointments.</p>",{evidence:bookingEvidence});
+  expect(ask).toHaveBeenCalledTimes(2);
+  expect(result.status).toBe("unavailable");
+});
+
+it("does not spend a ninth call or treat unexamined omitted assertions as checked",async()=>{
+  ask.mockImplementation(async(_op:string,prompt:string)=>JSON.stringify({passages:emptyAssignments(prompt)}));
+  const result=await verifyDraftClaims("<p>In Booklane, select a service and confirm a time slot.</p>".repeat(112),{evidence:bookingEvidence});
+  expect(ask).toHaveBeenCalledTimes(8);
+  expect(result.status).toBe("unavailable");
+  expect(result.checkedPassages).toEqual([]);
+});
+
+it("does not make another extraction call when a product procedure already has a claim",async()=>{
+  const quote="In Booklane, select a treatment and confirm your booking.";
+  const supported={quote,category:"product",verdict:"supported",reason:"The customer help page gives these steps.",evidence:[{sourceIndex:0,quote}],contradiction:""};
+  ask.mockResolvedValue(JSON.stringify({passages:[{passageIndex:0,claims:[supported]}]}));
+  expect((await verifyDraftClaims(`<p>${quote}</p>`,{evidence:[{...bookingEvidence[0],text:quote}]})).status).toBe("checked");
+  expect(ask).toHaveBeenCalledTimes(1);
+});
