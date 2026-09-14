@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
-import { setSpendReporter } from "@/lib/seo/client";
+import { setSpendReporter, withSpendReporter } from "@/lib/seo/client";
 import { getQuota, entitledToScheduledWork } from "@/lib/billing/quota";
 import { syncBacklinks } from "@/lib/seo/backlinks";
 import { recordSpend } from "@/lib/billing/spend";
@@ -237,4 +237,4 @@ async function run(request: Request) {
  * run as one `info` row — which is the only thing anywhere that proves the
  * schedule is still firing.
  */
-export const GET = observedCron("cron.serp", run);
+export const GET = observedCron("cron.serp", (request) => withSpendReporter(null, () => run(request)));

@@ -80,11 +80,11 @@ export const PHASE_LABELS: Record<OnboardingPhase, Record<PhaseStatus, string>> 
     failed: "Could not check your existing pages",
   },
   planning: {
-    pending: "Schedule your first month",
-    active: "Scheduling your first month",
+    pending: "Find your first article ideas",
+    active: "Checking your article ideas",
     done: "Prepared your first articles",
     skipped: "Nothing scheduled yet",
-    failed: "Could not schedule your first month",
+    failed: "Could not prepare article ideas",
   },
   drafting: {
     pending: "Write your first draft",
@@ -103,6 +103,9 @@ export function phaseLabel(step: OnboardingStep): string {
 /** A draft, reduced to what the calendar chip and the redirect need. */
 export interface OnboardingPlanned {
   brief?: Opportunity;
+  /** Small receipt; the source packet stays in service-written storage. */
+  preparation?: { context: string; checkedAt: string; requirements: string[] };
+  keywordId?: string;
   term: string;
   /** YYYY-MM-DD */
   date: string;
@@ -125,11 +128,13 @@ export interface OnboardingArticle {
  * one - keywords its count, drafting its article.
  */
 export type OnboardingEvent =
-  | { phase: OnboardingPhase; status: Exclude<PhaseStatus, "pending">; detail?: string; keywordsFound?: number; planned?: OnboardingPlanned[]; article?: OnboardingArticle }
+  | { phase: OnboardingPhase; status: PhaseStatus; detail?: string; briefs?: OnboardingPlanned[]; keywordsFound?: number; planned?: OnboardingPlanned[]; article?: OnboardingArticle }
   | { phase: "ready" }
   | { phase: "error"; detail: string };
 
 export interface OnboardingStep {
+  /** Supported previews; dates stay empty until the final plan is saved. */
+  briefs?: OnboardingPlanned[];
   phase: OnboardingPhase;
   status: PhaseStatus;
   detail?: string;
@@ -149,6 +154,8 @@ export interface OnboardingState {
   drafts: OnboardingArticle[];
   /** True once the run has emitted `ready`: the screen may hand off. */
   ready: boolean;
+  awaitingChoice?: boolean;
+  runId?: string;
   error: string | null;
 }
 
@@ -174,7 +181,7 @@ export function reduceOnboarding(state: OnboardingState, event: OnboardingEvent)
   if (event.phase === "error") return { ...state, error: event.detail };
 
   const steps = state.steps.map((s) =>
-    s.phase === event.phase ? { ...s, status: event.status, detail: event.detail ?? s.detail } : s,
+    s.phase === event.phase ? { ...s, status: event.status, detail: event.detail ?? s.detail, ...(event.briefs ? {briefs: event.briefs} : {}) } : s,
   );
 
   return {
@@ -205,7 +212,7 @@ export function isTerminal(state: OnboardingState): boolean {
 // article is a foreign key rather than a copy, so the row cannot claim a draft
 // that has since been deleted; /state joins the article row back in.
 
-export type OnboardingRunStatus = "running" | "done" | "partial" | "error";
+export type OnboardingRunStatus = "running" | "awaiting_choice" | "done" | "partial" | "error";
 
 export interface OnboardingRunRow {
   id: string;
@@ -273,6 +280,7 @@ export function isRunStale(run: Pick<OnboardingRunRow, "status" | "updated_at">,
 export function shouldResumeRun(snapshot: OnboardingRunSnapshot | null, now: number): boolean {
   const run = snapshot?.run;
   if (!run) return false;
+  if (run.status === "awaiting_choice") return true;
   if (run.status === "running") return !snapshot.stale;
   return run.finished_at !== null && now - new Date(run.finished_at).getTime() < RUN_RECENT_MS;
 }
@@ -313,7 +321,7 @@ export function stateFromRun(
   const steps: OnboardingStep[] = PHASE_ORDER.map((phase) => {
     const p = known.get(phase);
     if (!p) return { phase, status: "pending" };
-    return p.detail === undefined ? { phase, status: p.status } : { phase, status: p.status, detail: p.detail };
+    return { phase, status: p.status, ...(p.detail === undefined ? {} : {detail: p.detail}), ...(p.briefs ? {briefs: p.briefs} : {}) };
   });
   const draft: OnboardingArticle | null =
     article && run.article_id === article.id ? toOnboardingArticle(article) : null;
@@ -327,7 +335,9 @@ export function stateFromRun(
     planned: run.planned ?? [],
     article: draft,
     drafts,
-    ready: run.status !== "running",
+    runId: run.id,
+    awaitingChoice: run.status === "awaiting_choice",
+    ready: run.status !== "running" && run.status !== "awaiting_choice",
     error: run.error ?? (opts.stale ? STALE_RUN_ERROR : null),
   };
 }
@@ -442,7 +452,9 @@ export function onboardingOutcome(state: OnboardingState, handoff = false): Onbo
   if (!state.ready) {
     return {
       tone: "working",
-      line: "This takes about a minute. Nothing publishes without your approval.",
+      line: state.steps.some(step => step.phase === "drafting" && step.status === "active")
+        ? "Writing and checking your chosen article. Nothing publishes without your approval."
+        : "This can take a few minutes. Your article ideas appear as they are checked. Nothing publishes without your approval.",
       produced: false,
     };
   }

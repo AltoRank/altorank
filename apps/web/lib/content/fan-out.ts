@@ -141,6 +141,8 @@ export function fanOutDrafts(
 
 /** What the onboarding worker hands to /api/internal/draft for the first draft. */
 export interface FirstDraftDispatch {
+  expectedPreparationContext?: string;
+  expectedPreparationCreatedAt?: string;
   workspaceId: string;
   runId: string;
   keyword: string;

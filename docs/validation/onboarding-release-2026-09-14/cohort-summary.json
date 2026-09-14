@@ -1,0 +1,189 @@
+{
+  "scope": "Eight-case development evaluation, frozen production code 27f7bc0. Implementer assessment, not independent human labels or conversion measurement. Originals include documented factual defects; not approved for publication.",
+  "cases": [
+    {
+      "domain": "basecamp.com",
+      "candidateCount": 43,
+      "choiceCount": 1,
+      "discoverySeconds": 216.323,
+      "choiceToDraftSeconds": 158.661,
+      "claimStatus": "checked",
+      "checkedPassages": 39,
+      "totalPassages": 39,
+      "error": null,
+      "assessment": "Targeted edits",
+      "assessmentReason": "Useful specific workflow; tighten workspace/project terminology and remove guaranteed outcomes.",
+      "costUsd": 1.306245,
+      "costScope": "Saved completed-run spend; failed-run costs recovered from isolated local workspace ledger before any retry.",
+      "words": 1110,
+      "selected": {
+        "term": "centralize project files and deadlines",
+        "title": "How to centralize project files and deadlines using to-do lists and message boards",
+        "reason": "The query asks how to bring scattered files and deadlines into one place; explaining how to-do lists with due dates and message boards centralize this directly answers that task.",
+        "demand": {
+          "volume": null,
+          "confidence": "unknown"
+        }
+      }
+    },
+    {
+      "domain": "buffer.com",
+      "candidateCount": 58,
+      "choiceCount": 1,
+      "discoverySeconds": 226.767,
+      "choiceToDraftSeconds": 212.374,
+      "claimStatus": "checked",
+      "checkedPassages": 40,
+      "totalPassages": 40,
+      "error": null,
+      "assessment": "Material rework",
+      "assessmentReason": "Promises three-tool collaboration comparison but only substantiates Buffer; missing competitor criteria and asymmetric recommendation.",
+      "costUsd": 1.2365819999999998,
+      "costScope": "Saved completed-run spend; failed-run costs recovered from isolated local workspace ledger before any retry.",
+      "words": 1083,
+      "selected": {
+        "term": "multi-platform social media management",
+        "title": "Multi-Platform Social Media Management Tools for Agencies: Comparing Collaboration Features",
+        "reason": "Answers the comparison intent behind the query by evaluating tools on platform coverage and team collaboration, matching how agencies actually select multi-platform management software.",
+        "demand": {
+          "volume": 10,
+          "confidence": "measured"
+        }
+      }
+    },
+    {
+      "domain": "crisp.chat",
+      "candidateCount": 67,
+      "choiceCount": 1,
+      "discoverySeconds": 205.905,
+      "choiceToDraftSeconds": 202.858,
+      "claimStatus": "partial",
+      "checkedPassages": 40,
+      "totalPassages": 41,
+      "error": null,
+      "assessment": "Material corrections",
+      "assessmentReason": "Useful comparison structure, but worked-plan allowance, channel exclusion and missing-price inference require correction.",
+      "costUsd": 1.8939,
+      "costScope": "Saved completed-run spend; failed-run costs recovered from isolated local workspace ledger before any retry.",
+      "words": 1483,
+      "selected": {
+        "term": "conversational ai platform",
+        "title": "How to choose a conversational AI platform: pricing, training, and channel coverage compared",
+        "reason": "The query seeks a comparison of conversational AI platforms; this headline delivers selection criteria (pricing, training method, channels) rather than promoting one vendor's differentiators.",
+        "demand": {
+          "volume": 12100,
+          "confidence": "measured"
+        }
+      }
+    },
+    {
+      "domain": "brevo.com",
+      "candidateCount": 0,
+      "choiceCount": 0,
+      "discoverySeconds": 53.488,
+      "choiceToDraftSeconds": null,
+      "claimStatus": null,
+      "checkedPassages": 0,
+      "totalPassages": null,
+      "error": "No supported choice; record failure without substituting a keyword",
+      "assessment": "No draft",
+      "assessmentReason": "Rendered profile succeeded; keyword crawl returned HTTP 404 and no usable topical profile.",
+      "costUsd": 0.112599,
+      "costScope": "Saved completed-run spend; failed-run costs recovered from isolated local workspace ledger before any retry.",
+      "words": null,
+      "selected": null
+    },
+    {
+      "domain": "bellroy.com",
+      "candidateCount": 57,
+      "choiceCount": 1,
+      "discoverySeconds": 196.708,
+      "choiceToDraftSeconds": 211.413,
+      "claimStatus": "partial",
+      "checkedPassages": 34,
+      "totalPassages": 42,
+      "error": null,
+      "assessment": "Material corrections",
+      "assessmentReason": "Useful comparison table, but summary miscounts lower softside prices (one of three, not two), and repair/material claims need correction.",
+      "costUsd": 1.653807,
+      "costScope": "Saved completed-run spend; failed-run costs recovered from isolated local workspace ledger before any retry.",
+      "words": 1384,
+      "selected": {
+        "term": "carry on luggage",
+        "title": "How to compare carry-on luggage: hardside vs softside, materials, weight, and durability",
+        "reason": "Answers the comparison intent behind 'carry on luggage' by laying out criteria (material, weight, durability) travelers use to pick between options, not publisher claims.",
+        "demand": {
+          "volume": 135000,
+          "confidence": "measured"
+        }
+      }
+    },
+    {
+      "domain": "allbirds.com",
+      "candidateCount": 56,
+      "choiceCount": 2,
+      "discoverySeconds": 192.564,
+      "choiceToDraftSeconds": 166.405,
+      "claimStatus": "checked",
+      "checkedPassages": 44,
+      "totalPassages": 44,
+      "error": null,
+      "assessment": "Material rework",
+      "assessmentReason": "Applies another manufacturer\u2019s care guide to Allbirds and generalizes it to the category.",
+      "costUsd": 1.095306,
+      "costScope": "Saved completed-run spend; failed-run costs recovered from isolated local workspace ledger before any retry.",
+      "words": 864,
+      "selected": {
+        "term": "how to care for merino wool shoes",
+        "title": "How to care for merino wool shoes: washing, drying, and storage tips",
+        "reason": "Searchers want concrete care steps for merino wool shoes; this headline delivers that exact instructional task without adding unrelated brand or trust claims.",
+        "demand": {
+          "volume": null,
+          "confidence": "unknown"
+        }
+      }
+    },
+    {
+      "domain": "fresha.com",
+      "candidateCount": 25,
+      "choiceCount": 1,
+      "discoverySeconds": 199.581,
+      "choiceToDraftSeconds": 173.056,
+      "claimStatus": "checked",
+      "checkedPassages": 36,
+      "totalPassages": 36,
+      "error": null,
+      "assessment": "Targeted edits",
+      "assessmentReason": "Usable consumer booking walkthrough; remove unrelated custom-build diversion and qualify the universal free-app claim.",
+      "costUsd": 1.082524,
+      "costScope": "Saved completed-run spend; failed-run costs recovered from isolated local workspace ledger before any retry.",
+      "words": 1099,
+      "selected": {
+        "term": "beauty service discovery app",
+        "title": "How to find and book salon and beauty appointments through a discovery app",
+        "reason": "The query seeks apps that let consumers discover nearby salons and book appointments directly, matching a consumer-facing discovery-and-booking task rather than a developer or influencer tool.",
+        "demand": {
+          "volume": null,
+          "confidence": "unknown"
+        }
+      }
+    },
+    {
+      "domain": "fattureincloud.it",
+      "candidateCount": 54,
+      "choiceCount": 0,
+      "discoverySeconds": 186.273,
+      "choiceToDraftSeconds": null,
+      "claimStatus": null,
+      "checkedPassages": 0,
+      "totalPassages": null,
+      "error": "No supported choice; record failure without substituting a keyword",
+      "assessment": "No draft",
+      "assessmentReason": "54 candidates; qualification remained pending (timeouts, incomplete classifications, existing-page checks) or rejected.",
+      "costUsd": 0.4581300000000001,
+      "costScope": "Saved completed-run spend; failed-run costs recovered from isolated local workspace ledger before any retry.",
+      "words": null,
+      "selected": null
+    }
+  ]
+}

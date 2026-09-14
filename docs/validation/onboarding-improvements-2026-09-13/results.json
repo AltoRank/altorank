@@ -1,0 +1,362 @@
+{
+  "date": "2026-09-13",
+  "limitations": "Development iterations, one sample per business; not held-out, blinded, or a conversion experiment. DB interruption invalidates cross-run latency comparison. Costs exclude later review replays and unrecorded calls.",
+  "results": [
+    {
+      "domain": "altorank.co",
+      "scope": "Production pipeline, inferred profile",
+      "topics": [
+        {
+          "keyword": "ai content writer tool",
+          "volume": 210,
+          "title": "How to choose an AI content writer tool for your needs",
+          "demandConfidence": "measured"
+        },
+        {
+          "keyword": "how to find high volume low competition keywords",
+          "volume": 50,
+          "title": "How to find high-volume low-competition keywords step-by-step",
+          "demandConfidence": "measured"
+        },
+        {
+          "keyword": "search console integration analytics",
+          "volume": null,
+          "title": "Connect Search Console to GA4 to track search performance",
+          "demandConfidence": "unknown"
+        },
+        {
+          "keyword": "managing content for multiple websites",
+          "volume": null,
+          "title": "How to manage content for multiple websites from one workspace",
+          "demandConfidence": "unknown"
+        },
+        {
+          "keyword": "topic research for blog",
+          "volume": null,
+          "title": "How to research blog topics for Google rankings",
+          "demandConfidence": "unknown"
+        }
+      ],
+      "qualificationRun": {
+        "checked": 12,
+        "distinct": 5,
+        "stopped": "sufficient",
+        "calls": 34,
+        "costUsd": 0.114482
+      },
+      "words": 2283,
+      "draftSeconds": 140.355,
+      "recordedCostUsd": 0.6756550000000001,
+      "editorialReview": {
+        "status": "checked",
+        "headline": "preserved",
+        "productClaims": "needs-review",
+        "qualitativeClaims": "needs-review",
+        "structure": "needs-review",
+        "findings": [
+          {
+            "category": "product",
+            "text": "Reword, reviewed by 27 Best AI Writing Tools in 2026 (Tested &amp; Reviewed) , addresses this by asking users to define their topic and audience per project and by learning from Google Search Console data and prior edits over time.",
+            "reason": "The article attributes a capability (learning from Google Search Console data) to Reword but cites only a title/review link, not a source excerpt confirming Reword has this feature. The approved capabilities list does not include Reword's GSC integration. This is an unsupported product claim about R",
+            "removed": false
+          },
+          {
+            "category": "product",
+            "text": "Grammarly , are built for polishing existing text rather than generating and sourcing new claims, which is a different job entirely.",
+            "reason": "The article characterizes Grammarly as not generating and sourcing claims, positioning it as unsuitable for content requiring sources. The brief's approved results list includes Grammarly's SERP entry but provides no source excerpt confirming or denying whether Grammarly can generate and source new ",
+            "removed": false
+          },
+          {
+            "category": "qualitative",
+            "text": "Any AI content writer tool can produce fluent sentences; fewer make it easy to verify what's actually true in them.",
+            "reason": "This is an unsupported qualitative generalization about the broader AI writing tool category. No evidence provided that 'fewer' tools make source verification easy, or that this is a reliable industry characteristic. This is general advice presented as an observation about product capability norms.",
+            "removed": false
+          },
+          {
+            "category": "qualitative",
+            "text": "Generic AI output is the most common complaint against writer AI tools, and it usually comes from a tool that treats every prompt as a fresh start with no memory of how your business actually talks.",
+            "reason": "Unsupported qualitative claim about what constitutes the 'most common complaint' and what 'usually' causes it. No citation or evidence provided for this assertion about typical user complaints or their causes.",
+            "removed": false
+          },
+          {
+            "category": "product",
+            "text": "According to emailvendorselection.com's 2026 review , Rytr starts at $9 a month for 100k characters, Reword starts at $39 a month for three users and three projects, and Surfer starts at $69 a month for two seats and 180 keyword analyses, with add-ons like its article generator priced separately.",
+            "reason": "The article cites emailvendorselection.com as source for Reword's $39/month pricing for 'three users and three projects,' but the approved sources do not include a Reword pricing excerpt confirming this specific plan composition. The brief approves the emailvendorselection.com URL only as a result r",
+            "removed": false
+          },
+          {
+            "category": "product",
+            "text": "HubSpot's AI writing tools are bundled into its Starter plans from $20 a month, per the same review, but pricing scales with contacts and hub combinations rather than article volume.",
+            "reason": "The article attributes HubSpot's $20/month pricing and contact/hub-based scaling to emailvendorselection.com, but the approved sources provide no excerpt confirming HubSpot's pricing structure or scaling model. This is an unsupported pricing claim linked to a source not evidenced in the brief.",
+            "removed": false
+          },
+          {
+            "category": "repetition",
+            "text": "Expected result: a written, one-paragraph brief you can hand to any tool or trial account, instead of a vague sense of \"we need an AI writer.\"",
+            "reason": "This conclusion repeats the outcome of Step 1 and is restated almost verbatim after each subsequent step. Seven nearly identical 'Expected result' closures appear in sequence (Steps 1–7), each repeating the pattern of 'here's what you should have confirmed' without advancing the decision logic.",
+            "removed": false
+          },
+          {
+            "category": "repetition",
+            "text": "Expected result: you know whether the tool answers \"what should I write about\" or only \"write this for me,\" and whether that gap is one you're willing to manage manually.",
+            "reason": "Repeated definitional closure. All seven 'Expected result' sections follow identical structure and function, restating the step's premise rather than adding new decision criteria. This is repetitive scaffolding, not distinct conclusions.",
+            "removed": false
+          },
+          {
+            "category": "qualitative",
+            "text": "For content that needs to hold up to a reader's or a client's scrutiny, look for a review step where citations are visible next to the claims they support, not buried in a separate report.",
+            "reason": "General editorial advice presented as best practice, not a product capability difference. The statement describes a workflow principle but does not claim any tool implements it or that this is a built-in feature; it's advice about what to look for.",
+            "removed": false
+          },
+          {
+            "category": "product",
+            "text": "A workspace built around review and fact-checking before publishing, rather than one-shot generation, reduces the risk of an unchecked claim making it live.",
+            "reason": "General claim about workspace architecture reducing risk, presented without product evidence. No approved source confirms which tools offer 'review and fact-checking' workspaces versus 'one-shot generation,' or quantifies the risk reduction.",
+            "removed": false
+          }
+        ],
+        "revision": "kept-original"
+      }
+    },
+    {
+      "domain": "beardbrand.com",
+      "scope": "Production pipeline, inferred profile",
+      "topics": [
+        {
+          "keyword": "best beard oil",
+          "volume": 8100,
+          "title": "How to choose beard oil: conditioning, ingredients, and scent",
+          "demandConfidence": "measured"
+        },
+        {
+          "keyword": "best beard care products",
+          "volume": 3600,
+          "title": "Best beard care products by category: oils, balms, washes, and conditioners",
+          "demandConfidence": "measured"
+        },
+        {
+          "keyword": "how to style thick beard",
+          "volume": null,
+          "title": "How to style and maintain a thick beard",
+          "demandConfidence": "unknown"
+        },
+        {
+          "keyword": "roll on cologne vs spray",
+          "volume": 10,
+          "title": "Roll-on vs. spray cologne: diffusion, longevity, and application differences",
+          "demandConfidence": "measured"
+        }
+      ],
+      "qualificationRun": {
+        "checked": 15,
+        "distinct": 4,
+        "stopped": "budget",
+        "calls": 32,
+        "costUsd": 0.112125
+      },
+      "words": 1149,
+      "draftSeconds": 111.184,
+      "recordedCostUsd": 0.9416529999999999,
+      "editorialReview": {
+        "status": "checked",
+        "headline": "preserved",
+        "productClaims": "needs-review",
+        "qualitativeClaims": "needs-review",
+        "structure": "no-issues-detected",
+        "findings": [
+          {
+            "category": "product",
+            "text": "Some brands, like Beardbrand , price beard oil between $29 and $42 and build the formula around a named fragrance rather than a neutral \"unscented\" base, so you're choosing a scent family (woody, resinous, green, citrus) alongside the carrier oil blend.",
+            "reason": "The approved brief lists Beardbrand Beard Oil as $29–$42, but the article attributes the scent-forward positioning (\"build the formula around a named fragrance\") as a distinguishing Beardbrand feature. The brief capability list shows Beardbrand sells beard oils priced at this range without confirmin",
+            "removed": false
+          },
+          {
+            "category": "qualitative",
+            "text": "What a good oil for beard hair does is coat each strand and calm the skin underneath, which reduces breakage and split ends, so an existing beard looks fuller and healthier faster.",
+            "reason": "This describes the mechanical effect of beard oil as general advice (coating hair, reducing breakage) without citing a product capability or clinical evidence. The phrasing 'looks fuller and healthier faster' implies a visible benefit but is presented as a product promise rather than acknowledged ed",
+            "removed": false
+          },
+          {
+            "category": "qualitative",
+            "text": "No carrier oil or essential oil has been shown in published research to make hair grow faster from the follicle; genetics and hormones drive that.",
+            "reason": "Presents a categorical claim about published research without providing a citation or reference. Instruction specifies not to require definitions but prohibits unsupported qualitative generalizations; this functions as an unsupported research claim meant to guide buyer expectations.",
+            "removed": false
+          },
+          {
+            "category": "product",
+            "text": "Independent reviewer Steve Huff, after testing formulas from more than a dozen companies, settled on a bird-oil-based blend as his personal favorite for beard softness and scent longevity , a preference driven by his own sensitive skin.",
+            "reason": "The source (stevehuffphoto.com) identifies his top pick as Black Rebel brand with ostrich oil, not as a Beardbrand product. The article does not name the specific brand or product, only its characteristic (bird-oil-based), which obscures the source evidence and could conflate it with Beardbrand posi",
+            "removed": false
+          }
+        ],
+        "revision": "kept-original"
+      }
+    },
+    {
+      "domain": "pimlicoplumbers.com",
+      "scope": "Production pipeline, inferred profile",
+      "topics": [
+        {
+          "keyword": "mains water leak detection",
+          "volume": 390,
+          "title": "Signs of mains water leaks and how to check for them",
+          "demandConfidence": "measured"
+        },
+        {
+          "keyword": "burst pipe repair",
+          "volume": 170,
+          "title": "What to do about a burst pipe: immediate steps and when to call a plumber",
+          "demandConfidence": "measured"
+        },
+        {
+          "keyword": "blocked drain clearance",
+          "volume": 720,
+          "title": "Emergency drain unblocking in London: cable, jetting, CCTV surveys and rapid response",
+          "demandConfidence": "measured"
+        }
+      ],
+      "qualificationRun": {
+        "checked": 18,
+        "distinct": 3,
+        "stopped": "budget",
+        "calls": 43,
+        "costUsd": 0.137361
+      },
+      "words": 1136,
+      "draftSeconds": 90.909,
+      "recordedCostUsd": 0.72802,
+      "editorialReview": {
+        "status": "checked",
+        "headline": "preserved",
+        "productClaims": "needs-review",
+        "qualitativeClaims": "needs-review",
+        "structure": "no-issues-detected",
+        "findings": [
+          {
+            "category": "product",
+            "text": "Pimlico Plumbers lists damp and leak detection alongside its wider plumbing work, and operates a 24/7 emergency plumber service that aims to respond to call-outs within an hour, subject to availability, which matters when a mains leak is actively damaging flooring or undermining paving.",
+            "reason": "The approved brief confirms Pimlico Plumbers offers 'Damp & Leak Detection' and '24/7 availability' with '1 hour' response time 'subject to availability.' The article's claim matches the source evidence. No unsupported claim.",
+            "removed": false
+          },
+          {
+            "category": "qualitative",
+            "text": "A positive result on this test, combined with any of the visible or audible signs above, is a reasonable basis to arrange a professional inspection rather than keep testing repeatedly.",
+            "reason": "This is editorial guidance on when to move from self-testing to professional help. It is general advice about decision-making, not a product feature or built-in capability claim. Acceptable as contextual guidance supporting the buying job.",
+            "removed": false
+          },
+          {
+            "category": "product",
+            "text": "Specialist non-invasive tools commonly used for this include acoustic microphones that listen for the sound of escaping water through soil or concrete, tracer gas pumped through the empty pipe to find where it escapes at the surface, thermal imaging to spot temperature differences caused by water saturation, dye tracing, and moisture mapping across floors and walls.",
+            "reason": "The Leak Detection Company source explicitly states: 'We use the latest technology— thermal imaging, acoustic microphones, tracer gas, dye tracing, endoscopic cameras, and moisture mapping—to find hidden leaks without the need for destructive investigation.' The article's list of methods is supporte",
+            "removed": false
+          }
+        ],
+        "revision": "kept-original"
+      }
+    },
+    {
+      "domain": "plausible.io",
+      "scope": "Local production browser, hosted billing gate enabled with dummy Stripe key",
+      "topics": [
+        {
+          "keyword": "conversion tracking software",
+          "volume": 30,
+          "title": "How to choose conversion tracking software for your needs",
+          "demandConfidence": "measured"
+        },
+        {
+          "keyword": "funnel analysis tool",
+          "volume": 50,
+          "title": "How to choose a funnel analysis tool",
+          "demandConfidence": "measured"
+        },
+        {
+          "keyword": "migrate from google analytics",
+          "volume": null,
+          "title": "Migrate from Google Analytics to Plausible: Setup and data handling",
+          "demandConfidence": "unknown"
+        },
+        {
+          "keyword": "monitor ai traffic sources",
+          "volume": null,
+          "title": "Track AI traffic from ChatGPT, Perplexity, and Claude without custom setup",
+          "demandConfidence": "unknown"
+        }
+      ],
+      "words": 1859,
+      "status": "review",
+      "recordedCostUsd": 0.7830079999999999,
+      "editorialReview": {
+        "status": "checked",
+        "findings": [
+          {
+            "text": "Plausible tracks scroll depth from 1 to 100 percent on every page with no setup, which lets you build a scroll-based goal without touching code.",
+            "reason": "The approved capability states 'Scroll depth from 1 to 100 percent is tracked automatically on every page.' The article's phrasing 'from 1 to 100 percent' matches the source, but the article then includes a separate line stating 'from 1%, to 100% from 1% to 100%' which appears to be editorial format",
+            "removed": false,
+            "category": "product"
+          },
+          {
+            "text": "Those are vendor-reported outcomes for specific customers, not a guarantee of what any given site will see, but they illustrate the kind of diagnostic work this category is built for.",
+            "reason": "While this disclaimer appropriately qualifies the vendor case studies, the preceding paragraph presents specific conversion rate increases (22 percent and 40 percent drop-off reduction) from Zoho's published results without initially flagging these as vendor-reported. The qualifier comes after the c",
+            "removed": false,
+            "category": "qualitative"
+          },
+          {
+            "text": "AnyTrack cites Google data from 2025 stating that server-side tagging recovers roughly an 11 percent uplift in conversion signals compared with client-side tracking alone, a figure the company presents as a measure of what browser-only tracking was already missing. Treat that number as AnyTrack's cited estimate rather than an independently verified benchmark for every account.",
+            "reason": "The article appropriately qualifies the 11% figure as AnyTrack's cited estimate and advises treating it as such rather than a verified benchmark. However, the source excerpt provided states: 'Server-side tagging recovers roughly an 11% uplift in conversion signals compared with client-side tracking ",
+            "removed": false,
+            "category": "product"
+          }
+        ],
+        "headline": "preserved",
+        "revision": "kept-original",
+        "structure": "no-issues-detected",
+        "productClaims": "needs-review",
+        "qualitativeClaims": "needs-review"
+      }
+    }
+  ],
+  "controlledWriter": {
+    "scope": "One sample per prompt with identical saved inputs. Writer-only; excludes new retrieval, enrichment and corrective revision. Not a conversion experiment.",
+    "results": [
+      {
+        "label": "before",
+        "seconds": 93.395,
+        "words": 1157,
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 8096,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "output_tokens": 8698,
+          "service_tier": "standard",
+          "inference_geo": "global"
+        },
+        "costUsd": 0.154758
+      },
+      {
+        "label": "after",
+        "seconds": 102.205,
+        "words": 1313,
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 8416,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "output_tokens": 9299,
+          "service_tier": "standard",
+          "inference_geo": "global"
+        },
+        "costUsd": 0.164733
+      }
+    ]
+  }
+}

@@ -1,3 +1,4 @@
+import { wakeFirstMonth } from "@/lib/onboarding/first-month";
 import { NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -121,6 +122,11 @@ async function run(request: Request) {
   }
 
   const supabase = createServiceClient();
+  const preparing = await supabase.from("first_month_runs").select("workspace_id").in("status", ["queued", "planning", "writing"]);
+  if (preparing.error) throw preparing.error;
+  const preparingIds = new Set<string>((preparing.data ?? []).map((run) => run.workspace_id));
+  await Promise.allSettled([...preparingIds].map(wakeFirstMonth));
+
 
   // An account pause whose date has passed ends here, before the queue is
   // read, so those sites are in it. Stripe resumes charging on the date by
@@ -169,6 +175,7 @@ async function run(request: Request) {
   let lastDraftMs: number | null = null;
 
   for (const ws of queue) {
+    if (preparingIds.has(ws.id)) continue;
     if (written >= MAX_ARTICLES_PER_RUN) {
       results.push({
         workspaceId: ws.id as string,

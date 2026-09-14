@@ -2,7 +2,7 @@
 // challenge or a stripped page from a share of real sites (the readiness
 // checker learned this across 272 account sites); the identifier stays so a
 // site owner can see who visited.
-import { fetchLenient, isTlsChainError } from "./lenient-fetch";
+import { fetchLenient, isTlsChainError, recoverWwwHomepage } from "./lenient-fetch";
 
 const CRAWLER_UA =
   "Mozilla/5.0 (compatible; AltoRank-Auditor/1.0; +https://altorank.co; site audit)";
@@ -34,7 +34,7 @@ async function fetchPage(url: string, signal: AbortSignal): Promise<Response> {
   // keeps a sliding-window ban alive.
   if (refusing(url)) return new Response("", { status: 403, headers: { "content-type": "text/html" } });
   const res = await fetch(url, { signal, headers: { "User-Agent": CRAWLER_UA }, redirect: "follow" });
-  if (!REFUSED.has(res.status)) return res;
+  if (!REFUSED.has(res.status)) return recoverWwwHomepage(url, res, alternate => fetchPage(alternate, signal));
   // One more try the way the wizard's reader asks - once. If that is refused
   // too, it is the host's rule and not the agent string, and the run goes
   // quiet on this host.
@@ -51,7 +51,7 @@ async function fetchPage(url: string, signal: AbortSignal): Promise<Response> {
 export function describeFetchError(err: unknown): string {
   const e = err as { name?: string; message?: string; cause?: { code?: string } };
   const code = e?.cause?.code;
-  if (e?.name === "AbortError") return "timed out after 10s";
+  if (e?.name === "AbortError" || e?.name === "TimeoutError") return "page request timed out";
   if (code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" || code === "CERT_HAS_EXPIRED" || code === "ERR_TLS_CERT_ALTNAME_INVALID" || code === "SELF_SIGNED_CERT_IN_CHAIN") {
     return `TLS certificate could not be verified (${code}); browsers may cope, crawlers will not`;
   }
@@ -96,6 +96,8 @@ export interface CrawlOptions {
    * is one request fewer against that budget.
    */
   seedHtml?: string | null;
+  /** Optional absolute deadline shared with the calling research stage. */
+  deadline?: number;
 }
 
 export async function crawlSite(
@@ -106,6 +108,7 @@ export async function crawlSite(
   opts: CrawlOptions = {},
 ): Promise<CrawlResult[]> {
   const base = new URL(baseUrl);
+  let crawlOrigin = base.origin;
   const visited = new Set<string>();
   const results: CrawlResult[] = [];
 
@@ -113,6 +116,7 @@ export async function crawlSite(
   const queue: QueueItem[] = [{ url: base.href, depth: 0 }];
 
   while (queue.length > 0 && results.length < maxPages) {
+    if (Date.now() >= (opts.deadline ?? Infinity)) break;
     const item = queue.shift()!;
     const normalizedUrl = normalizeUrl(item.url);
 
@@ -122,15 +126,14 @@ export async function crawlSite(
 
     try {
       const start = Date.now();
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
+      // Keep the signal alive through body consumption, not just response headers.
+      const signal = AbortSignal.timeout(Math.max(1, Math.min(10_000, (opts.deadline ?? Infinity) - Date.now())));
 
       const seeded = item.depth === 0 && opts.seedHtml && normalizeUrl(item.url) === normalizeUrl(base.href);
       const res = seeded
         ? new Response(opts.seedHtml as string, { status: 200, headers: { "content-type": "text/html" } })
-        : await fetchPage(item.url, controller.signal);
+        : await fetchPage(item.url, signal);
 
-      clearTimeout(timeout);
       const loadTimeMs = Date.now() - start;
 
       // A refusal after the site had been answering is the site closing the
@@ -156,9 +159,12 @@ export async function crawlSite(
       }
 
       const html = await res.text();
-      const parsed = parseHtml(html, item.url, base.origin);
+      const pageUrl = res.url || item.url;
+      if (item.depth === 0 && new URL(pageUrl).hostname.replace(/^www\./, "") === base.hostname.replace(/^www\./, "")) crawlOrigin = new URL(pageUrl).origin;
+      visited.add(normalizeUrl(pageUrl));
+      const parsed = parseHtml(html, pageUrl, crawlOrigin);
 
-      results.push({ url: item.url, status: res.status, loadTimeMs, ...parsed });
+      results.push({ url: pageUrl, status: res.status, loadTimeMs, ...parsed });
 
       // Enqueue internal links
       if (item.depth < maxDepth) {
@@ -171,17 +177,17 @@ export async function crawlSite(
 
       // Rate limit
       if (delayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        await new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.min(delayMs, (opts.deadline ?? Infinity) - Date.now()))));
       }
     } catch (err) {
       // A chain Node cannot verify (www.lully.ai serves no intermediate,
       // 2026-09-02) is a finding about the site, not a reason to see nothing.
       // Read it without verification, mark the page, and let the audit report
       // the chain as an issue.
-      if (isTlsChainError(err)) {
+      if (isTlsChainError(err) && Date.now() < (opts.deadline ?? Infinity)) {
         try {
           const start = Date.now();
-          const r = await fetchLenient(item.url, { userAgent: CRAWLER_UA, timeoutMs: 10_000 });
+          const r = await fetchLenient(item.url, { userAgent: CRAWLER_UA, timeoutMs: Math.max(1, Math.min(10_000, (opts.deadline ?? Infinity) - Date.now())) });
           const loadTimeMs = Date.now() - start;
           if ((r.headers["content-type"] ?? "").includes("text/html")) {
             const parsed = parseHtml(r.body, item.url, base.origin);

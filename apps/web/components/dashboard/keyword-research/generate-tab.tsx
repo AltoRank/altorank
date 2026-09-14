@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button, Chip } from "@/components/ui";
 import { runGenerate, saveKeywordInstructions, type ResearchContext } from "@/app/actions/keyword-research";
 import { capacityLine } from "@/lib/keyword-research/funnel";
-import { GENERATE_DEFAULT, GENERATE_MAX } from "@/lib/keyword-research/pipeline";
+import { GENERATE_DEFAULT, GENERATE_MAX } from "@/lib/keyword-research/limits";
 import { KEYWORD_INSTRUCTIONS_MAX } from "@/lib/keyword-research/instructions";
 import type { PlanCapacity, ResearchResult, ResearchSource } from "@/lib/keyword-research/types";
 import { ProposalTable } from "./proposal-table";
@@ -72,9 +72,11 @@ export function GenerateTab({ workspaceId, ctx, handoff, onCapacity, onChanged, 
   const [instructions, setInstructions] = useState(ctx.instructions);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  const [previousHandoff, setPreviousHandoff] = useState(handoff);
+  if (handoff !== previousHandoff) {
+    setPreviousHandoff(handoff);
     if (handoff) setResult(handoff);
-  }, [handoff]);
+  }
 
   const needsCompetitors = source !== "audiences";
   const needsAudiences = source !== "competitors";

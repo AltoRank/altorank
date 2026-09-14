@@ -33,9 +33,11 @@ export async function dispatchWorker(runId: string, deps: DispatchDeps = {}): Pr
   try {
     const res = await selfInvoke("/api/onboard/run", { runId }, how);
     // 409 is the worker saying the run is already claimed or finished, which
-    // is not a failure of this dispatch. Anything else non-2xx never ran the
+    // is not a failure of this dispatch. A 503 can mean the claim committed
+    // but its response was lost: preserve the row for retry/stale recovery.
+    // Anything else non-2xx never ran the
     // pipeline (a 5xx that did has already closed the row itself).
-    if (!res.ok && res.status !== 409) {
+    if (!res.ok && res.status !== 409 && res.status !== 503) {
       await failRun(supabase(), runId, `The run could not be started (${res.status}).`);
     }
   } catch (err) {

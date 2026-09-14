@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { test, expect } from "./fixtures/test";
 import { admin, signIn, todayUtc } from "./fixtures/account";
 
@@ -69,7 +70,7 @@ test("a new account is walked from /dashboard to five qualified topics and one d
   await page.getByRole("button", { name: "Plan my first articles" }).click();
 
   // --- The run ---------------------------------------------------------------
-  await expect(page.getByRole("heading", { name: "Creating your content plan" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Finding your first article ideas" })).toBeVisible();
 
   // --- Everything on the screen is on disk -------------------------------------
   // Read after the run heading: the finish awaits its saves before it starts
@@ -87,11 +88,16 @@ test("a new account is walked from /dashboard to five qualified topics and one d
   expect((afterProfile?.business_profile as { name: string }).name).toBe("Nomad Atlas");
   expect(afterProfile?.sitemap_url).toBe(sitemapUrl);
   expect(afterProfile?.blog_root_url).toBe(`https://${ws.domain}/blog/`);
-  const plannedLine = page.getByText(/Prepared \d+ articles? for your calendar/);
-  await expect(plannedLine).toBeVisible({ timeout: 30_000 });
-  const planned = Number((await plannedLine.textContent())?.match(/Prepared (\d+)/)?.[1]);
+  await expect(page.getByRole("heading", { name: "Choose your first article" })).toBeVisible({ timeout: 30_000 });
+  const {count: planned} = await db.from("calendar_entries").select("id",{count:"exact",head:true}).eq("workspace_id",ws.id);
   expect(planned).toBeGreaterThan(0);
   expect(planned).toBeLessThanOrEqual(5);
+  const { data: beforeChoice } = await db.from("articles").select("id").eq("workspace_id", ws.id);
+  expect(beforeChoice).toHaveLength(0);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Choose your first article" })).toBeVisible();
+  await page.screenshot({path:test.info().outputPath("topic-choice.png"),fullPage:true});
+  await page.getByRole("button", { name: "Write this article" }).first().click();
   // Worded from the run's own outcome since #P0-O2: the old fixed sentence was
   // printed whether or not anything reached the calendar.
   await expect(
@@ -116,7 +122,7 @@ test("a new account is walked from /dashboard to five qualified topics and one d
   // The first draft: written for day one of the plan, waiting in review.
   //
   // Onboarding writes exactly one preview; the rest waits for review/trial.
-  const { data: articles } = await db.from("articles").select("id, status, keyword, generated_autonomously").eq("workspace_id", ws.id);
+  const { data: articles } = await db.from("articles").select("id, title, status, keyword, generated_autonomously").eq("workspace_id", ws.id);
   expect(articles).toHaveLength(1);
   // Everything onboarding writes is autonomous and waits for a yes; the gate
   // is the product, so no draft may arrive in any other state.
@@ -133,8 +139,64 @@ test("a new account is walked from /dashboard to five qualified topics and one d
   expect(dayOneArticle!.keyword).toBe(first.keyword);
 
   // --- The plan, on the calendar ------------------------------------------------
-  await page.getByRole("button", { name: "Open my plan" }).click();
-  await expect(page).toHaveURL(/\/content$/);
+  if (process.env.E2E_BILLING === "1") await page.getByRole("link", { name: `${dayOneArticle!.title} · Read draft`, exact: true }).click();
+  else await page.getByRole("button", { name: "Read my first draft" }).click();
+  await expect(page).toHaveURL(/\/onboarding\/draft\//);
+  await expect(page.locator("article")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Draft checks" })).toBeVisible();
+  await page.screenshot({path:test.info().outputPath("first-draft-preview.png"),fullPage:true});
+  // A partly unavailable source check must remain visible after persistence.
+  const {data: savedDraft}=await db.from("articles").select("research").eq("workspace_id",ws.id).eq("id",dayOneArticle!.id).single();
+  await db.from("articles").update({research:{...savedDraft?.research,editorialReview:{status:"unavailable",headline:"preserved",productClaims:"needs-review",qualitativeClaims:"not-checked",structure:"no-issues-detected",claimVerification:{status:"partial"},findings:[{category:"product",text:"Every plan supports unlimited sites.",reason:"The source limits this feature to one plan.",removed:false}]}}}).eq("workspace_id",ws.id).eq("id",dayOneArticle!.id);
+  await page.reload();
+  await expect(page.getByText("Some source checks could not finish.",{exact:false})).toBeVisible();
+  await expect(page.getByText("Every plan supports unlimited sites.",{exact:true})).toBeVisible();
+  if (process.env.E2E_BILLING === "1") {
+    await page.getByRole("link", {name:"See your trial plan"}).click();
+    await expect(page).toHaveURL(/#trial-plan$/);
+    await expect(page.locator("#trial-plan")).toBeInViewport();
+    await expect(page.getByRole("region", { name: "Continue with your draft" })).toContainText("100 articles per calendar month");
+    await expect(page.getByRole("region", { name: "Continue with your draft" })).toContainText("99 available after activation");
+    await page.screenshot({path:test.info().outputPath("draft-and-trial-gate.png"),fullPage:true});
+    await page.goto("/dashboard");
+    await expect(page).toHaveURL(/\/onboarding/);
+    // Real signed webhook and persisted entitlement; Stripe card entry itself
+    // is covered by the separate hosted sandbox run, not mocked as a payment.
+    const timestamp = Math.floor(Date.now() / 1000);
+    const event = JSON.stringify({ id: `evt_fixture_${ws.id}`, type: "customer.subscription.created", created: timestamp,
+      data: { object: { id: `sub_fixture_${ws.id}`, customer: `cus_fixture_${ws.id}`, status: "trialing", trial_end: timestamp + 7 * 86400,
+        metadata: { account_id: account.accountId, plan: "starter" }, items: { data: [{ price: { id: "price_fixture_managed" } }] } } } });
+    const signature = createHmac("sha256", "whsec_fixture_only").update(`${timestamp}.${event}`).digest("hex");
+    const headers = { "content-type": "application/json", "stripe-signature": `t=${timestamp},v1=${signature}` };
+    const activated = await page.request.post("/api/webhooks/stripe", { headers, data: event });
+    expect(activated.ok()).toBeTruthy();
+    expect((await page.request.post("/api/webhooks/stripe", { headers, data: event })).ok()).toBeTruthy();
+    await expect.poll(async () => (await db.from("first_month_runs").select("status").eq("workspace_id", ws.id).single()).data?.status, { timeout: 45000 }).toBe("ready");
+    const runs = await db.from("first_month_runs").select("workspace_id").eq("workspace_id", ws.id);
+    expect(runs.data).toHaveLength(1);
+    const prepared = await db.from("articles").select("id, status").eq("workspace_id", ws.id);
+    expect(prepared.data!.length).toBeGreaterThan(1);
+    expect(prepared.data!.every(article => article.status === "review")).toBe(true);
+    expect(prepared.data!.filter(article => article.id === dayOneArticle!.id)).toHaveLength(1);
+  }
+  await page.goto("/dashboard");
+  const month = page.getByRole("region", { name: "Your first month" });
+  await expect(month.getByRole("link", { name: "Review and edit your first draft" })).toHaveAttribute("href", `/content/${dayOneArticle!.id}`);
+  await page.reload();
+  await expect(month).toContainText(dayOneArticle!.title);
+  await page.screenshot({path:test.info().outputPath("first-dashboard.png"),fullPage:true});
+  await expect(page.getByRole("region", { name: "Recommended actions" })).not.toContainText("Nothing is scheduled");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(month.getByRole("link", { name: "Review and edit your first draft" })).toBeVisible();
+  await expect.poll(async()=>{
+    const sidebar=await page.locator("#dashboard-sidebar").boundingBox();
+    return sidebar ? sidebar.x+sidebar.width : 0;
+  }).toBeLessThanOrEqual(1);
+  await page.screenshot({path:test.info().outputPath("first-dashboard-mobile.png"),fullPage:true});
+  await month.getByRole("link", { name: "Review and edit your first draft" }).click();
+  await expect(page).toHaveURL(new RegExp(`/content/${dayOneArticle!.id}$`));
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/content");
 
   const now = new Date();
   const thisMonth = entries!.filter((e) => {

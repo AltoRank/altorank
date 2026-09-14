@@ -1,3 +1,4 @@
+import {DraftReadinessError} from "@/lib/content/draft-readiness";
 /**
  * Write exactly one draft, in its own invocation.
  *
@@ -31,6 +32,8 @@ import type { RelatedKeyword } from "@/lib/seo/brief-data";
 export const maxDuration = 300;
 
 interface Body {
+  expectedPreparationContext?: string;
+  expectedPreparationCreatedAt?: string;
   workspaceId?: string;
   keywordId?: string | null;
   keyword?: string;
@@ -109,6 +112,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await generateArticle({
+      expectedPreparationContext: body.expectedPreparationContext,
+      expectedPreparationCreatedAt: body.expectedPreparationCreatedAt,
+      verifySourceClaims: Boolean(runId),
       supabase,
       workspaceId,
       keyword,
@@ -155,7 +161,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    await stamp({ phase: "drafting", status: "failed", detail }, { finish: true });
+    await stamp({ phase: "drafting", status: "failed", detail }, { finish: true, retryChoice: err instanceof DraftReadinessError });
     return NextResponse.json({ status: "error", error: detail }, { status: 500 });
   }
 }

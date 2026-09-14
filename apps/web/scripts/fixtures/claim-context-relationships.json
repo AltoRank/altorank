@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "scope": "Preregistered development calibration of context and product relationships. Same saved source packet in all three cases; not a blinded benchmark.",
+  "sourceOrigin": "root-v3-writer-basecamp-3/input-sources.json",
+  "cases": [
+    {
+      "id": "original-task-level-error",
+      "origin": "Exact original named-product context, Hill Chart explanation and first two worked-example paragraphs from root-v3-writer-basecamp-3/raw-writer.html; unrelated sections omitted identically in the paired positive.",
+      "html": "<p>Two Basecamp-specific features are worth knowing if status visibility is your main goal:</p>\n<ul>\n<li><strong>Hill Charts.</strong> On any to-do list, you can choose \"Track this on the Hill Chart\" from the options menu, then manually drag a dot to represent where that piece of work stands. A dot past the peak means the work is \"full of certainty, with just execution left,\" while a dot still climbing means there are unsolved problems or open questions (<a href=\"https://basecamp.com/hill-charts\">Basecamp Hill Charts</a>). Every update saves a snapshot to the project's history, and because the status reflects a person's judgment rather than a computer calculation, someone on the team has to actually move the dot for it to mean anything.</li>\n</ul>\n<h2>Putting it together: an illustrative example</h2>\n<p>Say a five-person team is redesigning a client's website. As an illustrative setup, they define three milestones — wireframes, visual design, and development — each with a to-do list and a named owner. They turn on a Monday 9am check-in question and put the \"visual design\" to-do list on a Hill Chart.</p>\n<p>By the second week, two of the three design tasks show as dots past the peak, and one is still climbing. That pattern — from the Hill Chart's own logic — tells the team lead that most of the design work just needs execution time, but the remaining task has an open question worth asking about directly, rather than assuming it's simply behind. The dashboard doesn't identify the question; it only shows where attention is needed. The lead still has to follow up with that task's owner.</p>",
+      "expected": "material-relationship-error",
+      "targetQuote": "two of the three design tasks show as dots past the peak",
+      "requiredFinding": "The example maps individual tasks to chart dots, but the supplied product documentation attaches chart status to to-do lists instead of individual to-dos. Unrelated flags or merely an incomplete review do not satisfy this negative.",
+      "sourceSupport": "status is attached to lists instead of individual To-dos"
+    },
+    {
+      "id": "corrected-list-level-example",
+      "origin": "Paired original with only the tracked units, setup and dependent interpretation corrected: all three lists tracked, list-level dots and owners, no inference of total effort from dot counts. Other context and dashboard limitation unchanged.",
+      "html": "<p>Two Basecamp-specific features are worth knowing if status visibility is your main goal:</p>\n<ul>\n<li><strong>Hill Charts.</strong> On any to-do list, you can choose \"Track this on the Hill Chart\" from the options menu, then manually drag a dot to represent where that piece of work stands. A dot past the peak means the work is \"full of certainty, with just execution left,\" while a dot still climbing means there are unsolved problems or open questions (<a href=\"https://basecamp.com/hill-charts\">Basecamp Hill Charts</a>). Every update saves a snapshot to the project's history, and because the status reflects a person's judgment rather than a computer calculation, someone on the team has to actually move the dot for it to mean anything.</li>\n</ul>\n<h2>Putting it together: an illustrative example</h2>\n<p>Say a five-person team is redesigning a client's website. As an illustrative setup, they define three milestones — wireframes, visual design, and development — each with a to-do list and a named owner. They turn on a Monday 9am check-in question and put all three milestone to-do lists on a Hill Chart.</p>\n<p>By the second week, two of the three milestone to-do lists show as dots past the peak, and one is still climbing. That pattern — from the Hill Chart's own logic — tells the team lead that the work in those two lists just needs execution time, but the remaining list has an open question worth asking about directly, rather than assuming it's simply behind. The dashboard doesn't identify the question; it only shows where attention is needed. The lead still has to follow up with that list's owner.</p>",
+      "expected": "checked-no-material-error",
+      "requiredFinding": "Complete sentence coverage and no unsupported or contradicted claims. Hypothetical team/time/count inputs remain permissible; named-product state and entity meanings are preserved."
+    },
+    {
+      "id": "pure-hypothetical-input",
+      "origin": "Exact first paragraph of the prior hypothetical-input-vs-product-behavior fixture. The separate automatic-assignment product assertion is omitted to isolate the existing nonfactual input control.",
+      "html": "<p>Imagine a customer asks for a weekly summary. Write a hypothetical task titled Add a weekly summary.</p>",
+      "expected": "checked-no-material-error",
+      "requiredFinding": "Complete sentence coverage and no unsupported or contradicted claims; invented customer request and sample task title are explicitly nonfactual."
+    }
+  ]
+}

@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { WebhookAdapter, MAX_ATTEMPTS, webhookArticle } from "../webhook";
 import type { DeliveryAttempt } from "../types";
 
+// Retry tests isolate delivery from telemetry and its database timers.
+vi.mock("@/lib/observability/record",()=>({recordEvent:vi.fn()}));
+
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 

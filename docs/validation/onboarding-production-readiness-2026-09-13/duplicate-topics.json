@@ -1,0 +1,76 @@
+{
+  "scope": "Saved-input task overlap replay; not independent human labels.",
+  "topics": [
+    {
+      "query": "online appointment scheduling programs",
+      "angle": "How to compare online appointment scheduling programs for small teams",
+      "buyingJob": "Prevent double bookings across team calendars and automate scheduling workflows"
+    },
+    {
+      "query": "calendar scheduling tool",
+      "angle": "How to compare calendar scheduling tools for small teams: features, pricing, and tradeoffs",
+      "buyingJob": "Compare calendar scheduling tools to find the best fit for team availability management and appointment booking"
+    },
+    {
+      "query": "best scheduling app for startups",
+      "angle": "Scheduling apps for startups: comparison criteria and tradeoffs",
+      "buyingJob": "Compare scheduling platforms to prevent double bookings, automate reminders, and manage team availability"
+    }
+  ],
+  "results": [
+    {
+      "repeat": 0,
+      "keptIndices": [
+        0
+      ],
+      "calls": [
+        {
+          "operation": "onboarding/distinct-tasks",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "20cc28202a23e965ec0af0ca7777c56f3308af2014f056c7306ed66fedc010ae",
+          "elapsedMs": 1398,
+          "status": "complete",
+          "inputTokens": 776,
+          "outputTokens": 22,
+          "costUsd": 0.002658
+        }
+      ],
+      "validPartition": true,
+      "groups": [
+        [
+          0,
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "repeat": 1,
+      "keptIndices": [
+        0
+      ],
+      "calls": [
+        {
+          "operation": "onboarding/distinct-tasks",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "20cc28202a23e965ec0af0ca7777c56f3308af2014f056c7306ed66fedc010ae",
+          "elapsedMs": 1154,
+          "status": "complete",
+          "inputTokens": 776,
+          "outputTokens": 17,
+          "costUsd": 0.002583
+        }
+      ],
+      "validPartition": true,
+      "groups": [
+        [
+          0,
+          1,
+          2
+        ]
+      ]
+    }
+  ]
+}

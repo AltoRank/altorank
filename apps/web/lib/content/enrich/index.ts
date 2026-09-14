@@ -100,6 +100,7 @@ export interface EnrichContext {
   brandStyle?: Record<string, unknown> | null;
   /** `business_profile.name`; looked up when omitted and a client is given. */
   businessName?: string | null;
+  conversionUrl?: string | null;
   /** Storage, settings and spend. Omit in tests: every network step then skips. */
   supabase?: SupabaseClient | null;
   /**
@@ -279,6 +280,7 @@ export async function enrichArticle(html: string, ctx: EnrichContext): Promise<E
         enabled: settings.callToAction,
         domain: ctx.domain,
         businessName,
+        conversionUrl: ctx.conversionUrl,
         language: ctx.language,
       }),
     { added: false },

@@ -1,15 +1,15 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const { rpc, create, retrieve, subscriptions, update } = vi.hoisted(() => ({rpc:vi.fn(),create:vi.fn(),retrieve:vi.fn(),subscriptions:vi.fn(),update:vi.fn()}));
+const { rpc, create, retrieve, subscriptions, update, remove } = vi.hoisted(() => ({rpc:vi.fn(),create:vi.fn(),retrieve:vi.fn(),subscriptions:vi.fn(),update:vi.fn(),remove:vi.fn()}));
 vi.mock("@/lib/stripe", () => ({getStripe:()=>({checkout:{sessions:{create,retrieve}},subscriptions:{retrieve:subscriptions}})}));
-vi.mock("@/lib/supabase/server", () => ({createServiceClient:()=>({rpc,from:()=>({update})})}));
+vi.mock("@/lib/supabase/server", () => ({createServiceClient:()=>({rpc,from:()=>({update,delete:remove})})}));
 import { createPendingCheckout } from "../checkout-attempt";
 const parameters = {mode:"subscription" as const,line_items:[{price:"price_1",quantity:1}],client_reference_id:"account"};
 beforeEach(() => {
   vi.resetAllMocks();
   rpc.mockResolvedValue({data:[{id:"attempt-one",parameters:{...parameters,expires_at:12345}}]});
   create.mockResolvedValue({id:"cs_one",url:"https://checkout.stripe.com/test",status:"open"});
-  const q = {eq:()=>q,then:(resolve:(v:unknown)=>unknown)=>resolve({error:null})};
-  update.mockReturnValue(q);
+  const q = {eq:()=>q,is:()=>q,then:(resolve:(v:unknown)=>unknown)=>resolve({error:null})};
+  update.mockReturnValue(q); remove.mockReturnValue(q);
 });
 it("reuses the durable idempotency key and frozen parameters on retries", async () => {
   await createPendingCheckout("account",parameters); await createPendingCheckout("account",parameters);
@@ -31,4 +31,15 @@ it("resumes a completed active subscription rather than starting another", async
   subscriptions.mockResolvedValue({status:"trialing"});
   expect(await createPendingCheckout("account",parameters)).toMatchObject({status:"complete"});
   expect(create).not.toHaveBeenCalled();
+});
+
+it("releases a definitively rejected checkout so corrected prices can be used", async () => {
+  create.mockRejectedValue({ type: "StripeInvalidRequestError", statusCode: 400 });
+  await expect(createPendingCheckout("account",parameters)).rejects.toMatchObject({ statusCode: 400 });
+  expect(remove).toHaveBeenCalledTimes(1);
+});
+it.each([{type:"StripeConnectionError"}, {type:"StripeAPIError",statusCode:500}, {type:"StripeIdempotencyError",statusCode:409}])("retains the reservation when Stripe's outcome is uncertain: %s", async error => {
+  create.mockRejectedValue(error);
+  await expect(createPendingCheckout("account",parameters)).rejects.toEqual(error);
+  expect(remove).not.toHaveBeenCalled();
 });

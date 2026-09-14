@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fanOutDrafts, MAX_FAN_OUT } from "../fan-out";
+import { dispatchFirstDraft, fanOutDrafts, MAX_FAN_OUT } from "../fan-out";
 import {
   MAX_ARTICLES_PER_RUN,
   OBSERVED_SECONDS_PER_ARTICLE,
@@ -14,6 +14,16 @@ const deps = (fetchImpl: typeof fetch) => ({
   baseUrl: "https://app.example.com",
   secret: "s3cret",
   fetchImpl,
+});
+
+it("serializes both fields of the selected source receipt into the draft invocation",async()=>{
+  const f=vi.fn().mockResolvedValue(new Response("{}"));
+  const body={workspaceId:"ws1",runId:"run1",keywordId:"k1",keyword:"buyer task",expectedPreparationContext:"a".repeat(64),expectedPreparationCreatedAt:"2026-09-14T10:00:00.000Z"};
+  const sent=dispatchFirstDraft(body,deps(f as unknown as typeof fetch));
+  expect("request" in sent).toBe(true);
+  if("request" in sent)await sent.request;
+  expect(f.mock.calls[0][0]).toBe("https://app.example.com/api/internal/draft");
+  expect(JSON.parse((f.mock.calls[0][1] as RequestInit).body as string)).toEqual(body);
 });
 
 describe("fanOutDrafts", () => {

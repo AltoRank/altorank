@@ -6,7 +6,8 @@ describe("cta", () => {
     const { html, added } = addCallToAction("<p>Body.</p>", { domain: "https://www.Example.com/", businessName: "Example Ltd" });
     expect(added).toBe(true);
     expect(html).toContain('<section class="cta"><h2 id="learn-more-about-example-ltd">Learn more about Example Ltd</h2>');
-    expect(html).toContain('This article is published by Example Ltd. Visit <a href="https://example.com">example.com</a>.');
+    expect(html).toContain('Visit <a href="https://example.com">example.com</a>.');
+    expect(html).not.toContain('This article is published');
     expect(html.indexOf("<section")).toBeGreaterThan(html.indexOf("Body."));
   });
 
@@ -20,10 +21,17 @@ describe("cta", () => {
     expect(addCallToAction("<p>x</p>", {}).added).toBe(false);
     const once = addCallToAction("<p>x</p>", { domain: "a.com" }).html;
     expect(addCallToAction(once, { domain: "a.com" }).added).toBe(false);
+    const naturalEnding = '<p>Use the checklist to choose a plan.</p><p>Review <a href="https://a.com/pricing">plan details</a> before you start.</p>';
+    expect(addCallToAction(naturalEnding, {domain:"a.com",conversionUrl:"https://a.com/pricing"})).toEqual({html:naturalEnding,added:false});
   });
 
   it("never states an offer or a price", () => {
     const { html } = addCallToAction("<p>x</p>", { domain: "a.com", businessName: "Acme" });
     expect(html).not.toMatch(/free|trial|demo|€|\$|discount|book/i);
   });
+});
+
+it("uses the selected same-site conversion page and rejects external destinations", () => {
+  expect(addCallToAction("<p>Draft</p>", { domain:"example.com", conversionUrl:"https://example.com/pricing" }).html).toContain('href="https://example.com/pricing"');
+  expect(addCallToAction("<p>Draft</p>", { domain:"example.com", conversionUrl:"https://other.test/pricing" }).html).not.toContain("other.test");
 });

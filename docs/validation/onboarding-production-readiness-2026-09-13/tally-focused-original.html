@@ -1,0 +1,67 @@
+<h1>How to compare form builders with conditional logic: key criteria and tradeoffs</h1>
+<p>A <strong>form builder with conditional logic</strong> lets a form change in real time based on how someone answers: showing or hiding fields, skipping whole pages, or routing a respondent down a different path. Comparing these tools means checking four things side by side: what logic actions each one supports, whether that logic is free or gated behind a paid plan, how the builder deploys (WordPress plugin versus web-based SaaS), and which integrations carry your data onward. Below is how to run that comparison, with a worked example.</p>
+<p><strong>Contents</strong></p>
+<ul>
+<li><p><a href="#what-counts-as-conditional-logic-in-a-form-builder">What counts as conditional logic in a form builder?</a></p>
+</li>
+<li><p><a href="#which-conditional-logic-actions-actually-matter">Which conditional logic actions actually matter?</a></p>
+</li>
+<li><p><a href="#comparing-three-options-against-the-same-criteria">Comparing three options against the same criteria</a></p>
+</li>
+<li><p><a href="#how-do-the-pricing-models-actually-differ">How do the pricing models actually differ?</a></p>
+</li>
+<li><p><a href="#a-worked-example-qualifying-leads-with-a-budget-question">A worked example: qualifying leads with a budget question</a></p>
+</li>
+<li><p><a href="#how-do-deployment-and-integrations-change-the-decision">How do deployment and integrations change the decision?</a></p>
+</li>
+<li><p><a href="#making-the-call">Making the call</a></p>
+</li>
+</ul>
+<h2 id="what-counts-as-conditional-logic-in-a-form-builder">What counts as conditional logic in a form builder?</h2>
+<p>Conditional logic is a set of &quot;if this, then that&quot; rules attached to a question or field. Someone picks an answer, and the form reacts: a hidden field appears, an entire page gets skipped, a value gets calculated, or the respondent gets redirected somewhere else entirely. Tally's own documentation on <a href="https://tally.so/help/conditional-form-logic">conditional form logic</a> breaks this down into six trigger types: jump to page, calculate a value, make an answer required, show or hide blocks, hide the submit button to block completion, and redirect to a different URL or form. That six-action framework is a useful checklist to run against any builder you're evaluating, whether or not it's Tally.</p>
+<h2 id="which-conditional-logic-actions-actually-matter">Which conditional logic actions actually matter?</h2>
+<p>Not every form needs every action. A short contact form might only need show/hide. A lead-qualification form for a marketing team usually needs page jumps (skip irrelevant sections), calculated fields (score or price the response), and redirects (send qualified leads to a booking page, unqualified ones to a thank-you message). Before comparing pricing, list which of these your form actually needs. That list becomes your filter: a builder that only supports basic show/hide won't help if your workflow depends on branching page logic.</p>
+<h2 id="comparing-three-options-against-the-same-criteria">Comparing three options against the same criteria</h2>
+<p>Three form builders with reasonably well-documented conditional logic are Tally, WPForms, and Jotform. They sit in different corners of the market: Tally and Jotform are web-based, WPForms is a WordPress plugin. Here's how their published logic features, deployment, and free-tier terms compare.</p>
+<table>
+<tr><th><p>Criterion</p>
+</th><th><p>Tally</p>
+</th><th><p>WPForms</p>
+</th><th><p>Jotform</p>
+</th></tr>
+<tr><td><p>Platform</p>
+</td><td><p>Web-based, no CMS required</p>
+</td><td><p>WordPress plugin only</p>
+</td><td><p>Web-based, with WordPress embed option</p>
+</td></tr>
+<tr><td><p>Conditional logic on free tier</p>
+</td><td><p>Yes, unlimited conditions on the free plan</p>
+</td><td><p>Not on the free Lite version; requires a paid license</p>
+</td><td><p>Free Starter plan available, though it carries Jotform branding</p>
+</td></tr>
+<tr><td><p>Documented logic actions</p>
+</td><td><p>Jump to page, calculate a value, require an answer, show/hide blocks, disable submission, redirect</p>
+</td><td><p>Show/hide at field and section level, multi-page navigation, conditional email notifications and confirmations, conditional payment fields on paid tiers</p>
+</td><td><p>Show/hide fields, skip to a page, change the notification recipient, calculate or update values</p>
+</td></tr>
+<tr><td><p>Where rules live</p>
+</td><td><p>Inline logic block added with a slash command in the form editor</p>
+</td><td><p>A &quot;Smart Logic&quot; tab inside each field's settings</p>
+</td><td><p>A form-level Settings → Conditions menu rather than per-field</p>
+</td></tr>
+</table>
+<p>The Jotform logic-location detail and its action list come from a hands-on review published on the <a href="https://wpforms.com/best-form-builders-with-conditional-logic/" target="_blank" rel="noopener noreferrer nofollow">WPForms blog</a>, which tested seven builders; treat it as one reviewer's account of the interface rather than Jotform's own claim. Tally's action list and free-tier availability come directly from Tally's own <a href="https://tally.so/help/conditional-form-logic">conditional logic documentation</a>, which states plainly that &quot;conditional logic is available for free to all Tally users&quot; with &quot;no limits on the number of conditions you can add.&quot;</p>
+<h2 id="how-do-the-pricing-models-actually-differ">How do the pricing models actually differ?</h2>
+<p>This is where the tradeoffs get concrete. WPForms' free Lite plugin does not include conditional logic at all; according to the same WPForms blog review, it only unlocks once you buy a paid license, and payment-field logic requires a higher tier still. WPForms' own <a href="https://wpforms.com/pricing/" target="_blank" rel="noopener noreferrer nofollow">pricing page</a> lists Plus, Pro, and Elite tiers with discounted annual rates and different integration sets bundled into each, so the exact entry price to reach conditional logic is worth confirming directly on that page rather than assuming a fixed number, since published figures can change between a blog post and the current pricing page.</p>
+<p>Jotform's <a href="https://www.jotform.com/pricing/" target="_blank" rel="noopener noreferrer nofollow">pricing page</a> confirms a free Starter plan exists with &quot;all standard features, such as form templates, payment integrations, and widgets,&quot; but forms on that plan carry Jotform branding until you upgrade, and the page does not spell out exact submission caps in the excerpt reviewed here, so check current limits before committing a workflow to the free tier.</p>
+<p>Tally's <a href="https://tally.so/pricing">pricing page</a> states that conditional logic, calculations, payments, signatures, and file uploads are included on the free plan &quot;as long as you stay within our fair usage guidelines,&quot; with no separate charge to unlock branching logic. Paid Pro and Business tiers exist for things unrelated to logic itself, such as removing Tally branding, connecting a custom domain, and inviting team members to a shared workspace. Because the exact monthly price shown varied between pages reviewed, confirm the current rate on the pricing page itself before budgeting for an upgrade.</p>
+<h2 id="a-worked-example-qualifying-leads-with-a-budget-question">A worked example: qualifying leads with a budget question</h2>
+<p>Say a small business wants a lead form that asks for budget range, then behaves differently depending on the answer: respondents under $5,000 see two extra qualifying questions before submitting, and respondents over $5,000 skip straight to a calendar booking redirect. This is a hypothetical scenario, not a benchmark of any vendor's live behavior, but it's a useful test to run yourself in each builder's trial or free tier.</p>
+<p><strong>In Tally, this maps directly onto two documented actions: a &quot;show blocks&quot; rule for the extra questions when budget is under $5,000, and a &quot;redirect to a different URL&quot; rule for the high-budget branch, both free to build per Tally's </strong><a href="https://tally.so/help/conditional-form-logic"><strong>logic documentation</strong></a><strong>.</strong> In WPForms, the equivalent would use its Smart Logic field rules for the extra questions and a conditional confirmation or redirect for the booking link, but per the WPForms blog review, that logic tier requires a paid license first. In Jotform, the same test would use its Settings → Conditions menu to add a page-skip rule and a redirect action, per the reviewer's description of that interface.</p>
+<p>The way to validate any of this before committing: build the exact two-branch scenario above in each candidate's free trial, submit both test paths yourself, and confirm the right branch fires every time. That single test tells you more than any feature list, because conditional logic bugs (a rule attached to the wrong page, or a condition referencing the wrong field) are the most common failure mode Tally's own <a href="https://tally.so/help/conditional-form-logic">troubleshooting guide</a> calls out.</p>
+<h2 id="how-do-deployment-and-integrations-change-the-decision">How do deployment and integrations change the decision?</h2>
+<p>If your forms need to live inside an existing WordPress site and route submissions to WordPress-native workflows, a plugin like WPForms keeps everything in one dashboard, and its pricing page lists integrations with Salesforce, HubSpot, Pipedrive, Airtable, Google Sheets, and Zapier at higher tiers. If your forms need to stand alone, embed anywhere, or connect to a small business's existing spreadsheet and automation stack, a web-based tool is simpler to stand up. Tally's <a href="https://tally.so/features">features page</a> lists direct connections to Google Sheets, Notion, Airtable, Slack, Zapier, Make, and webhooks, all listed as part of the free plan rather than gated to a paid tier. Jotform's homepage cites &quot;150+ integrations&quot; for connecting to marketing, CRM, and storage apps.</p>
+<h2 id="making-the-call">Making the call</h2>
+<p>Start from the logic actions your form actually needs, not the longest feature list. If you need branching, calculated fields, and redirects and want to build and test them without hitting a paywall first, check whether conditional logic sits on the free tier, the way it does with Tally, before you build anything you'd need to migrate later. If your forms need to live inside an existing WordPress install and lean on WordPress-native CRM plugins, weigh WPForms' paid tiers against that need specifically. Either way, run the same two-branch test scenario in whichever tool you're trialing before you commit a real lead-generation form to it.</p>
+<h2 id="learn-more-about-tally">Learn more about Tally</h2>
+<p>This article is published by Tally. Visit <a href="https://tally.so/pricing">tally.so</a>.</p>

@@ -1,6 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { latestRun } from "@/lib/onboarding/run-store";
+import { createWorkerClient } from "@/lib/onboarding/worker-client";
+import { wakeChoicePreparation } from "@/lib/onboarding/choice-preparation";
+
+export const maxDuration = 300;
 
 // ---------------------------------------------------------------------------
 // GET /api/onboard/state?workspaceId= — the latest onboarding run, for polling
@@ -14,6 +18,7 @@ import { latestRun } from "@/lib/onboarding/run-store";
 // what decides whether the row is visible at all.
 
 export async function GET(request: NextRequest) {
+  const deadline = Date.now() + 285_000;
   const supabase = await createClient();
 
   const {
@@ -37,7 +42,11 @@ export async function GET(request: NextRequest) {
   if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const now = Date.now();
-  const snapshot = await latestRun(supabase, workspaceId, now);
+  const snapshot = await latestRun(supabase, workspaceId, now, request.nextUrl.searchParams.get("runId") ?? undefined);
+  if (snapshot.run?.status === "running") after(async()=>{
+    try { await wakeChoicePreparation(createWorkerClient(deadline),snapshot.run!.id,{durationMs:Math.max(0,deadline-Date.now())}); }
+    catch { console.warn("[onboarding] source preparation resume interrupted"); }
+  });
   return NextResponse.json(
     { ...snapshot, now },
     { headers: { "Cache-Control": "no-store" } },

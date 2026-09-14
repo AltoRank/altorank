@@ -79,6 +79,7 @@ export function OnboardingProgress({
   autoNavigate = true,
   onState,
   initialRun = null,
+  resumeRunId,
 }: {
   workspaceId: string;
   domain: string;
@@ -96,6 +97,8 @@ export function OnboardingProgress({
    * that has already finished is shown as it is and nothing is started.
    */
   initialRun?: OnboardingRunSnapshot | null;
+  /** Follow the selected run even if its draft finished before this mount. */
+  resumeRunId?: string | null;
 }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState>(() =>
@@ -109,8 +112,8 @@ export function OnboardingProgress({
   // - the workspace list refreshing after creation, for one - cannot re-run
   // that effect and clear its timer.
   const onDoneRef = useRef(onDone);
-  onDoneRef.current = onDone;
-  const settledOnMount = Boolean(initialRun?.run && (initialRun.run.status !== "running" || initialRun.stale));
+  useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
+  const settledOnMount = Boolean(initialRun?.run && (!["running", "awaiting_choice"].includes(initialRun.run.status) || initialRun.stale));
 
   // Start (or find) the run, then poll its row until it stops. The effect is
   // re-runnable: StrictMode runs it twice in development, and the second
@@ -121,6 +124,7 @@ export function OnboardingProgress({
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const startedAt = Date.now();
+    let watchedRunId = resumeRunId ?? initialRun?.run?.id;
 
     const fail = (detail: string) => setState((s) => reduceOnboarding(s, { phase: "error", detail }));
 
@@ -129,7 +133,7 @@ export function OnboardingProgress({
     const poll = async () => {
       if (cancelled) return;
       try {
-        const res = await fetch(`/api/onboard/state?workspaceId=${encodeURIComponent(workspaceId)}`, { cache: "no-store" });
+        const res = await fetch(`/api/onboard/state?workspaceId=${encodeURIComponent(workspaceId)}${watchedRunId ? `&runId=${encodeURIComponent(watchedRunId)}` : ""}`, { cache: "no-store" });
         if (res.ok) {
           const snapshot = (await res.json()) as OnboardingRunSnapshot;
           if (cancelled) return;
@@ -138,7 +142,7 @@ export function OnboardingProgress({
             const next = stateFromRun(snapshot.run, snapshot.article, { stale: snapshot.stale, drafts: snapshot.drafts });
             setState(next);
             if (snapshot.report) setReport(snapshot.report);
-            if (isTerminal(next)) return;
+            if (isTerminal(next) || next.awaitingChoice) return;
           } else {
             failures += 1;
           }
@@ -165,6 +169,7 @@ export function OnboardingProgress({
 
     (async () => {
       try {
+        if (watchedRunId) { await poll(); return; }
         const res = await fetch("/api/onboard/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -175,6 +180,8 @@ export function OnboardingProgress({
           fail(`Onboarding could not start (${res.status}).`);
           return;
         }
+        const started = await res.json();
+        watchedRunId = started.runId;
         await poll();
       } catch {
         if (!cancelled) fail("Onboarding could not start. Check the connection and reload.");
@@ -185,14 +192,14 @@ export function OnboardingProgress({
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [workspaceId, settledOnMount]);
+  }, [workspaceId, settledOnMount, resumeRunId, initialRun?.run?.id]);
 
   // Hand off once the run is over - or once the row says it stopped
   // responding. Either way the dashboard is the right place to be: it polls a
   // draft still in flight (first-draft-live) and shows whatever did complete.
   const finished = isTerminal(state);
   const onStateRef = useRef(onState);
-  onStateRef.current = onState;
+  useEffect(() => { onStateRef.current = onState; }, [onState]);
   useEffect(() => {
     onStateRef.current?.(state);
   }, [state]);
@@ -218,7 +225,7 @@ export function OnboardingProgress({
         <p
           className={`m-0 mt-1 text-[12.5px] leading-relaxed ${outcome.tone === "error" ? "text-err-ink" : "text-ink-2"}`}
         >
-          {outcome.line}
+          {state.awaitingChoice ? "Your article ideas are ready. Choose which one to draft first." : outcome.line}
         </p>
       </div>
 

@@ -1,0 +1,668 @@
+{
+  "scope": "Full stored Tally article replay; stored Tiptap HTML creates different passage boundaries from generation. Sources held fixed. Before the follow-up invalid-provenance omission fix; recovery hit the deadline and retained initial results.",
+  "claimVerification": {
+    "status": "partial",
+    "totalPassages": 51,
+    "checkedPassages": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      44,
+      45,
+      47,
+      48,
+      49,
+      50
+    ],
+    "claims": [
+      {
+        "quote": "Tally's own documentation on conditional form logic breaks this down into six trigger types: jump to page, calculate a value, make an answer required, show or hide blocks, hide the submit button to block completion, and redirect to a different URL or form.",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Matches Tally's documented six action types for conditional logic.",
+        "evidence": [
+          {
+            "sourceIndex": 3,
+            "quote": "Tally supports six actions: Jump to page, Calculate a value, Make answers required, Show or hide blocks, Hide button to disable completion, and Redirect to different URLs."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 11
+      },
+      {
+        "quote": "Tally and Jotform are web-based, WPForms is a WordPress plugin",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Matches deployment descriptions in sources",
+        "evidence": [
+          {
+            "sourceIndex": 4,
+            "quote": "WPForms WordPress Smart Logic toggle"
+          },
+          {
+            "sourceIndex": 6,
+            "quote": "EASIEST ONLINE FORM BUILDER"
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 15
+      },
+      {
+        "quote": "Web-based, no CMS required",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Tally is described as web-based with no signup/coding requirement",
+        "evidence": [
+          {
+            "sourceIndex": 2,
+            "quote": "No need to code \u2014 just type your questions like you would in a doc."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 21
+      },
+      {
+        "quote": "WordPress plugin only",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "WPForms described as WordPress plugin",
+        "evidence": [
+          {
+            "sourceIndex": 4,
+            "quote": "WPForms is a drag-and-drop form builder for WordPress"
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 22
+      },
+      {
+        "quote": "Web-based, with WordPress embed option",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Jotform described as web-based with WordPress embed option",
+        "evidence": [
+          {
+            "sourceIndex": 4,
+            "quote": "It's not a WordPress plugin (though there's an embed option), so it makes the most sense if you want forms that live independently from any one website."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 23
+      },
+      {
+        "quote": "Yes, unlimited conditions on the free plan",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Tally documentation confirms free unlimited conditional logic",
+        "evidence": [
+          {
+            "sourceIndex": 3,
+            "quote": "Is Tally's conditional logic free? Yes. Conditional logic is available for free to all Tally users . There are no limits on the number of conditions you can add."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 25
+      },
+      {
+        "quote": "Not on the free Lite version; requires a paid license",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "WPForms source confirms free tier lacks conditional logic",
+        "evidence": [
+          {
+            "sourceIndex": 4,
+            "quote": "WPForms Lite is free but does not include conditional logic. Paid licenses start at $49.50/yr (Basic) , where Smart Conditional Logic unlocks for all standard fields."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 26
+      },
+      {
+        "quote": "Free Starter plan available, though it carries Jotform branding",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Jotform pricing page confirms free Starter plan with branding until upgrade",
+        "evidence": [
+          {
+            "sourceIndex": 11,
+            "quote": "Keep in mind that your forms and signed documents will include Jotform branding, which can be removed once you have a paid subscription."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 27
+      },
+      {
+        "quote": "Jump to page, calculate a value, require an answer, show/hide blocks, disable submission, redirect",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Matches Tally's documented six conditional logic actions.",
+        "evidence": [
+          {
+            "sourceIndex": 3,
+            "quote": "Jump to page Calculate a value Make answers required Show or hide blocks Hide button to disable completion Redirect to different URLs and Tally forms"
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 29
+      },
+      {
+        "quote": "Show/hide at field and section level, multi-page navigation, conditional email notifications and confirmations, conditional payment fields on paid tiers",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Matches WPForms blog's described conditional logic scope and payment-tier gating.",
+        "evidence": [
+          {
+            "sourceIndex": 4,
+            "quote": "You can apply rules to whole sections, multi-page step navigation and email notifications (route different submissions to different team inboxes). You can also add conditional logic to form confirmations (show different thank-you messages based on answers), and even payment fields with the Stripe Pro, Square Pro, or PayPal Commerce integrations."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 30
+      },
+      {
+        "quote": "Show/hide fields, skip to a page, change the notification recipient, calculate or update values",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Matches WPForms blog's description of Jotform's conditional logic action types.",
+        "evidence": [
+          {
+            "sourceIndex": 4,
+            "quote": "you can show or hide fields, skip to specific pages, change the email recipient, calculate values, or update form values dynamically."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 31
+      },
+      {
+        "quote": "Inline logic block added with a slash command in the form editor",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Tally documentation confirms the slash-command logic insertion.",
+        "evidence": [
+          {
+            "sourceIndex": 3,
+            "quote": "Type /logic to add conditional logic to your form."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 33
+      },
+      {
+        "quote": "A \"Smart Logic\" tab inside each field's settings",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "WPForms blog describes the Smart Logic tab within field settings.",
+        "evidence": [
+          {
+            "sourceIndex": 4,
+            "quote": "you click any field, switch to the Smart Logic tab, flip the Enable Conditional Logic toggle, and start adding rules."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 34
+      },
+      {
+        "quote": "A form-level Settings \u2192 Conditions menu rather than per-field",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "WPForms blog states Jotform places conditions under form-level Settings \u00bb Conditions.",
+        "evidence": [
+          {
+            "sourceIndex": 4,
+            "quote": "JotForm puts them under Settings \u00bb Conditions at the form level."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 35
+      },
+      {
+        "quote": "The Jotform logic-location detail and its action list come from a hands-on review published on the WPForms blog , which tested seven builders",
+        "category": "qualitative",
+        "verdict": "supported",
+        "reason": "Source is indeed a WPForms blog review testing seven form builders.",
+        "evidence": [
+          {
+            "sourceIndex": 4,
+            "quote": "So I tested 7 of the most popular form builders with conditional logic side by side."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 36
+      },
+      {
+        "quote": "Tally's action list and free-tier availability come directly from Tally's own conditional logic documentation",
+        "category": "qualitative",
+        "verdict": "supported",
+        "reason": "Source 3 is Tally's own help documentation on conditional logic.",
+        "evidence": [
+          {
+            "sourceIndex": 3,
+            "quote": "Conditional logic lets your form adapt in real time based on how someone answers."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 36
+      },
+      {
+        "quote": "\"conditional logic is available for free to all Tally users\" with \"no limits on the number of conditions you can add.\"",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Directly matches Tally documentation wording.",
+        "evidence": [
+          {
+            "sourceIndex": 3,
+            "quote": "Yes. Conditional logic is available for free to all Tally users . There are no limits on the number of conditions you can add."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 36
+      },
+      {
+        "quote": "WPForms' free Lite plugin does not include conditional logic at all",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "WPForms blog confirms Lite lacks conditional logic.",
+        "evidence": [
+          {
+            "sourceIndex": 4,
+            "quote": "WPForms Lite is free but does not include conditional logic."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 38
+      },
+      {
+        "quote": "according to the same WPForms blog review, it only unlocks once you buy a paid license",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Matches statement that Basic license unlocks Smart Conditional Logic.",
+        "evidence": [
+          {
+            "sourceIndex": 4,
+            "quote": "Paid licenses start at $49.50/yr (Basic) , where Smart Conditional Logic unlocks for all standard fields."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 38
+      },
+      {
+        "quote": "payment-field logic requires a higher tier still",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "WPForms blog states payment conditional logic requires Pro tier.",
+        "evidence": [
+          {
+            "sourceIndex": 4,
+            "quote": "Conditional logic on Stripe payments requires Pro ($199.50/yr), which also unlocks PayPal Commerce, Square Pro, recurring subscriptions, the Calculations addon, and Conversational Forms."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 38
+      },
+      {
+        "quote": "WPForms' own pricing page lists Plus, Pro, and Elite tiers with discounted annual rates and different integration sets bundled into each",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "WPForms pricing page lists Elite, Pro, and Plus tiers with discounted annual pricing and distinct integrations.",
+        "evidence": [
+          {
+            "sourceIndex": 5,
+            "quote": "Elite Premier solution for smart business owners normally $599.00 $ 239 .60 / year"
+          },
+          {
+            "sourceIndex": 5,
+            "quote": "Pro Everything you need to build a perfect form normally $399.00 $ 159 .60 / year"
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 38
+      },
+      {
+        "quote": "Jotform's pricing page confirms a free Starter plan exists with \"all standard features, such as form templates, payment integrations, and widgets,\"",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Directly quoted from Jotform pricing FAQ.",
+        "evidence": [
+          {
+            "sourceIndex": 11,
+            "quote": "The Starter plan includes all standard features , such as form templates , payment integrations , and widgets."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 39
+      },
+      {
+        "quote": "forms on that plan carry Jotform branding until you upgrade",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Jotform pricing page confirms Starter plan branding removed only after upgrade.",
+        "evidence": [
+          {
+            "sourceIndex": 11,
+            "quote": "Keep in mind that your forms and signed documents will include Jotform branding, which can be removed once you have a paid subscription."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 39
+      },
+      {
+        "quote": "Tally's pricing page states that conditional logic, calculations, payments, signatures, and file uploads are included on the free plan \"as long as you stay within our fair usage guidelines,\"",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Matches Tally pricing page's free feature list and fair-use wording.",
+        "evidence": [
+          {
+            "sourceIndex": 0,
+            "quote": "Tally gives you unlimited forms and submissions, completely free, as long as you stay within our fair usage guidelines ."
+          },
+          {
+            "sourceIndex": 0,
+            "quote": "Conditional logic & calculations Prevent duplicate submissions Password protect forms Close forms on limit or date Answer piping"
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 40
+      },
+      {
+        "quote": "with no separate charge to unlock branching logic",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Conditional logic appears in the free feature list, not the paid tier list.",
+        "evidence": [
+          {
+            "sourceIndex": 0,
+            "quote": "Collect payments Collect signatures Collect file uploads Custom `Thank You` page Self email notifications Redirect on completion Conditional logic & calculations"
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 40
+      },
+      {
+        "quote": "Paid Pro and Business tiers exist for things unrelated to logic itself, such as removing Tally branding, connecting a custom domain, and inviting team members to a shared workspace.",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Tally pricing page lists these as Pro/Business features, unrelated to conditional logic.",
+        "evidence": [
+          {
+            "sourceIndex": 0,
+            "quote": "Remove Tally branding. Hide all branding and make your forms truly your own. Custom domains. Host forms on your custom (sub)domain to create branded links. Collaboration. Invite unlimited team members to shared workspaces."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 40
+      },
+      {
+        "quote": "Because the exact monthly price shown varied between pages reviewed, confirm the current rate on the pricing page itself before budgeting for an upgrade.",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Tally pricing differs between pricing page (\u20ac20/\u20ac65) and features page ($29/$89), confirming variation.",
+        "evidence": [
+          {
+            "sourceIndex": 0,
+            "quote": "Pro \u20ac 20 per month"
+          },
+          {
+            "sourceIndex": 1,
+            "quote": "\u2714\ufe0f $29/month or $290/year"
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 40
+      },
+      {
+        "quote": "the equivalent would use its Smart Logic field rules for the extra questions and a conditional confirmation or redirect for the booking link, but per the WPForms blog review, that logic tier requires a paid license first",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "WPForms review states free tier lacks conditional logic and Smart Logic requires paid plan.",
+        "evidence": [
+          {
+            "sourceIndex": 4,
+            "quote": "Free tier conditional logic: Not available (requires Basic at $49.50/yr)"
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 43
+      },
+      {
+        "quote": "conditional logic bugs (a rule attached to the wrong page, or a condition referencing the wrong field) are the most common failure mode Tally's own troubleshooting guide calls out",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Tally troubleshooting FAQ lists these exact common issues.",
+        "evidence": [
+          {
+            "sourceIndex": 3,
+            "quote": "The most common issues are: the logic block is placed on the wrong page, conditions reference the wrong field, or the form hasn't been tested with all answer combinations."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 44
+      },
+      {
+        "quote": "Jotform's homepage cites \"150+ integrations\" for connecting to marketing, CRM, and storage apps",
+        "category": "product",
+        "verdict": "unsupported",
+        "reason": "Jotform homepage source in packet cites 40M users and payments but not a '150+ integrations' figure; that figure appears only for Zoho.",
+        "evidence": [],
+        "contradiction": "",
+        "passageIndex": 46
+      },
+      {
+        "quote": "check whether conditional logic sits on the free tier, the way it does with Tally, before you build anything you'd need to migrate later",
+        "category": "product",
+        "verdict": "supported",
+        "reason": "Tally documentation confirms conditional logic is free with no limits.",
+        "evidence": [
+          {
+            "sourceIndex": 3,
+            "quote": "Is Tally's conditional logic free? Yes. Conditional logic is available for free to all Tally users . There are no limits on the number of conditions you can add."
+          }
+        ],
+        "contradiction": "",
+        "passageIndex": 48
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://tally.so/pricing",
+        "title": "Tally Pricing | Free Form Builder with Unlimited Responses"
+      },
+      {
+        "url": "https://tally.so/features",
+        "title": "Explore all Tally features for free online forms and surveys"
+      },
+      {
+        "url": "https://tally.so/",
+        "title": "Tally - Create Beautiful Forms for Free | Unlimited Forms & Submissions"
+      },
+      {
+        "url": "https://tally.so/help/conditional-form-logic",
+        "title": "Create Conditional Logic Forms | Free Form Builder | Tally"
+      },
+      {
+        "url": "https://wpforms.com/best-form-builders-with-conditional-logic/",
+        "title": "7 Best Form Builders With Conditional Logic"
+      },
+      {
+        "url": "https://wpforms.com/pricing/",
+        "title": "WPForms Pricing and Plans"
+      },
+      {
+        "url": "https://www.jotform.com/?utm_source=wp-beginner&utm_campaign=jf1&utm_medium=blog",
+        "title": "Jotform: Free Online Form Builder | Create Forms in Seconds"
+      },
+      {
+        "url": "https://www.zoho.com/forms/",
+        "title": "Free Form Builder | Create Online Forms For Free"
+      },
+      {
+        "url": "https://www.zoho.com/forms/",
+        "title": "Free Form Builder | Create Online Forms For Free"
+      },
+      {
+        "url": "https://www.gravityforms.com/",
+        "title": "Gravity Forms | The Best WordPress Form Plugin | Form Builder"
+      },
+      {
+        "url": "https://www.typeform.com/?ps_partner_key=c3llZGJhbGtoaQ&ps_xid=NStL9GLtwPqeIq&gsxid=NStL9GLtwPqeIq&gspk=c3llZGJhbGtoaQ",
+        "title": "Form Builder with AI Automation | Typeform"
+      },
+      {
+        "url": "https://www.jotform.com/pricing/",
+        "title": "Jotform Features and Pricing | Jotform"
+      }
+    ],
+    "failures": [
+      "Batch 3: Passage 43: a claim or evidence quote could not be verified.",
+      "Batch 3: Passage 46: a claim or evidence quote could not be verified."
+    ],
+    "modelCalls": [
+      {
+        "operation": "article/claim-verification",
+        "model": "claude-sonnet-5",
+        "thinking": "adaptive-medium",
+        "promptHash": "1fce51a8967600a19c4b1874ff2733758506d4cfea0fde44f8e112c2edd103bb",
+        "elapsedMs": 5002,
+        "status": "complete",
+        "inputTokens": 33799,
+        "outputTokens": 456,
+        "costUsd": 0.108237
+      },
+      {
+        "operation": "article/claim-verification",
+        "model": "claude-sonnet-5",
+        "thinking": "adaptive-medium",
+        "promptHash": "3e24e9817f98a33caca56442e20d0cf7aeb2c3b33c8eee0fe465ef203b7418b7",
+        "elapsedMs": 9382,
+        "status": "complete",
+        "inputTokens": 33365,
+        "outputTokens": 1160,
+        "costUsd": 0.117495
+      },
+      {
+        "operation": "article/claim-verification",
+        "model": "claude-sonnet-5",
+        "thinking": "adaptive-medium",
+        "promptHash": "9cb37444e17b18df1b1c3e64c6f4f4bef0eacc85191d96c42214c4bc99fad6a4",
+        "elapsedMs": 42308,
+        "status": "complete",
+        "inputTokens": 33970,
+        "outputTokens": 5695,
+        "costUsd": 0.187335
+      },
+      {
+        "operation": "article/claim-verification",
+        "model": "claude-sonnet-5",
+        "thinking": "adaptive-medium",
+        "promptHash": "c7932a24ad6c2760e81764a5f2d759b4313c34b869c48a2be9128080898e2750",
+        "elapsedMs": 50034,
+        "status": "complete",
+        "inputTokens": 34040,
+        "outputTokens": 1810,
+        "costUsd": 0.12927
+      },
+      {
+        "operation": "article/claim-verification",
+        "model": "claude-sonnet-5",
+        "thinking": "adaptive-medium",
+        "promptHash": "193b7a540a81e34a078324a047201aee01254acf13c121449668d42ae0238885",
+        "elapsedMs": 34968,
+        "status": "unavailable"
+      }
+    ]
+  },
+  "providerCostUsd": 0.542337,
+  "modelCalls": [
+    {
+      "operation": "article/claim-verification",
+      "model": "claude-sonnet-5",
+      "thinking": "adaptive-medium",
+      "promptHash": "1fce51a8967600a19c4b1874ff2733758506d4cfea0fde44f8e112c2edd103bb",
+      "elapsedMs": 5002,
+      "status": "complete",
+      "inputTokens": 33799,
+      "outputTokens": 456,
+      "costUsd": 0.108237
+    },
+    {
+      "operation": "article/claim-verification",
+      "model": "claude-sonnet-5",
+      "thinking": "adaptive-medium",
+      "promptHash": "3e24e9817f98a33caca56442e20d0cf7aeb2c3b33c8eee0fe465ef203b7418b7",
+      "elapsedMs": 9382,
+      "status": "complete",
+      "inputTokens": 33365,
+      "outputTokens": 1160,
+      "costUsd": 0.117495
+    },
+    {
+      "operation": "article/claim-verification",
+      "model": "claude-sonnet-5",
+      "thinking": "adaptive-medium",
+      "promptHash": "9cb37444e17b18df1b1c3e64c6f4f4bef0eacc85191d96c42214c4bc99fad6a4",
+      "elapsedMs": 42308,
+      "status": "complete",
+      "inputTokens": 33970,
+      "outputTokens": 5695,
+      "costUsd": 0.187335
+    },
+    {
+      "operation": "article/claim-verification",
+      "model": "claude-sonnet-5",
+      "thinking": "adaptive-medium",
+      "promptHash": "c7932a24ad6c2760e81764a5f2d759b4313c34b869c48a2be9128080898e2750",
+      "elapsedMs": 50034,
+      "status": "complete",
+      "inputTokens": 34040,
+      "outputTokens": 1810,
+      "costUsd": 0.12927
+    },
+    {
+      "operation": "article/claim-verification",
+      "model": "claude-sonnet-5",
+      "thinking": "adaptive-medium",
+      "promptHash": "193b7a540a81e34a078324a047201aee01254acf13c121449668d42ae0238885",
+      "elapsedMs": 34968,
+      "status": "unavailable"
+    }
+  ]
+}

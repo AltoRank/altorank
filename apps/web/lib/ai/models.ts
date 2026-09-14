@@ -25,7 +25,9 @@ export type ModelTier =
   /** Long-form writing and analysis, where output quality is the product. */
   | "content"
   /** Short structured work: meta descriptions, clustering, SERP summaries. */
-  | "structured";
+  | "structured"
+  /** Evidence judgments and revisions, independently benchmarked from extraction. */
+  | "editorial";
 
 const DEFAULTS = {
   /**
@@ -70,6 +72,7 @@ function fromEnv(name: string, fallback: string): string {
 
 /** Anthropic model for a given tier. */
 export function anthropicModel(tier: ModelTier = "content"): string {
+  if (tier === "editorial") return fromEnv("ANTHROPIC_MODEL_EDITORIAL", fromEnv("ANTHROPIC_MODEL", DEFAULTS.anthropicContent));
   return tier === "structured"
     ? fromEnv("ANTHROPIC_MODEL_STRUCTURED", fromEnv("ANTHROPIC_MODEL", DEFAULTS.anthropicStructured))
     : fromEnv("ANTHROPIC_MODEL", DEFAULTS.anthropicContent);

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import type Stripe from "stripe";
 import {
   getStripe,
@@ -13,7 +13,7 @@ import {
 import { createServiceClient } from "@/lib/supabase/server";
 import { recordEvent } from "@/lib/observability/record";
 import { describe as describeError } from "@/lib/observability/event";
-import { paceOnActivation } from "@/lib/content/pace";
+import { queueFirstMonth, wakeFirstMonth } from "@/lib/onboarding/first-month";
 import { resumePausedWorkspaces } from "@/lib/billing/resume";
 import { graceEndsAt } from "@/lib/billing/dunning";
 import {
@@ -339,7 +339,7 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
         const plan = await planForCheckoutSession(session);
         const trial = await trialForCheckoutSession(session);
 
-        await supabase
+        const activation = await supabase
           .from("accounts")
           .update({
             stripe_customer_id: String(session.customer),
@@ -359,31 +359,9 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
           })
           .eq("id", accountId);
 
-        /**
-         * Start writing at a paid pace.
-         *
-         * Signup sets FREE_TIER_PACE, which is right while the account is
-         * free: the quota allows FREE_DRAFTS a calendar month, and the pace
-         * matches so those drafts land inside the first week. It used to set
-         * one a week against a one-draft month, and nothing raised it
-         * afterwards, so a customer who paid for 100 a month kept getting
-         * about four with no control anywhere to change it. `paceOnActivation`
-         * only ever raises, and only from a value the product itself chose - a
-         * site deliberately paused at 0, or set to anything that is not the
-         * free-tier pace, is left alone.
-         */
-        const { data: sites } = await supabase
-          .from("workspaces")
-          .select("id, auto_generate_weekly_limit")
-          .eq("account_id", accountId);
-        for (const site of sites ?? []) {
-          const next = paceOnActivation(site.auto_generate_weekly_limit as number | null, plan);
-          if (next === null) continue;
-          await supabase
-            .from("workspaces")
-            .update({ auto_generate_weekly_limit: next })
-            .eq("id", site.id);
-        }
+        if (activation.error) throw activation.error;
+        const preparing = await queueFirstMonth(supabase, accountId, plan);
+        if (preparing.length) after(async () => { await Promise.all(preparing.map(wakeFirstMonth)); });
 
         // The card was taken: say when it is charged and where to stop that.
         if (trial) {
@@ -472,11 +450,14 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
         .maybeSingle();
       const before = (beforeRow as AccountBillingRow | null) ?? null;
 
-      if (accountId) {
-        await supabase.from("accounts").update(updates).eq("id", accountId);
-      } else {
-        // Fall back to matching by the stored subscription id.
-        await supabase.from("accounts").update(updates).eq("stripe_subscription_id", sub.id);
+      const persisted = await supabase.from("accounts").update(updates)
+        .eq(accountId ? "id" : "stripe_subscription_id", accountId ?? sub.id);
+      if (persisted.error) throw persisted.error;
+      const activatedAccount = accountId ?? before?.id;
+      if (activatedAccount && (status === "active" || status === "trialing") &&
+          (event.type === "customer.subscription.created" || !["active", "trialing"].includes(before?.plan_status ?? ""))) {
+        const preparing = await queueFirstMonth(supabase, activatedAccount, plan);
+        if (preparing.length) after(async () => { await Promise.all(preparing.map(wakeFirstMonth)); });
       }
 
       /**

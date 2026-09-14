@@ -142,7 +142,7 @@ export function parseRankedItem(item: DFSRankedItem): RankedKeyword | null {
 export function buildRankedFilters(minVolume: number, maxRank: number): unknown[] {
   const filters: unknown[] = [];
   if (minVolume > 0) {
-    filters.push(["keyword_data.keyword_info.search_volume", ">", minVolume]);
+    filters.push(["keyword_data.keyword_info.search_volume", ">=", minVolume]);
   }
   if (maxRank > 0) {
     if (filters.length) filters.push("and");

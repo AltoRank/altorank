@@ -18,6 +18,7 @@ const writes: { table: string; row: Row; col: string; val: unknown; filters: Fil
 let workspaceRows: Row[] = [];
 /** The one account row any single-row read of `accounts` returns; null = no match. */
 let accountRow: Row | null = null;
+let activationError: Error | null = null;
 
 /**
  * A chainable fake of the PostgREST builder: filters are recorded, the
@@ -33,13 +34,15 @@ function query(table: string, op: "select" | "update", row?: Row) {
     eq: (c: string, v: unknown) => (filters.push([c, "eq", v]), q),
     not: (c: string, o: string, v: unknown) => (filters.push([c, `not ${o}`, v]), q),
     select: () => q,
+    limit: () => q,
     single: () => ((single = true), q),
     maybeSingle: () => ((single = true), q),
     then: (resolve: (v: unknown) => unknown) => {
       if (op === "update") {
         writes.push({ table, row: row!, col: filters[0]?.[0], val: filters[0]?.[2], filters });
-        return resolve({ data: workspaceRows, error: null });
+        return resolve({ data: workspaceRows, error: table === "accounts" ? activationError : null });
       }
+      if (table === "onboarding_runs" || table === "first_month_runs") return resolve({ data: null });
       if (table === "accounts") return resolve({ data: single ? accountRow : accountRow ? [accountRow] : [] });
       return resolve({ data: workspaceRows });
     },
@@ -153,6 +156,7 @@ function invoiceEvent(type: "payment_failed" | "paid", overrides: Record<string,
 
 beforeEach(() => {
   writes.length = 0;
+  activationError = null;
   workspaceRows = [];
   accountRow = null;
   constructEvent.mockReset();
@@ -166,6 +170,10 @@ beforeEach(() => {
 });
 
 describe("checkout.session.completed", () => {
+  it("does not acknowledge activation when the account write failed", async () => {
+    activationError = new Error("Database unavailable");
+    await expect(deliver(checkoutCompleted())).rejects.toThrow("Database unavailable");
+  });
   it("writes the tier the subscription's price sells, not the column default", async () => {
     const res = await deliver(checkoutCompleted());
     expect(res.status).toBe(200);

@@ -52,6 +52,11 @@ export interface GscSignal {
 }
 
 export interface ArticleResearch {
+  draftPreparation?: { context: string; createdAt: string };
+  draftSources?: import("@/lib/keyword-research/page-evidence").PageExtract[];
+  draftSourceBrief?: import("@/lib/content/source-brief").SourceBrief;
+  draftEvidencePlan?: import("@/lib/content/draft-evidence").DraftEvidencePlan;
+  editorialReview?: import("@/lib/content/approved-output").EditorialReview;
   keyword: string;
   language: string;
   intent: IntentClassification;
@@ -369,6 +374,10 @@ export async function gatherArticleResearch(options: {
    * the saving. `undefined` means nobody looked, and this pays for the lookup.
    */
   relatedKeywords?: RelatedKeyword[];
+  /** The selected task already has a supported brief; generic expansion and
+   * competitor word counts do not help answer it. */
+  focusedFirstDraft?: boolean;
+  qualifiedSerp?: { query: string; languageCode: string; locationCode: number; fetchedAt: string; data: SerpData };
 }): Promise<ArticleResearch> {
   const { keyword, locale, supabase, workspaceId } = options;
   const loc = getLocale(locale ?? "en");
@@ -378,10 +387,13 @@ export async function gatherArticleResearch(options: {
   };
 
   const hasDataForSeo = hasDataForSEOCredentials();
-  const prefetched = options.relatedKeywords;
+  const prefetched = options.focusedFirstDraft ? [] : options.relatedKeywords;
 
+  const saved = options.qualifiedSerp;
+  const age = saved ? Date.now() - Date.parse(saved.fetchedAt) : Infinity;
+  const reuse = saved && saved.query === keyword && saved.languageCode === localeParam.languageCode && saved.locationCode === localeParam.locationCode && age >= 0 && age < 15 * 60_000;
   const [serpResult, keywordsResult, gscResult] = await Promise.allSettled([
-    hasDataForSeo
+    reuse ? Promise.resolve(saved.data) : hasDataForSeo
       ? fetchAdvancedSerp(keyword, localeParam)
       : Promise.reject(new Error("DataForSEO credentials not configured")),
     prefetched
@@ -464,14 +476,14 @@ export async function gatherArticleResearch(options: {
 
   // Fill in the word counts the SERP provider does not supply. Only worth the
   // round trips when there are competitors to measure at all.
-  const { competitors, layer: lengthLayer } = rawCompetitors.length
+  const { competitors, layer: lengthLayer } = rawCompetitors.length && !options.focusedFirstDraft
     ? await measureCompetitorLengths(rawCompetitors)
     : {
         competitors: rawCompetitors,
         layer: {
           id: "competitor_length" as const,
           status: "unavailable" as const,
-          detail: "no competitors to measure",
+          detail: options.focusedFirstDraft ? "length follows the approved task; no competitor-length lookup" : "no competitors to measure",
         },
       };
   layers.push(lengthLayer);

@@ -1,0 +1,39 @@
+{
+  "code": "27f7bc04f4bc0d7d7502c23d94b863bae5852eea",
+  "concurrentCases": 4,
+  "selection": "Accept inferred primary focus and first supported choice. Freeze product code across cases; failures retained.",
+  "cases": [
+    [
+      "basecamp.com",
+      "en"
+    ],
+    [
+      "buffer.com",
+      "en"
+    ],
+    [
+      "crisp.chat",
+      "en"
+    ],
+    [
+      "brevo.com",
+      "en"
+    ],
+    [
+      "bellroy.com",
+      "en"
+    ],
+    [
+      "allbirds.com",
+      "en"
+    ],
+    [
+      "fresha.com",
+      "en"
+    ],
+    [
+      "fattureincloud.it",
+      "it"
+    ]
+  ]
+}

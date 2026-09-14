@@ -43,7 +43,7 @@ const WORKER_EVENTS: OnboardingEvent[] = [
 /** What the draft route stamps once the draft lands. */
 const DRAFT_DONE: OnboardingEvent = { phase: "drafting", status: "done", detail: 'Wrote 1,200 words on "seo agent".' };
 const ARTICLE = { id: "a1", title: "What an SEO agent does", keyword: "seo agent", wordCount: 1200, verdict: "clean" as const };
-const ARTICLE_ROW = { id: "a1", title: "What an SEO agent does", keyword: "seo agent", word_count: 1200, fact_check_verdict: "clean", status: "review" };
+const ARTICLE_ROW = { id: "a1", workspace_id:"ws1", title: "What an SEO agent does", keyword: "seo agent", word_count: 1200, fact_check_verdict: "clean", status: "review" };
 
 describe("RunRecorder", () => {
   it("writes the row after every event, in order, with the reduced phases", async () => {
@@ -121,7 +121,7 @@ describe("reducer parity", () => {
     for (const e of WORKER_EVENTS) rec.record(e);
     await rec.flush();
     const persisted = stateFromRun(db.tables.onboarding_runs[0] as unknown as OnboardingRunRow, null);
-    expect(persisted).toEqual(streamed);
+    expect(persisted).toEqual({ ...streamed, runId: db.tables.onboarding_runs[0].id, awaitingChoice: false });
   });
 
   it("and once the draft route has stamped the draft and the run is over", async () => {
@@ -139,12 +139,12 @@ describe("reducer parity", () => {
     expect(row.status).toBe("done");
     expect(row.article_id).toBe("a1");
     const persisted = stateFromRun(row, ARTICLE_ROW);
-    expect(persisted).toEqual(streamed);
+    expect(persisted).toEqual({ ...streamed, runId: db.tables.onboarding_runs[0].id, awaitingChoice: false });
   });
 
   it("a row with nothing written yet is the first frame", () => {
     const row = { id: "r1", workspace_id: "ws1", status: "running", phases: [], planned: [], keywords_found: null, article_id: null, error: null, started_at: "", updated_at: "", finished_at: null } as OnboardingRunRow;
-    expect(stateFromRun(row, null)).toEqual(initialOnboardingState());
+    expect(stateFromRun(row, null)).toEqual({ ...initialOnboardingState(), runId: row.id, awaitingChoice: false });
   });
 
   it("does not show a draft the row does not point at", () => {
@@ -243,6 +243,18 @@ describe("startRun", () => {
 });
 
 describe("latestRun", () => {
+  it("keeps polling the chosen finished run when a newer run exists and scopes its article",async()=>{
+    const db=fakeDb({onboarding_runs:[
+      {id:"chosen",workspace_id:"ws1",status:"done",article_id:"a1",started_at:"2026-09-13",updated_at:"2026-09-13"},
+      {id:"newer",workspace_id:"ws1",status:"running",started_at:"2026-09-14",updated_at:"2026-09-14"},
+      {id:"foreign",workspace_id:"ws2",status:"done",started_at:"2026-09-14",updated_at:"2026-09-14"},
+    ],articles:[{...ARTICLE_ROW}]});
+    expect((await latestRun(db.client,"ws1",Date.now(),"chosen")).run?.id).toBe("chosen");
+    expect((await latestRun(db.client,"ws1",Date.now(),"chosen")).article?.id).toBe("a1");
+    expect((await latestRun(db.client,"ws1",Date.now(),"foreign")).run).toBeNull();
+    db.tables.articles[0].workspace_id="ws2";
+    expect((await latestRun(db.client,"ws1",Date.now(),"chosen")).article).toBeNull();
+  });
   it("returns the newest run, its draft, and whether it is stale", async () => {
     const now = Date.now();
     const db = fakeDb({
@@ -354,4 +366,40 @@ describe("a run that made nothing emails the account; a run that made something 
     expect(d.transient).toBe(false);
     expect(setupFailedFacts("error", null, "boom").line).toBe("boom");
   });
+});
+
+it("persists supported brief previews across polling before a calendar exists", async () => {
+  const db = fakeDb({onboarding_runs:[{id:"progress-run",workspace_id:"ws1",status:"running",phases:[],planned:[]}]});
+  const recorder = new RunRecorder(db.client,"progress-run");
+  const briefs = [{term:"Compare booking software",date:"",keywordId:"k1"}];
+  recorder.record({phase:"planning",status:"active",detail:"First supported brief ready",briefs});
+  await recorder.flush();
+  const state = stateFromRun(db.tables.onboarding_runs[0] as unknown as OnboardingRunRow,null);
+  expect(state.steps.find((s) => s.phase === "planning")?.briefs).toEqual(briefs);
+  expect(state.planned).toEqual([]); expect(state.ready).toBe(false);
+});
+
+
+it("coalesces slow progress writes but flushes the final choice snapshot before handoff", async () => {
+  const writes: Array<Record<string, unknown>> = [];
+  let release!: () => void;
+  const firstWrite = new Promise<void>(resolve => { release = resolve; });
+  const db = {from:()=>({update:(patch:Record<string, unknown>)=>({eq:async()=>{
+    writes.push(patch);
+    if (writes.length === 1) await firstWrite;
+    return {error:null};
+  }})})};
+  const recorder = new RunRecorder(db as never,"slow-run",{coalesce:true});
+  recorder.record({phase:"scanning",status:"active"});
+  await Promise.resolve();
+  for (const event of WORKER_EVENTS) recorder.record(event);
+  expect(writes).toHaveLength(1);
+  let flushed = false;
+  const flush = recorder.flush().then(() => { flushed = true; });
+  await Promise.resolve();
+  expect(flushed).toBe(false);
+  release();
+  await flush;
+  expect(writes).toHaveLength(2);
+  expect(writes[1]).toMatchObject({keywords_found:94,planned:expect.arrayContaining([{term:"seo agent",date:"2026-09-07"}])});
 });

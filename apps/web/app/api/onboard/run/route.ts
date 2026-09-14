@@ -9,12 +9,11 @@ import { executeRun } from "@/lib/onboarding/run-worker";
 // Server-to-server only, authenticated with CRON_SECRET like the cron routes
 // and /api/internal/draft: the caller is /api/onboard/start, which has no
 // session to forward. Runs the phases with the service client and writes the
-// row after every one (lib/onboarding/run-worker.ts). No request signal is
-// read anywhere: nobody's tab is attached to this request, so nothing can
-// cancel it but the platform's own ceiling.
+// row as progress changes (lib/onboarding/run-worker.ts). Research and
+// database transport use invocation deadlines independent of the user's tab.
 
-// Read, discover and schedule take tens of seconds; the draft is not written
-// here (see the worker), so this finishes well inside the budget.
+// Stop research at 240s and database transport at 285s, reserving time to
+// persist the source-check queue before the platform ceiling.
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
@@ -35,8 +34,12 @@ export async function POST(request: NextRequest) {
   after(() => result.keepAlive);
 
   const status =
-    result.outcome === "not-found" ? 404
+    result.outcome === "retryable-error" ? 503
+    : result.outcome === "not-found" ? 404
     : result.outcome === "already-running" || result.outcome === "already-finished" ? 409
     : 200;
-  return NextResponse.json({ outcome: result.outcome }, { status });
+  return NextResponse.json({ outcome: result.outcome }, {
+    status,
+    ...(status === 503 ? { headers: { "Retry-After": "5" } } : {}),
+  });
 }

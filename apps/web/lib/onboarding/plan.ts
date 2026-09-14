@@ -1,3 +1,5 @@
+import { distinctOnboardingTopics } from "./distinct-topics";
+import { e2eStubsEnabled } from "@/lib/e2e/stubs";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 import { qualifyOpportunities, serpOverlap, type Opportunity } from "@/lib/keyword-research/opportunity";
 // ---------------------------------------------------------------------------
@@ -16,211 +18,14 @@ import { qualifyOpportunities, serpOverlap, type Opportunity } from "@/lib/keywo
 // entry and still lands it in review.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { MAX_PACE, monthlyFromPace } from "@/lib/content/pace";
 import { recommendKeywords, type KeywordRecommendation } from "@/lib/seo/recommendations";
 import { classifyKeyword } from "@/lib/keywords/taxonomy";
 import { generateQualityQuestionsBatch, parseStoredQuestions, toQualityQuestions } from "@/lib/keywords/questions";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import type { KeywordIntent } from "@/lib/types";
 
-export const PLAN_HORIZON_DAYS = 30;
-/**
- * Hard cap on keywords scheduled per workspace, whatever the pace. The
- * planner header shows "N of 60"; `schedulePlan` and the cron top-up both
- * stop at it. Matches the ceiling users know from other planners.
- */
-export const PLAN_MAX_ENTRIES = 60;
-
-export interface PlannedEntry {
-  brief?: Opportunity;
-  keywordId: string;
-  term: string;
-  /** ISO date, YYYY-MM-DD, in UTC. */
-  date: string;
-}
-
-const DAY_MS = 86_400_000;
-
-function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-/** Sunday is 0, as in `publishing_cadences.days_of_week` and `Date#getUTCDay`. */
-export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
-
-/** How many entries a month at `weeklyLimit` should hold. */
-export function monthlyTarget(weeklyLimit: number): number {
-  const weekly = Math.max(0, Math.min(MAX_PACE, Math.floor(weeklyLimit)));
-  // The same arithmetic the plan copy quotes ("about N a month"), so the
-  // top-up floor never promises more than the pricing page did. Paces above
-  // one a day ("two a day", 14) are real since multi-per-day scheduling; the
-  // calendar cap is the only ceiling.
-  return Math.min(PLAN_MAX_ENTRIES, monthlyFromPace(weekly));
-}
-
-/**
- * Spread the queue across the horizon at `weeklyLimit` articles a week.
- *
- * 7 a week is one a day; 1 a week is every seventh day; anything in between
- * spaces entries evenly rather than front-loading the week. Weekends are not
- * skipped by default: a blog that publishes daily publishes on Saturday too.
- *
- * `maxEntries` lets a caller that already holds some of the 60 ask only for
- * the room that is left.
- *
- * `daysOfWeek` is the cadence table's choice of days. When it is given and not
- * empty, every entry lands on one of those weekdays: each seven-day window
- * from `from` gets its `weeklyLimit` entries spread over the allowed days in
- * that window, evenly when there are more days than entries and round-robin
- * (two on a Monday) when there are more entries than days. A pace higher than
- * the number of chosen days is not an error - generation still runs at that
- * pace and the extra drafts wait in review - it just means some days carry
- * two.
- *
- * The calendar plans at most one a day when no days are chosen: above 7 a
- * week the live queue supplies the rest (cron/generate falls back to it when
- * nothing planned is due), so the horizon shows what the schedule promises
- * rather than two chips on every square.
- */
-export function buildPlan(
-  recommendations: Pick<KeywordRecommendation, "keywordId" | "term" | "action" | "quality" | "opportunity">[],
-  opts: {
-    weeklyLimit: number;
-    from?: Date;
-    horizonDays?: number;
-    maxEntries?: number;
-    daysOfWeek?: readonly number[];
-    /**
-     * Dates already carrying an entry that survives this plan (written or
-     * scheduled). Each one uses up a grid slot on its day, so a re-plan at
-     * 3/week does not stack a new entry on the day the first draft occupies.
-     */
-    occupied?: readonly string[];
-  },
-): PlannedEntry[] {
-  const weekly = Math.max(0, Math.min(MAX_PACE, Math.floor(opts.weeklyLimit)));
-  if (weekly === 0) return [];
-  const horizon = opts.horizonDays ?? PLAN_HORIZON_DAYS;
-  const from = opts.from ?? new Date();
-  const start = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
-  const cap = Math.max(0, Math.min(PLAN_MAX_ENTRIES, opts.maxEntries ?? PLAN_MAX_ENTRIES));
-  const count = Math.min(cap, Math.ceil((weekly * horizon) / 7));
-
-  const usable = recommendations.filter((r) => r.action === "write" && r.quality === "ok" && r.keywordId);
-  const offsets = planOffsets(weekly, horizon, count, normaliseDays(opts.daysOfWeek), new Date(start).getUTCDay());
-  const taken = new Map<string, number>();
-  for (const d of opts.occupied ?? []) taken.set(d, (taken.get(d) ?? 0) + 1);
-  const out: PlannedEntry[] = [];
-  let k = 0;
-  for (const offset of offsets) {
-    if (k >= usable.length) break;
-    const date = isoDate(new Date(start + offset * DAY_MS));
-    const left = taken.get(date) ?? 0;
-    if (left > 0) {
-      taken.set(date, left - 1);
-      continue;
-    }
-    out.push({ keywordId: usable[k].keywordId, term: usable[k].term, date, ...(usable[k].opportunity ? { brief: usable[k].opportunity } : {}) });
-    k++;
-  }
-  return out;
-}
-
-/** Distinct, in range, sorted; undefined when nothing usable was given. */
-function normaliseDays(days: readonly number[] | undefined): Weekday[] | undefined {
-  if (!days) return undefined;
-  const set = new Set<number>();
-  for (const d of days) if (Number.isInteger(d) && d >= 0 && d <= 6) set.add(d);
-  if (set.size === 0) return undefined;
-  return [...set].sort((a, b) => a - b) as Weekday[];
-}
-
-/**
- * Day offsets from the start, one per planned entry, ascending.
- *
- * Without chosen days this is the even spacing the plan has always used.
- * With them, each seven-day window is filled from the allowed dates it holds.
- */
-function planOffsets(
-  weekly: number,
-  horizon: number,
-  count: number,
-  days: Weekday[] | undefined,
-  startWeekday: number,
-): number[] {
-  if (!days) {
-    const step = 7 / weekly;
-    const out: number[] = [];
-    for (let i = 0; i < count; i++) {
-      const offset = Math.round(i * step);
-      if (offset >= horizon) break;
-      out.push(offset);
-    }
-    return out;
-  }
-
-  const out: number[] = [];
-  for (let weekStart = 0; weekStart < horizon && out.length < count; weekStart += 7) {
-    const allowed: number[] = [];
-    for (let d = weekStart; d < weekStart + 7 && d < horizon; d++) {
-      if (days.includes(((startWeekday + d) % 7) as Weekday)) allowed.push(d);
-    }
-    if (allowed.length === 0) continue;
-    const n = Math.min(weekly, count - out.length);
-    for (let i = 0; i < n; i++) {
-      const idx = allowed.length >= n ? Math.floor((i * allowed.length) / n) : i % allowed.length;
-      out.push(allowed[idx]);
-    }
-  }
-  return out.sort((a, b) => a - b);
-}
-
-/** What a re-plan changes, for saying so before it happens. */
-export interface PlanDiff {
-  /** Entries that keep both their keyword and their day. */
-  unchanged: number;
-  /** Planned keywords that stay planned but land on a different day. */
-  moved: number;
-  /** Keywords newly planned. */
-  added: number;
-  /** Planned keywords that leave the plan (they stay in the queue, unwritten). */
-  removed: number;
-}
-
-/**
- * Compare the unfulfilled plan with what a re-plan would write. Pure, so the
- * confirmation copy can be tested; keyed by keyword id, because the term is
- * what the person sees but the id is what the row points at.
- */
-export function diffPlan(
-  existing: readonly Pick<PlannedEntry, "keywordId" | "date">[],
-  next: readonly Pick<PlannedEntry, "keywordId" | "date">[],
-): PlanDiff {
-  const before = new Map(existing.map((e) => [e.keywordId, e.date]));
-  const after = new Map(next.map((e) => [e.keywordId, e.date]));
-  let unchanged = 0;
-  let moved = 0;
-  let added = 0;
-  for (const [id, date] of after) {
-    if (!before.has(id)) added++;
-    else if (before.get(id) === date) unchanged++;
-    else moved++;
-  }
-  let removed = 0;
-  for (const id of before.keys()) if (!after.has(id)) removed++;
-  return { unchanged, moved, added, removed };
-}
-
-/** The plan sentence: "This moves 6 planned articles; nothing already written changes." */
-export function describePlanDiff(d: PlanDiff): string {
-  const parts: string[] = [];
-  if (d.moved) parts.push(`moves ${d.moved} planned ${d.moved === 1 ? "article" : "articles"}`);
-  if (d.added) parts.push(`adds ${d.added}`);
-  if (d.removed) parts.push(`unplans ${d.removed}`);
-  if (parts.length === 0) return "Nothing on the calendar changes; nothing already written changes.";
-  return `This ${parts.join(", ")}; nothing already written changes.`;
-}
-
+import { PLAN_MAX_ENTRIES, buildPlan, diffPlan, nextOpenDates, type PlannedEntry, type PlanDiff, monthlyTarget, DAY_MS, isoDate } from "./plan-calendar";
+export { PLAN_HORIZON_DAYS, PLAN_MAX_ENTRIES, buildPlan, diffPlan, nextOpenDates, type PlannedEntry, type Weekday, type PlanDiff, monthlyTarget, describePlanDiff } from "./plan-calendar";
 
 type ExistingEntry = {
   keyword_id: string | null;
@@ -272,10 +77,16 @@ export interface PlanOptions {
    * existing entry - including ones a person moved - and only appends, from the
    * day after the last one, until the month holds what the pace promises. The
    * cron uses `top-up`; a plan someone has edited must not be rewritten under
-   * them.
+   * them. `fill-month` preserves those entries while filling unused slots
+   * inside the thirty-day window beginning at `from`.
    */
-  mode?: "replace" | "top-up";
+  mode?: "replace" | "top-up" | "fill-month";
   maxEntries?: number;
+  distinctTasks?: boolean;
+  retryPending?: boolean;
+  /** Owner interviews are optional and can be generated when the topic is opened. */
+  deferQuestions?: boolean;
+  onProgress?: NonNullable<Parameters<typeof recommendKeywords>[2]>["onProgress"];
 }
 
 /**
@@ -295,7 +106,7 @@ async function planFor(
   // not count against the cap and its keywords are free to be planned again.
   const existing = mode === "replace" ? all.filter((e) => e.status !== "queue" || e.article_id) : all;
   const room = PLAN_MAX_ENTRIES - existing.length;
-  if (room <= 0) return { plan: [], recs: [] };
+  if (room <= 0 || opts.maxEntries === 0) return { plan: [], recs: [] };
 
   const { data: excludedRows } = await supabase
     .from("keywords")
@@ -311,21 +122,43 @@ async function planFor(
   // ranking" rows and the one writable keyword scored below them was never
   // seen (buttondown.com, 2026-09-07: 99 skips, 2 hand-added terms, 1
   // planned). Ask for the whole set; the planner filters to writable itself.
-  const recs = (await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true })).filter(
+  let recs = (await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true, distinctTasks: opts.distinctTasks, retryPending: opts.retryPending, ...(opts.onProgress ? {onProgress: opts.onProgress} : {}) })).filter(
     (r) => !excluded.has(r.keywordId) && !takenIds.has(r.keywordId) && !takenTerms.has(r.term.toLowerCase()),
   );
+
+  if (opts.distinctTasks && !e2eStubsEnabled()) {
+    // Existing drafts and accepted topics get first priority in a semantic
+    // group. Otherwise topping up reintroduces a synonym rejected during the
+    // first-choice pass merely because its SERP URLs differ.
+    const covered = existing.length ? await supabase.from("keywords").select("id, term, opportunity")
+      .eq("workspace_id", workspaceId).in("id", [...takenIds]) : { data: [], error: null };
+    if (covered.error) throw covered.error;
+    const anchors = (covered.data ?? []).map((keyword) => ({
+      keywordId: keyword.id, term: keyword.term, opportunity: keyword.opportunity,
+      action: "write", quality: "ok", qualityNote: null, volume: null, difficulty: null, intent: "info",
+      score: 0, reasons: [], existingArticleId: null, currentPosition: null, impressions: null,
+    } as KeywordRecommendation));
+    recs = (await distinctOnboardingTopics([...anchors, ...recs], {supabase,workspaceId}))
+      .filter((rec) => !takenIds.has(rec.keywordId));
+  }
 
   let start = opts.from ?? new Date();
   let maxEntries = Math.min(room, opts.maxEntries ?? room);
   if (mode === "top-up") {
     const unwritten = existing.filter((e) => !e.article_id).length;
-    maxEntries = Math.min(room, Math.max(0, monthlyTarget(weeklyLimit) - unwritten));
+    maxEntries = Math.min(maxEntries, Math.max(0, monthlyTarget(weeklyLimit) - unwritten));
     if (maxEntries === 0) return { plan: [], recs };
     const last = existing.map((e) => e.scheduled_date).sort().at(-1);
     if (last) {
       const next = new Date(new Date(`${last}T00:00:00Z`).getTime() + DAY_MS);
       if (next > start) start = next;
     }
+  }
+
+  if (mode === "fill-month") {
+    const end = isoDate(new Date(start.getTime() + 30 * DAY_MS));
+    const inMonth = existing.filter((e) => e.scheduled_date >= isoDate(start) && e.scheduled_date < end);
+    maxEntries = Math.min(maxEntries, Math.max(0, monthlyTarget(weeklyLimit) - inMonth.length));
   }
 
   const plan = buildPlan(recs, {
@@ -401,7 +234,7 @@ export async function schedulePlan(
   // Best-effort: a plan is written even if the shape or the questions fail.
   try {
     const intents = new Map(recs.map((r) => [r.keywordId, r.intent]));
-    await decoratePlannedKeywords(supabase, workspaceId, plan.map((p) => p.keywordId), intents);
+    await decoratePlannedKeywords(supabase, workspaceId, plan.map((p) => p.keywordId), intents, { deferQuestions: opts.deferQuestions });
   } catch (err) {
     console.warn("[plan] could not decorate planned keywords:", err instanceof Error ? err.message : err);
   }
@@ -420,24 +253,26 @@ export async function decoratePlannedKeywords(
   workspaceId: string,
   keywordIds: string[],
   intents: Map<string, KeywordIntent> = new Map(),
+  options: { deferQuestions?: boolean } = {},
 ): Promise<{ classified: number; questioned: number }> {
   if (keywordIds.length === 0) return { classified: 0, questioned: 0 };
   const { data } = await supabase
     .from("keywords")
-    .select("id, term, intent, article_subtype, quality_questions")
+    .select("id, term, intent, article_subtype, quality_questions, opportunity")
     .eq("workspace_id", workspaceId)
     .in("id", keywordIds);
-  const rows = (data ?? []) as Array<{ id: string; term: string; intent: KeywordIntent | null; article_subtype: string | null; quality_questions: unknown }>;
+  const rows = (data ?? []) as Array<{ id: string; term: string; intent: KeywordIntent | null; article_subtype: string | null; quality_questions: unknown; opportunity?: { status?: string; angle?: string } }>;
 
   let classified = 0;
   for (const row of rows) {
     if (row.article_subtype) continue;
-    const shape = classifyKeyword(row.term, intents.get(row.id) ?? row.intent);
+    const angle = row.opportunity?.status === "qualified" ? row.opportunity.angle : null;
+    const shape = classifyKeyword(angle || row.term, intents.get(row.id) ?? row.intent);
     await supabase.from("keywords").update(shape).eq("id", row.id).eq("workspace_id", workspaceId);
     classified++;
   }
 
-  const questioned = await ensureQuestionsFor(
+  const questioned = options.deferQuestions ? 0 : await ensureQuestionsFor(
     supabase,
     workspaceId,
     rows.filter((r) => parseStoredQuestions(r.quality_questions).length === 0).map((r) => ({ id: r.id, term: r.term })),
@@ -521,12 +356,13 @@ export async function fulfilPlannedEntry(
     patch.keyword = wrote.term;
     if (wrote.keywordId) patch.keyword_id = wrote.keywordId;
   }
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("calendar_entries")
     .update(patch)
     .eq("id", entryId)
     .select("keyword_id")
     .maybeSingle();
+  if (error) throw new Error(error.message);
   if (data?.keyword_id) {
     await supabase.from("keywords").update({ status: "drafting" }).eq("id", data.keyword_id);
   }
@@ -601,36 +437,6 @@ export async function closeCoveredEntries(
  * while it holds fewer entries than the pace allows (one a day at 7/week,
  * one every seventh day at 1/week). Pure, so the fill order can be tested.
  */
-export function nextOpenDates(
-  occupied: string[],
-  weeklyLimit: number,
-  count: number,
-  from: Date = new Date(),
-): string[] {
-  const weekly = Math.max(0, Math.min(MAX_PACE, Math.floor(weeklyLimit)));
-  if (weekly === 0 || count <= 0) return [];
-  const start = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
-  const step = 7 / weekly;
-  // Above 7/week the grid lands more than one slot on a day, so occupancy is
-  // a count per date, not a set: a day is open while it has fewer entries
-  // than the grid gives it.
-  const taken = new Map<string, number>();
-  for (const d of occupied) taken.set(d, (taken.get(d) ?? 0) + 1);
-  const out: string[] = [];
-  // Walk the pace grid forward until enough open slots are found. Bounded so
-  // a fully booked year cannot spin: past a year out, the answer is "no".
-  for (let i = 0; out.length < count && i < 366 * weekly; i++) {
-    const date = isoDate(new Date(start + Math.floor(i * step) * DAY_MS));
-    const left = taken.get(date) ?? 0;
-    if (left > 0) {
-      taken.set(date, left - 1);
-      continue;
-    }
-    out.push(date);
-  }
-  return out;
-}
-
 export interface ScheduleOutcome {
   scheduled: PlannedEntry[];
   /** Keyword ids that did not fit under the cap. Reported, never dropped quietly. */

@@ -1,7 +1,93 @@
 import { describe, it, expect } from "vitest";
-import { assessKeywordQuality, normalizeTarget } from "../recommendations";
+import { assessKeywordQuality, normalizeTarget, recommendKeywords } from "../recommendations";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const terms = (...t: string[]) => new Set(t.map((x) => x.toLowerCase()));
+
+type Row = Record<string, unknown>;
+const body = (text: string) => ({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] });
+
+/** Apply the production read filters and projections to mutable local fixtures. */
+function coverageClient(articles: Row[], position?: number): SupabaseClient {
+  const tables: Record<string, Row[]> = {
+    keywords: [{ id: "topic", workspace_id: "site", term: "newsletter tools", intent: "commercial", status: "new", volume: 100, difficulty: null }],
+    workspaces: [{ id: "site", domain: "example.test", topical_profile: null, business_profile: null, dr: null }],
+    articles,
+    keyword_rankings: position === undefined ? [] : [{ keyword_id: "topic", position, checked_at: "2026-09-14" }],
+    analytics_metrics: [],
+  };
+  return {
+    from(table: string) {
+      const filters: Array<(row: Row) => boolean> = [];
+      let columns: string[] = [];
+      const result = () => ({ data: tables[table].filter(row => filters.every(filter => filter(row))).map(row => Object.fromEntries(columns.map(column => [column, row[column]]))), error: null });
+      const query = {
+        select(value: string) { columns = value.split(",").map(column => column.trim()); return query; },
+        eq(column: string, value: unknown) { filters.push(row => row[column] === value); return query; },
+        in(column: string, values: unknown[]) { filters.push(row => values.includes(row[column])); return query; },
+        not(column: string, _operator: string, value: unknown) { filters.push(row => (row[column] ?? null) !== value); return query; },
+        gte() { return query; },
+        order() { return query; },
+        async single() { return { ...result(), data: result().data[0] ?? null }; },
+        then(resolve: (value: ReturnType<typeof result>) => unknown) { return Promise.resolve(resolve(result())); },
+      };
+      return query;
+    },
+  } as unknown as SupabaseClient;
+}
+
+describe("recommendKeywords — failed attempts are not topic coverage", () => {
+  const article = (patch: Row = {}): Row => ({ id: "existing", workspace_id: "site", keyword: "newsletter tools", status: "review", content: body("Compare the sending limits before choosing a newsletter tool."), ...patch });
+
+  it("keeps a withheld topic writable, then recognises only its successful retry", async () => {
+    const articles = [article({ id: "withheld", status: "error", content: null, word_count: 1200 })];
+    const db = coverageClient(articles);
+    expect((await recommendKeywords(db, "site"))[0]).toMatchObject({ action: "write", existingArticleId: null });
+
+    articles.unshift(article({ id: "successful-retry" }));
+    // Failed attempts can remain for diagnostics, even after the saved article.
+    articles.push(article({ id: "later-error", status: "error", content: { type: "doc", content: [] } }));
+    expect(await recommendKeywords(db, "site")).toEqual([
+      expect.objectContaining({ action: "refresh", existingArticleId: "successful-retry" }),
+    ]);
+  });
+
+  it.each(["draft", "review", "approved", "scheduled", "live", "drafting"])("preserves substantive %s content as a refresh target", async status => {
+    // Short authored content still counts. No word-count threshold is imposed.
+    const db = coverageClient([article({ status, keyword: "tools for newsletters", content: body("Compare sending limits.") })]);
+    expect((await recommendKeywords(db, "site"))[0]).toMatchObject({ action: "refresh", existingArticleId: "existing" });
+  });
+
+  it("preserves an approved article after a failed publication", async () => {
+    const db = coverageClient([article({ status: "error", approved_by: "editor" })]);
+    expect((await recommendKeywords(db, "site"))[0]).toMatchObject({ action: "refresh", existingArticleId: "existing" });
+  });
+
+  it.each([
+    { status: "draft", content: null },
+    { status: "drafting", content: { type: "doc", content: [] } },
+    { status: "review", content: body(" \u00a0\n ") },
+    { status: "draft", content: { type: "doc", content: [{ type: "heading", content: [{ type: "text", text: "Newsletter tools" }] }] } },
+    { status: "draft", content: { type: "doc", content: [{ type: "image", attrs: { alt: "Newsletter tools", src: "https://example.test/image.png" } }] } },
+    { status: "error", approved_by: null },
+    { status: "archived" },
+  ])("ignores empty, failed or archived content: %j", async patch => {
+    const db = coverageClient([article(patch)]);
+    expect((await recommendKeywords(db, "site"))[0]).toMatchObject({ action: "write", existingArticleId: null });
+  });
+
+  it("does not borrow coverage from another workspace", async () => {
+    const db = coverageClient([article({ workspace_id: "other-site" })]);
+    expect((await recommendKeywords(db, "site"))[0]).toMatchObject({ action: "write", existingArticleId: null });
+  });
+
+  it("preserves ranking decisions while refusing a phantom refresh target", async () => {
+    const failed = article({ status: "error", content: null });
+    expect((await recommendKeywords(coverageClient([failed], 15), "site"))[0]).toMatchObject({ action: "write", existingArticleId: null });
+    expect((await recommendKeywords(coverageClient([article({ status: "live" })], 15), "site"))[0]).toMatchObject({ action: "refresh", existingArticleId: "existing" });
+    expect((await recommendKeywords(coverageClient([failed], 5), "site"))[0]).toMatchObject({ action: "skip", existingArticleId: null });
+  });
+});
 
 describe("assessKeywordQuality — provider noise", () => {
   it("flags company names carried over from competitor rankings", () => {

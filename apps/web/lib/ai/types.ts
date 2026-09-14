@@ -21,6 +21,18 @@ export interface VoiceRules {
 }
 
 export interface ArticlePrompt {
+  firstDraft?: {
+    options?: string[];
+    requirements?: string[];
+    promises?: import("@/lib/content/evidence-scope").ArticlePromise[];
+    evidenceCoverage?: Array<{question:string;factIndices:number[]}>;
+    task: "comparison"|"procedure"|"explanation";
+    comparisonType?: "vendors"|"plans"|"categories";
+    brief: Record<string,string>;
+    facts: Array<Omit<import("@/lib/content/source-brief").SourceFact,"statement"> & {url:string}>;
+    unansweredQuestions: string[];
+    instructions?: string|null;
+  };
   keyword: string;
   title?: string;
   voiceRules?: VoiceRules;

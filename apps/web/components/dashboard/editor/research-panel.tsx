@@ -183,6 +183,7 @@ const STATUS_LABEL: Record<ExtractedClaim["status"], string> = {
   corroborated: "Seen elsewhere",
   verified: "Source checked",
   contradicted: "Not on cited page",
+  not_factual: "Reviewed as nonfactual",
 };
 
 function ClaimRow({
@@ -244,7 +245,7 @@ export function FactCheckPanel({
   report: FactCheckReport;
   onLocate?: (text: string) => void;
 }) {
-  if (report.verdict === "clean") {
+  if (report.verdict === "clean" && !report.claims.some(claim=>claim.status==="not_factual")) {
     return (
       <div className="flex items-center gap-2 text-[12.5px] text-ink-2">
         <Icons.check size={13} />
@@ -265,8 +266,8 @@ export function FactCheckPanel({
         <ClaimRow key={c.id} claim={c} onLocate={onLocate} />
       ))}
       <div className="text-[11px] text-ink-4 leading-[1.5] mt-1">
-        These are claims a reader would expect a source for. The check finds
-        unattributed figures; it cannot tell you whether a figure is true.
+        The numerical check finds figures to examine. A nonfactual decision
+        identifies an example or advice; it does not verify a measured result.
       </div>
     </div>
   );

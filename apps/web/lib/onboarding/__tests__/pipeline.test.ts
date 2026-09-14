@@ -32,11 +32,12 @@ const setSpendReporter = vi.fn();
 vi.mock("@/lib/seo/client", () => ({
   hasDataForSEOCredentials: () => creds(),
   setSpendReporter: (fn: unknown) => setSpendReporter(fn),
+  withSpendReporter: async (fn: unknown, work: () => Promise<unknown>) => { setSpendReporter(fn); try { return await work(); } finally { setSpendReporter(null); } },
 }));
 const recordSpendByDefault = vi.fn();
 vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault: (e: unknown) => recordSpendByDefault(e) }));
-const plan = vi.fn(async () => [] as unknown[]);
-vi.mock("../plan", () => ({ schedulePlan: () => plan(), fulfilPlannedEntry: vi.fn(async () => undefined) }));
+const plan = vi.fn(async (..._args: unknown[]) => [] as unknown[]);
+vi.mock("../plan", () => ({ schedulePlan: (...args: unknown[]) => plan(...args), fulfilPlannedEntry: vi.fn(async () => undefined) }));
 const fanOut = vi.fn(() => ({ dispatched: 0, settled: Promise.resolve() }));
 vi.mock("@/lib/content/fan-out", async () => {
   const real = await vi.importActual<typeof import("@/lib/content/fan-out")>("@/lib/content/fan-out");
@@ -131,6 +132,17 @@ beforeEach(() => {
 });
 
 describe("runOnboarding", () => {
+  it.each(["empty", "failed"])("never writes without a choice when planning is %s", async outcome => {
+    if (outcome === "failed") plan.mockRejectedValueOnce(new Error("Planning failed"));
+    else plan.mockResolvedValueOnce([]);
+    const events: OnboardingEvent[] = [];
+    const result = await runOnboarding(richClient(0), {...WS,business_profile:{primaryBuyer:"Small teams",priorityOffering:"Project management"}}, event=>events.push(event), {firstDraft:"choose"});
+    expect(result.awaitingChoice).toBe(false);
+    expect(generate).not.toHaveBeenCalled();
+    expect(recommend).not.toHaveBeenCalled();
+    expect(fanOut).not.toHaveBeenCalled();
+    expect(events).toContainEqual(expect.objectContaining({phase:"drafting",status:"skipped"}));
+  });
   it("fills the link pool from the site's own sources before the first draft is written", async () => {
     const order: string[] = [];
     detect.mockImplementation(async () => { order.push("detect"); return { found: 28, added: 28 }; });
@@ -191,6 +203,7 @@ describe("runOnboarding", () => {
     generate.mockImplementation(async () => { order.push("generate"); return { articleId: "a1", title: "T", wordCount: 1, factCheck: { verdict: "clean" } }; });
     await runOnboarding(client(0), WS, (e) => { if (e.phase === "ready") order.push("ready"); });
     expect(order).toEqual(["generate", "ready"]);
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({verifySourceClaims:true}));
   });
 
   /**
@@ -450,4 +463,32 @@ describe("runOnboarding", () => {
       expect(fanOut).not.toHaveBeenCalled();
     });
   });
+});
+
+
+it("uses lean evidence analysis and defers owner questions before the choice", async () => {
+  const { currentResearchBudget } = await import("@/lib/seo/request-context");
+  const deadline = Date.now() + 90_000;
+  analyse.mockImplementationOnce(async () => {
+    expect(currentResearchBudget()?.deadline).toBeLessThanOrEqual(deadline);
+    return { keywordsFound: 5, layers: [] };
+  });
+  plan.mockImplementationOnce(async () => {
+    expect(currentResearchBudget()?.deadline).toBe(deadline);
+    return [];
+  });
+  await runOnboarding(richClient(0), {...WS,business_profile:{primaryBuyer:"Small teams",priorityOffering:"Project management"}}, () => {}, {firstDraft:"choose",researchDeadline:deadline});
+  expect(analyse).toHaveBeenCalledWith(expect.objectContaining({ firstChoice: true, maxPages: 3, workspaceId: "ws1" }));
+  expect(plan).toHaveBeenCalledWith(expect.anything(), "ws1", expect.any(Number), expect.objectContaining({deferQuestions:true,distinctTasks:true}));
+  expect(voice).not.toHaveBeenCalled();
+  expect(currentResearchBudget()).toBeUndefined();
+});
+
+it("asks for the missing confirmed focus without starting unbounded voice work", async () => {
+  const events: OnboardingEvent[] = [];
+  const result = await runOnboarding(richClient(0), WS, event => events.push(event), {firstDraft:"choose"});
+  expect(result.awaitingChoice).toBe(false);
+  expect(events).toContainEqual(expect.objectContaining({phase:"scanning",status:"failed",detail:expect.stringContaining("Confirm your business focus")}));
+  expect(analyse).not.toHaveBeenCalled();
+  expect(voice).not.toHaveBeenCalled();
 });

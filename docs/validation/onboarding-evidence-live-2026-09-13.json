@@ -1,0 +1,43 @@
+{
+  "date": "2026-09-13",
+  "domain": "altorank.co",
+  "kind": "single development case; not a held-out evaluation",
+  "storedCandidates": 36,
+  "qualification": {
+    "checked": 12,
+    "distinct": 3,
+    "stopped": "budget",
+    "calls": 31,
+    "costUsd": 0.09493700000000005
+  },
+  "briefs": [
+    {
+      "query": "ai seo content generator",
+      "headline": "How to compare AI SEO content generators",
+      "volume": 210
+    },
+    {
+      "query": "seo writing assistant",
+      "headline": "How to choose an SEO writing assistant tool",
+      "volume": 70
+    },
+    {
+      "query": "bulk content generation tools",
+      "headline": "How to compare bulk content generation tools",
+      "volume": null
+    }
+  ],
+  "completedBriefSetSeconds": 168.2,
+  "draft": {
+    "title": "How to compare AI SEO content generators",
+    "words": 1881,
+    "seconds": 134.527,
+    "verdict": "review"
+  },
+  "recordedCostUsd": 0.654,
+  "limitations": [
+    "Completed-set timing predates incremental brief previews; it is not the first-preview latency.",
+    "This draft exposed unsafe sentence deletion and false-positive claim flags. The subsequent cleanup revision keeps flagged prose intact and removes only exact duplicate paragraphs; covered by regressions.",
+    "No hosted Stripe, publishing, image generation, human labels or conversion measurement in this run."
+  ]
+}

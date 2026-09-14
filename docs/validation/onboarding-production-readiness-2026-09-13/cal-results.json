@@ -1,0 +1,179 @@
+{
+  "codeCommit": "90312e5",
+  "scope": "Live local Cal.com onboarding before the later semantic-overlap and routing/link review fixes. No images, email signup, payment, publication or hosted-runtime validation.",
+  "article": {
+    "title": "How to compare online appointment scheduling programs for small teams",
+    "keyword": "online appointment scheduling programs",
+    "word_count": 1708,
+    "status": "review",
+    "published_at": null
+  },
+  "finishedAt": "2026-09-13T18:58:27.76+00:00",
+  "browserActionTimes": {
+    "auth": 1789325503198,
+    "plan": 1789325526501,
+    "choice": 1789325720354
+  },
+  "candidates": 47,
+  "topics": [
+    {
+      "term": "online appointment scheduling programs",
+      "angle": "How to compare online appointment scheduling programs for small teams",
+      "audience": "Small teams and startups seeking to streamline meeting coordination"
+    },
+    {
+      "term": "calendar scheduling tool",
+      "angle": "How to compare calendar scheduling tools for small teams: features, pricing, and tradeoffs",
+      "audience": "Small teams and startups evaluating scheduling solutions"
+    },
+    {
+      "term": "best scheduling app for startups",
+      "angle": "Scheduling apps for startups: comparison criteria and tradeoffs",
+      "audience": "Small teams and startups evaluating appointment and team scheduling tools"
+    }
+  ],
+  "articleCount": 1,
+  "review": {
+    "status": "checked",
+    "checkedPassages": 46,
+    "totalPassages": 46,
+    "failures": [],
+    "findings": [
+      {
+        "text": "Start from your team's actual bottleneck, not the feature list. If double bookings are the problem, test collective or round-robin scheduling directly by blocking a calendar and trying to book through it. If manual CRM entry is the problem, check whether Salesforce or HubSpot sync is included at your plan tier or reserved for a higher one. If you're a telehealth or healthcare team, confirm compliance coverage like HIPAA alignment before you scale, since that's often an add-on tier rather than a default . And if Google Calendar or Outlook is your team's daily driver, verify the sync depth (one-way versus two-way, and how many calendars per user) rather than assuming every \"calendar integration\" claim behaves the same way; a closer look at how these programs compare against Google Calendar's own scheduling tools is worth the ten minutes it takes. Whichever program you land on, the fastest way to confirm it fits is the same for every vendor: create the accounts, block a calendar, and try to break it before you pay for it.",
+        "reason": "Dangling reference to a Google Calendar comparison that doesn't exist anywhere in the article, with no link or content delivered.",
+        "removed": false,
+        "category": "qualitative",
+        "severity": "editorial"
+      },
+      {
+        "text": "Start from your team's actual bottleneck, not the feature list. If double bookings are the problem, test collective or round-robin scheduling directly by blocking a calendar and trying to book through it. If manual CRM entry is the problem, check whether Salesforce or HubSpot sync is included at your plan tier or reserved for a higher one. If you're a telehealth or healthcare team, confirm compliance coverage like HIPAA alignment before you scale, since that's often an add-on tier rather than a default . And if Google Calendar or Outlook is your team's daily driver, verify the sync depth (one-way versus two-way, and how many calendars per user) rather than assuming every \"calendar integration\" claim behaves the same way; a closer look at how these programs compare against Google Calendar's own scheduling tools is worth the ten minutes it takes. Whichever program you land on, the fastest way to confirm it fits is the same for every vendor: create the accounts, block a calendar, and try to break it before you pay for it.",
+        "reason": "Unsupported generalization that HIPAA/compliance coverage is 'often an add-on tier rather than a default' across vendors, not evidenced by sources.",
+        "removed": false,
+        "category": "qualitative",
+        "severity": "material"
+      },
+      {
+        "text": "Two-way sync with a CRM like Salesforce or HubSpot can save a sales team hours of manual data entry every week",
+        "reason": "No source quantifies time saved from CRM sync in hours per week",
+        "removed": false,
+        "category": "qualitative",
+        "severity": "material"
+      },
+      {
+        "text": "workflows",
+        "reason": "Cal.com's Teams plan bullet list does not explicitly include workflows as an unlocked feature",
+        "removed": false,
+        "category": "product",
+        "severity": "material"
+      }
+    ],
+    "modelCalls": [
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.117189,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 29759,
+        "operation": "article/approved-output-review",
+        "promptHash": "1ce877fcb1a649ed901ac5a3f592b6bc7677c2ff32739479815c2e912ec5f86f",
+        "inputTokens": 25293,
+        "outputTokens": 2754
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.074568,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 8177,
+        "operation": "article/claim-verification",
+        "promptHash": "05aa36136a7e8c631cb99e175f875034cea35dfbc98f9d899bd6f372f190376a",
+        "inputTokens": 20751,
+        "outputTokens": 821
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.088494,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 16692,
+        "operation": "article/claim-verification",
+        "promptHash": "a4abee92667c0f30525a1e82fbf9136bbcd23b9ab40c1f697d4884fac2a6f865",
+        "inputTokens": 20548,
+        "outputTokens": 1790
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.128328,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 35966,
+        "operation": "article/claim-verification",
+        "promptHash": "556c8b74585fdafd76427d1e663d03685c63a6c0d176ae90fcdf3d2d6ebd09b0",
+        "inputTokens": 21151,
+        "outputTokens": 4325
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.105228,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 51241,
+        "operation": "article/claim-verification",
+        "promptHash": "61708ed8c8855e26c13ca962b05d7b890af83fbc32b893bd1824bc74fa6cfcf4",
+        "inputTokens": 21361,
+        "outputTokens": 2743
+      }
+    ]
+  },
+  "sources": [
+    {
+      "url": "https://cal.com/pricing",
+      "characters": 9105,
+      "sha256": "bfc2446c6ead5b26295f399e825ba811d3c47dbdd4ad16e75a2eeb052a49dd4d"
+    },
+    {
+      "url": "https://calendly.com/",
+      "characters": 5246,
+      "sha256": "17f1a203fa254b57ae05bf2b54294f2bef77e3603a9f394b15c24446872e793b"
+    },
+    {
+      "url": "https://zapier.com/blog/best-appointment-scheduling-apps/",
+      "characters": 9000,
+      "sha256": "5d99c029a39a0580e01333c18de3513f674af7b87c607d189241aa43b26df2be"
+    },
+    {
+      "url": "https://calendly.com/pricing",
+      "characters": 9000,
+      "sha256": "7958077a41658e85ba145a2e172b06981dba99d5450a5a5f7bffd59c7a05e735"
+    },
+    {
+      "url": "https://calendly.com/scheduling",
+      "characters": 5781,
+      "sha256": "0d2950deaed45abc08aa9fe4e95689ddaabee0adee20194566448553bd3968c1"
+    },
+    {
+      "url": "https://calendly.com/integration/google",
+      "characters": 1893,
+      "sha256": "b8f2cd656ea4320e322683d70400120a36ea572b5df6cf9d0a5c98fbea5b72ae"
+    },
+    {
+      "url": "https://calendly.com/integration/microsoft",
+      "characters": 1657,
+      "sha256": "f36c7e47dafddc984c551fb76dd91249dd9fabae4162509711b94779e3d77e98"
+    },
+    {
+      "url": "https://cal.com/features/collective-events",
+      "characters": 152,
+      "sha256": "e7dd5441dcbac498061d8000734b3e9c07640b2e1e372fe3ad77238f29f9f737"
+    }
+  ],
+  "recordedCostUsd": 1.399618,
+  "browserChecks": {
+    "choicesPersisted": true,
+    "oneSelectedDraft": true,
+    "completePreviewBeforeTrial": true,
+    "previewReload": true,
+    "unpaidDashboardReturnsToOnboarding": true
+  }
+}

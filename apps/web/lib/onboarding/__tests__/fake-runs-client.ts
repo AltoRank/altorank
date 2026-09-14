@@ -13,12 +13,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type Row = Record<string, unknown>;
 
-type Filter = { col: string; op: "eq" | "is" | "not-is" | "gte"; val: unknown };
+type Filter = { col: string; op: "eq" | "is" | "not-is" | "gte" | "in"; val: unknown };
 
 let nextId = 1;
 
 function matches(row: Row, f: Filter): boolean {
   const v = row[f.col];
+  if (f.op === "in") return (f.val as unknown[]).includes(v);
   if (f.op === "is") return v === f.val;
   if (f.op === "not-is") return v !== f.val;
   if (f.op === "gte") return String(v) >= String(f.val);
@@ -55,7 +56,7 @@ export function fakeDb(tables: Record<string, Row[]> = {}): FakeDb {
         for (const r of inserted) {
           if (table === "onboarding_runs") {
             if (r.status === undefined) r.status = "running";
-            if (r.status === "running" && rows.some((x) => x.workspace_id === r.workspace_id && x.status === "running")) {
+            if (["running", "awaiting_choice"].includes(String(r.status)) && rows.some((x) => x.workspace_id === r.workspace_id && ["running", "awaiting_choice"].includes(String(x.status)))) {
               return { data: null, error: { code: "23505", message: "duplicate key value violates unique constraint" }, count: null };
             }
             const now = new Date().toISOString();
@@ -101,6 +102,7 @@ export function fakeDb(tables: Record<string, Row[]> = {}): FakeDb {
       insert: (row: Row | Row[]) => ((op = "insert"), (inserted = (Array.isArray(row) ? row : [row]).map((r) => ({ ...r }))), (wantRows = false), q),
       update: (p: Row) => ((op = "update"), (patch = p), (wantRows = false), q),
       eq: (col: string, val: unknown) => (filters.push({ col, op: "eq", val }), q),
+      in: (col: string, val: unknown[]) => (filters.push({ col, op: "in", val }), q),
       is: (col: string, val: unknown) => (filters.push({ col, op: "is", val }), q),
       gte: (col: string, val: unknown) => (filters.push({ col, op: "gte", val }), q),
       not: (col: string, _op: string, val: unknown) => (filters.push({ col, op: "not-is", val }), q),

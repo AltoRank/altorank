@@ -9,6 +9,7 @@ import {
 const VARS = [
   "ANTHROPIC_MODEL",
   "ANTHROPIC_MODEL_STRUCTURED",
+  "ANTHROPIC_MODEL_EDITORIAL",
   "OPENAI_MODEL",
   "OPENAI_IMAGE_MODEL",
 ] as const;
@@ -62,6 +63,12 @@ describe("model defaults", () => {
 });
 
 describe("environment overrides", () => {
+  it("can route editorial judgments independently of short extraction", () => {
+    process.env.ANTHROPIC_MODEL_EDITORIAL = "editorial-test-model";
+    expect(anthropicModel("editorial")).toBe("editorial-test-model");
+    expect(anthropicModel("structured")).toBe(MODEL_DEFAULTS.anthropicStructured);
+    expect(anthropicModel("content")).toBe(MODEL_DEFAULTS.anthropicContent);
+  });
   it("ANTHROPIC_MODEL overrides both tiers", () => {
     process.env.ANTHROPIC_MODEL = "claude-opus-5";
     expect(anthropicModel("content")).toBe("claude-opus-5");

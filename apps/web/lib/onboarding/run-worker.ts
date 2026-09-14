@@ -15,18 +15,22 @@
 // back for the route to keep alive with after().
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createServiceClient } from "@/lib/supabase/server";
-import { canSelfInvoke, dispatchFirstDraft } from "@/lib/content/fan-out";
+import { createWorkerClient } from "./worker-client";
+import { dispatchFirstDraft } from "@/lib/content/fan-out";
 import { announceDraftBatch } from "@/lib/email/draft-batch";
 import { runOnboarding } from "./pipeline";
 import { RunRecorder, RUN_COLUMNS, stampRun } from "./run-store";
 import type { OnboardingRunRow } from "./events";
+import { queueChoicePreparation, wakeChoicePreparation } from "./choice-preparation";
 
 export type ExecuteOutcome =
+  | "retryable-error"
   | "not-found"
   | "already-running"
   | "already-finished"
   | "ran"
+  | "awaiting-choice"
+  | "preparing-choices"
   | "awaiting-draft"
   | "failed";
 
@@ -47,6 +51,8 @@ export interface ExecuteDeps {
   dispatch?: typeof dispatchFirstDraft;
   canDispatch?: () => boolean;
   announce?: typeof announceDraftBatch;
+  queueChoices?: typeof queueChoicePreparation;
+  wakeChoices?: typeof wakeChoicePreparation;
 }
 
 /**
@@ -86,11 +92,23 @@ interface WorkerWorkspace {
   business_profile?: unknown;
 }
 
+/** PostgREST usually returns transport failures as errors, but an injected
+ * client or aborted response body can also reject the request. */
+async function preflight<T>(request: PromiseLike<{ data: T; error: unknown }>): Promise<{ data: T | null; error: unknown }> {
+  try { return await request; }
+  catch (error) { return { data: null, error }; }
+}
+
 export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise<ExecuteResult> {
-  const supabase = deps.supabase ?? createServiceClient();
+  const startedAt = Date.now();
+  const supabase = deps.supabase ?? createWorkerClient(startedAt + 285_000);
   const settled = { outcome: "failed" as ExecuteOutcome, keepAlive: Promise.resolve() };
 
-  const { data: found } = await supabase.from("onboarding_runs").select(RUN_COLUMNS).eq("id", runId).maybeSingle();
+  const { data: found, error: runError } = await preflight(supabase.from("onboarding_runs").select(RUN_COLUMNS).eq("id", runId).maybeSingle());
+  if (runError) {
+    console.warn(`[onboarding] run ${runId}: preflight lookup interrupted; retry is safe`);
+    return { ...settled, outcome: "retryable-error" };
+  }
   const run = found as OnboardingRunRow | null;
   if (!run) return { ...settled, outcome: "not-found" };
   if (run.status !== "running") return { ...settled, outcome: "already-finished" };
@@ -98,41 +116,63 @@ export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise
   // Claim it. A run is dispatched once, but a retried dispatch or a start
   // that raced could send two workers; the second finds `phases` no longer
   // empty and leaves. Atomic in the update's WHERE, so both cannot pass.
-  const { data: claimed } = await supabase
+  const { data: claimed, error: claimError } = await preflight(supabase
     .from("onboarding_runs")
     .update({ phases: [{ phase: "scanning", status: "pending" }], updated_at: new Date().toISOString() })
     .eq("id", runId)
     .eq("status", "running")
     .eq("phases", "[]")
-    .select("id");
+    .select("id"));
+  if (claimError) {
+    // The update may have committed, or another worker may own the row.
+    // Neither this worker nor its dispatcher may close an uncertain claim.
+    console.warn(`[onboarding] run ${runId}: claim response interrupted; ownership is unknown`);
+    return { ...settled, outcome: "retryable-error" };
+  }
   if (!claimed || (claimed as unknown[]).length === 0) return { ...settled, outcome: "already-running" };
 
-  const recorder = new RunRecorder(supabase, runId);
+  const recorder = new RunRecorder(supabase, runId, { coalesce: true });
 
-  const { data: ws } = await supabase
+  const { data: ws, error: workspaceError } = await preflight(supabase
     .from("workspaces")
     .select("id, domain, account_id, language, location_code, auto_generate_weekly_limit, business_profile")
     .eq("id", run.workspace_id)
-    .maybeSingle();
+    .maybeSingle());
+  if (workspaceError) {
+    await recorder.fail("Your workspace could not be loaded. Retry research in a moment.");
+    return settled;
+  }
   const workspace = ws as WorkerWorkspace | null;
   if (!workspace) {
     await recorder.fail("The workspace no longer exists.");
     return settled;
   }
 
-  const canDispatch = (deps.canDispatch ?? canSelfInvoke)();
+
   let result: Awaited<ReturnType<typeof runOnboarding>>;
   try {
     result = await (deps.run ?? runOnboarding)(supabase, workspace, recorder.record, {
-      firstDraft: canDispatch ? "dispatch" : "inline",
+      firstDraft: "choose",
+      researchDeadline: startedAt + 240_000,
     });
   } catch (err) {
     await recorder.fail(err instanceof Error ? err.message : "Onboarding failed.");
     return settled;
   }
   // Every phase is on the row before anything else may write to it.
-  await recorder.flush();
+  try { await recorder.flush({ requireLatest: true }); }
+  catch {
+    await recorder.fail("Your article ideas could not be saved. Retry research before choosing a draft.");
+    return settled;
+  }
 
+  if (result.awaitingChoice) {
+    try { await (deps.queueChoices??queueChoicePreparation)(supabase,runId,workspace.id); }
+    catch { await recorder.fail("Could not save your topic choices for source checks. Retry preparation."); return settled; }
+    const keepAlive=(deps.wakeChoices??wakeChoicePreparation)(supabase,runId,{durationMs:Math.max(0,285_000-(Date.now()-startedAt))})
+      .catch(()=>{ console.warn("[onboarding] source preparation dispatch interrupted; the saved queue can resume on refresh"); });
+    return { outcome: "preparing-choices", keepAlive };
+  }
   const announce = deps.announce ?? announceDraftBatch;
 
   const pending = result.pendingDraft;

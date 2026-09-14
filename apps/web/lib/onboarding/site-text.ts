@@ -10,7 +10,8 @@
 // Three sources, tried in order of cost, and the answer says which one
 // worked so the screen can be honest about it:
 //
-//   static     the homepage, plus one blog post the scraper finds itself
+//   static     source-labelled homepage, catalog/navigation and up to three
+//              observed product/service/pricing links
 //   sitemap    up to three article URLs from the sitemap; blogs are usually
 //              server-rendered even when the homepage is not
 //   rendered   DataForSEO renders the homepage in a real browser; we get the
@@ -18,7 +19,7 @@
 //
 // Anything under MIN_CHARS is reported as `none` rather than guessed from.
 
-import { scrapeWebsiteText } from "@/lib/scraper";
+import { readBusinessEvidence } from "./business-evidence";
 import { fetchSite } from "@/lib/audit/lenient-fetch";
 import { fetchInstantPage } from "@/lib/audit/onpage";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
@@ -64,16 +65,10 @@ export async function readSiteText(domain: string, maxChars = 12_000): Promise<S
   // Discovery is needed by the next wizard screen anyway and is cheap, so it
   // runs alongside the static read instead of after it.
   const [rawStatic, discovery] = await Promise.all([
-    scrapeWebsiteText(domain).catch(() => ""),
+    readBusinessEvidence(domain, maxChars).catch(() => ""),
     discoverSite(domain).catch(() => null),
   ]);
-  const base = domain.startsWith("http") ? domain : `https://${domain}`;
-  const productPages = await Promise.all(["/pricing", "/features", "/about"].map(async (path) => {
-    const url = new URL(path, base).href;
-    const text = await pageText(url);
-    return text.length >= 150 ? `SOURCE ${url}\n${text.slice(0, 1500)}` : "";
-  }));
-  const stat = [...productPages.filter(Boolean), `HOMEPAGE/BLOG CONTEXT\n${rawStatic}`].join("\n\n");
+  const stat = rawStatic;
   if (stat.length >= MIN_CHARS) return done(stat, "static");
 
   if (discovery?.exampleArticleUrls.length) {

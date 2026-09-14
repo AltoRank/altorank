@@ -1,3 +1,5 @@
+import { supportedCapabilities, type BusinessFocus } from "@/lib/onboarding/profile-focus";
+import { providerSignal, currentResearchBudget } from "@/lib/seo/request-context";
 // ---------------------------------------------------------------------------
 // The one model call shape the buyer-side research makes, and its bill
 // ---------------------------------------------------------------------------
@@ -9,13 +11,37 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { anthropicModel } from "@/lib/ai/models";
+import { anthropicModel, type ModelTier } from "@/lib/ai/models";
 import { anthropicCost, recordSpend } from "@/lib/billing/spend";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
 
 /** Where to write the spend row. Optional: scripts and tests have none. */
 export interface SpendSink {
   supabase: SupabaseClient;
   workspaceId: string | null;
+}
+
+export interface ModelObservation {
+  operation: string; model: string; elapsedMs: number;
+  status: "complete" | "truncated" | "deadline" | "unavailable";
+  inputTokens?: number; outputTokens?: number; costUsd?: number | null;
+  thinking?: "disabled" | "adaptive-medium" | "default";
+  promptHash?: string;
+  /** Present only for an explicitly enabled offline observer, never spend rows. */
+  responseText?: string;
+}
+export interface StructuredOptions {
+  maxTokens: number; spend?: SpendSink | null; tier?: ModelTier;
+  schema?: Record<string, unknown>;
+  timeoutMs?: number;
+  reasoning?: "disabled" | "medium";
+  observe?: (event: ModelObservation) => void;
+}
+const observations = new AsyncLocalStorage<{observer:(event:ModelObservation)=>void;includeResponse:boolean}>();
+/** Offline evaluations observe the real helper without replacing provider calls. */
+export function withModelObserver<T>(observer: (event: ModelObservation) => void, work: () => T, options: {includeResponse?:boolean} = {}): T {
+  return observations.run({observer,includeResponse:options.includeResponse??false}, work);
 }
 
 export function modelAvailable(): boolean {
@@ -30,32 +56,59 @@ export function modelAvailable(): boolean {
 export async function askStructured(
   operation: string,
   prompt: string,
-  options: { maxTokens: number; spend?: SpendSink | null },
+  options: StructuredOptions,
 ): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
-  const model = anthropicModel("structured");
+  const model = anthropicModel(options.tier ?? "structured");
+  // Unbounded default thinking exhausted review output; fully disabling it
+  // missed a real comparison error. Full-article judgments use measured medium
+  // effort; short final-topic checks stay non-thinking. Content is separate.
+  const editorial = options.tier === "editorial";
+  const reasoning = options.reasoning ?? process.env.ANTHROPIC_EDITORIAL_REASONING ?? (operation.startsWith("article/") ? "medium" : "disabled");
+  const mediumThinking = editorial && reasoning === "medium" && /^claude-(?:sonnet-5|opus-5|sonnet-4-6|opus-4-[6-8])/.test(model);
+  const started = Date.now();
+  // Observability must never turn a valid model result into a failed request.
+  const observe = (event: Omit<ModelObservation, "operation" | "model" | "elapsedMs">, responseText?:string) => {
+    const observation = { operation, model, thinking: mediumThinking ? "adaptive-medium" as const : editorial ? "disabled" as const : "default" as const, promptHash:createHash("sha256").update(prompt).digest("hex"), elapsedMs: Date.now() - started, ...event };
+    try {
+      options.observe?.(observation);
+      const context=observations.getStore();
+      context?.observer({...observation,...(context.includeResponse?{responseText}: {})});
+    } catch { /* Best effort observer. */ }
+  };
   try {
-    const client = new Anthropic({ apiKey });
+    const client = new Anthropic({ apiKey, maxRetries: 0 });
     const response = await client.messages.create({
       model,
       max_tokens: options.maxTokens,
+      ...(mediumThinking ? {thinking:{type:"adaptive" as const}} : editorial ? {thinking:{type:"disabled" as const}} : {}),
+      ...((mediumThinking || options.schema) ? {output_config:{...(mediumThinking?{effort:"medium" as const}:{}),...(options.schema?{format:{type:"json_schema" as const,schema:options.schema}}:{})}} : {}),
       messages: [{ role: "user", content: prompt }],
-    });
+    }, { signal: providerSignal(Math.max(1, Math.min(options.timeoutMs ?? Infinity, options.tier === "editorial" ? 60_000 : 25_000))) });
+    const inputTokens = response.usage?.input_tokens ?? 0;
+    const outputTokens = response.usage?.output_tokens ?? 0;
+    const cost = anthropicCost(model, inputTokens, outputTokens);
+    const budget = currentResearchBudget();
+    if (budget) budget.costUsd += cost ?? 0;
     if (options.spend) {
-      const inputTokens = response.usage?.input_tokens ?? 0;
-      const outputTokens = response.usage?.output_tokens ?? 0;
-      await recordSpend(options.spend.supabase, {
+      await boundedAccounting(recordSpend(options.spend.supabase, {
         provider: "anthropic",
         operation,
-        costUsd: anthropicCost(model, inputTokens, outputTokens),
+        costUsd: cost,
         inputTokens,
         outputTokens,
         workspaceId: options.spend.workspaceId,
-      });
+      }));
     }
-    return response.content[0]?.type === "text" ? response.content[0].text : null;
-  } catch {
+    const status = response.stop_reason === "max_tokens" ? "truncated" : "complete";
+    const text = response.content.filter(b => b.type === "text").map(b => b.text).join("");
+    observe({ status, inputTokens, outputTokens, costUsd: cost }, text);
+    if (status === "truncated") return null;
+    return text || null;
+  } catch (error) {
+    const name = (error as { name?: string })?.name;
+    observe({ status: name === "TimeoutError" || name === "AbortError" || name === "APIUserAbortError" || name === "ResearchBudgetError" ? "deadline" : "unavailable" });
     return null;
   }
 }
@@ -77,7 +130,7 @@ export function extractJson<T>(raw: string | null, open: "[" | "{", close: "]" |
 }
 
 /** The lines of a business profile the prompts share. */
-export function describeBusiness(business: {
+export function describeBusiness(business: BusinessFocus & {
   name?: string | null;
   description?: string | null;
   audiences?: string[] | null;
@@ -91,16 +144,28 @@ export function describeBusiness(business: {
   language?: string | null;
 }): string {
   const lines: string[] = [];
+  if (business.primaryBuyer) lines.push(`FIRST priority buyer: ${business.primaryBuyer}`);
+  if (business.priorityOffering) lines.push(`FIRST priority offering: ${business.priorityOffering}`);
+  lines.push(`Supported product capabilities: ${JSON.stringify(supportedCapabilities(business))}`);
   if (business.name?.trim()) lines.push(`Name: ${business.name.trim()}`);
   if (business.description?.trim()) lines.push(`What it does: ${business.description.trim()}`);
   if (business.offerings?.length) lines.push(`What people buy from it: ${business.offerings.join("; ")}`);
   if (business.audiences?.length) lines.push(`Who buys: ${business.audiences.join("; ")}`);
   if (business.competitors?.length) lines.push(`Competitors: ${business.competitors.join(", ")}`);
   if (business.buyingJobs?.length) lines.push(`Buying jobs: ${business.buyingJobs.join("; ")}`);
-  if (business.differentiators?.length) lines.push(`Supported differences: ${business.differentiators.join("; ")}`);
+  if (business.differentiators?.length) lines.push(`Site positioning (not independently verified capabilities): ${business.differentiators.join("; ")}`);
   if (business.exclusions?.length) lines.push(`Not served: ${business.exclusions.join("; ")}`);
   if (business.conversionUrl) lines.push(`Conversion page: ${business.conversionUrl}`);
   if (business.language) lines.push(`Language: ${business.language}`);
   if (business.country) lines.push(`Market: ${business.country}`);
   return lines.join("\n");
+}
+
+/** A slow accounting database cannot discard a successful model response. */
+async function boundedAccounting(work: Promise<unknown>): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([work.catch(() => { console.error("[research] Spend recording failed"); }),
+      new Promise<void>((resolve) => { timer = setTimeout(() => { console.error("[research] Spend recording exceeded deadline"); resolve(); }, 1500); })]);
+  } finally { clearTimeout(timer); }
 }

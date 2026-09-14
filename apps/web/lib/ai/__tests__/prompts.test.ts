@@ -107,3 +107,9 @@ describe("buildSystemPrompt — internal links", () => {
     expect(buildSystemPrompt({ keyword: "k", output })).not.toMatch(/emoji/i);
   });
 });
+it("does not attribute an explicit preview length to a different SERP target",()=>{
+  const research={recommendedWordCount:3000,wordCountBasis:"Median of ranking articles: 3000 words",intent:{intent:"informational",confidence:"high",signals:[]},competitors:[],peopleAlsoAsk:[],relatedKeywords:[],adjacentQueries:[],aiOverview:null} as unknown as NonNullable<Parameters<typeof buildSystemPrompt>[0]['research']>;
+  const prompt=buildSystemPrompt({keyword:"forms",targetWordCount:1200,research});
+  expect(prompt).toContain("Target approximately 1200 words");
+  expect(prompt).not.toContain("Median of ranking articles: 3000 words");
+});

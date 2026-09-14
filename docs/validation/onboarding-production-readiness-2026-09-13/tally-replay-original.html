@@ -1,0 +1,94 @@
+<h1>How to compare form builders with conditional logic: key criteria and tradeoffs</h1>
+<p>A <strong>form builder with conditional logic</strong> lets a form change in real time based on how someone answers it: show or hide a question, skip to a different page, calculate a price, or send a submission to a specific inbox. The mechanic behind almost every implementation is the same trigger-condition-action pattern: pick a field, set a rule for what counts as a match, then choose what happens next. What actually separates one builder from another is how much of that mechanic is free, how far it reaches into payments and email routing, and how long setup takes.</p>
+<p><strong>Contents</strong></p>
+<ul>
+<li><p><a href="#four-criteria-that-separate-one-form-builder-with-conditional-lo">Four criteria that separate one form builder with conditional logic from another</a></p>
+</li>
+<li><p><a href="#how-does-setup-complexity-differ-across-form-builders">How does setup complexity differ across form builders?</a></p>
+</li>
+<li><p><a href="#what-does-conditional-logic-cost-across-free-and-paid-tiers">What does conditional logic cost across free and paid tiers?</a></p>
+</li>
+<li><p><a href="#conditional-logic-on-payments-email-routing-and-multi-page-forms">Conditional logic on payments, email routing, and multi-page forms</a></p>
+</li>
+<li><p><a href="#a-worked-example-choosing-between-two-builders-for-a-lead-qualif">A worked example: choosing between two builders for a lead-qualification form</a></p>
+</li>
+<li><p><a href="#what-about-elementor-squarespace-and-other-website-builder-forms">What about Elementor, Squarespace, and other website-builder forms?</a></p>
+</li>
+<li><p><a href="#conclusion-match-the-criteria-to-the-form-you-re-actually-buildi">Conclusion: match the criteria to the form you're actually building</a></p>
+</li>
+</ul>
+<h2 id="four-criteria-that-separate-one-form-builder-with-conditional-lo">Four criteria that separate one form builder with conditional logic from another</h2>
+<p>Before comparing pricing or interfaces, it helps to break &quot;conditional logic&quot; into the four things it can actually do. Not every builder supports all four on every plan, so checking each one against your own use case matters more than a generic feature badge.</p>
+<ul>
+<li><p><strong>Show/hide fields.</strong> The most common use: a field or entire block only appears after a specific answer. Tally's documentation describes this as showing or hiding &quot;<a href="https://tally.so/help/conditional-form-logic">any block in your form depending on your respondents' answers</a>,&quot; which covers everything from a single question to a whole section.</p>
+</li>
+<li><p><strong>Branching and page jumps.</strong> Instead of just hiding a field, the form skips respondents to a different page entirely, which is how lead-qualification forms end early for people who don't qualify.</p>
+</li>
+<li><p><strong>Calculations.</strong> Rules that use answers to compute a score, a price, or a quote, then display or store that number. This is the feature that turns a form into a quote calculator or a lead-scoring tool.</p>
+</li>
+<li><p><strong>Routing.</strong> Sending different submissions to different destinations: a different confirmation page, a different redirect URL, or a different notification email address depending on the answer.</p>
+</li>
+</ul>
+<p>Tally's own conditional logic documentation lists <a href="https://tally.so/help/conditional-form-logic">six specific actions</a> you can trigger: jump to page, calculate a value, make an answer required, show or hide blocks, hide the submit button to block completion, and redirect to a different URL or Tally form. Conditions can also be grouped with &quot;when all match&quot; (an AND rule) or &quot;when any match&quot; (an OR rule), and groups can be nested, so a rule like &quot;under 18 AND (country is Germany OR France)&quot; is possible without a workaround. That's a genuinely useful thing to test in any builder you're evaluating: try to write a two-condition nested rule and see whether the interface makes it obvious or buries it in a submenu.</p>
+<h2 id="how-does-setup-complexity-differ-across-form-builders">How does setup complexity differ across form builders?</h2>
+<p>Where the logic rule lives, and how many clicks it takes to add one, varies a lot between builders, and that gap shows up the moment you build your fifth or sixth rule instead of your first.</p>
+<p>In Tally, you add a logic block by typing <code>/logic</code> directly under any question in the document-style editor, or by using the keyboard shortcut <code>cmd/ctrl + shift + L</code>. Because the editor works like a text document rather than a drag-and-drop canvas, the logic block sits inline with the question it controls, which makes it easier to see which rule belongs to which field when you're scanning a long form.</p>
+<p>WPForms takes a different approach: rules live inside a &quot;Smart Logic&quot; tab on each field's settings panel, reached by clicking the field and flipping an &quot;Enable Conditional Logic&quot; toggle. In WPForms' own walkthrough of the feature, adding one show/hide rule <a href="https://wpforms.com/best-form-builders-with-conditional-logic/" target="_blank" rel="noopener noreferrer nofollow">reportedly took about 15 seconds</a> once the pattern was familiar, though that same review also noted a tradeoff with Formidable Forms, a plugin in the same WordPress ecosystem: its conditional rules reference the field type rather than the field's label, which the reviewer said &quot;gets fiddly on larger forms&quot; with several similar fields.</p>
+<p>JotForm places conditional logic at the form level instead of the field level, under Settings, then Conditions, rather than inside individual field settings. That single difference in location is worth testing directly, since <a href="https://wpforms.com/best-form-builders-with-conditional-logic/" target="_blank" rel="noopener noreferrer nofollow">the same comparison</a> noted it caught a longtime WordPress builder off guard the first time. If you build forms in short bursts and don't revisit the interface often, a menu location you have to relearn each time is a real cost, not just a preference.</p>
+<h2 id="what-does-conditional-logic-cost-across-free-and-paid-tiers">What does conditional logic cost across free and paid tiers?</h2>
+<p>This is where the tradeoffs get concrete, because &quot;has conditional logic&quot; and &quot;conditional logic on the free plan&quot; are two different claims, and the gap between them is often the actual decision point for a small team.</p>
+<table>
+<tr><th><p>Form builder</p>
+</th><th><p>Conditional logic on free plan</p>
+</th><th><p>Starting paid price (if logic is gated)</p>
+</th><th><p>Rule setup location</p>
+</th></tr>
+<tr><td><p>Tally</p>
+</td><td><p>Yes, with no limit on the number of conditions, per <a href="https://tally.so/pricing">Tally's pricing page</a></p>
+</td><td><p>Not gated; Pro ($29/mo) and Business ($89/mo) add branding removal, custom domains and team features per <a href="https://tally.so/help/plans-and-pricing">Tally's plans page</a></p>
+</td><td><p>Inline <code>/logic</code> block under each question</p>
+</td></tr>
+<tr><td><p>WPForms</p>
+</td><td><p>No; the free Lite version does not include conditional logic per <a href="https://wpforms.com/best-form-builders-with-conditional-logic/" target="_blank" rel="noopener noreferrer nofollow">WPForms' own comparison</a></p>
+</td><td><p>Basic plan, $49.50/yr, unlocks Smart Conditional Logic on standard fields; payment-field logic needs the Pro tier</p>
+</td><td><p>Smart Logic tab in field settings</p>
+</td></tr>
+<tr><td><p>Jotform</p>
+</td><td><p>Yes, reported on Jotform's free tier (capped at 5 forms and 100 monthly submissions) per <a href="https://tally.so/help/tally-a-free-jotform-alternative">Tally's Jotform comparison</a></p>
+</td><td><p>Paid tiers mainly raise usage limits rather than gate logic itself, starting around $34/mo per WPForms' review</p>
+</td><td><p>Settings &gt; Conditions, at the form level</p>
+</td></tr>
+<tr><td><p>Paperform</p>
+</td><td><p>No free plan exists (14-day trial only); conditional logic is part of the paid tier</p>
+</td><td><p>$29/mo entry plan, per <a href="https://tally.so/help/tally-a-free-paperform-alternative">Tally's Paperform comparison</a></p>
+</td><td><p>Visible when clicking into a specific question</p>
+</td></tr>
+</table>
+<p>Calculations follow a similar split. Tally's calculated fields are part of the same free conditional logic system, with <a href="https://tally.so/help/conditional-form-logic">no separate paywall</a>. WPForms bundles its Calculations addon into the Pro plan rather than Basic, according to its own pricing page. Jotform's formula capability is described in that same WPForms comparison as &quot;widget only,&quot; which is worth confirming directly if a live, editable formula engine (rather than a static widget) is what your quote calculator needs.</p>
+<p>A few other builders show up repeatedly in vendor comparisons without a first-party pricing page to check here: Formidable Forms (from $39.50/yr, strong on calculation-heavy WordPress forms), Zoho Forms (from $10/mo, useful mainly if you're already on the Zoho suite), Gravity Forms (no free tier, from $59/yr, aimed at WordPress developers), and Formstack (no free tier, a 14-day trial, from $50/mo, geared toward workflow-heavy teams). These figures come from <a href="https://wpforms.com/best-form-builders-with-conditional-logic/" target="_blank" rel="noopener noreferrer nofollow">WPForms' own published comparison</a>; treat them as a starting point to verify on each vendor's current pricing page rather than a final number, since plans change.</p>
+<h2 id="conditional-logic-on-payments-email-routing-and-multi-page-forms">Conditional logic on payments, email routing, and multi-page forms</h2>
+<p>Basic show/hide logic is table stakes at this point. The harder question for a lead-generation or e-commerce form is whether logic reaches into payments, notification routing, and multi-page navigation, because that's where a simple contact form turns into a real workflow.</p>
+<p><strong>Payments.</strong> Tally lists payment collection as one of its input blocks, and its conditional logic documentation states you can show or hide &quot;any block,&quot; which by that same logic includes a payment block, letting you reveal a checkout field only for respondents who choose a paid option. WPForms ties conditional logic on payment fields specifically to its Pro tier, where the Stripe Pro, Square Pro, or PayPal Commerce integrations let the price shown, or whether a payment field appears at all, change based on earlier answers.</p>
+<p><strong>Email routing.</strong> If you need a submission to land in a different inbox depending on the answer (for example, sales leads going to one address and support requests to another), check this specifically rather than assuming it's included. WPForms' own materials describe routing &quot;certain submissions to specific email lists, CRMs, or Slack channels based on user input.&quot; Jotform's conditions menu, per the same WPForms review, includes an option to &quot;change the email recipient.&quot; Tally's documented action list centers on notifications, page jumps, and redirects; if address-based routing to different recipients is a hard requirement, it's worth confirming directly against the current feature list rather than assuming it behaves like the others.</p>
+<p><strong>Multi-page navigation.</strong> Tally's own FAQ confirms conditional logic and multi-page forms are meant to work together, explicitly: &quot;you can skip entire pages, show different paths based on answers, and create personalized form flows.&quot; The important detail from Tally's documentation is that the jump action only fires when a respondent clicks &quot;Next&quot; or &quot;Submit,&quot; and the logic block has to sit on the page you're jumping from, a small placement rule that explains most &quot;my page jump isn't working&quot; reports.</p>
+<h2 id="a-worked-example-choosing-between-two-builders-for-a-lead-qualif">A worked example: choosing between two builders for a lead-qualification form</h2>
+<p>Say a small business wants a lead form that asks a few qualifying questions, ends early for people who clearly don't fit (say, budget under a set threshold), shows a calculated estimate to everyone else, and needs to stay free while the business tests it with a few hundred monthly visitors. This is a hypothetical scenario, but it's the shape of decision most small teams actually face.</p>
+<p>Two realistic candidates: Tally and WPForms. Here's how the criteria above resolve the choice:</p>
+<ol>
+<li><p><strong>Check free-tier logic first.</strong> WPForms' free Lite plugin doesn't include conditional logic at all, per its own comparison article, so the qualifying-question branching this form needs would require at least the $49.50/yr Basic plan. Tally includes conditional logic on its free plan with no cap on the number of conditions, per its pricing page, so the same branching logic costs nothing to build and test.</p>
+</li>
+<li><p><strong>Check the calculation requirement.</strong> The estimate shown to qualified leads needs a live calculated field. Tally bundles this into the same free logic system. WPForms ties its Calculations addon to the Pro tier, not Basic, so hitting both the branching and the calculation requirement on WPForms means budgeting for the higher plan, not the entry one.</p>
+</li>
+<li><p><strong>Check where rules live before building.</strong> Since this form has several qualifying questions in sequence, open a free trial of each and build one nested rule (an AND inside an OR, or vice versa) to see whether the interface handles it cleanly or requires a workaround.</p>
+</li>
+<li><p><strong>Decide based on the actual requirement, not the brand.</strong> If the form only ever needs simple show/hide with no calculation, either tool can likely do it on its respective entry tier. Once a live calculation joins the requirement, the free-tier gap becomes the deciding factor for a team testing before committing budget.</p>
+</li>
+</ol>
+<p>This same four-step process works for any pair of builders: confirm free-tier logic availability, confirm calculation availability, build one real nested rule before committing, then decide based on which requirement is actually non-negotiable for the form you're building.</p>
+<h2 id="what-about-elementor-squarespace-and-other-website-builder-forms">What about Elementor, Squarespace, and other website-builder forms?</h2>
+<p>Conditional logic also shows up inside page builders and site platforms, not just standalone form tools: Elementor's form widget, Ninja Forms as a WordPress plugin, JetFormBuilder, and Squarespace's native form blocks all get asked about separately, because a business building its whole site on one of these platforms usually wants forms to live there too rather than in a separate tool.</p>
+<p>The capability and pricing details for these differ by plugin version and by whether you're on a free or paid tier, and none of that is something to guess at. The reliable way to check is the same regardless of platform: open the form editor, add one field, add one conditional rule (show a second field only after a specific answer), and confirm whether that rule works without a paid add-on. If you also need the rule to control page navigation in a multi-step WordPress form, or to skip a step conditionally, test that specific behavior too, since basic field-level show/hide and multi-step branching are sometimes gated separately even within the same plugin.</p>
+<h2 id="conclusion-match-the-criteria-to-the-form-you-re-actually-buildi">Conclusion: match the criteria to the form you're actually building</h2>
+<p>There's no single &quot;best&quot; form builder with conditional logic, because the right answer depends on which of the four capabilities (show/hide, branching, calculations, routing) your specific form actually needs, and whether that capability sits on the free tier or behind a paid plan. A simple contact form with one show/hide rule has very different requirements than a lead-qualification form with nested conditions, a live price calculator, and routing to different inboxes. Start from the requirement, check free-tier availability first since that's the fastest way to filter out a mismatched tool, then build one real nested rule in a trial before committing budget.</p>
+<h2 id="learn-more-about-tally">Learn more about Tally</h2>
+<p>This article is published by Tally. Visit <a href="https://tally.so/pricing">tally.so</a>.</p>

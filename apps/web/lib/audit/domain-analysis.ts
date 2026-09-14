@@ -1,3 +1,4 @@
+import { currentResearchBudget } from "@/lib/seo/request-context";
 import { balanceSources } from "@/lib/keyword-research/diversity";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 // ---------------------------------------------------------------------------
@@ -30,7 +31,7 @@ import { type DiscoveredKeyword, storedCpc } from "@/lib/seo/keywords";
 import { profileIsUsable, scoreRelevance, subjectVocabulary } from "@/lib/seo/topical-profile";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
-import { discoverBuyerKeywords } from "@/lib/keyword-research/discovery";
+import { discoverBuyerKeywords, type DiscoveryResult } from "@/lib/keyword-research/discovery";
 import { isBrandTerm } from "@/lib/keyword-research/seeds";
 import { judgeBuyerFit } from "@/lib/keyword-research/buyer-fit";
 import { isOutOfReach, isHopeless } from "@/lib/seo/difficulty";
@@ -57,6 +58,7 @@ export interface AnalysisLayer {
 }
 
 export interface DomainAnalysis {
+  keywordResearch?: Omit<Partial<DiscoveryResult>, "fromCompetitors" | "fromIdeas">;
   domain: string;
   readiness: ReadinessResult | null;
   /** Vocabulary the site actually uses, for scoring keyword relevance. */
@@ -190,7 +192,7 @@ async function ownSitemapPaths(
 ): Promise<Set<string> | null> {
   if (depth !== "full" || rankedCount === 0) return null;
   const maxUrls = 5_000;
-  const deadline = Date.now() + SITEMAP_WALK_MS;
+  const deadline = Math.min(Date.now() + SITEMAP_WALK_MS, currentResearchBudget()?.deadline ?? Infinity);
   try {
     const urls = await discoverUrls(domain, { timeoutMs: 6_000, maxUrls, deadline, bodies });
     // Both of these mean the list is a prefix of the sitemap rather than the
@@ -406,6 +408,10 @@ export async function analyseDomain(options: {
    * may be counting them.
    */
   maxPages?: number;
+  /** Onboarding can prepare briefs before the separate PageSpeed audit. */
+  deferPageSpeed?: boolean;
+  /** Retain topic evidence; defer the full technical audit until after onboarding. */
+  firstChoice?: boolean;
   /** How long to wait once when a host rate-bans the crawl. Tests pass 0. */
   rateBanWaitMs?: number;
   /**
@@ -422,6 +428,7 @@ export async function analyseDomain(options: {
   const depth = options.depth ?? "full";
   const baseUrl = `https://${domain}`;
   const layers: AnalysisLayer[] = [];
+  let keywordResearch: DomainAnalysis["keywordResearch"];
 
   // --- Agent readiness -----------------------------------------------------
   // What readiness fetches - the homepage, robots.txt, the sitemap - the crawl
@@ -429,7 +436,9 @@ export async function analyseDomain(options: {
   // counts requests sees each once.
   const recorded = recordingFetcher();
   let readiness: ReadinessResult | null = null;
-  try {
+  if (options.firstChoice) {
+    layers.push({ id: "readiness", status: "unavailable", detail: "Deferred until after topic selection" });
+  } else try {
     const result = await runAgentReadiness(domain, recorded);
     if (result.error) {
       layers.push({ id: "readiness", status: "failed", detail: result.error });
@@ -469,9 +478,9 @@ export async function analyseDomain(options: {
       depth === "quick" ? 1 : Math.min(options.maxPages ?? MAX_PAGES, MAX_PAGES),
       depth === "quick" ? 0 : MAX_DEPTH,
       CRAWL_DELAY_MS,
-      options.crawlRetryDelaysMs ?? CRAWL_RETRY_DELAYS_MS,
-      { seedHtml },
-      depth === "quick" ? null : (options.rateBanWaitMs ?? RATE_BAN_WAIT_MS),
+      options.crawlRetryDelaysMs ?? (options.firstChoice ? [] : CRAWL_RETRY_DELAYS_MS),
+      { seedHtml, ...(options.firstChoice ? { deadline: currentResearchBudget()?.deadline } : {}) },
+      depth === "quick" || options.firstChoice ? null : (options.rateBanWaitMs ?? RATE_BAN_WAIT_MS),
     );
     crawlAttempts = attempts;
     crawlRateLimited = rateLimited;
@@ -518,7 +527,7 @@ export async function analyseDomain(options: {
 
   // --- PageSpeed -----------------------------------------------------------
   let pagespeed: Record<string, unknown> = {};
-  const ps = depth === "full" ? await fetchPageSpeedDetailed(baseUrl) : { ok: false as const, kind: "unavailable" as const, detail: "not run on a quick look" };
+  const ps = depth === "full" && !options.deferPageSpeed && !options.firstChoice ? await fetchPageSpeedDetailed(baseUrl) : { ok: false as const, kind: "unavailable" as const, detail: options.deferPageSpeed || options.firstChoice ? "Deferred until after topic selection" : "not run on a quick look" };
   if (ps.ok) {
     // PageSpeedResult is a fixed shape; the column is jsonb, so it is stored
     // as a plain object rather than reshaped.
@@ -544,7 +553,9 @@ export async function analyseDomain(options: {
   // the question onboarding used to make the user answer from a dropdown of
   // twelve, and the site can usually answer it itself.
   let detection: Detection | null = null;
-  try {
+  if (options.firstChoice) {
+    layers.push({ id: "platform", status: "unavailable", detail: "Deferred until after topic selection" });
+  } else try {
     detection = await detectPlatform(domain);
     layers.push({
       id: "platform",
@@ -796,10 +807,11 @@ export async function analyseDomain(options: {
                 languageCode: languageCodeOf(options.locale),
                 locationCode: options.locationCode,
                 spend,
+                hasRankings: ranked.length > 0,
               })
             : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [] };
-        const fromCompetitors = discovered.fromCompetitors;
-        const fromIdeas = discovered.fromIdeas;
+        const {fromCompetitors, fromIdeas, ...summary} = discovered;
+        keywordResearch = summary;
 
         // Position per ranked term, for the reserve rule below.
         const positionByTerm = new Map<string, number | null>();
@@ -826,11 +838,13 @@ export async function analyseDomain(options: {
         // phrasings of "free portfolio website". Ranking #80 for a phrase
         // because you wrote about it is not evidence a buyer typed it.
         //
-        // Judge all candidates in bounded batches, strongest lexical matches
-        // first. Missing decisions cannot enter the automatic writing pool.
-        const toJudge = [...byTerm.values()]
-          .sort((a, b) => rel(b.k.keyword) - rel(a.k.keyword))
-          .map((c) => c.k.keyword);
+        // Bound the combined pool, including existing rankings, before model work.
+        // Balance origins so a large existing blog cannot crowd out new ideas.
+        // Unchecked candidates remain outside the automatic writing pool.
+        const toJudge = balanceSources(
+          [...byTerm.values()].sort((a, b) => rel(b.k.keyword) - rel(a.k.keyword)),
+          (c) => c.rank,
+        ).slice(0, 120).map((c) => c.k.keyword);
         const fit = await judgeBuyerFit(business, toJudge, { spend });
         const refusedByBuyerTest = [...fit.verdicts.values()].filter((v) => !v.keep).length;
 
@@ -940,6 +954,7 @@ export async function analyseDomain(options: {
               source_type: c.rank === 0 ? "ranked" : c.rank === 1 ? "competitor" : "profile",
               source_ref: c.rank === 1 ? (c.k.competitor ?? null) : null,
               source_url: c.k.sourceUrl ?? null,
+              research_evidence: c.k.evidence ?? null,
               buyer_fit: fit.verdicts.get(c.k.keyword.trim().toLowerCase()) ?? null,
             }));
           if (rows.length) {
@@ -976,7 +991,7 @@ export async function analyseDomain(options: {
             ? `${rankedDropped} on pages that are not yours, left out`
             : "",
           fromCompetitors.length
-            ? `${fromCompetitors.length} from what ${discovered.competitorsAsked.length === 1 ? "the competitor" : `the ${discovered.competitorsAsked.length} competitors`} you named rank${discovered.competitorsAsked.length === 1 ? "s" : ""} for`
+            ? `${fromCompetitors.length} from what ${discovered.competitorsAsked.length === 1 ? "the competitor" : `the ${discovered.competitorsAsked.length} competitors`} researched rank${discovered.competitorsAsked.length === 1 ? "s" : ""} for`
             : "",
           fromIdeas.length
             ? `${fromIdeas.length} around the ${discovered.seedsPriced} thing${discovered.seedsPriced === 1 ? "" : "s"} you said people buy from you`
@@ -988,7 +1003,7 @@ export async function analyseDomain(options: {
         layers.push({
           id: "keywords",
           status: toJudge.length > 0 && fit.verdicts.size === 0 ? "failed" : "ok",
-          detail: `${keywordsFound} keywords found: ${parts.join(", ") || "none"}`,
+          detail: `${keywordsFound} keywords found: ${parts.join(", ") || "none"}${"issues" in discovered && discovered.issues?.length ? `. ${discovered.issues.map((issue) => issue.message).filter((v, i, all) => all.indexOf(v) === i).join(" ")}` : ""}`,
         });
       })();
     } catch (err) {
@@ -1008,7 +1023,9 @@ export async function analyseDomain(options: {
   // --- Who links here -------------------------------------------------------
   // Only when there is a workspace to store into; the sales-side "check any
   // domain" path does not need it and should not pay for it.
-  if (depth === "full" && hasDataForSeo && supabase && workspaceId) {
+  if (options.firstChoice) {
+    layers.push({ id: "backlinks", status: "unavailable", detail: "Deferred until after topic selection" });
+  } else if (depth === "full" && hasDataForSeo && supabase && workspaceId) {
     try {
       const r = await syncBacklinks(supabase, workspaceId, domain);
       layers.push({
@@ -1056,7 +1073,7 @@ export async function analyseDomain(options: {
           traffic,
           referring_domains: referringDomains,
           ranking_keywords: ranked.length || null,
-          readiness: readiness?.score ?? null,
+          ...(!options.firstChoice ? { readiness: readiness?.score ?? null } : {}),
         },
         { onConflict: "workspace_id,measured_on" },
       );
@@ -1066,6 +1083,7 @@ export async function analyseDomain(options: {
   }
 
   const analysis: DomainAnalysis = {
+    keywordResearch,
     domain,
     authority,
     traffic,
@@ -1090,6 +1108,7 @@ export async function analyseDomain(options: {
       workspace_id: workspaceId,
       status: "completed",
       pages_crawled: pagesCrawled,
+      research_summary: keywordResearch ?? null,
       // Null stays null: an uncrawlable site has no on-page score, and storing 0
       // would make it indistinguishable from a site that scored badly.
       overall_score: auditScore ?? readiness?.score ?? null,
@@ -1137,13 +1156,14 @@ export async function analyseDomain(options: {
     await supabase
       .from("workspaces")
       .update({
-        ...firstLookPatch(firstLook, now),
+        // The first-choice pass leaves the full audit eligible for cron/analyze.
+        ...(!options.firstChoice ? firstLookPatch(firstLook, now) : {}),
         // The timestamp on every run, so the editor can tell "we fetched the
         // site and found no CMS we can post to" from "nobody has looked yet";
         // those used to be the same null and got the same "connect a CMS"
         // prompt. The platform itself only on a match: a blank must never
         // replace a platform the user has already confirmed.
-        detected_platform_at: now,
+        ...(!options.firstChoice ? { detected_platform_at: now } : {}),
         ...(detection ? { detected_platform: detection.platform } : {}),
         // Only overwrite when this run actually produced one, so a later crawl
         // that gets blocked does not erase a good profile.
@@ -1151,7 +1171,7 @@ export async function analyseDomain(options: {
       })
       .eq("id", workspaceId);
 
-    analysis.firstLook = firstLook;
+    if (!options.firstChoice) analysis.firstLook = firstLook;
   }
 
   return analysis;

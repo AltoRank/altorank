@@ -2,6 +2,8 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { startRun } from "@/lib/onboarding/run-store";
 import { dispatchWorker } from "@/lib/onboarding/run-dispatch";
+import { createWorkerClient } from "@/lib/onboarding/worker-client";
+import { wakeChoicePreparation } from "@/lib/onboarding/choice-preparation";
 
 // ---------------------------------------------------------------------------
 // POST /api/onboard/start — begin (or find) the onboarding run for a workspace
@@ -23,6 +25,7 @@ import { dispatchWorker } from "@/lib/onboarding/run-dispatch";
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
+  const deadline = Date.now() + 285_000;
   const supabase = await createClient();
 
   const {
@@ -58,6 +61,10 @@ export async function POST(request: NextRequest) {
     account_id: workspace.account_id as string,
   });
   if (created) after(() => dispatchWorker(runId));
+  else after(async()=>{
+    try { await wakeChoicePreparation(createWorkerClient(deadline),runId,{durationMs:Math.max(0,deadline-Date.now())}); }
+    catch { console.warn("[onboarding] source preparation resume interrupted"); }
+  });
 
   return NextResponse.json({ runId, existing: !created });
 }

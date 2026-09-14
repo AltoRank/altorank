@@ -1,3 +1,4 @@
+import {buildFirstDraftPrompt} from "./first-draft-prompt";
 import type { ArticlePrompt } from "./types";
 import type { ArticleResearch } from "@/lib/seo/research";
 import { INTENT_GUIDANCE } from "@/lib/seo/intent";
@@ -253,6 +254,7 @@ export function refreshLengthBudget(existingHtml: string): { current: number; ma
 }
 
 export function buildSystemPrompt(prompt: ArticlePrompt): string {
+  if(prompt.firstDraft && !prompt.refreshOf)return buildFirstDraftPrompt(prompt);
   const {
     keyword,
     title,
@@ -329,7 +331,7 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
           `Ensure the content is thorough and provides genuine value to the reader. ` +
           `Do not pad to reach the target: stop when the topic is covered.`
         : `Target approximately ${targetWordCount} words. ` +
-          (research
+          (research && !prompt.targetWordCount
             ? `This length is derived from the live SERP: ${research.wordCountBasis}. `
             : "") +
           `Ensure the content is thorough and provides genuine value to the reader. ` +
@@ -385,7 +387,7 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
           (b.articleType === "listicle"
             ? "Structure the body as a ranked or grouped list of distinct items, one H2 per item, each with what it is, who it suits and one concrete detail."
             : b.articleSubtype === "howTo"
-              ? "Structure the body as numbered steps a reader can follow in order, each with the expected result."
+              ? "Use numbered steps only for a genuinely sequential procedure. Explain what each step accomplishes naturally; do not append repetitive Expected result blocks. A choosing/comparing task can use grouped criteria and one worked example instead."
               : b.articleSubtype === "comparison"
                 ? "Set the options against each other on the same criteria, in a table, and end with a recommendation that names who should pick which."
                 : "Lead with the direct answer, then the detail a reader needs to act on it."),
@@ -475,7 +477,7 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
         "Each line is an article already published on this site. Where the",
         "draft naturally mentions one of these subjects, link to it once using",
         'the placeholder form <a href="{{internal-link:KEYWORD}}">anchor</a>,',
-        "using the keyword exactly as written below. Two to four links is right",
+        "using the keyword exactly as written below ONLY inside the placeholder href. The visible anchor must be a short natural phrase that fits the sentence, never a pasted search query or title. Omit a link if it adds no value. Two to four links is right",
         "for an article of this length. Never invent a target that is not listed:",
         "do not write any other href on this site's domain or any other relative",
         "path. A link to a page not on this list is removed before publishing.",
@@ -574,9 +576,9 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
         "Every unattributed figure is flagged for human review before publishing.",
       "- Do not attribute claims to named companies, people or publications " +
         "unless the claim is genuinely theirs.",
-      "- Prefer a qualitative statement you know to be true over a quantitative " +
-        'one you are guessing at. "Most sites get this wrong" is publishable; ' +
-        '"73% of sites get this wrong" is not, unless you can name the source.',
+      "- Qualitative generalizations need evidence too: most users, biggest buyer " +
+        "surprise, usually fails and saves hours are factual claims, not safe " +
+        "substitutes for missing statistics. Omit them unless supplied evidence supports them.",
       "- If the topic genuinely needs a figure you do not have, write the " +
         "sentence without it rather than filling the gap.",
     ].join("\n"),
@@ -595,11 +597,8 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       "",
       "- Open by answering the question. First paragraph under 90 words, naming",
       "  the subject in the first sentence. No throat-clearing, no context-setting.",
-      `- Straight after the opening paragraph, add a short summary block with an <h2> label written in ${language},`,
-      "  with three to five <li> bullets, each one a complete, quotable sentence.",
-      "  No figures in the bullets unless the same figure is sourced in the body.",
-      "- Include one standalone definition of 20-70 words that starts with the",
-      "  term and makes sense with nothing around it.",
+      `- A short summary in ${language} is optional when it helps readers navigate a complex decision. Do not repeat the opening or conclusion in a takeaway block.`,
+      "- Define an unfamiliar term once, inline where needed. If the opening already explains it, do not add a second definition section.",
       "- Use specific figures only when sourced and useful to the reader's task.",
       "  There is no minimum number of statistics, prices or percentages to include.",
       "- Attribute every figure to a named, linked source. If you cannot source a",
@@ -672,6 +671,10 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       `- Write every heading, summary label and answer in ${language}. Translate generic labels such as 'Key takeaways'; retain proper product names.`,
       "- Every paragraph should deliver value.",
       "- Organize around the reader's decision or task, not one repetitive section per product feature. Group related criteria and explain concrete tradeoffs, checks or next steps.",
+      "- A how-to-compare article must demonstrate a worked decision: a concrete brief, test or scenario, what to inspect, and how the result changes the choice. Clearly label hypothetical examples; never invent hands-on testing. Use unnamed hypothetical options when actual product capabilities are unverified; labelling a scenario hypothetical does not justify inventing features or limitations for named products. A best-products article needs sourced named options and reasons for each use case, not just a category glossary. Specific current product features, prices, plan limits and exclusions need supplied first-party evidence; secondary reviews only establish what that reviewer reported. Never treat a review date as proof of current vendor terms. If evidence cannot support a ranking, say so and provide a useful selection method.",
+      "- Do not infer a named tool's interface location, evaluation order or failure behavior from how similar tools work. Recommend checking the behavior without inventing an expected result. Do not rank a publisher ahead of competitors merely because its documentation was easier to retrieve. An evidence gap is not a product disadvantage.",
+      "- Tables must contain supported facts or explicitly labelled evaluation criteria. Never invent typical capabilities, speeds or limits for broad vendor categories. Preserve plan, date, region and other conditions around sourced facts.",
+      "- Use supplied source extracts for factual claims. A citation must support the exact claim, not merely discuss the same subject. A community homepage or whole subreddit does not establish consensus. Avoid medical prescriptions and universal care schedules unsupported by an appropriate primary source.",
       "- Include background facts or statistics only when they change that decision. Omit generic adoption numbers, market-size trivia and long definitions used to fill space.",
       "- Do NOT include any text outside of the HTML output and the meta-description tag.",
       "",

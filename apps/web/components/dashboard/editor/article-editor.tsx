@@ -144,7 +144,7 @@ export function ArticleEditor({
     setConnectOpen(true);
   }
   const [generating, setGenerating] = useState(false);
-  const [streamHtml, setStreamHtml] = useState("");
+  const [, setStreamHtml] = useState("");
   // Generation now has phases before any text appears. Without this the button
   // reads "Generating…" through a SERP round trip with nothing on screen.
   const [phase, setPhase] = useState<"idle" | "researching" | "writing" | "checking">("idle");
@@ -647,6 +647,7 @@ export function ArticleEditor({
       workspace.domain,
       linkableArticles,
       linkTargets,
+      knownPages,
     ],
   );
   const auditOpen = audit.counts.fail + audit.counts.warn;
@@ -830,14 +831,14 @@ export function ArticleEditor({
               <ScoreRing
                 value={article.seo_score > 0 ? article.seo_score : null}
                 label="SEO"
-                caption="Google ranking"
+                caption="On-page quality"
                 checks={article.seo_checks as ScoringCheck[] | null}
                 basis="Weighted from keyword placement, density, heading tree, meta length, length and readability."
               />
               <ScoreRing
                 value={article.aeo_score}
                 label="GEO"
-                caption="AI citation"
+                caption="Citation readiness"
                 checks={article.aeo_checks as ScoringCheck[] | null}
                 basis="Weighted from answer-first opening, a liftable definition, quotable figures with sources, question headings and structure."
               />
@@ -863,12 +864,26 @@ export function ArticleEditor({
           </SidebarSection>
         )}
 
+        {article.research?.editorialReview && <SidebarSection title="Editorial checks">
+          <div className="space-y-2 text-[12px] text-ink-2">
+            <p>Checks on the generated draft. Recheck any text you edit.</p>
+            <p>Product claims: {article.research.editorialReview.productClaims.replaceAll("-", " ")}.</p>
+            <p>Qualitative claims: {article.research.editorialReview.qualitativeClaims.replaceAll("-", " ")}.</p>
+            <p>Structure: {article.research.editorialReview.structure.replaceAll("-", " ")}.</p>
+            {article.research.editorialReview.findings.map((finding, index) => <div key={index} className="border-t border-line pt-2">
+              <p>{finding.removed ? "Removed duplicate" : "Review suggested"}: {finding.reason}</p>
+              {!finding.removed && <button type="button" className="mt-1 text-accent underline" onClick={() => locateInEditor(finding.text)}>Find this passage</button>}
+            </div>)}
+          </div>
+        </SidebarSection>}
+
         {/* Internal links: which words link where, against the configured count */}
         <SidebarSection title="Internal links">
           <InternalLinksPanel
             html={docHtml}
             siteDomain={workspace.domain}
             targets={linkTargets}
+            knownPages={knownPages}
             wanted={internalLinksWanted}
           />
         </SidebarSection>

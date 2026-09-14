@@ -145,7 +145,7 @@ describe("buildRankedFilters", () => {
   // nothing" instead of as a bug.
   it("joins two conditions with 'and'", () => {
     expect(buildRankedFilters(500, 20)).toEqual([
-      ["keyword_data.keyword_info.search_volume", ">", 500],
+      ["keyword_data.keyword_info.search_volume", ">=", 500],
       "and",
       ["ranked_serp_element.serp_item.rank_group", "<=", 20],
     ]);
@@ -153,7 +153,7 @@ describe("buildRankedFilters", () => {
 
   it("omits the join when only one condition is set", () => {
     expect(buildRankedFilters(500, 0)).toEqual([
-      ["keyword_data.keyword_info.search_volume", ">", 500],
+      ["keyword_data.keyword_info.search_volume", ">=", 500],
     ]);
     expect(buildRankedFilters(0, 20)).toEqual([
       ["ranked_serp_element.serp_item.rank_group", "<=", 20],

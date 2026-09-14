@@ -1,0 +1,213 @@
+{
+  "scope": "Evaluator-authored explicit offering boundaries; evaluates final task validation, not discovery recall or ranking.",
+  "models": {
+    "structured": "claude-haiku-4-5-20251001",
+    "editorial": "claude-sonnet-5"
+  },
+  "results": [
+    {
+      "id": "confirmed-focus-healthcare-drift",
+      "repeat": 0,
+      "expectedSupported": false,
+      "prediction": {
+        "status": "unsupported"
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "c7ccfd4e3cc6257bceff7f4765ebe479649c33401336ead9120ba92c873beb4d",
+          "elapsedMs": 1744,
+          "status": "complete",
+          "inputTokens": 1535,
+          "outputTokens": 80,
+          "costUsd": 0.005805
+        }
+      ]
+    },
+    {
+      "id": "confirmed-focus-team-payments",
+      "repeat": 0,
+      "expectedSupported": true,
+      "prediction": {
+        "status": "supported",
+        "task": {
+          "status": "supported",
+          "queryTask": "Compare scheduling software options that include payment processing for small teams",
+          "sourceIndex": 0,
+          "angle": "Scheduling software with payments compared for small teams",
+          "buyingJob": "Evaluate and choose scheduling software that supports payment collection",
+          "reason": "The query seeks a comparison of scheduling tools with payment features; this headline directly addresses that selection task for small teams without veering into unrelated topics.",
+          "businessFit": {
+            "supported": true,
+            "quote": "CalExample offers team scheduling with shared availability, payments and collective events"
+          },
+          "focusFit": {
+            "buyer": true,
+            "offering": true,
+            "reason": "CalExample serves small teams and startups with team scheduling that includes payments, directly matching the confirmed buyer and priority offering for this comparison task."
+          },
+          "sourceQuote": "Scheduling software with payments compared for small teams"
+        }
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "90ff8ab5d9662fb63183b0375a78653ce69e696eae0eecf20751a98d22754692",
+          "elapsedMs": 3048,
+          "status": "complete",
+          "inputTokens": 1493,
+          "outputTokens": 264,
+          "costUsd": 0.008439
+        }
+      ]
+    },
+    {
+      "id": "confirmed-focus-healthcare-explicit",
+      "repeat": 0,
+      "expectedSupported": true,
+      "prediction": {
+        "status": "supported",
+        "task": {
+          "status": "supported",
+          "queryTask": "Compare HIPAA compliant scheduling platforms for healthcare practices, with criteria and tradeoffs relevant to compliance and patient scheduling needs",
+          "sourceIndex": 0,
+          "angle": "Compare HIPAA compliant scheduling platforms for healthcare practices",
+          "buyingJob": "Evaluate and select a HIPAA compliant scheduling platform for a healthcare practice",
+          "reason": "The query seeks a comparison of HIPAA compliant scheduling platforms; this headline directly matches that intent with relevant selection criteria for healthcare buyers.",
+          "businessFit": {
+            "supported": true,
+            "quote": "Organizations offers HIPAA compliance for healthcare practices"
+          },
+          "focusFit": {
+            "buyer": true,
+            "offering": true,
+            "reason": "The confirmed focus is healthcare practices and compliance officers needing HIPAA-compliant patient scheduling, which directly matches the offering and the comparison task requested."
+          },
+          "sourceQuote": "Compare HIPAA compliant scheduling platforms for healthcare practices"
+        }
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "2235f4c621f7d0d3070a849fa959f210064481f047d1d086a091e64c149bc23f",
+          "elapsedMs": 3417,
+          "status": "complete",
+          "inputTokens": 1549,
+          "outputTokens": 329,
+          "costUsd": 0.009582
+        }
+      ]
+    },
+    {
+      "id": "confirmed-focus-healthcare-drift",
+      "repeat": 1,
+      "expectedSupported": false,
+      "prediction": {
+        "status": "unsupported"
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "c7ccfd4e3cc6257bceff7f4765ebe479649c33401336ead9120ba92c873beb4d",
+          "elapsedMs": 1651,
+          "status": "complete",
+          "inputTokens": 1535,
+          "outputTokens": 82,
+          "costUsd": 0.005835
+        }
+      ]
+    },
+    {
+      "id": "confirmed-focus-team-payments",
+      "repeat": 1,
+      "expectedSupported": true,
+      "prediction": {
+        "status": "supported",
+        "task": {
+          "status": "supported",
+          "queryTask": "Compare scheduling software options that include integrated payment processing, focusing on criteria and tradeoffs relevant to small teams",
+          "sourceIndex": 0,
+          "angle": "How to compare scheduling software with payment processing for small teams",
+          "buyingJob": "Evaluate scheduling tools with built-in payments to pick the right fit for a small team",
+          "reason": "Directly matches the query task of comparing scheduling-with-payments tools for small teams, without drifting into unrelated compliance or trust topics.",
+          "businessFit": {
+            "supported": true,
+            "quote": "CalExample offers team scheduling with shared availability, payments and collective events"
+          },
+          "focusFit": {
+            "buyer": true,
+            "offering": true,
+            "reason": "Small teams comparing scheduling software with payments directly matches CalExample's team scheduling offering with built-in payments, fitting the confirmed buyer and priority offering."
+          },
+          "sourceQuote": "Scheduling software with payments compared for small teams"
+        }
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "90ff8ab5d9662fb63183b0375a78653ce69e696eae0eecf20751a98d22754692",
+          "elapsedMs": 3339,
+          "status": "complete",
+          "inputTokens": 1493,
+          "outputTokens": 301,
+          "costUsd": 0.008994
+        }
+      ]
+    },
+    {
+      "id": "confirmed-focus-healthcare-explicit",
+      "repeat": 1,
+      "expectedSupported": true,
+      "prediction": {
+        "status": "supported",
+        "task": {
+          "status": "supported",
+          "queryTask": "Compare HIPAA compliant scheduling platforms for healthcare practices, with criteria and tradeoffs",
+          "sourceIndex": 0,
+          "angle": "How to compare HIPAA-compliant scheduling platforms for healthcare practices",
+          "buyingJob": "Select a HIPAA-compliant patient scheduling platform for a healthcare practice",
+          "reason": "The query seeks a comparison of HIPAA-compliant scheduling platforms; this headline delivers evaluation criteria and tradeoffs rather than promotional or unrelated content.",
+          "businessFit": {
+            "supported": true,
+            "quote": "Organizations offers HIPAA compliance for healthcare practices"
+          },
+          "focusFit": {
+            "buyer": true,
+            "offering": true,
+            "reason": "The buyer is healthcare practices/compliance officers evaluating HIPAA-compliant scheduling, directly matching the confirmed focus and the supplied HIPAA compliance offering for healthcare practices."
+          },
+          "sourceQuote": "Compare HIPAA compliant scheduling platforms for healthcare practices"
+        }
+      },
+      "passed": true,
+      "calls": [
+        {
+          "operation": "keyword-research/editorial-task",
+          "model": "claude-sonnet-5",
+          "thinking": "disabled",
+          "promptHash": "2235f4c621f7d0d3070a849fa959f210064481f047d1d086a091e64c149bc23f",
+          "elapsedMs": 3354,
+          "status": "complete",
+          "inputTokens": 1549,
+          "outputTokens": 333,
+          "costUsd": 0.009642
+        }
+      ]
+    }
+  ]
+}

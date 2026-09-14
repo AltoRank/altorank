@@ -115,6 +115,24 @@ export interface LenientResponse {
   tlsUnverified: true;
 }
 
+/** A missing apex homepage may have a working www variant. One public GET,
+ * same caller deadline; never recover a missing article, refusal or private URL.
+ * Keep the original 404 unless the same site's variant actually succeeds.
+ */
+export async function recoverWwwHomepage(url: string, response: Response, request: (url: string) => Promise<Response>): Promise<Response> {
+  const original = new URL(url);
+  if (response.status !== 404 || original.pathname !== "/" || original.search || original.username || original.password || original.port || original.hostname.startsWith("www.") || !original.hostname.includes(".") || (ipv4Parts(original.hostname) || original.hostname.includes(":")) || isPrivateHost(original.hostname)) return response;
+  const alternate = new URL(original); alternate.hostname = `www.${original.hostname}`;
+  try {
+    assertPublicUrl(alternate.href);
+    const next = await request(alternate.href);
+    const sameSite = !next.url || new URL(next.url).hostname.replace(/^www\./, "") === original.hostname;
+    if (next.ok && sameSite) { await response.body?.cancel(); return next; }
+    await next.body?.cancel();
+  } catch { /* A failed variant is not a successful read. */ }
+  return response;
+}
+
 export const TLS_CHAIN_CODES = new Set([
   "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
   "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
@@ -189,14 +207,15 @@ export function fetchLenient(
  */
 export async function fetchSite(
   url: string,
-  init: { headers?: Record<string, string>; signal?: AbortSignal; redirect?: RequestRedirect; timeoutMs?: number } = {},
+  init: { headers?: Record<string, string>; signal?: AbortSignal; redirect?: RequestRedirect; timeoutMs?: number; homepageFallback?: boolean } = {},
 ): Promise<Response> {
   // Before anything leaves. `fetch()` follows redirects on its own, so a
   // public site that 302s to a private address is not caught here; the
   // lenient path below checks every hop.
   assertPublicUrl(url);
   try {
-    return await fetch(url, { headers: init.headers, signal: init.signal, redirect: init.redirect ?? "follow" });
+    const response = await fetch(url, { headers: init.headers, signal: init.signal, redirect: init.redirect ?? "follow" });
+    return init.homepageFallback ? await recoverWwwHomepage(url, response, alternate => fetchSite(alternate, {...init, homepageFallback:false})) : response;
   } catch (err) {
     if (!isTlsChainError(err)) throw err;
     const ua =

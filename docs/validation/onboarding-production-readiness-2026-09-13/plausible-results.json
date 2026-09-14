@@ -1,0 +1,185 @@
+{
+  "scope": "Fresh live-provider onboarding on final source commit 2ce0e79, additional business not used for the preceding Tally prompt fixes. Implementer-reviewed, not a blinded human holdout.",
+  "article": {
+    "title": "How to choose a website traffic monitoring tool: features and tradeoffs to compare",
+    "keyword": "website traffic monitoring tool",
+    "word_count": 1396,
+    "status": "review",
+    "published_at": null
+  },
+  "articleCount": 1,
+  "finishedAt": "2026-09-13T19:50:47.957+00:00",
+  "topics": [
+    {
+      "term": "website traffic monitoring tool",
+      "angle": "How to choose a website traffic monitoring tool: features and tradeoffs to compare",
+      "audience": "Small business website owners seeking simpler analytics alternatives"
+    },
+    {
+      "term": "track revenue from website traffic",
+      "angle": "How to track revenue from your website traffic on your own site",
+      "audience": "Small business website owners"
+    }
+  ],
+  "review": {
+    "status": "checked",
+    "checkedPassages": 44,
+    "totalPassages": 44,
+    "failures": [],
+    "findings": [
+      {
+        "text": "For the checkout scenario above, Cloudflare Web Analytics is ruled out immediately: it keeps only six months of history and can't track a custom \"purchase completed\" event, so year-over-year comparison and conversion tracking are both off the table. Cloudflare also aggregates larger historical reports down to roughly 10% of original volume after seven days, meaning older totals become estimates rather than direct counts. Matomo can technically do everything you need, but its depth (dozens of reports, visitor-level data) means more setup and more privacy configuration to strip out cookies before you're consent-banner-free. Plausible fits the brief directly: goals and revenue tracking for checkout events, funnels for the checkout sequence, and data retention starting at 3 years on the Starter plan, without a consent banner. Matomo's own pricing wasn't part of the pages we drew from here, so check that directly against your traffic volume before deciding.",
+        "reason": "Implies funnels/revenue attribution ship with Starter's 3-year retention, but source ties those features to the Business plan (5-year retention).",
+        "removed": false,
+        "category": "product",
+        "severity": "material"
+      },
+      {
+        "text": "Broad reporting depth, includes visitor-level views",
+        "reason": "Table cell for 'Custom events and UTM campaign tracking' row doesn't answer whether Matomo supports custom events/UTM; vague non-responsive answer to the stated criterion.",
+        "removed": false,
+        "category": "qualitative",
+        "severity": "material"
+      }
+    ],
+    "modelCalls": [
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.109074,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 27504,
+        "operation": "article/approved-output-review",
+        "promptHash": "fb17ccb14dc3804ee71b494c28e171089721e9055ef576389423d3a6d4c9926e",
+        "inputTokens": 23463,
+        "outputTokens": 2579
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.07701,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 12028,
+        "operation": "article/claim-verification",
+        "promptHash": "1794d7cb2063ea91729feae03173ec07bb306e4cc439310e7483098e3ff89f96",
+        "inputTokens": 21080,
+        "outputTokens": 918
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.092184,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 14416,
+        "operation": "article/claim-verification",
+        "promptHash": "cd32b0394c343daf93d2be9f08d5c7f8effbfe4750bb66ca04bc971c4f39814d",
+        "inputTokens": 21423,
+        "outputTokens": 1861
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.070488,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 6493,
+        "operation": "article/claim-verification",
+        "promptHash": "50833e6eb86c09e5267e11f32302e321a54d19e05b283c20fae5f592e3fe9c15",
+        "inputTokens": 20651,
+        "outputTokens": 569
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.118347,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 25704,
+        "operation": "article/claim-verification",
+        "promptHash": "9de5c51ff7ba4a2a2f72dd2c1beab774376c174a35e1cac323b54ce28daaff8a",
+        "inputTokens": 21849,
+        "outputTokens": 3520
+      },
+      {
+        "model": "claude-sonnet-5",
+        "status": "complete",
+        "costUsd": 0.087798,
+        "thinking": "adaptive-medium",
+        "elapsedMs": 13446,
+        "operation": "article/claim-verification",
+        "promptHash": "86f6a8f1edd83c366cc273e84be9d102a022f0c83786b06419bc1d1e7ec76cac",
+        "inputTokens": 20691,
+        "outputTokens": 1715
+      }
+    ]
+  },
+  "evidencePlan": {
+    "task": "comparison",
+    "status": "planned",
+    "requirements": [
+      "What real-time monitoring capabilities does each tool offer, and how frequently do dashboards update?",
+      "What is the pricing structure for each tool, and what traffic/pageview limits apply at each tier?",
+      "Which visitor behavior tracking features (conversions, goals, funnels, user journeys) does each tool include as standard?",
+      "What privacy and data handling practices does each tool employ regarding cookies, data storage, and compliance?"
+    ],
+    "selectedUrls": [
+      "https://plausible.io/vs-google-analytics",
+      "https://plausible.io/vs-matomo",
+      "https://plausible.io/vs-cloudflare-web-analytics",
+      "https://www.semrush.com/pricing/",
+      "https://www.semrush.com/analytics/traffic/?src=freetools"
+    ],
+    "retrievedUrls": [
+      "https://plausible.io/vs-google-analytics",
+      "https://plausible.io/vs-matomo",
+      "https://plausible.io/vs-cloudflare-web-analytics",
+      "https://www.semrush.com/pricing/seo-ai-search/"
+    ]
+  },
+  "sources": [
+    {
+      "url": "https://plausible.io/",
+      "characters": 6483,
+      "sha256": "954b8fdef2f28871072501cb8e986833de5d11e8ebf120292267e95fc452e79d"
+    },
+    {
+      "url": "https://plausible.io/features",
+      "characters": 1539,
+      "sha256": "63804060748accecc8ce796427ad7da796e941233461f670a6c8682674a2e8df"
+    },
+    {
+      "url": "https://www.semrush.com/website/",
+      "characters": 9000,
+      "sha256": "8109fdfd5bb5f698d130b0dcc7a6276e5ea10de3642d1f164bc6b734d2a91e04"
+    },
+    {
+      "url": "https://plausible.io/vs-google-analytics",
+      "characters": 9000,
+      "sha256": "8657d9c9204ac12854e0c739474dbebf097bc12e347b324c8b43dd64068b992f"
+    },
+    {
+      "url": "https://plausible.io/vs-matomo",
+      "characters": 6901,
+      "sha256": "df7c2a3e3aed7f7547373a9b5a722bcb2cce6ad5b9c5a3881dc5140c7cd2744a"
+    },
+    {
+      "url": "https://plausible.io/vs-cloudflare-web-analytics",
+      "characters": 7543,
+      "sha256": "f15b4a777a2154520ffa46c8e986445969c2193148c05b90fec150cbd7fda531"
+    },
+    {
+      "url": "https://www.semrush.com/pricing/seo-ai-search/",
+      "characters": 4372,
+      "sha256": "172eda88faa4f86164d82675d8869fd65ccc4f1d7e72de4057f00df362c43172"
+    }
+  ],
+  "recordedCostUsd": 1.5588819999999988,
+  "codeCommit": "2ce0e79",
+  "selectionToCompletionSeconds": 237.01,
+  "browserChecks": {
+    "choicesPersistAfterReload": true,
+    "zeroArticlesBeforeChoice": true,
+    "generationSurvivesReload": true,
+    "completePreviewBeforeTrial": true,
+    "monthlyYearlyDisclosures": true,
+    "missingPriceFailureVisibleAndDraftRetained": true
+  }
+}

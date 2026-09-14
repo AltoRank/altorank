@@ -340,6 +340,17 @@ export async function stubGenerateArticle(options: GenerateArticleOptions): Prom
     .single();
   if (wsError || !workspace) throw new Error("Workspace not found");
 
+  // Controlled provider failure for the browser's recovery lane. The marker
+  // exists only in local fixtures; production never enters this module path.
+  if (options.verifySourceClaims && options.keywordId) {
+    const {data: fixture} = await supabase.from("keywords").select("instructions")
+      .eq("workspace_id",workspaceId).eq("id",options.keywordId).maybeSingle();
+    if (fixture?.instructions === "e2e:withhold-material" || fixture?.instructions === "e2e:withhold-incomplete") {
+      const {DraftReadinessError}=await import("@/lib/content/draft-readiness");
+      throw new DraftReadinessError(fixture.instructions === "e2e:withhold-material" ? "material-findings" : "incomplete-review");
+    }
+  }
+
   const language = (workspace.language as string | null) ?? "en";
   const title = options.title || `${titleCase(keyword)}: A Practical Guide`;
   const html = stubArticleHtml(keyword, title);

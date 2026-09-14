@@ -1,0 +1,316 @@
+{
+  "labelOrigin": "Evaluator-authored synthetic minimal pairs derived from observed failure classes; not independent human labels. Holdout cases were authored before running comparisons and must not be used to tune prompts. Sources are fictional test facts, not real-world advice.",
+  "scope": "Synthetic passage regression; not full-draft, discovery, human or conversion evaluation. Model variant changes model only; combined also uses editorial deadline. Fixtures were never sent with labels.",
+  "models": {
+    "structured": "claude-haiku-4-5-20251001",
+    "editorial": "claude-sonnet-5"
+  },
+  "results": [
+    {
+      "id": "flow-routing-control",
+      "split": "development",
+      "variant": "combined",
+      "repeat": 0,
+      "checked": true,
+      "passed": true,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "categoryErrors": 0,
+      "report": {
+        "status": "checked",
+        "headline": "not-specified",
+        "productClaims": "no-issues-detected",
+        "qualitativeClaims": "no-issues-detected",
+        "structure": "no-issues-detected",
+        "findings": [],
+        "modelCalls": [
+          {
+            "operation": "article/approved-output-review",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "d86190760d25fb3a7cce9feab5847f5b149d6c64ef813aa3020ae08faaf8b1d0",
+            "elapsedMs": 2149,
+            "status": "complete",
+            "inputTokens": 2280,
+            "outputTokens": 47,
+            "costUsd": 0.007545
+          }
+        ]
+      },
+      "calls": [
+        {
+          "operation": "article/approved-output-review",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "d86190760d25fb3a7cce9feab5847f5b149d6c64ef813aa3020ae08faaf8b1d0",
+          "elapsedMs": 2149,
+          "status": "complete",
+          "inputTokens": 2280,
+          "outputTokens": 47,
+          "costUsd": 0.007545
+        }
+      ]
+    },
+    {
+      "id": "flow-routing-failure",
+      "split": "development",
+      "variant": "combined",
+      "repeat": 0,
+      "checked": true,
+      "passed": true,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "categoryErrors": 0,
+      "report": {
+        "status": "checked",
+        "headline": "not-specified",
+        "productClaims": "no-issues-detected",
+        "qualitativeClaims": "needs-review",
+        "structure": "no-issues-detected",
+        "findings": [
+          {
+            "category": "qualitative",
+            "severity": "material",
+            "text": "To test round robin, block one host while another remains free. If the booking page still offers that slot, the software is broken.",
+            "reason": "Round robin routes to any available host; a slot still showing when one host is busy is expected behavior, not proof of a broken system.",
+            "removed": false
+          }
+        ],
+        "modelCalls": [
+          {
+            "operation": "article/approved-output-review",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "25f1b68b6b8eeb2e1b78724030d016ddd3b4c0431555ec65fe6efc531ca2f42d",
+            "elapsedMs": 3770,
+            "status": "complete",
+            "inputTokens": 2261,
+            "outputTokens": 231,
+            "costUsd": 0.010248
+          }
+        ]
+      },
+      "calls": [
+        {
+          "operation": "article/approved-output-review",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "25f1b68b6b8eeb2e1b78724030d016ddd3b4c0431555ec65fe6efc531ca2f42d",
+          "elapsedMs": 3770,
+          "status": "complete",
+          "inputTokens": 2261,
+          "outputTokens": 231,
+          "costUsd": 0.010248
+        }
+      ]
+    },
+    {
+      "id": "flow-linked-reading",
+      "split": "development",
+      "variant": "combined",
+      "repeat": 0,
+      "checked": true,
+      "passed": true,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "categoryErrors": 0,
+      "report": {
+        "status": "checked",
+        "headline": "not-specified",
+        "productClaims": "no-issues-detected",
+        "qualitativeClaims": "no-issues-detected",
+        "structure": "no-issues-detected",
+        "findings": [],
+        "modelCalls": [
+          {
+            "operation": "article/approved-output-review",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "979aa60d5eddee9f3a9fe24719d3803627020718c4d0e95d4fb8fbc4c149c17c",
+            "elapsedMs": 2683,
+            "status": "complete",
+            "inputTokens": 2273,
+            "outputTokens": 118,
+            "costUsd": 0.008589
+          }
+        ]
+      },
+      "calls": [
+        {
+          "operation": "article/approved-output-review",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "979aa60d5eddee9f3a9fe24719d3803627020718c4d0e95d4fb8fbc4c149c17c",
+          "elapsedMs": 2683,
+          "status": "complete",
+          "inputTokens": 2273,
+          "outputTokens": 118,
+          "costUsd": 0.008589
+        }
+      ]
+    },
+    {
+      "id": "flow-routing-failure",
+      "split": "development",
+      "variant": "combined",
+      "repeat": 1,
+      "checked": true,
+      "passed": true,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "categoryErrors": 0,
+      "report": {
+        "status": "checked",
+        "headline": "not-specified",
+        "productClaims": "no-issues-detected",
+        "qualitativeClaims": "needs-review",
+        "structure": "no-issues-detected",
+        "findings": [
+          {
+            "category": "qualitative",
+            "severity": "material",
+            "text": "To test round robin, block one host while another remains free. If the booking page still offers that slot, the software is broken.",
+            "reason": "Round robin only needs one available host; still offering the slot is correct behavior, not a sign the software is broken.",
+            "removed": false
+          }
+        ],
+        "modelCalls": [
+          {
+            "operation": "article/approved-output-review",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "25f1b68b6b8eeb2e1b78724030d016ddd3b4c0431555ec65fe6efc531ca2f42d",
+            "elapsedMs": 3093,
+            "status": "complete",
+            "inputTokens": 2261,
+            "outputTokens": 211,
+            "costUsd": 0.009948
+          }
+        ]
+      },
+      "calls": [
+        {
+          "operation": "article/approved-output-review",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "25f1b68b6b8eeb2e1b78724030d016ddd3b4c0431555ec65fe6efc531ca2f42d",
+          "elapsedMs": 3093,
+          "status": "complete",
+          "inputTokens": 2261,
+          "outputTokens": 211,
+          "costUsd": 0.009948
+        }
+      ]
+    },
+    {
+      "id": "flow-routing-control",
+      "split": "development",
+      "variant": "combined",
+      "repeat": 1,
+      "checked": true,
+      "passed": true,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "categoryErrors": 0,
+      "report": {
+        "status": "checked",
+        "headline": "not-specified",
+        "productClaims": "no-issues-detected",
+        "qualitativeClaims": "no-issues-detected",
+        "structure": "no-issues-detected",
+        "findings": [],
+        "modelCalls": [
+          {
+            "operation": "article/approved-output-review",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "d86190760d25fb3a7cce9feab5847f5b149d6c64ef813aa3020ae08faaf8b1d0",
+            "elapsedMs": 2151,
+            "status": "complete",
+            "inputTokens": 2280,
+            "outputTokens": 66,
+            "costUsd": 0.00783
+          }
+        ]
+      },
+      "calls": [
+        {
+          "operation": "article/approved-output-review",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "d86190760d25fb3a7cce9feab5847f5b149d6c64ef813aa3020ae08faaf8b1d0",
+          "elapsedMs": 2151,
+          "status": "complete",
+          "inputTokens": 2280,
+          "outputTokens": 66,
+          "costUsd": 0.00783
+        }
+      ]
+    },
+    {
+      "id": "flow-linked-reading",
+      "split": "development",
+      "variant": "combined",
+      "repeat": 1,
+      "checked": true,
+      "passed": true,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "categoryErrors": 0,
+      "report": {
+        "status": "checked",
+        "headline": "not-specified",
+        "productClaims": "no-issues-detected",
+        "qualitativeClaims": "no-issues-detected",
+        "structure": "no-issues-detected",
+        "findings": [],
+        "modelCalls": [
+          {
+            "operation": "article/approved-output-review",
+            "model": "claude-sonnet-5",
+            "thinking": "adaptive-medium",
+            "promptHash": "979aa60d5eddee9f3a9fe24719d3803627020718c4d0e95d4fb8fbc4c149c17c",
+            "elapsedMs": 2923,
+            "status": "complete",
+            "inputTokens": 2273,
+            "outputTokens": 173,
+            "costUsd": 0.009414
+          }
+        ]
+      },
+      "calls": [
+        {
+          "operation": "article/approved-output-review",
+          "model": "claude-sonnet-5",
+          "thinking": "adaptive-medium",
+          "promptHash": "979aa60d5eddee9f3a9fe24719d3803627020718c4d0e95d4fb8fbc4c149c17c",
+          "elapsedMs": 2923,
+          "status": "complete",
+          "inputTokens": 2273,
+          "outputTokens": 173,
+          "costUsd": 0.009414
+        }
+      ]
+    }
+  ],
+  "summary": [
+    {
+      "variant": "combined",
+      "total": 6,
+      "passed": 6,
+      "unavailable": 0,
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "categoryErrors": 0,
+      "costUsd": 0.053574000000000004,
+      "meanCallMs": 2794.8333333333335
+    }
+  ]
+}

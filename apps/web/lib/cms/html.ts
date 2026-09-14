@@ -147,7 +147,7 @@ function escapeHtml(text: string): string {
 }
 
 function escapeAttr(text: string): string {
-  return text.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  return escapeHtml(text).replace(/'/g, "&#39;");
 }
 
 export function tiptapToHtml(content: Record<string, unknown>): string {

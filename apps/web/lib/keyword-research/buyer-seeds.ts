@@ -1,3 +1,5 @@
+import { SEED_FAMILIES, type SeedFamily } from "./evidence";
+import type { BusinessFocus } from "@/lib/onboarding/profile-focus";
 // ---------------------------------------------------------------------------
 // What a buyer types, proposed from the business profile
 // ---------------------------------------------------------------------------
@@ -23,11 +25,13 @@ export const MAX_BUYER_SEEDS = 15;
 
 export interface BuyerSeeds {
   seeds: string[];
+  families?: Record<string, SeedFamily>;
+  missingFamilies?: SeedFamily[];
   /** Where they came from, for the run's trace. */
   basis: "model" | "profile" | "none";
 }
 
-export interface SeedableProfile {
+export interface SeedableProfile extends BusinessFocus {
   name?: string | null;
   description?: string | null;
   audiences?: string[] | null;
@@ -47,14 +51,15 @@ const PROMPT = [
   "or trying to solve the problem it solves, and do not yet know this business exists.",
   "",
   "Rules:",
-  "- 10 to 15 phrases, 2 to 8 words each, lowercase, in the language the site is written in.",
+  "- 10 to 15 phrases, 2 to 8 words each, lowercase, in the explicitly requested research language. The homepage's language is source evidence and does not override that request.",
   "- At least five must be established 2-4 word categories or tasks buyers actually search. Use ordinary market vocabulary, not strings assembled from the product's feature list. Keep audience and differentiator detail for article qualification, not every seed.",
   "- Product and service categories, the problems they solve, comparisons and alternatives, how-to questions a buyer asks.",
+  "- Include at least four concrete editorial tasks: choosing between treatments/products, comparing service quotes, diagnosing a problem, care or maintenance. For local services, do not fill the list with town names or near-me searches; those usually need service pages. Do not invent coverage locations.",
   "- Include relevant competitor alternatives, comparisons and migration searches; exclude pure brand navigation. Cover different offerings, audiences and buying jobs rather than synonyms of one category.",
   "- Never a one-word head term. \"shipping\" is not a search a buyer of a packing app makes; \"packing slip template\" is.",
   "- Nothing a consumer types for personal use unless consumers are who this business sells to.",
   "",
-  "Return ONLY a JSON array of strings, no prose, no code fence.",
+  'Return ONLY a JSON array of objects {"term":string,"family":"category"|"buying-decision"|"alternatives"|"migration"|"problem"}. Cover each relevant family. Do not invent a competitor or migration need to fill a family. Prefer the primary buyer and priority offering.',
 ].join("\n");
 
 /** Exported for tests: the reply to a seed list, cleaned. */
@@ -64,8 +69,9 @@ export function parseSeeds(raw: string | null): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const v of arr) {
-    if (typeof v !== "string") continue;
-    const s = v.trim().toLowerCase().replace(/\s+/g, " ");
+    const value = typeof v === "string" ? v : v && typeof v === "object" && typeof v.term === "string" ? v.term : null;
+    if (!value) continue;
+    const s = value.trim().toLowerCase().replace(/\s+/g, " ");
     const words = s.split(" ").filter(Boolean);
     if (words.length < 2 || words.length > 8 || s.length < 4) continue;
     if (seen.has(s)) continue;
@@ -85,17 +91,28 @@ export function seedsFromProfile(business: SeedableProfile | null): string[] {
 
 export async function proposeBuyerSeeds(
   business: SeedableProfile | null,
-  options: { spend?: SpendSink | null } = {},
+  options: { spend?: SpendSink | null; languageCode?: string; locationCode?: number } = {},
 ): Promise<BuyerSeeds> {
   if (!business || !(business.description?.trim() || business.offerings?.length || business.audiences?.length)) {
     return { seeds: [], basis: "none" };
   }
   if (modelAvailable()) {
-    const prompt = `${PROMPT}\n\nBUSINESS\n${describeBusiness(business)}${business.language ? `\nSite language: ${business.language}` : ""}`;
-    const seeds = parseSeeds(await askStructured("keyword-research/buyer-seeds", prompt, { maxTokens: 600, spend: options.spend }));
-    if (seeds.length) return { seeds, basis: "model" };
+    const prompt = `${PROMPT}\n\n${seedLocaleInstruction(business,options)}\n\nBUSINESS SOURCE EVIDENCE\n${describeBusiness(business)}`;
+    const raw = await askStructured("keyword-research/buyer-seeds", prompt, { maxTokens: 1600, spend: options.spend });
+    const seeds = parseSeeds(raw);
+    const entries = extractJson<Array<{ term?: string; family?: SeedFamily }>>(raw, "[", "]");
+    const families: Record<string, SeedFamily> = {};
+    if (Array.isArray(entries)) for (const row of entries) {
+      if (typeof row?.term === "string" && SEED_FAMILIES.includes(row.family!)) {
+        const term = row.term.trim().toLowerCase().replace(/\s+/g, " ");
+        if (seeds.includes(term)) families[term] = row.family!;
+      }
+    }
+    if (seeds.length) return { seeds, basis: "model", ...(Object.keys(families).length ? { families, missingFamilies: SEED_FAMILIES.filter((f) => !Object.values(families).includes(f)) } : {}) };
   }
-  const seeds = seedsFromProfile(business);
+  // A failed locale-specific proposal cannot silently become untranslated
+  // homepage phrases. Observed competitor terms remain available separately.
+  const seeds = options.languageCode ? [] : seedsFromProfile(business);
   return { seeds, basis: seeds.length ? "profile" : "none" };
 }
 
@@ -103,18 +120,28 @@ export async function proposeBuyerSeeds(
 export async function recoverBuyerSeeds(
   business: SeedableProfile | null,
   attempted: string[],
-  options: { spend?: SpendSink | null } = {},
+  options: { spend?: SpendSink | null; languageCode?: string; locationCode?: number } = {},
 ): Promise<string[]> {
   if (!business || !modelAvailable()) return [];
   const raw = await askStructured("keyword-research/seed-recovery", [
     "The exact keyword seeds below have almost no search-volume data. Recover discovery by naming the established market categories this business belongs to.",
-    "Return ONLY a JSON array of 5-8 NEW category searches, 2-4 plain words each, in the business language. Use words a buyer already knows before seeing this product.",
+    "Return ONLY a JSON array of 5-8 NEW category searches, 2-4 plain words each, in the explicitly requested research language. Use words a buyer already knows before seeing this product.",
+    seedLocaleInstruction(business,options),
     "These are broad inputs to keyword expansion, NOT article titles or final recommendations. It is correct to omit the product's special differentiators, audience modifiers and workflows. Buyer fit and editorial relevance are checked separately AFTER expansion.",
     "For example: an AI writing product with mandatory approvals belongs to 'ai writing tools' or 'content planning tools'; a clinic web-design studio belongs to 'medical website design'; a coach scheduling app belongs to 'personal trainer software'. Use examples only if they fit this business.",
     "Do not coin a new category, concatenate features, or use hyphenated compounds to squeeze in a longer phrase. Avoid pure brand searches, careers and unrelated industries. Do not repeat attempted seeds.",
-    `BUSINESS\n${JSON.stringify({ description: business.description, audiences: business.audiences, offerings: business.offerings, language: business.language })}`,
+    `BUSINESS\n${describeBusiness(business)}`,
     `ALREADY ATTEMPTED\n${JSON.stringify(attempted)}`,
   ].join("\n\n"), { maxTokens: 400, spend: options.spend });
   const previous = new Set(attempted);
   return parseSeeds(raw).filter((s) => (s.match(/[\p{L}\p{N}]+/gu)?.length ?? 0) <= 4 && !previous.has(s)).slice(0, 8);
+}
+
+function seedLocaleInstruction(business: SeedableProfile, options: {languageCode?:string;locationCode?:number}): string {
+  return [
+    `REQUESTED RESEARCH LANGUAGE: ${options.languageCode ?? business.language ?? "en"}.`,
+    ...(options.locationCode ? [`TARGET SEARCH MARKET: DataForSEO location code ${options.locationCode}.`] : []),
+    "Generate natural new search phrases for this language and market. Source pages and quoted business descriptions may use another language; they do not set the target language. Preserve brand names and established loanwords where natural.",
+    "These are new candidate queries that require their own measurements and search results. Never transfer metrics from an existing query to its translation.",
+  ].join("\n");
 }
