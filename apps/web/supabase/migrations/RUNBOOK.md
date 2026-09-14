@@ -691,3 +691,7 @@ showing an empty table.
 ### 092 — First-month preparation
 
 Apply `092_first_month_preparation.sql` before deploying the trial-to-dashboard changes. It adds workspace-scoped read policies on `first_month_runs` and `first_month_jobs`, and service-role-only claim/retry functions. `CRON_SECRET` and `NEXT_PUBLIC_APP_URL` must point workers at this deployment. Stripe activation persists the entitlement and durable run before dispatch; duplicate events preserve existing runs. `/api/internal/first-month` accepts one leased step and returns 202 before background work starts. Each article remains in review. `/api/cron/generate` and dashboard refreshes rescue interrupted dispatches after a ten-minute lease. Two automatic attempts per planning step or draft, then an explicit retry in the dashboard. Preparation stops on exhausted quota, a paused site or lost entitlement. This prepares drafts ahead of their dates; it does not publish them.
+
+### 093 — Bounded topic-group persistence
+
+Apply `093_onboarding_task_group.sql` before deploying the topic-group save fix. The service-only `save_onboarding_task_group` RPC places large evidence snapshots in the request body, compares the current JSONB value atomically, and changes only `taskKey` on a matching workspace/keyword. This avoids HTTP 414 failures from URL filters while preserving concurrent qualification updates, including legacy evidence without a timestamp. A stale comparison returns false; it does not overwrite the row.

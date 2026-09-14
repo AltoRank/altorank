@@ -359,9 +359,11 @@ async function runPhases(
     }
   }
 
-  if (firstDraft === "choose" && plan.length) {
-    emit({ phase: "drafting", status: "pending", detail: "Choose the article you want to read first." });
-    return { pendingDraft: null, awaitingChoice: true, fanOutSettled: Promise.resolve() };
+  if (firstDraft === "choose") {
+    emit(plan.length
+      ? { phase: "drafting", status: "pending", detail: "Choose the article you want to read first." }
+      : { phase: "drafting", status: "skipped", detail: "No supported article choices are ready. Refine your business focus or retry research." });
+    return { pendingDraft: null, awaitingChoice: plan.length > 0, fanOutSettled: Promise.resolve() };
   }
 
   emit({ phase: "drafting", status: "active" });

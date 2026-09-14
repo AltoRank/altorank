@@ -99,10 +99,10 @@ it("adjudicates a false unsupported finding with validated source evidence",asyn
   expect(result.status).toBe("checked");expect(result.claims).toHaveLength(1);expect(result.claims[0].verdict).toBe("supported");
 });
 it.each([
-  [],
-  [{...claim,verdict:"supported",evidence:[]}],
-  [{...claim,verdict:"supported",evidence:[{sourceIndex:0,quote:"All plans include three sites."}]}],
-])("cannot erase a prior finding through omission or invalid recovery evidence %#",async claims=>{
+  {claims:[]},
+  {claims:[{...claim,verdict:"supported",evidence:[]}]},
+  {claims:[{...claim,verdict:"supported",evidence:[{sourceIndex:0,quote:"All plans include three sites."}]}]},
+])("cannot erase a prior finding through omission or invalid recovery evidence %#",async ({claims})=>{
   ask.mockResolvedValueOnce(JSON.stringify({passages:[{passageIndex:0,claims:[claim]}]}));
   ask.mockResolvedValueOnce(JSON.stringify({passages:[{passageIndex:0,claims}]}));
   const result=await verifyDraftClaims(`<p>${claim.quote}</p>`,{evidence});

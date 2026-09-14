@@ -82,3 +82,13 @@ The Tally follow-up adds one optional evidence-planning round through newly obse
 The selected first-preview writer now omits broader keyword/AI-overview/competitor-list composition prompts, retains the saved research, and caps its automatic word target at 1,200 (explicit length settings still apply). Scoring receives the same target. Editorial review uses the shared visible-text entity decoder. Current vendor pricing takes precedence over blog snapshots; unresolved discounts or conflicting terms should lead to omitting the exact price.
 
 Remaining claim-check budget can fund one targeted second pass for invalid responses and unsupported claims, with no ninth call or extended deadline. Prior accepted claims must reappear with the same quote/category; omission or invalid evidence cannot erase a warning. Only actually repaired assignments lose their incomplete-check disclosure. Exact provenance remains distinct from semantic correctness.
+
+## Fresh-business release evaluation
+
+`onboarding-release-eval.ts` accepts the inferred focus, runs the production choice pipeline, selects its first supported topic, performs deferred voice/link preparation and writes a source-verified first draft to loopback Supabase. It does not replace failed cases with a supplied keyword. Use a distinct output directory for each case; provider credentials are allowlisted and billing/email/image credentials are excluded.
+
+```sh
+npx tsx scripts/onboarding-release-eval.ts --provider-env=/path/to/provider.env --local-env=/path/to/local-supabase.env --domain=example-business.com --language=en --out=/tmp/release-eval/example-business
+```
+
+Accepting the inferred buyer and first choice simulates user input. This is a production-function evaluation, not a browser/payment test or independent human quality approval. Compare the actual draft with its task and source packet; do not treat automated scores as the release decision. The 14 September manifest freezes eight new business cases before reading their outputs.

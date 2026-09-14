@@ -27,14 +27,24 @@ it("never promotes unqualified candidates or pays for a single option",async()=>
 it("remembers rejected synonyms when the month is extended later",async()=>{
   const inputs=structuredClone(recs);
   ask.mockResolvedValue('{"groups":[[0,1],[2]]}');
-  const updates:Array<{id:string;taskKey:string}>=[];
-  const snapshots:unknown[]=[];
   const originalEvidence=inputs.map(rec=>structuredClone(rec.opportunity));
-  const db={from(){let opportunity:{taskKey:string};let id="";const q={update:(value:{opportunity:{taskKey:string}})=>{opportunity=value.opportunity;return q;},eq:(key:string,value:string)=>{if(key==="id")id=value;if(key==="opportunity")snapshots.push(JSON.parse(value));return q;},then:(resolve:(value:unknown)=>unknown)=>{updates.push({id,taskKey:opportunity.taskKey});return resolve({error:null});}};return q;}};
-  await distinctOnboardingTopics(inputs,{supabase:db as never,workspaceId:"site-a"});
-  expect(updates).toEqual([{id:"0",taskKey:"0"},{id:"1",taskKey:"0"},{id:"2",taskKey:"2"}]);
-  expect(snapshots).toEqual(originalEvidence);
+  const rpc=vi.fn(async()=>({data:true,error:null}));
+  await distinctOnboardingTopics(inputs,{supabase:{rpc} as never,workspaceId:"site-a"});
+  expect(rpc.mock.calls).toHaveLength(3);
+  for (const [index,taskKey] of ["0","0","2"].entries()) expect(rpc).toHaveBeenNthCalledWith(index+1,"save_onboarding_task_group",{
+    p_workspace:"site-a",p_keyword:String(index),p_expected:originalEvidence[index],p_task_key:taskKey,
+  });
   ask.mockClear();
   expect(await distinctOnboardingTopics(inputs.slice(0,2))).toEqual([inputs[0]]);
   expect(ask).not.toHaveBeenCalled();
+});
+
+it("sends a large legacy snapshot in the RPC body and preserves a concurrent update",async()=>{
+  const inputs=structuredClone(recs.slice(0,2));
+  inputs[0].opportunity={...inputs[0].opportunity!,reason:"Evidence ".repeat(3000)};
+  ask.mockResolvedValue('{"groups":[[0,1]]}');
+  const rpc=vi.fn(async()=>({data:false,error:null}));
+  await distinctOnboardingTopics(inputs,{supabase:{rpc} as never,workspaceId:"site-a"});
+  expect(rpc).toHaveBeenCalledWith("save_onboarding_task_group",expect.objectContaining({p_expected:inputs[0].opportunity}));
+  expect(inputs.every(rec=>!rec.opportunity?.taskKey)).toBe(true);
 });

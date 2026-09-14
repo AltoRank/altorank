@@ -49,14 +49,14 @@ export async function distinctOnboardingTopics(recs: KeywordRecommendation[], sp
       for (const index of group) {
         const candidate = candidates[index];
         const opportunity = { ...candidate.opportunity!, taskKey };
-        // Compare the whole JSONB snapshot, including legacy evidence without a
-        // timestamp. A concurrent qualification must never be overwritten.
-        const update = spend.supabase.from("keywords").update({ opportunity })
-          .eq("workspace_id", spend.workspaceId).eq("id", candidate.keywordId)
-          .eq("opportunity", JSON.stringify(candidate.opportunity));
-        const saved = await update;
+        // Keep the snapshot in a POST body: real evidence exceeds URL limits.
+        // The atomic comparison also protects legacy rows without timestamps.
+        const saved = await spend.supabase.rpc("save_onboarding_task_group", {
+          p_workspace: spend.workspaceId, p_keyword: candidate.keywordId,
+          p_expected: candidate.opportunity, p_task_key: taskKey,
+        });
         if (saved.error) throw saved.error;
-        candidate.opportunity = opportunity;
+        if (saved.data) candidate.opportunity = opportunity;
       }
     }
   }

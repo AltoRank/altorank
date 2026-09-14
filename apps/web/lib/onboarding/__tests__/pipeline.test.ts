@@ -132,6 +132,17 @@ beforeEach(() => {
 });
 
 describe("runOnboarding", () => {
+  it.each(["empty", "failed"])("never writes without a choice when planning is %s", async outcome => {
+    if (outcome === "failed") plan.mockRejectedValueOnce(new Error("Planning failed"));
+    else plan.mockResolvedValueOnce([]);
+    const events: OnboardingEvent[] = [];
+    const result = await runOnboarding(richClient(0), {...WS,business_profile:{primaryBuyer:"Small teams",priorityOffering:"Project management"}}, event=>events.push(event), {firstDraft:"choose"});
+    expect(result.awaitingChoice).toBe(false);
+    expect(generate).not.toHaveBeenCalled();
+    expect(recommend).not.toHaveBeenCalled();
+    expect(fanOut).not.toHaveBeenCalled();
+    expect(events).toContainEqual(expect.objectContaining({phase:"drafting",status:"skipped"}));
+  });
   it("fills the link pool from the site's own sources before the first draft is written", async () => {
     const order: string[] = [];
     detect.mockImplementation(async () => { order.push("detect"); return { found: 28, added: 28 }; });
