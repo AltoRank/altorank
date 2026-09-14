@@ -2,7 +2,7 @@
 // challenge or a stripped page from a share of real sites (the readiness
 // checker learned this across 272 account sites); the identifier stays so a
 // site owner can see who visited.
-import { fetchLenient, isTlsChainError } from "./lenient-fetch";
+import { fetchLenient, isTlsChainError, recoverWwwHomepage } from "./lenient-fetch";
 
 const CRAWLER_UA =
   "Mozilla/5.0 (compatible; AltoRank-Auditor/1.0; +https://altorank.co; site audit)";
@@ -34,7 +34,7 @@ async function fetchPage(url: string, signal: AbortSignal): Promise<Response> {
   // keeps a sliding-window ban alive.
   if (refusing(url)) return new Response("", { status: 403, headers: { "content-type": "text/html" } });
   const res = await fetch(url, { signal, headers: { "User-Agent": CRAWLER_UA }, redirect: "follow" });
-  if (!REFUSED.has(res.status)) return res;
+  if (!REFUSED.has(res.status)) return recoverWwwHomepage(url, res, alternate => fetchPage(alternate, signal));
   // One more try the way the wizard's reader asks - once. If that is refused
   // too, it is the host's rule and not the agent string, and the run goes
   // quiet on this host.
@@ -106,6 +106,7 @@ export async function crawlSite(
   opts: CrawlOptions = {},
 ): Promise<CrawlResult[]> {
   const base = new URL(baseUrl);
+  let crawlOrigin = base.origin;
   const visited = new Set<string>();
   const results: CrawlResult[] = [];
 
@@ -156,9 +157,12 @@ export async function crawlSite(
       }
 
       const html = await res.text();
-      const parsed = parseHtml(html, item.url, base.origin);
+      const pageUrl = res.url || item.url;
+      if (item.depth === 0 && new URL(pageUrl).hostname.replace(/^www\./, "") === base.hostname.replace(/^www\./, "")) crawlOrigin = new URL(pageUrl).origin;
+      visited.add(normalizeUrl(pageUrl));
+      const parsed = parseHtml(html, pageUrl, crawlOrigin);
 
-      results.push({ url: item.url, status: res.status, loadTimeMs, ...parsed });
+      results.push({ url: pageUrl, status: res.status, loadTimeMs, ...parsed });
 
       // Enqueue internal links
       if (item.depth < maxDepth) {

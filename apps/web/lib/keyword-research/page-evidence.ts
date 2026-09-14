@@ -8,7 +8,7 @@ export async function readPageExtract(url: string, maxChars = 4500, options: {in
   try {
     const remaining = (currentResearchBudget()?.deadline ?? Date.now() + 6000) - Date.now();
     if (remaining <= 0) return null;
-    const response = await fetchSite(url, { signal: AbortSignal.timeout(Math.min(6000, remaining)), headers: { "User-Agent": "AltoRankBot/1.0" } });
+    const response = await fetchSite(url, { homepageFallback:true, signal: AbortSignal.timeout(Math.min(6000, remaining)), headers: { "User-Agent": "AltoRankBot/1.0" } });
     if (!response.ok || !response.body) return null;
     const contentType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
     if (contentType && !["text/html", "application/xhtml+xml", "text/plain"].includes(contentType)) {

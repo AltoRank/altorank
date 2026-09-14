@@ -26,7 +26,7 @@ export function businessPageEvidence(html: string, url: string): { text: string;
 
 async function read(url: string): Promise<ReturnType<typeof businessPageEvidence> | null> {
   try {
-    const response = await fetchSite(url, { signal: AbortSignal.timeout(8000), headers: { "User-Agent": "AltoRankBot/1.0 (content analysis)" } });
+    const response = await fetchSite(url, { homepageFallback:true, signal: AbortSignal.timeout(8000), headers: { "User-Agent": "AltoRankBot/1.0 (content analysis)" } });
     if (!response.ok || !response.body) return null;
     const reader = response.body.getReader(); const decoder = new TextDecoder();
     let html = ""; let bytes = 0;
@@ -36,7 +36,7 @@ async function read(url: string): Promise<ReturnType<typeof businessPageEvidence
         bytes += value.length; html += decoder.decode(value, { stream: true });
       }
     } finally { await reader.cancel(); }
-    return businessPageEvidence(html, url);
+    return businessPageEvidence(html, response.url || url);
   } catch { return null; }
 }
 

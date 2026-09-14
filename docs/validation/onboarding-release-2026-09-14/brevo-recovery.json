@@ -1,0 +1,34 @@
+{
+  "scope": "Fresh local rerun after fixing apex 404 versus www 200. Real providers, automatic newly inferred focus. Separate from the frozen cohort. Source article recovered from local database after temporary evaluation files became unavailable.",
+  "domain": "brevo.com",
+  "profileSource": "static",
+  "buyer": "Small business owners",
+  "offering": "Email marketing campaigns",
+  "candidateCount": 59,
+  "choiceCount": 1,
+  "title": "How to compare email marketing platforms for small business: features, pricing, deliverability, and ease of use",
+  "wordCount": 1280,
+  "discoverySeconds": 186.61,
+  "choiceToDraftSeconds": 142.326,
+  "costUsd": 1.248438,
+  "claimStatus": "checked",
+  "checkedPassages": 41,
+  "totalPassages": 41,
+  "findings": [
+    {
+      "text": "As an example of how these categories look in practice, Brevo's Starter and Standard plans bundle a drag-and-drop editor with industry-specific templates, unlimited multi-step automation workflows, advanced segmentation by behavior and custom events, an AI content generator for subject lines, and AI send-time optimization that sends each contact's email when they're most likely to engage, according to Brevo's pricing page . Treat this as one illustration of what \"automation\" or \"segmentation\" can include when you're reading a features list, not a benchmark every platform must match.",
+      "reason": "Attributes marketing automation and AI send-time optimization to the Starter plan, but source lists these as Standard-only additions ('Everything in Starter, plus').",
+      "removed": false,
+      "category": "product",
+      "severity": "material"
+    },
+    {
+      "text": "a user-friendly drag-and-drop editor and visual automation builder are the two features that separate platforms people actually keep using from ones they abandon",
+      "reason": "Source lists these as top features the reviewer judges platforms on but never claims they determine retention versus abandonment.",
+      "removed": false,
+      "category": "qualitative",
+      "severity": "material"
+    }
+  ],
+  "assessment": "Delivery recovered. Material correction remains: combines Starter and Standard features. Comparative evidence remains uneven; not publication approval."
+}
