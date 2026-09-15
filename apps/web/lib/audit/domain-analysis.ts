@@ -33,6 +33,7 @@ import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { discoverBuyerKeywords } from "@/lib/keyword-research/discovery";
 import { isBrandTerm } from "@/lib/keyword-research/seeds";
 import { judgeBuyerFit } from "@/lib/keyword-research/buyer-fit";
+import { contextKey, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
 import { isOutOfReach, isHopeless } from "@/lib/seo/difficulty";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { dedupePermutations, dedupeTargets } from "@/lib/seo/keywords";
@@ -948,6 +949,50 @@ export async function analyseDomain(options: {
             for (const r of inserted ?? []) seen.set((r.term as string).toLowerCase(), r.id as string);
           }
 
+          // What the buyer test refused is kept, not dropped: parked with the
+          // verdict, off the plan, on the keywords page with the reason. The
+          // pool of what the writer may take is unchanged; what changes is
+          // that a person can see the "no" and overrule it, and a profile
+          // edit can revisit it, instead of the term being rediscovered and
+          // refused again next month at the same price.
+          const fingerprint = contextKey({
+            domain,
+            business,
+            languageCode: languageCodeOf(options.locale),
+            locationCode: options.locationCode ?? 2840,
+          });
+          const parkedRows = candidates
+            .filter((c) => fit.verdicts.get(c.k.keyword.trim().toLowerCase())?.keep === false)
+            .filter((c) => !seen.has(c.k.keyword.toLowerCase()))
+            .map((c) => {
+              const verdict = fit.verdicts.get(c.k.keyword.trim().toLowerCase())!;
+              const opportunity: Opportunity = {
+                version: OPPORTUNITY_VERSION, context: fingerprint, checkedAt: new Date().toISOString(),
+                status: "rejected", cause: "buyer_mismatch",
+                reason: verdict.keep ? "" : verdict.reason,
+              };
+              return {
+                workspace_id: workspaceId,
+                term: c.k.keyword,
+                volume: c.k.unmeasured ? null : c.k.volume,
+                difficulty: c.k.difficulty,
+                cpc: storedCpc(c.k.cpc),
+                intent: c.k.intent ?? classifyIntent(c.k.keyword, options.locale ?? "en").intent,
+                status: "stored",
+                plan_excluded_at: new Date().toISOString(),
+                source: c.rank === 0 ? "ranked" : c.rank === 1 ? "gap" : "ideas",
+                source_type: c.rank === 0 ? "ranked" : c.rank === 1 ? "competitor" : "profile",
+                source_ref: c.rank === 1 ? (c.k.competitor ?? null) : null,
+                source_url: c.k.sourceUrl ?? null,
+                buyer_fit: verdict,
+                opportunity,
+              };
+            });
+          if (parkedRows.length) {
+            const { error: parkError } = await supabase.from("keywords").insert(parkedRows);
+            if (parkError) console.warn("[first look] could not park refused terms:", parkError.message);
+          }
+
           // Positions, so the queue can see striking distance. Without this the
           // strongest multiplier in recommendKeywords (a term sitting at 11-20,
           // one revision from page one) could never fire on a new workspace:
@@ -982,7 +1027,7 @@ export async function analyseDomain(options: {
             ? `${fromIdeas.length} around the ${discovered.seedsPriced} thing${discovered.seedsPriced === 1 ? "" : "s"} you said people buy from you`
             : "",
           refusedByBuyerTest
-            ? `${refusedByBuyerTest} dropped as not what your buyers would search`
+            ? `${refusedByBuyerTest} parked as not what your buyers would search`
             : "",
         ].filter(Boolean);
         layers.push({

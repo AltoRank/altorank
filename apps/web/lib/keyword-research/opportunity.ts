@@ -17,6 +17,7 @@ export const QUALIFICATION_LIMIT = 15;
  * nights of nothing.
  */
 export type OpportunityCause =
+  | "unjudged"
   | "no_profile"
   | "no_verdict"
   | "thin_serp"
@@ -282,7 +283,13 @@ export function summarizeQualification(opportunities: ReadonlyArray<Opportunity 
   return parts.join(", ");
 }
 
+/** The cause in words, for a log line or a pill. */
+export function causeLabel(cause: OpportunityCause | string | undefined): string {
+  return (cause && CAUSE_LABEL[cause as OpportunityCause]) || (cause ?? "unspecified");
+}
+
 const CAUSE_LABEL: Record<OpportunityCause, string> = {
+  unjudged: "stored before qualification existed",
   no_profile: "no business profile",
   no_verdict: "no buyer decision returned",
   thin_serp: "too few search results",

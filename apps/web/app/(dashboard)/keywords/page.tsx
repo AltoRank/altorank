@@ -5,6 +5,7 @@ import { getKeywords, getLatestRankings, getSelectionReasonsByKeyword, type Keyw
 import { loadGscRows } from "@/lib/gsc/queries";
 import { queryStats, WINDOW_DAYS, type QueryStat } from "@/lib/gsc/analysis";
 import { PageHead, StatusPill, Avatar, Chip, Card, StatStrip, DotSep } from "@/components/ui";
+import { causeLabel } from "@/lib/keyword-research/opportunity";
 import { createClient } from "@/lib/supabase/server";
 import { KeywordActions } from "@/components/dashboard/keyword-actions";
 import { KeywordFilters } from "@/components/dashboard/keyword-filters";
@@ -44,6 +45,13 @@ function matchesQuery(fields: (string | null | undefined)[], q: string): boolean
   if (!q) return true;
   const needle = q.trim().toLowerCase();
   return fields.some((f) => (f ?? "").toLowerCase().includes(needle));
+}
+
+/** Why a parked keyword is parked, from its verdict; "by you" when a person did it. */
+function parkedReason(k: { opportunity?: unknown }): string {
+  const o = k.opportunity as { status?: string; cause?: string } | null | undefined;
+  if (o && typeof o === "object" && o.cause) return causeLabel(o.cause);
+  return "taken off the plan";
 }
 
 export default async function KeywordsPage({ searchParams }: Props) {
@@ -239,7 +247,14 @@ export default async function KeywordsPage({ searchParams }: Props) {
                       )}
                     </td>
                     <td className="px-3.5 py-3 border-b border-line-soft">
-                      <StatusPill status={k.status} />
+                      {/* A parked row says why it is parked: the verdict that
+                          parked it, or that a person took it off the plan.
+                          The status alone ("stored") told nobody anything. */}
+                      {k.plan_excluded_at ? (
+                        <StatusPill status="stored" label={`Parked · ${parkedReason(k)}`} className="max-w-[260px] truncate" />
+                      ) : (
+                        <StatusPill status={k.status} />
+                      )}
                     </td>
                   </tr>
                 );

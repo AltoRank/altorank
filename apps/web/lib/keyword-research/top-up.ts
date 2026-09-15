@@ -44,6 +44,11 @@ import { resolveSeedHead } from "./category";
 import { isOutOfReach } from "@/lib/seo/difficulty";
 import { commercialFit } from "@/lib/seo/commercial-fit";
 import { scoreRelevance, subjectVocabulary, type TopicalProfile } from "@/lib/seo/topical-profile";
+import { judgeBuyerFit } from "./buyer-fit";
+import { profileUsable } from "./business-context";
+import { languageCodeOf } from "./locale";
+import { contextKey, OPPORTUNITY_VERSION, type Opportunity } from "./opportunity";
+import { countReady, queueTarget } from "./queue";
 
 /** Never store more than this from one top-up: a queue, not a dump. */
 export const TOP_UP_MAX = 40;
@@ -68,6 +73,8 @@ export const TOP_UP_PLAYBOOKS: readonly PlaybookId[] = [
 ];
 
 export interface TopUpOutcome {
+  /** Refused by the buyer test and parked with the verdict, not dropped. */
+  parked?: number;
   /** Distinct candidate strings gathered, before anything was priced. */
   candidates: number;
   /** How many the provider knew. */
@@ -206,10 +213,26 @@ export async function topUpKeywords(
 
   const { data: ws } = await supabase
     .from("workspaces")
-    .select("domain, dr, business_profile, topical_profile")
+    .select("domain, dr, business_profile, topical_profile, language, location_code, auto_generate_weekly_limit")
     .eq("id", workspaceId)
     .single();
   if (!ws) return { ...empty, reason: "workspace not found" };
+
+  // Research only when the queue needs it. A pool is not a thing to grow:
+  // what the pace will use in the next week or so is the whole target
+  // (lib/keyword-research/queue.ts), and above it every priced candidate is
+  // a row nobody will read for a month.
+  const context = {
+    domain: String(ws.domain ?? ""),
+    business: (ws.business_profile as BusinessProfile | null) ?? null,
+    languageCode: languageCodeOf((ws.language as string | null) ?? options.locale),
+    locationCode: (ws.location_code as number | null) ?? options.locationCode ?? 2840,
+  };
+  const target = queueTarget(ws.auto_generate_weekly_limit as number | null | undefined);
+  const ready = await countReady(supabase, workspaceId, context);
+  if (ready >= target) {
+    return { ...empty, reason: `the queue holds ${ready} qualified topic${ready === 1 ? "" : "s"}; nothing new is needed until it drops under ${target}` };
+  }
 
   const { data: existing } = await supabase
     .from("keywords")
@@ -278,8 +301,19 @@ export async function topUpKeywords(
     };
   }
 
+  // The buyer test at intake, the same one the first look runs: one batched
+  // call, and a refusal is stored with its verdict rather than dropped.
+  const fit = profileUsable(context.business)
+    ? await judgeBuyerFit({ ...context.business, language: context.languageCode }, keep.map((m) => m.term), { spend: { supabase, workspaceId } })
+    : { verdicts: new Map<string, { keep: boolean; reason: string | null }>(), basis: "none" as const };
+  const fingerprint = contextKey(context);
   const rows = keep.map((m) => {
     const source = origin.get(m.term.toLowerCase()) ?? "ideas";
+    const verdict = fit.verdicts.get(m.term.trim().toLowerCase());
+    const refused = verdict?.keep === false;
+    const opportunity: Opportunity | null = refused
+      ? { version: OPPORTUNITY_VERSION, context: fingerprint, checkedAt: new Date().toISOString(), status: "rejected", cause: "buyer_mismatch", reason: verdict.reason ?? "not a search this business's buyer makes" }
+      : null;
     return {
       workspace_id: workspaceId,
       term: m.term,
@@ -287,10 +321,13 @@ export async function topUpKeywords(
       difficulty: m.difficulty,
       cpc: m.cpc,
       intent: m.intent,
-      status: "new",
+      status: refused ? "stored" : "new",
+      plan_excluded_at: refused ? new Date().toISOString() : null,
       source: "ideas",
       source_type: source,
       source_ref: source === "ideas" ? "article research" : "profile playbook",
+      buyer_fit: verdict ?? null,
+      opportunity,
     };
   });
 
@@ -307,7 +344,8 @@ export async function topUpKeywords(
   return {
     candidates: candidates.length,
     priced: metrics.size,
-    inserted: rows.length,
+    inserted: rows.filter((r) => r.status === "new").length,
+    parked: rows.filter((r) => r.status === "stored").length,
     bySource: {
       ideas: rows.filter((r) => r.source_type === "ideas").length,
       playbook: rows.filter((r) => r.source_type === "playbook").length,

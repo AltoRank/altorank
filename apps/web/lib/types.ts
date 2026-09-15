@@ -207,6 +207,8 @@ export type Keyword = {
   source_type?: string | null;
   source_ref?: string | null;
   plan_excluded_at?: string | null;
+  /** The topic verdict, lib/keyword-research/opportunity.ts. Null on rows never judged. */
+  opportunity?: unknown;
 };
 
 // === Backlink ===
