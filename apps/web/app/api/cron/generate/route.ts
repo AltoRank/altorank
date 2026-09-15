@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
+import { summarizeQualification } from "@/lib/keyword-research/opportunity";
+import { setSpendReporter } from "@/lib/seo/client";
+import { recordSpend } from "@/lib/billing/spend";
 import { closeCoveredEntries, duePlannedKeyword, fulfilPlannedEntry } from "@/lib/onboarding/plan";
 import { profileIsUsable } from "@/lib/seo/topical-profile";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
@@ -285,7 +288,17 @@ async function run(request: Request) {
       // Not 25: the list is cut after scoring across every action, so a
       // site with 25 page-one rankings never showed a writable term here
       // (lib/onboarding/plan.ts has the same note).
-      const recommendations = await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true });
+      // Qualification buys SERPs; without a reporter armed those rows landed
+      // unattributed (342 of 406 DataForSEO calls in the four days after #214).
+      setSpendReporter(({ operation, costUsd }) => {
+        void recordSpend(supabase, { provider: "dataforseo", operation, costUsd, workspaceId });
+      });
+      let recommendations;
+      try {
+        recommendations = await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true });
+      } finally {
+        setSpendReporter(null);
+      }
       // The calendar is a promise. If the plan says today is "<term>", write
       // that, and fall back to the live queue only when nothing is due.
       // Retire entries the live queue already covered, or the plan writes the
@@ -341,15 +354,24 @@ async function run(request: Request) {
         : "";
 
       if (!next) {
+        // What the verdicts add up to, when there are any. "Pending" is our
+        // problem to resolve, not the customer's, so it is a different
+        // sentence from "queue exhausted" and does not email them.
+        const verdicts = summarizeQualification(recommendations.map((r) => r.opportunity));
+        const anyPending = recommendations.some((r) => r.opportunity?.status === "pending");
         results.push(
           await skipped(
             supabase,
             ws,
             workspaceId,
             domain,
-            recommendations.length
-              ? "no keyword qualifies: all are covered, already ranking, or flagged as provider noise"
-              : "no keywords tracked for this workspace",
+            !recommendations.length
+              ? "no keywords tracked for this workspace"
+              : anyPending && verdicts
+                ? `topic qualification pending: ${verdicts}`
+                : verdicts
+                  ? `no keyword qualifies: ${verdicts}`
+                  : "no keyword qualifies: all are covered, already ranking, or flagged as provider noise",
           ),
         );
         continue;

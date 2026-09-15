@@ -1,4 +1,5 @@
-import { qualifyOpportunities, readOpportunity, contextKey, serpOverlap, type Opportunity } from "@/lib/keyword-research/opportunity";
+import { qualifyOpportunities, readOpportunity, contextKey, serpOverlap, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
+import { ensureBusinessProfile } from "@/lib/keyword-research/business-context";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 // ---------------------------------------------------------------------------
 // What to write next
@@ -700,14 +701,28 @@ export async function recommendKeywords(
   }
 
   const sorted = [...byTarget.values()];
-  const context = { business, domain: workspace?.domain ?? "", languageCode: languageCodeOf(workspace?.language), locationCode: workspace?.location_code ?? 2840 };
+  // A qualifying caller is about to spend on verdicts, and a verdict needs a
+  // profile to judge against. A workspace older than the wizard has none;
+  // read the site for one now, once, rather than stamping every term
+  // "pending" for want of a column (lib/keyword-research/business-context.ts).
+  const ensured = options?.qualify
+    ? await ensureBusinessProfile(supabase, workspaceId, workspace?.domain, business)
+    : { business, inferred: false, missing: null };
+  const context = { business: ensured.business, domain: workspace?.domain ?? "", languageCode: languageCodeOf(workspace?.language), locationCode: workspace?.location_code ?? 2840 };
   const fingerprint = contextKey(context);
   // Only explicit scheduling/generation requests buy fresh evidence. List pages
   // consume saved briefs without triggering provider work during rendering.
   const eligible = sorted.filter((rec) => rec.action === "write" && rec.quality === "ok");
   const candidateRows = eligible.map((rec) => ({ ...keywords.find((k) => k.id === rec.keywordId)!, id: rec.keywordId, term: rec.term }));
   const evidence = options?.qualify
-    ? await qualifyOpportunities(supabase, workspaceId, candidateRows, context)
+    ? ensured.missing
+      // Nothing to judge against and nothing bought: every eligible term
+      // carries the same verdict in memory, and the log can say why.
+      ? new Map<string, Opportunity>(candidateRows.map((row) => [row.id, {
+          version: OPPORTUNITY_VERSION, context: fingerprint, checkedAt: new Date().toISOString(),
+          status: "pending", cause: "no_profile", reason: `Topic qualification is blocked: ${ensured.missing}.`,
+        }]))
+      : await qualifyOpportunities(supabase, workspaceId, candidateRows, context)
     : new Map(candidateRows.flatMap((row) => { const o = readOpportunity(row.opportunity, fingerprint); return o ? [[row.id, o] as const] : []; }));
   const clusters: KeywordRecommendation[] = [];
   for (const rec of eligible) {
