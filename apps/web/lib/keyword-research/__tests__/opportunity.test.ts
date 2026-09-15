@@ -4,10 +4,10 @@ vi.mock("../buyer-model", async (original) => ({ ...await original<object>(), mo
 vi.mock("../buyer-fit", () => ({ judgeBuyerFit: judge }));
 vi.mock("@/lib/seo/client", () => ({ hasDataForSEOCredentials: available }));
 vi.mock("@/lib/seo/brief-data", () => ({ fetchAdvancedSerp: fetchSerp }));
-import { qualifyOpportunities, readOpportunity, contextKey, serpOverlap, validArticleAngle, assertAutonomousTopic } from "../opportunity";
+import { qualifyOpportunities, readOpportunity, contextKey, serpOverlap, validArticleAngle, assertAutonomousTopic, summarizeQualification, type Opportunity } from "../opportunity";
 import { balanceSources, diverseSeeds } from "../diversity";
 
-const context = { domain: "example.com", languageCode: "it", locationCode: 2380, business: { name: "Clinic Studio", offerings: ["clinic booking websites"], audiences: ["clinic owners"] } };
+const context = { domain: "example.com", languageCode: "it", locationCode: 2380, business: { name: "Clinic Studio", description: "Clinic Studio builds booking websites for clinics and salons at a fixed price.", offerings: ["clinic booking websites"], audiences: ["clinic owners"] } };
 const term = "clinic booking website costs";
 const urls = ["https://one.test/guide", "https://two.test/guide", "https://three.test/guide"];
 const approval = { approve: true, reason: "Clinic owners compare the cost of a booking website", audience: "clinic owners", buyingJob: "choose a booking website", offering: "clinic booking websites", angle: "What clinics should budget for a booking website", format: "article", conversionPath: "https://example.com/contact", evidenceUrls: urls.slice(0, 2) };
@@ -24,7 +24,7 @@ async function run(extra = {}) { return (await qualifyOpportunities(db, "ws", [{
 
 describe("topic qualification", () => {
   it("shares cached evidence across callers and JSONB field orders", () => {
-    expect(contextKey(context)).toBe(contextKey({ business: { audiences: context.business.audiences, offerings: context.business.offerings, name: context.business.name }, locationCode: context.locationCode, languageCode: context.languageCode, domain: context.domain }));
+    expect(contextKey(context)).toBe(contextKey({ business: { audiences: context.business.audiences, offerings: context.business.offerings, description: context.business.description, name: context.business.name }, locationCode: context.locationCode, languageCode: context.languageCode, domain: context.domain }));
   });
   it("keeps browser fixture approvals isolated from real domains and databases", async () => {
     vi.stubEnv("E2E_STUBS", "1");
@@ -89,9 +89,50 @@ describe("topic qualification", () => {
   it("does not consider malformed saved approvals valid", () => {
     expect(readOpportunity({version:1,context:contextKey(context),status:"qualified",checkedAt:new Date().toISOString()},contextKey(context))).toBeNull();
   });
-  it("leaves failed provider calls pending", async () => {
+  it("leaves failed provider calls pending, and says which call failed", async () => {
     fetchSerp.mockRejectedValue(new Error("provider unavailable"));
-    expect((await run()).status).toBe("pending");
+    const result = await run();
+    expect(result.status).toBe("pending");
+    expect(result.cause).toBe("provider_error");
+    expect(result.reason).toContain("provider unavailable");
+  });
+  it("names a missing buyer decision as the cause, not a vague failure", async () => {
+    judge.mockResolvedValue({basis:"model",verdicts:new Map()});
+    const result = await run();
+    expect(result).toMatchObject({ status: "pending", cause: "no_verdict" });
+    expect(result.reason).not.toContain("could not be confirmed");
+  });
+  it("names a thin search page as the cause", async () => {
+    fetchSerp.mockResolvedValue({ organic: urls.slice(0, 2).map((url, i) => ({url,title:"t",description:"d",rank:i+1})), peopleAlsoAsk:[], aiOverview:null });
+    const result = await run();
+    expect(result).toMatchObject({ status: "pending", cause: "thin_serp" });
+    expect(ask).not.toHaveBeenCalled();
+  });
+  it("without a business profile, stamps every term 'no profile' and buys nothing", async () => {
+    // altorank.co and supalabs.co, 2026-09-14: sixty-four terms "pending:
+    // buyer fit could not be confirmed", six nights running, because the
+    // profile column was empty and nothing said so.
+    const result = (await qualifyOpportunities(db, "ws", [{ id: "k", term }], { ...context, business: null })).get("k")!;
+    expect(result).toMatchObject({ status: "pending", cause: "no_profile" });
+    expect(result.reason).toContain("No business profile");
+    expect(judge).not.toHaveBeenCalled();
+    expect(fetchSerp).not.toHaveBeenCalled();
+    expect(writes).toHaveLength(1);
+  });
+  it("carries a cause on every rejection", async () => {
+    judge.mockResolvedValue({basis:"model",verdicts:new Map([[term,{keep:false,reason:"student homework"}]])});
+    expect(await run()).toMatchObject({ status: "rejected", cause: "buyer_mismatch" });
+    judge.mockResolvedValue({ basis: "model", verdicts: new Map([[term, {keep:true,reason:"specific buyer need"}]]) });
+    ask.mockResolvedValue(JSON.stringify({ ...approval, approve: false, reason: "product pages only" }));
+    expect(await run()).toMatchObject({ status: "rejected", cause: "not_editorial" });
+    expect(await run({source_url:"https://www.example.com/booking"})).toMatchObject({ status: "rejected", cause: "existing_page" });
+  });
+  it("sums the verdicts into one line for the run log", () => {
+    const o = (status: Opportunity["status"], cause?: Opportunity["cause"]): Opportunity => ({ version: 2, context: "c", checkedAt: "now", status, reason: "r", cause });
+    expect(summarizeQualification([])).toBeNull();
+    expect(summarizeQualification([undefined, null])).toBeNull();
+    expect(summarizeQualification([o("qualified"), o("rejected", "buyer_mismatch"), o("rejected", "buyer_mismatch"), o("pending", "no_profile"), o("pending", "thin_serp"), o("pending", "no_profile")]))
+      .toBe("1 qualified, 2 rejected (2 not a buyer search), 3 pending (2 no business profile, 1 too few search results)");
   });
   it("does not invent approval when providers are unavailable", async () => {
     available.mockReturnValue(false);
