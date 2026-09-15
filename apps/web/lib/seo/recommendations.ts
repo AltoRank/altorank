@@ -1,5 +1,7 @@
-import { qualifyOpportunities, readOpportunity, contextKey, serpOverlap, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
+import { readOpportunity, contextKey, serpOverlap, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
 import { ensureBusinessProfile } from "@/lib/keyword-research/business-context";
+import { causeLabel } from "@/lib/keyword-research/opportunity";
+import { isParked, isParkedForGood, isRequalifiable, queueTarget, refillQualifiedQueue, type QueueRow } from "@/lib/keyword-research/queue";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 // ---------------------------------------------------------------------------
 // What to write next
@@ -397,7 +399,7 @@ export async function recommendKeywords(
 
   const { data: keywords, error } = await supabase
     .from("keywords")
-    .select("id, term, volume, difficulty, intent, status, source, source_type, source_ref, source_url, opportunity")
+    .select("id, term, volume, difficulty, intent, status, source, source_type, source_ref, source_url, opportunity, plan_excluded_at")
     .eq("workspace_id", workspaceId);
 
   if (error) throw new Error(`Could not read keywords: ${error.message}`);
@@ -408,7 +410,7 @@ export async function recommendKeywords(
   // different industry.
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("topical_profile, dr, business_profile, domain, language, location_code")
+    .select("topical_profile, dr, business_profile, domain, language, location_code, auto_generate_weekly_limit")
     .eq("id", workspaceId)
     .single();
 
@@ -712,9 +714,25 @@ export async function recommendKeywords(
   const fingerprint = contextKey(context);
   // Only explicit scheduling/generation requests buy fresh evidence. List pages
   // consume saved briefs without triggering provider work during rendering.
+  //
+  // A parked row is not a candidate. Parked by a verdict: never again without
+  // a person. Parked by a person: where they put it. Parked for want of a
+  // verdict (the pre-qualification sweep): a candidate again, judged when the
+  // queue needs topics (lib/keyword-research/queue.ts).
+  const rowOf = new Map(keywords.map((k) => [k.id as string, k as unknown as QueueRow]));
   const eligible = sorted.filter((rec) => rec.action === "write" && rec.quality === "ok");
-  const candidateRows = eligible.map((rec) => ({ ...keywords.find((k) => k.id === rec.keywordId)!, id: rec.keywordId, term: rec.term }));
-  const evidence = options?.qualify
+  for (const rec of eligible) {
+    const row = rowOf.get(rec.keywordId);
+    if (row && isParked(row) && !isRequalifiable(row)) {
+      rec.action = "skip";
+      const cause = (row.opportunity as { cause?: string } | null)?.cause;
+      rec.reasons.unshift(isParkedForGood(row) && cause ? `Parked: ${causeLabel(cause)}` : "Parked: taken off the plan by a person");
+    }
+  }
+  const candidateRows = eligible
+    .filter((rec) => rec.action === "write")
+    .map((rec) => ({ ...rowOf.get(rec.keywordId)!, id: rec.keywordId, term: rec.term }));
+  const evidence: Map<string, Opportunity> = options?.qualify
     ? ensured.missing
       // Nothing to judge against and nothing bought: every eligible term
       // carries the same verdict in memory, and the log can say why.
@@ -722,10 +740,15 @@ export async function recommendKeywords(
           version: OPPORTUNITY_VERSION, context: fingerprint, checkedAt: new Date().toISOString(),
           status: "pending", cause: "no_profile", reason: `Topic qualification is blocked: ${ensured.missing}.`,
         }]))
-      : await qualifyOpportunities(supabase, workspaceId, candidateRows, context)
+      // Buy verdicts for the best candidates only until the queue holds
+      // what the pace will use; a rejection parks the row as it goes.
+      : (await refillQualifiedQueue(supabase, workspaceId, candidateRows, context, {
+          target: queueTarget(workspace?.auto_generate_weekly_limit as number | null | undefined),
+        })).verdicts
     : new Map(candidateRows.flatMap((row) => { const o = readOpportunity(row.opportunity, fingerprint); return o ? [[row.id, o] as const] : []; }));
   const clusters: KeywordRecommendation[] = [];
   for (const rec of eligible) {
+    if (rec.action !== "write") continue;
     const o = evidence.get(rec.keywordId);
     rec.opportunity = o;
     if (o?.status === "qualified") {

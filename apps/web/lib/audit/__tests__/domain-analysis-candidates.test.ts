@@ -227,10 +227,14 @@ describe("the stored hundred", () => {
       basis: "model",
     });
     const { stored } = await analyse({}, { competitors: ["wix.com"] });
-    const terms = stored.map((r) => r.term);
-    expect(terms).toContain("newsletter deliverability");
-    expect(terms).not.toContain("wix");
-    expect(terms).not.toContain("free portfolio website");
+    const queued = stored.filter((r) => r.status === "new").map((r) => r.term);
+    expect(queued).toContain("newsletter deliverability");
+    expect(queued).not.toContain("wix");
+    expect(queued).not.toContain("free portfolio website");
+    // The refusal is kept, parked, with its verdict; the brand never got that far.
+    const parked = stored.filter((r) => r.status === "stored");
+    expect(parked.map((r) => r.term)).toEqual(["free portfolio website"]);
+    expect(parked[0].opportunity).toMatchObject({ status: "rejected", cause: "buyer_mismatch" });
   });
 
   it("a site that ranks for everything still stores a hundred, all of them rankings", async () => {

@@ -180,15 +180,21 @@ describe("the qasimcode signup", () => {
     expect(ids.indexOf("keywords")).toBeLessThan(ids.indexOf("authority"));
   });
 
-  it("refuses what the buyer test refuses, and stores the rest", async () => {
+  it("parks what the buyer test refuses, with the verdict, and queues the rest", async () => {
     discover.mockResolvedValue(ideas());
     fit.mockResolvedValue(refusing("do other countries have states", "other countries", "idea for small businesses"));
     const { stored } = await analyse();
-    const terms = stored.map((r) => r.term);
-    expect(terms).not.toContain("do other countries have states");
-    expect(terms).not.toContain("other countries");
-    expect(terms).not.toContain("idea for small businesses");
-    expect(terms).toContain("website design");
+    const queued = stored.filter((r) => r.status === "new").map((r) => r.term);
+    const parked = stored.filter((r) => r.status === "stored");
+    expect(queued).not.toContain("do other countries have states");
+    expect(queued).not.toContain("other countries");
+    expect(queued).not.toContain("idea for small businesses");
+    expect(queued).toContain("website design");
+    // Kept, not dropped: off the plan, with the reason, for a person to see.
+    const geography = parked.find((r) => r.term === "do other countries have states")!;
+    expect(geography.plan_excluded_at).toEqual(expect.any(String));
+    expect(geography.opportunity).toMatchObject({ status: "rejected", cause: "buyer_mismatch", reason: "not a buyer search" });
+    expect(parked.map((r) => r.term)).toContain("idea for small businesses");
   });
 
   it("asks the buyer test about every unproven term, once", async () => {
@@ -305,6 +311,6 @@ describe("the qasimcode signup", () => {
     const detail = analysis.layers.find((l) => l.id === "keywords")?.detail ?? "";
     expect(detail).toContain("1 from what the 2 competitors you named rank for");
     expect(detail).toContain("around the 2 things you said people buy from you");
-    expect(detail).toContain("2 dropped as not what your buyers would search");
+    expect(detail).toContain("2 parked as not what your buyers would search");
   });
 });
