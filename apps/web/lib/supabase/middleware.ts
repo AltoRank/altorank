@@ -51,6 +51,13 @@ export const PUBLIC_PREFIXES = [
   // OAuth discovery for the hosted MCP endpoint (RFC 8414 / 9728). An MCP
   // client reads these before anyone has signed in; that is their purpose.
   "/.well-known",
+  // robots.txt. Deny-by-default caught it too: a crawler asking this host what
+  // it may crawl was answered `307 -> /signin?next=%2Frobots.txt`, which every
+  // crawler reads as "no directives" and then falls back to its own default of
+  // crawling whatever it can reach - including /check, where an uncached URL
+  // makes this host fetch a third-party site. The rules are in
+  // `app/robots.txt/route.ts`.
+  "/robots.txt",
   // The connector consent screen. It handles the signed-out case itself,
   // by sending the person to /signin with a `next` back to the exact
   // request, which a blanket redirect here would drop on the floor.
