@@ -5,6 +5,7 @@ import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
 import { canSpend } from "@/lib/billing/spend-gate";
 import { analyseDomain } from "@/lib/audit/domain-analysis";
+import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
 import {
   MAX_ANALYSIS_ATTEMPTS,
   decideFirstLook,
@@ -135,6 +136,17 @@ async function run(request: Request) {
         analysisAttempts: (ws.analysis_attempts as number | null) ?? 0,
       });
 
+      // Search Console queries the sync has landed since the last look. The
+      // nightly analytics job keeps analytics_metrics current; this is what
+      // moves a query the site has started to appear for into the pool the
+      // planner draws from, without waiting for a re-onboarding. Database
+      // only, idempotent by term, and written not to throw.
+      const consoleSeeds = await seedKeywordsFromSearchConsole(supabase, {
+        id: workspaceId,
+        domain,
+        language: (ws.language as string | null) ?? null,
+      });
+
       results.push({
         workspaceId,
         domain,
@@ -146,7 +158,8 @@ async function run(request: Request) {
         headline: analysis.headline,
         readinessScore: analysis.readiness?.score ?? null,
         pagesCrawled: analysis.pagesCrawled,
-        keywordsFound: analysis.keywordsFound,
+        keywordsFound: analysis.keywordsFound + consoleSeeds.inserted,
+        consoleSeeded: consoleSeeds.inserted,
         layers: analysis.layers,
       });
     } catch (err) {

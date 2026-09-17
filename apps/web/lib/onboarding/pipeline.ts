@@ -36,6 +36,7 @@ import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { generateArticle } from "@/lib/content/generate";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
+import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
 import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
@@ -219,6 +220,21 @@ async function runPhases(
         maxPages: ONBOARDING_CRAWL_PAGES,
       });
       keywordsFound = analysis.keywordsFound;
+
+      // What Google has already measured for this site, before anything the
+      // model or a provider guessed. A workspace that connected Search Console
+      // (the onboarding wizard offers it) has the queries it appears for
+      // sitting in analytics_metrics; until 2026-09-17 nothing turned them
+      // into keyword rows, so the picker could not see them. DataForSEO's
+      // index does not know a young domain at all (altorank.co: 0 ranked
+      // rows against 26 Search Console queries), which is exactly the
+      // customer onboarding meets most.
+      //
+      // Database only, no provider call, and idempotent by term. Nothing here
+      // can fail the phase: a workspace without the connection gets a
+      // one-line "nothing synced" and the run carries on.
+      const consoleSeeds = await seedKeywordsFromSearchConsole(supabase, workspace);
+      keywordsFound += consoleSeeds.inserted;
       // "Nothing rankable found for this site yet" is only true when we were
       // able to look. When the site could not be read, `analyseDomain` stores
       // nothing on purpose and says why on its keywords layer - quoting that
@@ -232,7 +248,10 @@ async function runPhases(
       // and print "Found 14 keywords worth tracking." A person reading the log
       // could not tell a good 14 from qasimcode.com's 14, eleven of which were
       // a rival's name or somebody shopping for a free portfolio site.
-      const breakdown = analysis.layers.find((l) => l.id === "keywords" && l.status === "ok")?.detail;
+      const analysisBreakdown = analysis.layers.find((l) => l.id === "keywords" && l.status === "ok")?.detail;
+      const breakdown = consoleSeeds.inserted
+        ? [analysisBreakdown, consoleSeeds.detail].filter(Boolean).join(" ")
+        : analysisBreakdown;
       // When the crawl itself failed, that is the news - not the keywords
       // layer's downstream "too little readable text", which packhub.io was
       // shown for a site with 379 words on its homepage. Quote the crawl's
