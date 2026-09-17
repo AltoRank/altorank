@@ -11,10 +11,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * that finished or skipped the wizard, goes out the ordinary way.
  */
 
-const { generateArticle, sendArticleDraftedEmails, announceSetupUnfinished, sweepUnfinishedSetups, announceNothingWritten } = vi.hoisted(
+const { generateArticle, announceDraftBatch, announceSetupUnfinished, sweepUnfinishedSetups, announceNothingWritten } = vi.hoisted(
   () => ({
     generateArticle: vi.fn(),
-    sendArticleDraftedEmails: vi.fn(),
+    announceDraftBatch: vi.fn(),
     announceSetupUnfinished: vi.fn(),
     sweepUnfinishedSetups: vi.fn(),
     announceNothingWritten: vi.fn(),
@@ -69,7 +69,10 @@ vi.mock("@/lib/email/account-recipients", () => ({
   accountBillingRecipients: async () => [],
   userEmail: async () => null,
 }));
-vi.mock("@/lib/email/article-emails", () => ({ sendArticleDraftedEmails: (...a: unknown[]) => sendArticleDraftedEmails(...a) }));
+vi.mock("@/lib/email/draft-batch", () => ({
+  announceDraftBatch: (...a: unknown[]) => announceDraftBatch(...a),
+  sweepUnannouncedDrafts: async () => [],
+}));
 vi.mock("@/lib/email/schedule-events", () => ({
   announceNothingWritten: (...a: unknown[]) => announceNothingWritten(...a),
   announcePausedSites: async () => [],
@@ -91,7 +94,7 @@ beforeEach(() => {
   process.env.CRON_SECRET = "s";
   workspaces = [];
   generateArticle.mockReset().mockResolvedValue(DRAFT);
-  sendArticleDraftedEmails.mockReset().mockResolvedValue({ sent: 1, skipped: 0, failed: 0 });
+  announceDraftBatch.mockReset().mockResolvedValue("1 draft, emailed 1");
   announceSetupUnfinished.mockReset().mockResolvedValue("emailed 1");
   sweepUnfinishedSetups.mockReset().mockResolvedValue([]);
   announceNothingWritten.mockReset().mockResolvedValue("emailed 1");
@@ -110,36 +113,36 @@ describe("cron/generate and the stalled wizard", () => {
     expect(body.generated).toBe(1);
     expect(generateArticle).toHaveBeenCalledTimes(1);
     expect(announceSetupUnfinished).toHaveBeenCalledWith(expect.anything(), { accountId: "ag-1", workspaceId: "ws-1", domain: "acme.com" });
-    expect(sendArticleDraftedEmails).not.toHaveBeenCalled();
+    expect(announceDraftBatch).not.toHaveBeenCalled();
     expect(body.results[0].detail).toContain("setup email: emailed 1");
   });
 
   it("announces the ordinary way once the wizard was finished", async () => {
     workspaces = [{ ...stalled, onboarded_at: "2026-09-07T10:00:00Z" }];
     await GET(request());
-    expect(sendArticleDraftedEmails).toHaveBeenCalledTimes(1);
+    expect(announceDraftBatch).toHaveBeenCalledTimes(1);
     expect(announceSetupUnfinished).not.toHaveBeenCalled();
   });
 
   /**
-   * The draft-ready mail goes through sendOnce now, so the cron has to hand it
-   * a client to claim against and the workspace it is about - without those the
-   * ledger cannot key the send and the dedupe silently does nothing.
+   * The draft-ready mail goes through the batch announcer now (one mail per
+   * workspace per day, keyed in the ledger), so the cron hands it a client,
+   * the workspace, and the reasons the single-draft template still shows.
    */
-  it("passes the client and the workspace scope to the draft-ready send", async () => {
+  it("hands the draft to the batch announcer with its reasons", async () => {
     workspaces = [{ ...stalled, onboarded_at: "2026-09-07T10:00:00Z" }];
-    await GET(request());
-    const [client, recipients, payload, scope] = sendArticleDraftedEmails.mock.calls[0]!;
+    const body = await (await GET(request())).json();
+    const [client, workspaceId, opts] = announceDraftBatch.mock.calls[0]!;
     expect(client).toBeTruthy();
-    expect(recipients).toEqual(["owner@acme.co"]);
-    expect(payload).toMatchObject({ articleId: "art-1", domain: "acme.com" });
-    expect(scope).toEqual({ accountId: "ag-1", workspaceId: "ws-1" });
+    expect(workspaceId).toBe("ws-1");
+    expect((opts as { reasonsFor: Record<string, unknown> }).reasonsFor).toHaveProperty("art-1");
+    expect(body.results[0].detail).toContain("1 draft, emailed 1");
   });
 
   it("treats a skipped wizard as finished for this purpose", async () => {
     workspaces = [{ ...stalled, onboarding_skipped_at: "2026-09-07T10:00:00Z" }];
     await GET(request());
-    expect(sendArticleDraftedEmails).toHaveBeenCalledTimes(1);
+    expect(announceDraftBatch).toHaveBeenCalledTimes(1);
     expect(announceSetupUnfinished).not.toHaveBeenCalled();
   });
 
