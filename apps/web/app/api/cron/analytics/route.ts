@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
-import { syncWorkspaceAnalytics, type SyncableIntegration } from "@/lib/google/sync";
+import { syncWorkspaceAnalytics, syncDates, type SyncableIntegration } from "@/lib/google/sync";
 import { syncBingWorkspace, type BingIntegration, type BingSyncResult } from "@/lib/bing/sync";
 import { observedCron } from "@/lib/observability/cron";
 
 /**
- * Daily cron: sync GA4 + GSC metrics for all connected workspaces, then Bing.
+ * Daily cron: sync GA4 + GSC metrics for the last SYNC_LAG_DAYS days for all
+ * connected workspaces, then Bing.
  */
 async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
@@ -45,13 +46,16 @@ async function run(request: Request) {
     return NextResponse.json({ error: integrationsError.message }, { status: 500 });
   }
 
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const dateStr = yesterday.toISOString().split("T")[0];
+  // Not just yesterday: Search Console has not published yesterday yet when
+  // this runs, and a day asked for once and never again is a day lost. See
+  // SYNC_LAG_DAYS for what that did to production.
+  const dates = syncDates();
 
   const results: Array<{ workspaceId: string; ga4: number; gsc: number; error?: string; needsReconnect?: boolean }> = [];
   for (const integration of integrations ?? []) {
-    results.push(await syncWorkspaceAnalytics(supabase, integration as SyncableIntegration, dateStr));
+    for (const dateStr of dates) {
+      results.push(await syncWorkspaceAnalytics(supabase, integration as SyncableIntegration, dateStr));
+    }
   }
 
   // Bing: the last week, replaced in place, because Bing revises recent days.
