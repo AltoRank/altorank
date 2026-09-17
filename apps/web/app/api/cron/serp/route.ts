@@ -141,6 +141,11 @@ async function run(request: Request) {
         .select("*")
         .eq("workspace_id", ws.id)
         .in("status", ["planned", "shipped"])
+        // A term Search Console put in the pool gets its position from
+        // Search Console, refreshed nightly by lib/gsc/seed.ts for free and
+        // for the site's real audience rather than one SERP locale. Buying a
+        // SERP for it would pay to know less.
+        .neq("source", "gsc")
         .order("created_at", { ascending: false })
         .limit(TRACK_CAP);
 

@@ -284,6 +284,37 @@ const STRIKING_MIN = 11;
 const STRIKING_MAX = 20;
 /** Already winning: leave it alone rather than competing with ourselves. */
 const ALREADY_WON = 10;
+/**
+ * How far past the striking band a *measured* term still counts as one.
+ *
+ * The 11-20 band was set for positions bought from a SERP snapshot. Search
+ * Console reports a different kind of position: an impression-weighted mean
+ * over the site's real audience, and it comes with the impressions that
+ * prove people saw the listing. A term Google has shown a site 171 times at
+ * position 29 is stronger evidence than a 9,900/mo volume estimate for a
+ * term the site has never appeared for - and until 2026-09-17 the scorer
+ * ranked them the other way round (altorank.co: "site rank" above
+ * "ranking coach alternative"; validate:picks 1/5). Measured demand extends
+ * the band; a bare position from a SERP snapshot still does not.
+ */
+const STRIKING_MEASURED_MAX = 40;
+const STRIKING_MEASURED_MIN_IMPRESSIONS = 50;
+
+export type PositionBand = "won" | "striking" | "ranking";
+
+/** Which band a position falls in, given how much demand was measured behind it. */
+export function positionBand(position: number | null, impressions: number | null): PositionBand | null {
+  if (position === null) return null;
+  if (position <= ALREADY_WON) return "won";
+  if (position >= STRIKING_MIN && position <= STRIKING_MAX) return "striking";
+  if (
+    position > STRIKING_MAX &&
+    position <= STRIKING_MEASURED_MAX &&
+    (impressions ?? 0) >= STRIKING_MEASURED_MIN_IMPRESSIONS
+  )
+    return "striking";
+  return "ranking";
+}
 
 /**
  * Volume contributes on a log scale.
@@ -538,15 +569,20 @@ export async function recommendKeywords(
 
     let action: RecommendedAction = "write";
 
-    if (position !== null && position <= ALREADY_WON) {
+    const band = positionBand(position, impressions);
+    if (band === "won") {
       action = "skip";
       score *= 0.15;
       reasons.push(`already ranking at position ${position}, leave it alone`);
-    } else if (position !== null && position >= STRIKING_MIN && position <= STRIKING_MAX) {
+    } else if (band === "striking") {
       action = existingArticleId ? "refresh" : "write";
       score *= 2.5;
-      reasons.push(`position ${position} is striking distance, one revision from page one`);
-    } else if (position !== null) {
+      reasons.push(
+        position! <= STRIKING_MAX
+          ? `position ${position} is striking distance, one revision from page one`
+          : `position ${position} with ${impressions!.toLocaleString()} impressions: Google already shows this site for it, one good article from page one`,
+      );
+    } else if (band === "ranking") {
       score *= 1.2;
       reasons.push(`ranking at position ${position}`);
     }
@@ -579,7 +615,16 @@ export async function recommendKeywords(
     // An observed position is the test result this is asking for, and it is
     // already in scope. Where the row came from is bookkeeping; whether Google
     // put the site on the page is evidence.
-    const proven = Boolean(existingArticleId && position !== null && position <= 20);
+    // What "proven" was in code until 2026-09-17: an existing article AND a
+    // position inside the top 20. The comment above says a ranking is a test
+    // result; the code required an article as well, so a term Google shows
+    // the site for on page three - "ranking coach alternative", position 29,
+    // 171 impressions - was still handed to the vocabulary filter and told
+    // "coach" does not appear anywhere on the site. It does not. Google
+    // shows the site anyway. Measured demand behind the position is the
+    // test result, with or without an article; the article only decides
+    // write-vs-refresh, and that is handled above.
+    const proven = position !== null && (position <= 20 || (impressions ?? 0) >= STRIKING_MEASURED_MIN_IMPRESSIONS);
     const relevance = proven
       ? { score: 1, matched: [], unmatched: [], reason: "the site already ranks for this" }
       : scoreRelevance(k.term as string, profile, subject);
@@ -662,7 +707,16 @@ export async function recommendKeywords(
       );
     }
 
-    const { quality, note } = assessKeywordQuality(k.term as string, allTerms);
+    // The quality heuristic exists for provider fragments - split words,
+    // truncated phrases, function-word openers - which is what a keyword
+    // index returns. A query with measured impressions is, by definition, a
+    // query somebody typed: "better than ranking coach" is a real search
+    // that read as "a sentence fragment rather than a query" and was scored
+    // at 0.3 with 139 impressions behind it.
+    const { quality, note } =
+      (impressions ?? 0) >= STRIKING_MEASURED_MIN_IMPRESSIONS
+        ? { quality: "ok" as KeywordQuality, note: null }
+        : assessKeywordQuality(k.term as string, allTerms);
     if (quality === "suspect" && note) {
       // Scored down as well as flagged, so a suspect term does not sit at the
       // top of a human's queue either.
