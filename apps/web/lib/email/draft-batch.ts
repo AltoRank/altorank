@@ -61,6 +61,7 @@ import {
   type EmailStat,
 } from "./layout";
 import { getDestinations } from "@/lib/publishing/destinations";
+import { holdUrl } from "@/lib/publishing/hold-link";
 import type { FactCheckReport } from "@/lib/ai/fact-check";
 
 /** The digest's own slug in `sent_emails`. */
@@ -213,6 +214,37 @@ export interface AnnounceOptions {
   since?: Date;
   /** Ignore drafts younger than SETTLE_MS. The sweep sets this; the fan-out does not. */
   settledOnly?: boolean;
+  /** Why the cron picked a draft's keyword, for the single-draft mail's "chosen because" list. */
+  reasonsFor?: Record<string, readonly string[]>;
+}
+
+/** The line a caller gets when today's mail already went and the drafts wait for tomorrow's. */
+export const WAITS_FOR_TOMORROW = "waits for tomorrow's digest";
+
+/**
+ * Whether this workspace was already told about a draft today (UTC).
+ *
+ * One announcement a day, whatever shape it takes. The generate cron runs four
+ * times a day and used to mail each draft the moment it was written, so a
+ * workspace producing at pace heard from us four times before lunch, on top of
+ * the hold digest. A draft written after today's mail is not lost: it stays
+ * unclaimed in the ledger and the first announcement tomorrow lists it.
+ */
+export async function announcedToday(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  now: Date,
+): Promise<boolean> {
+  const dayStart = `${now.toISOString().slice(0, 10)}T00:00:00.000Z`;
+  const { data, error } = await supabase
+    .from("sent_emails")
+    .select("sent_at")
+    .eq("workspace_id", workspaceId)
+    .in("email_type", [ARTICLE_DRAFTED, DRAFT_BATCH])
+    .gte("sent_at", dayStart)
+    .limit(1);
+  if (error) throw new Error(`could not read the draft ledger: ${error.message}`);
+  return (data ?? []).length > 0;
 }
 
 type WorkspaceRow = {
@@ -294,6 +326,9 @@ export async function announceDraftBatch(
     const announced = new Set((told ?? []).map((r) => r.subject_id as string));
     const fresh = candidates.filter((a) => !announced.has(a.id));
     if (!fresh.length) return "no drafts to announce";
+    if (await announcedToday(supabase, workspaceId, now)) {
+      return `${fresh.length} draft${fresh.length === 1 ? "" : "s"} ${WAITS_FOR_TOMORROW}`;
+    }
 
     const to = await accountRecipients(supabase, ws.account_id, workspaceId);
     if (!normalizeRecipients(to).length) return "nobody to email";
@@ -336,12 +371,13 @@ export async function announceDraftBatch(
               title: fresh[0]!.title ?? "Untitled draft",
               wordCount: fresh[0]!.word_count ?? 0,
               verdict: verdictOf(fresh[0]!.fact_check_verdict),
-              reasons: [],
+              reasons: opts.reasonsFor?.[fresh[0]!.id] ?? [],
               articleId: fresh[0]!.id,
               volume: byKeyword.get(fresh[0]!.keyword_id ?? "")?.volume,
               difficulty: byKeyword.get(fresh[0]!.keyword_id ?? "")?.difficulty,
               cmsConnected,
               autoApproveAfter,
+              holdUrlFor: autoApproveAfter ? (to) => holdUrl(fresh[0]!.id, to) : undefined,
             },
             scope,
           )
@@ -486,7 +522,7 @@ export async function sweepUnannouncedDrafts(
 
     for (const workspaceId of new Set((data ?? []).map((r) => r.workspace_id as string))) {
       const line = await announceDraftBatch(supabase, workspaceId, { now, settledOnly: true });
-      if (line !== "no drafts to announce" && line !== "nobody to email") {
+      if (line !== "no drafts to announce" && line !== "nobody to email" && !line.endsWith(WAITS_FOR_TOMORROW)) {
         lines.push(`${workspaceId}: ${line}`);
       }
     }
