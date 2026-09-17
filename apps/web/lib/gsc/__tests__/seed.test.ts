@@ -87,6 +87,30 @@ describe("seedKeywordsFromSearchConsole", () => {
     expect(db.tables.keyword_rankings[0]).toMatchObject({ position: 28 });
   });
 
+  it("refreshes the position of a term it stored on an earlier run", async () => {
+    const db = fakeDb({
+      analytics_metrics: [metric("rankingcoach alternative", 300, 21, "2026-09-15")],
+      keywords: [{ id: "k1", workspace_id: "ws1", term: "rankingcoach alternative", source: "gsc" }],
+      keyword_rankings: [{ keyword_id: "k1", position: 28, checked_at: "2026-09-01T00:00:00Z" }],
+    });
+    const r = await seedKeywordsFromSearchConsole(db.client, ws, { now });
+    expect(r.inserted).toBe(0);
+    expect(r.refreshed).toBe(1);
+    expect(db.tables.keyword_rankings).toHaveLength(2);
+    expect(db.tables.keyword_rankings[1]).toMatchObject({ keyword_id: "k1", position: 21 });
+  });
+
+  it("does not touch the position of a term another source owns", async () => {
+    const db = fakeDb({
+      analytics_metrics: [metric("rankingcoach alternative", 300, 21)],
+      keywords: [{ id: "k1", workspace_id: "ws1", term: "rankingcoach alternative", source: "ideas" }],
+      keyword_rankings: [],
+    });
+    const r = await seedKeywordsFromSearchConsole(db.client, ws, { now });
+    expect(r.refreshed).toBe(0);
+    expect(db.tables.keyword_rankings).toHaveLength(0);
+  });
+
   it("leaves a term already in the pool alone, from any source", async () => {
     const db = fakeDb({
       analytics_metrics: [metric("rankingcoach alternative", 215, 28)],

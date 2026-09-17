@@ -126,6 +126,8 @@ export interface SeedResult {
   inserted: number;
   /** Seeds already in the pool by term; left as they were. */
   existing: number;
+  /** Existing gsc-source rows given a fresh ranking row from this window. */
+  refreshed: number;
   brand: number;
   /** One line for a phase log or a layer. */
   detail: string;
@@ -146,7 +148,7 @@ export async function seedKeywordsFromSearchConsole(
   workspace: { id: string; domain: string | null; language?: string | null },
   opts?: { lookbackDays?: number; minImpressions?: number; maxPosition?: number; limit?: number; now?: Date },
 ): Promise<SeedResult> {
-  const empty = (detail: string): SeedResult => ({ candidates: 0, inserted: 0, existing: 0, brand: 0, detail, terms: [] });
+  const empty = (detail: string): SeedResult => ({ candidates: 0, inserted: 0, existing: 0, refreshed: 0, brand: 0, detail, terms: [] });
   if (!workspace.domain) return empty("no domain to read Search Console for");
   // A seeding step must never cost a run its keywords phase: the analysis
   // that ran before it is already stored. Whatever breaks here is reported
@@ -187,24 +189,41 @@ async function seed(
     return { ...empty(`Search Console has ${rows.length} query rows but none at ${SEED_MIN_IMPRESSIONS}+ impressions inside the top ${SEED_MAX_POSITION}`), brand: selection.brand };
   }
 
-  const { data: existingRows } = await supabase.from("keywords").select("id, term").eq("workspace_id", workspace.id);
-  const known = new Set(((existingRows ?? []) as Array<{ term: string }>).map((k) => k.term.trim().toLowerCase()));
+  const { data: existingRows } = await supabase.from("keywords").select("id, term, source").eq("workspace_id", workspace.id);
+  const byTerm = new Map(
+    ((existingRows ?? []) as Array<{ id: string; term: string; source: string | null }>).map((k) => [k.term.trim().toLowerCase(), k]),
+  );
+  const checkedAt = now.toISOString();
 
-  const fresh = selection.seeds.filter((s) => !known.has(s.term));
+  // Terms this seeder stored on an earlier run get their position brought up
+  // to date from the same window, as a new ranking row. This is what makes a
+  // gsc term's position real on the keywords page night after night: Search
+  // Console reports it for free, so cron/serp does not buy a SERP for these
+  // (it skips source = 'gsc'). Terms from any other source are left to the
+  // tracker they already have.
+  const refreshRows = selection.seeds.flatMap((s) => {
+    const row = byTerm.get(s.term);
+    return row && row.source === "gsc" ? [{ keyword_id: row.id, position: s.position, url: null, checked_at: checkedAt }] : [];
+  });
+  if (refreshRows.length) await supabase.from("keyword_rankings").insert(refreshRows);
+
+  const fresh = selection.seeds.filter((s) => !byTerm.has(s.term));
   const existing = selection.seeds.length - fresh.length;
   if (!fresh.length) {
     return {
       candidates: selection.seeds.length,
       inserted: 0,
       existing,
+      refreshed: refreshRows.length,
       brand: selection.brand,
-      detail: `${selection.seeds.length} Search Console ${plural(selection.seeds.length, "query", "queries")} already in the pool`,
+      detail:
+        `${selection.seeds.length} Search Console ${plural(selection.seeds.length, "query", "queries")} already in the pool` +
+        (refreshRows.length ? `, ${refreshRows.length} ${plural(refreshRows.length, "position", "positions")} refreshed` : ""),
       terms: [],
     };
   }
 
   const language = workspace.language ?? "en";
-  const checkedAt = now.toISOString();
   const rowsToInsert = fresh.map((s) => ({
     workspace_id: workspace.id,
     term: s.term,
@@ -221,7 +240,7 @@ async function seed(
     source_ref: "search console",
   }));
   const { data: inserted, error: insertError } = await supabase.from("keywords").insert(rowsToInsert).select("id, term");
-  if (insertError) return { ...empty(`could not store Search Console keywords: ${insertError.message}`), candidates: selection.seeds.length, brand: selection.brand };
+  if (insertError) return { ...empty(`could not store Search Console keywords: ${insertError.message}`), candidates: selection.seeds.length, refreshed: refreshRows.length, brand: selection.brand };
 
   const idByTerm = new Map(((inserted ?? []) as Array<{ id: string; term: string }>).map((r) => [r.term.trim().toLowerCase(), r.id]));
   const rankings = fresh
@@ -234,11 +253,13 @@ async function seed(
     candidates: selection.seeds.length,
     inserted: fresh.length,
     existing,
+    refreshed: refreshRows.length,
     brand: selection.brand,
     detail:
       `${fresh.length} from Search Console, ${plural(fresh.length, "query", "queries")} the site already appears for` +
       (close ? `, ${close} in striking distance` : "") +
-      (existing ? ` (${existing} already in the pool)` : ""),
+      (existing ? ` (${existing} already in the pool)` : "") +
+      (refreshRows.length ? `, ${refreshRows.length} ${plural(refreshRows.length, "position", "positions")} refreshed` : ""),
     terms: fresh.map((s) => s.term),
   };
 }
