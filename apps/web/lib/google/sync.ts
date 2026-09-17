@@ -106,8 +106,14 @@ export async function syncWorkspaceAnalytics(
     if (integration.config?.ga4PropertyId) {
       const metrics = await fetchGA4Metrics(accessToken, integration.config.ga4PropertyId, dateStr, dateStr);
       const rows = metrics.map((m) => ({ workspace_id: ws.id, source: "ga4" as const, metric_date: dateStr, pageviews: m.pageviews, sessions: m.sessions, page_url: m.pageUrl }));
-      await supabase.from("analytics_metrics").delete().eq("workspace_id", ws.id).eq("source", "ga4").eq("metric_date", dateStr);
-      if (rows.length) { await supabase.from("analytics_metrics").insert(rows); ga4Count = rows.length; }
+      // An empty answer means the provider has not written that day yet, not
+      // that the day was empty. Now that the cron re-asks for recent days,
+      // deleting before checking would wipe a day that already landed.
+      if (rows.length) {
+        await supabase.from("analytics_metrics").delete().eq("workspace_id", ws.id).eq("source", "ga4").eq("metric_date", dateStr);
+        await supabase.from("analytics_metrics").insert(rows);
+        ga4Count = rows.length;
+      }
     }
 
     if (ws.domain) {
@@ -138,8 +144,11 @@ export async function syncWorkspaceAnalytics(
         queryPages,
         articleIdByUrl: articleIndex((liveArticles ?? []) as Array<{ id: string; published_url: string | null }>),
       });
-      await supabase.from("analytics_metrics").delete().eq("workspace_id", ws.id).eq("source", "gsc").eq("metric_date", dateStr);
-      if (rows.length) { await supabase.from("analytics_metrics").insert(rows); gscCount = rows.length; }
+      if (rows.length) {
+        await supabase.from("analytics_metrics").delete().eq("workspace_id", ws.id).eq("source", "gsc").eq("metric_date", dateStr);
+        await supabase.from("analytics_metrics").insert(rows);
+        gscCount = rows.length;
+      }
     }
 
     return { workspaceId: ws.id, ga4: ga4Count, gsc: gscCount };
@@ -155,6 +164,34 @@ export async function syncWorkspaceAnalytics(
     }
     return { workspaceId: ws.id, ga4: 0, gsc: 0, error: message };
   }
+}
+
+/**
+ * How many days back the nightly sync reaches.
+ *
+ * Search Console publishes a day's data two to three days after the day. The
+ * nightly cron used to ask for exactly yesterday, once, and never again: the
+ * request returned zero rows because Google had not written that day yet, the
+ * cron logged `synced: 3, success: true`, and the day was permanently skipped.
+ * Every workspace's GSC series stopped at the last day the connect-time
+ * backfill had covered - 2026-08-31 on production, found 2026-09-17 - while
+ * the job reported a clean run every night in between.
+ *
+ * Three days covers the lag with one to spare. Each day is deleted-then-
+ * inserted for the workspace and source, so re-syncing a day that already
+ * landed is idempotent, not a duplicate.
+ */
+export const SYNC_LAG_DAYS = 3;
+
+/** The dates the nightly sync asks for, newest first: D-1 back to D-SYNC_LAG_DAYS. */
+export function syncDates(now: Date = new Date(), lagDays: number = SYNC_LAG_DAYS): string[] {
+  const out: string[] = [];
+  for (let i = 1; i <= lagDays; i++) {
+    const d = new Date(now);
+    d.setUTCDate(d.getUTCDate() - i);
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
 }
 
 /** Yesterday back to `days` ago, one call set per day. Search Console lags
