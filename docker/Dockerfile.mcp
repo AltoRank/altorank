@@ -1,0 +1,51 @@
+# AltoRank MCP server, stdio transport.
+#
+# Directories that grade MCP servers (Glama and similar) build this image and
+# speak JSON-RPC to it over stdio to enumerate the tools. It is also a fine way
+# to run the server locally without a Node toolchain:
+#
+#   docker build -f docker/Dockerfile.mcp -t altorank-mcp .
+#   docker run --rm -i -e ALTORANK_API_KEY=ar_... altorank-mcp
+#
+# Build from the repo root, not from this directory.
+#
+# This is NOT the dashboard image — that is docker/Dockerfile. The hosted
+# equivalent of this server is https://app.altorank.co/api/mcp, which speaks
+# streamable-http behind OAuth instead of stdio.
+
+# ── deps ──────────────────────────────────────────────────────────────────────
+FROM node:22-alpine AS deps
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/
+# Dev dependencies are needed at runtime here, unlike the dashboard image: the
+# entrypoint runs the TypeScript source through tsx rather than a compiled
+# bundle. --force for the same reason as docker/Dockerfile: the lockfile
+# carries darwin-only optional binaries that EBADPLATFORM on linux.
+RUN npm ci --workspace=altorank-web --include-workspace-root --force
+
+# ── runtime ───────────────────────────────────────────────────────────────────
+FROM node:22-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
+
+# Never run as root.
+RUN addgroup -g 1001 -S nodejs && adduser -S altorank -u 1001
+
+COPY --from=deps --chown=altorank:nodejs /app/node_modules ./node_modules
+COPY --chown=altorank:nodejs package.json ./
+# Only the subtree the stdio entrypoint actually reaches, so the image does not
+# carry the Next application, its routes or its build output.
+COPY --chown=altorank:nodejs apps/web/package.json ./apps/web/
+COPY --chown=altorank:nodejs apps/web/tsconfig.json ./apps/web/
+COPY --chown=altorank:nodejs apps/web/scripts ./apps/web/scripts
+COPY --chown=altorank:nodejs apps/web/lib ./apps/web/lib
+
+USER altorank
+WORKDIR /app/apps/web
+
+# stdio, so no port is exposed. The read-only tools answer without credentials;
+# the account tools need ALTORANK_API_KEY and say so rather than failing at
+# startup, which is what lets a directory enumerate the tool list unauthenticated.
+ENTRYPOINT ["npx", "tsx", "scripts/mcp.ts"]
