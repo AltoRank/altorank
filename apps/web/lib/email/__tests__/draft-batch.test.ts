@@ -318,3 +318,44 @@ describe("sweepUnannouncedDrafts", () => {
     expect(html).not.toContain("Draft number 3");
   });
 });
+
+describe("one announcement a day", () => {
+  const sentToday = (email_type: string) => ({
+    email_type,
+    subject_id: "ws1:a0",
+    recipient: "owner@example.test",
+    workspace_id: "ws1",
+    sent_at: new Date(NOW.getTime() - 3 * 60 * 60 * 1000).toISOString(),
+  });
+
+  it("holds a draft written after today's mail for tomorrow's digest", async () => {
+    const d = db({ sent_emails: [sentToday("article_drafted")] });
+    expect(await announceDraftBatch(d.client, "ws1", { now: NOW })).toBe("3 drafts waits for tomorrow's digest");
+    expect(sendTransactionalEmail).not.toHaveBeenCalled();
+    // Nothing was claimed, so tomorrow's first announcement lists all three.
+    const tomorrow = new Date(NOW.getTime() + 24 * 60 * 60 * 1000);
+    expect(await announceDraftBatch(d.client, "ws1", { now: tomorrow })).toBe("3 drafts, emailed 1");
+  });
+
+  it("counts a batch digest as today's mail too", async () => {
+    const d = db({ sent_emails: [sentToday("article_batch_drafted")] });
+    expect(await announceDraftBatch(d.client, "ws1", { now: NOW })).toMatch(/waits for tomorrow/);
+  });
+
+  it("does not let yesterday's mail block today's", async () => {
+    const yesterday = { ...sentToday("article_drafted"), sent_at: new Date(NOW.getTime() - 26 * 60 * 60 * 1000).toISOString() };
+    const d = db({ sent_emails: [yesterday] });
+    expect(await announceDraftBatch(d.client, "ws1", { now: NOW })).toBe("3 drafts, emailed 1");
+  });
+
+  it("keeps a waiting workspace out of the sweep's report", async () => {
+    const d = db({ sent_emails: [sentToday("article_drafted")] });
+    expect(await sweepUnannouncedDrafts(d.client, NOW)).toEqual([]);
+  });
+
+  it("passes the cron's reasons into the single-draft mail", async () => {
+    const d = db({ articles: [draft(1)] });
+    await announceDraftBatch(d.client, "ws1", { now: NOW, reasonsFor: { a1: ["nobody else ranks for it"] } });
+    expect(sendTransactionalEmail.mock.calls[0]![2] as string).toContain("nobody else ranks for it");
+  });
+});

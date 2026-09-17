@@ -61,11 +61,62 @@ export function renderHeldDigest(domain: string | null, held: readonly HeldDraft
   };
 }
 
+/** A window opener this old is the last time the team was told; the next digest reminds. */
+export const HOLD_REMINDER_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
+/** Nothing sent for this long means the hold ended and a fresh one may open a new window. */
+export const HOLD_WINDOW_RESET_MS = 14 * 24 * 60 * 60 * 1000;
+
+const REMINDER_SUFFIX = ":reminder";
+
+export type HoldDigestSlot =
+  | { kind: "opener" | "reminder"; subjectId: string }
+  | { kind: "skip"; reason: string };
+
+/**
+ * Which digest, if any, this hold window still owes the workspace.
+ *
+ * Keyed on the window, not the day. The ledger held one row per (workspace,
+ * UTC date), so a workspace whose drafts sat in review got the same list every
+ * morning: a real account collected eight of these in eight days and never
+ * signed in again. A window opens with the first digest, may send one
+ * reminder once the opener is HOLD_REMINDER_AFTER_MS old, and then says
+ * nothing until the ledger has been quiet for HOLD_WINDOW_RESET_MS. The
+ * opener's key carries the day it opened; the reminder's key is the opener's
+ * plus a suffix, so a run that repeats is still caught by the ledger.
+ */
+export async function holdDigestSlot(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  now: Date,
+): Promise<HoldDigestSlot> {
+  const { data, error } = await supabase
+    .from("sent_emails")
+    .select("subject_id, sent_at")
+    .eq("email_type", "auto_approve_held")
+    .eq("workspace_id", workspaceId)
+    .order("sent_at", { ascending: false })
+    .limit(1);
+  if (error) throw new Error(`could not read the hold ledger: ${error.message}`);
+  const last = data?.[0] as { subject_id: string; sent_at: string } | undefined;
+  const day = now.toISOString().slice(0, 10);
+  if (!last) return { kind: "opener", subjectId: `${workspaceId}:hold:${day}` };
+
+  const age = now.getTime() - new Date(last.sent_at).getTime();
+  if (age >= HOLD_WINDOW_RESET_MS) return { kind: "opener", subjectId: `${workspaceId}:hold:${day}` };
+  if (last.subject_id.endsWith(REMINDER_SUFFIX)) {
+    return { kind: "skip", reason: "reminded already this hold window" };
+  }
+  if (age >= HOLD_REMINDER_AFTER_MS) {
+    return { kind: "reminder", subjectId: `${last.subject_id}${REMINDER_SUFFIX}` };
+  }
+  return { kind: "skip", reason: `told ${Math.floor(age / 86_400_000)} day(s) ago, reminder waits` };
+}
+
 /**
  * From one cron pass: group the actionable holds by workspace and send each
- * workspace's team one digest for the day. Keyed by (workspace, UTC date) in
- * `sent_emails`, so a cron that runs more than once a day still sends once.
- * Never throws; returns one line per workspace for the run's JSON.
+ * workspace's team one digest per hold window, plus one reminder after three
+ * days (`holdDigestSlot`). Never throws; returns one line per workspace for
+ * the run's JSON.
  */
 export async function sendHeldDigests(
   supabase: SupabaseClient,
@@ -82,9 +133,13 @@ export async function sendHeldDigests(
   if (!byWorkspace.size) return [];
 
   const lines: string[] = [];
-  const day = now.toISOString().slice(0, 10);
   for (const [workspaceId, held] of byWorkspace) {
     try {
+      const slot = await holdDigestSlot(supabase, workspaceId, now);
+      if (slot.kind === "skip") {
+        lines.push(`${workspaceId}: ${held.length} held, ${slot.reason}`);
+        continue;
+      }
       const [{ data: ws }, { data: articles }] = await Promise.all([
         supabase.from("workspaces").select("account_id, domain").eq("id", workspaceId).maybeSingle(),
         supabase.from("articles").select("id, title").in("id", held.map((h) => h.articleId)),
@@ -96,10 +151,10 @@ export async function sendHeldDigests(
       const out = await sendOnce(
         supabase,
         to,
-        { type: "auto_approve_held", subjectId: `${workspaceId}:${day}`, category: "drafts", accountId: ws.account_id as string, workspaceId },
+        { type: "auto_approve_held", subjectId: slot.subjectId, category: "drafts", accountId: ws.account_id as string, workspaceId },
         () => renderHeldDigest((ws.domain as string | null) ?? null, drafts),
       );
-      lines.push(`${workspaceId}: ${drafts.length} held, ${describeSendOutcome(out)}`);
+      lines.push(`${workspaceId}: ${drafts.length} held, ${slot.kind}, ${describeSendOutcome(out)}`);
     } catch (err) {
       lines.push(`${workspaceId}: digest failed (${err instanceof Error ? err.message : "unknown"})`);
     }

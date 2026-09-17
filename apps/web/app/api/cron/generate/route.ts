@@ -17,12 +17,7 @@ import { sweepStaleDrafts } from "@/lib/content/stale-drafts";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
 import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
 import { readFrozenEntries } from "@/lib/plan/frozen";
-import { accountRecipients } from "@/lib/email/account-recipients";
-import { sendArticleDraftedEmails } from "@/lib/email/article-emails";
-import { sweepUnannouncedDrafts } from "@/lib/email/draft-batch";
-import { describeSendOutcome } from "@/lib/email/send-once";
-import { getDestinations } from "@/lib/publishing/destinations";
-import { holdUrl } from "@/lib/publishing/hold-link";
+import { announceDraftBatch, sweepUnannouncedDrafts } from "@/lib/email/draft-batch";
 import {
   announceNothingWritten,
   announcePausedSites,
@@ -467,39 +462,15 @@ async function run(request: Request) {
           });
           continue;
         }
-        const to = await accountRecipients(supabase, ws.account_id as string, workspaceId);
-        // Whether there is anywhere to publish to, so the mail can say the one
-        // honest thing about a site that has connected nothing. Never fatal:
-        // undefined leaves the line out rather than guessing.
-        let cmsConnected: boolean | undefined;
-        try {
-          cmsConnected = (await getDestinations(supabase, workspaceId)).length > 0;
-        } catch {
-          cmsConnected = undefined;
-        }
-        const out = await sendArticleDraftedEmails(
-          supabase,
-          to,
-          {
-            domain,
-            keyword: next.term,
-            title: result.title,
-            wordCount: result.wordCount,
-            verdict: result.factCheck.verdict,
-            reasons: next.reasons,
-            articleId: result.articleId,
-            // Already read for the selection above, so the stat row costs
-            // nothing extra. Null where the provider measured nothing, which
-            // the mail renders as "—" rather than a zero.
-            volume: next.volume,
-            difficulty: next.difficulty,
-            cmsConnected,
-            autoApproveAfter,
-            holdUrlFor: autoApproveAfter ? (to) => holdUrl(result.articleId, to) : undefined,
-          },
-          { accountId: ws.account_id as string, workspaceId },
-        );
-        notified = `, ${describeSendOutcome(out)}`;
+        // Through the batch announcer, not straight to the single-draft mail:
+        // it folds in any draft still unannounced (yesterday's, if today's
+        // mail had already gone when it was written) and sends at most one
+        // announcement per workspace per day (lib/email/draft-batch.ts).
+        // One draft still gets the single-draft template, with its reasons.
+        const line = await announceDraftBatch(supabase, workspaceId, {
+          reasonsFor: { [result.articleId]: next.reasons },
+        });
+        notified = `, ${line}`;
       } catch (err) {
         notified = `, email failed (${err instanceof Error ? err.message : "unknown"})`;
       }
