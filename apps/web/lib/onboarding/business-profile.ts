@@ -18,7 +18,6 @@ import Anthropic from "@anthropic-ai/sdk";
 import { anthropicModel } from "@/lib/ai/models";
 import { readSiteText, type SiteTextSource, MIN_CHARS } from "./site-text";
 import { e2eStubsEnabled, stubInferProfile } from "@/lib/e2e/stubs";
-import { resolveCompetitorDomains } from "./competitor-domains";
 
 export interface BusinessProfile {
   /** The business's own name for itself, not the domain. */
@@ -129,14 +128,6 @@ export async function inferBusinessProfileDetailed(domain: string): Promise<Infe
     });
     const raw = response.content[0]?.type === "text" ? response.content[0].text : "";
     const profile = parseProfile(raw, domain);
-    // The model names rivals ("trainerize"); research needs their domains.
-    // Unplaceable names are dropped here so the wizard never shows a chip
-    // that keyword research cannot read.
-    if (profile?.competitors.length) {
-      const own = domain.replace(/^www\./, "").toLowerCase();
-      const { domains } = await resolveCompetitorDomains(profile.competitors);
-      profile.competitors = domains.filter((d) => d !== own);
-    }
     return profile ? { profile, reason: "ok", source: read.source } : { profile: null, reason: "model_failed", source: read.source };
   } catch {
     return { profile: null, reason: "model_failed", source: read.source };
