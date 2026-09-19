@@ -109,7 +109,7 @@ describe("parseVerdicts", () => {
       { t: "not asked", k: true },
     ]);
     const v = parseVerdicts(raw, asked);
-    expect(v.get("packing slip template")).toEqual({ keep: true, reason: null });
+    expect(v.get("packing slip template")).toEqual({ keep: true, reason: null, funnel: "buyer" });
     expect(v.get("ups shipping calculator")).toEqual({ keep: false, reason: "consumer postage lookup" });
     expect(v.get("shipping")?.keep).toBe(false);
     expect(v.get("shipping")?.reason).toBeTruthy();

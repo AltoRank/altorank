@@ -1,6 +1,7 @@
 import { readOpportunity, contextKey, serpOverlap, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
 import { ensureBusinessProfile } from "@/lib/keyword-research/business-context";
 import { causeLabel } from "@/lib/keyword-research/opportunity";
+import { funnelOf, type FitVerdict, type Funnel } from "@/lib/keyword-research/buyer-fit";
 import { isParked, isParkedForGood, isRequalifiable, queueTarget, refillQualifiedQueue, type QueueRow } from "@/lib/keyword-research/queue";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 // ---------------------------------------------------------------------------
@@ -74,6 +75,8 @@ export interface KeywordRecommendation {
   /** Why it was flagged; null when quality is `ok`. */
   qualityNote: string | null;
   opportunity?: Opportunity;
+  /** "audience" for a top-of-funnel topic; null when no buyer verdict is saved. */
+  funnel: Funnel | null;
 }
 
 /**
@@ -324,6 +327,9 @@ export function positionBand(position: number | null, impressions: number | null
  * fraction of the volume. Linear volume makes the queue nothing but head terms,
  * which is the classic way to spend a year ranking for nothing.
  */
+/** An audience topic against the same search made with buying intent. */
+export const AUDIENCE_TOPIC_WEIGHT = 0.5;
+
 /** What an unmeasured volume scores: the same as ~30 searches a month. */
 const UNKNOWN_VOLUME_SCORE = 15;
 
@@ -430,7 +436,7 @@ export async function recommendKeywords(
 
   const { data: keywords, error } = await supabase
     .from("keywords")
-    .select("id, term, volume, difficulty, intent, status, source, source_type, source_ref, source_url, opportunity, plan_excluded_at")
+    .select("id, term, volume, difficulty, intent, status, source, source_type, source_ref, source_url, opportunity, buyer_fit, plan_excluded_at")
     .eq("workspace_id", workspaceId);
 
   if (error) throw new Error(`Could not read keywords: ${error.message}`);
@@ -566,6 +572,15 @@ export async function recommendKeywords(
     );
 
     score *= INTENT_WEIGHT[intent];
+
+    // A search by the people the business sells to, made while they are not
+    // shopping. Worth writing, and worth less than a search by someone who is:
+    // it sits below every comparable buying topic and says so on the row.
+    const funnel = funnelOf(k.buyer_fit as FitVerdict | null);
+    if (funnel === "audience") {
+      score *= AUDIENCE_TOPIC_WEIGHT;
+      reasons.push("top of funnel: your audience searches this, but not while choosing a product");
+    }
 
     let action: RecommendedAction = "write";
 
@@ -748,6 +763,7 @@ export async function recommendKeywords(
       existingArticleId,
       currentPosition: position,
       impressions,
+      funnel,
       quality,
       qualityNote: note,
     };

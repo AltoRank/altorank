@@ -6,9 +6,9 @@ export function TopicBriefs({ planned }: { planned: OnboardingPlanned[] }) {
   return <section className="my-5">
     <h2 className="mb-3 text-lg font-semibold">Why these articles</h2>
     <div className="flex flex-col gap-3">{topics.map(({term,brief}) => <details key={term} className="rounded-lg border border-line bg-panel p-4">
-      <summary className="cursor-pointer font-medium">{brief!.angle}</summary>
+      <summary className="cursor-pointer font-medium">{brief!.angle}{brief!.funnel === "audience" && <span className="ml-2 rounded-full border border-line px-2 py-0.5 text-[11px] font-normal text-ink-3">Top of funnel</span>}</summary>
       <dl className="mt-3 grid gap-2 text-sm text-ink-2">
-        <div><dt className="font-medium">Reader and buying problem</dt><dd>{brief!.audience} · {brief!.buyingJob}</dd></div>
+        <div><dt className="font-medium">{brief!.funnel === "audience" ? "Reader and what they are working on" : "Reader and buying problem"}</dt><dd>{brief!.audience} · {brief!.buyingJob}</dd></div>
         <div><dt className="font-medium">Your offering</dt><dd>{brief!.offering}</dd></div>
         <div><dt className="font-medium">Search</dt><dd>{term}</dd></div>
         <div><dt className="font-medium">Why it fits</dt><dd>{brief!.reason}</dd></div>
