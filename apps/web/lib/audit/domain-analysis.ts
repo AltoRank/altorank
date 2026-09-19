@@ -798,7 +798,7 @@ export async function analyseDomain(options: {
                 locationCode: options.locationCode,
                 spend,
               })
-            : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [] };
+            : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [], competitorsUnresolved: [] as string[], competitorsFailed: [] as string[] };
         const fromCompetitors = discovered.fromCompetitors;
         const fromIdeas = discovered.fromIdeas;
 
@@ -1022,6 +1022,14 @@ export async function analyseDomain(options: {
             : "",
           fromCompetitors.length
             ? `${fromCompetitors.length} from what ${discovered.competitorsAsked.length === 1 ? "the competitor" : `the ${discovered.competitorsAsked.length} competitors`} you named rank${discovered.competitorsAsked.length === 1 ? "s" : ""} for`
+            : discovered.competitorsAsked.length
+              ? `0 from the ${discovered.competitorsAsked.length} competitor${discovered.competitorsAsked.length === 1 ? "" : "s"} you named`
+              : "",
+          discovered.competitorsFailed?.length
+            ? `${discovered.competitorsFailed.join(", ")} could not be read`
+            : "",
+          discovered.competitorsUnresolved?.length
+            ? `no website found for ${discovered.competitorsUnresolved.join(", ")}`
             : "",
           fromIdeas.length
             ? `${fromIdeas.length} around the ${discovered.seedsPriced} thing${discovered.seedsPriced === 1 ? "" : "s"} you said people buy from you`
