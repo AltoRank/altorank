@@ -14,6 +14,7 @@ const FIELD_LABEL: Record<keyof BusinessProfile, string> = {
   audiences: "audiences",
   offerings: "offerings",
   competitors: "competitors",
+  searchRivals: "search rivals",
   buyingJobs: "buying goals", differentiators: "product differences", exclusions: "excluded needs", conversionUrl: "conversion page",
 };
 

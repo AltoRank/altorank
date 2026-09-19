@@ -39,6 +39,14 @@ export interface BusinessProfile {
   offerings?: string[];
   /** Domains, not company names, so they can seed competitive research. */
   competitors: string[];
+  /**
+   * Rivals read off the results pages for this site's buyer searches and
+   * vetted as selling against it (lib/keyword-research/serp-rivals.ts). Found
+   * once and kept: the search that finds them starts from model-worded seeds
+   * and returned a different valid set on every run, which made each night's
+   * keyword pool a different market. Not shown in the wizard.
+   */
+  searchRivals?: string[];
   buyingJobs?: string[];
   differentiators?: string[];
   exclusions?: string[];

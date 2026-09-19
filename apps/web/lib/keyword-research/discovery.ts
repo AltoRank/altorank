@@ -12,7 +12,7 @@ import { fetchTermMetrics } from "./metrics";
 import { isBrandTerm } from "./seeds";
 import { proposeBuyerSeeds, recoverBuyerSeeds, type BuyerSeeds, type SeedableProfile } from "./buyer-seeds";
 import type { SpendSink } from "./buyer-model";
-import { findSerpRivals } from "./serp-rivals";
+import { findSerpRivals, MAX_SERP_RIVALS } from "./serp-rivals";
 import { resolveCompetitorDomains } from "@/lib/onboarding/competitor-domains";
 
 /** A candidate plus the rival that holds it, when one does. */
@@ -30,6 +30,10 @@ export interface DiscoveryResult {
   competitorsAsked: string[];
   /** Rivals read off the results pages for the buyer seeds, and how many rows they gave. */
   serpRivals: string[];
+  /** True when the rivals came from the profile rather than a fresh search. */
+  serpRivalsKept: boolean;
+  /** False when no model could vet the candidates, so none was read. */
+  serpRivalsVetted: boolean;
   fromSerpRivals: number;
   /** Seeds whose rival search errored. */
   serpRivalSearchesFailed: string[];
@@ -128,41 +132,13 @@ export async function discoverBuyerKeywords(options: {
   };
   perCompetitor.forEach((rows, i) => absorb(rows, competitors[i]));
 
-  // The rivals that hold this site's results pages, in its own locale. Read
-  // after the seeds exist because the seeds are what is searched.
-  const serpRivals = seeds.seeds.length
-    ? await findSerpRivals(
-        seeds.seeds.filter((t) => !brand(t)),
-        // Same market `fetchRankedKeywords` reads when none is set, so the rivals
-        // found and the rows read for them come from one results index.
-        { languageCode, locationCode: options.locationCode ?? 2840 },
-        new Set([own, ...competitors]),
-      )
-    : { rivals: [] as string[], searched: [] as string[], failed: [] as string[] };
-  const perSerpRival = await Promise.all(
-    serpRivals.rivals.map((c) =>
-      fetchRankedKeywords(c, {
-        ...locale,
-        limit: ROWS_PER_COMPETITOR,
-        minVolume: COMPETITOR_MIN_VOLUME,
-        maxRank: COMPETITOR_MAX_RANK,
-      }).catch(() => {
-        competitorsFailed.push(c);
-        return [];
-      }),
-    ),
-  );
-  rivalsKnown.push(...serpRivals.rivals);
-  const namedRows = fromCompetitors.length;
-  perSerpRival.forEach((rows, i) => absorb(rows, serpRivals.rivals[i]));
-  const fromSerpRivals = fromCompetitors.length - namedRows;
-
   const fromIdeas: Candidate[] = [];
   const seedRecovery = { attempted: false, seeds: [] as string[], measured: 0 };
   let expandedSeeds: string[] = [];
   let seedsPriced = 0;
+  let priced: Awaited<ReturnType<typeof fetchTermMetrics>> = new Map();
   if (seeds.seeds.length) {
-    const priced = await fetchTermMetrics(seeds.seeds, locale).catch(() => new Map());
+    priced = await fetchTermMetrics(seeds.seeds, locale).catch(() => new Map());
     const measured = (terms: string[]) => terms.filter((term) => {
       const m = priced.get(term);
       return m?.volume != null && m.volume >= SEED_MIN_VOLUME && !brand(term);
@@ -213,5 +189,48 @@ export async function discoverBuyerKeywords(options: {
     fromIdeas.push(...[...ideas.values()].sort((a, b) => Number(Boolean(a.unmeasured)) - Number(Boolean(b.unmeasured))));
   }
 
-  return { fromCompetitors, fromIdeas, seeds, seedsPriced, competitorsAsked: competitors, competitorsUnresolved: named.unresolved, competitorsFailed, serpRivals: serpRivals.rivals, fromSerpRivals, serpRivalSearchesFailed: serpRivals.failed, seedRecovery, expandedSeeds };
+  // The rivals that hold this site's results pages, in its own locale. Read
+  // after the seeds exist because the seeds are what is searched.
+  const rivalSeeds = [...new Set([...seeds.seeds, ...seedRecovery.seeds])].filter((t) => !brand(t));
+  // Searched in a fixed order: the seeds anyone searches, biggest first, then
+  // the rest. The model words its seeds differently every run; the measured
+  // ones are the category's real names and recur, so the same site meets the
+  // same results pages and the same rivals.
+  const searchable = [
+    ...rivalSeeds.filter((t) => (priced.get(t)?.volume ?? 0) > 0).sort((x, y) => (priced.get(y)?.volume ?? 0) - (priced.get(x)?.volume ?? 0)),
+    ...rivalSeeds.filter((t) => !((priced.get(t)?.volume ?? 0) > 0)),
+  ];
+  // Found once, then kept on the profile: see BusinessProfile.searchRivals.
+  const kept = [...new Set((options.business?.searchRivals ?? []).map(host))].filter((c) => c && c !== own && !competitors.includes(c));
+  const serpRivals = kept.length
+    ? { rivals: kept.slice(0, MAX_SERP_RIVALS), searched: [] as string[], failed: [] as string[], candidates: kept, vetted: true }
+    : searchable.length
+    ? await findSerpRivals(
+        searchable,
+        // Same market `fetchRankedKeywords` reads when none is set, so the rivals
+        // found and the rows read for them come from one results index.
+        { languageCode, locationCode: options.locationCode ?? 2840 },
+        new Set([own, ...competitors]),
+        { business: options.business, spend: options.spend },
+      )
+    : { rivals: [] as string[], searched: [] as string[], failed: [] as string[], candidates: [] as string[], vetted: true };
+  const perSerpRival = await Promise.all(
+    serpRivals.rivals.map((c) =>
+      fetchRankedKeywords(c, {
+        ...locale,
+        limit: ROWS_PER_COMPETITOR,
+        minVolume: COMPETITOR_MIN_VOLUME,
+        maxRank: COMPETITOR_MAX_RANK,
+      }).catch(() => {
+        competitorsFailed.push(c);
+        return [];
+      }),
+    ),
+  );
+  rivalsKnown.push(...serpRivals.rivals);
+  const namedRows = fromCompetitors.length;
+  perSerpRival.forEach((rows, i) => absorb(rows, serpRivals.rivals[i]));
+  const fromSerpRivals = fromCompetitors.length - namedRows;
+
+  return { fromCompetitors, fromIdeas, seeds, seedsPriced, competitorsAsked: competitors, competitorsUnresolved: named.unresolved, competitorsFailed, serpRivals: serpRivals.rivals, serpRivalsKept: kept.length > 0, serpRivalsVetted: serpRivals.vetted, fromSerpRivals, serpRivalSearchesFailed: serpRivals.failed, seedRecovery, expandedSeeds };
 }

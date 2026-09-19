@@ -64,7 +64,10 @@ export interface OpportunityCandidate {
 export function contextKey(context: OpportunityContext): string {
   const stable = (value: unknown): unknown => Array.isArray(value) ? value.map(stable)
     : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, stable(item)])) : value;
-  return createHash("sha256").update(JSON.stringify(stable(context))).digest("hex").slice(0, 24);
+  // `searchRivals` is bookkeeping about where keywords are looked for, not a
+  // fact about the business: writing it must not void every saved verdict.
+  const business = context.business ? { ...context.business, searchRivals: undefined } : context.business;
+  return createHash("sha256").update(JSON.stringify(stable({ ...context, business }))).digest("hex").slice(0, 24);
 }
 export function readOpportunity(raw: unknown, context: string): Opportunity | null {
   if (!raw || typeof raw !== "object") return null;

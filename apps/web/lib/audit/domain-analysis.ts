@@ -798,7 +798,15 @@ export async function analyseDomain(options: {
                 locationCode: options.locationCode,
                 spend,
               })
-            : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [], competitorsUnresolved: [] as string[], competitorsFailed: [] as string[], serpRivals: [] as string[], fromSerpRivals: 0, serpRivalSearchesFailed: [] as string[] };
+            : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [], competitorsUnresolved: [] as string[], competitorsFailed: [] as string[], serpRivals: [] as string[], serpRivalsKept: false, serpRivalsVetted: true, fromSerpRivals: 0, serpRivalSearchesFailed: [] as string[] };
+        // Keep the rivals a fresh search found, so tomorrow reads the same market.
+        if (supabase && workspaceId && business && discovered.serpRivals?.length && !discovered.serpRivalsKept) {
+          const { error: keepError } = await supabase
+            .from("workspaces")
+            .update({ business_profile: { ...business, searchRivals: discovered.serpRivals } })
+            .eq("id", workspaceId);
+          if (keepError) console.warn("[keywords] search rivals not saved:", keepError.message);
+        }
         const fromCompetitors = discovered.fromCompetitors;
         const fromIdeas = discovered.fromIdeas;
 
@@ -1022,6 +1030,9 @@ export async function analyseDomain(options: {
             : "",
           discovered.serpRivals?.length
             ? `${discovered.fromSerpRivals} from ${discovered.serpRivals.join(", ")}, who rank where your buyers search`
+            : "",
+          discovered.serpRivalsVetted === false
+            ? "rivals in your search results could not be checked, so none was read"
             : "",
           discovered.serpRivalSearchesFailed?.length
             ? `${discovered.serpRivalSearchesFailed.length} rival search${discovered.serpRivalSearchesFailed.length === 1 ? "" : "es"} could not be read`
