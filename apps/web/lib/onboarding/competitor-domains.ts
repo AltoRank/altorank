@@ -19,8 +19,8 @@ import { fetchAdvancedSerp } from "@/lib/seo/brief-data";
 
 const DOMAIN_SHAPE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/;
 
-/** Hosts that rank for every brand name and are never the brand. */
-const NOT_THE_BRAND = /(^|\.)(g2|capterra|getapp|trustpilot|trustradius|softwareadvice|wikipedia|linkedin|facebook|instagram|youtube|x|twitter|reddit|crunchbase|producthunt|apple|google|amazon|appvizer|alternativeto)\.[a-z.]+$/;
+/** Hosts that rank for every brand name and every category: never the brand, never a rival. */
+export const NOT_A_RIVAL = /(^|\.)(g2|capterra|getapp|trustpilot|trustradius|softwareadvice|wikipedia|linkedin|facebook|instagram|youtube|x|twitter|reddit|crunchbase|producthunt|apple|google|amazon|appvizer|alternativeto|pinterest|tiktok|quora|medium)\.[a-z.]+$/;
 
 export interface ResolvedCompetitors {
   /** Domain-shaped entries, in the order given, de-duplicated. */
@@ -53,7 +53,7 @@ export function pickCompetitorDomain(name: string, hosts: readonly string[]): st
   if (!wanted) return null;
   for (const raw of hosts) {
     const host = clean(raw);
-    if (!DOMAIN_SHAPE.test(host) || NOT_THE_BRAND.test(host)) continue;
+    if (!DOMAIN_SHAPE.test(host) || NOT_A_RIVAL.test(host)) continue;
     const labels = host.split(".");
     // app.trainerize.com and trainerize.com both answer to "trainerize".
     const match = labels.slice(0, -1).find((label) => squash(label) === wanted);

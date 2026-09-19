@@ -12,6 +12,7 @@ import { fetchTermMetrics } from "./metrics";
 import { isBrandTerm } from "./seeds";
 import { proposeBuyerSeeds, recoverBuyerSeeds, type BuyerSeeds, type SeedableProfile } from "./buyer-seeds";
 import type { SpendSink } from "./buyer-model";
+import { findSerpRivals } from "./serp-rivals";
 import { resolveCompetitorDomains } from "@/lib/onboarding/competitor-domains";
 
 /** A candidate plus the rival that holds it, when one does. */
@@ -27,6 +28,11 @@ export interface DiscoveryResult {
   seedsPriced: number;
   /** Which competitors were read, for the run's trace. */
   competitorsAsked: string[];
+  /** Rivals read off the results pages for the buyer seeds, and how many rows they gave. */
+  serpRivals: string[];
+  fromSerpRivals: number;
+  /** Seeds whose rival search errored. */
+  serpRivalSearchesFailed: string[];
   /** Names no domain could be found for; never queried. */
   competitorsUnresolved: string[];
   /** Rivals whose read errored, as opposed to returning nothing. */
@@ -74,7 +80,10 @@ export async function discoverBuyerKeywords(options: {
     .filter((c) => c && c !== own)
     .slice(0, MAX_COMPETITORS_READ);
   const competitorsFailed: string[] = [];
-  const brand = (term: string) => isBrandTerm(term, options.domain, competitors);
+  // Grows when rivals are read off the results pages: their brand names are
+  // navigation for them, the same as a named rival's.
+  const rivalsKnown = [...competitors];
+  const brand = (term: string) => isBrandTerm(term, options.domain, rivalsKnown);
 
   const [seeds, perCompetitor] = await Promise.all([
     proposeBuyerSeeds(options.business, { spend: options.spend }),
@@ -96,7 +105,7 @@ export async function discoverBuyerKeywords(options: {
 
   const fromCompetitors: Candidate[] = [];
   const seen = new Set<string>();
-  perCompetitor.forEach((rows, i) => {
+  const absorb = (rows: Awaited<ReturnType<typeof fetchRankedKeywords>>, competitor: string) => {
     const byPage = new Map<string, number>();
     for (const k of rows) {
       const key = k.keyword.trim().toLowerCase();
@@ -113,10 +122,40 @@ export async function discoverBuyerKeywords(options: {
         competition: 0,
         intent: k.intent ?? classifyIntent(k.keyword, languageCode).intent,
         sourceUrl: k.url,
-        competitor: competitors[i],
+        competitor,
       });
     }
-  });
+  };
+  perCompetitor.forEach((rows, i) => absorb(rows, competitors[i]));
+
+  // The rivals that hold this site's results pages, in its own locale. Read
+  // after the seeds exist because the seeds are what is searched.
+  const serpRivals = seeds.seeds.length
+    ? await findSerpRivals(
+        seeds.seeds.filter((t) => !brand(t)),
+        // Same market `fetchRankedKeywords` reads when none is set, so the rivals
+        // found and the rows read for them come from one results index.
+        { languageCode, locationCode: options.locationCode ?? 2840 },
+        new Set([own, ...competitors]),
+      )
+    : { rivals: [] as string[], searched: [] as string[], failed: [] as string[] };
+  const perSerpRival = await Promise.all(
+    serpRivals.rivals.map((c) =>
+      fetchRankedKeywords(c, {
+        ...locale,
+        limit: ROWS_PER_COMPETITOR,
+        minVolume: COMPETITOR_MIN_VOLUME,
+        maxRank: COMPETITOR_MAX_RANK,
+      }).catch(() => {
+        competitorsFailed.push(c);
+        return [];
+      }),
+    ),
+  );
+  rivalsKnown.push(...serpRivals.rivals);
+  const namedRows = fromCompetitors.length;
+  perSerpRival.forEach((rows, i) => absorb(rows, serpRivals.rivals[i]));
+  const fromSerpRivals = fromCompetitors.length - namedRows;
 
   const fromIdeas: Candidate[] = [];
   const seedRecovery = { attempted: false, seeds: [] as string[], measured: 0 };
@@ -174,5 +213,5 @@ export async function discoverBuyerKeywords(options: {
     fromIdeas.push(...[...ideas.values()].sort((a, b) => Number(Boolean(a.unmeasured)) - Number(Boolean(b.unmeasured))));
   }
 
-  return { fromCompetitors, fromIdeas, seeds, seedsPriced, competitorsAsked: competitors, competitorsUnresolved: named.unresolved, competitorsFailed, seedRecovery, expandedSeeds };
+  return { fromCompetitors, fromIdeas, seeds, seedsPriced, competitorsAsked: competitors, competitorsUnresolved: named.unresolved, competitorsFailed, serpRivals: serpRivals.rivals, fromSerpRivals, serpRivalSearchesFailed: serpRivals.failed, seedRecovery, expandedSeeds };
 }
