@@ -73,7 +73,8 @@ describe("topic qualification", () => {
   });
   it("does not treat a tool-dominated search as an approved article", async () => {
     ask.mockResolvedValue(JSON.stringify({...approval,format:"tool"}));
-    expect((await run()).status).toBe("pending");
+    // Not pending any more: the answer is known, and it is a page, not an article.
+    expect(await run()).toMatchObject({ status: "rejected", cause: "needs_page" });
   });
   it("routes existing own-page targets to review instead of a new blog", async () => {
     const result = await run({source_url:"https://www.example.com/booking"});
@@ -154,5 +155,29 @@ describe("candidate diversity", () => {
   it("recognizes SERP overlap without inventing overlap from sparse responses", () => {
     expect(serpOverlap(urls,[...urls.slice(0,2),"https://four.test/a"])).toBeCloseTo(2/3);
     expect(serpOverlap(urls,urls.slice(0,1))).toBe(0);
+  });
+});
+
+describe("page-type decisions", () => {
+  it("saves the shape the results page is won by", async () => {
+    ask.mockResolvedValue(JSON.stringify({ ...approval, shape: "comparison" }));
+    const out = await run();
+    expect(out.status).toBe("qualified");
+    expect(out.shape).toBe("comparison");
+  });
+  it("ignores a shape outside the taxonomy", async () => {
+    ask.mockResolvedValue(JSON.stringify({ ...approval, shape: "poem" }));
+    expect((await run()).shape).toBeUndefined();
+  });
+  it("says a search wants a landing page when the results are product or tool pages", async () => {
+    ask.mockResolvedValue(JSON.stringify({ ...approval, approve: false, format: "tool", reason: "Results are app store and product pages." }));
+    const out = await run();
+    expect(out.status).toBe("rejected");
+    expect(out.cause).toBe("needs_page");
+    expect(out.reason).toContain("landing page");
+  });
+  it("does the same when the model approved but the results are product pages", async () => {
+    ask.mockResolvedValue(JSON.stringify({ ...approval, format: "product" }));
+    expect((await run()).cause).toBe("needs_page");
   });
 });

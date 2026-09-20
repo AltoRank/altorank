@@ -43,7 +43,12 @@ const PROFILE = buildTopicalProfile(
 type Row = { id: string; term: string; volume: number | null; difficulty: number | null; buyer_fit?: unknown; intent?: string };
 
 /** Only the reads `recommendKeywords` makes, in the shapes it makes them. */
-function client(rows: Row[], dr: number | null, rankings: Array<{ keyword_id: string; position: number; checked_at: string }> = []): SupabaseClient {
+function client(
+  rows: Row[],
+  dr: number | null,
+  rankings: Array<{ keyword_id: string; position: number; checked_at: string }> = [],
+  pages: Array<{ url: string; keyword: string | null }> = [],
+): SupabaseClient {
   const empty = { data: [] as unknown[] };
   const chain = (value: unknown): Record<string, unknown> => {
     const self: Record<string, unknown> = {};
@@ -62,7 +67,9 @@ function client(rows: Row[], dr: number | null, rankings: Array<{ keyword_id: st
           ? { data: rows.map((r) => ({ intent: "commercial", ...r, status: "new", source: null })) }
           : table === "keyword_rankings"
             ? { data: rankings }
-            : empty,
+            : table === "site_pages"
+              ? { data: pages }
+              : empty,
       );
     },
   } as unknown as SupabaseClient;
@@ -200,5 +207,27 @@ describe("recommendKeywords — a navigational label against a buyer verdict", (
   it("keeps the label when no buyer verdict vouches for the term", async () => {
     const recs = await recommendKeywords(client([{ ...PHRASINGS[1], buyer_fit: null }], 0), "ws1");
     expect(recs[0].intent).toBe("navigational");
+  });
+});
+
+describe("recommendKeywords — a page on the site already targets the query", () => {
+  // altorank.co, 2026-09-18: "rankingcoach alternative" was drafted as a blog
+  // post while /alternatives/rankingcoach/ sat at position 28 for it.
+  const ROWS_: Row[] = [
+    { id: "r", term: "rankingcoach alternative", volume: 10, difficulty: 20, buyer_fit: { keep: true, reason: null, funnel: "buyer" } },
+    { id: "w", term: "website design account", volume: 1200, difficulty: 28, buyer_fit: { keep: true, reason: null, funnel: "buyer" } },
+  ];
+  const pages = [{ url: "https://qasimcode.com/alternatives/rankingcoach/", keyword: "rankingcoach alternatives" }];
+  it("does not write a second page, and names the one to update", async () => {
+    const recs = await recommendKeywords(client(ROWS_, 0, [{ keyword_id: "r", position: 28, checked_at: "2026-09-20T00:00:00Z" }], pages), "ws1");
+    const rec = recs.find((r) => r.term === "rankingcoach alternative")!;
+    expect(rec.action).toBe("skip");
+    expect(rec.existingPageUrl).toBe("https://qasimcode.com/alternatives/rankingcoach/");
+    expect(rec.reasons.join(" ")).toContain("/alternatives/rankingcoach/");
+    expect(pickNextKeyword(recs)?.term).toBe("website design account");
+  });
+  it("leaves a term alone when no page targets it", async () => {
+    const recs = await recommendKeywords(client(ROWS_, 0, [], []), "ws1");
+    expect(recs.find((r) => r.term === "rankingcoach alternative")!.existingPageUrl).toBeNull();
   });
 });
