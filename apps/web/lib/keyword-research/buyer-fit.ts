@@ -7,7 +7,14 @@ import { askStructured, describeBusiness, extractJson, modelAvailable } from "./
 /** Maximum phrases per model request, not a limit on total coverage. */
 export const MAX_JUDGED = 40; // Per request, not a cap on coverage.
 
-export type FitVerdict = { keep: true; reason: string | null } | { keep: false; reason: string };
+/**
+ * Who the search belongs to. "buyer": someone weighing this kind of product.
+ * "audience": one of the business's named audiences doing their job, not
+ * shopping. Absent on verdicts saved before 2026-09-19, which were all buyers.
+ */
+export type Funnel = "buyer" | "audience";
+export type FitVerdict = { keep: true; reason: string | null; funnel?: Funnel } | { keep: false; reason: string };
+export const funnelOf = (v: FitVerdict | null | undefined): Funnel | null => (v?.keep ? v.funnel ?? "buyer" : null);
 
 export interface FitJudgement {
   /** Term (lower-cased) to verdict. A term the model did not answer for is absent. */
@@ -43,10 +50,17 @@ const PROMPT = [
   "",
   "For alternatives and comparisons, the business must actually solve the core job the named product is bought for. A picking/packing app that does not provide shipping-label purchasing is not a substitute for shipping management software.",
   "Keep a phrase when it is the product category, a problem the product solves, a comparison or alternative search,",
-  "or a how-to question this business's buyer asks while doing their job.",
+  "or a how-to question this business's buyer asks while doing their job. Mark these f:\"buy\".",
+  "",
+  "Also keep, marked f:\"aud\", a phrase typed by a member of one of the business's NAMED audiences about their own",
+  "profession: their career and earnings, certifications, regulation and tax for their trade, getting and keeping",
+  "clients, running their practice. They are not shopping, but they are exactly who this business sells to.",
+  "The searcher must BE that professional. The professional's own customers are not the audience: for software sold",
+  "to personal trainers, \"how much does a personal trainer earn\" is aud, \"how much does a personal trainer cost\"",
+  "and \"gym near me\" are rejected. Every rejection rule above still applies to aud.",
   "",
   "Write reasons in the business language when specified. Return ONLY a JSON array, no prose, no code fence, one object per phrase in the order given:",
-  '[{"t":"<phrase exactly as given>","k":true|false,"r":"<reason naming the buyer and product connection, 20 words or fewer>"}]',
+  '[{"t":"<phrase exactly as given>","k":true|false,"f":"buy"|"aud","r":"<reason naming the searcher and their connection to the business, 20 words or fewer>"}]',
 ].join("\n");
 
 /** Exported for tests: the reply, folded onto the terms that were asked. */
@@ -57,11 +71,12 @@ export function parseVerdicts(raw: string | null, asked: readonly string[]): Map
   const askedSet = new Set(asked.map((t) => t.trim().toLowerCase()));
   for (const v of arr) {
     if (!v || typeof v !== "object") continue;
-    const o = v as { t?: unknown; k?: unknown; r?: unknown };
+    const o = v as { t?: unknown; k?: unknown; r?: unknown; f?: unknown };
     const term = typeof o.t === "string" ? o.t.trim().toLowerCase() : "";
     if (!term || !askedSet.has(term) || typeof o.k !== "boolean") continue;
     const reason = typeof o.r === "string" && o.r.trim() ? o.r.trim() : null;
-    out.set(term, o.k ? { keep: true, reason } : { keep: false, reason: reason ?? "not a search this business's buyer makes" });
+    // Anything but an explicit "aud" is a buyer: the stricter reading.
+    out.set(term, o.k ? { keep: true, reason, funnel: o.f === "aud" ? "audience" : "buyer" } : { keep: false, reason: reason ?? "not a search this business's buyer makes" });
   }
   return out;
 }

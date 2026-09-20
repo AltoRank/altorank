@@ -40,7 +40,7 @@ const PROFILE = buildTopicalProfile(
   "2026-09-07T00:00:00.000Z",
 );
 
-type Row = { id: string; term: string; volume: number | null; difficulty: number | null };
+type Row = { id: string; term: string; volume: number | null; difficulty: number | null; buyer_fit?: unknown };
 
 /** Only the reads `recommendKeywords` makes, in the shapes it makes them. */
 function client(rows: Row[], dr: number | null): SupabaseClient {
@@ -142,5 +142,22 @@ describe("recommendKeywords — measured demand", () => {
   it("does not pick one even when nothing else is left", async () => {
     const next = pickNextKeyword(await recommendKeywords(client(UNMEASURED.slice(1), 0), "ws1"));
     expect(next).toBeNull();
+  });
+});
+
+describe("recommendKeywords — audience topics", () => {
+  const PAIR: Row[] = [
+    { id: "b", term: "website design account", volume: 1200, difficulty: 28, buyer_fit: { keep: true, reason: null, funnel: "buyer" } },
+    { id: "a", term: "small business websites", volume: 1200, difficulty: 28, buyer_fit: { keep: true, reason: null, funnel: "audience" } },
+  ];
+  it("writes them, labelled, and below the same demand with buying intent", async () => {
+    const recs = await recommendKeywords(client(PAIR, 0), "ws1");
+    const aud = recs.find((r) => r.term === "small business websites")!;
+    const buy = recs.find((r) => r.term === "website design account")!;
+    expect(aud.action).toBe("write");
+    expect(aud.funnel).toBe("audience");
+    expect(aud.reasons.join(" ")).toContain("top of funnel");
+    expect(aud.score).toBeLessThan(buy.score);
+    expect(pickNextKeyword(recs)?.term).toBe("website design account");
   });
 });
