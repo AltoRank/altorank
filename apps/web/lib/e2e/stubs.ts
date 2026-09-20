@@ -30,6 +30,7 @@ import type { TechFinding } from "@/lib/seo/tech-audit";
 import { classifyIntent } from "@/lib/seo/intent";
 import { buildTopicalProfile, type TopicalProfile } from "@/lib/seo/topical-profile";
 import type { CrawlResult } from "@/lib/audit/crawler";
+import type { CompetitorSuggestion, CompetitorSuggestions } from "@/lib/onboarding/competitor-suggestions";
 import { htmlToTiptapJson } from "@/lib/ai/tiptap";
 import { factCheckArticle } from "@/lib/ai/fact-check";
 
@@ -92,6 +93,17 @@ export function stubReadSiteText(domain: string, maxChars = 12_000): SiteText {
 export function stubInferProfile(domain: string): InferenceResult {
   if (isUnreadable(domain)) return { profile: null, reason: "unreadable", source: "none" };
   return { profile: { ...STUB_PROFILE, audiences: [...STUB_PROFILE.audiences], offerings: [...(STUB_PROFILE.offerings ?? [])], competitors: [...STUB_PROFILE.competitors] }, reason: "ok", source: "static" };
+}
+
+/** The competitor step's suggestions: one of each source, sized, no provider. */
+export function stubSuggestCompetitors(domain: string, profile: BusinessProfile): CompetitorSuggestions {
+  const named = profile.competitors.map((c) => c.toLowerCase());
+  const suggestions: CompetitorSuggestion[] = [
+    ...named.map((d) => ({ domain: d, source: "site" as const, authority: 20, size: "similar" as const })),
+    { domain: "roamplanner.example", source: "serp" as const, authority: 12, size: "smaller" as const },
+    { domain: "bigtravelco.example", source: "index" as const, authority: 61, size: "bigger" as const },
+  ].filter((s) => s.domain !== domain);
+  return { own: 24, suggestions, searchRivals: ["roamplanner.example"] };
 }
 
 export function stubDiscoverSite(domain: string): SiteDiscovery {

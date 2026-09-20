@@ -81,3 +81,25 @@ export async function fetchDomainMetrics(
 
   return out;
 }
+
+/**
+ * Authority for many hosts in one call, 0-100, null where unmeasured.
+ *
+ * `/backlinks/bulk_ranks` prices one request the same for one target or a
+ * hundred (~$0.02), which is what makes tagging every suggested rival
+ * affordable at the wizard. Same scale caveat as `fetchDomainMetrics`: it is
+ * DataForSEO's rank on their `one_hundred` scale, labelled Authority, not DR.
+ */
+export async function fetchBulkAuthority(targets: readonly string[]): Promise<Map<string, number | null>> {
+  const out = new Map<string, number | null>();
+  const hosts = [...new Set(targets.map((t) => t.replace(/^https?:\/\//, "").replace(/^www\./, "").toLowerCase()).filter(Boolean))];
+  for (const h of hosts) out.set(h, null);
+  if (!hosts.length || !hasDataForSEOCredentials()) return out;
+  type BulkRanksResult = { items?: Array<{ target?: string | null; rank?: number | null }> | null };
+  const response = await post<BulkRanksResult>("/backlinks/bulk_ranks/live", [{ targets: hosts, rank_scale: "one_hundred" }]);
+  for (const item of response.tasks[0]?.result?.[0]?.items ?? []) {
+    const host = (item.target ?? "").replace(/^www\./, "").toLowerCase();
+    if (host && out.has(host) && typeof item.rank === "number" && Number.isFinite(item.rank)) out.set(host, Math.round(item.rank));
+  }
+  return out;
+}

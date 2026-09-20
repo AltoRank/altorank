@@ -34,6 +34,8 @@ import { useRouter } from "next/navigation";
 import { Button, Icons } from "@/components/ui";
 import {
   proposeProfile,
+  resolveCompetitor,
+  suggestCompetitors,
   saveProfile,
   discoverSiteDetails,
   saveSiteDetails,
@@ -47,7 +49,9 @@ import type { SiteDiscovery } from "@/lib/onboarding/site-discovery";
 // The forms themselves live in components/settings: every wizard screen is
 // also a permanent Settings tab, and one copy of each form keeps them in step.
 import { BusinessFields } from "@/components/settings/business-fields";
-import { AudienceList, CompetitorList, OfferingList } from "@/components/settings/audience-fields";
+import { AudienceList, OfferingList } from "@/components/settings/audience-fields";
+import { CompetitorStep } from "@/components/onboarding/competitor-step";
+import type { CompetitorSuggestion, RivalSize } from "@/lib/onboarding/competitor-suggestions";
 import { SiteFields } from "@/components/settings/site-fields";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
 import {
@@ -155,6 +159,13 @@ export function OnboardingWizard({
   const [running, setRunning] = useState(resumed !== null);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Rivals proposed for the competitor step, looked up once the profile is
+  // read (the lookup starts from the profile's offerings), and the size of
+  // every host the person has chosen, from suggestions or typed.
+  const [rivalSuggestions, setRivalSuggestions] = useState<CompetitorSuggestion[]>([]);
+  const [rivalsLoading, setRivalsLoading] = useState(false);
+  const [ownAuthority, setOwnAuthority] = useState<number | null>(null);
+  const [rivalSizes, setRivalSizes] = useState<Record<string, RivalSize | null>>({});
 
   // Read the site. A failure is a normal outcome and is shown as one. Not
   // while a run is on screen: that page has already been through this.
@@ -165,6 +176,7 @@ export function OnboardingWizard({
       .then((r) => {
         if (cancelled) return;
         setProfile(r.profile ?? EMPTY_PROFILE);
+        if (r.profile) lookUpRivals(r.profile);
         setReadFailure(r.profile ? null : r.reason);
         // A billing refusal names this account's own state, so it travels as
         // a sentence rather than as a key into the copy map.
@@ -203,6 +215,22 @@ export function OnboardingWizard({
     };
   }, [discovery, running, workspaceId, alreadyOnboarded]);
 
+  function lookUpRivals(read: BusinessProfile) {
+    setRivalsLoading(true);
+    suggestCompetitors(workspaceId, read)
+      .then((found) => {
+        setOwnAuthority(found.own);
+        setRivalSuggestions(found.suggestions);
+        // The homepage's rivals are already chosen; their size is now known.
+        // The vetted results-page rivals ride along on the profile so the
+        // keyword pool reads the same market the person saw here.
+        setRivalSizes((sizes) => ({ ...sizes, ...Object.fromEntries(found.suggestions.map((s) => [s.domain, s.size])) }));
+        if (found.searchRivals.length) patch({ searchRivals: found.searchRivals });
+      })
+      .catch(() => setRivalSuggestions([]))
+      .finally(() => setRivalsLoading(false));
+  }
+
   function patch(next: Partial<BusinessProfile>) {
     setProfile((p) => (p ? { ...p, ...next } : p));
   }
@@ -216,6 +244,12 @@ export function OnboardingWizard({
    */
   function finish() {
     setError(null);
+    // Required, not because the form says so: the competitors decide the
+    // first plan (see lib/onboarding/competitor-suggestions.ts).
+    if (profile && profile.competitors.length === 0) {
+      setError("Name at least one competitor. It is where your first article comes from.");
+      return;
+    }
     start(async () => {
       try {
         if (profile) await saveProfile(workspaceId, profile);
@@ -310,7 +344,17 @@ export function OnboardingWizard({
             <OfferingList profile={profile} patch={patch} />
           </div>
           <div className="rounded-[10px] border border-accent/40 bg-panel p-5">
-            <CompetitorList profile={profile} patch={patch} />
+            <CompetitorStep
+              chosen={profile.competitors}
+              sizes={rivalSizes}
+              suggestions={rivalSuggestions}
+              loading={rivalsLoading}
+              onChange={(competitors, sizes) => {
+                setRivalSizes(sizes);
+                patch({ competitors });
+              }}
+              resolve={(entry) => resolveCompetitor(workspaceId, entry, ownAuthority)}
+            />
           </div>
 
           {/* Empty is not found. An audience list the model returned nothing
