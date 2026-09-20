@@ -12,6 +12,7 @@ import { fetchTermMetrics } from "./metrics";
 import { isBrandTerm } from "./seeds";
 import { proposeBuyerSeeds, recoverBuyerSeeds, type BuyerSeeds, type SeedableProfile } from "./buyer-seeds";
 import type { SpendSink } from "./buyer-model";
+import { resolveCompetitorDomains } from "@/lib/onboarding/competitor-domains";
 
 /** A candidate plus the rival that holds it, when one does. */
 export type Candidate = DiscoveredKeyword & { competitor?: string };
@@ -26,6 +27,10 @@ export interface DiscoveryResult {
   seedsPriced: number;
   /** Which competitors were read, for the run's trace. */
   competitorsAsked: string[];
+  /** Names no domain could be found for; never queried. */
+  competitorsUnresolved: string[];
+  /** Rivals whose read errored, as opposed to returning nothing. */
+  competitorsFailed: string[];
   /** Recovery and expansion evidence; missing metrics never imply zero demand. */
   seedRecovery: { attempted: boolean; seeds: string[]; measured: number };
   expandedSeeds: string[];
@@ -59,9 +64,16 @@ export async function discoverBuyerKeywords(options: {
   const languageCode = options.languageCode ?? "en";
   const locale = { languageCode, locationCode: options.locationCode };
   const own = host(options.domain);
-  const competitors = [...new Set((options.business?.competitors ?? []).map(host))]
+  // Profiles saved before names were resolved at the wizard, and anything
+  // typed by hand, can still hold "trainerize". A name is resolved here and
+  // what cannot be placed is reported rather than sent to `ranked_keywords`.
+  const named = await resolveCompetitorDomains(
+    (options.business?.competitors ?? []).slice(0, MAX_COMPETITORS_READ * 2),
+  ).catch(() => ({ domains: [] as string[], unresolved: [] as string[] }));
+  const competitors = [...new Set(named.domains.map(host))]
     .filter((c) => c && c !== own)
     .slice(0, MAX_COMPETITORS_READ);
+  const competitorsFailed: string[] = [];
   const brand = (term: string) => isBrandTerm(term, options.domain, competitors);
 
   const [seeds, perCompetitor] = await Promise.all([
@@ -73,7 +85,11 @@ export async function discoverBuyerKeywords(options: {
           limit: ROWS_PER_COMPETITOR,
           minVolume: COMPETITOR_MIN_VOLUME,
           maxRank: COMPETITOR_MAX_RANK,
-        }).catch(() => []),
+        }).catch(() => {
+          // A provider error is not "this rival ranks for nothing".
+          competitorsFailed.push(c);
+          return [];
+        }),
       ),
     ),
   ]);
@@ -158,5 +174,5 @@ export async function discoverBuyerKeywords(options: {
     fromIdeas.push(...[...ideas.values()].sort((a, b) => Number(Boolean(a.unmeasured)) - Number(Boolean(b.unmeasured))));
   }
 
-  return { fromCompetitors, fromIdeas, seeds, seedsPriced, competitorsAsked: competitors, seedRecovery, expandedSeeds };
+  return { fromCompetitors, fromIdeas, seeds, seedsPriced, competitorsAsked: competitors, competitorsUnresolved: named.unresolved, competitorsFailed, seedRecovery, expandedSeeds };
 }

@@ -21,6 +21,7 @@ import {
   type BusinessProfile,
   type InferenceResult,
 } from "@/lib/onboarding/business-profile";
+import { resolveCompetitorDomains } from "@/lib/onboarding/competitor-domains";
 import { resolveLocale } from "@/lib/onboarding/locale";
 import { discoverSite, type SiteDiscovery } from "@/lib/onboarding/site-discovery";
 import {
@@ -66,7 +67,17 @@ export async function proposeProfile(workspaceId: string): Promise<InferenceResu
   if (!gate.allowed) {
     return { profile: null, reason: "needs_plan", source: "none", message: gate.message };
   }
-  return inferBusinessProfileDetailed(workspace.domain);
+  const result = await inferBusinessProfileDetailed(workspace.domain);
+  // The model names rivals ("trainerize"); keyword research reads domains.
+  // Resolved here, not in business-profile.ts, because the client wizard
+  // imports that file and the resolver needs node:dns. A name nothing can
+  // place is dropped, so no chip is shown that research cannot read.
+  if (result.profile?.competitors.length) {
+    const own = workspace.domain.replace(/^www\./, "").toLowerCase();
+    const { domains } = await resolveCompetitorDomains(result.profile.competitors);
+    result.profile.competitors = domains.filter((d) => d !== own);
+  }
+  return result;
 }
 
 /** Save the profile the person confirmed. Labels stay in the profile; codes go in the columns. */
