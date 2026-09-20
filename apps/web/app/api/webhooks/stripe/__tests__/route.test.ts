@@ -47,6 +47,9 @@ function query(table: string, op: "select" | "update", row?: Row) {
   return q;
 }
 
+const { topUp } = vi.hoisted(() => ({ topUp: vi.fn(async () => []) }));
+vi.mock("@/lib/onboarding/plan", () => ({ schedulePlan: (...a: unknown[]) => topUp(...a) }));
+
 vi.mock("@/lib/supabase/server", () => ({
   createServiceClient: () => ({
     from: (table: string) => ({
@@ -166,6 +169,16 @@ beforeEach(() => {
 });
 
 describe("checkout.session.completed", () => {
+  it("opens the month the trial gate held: a top-up per site, as soon as the card is taken", async () => {
+    topUp.mockClear();
+    workspaceRows = [{ id: "ws-1", auto_generate_weekly_limit: 7 }];
+    await deliver(checkoutCompleted());
+    // One call per workspace on the account, in top-up mode; a failure here
+    // is logged and the nightly cron does the same, so it never fails the event.
+    expect(topUp).toHaveBeenCalled();
+    expect(topUp.mock.calls[0][3]).toMatchObject({ mode: "top-up" });
+  });
+
   it("writes the tier the subscription's price sells, not the column default", async () => {
     const res = await deliver(checkoutCompleted());
     expect(res.status).toBe(200);
