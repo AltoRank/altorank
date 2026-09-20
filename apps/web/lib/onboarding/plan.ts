@@ -1,5 +1,5 @@
 import { languageCodeOf } from "@/lib/keyword-research/locale";
-import { qualifyOpportunities, serpOverlap, type Opportunity } from "@/lib/keyword-research/opportunity";
+import { ARTICLE_SHAPES, qualifyOpportunities, serpOverlap, type ArticleShape, type Opportunity } from "@/lib/keyword-research/opportunity";
 // ---------------------------------------------------------------------------
 // The first thirty days, scheduled
 // ---------------------------------------------------------------------------
@@ -18,7 +18,7 @@ import { qualifyOpportunities, serpOverlap, type Opportunity } from "@/lib/keywo
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { MAX_PACE, monthlyFromPace } from "@/lib/content/pace";
 import { recommendKeywords, type KeywordRecommendation } from "@/lib/seo/recommendations";
-import { classifyKeyword } from "@/lib/keywords/taxonomy";
+import { classifyKeyword, type KeywordTaxonomy } from "@/lib/keywords/taxonomy";
 import { generateQualityQuestionsBatch, parseStoredQuestions, toQualityQuestions } from "@/lib/keywords/questions";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import type { KeywordIntent } from "@/lib/types";
@@ -263,6 +263,13 @@ export async function readPlannedEntries(
 }
 
 export interface PlanOptions {
+  /**
+   * Batches of verdicts the plan may buy (lib/keyword-research/queue.ts).
+   * The first look asks for more than a cron pass: on altorank.co eight of
+   * the first twenty-two verdicts were "wants a landing page" and the plan
+   * came out at one topic with twenty-three kept candidates never judged.
+   */
+  qualifyBatches?: number;
   from?: Date;
   /** Weekdays the site publishes on, from its cadence. Absent = any day. */
   daysOfWeek?: readonly number[];
@@ -311,7 +318,7 @@ async function planFor(
   // ranking" rows and the one writable keyword scored below them was never
   // seen (buttondown.com, 2026-09-07: 99 skips, 2 hand-added terms, 1
   // planned). Ask for the whole set; the planner filters to writable itself.
-  const recs = (await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true })).filter(
+  const recs = (await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true, qualifyBatches: opts.qualifyBatches })).filter(
     (r) => !excluded.has(r.keywordId) && !takenIds.has(r.keywordId) && !takenTerms.has(r.term.toLowerCase()),
   );
 
@@ -424,15 +431,18 @@ export async function decoratePlannedKeywords(
   if (keywordIds.length === 0) return { classified: 0, questioned: 0 };
   const { data } = await supabase
     .from("keywords")
-    .select("id, term, intent, article_subtype, quality_questions")
+    .select("id, term, intent, article_subtype, quality_questions, opportunity")
     .eq("workspace_id", workspaceId)
     .in("id", keywordIds);
-  const rows = (data ?? []) as Array<{ id: string; term: string; intent: KeywordIntent | null; article_subtype: string | null; quality_questions: unknown }>;
+  const rows = (data ?? []) as Array<{ id: string; term: string; intent: KeywordIntent | null; article_subtype: string | null; quality_questions: unknown; opportunity: unknown }>;
 
   let classified = 0;
   for (const row of rows) {
     if (row.article_subtype) continue;
-    const shape = classifyKeyword(row.term, intents.get(row.id) ?? row.intent);
+    // The qualification read the results page and said what wins it. The
+    // regex only saw the words: "software gestione palestra" was briefed as a
+    // comparison and stored as a listicle (fitsuite.co, 2026-09-19).
+    const shape = shapeFromBrief(row.term, row.opportunity) ?? classifyKeyword(row.term, intents.get(row.id) ?? row.intent);
     await supabase.from("keywords").update(shape).eq("id", row.id).eq("workspace_id", workspaceId);
     classified++;
   }
@@ -443,6 +453,23 @@ export async function decoratePlannedKeywords(
     rows.filter((r) => parseStoredQuestions(r.quality_questions).length === 0).map((r) => ({ id: r.id, term: r.term })),
   );
   return { classified, questioned };
+}
+
+/** The planner's taxonomy for the shape the results page was won by, when a qualified brief carries one. */
+export function shapeFromBrief(term: string, raw: unknown): KeywordTaxonomy | null {
+  const o = raw as { status?: unknown; shape?: unknown } | null;
+  if (!o || o.status !== "qualified" || !ARTICLE_SHAPES.includes(o.shape as ArticleShape)) return null;
+  switch (o.shape as ArticleShape) {
+    case "comparison": return { article_type: "guide", article_subtype: "comparison" };
+    case "howTo": return { article_type: "guide", article_subtype: "howTo" };
+    case "explainer": return { article_type: "guide", article_subtype: "explainer" };
+    case "reference": return { article_type: "guide", article_subtype: "reference" };
+    case "listicle": {
+      // Which list is still the query's call: things you pick or things you copy.
+      const words = classifyKeyword(term, "commercial");
+      return { article_type: "listicle", article_subtype: words.article_type === "listicle" ? words.article_subtype : "roundup" };
+    }
+  }
 }
 
 /**

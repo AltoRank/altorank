@@ -26,7 +26,12 @@ export type OpportunityCause =
   | "buyer_mismatch"
   | "existing_page"
   | "not_editorial"
+  | "needs_page"
   | "duplicate";
+
+/** The shape of the editorial results a query is won by, in the planner's taxonomy. */
+export type ArticleShape = "comparison" | "listicle" | "howTo" | "explainer" | "reference";
+export const ARTICLE_SHAPES: readonly ArticleShape[] = ["comparison", "listicle", "howTo", "explainer", "reference"];
 
 export interface Opportunity {
   version: number;
@@ -42,6 +47,8 @@ export interface Opportunity {
   offering?: string;
   angle?: string;
   format?: string;
+  /** What the winning results are shaped like; the article takes this shape, not one guessed from the query's words. */
+  shape?: ArticleShape;
   conversionPath?: string;
   evidenceUrls?: string[];
   organicUrls?: string[];
@@ -212,7 +219,8 @@ export async function qualifyOpportunities(
             ]),
             "Write the user-facing fields in the market languageCode. The angle must be a specific publishable headline, at most 140 characters, naming the buying job or audience; not a paragraph, generic category guide, or instructions to a writer. Keep the reason under 240 characters.\nUse only the supplied business description for product claims. Name the specific audience, buying job, offering, proposed article angle, and a conversion destination supported by that description (use the homepage if no other URL is known).",
             `Today is ${new Date().toISOString().slice(0, 10)}. Keep the headline evergreen: include a calendar year only when that exact year appears in the query. Do not copy an old year from a search result.`,
-            'Return JSON: {"approve":boolean,"reason":string,"audience":string,"buyingJob":string,"offering":string,"angle":string,"format":"article"|"mixed"|"product"|"service"|"tool"|"navigation","conversionPath":string,"evidenceUrls":string[]}. Evidence URLs must be exact observed editorial results. Never estimate search volume.',
+            "shape: what the editorial results that win this query are shaped like, from their titles. comparison = one option against others or alternatives to a named product; listicle = a ranked or counted list of options; howTo = steps to do something; explainer = what something is or why; reference = figures, codes, rules or a checklist. The article takes this shape. A software-selection query whose winners are 'best X software' lists is a listicle; whose winners are 'X vs Y' or 'X alternatives' is a comparison.",
+            'Return JSON: {"approve":boolean,"reason":string,"audience":string,"buyingJob":string,"offering":string,"angle":string,"format":"article"|"mixed"|"product"|"service"|"tool"|"navigation","shape":"comparison"|"listicle"|"howTo"|"explainer"|"reference","conversionPath":string,"evidenceUrls":string[]}. Evidence URLs must be exact observed editorial results. Never estimate search volume.',
             JSON.stringify({ business: describeBusiness(context.business ?? {}), domain: context.domain, market: { language: context.languageCode, location: context.locationCode }, query: c.term, buyerFit: verdict.reason, results: organic }),
           ].join("\n"), { maxTokens: 1200, spend });
           const parsed = extractJson<Record<string, unknown>>(raw, "{", "}");
@@ -221,16 +229,28 @@ export async function qualifyOpportunities(
             const evidence = [...new Set((Array.isArray(parsed.evidenceUrls) ? parsed.evidenceUrls : []).filter((url): url is string => typeof url === "string" && supported.has(url)))];
             const fields = ["audience", "buyingJob", "offering", "angle", "format", "conversionPath"] as const;
             const complete = fields.every((key) => typeof parsed[key] === "string" && (parsed[key] as string).trim().length > 0);
-            if (!parsed.approve) { result.status = "rejected"; result.cause = "not_editorial"; result.reason = parsed.reason.slice(0, 400); }
+            const pageFormat = ["product", "service", "tool"].includes(String(parsed.format));
+            if (!parsed.approve && pageFormat) {
+              // Not a bad topic: the right buyer, measured demand, and a
+              // results page an article cannot win ("app schede palestra",
+              // 720/mo, all apps). What wins it is a page of that kind.
+              result.status = "rejected"; result.cause = "needs_page";
+              result.reason = `The results are ${String(parsed.format)} pages: this search wants a landing page, not an article. ${parsed.reason}`.slice(0, 400);
+            }
+            else if (!parsed.approve) { result.status = "rejected"; result.cause = "not_editorial"; result.reason = parsed.reason.slice(0, 400); }
             else if (complete && validArticleAngle(String(parsed.angle), c.term) && evidence.length >= 2 && ["article", "mixed"].includes(String(parsed.format))) {
               result.status = "qualified";
               result.funnel = funnelOf(verdict) ?? "buyer";
               delete result.cause;
               result.reason = parsed.reason.slice(0, 400);
               for (const key of fields) result[key] = (parsed[key] as string).trim().slice(0, 300);
+              if (ARTICLE_SHAPES.includes(parsed.shape as ArticleShape)) result.shape = parsed.shape as ArticleShape;
               // A model cannot invent or redirect the product's destination.
               result.conversionPath = ownPage(result.conversionPath, context.domain) ? result.conversionPath : `https://${context.domain.replace(/^https?:\/\//, "")}`;
               result.evidenceUrls = evidence;
+            } else if (pageFormat) {
+              result.status = "rejected"; result.cause = "needs_page";
+              result.reason = `The results are ${String(parsed.format)} pages: this search wants a landing page, not an article.`;
             } else {
               result.reason = evidence.length < 2
                 ? "The model approved the topic but named fewer than two observed editorial results as evidence. It is asked again on the next run."
@@ -315,5 +335,6 @@ const CAUSE_LABEL: Record<OpportunityCause, string> = {
   buyer_mismatch: "not a buyer search",
   existing_page: "an existing page already targets it",
   not_editorial: "the results are not articles",
+  needs_page: "wants a landing page, not an article",
   duplicate: "same intent as a planned topic",
 };

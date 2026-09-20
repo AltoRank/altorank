@@ -67,6 +67,8 @@ export interface KeywordRecommendation {
   reasons: string[];
   /** Set when an article in this workspace already targets the term. */
   existingArticleId: string | null;
+  /** A page on the site, not written here, that already targets the term. */
+  existingPageUrl: string | null;
   /** Most recent tracked position, when the rank cron has run. */
   currentPosition: number | null;
   /** Impressions over the GSC lookback window, when Search Console is synced. */
@@ -229,6 +231,11 @@ const STOPWORDS = new Set([
  * endings and sorting catches the overwhelmingly common case, which is word
  * order and connecting words.
  */
+/** "/alternatives/rankingcoach/" for a full URL; the URL itself when it will not parse. */
+function pathOf(url: string): string {
+  try { return new URL(url).pathname || "/"; } catch { return url; }
+}
+
 export function normalizeTarget(term: string): string {
   return term
     .toLowerCase()
@@ -430,7 +437,7 @@ const AUDIENCE_BOOST = 1.75;
 export async function recommendKeywords(
   supabase: SupabaseClient,
   workspaceId: string,
-  options?: { limit?: number; qualify?: boolean },
+  options?: { limit?: number; qualify?: boolean; qualifyBatches?: number },
 ): Promise<KeywordRecommendation[]> {
   const limit = options?.limit ?? 25;
 
@@ -474,7 +481,7 @@ export async function recommendKeywords(
   // Each of these is optional: a workspace with no rank history and no Search
   // Console still gets a usable queue from volume, difficulty and intent alone.
 
-  const [rankRes, articleRes, gscRes] = await Promise.allSettled([
+  const [rankRes, articleRes, gscRes, pagesRes] = await Promise.allSettled([
     supabase
       .from("keyword_rankings")
       .select("keyword_id, position, checked_at")
@@ -487,7 +494,7 @@ export async function recommendKeywords(
       .not("keyword", "is", null),
     supabase
       .from("analytics_metrics")
-      .select("query, impressions")
+      .select("query, impressions, page_url")
       .eq("workspace_id", workspaceId)
       .eq("source", "gsc")
       .gte(
@@ -495,6 +502,16 @@ export async function recommendKeywords(
         new Date(Date.now() - GSC_LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10),
       )
       .not("query", "is", null),
+    // The site's own pages and the query each one targets (lib/seo/site-crawl.ts
+    // fills `keyword` from the heading or from a ranking). An article written
+    // for a query one of these pages already holds is a second page on one
+    // query: altorank.co drafted "rankingcoach alternative" while
+    // /alternatives/rankingcoach/ sat at position 28 for it (2026-09-18).
+    supabase
+      .from("site_pages")
+      .select("url, keyword")
+      .eq("workspace_id", workspaceId)
+      .not("keyword", "is", null),
   ]);
 
   // Most recent position per keyword; the query is already newest-first.
@@ -523,15 +540,35 @@ export async function recommendKeywords(
     }
   }
 
+  // The page on this site that targets a query: a crawled page whose keyword
+  // is the query, or the page Search Console shows for it (the strongest
+  // page by impressions). Keyed like `articleByTerm`, so phrasings meet.
+  const pageByTarget = new Map<string, string>();
+  if (pagesRes.status === "fulfilled") {
+    for (const p of (pagesRes.value.data ?? []) as Array<{ url: string; keyword: string | null }>) {
+      if (p.keyword && p.url) pageByTarget.set(normalizeTarget(p.keyword), p.url);
+    }
+  }
+  const gscPageStrength = new Map<string, number>();
+
   const impressionsByTerm = new Map<string, number>();
   if (gscRes.status === "fulfilled") {
     for (const row of (gscRes.value.data ?? []) as Array<{
       query: string | null;
       impressions: number | null;
+      page_url?: string | null;
     }>) {
       if (!row.query) continue;
       const key = row.query.toLowerCase().trim();
       impressionsByTerm.set(key, (impressionsByTerm.get(key) ?? 0) + (row.impressions ?? 0));
+      if (row.page_url) {
+        const target = normalizeTarget(row.query!);
+        const strength = (gscPageStrength.get(target) ?? 0);
+        if ((row.impressions ?? 0) >= strength) {
+          gscPageStrength.set(target, row.impressions ?? 0);
+          pageByTarget.set(target, row.page_url);
+        }
+      }
     }
   }
 
@@ -560,6 +597,7 @@ export async function recommendKeywords(
 
     const position = latestPosition.get(k.id as string) ?? null;
     const existingArticleId = articleByTerm.get(normalizeTarget(term)) ?? null;
+    const existingPageUrl = pageByTarget.get(normalizeTarget(term)) ?? null;
     const impressions = impressionsByTerm.get(term) ?? null;
 
     const reasons: string[] = [];
@@ -619,6 +657,11 @@ export async function recommendKeywords(
       action = "refresh";
       score *= 0.8;
       reasons.push("an article already targets this, refresh rather than duplicate");
+    } else if (existingPageUrl && !existingArticleId && (action === "write" || action === "refresh")) {
+      // A page this product did not write and cannot revise. The honest
+      // answer is the page, not a competing post: say which one.
+      action = "skip";
+      reasons.push(`your page ${pathOf(existingPageUrl)} already targets this; update that page rather than add a second one`);
     }
 
     // --- Relevance ---------------------------------------------------------
@@ -782,6 +825,7 @@ export async function recommendKeywords(
       action,
       reasons,
       existingArticleId,
+      existingPageUrl,
       currentPosition: position,
       impressions,
       funnel,
@@ -847,6 +891,7 @@ export async function recommendKeywords(
       // what the pace will use; a rejection parks the row as it goes.
       : (await refillQualifiedQueue(supabase, workspaceId, candidateRows, context, {
           target: queueTarget(workspace?.auto_generate_weekly_limit as number | null | undefined),
+          ...(options.qualifyBatches ? { maxBatches: options.qualifyBatches } : {}),
         })).verdicts
     : new Map(candidateRows.flatMap((row) => { const o = readOpportunity(row.opportunity, fingerprint); return o ? [[row.id, o] as const] : []; }));
   const clusters: KeywordRecommendation[] = [];

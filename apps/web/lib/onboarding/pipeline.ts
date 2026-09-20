@@ -344,19 +344,38 @@ async function runPhases(
 
   // --- Phase 4: schedule the month, then write the first draft ------------
   emit({ phase: "planning", status: "active" });
+  // Four batches of up to fifteen results pages: about $0.25 at most, once.
+  const FIRST_LOOK_QUALIFY_BATCHES = 4;
   let plan: PlannedEntry[] = [];
   if (keywordsFound === 0) {
     emit({ phase: "planning", status: "skipped", detail: "Nothing to schedule until there are keywords." });
   } else {
     try {
-      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, { maxEntries: 5 });
+      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, { maxEntries: 5, qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES });
+      // Searches the right buyer makes that no article can win: the plan
+      // leaves them out, and the person should hear about them, because the
+      // page that wins them is theirs to build.
+      let needsPage = 0;
+      try {
+        const { count } = await supabase
+          .from("keywords")
+          .select("id", { count: "exact", head: true })
+          .eq("workspace_id", workspace.id)
+          .eq("opportunity->>cause", "needs_page");
+        needsPage = count ?? 0;
+      } catch {
+        // A count is a courtesy; a plan is not held up for it.
+      }
+      const pageNote = needsPage
+        ? ` ${needsPage} search${needsPage === 1 ? "" : "es"} your buyers make want${needsPage === 1 ? "s" : ""} a landing page rather than an article; see Keywords.`
+        : "";
       emit({
         phase: "planning",
         status: plan.length > 0 ? "done" : "skipped",
         detail:
           plan.length > 0
-            ? `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has a buyer and supporting search evidence.`
-            : "No keyword clear enough to plan yet.",
+            ? `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has a buyer and supporting search evidence.${pageNote}`
+            : `No keyword clear enough to plan yet.${pageNote}`,
         planned: plan.map((p) => ({ term: p.term, date: p.date, brief: p.brief })),
       });
     } catch (err) {
