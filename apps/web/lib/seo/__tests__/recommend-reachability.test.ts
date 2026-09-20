@@ -40,7 +40,7 @@ const PROFILE = buildTopicalProfile(
   "2026-09-07T00:00:00.000Z",
 );
 
-type Row = { id: string; term: string; volume: number; difficulty: number | null };
+type Row = { id: string; term: string; volume: number | null; difficulty: number | null };
 
 /** Only the reads `recommendKeywords` makes, in the shapes it makes them. */
 function client(rows: Row[], dr: number | null): SupabaseClient {
@@ -118,5 +118,29 @@ describe("recommendKeywords — reachability", () => {
     const recs = await recommendKeywords(client(ROWS, null), "ws1");
     expect(recs.find((r) => r.term === "website design")?.action).toBe("write");
     expect(recs.find((r) => r.term === "business building websites")?.action).toBe("skip");
+  });
+});
+
+describe("recommendKeywords — measured demand", () => {
+  // fitsuite.co, 2026-09-19: four of five planned topics were phrases the
+  // model proposed and no provider had a single search for.
+  const UNMEASURED: Row[] = [
+    { id: "m", term: "website design account", volume: 1200, difficulty: 28 },
+    { id: "u", term: "small business websites booking", volume: null, difficulty: null },
+    { id: "z", term: "business websites appointment", volume: 0, difficulty: null },
+  ];
+
+  it("never writes to a term nobody is known to search", async () => {
+    const recs = await recommendKeywords(client(UNMEASURED, 0), "ws1");
+    const byTerm = new Map(recs.map((r) => [r.term, r]));
+    expect(byTerm.get("small business websites booking")?.action).toBe("skip");
+    expect(byTerm.get("business websites appointment")?.action).toBe("skip");
+    expect(byTerm.get("small business websites booking")?.reasons.join(" ")).toContain("no measured demand");
+    expect(byTerm.get("website design account")?.action).toBe("write");
+  });
+
+  it("does not pick one even when nothing else is left", async () => {
+    const next = pickNextKeyword(await recommendKeywords(client(UNMEASURED.slice(1), 0), "ws1"));
+    expect(next).toBeNull();
   });
 });

@@ -798,7 +798,7 @@ export async function analyseDomain(options: {
                 locationCode: options.locationCode,
                 spend,
               })
-            : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [], competitorsUnresolved: [] as string[], competitorsFailed: [] as string[] };
+            : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [], competitorsUnresolved: [] as string[], competitorsFailed: [] as string[], serpRivals: [] as string[], fromSerpRivals: 0, serpRivalSearchesFailed: [] as string[] };
         const fromCompetitors = discovered.fromCompetitors;
         const fromIdeas = discovered.fromIdeas;
 
@@ -1020,8 +1020,14 @@ export async function analyseDomain(options: {
           rankedDropped
             ? `${rankedDropped} on pages that are not yours, left out`
             : "",
-          fromCompetitors.length
-            ? `${fromCompetitors.length} from what ${discovered.competitorsAsked.length === 1 ? "the competitor" : `the ${discovered.competitorsAsked.length} competitors`} you named rank${discovered.competitorsAsked.length === 1 ? "s" : ""} for`
+          discovered.serpRivals?.length
+            ? `${discovered.fromSerpRivals} from ${discovered.serpRivals.join(", ")}, who rank where your buyers search`
+            : "",
+          discovered.serpRivalSearchesFailed?.length
+            ? `${discovered.serpRivalSearchesFailed.length} rival search${discovered.serpRivalSearchesFailed.length === 1 ? "" : "es"} could not be read`
+            : "",
+          fromCompetitors.length - (discovered.fromSerpRivals ?? 0) > 0
+            ? `${fromCompetitors.length - (discovered.fromSerpRivals ?? 0)} from what ${discovered.competitorsAsked.length === 1 ? "the competitor" : `the ${discovered.competitorsAsked.length} competitors`} you named rank${discovered.competitorsAsked.length === 1 ? "s" : ""} for`
             : discovered.competitorsAsked.length
               ? `0 from the ${discovered.competitorsAsked.length} competitor${discovered.competitorsAsked.length === 1 ? "" : "s"} you named`
               : "",

@@ -698,6 +698,18 @@ export async function recommendKeywords(
       reasons.push(fit.reason);
     }
 
+    // Nothing is planned on a guess. Demand is measured when a provider
+    // reports searches, when Search Console reports impressions, or when the
+    // site already holds a position for the term. A phrase with none of the
+    // three is a model's idea of what buyers type: fitsuite.co's first plan
+    // (2026-09-19) was four such phrases and one keyword anyone searches.
+    // Refused here, before qualification, so no results page is bought for it.
+    const measuredDemand = (volume ?? 0) > 0 || (impressions ?? 0) > 0 || position !== null;
+    if (action === "write" && !measuredDemand) {
+      action = "skip";
+      reasons.push("no measured demand: no search volume, no impressions, no ranking");
+    }
+
     if (action === "write" && !proven && isOutOfReach(difficulty, authority)) {
       action = "skip";
       reasons.push(
