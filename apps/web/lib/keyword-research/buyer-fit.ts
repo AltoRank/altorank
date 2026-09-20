@@ -28,6 +28,7 @@ export interface FitProfile {
   audiences?: string[] | null;
   offerings?: string[] | null;
   competitors?: string[] | null;
+  searchRivals?: string[] | null;
   buyingJobs?: string[] | null;
   differentiators?: string[] | null;
   exclusions?: string[] | null;
@@ -57,7 +58,10 @@ const PROMPT = [
   "clients, running their practice. They are not shopping, but they are exactly who this business sells to.",
   "The searcher must BE that professional. The professional's own customers are not the audience: for software sold",
   "to personal trainers, \"how much does a personal trainer earn\" is aud, \"how much does a personal trainer cost\"",
-  "and \"gym near me\" are rejected. Every rejection rule above still applies to aud.",
+  "and \"gym near me\" are rejected. The phrase must be SPECIFIC to that profession: it names the profession or",
+  "something only that profession deals with. A question every freelancer or small business types (VAT number, tax",
+  "brackets, flat-rate tax regime, social security portal) is rejected even though the audience also types it.",
+  "Every rejection rule above still applies to aud.",
   "",
   "Write reasons in the business language when specified. Return ONLY a JSON array, no prose, no code fence, one object per phrase in the order given:",
   '[{"t":"<phrase exactly as given>","k":true|false,"f":"buy"|"aud","r":"<reason naming the searcher and their connection to the business, 20 words or fewer>"}]',
