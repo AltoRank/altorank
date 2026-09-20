@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-const { seeds, rivals, organic, bulk } = vi.hoisted(() => ({ seeds: vi.fn(), rivals: vi.fn(), organic: vi.fn(), bulk: vi.fn() }));
+const { seeds, rivals, organic, bulk, vet } = vi.hoisted(() => ({ seeds: vi.fn(), rivals: vi.fn(), organic: vi.fn(), bulk: vi.fn(), vet: vi.fn() }));
 vi.mock("@/lib/keyword-research/buyer-seeds", () => ({ proposeBuyerSeeds: seeds }));
-vi.mock("@/lib/keyword-research/serp-rivals", () => ({ findSerpRivals: rivals }));
+vi.mock("@/lib/keyword-research/serp-rivals", () => ({ findSerpRivals: rivals, vetRivals: vet }));
 vi.mock("@/lib/seo/competitors", async (original) => ({ ...await original<object>(), fetchOrganicCompetitors: organic }));
 vi.mock("@/lib/seo/domain-metrics", () => ({ fetchBulkAuthority: bulk }));
 
@@ -47,7 +47,10 @@ describe("suggestCompetitors", () => {
       { domain: "managify.it", sharedKeywords: 4, avgPosition: 12, estimatedTraffic: null },
       // One shared keyword is a coincidence, not a competitor.
       { domain: "aranzulla.it", sharedKeywords: 1, avgPosition: 3, estimatedTraffic: 9_000_000 },
+      // Shares enough keywords and is still a magazine: the vetting model says so.
+      { domain: "starbene.it", sharedKeywords: 5, avgPosition: 4, estimatedTraffic: 2_000_000 },
     ]);
+    vet.mockImplementation(async (candidates: Array<{ host: string }>) => ({ rivals: candidates.map((c) => c.host).filter((h) => h === "managify.it"), vetted: true }));
     bulk.mockResolvedValue(new Map([["fitsuite.co", 42], ["trainerize.com", 70], ["revoo-app.com", 22], ["qomodo.me", 28], ["managify.it", null]]));
     const out = await suggestCompetitors({ domain: "fitsuite.co", business, languageCode: "it", locationCode: 2380 });
     expect(out.own).toBe(42);
@@ -66,6 +69,7 @@ describe("suggestCompetitors", () => {
   it("still answers with what it has when a source fails", async () => {
     seeds.mockRejectedValue(new Error("no key"));
     organic.mockRejectedValue(new Error("503"));
+    vet.mockRejectedValue(new Error("no key"));
     bulk.mockRejectedValue(new Error("503"));
     const out = await suggestCompetitors({ domain: "fitsuite.co", business, languageCode: "it", locationCode: 2380 });
     expect(out).toEqual({ own: null, searchRivals: [], suggestions: [{ domain: "trainerize.com", source: "site", authority: null, size: null }] });

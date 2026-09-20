@@ -20,7 +20,7 @@
 
 import type { BusinessProfile } from "./business-profile";
 import { proposeBuyerSeeds } from "@/lib/keyword-research/buyer-seeds";
-import { findSerpRivals } from "@/lib/keyword-research/serp-rivals";
+import { findSerpRivals, vetRivals } from "@/lib/keyword-research/serp-rivals";
 import { isBrandTerm } from "@/lib/keyword-research/seeds";
 import { fetchOrganicCompetitors, rankCompetitors } from "@/lib/seo/competitors";
 import { fetchBulkAuthority } from "@/lib/seo/domain-metrics";
@@ -112,14 +112,21 @@ export async function suggestCompetitors(options: {
       // of them: fitsuite.co's index competitors were a tech blog and a
       // running coach. Sharing one keyword is a coincidence; sharing several
       // is a market.
-      .then((items) => rankCompetitors(own, items.filter((c) => c.sharedKeywords >= MIN_SHARED_KEYWORDS), 5).map((c) => c.domain))
+      .then((items) => rankCompetitors(own, items.filter((c) => c.sharedKeywords >= MIN_SHARED_KEYWORDS), 8).map((c) => c.domain))
       .catch(() => [] as string[]),
   ]);
+  // The index answers "who ranks for what you rank for", and for a site with
+  // a handful of rankings that is whoever holds them: a tech blog, a health
+  // magazine, a running coach (fitsuite.co, 2026-09-20). Same question the
+  // results-page rivals get: does this host sell against the business.
+  const indexVetted = index.length
+    ? (await vetRivals(index.map((domain) => ({ host: domain, pages: 0, rank: 0, titles: [] })), options.business, { spend: options.spend }).catch(() => ({ rivals: [] as string[] }))).rivals
+    : [];
 
   const merged = mergeSuggestions(own, [
     { source: "site", domains: named },
     { source: "serp", domains: serp.rivals },
-    { source: "index", domains: index },
+    { source: "index", domains: indexVetted },
   ]);
   const authority = await fetchBulkAuthority([own, ...merged.map((m) => m.domain)]).catch(() => new Map<string, number | null>());
   const ownAuthority = authority.get(own) ?? null;

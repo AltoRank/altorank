@@ -43,7 +43,7 @@ const PROFILE = buildTopicalProfile(
 type Row = { id: string; term: string; volume: number | null; difficulty: number | null; buyer_fit?: unknown; intent?: string };
 
 /** Only the reads `recommendKeywords` makes, in the shapes it makes them. */
-function client(rows: Row[], dr: number | null): SupabaseClient {
+function client(rows: Row[], dr: number | null, rankings: Array<{ keyword_id: string; position: number; checked_at: string }> = []): SupabaseClient {
   const empty = { data: [] as unknown[] };
   const chain = (value: unknown): Record<string, unknown> => {
     const self: Record<string, unknown> = {};
@@ -60,7 +60,9 @@ function client(rows: Row[], dr: number | null): SupabaseClient {
       return chain(
         table === "keywords"
           ? { data: rows.map((r) => ({ intent: "commercial", ...r, status: "new", source: null })) }
-          : empty,
+          : table === "keyword_rankings"
+            ? { data: rankings }
+            : empty,
       );
     },
   } as unknown as SupabaseClient;
@@ -147,18 +149,20 @@ describe("recommendKeywords — measured demand", () => {
 
 describe("recommendKeywords — audience topics", () => {
   const PAIR: Row[] = [
-    { id: "b", term: "small business websites", volume: 1200, difficulty: 28, buyer_fit: { keep: true, reason: null, funnel: "buyer" } },
+    { id: "b", term: "website design", volume: 1200, difficulty: 28, buyer_fit: { keep: true, reason: null, funnel: "buyer" } },
     { id: "a", term: "how much do salon owners earn", volume: 1200, difficulty: 28, buyer_fit: { keep: true, reason: null, funnel: "audience" } },
   ];
   it("writes them, labelled, and below the same demand with buying intent", async () => {
-    const recs = await recommendKeywords(client(PAIR, 0), "ws1");
+    // The buyer term is proven (a position inside the top 20), so neither row
+    // is under the vocabulary filter and the only difference is the funnel.
+    const recs = await recommendKeywords(client(PAIR, 0, [{ keyword_id: "b", position: 15, checked_at: "2026-09-20T00:00:00Z" }]), "ws1");
     const aud = recs.find((r) => r.term === "how much do salon owners earn")!;
-    const buy = recs.find((r) => r.term === "small business websites")!;
+    const buy = recs.find((r) => r.term === "website design")!;
     expect(aud.action).toBe("write");
     expect(aud.funnel).toBe("audience");
     expect(aud.reasons.join(" ")).toContain("top of funnel");
     expect(aud.score).toBeLessThan(buy.score);
-    expect(pickNextKeyword(recs)?.term).toBe("small business websites");
+    expect(pickNextKeyword(recs)?.term).toBe("website design");
   });
 });
 
