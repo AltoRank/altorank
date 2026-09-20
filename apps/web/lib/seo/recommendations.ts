@@ -651,13 +651,23 @@ export async function recommendKeywords(
     // test result, with or without an article; the article only decides
     // write-vs-refresh, and that is handled above.
     const proven = position !== null && (position <= 20 || (impressions ?? 0) >= STRIKING_MEASURED_MIN_IMPRESSIONS);
+    // An audience topic is, by construction, worded in the audience's terms
+    // and not the site's: a coaching SaaS has no page with "stipendio" or
+    // "codice ATECO" on it, which is the point of writing one. The buyer test
+    // has already read the phrase against the business and kept it; the
+    // vocabulary filter would then score it 3.5 against 27.8 for a product
+    // term (fitsuite.co, 2026-09-20) and put it behind a hundred skipped rows,
+    // where the first plan never reaches it.
+    const vouched = proven || funnel === "audience";
     const relevance = proven
       ? { score: 1, matched: [], unmatched: [], reason: "the site already ranks for this" }
-      : scoreRelevance(k.term as string, profile, subject);
+      : funnel === "audience"
+        ? { score: 1, matched: [], unmatched: [], reason: "a question your audience asks, in their words rather than the site's" }
+        : scoreRelevance(k.term as string, profile, subject);
     // Squared, so a half-relevant term (one word of two on the site) is
     // worth a quarter of a fully on-topic one, not half. Volume differences
     // are logarithmic here; relevance has to be able to outvote them.
-    if (!proven) {
+    if (!vouched) {
       score *= RELEVANCE_FLOOR + (1 - RELEVANCE_FLOOR) * relevance.score * relevance.score;
     }
     // Named the buyer, not just the category. Applies to proven rows too: a

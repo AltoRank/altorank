@@ -22,6 +22,10 @@ import {
   type InferenceResult,
 } from "@/lib/onboarding/business-profile";
 import { resolveCompetitorDomains } from "@/lib/onboarding/competitor-domains";
+import { classifyRivalSize, suggestCompetitors as findCompetitorSuggestions, type CompetitorSuggestions, type RivalSize } from "@/lib/onboarding/competitor-suggestions";
+import { fetchBulkAuthority } from "@/lib/seo/domain-metrics";
+import { languageCodeOf } from "@/lib/keyword-research/locale";
+import { e2eStubsEnabled, stubSuggestCompetitors } from "@/lib/e2e/stubs";
 import { resolveLocale } from "@/lib/onboarding/locale";
 import { discoverSite, type SiteDiscovery } from "@/lib/onboarding/site-discovery";
 import {
@@ -78,6 +82,54 @@ export async function proposeProfile(workspaceId: string): Promise<InferenceResu
     result.profile.competitors = domains.filter((d) => d !== own);
   }
   return result;
+}
+
+/**
+ * Rivals to propose on the competitor step, tagged by source and size.
+ *
+ * Takes the profile from the screen rather than the row: nothing is saved
+ * before the one button. Costs a few provider calls (seed proposal, up to six
+ * results pages, one vetting call, one bulk-rank call), so it sits behind the
+ * same spend gate as the profile read.
+ */
+export async function suggestCompetitors(workspaceId: string, profile: BusinessProfile): Promise<CompetitorSuggestions> {
+  const { supabase, workspace } = await assertWorkspace(workspaceId);
+  if (!workspace.domain) return { own: null, suggestions: [], searchRivals: [] };
+  // E2E_STUBS: a fixture, no provider (lib/e2e/stubs.ts).
+  if (e2eStubsEnabled()) return stubSuggestCompetitors(workspace.domain, profile);
+  const { accountId, user } = await requireAuth();
+  const gate = await canSpend(supabase, accountId, { userEmail: user.email ?? undefined, workspaceId, action: "keyword-research" });
+  if (!gate.allowed) return { own: null, suggestions: [], searchRivals: [] };
+  const locale = resolveLocale(profile.language, profile.country);
+  return findCompetitorSuggestions({
+    domain: workspace.domain,
+    business: profile,
+    languageCode: languageCodeOf(locale.language),
+    locationCode: locale.locationCode,
+    spend: { supabase, workspaceId },
+  });
+}
+
+/**
+ * One typed entry, resolved to a domain and sized against the site.
+ * "revoo" becomes revoo-app.com; a name nothing can place returns null and
+ * the screen says so, rather than storing a word research cannot read.
+ */
+export async function resolveCompetitor(
+  workspaceId: string,
+  entry: string,
+  own: number | null,
+): Promise<{ domain: string; authority: number | null; size: RivalSize | null } | null> {
+  const { workspace } = await assertWorkspace(workspaceId);
+  if (e2eStubsEnabled()) {
+    const domain = entry.trim().toLowerCase().replace(/\s+/g, "-");
+    return domain ? { domain: domain.includes(".") ? domain : `${domain}.example`, authority: null, size: null } : null;
+  }
+  const { domains } = await resolveCompetitorDomains([entry]);
+  const domain = domains.find((d) => d !== (workspace.domain ?? "").replace(/^www\./, "").toLowerCase());
+  if (!domain) return null;
+  const authority = own === null ? null : (await fetchBulkAuthority([domain]).catch(() => new Map<string, number | null>())).get(domain) ?? null;
+  return { domain, authority, size: classifyRivalSize(own, authority) };
 }
 
 /** Save the profile the person confirmed. Labels stay in the profile; codes go in the columns. */
