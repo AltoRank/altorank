@@ -40,7 +40,7 @@ const PROFILE = buildTopicalProfile(
   "2026-09-07T00:00:00.000Z",
 );
 
-type Row = { id: string; term: string; volume: number | null; difficulty: number | null; buyer_fit?: unknown };
+type Row = { id: string; term: string; volume: number | null; difficulty: number | null; buyer_fit?: unknown; intent?: string };
 
 /** Only the reads `recommendKeywords` makes, in the shapes it makes them. */
 function client(rows: Row[], dr: number | null): SupabaseClient {
@@ -59,7 +59,7 @@ function client(rows: Row[], dr: number | null): SupabaseClient {
     from(table: string) {
       return chain(
         table === "keywords"
-          ? { data: rows.map((r) => ({ ...r, intent: "commercial", status: "new", source: null })) }
+          ? { data: rows.map((r) => ({ intent: "commercial", ...r, status: "new", source: null })) }
           : empty,
       );
     },
@@ -159,5 +159,24 @@ describe("recommendKeywords — audience topics", () => {
     expect(aud.reasons.join(" ")).toContain("top of funnel");
     expect(aud.score).toBeLessThan(buy.score);
     expect(pickNextKeyword(recs)?.term).toBe("website design account");
+  });
+});
+
+describe("recommendKeywords — a navigational label against a buyer verdict", () => {
+  // Two phrasings of one search. The bigger one carries the provider's
+  // "navigational" label; the buyer test kept both as product searches.
+  const PHRASINGS: Row[] = [
+    { id: "s", term: "small business websites", volume: 90, difficulty: null, buyer_fit: { keep: true, reason: null, funnel: "buyer" } },
+    { id: "g", term: "website design account", volume: 390, difficulty: 6, intent: "navigational", buyer_fit: { keep: true, reason: null, funnel: "buyer" } },
+  ];
+  it("ranks the phrasing more people search first, and says why the label was set aside", async () => {
+    const recs = await recommendKeywords(client(PHRASINGS, 0), "ws1");
+    expect(recs[0].term).toBe("website design account");
+    expect(recs[0].intent).toBe("commercial");
+    expect(recs[0].reasons.join(" ")).toContain("labelled navigational");
+  });
+  it("keeps the label when no buyer verdict vouches for the term", async () => {
+    const recs = await recommendKeywords(client([{ ...PHRASINGS[1], buyer_fit: null }], 0), "ws1");
+    expect(recs[0].intent).toBe("navigational");
   });
 });

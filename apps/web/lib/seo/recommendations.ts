@@ -546,7 +546,17 @@ export async function recommendKeywords(
     const volumeKnown = typeof k.volume === "number";
     const volume = volumeKnown ? (k.volume as number) : null;
     const difficulty = (k.difficulty as number | null) ?? null;
-    const intent = ((k.intent as KeywordIntent) ?? "info") satisfies KeywordIntent;
+    const labelled = ((k.intent as KeywordIntent) ?? "info") satisfies KeywordIntent;
+    // A provider's "navigational" means "this looks like a name". The buyer
+    // test has read the phrase against the business and, when it kept it, said
+    // what it is: a product search or an audience question. That verdict is
+    // about this site; the label is about the string. fitsuite.co, 2026-09-19:
+    // "gestionale palestra" (390/mo, KD 6) was labelled navigational, took the
+    // 0.3 weight against 1.5, and lost its own search intent to a 90/mo
+    // phrasing of the same query. Brand navigation never gets here: the buyer
+    // test refuses it.
+    const kept = funnelOf(k.buyer_fit as FitVerdict | null);
+    const intent: KeywordIntent = labelled === "navigational" && kept ? (kept === "buyer" ? "commercial" : "info") : labelled;
 
     const position = latestPosition.get(k.id as string) ?? null;
     const existingArticleId = articleByTerm.get(normalizeTarget(term)) ?? null;
@@ -576,7 +586,8 @@ export async function recommendKeywords(
     // A search by the people the business sells to, made while they are not
     // shopping. Worth writing, and worth less than a search by someone who is:
     // it sits below every comparable buying topic and says so on the row.
-    const funnel = funnelOf(k.buyer_fit as FitVerdict | null);
+    const funnel = kept;
+    if (labelled !== intent) reasons.push(`labelled navigational by the keyword index; the buyer test read it as ${kept === "buyer" ? "a product search" : "an audience question"}`);
     if (funnel === "audience") {
       score *= AUDIENCE_TOPIC_WEIGHT;
       reasons.push("top of funnel: your audience searches this, but not while choosing a product");
