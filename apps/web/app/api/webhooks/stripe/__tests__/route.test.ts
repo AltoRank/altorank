@@ -47,7 +47,7 @@ function query(table: string, op: "select" | "update", row?: Row) {
   return q;
 }
 
-const { topUp } = vi.hoisted(() => ({ topUp: vi.fn(async () => []) }));
+const { topUp } = vi.hoisted(() => ({ topUp: vi.fn(async (..._a: unknown[]) => [] as unknown[]) }));
 vi.mock("@/lib/onboarding/plan", () => ({ schedulePlan: (...a: unknown[]) => topUp(...a) }));
 
 vi.mock("@/lib/supabase/server", () => ({
