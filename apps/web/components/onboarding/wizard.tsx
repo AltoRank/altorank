@@ -44,6 +44,7 @@ import {
 import { saveAttribution } from "@/app/actions/attribution";
 import { AttributionPicker, EMPTY_ATTRIBUTION, attributionComplete, type AttributionDraft } from "@/components/onboarding/attribution-picker";
 import type { SiteDetails } from "@/lib/onboarding/output-settings";
+import type { OnboardingHeld } from "@/lib/onboarding/events";
 import { EMPTY_PROFILE, type BusinessProfile, type InferenceReason } from "@/lib/onboarding/business-profile";
 import type { SiteDiscovery } from "@/lib/onboarding/site-discovery";
 // The forms themselves live in components/settings: every wizard screen is
@@ -86,6 +87,7 @@ export function OnboardingWizard({
   askAttribution,
   alreadyOnboarded = false,
   gatePlan = [],
+  gateHeld = null,
   gateReport = null,
   gateWritten = [],
   initialRun = null,
@@ -131,6 +133,8 @@ export function OnboardingWizard({
   alreadyOnboarded?: boolean;
   /** The month already planned for this account, shown locked on the gate. */
   gatePlan?: OnboardingPlanned[];
+  /** Topics held for the trial, shown locked beside the plan on the gate. */
+  gateHeld?: OnboardingHeld | null;
   /** The analysis already run on this account's site, shown open on the gate. */
   gateReport?: FirstLookReport | null;
   /** Articles the run already wrote, matched to the plan by keyword. */
@@ -267,7 +271,7 @@ export function OnboardingWizard({
   // There is nothing to show the progress of and nothing to set up again -
   // only the card stands between this account and the product.
   if (!running && alreadyOnboarded && trialEligible) {
-    return <TrialGateScreen canBuy={canBuy} onRetry={() => setRunning(true)} domain={domain} planned={gatePlan} report={gateReport} written={gateWritten} askAttribution={askAttribution} />;
+    return <TrialGateScreen canBuy={canBuy} onRetry={() => setRunning(true)} domain={domain} planned={gatePlan} held={gateHeld} report={gateReport} written={gateWritten} askAttribution={askAttribution} />;
   }
 
   if (running) {
@@ -566,6 +570,7 @@ function TrialGateScreen({
   canBuy,
   onRetry,
   planned,
+  held = null,
   report,
   written,
   askAttribution = false,
@@ -574,6 +579,7 @@ function TrialGateScreen({
   canBuy: boolean;
   onRetry: () => void;
   planned: OnboardingPlanned[];
+  held?: OnboardingHeld | null;
   report: FirstLookReport | null;
   written: { id: string; keyword: string; title: string; wordCount: number }[];
   askAttribution?: boolean;
@@ -631,7 +637,7 @@ function TrialGateScreen({
               <div className="mb-2 flex items-baseline justify-between gap-3">
                 <div className="text-[12.5px] font-medium text-ink">Your first articles</div>
                 <div className="text-[11.5px] text-ink-3">
-                  {planned.length} {planned.length === 1 ? "article" : "articles"} scheduled
+                  {planned.length} {planned.length === 1 ? "article" : "articles"} scheduled{held && held.count > 0 ? `, ${held.count} more ready for the trial` : ""}
                 </div>
               </div>
               {/* The first row is the article that exists: its real title, its
@@ -700,12 +706,14 @@ function TrialStep({
   drafts,
   canBuy,
   planned,
+  held,
   returnTo,
   askAttribution = false,
 }: {
   drafts: OnboardingArticle[];
   canBuy: boolean;
   planned: OnboardingPlanned[];
+  held: OnboardingHeld | null;
   returnTo: string;
   askAttribution?: boolean;
 }) {
@@ -718,7 +726,16 @@ function TrialStep({
       <TrialOffer canBuy={canBuy} returnTo={returnTo} />
       {askAttribution && <AttributionAsk />}
 
-      {planned.length > 0 && (
+      {held && held.count > 0 && (
+        <p className="m-0 mt-5 text-[13px] leading-[1.6] text-ink-2">
+          {/* Count and dates, never the terms: a readable list of topics is a
+              free keyword report, and the trial is what buys it. */}
+          <strong>Ready for your trial:</strong> {held.count} more {held.count === 1 ? "topic" : "topics"}, each with a buyer and search evidence behind it,
+          {held.dates.length ? ` on ${calendarDay(held.dates[0])}${held.dates.length > 1 ? ` to ${calendarDay(held.dates[held.dates.length - 1])}` : ""}` : ""}. Start the trial to see them and keep the schedule writing.
+        </p>
+      )}
+
+      {planned.length > 0 && !(held && held.count > 0) && (
         <p className="m-0 mt-5 text-[13px] leading-[1.6] text-ink-2">
           {/* "on the calendar", not "more": the plan counts the drafts above,
               so a run that planned eight and wrote seven has one still to come,
@@ -856,7 +873,7 @@ function RunScreen({
           <Button onClick={() => { setState(null); setAttempt((a) => a + 1); }}>Retry first draft</Button>
         </div>}
         {trialStep && (
-          <TrialStep canBuy={canBuy} drafts={drafts} planned={planned} returnTo="/articles?status=review" askAttribution={askAttribution} />
+          <TrialStep canBuy={canBuy} drafts={drafts} planned={planned} held={trialEligible ? state?.held ?? null : null} returnTo="/articles?status=review" askAttribution={askAttribution} />
         )}
 
         <div className="mx-auto max-w-[640px]">
@@ -868,6 +885,7 @@ function RunScreen({
               autoNavigate={false}
               onState={setState}
               initialRun={attempt === 0 ? initialRun : null}
+              lockHeld={trialEligible}
             />
             {planned.length > 0 && (
               <div className="mt-5">
@@ -881,6 +899,16 @@ function RunScreen({
                   ))}
                 </ul>
                 {planned.length > 10 && <p className="m-0 mt-1.5 text-[12px] text-ink-3">and {planned.length - 10} more on the calendar.</p>}
+                {trialEligible && state?.held && state.held.count > 0 && (
+                  <ul className="m-0 mt-1.5 grid list-none grid-cols-2 gap-1.5 p-0" aria-label="Held for the trial">
+                    {state.held.dates.slice(0, 10).map((date, i) => (
+                      <li key={date + i} className="flex items-baseline gap-2 text-[12.5px] text-ink-3">
+                        <span className="font-mono text-[11px]">{date.slice(5)}</span>
+                        <span className="truncate">Ready · opens with the trial</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
             <div className="mt-6 flex items-center gap-3">

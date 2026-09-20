@@ -12,6 +12,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordEvent } from "@/lib/observability/record";
 import { notifySetupFailed } from "@/lib/email/lifecycle";
 import { loadFirstLookReport } from "./first-look-report";
+import { heldTopics } from "./plan";
+import { FREE_TIER_PACE } from "@/lib/content/pace";
+import type { OnboardingHeld } from "./events";
 import {
   initialOnboardingState,
   onboardingOutcome,
@@ -77,7 +80,18 @@ export async function latestRun(
   // The audit the keywords phase wrote, when it has. Bounded by the run's
   // start for the same reason the drafts are.
   const report = await loadFirstLookReport(supabase, workspaceId, run.started_at);
-  return { run, article, drafts, stale: isRunStale(run, now), report };
+  // What a trial would open. Read here, once the plan exists, so a screen
+  // that shows the plan can show what stands behind it; a count is cheap.
+  let held: OnboardingHeld | undefined;
+  if ((run.planned ?? []).length) {
+    try {
+      const { data: ws } = await supabase.from("workspaces").select("auto_generate_weekly_limit").eq("id", workspaceId).maybeSingle();
+      held = await heldTopics(supabase, workspaceId, (ws?.auto_generate_weekly_limit as number | null) ?? FREE_TIER_PACE, run.planned.map((p) => p.date));
+    } catch {
+      // Then the screen shows the plan without its locked rows.
+    }
+  }
+  return { run, article, drafts, stale: isRunStale(run, now), report, ...(held ? { held } : {}) };
 }
 
 /**

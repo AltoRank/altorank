@@ -135,10 +135,18 @@ export interface OnboardingStep {
   detail?: string;
 }
 
+/** Topics the plan holds back for the trial: how many, and the days they would take. */
+export interface OnboardingHeld {
+  count: number;
+  dates: string[];
+}
+
 export interface OnboardingState {
   steps: OnboardingStep[];
   keywordsFound: number | null;
   planned: OnboardingPlanned[];
+  /** Read from the workspace with each snapshot, never from an event; null until known. */
+  held: OnboardingHeld | null;
   article: OnboardingArticle | null;
   /**
    * Every draft the run has written so far, first one included, in the order
@@ -157,6 +165,7 @@ export function initialOnboardingState(): OnboardingState {
     steps: PHASE_ORDER.map((phase) => ({ phase, status: "pending" as PhaseStatus })),
     keywordsFound: null,
     planned: [],
+    held: null,
     article: null,
     drafts: [],
     ready: false,
@@ -237,6 +246,8 @@ export interface OnboardingRunSnapshot {
   article: OnboardingRunArticle | null;
   /** The drafts written since the run started, oldest first. Absent on old callers. */
   drafts?: OnboardingRunArticle[];
+  /** Qualified topics the plan left unscheduled, for the trial's locked rows. Absent on old callers. */
+  held?: OnboardingHeld;
   /** A `running` row nothing has written to for RUN_STALE_MS: the worker died. */
   stale: boolean;
   /**
@@ -305,7 +316,7 @@ function toOnboardingArticle(article: OnboardingRunArticle): OnboardingArticle {
 export function stateFromRun(
   run: OnboardingRunRow | null,
   article: OnboardingRunArticle | null,
-  opts: { stale?: boolean; drafts?: OnboardingRunArticle[] } = {},
+  opts: { stale?: boolean; drafts?: OnboardingRunArticle[]; held?: OnboardingHeld } = {},
 ): OnboardingState {
   const base = initialOnboardingState();
   if (!run) return base;
@@ -325,6 +336,7 @@ export function stateFromRun(
     steps,
     keywordsFound: run.keywords_found,
     planned: run.planned ?? [],
+    held: opts.held ?? null,
     article: draft,
     drafts,
     ready: run.status !== "running",

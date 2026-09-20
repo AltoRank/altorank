@@ -34,13 +34,14 @@ import { analyseDomain, isTransientCrawlFailure } from "@/lib/audit/domain-analy
 import { refusing } from "@/lib/audit/host-circuit";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { generateArticle } from "@/lib/content/generate";
+import { trialGateApplies } from "@/lib/billing/trial";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
 import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
-import { schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
+import { heldTopics, schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
 
 /** Pages the onboarding minute reads. The nightly pass reads up to forty. */
 const ONBOARDING_CRAWL_PAGES = 20;
@@ -351,7 +352,16 @@ async function runPhases(
     emit({ phase: "planning", status: "skipped", detail: "Nothing to schedule until there are keywords." });
   } else {
     try {
-      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, { maxEntries: 5, qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES });
+      // An account that will be asked for a card gets one article on the
+      // calendar and the rest held: the trial is what opens the month. The
+      // held topics are qualified rows with no calendar entry, read back by
+      // heldTopics for the locked rows the screen shows. Everyone else -
+      // self-host, operator, paying - gets the month as before.
+      const gated = trialGateApplies(await getQuota(supabase, workspace.account_id).catch(() => null));
+      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, { maxEntries: gated ? 1 : 5, qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES });
+      const held = gated && plan.length
+        ? await heldTopics(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, plan.map((p) => p.date)).catch(() => ({ count: 0, dates: [] }))
+        : { count: 0, dates: [] };
       // Searches the right buyer makes that no article can win: the plan
       // leaves them out, and the person should hear about them, because the
       // page that wins them is theirs to build.
@@ -374,7 +384,9 @@ async function runPhases(
         status: plan.length > 0 ? "done" : "skipped",
         detail:
           plan.length > 0
-            ? `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has a buyer and supporting search evidence.${pageNote}`
+            ? held.count > 0
+              ? `Scheduled your first article. ${held.count} more topic${held.count === 1 ? " is" : "s are"} ready, each with a buyer and supporting search evidence; the trial opens them.${pageNote}`
+              : `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has a buyer and supporting search evidence.${pageNote}`
             : `No keyword clear enough to plan yet.${pageNote}`,
         planned: plan.map((p) => ({ term: p.term, date: p.date, brief: p.brief })),
       });

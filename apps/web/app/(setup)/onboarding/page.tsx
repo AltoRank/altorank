@@ -10,6 +10,7 @@ import { FREE_TIER_PACE } from "@/lib/content/pace";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { latestRun } from "@/lib/onboarding/run-store";
+import { heldTopics } from "@/lib/onboarding/plan";
 
 export const metadata: Metadata = { title: "Set up your site" };
 
@@ -107,6 +108,10 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
           ),
       ])
     : [[], null, []];
+  // What the trial would open, beside the locked month: read only on the gate.
+  const gateHeld = gateShown && gatePlan.length
+    ? await heldTopics(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, gatePlan.map((p) => p.date)).catch(() => null)
+    : null;
 
   return (
     <>
@@ -145,6 +150,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       // overwritten with whatever the model proposes today.
       alreadyOnboarded={Boolean(workspace.onboarded_at || workspace.onboarding_skipped_at)}
       gatePlan={gatePlan}
+      gateHeld={gateHeld}
       gateReport={gateReport}
       gateWritten={gateWritten}
       initialRun={run}

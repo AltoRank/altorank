@@ -79,6 +79,7 @@ export function OnboardingProgress({
   autoNavigate = true,
   onState,
   initialRun = null,
+  lockHeld = false,
 }: {
   workspaceId: string;
   domain: string;
@@ -96,10 +97,12 @@ export function OnboardingProgress({
    * that has already finished is shown as it is and nothing is started.
    */
   initialRun?: OnboardingRunSnapshot | null;
+  /** Draw the topics held for the trial as locked squares on the strip. */
+  lockHeld?: boolean;
 }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState>(() =>
-    initialRun?.run ? stateFromRun(initialRun.run, initialRun.article, { stale: initialRun.stale, drafts: initialRun.drafts }) : initialOnboardingState(),
+    initialRun?.run ? stateFromRun(initialRun.run, initialRun.article, { stale: initialRun.stale, drafts: initialRun.drafts, held: initialRun.held }) : initialOnboardingState(),
   );
   // The site report, from the same snapshot the phases come from. Kept apart
   // from the reducer: it is a thing the run measured, not a step of the run.
@@ -135,7 +138,7 @@ export function OnboardingProgress({
           if (cancelled) return;
           if (snapshot.run) {
             failures = 0;
-            const next = stateFromRun(snapshot.run, snapshot.article, { stale: snapshot.stale, drafts: snapshot.drafts });
+            const next = stateFromRun(snapshot.run, snapshot.article, { stale: snapshot.stale, drafts: snapshot.drafts, held: snapshot.held });
             setState(next);
             if (snapshot.report) setReport(snapshot.report);
             if (isTerminal(next)) return;
@@ -226,6 +229,7 @@ export function OnboardingProgress({
 
       <CalendarStrip
         planned={state.planned}
+        heldDates={lockHeld ? state.held?.dates ?? [] : []}
         drafting={drafting?.status === "active"}
         article={state.article}
         skipped={drafting?.status === "skipped" || drafting?.status === "failed"}
@@ -369,18 +373,23 @@ const MONTH_DAY: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", 
  */
 function CalendarStrip({
   planned,
+  heldDates,
   drafting,
   article,
   skipped,
   skippedReason,
 }: {
   planned: OnboardingState["planned"];
+  /** Days a held topic would take; drawn as a locked chip, no term. */
+  heldDates?: string[];
   drafting: boolean;
   article: OnboardingState["article"];
   skipped: boolean;
   skippedReason?: string;
 }) {
   const { days, beyond, lastDate, draftDate } = calendarStripDays(planned);
+  const heldOn = new Map<string, number>();
+  for (const d of heldDates ?? []) heldOn.set(d, (heldOn.get(d) ?? 0) + 1);
 
   return (
     <div>
@@ -431,6 +440,14 @@ function CalendarStrip({
                 </div>
               ))}
               {more > 0 && <div className="mt-1 px-1 text-[10px] leading-tight text-ink-3">+{more}</div>}
+              {(heldOn.get(day.date) ?? 0) > 0 && (
+                <div
+                  className="mt-1 truncate rounded-sm border border-dashed border-line px-1 py-0.5 text-[10.5px] leading-tight text-ink-3"
+                  title="A topic held for the trial"
+                >
+                  {(heldOn.get(day.date) ?? 0) > 1 ? `${heldOn.get(day.date)} held` : "Held for trial"}
+                </div>
+              )}
             </div>
           );
         })}

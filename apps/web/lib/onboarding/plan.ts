@@ -455,6 +455,40 @@ export async function decoratePlannedKeywords(
   return { classified, questioned };
 }
 
+/** Topics ready to schedule that the plan did not take, and the days they would land on. */
+export interface HeldTopics {
+  count: number;
+  /** YYYY-MM-DD, one per held topic, on the pace grid after what is scheduled. */
+  dates: string[];
+}
+
+/**
+ * What a trial would open: the qualified topics the first look left out.
+ *
+ * A trial-eligible account gets one article scheduled and the rest held
+ * (see runOnboarding). The held ones are ordinary qualified rows with no
+ * calendar entry, so nothing is stored for this; it is read when a screen
+ * needs it. The dates are where they would go, on the same grid the planner
+ * uses, so the locked rows sit on real days rather than on "soon".
+ */
+export async function heldTopics(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  weeklyLimit: number,
+  occupied: string[],
+  from: Date = new Date(),
+): Promise<HeldTopics> {
+  const { count } = await supabase
+    .from("keywords")
+    .select("id", { count: "exact", head: true })
+    .eq("workspace_id", workspaceId)
+    .eq("status", "new")
+    .eq("opportunity->>status", "qualified")
+    .is("plan_excluded_at", null);
+  const n = Math.min(count ?? 0, PLAN_MAX_ENTRIES);
+  return { count: n, dates: n ? nextOpenDates(occupied, Math.max(1, weeklyLimit), n, from) : [] };
+}
+
 /** The planner's taxonomy for the shape the results page was won by, when a qualified brief carries one. */
 export function shapeFromBrief(term: string, raw: unknown): KeywordTaxonomy | null {
   const o = raw as { status?: unknown; shape?: unknown } | null;
