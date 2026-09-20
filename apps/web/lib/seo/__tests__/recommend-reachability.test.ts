@@ -147,18 +147,36 @@ describe("recommendKeywords — measured demand", () => {
 
 describe("recommendKeywords — audience topics", () => {
   const PAIR: Row[] = [
-    { id: "b", term: "website design account", volume: 1200, difficulty: 28, buyer_fit: { keep: true, reason: null, funnel: "buyer" } },
-    { id: "a", term: "small business websites", volume: 1200, difficulty: 28, buyer_fit: { keep: true, reason: null, funnel: "audience" } },
+    { id: "b", term: "small business websites", volume: 1200, difficulty: 28, buyer_fit: { keep: true, reason: null, funnel: "buyer" } },
+    { id: "a", term: "how much do salon owners earn", volume: 1200, difficulty: 28, buyer_fit: { keep: true, reason: null, funnel: "audience" } },
   ];
   it("writes them, labelled, and below the same demand with buying intent", async () => {
     const recs = await recommendKeywords(client(PAIR, 0), "ws1");
-    const aud = recs.find((r) => r.term === "small business websites")!;
-    const buy = recs.find((r) => r.term === "website design account")!;
+    const aud = recs.find((r) => r.term === "how much do salon owners earn")!;
+    const buy = recs.find((r) => r.term === "small business websites")!;
     expect(aud.action).toBe("write");
     expect(aud.funnel).toBe("audience");
     expect(aud.reasons.join(" ")).toContain("top of funnel");
     expect(aud.score).toBeLessThan(buy.score);
-    expect(pickNextKeyword(recs)?.term).toBe("website design account");
+    expect(pickNextKeyword(recs)?.term).toBe("small business websites");
+  });
+});
+
+describe("recommendKeywords — an audience topic in the audience's words", () => {
+  // The site's vocabulary is appointment websites; a salary question shares
+  // no word with it and is still what its audience asks.
+  const OFF_SITE: Row[] = [
+    { id: "s", term: "how much does a salon owner earn", volume: 590, difficulty: 0, buyer_fit: { keep: true, reason: null, funnel: "audience" } },
+    { id: "b", term: "website design account", volume: 1200, difficulty: 28, buyer_fit: { keep: true, reason: null, funnel: "buyer" } },
+  ];
+  it("is not penalised for words the site never uses", async () => {
+    const recs = await recommendKeywords(client(OFF_SITE, 0), "ws1");
+    const aud = recs.find((r) => r.term === "how much does a salon owner earn")!;
+    expect(aud.action).toBe("write");
+    expect(aud.reasons.join(" ")).not.toContain("does not appear anywhere on the site");
+    // Half a buying topic of the same shape, not a rounding error below it.
+    const buy = recs.find((r) => r.term === "website design account")!;
+    expect(aud.score).toBeGreaterThan(buy.score * 0.2);
   });
 });
 
