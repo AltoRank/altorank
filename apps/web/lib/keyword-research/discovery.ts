@@ -142,8 +142,11 @@ export async function discoverBuyerKeywords(options: {
   let priced: Awaited<ReturnType<typeof fetchTermMetrics>> = new Map();
   // What a buyer types when weighing a rival the person named, or one the
   // results pages vetted. Priced with the buyer seeds and judged like them.
+  // Every rival the person named, not only the three whose rankings are
+  // read: the fourth name is the small one they added by hand, and its
+  // phrase is the cheapest seed in the run.
   const rivalPhrases = alternativeSeeds(
-    [...competitors, ...(options.business?.searchRivals ?? [])],
+    [...named.domains.map(host).filter((c) => c && c !== own), ...(options.business?.searchRivals ?? [])],
     languageCode,
   ).filter((t) => !brand(t));
   if (seeds.seeds.length || rivalPhrases.length) {
