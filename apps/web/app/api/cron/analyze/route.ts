@@ -20,6 +20,7 @@ import {
   type RefreshOutcome,
 } from "@/lib/audit/profile-refresh";
 import { monthlyTarget, schedulePlan } from "@/lib/onboarding/plan";
+import { reapStaleRuns } from "@/lib/onboarding/run-store";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { topUpKeywords, type TopUpOutcome } from "@/lib/keyword-research/top-up";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
@@ -73,6 +74,15 @@ async function run(request: Request) {
 
   const supabase = createServiceClient();
   const startedAt = new Date();
+
+  // First: close the first looks whose worker died. A `running` row was only
+  // ever reaped when the person reopened the screen, so one that nobody came
+  // back to stayed `running` for as long as the account existed - and the
+  // person heard nothing (lib/onboarding/run-store.ts).
+  const reaped = await reapStaleRuns(supabase, startedAt.getTime()).catch((err) => {
+    console.error(`[cron.analyze] stale runs: ${err instanceof Error ? err.message : err}`);
+    return { reaped: 0, runIds: [] as string[] };
+  });
 
   // A workspace nobody has read yet, that has attempts left, and that was not
   // just tried. Ordered by attempts first so a retry can never take the slot
@@ -228,6 +238,7 @@ async function run(request: Request) {
   const pools = await refillEmptyPools(supabase);
 
   return NextResponse.json({
+    staleRunsClosed: reaped.reaped,
     pending: pending?.length ?? 0,
     analysed: results.filter((r) => r.status === "analysed").length,
     unreadable: results.filter((r) => r.status === "unreadable").length,

@@ -19,6 +19,7 @@ import {
   initialOnboardingState,
   onboardingOutcome,
   isRunStale,
+  RUN_STALE_MS,
   reduceOnboarding,
   runStatusFrom,
   STALE_RUN_ERROR,
@@ -123,11 +124,11 @@ export async function startRun(
   const existing = await live();
   if (existing) {
     if (!isRunStale(existing, now)) return { runId: existing.id, created: false };
-    await supabase
-      .from("onboarding_runs")
-      .update({ status: "error", error: STALE_RUN_ERROR, finished_at: new Date(now).toISOString(), updated_at: new Date(now).toISOString() })
-      .eq("id", existing.id)
-      .eq("status", "running");
+    // Through the reaper, so a run closed here is recorded and announced the
+    // same way one closed by the nightly pass is. This used to be a bare
+    // update: the row went quiet, the row was closed, and nothing anywhere
+    // said a first look had died.
+    await reapStaleRuns(supabase, now, { runId: existing.id });
   }
 
   const { data, error } = await supabase
@@ -222,6 +223,23 @@ export class RunRecorder {
 
 /** Close a run as `error`, if it is still running. */
 export async function failRun(supabase: SupabaseClient, runId: string, reason: string): Promise<void> {
+  await closeRun(supabase, runId, reason, null, false);
+}
+
+/**
+ * Close a `running` row as an error, and say so where somebody will see it.
+ *
+ * `.eq("status", "running")` is the lock: two callers racing to close one row
+ * (the reaper and a person reopening the screen) leave one update matching no
+ * rows, and only the winner announces.
+ */
+async function closeRun(
+  supabase: SupabaseClient,
+  runId: string,
+  reason: string,
+  steps: readonly { phase: string; status: string; detail?: string | null }[] | null,
+  produced: boolean,
+): Promise<boolean> {
   const now = new Date().toISOString();
   const { data, error } = await supabase
     .from("onboarding_runs")
@@ -229,8 +247,57 @@ export async function failRun(supabase: SupabaseClient, runId: string, reason: s
     .eq("id", runId)
     .eq("status", "running")
     .select("workspace_id, account_id");
-  if (error) console.error(`[onboarding] run ${runId}: could not mark error: ${error.message}`);
-  else await announceOutcome(supabase, runId, "error", scopeOf(data), null, { reason, produced: false });
+  if (error) {
+    console.error(`[onboarding] run ${runId}: could not mark error: ${error.message}`);
+    return false;
+  }
+  if (!(data ?? []).length) return false;
+  await announceOutcome(supabase, runId, "error", scopeOf(data), steps, { reason, produced });
+  return true;
+}
+
+/**
+ * Close the runs whose worker died, wherever they are.
+ *
+ * A `running` row is reaped when the person comes back to the screen
+ * (`startRun`), and only then. wesellanything.co's first look stopped at
+ * 15:46 on 2026-09-08 and was still `running` thirteen days later: the person
+ * closed the tab, so nothing ever read the row again. Nothing was emailed,
+ * nothing was recorded, and the account sat in setup with a screen that would
+ * have said "still working" if anyone had opened it.
+ *
+ * Called from the nightly pass rather than from a cron of its own: this
+ * deployment's schedule is its cron budget, and a job that closes a handful of
+ * rows does not need one.
+ *
+ * A run that produced a draft or a plan is closed just as quietly - the work
+ * is on its own tables and the screen shows it - but the person is not
+ * emailed about a setup that in fact delivered something (`announceOutcome`).
+ */
+export async function reapStaleRuns(
+  supabase: SupabaseClient,
+  now = Date.now(),
+  opts: { limit?: number; runId?: string } = {},
+): Promise<{ reaped: number; runIds: string[] }> {
+  let query = supabase
+    .from("onboarding_runs")
+    .select("id, phases, planned, article_id, updated_at")
+    .eq("status", "running")
+    .lt("updated_at", new Date(now - RUN_STALE_MS).toISOString());
+  // One row when the caller has one in hand; otherwise every stale row there
+  // is, oldest first.
+  if (opts.runId) query = query.eq("id", opts.runId);
+  const { data, error } = await query.order("updated_at", { ascending: true }).limit(opts.limit ?? 50);
+  if (error) {
+    console.error(`[onboarding] stale runs could not be read: ${error.message}`);
+    return { reaped: 0, runIds: [] };
+  }
+  const runIds: string[] = [];
+  for (const row of (data ?? []) as Array<Pick<OnboardingRunRow, "id" | "phases" | "planned" | "article_id">>) {
+    const produced = Boolean(row.article_id) || (row.planned ?? []).length > 0;
+    if (await closeRun(supabase, row.id, STALE_RUN_ERROR, row.phases ?? null, produced)) runIds.push(row.id);
+  }
+  return { reaped: runIds.length, runIds };
 }
 
 /**

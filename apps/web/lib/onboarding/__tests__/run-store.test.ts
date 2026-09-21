@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fakeDb } from "./fake-runs-client";
+import { fakeDb, type Row } from "./fake-runs-client";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 // The email a failed run sends. Mocked whole: the recipients, the ledger and
 // the transport have their own tests; here the question is only whether a run
@@ -7,7 +8,7 @@ import { fakeDb } from "./fake-runs-client";
 const notifySetupFailed = vi.fn(async (..._args: unknown[]) => ({ sent: 1, skipped: 0, failed: 0 }));
 vi.mock("@/lib/email/lifecycle", () => ({ notifySetupFailed: (...a: unknown[]) => notifySetupFailed(...a) }));
 
-import { RunRecorder, failRun, latestRun, setupFailedFacts, stampRun, startRun } from "../run-store";
+import { RunRecorder, failRun, latestRun, reapStaleRuns, setupFailedFacts, stampRun, startRun } from "../run-store";
 import {
   initialOnboardingState,
   isRunStale,
@@ -353,5 +354,51 @@ describe("a run that made nothing emails the account; a run that made something 
     expect(d.line).toContain("too little readable text");
     expect(d.transient).toBe(false);
     expect(setupFailedFacts("error", null, "boom").line).toBe("boom");
+  });
+});
+
+describe("reapStaleRuns", () => {
+  beforeEach(() => notifySetupFailed.mockClear());
+
+  const NOW = Date.parse("2026-09-21T18:00:00Z");
+  const died = "2026-09-08T15:46:09Z";
+  const run = (over: Row = {}): Row => ({
+    id: "r1", workspace_id: "ws1", account_id: "ag1", status: "running",
+    phases: [{ phase: "drafting", status: "active" }], planned: [], article_id: null,
+    started_at: died, updated_at: died, ...over,
+  });
+
+  it("closes a run whose worker died, wherever it is, and tells the person", async () => {
+    // wesellanything.co: `running` for thirteen days because nobody reopened
+    // the screen that was the only thing that ever reaped one.
+    const db = fakeDb({ onboarding_runs: [run()], workspaces: [{ id: "ws1", domain: "wsa.example" }] });
+    expect(await reapStaleRuns(db.client, NOW)).toEqual({ reaped: 1, runIds: ["r1"] });
+    expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "error", error: STALE_RUN_ERROR });
+    expect(db.tables.onboarding_runs[0].finished_at).not.toBeNull();
+    expect(notifySetupFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a run that is merely slow", async () => {
+    const db = fakeDb({ onboarding_runs: [run({ updated_at: new Date(NOW - RUN_STALE_MS + 60_000).toISOString() })] });
+    expect(await reapStaleRuns(db.client, NOW)).toEqual({ reaped: 0, runIds: [] });
+    expect(db.tables.onboarding_runs[0].status).toBe("running");
+  });
+
+  it("closes a run that produced something without emailing about it", async () => {
+    const db = fakeDb({ onboarding_runs: [run({ article_id: "a1" })], workspaces: [{ id: "ws1", domain: "wsa.example" }] });
+    expect((await reapStaleRuns(db.client, NOW)).reaped).toBe(1);
+    expect(db.tables.onboarding_runs[0].status).toBe("error");
+    expect(notifySetupFailed).not.toHaveBeenCalled();
+  });
+
+  it("takes one row when the caller names one, and every stale row when it does not", async () => {
+    const two = { onboarding_runs: [run(), run({ id: "r2", workspace_id: "ws2" })], workspaces: [{ id: "ws1", domain: "a.example" }, { id: "ws2", domain: "b.example" }] };
+    expect((await reapStaleRuns(fakeDb(structuredClone(two)).client, NOW, { runId: "r2" })).runIds).toEqual(["r2"]);
+    expect((await reapStaleRuns(fakeDb(structuredClone(two)).client, NOW)).reaped).toBe(2);
+  });
+
+  it("closes nothing, and does not throw, when the read fails", async () => {
+    const client = { from: () => ({ select: () => { const q: Record<string, unknown> = {}; for (const m of ["eq", "lt", "order"]) q[m] = () => q; q.limit = async () => ({ data: null, error: { message: "gone" } }); return q; } }) } as unknown as SupabaseClient;
+    expect(await reapStaleRuns(client, NOW)).toEqual({ reaped: 0, runIds: [] });
   });
 });
