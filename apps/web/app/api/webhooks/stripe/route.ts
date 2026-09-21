@@ -13,7 +13,8 @@ import {
 import { createServiceClient } from "@/lib/supabase/server";
 import { recordEvent } from "@/lib/observability/record";
 import { describe as describeError } from "@/lib/observability/event";
-import { paceOnActivation } from "@/lib/content/pace";
+import { FREE_TIER_PACE, paceOnActivation } from "@/lib/content/pace";
+import { schedulePlan } from "@/lib/onboarding/plan";
 import { resumePausedWorkspaces } from "@/lib/billing/resume";
 import { graceEndsAt } from "@/lib/billing/dunning";
 import {
@@ -383,6 +384,25 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
             .from("workspaces")
             .update({ auto_generate_weekly_limit: next })
             .eq("id", site.id);
+        }
+
+        /**
+         * Open the month the trial gate held back.
+         *
+         * A gated first look schedules one article and leaves the other
+         * qualified topics unplanned (lib/onboarding/pipeline.ts). The person
+         * returns from checkout to the calendar, and it should hold the
+         * month they were shown locked, not one article and a wait for the
+         * nightly top-up. Best effort per site: the nightly cron runs the same
+         * top-up, so a failure here costs a day, not the plan.
+         */
+        for (const site of sites ?? []) {
+          try {
+            const pace = paceOnActivation(site.auto_generate_weekly_limit as number | null, plan) ?? (site.auto_generate_weekly_limit as number | null) ?? FREE_TIER_PACE;
+            await schedulePlan(supabase, site.id as string, pace, { mode: "top-up" });
+          } catch (err) {
+            console.error(`[stripe] plan top-up for ${site.id}: ${err instanceof Error ? err.message : err}`);
+          }
         }
 
         // The card was taken: say when it is charged and where to stop that.
