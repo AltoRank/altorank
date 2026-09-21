@@ -8,6 +8,9 @@ describe("pickCompetitorDomain", () => {
   it("squashes a spaced name", () => {
     expect(pickCompetitorDomain("pt distinction", ["www.ptdistinction.com"])).toBe("ptdistinction.com");
   });
+  it("matches a name to a domain that carries a product suffix", () => {
+    expect(pickCompetitorDomain("revoo", ["www.capterra.it", "revoo-app.com"])).toBe("revoo-app.com");
+  });
   it("drops an app subdomain", () => {
     expect(pickCompetitorDomain("truecoach", ["app.truecoach.co"])).toBe("truecoach.co");
   });

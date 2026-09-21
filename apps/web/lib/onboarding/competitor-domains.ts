@@ -16,6 +16,7 @@
 
 import { checkDomainReachable } from "@/lib/domain/reachable";
 import { fetchAdvancedSerp } from "@/lib/seo/brief-data";
+import { brandAliases } from "@/lib/keyword-research/seeds";
 
 const DOMAIN_SHAPE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/;
 
@@ -55,8 +56,12 @@ export function pickCompetitorDomain(name: string, hosts: readonly string[]): st
     const host = clean(raw);
     if (!DOMAIN_SHAPE.test(host) || NOT_A_RIVAL.test(host)) continue;
     const labels = host.split(".");
-    // app.trainerize.com and trainerize.com both answer to "trainerize".
-    const match = labels.slice(0, -1).find((label) => squash(label) === wanted);
+    // app.trainerize.com and trainerize.com both answer to "trainerize", and
+    // so does revoo-app.com to "revoo": a label is matched as written and
+    // with the product suffixes brandAliases strips ("-app", "hq", ...).
+    const match = labels.slice(0, -1).find((label, i) =>
+      squash(label) === wanted || brandAliases(labels.slice(i).join(".")).some((alias) => squash(alias) === wanted),
+    );
     if (match) return labels.slice(labels.indexOf(match)).join(".");
   }
   return null;

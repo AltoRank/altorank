@@ -13,6 +13,7 @@ import { isBrandTerm } from "./seeds";
 import { proposeBuyerSeeds, recoverBuyerSeeds, type BuyerSeeds, type SeedableProfile } from "./buyer-seeds";
 import type { SpendSink } from "./buyer-model";
 import { findSerpRivals, MAX_SERP_RIVALS } from "./serp-rivals";
+import { alternativeSeeds } from "./alternative-seeds";
 import { resolveCompetitorDomains } from "@/lib/onboarding/competitor-domains";
 
 /** A candidate plus the rival that holds it, when one does. */
@@ -37,6 +38,8 @@ export interface DiscoveryResult {
   fromSerpRivals: number;
   /** Seeds whose rival search errored. */
   serpRivalSearchesFailed: string[];
+  /** "{rival} alternative" phrases produced from the named and vetted rivals. */
+  alternativeSeeds: string[];
   /** Names no domain could be found for; never queried. */
   competitorsUnresolved: string[];
   /** Rivals whose read errored, as opposed to returning nothing. */
@@ -137,8 +140,17 @@ export async function discoverBuyerKeywords(options: {
   let expandedSeeds: string[] = [];
   let seedsPriced = 0;
   let priced: Awaited<ReturnType<typeof fetchTermMetrics>> = new Map();
-  if (seeds.seeds.length) {
-    priced = await fetchTermMetrics(seeds.seeds, locale).catch(() => new Map());
+  // What a buyer types when weighing a rival the person named, or one the
+  // results pages vetted. Priced with the buyer seeds and judged like them.
+  // Every rival the person named, not only the three whose rankings are
+  // read: the fourth name is the small one they added by hand, and its
+  // phrase is the cheapest seed in the run.
+  const rivalPhrases = alternativeSeeds(
+    [...named.domains.map(host).filter((c) => c && c !== own), ...(options.business?.searchRivals ?? [])],
+    languageCode,
+  ).filter((t) => !brand(t));
+  if (seeds.seeds.length || rivalPhrases.length) {
+    priced = await fetchTermMetrics([...seeds.seeds, ...rivalPhrases], locale).catch(() => new Map());
     const measured = (terms: string[]) => terms.filter((term) => {
       const m = priced.get(term);
       return m?.volume != null && m.volume >= SEED_MIN_VOLUME && !brand(term);
@@ -154,17 +166,23 @@ export async function discoverBuyerKeywords(options: {
         seedRecovery.measured = measured(seedRecovery.seeds).length;
       }
     }
-    const allSeeds = [...seeds.seeds, ...seedRecovery.seeds];
+    // The model may have proposed a rival phrase itself; one row per term.
+    const allSeeds = [...new Set([...seeds.seeds, ...seedRecovery.seeds, ...rivalPhrases])];
     const live = measured(allSeeds);
     seedsPriced = live.length;
     // Missing overview data does not prevent a bounded suggestions probe.
     // Prefer short recovery categories when none were measured; never probe a
     // seed whose volume was explicitly measured below the floor.
-    const unknown = [...seedRecovery.seeds, ...seeds.seeds].filter((term) =>
+    const unknown = [...new Set([...seedRecovery.seeds, ...seeds.seeds, ...rivalPhrases])].filter((term) =>
       !brand(term) && priced.get(term)?.volume == null,
     );
+    // A rival phrase with no metrics is kept as a candidate but not probed
+    // for suggestions: "revoo alternatives" long-tails to nothing, and the
+    // probe slots belong to the category seeds.
+    const rivalPhraseSet = new Set(rivalPhrases);
+    const probeable = unknown.filter((term) => !rivalPhraseSet.has(term) || seeds.seeds.includes(term));
     const knownExpansion = diverseSeeds(live, MAX_EXPANDED_SEEDS);
-    expandedSeeds = [...knownExpansion, ...diverseSeeds(unknown, MAX_EXPANDED_SEEDS - knownExpansion.length)]
+    expandedSeeds = [...knownExpansion, ...diverseSeeds(probeable, MAX_EXPANDED_SEEDS - knownExpansion.length)]
       .slice(0, MAX_EXPANDED_SEEDS);
     const ideas = new Map<string, Candidate>();
     for (const term of [...live, ...unknown]) {
@@ -232,5 +250,5 @@ export async function discoverBuyerKeywords(options: {
   perSerpRival.forEach((rows, i) => absorb(rows, serpRivals.rivals[i]));
   const fromSerpRivals = fromCompetitors.length - namedRows;
 
-  return { fromCompetitors, fromIdeas, seeds, seedsPriced, competitorsAsked: competitors, competitorsUnresolved: named.unresolved, competitorsFailed, serpRivals: serpRivals.rivals, serpRivalsKept: kept.length > 0, serpRivalsVetted: serpRivals.vetted, fromSerpRivals, serpRivalSearchesFailed: serpRivals.failed, seedRecovery, expandedSeeds };
+  return { fromCompetitors, fromIdeas, seeds, seedsPriced, competitorsAsked: competitors, alternativeSeeds: rivalPhrases, competitorsUnresolved: named.unresolved, competitorsFailed, serpRivals: serpRivals.rivals, serpRivalsKept: kept.length > 0, serpRivalsVetted: serpRivals.vetted, fromSerpRivals, serpRivalSearchesFailed: serpRivals.failed, seedRecovery, expandedSeeds };
 }

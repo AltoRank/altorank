@@ -798,7 +798,7 @@ export async function analyseDomain(options: {
                 locationCode: options.locationCode,
                 spend,
               })
-            : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [], competitorsUnresolved: [] as string[], competitorsFailed: [] as string[], serpRivals: [] as string[], serpRivalsKept: false, serpRivalsVetted: true, fromSerpRivals: 0, serpRivalSearchesFailed: [] as string[] };
+            : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [], alternativeSeeds: [] as string[], competitorsUnresolved: [] as string[], competitorsFailed: [] as string[], serpRivals: [] as string[], serpRivalsKept: false, serpRivalsVetted: true, fromSerpRivals: 0, serpRivalSearchesFailed: [] as string[] };
         // Keep the rivals a fresh search found, so tomorrow reads the same market.
         if (supabase && workspaceId && business && discovered.serpRivals?.length && !discovered.serpRivalsKept) {
           const { error: keepError } = await supabase
@@ -1044,6 +1044,9 @@ export async function analyseDomain(options: {
               : "",
           discovered.competitorsFailed?.length
             ? `${discovered.competitorsFailed.join(", ")} could not be read`
+            : "",
+          discovered.alternativeSeeds?.length
+            ? `${discovered.alternativeSeeds.length} phrase${discovered.alternativeSeeds.length === 1 ? "" : "s"} buyers type when weighing the rivals you named`
             : "",
           discovered.competitorsUnresolved?.length
             ? `no website found for ${discovered.competitorsUnresolved.join(", ")}`

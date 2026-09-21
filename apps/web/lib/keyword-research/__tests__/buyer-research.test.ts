@@ -241,9 +241,11 @@ describe("discoverBuyerKeywords", () => {
     const out = await discoverBuyerKeywords({ domain: "example.test", business: PACKHUB });
     expect(out.expandedSeeds).toEqual(["editorial workflow"]);
     expect(out.seedsPriced).toBe(0);
-    expect(out.fromIdeas).toHaveLength(1);
-    expect(out.fromIdeas[0]).toMatchObject({ volume: 30 });
-    expect(out.fromIdeas[0].unmeasured).not.toBe(true);
+    // The rival phrases ride along unmeasured; the one measured idea leads.
+    const ideas = out.fromIdeas.filter((k) => !/alternative/.test(k.keyword));
+    expect(ideas).toHaveLength(1);
+    expect(ideas[0]).toMatchObject({ volume: 30 });
+    expect(ideas[0].unmeasured).not.toBe(true);
   });
 
   it("does not count null volume as measured demand or exceed five probes", async () => {
@@ -268,7 +270,10 @@ describe("discoverBuyerKeywords", () => {
     price.mockResolvedValue(new Map([["warehouse picking app", { term: "warehouse picking app", volume: 0, difficulty: 39, cpc: null, intent: "info" }]]));
     const out = await discoverBuyerKeywords({ domain: "x.co", business: PACKHUB });
     expect(suggest).not.toHaveBeenCalled();
-    expect(out.fromIdeas).toEqual([]);
+    // The "{rival} alternative" phrases for PACKHUB's three rivals are stored
+    // unmeasured and never probed; what the model seeded is gone.
+    expect(out.fromIdeas.filter((k) => !/alternative/.test(k.keyword))).toEqual([]);
+    expect(out.alternativeSeeds).toHaveLength(6);
   });
 
   it("survives a rival lookup that throws", async () => {
