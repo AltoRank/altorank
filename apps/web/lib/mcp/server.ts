@@ -137,7 +137,9 @@ server.registerTool(
       "Run the nine agent-readiness checks against a domain: AI-crawler rules in " +
       "robots.txt, sitemap, structured data, Organization schema, machine-readable " +
       "content (llms.txt / markdown), title+meta, single h1, content signals. " +
-      "Returns a severity-weighted 0-100 score and a finding per check. Reads " +
+      "Returns a 0-100 score and a finding per check. The score weights each " +
+      "check by measured effect on AI visibility, so crawler access moves it " +
+      "far more than structured data or llms.txt do. Reads " +
       "public site configuration only. Use this first; the other tools generate " +
       "fixes for what this reports as failing.",
     inputSchema: domainArg,

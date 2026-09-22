@@ -61,7 +61,7 @@ export interface ReadinessFinding {
 export interface ReadinessResult {
   domain: string;
   findings: ReadinessFinding[];
-  /** 0-100, severity-weighted. 0 with an error means the site wasn't analysable. */
+  /** 0-100, weighted by `CHECK_IMPACT`. 0 with an error means the site wasn't analysable. */
   score: number;
   error?: string;
   /**
