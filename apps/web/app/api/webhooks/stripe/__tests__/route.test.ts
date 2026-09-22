@@ -49,6 +49,8 @@ function query(table: string, op: "select" | "update", row?: Row) {
 
 const { topUp } = vi.hoisted(() => ({ topUp: vi.fn(async (..._a: unknown[]) => [] as unknown[]) }));
 vi.mock("@/lib/onboarding/plan", () => ({ schedulePlan: (...a: unknown[]) => topUp(...a) }));
+const { trialStarted, order } = vi.hoisted(() => ({ order: [] as string[], trialStarted: vi.fn(async (..._a: unknown[]) => { order.push("email"); return { sent: 1, skipped: 0, failed: 0 }; }) }));
+vi.mock("@/lib/email/lifecycle", async (importOriginal) => ({ ...await importOriginal<object>(), notifyTrialStarted: (...a: unknown[]) => trialStarted(...a) }));
 
 vi.mock("@/lib/supabase/server", () => ({
   createServiceClient: () => ({
@@ -565,6 +567,21 @@ describe("the seven-day card trial", () => {
       plan: "starter",
       trial_ends_at: new Date(TRIAL_END * 1000).toISOString(),
     });
+  });
+
+  it("sends the trial-started email BEFORE buying the month's plan, and budgets the route for it", async () => {
+    // The top-up buys results pages and verdicts and can run for minutes;
+    // a timeout inside it used to take the one email that says when the
+    // card is charged down with it. Now the email is sent first, and the
+    // route has the same budget the other callers of that pipeline run under.
+    order.length = 0;
+    topUp.mockClear();
+    topUp.mockImplementation(async () => { order.push("top-up"); return []; });
+    workspaceRows = [{ id: "ws-1", auto_generate_weekly_limit: 7 }];
+    retrieveSubscription.mockResolvedValue({ status: "trialing", trial_end: TRIAL_END, items: { data: [{ price: { id: STARTER } }] } });
+    await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "starter" } }));
+    expect(order).toEqual(["email", "top-up"]);
+    expect((await import("../route")).maxDuration).toBe(300);
   });
 
   it("records a checkout with no trial as active, with no trial end", async () => {

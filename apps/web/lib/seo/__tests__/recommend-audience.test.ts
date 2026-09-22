@@ -42,7 +42,7 @@ function client(rows: Row[]): SupabaseClient {
   const empty = { data: [] as unknown[] };
   const chain = (value: unknown): Record<string, unknown> => {
     const self: Record<string, unknown> = {};
-    for (const m of ["eq", "in", "order", "gte", "not", "select"]) {
+    for (const m of ["eq", "in", "order", "gte", "not", "select", "is"]) {
       self[m] = () => Object.assign(Promise.resolve(value), self);
     }
     self.single = async () => ({ data: { topical_profile: PROFILE, dr: 0, business_profile: null } });

@@ -494,14 +494,21 @@ export async function recommendKeywords(
       .not("keyword", "is", null),
     supabase
       .from("analytics_metrics")
-      .select("query, impressions, page_url")
+      .select("query, impressions")
       .eq("workspace_id", workspaceId)
       .eq("source", "gsc")
       .gte(
         "metric_date",
         new Date(Date.now() - GSC_LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10),
       )
-      .not("query", "is", null),
+      .not("query", "is", null)
+      // Query-only rows. Search Console is also stored as query+page rows
+      // (lib/gsc/rows.ts), and reading those here counted every impression
+      // twice and, worse, turned "Google once showed the homepage for this"
+      // into "a page of yours already targets this" - which skipped exactly
+      // the striking-distance rows the scorer multiplies by 2.5 (altorank.co,
+      // 2026-09-22). The seeder guards the same way (lib/gsc/seed.ts).
+      .is("page_url", null),
     // The site's own pages and the query each one targets (lib/seo/site-crawl.ts
     // fills `keyword` from the heading or from a ranking). An article written
     // for a query one of these pages already holds is a second page on one
@@ -541,34 +548,26 @@ export async function recommendKeywords(
   }
 
   // The page on this site that targets a query: a crawled page whose keyword
-  // is the query, or the page Search Console shows for it (the strongest
-  // page by impressions). Keyed like `articleByTerm`, so phrasings meet.
+  // is the query (lib/seo/site-crawl.ts). Keyed like `articleByTerm`, so
+  // phrasings meet. Not the page Search Console shows for the query: that is
+  // where Google happened to land an impression, and for a term at position
+  // 34 it is usually the homepage - a page that targets nothing.
   const pageByTarget = new Map<string, string>();
   if (pagesRes.status === "fulfilled") {
     for (const p of (pagesRes.value.data ?? []) as Array<{ url: string; keyword: string | null }>) {
       if (p.keyword && p.url) pageByTarget.set(normalizeTarget(p.keyword), p.url);
     }
   }
-  const gscPageStrength = new Map<string, number>();
 
   const impressionsByTerm = new Map<string, number>();
   if (gscRes.status === "fulfilled") {
     for (const row of (gscRes.value.data ?? []) as Array<{
       query: string | null;
       impressions: number | null;
-      page_url?: string | null;
     }>) {
       if (!row.query) continue;
       const key = row.query.toLowerCase().trim();
       impressionsByTerm.set(key, (impressionsByTerm.get(key) ?? 0) + (row.impressions ?? 0));
-      if (row.page_url) {
-        const target = normalizeTarget(row.query!);
-        const strength = (gscPageStrength.get(target) ?? 0);
-        if ((row.impressions ?? 0) >= strength) {
-          gscPageStrength.set(target, row.impressions ?? 0);
-          pageByTarget.set(target, row.page_url);
-        }
-      }
     }
   }
 

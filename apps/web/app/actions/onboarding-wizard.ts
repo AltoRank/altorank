@@ -21,7 +21,7 @@ import {
   type BusinessProfile,
   type InferenceResult,
 } from "@/lib/onboarding/business-profile";
-import { resolveCompetitorDomains } from "@/lib/onboarding/competitor-domains";
+import { looksLikeDomain, resolveCompetitorDomains } from "@/lib/onboarding/competitor-domains";
 import { classifyRivalSize, suggestCompetitors as findCompetitorSuggestions, type CompetitorSuggestions, type RivalSize } from "@/lib/onboarding/competitor-suggestions";
 import { fetchBulkAuthority } from "@/lib/seo/domain-metrics";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
@@ -120,10 +120,19 @@ export async function resolveCompetitor(
   entry: string,
   own: number | null,
 ): Promise<{ domain: string; authority: number | null; size: RivalSize | null } | null> {
-  const { workspace } = await assertWorkspace(workspaceId);
+  const { supabase, workspace } = await assertWorkspace(workspaceId);
   if (e2eStubsEnabled()) {
     const domain = entry.trim().toLowerCase().replace(/\s+/g, "-");
     return domain ? { domain: domain.includes(".") ? domain : `${domain}.example`, authority: null, size: null } : null;
+  }
+  // A results page and a bulk-rank read per press (~$0.024): gated like the
+  // suggestion lookup above. A refused account gets the entry as typed when
+  // it already is a domain, and nothing invented when it is not.
+  const { accountId, user } = await requireAuth();
+  const gate = await canSpend(supabase, accountId, { userEmail: user.email ?? undefined, workspaceId, action: "keyword-research" });
+  if (!gate.allowed) {
+    const typed = entry.trim().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "").toLowerCase();
+    return looksLikeDomain(typed) ? { domain: typed, authority: null, size: null } : null;
   }
   const { domains } = await resolveCompetitorDomains([entry]);
   const domain = domains.find((d) => d !== (workspace.domain ?? "").replace(/^www\./, "").toLowerCase());
