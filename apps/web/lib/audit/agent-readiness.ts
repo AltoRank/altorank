@@ -4,7 +4,8 @@
  * TypeScript port of tools/agent-readiness/agent_readiness.py (the Python
  * checker was verified against Cloudflare's isitagentready.com scanner on
  * 2026-08-15 across 272 live account sites). Scoring is identical on purpose,
- * so numbers from the two implementations are comparable.
+ * so numbers from the two implementations are comparable: CHECK_IMPACT below
+ * and CHECK_IMPACT there must be changed together.
  *
  * This module is deliberately self-contained — no Supabase, no Next, no
  * imports from @/lib/types — so it lifts into packages/core unchanged when
@@ -107,8 +108,45 @@ export const AI_CRAWLERS = [
   "Applebot-Extended",
 ] as const;
 
-/** A blocked AI crawler outweighs a missing h1 by a lot. */
-const WEIGHTS: Record<ReadinessSeverity, number> = { high: 3, medium: 2, low: 1 };
+// `severity` on each finding is presentation only: consumers use it to order
+// and colour findings. What a check is *worth* in the score is CHECK_IMPACT,
+// because the two are genuinely different questions — a missing /llms.txt is
+// worth saying out loud, and worth almost nothing.
+
+/**
+ * Score weight per check, 1-5, anchored to measured effect rather than to how
+ * bad the finding looks.
+ *
+ * Source: Zyppy "Google Ranking Factors Expert Survey 2026", which asked
+ * search practitioners to rate each factor's effect on appearing in Google AI
+ * answers from -3 to +3. Those ratings are expert opinion, not a measured
+ * correlation, so they set the ordering here and not literal coefficients.
+ *
+ * The ordering it forced, versus what severity alone used to imply:
+ *   - AI crawl access is the single strongest factor (+2.20). It was already
+ *     weighted top; it now pulls further ahead.
+ *   - Structured data is near the bottom (+0.80), and /llms.txt is
+ *     indistinguishable from zero (+0.05). Under pure severity weighting the
+ *     two schema checks plus llms.txt were 8 of 18 points — 44% of the score
+ *     rode on the survey's three weakest factors.
+ *   - Extractable structure (+1.69) and answer prominence (+1.65) are strong,
+ *     and were pinned at 1 point each as `low`.
+ *
+ * entity_schema stays above nothing but below crawl access on purpose: the
+ * factor that scores +2.08 is brand/entity prominence in LLM memory, which
+ * Organization markup is a weak proxy for, not a cause of.
+ */
+const CHECK_IMPACT: Record<ReadinessCheckId, number> = {
+  ai_crawlers_allowed: 5, // +2.20 AI crawl access & snippet eligibility
+  robots_reachable: 3, // the gate the above is read through
+  sitemap: 3, // discovery; feeds crawl access
+  title_meta: 3, // +1.65 answer prominence
+  single_h1: 3, // +1.69 extractable content structure
+  structured_data: 2, // +0.80 structured data
+  entity_schema: 2, // +0.80 as markup; entity prominence is not markup
+  machine_readable: 1, // +0.05 llms.txt file
+  content_signals: 1, // not surveyed; emerging proposal
+};
 
 /** Schema types that make the site a resolvable entity, not just a document. */
 const ENTITY_TYPES = new Set([
@@ -318,15 +356,15 @@ export function collectJsonLdTypes(html: string): string[] {
 
 // ── the run ───────────────────────────────────────────────────────────────────
 
-/** Severity-weighted 0-100 over exactly the findings given. Exported so a
- * consumer that drops inconclusive findings can score what remains the same
- * way. */
+/** Impact-weighted 0-100 over exactly the findings given (see
+ * `CHECK_IMPACT`). Exported so a consumer that drops inconclusive findings
+ * can score what remains the same way. */
 export function scoreFindings(findings: ReadinessFinding[]): number {
-  const total = findings.reduce((s, f) => s + WEIGHTS[f.severity], 0);
+  const total = findings.reduce((s, f) => s + CHECK_IMPACT[f.check], 0);
   if (total === 0) return 0;
   const earned = findings
     .filter((f) => f.passed)
-    .reduce((s, f) => s + WEIGHTS[f.severity], 0);
+    .reduce((s, f) => s + CHECK_IMPACT[f.check], 0);
   return Math.round((100 * earned) / total);
 }
 

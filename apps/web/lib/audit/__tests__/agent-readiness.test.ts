@@ -5,7 +5,9 @@ import {
   collectJsonLdTypes,
   parseRobotsGroups,
   runAgentReadiness,
+  scoreFindings,
   type FetchedResource,
+  type ReadinessCheckId,
   type ResourceFetcher,
 } from "../agent-readiness";
 
@@ -125,10 +127,12 @@ describe("runAgentReadiness", () => {
     expect(result.score).toBe(100);
   });
 
-  it("matches the Python scorer: three low-severity failures score 83 (altorank.co parity case)", async () => {
-    // Passing everything except content_signals, single_h1, title_meta
-    // earned 15 of 18 weighted points -> 83, the exact score the Python
-    // checker produced for altorank.co pre-fix.
+  it("matches the Python scorer: three structure/signal failures score 70 (altorank.co parity case)", async () => {
+    // Passing everything except content_signals, single_h1, title_meta:
+    // earned 16 of 23 impact points -> 70. This was 83 while severity drove
+    // the score; the drop is the point. Two of the three failures here are
+    // extractable structure (+1.69) and answer prominence (+1.65), which the
+    // survey ranks far above the schema and llms.txt checks this site passes.
     const home =
       `<html><head>` +
       ldJson({ "@type": "Organization" }) +
@@ -140,7 +144,20 @@ describe("runAgentReadiness", () => {
     }));
     const failed = result.findings.filter((f) => !f.passed).map((f) => f.check).sort();
     expect(failed).toEqual(["content_signals", "single_h1", "title_meta"]);
-    expect(result.score).toBe(83);
+    expect(result.score).toBe(70);
+  });
+
+  it("weights AI crawl access above schema, and schema above llms.txt", async () => {
+    // The survey ordering this file is anchored to (+2.20 crawl access,
+    // +0.80 structured data, +0.05 llms.txt). A future edit that quietly
+    // promotes llms.txt back to parity with schema should fail here.
+    const only = (check: ReadinessCheckId) =>
+      scoreFindings([
+        { check, passed: true, severity: "low", detail: "" },
+        { check: "sitemap", passed: false, severity: "low", detail: "" },
+      ]);
+    expect(only("ai_crawlers_allowed")).toBeGreaterThan(only("structured_data"));
+    expect(only("structured_data")).toBeGreaterThan(only("machine_readable"));
   });
 
   it("reports a refused robots.txt as inconclusive, not absent (5xx !== 404)", async () => {
