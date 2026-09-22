@@ -56,8 +56,10 @@ describe("shapePublicCheck", () => {
     const robots = data.checks.find((c) => c.id === "robots_reachable")!;
     expect(robots.status).toBe("pass");
     expect(robots.fix_summary).toBe("");
-    // high=3 lost out of 18 weight points: 15/18
-    expect(data.score).toBe(83);
+    // entity_schema is worth 2 of 23 impact points: 21/23. Organization
+    // markup is a weak proxy for entity prominence, so losing it alone
+    // should not gut the score.
+    expect(data.score).toBe(91);
   });
 
   it("marks checks the run never reached as unknown and scores only the rest (rule 5)", () => {

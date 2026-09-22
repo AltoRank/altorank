@@ -110,8 +110,32 @@ ADVANCED_PROBES = [
 ]
 
 HIGH, MEDIUM, LOW = "high", "medium", "low"
-# Weights drive the score. A blocked AI crawler outweighs a missing h1 by a lot.
+# Severity is presentation: it orders and colours findings in a report. It no
+# longer drives the score, because how alarming a failure looks and how much
+# it actually costs you are different questions.
 WEIGHTS = {HIGH: 3, MEDIUM: 2, LOW: 1}
+
+# Score weight per check, 1-5, anchored to measured effect. Kept byte-for-byte
+# in step with CHECK_IMPACT in apps/web/lib/audit/agent-readiness.ts so the two
+# implementations stay comparable.
+#
+# Source: Zyppy "Google Ranking Factors Expert Survey 2026", where
+# practitioners rated each factor's effect on appearing in Google AI answers
+# from -3 to +3. Expert opinion, not measured correlation, so it sets the
+# ordering and not literal coefficients. Under the old severity weighting the
+# two schema checks plus llms.txt were 8 of 18 points -- 44% of the score on
+# the survey's three weakest factors.
+CHECK_IMPACT = {
+    "ai_crawlers_allowed": 5,  # +2.20 AI crawl access & snippet eligibility
+    "robots_reachable": 3,     # the gate the above is read through
+    "sitemap": 3,              # discovery; feeds crawl access
+    "title_meta": 3,           # +1.65 answer prominence
+    "single_h1": 3,            # +1.69 extractable content structure
+    "structured_data": 2,      # +0.80 structured data
+    "entity_schema": 2,        # +0.80 as markup; entity prominence is not markup
+    "machine_readable": 1,     # +0.05 llms.txt file
+    "content_signals": 1,      # not surveyed; emerging proposal
+}
 
 
 @dataclass
@@ -133,8 +157,8 @@ class Run:
     def score(self) -> int:
         if not self.findings:
             return 0
-        earned = sum(WEIGHTS[f.severity] for f in self.findings if f.passed)
-        total = sum(WEIGHTS[f.severity] for f in self.findings)
+        earned = sum(CHECK_IMPACT[f.check] for f in self.findings if f.passed)
+        total = sum(CHECK_IMPACT[f.check] for f in self.findings)
         return round(100 * earned / total) if total else 0
 
     @property
