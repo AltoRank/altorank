@@ -51,6 +51,9 @@ function mapStatus(s: Stripe.Subscription.Status): string {
   }
 }
 
+/** The checkout top-up runs the paid keyword pipeline; the same budget cron/analyze and write-now use. */
+export const maxDuration = 300;
+
 /**
  * Which tier a completed checkout bought.
  *
@@ -386,25 +389,6 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
             .eq("id", site.id);
         }
 
-        /**
-         * Open the month the trial gate held back.
-         *
-         * A gated first look schedules one article and leaves the other
-         * qualified topics unplanned (lib/onboarding/pipeline.ts). The person
-         * returns from checkout to the calendar, and it should hold the
-         * month they were shown locked, not one article and a wait for the
-         * nightly top-up. Best effort per site: the nightly cron runs the same
-         * top-up, so a failure here costs a day, not the plan.
-         */
-        for (const site of sites ?? []) {
-          try {
-            const pace = paceOnActivation(site.auto_generate_weekly_limit as number | null, plan) ?? (site.auto_generate_weekly_limit as number | null) ?? FREE_TIER_PACE;
-            await schedulePlan(supabase, site.id as string, pace, { mode: "top-up" });
-          } catch (err) {
-            console.error(`[stripe] plan top-up for ${site.id}: ${err instanceof Error ? err.message : err}`);
-          }
-        }
-
         // The card was taken: say when it is charged and where to stop that.
         if (trial) {
           const tier = plan ?? "starter";
@@ -419,6 +403,31 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
             console.error(`[stripe] trial-started email: ${err instanceof Error ? err.message : err}`);
           }
         }
+        /**
+         * Open the month the trial gate held back.
+         *
+         * A gated first look schedules one article and leaves the other
+         * qualified topics unplanned (lib/onboarding/pipeline.ts). The person
+         * returns from checkout to the calendar, and it should hold the
+         * month they were shown locked, not one article and a wait for the
+         * nightly top-up. Best effort per site: the nightly cron runs the same
+         * top-up, so a failure here costs a day, not the plan.
+         *
+         * After the trial email, not before: this buys results pages and
+         * verdicts and can run for minutes, and the email is the one thing in
+         * this handler that must not be lost to a timeout. `maxDuration`
+         * above is the budget the other callers of this pipeline already run
+         * under; before it this route ran at the platform default.
+         */
+        for (const site of sites ?? []) {
+          try {
+            const pace = paceOnActivation(site.auto_generate_weekly_limit as number | null, plan) ?? (site.auto_generate_weekly_limit as number | null) ?? FREE_TIER_PACE;
+            await schedulePlan(supabase, site.id as string, pace, { mode: "top-up" });
+          } catch (err) {
+            console.error(`[stripe] plan top-up for ${site.id}: ${err instanceof Error ? err.message : err}`);
+          }
+        }
+
       }
       break;
     }

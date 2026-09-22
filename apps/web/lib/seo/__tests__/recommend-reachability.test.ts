@@ -43,17 +43,25 @@ const PROFILE = buildTopicalProfile(
 type Row = { id: string; term: string; volume: number | null; difficulty: number | null; buyer_fit?: unknown; intent?: string };
 
 /** Only the reads `recommendKeywords` makes, in the shapes it makes them. */
+/** Every filter the last `client()` applied, as [method, ...args]. */
+let seenFilters: unknown[][] = [];
+
 function client(
   rows: Row[],
   dr: number | null,
   rankings: Array<{ keyword_id: string; position: number; checked_at: string }> = [],
   pages: Array<{ url: string; keyword: string | null }> = [],
+  gsc: Array<{ query: string; impressions: number }> = [],
 ): SupabaseClient {
+  seenFilters = [];
   const empty = { data: [] as unknown[] };
   const chain = (value: unknown): Record<string, unknown> => {
     const self: Record<string, unknown> = {};
-    for (const m of ["eq", "in", "order", "gte", "not", "select"]) {
-      self[m] = () => Object.assign(Promise.resolve(value), self);
+    for (const m of ["eq", "in", "order", "gte", "not", "select", "is"]) {
+      self[m] = (...args: unknown[]) => {
+        seenFilters.push([m, ...args]);
+        return Object.assign(Promise.resolve(value), self);
+      };
     }
     self.single = async () => ({
       data: { topical_profile: PROFILE, dr, business_profile: null },
@@ -69,7 +77,9 @@ function client(
             ? { data: rankings }
             : table === "site_pages"
               ? { data: pages }
-              : empty,
+              : table === "analytics_metrics"
+                ? { data: gsc }
+                : empty,
       );
     },
   } as unknown as SupabaseClient;
@@ -229,5 +239,29 @@ describe("recommendKeywords — a page on the site already targets the query", (
   it("leaves a term alone when no page targets it", async () => {
     const recs = await recommendKeywords(client(ROWS_, 0, [], []), "ws1");
     expect(recs.find((r) => r.term === "rankingcoach alternative")!.existingPageUrl).toBeNull();
+  });
+});
+
+describe("recommendKeywords — Search Console rows are demand, not pages", () => {
+  // altorank.co, 2026-09-22: every query the site had ever earned an
+  // impression for was read as "your page / already targets this" and
+  // skipped, because the query+page rows Search Console also stores were
+  // read as pages. The striking-distance rows the same function boosts x2.5
+  // became unplannable.
+  const ROW: Row[] = [
+    { id: "r", term: "rankingcoach alternative", volume: 10, difficulty: 20, buyer_fit: { keep: true, reason: null, funnel: "buyer" } },
+  ];
+  it("keeps a striking-distance query writable, and reads only query rows", async () => {
+    const recs = await recommendKeywords(
+      client(ROW, 0, [{ keyword_id: "r", position: 29, checked_at: "2026-09-21T00:00:00Z" }], [], [{ query: "rankingcoach alternative", impressions: 275 }]),
+      "ws1",
+    );
+    const rec = recs.find((r) => r.term === "rankingcoach alternative")!;
+    expect(rec.existingPageUrl).toBeNull();
+    expect(rec.action).toBe("write");
+    expect(rec.impressions).toBe(275);
+    expect(rec.reasons.join(" ")).not.toContain("already targets this");
+    // The query+page rows never reach the scorer: one impression, counted once.
+    expect(seenFilters).toContainEqual(["is", "page_url", null]);
   });
 });

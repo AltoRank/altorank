@@ -36,7 +36,7 @@ function client(businessProfile: unknown): SupabaseClient {
   ];
   const chain = (value: unknown): Record<string, unknown> => {
     const self: Record<string, unknown> = {};
-    for (const m of ["eq", "in", "order", "gte", "not", "select"]) self[m] = () => Object.assign(Promise.resolve(value), self);
+    for (const m of ["eq", "in", "order", "gte", "not", "select", "is"]) self[m] = () => Object.assign(Promise.resolve(value), self);
     self.single = async () => ({ data: { topical_profile: PROFILE, dr: 10, business_profile: businessProfile, domain: "altorank.co", language: "en", location_code: 2840 } });
     return self;
   };
