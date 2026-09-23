@@ -11,6 +11,7 @@ import { normalizeDomain, DOMAIN_PATTERN } from "@/lib/growth-plan/build";
 import { checkDomainReachable } from "@/lib/domain/reachable";
 import { SubmitButton } from "@/components/auth/submit-button";
 import { recordEvent } from "@/lib/observability/record";
+import { existingSignup } from "@/lib/auth/signup-reuse";
 
 export const metadata: Metadata = {
   title: "Sign Up",
@@ -81,6 +82,12 @@ async function signUp(formData: FormData) {
     let accountId: string | null = null;
     let lastError = "";
 
+    // The same person submitting twice gets what the first submit made, not
+    // a second account and a second site (lib/auth/signup-reuse.ts).
+    const prior = await existingSignup(admin, data.user.id, DOMAIN_PATTERN.test(domain) ? domain : null);
+    const alreadyMember = prior.accountId !== null;
+    if (prior.accountId) accountId = prior.accountId;
+
     for (let attempt = 0; attempt < 5 && !accountId; attempt++) {
       const slug = attempt === 0 ? base : `${base}-${Math.random().toString(36).slice(2, 8)}`;
       const { data: account, error: accountError } = await admin
@@ -116,11 +123,13 @@ async function signUp(formData: FormData) {
       redirect("/signup?error=" + encodeURIComponent(`Could not set up your workspace: ${lastError}`));
     }
 
-    const { error: memberError } = await admin.from("account_members").insert({
-      account_id: accountId,
-      user_id: data.user.id,
-      role: "owner",
-    });
+    const { error: memberError } = alreadyMember
+      ? { error: null }
+      : await admin.from("account_members").insert({
+          account_id: accountId,
+          user_id: data.user.id,
+          role: "owner",
+        });
     if (memberError) {
       await recordEvent({
         level: "error",
@@ -135,7 +144,7 @@ async function signUp(formData: FormData) {
       );
     }
 
-    if (DOMAIN_PATTERN.test(domain)) {
+    if (DOMAIN_PATTERN.test(domain) && !prior.workspaceId) {
       const { error: wsError } = await admin.from("workspaces").insert({
         account_id: accountId,
         name: domain,
