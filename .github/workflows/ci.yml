@@ -20,6 +20,9 @@ on:
 
 permissions:
   contents: read
+  # Pull the local Supabase images from ghcr.io as this repository rather
+  # than anonymously (see "Log in to GHCR" in the e2e job).
+  packages: read
 
 jobs:
   build:
@@ -71,6 +74,17 @@ jobs:
 
       # `start` applies apps/web/supabase/migrations on the way up. Studio,
       # mail, realtime and storage are not needed by any spec.
+      # Anonymous pulls from ghcr.io share a rate limit across every GitHub
+      # runner on the same address. On 2026-09-23 the e2e job failed four
+      # times in a row over an hour at "Start Supabase" with `toomanyrequests`,
+      # before any test ran. Authenticated pulls are counted per token.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Start Supabase
         working-directory: apps/web
         run: supabase start -x studio,inbucket,mailpit,realtime,storage-api,imgproxy,edge-runtime,logflare,vector,supavisor
