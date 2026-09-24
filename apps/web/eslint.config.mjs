@@ -17,6 +17,16 @@ const eslintConfig = defineConfig([
     ".open-next/**",
     ".wrangler/**",
   ]),
+  {
+    rules: {
+      // A leading underscore is how this codebase says "unused on purpose": a
+      // mock that has to match a signature it ignores (`vi.fn((_args) => ...)`).
+      // Without this, those are warnings nobody acts on, and `lint:guarded`
+      // could not run with --max-warnings 0, so a new, real unused variable in
+      // a guarded path would pass CI as just one more warning.
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+    },
+  },
 ]);
 
 export default eslintConfig;

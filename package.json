@@ -9,6 +9,7 @@
     "dev": "npm run dev -w apps/web",
     "build": "npm run build -w apps/web",
     "test": "npm run test -w apps/web",
+    "test:db": "npm run test:db -w apps/web",
     "smoke": "npm run smoke -w apps/web"
   },
   "license": "AGPL-3.0-only",

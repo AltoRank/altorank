@@ -14,48 +14,22 @@
 // next request, an expired key never worked, and a key without the `write`
 // scope cannot mutate.
 //
-// Needs the local Supabase stack; skips itself when it is not answering.
+// Runs in the vitest `db` project (`npm run test:db`) against the local
+// Supabase stack only; lib/__tests__/support/local-db.ts refuses any database
+// URL that is not on this machine. Skips when no local stack is configured or
+// answering, except in CI.
 
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { connectLocalStack } from "@/lib/__tests__/support/local-db";
 import { generateApiKey } from "../api-keys";
 
-function loadEnv(): { url: string; anon: string; service: string } | null {
-  const env = { ...process.env } as Record<string, string | undefined>;
-  for (const file of [".env.development.local", ".env.local"]) {
-    try {
-      const text = readFileSync(path.resolve(__dirname, "../../..", file), "utf8");
-      for (const line of text.split("\n")) {
-        const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-        if (m && !env[m[1]]) env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-      }
-    } catch {
-      // Absent is fine.
-    }
-  }
-  const url = env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const service = env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !anon || !service) return null;
-  // The route handlers build their own service client from the environment.
-  process.env.NEXT_PUBLIC_SUPABASE_URL = url;
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = anon;
-  process.env.SUPABASE_SERVICE_ROLE_KEY = service;
-  return { url, anon, service };
-}
-
-const ENV = loadEnv();
-const LIVE = ENV
-  ? await fetch(`${ENV.url}/auth/v1/health`, {
-      headers: { apikey: ENV.anon },
-      signal: AbortSignal.timeout(2_000),
-    })
-      .then((r) => r.ok)
-      .catch(() => false)
-  : false;
+const ENV = await connectLocalStack();
+// connectLocalStack put the local stack's URL and keys into process.env and
+// checked every database URL there, so the service client the route handlers
+// build for themselves points at the same local stack as the fixtures below.
+const LIVE = ENV !== null;
 
 const SLUGS = ["agent-iso-a", "agent-iso-b"];
 
