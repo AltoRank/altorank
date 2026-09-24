@@ -19,6 +19,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { tiptapToHtml } from "@/lib/cms/html";
+import type { GscShapes } from "@/lib/gsc/analysis";
+import { readGsc } from "@/lib/gsc/read";
 import type { Detection, Evidence, Opportunity } from "./types";
 
 // ── Inputs ──────────────────────────────────────────────────────────────────
@@ -229,12 +231,15 @@ export interface MetricRow {
   avg_position: number | string | null;
 }
 
-/** Total per-day query rows into one QueryStats per query. */
-export function aggregateQueries(rows: readonly MetricRow[]): Map<string, QueryStats> {
+/**
+ * Total per-day query rows into one QueryStats per query. Takes the query
+ * partition (lib/gsc/read.ts) and nothing else: a page or query_page row has
+ * no way in, so none needs filtering out here.
+ */
+export function aggregateQueries(gsc: GscShapes<MetricRow, "query">): Map<string, QueryStats> {
   const acc = new Map<string, { clicks: number; impressions: number; posWeight: number; weight: number }>();
-  for (const r of rows) {
-    // Query rows only. Page rows carry a URL and no query.
-    if (!r.query || r.page_url) continue;
+  for (const r of gsc.query) {
+    if (!r.query) continue;
     const key = r.query.trim().toLowerCase();
     const a = acc.get(key) ?? { clicks: 0, impressions: 0, posWeight: 0, weight: 0 };
     const imp = r.impressions ?? 0;
@@ -336,29 +341,21 @@ export async function analyzeWorkspace(
   if (!gsc?.length) return { reason: "gsc_not_connected" };
 
   const since = new Date(now.getTime() - 56 * 86_400_000).toISOString().slice(0, 10);
-  // Paged: PostgREST caps a single select at 1,000 rows and says nothing. A
-  // site with a hundred queries a day passes that inside the 56-day window,
-  // and once per-page rows are stored too (four shapes a day) it passes it in
-  // a week. A truncated window makes "declining" a comparison of two random
-  // slices, so read until a page comes back short.
-  const metricRows: MetricRow[] = [];
-  const PAGE = 1000;
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from("analytics_metrics")
-      .select("metric_date, query, page_url, article_id, clicks, impressions, avg_position")
-      .eq("workspace_id", workspaceId)
-      .eq("source", "gsc")
-      .gte("metric_date", since)
-      .order("metric_date", { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    metricRows.push(...((data ?? []) as MetricRow[]));
-    if (!data || data.length < PAGE) break;
-  }
-  const windows = splitWindows(metricRows, now);
-  const current = aggregateQueries(windows.current);
-  const previous = aggregateQueries(windows.previous);
+  // Query rows, every one in the 56 days. PostgREST caps a single select at
+  // 1,000 rows and says nothing; a truncated window makes "declining" a
+  // comparison of two random slices. lib/gsc/read.ts pages past the cap in a
+  // unique order - this loop used to order by date alone, so rows sharing a
+  // date could fall between two pages or land in both - and reads only the
+  // query shape, the one partition the detectors use.
+  const metrics = await readGsc(supabase, {
+    workspaceId,
+    shapes: ["query"],
+    since,
+    columns: ["article_id", "clicks", "impressions", "avg_position"],
+  });
+  const windows = splitWindows(metrics.query, now);
+  const current = aggregateQueries({ query: windows.current });
+  const previous = aggregateQueries({ query: windows.previous });
 
   const serp = await loadSerpHistory(supabase, workspaceId, now);
 

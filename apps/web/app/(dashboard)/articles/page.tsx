@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHead, DotSep, StatStrip } from "@/components/ui";
 import { ArticleActions } from "@/components/dashboard/article-actions";
 import { coverageBucket } from "@/lib/gsc/analysis";
+import { readGsc } from "@/lib/gsc/read";
 import { inspectionFrom } from "@/lib/google/inspection";
 import { ArticleHistory } from "@/components/dashboard/article-history";
 import { HowItWorks } from "@/components/dashboard/how-it-works";
@@ -45,27 +46,29 @@ export default async function ArticlesPage({ searchParams }: Props) {
   // last 30 days, attributed per article by the analytics cron. Dash when
   // nothing is attributed, because "0 clicks" and "nobody measured" are
   // different facts. Scoped like every other read on the page (AGENTS.md).
-  let metricsQuery = supabase
-    .from("analytics_metrics")
-    .select("article_id, clicks, impressions")
-    .not("article_id", "is", null)
-    // Page rows only. The sync also stores (query, page) rows that carry
-    // the article id, and summing both shapes counts every click twice
-    // (lib/gsc/analysis.ts).
-    .is("query", null)
-    .gte("metric_date", since);
-  if (scopeId) metricsQuery = metricsQuery.eq("workspace_id", scopeId);
-  const [workspaces, allArticles, { data: metricRows }, { data: auth }] = await Promise.all([
+  //
+  // Page rows only. The sync also stores (query, page) rows that carry the
+  // article id, and summing both shapes counts every click twice
+  // (lib/gsc/analysis.ts). A failed read leaves every row on its dash, as it
+  // always has here: unmeasured, never zero.
+  const metricsRead = readGsc(supabase, {
+    workspaceId: scopeId ?? null,
+    shapes: ["page"],
+    article: "any",
+    since,
+    columns: ["article_id", "clicks", "impressions"],
+  }).catch(() => ({ page: [] }));
+  const [workspaces, allArticles, { page: metricRows }, { data: auth }] = await Promise.all([
     getWorkspaces(),
     getArticles(scopeId ?? undefined),
-    metricsQuery,
+    metricsRead,
     supabase.auth.getUser(),
   ]);
   const clicksByArticle = new Map<string, number>();
   // Served in search at least once: the page is in Google's index, whatever
   // else we do or do not know about it.
   const servedArticles = new Set<string>();
-  for (const m of metricRows ?? []) {
+  for (const m of metricRows) {
     if (!m.article_id) continue;
     clicksByArticle.set(
       m.article_id,

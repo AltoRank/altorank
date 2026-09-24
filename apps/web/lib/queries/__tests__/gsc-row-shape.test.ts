@@ -36,6 +36,10 @@ function chain(rows: Row[]) {
       return q;
     },
     gte: () => q,
+    lte: () => q,
+    // lib/gsc/read.ts pages with `.range()`; one page of six rows is short,
+    // so the read ends after it.
+    range: () => q,
     ilike: () => q,
     eq: (col: string, value: unknown) => {
       filters.push((r) => r[col] === value);

@@ -57,14 +57,27 @@ beforeEach(() => {
 describe("loadGscRows", () => {
   it("returns only the workspace it was given", async () => {
     const { loadGscRows } = await import("../queries");
-    const rows = await loadGscRows(WORKSPACE_A);
+    const gsc = await loadGscRows(WORKSPACE_A);
+    const rows = Object.values(gsc).flat();
     expect(rows.length).toBe(3);
-    expect(leaksOtherWorkspace(rows as Record<string, unknown>[], WORKSPACE_A)).toBe(false);
+    expect(leaksOtherWorkspace(rows as unknown as Record<string, unknown>[], WORKSPACE_A)).toBe(false);
   });
   it("returns the second workspace when asked for it", async () => {
     const { loadGscRows } = await import("../queries");
-    const rows = await loadGscRows(WORKSPACE_B);
+    const rows = Object.values(await loadGscRows(WORKSPACE_B)).flat();
     expect(rows.every((r) => (r as unknown as { workspace_id: string }).workspace_id === WORKSPACE_B)).toBe(true);
+  });
+  it("files each row under its own shape, once", async () => {
+    // This fixture ignores `.is()` and `.not()`, so every per-shape query gets
+    // every row back. The in-memory check in lib/gsc/read.ts is what keeps
+    // the total row out of the page partition and the page rows out of the
+    // total one - without it this would be twelve rows, not three.
+    const { loadGscRows } = await import("../queries");
+    const gsc = await loadGscRows(WORKSPACE_A);
+    expect(gsc.total).toHaveLength(1);
+    expect(gsc.page).toHaveLength(2);
+    expect(gsc.query).toHaveLength(0);
+    expect(gsc.query_page).toHaveLength(0);
   });
 });
 
