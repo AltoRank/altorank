@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
+import { latestGscDate } from "@/lib/gsc/read";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { EMPTY_PROFILE } from "@/lib/onboarding/business-profile";
 import {
@@ -37,7 +38,7 @@ export async function getWorkspaceSettings(): Promise<WorkspaceSettings | null> 
   if (!scopeId) return null;
 
   const supabase = await createClient();
-  const [{ data: ws }, { data: output }, { data: gscRow }, { data: latest }] = await Promise.all([
+  const [{ data: ws }, { data: output }, { data: gscRow }, gscLastDate] = await Promise.all([
     supabase
       .from("workspaces")
       .select("id, name, domain, business_profile, sitemap_url, blog_root_url, example_article_urls")
@@ -51,14 +52,7 @@ export async function getWorkspaceSettings(): Promise<WorkspaceSettings | null> 
       .eq("workspace_id", scopeId)
       .eq("integration_id", "gsc")
       .maybeSingle(),
-    supabase
-      .from("analytics_metrics")
-      .select("metric_date")
-      .eq("workspace_id", scopeId)
-      .eq("source", "gsc")
-      .order("metric_date", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+    latestGscDate(supabase, scopeId),
   ]);
   if (!ws) return null;
 
@@ -85,6 +79,6 @@ export async function getWorkspaceSettings(): Promise<WorkspaceSettings | null> 
     keywordPrompt: (output as { global_keyword_prompt?: string | null } | null)?.global_keyword_prompt ?? "",
     gscConnected: Boolean(gscRow),
     gscNeedsReconnect: Boolean(gscRow?.needs_reconnect),
-    gscLastDate: (latest?.metric_date as string | undefined) ?? null,
+    gscLastDate,
   };
 }

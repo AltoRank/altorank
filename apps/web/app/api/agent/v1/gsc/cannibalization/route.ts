@@ -19,9 +19,9 @@ export const GET = withAgent(async (request, ctx) => {
   const minImpressions = Math.max(1, Number(q.get("min_impressions")) || 10);
   const limit = Math.min(50, Math.max(1, Number(q.get("limit")) || 10));
 
-  const rows = await gscRows(ctx, scope);
-  const measured = windowMeasured(rows, windows(scope.today, scope.days).current);
-  const issues = cannibalization(rows, scope.today, scope.days, { minImpressions, limit });
+  const gsc = await gscRows(ctx, scope);
+  const measured = windowMeasured(gsc, windows(scope.today, scope.days).current);
+  const issues = cannibalization(gsc, scope.today, scope.days, { minImpressions, limit });
 
   const data = {
     workspace_id: scope.workspace.id,

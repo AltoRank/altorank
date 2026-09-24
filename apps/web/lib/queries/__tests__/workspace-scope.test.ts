@@ -65,6 +65,35 @@ function freshSeed(): Seed {
       config: { type: "wordpress" },
     }));
   }
+  // Search Console rows in the two shapes the value reads use: query rows for
+  // the traffic value (priced by term) and page rows attributed to one article
+  // for the article value. lib/gsc/read.ts files a row by its columns, so the
+  // generic row above - a query row carrying an article id, which the sync
+  // never writes - no longer passes for the article's page traffic.
+  seeded.analytics_metrics = [
+    ...twoWorkspaces(3, (workspace_id, i) => ({
+      id: `am-q-${workspace_id.slice(0, 4)}-${i}`,
+      workspace_id,
+      source: "gsc",
+      metric_date: "2026-09-01",
+      clicks: 1,
+      impressions: 10,
+      query: `term ${i}`,
+      page_url: null,
+      article_id: null,
+    })),
+    ...twoWorkspaces(3, (workspace_id, i) => ({
+      id: `am-p-${workspace_id.slice(0, 4)}-${i}`,
+      workspace_id,
+      source: "gsc",
+      metric_date: "2026-09-01",
+      clicks: 1,
+      impressions: 10,
+      query: null,
+      page_url: `https://${workspace_id.slice(0, 4)}.test/p${i}`,
+      article_id: "article-shared",
+    })),
+  ];
   return seeded;
 }
 

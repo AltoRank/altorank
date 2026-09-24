@@ -29,8 +29,8 @@ export const GET = withAgent(async (request, ctx) => {
   if ("envelope" in resolved) return resolved.envelope;
   const { scope } = resolved;
 
-  const [rows, known] = await Promise.all([gscRows(ctx, scope), knownPagesFrom(ctx.supabase, scope.workspace.id)]);
-  const served = servedUrls(rows, scope.today, scope.days);
+  const [gsc, known] = await Promise.all([gscRows(ctx, scope), knownPagesFrom(ctx.supabase, scope.workspace.id)]);
+  const served = servedUrls(gsc, scope.today, scope.days);
   const summary = indexCoverage(known, served);
   const base = appBaseUrl(request);
 
