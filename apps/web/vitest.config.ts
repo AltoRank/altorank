@@ -5,12 +5,24 @@ import path from "path";
 // cannot be skipped by accident:
 //
 // - `unit` (`npm run test`): mocks only, no services, runs anywhere.
+//   lib/__tests__/support/unit-setup.ts refuses a production database URL in
+//   the shell, removes the rest so every machine sees what CI sees, and
+//   installs the network guard, which lets no connection out of the process
+//   except to a server the test itself started.
 // - `db` (`npm run test:db`): every `*.db.test.ts`, against the local Supabase
-//   from `supabase start`. lib/__tests__/support/db-setup.ts loads the env the
-//   way `next dev` does and refuses, before any test body runs, when a database
-//   URL is not on this machine. CI runs it in the e2e job, which owns a stack.
+//   from `supabase start`. lib/__tests__/support/db-setup.ts installs the
+//   network guard in loopback mode (nothing that is not on this machine), then
+//   loads the local stack's values the way `next dev` does and refuses, before
+//   any test body runs, when a database URL is not on this machine. CI runs it
+//   in the e2e job, which owns a stack.
+//
+// Which tier a file lands in is decided by its name, so the pattern covers
+// every extension vitest collects (a `.db.test.tsx` or `.db.spec.mts` is a db
+// test too), and lib/__tests__/test-tiers.test.ts fails when a file that is not
+// named as a db test reaches for the local stack or an env file.
 //
 // Playwright owns e2e/; its specs share the .spec.ts suffix vitest looks for.
+const DB_TESTS = "**/*.db.{test,spec}.?(c|m)[jt]s?(x)";
 const exclude = [...configDefaults.exclude, "e2e/**"];
 
 export default defineConfig({
@@ -22,14 +34,15 @@ export default defineConfig({
         extends: true,
         test: {
           name: "unit",
-          exclude: [...exclude, "**/*.db.test.ts"],
+          exclude: [...exclude, DB_TESTS],
+          setupFiles: ["./lib/__tests__/support/unit-setup.ts"],
         },
       },
       {
         extends: true,
         test: {
           name: "db",
-          include: ["**/*.db.test.ts"],
+          include: [DB_TESTS],
           exclude,
           setupFiles: ["./lib/__tests__/support/db-setup.ts"],
           // One file at a time: the suites sign users in and cascade-delete

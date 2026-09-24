@@ -1,15 +1,24 @@
-// The guard in front of every test that touches a database. It is the only
-// thing standing between `npm run test:db` in the main checkout (whose
-// .env.local is the production project) and a suite that creates and deletes
-// users with the service role, so it gets tested in the unit tier, where it
-// runs on every push with no database at all.
+// The env half of the guard in front of every test that touches a database:
+// the loader that decides which Supabase `npm run test:db` means in the main
+// checkout (whose .env.local is the production project), and the check that
+// refuses it before a suite creates and deletes users with the service role.
+// The other half, the network guard, has its own file (network-guard.test.ts).
+// Both are tested in the unit tier, where they run on every push with no
+// database at all.
 
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { resetEnv } from "@next/env";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { assertLocalEnv, assertLoopback, connectLocalStack, localStackFrom } from "./support/local-db";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  assertLocalEnv,
+  assertLoopback,
+  connectLocalStack,
+  loadLocalEnv,
+  LOCAL_STACK_VARS,
+  localEnvFrom,
+  localStackFrom,
+} from "./support/local-db";
 
 const KEYS = { NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon", SUPABASE_SERVICE_ROLE_KEY: "service" };
 
@@ -79,33 +88,111 @@ describe("localStackFrom", () => {
   });
 });
 
-// End to end through the loader: a production URL sitting in an env file, read
-// under NODE_ENV=test (which vitest sets and which, left alone, would make
-// @next/env skip .env.development.local and quietly find nothing).
-describe("connectLocalStack", () => {
-  let dir: string | undefined;
+// The loader: which files, in which order, and which variables it will take
+// from them. The main checkout's .env.local is production and also holds live
+// provider keys, so both "a production URL there is refused" and "nothing but
+// the three local-stack values is imported" matter.
+describe("localEnvFrom", () => {
+  let dir: string;
 
-  afterEach(() => {
-    resetEnv();
-    vi.unstubAllEnvs();
-    vi.unstubAllGlobals();
-    if (dir) rmSync(dir, { recursive: true, force: true });
-    dir = undefined;
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(tmpdir(), "local-db-guard-"));
   });
 
-  it("refuses a production URL from .env.development.local before making any request", async () => {
-    dir = mkdtempSync(path.join(tmpdir(), "local-db-guard-"));
-    writeFileSync(
-      path.join(dir, ".env.development.local"),
-      "NEXT_PUBLIC_SUPABASE_URL=https://abc.supabase.co\nNEXT_PUBLIC_SUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\n",
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const write = (name: string, lines: string[]) => writeFileSync(path.join(dir, name), `${lines.join("\n")}\n`);
+
+  it("takes .env.development.local over .env.local, as next dev does", () => {
+    write(".env.development.local", [
+      "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54331",
+      "SUPABASE_SERVICE_ROLE_KEY=local-service",
+    ]);
+    write(".env.local", [
+      "NEXT_PUBLIC_SUPABASE_URL=https://abc.supabase.co",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY=anon",
+      "SUPABASE_SERVICE_ROLE_KEY=prod-service",
+    ]);
+    expect(localEnvFrom(dir, {})).toEqual({
+      NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54331",
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon",
+      SUPABASE_SERVICE_ROLE_KEY: "local-service",
+    });
+  });
+
+  it("imports none of the provider keys or other secrets sitting beside them", () => {
+    write(".env.development.local", [
+      "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54331",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY=anon",
+      "SUPABASE_SERVICE_ROLE_KEY=service",
+    ]);
+    write(".env.local", [
+      "RESEND_API_KEY=re_FAKE_LIVE",
+      "STRIPE_SECRET_KEY=sk_live_FAKE",
+      "ANTHROPIC_API_KEY=sk-ant-FAKE",
+      "DATAFORSEO_PASSWORD=FAKE",
+      "DATABASE_URL=postgres://postgres:pw@db.abc.supabase.co:5432/postgres",
+      "NEXT_PUBLIC_APP_URL=https://app.example.com",
+    ]);
+    const env = localEnvFrom(dir, {});
+    expect(Object.keys(env).sort()).toEqual([...LOCAL_STACK_VARS].sort());
+    expect(JSON.stringify(env)).not.toMatch(/FAKE|abc\.supabase\.co|example\.com/);
+  });
+
+  it("finds a production URL in .env.local when nothing overrides it, and the guard refuses it", () => {
+    write(".env.local", [
+      "NEXT_PUBLIC_SUPABASE_URL=https://abc.supabase.co",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY=anon",
+      "SUPABASE_SERVICE_ROLE_KEY=service",
+    ]);
+    expect(() => localStackFrom(localEnvFrom(dir, {}))).toThrow(/NEXT_PUBLIC_SUPABASE_URL points at abc\.supabase\.co/);
+  });
+
+  it("lets a value already in the environment win over every file", () => {
+    write(".env.development.local", ["NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54331"]);
+    expect(localEnvFrom(dir, { NEXT_PUBLIC_SUPABASE_URL: "https://abc.supabase.co" }).NEXT_PUBLIC_SUPABASE_URL).toBe(
+      "https://abc.supabase.co",
     );
-    // Nothing already in the environment may win over the file.
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", undefined);
+  });
+
+  it("reads nothing next dev would not: .env.test* is ignored", () => {
+    write(".env.test.local", ["NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:1"]);
+    expect(localEnvFrom(dir, {}).NEXT_PUBLIC_SUPABASE_URL).toBeUndefined();
+  });
+});
+
+describe("loadLocalEnv", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("adds nothing to process.env but the local-stack values, whatever apps/web's env files hold", () => {
+    for (const name of LOCAL_STACK_VARS) vi.stubEnv(name, undefined);
+    const before = new Set(Object.keys(process.env));
+    loadLocalEnv();
+    const added = Object.keys(process.env).filter((name) => !before.has(name));
+    expect(added.filter((name) => !(LOCAL_STACK_VARS as readonly string[]).includes(name))).toEqual([]);
+  });
+});
+
+// End to end through connectLocalStack: the refusal comes before the health
+// check, so a production URL never receives even that one request.
+describe("connectLocalStack", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("refuses a production URL before making any request", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://abc.supabase.co");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service");
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
 
-    await expect(connectLocalStack(dir)).rejects.toThrow(/NEXT_PUBLIC_SUPABASE_URL points at abc\.supabase\.co/);
+    await expect(connectLocalStack()).rejects.toThrow(/NEXT_PUBLIC_SUPABASE_URL points at abc\.supabase\.co/);
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(process.env.NODE_ENV).toBe("test");
   });
 });
