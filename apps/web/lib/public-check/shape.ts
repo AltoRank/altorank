@@ -51,8 +51,11 @@ export const APP_URL = "https://app.altorank.co";
 export const AGENT_GUIDANCE =
   "Each check is pass, fail or unknown. Unknown means the check did not " +
   "complete or the server's answer was inconclusive; it is not a failure and " +
-  "it does not lower the score. The score is severity-weighted over the checks " +
-  "that completed and is null when none did. Evidence is what AltoRank " +
+  "it does not lower the score. The score weights each check by how much it " +
+  "actually affects whether AI assistants can read and cite the site, not by " +
+  "how alarming the finding looks: crawler access counts for most, structured " +
+  "data and llms.txt for comparatively little. It covers the checks that " +
+  "completed and is null when none did. Evidence is what AltoRank " +
   "observed on the site's public configuration at checked_at; re-run before " +
   "quoting it later. The checker reads only the homepage, /robots.txt, " +
   "/sitemap.xml and /llms.txt.";
