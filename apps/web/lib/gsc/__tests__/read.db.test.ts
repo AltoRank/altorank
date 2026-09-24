@@ -18,7 +18,9 @@
 //   carries the query row's numbers. It read query_page rows as more of the
 //   same query, which doubled them.
 //
-// And one read the cap used to cut short: 2,500 rows come back as 2,500.
+// And two reads the cap used to cut short: 2,500 Search Console rows come
+// back as 2,500, and the report's GA4 block counts 1,550 GA4 rows, not the
+// first 1,000.
 //
 // Every row hangs off one account with a random slug; deleting the account
 // cascades to its workspaces and their metrics, so the shared local stack is
@@ -80,6 +82,8 @@ describe.skipIf(!STACK)("Search Console reads on the local stack", () => {
   let dayWs: string;
   /** 2,500 query rows. */
   let bulkWs: string;
+  /** A month of GA4: 31 days of 50 pages, one pageview and one session each. */
+  let ga4Ws: string;
 
   async function workspace(label: string): Promise<string> {
     const { data, error } = await db
@@ -132,6 +136,24 @@ describe.skipIf(!STACK)("Search Console reads on the local stack", () => {
       const { error: bulkErr } = await db.from("analytics_metrics").insert(bulk.slice(i, i + 500));
       if (bulkErr) throw new Error(`analytics_metrics (bulk): ${bulkErr.message}`);
     }
+
+    // GA4 writes one row per page per day (lib/google/sync.ts): 1,550 rows
+    // for a small site's month, past the cap the report's read stopped at.
+    ga4Ws = await workspace("ga4");
+    const ga4 = Array.from({ length: 31 }, (_, d) =>
+      Array.from({ length: 50 }, (_, p) => ({
+        workspace_id: ga4Ws,
+        source: "ga4",
+        metric_date: `2026-07-${String(d + 1).padStart(2, "0")}`,
+        page_url: `/page-${p}`,
+        pageviews: 1,
+        sessions: 1,
+      })),
+    ).flat();
+    for (let i = 0; i < ga4.length; i += 500) {
+      const { error: ga4Err } = await db.from("analytics_metrics").insert(ga4.slice(i, i + 500));
+      if (ga4Err) throw new Error(`analytics_metrics (ga4): ${ga4Err.message}`);
+    }
   }, 60_000);
 
   afterAll(async () => {
@@ -177,6 +199,13 @@ describe.skipIf(!STACK)("Search Console reads on the local stack", () => {
   it("the local PostgREST caps an unpaged read at 1,000 rows, so the next test means something", async () => {
     const { data } = await db.from("analytics_metrics").select("id").eq("workspace_id", bulkWs);
     expect(data).toHaveLength(GSC_PAGE_SIZE);
+  });
+
+  it("the client report's GA4 block counts every row of the month, not the first 1,000", async () => {
+    const report = await aggregateReportData(db, ga4Ws, "2026-07-01", "2026-07-31");
+    expect(report.ga4Summary?.pageviews).toBe(1550);
+    // No Search Console rows for this workspace: unmeasured, not zero.
+    expect(report.gscSummary).toBeNull();
   });
 
   it("readGsc: 2,500 seeded rows come back as 2,500, each once", async () => {

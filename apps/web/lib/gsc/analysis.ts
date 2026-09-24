@@ -21,9 +21,16 @@
 // So nothing here takes a flat list of rows. Every function takes the rows
 // already partitioned by shape (`GscShapes`), and names in its signature the
 // partitions it reads: a function that wants query rows is handed
-// `{ query: [...] }` and has no way to see a page row, never mind add one in.
+// `{ query: [...] }`, and the rows of each partition are typed with their
+// shape (`Shaped`), so query_page rows handed over as `query` do not compile.
 // The partition is made once, by the only Search Console reader there is
 // (lib/gsc/read.ts), from the one table below that says what each shape is.
+//
+// The types stop a shape arriving under the wrong name. They cannot stop a
+// caller that holds two partitions from spreading them into one array and
+// summing it; nothing in TypeScript can. That is left to review, and the read
+// guard (lib/gsc/__tests__/read-guard.test.ts) makes sure a reviewer sees it:
+// a read of more than one shape needs an entry, with a reason, in its list.
 //
 // Every number is measured or null. A page with no rows in the previous window
 // has `prevClicks: null` when nothing at all was synced for that window, and 0
@@ -71,12 +78,25 @@ export function rowShape(r: Pick<GscRow, "query" | "page_url">): RowShape {
   return ROW_SHAPES.find((s) => SHAPE_COLUMNS[s].query === query && SHAPE_COLUMNS[s].page_url === page)!;
 }
 
+declare const SHAPE: unique symbol;
+
+/**
+ * A row that sits in the `S` partition. The mark is in the type only (no row
+ * carries it at run time), and it is optional, so a fixture written by hand
+ * still fits. What it stops is a partition passed under another shape's
+ * name: `periodTotals({ total: gsc.query_page, ... })` does not compile,
+ * because query_page rows are not total rows, even though every column says
+ * they could be.
+ */
+export type Shaped<R, S extends RowShape> = R & { readonly [SHAPE]?: S };
+
 /**
  * Rows held apart by shape. `S` narrows it to the partitions a reader asked
  * for, so reading one it did not ask for is a type error rather than an empty
- * list that looks like "Google reported nothing".
+ * list that looks like "Google reported nothing"; each partition's rows are
+ * `Shaped` with their own shape, so one cannot stand in for another.
  */
-export type GscShapes<R = GscRow, S extends RowShape = RowShape> = { [K in S]: R[] };
+export type GscShapes<R = GscRow, S extends RowShape = RowShape> = { [K in S]: Shaped<R, K>[] };
 
 /**
  * A flat list, split by shape. For tests and fixtures that build mixed rows
@@ -118,6 +138,29 @@ const n = (v: number | null | undefined) => v ?? 0;
 /** The columns a daily count needs; narrower than GscRow so a reader can ask for just these. */
 export type CountedRow = Pick<GscRow, "metric_date" | "clicks" | "impressions">;
 
+const DAY_MS = 86_400_000;
+
+/**
+ * The longest window a series will lay out day by day. Search Console keeps
+ * 16 months; the dashboard asks for 28 days, the agent API for at most 90, a
+ * client report for at most MAX_REPORT_DAYS (lib/reports/period.ts). Past
+ * this, the window came from somewhere that did not check it, and the answer
+ * is an error, not a few million empty days.
+ */
+export const MAX_SERIES_DAYS = 1000;
+
+/**
+ * A YYYY-MM-DD date as a whole number of days since 1970-01-01, or an error.
+ * The series counts days as integers: stepping ISO strings and comparing them
+ * never ends past 9999-12-31, where toISOString() turns into "+010000-01-01",
+ * which sorts before "9999-12-31" as text.
+ */
+function dayNumber(date: string): number {
+  const t = /^\d{4}-\d{2}-\d{2}$/.test(date) ? Date.parse(`${date}T00:00:00Z`) : NaN;
+  if (Number.isNaN(t)) throw new Error(`Not a YYYY-MM-DD date: ${JSON.stringify(date)}`);
+  return t / DAY_MS;
+}
+
 /**
  * One point per day for one window. Totals when the day has a total row;
  * otherwise the sum of that day's query rows, which is what the sync stored
@@ -125,6 +168,11 @@ export type CountedRow = Pick<GscRow, "metric_date" | "clicks" | "impressions">;
  * anonymised queries from that dimension) so a total row wins when both exist.
  */
 function seriesFor(gsc: GscShapes<CountedRow, "total" | "query">, w: DateWindow): DayPoint[] {
+  const first = dayNumber(w.start);
+  const last = dayNumber(w.end);
+  if (last - first + 1 > MAX_SERIES_DAYS) {
+    throw new Error(`A ${last - first + 1}-day window (${w.start} to ${w.end}) is longer than ${MAX_SERIES_DAYS} days.`);
+  }
   const byDay = (rows: CountedRow[]) => {
     const out = new Map<string, DayPoint>();
     for (const r of rows) {
@@ -139,7 +187,8 @@ function seriesFor(gsc: GscShapes<CountedRow, "total" | "query">, w: DateWindow)
   const totals = byDay(gsc.total);
   const fromQueries = byDay(gsc.query);
   const out: DayPoint[] = [];
-  for (let d = w.start; d <= w.end; d = isoDaysAgo(new Date(`${d}T00:00:00Z`), -1)) {
+  for (let day = first; day <= last; day++) {
+    const d = new Date(day * DAY_MS).toISOString().slice(0, 10);
     out.push(totals.get(d) ?? fromQueries.get(d) ?? { date: d, clicks: 0, impressions: 0 });
   }
   return out;

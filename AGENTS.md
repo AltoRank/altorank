@@ -55,8 +55,13 @@ the client report.
 the shapes you need, read the partition you asked for, and hand it to an
 analysis function that takes that partition; it pages past the cap for you.
 Freshness is `latestGscDate()` / `lastGscWriteAt()`. GA4 and Bing share the
-table and are not Search Console: pin their `source`.
+table and are not Search Console: pin their `source` in the same chain, and
+page the read with `readAllPages()` (`apps/web/lib/supabase/read-all.ts`).
 
-`lib/gsc/__tests__/read-guard.test.ts` fails the build on any other
-`.from("analytics_metrics")` that is not an allowlisted writer or GA4/Bing
-reader.
+`lib/gsc/__tests__/read-guard.test.ts` parses every file in `apps/web` and
+fails the build on: any other `.from("analytics_metrics")` that is not an
+allowlisted writer or paged GA4/Bing reader; the table's name in any other
+string (a variable, a REST URL, SQL); a `readGsc` call holding more than one
+shape without a listed reason, since two partitions added together double the
+number and no type can stop that; and a migration that reads the table in a
+view, function or anything else that is not DDL on it.
