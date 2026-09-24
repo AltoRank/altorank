@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { readAllPages } from "@/lib/supabase/read-all";
 
 export type BingSummary = {
   /** A Bing key is stored for the workspace(s) in scope. */
@@ -23,11 +24,30 @@ export async function getBingSummary(workspaceId?: string): Promise<BingSummary>
 
   let conn = supabase.from("workspace_integrations").select("id", { count: "exact", head: true }).eq("integration_id", "bing");
   if (workspaceId) conn = conn.eq("workspace_id", workspaceId);
-  let rows = supabase.from("analytics_metrics").select("clicks, impressions").eq("source", "bing").gte("metric_date", since);
-  if (workspaceId) rows = rows.eq("workspace_id", workspaceId);
+  // One row per site per day, so the all-sites view of an account with more
+  // than 33 Bing-connected sites is past PostgREST's 1,000-row cap in 30 days.
+  // Paged, like every summed read of this table (lib/supabase/read-all.ts).
+  // The workspace filter goes on after the range because the builder allows
+  // it, and so the source pin stays in the one chain the read guard checks.
+  const rows = readAllPages<{ clicks: number | null; impressions: number | null }>("Bing read", (from, to, count) => {
+    const page = supabase
+      .from("analytics_metrics")
+      .select("clicks, impressions", { count })
+      .eq("source", "bing")
+      .gte("metric_date", since)
+      .order("metric_date", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to);
+    return workspaceId ? page.eq("workspace_id", workspaceId) : page;
+  }).catch((err: unknown) => {
+    // A side line on the dashboard: a failed read shows as "no Bing data",
+    // which is what an error here always looked like, rather than taking the
+    // whole page down with it. Logged, so it is not also invisible.
+    console.error(`[bing] summary read failed: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  });
 
-  const [{ count }, { data }] = await Promise.all([conn, rows]);
-  const list = (data ?? []) as Array<{ clicks: number | null; impressions: number | null }>;
+  const [{ count }, list] = await Promise.all([conn, rows]);
   return {
     connected: (count ?? 0) > 0,
     hasData: list.length > 0,

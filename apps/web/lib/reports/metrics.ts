@@ -8,6 +8,8 @@ import {
 } from "@/lib/analytics/value";
 import { periodTotals } from "@/lib/gsc/analysis";
 import { readGsc } from "@/lib/gsc/read";
+import { readAllPages } from "@/lib/supabase/read-all";
+import { assertReportPeriod } from "./period";
 
 export interface ReportData {
   period: string;
@@ -81,6 +83,10 @@ export async function aggregateReportData(
   startDate: string,
   endDate: string,
 ): Promise<ReportData> {
+  // Before anything reads with them: the dates window two reads, drive a
+  // day-by-day walk and end up in the PDF's storage path (lib/reports/period.ts).
+  assertReportPeriod(startDate, endDate);
+
   // Fetch workspace + account
   const { data: workspace } = await supabase
     .from("workspaces")
@@ -176,16 +182,25 @@ export async function aggregateReportData(
     .order("seo_score", { ascending: false })
     .limit(5);
 
-  // Analytics
-  const { data: ga4Data } = await supabase
-    .from("analytics_metrics")
-    .select("pageviews, sessions")
-    .eq("workspace_id", workspaceId)
-    .eq("source", "ga4")
-    .gte("metric_date", startDate)
-    .lte("metric_date", endDate);
+  // Analytics. GA4 rows are one per page per day (lib/google/sync.ts), so a
+  // month of a site with a few dozen pages is more than PostgREST's 1,000-row
+  // cap; this read stopped there without a word and the report printed the
+  // first thousand rows' pageviews as the month's. Paged now, like the Search
+  // Console block below.
+  const ga4Data = await readAllPages<{ pageviews: number | null; sessions: number | null }>("GA4 read", (from, to, count) =>
+    supabase
+      .from("analytics_metrics")
+      .select("pageviews, sessions", { count })
+      .eq("workspace_id", workspaceId)
+      .eq("source", "ga4")
+      .gte("metric_date", startDate)
+      .lte("metric_date", endDate)
+      .order("metric_date", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
 
-  const ga4Summary = ga4Data?.length
+  const ga4Summary = ga4Data.length
     ? {
         pageviews: ga4Data.reduce((s, m) => s + (m.pageviews ?? 0), 0),
         sessions: ga4Data.reduce((s, m) => s + (m.sessions ?? 0), 0),

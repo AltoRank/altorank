@@ -4,6 +4,7 @@ import {
   coverageBucket,
   indexCoverage,
   isoDaysAgo,
+  MAX_SERIES_DAYS,
   normalizeUrl,
   partitionByShape,
   periodTotals,
@@ -18,6 +19,7 @@ import {
   topPages,
   windows,
   type GscRow,
+  type GscShapes,
 } from "../analysis";
 
 // The functions take rows partitioned by shape, the way lib/gsc/read.ts hands
@@ -120,6 +122,54 @@ describe("periodTotals", () => {
 
   it("says unmeasured, not zero, when the period has no rows", () => {
     expect(periodTotals(by([]), w)).toEqual({ clicks: 0, impressions: 0, ctr: 0, measured: false });
+  });
+
+  it("walks the last days of year 9999 and stops", () => {
+    // Stepping ISO strings never ended here: past 9999-12-31 toISOString()
+    // gives "+010000-01-01", which sorts before "9999-12-31" as text.
+    const t = periodTotals(by([row({ metric_date: "9999-12-31", clicks: 1, impressions: 2 })]), { start: "9999-12-30", end: "9999-12-31" });
+    expect(t).toMatchObject({ clicks: 1, impressions: 2 });
+  });
+
+  it("walks a month boundary and a leap day one day at a time", () => {
+    const t = periodTotals(
+      by([row({ metric_date: "2028-02-29", clicks: 5, impressions: 50 }), row({ metric_date: "2028-03-01", clicks: 1, impressions: 10 })]),
+      { start: "2028-02-28", end: "2028-03-01" },
+    );
+    expect(t).toMatchObject({ clicks: 6, impressions: 60 });
+  });
+
+  it("refuses a window longer than MAX_SERIES_DAYS rather than laying out millions of days", () => {
+    expect(() => periodTotals(by([]), { start: "0001-01-01", end: "9999-12-31" })).toThrow(/longer than/);
+    expect(() => periodTotals(by([]), { start: "2020-01-01", end: isoDaysAgo(new Date("2020-01-01T00:00:00Z"), -MAX_SERIES_DAYS) })).toThrow(/longer than/);
+    expect(() => periodTotals(by([]), { start: "2020-01-01", end: isoDaysAgo(new Date("2020-01-01T00:00:00Z"), -(MAX_SERIES_DAYS - 1)) })).not.toThrow();
+  });
+
+  it("refuses a date that is not YYYY-MM-DD", () => {
+    expect(() => periodTotals(by([]), { start: "", end: "2026-09-01" })).toThrow(/Not a YYYY-MM-DD date/);
+    expect(() => periodTotals(by([]), { start: "2026-09-01", end: "+010000-01-01" })).toThrow(/Not a YYYY-MM-DD date/);
+  });
+});
+
+describe("Shaped partitions", () => {
+  it("cannot be handed over under another shape's name (checked by tsc and next build, not at run time)", () => {
+    // Every column of a query_page row fits a total row, so without the shape
+    // in the row type these would all compile and each would double a number.
+    // If the mark on GscShapes is ever lost, these directives go unused and
+    // the typecheck fails.
+    const w = { start: day(3), end: day(1) };
+    const wrong = (gsc: GscShapes) => {
+      // @ts-expect-error query_page rows are not total rows
+      periodTotals({ total: gsc.query_page, query: gsc.query }, w);
+      // @ts-expect-error page rows are not query rows
+      queryStats({ query: gsc.page }, TODAY);
+      // @ts-expect-error query rows are not query_page rows
+      cannibalization({ query_page: gsc.query }, TODAY);
+      // The right partition under its own name is fine, and so is a hand-built fixture.
+      periodTotals({ total: gsc.total, query: gsc.query }, w);
+      queryStats({ query: [row({ metric_date: day(1), query: "a" })] }, TODAY);
+    };
+    expect(typeof wrong).toBe("function");
   });
 });
 
