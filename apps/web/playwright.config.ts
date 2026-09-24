@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
-// Loads .env.development.local / .env.local into this process and refuses any
-// Supabase or base URL that is not localhost. See e2e/README.md.
+// Takes the local Supabase URL and keys from .env.development.local /
+// .env.local into this process and refuses any Supabase or base URL that is
+// not localhost. See e2e/README.md.
 import { BASE_URL } from "./e2e/fixtures/env";
 
 /**

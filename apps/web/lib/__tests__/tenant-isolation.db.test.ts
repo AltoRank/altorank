@@ -16,10 +16,12 @@
 // question an attacker asks.
 //
 // It runs in the vitest `db` project (`npm run test:db`) against the local
-// Supabase stack and nothing else: lib/__tests__/support/local-db.ts loads the
-// env the way `next dev` does and refuses to start when any database URL is not
-// on this machine. It skips only when no local stack is configured or answering,
-// and never in CI, where the e2e job starts one before running it.
+// Supabase stack and nothing else: lib/__tests__/support/local-db.ts takes the
+// stack's URL and keys from the files `next dev` reads and refuses to start when
+// any database URL is not on this machine, and the tier's network guard refuses
+// any connection that leaves it. It skips only when no local stack is
+// configured or answering, and never in CI, where the e2e job starts one before
+// running it.
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

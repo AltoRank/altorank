@@ -26,9 +26,9 @@ import { connectLocalStack } from "@/lib/__tests__/support/local-db";
 import { generateApiKey } from "../api-keys";
 
 const ENV = await connectLocalStack();
-// connectLocalStack loaded .env* into process.env and checked every database
-// URL in it, so the service client the route handlers build for themselves
-// points at the same local stack as the fixtures below.
+// connectLocalStack put the local stack's URL and keys into process.env and
+// checked every database URL there, so the service client the route handlers
+// build for themselves points at the same local stack as the fixtures below.
 const LIVE = ENV !== null;
 
 const SLUGS = ["agent-iso-a", "agent-iso-b"];
