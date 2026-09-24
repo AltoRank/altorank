@@ -10,7 +10,7 @@
     "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "lint": "eslint",
-    "lint:guarded": "eslint lib/onboarding lib/keyword-research lib/billing lib/gsc app/actions/onboarding*.ts app/api/onboard app/api/cron app/api/webhooks",
+    "lint:guarded": "eslint --max-warnings 0 lib/onboarding lib/keyword-research lib/billing lib/gsc lib/queries/onboarding.ts 'app/actions/onboard*.ts' 'app/(setup)/onboarding' app/api/onboard app/api/cron app/api/webhooks",
     "test": "vitest run --project unit",
     "test:db": "vitest run --project db",
     "e2e": "playwright test",

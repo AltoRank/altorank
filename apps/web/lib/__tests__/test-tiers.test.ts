@@ -186,7 +186,10 @@ function testSources(): string[] {
   return out;
 }
 
-describe("test tiers", () => {
+// Parsing a few hundred files takes a second or two alone and several times
+// that while the rest of the suite is using every core, so these two get more
+// than vitest's default 5s: a timeout here would read as a finding.
+describe("test tiers", { timeout: 60_000 }, () => {
   it("finds the test files it is meant to police", () => {
     const files = testSources();
     // A walk that silently found nothing would pass the check below.

@@ -13,8 +13,10 @@
 
 import { assertLocalEnv, assertLoopback, loadLocalEnv } from "../../lib/__tests__/support/local-db";
 
-// Same loader `next dev` uses, same precedence (.env.development.local first),
-// so the tests and the server agree on which Supabase they are talking to.
+// The Supabase URL and keys from the files `next dev` reads, in its order
+// (.env.development.local first), so the tests and the server agree on which
+// Supabase they are talking to. Nothing else is taken from those files; the
+// dev server reads the rest itself.
 loadLocalEnv();
 // Every database URL the server could pick up, not only the Supabase one.
 assertLocalEnv(process.env);

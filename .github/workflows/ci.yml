@@ -68,12 +68,15 @@ jobs:
       # anywhere before a merge. Scoped to the paths that decide what a
       # customer is charged, what gets written for them and what the crons do
       # unattended, which were clean when the step was added; widen it as other
-      # paths are cleaned up rather than letting it start red.
+      # paths are cleaned up rather than letting it start red. Warnings fail it
+      # too (--max-warnings 0): a warning that passes CI is one nobody reads.
       - name: Lint the guarded paths
         run: npm run lint:guarded -w apps/web
 
       # The unit tier only (vitest project `unit`). The `*.db.test.ts` files
-      # need a database and run in the e2e job, which has one.
+      # need a database and run in the e2e job, which has one. The unit tier's
+      # network guard lets no connection out of a test process, so a test that
+      # quietly needed a service fails here instead of passing on a laptop.
       - run: npm run test
 
       - run: npm run build
@@ -162,7 +165,8 @@ jobs:
       # The vitest `db` tier (every `*.db.test.ts`): real queries against the
       # stack just started, so what Postgres returns is tested, not mocked. The
       # suite's own guard refuses any database URL that is not on this runner,
-      # and under CI it fails rather than skips when the stack is missing.
+      # its network guard refuses any connection that leaves it, and under CI
+      # it fails rather than skips when the stack is missing.
       - name: Run the db tests
         working-directory: apps/web
         run: npm run test:db

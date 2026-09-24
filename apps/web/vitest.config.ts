@@ -12,9 +12,10 @@ import path from "path";
 // - `db` (`npm run test:db`): every `*.db.test.ts`, against the local Supabase
 //   from `supabase start`. lib/__tests__/support/db-setup.ts installs the
 //   network guard in loopback mode (nothing that is not on this machine), then
-//   loads the local stack's values the way `next dev` does and refuses, before
-//   any test body runs, when a database URL is not on this machine. CI runs it
-//   in the e2e job, which owns a stack.
+//   takes the local stack's URL and keys from the files `next dev` reads (and
+//   nothing else from them) and refuses, before any test body runs, when a
+//   database URL is not on this machine. CI runs it in the e2e job, which
+//   owns a stack.
 //
 // Which tier a file lands in is decided by its name, so the pattern covers
 // every extension vitest collects (a `.db.test.tsx` or `.db.spec.mts` is a db
