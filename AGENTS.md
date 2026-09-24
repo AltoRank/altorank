@@ -41,3 +41,27 @@ check the table has a `workspace_id` column before "fixing" it.
 `lib/queries/__tests__/workspace-scope*.ts` fails the build on new instances,
 including a call site that simply omits the argument. If it fires, read the
 message: it tells you which line and why.
+
+# Search Console: one reader
+
+`analytics_metrics` holds Search Console in four row shapes a day (total,
+query, page, query_page; `apps/web/lib/gsc/analysis.ts`), and the same click is
+in every one of them. A filter that lets a second shape through doubles a
+number; no filter quadruples it. PostgREST also stops every response at 1,000
+rows and says nothing. Both mistakes shipped more than once, the last time in
+the client report.
+
+**Read Search Console with `readGsc()` from `apps/web/lib/gsc/read.ts`.** Name
+the shapes you need, read the partition you asked for, and hand it to an
+analysis function that takes that partition; it pages past the cap for you.
+Freshness is `latestGscDate()` / `lastGscWriteAt()`. GA4 and Bing share the
+table and are not Search Console: pin their `source` in the same chain, and
+page the read with `readAllPages()` (`apps/web/lib/supabase/read-all.ts`).
+
+`lib/gsc/__tests__/read-guard.test.ts` parses every file in `apps/web` and
+fails the build on: any other `.from("analytics_metrics")` that is not an
+allowlisted writer or paged GA4/Bing reader; the table's name in any other
+string (a variable, a REST URL, SQL); a `readGsc` call holding more than one
+shape without a listed reason, since two partitions added together double the
+number and no type can stop that; and a migration that reads the table in a
+view, function or anything else that is not DDL on it.

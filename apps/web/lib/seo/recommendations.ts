@@ -31,6 +31,7 @@ import { languageCodeOf } from "@/lib/keyword-research/locale";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { KeywordIntent } from "@/lib/types";
+import { readGsc } from "@/lib/gsc/read";
 import { scoreRelevance, subjectVocabulary, type TopicalProfile } from "./topical-profile";
 import { commercialFit } from "./commercial-fit";
 import { relativeDifficulty, isOutOfReach } from "./difficulty";
@@ -492,23 +493,20 @@ export async function recommendKeywords(
       .select("id, keyword")
       .eq("workspace_id", workspaceId)
       .not("keyword", "is", null),
-    supabase
-      .from("analytics_metrics")
-      .select("query, impressions")
-      .eq("workspace_id", workspaceId)
-      .eq("source", "gsc")
-      .gte(
-        "metric_date",
-        new Date(Date.now() - GSC_LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10),
-      )
-      .not("query", "is", null)
-      // Query-only rows. Search Console is also stored as query+page rows
-      // (lib/gsc/rows.ts), and reading those here counted every impression
-      // twice and, worse, turned "Google once showed the homepage for this"
-      // into "a page of yours already targets this" - which skipped exactly
-      // the striking-distance rows the scorer multiplies by 2.5 (altorank.co,
-      // 2026-09-22). The seeder guards the same way (lib/gsc/seed.ts).
-      .is("page_url", null),
+    // Query rows only, all of them (lib/gsc/read.ts pages past the 1,000-row
+    // cap the old read stopped at). Search Console is also stored as
+    // query+page rows (lib/gsc/rows.ts), and reading those here counted every
+    // impression twice and, worse, turned "Google once showed the homepage
+    // for this" into "a page of yours already targets this" - which skipped
+    // exactly the striking-distance rows the scorer multiplies by 2.5 (a real
+    // workspace, 2026-09-22). The seeder reads the same partition
+    // (lib/gsc/seed.ts).
+    readGsc(supabase, {
+      workspaceId,
+      shapes: ["query"],
+      since: new Date(Date.now() - GSC_LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10),
+      columns: ["impressions"],
+    }),
     // The site's own pages and the query each one targets (lib/seo/site-crawl.ts
     // fills `keyword` from the heading or from a ranking). An article written
     // for a query one of these pages already holds is a second page on one
@@ -561,10 +559,7 @@ export async function recommendKeywords(
 
   const impressionsByTerm = new Map<string, number>();
   if (gscRes.status === "fulfilled") {
-    for (const row of (gscRes.value.data ?? []) as Array<{
-      query: string | null;
-      impressions: number | null;
-    }>) {
+    for (const row of gscRes.value.query) {
       if (!row.query) continue;
       const key = row.query.toLowerCase().trim();
       impressionsByTerm.set(key, (impressionsByTerm.get(key) ?? 0) + (row.impressions ?? 0));

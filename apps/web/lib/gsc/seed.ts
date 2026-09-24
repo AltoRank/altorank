@@ -19,13 +19,16 @@
 // This turns query rows into keyword rows, with the position as a ranking
 // row so the recommender's striking-distance branch fires on the same run.
 //
-// Only the `query` shape is read (query set, page_url null) - lib/gsc/analysis.ts
-// explains why the four shapes must never be mixed. Everything numeric is
-// aggregated over the window, impression-weighted for position.
+// Only the `query` shape is read (query set, page_url null), as the query
+// partition lib/gsc/read.ts hands back - lib/gsc/analysis.ts explains why the
+// four shapes must never be mixed. Everything numeric is aggregated over the
+// window, impression-weighted for position.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { classifyIntent } from "@/lib/seo/intent";
 import { isBrandTerm } from "@/lib/keyword-research/seeds";
+import type { GscShapes } from "./analysis";
+import { readGsc } from "./read";
 
 /** Search Console keeps 16 months; the recommender's own lookback is 90 days. */
 export const SEED_LOOKBACK_DAYS = 90;
@@ -61,11 +64,15 @@ export interface SeedSelection {
 }
 
 /**
- * The pure part: rows in, the seeds worth storing out. Exported so the
- * thresholds are testable without a database.
+ * The pure part: the query partition in, the seeds worth storing out.
+ * Exported so the thresholds are testable without a database.
+ *
+ * It takes `{ query }` and nothing else, so it cannot be handed a query_page
+ * row: one carries the same impressions again for each page, and summing both
+ * shapes counts every impression twice.
  */
 export function selectSearchConsoleSeeds(
-  rows: readonly QueryRow[],
+  gsc: GscShapes<QueryRow, "query">,
   domain: string,
   opts?: { minImpressions?: number; maxPosition?: number; limit?: number },
 ): SeedSelection {
@@ -74,10 +81,8 @@ export function selectSearchConsoleSeeds(
   const limit = opts?.limit ?? SEED_LIMIT;
 
   const byTerm = new Map<string, { term: string; impressions: number; clicks: number; weighted: number }>();
-  for (const r of rows) {
-    // Query shape only. A query_page row carries the same impressions again
-    // for each page, and summing both shapes counts every impression twice.
-    if (!r.query || r.page_url) continue;
+  for (const r of gsc.query) {
+    if (!r.query) continue;
     const term = r.query.trim().toLowerCase();
     if (!term) continue;
     const impressions = r.impressions ?? 0;
@@ -171,20 +176,25 @@ async function seed(
   const now = opts?.now ?? new Date();
   const since = new Date(now.getTime() - (opts?.lookbackDays ?? SEED_LOOKBACK_DAYS) * 86_400_000).toISOString().slice(0, 10);
 
-  const { data, error } = await supabase
-    .from("analytics_metrics")
-    .select("query, page_url, impressions, clicks, avg_position")
-    .eq("workspace_id", workspace.id)
-    .eq("source", "gsc")
-    .gte("metric_date", since)
-    .not("query", "is", null)
-    .is("page_url", null);
-  if (error) return empty(`could not read Search Console rows: ${error.message}`);
+  // Every query row in the window. The read used to stop at PostgREST's first
+  // 1,000 rows, which on a site with a few dozen queries a day is about a
+  // month of a 90-day window, summed as if it were all of it.
+  let gsc: GscShapes<QueryRow, "query">;
+  try {
+    gsc = await readGsc(supabase, {
+      workspaceId: workspace.id,
+      shapes: ["query"],
+      since,
+      columns: ["impressions", "clicks", "avg_position"],
+    });
+  } catch (error) {
+    return empty(`could not read Search Console rows: ${error instanceof Error ? error.message : String(error)}`);
+  }
 
-  const rows = (data ?? []) as QueryRow[];
+  const rows = gsc.query;
   if (!rows.length) return empty("no Search Console queries synced for this window");
 
-  const selection = selectSearchConsoleSeeds(rows, workspace.domain, opts);
+  const selection = selectSearchConsoleSeeds(gsc, workspace.domain, opts);
   if (!selection.seeds.length) {
     return { ...empty(`Search Console has ${rows.length} query rows but none at ${SEED_MIN_IMPRESSIONS}+ impressions inside the top ${SEED_MAX_POSITION}`), brand: selection.brand };
   }

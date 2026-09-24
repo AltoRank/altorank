@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { readGsc } from "@/lib/gsc/read";
 import {
   cpcIndex,
   estimateOrganicValue,
@@ -47,23 +48,25 @@ export async function getTrafficValue(
     .not("cpc", "is", null);
   if (workspaceId) keywordQuery = keywordQuery.eq("workspace_id", workspaceId);
 
-  let metricQuery = supabase
-    .from("analytics_metrics")
-    .select("workspace_id, query, clicks")
-    .eq("source", "gsc")
-    .gte("metric_date", start)
-    // Query rows, and only query rows. `.not("query","is",null)` also matches
-    // the (query, page) shape the sync writes alongside them, so both the euro
-    // figure and the "covers X% of N clicks" line under it were about twice
-    // what Search Console reported (lib/gsc/analysis.ts).
-    .not("query", "is", null)
-    .is("page_url", null);
-  if (workspaceId) metricQuery = metricQuery.eq("workspace_id", workspaceId);
-
-  const [{ data: keywords }, { data: metrics }] = await Promise.all([keywordQuery, metricQuery]);
+  // Query rows, and only query rows. `.not("query","is",null)` also matches
+  // the (query, page) shape the sync writes alongside them, so both the euro
+  // figure and the "covers X% of N clicks" line under it were about twice
+  // what Search Console reported (lib/gsc/analysis.ts). The query partition
+  // from lib/gsc/read.ts is exactly the query rows, all of them: this read
+  // also used to stop at PostgREST's first 1,000 rows of the window.
+  const [{ data: keywords }, gsc] = await Promise.all([
+    keywordQuery,
+    readGsc(supabase, {
+      workspaceId: workspaceId ?? null,
+      shapes: ["query"],
+      since: start,
+      columns: ["workspace_id", "clicks"],
+    // A failed read prices nothing, as it always has here: the figure shows
+    // its unmeasured dash rather than taking the dashboard down with it.
+    }).catch(() => ({ query: [] })),
+  ]);
 
   type KeywordRow = { workspace_id: string; term: string; cpc: number | string | null };
-  type MetricRow = { workspace_id: string; query: string | null; clicks: number | null };
 
   const keywordsByWorkspace = new Map<string, KeywordRow[]>();
   for (const k of (keywords ?? []) as KeywordRow[]) {
@@ -73,7 +76,7 @@ export async function getTrafficValue(
   }
 
   const rowsByWorkspace = new Map<string, ClickRow[]>();
-  for (const m of (metrics ?? []) as MetricRow[]) {
+  for (const m of gsc.query) {
     const list = rowsByWorkspace.get(m.workspace_id) ?? [];
     list.push({ term: m.query, clicks: m.clicks });
     rowsByWorkspace.set(m.workspace_id, list);
@@ -107,17 +110,16 @@ export async function getArticleValue(
   const supabase = await createClient();
   const start = windowStart(days);
 
-  const metricQuery = supabase
-    .from("analytics_metrics")
-    .select("clicks")
-    .eq("workspace_id", workspaceId)
-    .eq("article_id", articleId)
-    .eq("source", "gsc")
-    // Page rows, as the docstring above says. An article id is stamped on the
-    // page shape *and* on the (query, page) shape, so an `article_id` filter
-    // alone doubled every article's traffic value.
-    .is("query", null)
-    .gte("metric_date", start);
+  // Page rows, as the docstring above says. An article id is stamped on the
+  // page shape *and* on the (query, page) shape, so an `article_id` filter
+  // alone doubled every article's traffic value.
+  const metricRead = readGsc(supabase, {
+    workspaceId,
+    shapes: ["page"],
+    article: articleId,
+    since: start,
+    columns: ["clicks"],
+  }).catch(() => ({ page: [] }));
 
   const keywordQuery = keyword
     ? supabase
@@ -128,9 +130,9 @@ export async function getArticleValue(
         .not("cpc", "is", null)
     : Promise.resolve({ data: [] as Array<{ term: string; cpc: number | string | null }> });
 
-  const [{ data: metrics }, { data: keywords }] = await Promise.all([metricQuery, keywordQuery]);
+  const [gsc, { data: keywords }] = await Promise.all([metricRead, keywordQuery]);
 
-  const rows: ClickRow[] = ((metrics ?? []) as Array<{ clicks: number | null }>).map((m) => ({
+  const rows: ClickRow[] = gsc.page.map((m) => ({
     term: keyword,
     clicks: m.clicks,
   }));
