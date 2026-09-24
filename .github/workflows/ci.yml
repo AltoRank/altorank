@@ -21,6 +21,31 @@ on:
 permissions:
   contents: read
 
+env:
+  # Pinned, not `latest`. `latest` makes supabase/setup-cli ask the GitHub API
+  # for the newest release on every run, and that call is rate-limited by IP on
+  # shared runners: on 2026-09-06 it failed with "rate limit exceeded" before a
+  # single test ran, on a PR whose code was fine. A pin removes the lookup.
+  # Bump it deliberately, and SUPABASE_IMAGES with it.
+  SUPABASE_CLI_VERSION: 2.116.0
+  # Every image `supabase start -x <the set in the e2e job>` uses on that CLI
+  # version, as `name:tag` without the registry. Read off the CLI's own image
+  # list (apps/cli-go/pkg/config/templates/Dockerfile at the v2.116.0 tag) and
+  # checked against a real run: postgres, kong, postgrest, postgres-meta and
+  # gotrue run as services, and realtime and storage-api are still pulled even
+  # though they are excluded, because `start` runs each once to initialise its
+  # schema. The e2e job caches these so the registries are asked once per CLI
+  # version (see .github/scripts/supabase-images.sh); its "Check the image
+  # list" step fails, naming what differs, when this list stops matching.
+  SUPABASE_IMAGES: >-
+    postgres:17.6.1.165
+    kong:2.8.1
+    postgrest:v16.1
+    postgres-meta:v0.98.0
+    gotrue:v2.196.0
+    realtime:v2.129.3
+    storage-api:v1.70.3
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -39,6 +64,16 @@ jobs:
       # the first commit (a stale apps/marketing entry in the lockfile).
       - run: npm ci
 
+      # `next build` does not lint, so without this step no lint rule runs
+      # anywhere before a merge. Scoped to the paths that decide what a
+      # customer is charged, what gets written for them and what the crons do
+      # unattended, which were clean when the step was added; widen it as other
+      # paths are cleaned up rather than letting it start red.
+      - name: Lint the guarded paths
+        run: npm run lint:guarded -w apps/web
+
+      # The unit tier only (vitest project `unit`). The `*.db.test.ts` files
+      # need a database and run in the e2e job, which has one.
       - run: npm run test
 
       - run: npm run build
@@ -60,20 +95,57 @@ jobs:
 
       - run: npm ci
 
-      # Pinned, not `latest`. `latest` makes the action ask the GitHub API for
-      # the newest release on every run, and that call is rate-limited by IP on
-      # shared runners: on 2026-09-06 it failed with "rate limit exceeded"
-      # before a single test ran, on a PR whose code was fine. A pin removes the
-      # lookup. Bump it deliberately.
+      # Pinned: see SUPABASE_CLI_VERSION at the top.
       - uses: supabase/setup-cli@v1
         with:
-          version: 2.116.0
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      # The images come from a cache, not a registry. On 2026-09-23 this job
+      # failed five times in a day at "Start Supabase" with `toomanyrequests`
+      # from ghcr.io, before a single test ran; logging in to ghcr did not
+      # help. The key is the CLI version plus the image list, so a registry is
+      # asked once per bump. The `supabase-images` job fills the same key from
+      # main, where every pull request can read it; a pull request that misses
+      # (before that has run) fills its own for its re-runs.
+      - name: Supabase image cache key
+        id: images
+        run: echo "key=supabase-images-$SUPABASE_CLI_VERSION-$(printf '%s' "$SUPABASE_IMAGES" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the Supabase images
+        id: image-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/supabase-images
+          key: ${{ steps.images.outputs.key }}
+
+      - name: Load the Supabase images
+        if: steps.image-cache.outputs.cache-hit == 'true'
+        run: |
+          .github/scripts/supabase-images.sh load ~/.cache/supabase-images/images.tar
+          rm ~/.cache/supabase-images/images.tar
 
       # `start` applies apps/web/supabase/migrations on the way up. Studio,
       # mail, realtime and storage are not needed by any spec.
       - name: Start Supabase
         working-directory: apps/web
         run: supabase start -x studio,inbucket,mailpit,realtime,storage-api,imgproxy,edge-runtime,logflare,vector,supavisor
+
+      # After a load this proves nothing was pulled that the cache does not
+      # hold; after a miss it proves the cache is about to hold all of it.
+      - name: Check the image list
+        run: .github/scripts/supabase-images.sh verify
+
+      # Saved straight after `start`, not at the end of the job, so a red test
+      # run still leaves the images cached for its re-run.
+      - name: Save the Supabase images
+        if: steps.image-cache.outputs.cache-hit != 'true'
+        run: .github/scripts/supabase-images.sh save ~/.cache/supabase-images/images.tar
+
+      - uses: actions/cache/save@v4
+        if: steps.image-cache.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/supabase-images
+          key: ${{ steps.images.outputs.key }}
 
       # The local keys, as the app and the suite read them. Written to the job
       # env rather than to a file, and printed by nobody.
@@ -86,6 +158,14 @@ jobs:
             echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(grep '^ANON_KEY=' "$RUNNER_TEMP/supabase.env" | cut -d= -f2- | tr -d '"')"
             echo "SUPABASE_SERVICE_ROLE_KEY=$(grep '^SERVICE_ROLE_KEY=' "$RUNNER_TEMP/supabase.env" | cut -d= -f2- | tr -d '"')"
           } >> "$GITHUB_ENV"
+
+      # The vitest `db` tier (every `*.db.test.ts`): real queries against the
+      # stack just started, so what Postgres returns is tested, not mocked. The
+      # suite's own guard refuses any database URL that is not on this runner,
+      # and under CI it fails rather than skips when the stack is missing.
+      - name: Run the db tests
+        working-directory: apps/web
+        run: npm run test:db
 
       - name: Install Chromium
         working-directory: apps/web
@@ -103,3 +183,37 @@ jobs:
           name: playwright-report
           path: apps/web/playwright-report
           retention-days: 7
+
+  # Fills the Supabase image cache from main. A cache written by a pull request
+  # is visible only to that pull request, so without this every new PR would
+  # pull from the registries again; one written here is visible to all of them.
+  # With the key already present it only looks the key up, in seconds.
+  supabase-images:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Supabase image cache key
+        id: images
+        run: echo "key=supabase-images-$SUPABASE_CLI_VERSION-$(printf '%s' "$SUPABASE_IMAGES" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Look up the Supabase images
+        id: image-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/supabase-images
+          key: ${{ steps.images.outputs.key }}
+          lookup-only: true
+
+      - name: Pull and save the Supabase images
+        if: steps.image-cache.outputs.cache-hit != 'true'
+        run: |
+          .github/scripts/supabase-images.sh pull
+          .github/scripts/supabase-images.sh save ~/.cache/supabase-images/images.tar
+
+      - uses: actions/cache/save@v4
+        if: steps.image-cache.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/supabase-images
+          key: ${{ steps.images.outputs.key }}
