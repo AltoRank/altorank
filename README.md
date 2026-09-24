@@ -118,7 +118,8 @@ Other entry points:
 
 ```bash
 npm run mcp      # MCP server, for driving the engine from an AI assistant
-npm run test     # vitest
+npm run test     # vitest, unit tier: mocks only, needs no services
+npm run test:db  # vitest, db tier: *.db.test.ts against the local Supabase only
 npm run smoke    # research → prompt → model → fact check, against real APIs
 ```
 

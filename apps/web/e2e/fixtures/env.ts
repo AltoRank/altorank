@@ -6,26 +6,24 @@
 // a server is started or a row is written. The suite creates and deletes users
 // with the service role; the only database it may ever do that to is the local
 // one from `supabase start`.
+//
+// The loader and the loopback check are the same ones the vitest `db` project
+// uses (lib/__tests__/support/local-db.ts), so the two suites cannot disagree
+// about what counts as local.
 
-import path from "node:path";
-import { loadEnvConfig } from "@next/env";
+import { assertLocalEnv, assertLoopback, loadLocalEnv } from "../../lib/__tests__/support/local-db";
 
-const WEB_DIR = path.resolve(__dirname, "..", "..");
 // Same loader `next dev` uses, same precedence (.env.development.local first),
 // so the tests and the server agree on which Supabase they are talking to.
-loadEnvConfig(WEB_DIR, true, { info: () => {}, error: console.error });
-
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1", "0.0.0.0"]);
+loadLocalEnv();
+// Every database URL the server could pick up, not only the Supabase one.
+assertLocalEnv(process.env);
 
 function local(label: string, url: string | undefined): string {
   if (!url) {
     throw new Error(`${label} is not set. The e2e suite needs the local Supabase from \`supabase start\` (see e2e/README.md).`);
   }
-  const host = new URL(url).hostname;
-  if (!LOCAL_HOSTS.has(host)) {
-    throw new Error(`${label} points at ${host}. The e2e suite only runs against localhost; refusing to continue.`);
-  }
-  return url;
+  return assertLoopback(label, url);
 }
 
 export const BASE_URL = local("E2E_BASE_URL", process.env.E2E_BASE_URL ?? "http://localhost:3110");

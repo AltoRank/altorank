@@ -366,8 +366,11 @@ email Supabase itself would send. The app's own emails go through Resend and
 locally the signup / reset / invite actions fail at the send step unless you set
 one (a Resend test key works).
 
-`npm run test` is vitest and needs no services. `npm run build` type-checks
-and compiles with no env at all, which is exactly what CI does.
+`npm run test` is vitest and needs no services. `npm run test:db` runs the
+`*.db.test.ts` files against the stack from `supabase start`; it loads the env
+the way `next dev` does and refuses to run at all if any database URL in it is
+not on this machine (lib/__tests__/support/local-db.ts). `npm run build`
+type-checks and compiles with no env at all, which is exactly what CI does.
 
 ## Rollback
 
