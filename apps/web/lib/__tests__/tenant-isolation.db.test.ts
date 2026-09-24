@@ -15,51 +15,20 @@
 // signs them in for real, and asks the database directly - which is the
 // question an attacker asks.
 //
-// It needs the local Supabase stack (`.env.development.local`, 127.0.0.1:54331
-// by default) and skips itself when that is not answering, so `npm test` stays
-// green on a machine without Docker.
+// It runs in the vitest `db` project (`npm run test:db`) against the local
+// Supabase stack and nothing else: lib/__tests__/support/local-db.ts loads the
+// env the way `next dev` does and refuses to start when any database URL is not
+// on this machine. It skips only when no local stack is configured or answering,
+// and never in CI, where the e2e job starts one before running it.
 
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { connectLocalStack } from "./support/local-db";
 
 // --- Environment -------------------------------------------------------------
 
-function loadEnv(): { url: string; anon: string; service: string } | null {
-  const env = { ...process.env } as Record<string, string | undefined>;
-  for (const file of [".env.development.local", ".env.local"]) {
-    try {
-      const text = readFileSync(path.resolve(__dirname, "../..", file), "utf8");
-      for (const line of text.split("\n")) {
-        const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-        if (m && !env[m[1]]) env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-      }
-    } catch {
-      // Absent is fine; the next check decides whether we can run.
-    }
-  }
-  const url = env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const service = env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !anon || !service) return null;
-  return { url, anon, service };
-}
-
-async function reachable(url: string, anon: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${url}/auth/v1/health`, {
-      headers: { apikey: anon },
-      signal: AbortSignal.timeout(2_000),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-const ENV = loadEnv();
-const LIVE = ENV ? await reachable(ENV.url, ENV.anon) : false;
+const ENV = await connectLocalStack();
+const LIVE = ENV !== null;
 
 // --- Fixture -----------------------------------------------------------------
 
@@ -224,6 +193,10 @@ describe.skipIf(!LIVE)("tenant isolation, as two signed-in accounts", () => {
   // --- Across accounts ------------------------------------------------------
 
   describe("account A cannot reach account B", () => {
+    // Every table named here must be created by a file in supabase/migrations.
+    // CI runs this suite on a database built from those files and nothing else;
+    // `webhook_deliveries` sat in this list for weeks because it existed on one
+    // shared local stack, and it failed every from-scratch database.
     const perWorkspace = [
       "articles",
       "keywords",
@@ -248,7 +221,6 @@ describe.skipIf(!LIVE)("tenant isolation, as two signed-in accounts", () => {
       "publishing_cadences",
       "keyword_research_runs",
       "backlinks",
-      "webhook_deliveries",
       "workspace_integrations",
     ] as const;
 

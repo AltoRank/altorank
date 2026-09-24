@@ -32,8 +32,9 @@ trace you can open with `npx playwright show-report`.
 ## Guardrails
 
 - **Localhost only.** `e2e/fixtures/env.ts` loads the env the way `next dev`
-  does and refuses to start if `NEXT_PUBLIC_SUPABASE_URL` or `E2E_BASE_URL`
-  points anywhere but localhost. The suite creates and deletes users with the
+  does and refuses to start if `NEXT_PUBLIC_SUPABASE_URL`, `DATABASE_URL` or
+  `E2E_BASE_URL` points anywhere but localhost. The loader and the check live in
+  `lib/__tests__/support/local-db.ts` and are shared with the vitest `db` tier. The suite creates and deletes users with the
   service role; the local database is the only one it may ever do that to.
 - **No passwords.** Accounts are created through the GoTrue admin API without
   one, and the browser is signed in by visiting the app's own `/callback` with
