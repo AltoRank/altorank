@@ -8,6 +8,7 @@
 
 import { describe, it, expect } from "vitest";
 import { selectSearchConsoleSeeds, seedKeywordsFromSearchConsole, type QueryRow } from "../seed";
+import { partitionByShape } from "../analysis";
 import { fakeDb } from "@/lib/onboarding/__tests__/fake-runs-client";
 
 const q = (query: string, impressions: number, avg_position: number, extra?: Partial<QueryRow>): QueryRow => ({
@@ -23,42 +24,43 @@ describe("selectSearchConsoleSeeds", () => {
   const domain = "altorank.co";
 
   it("keeps a striking-distance query the site already appears for", () => {
-    const { seeds } = selectSearchConsoleSeeds([q("rankingcoach alternative", 215, 28)], domain);
+    const { seeds } = selectSearchConsoleSeeds({ query: [q("rankingcoach alternative", 215, 28)] }, domain);
     expect(seeds).toEqual([{ term: "rankingcoach alternative", impressions: 215, clicks: 0, position: 28 }]);
   });
 
   it("aggregates a query across days, impression-weighted for position", () => {
     // 100 impressions at 30 and 10 at 3: the month at 30 wins, the day at 3 nudges.
-    const { seeds } = selectSearchConsoleSeeds([q("geo pricing", 100, 30), q("geo pricing", 10, 3)], domain);
+    const { seeds } = selectSearchConsoleSeeds({ query: [q("geo pricing", 100, 30), q("geo pricing", 10, 3)] }, domain);
     expect(seeds).toHaveLength(1);
     expect(seeds[0].impressions).toBe(110);
     expect(seeds[0].position).toBe(28);
   });
 
-  it("reads the query shape only, never query_page rows", () => {
+  it("reads the query partition only, never query_page rows", () => {
     // The same impressions again, once per page: counting both doubles them.
+    // The function takes `{ query }`, so the query_page row cannot reach it.
     const rows = [q("geo pricing", 50, 20), q("geo pricing", 50, 20, { page_url: "https://altorank.co/geo/" })];
-    const { seeds } = selectSearchConsoleSeeds(rows, domain);
+    const { seeds } = selectSearchConsoleSeeds(partitionByShape(rows), domain);
     expect(seeds[0].impressions).toBe(50);
   });
 
   it("drops brand navigation but keeps an evaluative brand query", () => {
     // The house rule from keyword-research/seeds.ts: "altorank" is someone
     // who knows the name; "altorank pricing" is someone deciding.
-    const { seeds, brand } = selectSearchConsoleSeeds([q("altorank", 400, 1), q("altorank pricing", 40, 2)], domain);
+    const { seeds, brand } = selectSearchConsoleSeeds({ query: [q("altorank", 400, 1), q("altorank pricing", 40, 2)] }, domain);
     expect(seeds.map((s) => s.term)).toEqual(["altorank pricing"]);
     expect(brand).toBe(1);
   });
 
   it("drops noise under the impression floor and past the position ceiling", () => {
-    const { seeds, weak } = selectSearchConsoleSeeds([q("serp analyzer", 9, 12), q("keyword cluster", 80, 91)], domain);
+    const { seeds, weak } = selectSearchConsoleSeeds({ query: [q("serp analyzer", 9, 12), q("keyword cluster", 80, 91)] }, domain);
     expect(seeds).toEqual([]);
     expect(weak).toBe(2);
   });
 
   it("orders by measured demand and respects the limit", () => {
     const rows = [q("a", 20, 15), q("b", 200, 15), q("c", 50, 15)];
-    const { seeds } = selectSearchConsoleSeeds(rows, domain, { limit: 2 });
+    const { seeds } = selectSearchConsoleSeeds({ query: rows }, domain, { limit: 2 });
     expect(seeds.map((s) => s.term)).toEqual(["b", "c"]);
   });
 });

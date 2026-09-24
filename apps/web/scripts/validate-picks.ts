@@ -14,7 +14,8 @@
 // Search 2026", overlap 0/5. After: "rankingcoach alternative", 5/5.
 import { createClient } from "@supabase/supabase-js";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
-import { selectSearchConsoleSeeds, type QueryRow } from "@/lib/gsc/seed";
+import { selectSearchConsoleSeeds } from "@/lib/gsc/seed";
+import { readGsc } from "@/lib/gsc/read";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -42,15 +43,10 @@ async function main() {
   let failures = 0;
   for (const ws of workspaces) {
     const since = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10);
-    const { data: metrics } = await db
-      .from("analytics_metrics")
-      .select("query, page_url, impressions, clicks, avg_position")
-      .eq("workspace_id", ws.id)
-      .eq("source", "gsc")
-      .gte("metric_date", since)
-      .not("query", "is", null)
-      .is("page_url", null);
-    const gscTop = selectSearchConsoleSeeds((metrics ?? []) as QueryRow[], ws.domain ?? "", { limit: 5 }).seeds.map((s) => s.term);
+    // The query partition, through the one Search Console reader: the same
+    // rows the seeder and the recommender read, all of them.
+    const gsc = await readGsc(db, { workspaceId: ws.id, shapes: ["query"], since, columns: ["impressions", "clicks", "avg_position"] });
+    const gscTop = selectSearchConsoleSeeds(gsc, ws.domain ?? "", { limit: 5 }).seeds.map((s) => s.term);
 
     const recs = await recommendKeywords(db, ws.id, { limit: 1000, qualify: false });
     const writable = recs.filter((r) => r.action === "write" && r.quality === "ok").slice(0, 5).map((r) => r.term.toLowerCase());

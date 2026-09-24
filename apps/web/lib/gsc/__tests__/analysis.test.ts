@@ -5,9 +5,13 @@ import {
   indexCoverage,
   isoDaysAgo,
   normalizeUrl,
+  partitionByShape,
+  periodTotals,
   queryOpportunities,
   queryStats,
+  ROW_SHAPES,
   rowShape,
+  SHAPE_COLUMNS,
   searchPerformance,
   servedUrls,
   shortUrl,
@@ -15,6 +19,12 @@ import {
   windows,
   type GscRow,
 } from "../analysis";
+
+// The functions take rows partitioned by shape, the way lib/gsc/read.ts hands
+// them over. The fixtures here are written as the sync writes them - one mixed
+// day at a time - and split by the same classifier before each call, so every
+// test below is also a test that a function reads only its own partition.
+const by = partitionByShape;
 
 // A fixed clock: every window here is relative to it.
 const TODAY = new Date("2026-09-04T10:00:00Z");
@@ -40,11 +50,82 @@ describe("rowShape", () => {
     expect(rowShape({ query: null, page_url: "https://a.co/x" })).toBe("page");
     expect(rowShape({ query: "seo", page_url: "https://a.co/x" })).toBe("query_page");
   });
+
+  it("means SQL NULL by unset, so it files a row where the SQL filter found it", () => {
+    // `query IS NULL` is false for "", so the database hands an empty-string
+    // query to the query read. A truthiness test would file it under total,
+    // and the row would end up in no partition at all.
+    expect(rowShape({ query: "", page_url: null })).toBe("query");
+  });
+
+  it("agrees with SHAPE_COLUMNS for every shape, which is what read.ts filters by", () => {
+    for (const shape of ROW_SHAPES) {
+      const cols = SHAPE_COLUMNS[shape];
+      expect(rowShape({ query: cols.query ? "q" : null, page_url: cols.page_url ? "https://a.co/p" : null })).toBe(shape);
+    }
+  });
+});
+
+describe("partitionByShape", () => {
+  it("puts each row in exactly one partition", () => {
+    const rows = [
+      row({ metric_date: day(1), clicks: 100 }),
+      row({ metric_date: day(1), clicks: 60, query: "a" }),
+      row({ metric_date: day(1), clicks: 100, page_url: "https://a.co/p" }),
+      row({ metric_date: day(1), clicks: 60, query: "a", page_url: "https://a.co/p" }),
+    ];
+    const p = partitionByShape(rows);
+    expect(Object.fromEntries(ROW_SHAPES.map((s) => [s, p[s].length]))).toEqual({ total: 1, query: 1, page: 1, query_page: 1 });
+  });
+});
+
+describe("periodTotals", () => {
+  const w = { start: day(3), end: day(1) };
+
+  it("sums the total rows and divides clicks by impressions for CTR", () => {
+    const t = periodTotals(
+      by([
+        row({ metric_date: day(1), clicks: 10, impressions: 100 }),
+        row({ metric_date: day(2), clicks: 2, impressions: 400 }),
+        // The same clicks again in the query shape: not added.
+        row({ metric_date: day(1), clicks: 10, impressions: 100, query: "a" }),
+      ]),
+      w,
+    );
+    expect(t).toEqual({ clicks: 12, impressions: 500, ctr: 12 / 500, measured: true });
+  });
+
+  it("is never the mean of per-row CTRs", () => {
+    // 50% on 2 impressions and 1% on 10,000: the period's CTR is ~1%, not 25.5%.
+    const t = periodTotals(
+      by([
+        row({ metric_date: day(1), clicks: 1, impressions: 2 }),
+        row({ metric_date: day(2), clicks: 100, impressions: 10_000 }),
+      ]),
+      w,
+    );
+    expect(t.ctr).toBeCloseTo(101 / 10_002, 10);
+  });
+
+  it("falls back to query rows for a day with no total row, like the chart", () => {
+    const t = periodTotals(
+      by([
+        row({ metric_date: day(2), clicks: 3, impressions: 30, query: "a" }),
+        row({ metric_date: day(2), clicks: 1, impressions: 10, query: "b" }),
+      ]),
+      w,
+    );
+    expect(t).toMatchObject({ clicks: 4, impressions: 40, measured: true });
+  });
+
+  it("says unmeasured, not zero, when the period has no rows", () => {
+    expect(periodTotals(by([]), w)).toEqual({ clicks: 0, impressions: 0, ctr: 0, measured: false });
+  });
 });
 
 describe("searchPerformance", () => {
   it("reports nothing measured when there are no rows", () => {
-    const s = searchPerformance([], TODAY);
+    const s = searchPerformance(by([]), TODAY);
     expect(s.hasData).toBe(false);
     expect(s.hasClicks).toBe(false);
     expect(s.current).toHaveLength(28);
@@ -66,7 +147,7 @@ describe("searchPerformance", () => {
       row({ metric_date: day(2), clicks: 3, impressions: 30, page_url: "https://a.co/p" }),
       row({ metric_date: day(2), clicks: 3, impressions: 30, page_url: "https://a.co/p", query: "a" }),
     ];
-    const s = searchPerformance(rows, TODAY);
+    const s = searchPerformance(by(rows), TODAY);
     const last = s.current[s.current.length - 1];
     expect(last).toEqual({ date: day(1), clicks: 10, impressions: 100 });
     expect(s.current[s.current.length - 2]).toEqual({ date: day(2), clicks: 3, impressions: 30 });
@@ -75,7 +156,7 @@ describe("searchPerformance", () => {
   });
 
   it("keeps a measured zero apart from an unmeasured window", () => {
-    const measuredZero = searchPerformance([row({ metric_date: day(3), clicks: 0, impressions: 120 })], TODAY);
+    const measuredZero = searchPerformance(by([row({ metric_date: day(3), clicks: 0, impressions: 120 })]), TODAY);
     expect(measuredZero.hasData).toBe(true);
     expect(measuredZero.hasClicks).toBe(false);
     expect(measuredZero.impressions.current).toBe(120);
@@ -86,7 +167,7 @@ describe("searchPerformance", () => {
 
   it("compares against the previous window only when that window was synced", () => {
     const s = searchPerformance(
-      [row({ metric_date: day(1), clicks: 30, impressions: 300 }), row({ metric_date: day(40), clicks: 20, impressions: 200 })],
+      by([row({ metric_date: day(1), clicks: 30, impressions: 300 }), row({ metric_date: day(40), clicks: 20, impressions: 200 })]),
       TODAY,
     );
     expect(s.previousMeasured).toBe(true);
@@ -96,7 +177,7 @@ describe("searchPerformance", () => {
 
   it("gives no percentage against a zero baseline", () => {
     const s = searchPerformance(
-      [row({ metric_date: day(1), clicks: 5, impressions: 50 }), row({ metric_date: day(40), clicks: 0, impressions: 10 })],
+      by([row({ metric_date: day(1), clicks: 5, impressions: 50 }), row({ metric_date: day(40), clicks: 0, impressions: 10 })]),
       TODAY,
     );
     expect(s.clicks.previous).toBe(0);
@@ -116,7 +197,7 @@ describe("topPages", () => {
   ];
 
   it("merges spellings of one URL, weights position by impressions and carries the article id", () => {
-    const [one, two] = topPages(rows, TODAY);
+    const [one, two] = topPages(by(rows), TODAY);
     expect(one.url).toBe("https://a.co/one");
     expect(one.articleId).toBe("art-1");
     expect(one.clicks).toBe(10);
@@ -134,13 +215,13 @@ describe("topPages", () => {
   });
 
   it("reports no delta when the previous window was never synced", () => {
-    const [one] = topPages(rows.filter((r) => r.metric_date !== day(35)), TODAY);
+    const [one] = topPages(by(rows.filter((r) => r.metric_date !== day(35))), TODAY);
     expect(one.prevClicks).toBeNull();
     expect(one.clicksDelta).toBeNull();
   });
 
   it("leaves position null for a page that was never shown", () => {
-    const [p] = topPages([row({ metric_date: day(1), clicks: 0, impressions: 0, avg_position: 3, page_url: "https://a.co/x" })], TODAY);
+    const [p] = topPages(by([row({ metric_date: day(1), clicks: 0, impressions: 0, avg_position: 3, page_url: "https://a.co/x" })]), TODAY);
     expect(p.position).toBeNull();
     expect(p.ctr).toBeNull();
   });
@@ -158,13 +239,13 @@ describe("queryStats and queryOpportunities", () => {
   ];
 
   it("folds case variants of a query into one row", () => {
-    const stats = queryStats(rows, TODAY);
+    const stats = queryStats(by(rows), TODAY);
     expect(stats.get("agency seo")).toMatchObject({ clicks: 2, impressions: 200, position: 8 });
     expect(stats.has("old query")).toBe(false);
   });
 
   it("keeps only positions 4-15 with impressions, most shown first", () => {
-    const opps = queryOpportunities(rows, TODAY);
+    const opps = queryOpportunities(by(rows), TODAY);
     expect(opps.map((o) => o.query.toLowerCase())).toEqual(["agency seo", "geo audit"]);
   });
 });
@@ -187,7 +268,7 @@ describe("cannibalization", () => {
   ];
 
   it("finds queries with two or more ranking pages and names the winner", () => {
-    const out = cannibalization(rows, TODAY);
+    const out = cannibalization(by(rows), TODAY);
     expect(out.map((c) => c.query)).toEqual(["seo agency", "geo tools"]);
     const [seo, geo] = out;
     expect(seo.winner.url).toBe("https://a.co/seo-agency");
@@ -198,7 +279,7 @@ describe("cannibalization", () => {
   });
 
   it("suggests a merge for a loser earning a fifth or less, and differentiation otherwise", () => {
-    const [seo, geo] = cannibalization(rows, TODAY);
+    const [seo, geo] = cannibalization(by(rows), TODAY);
     expect(seo.suggestions).toEqual([
       expect.objectContaining({ url: "https://a.co/agency-seo", action: "merge" }),
     ]);
@@ -208,10 +289,10 @@ describe("cannibalization", () => {
 
   it("suggests differentiation when nobody has clicked yet", () => {
     const [c] = cannibalization(
-      [
+      by([
         row({ metric_date: day(1), clicks: 0, impressions: 60, avg_position: 30, query: "q", page_url: "https://a.co/a" }),
         row({ metric_date: day(1), clicks: 0, impressions: 40, avg_position: 35, query: "q", page_url: "https://a.co/b" }),
-      ],
+      ]),
       TODAY,
     );
     // Better position wins the tie on zero clicks.
@@ -232,12 +313,12 @@ describe("coverage", () => {
 
   it("counts every known page once and keeps unknown as its own bucket", () => {
     const served = servedUrls(
-      [
+      by([
         row({ metric_date: day(1), clicks: 0, impressions: 5, page_url: "https://www.a.co/served/" }),
         // Zero impressions is not evidence of anything.
         row({ metric_date: day(1), clicks: 0, impressions: 0, page_url: "https://a.co/ghost" }),
         row({ metric_date: day(40), clicks: 0, impressions: 50, page_url: "https://a.co/last-month" }),
-      ],
+      ]),
       TODAY,
     );
     expect([...served]).toEqual(["a.co/served"]);

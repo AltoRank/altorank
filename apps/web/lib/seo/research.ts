@@ -26,6 +26,7 @@ import { classifyIntent, type IntentClassification } from "./intent";
 import { getLocale } from "./locales";
 import { htmlToMarkdown } from "@/lib/audit/markdown";
 import { fetchSite } from "@/lib/audit/lenient-fetch";
+import { readGsc, type ReadRow } from "@/lib/gsc/read";
 
 export interface ResearchLayer {
   /** `site_facts` is added by lib/content/site-facts.ts, not by `gatherArticleResearch`. */
@@ -240,8 +241,16 @@ async function measureCompetitorLengths(
  * Reads `analytics_metrics`, which the analytics cron populates, rather than
  * calling Google directly: the cron already handles token refresh, and article
  * generation should not fail because an access token expired.
+ *
+ * Query rows only, through lib/gsc/read.ts. The read here used to be
+ * `.not("query", "is", null)` with no page filter, which also took the
+ * (query, page) rows: every query's clicks and impressions were counted once
+ * per shape, so "already ranking" told the writer about twice the traffic the
+ * site had. It also stopped at PostgREST's first 1,000 rows of the 90 days.
+ *
+ * Exported for the db test that pins it to the query shape.
  */
-async function fetchGscSignals(
+export async function fetchGscSignals(
   supabase: SupabaseClient,
   workspaceId: string,
   keyword: string,
@@ -254,23 +263,24 @@ async function fetchGscSignals(
     .toISOString()
     .slice(0, 10);
 
-  const { data, error } = await supabase
-    .from("analytics_metrics")
-    .select("query, clicks, impressions, avg_position")
-    .eq("workspace_id", workspaceId)
-    .eq("source", "gsc")
-    .gte("metric_date", since)
-    .not("query", "is", null);
-
-  if (error) {
+  let rows: ReadRow<"clicks" | "impressions" | "avg_position">[];
+  try {
+    const gsc = await readGsc(supabase, {
+      workspaceId,
+      shapes: ["query"],
+      since,
+      columns: ["clicks", "impressions", "avg_position"],
+    });
+    rows = gsc.query;
+  } catch (error) {
     return {
       existing: null,
       adjacent: [],
-      layer: { id: "gsc", status: "failed", detail: error.message },
+      layer: { id: "gsc", status: "failed", detail: error instanceof Error ? error.message : String(error) },
     };
   }
 
-  if (!data?.length) {
+  if (!rows.length) {
     return {
       existing: null,
       adjacent: [],
@@ -290,12 +300,7 @@ async function fetchGscSignals(
     { clicks: number; impressions: number; positionXImpressions: number }
   >();
 
-  for (const row of data as Array<{
-    query: string | null;
-    clicks: number | null;
-    impressions: number | null;
-    avg_position: number | null;
-  }>) {
+  for (const row of rows) {
     if (!row.query) continue;
     const key = row.query.toLowerCase();
     const entry = rollup.get(key) ?? {
