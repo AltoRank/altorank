@@ -20,14 +20,18 @@
 //
 // So there is one reader, this one, and a guard test
 // (lib/gsc/__tests__/read-guard.test.ts) that fails the build when any other
-// file in apps/web names the table in a read. What it gives back cannot be
-// mixed or short:
+// file in apps/web names the table in a read, or asks this one for more than
+// one shape without a reason on file. What it gives back is not short, and
+// is not mixed unless a caller mixes it on purpose:
 //
 // - It is partitioned by shape. A caller names the shapes it wants and gets
 //   one array per shape, never a flat list; the type says which partitions
-//   exist, so reading one it did not ask for does not compile. Every analysis
-//   function takes the partition it reads, so the old mistake has nowhere left
-//   to be written.
+//   exist, so reading one it did not ask for does not compile, and each
+//   partition's rows carry their shape in their type (analysis.ts, `Shaped`),
+//   so handing query_page rows to a function under the name `total` does not
+//   compile either. What a type cannot stop is a caller that reads two shapes
+//   and adds them together itself; that is why a multi-shape read has to be
+//   explained in the guard's allowlist, where a reviewer sees it.
 // - Each shape is its own query, filtered in SQL from SHAPE_COLUMNS, and every
 //   row that comes back is checked against the same table in memory before it
 //   is filed. The two cannot disagree, and a client that ignored the filter
@@ -36,11 +40,14 @@
 // - It is always `source = 'gsc'`. GA4 and Bing share the table and are not
 //   Search Console; their readers stay where they are, allowlisted by the
 //   guard with the reason.
-// - It reads every row in the window: ordered by (metric_date, id), a unique
-//   order, so an offset page never skips or repeats a row, and read a page at
-//   a time until a page comes back short.
+// - It reads every row in the window, a page at a time, through
+//   lib/supabase/read-all.ts: ordered by (metric_date, id), a unique order,
+//   until the row count PostgREST reported on the first page is met. That
+//   file says what paging by offset can and cannot promise while the nightly
+//   sync is rewriting a day.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { PAGE_SIZE, readAllPages } from "@/lib/supabase/read-all";
 import { SHAPE_COLUMNS, rowShape, type GscShapes, type RowShape } from "./analysis";
 
 /** Every Search Console column of an `analytics_metrics` row, as stored. */
@@ -72,12 +79,11 @@ export type GscColumn = Exclude<keyof StoredGscRow, Always>;
 export type ReadRow<C extends GscColumn> = Pick<StoredGscRow, Always | C>;
 
 /**
- * PostgREST's `max_rows` (supabase/config.toml, and Supabase's hosted default).
- * A page shorter than this is the last one. If the cap were ever set lower
- * than the page, every page would come back "short" and the read would stop
- * after the first, so the two numbers must move together.
+ * PostgREST's `max_rows` (supabase/config.toml, and Supabase's hosted default),
+ * which is also the page this reads. The db test pins that the local stack
+ * really does stop an unpaged read here.
  */
-export const GSC_PAGE_SIZE = 1000;
+export const GSC_PAGE_SIZE = PAGE_SIZE;
 
 export type ReadGscOptions<S extends RowShape, C extends GscColumn> = {
   /**
@@ -86,6 +92,11 @@ export type ReadGscOptions<S extends RowShape, C extends GscColumn> = {
    * user's client can see. It is spelled out rather than left off so that no
    * caller gets it by forgetting; on a service-role client there is no RLS
    * behind it, and `null` would read every account.
+   *
+   * Anything else must be a real id. An empty string (or an `undefined` that
+   * got past the type through a cast) throws, rather than being read as
+   * "no filter": `.eq("workspace_id", "")` fails in Postgres, which is how the
+   * readers this replaced failed closed, and this keeps them failing closed.
    */
   workspaceId: string | null;
   /** The partitions to read. The result has exactly these keys. */
@@ -116,6 +127,10 @@ export async function readGsc<S extends RowShape, C extends GscColumn>(
   supabase: SupabaseClient,
   opts: ReadGscOptions<S, C>,
 ): Promise<GscShapes<ReadRow<C>, S>> {
+  const ws: unknown = opts.workspaceId;
+  if (ws !== null && (typeof ws !== "string" || ws.trim() === "")) {
+    throw new Error("readGsc: workspaceId must be a workspace id, or null for the account-wide read.");
+  }
   const shapes = [...new Set(opts.shapes)];
   if (!shapes.length) throw new Error("readGsc: name at least one row shape to read.");
   const select = [...new Set<string>(["metric_date", "query", "page_url", ...opts.columns])].join(", ");
@@ -132,36 +147,29 @@ async function readShape<C extends GscColumn>(
   opts: ReadGscOptions<RowShape, C>,
 ): Promise<ReadRow<C>[]> {
   const columns = SHAPE_COLUMNS[shape];
-  const out: ReadRow<C>[] = [];
-  for (let from = 0; ; from += GSC_PAGE_SIZE) {
+  const rows = await readAllPages<ReadRow<C>>(`Search Console read (${shape} rows)`, (from, to, count) => {
     let q = supabase
       .from("analytics_metrics")
-      .select(select)
+      .select(select, { count })
       .eq("source", "gsc")
       .gte("metric_date", opts.since);
     if (opts.until) q = q.lte("metric_date", opts.until);
-    if (opts.workspaceId) q = q.eq("workspace_id", opts.workspaceId);
+    // Checked non-empty in readGsc; null, and only null, is the account-wide read.
+    if (opts.workspaceId !== null) q = q.eq("workspace_id", opts.workspaceId);
     if (opts.article === "any") q = q.not("article_id", "is", null);
     else if (opts.article) q = q.eq("article_id", opts.article);
     // The shape, from the table: set is NOT NULL, unset is NULL.
     q = columns.query ? q.not("query", "is", null) : q.is("query", null);
     q = columns.page_url ? q.not("page_url", "is", null) : q.is("page_url", null);
-
-    const { data, error } = await q
+    return q
       .order("metric_date", { ascending: true })
       .order("id", { ascending: true })
-      .range(from, from + GSC_PAGE_SIZE - 1);
-    if (error) throw new Error(`Search Console read (${shape} rows) failed: ${error.message}`);
-
-    const batch = (data ?? []) as unknown as ReadRow<C>[];
-    for (const row of batch) {
-      // The same table, asked again of the row itself. Against Postgres this
-      // never drops anything; it is what keeps a client that did not apply
-      // the filter from filing one click under four shapes.
-      if (rowShape(row) === shape) out.push(row);
-    }
-    if (batch.length < GSC_PAGE_SIZE) return out;
-  }
+      .range(from, to) as unknown as PromiseLike<{ data: ReadRow<C>[] | null; error: { message: string } | null; count: number | null }>;
+  });
+  // The same table, asked again of each row. Against Postgres this never
+  // drops anything; it is what keeps a client that did not apply the filter
+  // from filing one click under four shapes.
+  return rows.filter((row) => rowShape(row) === shape);
 }
 
 /**

@@ -53,6 +53,9 @@ export function fakeDb(tables: Record<string, Row[]> = {}): FakeDb {
     let single: "single" | "maybe" | null = null;
     let wantRows = true;
     let head = false;
+    // `{ count: "exact" }` is the number of rows the filters match, before any
+    // range: lib/supabase/read-all.ts reads until it has that many.
+    let wantCount = false;
 
     const run = () => {
       const rows = db.tables[table] ?? (db.tables[table] = []);
@@ -90,18 +93,20 @@ export function fakeDb(tables: Record<string, Row[]> = {}): FakeDb {
         return { data: wantRows ? hit : null, error: null, count: null };
       }
       if (order) hit = [...hit].sort((a, b) => (String(a[order!.col]) < String(b[order!.col]) ? (order!.asc ? -1 : 1) : order!.asc ? 1 : -1));
+      const matched = hit.length;
       if (limit !== null) hit = hit.slice(0, limit);
       if (range) hit = hit.slice(range[0], range[1] + 1);
-      if (head) return { data: null, error: null, count: hit.length };
+      if (head) return { data: null, error: null, count: matched };
       if (single === "single") return { data: hit[0] ?? null, error: hit[0] ? null : { code: "PGRST116", message: "no rows" }, count: null };
       if (single === "maybe") return { data: hit[0] ?? null, error: null, count: null };
-      return { data: hit, error: null, count: hit.length };
+      return { data: hit, error: null, count: wantCount ? matched : null };
     };
 
     const q = {
       select: (_cols?: string, opts?: { count?: string; head?: boolean }) => {
         wantRows = true;
         if (opts?.head) head = true;
+        if (opts?.count) wantCount = true;
         return q;
       },
       insert: (row: Row | Row[]) => ((op = "insert"), (inserted = (Array.isArray(row) ? row : [row]).map((r) => ({ ...r }))), (wantRows = false), q),
