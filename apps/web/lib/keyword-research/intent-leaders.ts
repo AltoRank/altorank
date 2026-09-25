@@ -34,6 +34,7 @@
 // position 30 is usually the homepage, a page that targets nothing
 // (lib/seo/recommendations.ts reads them the same way).
 
+import { readAll } from "@/lib/supabase/read-all";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { storedSerp, type IntentStage, type StagedTopic } from "./intent";
 
@@ -145,27 +146,46 @@ export function leadersFrom(sources: LeaderSources, onCalendar: OnCalendar): Int
  * with nothing in the log.
  */
 export async function readIntentLeaders(supabase: SupabaseClient, workspaceId: string, onCalendar: OnCalendar): Promise<IntentLeader[]> {
+  // Paged (lib/supabase/read-all.ts): the server hands back 1,000 rows at
+  // most and says nothing, and a site with more pages than that compared its
+  // candidates against the first thousand.
   const [keywords, articles, pages, entries] = await Promise.all([
-    supabase
-      .from("keywords")
-      .select("id, term, status, opportunity")
-      .eq("workspace_id", workspaceId)
-      .in("status", ["planned", "drafting", "scheduled", "shipped"]),
-    supabase
-      .from("articles")
-      .select("id, keyword, keyword_id, status")
-      .eq("workspace_id", workspaceId)
-      .not("keyword", "is", null),
-    supabase
-      .from("site_pages")
-      .select("url, keyword")
-      .eq("workspace_id", workspaceId)
-      .not("keyword", "is", null),
-    supabase
-      .from("calendar_entries")
-      .select("keyword_id, scheduled_date")
-      .eq("workspace_id", workspaceId)
-      .in("status", ["queue", "scheduled"]),
+    readAll<KeywordRow>((from, to) =>
+      supabase
+        .from("keywords")
+        .select("id, term, status, opportunity")
+        .eq("workspace_id", workspaceId)
+        .in("status", ["planned", "drafting", "scheduled", "shipped"])
+        .order("id")
+        .range(from, to),
+    ),
+    readAll<ArticleRow>((from, to) =>
+      supabase
+        .from("articles")
+        .select("id, keyword, keyword_id, status")
+        .eq("workspace_id", workspaceId)
+        .not("keyword", "is", null)
+        .order("id")
+        .range(from, to),
+    ),
+    readAll<PageRow>((from, to) =>
+      supabase
+        .from("site_pages")
+        .select("url, keyword")
+        .eq("workspace_id", workspaceId)
+        .not("keyword", "is", null)
+        .order("id")
+        .range(from, to),
+    ),
+    readAll<EntryRow>((from, to) =>
+      supabase
+        .from("calendar_entries")
+        .select("keyword_id, scheduled_date")
+        .eq("workspace_id", workspaceId)
+        .in("status", ["queue", "scheduled"])
+        .order("id")
+        .range(from, to),
+    ),
   ]);
   for (const [what, res] of [["keywords", keywords], ["articles", articles], ["site pages", pages], ["calendar entries", entries]] as const) {
     if (res.error) throw new Error(`Could not read ${what} to check for duplicate topics: ${res.error.message}`);

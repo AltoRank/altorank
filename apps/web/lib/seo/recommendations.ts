@@ -1,3 +1,4 @@
+import { readAll } from "@/lib/supabase/read-all";
 import { readOpportunity, contextKey, duplicateVerdict, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
 import { clusterByIntent, intentKey, intentLanguage, sameIntent, storedSerp, unfoldedNote, type IntentFollower, type IntentStage, type StagedTopic } from "@/lib/keyword-research/intent";
 import { articleStage, leadersFrom, type IntentLeader, type KeywordRow, type OnCalendar } from "@/lib/keyword-research/intent-leaders";
@@ -392,10 +393,17 @@ export async function recommendKeywords(
 ): Promise<KeywordRecommendation[]> {
   const limit = options?.limit ?? 25;
 
-  const { data: keywords, error } = await supabase
-    .from("keywords")
-    .select("id, term, volume, difficulty, intent, status, source, source_type, source_ref, source_url, opportunity, buyer_fit, plan_excluded_at")
-    .eq("workspace_id", workspaceId);
+  // Every keyword, paged (lib/supabase/read-all.ts): the server stops at
+  // 1,000 rows without saying so, and the rest were neither scored nor
+  // compared as leaders.
+  const { data: keywords, error } = await readAll<Record<string, unknown>>((from, to) =>
+    supabase
+      .from("keywords")
+      .select("id, term, volume, difficulty, intent, status, source, source_type, source_ref, source_url, opportunity, buyer_fit, plan_excluded_at")
+      .eq("workspace_id", workspaceId)
+      .order("id")
+      .range(from, to),
+  );
 
   if (error) throw new Error(`Could not read keywords: ${error.message}`);
   if (!keywords?.length) return [];
@@ -450,11 +458,17 @@ export async function recommendKeywords(
       .select("keyword_id, position, checked_at")
       .in("keyword_id", keywordIds)
       .order("checked_at", { ascending: false }),
-    supabase
-      .from("articles")
-      .select("id, keyword, keyword_id, status")
-      .eq("workspace_id", workspaceId)
-      .not("keyword", "is", null),
+    // The leaders, paged like `readIntentLeaders`: a site past 1,000 of any
+    // of them compared its candidates against the first thousand.
+    readAll((from, to) =>
+      supabase
+        .from("articles")
+        .select("id, keyword, keyword_id, status")
+        .eq("workspace_id", workspaceId)
+        .not("keyword", "is", null)
+        .order("id")
+        .range(from, to),
+    ),
     supabase
       .from("analytics_metrics")
       .select("query, impressions")
@@ -477,18 +491,26 @@ export async function recommendKeywords(
     // for a query one of these pages already holds is a second page on one
     // query: altorank.co drafted "rankingcoach alternative" while
     // /alternatives/rankingcoach/ sat at position 28 for it (2026-09-18).
-    supabase
-      .from("site_pages")
-      .select("url, keyword")
-      .eq("workspace_id", workspaceId)
-      .not("keyword", "is", null),
+    readAll((from, to) =>
+      supabase
+        .from("site_pages")
+        .select("url, keyword")
+        .eq("workspace_id", workspaceId)
+        .not("keyword", "is", null)
+        .order("id")
+        .range(from, to),
+    ),
     // When each planned keyword is due: of two planned phrasings of one
     // search, the one due first is the one kept.
-    supabase
-      .from("calendar_entries")
-      .select("keyword_id, scheduled_date")
-      .eq("workspace_id", workspaceId)
-      .in("status", ["queue", "scheduled"]),
+    readAll((from, to) =>
+      supabase
+        .from("calendar_entries")
+        .select("keyword_id, scheduled_date")
+        .eq("workspace_id", workspaceId)
+        .in("status", ["queue", "scheduled"])
+        .order("id")
+        .range(from, to),
+    ),
   ]);
 
   // Most recent position per keyword; the query is already newest-first.

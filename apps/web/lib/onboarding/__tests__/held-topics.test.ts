@@ -15,7 +15,7 @@ function client(held: Row[] | number, owners: { keywords?: Row[]; articles?: unk
           : table === "articles" ? owners.articles ?? []
             : table === "site_pages" ? owners.pages ?? [] : [];
       const q: Record<string, unknown> = {};
-      for (const m of ["select", "eq", "is", "in", "not"]) q[m] = () => { filters.push(m); return q; };
+      for (const m of ["select", "eq", "is", "in", "not", "order", "range"]) q[m] = () => { filters.push(m); return q; };
       q.maybeSingle = async () => ({ data: table === "workspaces" ? { language } : null, error: null });
       q.then = (resolve: (v: unknown) => unknown) => resolve({ data: data(), error: null });
       return q;

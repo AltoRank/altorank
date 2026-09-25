@@ -57,7 +57,7 @@ function client(rows: Row[], articles: unknown[], language = "tr", entries: unkn
           : table === "articles" ? articles
             : table === "calendar_entries" ? entries : [];
       const q: Record<string, unknown> = {};
-      for (const m of ["select", "eq", "in", "order", "gte", "not", "is"]) q[m] = (...args: unknown[]) => { filters.push([m, ...args]); return q; };
+      for (const m of ["select", "eq", "in", "order", "range", "gte", "not", "is"]) q[m] = (...args: unknown[]) => { filters.push([m, ...args]); return q; };
       for (const m of ["update", "delete"]) q[m] = (v?: unknown) => { op = m; value = v ?? null; return q; };
       q.single = async () => ({ data: { topical_profile: null, dr: 20, business_profile: BUSINESS, domain: DOMAIN, language, location_code: 2792, auto_generate_weekly_limit: 3 } });
       q.then = (resolve: (v: unknown) => unknown) => {

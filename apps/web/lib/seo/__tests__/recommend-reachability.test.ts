@@ -57,7 +57,7 @@ function client(
   const empty = { data: [] as unknown[] };
   const chain = (value: unknown): Record<string, unknown> => {
     const self: Record<string, unknown> = {};
-    for (const m of ["eq", "in", "order", "gte", "not", "select", "is"]) {
+    for (const m of ["eq", "in", "order", "range", "gte", "not", "select", "is"]) {
       self[m] = (...args: unknown[]) => {
         seenFilters.push([m, ...args]);
         return Object.assign(Promise.resolve(value), self);
