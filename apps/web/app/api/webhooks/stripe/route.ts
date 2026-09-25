@@ -349,7 +349,13 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
         const plan = await planForCheckoutSession(session);
         const trial = await trialForCheckoutSession(session);
 
-        await supabase
+        // Checked, and thrown so Stripe delivers the event again. Everything
+        // below acts on this write: the resume it owes and dispatches drafts
+        // the rest of the week only for an account that is no longer gated,
+        // and against an account this write missed it recorded "waiting for
+        // your trial to start" on every owed entry and spent the checkout's
+        // one burst, while Stripe had its 200.
+        const { error: accountWriteError } = await supabase
           .from("accounts")
           .update({
             stripe_customer_id: String(session.customer),
@@ -368,6 +374,9 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
             ...(plan ? { plan } : {}),
           })
           .eq("id", accountId);
+        if (accountWriteError) {
+          throw new Error(`checkout.session.completed: could not record the subscription on the account (${accountWriteError.message})`);
+        }
 
         /**
          * Start writing at a paid pace.

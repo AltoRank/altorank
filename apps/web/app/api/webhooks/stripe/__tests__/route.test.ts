@@ -18,6 +18,8 @@ const writes: { table: string; row: Row; col: string; val: unknown; filters: Fil
 let workspaceRows: Row[] = [];
 /** When set, the webhook's write of what a checkout owes each site fails. */
 let oweFails = false;
+/** When set, the checkout's write to `accounts` fails with this message. */
+let accountWriteFails: string | null = null;
 /** The one account row any single-row read of `accounts` returns; null = no match. */
 let accountRow: Row | null = null;
 
@@ -40,6 +42,9 @@ function query(table: string, op: "select" | "update", row?: Row) {
     maybeSingle: () => ((single = true), q),
     then: (resolve: (v: unknown) => unknown) => {
       if (op === "update") {
+        if (accountWriteFails && table === "accounts") {
+          return resolve({ data: null, error: { message: accountWriteFails } });
+        }
         if (oweFails && table === "workspaces" && row && "trial_resume_key" in row) {
           return resolve({ data: null, error: { message: "column workspaces.trial_resume_key does not exist" } });
         }
@@ -226,6 +231,24 @@ describe("checkout.session.completed", () => {
     // The plan and its status were written first and stand; nothing was handed off.
     expect(accountWrite().row).toMatchObject({ plan_status: "active" });
     expect(deferred).toHaveLength(0);
+  });
+
+  it("answers 500 when it cannot record the subscription, and owes and dispatches nothing", async () => {
+    // Everything after this write assumes it happened: a resume dispatched
+    // against a still-gated account records "waiting for your trial" on every
+    // owed entry and spends the checkout's one burst, and Stripe, told 200,
+    // would never send the event again.
+    resume.mockClear();
+    deferred.length = 0;
+    accountWriteFails = "connection reset";
+    workspaceRows = [{ id: "ws-1", auto_generate_weekly_limit: 7 }];
+    try {
+      await expect(deliver(checkoutCompleted())).rejects.toThrow(/could not record the subscription on the account/);
+      expect(writes.filter((w) => w.table === "workspaces" && "trial_resume_key" in w.row)).toHaveLength(0);
+      expect(deferred).toHaveLength(0);
+    } finally {
+      accountWriteFails = null;
+    }
   });
 
   it("writes the tier the subscription's price sells, not the column default", async () => {
