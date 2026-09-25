@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes) and **100** (pre-trial spend bounds), each with its section at the end. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds) and **101** (account creator), each with its section at the end. **101 goes in BEFORE its code is deployed; 097, 099 and 100 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -152,7 +152,8 @@ m(file, applied) as (values
   ('094_found_on_site',                      to_regclass('public.found_on_site_checks') is not null and exists (select 1 from col where t='articles' and c='found_on_site_rejected') and exists (select 1 from col where t='workspaces' and c='found_on_site_unreadable')),
   ('098_fact_check_unchecked',               exists (select 1 from pg_constraint where conname = 'articles_fact_check_verdict_check' and pg_get_constraintdef(oid) like '%unchecked%')),
   ('099_trial_gate_server_writes',           not has_table_privilege('authenticated', 'public.api_keys', 'INSERT') and pg_get_functiondef('public.accounts_guard_privileged_columns'::regproc) like '%free_drafts_used%'),
-  ('100_pre_trial_spend_bounds',             not has_table_privilege('authenticated', 'public.workspaces', 'INSERT') and exists (select 1 from pg_trigger where tgname = 'account_members_guard_own_row'))
+  ('100_pre_trial_spend_bounds',             not has_table_privilege('authenticated', 'public.workspaces', 'INSERT') and exists (select 1 from pg_trigger where tgname = 'account_members_guard_own_row') and not has_column_privilege('authenticated', 'public.workspaces', 'first_analysed_at', 'UPDATE')),
+  ('101_account_creator',                    exists (select 1 from col where t='accounts' and c='created_by') and not has_table_privilege('authenticated', 'public.account_members', 'INSERT'))
 )
 select file, applied from m order by file;
 ```
@@ -285,6 +286,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 093_draft_claims.sql   # BEFORE it
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 094_found_on_site.sql   # BEFORE its code is merged; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 095_site_pages_extract.sql   # BEFORE its code is merged; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 098_fact_check_unchecked.sql   # BEFORE its code is merged; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 101_account_creator.sql   # BEFORE its code is deployed; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 097_article_body_server_only.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 099_trial_gate_server_writes.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 100_pre_trial_spend_bounds.sql   # AFTER its code is live; see its section
@@ -359,6 +361,7 @@ no code in the repo references either).
 | 098_fact_check_unchecked.sql | `fix/locale-contract` | 015 | yes | only once no row holds `unchecked`: re-add the three-value check |
 | 099_trial_gate_server_writes.sql | `fix/trial-gate-first-article` | 083, 086, the `api_keys` table; **its code deployed first** | yes | yes, see its section (the three holes it closes reopen) |
 | 100_pre_trial_spend_bounds.sql | `integration/root-causes-2026-09-25` | 076, 085, 053/072, 093; **its code deployed first** | yes | yes, see its section (the four holes it closes reopen) |
+| 101_account_creator.sql | `integration/root-causes-2026-09-25` | 085; **applied before its code is deployed** | yes | yes, see its section (an owner can again add any user as a member) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -865,10 +868,14 @@ could reset or multiply those counts:
   number of rows past the one-site allowance.
 - `workspaces`: table `UPDATE` revoked from `anon` and `authenticated`, and
   granted back on every column except `id`, `account_id`, `ai_provider`,
-  `ai_model` and `trial_resume_key` / `trial_resume_claimed_at` /
-  `trial_resumed_at`. No code writes those through a person's client. A model
-  name that does not exist made every draft fail after its research was
-  bought.
+  `ai_model`, `trial_resume_key` / `trial_resume_claimed_at` /
+  `trial_resumed_at`, and the nightly first look's queue columns
+  `first_analysed_at` / `analysis_attempts` / `last_analysis_attempt_at` /
+  `created_at`. No code writes those through a person's client (the Search
+  Console import runs its setup through the onboarding worker since this
+  change). A model name that does not exist made every draft fail after its
+  research was bought; clearing the queue columns re-bought a ~$0.20 first
+  look, and backdating `created_at` pinned a row at the head of the queue.
 - `account_members`: trigger `account_members_guard_own_row` refuses a
   signed-in user deleting their own membership or changing its `user_id` or
   `account_id`. With it gone, `ensureAccount` made them a fresh never-trialed
@@ -890,7 +897,7 @@ until it is granted.** Its migration must say
 `grant update (<column>) on public.workspaces to authenticated;` unless only
 the server writes it. A missing grant fails loudly (`permission denied`).
 
-Post-flight (expect `t`, `t`, `f`, `f`, `t`, `t`):
+Post-flight (expect `t`, `t`, `f`, `f`, `f`, `t`, `t`):
 
 ```sql
 select (select is_nullable from information_schema.columns
@@ -898,6 +905,7 @@ select (select is_nullable from information_schema.columns
        (select confdeltype from pg_constraint where conname = 'onboarding_runs_workspace_id_fkey') = 'n',
        has_table_privilege('authenticated', 'public.workspaces', 'INSERT'),
        has_column_privilege('authenticated', 'public.workspaces', 'ai_model', 'UPDATE'),
+       has_column_privilege('authenticated', 'public.workspaces', 'first_analysed_at', 'UPDATE'),
        has_column_privilege('authenticated', 'public.workspaces', 'name', 'UPDATE'),
        exists (select 1 from pg_trigger where tgname = 'account_members_guard_own_row');
 ```
@@ -918,6 +926,90 @@ and, only once no run has a null `workspace_id`
 (`delete from onboarding_runs where workspace_id is null;` loses the count),
 `alter table public.onboarding_runs alter column workspace_id set not null;`
 with the foreign key recreated `on delete cascade`.
+
+## 101 — account creator
+
+Whether an account is ours - unmetered in the crons, open at the trial gate,
+no "Powered by" line on what it publishes - was "is any member an
+operator?", and membership is the account owner's to give. An owner could
+POST any user id into `account_members` over PostgREST, and an operator who
+accepted an invitation to help a customer made that customer's account
+"ours". Now:
+
+- `accounts.created_by` (uuid, `auth.users` on delete set null): the user of
+  the account's FIRST membership, set by the trigger
+  `account_members_set_account_creator` (every path that makes an account -
+  signup, ensureAccount, the e2e fixtures - writes its owner's membership
+  right after the row), backfilled from each account's oldest membership, and
+  guarded by `accounts_guard_created_by` against any signed-in user.
+  `apps/web/lib/billing/operator-account.ts` asks only about the creator.
+- `account_members`: `INSERT` revoked from `anon` and `authenticated` (every
+  membership is written with the service role: signup, invite acceptance,
+  ensureAccount), and table `UPDATE` revoked and granted back on `role` and
+  `workspace_ids` only (what the Team page writes). `DELETE` stays with the
+  policy and 100's trigger.
+
+**Apply BEFORE its code is deployed** - the opposite of 097/099/100. The code
+that ships with it reads `accounts.created_by`; without the column the
+operator question fails (said in the log, never cached) and our own accounts
+are metered like customers' until it is applied. The code from before it
+never reads the column and only inserts memberships with the service role,
+so applying it first changes nothing for the running app. Independent of
+097-100 in either order.
+
+Pre-flight - the accounts the backfill will call ours. Run it before
+applying, with the operator addresses from `ADMIN_EMAILS` pasted in by hand
+(never commit them): every account you expect to be ours should be listed,
+and nothing else.
+
+```sql
+select a.id, a.name, u.email
+  from public.accounts a
+  join lateral (select m.user_id from public.account_members m
+                 where m.account_id = a.id
+                 order by m.created_at asc nulls last, m.id limit 1) first on true
+  join auth.users u on u.id = first.user_id
+ where lower(u.email) = any (array['<operator address>']);
+```
+
+Post-flight (expect `t`, `f`, `t`, `f`, `t`, `t`, `0`):
+
+```sql
+select exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'accounts' and column_name = 'created_by'),
+       has_table_privilege('authenticated', 'public.account_members', 'INSERT'),
+       has_column_privilege('authenticated', 'public.account_members', 'role', 'UPDATE'),
+       has_column_privilege('authenticated', 'public.account_members', 'created_at', 'UPDATE'),
+       exists (select 1 from pg_trigger where tgname = 'account_members_set_account_creator'),
+       exists (select 1 from pg_trigger where tgname = 'accounts_guard_created_by'),
+       (select count(*) from public.accounts a
+         where a.created_by is null
+           and exists (select 1 from public.account_members m where m.account_id = a.id));
+```
+
+Then deploy, and after the deploy is live re-run the pre-flight list: the
+same accounts, now read through `created_by`
+(`join auth.users u on u.id = a.created_by`).
+
+Verified 2026-09-25 on an isolated schema-only copy of the local stack
+(created and dropped for the check; the shared stack was not touched), as
+`authenticated` with an owner's JWT claims: before, inserting a stranger as
+a member and backdating a membership both succeeded; after, both are
+`permission denied`, rewriting `accounts.created_by` is refused by the
+trigger, and changing a teammate's role and renaming the account still
+work. The backfill named each account's oldest member; a new account's
+first membership written as `service_role` set `created_by`, and a second
+(an accepted invitation) did not change it. Applied twice: the second run is
+a no-op. With 100 applied after it, clearing `first_analysed_at` /
+`analysis_attempts` / `last_analysis_attempt_at` and backdating a site's
+`created_at` are `permission denied`, and renaming the site still works.
+
+Rollback (then the operator question falls back to nothing: the code that
+reads `created_by` must be reverted before the column is dropped):
+`drop trigger account_members_set_account_creator on public.account_members; drop function public.account_members_set_account_creator();`
+`drop trigger accounts_guard_created_by on public.accounts; drop function public.accounts_guard_created_by();`
+`grant insert, update on table public.account_members to authenticated;`
+and, once no deployed code reads it, `alter table public.accounts drop column created_by;`
 
 ## 095 — site pages extract
 

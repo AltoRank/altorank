@@ -34,9 +34,15 @@
 --    read straight into the model call, and pointing them at a model that
 --    does not exist made every draft fail after its research was bought.
 --    `account_id` moves a site, and everything under it, between accounts.
---    `trial_resume_*` are the resume's claim (093). No code writes any of
---    them through a person's client, so a client token loses UPDATE on them;
---    every other column keeps it.
+--    `trial_resume_*` are the resume's claim (093). `first_analysed_at`,
+--    `analysis_attempts`, `last_analysis_attempt_at` and `created_at` are the
+--    nightly first look's queue (cron/analyze orders by the attempts and the
+--    age, and buys a ~$0.20 look for a row it finds): a client clearing them
+--    re-bought a first look of whatever domain the row held, and backdating
+--    `created_at` pinned the row at the head of the queue. No code writes any
+--    of them through a person's client (the Search Console import runs its
+--    setup through the onboarding worker since this file), so a client token
+--    loses UPDATE on them; every other column keeps it.
 --
 -- 4. A person's own membership. "Owners manage members" is FOR ALL, so an
 --    owner could delete their own account_members row (or point it at
@@ -87,7 +93,9 @@ begin
    where table_schema = 'public'
      and table_name = 'workspaces'
      and column_name not in ('id', 'account_id', 'ai_provider', 'ai_model',
-                             'trial_resume_key', 'trial_resume_claimed_at', 'trial_resumed_at');
+                             'trial_resume_key', 'trial_resume_claimed_at', 'trial_resumed_at',
+                             'first_analysed_at', 'analysis_attempts', 'last_analysis_attempt_at',
+                             'created_at');
   execute format('grant update (%s) on table public.workspaces to authenticated', writable);
 end
 $$;

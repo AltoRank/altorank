@@ -65,6 +65,13 @@ export const maxDuration = 300;
 /** Bounded per invocation: each analysis crawls a site and calls two APIs. */
 const BATCH = 3;
 
+/**
+ * How many waiting sites one run may ask the spend gate about. A refusal buys
+ * nothing and does not use one of the BATCH analyses, so this bounds only the
+ * gate's own reads on a night when many sites in the queue are refused.
+ */
+const FIRST_LOOK_SCAN = 30;
+
 async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
     setSpendReporter(null);
@@ -85,8 +92,19 @@ async function run(request: Request) {
   });
 
   // A workspace nobody has read yet, that has attempts left, and that was not
-  // just tried. Ordered by attempts first so a retry can never take the slot
-  // of a signup that has had no look at all.
+  // just tried. Never-tried first (a null last attempt), then the one asked
+  // longest ago, so the queue rotates: a signup that has had no look at all
+  // goes before any retry, and a site refused tonight goes to the back.
+  //
+  // It was ordered by attempts and then by age, three at a time, and a site
+  // the spend gate refused was skipped without a stamp. Every account that
+  // has its pre-trial article is refused, so three such sites whose crawl
+  // read nothing held the three slots every night, and every other site's
+  // first-look retry waited behind them for good (round-4 review). A refusal
+  // now stamps the attempt time - not the attempt count: nothing was tried -
+  // and does not use one of the BATCH analyses. The columns the order reads
+  // are not writable by a client token (migration 100), so a person cannot
+  // backdate a row to the head of the queue either.
   const { data: pending, error } = await supabase
     .from("workspaces")
     .select("id, domain, account_id, language, location_code, analysis_attempts")
@@ -97,15 +115,17 @@ async function run(request: Request) {
     )
     .not("domain", "is", null)
     .neq("status", "paused")
-    .order("analysis_attempts", { ascending: true })
+    .order("last_analysis_attempt_at", { ascending: true, nullsFirst: true })
     .order("created_at", { ascending: true })
-    .limit(BATCH);
+    .limit(FIRST_LOOK_SCAN);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const results: Array<Record<string, unknown>> = [];
+  let looked = 0;
 
   for (const ws of pending ?? []) {
+    if (looked >= BATCH) break;
     const workspaceId = ws.id as string;
     const domain = ws.domain as string;
 
@@ -122,9 +142,22 @@ async function run(request: Request) {
       action: "site-audit",
     });
     if (!spend.allowed) {
-      results.push({ workspaceId, domain, status: "skipped", detail: spend.message });
+      // To the back of the queue, and no slot used. The attempt count stays
+      // where it was: nothing was tried, and a site whose account starts its
+      // trial must still get its looks.
+      const { error: stampError } = await supabase
+        .from("workspaces")
+        .update({ last_analysis_attempt_at: new Date().toISOString() })
+        .eq("id", workspaceId);
+      results.push({
+        workspaceId,
+        domain,
+        status: "skipped",
+        detail: stampError ? `${spend.message} (could not move it back in the queue: ${stampError.message})` : spend.message,
+      });
       continue;
     }
+    looked += 1;
 
     setSpendReporter(({ operation, costUsd }) => {
       void recordSpend(supabase, {
@@ -203,7 +236,7 @@ async function run(request: Request) {
   // three domains are pending this run does no refreshing, which is correct -
   // both share one 300s invocation.
   const refreshed: RefreshOutcome[] = [];
-  const slots = BATCH - (pending?.length ?? 0);
+  const slots = BATCH - looked;
 
   if (slots > 0) {
     // Oldest first, nulls before them, so the queue rotates instead of
@@ -240,6 +273,7 @@ async function run(request: Request) {
   return NextResponse.json({
     staleRunsClosed: reaped.reaped,
     pending: pending?.length ?? 0,
+    refused: results.filter((r) => r.status === "skipped").length,
     analysed: results.filter((r) => r.status === "analysed").length,
     unreadable: results.filter((r) => r.status === "unreadable").length,
     errors: results.filter((r) => r.status === "error").length,

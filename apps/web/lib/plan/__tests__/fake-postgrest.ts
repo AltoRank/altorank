@@ -88,7 +88,7 @@ export class FakeDb {
 
   private query(table: string) {
     const preds: Pred[] = [];
-    const orders: Array<[string, boolean]> = [];
+    const orders: Array<[string, boolean, boolean]> = [];
     let lim: number | null = null;
     let mode: "select" | "update" | "insert" | "delete" = "select";
     let patch: Row = {};
@@ -113,8 +113,17 @@ export class FakeDb {
         this.updates.push({ table, patch, ids: matched.map((r) => r.id) });
         return { data: matched.map((r) => ({ ...r })), error: null };
       }
-      for (const [col, asc] of [...orders].reverse()) {
-        matched = [...matched].sort((a, b) => (String(a[col]) < String(b[col]) ? -1 : String(a[col]) > String(b[col]) ? 1 : 0) * (asc ? 1 : -1));
+      for (const [col, asc, nullsFirst] of [...orders].reverse()) {
+        matched = [...matched].sort((a, b) => {
+          // `nullsFirst` as PostgREST means it; without it, nulls compare as
+          // the string "null", as they always have here.
+          if (nullsFirst) {
+            const an = a[col] === null || a[col] === undefined;
+            const bn = b[col] === null || b[col] === undefined;
+            if (an !== bn) return an ? -1 : 1;
+          }
+          return (String(a[col]) < String(b[col]) ? -1 : String(a[col]) > String(b[col]) ? 1 : 0) * (asc ? 1 : -1);
+        });
       }
       if (lim !== null) matched = matched.slice(0, lim);
       const count = matched.length;
@@ -140,7 +149,7 @@ export class FakeDb {
       in: (c: string, vs: unknown[]) => (preds.push((r) => vs.map(String).includes(String(r[c]))), q),
       not: (c: string, op: string, v: unknown) => (preds.push((r) => !cmp(op, r[c], String(v))), q),
       or: (expr: string) => (preds.push(orFilter(expr)), q),
-      order: (c: string, o?: { ascending?: boolean }) => (orders.push([c, o?.ascending !== false]), q),
+      order: (c: string, o?: { ascending?: boolean; nullsFirst?: boolean }) => (orders.push([c, o?.ascending !== false, o?.nullsFirst === true]), q),
       limit: (n: number) => ((lim = n), q),
       maybeSingle: () => ((single = true), run()),
       single: () => ((single = true), run()),
