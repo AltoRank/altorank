@@ -40,8 +40,19 @@ export interface SiteLink {
 
 export interface StatedFact {
   kind: "founded" | "team" | "location";
-  /** The sentence (or structured-data value) exactly as the page states it. */
+  /**
+   * The sentence exactly as the page states it, or - with `from` set - the
+   * structured-data value alone ("2014", "Leeds, GB"), never a sentence we
+   * wrote around it.
+   */
   text: string;
+  /**
+   * Set when the fact is a value from the page's JSON-LD, which has no words
+   * of the site's to quote. The prompt gives these as values and asks for
+   * them in the article's language; wrapping them in an English sentence
+   * handed a Turkish article English text labelled as the site's own words.
+   */
+  from?: "structured-data";
 }
 
 export interface SitePageExtract {
@@ -437,18 +448,18 @@ const LOCATION =
 export function statedFacts(mainHtml: string, html: string, now = new Date()): StatedFact[] {
   const out: StatedFact[] = [];
   const seen = new Set<string>();
-  const add = (kind: StatedFact["kind"], text: string) => {
+  const add = (kind: StatedFact["kind"], text: string, from?: StatedFact["from"]) => {
     const clean = text.replace(/\s+/g, " ").trim().slice(0, MAX_SENTENCE);
     const key = `${kind}:${fold(clean)}`;
     if (!clean || seen.has(key) || out.length >= MAX_STATED) return;
     seen.add(key);
-    out.push({ kind, text: clean });
+    out.push(from ? { kind, text: clean, from } : { kind, text: clean });
   };
 
   // Structured data first: it is the site stating the fact on purpose.
   for (const node of jsonLdNodes(html, true)) {
     const founding = node.foundingDate;
-    if (typeof founding === "string" && YEAR.test(founding)) add("founded", `Founding date in the site's structured data: ${founding}`);
+    if (typeof founding === "string" && YEAR.test(founding)) add("founded", founding, "structured-data");
     const employees = node.numberOfEmployees;
     const count =
       typeof employees === "number" || typeof employees === "string"
@@ -456,13 +467,13 @@ export function statedFacts(mainHtml: string, html: string, now = new Date()): S
         : employees && typeof employees === "object"
           ? String((employees as Record<string, unknown>).value ?? (employees as Record<string, unknown>).minValue ?? "")
           : "";
-    if (count && /\d/.test(count)) add("team", `Number of employees in the site's structured data: ${count}`);
+    if (count && /\d/.test(count)) add("team", count, "structured-data");
     const address = node.address;
     if (address && typeof address === "object" && typesOf(address as Record<string, unknown>).includes("postaladdress")) {
       const a = address as Record<string, unknown>;
       const country = typeof a.addressCountry === "object" && a.addressCountry ? (a.addressCountry as Record<string, unknown>).name : a.addressCountry;
       const parts = [a.addressLocality, a.addressRegion, country].filter((p): p is string => typeof p === "string" && p.trim() !== "");
-      if (parts.length) add("location", `Address in the site's structured data: ${parts.join(", ")}`);
+      if (parts.length) add("location", parts.join(", "), "structured-data");
     }
   }
 

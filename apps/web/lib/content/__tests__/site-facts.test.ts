@@ -241,6 +241,23 @@ describe("the writer prompt", () => {
     expect(buildSystemPrompt({ keyword: "k", siteFacts: facts })).toContain("INTERNAL LINKS — do not add any.");
   });
 
+  it("gives structured-data facts as values, not as the site's quoted words", () => {
+    // The page's JSON-LD has no wording to quote. An English sentence around
+    // the value, quoted as the site's own words, told the writer of a
+    // Turkish article to quote English.
+    const facts = buildSiteFacts([], DOMAIN);
+    facts.stated = [
+      { kind: "founded", text: "2014", source: `${O}/hakkimizda`, from: "structured-data" },
+      { kind: "team", text: "12 kişilik bir ekibiz.", source: `${O}/hakkimizda` },
+    ];
+    const section = buildSiteFactsSection(facts);
+    expect(section).toContain(`- "12 kişilik bir ekibiz." (${O}/hakkimizda)`);
+    expect(section).toContain(`- founding date: 2014 (${O}/hakkimizda)`);
+    expect(section).toContain("state them in the article's language");
+    expect(section).not.toContain('"2014"');
+    expect(section).not.toContain("is quoted from the business's pages");
+  });
+
   it("allows the business's pages alongside the article pool, and nothing else on the site", () => {
     const facts = buildSiteFacts(ROWS, DOMAIN);
     const p = buildSystemPrompt({ keyword: "k", siteFacts: facts, internalLinkTargets: [{ keyword: "maliyet", title: "Uygulama maliyeti" }] });

@@ -121,7 +121,8 @@ export interface SiteFacts {
    */
   headings: Array<{ page: string; url: string; items: string[] }>;
   /** Founding, team and location statements, as the page makes them, with the page. */
-  stated: Array<{ kind: "founded" | "team" | "location"; text: string; source: string }>;
+  /** `from: "structured-data"`: a value from the page's JSON-LD, not the site's words (lib/audit/site-extract.ts). */
+  stated: Array<{ kind: "founded" | "team" | "location"; text: string; source: string; from?: "structured-data" }>;
   /** The opening of its about page, in its own words. */
   about: { text: string; source: string } | null;
   /** Its section pages (services, portfolio, about, contact, pricing), which exist. */

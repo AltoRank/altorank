@@ -193,7 +193,7 @@ export function buildSiteFacts(rows: SitePageRow[], domain: string): SiteFacts {
         const key = fold(s.text);
         if (seenStated.has(key) || facts.stated.length >= MAX_STATED) continue;
         seenStated.add(key);
-        facts.stated.push({ kind: s.kind, text: s.text, source: p.url });
+        facts.stated.push({ kind: s.kind, text: s.text, source: p.url, ...(s.from ? { from: s.from } : {}) });
       }
     }
   }

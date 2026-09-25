@@ -162,8 +162,10 @@ describe("extractSitePage — English", () => {
     const x = extractSitePage(html, "https://acme-agency.example/company/who", { now: NOW });
     expect(x).toMatchObject({ role: "about", roleFrom: "schema" });
     expect(x!.stated).toEqual([
-      { kind: "founded", text: "Founding date in the site's structured data: 2014" },
-      { kind: "location", text: "Address in the site's structured data: Leeds, GB" },
+      // Values, not sentences: the page's JSON-LD has no words of the site's
+      // to quote, and an English sentence around a value would be ours.
+      { kind: "founded", text: "2014", from: "structured-data" },
+      { kind: "location", text: "Leeds, GB", from: "structured-data" },
       { kind: "team", text: "We are a team of 12 designers and developers." },
     ]);
   });
