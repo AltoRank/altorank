@@ -171,10 +171,11 @@ describe("classifyLinkResponse", () => {
     expect(classifyLinkResponse("https://gone.example/x", { status: 404, method: "HEAD" }).verdict).toBe("unverified");
   });
 
-  it("keeps a 404 from a store that hides listings by country", () => {
+  it("keeps a 404 from a store that hides listings by country, and says an invented app id looks the same", () => {
     const out = classifyLinkResponse(PLAY, { status: 404, method: "GET" });
     expect(out.verdict).toBe("unverified");
-    expect(out.reason).toMatch(/countries/);
+    expect(out.reason).toMatch(/not sold in the country/);
+    expect(out.reason).toMatch(/app id that does not exist/);
   });
 
   it("keeps a Cloudflare or Akamai challenge page whatever its status says", () => {
@@ -198,6 +199,66 @@ describe("classifyLinkResponse", () => {
 
   it("recognises no challenge on an ordinary page", () => {
     expect(botChallengeOf({ server: "nginx" }, "<html><head><title>Annual report</title></head></html>")).toBeNull();
+  });
+
+  // The same vendors put a sensor on every page they protect. A sensor is not
+  // a challenge: the page it rides on is live or gone like any other.
+  const CF_JSD =
+    "<script>(function(){var a=document.createElement('script');" +
+    "a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.head.appendChild(a)})();</script>";
+
+  it("takes a Cloudflare page carrying the JavaScript-detections script at its status", () => {
+    const live = `<html><head><title>Annual report 2025</title></head><body><h1>Report</h1>${CF_JSD}</body></html>`;
+    const gone = `<html><head><title>Page not found</title></head><body><h1>404</h1>${CF_JSD}</body></html>`;
+    const headers = { server: "cloudflare", "cf-ray": "8c0ffee-IST" };
+    expect(classifyLinkResponse("https://guarded.example/r", { status: 200, headers, body: live, method: "GET" })).toEqual({ verdict: "live" });
+    expect(classifyLinkResponse("https://guarded.example/r", { status: 404, headers, body: gone, method: "GET" })).toEqual({
+      verdict: "dead",
+      reason: "HTTP 404, page gone",
+    });
+  });
+
+  it("takes a DataDome 404 as gone: the header is on every response, not only on its challenge", () => {
+    const res = {
+      status: 404,
+      headers: { "x-datadome": "protected", "x-datadome-cid": "AHrlqAAAAAMA" },
+      body: '<html><head><title>Not found</title><script src="https://js.datadome.co/tags.js"></script></head><body>Not found</body></html>',
+      method: "GET" as const,
+    };
+    expect(classifyLinkResponse("https://shop.example/gone", res).verdict).toBe("dead");
+  });
+
+  it("takes a PerimeterX or Imperva page with only its sensor as live", () => {
+    const px = '<html><head><title>Pricing</title><script>window._pxAppId="PXabc123";</script></head><body>Plans</body></html>';
+    const imperva = '<html><head><title>Pricing</title><script src="/_Incapsula_Resource?SWJIYLWA=719d34d31c8e"></script></head></html>';
+    for (const body of [px, imperva]) {
+      expect(botChallengeOf({}, body, 200)).toBeNull();
+      expect(classifyLinkResponse("https://vendor.example/pricing", { status: 200, body, method: "GET" }).verdict).toBe("live");
+    }
+  });
+
+  it("names the vendor from a challenge-only marker on a blocking status", () => {
+    const dd = '<html><head><title>example.com</title></head><body><script>var dd={"host":"geo.captcha-delivery.com"}</script></body></html>';
+    expect(classifyLinkResponse("https://shop.example/x", { status: 403, headers: { "x-datadome": "protected" }, body: dd, method: "GET" })).toEqual({
+      verdict: "unverified",
+      reason: "HTTP 403, a DataDome challenge page; could not verify",
+    });
+    const cf = "<html><head><title>example.com</title></head><body><script>window._cf_chl_opt={cvId:'3'}</script></body></html>";
+    expect(botChallengeOf({}, cf, 403)).toBe("Cloudflare");
+    // The same marker on a 200 is not taken on its own.
+    expect(botChallengeOf({}, cf, 200)).toBeNull();
+    expect(botChallengeOf({}, '<div id="px-captcha"></div>', 403)).toBe("PerimeterX");
+  });
+
+  it("recognises Akamai's block page with its encoded reference, and Imperva's block text", () => {
+    const akamai =
+      "<HTML><HEAD>\n<TITLE>Access Denied</TITLE>\n</HEAD><BODY>\n<H1>Access Denied</H1>\n" +
+      "Reference&#32;&#35;18&#46;5e0f1b2&#46;1727000000&#46;abc\n<P>https&#58;&#47;&#47;errors&#46;edgesuite&#46;net&#47;18</P></BODY></HTML>";
+    expect(botChallengeOf({ server: "AkamaiGHost" }, akamai, 403)).toBe("Akamai");
+    // An article titled "Access Denied" is not a block page.
+    expect(botChallengeOf({ server: "AkamaiGHost" }, "<title>Access Denied</title><p>A film review.</p>", 200)).toBeNull();
+    const incap = '<html><body><iframe src="/_Incapsula_Resource?CWUDNSAI=9">Request unsuccessful. Incapsula incident ID: 123-456</iframe></body></html>';
+    expect(botChallengeOf({}, incap, 200)).toBe("Imperva");
   });
 });
 

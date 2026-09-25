@@ -355,8 +355,15 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
       const answered = checks.filter((c) => c.ok).length;
       const removed = checks.filter((c) => c.removed);
       const unknown = checks.filter((c) => !c.ok && !c.removed);
+      // A kept "not found" is not a guarded page. It was kept because that
+      // answer is not final where it came from - a 404 to HEAD only, or a
+      // store that hides listings by country (lib/seo/link-check.ts) - but an
+      // app id or path the model invented answers exactly the same. Named
+      // apart, and located first, so it is opened before the WAF blocks.
+      const notFound = unknown.filter((c) => c.status === 404 || c.status === 410);
+      const guarded = unknown.filter((c) => !notFound.includes(c));
       const anchorFor = (url: string) => external.find((l) => l.href === url)?.anchor ?? "";
-      const reasons = [...new Set(unknown.map((c) => c.reason ?? "no answer"))].slice(0, 3).join(", ");
+      const reasons = [...new Set(guarded.map((c) => c.reason ?? "no answer"))].slice(0, 3).join(", ");
       push({
         id: "sources-verified",
         group: "sources",
@@ -365,11 +372,14 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
         detail:
           `${answered} of ${checks.length} cited ${checks.length === 1 ? "URL" : "URLs"} answered when the draft was generated` +
           (removed.length ? `; ${removed.length} dead ${removed.length === 1 ? "link was" : "links were"} removed` : "") +
-          (unknown.length
-            ? `; ${unknown.length} could not be reached (${reasons}) and ${unknown.length === 1 ? "needs" : "need"} opening by hand`
+          (notFound.length
+            ? `; ${notFound.length} answered "not found" where we checked and ${notFound.length === 1 ? "was" : "were"} kept only because that answer is not final there, so ${notFound.length === 1 ? "it" : "each"} may not exist at all (an invented app id or path answers the same) - open ${notFound.length === 1 ? "it" : "these"} first`
+            : "") +
+          (guarded.length
+            ? `; ${guarded.length} could not be reached (${reasons}) and ${guarded.length === 1 ? "needs" : "need"} opening by hand`
             : "") +
           ". Whether each page says what the text claims is still yours to confirm.",
-        locate: unknown.map((c) => anchorFor(c.url)).filter(Boolean).slice(0, 6),
+        locate: [...notFound, ...guarded].map((c) => anchorFor(c.url)).filter(Boolean).slice(0, 6),
       });
     } else {
       push({

@@ -19,12 +19,16 @@
 //
 // A real signup, 2026-09-22 (Turkish web/mobile agency): the checker deleted a
 // valid Google Play source from his draft. It removed only 404, 410 and
-// unresolvable hosts, so Play answered one of those - and a HEAD-only 404 was
-// taken as final, and Play answers 404 for a listing that is not distributed
-// in the country the request comes from, which a check run from one data
-// centre cannot tell from a missing app. So: a HEAD is never the last word
-// (anything but a 2xx/3xx to HEAD is asked again with GET), and a 404 from a
-// catalogue that scopes listings by country is recorded as unverified.
+// unresolvable hosts, so Play answered one of those. Which one was not
+// confirmed: the check's record for that draft is in production and was not
+// read. Two ways it happens, and both are closed: a HEAD-only 404 was taken
+// as final (anything but a 2xx/3xx to HEAD is now asked again with GET), and
+// Play answers 404 for a listing that is not distributed in the country the
+// request comes from, which a check run from one data centre cannot tell from
+// a missing app. A 404 from such a catalogue is kept as unverified - and
+// because an app id the model invented answers exactly the same, the review
+// (lib/seo/article-audit.ts) lists every kept "not found" apart from the
+// guarded ones, as a link that may not exist.
 //
 // Every request goes through the SSRF-safe fetcher the public tools use
 // (lib/public-tools/safe-fetch.ts): a URL a model wrote is not one our server
@@ -97,24 +101,58 @@ const DEAD_STATUSES = new Set([404, 410]);
  */
 export const COUNTRY_SCOPED_HOSTS: ReadonlySet<string> = new Set(["play.google.com"]);
 
+/** The statuses a bot manager serves its challenge or block page with. */
+const CHALLENGE_STATUSES = new Set([403, 429, 503]);
+
 /**
  * The challenge page a bot manager serves instead of the page, by vendor, or
- * null. Its status is often 403 or 503 but can be 200 or even 404, so the
- * status alone cannot be trusted to say what the page is.
+ * null.
+ *
+ * Only a definitive sign counts. The same vendors put their sensor script,
+ * cookie or header on every ordinary page they protect: Cloudflare's
+ * JavaScript detections inject /cdn-cgi/challenge-platform/scripts/jsd/,
+ * DataDome sends `x-datadome` on every response, PerimeterX pages carry
+ * `_pxAppId`, Imperva injects `_Incapsula_Resource`. Counting those made a
+ * real 404 on such a site "unverified" (so a dead citation was kept) and a
+ * live 200 "unverified" too. So:
+ *
+ *   - at any status: Cloudflare's `cf-mitigated: challenge` header, and a
+ *     page whose title (or block text) is the challenge's own - "Just a
+ *     moment...", "Attention Required! | Cloudflare", Akamai's "Access
+ *     Denied" with its reference number, "Pardon Our Interruption",
+ *     Incapsula's "Request unsuccessful" block text, an exact "Robot Check";
+ *   - only on a 403, 429 or 503: a marker that appears in the challenge page
+ *     itself and not in the sensor on ordinary pages (`cf-chl-`, Cloudflare's
+ *     challenge orchestration path, DataDome's captcha-delivery.com,
+ *     PerimeterX's px-captcha box). Those statuses are kept as unverified
+ *     anyway; the marker only names who stood in the way.
+ *
+ * A 200 or a 404 carrying a vendor's sensor is the page, live or gone.
  */
-export function botChallengeOf(headers: Record<string, string> = {}, body = ""): string | null {
+export function botChallengeOf(headers: Record<string, string> = {}, body = "", status?: number): string | null {
   const h = (name: string) => (headers[name] ?? "").toLowerCase();
   const head = body.slice(0, 20_000);
+  const title = (head.match(/<title[^>]*>([\s\S]{0,200}?)<\/title>/i)?.[1] ?? "")
+    .replace(/&#32;|&nbsp;/gi, " ")
+    .replace(/&#46;|&period;/gi, ".")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+  // Definitive at any status.
   if (h("cf-mitigated") === "challenge") return "Cloudflare";
-  if (/<title>\s*(?:just a moment|attention required!? \| cloudflare)/i.test(head) || /cf-chl-|challenge-platform|cf-browser-verification/i.test(head)) {
-    return "Cloudflare";
+  if (/^just a moment(?:\.\.\.|\u2026)?$/.test(title) || /^attention required! \| cloudflare$/.test(title)) return "Cloudflare";
+  if (title === "access denied" && /reference(?:&#32;|\s)+(?:#|&#35;)|errors(?:\.|&#46;)edgesuite(?:\.|&#46;)net/i.test(head)) return "Akamai";
+  if (title === "pardon our interruption" || /request unsuccessful\.\s*incapsula incident id/i.test(head)) return "Imperva";
+  if (/^(?:robot check|are you a robot\??|verify you are human\.?)$/.test(title)) return "a bot check";
+
+  // Challenge-only markers, and only where the status already says "blocked".
+  if (status !== undefined && CHALLENGE_STATUSES.has(status)) {
+    if (/cf-chl-|_cf_chl_opt|\/cdn-cgi\/challenge-platform\/h\/|cf-browser-verification/i.test(head)) return "Cloudflare";
+    if (/captcha-delivery\.com/i.test(head)) return "DataDome";
+    if (/id=["']px-captcha["']/i.test(head)) return "PerimeterX";
   }
-  if (h("server").includes("akamaighost") && /access denied/i.test(head)) return "Akamai";
-  if (/errors\.edgesuite\.net|<title>\s*access denied\s*<\/title>[\s\S]{0,2000}reference(?:&#32;|\s)#/i.test(head)) return "Akamai";
-  if (h("x-datadome") || /captcha-delivery\.com/i.test(head)) return "DataDome";
-  if (/<title>\s*pardon our interruption/i.test(head) || /_incapsula_resource|incap_ses_/i.test(head)) return "Imperva";
-  if (/px-captcha|_pxappid/i.test(head)) return "PerimeterX";
-  if (/<title>\s*(?:robot check|are you a robot|verify you are human)/i.test(head)) return "a bot check";
   return null;
 }
 
@@ -125,14 +163,20 @@ export function botChallengeOf(headers: Record<string, string> = {}, body = ""):
  */
 export function classifyLinkResponse(url: string, res: LinkResponse): { verdict: LinkVerdict; reason?: string } {
   const { status } = res;
-  const challenge = botChallengeOf(res.headers, res.body);
+  const challenge = botChallengeOf(res.headers, res.body, status);
   if (challenge) return { verdict: "unverified", reason: `HTTP ${status}, a ${challenge} challenge page; could not verify` };
   if (status >= 200 && status < 400) return { verdict: "live" };
   if (DEAD_STATUSES.has(status)) {
     if (res.method === "HEAD") return { verdict: "unverified", reason: `HTTP ${status} to HEAD, not confirmed with GET` };
     const host = hostOf(url);
     if (host && COUNTRY_SCOPED_HOSTS.has(host)) {
-      return { verdict: "unverified", reason: `HTTP ${status}; this store hides listings from countries they are not sold in, could not verify` };
+      // Kept, and said to be what it is: either not sold where we asked from,
+      // or an app id that does not exist. The review lists it as a link that
+      // may not exist, apart from the guarded ones.
+      return {
+        verdict: "unverified",
+        reason: `HTTP ${status}; this store answers "not found" for a listing not sold in the country the check ran from, and for an app id that does not exist, so it could not verify which`,
+      };
     }
     return { verdict: "dead", reason: `HTTP ${status}, page gone` };
   }
