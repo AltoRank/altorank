@@ -1258,16 +1258,16 @@ export async function generateArticle(
  * between "regenerate" and "first draft", and guessing either is wrong.
  */
 async function articleHasText(supabase: SupabaseClient, articleId: string): Promise<boolean> {
+  // Not null is the whole test. The column is jsonb and PostgREST casts a
+  // comparison value to the column's type, so an empty-string comparison is
+  // not JSON: it failed with 22P02 on every call and took every in-place
+  // draft with it (round-5 review, on a real PostgREST). A row the writer has
+  // not written carries SQL null. The unit test's fake asserts this exact
+  // filter, so a no-op fake cannot hide a change to it again.
   const { data, error } = await accountCountingClient(supabase)
     .from("articles")
     .select("id")
     .eq("id", articleId)
-    // `content` is jsonb, so this is the whole test: PostgREST casts a
-    // comparison value to the column's type, and `neq.` (the empty string)
-    // is not JSON - every call failed with 22P02 and took every in-place
-    // draft with it (round-5 review, on a real PostgREST). A row the writer
-    // has not written carries SQL null; the fake client in the unit tests
-    // asserts this exact filter so it cannot drift back.
     .not("content", "is", null)
     .maybeSingle();
   if (error) throw new Error(`Could not check the article's text: ${error.message}`);
