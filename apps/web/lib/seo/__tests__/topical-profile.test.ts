@@ -191,6 +191,19 @@ describe("seedPhrasesFromPages", () => {
     expect(seeds.join(" ")).not.toContain("learn more");
     expect(seeds.every((s) => s.split(" ").length >= 2)).toBe(true);
   });
+
+  it("drops page furniture in every language the locale contract describes", async () => {
+    const { seedPhrasesFromPages } = await import("../topical-profile");
+    const seeds = seedPhrasesFromPages([
+      { title: "Mobil Uygulama Geliştirme - Acme", h1: ["Mobil Uygulama Geliştirme"], h2: ["Sıkça Sorulan Sorular", "SIKÇA SORULAN SORULAR", "Devamını Oku", "Mobil uygulama geliştirme süreci"] },
+      { title: "Domande frequenti", h1: ["Häufig gestellte Fragen"], h2: ["Sık sorulan sorular", "Mobil uygulama geliştirme"] },
+    ], "acme-agency.example");
+    expect(seeds[0]).toBe("mobil uygulama geliştirme");
+    const all = seeds.join(" | ");
+    for (const furniture of ["sorulan sorular", "devamını oku", "domande frequenti", "gestellte fragen"]) {
+      expect(all, furniture).not.toContain(furniture);
+    }
+  });
 });
 
 describe("domainTokens", () => {
