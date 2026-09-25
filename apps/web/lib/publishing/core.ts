@@ -219,7 +219,7 @@ async function pushToDestination(
         // Crons carry no caller, so the operator check has to ask the account.
         !(await isOperatorAccount(supabase, ws.account_id))
       ) {
-        html = appendAttribution(html);
+        html = appendAttribution(html, language);
       }
     }
   } catch {

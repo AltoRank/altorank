@@ -2,6 +2,7 @@ import type { ArticlePrompt, SiteFacts } from "./types";
 import type { ArticleResearch } from "@/lib/seo/research";
 import { INTENT_GUIDANCE } from "@/lib/seo/intent";
 import { LENGTH_BANDS, TAXONOMY_LABELS, targetWordCountFor } from "@/lib/keywords/taxonomy";
+import { resolveLocale } from "@/lib/i18n/locale";
 
 // ---------------------------------------------------------------------------
 // Build the system prompt sent to the AI model for article generation.
@@ -339,6 +340,13 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     language = "English",
     research,
   } = prompt;
+  // The fixed labels this prompt asks the writer to use come from the locale
+  // contract, so the heading the prompt asks for is the heading the FAQ
+  // schema and the AEO summary check recognise. `language` is the name the
+  // caller passes ("Turkish"); the contract resolves names and codes alike.
+  // A language it does not describe gets no English label to copy: the
+  // writer is asked to write the label in that language instead.
+  const locale = resolveLocale(language);
 
   // An explicit target wins; then the owner's length band for this keyword;
   // otherwise the length derived from what ranks.
@@ -716,7 +724,9 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       "",
       "- Open by answering the question. First paragraph under 90 words, naming",
       "  the subject in the first sentence. No throat-clearing, no context-setting.",
-      `- Straight after the opening paragraph, add a short summary block with an <h2> label written in ${language},`,
+      locale.supported
+        ? `- Straight after the opening paragraph, add a short summary block with an <h2> label written in ${language} (such as "${locale.labels.keyTakeaways}"),`
+        : `- Straight after the opening paragraph, add a short summary block with an <h2> label written in ${language},`,
       "  with three to five <li> bullets, each one a complete, quotable sentence.",
       "  No figures in the bullets unless the same figure is sourced in the body.",
       "- Include one standalone definition of 20-70 words that starts with the",
@@ -775,8 +785,11 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     // request in the prompt the FAQPage data existed only when the model
     // happened to end on questions.
     if (o.faq === true) {
+      const faqHeading = locale.supported
+        ? `an <h2>${locale.labels.faqHeading}</h2> section`
+        : `an <h2> section headed with the usual ${language} phrase for "frequently asked questions"`;
       prefs.push(
-        "- When useful unanswered questions remain, end with an <h2>Frequently asked questions</h2> section: up to five <h3> questions " +
+        `- When useful unanswered questions remain, end with ${faqHeading}: up to five <h3> questions ` +
           "that serve the approved audience and article task, each answered in 40-80 words that stand alone. " +
           "Do not repeat a question already covered or invent adjacent topics to fill this section; omit it when nothing useful remains.",
       );

@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract) and **097** (article text server-only), each with its section at the end. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only) and **098** (fact check unchecked), each with its section at the end. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -149,7 +149,8 @@ m(file, applied) as (values
   ('093_draft_claims',                       exists (select 1 from col where t='calendar_entries' and c='draft_owed_at') and exists (select 1 from col where t='workspaces' and c='trial_resume_claimed_at')),
   ('097_article_body_server_only',           not has_column_privilege('authenticated', 'public.articles', 'content', 'SELECT')),
   ('095_site_pages_extract',                 exists (select 1 from col where t='site_pages' and c='extract')),
-  ('094_found_on_site',                      to_regclass('public.found_on_site_checks') is not null and exists (select 1 from col where t='articles' and c='found_on_site_rejected') and exists (select 1 from col where t='workspaces' and c='found_on_site_unreadable'))
+  ('094_found_on_site',                      to_regclass('public.found_on_site_checks') is not null and exists (select 1 from col where t='articles' and c='found_on_site_rejected') and exists (select 1 from col where t='workspaces' and c='found_on_site_unreadable')),
+  ('098_fact_check_unchecked',               exists (select 1 from pg_constraint where conname = 'articles_fact_check_verdict_check' and pg_get_constraintdef(oid) like '%unchecked%'))
 )
 select file, applied from m order by file;
 ```
@@ -282,6 +283,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 093_draft_claims.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 097_article_body_server_only.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 095_site_pages_extract.sql   # BEFORE its code is merged; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 094_found_on_site.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 098_fact_check_unchecked.sql
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -350,6 +352,7 @@ no code in the repo references either).
 | 097_article_body_server_only.sql | `fix/trial-gate-first-article` | 001, 053; **its code deployed first** | yes | yes, `grant select on table public.articles to anon, authenticated;` (the text is then readable through the API again) |
 | 095_site_pages_extract.sql | `fix/writer-site-facts` | **044**; **applied before its code merges** | yes | yes, after its code is reverted: `alter table site_pages drop column if exists extract;` (loses the stored extracts only) |
 | 094_found_on_site.sql | `feat/published-elsewhere` | 001 | yes | yes, see its section (the check then fails loudly in the cron body, and the crawl still runs) |
+| 098_fact_check_unchecked.sql | `fix/locale-contract` | 015 | yes | only once no row holds `unchecked`: re-add the three-value check |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -898,3 +901,23 @@ Roll back with
 — run it only after putting any found article back first
 (`update articles set status = found_on_site_prior->>'status', published_url = found_on_site_prior->>'published_url', published_at = (found_on_site_prior->>'published_at')::timestamptz where found_on_site_at is not null;`),
 or those articles stay `live` at a URL nobody can then take back.
+
+## 098 — fact-check `unchecked` verdict
+
+Widens `articles_fact_check_verdict_check` to allow `'unchecked'`, the verdict
+the fact checker returns for an article in a language the locale contract
+(`lib/i18n/locale.ts`) does not describe. No dependencies beyond 015;
+idempotent (`drop constraint if exists`, then add). Every existing row stays
+valid.
+
+**Apply before the code that writes it ships.** Until then, generating a draft
+for a site whose language is not English, Italian, Spanish, French, German or
+Turkish fails at the article save (the constraint refuses `unchecked`), where
+before it saved a verdict read with English rules.
+
+Smoke after applying:
+
+```sql
+select pg_get_constraintdef(oid) from pg_constraint
+ where conname = 'articles_fact_check_verdict_check';  -- lists 'unchecked'
+```

@@ -21,7 +21,7 @@
 // `runAutoApprovals` is the cron's entry point.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { factCheckArticle, approvalBlocker } from "@/lib/ai/fact-check";
+import { factCheckArticle, autoApprovalBlocker } from "@/lib/ai/fact-check";
 import { tiptapToHtml } from "@/lib/cms/html";
 import { auditArticle } from "@/lib/seo/article-audit";
 import type { ArticleResearch } from "@/lib/seo/research";
@@ -46,7 +46,11 @@ export type AutoApproveCandidate = {
   created_at: string | null;
   seo_score: number | null;
   aeo_score: number | null;
-  /** Message from `approvalBlocker`, or null when the fact check passed. */
+  /**
+   * Message from `autoApprovalBlocker`, or null when the fact check passed.
+   * Unlike a person's approve, a draft in a language the checker cannot read
+   * is held here: nothing looked at its figures.
+   */
   factCheckBlocker: string | null;
   /** Titles of audit items with status `fail`. */
   auditFailures: readonly string[];
@@ -134,7 +138,14 @@ export type AutoApproveResult = {
   detail?: string;
 };
 
-type WorkspaceRow = AutoApproveRule & { id: string; account_id: string; domain: string | null; status: string };
+type WorkspaceRow = AutoApproveRule & {
+  id: string;
+  account_id: string;
+  domain: string | null;
+  status: string;
+  /** Read so the fact check and the audit use the site's language rules. */
+  language: string | null;
+};
 
 type ArticleRow = {
   id: string;
@@ -170,7 +181,7 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
 
   const { data: wsRows, error: wsError } = await supabase
     .from("workspaces")
-    .select("id, account_id, domain, status, auto_approve, auto_approve_hold_hours, auto_approve_min_seo, auto_approve_min_aeo, auto_approve_set_by")
+    .select("id, account_id, domain, language, status, auto_approve, auto_approve_hold_hours, auto_approve_min_seo, auto_approve_min_aeo, auto_approve_set_by")
     .eq("auto_approve", true)
     .eq("status", "on");
   if (wsError) throw new Error(`auto-approve: workspaces: ${wsError.message}`);
@@ -224,7 +235,7 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
     for (const article of articles as ArticleRow[]) {
       try {
         const html = article.content ? tiptapToHtml(article.content) : "";
-        const report = html ? factCheckArticle(html, article.research ?? undefined) : null;
+        const report = html ? factCheckArticle(html, article.research ?? undefined, ws.language) : null;
         if (report) {
           await supabase
             .from("articles")
@@ -240,6 +251,7 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
               metaDescription: article.meta_description,
               slug: article.slug,
               featuredImageUrl: article.featured_image_url,
+              language: ws.language,
             })
           : null;
 
@@ -247,7 +259,7 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
           ws,
           {
             ...article,
-            factCheckBlocker: report ? approvalBlocker(report) : "draft has no content",
+            factCheckBlocker: report ? autoApprovalBlocker(report) : "draft has no content",
             auditFailures: audit ? audit.items.filter((i) => i.status === "fail").map((i) => i.label) : [],
             needsPlan,
             hasDestination,

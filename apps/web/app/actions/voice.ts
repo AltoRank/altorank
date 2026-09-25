@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { analyzeVoice, trainVoiceProfile } from "@/lib/voice/train";
 import { canSpend } from "@/lib/billing/spend-gate";
+import { readWorkspaceLanguage } from "@/lib/i18n/workspace-language";
 import type { BillingOutcome } from "@/lib/billing/failure";
 
 // Training reads the site and asks the model to describe how it writes: one
@@ -67,7 +68,9 @@ export async function retrainVoice(workspaceId: string): Promise<BillingOutcome>
 
   if (!profile?.sample_text) throw new Error("No sample text to train from");
 
-  const rules = await analyzeVoice(profile.sample_text);
+  // The sample is read in the site's language, not in English.
+  const language = await readWorkspaceLanguage(supabase, workspaceId, "voice.retrain");
+  const rules = await analyzeVoice(profile.sample_text, language);
 
   const { error } = await supabase
     .from("voice_profiles")

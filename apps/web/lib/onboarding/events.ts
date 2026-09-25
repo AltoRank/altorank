@@ -113,7 +113,8 @@ export interface OnboardingArticle {
   title: string;
   keyword: string;
   wordCount: number;
-  verdict: "clean" | "review" | "high_risk";
+  /** `unchecked`: the site's language is one the fact checker does not read. */
+  verdict: "clean" | "review" | "high_risk" | "unchecked";
 }
 
 /**
@@ -291,7 +292,7 @@ export function shouldResumeRun(snapshot: OnboardingRunSnapshot | null, now: num
 export const STALE_RUN_ERROR =
   "This run stopped responding. Everything it finished is kept, and tonight's run picks up the rest.";
 
-const VERDICTS: readonly OnboardingArticle["verdict"][] = ["clean", "review", "high_risk"];
+const VERDICTS: readonly OnboardingArticle["verdict"][] = ["clean", "review", "high_risk", "unchecked"];
 
 /**
  * The persisted row, as the state the screen renders.

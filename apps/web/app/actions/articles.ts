@@ -7,6 +7,7 @@ import { z } from "zod";
 import { assertEditorialStatus } from "@/lib/articles/editorial-status";
 import { sessionBodyLockedForWorkspace } from "@/lib/billing/body-lock";
 import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial";
+import { urlSlug } from "@/lib/i18n/locale";
 
 const createArticleSchema = z.object({
   workspace_id: z.string().uuid(),
@@ -25,7 +26,9 @@ export async function createArticle(formData: FormData) {
     cms: formData.get("cms"),
   });
 
-  const slug = parsed.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  // The same fold as every other slug: an ASCII-only strip dropped every
+  // accented and Turkish letter from a title typed here.
+  const slug = urlSlug(parsed.title);
 
   // Auto-fill cms from workspace integration if not explicitly set
   let cms = parsed.cms;

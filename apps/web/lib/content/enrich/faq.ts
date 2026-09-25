@@ -10,10 +10,17 @@
 // publishing adapters are where it belongs, and they get it from the report.
 
 import { extractFaqPairs } from "@/lib/audit/schema-generator";
+import { matchesAnyHeading } from "@/lib/i18n/locale";
 import { splitSections, stripTags } from "./html";
 
-export const FAQ_HEADING =
-  /\bfaqs?\b|frequently asked|domande frequenti|preguntas frecuentes|questions fr[ée]quentes|h[äa]ufig gestellte/i;
+/**
+ * A FAQ heading in any language the locale contract describes: the prompt
+ * asks for one in the article's language ("Sıkça sorulan sorular"), and this
+ * is the reader that has to recognise what the prompt asked for.
+ */
+export function isFaqHeading(text: string): boolean {
+  return matchesAnyHeading("faq", text);
+}
 
 export interface FaqSchema {
   "@context": "https://schema.org";
@@ -31,7 +38,7 @@ export interface FaqSchema {
  */
 export function hasFaqShape(html: string): boolean {
   const headings = [...html.matchAll(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi)].map((m) => stripTags(m[2]));
-  if (headings.some((h) => FAQ_HEADING.test(h))) return true;
+  if (headings.some(isFaqHeading)) return true;
   return headings.filter((h) => h.trim().endsWith("?")).length >= 3;
 }
 
@@ -41,7 +48,7 @@ export function buildFaqSchema(html: string): { schema: FaqSchema | null; count:
   // Prefer the pairs under the FAQ heading itself, so a rhetorical question
   // heading elsewhere in the article does not become a FAQ entry.
   const { sections } = splitSections(html);
-  const faqSection = sections.find((s) => FAQ_HEADING.test(s.headingText));
+  const faqSection = sections.find((s) => isFaqHeading(s.headingText));
   const source = faqSection ? faqSection.body : html;
 
   const pairs = extractFaqPairs(source);

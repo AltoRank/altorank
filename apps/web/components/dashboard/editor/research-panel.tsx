@@ -245,6 +245,12 @@ export function FactCheckPanel({
   report: FactCheckReport;
   onLocate?: (text: string) => void;
 }) {
+  // Nothing was looked for, so there is no list and no "claims a reader
+  // would expect a source for" footnote: only what the reviewer has to do.
+  if (report.verdict === "unchecked") {
+    return <div className="text-[12.5px] text-ink-2 leading-[1.5]">{report.summary}</div>;
+  }
+
   if (report.verdict === "clean") {
     return (
       <div className="flex items-center gap-2 text-[12.5px] text-ink-2">

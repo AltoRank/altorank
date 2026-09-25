@@ -3,6 +3,7 @@ import type { BacklinkCreditReason } from "@/lib/types";
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicModel } from "@/lib/ai/models";
 import { fetchSite } from "@/lib/audit/lenient-fetch";
+import { resolveLocale } from "@/lib/i18n/locale";
 
 // Tiptap node types (minimal, matching lib/ai/tiptap.ts)
 type TiptapMark = { type: string; attrs?: Record<string, unknown> };
@@ -134,7 +135,8 @@ export async function suggestPlacement(
         role: "user",
         content: [
           `Given this article HTML:\n${truncated}\n\n`,
-          `Suggest where to naturally place a backlink to "${targetUrl}" about "${targetKeyword}".`,
+          `Suggest where to naturally place a backlink to "${targetUrl}" about "${targetKeyword}". `,
+          `The anchor text is words in the article's own language.`,
           `Reply with JSON: {"paragraphIndex": <number>, "anchorText": "<text>", "context": "<surrounding sentence>"}`,
           `Reply with ONLY valid JSON.`,
         ].join(""),
@@ -153,17 +155,37 @@ export async function suggestPlacement(
 }
 
 /**
+ * The citation and the words round it, as text nodes.
+ *
+ * The sentence is the article's language's (`ArticleLabels.citeLead` in
+ * lib/i18n/locale.ts): the drafts this is appended to are written in the
+ * host site's language, and " Learn more about <anchor>." went into every one
+ * of them until 2026-09-25, the incident's own English leak. In a language
+ * the contract does not describe, the link goes in parentheses with no
+ * words, which reads in any language.
+ */
+function citationNodes(link: TiptapNode, language: string | null | undefined): TiptapNode[] {
+  const locale = resolveLocale(language);
+  if (!locale.supported) return [{ type: "text", text: " (" }, link, { type: "text", text: ")" }];
+  const [before, after = ""] = locale.labels.citeLead.split("{link}");
+  // The leading space parts the sentence from the paragraph's last one; a
+  // Tiptap text node may not be empty, so an empty side is left out.
+  return [{ type: "text", text: ` ${before}` }, link, ...(after ? [{ type: "text", text: after }] : [])];
+}
+
+/**
  * Insert a backlink into an article's Tiptap JSON content.
  *
- * Finds the target paragraph by index, then appends a linked sentence
- * at the end of the paragraph. Returns the modified content, or the
- * original if insertion fails.
+ * Finds the target paragraph by index, then appends a linked sentence, in
+ * the article's `language`, at the end of the paragraph. Returns the
+ * modified content, or the original if insertion fails.
  */
 export function insertBacklinkIntoContent(
   content: TiptapDoc,
   targetUrl: string,
   anchorText: string,
   paragraphIndex: number,
+  language: string | null | undefined,
 ): TiptapDoc {
   if (!content.content || content.content.length === 0) return content;
 
@@ -181,37 +203,33 @@ export function insertBacklinkIntoContent(
 
   if (!target) return content;
 
-  // Build the link node: " Learn more about <anchor text>."
-  const linkNodes: TiptapNode[] = [
-    { type: "text", text: " Learn more about " },
-    {
-      type: "text",
-      text: anchorText,
-      marks: [
-        {
-          type: "link",
-          attrs: {
-            href: targetUrl,
-            target: "_blank",
-            /**
-             * Followed, and that is the point of migration 039.
-             *
-             * It was `nofollow sponsored` while the publisher earned credits
-             * for carrying it: value flowing to whoever hosts a link makes it
-             * a paid link, and a paid link has to be marked. Now the publisher
-             * PAYS for the article and the citation is the writer's byline, so
-             * nothing was paid for the link and there is nothing to disclose.
-             *
-             * `noopener noreferrer` stays because the anchor opens a new tab;
-             * neither is a ranking hint.
-             */
-            rel: "noopener noreferrer",
-          },
+  const link: TiptapNode = {
+    type: "text",
+    text: anchorText,
+    marks: [
+      {
+        type: "link",
+        attrs: {
+          href: targetUrl,
+          target: "_blank",
+          /**
+           * Followed, and that is the point of migration 039.
+           *
+           * It was `nofollow sponsored` while the publisher earned credits
+           * for carrying it: value flowing to whoever hosts a link makes it
+           * a paid link, and a paid link has to be marked. Now the publisher
+           * PAYS for the article and the citation is the writer's byline, so
+           * nothing was paid for the link and there is nothing to disclose.
+           *
+           * `noopener noreferrer` stays because the anchor opens a new tab;
+           * neither is a ranking hint.
+           */
+          rel: "noopener noreferrer",
         },
-      ],
-    },
-    { type: "text", text: "." },
-  ];
+      },
+    ],
+  };
+  const linkNodes = citationNodes(link, language);
 
   // Clone the doc to avoid mutation
   const newContent = content.content.map((node, i) => {
