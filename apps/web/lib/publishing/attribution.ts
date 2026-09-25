@@ -26,7 +26,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Quota } from "@/lib/billing/quota";
-import { isAdminEmail } from "@/lib/auth/operators";
+import { accountHasOperator } from "@/lib/billing/operator-account";
+import { accountCountingClient } from "@/lib/billing/account-client";
 import { resolveLocale } from "@/lib/i18n/locale";
 
 /** Where the link points. Bare and canonical: no query string to split. */
@@ -77,28 +78,17 @@ export function shouldAttribute(quota: Quota, removeBranding: boolean): boolean 
  * have put "Powered by AltoRank" on altorank.co's own articles, a footer link
  * from our domain to our domain (found 2026-09-02).
  *
- * Needs the service role to read addresses. On a request-scoped client the
- * admin call fails, and false is the right answer there anyway, because
- * `getQuota` has already resolved the signed-in operator itself.
+ * The same question getQuota asks, answered by the same function
+ * (lib/billing/operator-account.ts): an account an operator created. It had
+ * its own copy that asked "is any member an operator", which a customer
+ * could make true by adding a member (round-4 review). Asked on the
+ * account-wide service client, because the answer needs auth.users.
  */
 export async function isOperatorAccount(
   supabase: SupabaseClient,
   accountId: string,
 ): Promise<boolean> {
-  try {
-    const { data: members } = await supabase
-      .from("account_members")
-      .select("user_id")
-      .eq("account_id", accountId);
-    for (const m of members ?? []) {
-      const { data } = await supabase.auth.admin.getUserById(m.user_id as string);
-      if (isAdminEmail(data?.user?.email)) return true;
-    }
-  } catch {
-    // No service role, or the lookup failed. Fall through to the caller-based
-    // answer rather than guessing.
-  }
-  return false;
+  return accountHasOperator(accountCountingClient(supabase), accountId);
 }
 
 /**

@@ -45,7 +45,9 @@ const rows: Rows = {
   workspaces: [{ id: "w1", account_id: "a1" }],
   account_members: [{ user_id: "u1" }],
   // No plan, never trialed: gated, unless the account is ours.
-  accounts: [{ plan: null, plan_status: null, free_drafts_used: 0, trial_ends_at: null, stripe_subscription_id: null }],
+  // Created by an operator (migration 101 records it): that, not who the
+  // members are, is what makes it ours.
+  accounts: [{ plan: null, plan_status: null, free_drafts_used: 0, trial_ends_at: null, stripe_subscription_id: null, created_by: "u1" }],
   articles: [],
 };
 
@@ -84,5 +86,19 @@ describe("the publisher's trial gate on an operator account", () => {
     const { workspaceTrialGate } = await import("../body-lock");
     await workspaceTrialGate(cookie as never, "w1");
     expect(await workspaceTrialGate(service as never, "w1")).toBe("open");
+  });
+});
+
+describe("one answer for the account, whoever asks", () => {
+  // Round-4 review: the agent API's content lock asks as the key's creator,
+  // and its generate route asks as nobody. With the account check made only
+  // for "nobody", a key created by a colleague on our own account was locked
+  // out of the text while the same key drafted freely.
+  it("is open for a key created by a non-operator member of an account an operator created", async () => {
+    const { accountTrialGate } = await import("../body-lock");
+    const { getQuota } = await import("../quota");
+    expect(await accountTrialGate(service as never, "a1", "colleague@acme-agency.example")).toBe("open");
+    expect((await getQuota(service as never, "a1", null)).reason).toBe("operator");
+    expect((await getQuota(service as never, "a1", "colleague@acme-agency.example")).reason).toBe("operator");
   });
 });

@@ -197,18 +197,23 @@ export async function getQuota(
   // The operator bypass is the single biggest difference between what we see
   // and what a customer sees - unmetered against a real ceiling - so the
   // customer preview has to lift it, or the preview would show the one screen
-  // it exists to check in the one state no customer is ever in.
+  // it exists to check in the one state no customer is ever in. Only a
+  // session can be previewing; a cron (`noSession`) never is.
   //
   // Only the bypass is dropped. Everything below runs against the real account
   // row, so quota is the account's actual usage, not a fixture.
-  if (isAdminEmail(userEmail) && !(await inCustomerPreview())) {
+  const previewing = !noSession && (await inCustomerPreview());
+  if (isAdminEmail(userEmail) && !previewing) {
     return { limit: null, used, remaining: null, reason: "operator", plan: null };
   }
 
-  // Same bypass, reached the only way a cron can reach it. Without this our own
-  // account is metered by every scheduled job: one draft a month from
-  // cron/generate, and since scheduled work was gated on a plan, no rank
-  // tracking at all. See lib/billing/operator-account.ts.
+  // The same bypass for the account itself: one an operator created is ours,
+  // whoever asks - a cron with no session, a key made by a colleague, a
+  // teammate signed in (lib/billing/operator-account.ts). It used to be asked
+  // only when there was no session, so the agent API's content lock (which
+  // asks as the key's creator) and its generate route (which asks as nobody)
+  // gave the same key two different answers about the same account
+  // (round-4 review).
   //
   // Asked on the counting client, never the caller's: the answer needs
   // auth.users, which only the service role can read. The publisher reaches
@@ -216,7 +221,7 @@ export async function getQuota(
   // click, but the publisher speaks for no session), and on that client the
   // lookup failed and read as "not an operator" - so our own account, with
   // no plan by design, was refused its own Publish (round-4 review).
-  if (noSession && (await accountHasOperator(counting, accountId))) {
+  if (!previewing && (await accountHasOperator(counting, accountId))) {
     return { limit: null, used, remaining: null, reason: "operator", plan: null };
   }
 

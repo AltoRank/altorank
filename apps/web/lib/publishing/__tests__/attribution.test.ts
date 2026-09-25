@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
+import { clearOperatorAccountCache } from "@/lib/billing/operator-account";
 import type { Quota } from "@/lib/billing/quota";
 import {
   appendAttribution,
@@ -71,14 +72,26 @@ describe("the line in the article's language", () => {
 });
 
 describe("isOperatorAccount", () => {
-  function client(email: string | null) {
+  // The account's creator, as migration 101 records it; the admin API answers
+  // the creator's address. The same question getQuota asks.
+  function client(email: string | null, opts: { creator?: string | null } = {}) {
+    const creator = opts.creator === undefined ? "u1" : opts.creator;
     return {
-      from: () => ({ select: () => ({ eq: async () => ({ data: [{ user_id: "u1" }] }) }) }),
-      auth: { admin: { getUserById: async () => ({ data: email ? { user: { email } } : null }) } },
+      from: (table: string) => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () =>
+              table === "accounts" ? { data: { created_by: creator }, error: null } : { data: null, error: null },
+          }),
+        }),
+      }),
+      auth: { admin: { getUserById: async () => ({ data: email ? { user: { email } } : null, error: null }) } },
     } as never;
   }
 
-  it("recognises an operator-owned account", async () => {
+  beforeEach(() => clearOperatorAccountCache());
+
+  it("recognises an account an operator created", async () => {
     expect(await isOperatorAccount(client("helloaltorank@gmail.com"), "a1")).toBe(true);
   });
 
@@ -86,10 +99,14 @@ describe("isOperatorAccount", () => {
     expect(await isOperatorAccount(client("someone@example.com"), "a1")).toBe(false);
   });
 
+  it("does not flag an account with no creator on record", async () => {
+    expect(await isOperatorAccount(client("helloaltorank@gmail.com", { creator: null }), "a1")).toBe(false);
+  });
+
   it("answers false when the address cannot be read, rather than throwing", async () => {
     // A request-scoped client has no service role; the publish must not fail.
     const noAdmin = {
-      from: () => ({ select: () => ({ eq: async () => ({ data: [{ user_id: "u1" }] }) }) }),
+      from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { created_by: "u1" }, error: null }) }) }) }),
       auth: { admin: { getUserById: async () => { throw new Error("not authorized"); } } },
     } as never;
     expect(await isOperatorAccount(noAdmin, "a1")).toBe(false);
