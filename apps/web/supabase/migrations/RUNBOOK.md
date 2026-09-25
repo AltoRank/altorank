@@ -756,6 +756,8 @@ The editor and the Articles list read the columns with `select *`, so they
 degrade to "no find" rather than failing. These name the columns and fail
 without them, which is why the order matters:
 
+- the calendar (`lib/queries/planner-state.ts`) throws, so `/content` errors;
+- the blog API (`/api/blog/v1/articles`, `altorank-next-blog`) answers 500;
 - the free allowance's first-draft gate cannot read the drafts, and fails
   closed: cron/generate writes nothing on the free allowance and says why;
 - the admin Users page shows no article counts.
