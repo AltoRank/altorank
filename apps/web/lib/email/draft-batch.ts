@@ -266,7 +266,7 @@ type ArticleRow = {
   auto_approve_after: string | null;
 };
 
-const VERDICTS = new Set(["clean", "review", "high_risk"]);
+const VERDICTS = new Set(["clean", "review", "high_risk", "unchecked"]);
 const verdictOf = (v: string | null): FactCheckReport["verdict"] =>
   VERDICTS.has(v ?? "") ? (v as FactCheckReport["verdict"]) : "clean";
 

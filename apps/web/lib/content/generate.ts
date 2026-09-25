@@ -48,6 +48,7 @@ import type { RelatedKeyword } from "@/lib/seo/brief-data";
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { getLocale } from "@/lib/seo/locales";
+import { urlSlug } from "@/lib/i18n/locale";
 import type { ArticleBrief, RefreshContext, SiteContext, VoiceRules } from "@/lib/ai/types";
 import { classifyKeyword, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { parseStoredQuestions } from "@/lib/keywords/questions";
@@ -220,17 +221,12 @@ export class ConcurrentGenerationError extends Error {
  * Accented letters are folded to their base letter before anything is
  * dropped. The old `[^a-z0-9]` pass deleted them outright, so an Italian
  * keyword like "città d'arte" published at `/citt-d-arte` and "perché" at
- * `/perch`: a slug missing letters from the keyword it was meant to carry,
- * on the locales the product is sold into first. Same fold as the heading
- * ids in lib/content/enrich/html.ts, so an anchor and a slug agree.
+ * `/perch`; the dotless ı, which has no accent to fold, still vanished
+ * ("yazılım" -> `/yaz-l-m`) until the fold moved into the locale contract.
+ * Same fold as the heading ids, so an anchor and a slug agree.
  */
 export function slugFor(text: string): string {
-  return text
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
+  return urlSlug(text);
 }
 
 /** The three fields of `workspaces.business_profile` a writer can use, or undefined when there is nothing to say. */

@@ -461,7 +461,12 @@ function CalendarStrip({
       {article && (
         <p className="m-0 mt-2 text-[12px] text-ink-2">
           First draft is in your review queue
-          {article.verdict === "high_risk" ? " with figures to check before publishing" : ""}.
+          {article.verdict === "high_risk"
+            ? " with figures to check before publishing"
+            : article.verdict === "unchecked"
+              ? "; the fact check does not read this language, so check its figures by hand"
+              : ""}
+          .
         </p>
       )}
       {skipped && skippedReason && (

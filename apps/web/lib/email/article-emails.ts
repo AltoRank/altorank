@@ -124,6 +124,8 @@ const VERDICT_LINE: Record<FactCheckReport["verdict"], string> = {
     "The fact check flagged some claims worth a look. They are listed against the draft.",
   high_risk:
     "The fact check found at least one figure with no source given anywhere in its sentence. Check those before publishing; they are listed against the draft.",
+  unchecked:
+    "The fact check does not read this site's language, so no figure in this draft was checked. Check each one against its source before publishing.",
 };
 
 /** The verdict as the dashboard shows a status: a short word and a colour. */
@@ -131,6 +133,7 @@ export const VERDICT_PILL: Record<FactCheckReport["verdict"], { label: string; t
   clean: { label: "All sourced", tone: "ok" },
   review: { label: "One to confirm", tone: "warn" },
   high_risk: { label: "Unsourced figure", tone: "err" },
+  unchecked: { label: "Not checked", tone: "warn" },
 };
 
 /** A figure the product measured, or "—" when it did not. Never a stand-in zero. */

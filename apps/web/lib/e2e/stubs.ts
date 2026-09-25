@@ -33,6 +33,7 @@ import type { CrawlResult } from "@/lib/audit/crawler";
 import type { CompetitorSuggestion, CompetitorSuggestions } from "@/lib/onboarding/competitor-suggestions";
 import { htmlToTiptapJson } from "@/lib/ai/tiptap";
 import { factCheckArticle } from "@/lib/ai/fact-check";
+import { urlSlug } from "@/lib/i18n/locale";
 
 export function e2eStubsEnabled(): boolean {
   return process.env.E2E_STUBS === "1";
@@ -356,7 +357,7 @@ export async function stubGenerateArticle(options: GenerateArticleOptions): Prom
   const title = options.title || `${titleCase(keyword)}: A Practical Guide`;
   const html = stubArticleHtml(keyword, title);
   const wordCount = html.replace(/<[^>]+>/g, " ").trim().split(/\s+/).length;
-  const slug = (options.title || keyword).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  const slug = urlSlug(options.title || keyword);
 
   const research: ArticleResearch = {
     keyword,

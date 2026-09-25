@@ -17,9 +17,23 @@
 // set and `currentColor` (the publishing theme's text colour) otherwise, and
 // the SVG carries role, label and title so a screen reader gets the same
 // numbers a sighted reader does.
+//
+// How numbers, units and "from … to …" are written is language-dependent -
+// "%42'den %61'e", "1.500,50 TL", "12 saat" - and comes from the locale
+// contract, as do the chart's caption and aria-label. A language the contract
+// does not describe gets no chart: a number whose separators cannot be read
+// with certainty is not charted, and a chart labelled in English inside a
+// Turkish article is the failure this step would otherwise add.
 
 import { splitSections, stripTags, escapeHtml, escapeAttr, truncate } from "./html";
-import { labelsFor } from "./labels";
+import {
+  resolveLocale,
+  parseNumber as parseLocaleNumber,
+  formatNumber,
+  phrasePattern,
+  type SupportedLocale,
+  type TimeUnit,
+} from "@/lib/i18n/locale";
 
 export interface InfographicOptions {
   /** `workspace_output_settings.infographics`; defaults on. */
@@ -43,53 +57,88 @@ export interface ChartSpec {
   source: string;
 }
 
-const UNIT = String.raw`(%|percent|per cent|€|\$|£|hours?|hrs?|minutes?|mins?|seconds?|secs?|days?|weeks?|months?|years?|ms|GB|MB|TB|kg|g|km|m|x)`;
-// A number with an optional unit before (currency) or after.
-const NUMBER_WITH_UNIT = new RegExp(
-  String.raw`(?:(€|\$|£)\s?(\d[\d.,]*)|(\d[\d.,]*)\s?${UNIT}(?![a-z]))`,
-  "gi",
-);
+const TIME_UNITS: TimeUnit[] = ["hours", "minutes", "seconds", "days", "weeks", "months", "years"];
+/** Units that mean the same thing in every language. */
+const NEUTRAL_UNITS = ["ms", "GB", "MB", "TB", "kg", "g", "km", "m", "x"];
+const CURRENCY_SYMBOL: Record<string, string> = { "€": "€", $: "$", "£": "£", "₺": "₺" };
 
-const NUMBER_WITH_UNIT_AND_QUALIFIER = new RegExp(
-  `${NUMBER_WITH_UNIT.source}(?:\\s*(?:per|a|/|al|au|pro)\\s*(?:month|year|week|day|user|seat|mo|yr|mese|anno|mois|an|monat|jahr)\\b)?`,
-  "gi",
-);
+interface UnitRules {
+  measure: RegExp;
+  measureWithPeriod: RegExp;
+  normalise: (unit: string) => string;
+}
 
-function parseNumber(raw: string): number | null {
-  // 1,200 and 1.200 are both a thousand-and-two-hundred in some locale and a
-  // decimal in another. Only the unambiguous forms are accepted: a single
-  // separator followed by exactly three digits is a thousands separator, a
-  // single separator followed by one or two digits is a decimal point.
-  const cleaned = raw.replace(/[.,](?=\d{3}(?:\D|$))/g, "");
-  if (/[.,].*[.,]/.test(cleaned)) return null;
-  const n = parseFloat(cleaned.replace(",", "."));
-  return Number.isFinite(n) ? n : null;
+const UNIT_RULES = new Map<string, UnitRules>();
+
+/**
+ * The regexes and unit mapping for one language, built once from the
+ * contract. A number with a currency symbol or (where the language writes it
+ * so) a % before it, or a unit after it.
+ */
+function unitRules(locale: SupportedLocale): UnitRules {
+  const cached = UNIT_RULES.get(locale.code);
+  if (cached) return cached;
+  const n = locale.numbers;
+  const timeWords = TIME_UNITS.flatMap((u) => n.timeUnits[u]);
+  const after = [
+    "%",
+    ...(n.percentWordsAfter.length ? [phrasePattern(n.percentWordsAfter)] : []),
+    ...(n.symbolAfter ? ["€", "\\$", "£", "₺"] : []),
+    ...n.currencyAfter,
+    ...timeWords,
+    ...NEUTRAL_UNITS,
+  ];
+  const before = `[€$£₺${n.percentSignBefore ? "%" : ""}]`;
+  const measureSource = String.raw`(?:(${before})\s?(${n.digits})|(${n.digits})\s?(${after.join("|")})(?![\p{L}]))`;
+
+  const normalise = (unit: string): string => {
+    const u = locale.lower(unit.trim());
+    if (!u) return "";
+    if (u === "%" || n.percentWordsAfter.includes(u.replace(/\s+/g, " "))) return "%";
+    if (CURRENCY_SYMBOL[u]) return CURRENCY_SYMBOL[u];
+    if (/^(tl|try|lira)$/.test(u)) return "₺";
+    if (/^(eur|euros?)$/.test(u)) return "€";
+    if (/^(usd|dollari|dólares|dollars?|dolar)$/.test(u)) return "$";
+    if (u === "avro") return "€";
+    for (const t of TIME_UNITS) {
+      if (n.timeUnits[t].some((w) => new RegExp(`^(?:${w})$`, "iu").test(u))) return t;
+    }
+    return u;
+  };
+
+  const rules: UnitRules = {
+    measure: new RegExp(measureSource, "giu"),
+    measureWithPeriod: new RegExp(`${measureSource}(?:\\s*${n.perPeriod})?`, "giu"),
+    normalise,
+  };
+  UNIT_RULES.set(locale.code, rules);
+  return rules;
 }
 
 function isYear(value: number, unit: string): boolean {
   return !unit && value >= 1900 && value <= 2100 && Number.isInteger(value);
 }
 
-/** Every (value, unit) stated in a piece of plain text. */
-export function extractMeasures(text: string): { value: number; unit: string; index: number }[] {
+/**
+ * Every (value, unit) stated in a piece of plain text, read with the rules of
+ * `language`. Nothing for a language the contract does not describe.
+ */
+export function extractMeasures(
+  text: string,
+  language?: string | null,
+): { value: number; unit: string; index: number }[] {
+  const locale = resolveLocale(language);
+  if (!locale.supported) return [];
+  const { measure, normalise } = unitRules(locale);
   const out: { value: number; unit: string; index: number }[] = [];
-  for (const m of text.matchAll(NUMBER_WITH_UNIT)) {
-    const unit = (m[1] ?? m[4] ?? "").toLowerCase();
-    const value = parseNumber(m[2] ?? m[3]);
+  for (const m of text.matchAll(new RegExp(measure.source, measure.flags))) {
+    const unit = normalise(m[1] ?? m[4] ?? "");
+    const value = parseLocaleNumber(m[2] ?? m[3], locale);
     if (value === null || value < 0) continue;
     if (isYear(value, unit)) continue;
-    out.push({ value, unit: normaliseUnit(unit), index: m.index ?? 0 });
+    out.push({ value, unit, index: m.index ?? 0 });
   }
   return out;
-}
-
-function normaliseUnit(unit: string): string {
-  const u = unit.toLowerCase();
-  if (u === "percent" || u === "per cent") return "%";
-  if (/^hrs?$/.test(u)) return "hours";
-  if (/^mins?$/.test(u)) return "minutes";
-  if (/^secs?$/.test(u)) return "seconds";
-  return u.replace(/s$/, "").replace(/^(hour|minute|second|day|week|month|year)$/, "$1s");
 }
 
 function comparable(values: number[]): boolean {
@@ -105,14 +154,17 @@ function comparable(values: number[]): boolean {
  * A list where each of three or more items states exactly one number in one
  * shared unit. The label is the item's text with the number taken out.
  */
-export function chartFromList(listHtml: string): ChartSpec | null {
+export function chartFromList(listHtml: string, language?: string | null): ChartSpec | null {
+  const locale = resolveLocale(language);
+  if (!locale.supported) return null;
+  const { measureWithPeriod } = unitRules(locale);
   const items = [...listHtml.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/gi)].map((m) => stripTags(m[1]));
   if (items.length < 3) return null;
 
   const data: Datum[] = [];
   let unit: string | null = null;
   for (const item of items) {
-    const measures = extractMeasures(item);
+    const measures = extractMeasures(item, locale.code);
     if (measures.length !== 1) return null;
     const [m] = measures;
     if (unit === null) unit = m.unit;
@@ -121,7 +173,7 @@ export function chartFromList(listHtml: string): ChartSpec | null {
     // qualifier that rides with it ("€9 per month" -> "€9"): it is the same
     // for every item, so it belongs in the caption, not in each bar.
     const label = item
-      .replace(NUMBER_WITH_UNIT_AND_QUALIFIER, " ")
+      .replace(new RegExp(measureWithPeriod.source, measureWithPeriod.flags), " ")
       .replace(/\s+/g, " ")
       .replace(/^[\s:–-]+|[\s:,;–-]+$/g, "")
       .trim();
@@ -132,38 +184,46 @@ export function chartFromList(listHtml: string): ChartSpec | null {
   return { unit, data, source: items.join("; ") };
 }
 
-const BEFORE_AFTER =
-  /\b(?:from|da|de|von)\s+(€|\$|£)?\s?(\d[\d.,]*)\s?([%€$£]|percent|hours?|days?|weeks?|months?|minutes?|seconds?)?\s+(?:to|a|à|auf|bis)\s+(€|\$|£)?\s?(\d[\d.,]*)\s?([%€$£]|percent|hours?|days?|weeks?|months?|minutes?|seconds?)?/i;
-
-/** "from 42% to 61%": two bars, labelled with the words the sentence used. */
-export function chartFromBeforeAfter(sentence: string): ChartSpec | null {
-  const m = sentence.match(BEFORE_AFTER);
-  if (!m) return null;
-  const unitA = normaliseUnit(m[1] ?? m[3] ?? "");
-  const unitB = normaliseUnit(m[4] ?? m[6] ?? "");
+/**
+ * "from 42% to 61%": two bars. Where the sentence has words for the two ends
+ * ("from", "to"; "da", "a") the bars take them; where the direction is in a
+ * suffix ("%42'den %61'e") they take the contract's "before" and "after".
+ */
+export function chartFromBeforeAfter(sentence: string, language?: string | null): ChartSpec | null {
+  const locale = resolveLocale(language);
+  if (!locale.supported) return null;
+  const { normalise } = unitRules(locale);
+  const m = sentence.match(locale.numbers.beforeAfter);
+  if (!m?.groups) return null;
+  const g = m.groups;
+  const unitA = normalise(g.ca ?? g.ua ?? "");
+  const unitB = normalise(g.cb ?? g.ub ?? "");
   // One side may omit the unit ("from 42 to 61%"); both stated and different
   // is not a comparison.
   const unit = unitA || unitB;
   if (!unit || (unitA && unitB && unitA !== unitB)) return null;
-  const before = parseNumber(m[2]);
-  const after = parseNumber(m[5]);
+  const before = parseLocaleNumber(g.a, locale);
+  const after = parseLocaleNumber(g.b, locale);
   if (before === null || after === null || before === after) return null;
   if (isYear(before, unit) || isYear(after, unit)) return null;
   if (!comparable([before, after])) return null;
   return {
     unit,
     data: [
-      { label: m[0].split(/\s+/)[0], value: before },
-      { label: sentence.slice(m.index ?? 0).match(/\s(to|a|à|auf|bis)\s/i)?.[1] ?? "to", value: after },
+      { label: g.from ?? locale.labels.before, value: before },
+      { label: g.to ?? locale.labels.after, value: after },
     ],
     source: sentence.trim(),
   };
 }
 
-function formatValue(value: number, unit: string): string {
-  const num = Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
-  if (unit === "€" || unit === "$" || unit === "£") return `${unit}${num}`;
-  if (unit === "%") return `${num}%`;
+function formatValue(value: number, unit: string, locale: SupportedLocale): string {
+  const num = formatNumber(value, locale);
+  if (unit === "€" || unit === "$" || unit === "£" || unit === "₺") {
+    return locale.numbers.symbolAfter ? `${num} ${unit}` : `${unit}${num}`;
+  }
+  if (unit === "%") return locale.numbers.formatPercent(num);
+  if ((TIME_UNITS as string[]).includes(unit)) return `${num} ${locale.numbers.timeUnitLabels[unit as TimeUnit]}`;
   return unit ? `${num} ${unit}` : num;
 }
 
@@ -173,7 +233,11 @@ function formatValue(value: number, unit: string): string {
  * selected and read aloud.
  */
 export function renderBarChart(spec: ChartSpec, language?: string | null, brandColor?: string | null): string {
-  const labels = labelsFor(language);
+  const locale = resolveLocale(language);
+  // A chart is only drawn for a language the contract describes; a direct
+  // caller with any other gets the English-free minimum, the numbers alone.
+  const labels = locale.supported ? locale.labels : null;
+  const fmt = (d: Datum) => (locale.supported ? formatValue(d.value, spec.unit, locale) : String(d.value));
   // Validated again here: this string lands inside an attribute of markup that
   // is stored and re-rendered, and the SVG allowlist trusts what this writes.
   const fill = brandColor && /^#[0-9a-fA-F]{6}$/.test(brandColor) ? brandColor : "currentColor";
@@ -186,7 +250,7 @@ export function renderBarChart(spec: ChartSpec, language?: string | null, brandC
   const barMax = width - labelWidth - valueWidth - padding * 2;
   const max = Math.max(...spec.data.map((d) => d.value));
 
-  const description = spec.data.map((d) => `${d.label} ${formatValue(d.value, spec.unit)}`).join(", ");
+  const description = spec.data.map((d) => `${d.label} ${fmt(d)}`).join(", ");
   const rows = spec.data
     .map((d, i) => {
       const y = padding + i * rowHeight;
@@ -194,19 +258,19 @@ export function renderBarChart(spec: ChartSpec, language?: string | null, brandC
       return (
         `<text x="${labelWidth - 8}" y="${y + rowHeight / 2 + 4}" text-anchor="end" font-size="13">${escapeHtml(d.label)}</text>` +
         `<rect x="${labelWidth}" y="${y + 6}" width="${w}" height="${rowHeight - 12}" rx="3" fill="${fill}" opacity="${i === 0 ? 0.85 : 0.6}"></rect>` +
-        `<text x="${labelWidth + w + 8}" y="${y + rowHeight / 2 + 4}" font-size="13">${escapeHtml(formatValue(d.value, spec.unit))}</text>`
+        `<text x="${labelWidth + w + 8}" y="${y + rowHeight / 2 + 4}" font-size="13">${escapeHtml(fmt(d))}</text>`
       );
     })
     .join("");
 
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" role="img" ` +
-    `aria-label="${escapeAttr(`Bar chart: ${description}`)}" style="max-width:${width}px;font-family:system-ui,sans-serif">` +
+    `aria-label="${escapeAttr(labels ? labels.barChart(description) : description)}" style="max-width:${width}px;font-family:system-ui,sans-serif">` +
     `<title>${escapeHtml(description)}</title>${rows}</svg>`;
 
   return (
     `<figure class="infographic">${svg}` +
-    `<figcaption>${escapeHtml(labels.figuresFrom)} “${escapeHtml(truncate(spec.source, 160))}”</figcaption></figure>`
+    `<figcaption>${labels ? `${escapeHtml(labels.figuresFrom)} ` : ""}“${escapeHtml(truncate(spec.source, 160))}”</figcaption></figure>`
   );
 }
 
@@ -217,6 +281,8 @@ export function addInfographics(
   if (opts.enabled === false) return { html, added: 0 };
   const max = opts.max ?? 2;
   if (max <= 0) return { html, added: 0 };
+  const locale = resolveLocale(opts.language);
+  if (!locale.supported) return { html, added: 0 };
   const { intro, sections } = splitSections(html);
   let added = 0;
 
@@ -227,10 +293,10 @@ export function addInfographics(
 
     // Lists first: the labels are explicit, so the chart is exact.
     const list = [...s.body.matchAll(/<(ul|ol)\b[^>]*>[\s\S]*?<\/\1>/gi)].find(
-      (m) => chartFromList(m[0]) !== null,
+      (m) => chartFromList(m[0], locale.code) !== null,
     );
     if (list && list.index !== undefined) {
-      const spec = chartFromList(list[0])!;
+      const spec = chartFromList(list[0], locale.code)!;
       const at = list.index + list[0].length;
       added++;
       return s.body.slice(0, at) + "\n" + renderBarChart(spec, opts.language, opts.brandColor) + "\n" + s.body.slice(at);
@@ -238,9 +304,9 @@ export function addInfographics(
 
     for (const p of s.body.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)) {
       const text = stripTags(p[1]);
-      const sentence = text.split(/(?<=[.!?])\s+/).find((sen) => BEFORE_AFTER.test(sen));
+      const sentence = text.split(/(?<=[.!?])\s+/).find((sen) => locale.numbers.beforeAfter.test(sen));
       if (!sentence) continue;
-      const spec = chartFromBeforeAfter(sentence);
+      const spec = chartFromBeforeAfter(sentence, locale.code);
       if (!spec || p.index === undefined) continue;
       const at = p.index + p[0].length;
       added++;
