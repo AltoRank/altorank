@@ -172,7 +172,7 @@ export function PlannerCard({
   });
   const state = starting && serverState === "planned" ? "writing" : serverState;
   const actions = cardActions(state);
-  const pill = cardStatusPill(state);
+  const pill = cardStatusPill(state, article);
   // Two clocks, because the card reads "writing" for two different reasons.
   // The server's `inFlight.createdAt` bounds a draft the server has confirmed
   // and survives a reload. `startedAt` bounds the optimistic window before

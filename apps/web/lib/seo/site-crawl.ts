@@ -68,12 +68,25 @@ export class SitePagesWriteError extends Error {
 const UA =
   "Mozilla/5.0 (compatible; AltoRank-Auditor/1.0; +https://altorank.co; site audit)";
 
+/** The User-Agent the crawl sends. The found-on-site check reads the same sites as the same crawler. */
+export const CRAWLER_USER_AGENT = UA;
+
 /**
  * Below this a fetched page has no readable body: almost always a shell whose
  * content arrives from JavaScript. A genuinely thin page exists, but scoring
- * one on fifty words says nothing either.
+ * one on fifty words says nothing either. The found-on-site check uses the
+ * same line to say a site's pages cannot be read without a browser.
  */
-const MIN_WORDS = 60;
+export const MIN_READABLE_WORDS = 60;
+
+/**
+ * Words in a page's main content (`main`, the longest `article`, or the body
+ * without its chrome), counted the one way both the crawl and the
+ * found-on-site check count them.
+ */
+export function mainContentWords(html: string): number {
+  return extractMainContent(html).html.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
+}
 
 /** Bounds, so one site cannot become an hour of fetching. */
 export const DEFAULTS = {
@@ -109,7 +122,7 @@ export const CRAWLER_NAME = "AltoRank-Auditor";
 const LOCALE_SEGMENT = /^[a-z]{2}(-[a-z]{2})?$/i;
 
 /** Pages that are never content: feeds, assets, and the index pages themselves. */
-const NOT_CONTENT =
+export const NOT_CONTENT =
   /\.(xml|json|txt|rss|atom|pdf|jpg|jpeg|png|gif|svg|webp|ico|css|js|zip)(\?|$)/i;
 
 export type PageType = "article" | "listing" | "page";
@@ -590,7 +603,7 @@ export async function crawlPage(url: string, ctx: PageContext): Promise<SitePage
   // That is the one case worth paying a browser for, and only if the caller
   // has opted in.
   const words = body.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
-  if (words < MIN_WORDS && ctx.renderFallback && hasDataForSEOCredentials()) {
+  if (words < MIN_READABLE_WORDS && ctx.renderFallback && hasDataForSEOCredentials()) {
     const rendered = await renderPage(url, path, ctx);
     if (rendered) return rendered;
   }

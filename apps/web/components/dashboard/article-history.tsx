@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, Chip, SearchInput, StatusPill, Icons } from "@/components/ui";
 import { ArticleRowMenu } from "@/components/dashboard/article-row-menu";
 import { IndexBadge } from "@/components/dashboard/gsc-blocks";
+import { LIVE_ON_YOUR_SITE } from "@/lib/found-on-site/state";
 import {
   HISTORY_FILTERS,
   countByFilter,
@@ -140,7 +141,7 @@ export function ArticleHistory({
                   {r.index ? <IndexBadge bucket={r.index.bucket} title={r.index.title} /> : <span className="text-ink-4 text-xs">—</span>}
                 </td>
                 <td className="px-3.5 py-3 border-b border-line-soft">
-                    <StatusPill status={r.status} />
+                    <StatusPill status={r.status} label={r.foundOnSite ? LIVE_ON_YOUR_SITE : undefined} />
                     {/* The rule's promise, next to the status it will change (079). */}
                     {r.status === "review" && r.held && (
                       <div className="mt-1 text-[11px] text-ink-3">Held</div>
