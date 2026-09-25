@@ -742,8 +742,12 @@ a database without these columns the check's first query fails, the body says
 so (`found_on_site_error`, and a `job: "found-on-site"` result with status
 `error`, which `system_events` records as a warning), and the crawl still runs.
 The editor and the Articles list read the columns with `select *`, so they
-degrade to "no find" rather than failing; the admin Users page names
-`found_on_site_at` in its select and shows no article counts until then.
+degrade to "no find" rather than failing. These name the columns and fail
+without them, which is why the order matters:
+
+- the free allowance's first-draft gate cannot read the drafts, and fails
+  closed: cron/generate writes nothing on the free allowance and says why;
+- the admin Users page shows no article counts.
 
 Roll back with
 `drop table if exists found_on_site_checks; alter table workspaces drop column if exists found_on_site_checked_at; alter table articles drop column if exists found_on_site_at, drop column if exists found_on_site_evidence, drop column if exists found_on_site_prior, drop column if exists found_on_site_rejected;`

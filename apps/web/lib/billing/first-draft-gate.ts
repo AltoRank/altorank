@@ -67,11 +67,20 @@ export function firstDraftBlocker(drafts: DraftSignal[]): string | null {
   );
 }
 
-/** The rows `firstDraftBlocker` needs, for one workspace. */
+/**
+ * The rows `firstDraftBlocker` needs, for one workspace.
+ *
+ * A read that fails is a reason not to write, said as one. Read as "no
+ * drafts", it would open the gate for every free account at once - which is
+ * exactly what a missing column (094 not yet applied) or a timeout would do.
+ */
 export async function firstDraftAwaitsReview(supabase: SupabaseClient, workspaceId: string): Promise<string | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("articles")
     .select("status, generated_autonomously, approved_at, held_by, created_at, updated_at, found_on_site_at")
     .eq("workspace_id", workspaceId);
+  if (error) {
+    return `The free allowance's drafts could not be read (${error.message}), so nothing more is drafted on it until they can be.`;
+  }
   return firstDraftBlocker((data ?? []) as DraftSignal[]);
 }
