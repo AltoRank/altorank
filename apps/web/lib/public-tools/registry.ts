@@ -27,6 +27,12 @@ import { socialMediaPostGenerator } from "./tools/social-media-post-generator";
 import { aiArticleGenerator } from "./tools/ai-article-generator";
 import { altTextGenerator } from "./tools/alt-text-generator";
 import { lsiKeywordGenerator } from "./tools/lsi-keyword-generator";
+import { keywordResearch } from "./tools/keyword-research";
+import { blogPostIdeas } from "./tools/blog-post-ideas";
+import { googleRankChecker } from "./tools/google-rank-checker";
+import { backlinkChecker } from "./tools/backlink-checker";
+import { websiteWorthCalculator } from "./tools/website-worth-calculator";
+import { plagiarismChecker } from "./tools/plagiarism-checker";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- each tool has its own input type; the handler validates before calling run()
 export type AnyPublicTool = PublicTool<any>;
@@ -54,6 +60,13 @@ const TOOLS: AnyPublicTool[] = [
   aiArticleGenerator,
   altTextGenerator,
   lsiKeywordGenerator,
+  // data tools (paid, spend-guarded)
+  keywordResearch,
+  blogPostIdeas,
+  googleRankChecker,
+  backlinkChecker,
+  websiteWorthCalculator,
+  plagiarismChecker,
 ];
 
 const BY_SLUG = new Map<string, AnyPublicTool>();
