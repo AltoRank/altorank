@@ -6,7 +6,7 @@
 // is unconfirmed, so a double click on "Create account", or a second try by
 // someone who has not found the confirmation email yet, reaches the account
 // and workspace inserts with a user those inserts already ran for.
-// novatristech.com, 2026-09-22: one person, two accounts and two workspaces,
+// A real signup, 2026-09-22: one person, two accounts and two workspaces,
 // eight seconds apart; the second workspace empty and on the English/US
 // defaults, so the dashboard could open on the wrong one.
 //
