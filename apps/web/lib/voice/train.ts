@@ -14,20 +14,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { analyzeVoiceWithAI } from "@/lib/ai/voice-analyzer";
 import { resolveLocale, notCheckedFor, scaleWords } from "@/lib/i18n/locale";
-
-/**
- * `workspaces.language`, for a caller that only has the id. A missing row or
- * column is the column's own default.
- */
-async function workspaceLanguage(supabase: SupabaseClient, workspaceId: string): Promise<string> {
-  try {
-    const { data } = await supabase.from("workspaces").select("language").eq("id", workspaceId).maybeSingle();
-    const language = (data as { language?: unknown } | null)?.language;
-    return typeof language === "string" && language.trim() ? language : "en";
-  } catch {
-    return "en";
-  }
-}
+import { readWorkspaceLanguage } from "@/lib/i18n/workspace-language";
 
 /**
  * Analyse a sample and upsert the workspace's voice profile from it. The
@@ -39,7 +26,7 @@ export async function trainVoiceProfile(
   sampleText: string,
   language?: string | null,
 ): Promise<void> {
-  const rules = await analyzeVoice(sampleText, language ?? (await workspaceLanguage(supabase, workspaceId)));
+  const rules = await analyzeVoice(sampleText, language ?? (await readWorkspaceLanguage(supabase, workspaceId, "voice.train")));
 
   const { error } = await supabase
     .from("voice_profiles")

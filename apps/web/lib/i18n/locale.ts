@@ -978,7 +978,16 @@ function primaryCode(language: string | null | undefined): string {
   return code.split(/[-_]/)[0].toLowerCase();
 }
 
+/**
+ * BCP 47 "undetermined": the site's language could not be read. It resolves
+ * to an unsupported locale, so every check that reads text says it did not
+ * run instead of reading the text as English. `readWorkspaceLanguage`
+ * (lib/i18n/workspace-language.ts) answers it when the lookup fails.
+ */
+export const UNKNOWN_LANGUAGE = "und";
+
 function nameOf(code: string): string {
+  if (code === UNKNOWN_LANGUAGE) return "an unread language";
   const entry = LOCALES[code];
   if (entry) return entry.label.replace(/\s*\(.*\)$/, "");
   try {
@@ -1036,6 +1045,7 @@ export const SUPPORTED_LANGUAGE_LIST = `${SUPPORTED_NAMES.slice(0, -1).join(", "
  * the same everywhere, so a reviewer learns it once.
  */
 export function notCheckedFor(locale: Locale): string {
+  if (locale.code === UNKNOWN_LANGUAGE) return "Not checked: the site's language could not be read.";
   return `Not checked for ${locale.name}: this check reads ${SUPPORTED_LANGUAGE_LIST} only.`;
 }
 

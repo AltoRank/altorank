@@ -38,6 +38,7 @@ import { groupByPage, type RankedKeyword } from "./ranked-keywords";
 import { fetchInstantPage, type OnPageFacts } from "@/lib/audit/onpage";
 import { hasDataForSEOCredentials } from "./client";
 import { ALLOW_EVERYTHING, isAllowed, loadRobots, type RobotsRules } from "./robots";
+import { readWorkspaceLanguage } from "@/lib/i18n/workspace-language";
 import {
   canonicalOf,
   checkPage,
@@ -787,7 +788,7 @@ export async function syncSitePages(
   const workers = crawlDelayMs > 0 ? 1 : concurrency;
 
   const rankedByPath = await loadRankedKeywords(supabase, workspaceId);
-  const language = await loadLanguage(supabase, workspaceId);
+  const language = await readWorkspaceLanguage(supabase, workspaceId, "site-crawl");
 
   const { data: existing } = await supabase
     .from("site_pages")
@@ -878,20 +879,6 @@ export async function syncSitePages(
     truncated,
     robotsBlocked,
   };
-}
-
-/**
- * `workspaces.language`, so a customer's own pages are scored with their
- * language's rules. Null (then English, the column default) only when the
- * row cannot be read.
- */
-async function loadLanguage(supabase: SupabaseClient, workspaceId: string): Promise<string | null> {
-  try {
-    const { data } = await supabase.from("workspaces").select("language").eq("id", workspaceId).maybeSingle();
-    return (data?.language as string | null | undefined) ?? null;
-  } catch {
-    return null;
-  }
 }
 
 /**

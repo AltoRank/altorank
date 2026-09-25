@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { VoiceRules } from "./types";
 import { anthropicModel } from "./models";
-import { resolveLocale } from "@/lib/i18n/locale";
+import { resolveLocale, UNKNOWN_LANGUAGE } from "@/lib/i18n/locale";
 
 const ANALYSIS_PROMPT = `You are a writing style analyst. Analyze the following sample text(s) and extract a detailed voice profile. Return a JSON object with these exact fields:
 
@@ -30,7 +30,9 @@ Return ONLY valid JSON, no markdown fences or explanation.`;
  * and a profile that looked only for the pronoun missed it on 2026-09-22.
  */
 export function voiceLanguageNote(language?: string | null): string {
-  const { name } = resolveLocale(language);
+  const locale = resolveLocale(language);
+  // Unread is not English: the model can tell the language from the text.
+  const name = locale.code === UNKNOWN_LANGUAGE ? "the samples' own language (identify it from the text)" : locale.name;
   return (
     `The samples are written in ${name}. Quote vocabulary, signature phrases and patterns in ${name} exactly as written, ` +
     `never translated. Describe person and address (first-person plural or singular, formal or informal "you") as ${name} expresses them, ` +
