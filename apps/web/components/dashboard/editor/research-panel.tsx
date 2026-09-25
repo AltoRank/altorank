@@ -34,6 +34,7 @@ function LayerRow({ layer }: { layer: ResearchLayer }) {
     related_keywords: "Related keywords",
     gsc: "Search Console",
     competitor_length: "Competitor length",
+    site_facts: "Your site",
   };
 
   const tone =

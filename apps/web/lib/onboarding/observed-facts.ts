@@ -51,6 +51,13 @@ export type SiteUrlCheck =
 export interface CheckOptions {
   fetch?: SafeFetch;
   timeoutMs?: number;
+  /**
+   * Accept a URL on another host. Only for a conversion page a person typed
+   * in settings - a booking page on a scheduling service is a real answer to
+   * "where should a buyer go". Nothing read off the site is ever allowed to
+   * leave it.
+   */
+  anyHost?: boolean;
 }
 
 const TIMEOUT_MS = 8_000;
@@ -87,7 +94,7 @@ function isRoot(url: string): boolean {
  * is rate-limiting us never condemns a page that is really there.
  */
 export async function checkSiteUrl(url: string, domain: string, opts: CheckOptions = {}): Promise<SiteUrlCheck> {
-  if (classifyHref(url, domain) !== "internal" || !/^https?:\/\//i.test(url)) {
+  if (!/^https?:\/\//i.test(url) || (!opts.anyHost && classifyHref(url, domain) !== "internal")) {
     return { state: "rejected", url, reason: `${url} is not on ${domain}` };
   }
   const fetchImpl = opts.fetch ?? safeFetch;
@@ -107,6 +114,7 @@ export async function checkSiteUrl(url: string, domain: string, opts: CheckOptio
     // A redirect the fetcher was not allowed to follow further.
     return { state: "unverified", url, status: res.status, reason: `HTTP ${res.status}, redirects on further than we follow` };
   }
+  if (opts.anyHost && classifyHref(url, domain) !== "internal") return { state: "verified", url: res.url, status: res.status };
   if (classifyHref(res.url, domain) !== "internal") {
     return { state: "rejected", url, reason: `${url} redirects off the site, to ${new URL(res.url).hostname}` };
   }

@@ -1,4 +1,4 @@
-import type { ArticlePrompt } from "./types";
+import type { ArticlePrompt, SiteFacts } from "./types";
 import type { ArticleResearch } from "@/lib/seo/research";
 import { INTENT_GUIDANCE } from "@/lib/seo/intent";
 import { LENGTH_BANDS, TAXONOMY_LABELS, targetWordCountFor } from "@/lib/keywords/taxonomy";
@@ -184,6 +184,83 @@ export const BANNED_PHRASES: readonly string[] = [
   "in conclusion",
 ];
 
+/** The URLs on the business's own site that the facts section offers for linking. */
+export function siteFactUrls(facts: SiteFacts | undefined): string[] {
+  if (!facts) return [];
+  return [
+    ...facts.offerings.map((o) => o.url),
+    ...facts.work.map((w) => w.url),
+    ...facts.pages.map((p) => p.url),
+    facts.conversion?.url ?? null,
+  ].filter((u): u is string => Boolean(u));
+}
+
+/**
+ * What the business's own pages say, and how the writer may use it.
+ *
+ * A real signup's first article (2026-09-22, Turkish web/mobile agency) was a
+ * guide to choosing any agency: the writer had three profile fields and none
+ * of the services, portfolio, about or contact pages the crawl had just read.
+ * This section is those pages, quoted, with the rule that goes with them:
+ * market this business's own offer with these facts, and nothing beyond them.
+ * The "never invent" list names the things a model reaches for when it wants
+ * to sound specific about a real, named business - clients, numbers, prices,
+ * awards, the authority a regulation belongs to - because each of those,
+ * invented, is a false statement published under the customer's name.
+ *
+ * Exported for tests: the wording is the whole mechanism.
+ */
+export function buildSiteFactsSection(facts: SiteFacts): string {
+  const lines: string[] = [
+    facts.pagesRead
+      ? `WHAT THIS BUSINESS'S OWN SITE SAYS (read from ${facts.pagesRead} of its pages that answered):`
+      : "WHAT THIS BUSINESS'S OWN SITE SAYS:",
+  ];
+  const named = (items: Array<{ name: string; url: string | null }>) =>
+    items.map((i) => (i.url ? `- ${i.name}: ${i.url}` : `- ${i.name}`));
+
+  if (facts.offerings.length) lines.push("What it sells, as its own pages name it:", ...named(facts.offerings));
+  if (facts.work.length) lines.push("Work its site shows, by the names the site uses:", ...named(facts.work));
+  for (const h of facts.headings) lines.push(`Headings on its page "${h.page}" (${h.url}), as written: ${h.items.join(" | ")}`);
+  if (facts.stated.length) {
+    lines.push(
+      "Stated on its own pages (quote or closely paraphrase; do not extend):",
+      ...facts.stated.map((s) => `- "${s.text}" (${s.source})`),
+    );
+  }
+  if (facts.about) lines.push(`The opening of its about page (${facts.about.source}), in its own words:`, `  "${facts.about.text}"`);
+  if (facts.pages.length) lines.push("Its own pages, which exist:", ...facts.pages.map((p) => `- ${p.role}: ${p.name} - ${p.url}`));
+  lines.push(
+    facts.conversion
+      ? `Where a reader who is ready should go: ${facts.conversion.url} (${facts.conversion.check}).`
+      : "Where a reader who is ready should go: NO PAGE COULD BE CONFIRMED. Do not link to a contact, " +
+          "pricing or booking page and do not write a path such as /contact; point the reader to the " +
+          "business by name instead.",
+  );
+  for (const note of facts.notes) lines.push(`Note: ${note}`);
+
+  const has = facts.offerings.length || facts.work.length || facts.stated.length || facts.about || facts.headings.length;
+  lines.push(
+    "",
+    "HOW TO USE THIS:",
+    has
+      ? "- This article is for this business. Where the reader is deciding what to buy or whom to hire, " +
+          "show how THIS business does it: name its relevant services, and where they fit, the work its site " +
+          "shows. Market its own offer with these facts, not the category. Elsewhere, stay useful to the reader."
+      : "- Nothing above says what this business sells or has done beyond the profile. Do not fill that gap: " +
+          "write a useful article and mention the business only as the profile describes it.",
+    "- Use only facts present above or in ABOUT THE SITE. Never invent clients, projects, results, numbers,",
+    "  prices, years, team sizes, locations, awards, certifications, partnerships, or the authority behind a",
+    "  law or standard, for this business. A claim about the business that is not written here is left out.",
+    "- A name under \"Work its site shows\" is a project the site lists, nothing more: do not describe its",
+    "  results, its client relationship or its scope beyond what the name says.",
+    "- Links to this site go only to the URLs written above or in the INTERNAL LINKS list; each is a page",
+    "  that was fetched and answered. Write them exactly as listed. Any other link on this site is removed",
+    "  before publishing.",
+  );
+  return lines.join("\n");
+}
+
 /**
  * The user turn. One place, so both providers say the same thing and a
  * refresh asks for a rewrite rather than a fresh article.
@@ -345,22 +422,30 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
   // named business is the fabricated-fact failure this product exists to
   // prevent.
   const site = prompt.site;
+  const facts = prompt.siteFacts;
   if (site && (site.name?.trim() || site.description?.trim())) {
     const lines = ["ABOUT THE SITE THIS ARTICLE IS FOR:"];
     if (site.name?.trim()) lines.push(`- Name: ${site.name.trim()}`);
     if (site.description?.trim()) lines.push(`- What it does: ${site.description.trim()}`);
     const audiences = (site.audiences ?? []).map((a) => a.trim()).filter(Boolean);
     if (audiences.length) lines.push(`- Who it serves: ${audiences.join("; ")}`);
+    const offerings = (site.offerings ?? []).map((o) => o.trim()).filter(Boolean);
+    if (offerings.length) lines.push(`- What people buy from it, in the owner's confirmed words: ${offerings.join("; ")}`);
     lines.push(
-      "- Write for these readers, and choose examples that fit them. Mention the site",
-      "  where it is genuinely relevant, at most a few times, never as a sales pitch.",
-      "- State nothing about the business beyond what is written here: no features,",
+      "- Write for these readers, and choose examples that fit them.",
+      facts
+        ? "- The section below, from the business's own pages, says how to bring the business in."
+        : "- Mention the site where it is genuinely relevant, at most a few times, never as a sales pitch.",
+      `- State nothing about the business beyond what is written here${facts ? " and in the section below" : ""}: no features,`,
       "  prices, clients, results, history or comparisons the description does not",
       "  make. If the article needs a claim about the business that is not here,",
       "  leave it out.",
     );
     sections.push(lines.join("\n"));
   }
+  // Whenever the writer was given facts - including "none could be read",
+  // which it must be told rather than left to fill.
+  if (facts) sections.push(buildSiteFactsSection(facts));
 
   // --- The owner's brief -----------------------------------------------------
   // Before the research, because it outranks it: the SERP says what readers
@@ -468,6 +553,10 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
   // removed, and the sentence around a removed link often still reads as if
   // it pointed somewhere.
   const hasLinkPool = Boolean(prompt.internalLinkTargets?.length);
+  // The business's own pages the facts section listed are fetched pages too,
+  // and may be linked by their exact URL; the rules below say so, so the two
+  // sections cannot contradict each other.
+  const factPages = siteFactUrls(facts).length > 0;
   if (hasLinkPool) {
     sections.push(
       [
@@ -477,12 +566,32 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
         'the placeholder form <a href="{{internal-link:KEYWORD}}">anchor</a>,',
         "using the keyword exactly as written below. Two to four links is right",
         "for an article of this length. Never invent a target that is not listed:",
-        "do not write any other href on this site's domain or any other relative",
-        "path. A link to a page not on this list is removed before publishing.",
+        ...(factPages
+          ? [
+              "apart from the business's own pages listed above by their URL, do not",
+              "write any other href on this site's domain or any other relative path.",
+              "A link to a page on neither list is removed before publishing.",
+            ]
+          : [
+              "do not write any other href on this site's domain or any other relative",
+              "path. A link to a page not on this list is removed before publishing.",
+            ]),
         "",
         ...prompt.internalLinkTargets!
           .slice(0, 20)
           .map((t) => `- ${t.keyword} — "${t.title}"`),
+      ].join("\n"),
+    );
+  } else if (factPages) {
+    sections.push(
+      [
+        "INTERNAL LINKS — only the business's own pages listed above.",
+        "This site has no articles in its link pool yet. The only links to this",
+        "site you may write are the business's own pages listed above, by their",
+        "exact URL, where one genuinely helps the reader. Do not use the",
+        "{{internal-link:...}} placeholder and do not write any other path or URL",
+        "on this site: a link to a page that does not exist is a 404 the reader",
+        "hits, and it is removed before publishing. Outbound citations are unaffected.",
       ].join("\n"),
     );
   } else {
