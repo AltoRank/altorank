@@ -30,6 +30,7 @@
 import { fetchLenient, isTlsChainError } from "./lenient-fetch";
 import { FALLBACK_UA } from "./crawler";
 import { noteRefusal, refusing, REFUSED_STATUSES } from "./host-circuit";
+import { evaluateRobots, parseRobotsTxt } from "../robots/rfc9309";
 
 export type ReadinessSeverity = "high" | "medium" | "low";
 
@@ -246,76 +247,22 @@ export async function fetchResource(
 
 // ── robots.txt ────────────────────────────────────────────────────────────────
 
-interface RobotsGroup {
-  agents: string[];
-  allowRoot: boolean;
-  disallowRoot: boolean;
-}
-
 /**
- * Minimal robots.txt model, scoped to the one question we ask: may this bot
- * fetch the homepage? Only rules whose path matches "/" apply to that ("/",
- * "/*", or the no-op empty Disallow), so full longest-match path semantics
- * are not needed. On a root-level Allow/Disallow tie the least restrictive
- * rule wins, per Google's documented tie-break.
+ * Which of the given bots may not fetch the homepage.
+ *
+ * RFC 9309 via `lib/robots/rfc9309.ts`: a group applies to a bot only when it
+ * names the bot's product token exactly, so `User-agent: Applebot` says
+ * nothing about Applebot-Extended and `User-agent: Google` nothing about
+ * Google-Extended. Full path semantics apply to "/" (longest match wins,
+ * Allow wins a tie), so `Allow: /$` carves the homepage out of `Disallow: /`.
+ * `tools/agent-readiness/agent_readiness.py` mirrors this; change both.
  */
-export function parseRobotsGroups(body: string): RobotsGroup[] {
-  const groups: RobotsGroup[] = [];
-  let current: RobotsGroup | null = null;
-  let agentRun = false; // consecutive User-agent lines share one group
-
-  for (const raw of body.split("\n")) {
-    const line = raw.replace(/#.*$/, "").trim();
-    const m = line.match(/^([A-Za-z-]+)\s*:\s*(.*)$/);
-    if (!m) continue;
-    const field = m[1].toLowerCase();
-    const value = m[2].trim();
-
-    if (field === "user-agent") {
-      if (!agentRun || !current) {
-        current = { agents: [], allowRoot: false, disallowRoot: false };
-        groups.push(current);
-      }
-      current.agents.push(value.toLowerCase());
-      agentRun = true;
-      continue;
-    }
-    agentRun = false;
-    if (!current) continue;
-
-    if (field === "allow" || field === "disallow") {
-      const path = value.replace(/\*+$/, ""); // "/*" and "/" both match root
-      const matchesRoot = path === "/" || path === "";
-      if (!matchesRoot) continue;
-      if (field === "allow" && path === "/") current.allowRoot = true;
-      // Empty Disallow explicitly means "nothing disallowed" per the spec.
-      if (field === "disallow" && path === "/") current.disallowRoot = true;
-    }
-  }
-  return groups;
-}
-
-/** Which of the given bots may not fetch the homepage. */
 export function blockedCrawlers(
   robotsBody: string,
   bots: readonly string[] = AI_CRAWLERS,
 ): string[] {
-  const groups = parseRobotsGroups(robotsBody);
-  const blocked: string[] = [];
-
-  for (const bot of bots) {
-    const lower = bot.toLowerCase();
-    // A group naming the bot specifically overrides the * group entirely.
-    const specific = groups.filter((g) =>
-      g.agents.some((a) => a !== "*" && (lower.includes(a) || a.includes(lower))),
-    );
-    const applicable = specific.length
-      ? specific
-      : groups.filter((g) => g.agents.includes("*"));
-    const disallowed = applicable.some((g) => g.disallowRoot && !g.allowRoot);
-    if (disallowed) blocked.push(bot);
-  }
-  return blocked;
+  const parsed = parseRobotsTxt(robotsBody);
+  return bots.filter((bot) => !evaluateRobots(parsed, bot, "/").allowed);
 }
 
 // ── JSON-LD ───────────────────────────────────────────────────────────────────

@@ -3,7 +3,6 @@ import {
   AI_CRAWLERS,
   blockedCrawlers,
   collectJsonLdTypes,
-  parseRobotsGroups,
   runAgentReadiness,
   scoreFindings,
   type FetchedResource,
@@ -104,7 +103,32 @@ describe("blockedCrawlers", () => {
   it("ignores path-specific rules that do not affect the homepage", () => {
     const robots = "User-agent: GPTBot\nDisallow: /private/\n";
     expect(blockedCrawlers(robots)).toEqual([]);
-    expect(parseRobotsGroups(robots)[0].disallowRoot).toBe(false);
+  });
+
+  // Regressions: group selection used to be substring-in-both-directions.
+  it("does not apply a group for a longer token to a bot it contains (Applebot vs Applebot-Extended)", () => {
+    const robots = "User-agent: *\nAllow: /\n\nUser-agent: Applebot\nDisallow: /\n";
+    expect(blockedCrawlers(robots)).toEqual([]);
+    expect(blockedCrawlers("User-agent: Applebot-Extended\nDisallow: /\n")).toEqual(["Applebot-Extended"]);
+  });
+
+  it("does not apply a group for a shorter token to bots whose name contains it", () => {
+    expect(blockedCrawlers("User-agent: Google\nDisallow: /\n")).toEqual([]);
+    expect(blockedCrawlers("User-agent: bot\nDisallow: /\n")).toEqual([]);
+    expect(blockedCrawlers("User-agent: GPT\nDisallow: /\n")).toEqual([]);
+  });
+
+  it("reads a versioned agent line as the bare token", () => {
+    expect(blockedCrawlers("User-agent: GPTBot/1.0\nDisallow: /\n")).toEqual(["GPTBot"]);
+  });
+
+  it("merges repeated groups for one bot before deciding (RFC 9309 §2.2.1)", () => {
+    const robots = "User-agent: GPTBot\nDisallow: /\n\nUser-agent: GPTBot\nAllow: /\n";
+    expect(blockedCrawlers(robots)).toEqual([]);
+  });
+
+  it("lets Allow: /$ carve the homepage out of Disallow: /", () => {
+    expect(blockedCrawlers("User-agent: GPTBot\nAllow: /$\nDisallow: /\n")).toEqual([]);
   });
 });
 
