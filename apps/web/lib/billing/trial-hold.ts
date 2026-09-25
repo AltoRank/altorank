@@ -156,10 +156,13 @@ export async function isFirstPreTrialDraft(supabase: SupabaseClient, accountId: 
  * they spend. The column is server-written only (migration 099), and written
  * here with the service role whatever client the caller holds.
  *
- * The price is that a first article our own platform fails to write is not
- * written again before the trial: the trial drafts the week straight away,
- * and that is the one way past it. Refunding a failed attempt would reopen
- * the loop, because a client can cause the failure.
+ * The price is that a first article our own platform fails to write once
+ * the research is bought is not written again before the trial: the trial
+ * drafts it with the rest of the week, and the gate screen says so
+ * (lib/onboarding/setup-retry.ts). Refunding a failed attempt would reopen
+ * the loop, because a client can cause the failure. A run that stops BEFORE
+ * anything is bought gives it back (releasePreTrialDraft): there is nothing
+ * to loop on when nothing was spent.
  */
 export async function claimPreTrialDraft(supabase: SupabaseClient, accountId: string): Promise<boolean> {
   const counting = accountCountingClient(supabase);
@@ -181,6 +184,34 @@ export async function claimPreTrialDraft(supabase: SupabaseClient, accountId: st
     if (moved && moved.length > 0) return true;
   }
   return false;
+}
+
+/**
+ * Give the pre-trial draft back, for a run that claimed it and stopped
+ * before anything was bought: the article row could not be found or
+ * written, or the job row could not be. `generateArticle` claims after every
+ * refusal that costs nothing and before the row, so the stretch between the
+ * claim and the job row reads and writes our own tables and buys nothing -
+ * a failure there left the account with no article and no way to one before
+ * the trial (round-5 review), for no money spent. From the job row on the
+ * research is bought, and the claim is kept (see claimPreTrialDraft).
+ *
+ * A compare-and-set from the value the claim wrote, so it can only undo that
+ * claim: if anything else moved the counter since, it is left alone. Best
+ * effort - the run is already failing with its own error, which is the one
+ * worth reporting - and logged when it does not land.
+ */
+export async function releasePreTrialDraft(supabase: SupabaseClient, accountId: string): Promise<void> {
+  try {
+    const { error } = await accountCountingClient(supabase)
+      .from("accounts")
+      .update({ free_drafts_used: PRE_TRIAL_DRAFTS - 1 })
+      .eq("id", accountId)
+      .eq("free_drafts_used", PRE_TRIAL_DRAFTS);
+    if (error) console.warn(`[trial-hold] could not give the pre-trial draft back: ${error.message}`);
+  } catch (err) {
+    console.warn("[trial-hold] could not give the pre-trial draft back:", err instanceof Error ? err.message : err);
+  }
 }
 
 /**

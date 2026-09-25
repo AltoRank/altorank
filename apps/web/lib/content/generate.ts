@@ -28,8 +28,9 @@ import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { draftBodyLocked, trialGateApplies } from "@/lib/billing/trial";
 import { accountCountingClient } from "@/lib/billing/account-client";
 import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
-import { claimPreTrialDraft, isFirstPreTrialDraft, TrialHoldError, trialHoldReason } from "@/lib/billing/trial-hold";
+import { claimPreTrialDraft, isFirstPreTrialDraft, releasePreTrialDraft, TrialHoldError, trialHoldReason } from "@/lib/billing/trial-hold";
 import { recordOverageArticle } from "@/lib/billing/overage";
+import { recordFreeDraftWritten } from "@/lib/billing/free-drafts";
 import { accountPausedMessage } from "@/lib/billing/pause";
 import { spendClient } from "@/lib/billing/default-spend";
 import { setSpendReporter } from "@/lib/seo/client";
@@ -390,11 +391,17 @@ export async function generateArticle(
     if (held) throw new TrialHoldError(held);
   }
 
+  // Past the included volume a person's draft is billed the overage - once
+  // the draft EXISTS, beside the free tier's counter below. This created the
+  // Stripe invoice item here, before the row, the research or the model call,
+  // so a Write-now that then failed billed €0.60 for no article, and the
+  // failed row (`error`) was not even in the count (round-5 review).
+  let recordOverage: (() => Promise<void>) | null = null;
   if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
     if (quota.reason === "no-plan" || autonomous) {
       throw new Error(quotaExceededMessage(quota));
     }
-    await recordOverageArticle(supabase, billedAccountId, quota);
+    recordOverage = () => recordOverageArticle(supabase, billedAccountId, quota);
   }
 
   let topicBrief: Opportunity | null = null;
@@ -491,147 +498,156 @@ export async function generateArticle(
   // turn "restore it" into "delete it".
   let previousStatus: string | null = null;
 
-  if (refreshOf) {
-    // A rewrite touches no article row: the original stays exactly as it is
-    // until a person pushes the reviewed result. The id, when there is one,
-    // is only for attributing the job and the spend.
-    article = { id: refreshOf.articleId ?? null };
-  } else if (articleId) {
-    const { data: existing, error: existingError } = await supabase
-      .from("articles")
-      .select("id, status")
-      .eq("id", articleId)
-      // Scoped to the workspace the caller was authorised for, so an id
-      // belonging to another account cannot be written through.
-      .eq("workspace_id", workspaceId)
-      .single();
+  // From the claim to the job row nothing is bought: only our own rows are
+  // read and written. A failure in that stretch gives the pre-trial draft
+  // back (releasePreTrialDraft); from the job row on, the research is bought
+  // and the claim stands.
+  try {
+    if (refreshOf) {
+      // A rewrite touches no article row: the original stays exactly as it is
+      // until a person pushes the reviewed result. The id, when there is one,
+      // is only for attributing the job and the spend.
+      article = { id: refreshOf.articleId ?? null };
+    } else if (articleId) {
+      const { data: existing, error: existingError } = await supabase
+        .from("articles")
+        .select("id, status")
+        .eq("id", articleId)
+        // Scoped to the workspace the caller was authorised for, so an id
+        // belonging to another account cannot be written through.
+        .eq("workspace_id", workspaceId)
+        .single();
 
-    if (existingError || !existing) {
-      throw new Error("Article not found in this workspace");
-    }
-
-    article = { id: existing.id };
-    previousStatus = existing.status as string;
-
-    // A row with no text is a new draft even though the row already exists:
-    // the agent API inserts its own row and generates into it, and a first
-    // article whose run died is tried again here. Recorded like the insert
-    // path's (below), or a draft written this way was counted only while its
-    // row was not `error` - which the account's own client can set.
-    if (quota.reason === "no-plan" && !claimedPreTrial && !(await articleHasText(supabase, existing.id as string))) {
-      recordFreeDraft = freeDraftRecorder(supabase, billedAccountId, quota.used);
-    }
-
-    // Same signal the insert path sets, so the list shows this article as
-    // being written while the run is open.
-    await supabase
-      .from("articles")
-      .update({ status: "drafting", updated_at: new Date().toISOString() })
-      .eq("id", existing.id);
-  } else {
-    const { data: created, error: articleError } = await supabase
-      .from("articles")
-      .insert({
-        workspace_id: workspaceId,
-        title: approvedTitle || keyword,
-        slug,
-        keyword,
-        keyword_id: keywordRow?.id ?? null,
-        status: "drafting",
-        ai_provider: workspace.ai_provider || "claude",
-        generated_autonomously: autonomous ?? false,
-      })
-      .select("id")
-      .single();
-
-    if (articleError || !created) {
-      // Migration 074's partial unique index: another run is already writing
-      // this keyword for this workspace. Distinguished from a real insert
-      // failure because it is not one - the work is being done, just not by
-      // this caller - and the cron reports it as a skip rather than an error
-      // somebody has to investigate every morning.
-      if (articleError?.code === UNIQUE_VIOLATION) {
-        throw new ConcurrentGenerationError(workspaceId, keyword);
+      if (existingError || !existing) {
+        throw new Error("Article not found in this workspace");
       }
-      throw new Error(`Failed to create article: ${articleError?.message}`);
-    }
 
-    article = created;
+      article = { id: existing.id };
+      previousStatus = existing.status as string;
 
-    // The gate above read the count before this row existed, and nothing
-    // held the account between the read and the insert. Six onboarding
-    // dispatches (lib/content/fan-out.ts) arrive at once, each sees the same
-    // "2 remaining", and all six write - four drafts the plan did not
-    // include, on the one night the account is most likely to be on the
-    // free allowance. The row is inserted first and then the count is read
-    // again *including it*: the k-th of N racing requests to reach this line
-    // sees at least k rows of the burst (its own plus every earlier reader's,
-    // which were inserted before those reads), so at most `remaining` of them
-    // can ever see a count within the limit. The rest delete their own row
-    // and stop, before the model is called or a job row is written. Over-
-    // refusing is possible when they all insert before any of them reads;
-    // that leaves the plan entry for the cron, which is where it would have
-    // been written anyway. Under-refusing is not.
-    //
-    // Only where the gate refuses at zero (an autonomous draft, or an account
-    // with no plan). A person writing past the limit is billed the overage
-    // above and is not a burst.
-    if (quota.limit !== null && (quota.reason === "no-plan" || autonomous)) {
-      const after = await getQuota(supabase, billedAccountId, callerEmail);
-      // The trial hold, by the same argument: two first drafts racing (two
-      // sites onboarding at once, or a retried dispatch beside the one it
-      // retried) each read "0 written" above, and counted with their rows in
-      // each sees two. The count says a race happened; the earliest row wins
-      // it (`isFirstPreTrialDraft`), so exactly one of them is written and the
-      // rest stop - and "your first article is written" is true for them.
-      const heldAfter = trialHoldReason(after, { adding: 0 });
-      if (heldAfter) {
-        let wins = false;
-        try {
-          wins = await isFirstPreTrialDraft(supabase, billedAccountId, created.id);
-        } finally {
-          // Lost the race, or could not tell: this row is not written.
-          if (!wins) await supabase.from("articles").delete().eq("id", created.id);
+      // A row with no text is a new draft even though the row already exists:
+      // the agent API inserts its own row and generates into it, and a first
+      // article whose run died is tried again here. Recorded like the insert
+      // path's (below), or a draft written this way was counted only while its
+      // row was not `error` - which the account's own client can set.
+      if (quota.reason === "no-plan" && !claimedPreTrial && !(await articleHasText(supabase, existing.id as string))) {
+        recordFreeDraft = () => recordFreeDraftWritten(supabase, billedAccountId);
+      }
+
+      // Same signal the insert path sets, so the list shows this article as
+      // being written while the run is open.
+      await supabase
+        .from("articles")
+        .update({ status: "drafting", updated_at: new Date().toISOString() })
+        .eq("id", existing.id);
+    } else {
+      const { data: created, error: articleError } = await supabase
+        .from("articles")
+        .insert({
+          workspace_id: workspaceId,
+          title: approvedTitle || keyword,
+          slug,
+          keyword,
+          keyword_id: keywordRow?.id ?? null,
+          status: "drafting",
+          ai_provider: workspace.ai_provider || "claude",
+          generated_autonomously: autonomous ?? false,
+        })
+        .select("id")
+        .single();
+
+      if (articleError || !created) {
+        // Migration 074's partial unique index: another run is already writing
+        // this keyword for this workspace. Distinguished from a real insert
+        // failure because it is not one - the work is being done, just not by
+        // this caller - and the cron reports it as a skip rather than an error
+        // somebody has to investigate every morning.
+        if (articleError?.code === UNIQUE_VIOLATION) {
+          throw new ConcurrentGenerationError(workspaceId, keyword);
         }
-        if (!wins) throw new TrialHoldError(heldAfter);
+        throw new Error(`Failed to create article: ${articleError?.message}`);
       }
-      if (after.limit !== null && after.used > after.limit) {
-        await supabase.from("articles").delete().eq("id", created.id);
-        throw new Error(quotaExceededMessage(after));
-      }
-    }
 
-    // The free allowance is one-time (migration 083), so it needs a counter a
-    // delete cannot walk backwards: seven drafts, delete them, seven more,
-    // forever. `getQuota` reads the larger of this column and the live
-    // article count, so this is a floor rather than the sole truth and a
-    // missed increment cannot hand out an eighth draft - but recording it is
-    // what makes the allowance actually one-time.
-    //
-    // Only on the free tier: a paid account's limit is its plan's monthly
-    // volume and this column is never read for it. Best effort.
-    //
-    // Recorded once the draft EXISTS - after its content is saved, or after a
-    // rewrite completes - not once its row does. This used to run here, right
-    // after the `articles` insert and before a word was generated, so a run
-    // Vercel killed at the function limit spent a free draft on a row at zero
-    // words. qasimcode.com was told "all 7 free drafts are used" with five on
-    // the account (2026-09-09). The window between the save and this write is
-    // covered by the live count `getQuota` floors with; the window between
-    // this write and the save is what was charging people for our timeouts.
-    // The one exception is an account before its trial, whose single draft
-    // is claimed as an attempt (claimPreTrialDraft, above) because a client
-    // can cause the failure a refund would reward.
-    //
-    // Written with the service role, whatever client the caller holds: the
-    // column is server-written only (migration 099), because it is the floor
-    // under the count the trial hold and the spend gate read, and a signed-in
-    // person could set it back to 0 over PostgREST and buy another pre-trial
-    // draft. Without a service key (self-host) the caller's client is used,
-    // and self-host has no allowance to protect.
-    if (quota.reason === "no-plan" && !claimedPreTrial) {
-      recordFreeDraft = freeDraftRecorder(supabase, billedAccountId, quota.used);
+      article = created;
+
+      // The gate above read the count before this row existed, and nothing
+      // held the account between the read and the insert. Six onboarding
+      // dispatches (lib/content/fan-out.ts) arrive at once, each sees the same
+      // "2 remaining", and all six write - four drafts the plan did not
+      // include, on the one night the account is most likely to be on the
+      // free allowance. The row is inserted first and then the count is read
+      // again *including it*: the k-th of N racing requests to reach this line
+      // sees at least k rows of the burst (its own plus every earlier reader's,
+      // which were inserted before those reads), so at most `remaining` of them
+      // can ever see a count within the limit. The rest delete their own row
+      // and stop, before the model is called or a job row is written. Over-
+      // refusing is possible when they all insert before any of them reads;
+      // that leaves the plan entry for the cron, which is where it would have
+      // been written anyway. Under-refusing is not.
+      //
+      // Only where the gate refuses at zero (an autonomous draft, or an account
+      // with no plan). A person writing past the limit is billed the overage
+      // above and is not a burst.
+      if (quota.limit !== null && (quota.reason === "no-plan" || autonomous)) {
+        const after = await getQuota(supabase, billedAccountId, callerEmail);
+        // The trial hold, by the same argument: two first drafts racing (two
+        // sites onboarding at once, or a retried dispatch beside the one it
+        // retried) each read "0 written" above, and counted with their rows in
+        // each sees two. The count says a race happened; the earliest row wins
+        // it (`isFirstPreTrialDraft`), so exactly one of them is written and the
+        // rest stop - and "your first article is written" is true for them.
+        const heldAfter = trialHoldReason(after, { adding: 0 });
+        if (heldAfter) {
+          let wins = false;
+          try {
+            wins = await isFirstPreTrialDraft(supabase, billedAccountId, created.id);
+          } finally {
+            // Lost the race, or could not tell: this row is not written.
+            if (!wins) await supabase.from("articles").delete().eq("id", created.id);
+          }
+          if (!wins) throw new TrialHoldError(heldAfter);
+        }
+        if (after.limit !== null && after.used > after.limit) {
+          await supabase.from("articles").delete().eq("id", created.id);
+          throw new Error(quotaExceededMessage(after));
+        }
+      }
+
+      // The free allowance is one-time (migration 083), so it needs a counter a
+      // delete cannot walk backwards: seven drafts, delete them, seven more,
+      // forever. `getQuota` reads the larger of this column and the live
+      // article count, so this is a floor rather than the sole truth and a
+      // missed increment cannot hand out an eighth draft - but recording it is
+      // what makes the allowance actually one-time.
+      //
+      // Only on the free tier: a paid account's limit is its plan's monthly
+      // volume and this column is never read for it. Best effort.
+      //
+      // Recorded once the draft EXISTS - after its content is saved, or after a
+      // rewrite completes - not once its row does. This used to run here, right
+      // after the `articles` insert and before a word was generated, so a run
+      // Vercel killed at the function limit spent a free draft on a row at zero
+      // words. qasimcode.com was told "all 7 free drafts are used" with five on
+      // the account (2026-09-09). The window between the save and this write is
+      // covered by the live count `getQuota` floors with; the window between
+      // this write and the save is what was charging people for our timeouts.
+      // The one exception is an account before its trial, whose single draft
+      // is claimed as an attempt (claimPreTrialDraft, above) because a client
+      // can cause the failure a refund would reward.
+      //
+      // Written with the service role, whatever client the caller holds: the
+      // column is server-written only (migration 099), because it is the floor
+      // under the count the trial hold and the spend gate read, and a signed-in
+      // person could set it back to 0 over PostgREST and buy another pre-trial
+      // draft. Without a service key (self-host) the caller's client is used,
+      // and self-host has no allowance to protect.
+      if (quota.reason === "no-plan" && !claimedPreTrial) {
+        recordFreeDraft = () => recordFreeDraftWritten(supabase, billedAccountId);
+      }
     }
+  } catch (err) {
+    if (claimedPreTrial) await releasePreTrialDraft(supabase, billedAccountId);
+    throw err;
   }
 
   const { data: job, error: jobError } = await supabase
@@ -667,6 +683,7 @@ export async function generateArticle(
     } else {
       await supabase.from("articles").delete().eq("id", article.id);
     }
+    if (claimedPreTrial) await releasePreTrialDraft(supabase, billedAccountId);
     throw new Error(`Failed to create generation job: ${jobError?.message}`);
   }
 
@@ -1073,6 +1090,7 @@ export async function generateArticle(
         })
         .eq("id", job.id);
       if (recordFreeDraft) await recordFreeDraft();
+      if (recordOverage) await recordOverage();
 
       return {
         articleId: article.id,
@@ -1154,6 +1172,7 @@ export async function generateArticle(
       throw new Error(`Could not save the generated article: ${saveError.message}`);
     }
     if (recordFreeDraft) await recordFreeDraft();
+    if (recordOverage) await recordOverage();
 
     await supabase
       .from("generation_jobs")
@@ -1233,25 +1252,6 @@ export async function generateArticle(
 }
 
 /**
- * The free tier's counter write, run once the draft exists. `used` is the
- * quota's count, already the larger of the stored counter and the live one,
- * so this only ever moves the column forward. Two concurrent drafts can write
- * the same number; the live count is what catches that, which is exactly the
- * job it is kept for. Service role, whatever client the caller holds (the
- * column is server-written only, migration 099). Best effort: the live count
- * still floors it.
- */
-function freeDraftRecorder(supabase: SupabaseClient, accountId: string, used: number): () => Promise<void> {
-  return async () => {
-    try {
-      await accountCountingClient(supabase).from("accounts").update({ free_drafts_used: used + 1 }).eq("id", accountId);
-    } catch {
-      // The live count still floors it; see getQuota.
-    }
-  };
-}
-
-/**
  * Whether an article has text. Read with the service role: a client token
  * may not read `content` (migration 097), and only whether it is there is
  * asked, never the text. A failed read throws - the caller is deciding
@@ -1262,8 +1262,13 @@ async function articleHasText(supabase: SupabaseClient, articleId: string): Prom
     .from("articles")
     .select("id")
     .eq("id", articleId)
+    // `content` is jsonb, so this is the whole test: PostgREST casts a
+    // comparison value to the column's type, and `neq.` (the empty string)
+    // is not JSON - every call failed with 22P02 and took every in-place
+    // draft with it (round-5 review, on a real PostgREST). A row the writer
+    // has not written carries SQL null; the fake client in the unit tests
+    // asserts this exact filter so it cannot drift back.
     .not("content", "is", null)
-    .neq("content", "")
     .maybeSingle();
   if (error) throw new Error(`Could not check the article's text: ${error.message}`);
   return Boolean(data);
