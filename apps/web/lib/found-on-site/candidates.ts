@@ -13,8 +13,16 @@
 //   lastmod     the sitemap's date for the page is no earlier than a day
 //               before the draft was created. A day, because many sitemaps
 //               carry a date with no time, which parses as midnight UTC.
-//   no lastmod  the weekly crawl had not seen the page before the draft was
-//               created (`site_pages.first_seen_at`), or has never seen it.
+//   first seen  the weekly crawl first saw the page after the draft was
+//               created (`site_pages.first_seen_at`). This counts even when
+//               a lastmod says the page is older: a hand-written sitemap
+//               often carries a date copied from another entry, or never
+//               updated, and the crawl's own first sighting is a fact we
+//               observed. A page the crawl saw BEFORE the draft stays old
+//               whatever its lastmod says, which keeps a content-refresh
+//               draft from being compared with the page it refreshes.
+//   neither     with no lastmod, a page the crawl has never seen is new; with
+//               a lastmod, it is new only if the lastmod says so.
 //
 // And only when it has not already been compared: the ledger
 // (`found_on_site_checks`, migration 094) records every page read. A page read
@@ -144,9 +152,10 @@ export function selectCandidates(input: SelectInput): Selection {
     for (const d of input.drafts) {
       if (d.rejected.some((r) => urlKey(r) === key)) continue;
       const created = Date.parse(d.createdAt);
+      const seenAfter = firstSeen !== undefined && Date.parse(firstSeen) >= created;
       const isNew = Number.isFinite(lastmod)
-        ? lastmod >= created - LASTMOD_SLACK_MS
-        : firstSeen === undefined || Date.parse(firstSeen) >= created;
+        ? lastmod >= created - LASTMOD_SLACK_MS || seenAfter
+        : firstSeen === undefined || seenAfter;
       if (!isNew) continue;
       isNewForSome = true;
       // Read before: only again if the page changed after that read, which

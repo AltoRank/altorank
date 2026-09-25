@@ -57,6 +57,29 @@ describe("newness", () => {
     expect(sel.skipped.notNew).toBe(1);
   });
 
+  it("takes a page the crawl first saw after the draft even when its lastmod is stale", () => {
+    // A hand-written sitemap entry copied from an older one: the date says
+    // August, and the weekly crawl met the page for the first time after the
+    // draft existed. The observation wins; a page seen before the draft, or
+    // never seen, still goes by its lastmod.
+    const stale = "2026-08-01T00:00:00.000Z";
+    const sel = selectCandidates(
+      input({
+        entries: [
+          { loc: `${S}/blog/copied-date`, lastmod: stale },
+          { loc: `${S}/blog/refresh-target`, lastmod: stale },
+          { loc: `${S}/blog/never-crawled`, lastmod: stale },
+        ],
+        known: new Map([
+          [urlKey(`${S}/blog/copied-date`), "2026-09-23T00:00:00.000Z"],
+          [urlKey(`${S}/blog/refresh-target`), "2026-09-01T00:00:00.000Z"],
+        ]),
+      }),
+    );
+    expect(sel.chosen.map((c) => c.url)).toEqual([`${S}/blog/copied-date`]);
+    expect(sel.skipped.notNew).toBe(2);
+  });
+
   it("records per page which drafts it is new for", () => {
     const later = { id: "d2", createdAt: "2026-09-24T10:00:00.000Z", rejected: [] };
     const sel = selectCandidates(
