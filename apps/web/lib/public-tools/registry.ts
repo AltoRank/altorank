@@ -7,12 +7,24 @@
 // add one line below (see ./README.md).
 
 import type { PublicTool } from "./types";
+import { aiCrawlerSimulator } from "./tools/ai-crawler-simulator";
+import { websiteMetadataChecker } from "./tools/website-metadata-checker";
+import { robotsTxtTester } from "./tools/robots-txt-tester";
+import { canonicalChecker } from "./tools/canonical-checker";
+import { sitemapChecker } from "./tools/sitemap-checker";
+import { linkExtractor } from "./tools/link-extractor";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- each tool has its own input type; the handler validates before calling run()
 export type AnyPublicTool = PublicTool<any>;
 
 const TOOLS: AnyPublicTool[] = [
   // fetch tools (free)
+  aiCrawlerSimulator,
+  websiteMetadataChecker,
+  robotsTxtTester,
+  canonicalChecker,
+  sitemapChecker,
+  linkExtractor,
 ];
 
 const BY_SLUG = new Map<string, AnyPublicTool>();
