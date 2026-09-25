@@ -27,6 +27,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Quota } from "@/lib/billing/quota";
 import { isAdminEmail } from "@/lib/auth/operators";
+import { resolveLocale } from "@/lib/i18n/locale";
 
 /** Where the link points. Bare and canonical: no query string to split. */
 export const ATTRIBUTION_URL = "https://altorank.co";
@@ -100,14 +101,21 @@ export async function isOperatorAccount(
   return false;
 }
 
-/** The markup itself. Kept to one paragraph so every CMS accepts it. */
-export function attributionHtml(): string {
+/**
+ * The markup itself. Kept to one paragraph so every CMS accepts it.
+ *
+ * In the article's language (`ArticleLabels.poweredBy`): the line sits under
+ * the customer's own article, and "Powered by" under a Turkish one is the
+ * same English leak as the "Contents" the locale contract was written for
+ * (a real signup, 2026-09-22). In a language the contract does not describe,
+ * the brand's link alone, which is no language's words.
+ */
+export function attributionHtml(language: string | null | undefined): string {
   const rel = ATTRIBUTION_REL ? ` rel="${ATTRIBUTION_REL}"` : "";
-  return (
-    `<p data-altorank-attribution="1">` +
-    `<small>Powered by <a href="${ATTRIBUTION_URL}"${rel}>${ATTRIBUTION_ANCHOR}</a></small>` +
-    `</p>`
-  );
+  const link = `<a href="${ATTRIBUTION_URL}"${rel}>${ATTRIBUTION_ANCHOR}</a>`;
+  const locale = resolveLocale(language);
+  const line = locale.supported ? locale.labels.poweredBy.replace("{link}", link) : link;
+  return `<p data-altorank-attribution="1"><small>${line}</small></p>`;
 }
 
 /**
@@ -117,7 +125,7 @@ export function attributionHtml(): string {
  * a second badge on top of the first, and adapters that round-trip HTML
  * through the CMS will hand back a body that already has one.
  */
-export function appendAttribution(html: string): string {
+export function appendAttribution(html: string, language: string | null | undefined): string {
   if (html.includes("data-altorank-attribution")) return html;
-  return `${html}\n${attributionHtml()}`;
+  return `${html}\n${attributionHtml(language)}`;
 }

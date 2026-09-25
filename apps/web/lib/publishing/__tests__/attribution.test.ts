@@ -33,7 +33,7 @@ describe("shouldAttribute", () => {
 
 describe("attributionHtml", () => {
   it("links to the bare canonical URL with a branded anchor", () => {
-    const html = attributionHtml();
+    const html = attributionHtml("en");
     expect(html).toContain(`href="${ATTRIBUTION_URL}"`);
     expect(html).toContain(ATTRIBUTION_ANCHOR);
     // A query string would split the link target across URLs.
@@ -43,16 +43,30 @@ describe("attributionHtml", () => {
 
 describe("appendAttribution", () => {
   it("appends the line to a body", () => {
-    expect(appendAttribution("<p>Body</p>")).toContain("Powered by");
+    expect(appendAttribution("<p>Body</p>", "en")).toContain("Powered by");
   });
 
   it("is idempotent, so republishing does not stack badges", () => {
-    const once = appendAttribution("<p>Body</p>");
-    expect(appendAttribution(once)).toBe(once);
+    const once = appendAttribution("<p>Body</p>", "en");
+    expect(appendAttribution(once, "en")).toBe(once);
   });
 
   it("keeps the original body intact", () => {
-    expect(appendAttribution("<h2>Title</h2><p>Body</p>")).toContain("<h2>Title</h2><p>Body</p>");
+    expect(appendAttribution("<h2>Title</h2><p>Body</p>", "en")).toContain("<h2>Title</h2><p>Body</p>");
+  });
+});
+
+describe("the line in the article's language", () => {
+  it("is Turkish under a Turkish article, with no English in it", () => {
+    const html = attributionHtml("tr");
+    expect(html).toContain(`<small><a href="${ATTRIBUTION_URL}">${ATTRIBUTION_ANCHOR}</a> ile hazırlandı</small>`);
+    expect(html).not.toContain("Powered by");
+  });
+
+  it("is the brand's link alone in a language the contract does not describe", () => {
+    expect(attributionHtml("pt")).toBe(
+      `<p data-altorank-attribution="1"><small><a href="${ATTRIBUTION_URL}">${ATTRIBUTION_ANCHOR}</a></small></p>`,
+    );
   });
 });
 

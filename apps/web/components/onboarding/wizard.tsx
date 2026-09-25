@@ -555,6 +555,7 @@ const VERDICT_LABEL: Record<OnboardingArticle["verdict"], { text: string; classN
   clean: { text: "Fact check passed", className: "text-ok" },
   review: { text: "Fact check: review", className: "text-warn" },
   high_risk: { text: "Fact check: needs work", className: "text-err" },
+  unchecked: { text: "Fact check: not run for this language", className: "text-warn" },
 };
 
 /**

@@ -21,13 +21,32 @@
 // cited URL resolves, whether a source says what the text claims. Those are
 // listed as things a person still has to check, not scored as if a machine
 // had.
+//
+// Nor can it read a language nobody described to it. Figures, attributions,
+// appeals to evidence, first-hand markers and alt-text length are language,
+// and come from the locale contract (lib/i18n/locale); labels it recognises
+// (a FAQ heading, "click here", a byline) are matched in every language the
+// contract describes. For an article in any other language those items are
+// `info` and say "not checked for <language>" - never a pass computed with
+// English rules, which is what a Turkish draft got on 2026-09-22.
 
 import { findFigures } from "./aeo-scoring";
 import { findAttribution } from "@/lib/ai/fact-check";
 import { checkInlineCitations } from "@/lib/ai/inline-citations";
-import { findWeakAltText, MIN_ALT_WORDS } from "@/lib/ai/alt-text";
+import { findWeakAltText, MIN_ALT_WORDS, minAltWords } from "@/lib/ai/alt-text";
 import { decodeEntities } from "@/lib/audit/html-utils";
 import { extractLinks, hostOf, normaliseDomain, type LinkRef, isKnownPage } from "./links";
+import {
+  resolveLocale,
+  notCheckedFor,
+  matchesAnyHeading,
+  anyLanguageLabels,
+  supportedLocales,
+  findLowered,
+  foldCase,
+  scaleWords,
+  urlSlug,
+} from "@/lib/i18n/locale";
 import type { LinkCheck } from "./link-check";
 
 // The link classifier moved to ./links so the scorers can share it without
@@ -92,6 +111,11 @@ export interface ArticleAuditInput {
    * why rather than showing a pass nobody earned.
    */
   keywordConfidence?: "known" | "guessed";
+  /**
+   * `workspaces.language`. The items that read prose use its rules; in a
+   * language the locale contract does not describe they report "not checked".
+   */
+  language?: string | null;
 }
 
 export interface ArticleAudit {
@@ -126,27 +150,26 @@ function hasExternalLink(block: string, siteDomain: string | null): boolean {
 }
 
 /**
- * Anchor text a reader learns nothing from and a crawler learns nothing from.
- * Multi-language because the sites this serves are not all English.
+ * Anchor text a reader learns nothing from and a crawler learns nothing from,
+ * in every language the locale contract describes.
  */
-const GENERIC_ANCHORS = new Set([
-  "here", "click here", "this", "this article", "this post", "this page", "link",
-  "read more", "learn more", "more", "website", "source", "see more",
-  "qui", "clicca qui", "leggi di più", "scopri di più", "questo articolo",
-  "aquí", "haz clic aquí", "leer más", "ici", "cliquez ici", "en savoir plus",
-  "hier", "hier klicken", "mehr erfahren",
-]);
+const GENERIC_ANCHORS = anyLanguageLabels("genericAnchors");
 
-/** Appeals to evidence that name none. Mirrors the fact checker's category. */
-const HOLLOW_EVIDENCE =
-  /\b(?:studies|study|research|surveys?|experts?|data|reports?)\s+(?:show|shows|suggest|suggests|agree|agrees|found|find|finds|indicate|indicates|confirm|confirms|reveal|reveals)\b|\bit is well[- ]known\b|\bmost experts\b|\bexperts recommend\b/gi;
+/** A byline in any described language: "Written by", "Yazar:". */
+function hasByline(text: string): boolean {
+  return supportedLocales().some((l) => l.prose.byline.test(l.lower(text)));
+}
 
 // ── The audit ───────────────────────────────────────────────────────────────
 
 export function auditArticle(input: ArticleAuditInput): ArticleAudit {
   const html = input.html ?? "";
+  const locale = resolveLocale(input.language);
+  const notChecked = notCheckedFor(locale);
   const keyword = (input.keyword ?? "").trim();
-  const kw = keyword.toLowerCase();
+  // Folded, not lowered: "API" lowers to "apı" in Turkish and then matched
+  // no keyword (see `foldCase`).
+  const kw = foldCase(keyword);
   const siteDomain = normaliseDomain(input.siteDomain);
   const items: AuditItem[] = [];
   const push = (item: AuditItem) => items.push(item);
@@ -246,17 +269,21 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
   }
 
   const generic = links.filter(
-    (l) => (l.kind === "internal" || l.kind === "external") && GENERIC_ANCHORS.has(l.anchor.toLowerCase().replace(/[.!]$/, "")),
+    (l) => (l.kind === "internal" || l.kind === "external") && GENERIC_ANCHORS.has(foldCase(l.anchor).replace(/[.!]$/, "")),
   );
   if (internal.length + external.length > 0) {
     push({
       id: "anchor-text",
       group: "links",
-      status: generic.length ? "warn" : "pass",
+      // A generic anchor found is a finding in any language; none found is
+      // only a pass where we know what generic looks like.
+      status: generic.length ? "warn" : locale.supported ? "pass" : "info",
       label: "Anchor text",
       detail: generic.length
         ? `${generic.length} ${generic.length === 1 ? "link uses" : "links use"} anchor text that says nothing about the destination (${[...new Set(generic.map((l) => `"${l.anchor}"`))].slice(0, 3).join(", ")}). The words inside the link are what tell a crawler what the target is about.`
-        : "Anchor text describes where each link goes.",
+        : locale.supported
+          ? "Anchor text describes where each link goes."
+          : notChecked,
       locate: generic.map((l) => l.anchor).slice(0, 6),
     });
   }
@@ -275,27 +302,29 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
     if (!plain) continue;
     const cites = hasExternalLink(block, siteDomain);
 
-    const figures = findFigures(plain);
+    const figures = findFigures(plain, locale.code);
     figuresSeen += figures.length;
     if (figures.length && !cites) unsourcedFigures.push(...figures);
 
-    const name = findAttribution(plain);
+    const name = findAttribution(plain, locale.code);
     if (name) {
       attributionsSeen++;
       if (!cites) unlinkedNames.push(name);
     }
 
-    if (!cites) {
-      for (const m of plain.matchAll(HOLLOW_EVIDENCE)) hollowAppeals.push(m[0]);
+    if (!cites && locale.supported) {
+      hollowAppeals.push(...findLowered(locale.prose.hollowEvidence, plain, locale));
     }
   }
 
   push({
     id: "unsourced-figures",
     group: "sources",
-    status: unsourcedFigures.length ? "fail" : figuresSeen ? "pass" : "info",
+    status: !locale.supported ? "info" : unsourcedFigures.length ? "fail" : figuresSeen ? "pass" : "info",
     label: "Figures with a linked source",
-    detail: unsourcedFigures.length
+    detail: !locale.supported
+      ? notChecked
+      : unsourcedFigures.length
       ? `${unsourcedFigures.length} ${unsourcedFigures.length === 1 ? "figure sits" : "figures sit"} in a passage with no source link. Link the source in the same paragraph, or cut the number.`
       : figuresSeen
         ? `All ${figuresSeen} figures sit in a passage that links a source.`
@@ -306,9 +335,11 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
   push({
     id: "named-sources",
     group: "sources",
-    status: unlinkedNames.length ? "warn" : attributionsSeen ? "pass" : "info",
+    status: !locale.supported ? "info" : unlinkedNames.length ? "warn" : attributionsSeen ? "pass" : "info",
     label: "Named sources are linked",
-    detail: unlinkedNames.length
+    detail: !locale.supported
+      ? notChecked
+      : unlinkedNames.length
       ? `${unlinkedNames.length} ${unlinkedNames.length === 1 ? "source is" : "sources are"} named but not linked (${[...new Set(unlinkedNames)].slice(0, 3).join(", ")}). A name a reader cannot click is a claim they cannot check.`
       : attributionsSeen
         ? "Every named source carries a link."
@@ -319,9 +350,11 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
   push({
     id: "hollow-evidence",
     group: "sources",
-    status: hollowAppeals.length ? "warn" : "pass",
+    status: !locale.supported ? "info" : hollowAppeals.length ? "warn" : "pass",
     label: "Appeals to unnamed evidence",
-    detail: hollowAppeals.length
+    detail: !locale.supported
+      ? notChecked
+      : hollowAppeals.length
       ? `${hollowAppeals.length} ${hollowAppeals.length === 1 ? "phrase appeals" : "phrases appeal"} to studies, experts or data without naming or linking any. Name the study or make the point without the appeal.`
       : "No \"studies show\" without a study.",
     locate: [...new Set(hollowAppeals)].slice(0, 6),
@@ -332,7 +365,17 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
   // above already says which passages cite nothing. Only worth a line when
   // there is a footer, or outbound links whose placement can be praised.
   const citations = checkInlineCitations(html, siteDomain);
-  if (citations.footer || external.length) {
+  // A footer is recognised by its label, in any described language. Finding
+  // none in an article whose language has no described labels proves nothing.
+  if (!citations.footer && !locale.supported && external.length) {
+    push({
+      id: "inline-citations",
+      group: "sources",
+      status: "info",
+      label: "Sources linked at the claim",
+      detail: `${notChecked} A "Sources" list at the end is recognised by its heading.`,
+    });
+  } else if (citations.footer || external.length) {
     const orphaned = citations.orphaned;
     const listed = citations.footerUrls.length;
     push({
@@ -440,9 +483,9 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
     push({
       id: "keyword-in-subheading",
       group: "structure",
-      status: subheads.some((h) => h.text.toLowerCase().includes(kw)) ? "pass" : "warn",
+      status: subheads.some((h) => foldCase(h.text).includes(kw)) ? "pass" : "warn",
       label: "Keyword in a subheading",
-      detail: subheads.some((h) => h.text.toLowerCase().includes(kw))
+      detail: subheads.some((h) => foldCase(h.text).includes(kw))
         ? "The keyword appears in at least one H2 or H3."
         : `"${keyword}" appears in no H2 or H3. One subheading that names the subject the way it is searched is cheap and usually natural.`,
     });
@@ -452,18 +495,16 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
     push({
       id: "keyword-in-intro",
       group: "structure",
-      status: lead.toLowerCase().includes(kw) ? "pass" : "warn",
+      status: foldCase(lead).includes(kw) ? "pass" : "warn",
       label: "Keyword in the opening paragraph",
-      detail: lead.toLowerCase().includes(kw)
+      detail: foldCase(lead).includes(kw)
         ? "The opening paragraph names the subject."
         : `The opening paragraph does not contain "${keyword}". The first hundred words are what decide whether the page matches the query.`,
     });
   }
 
   const questionHeads = subheads.filter((h) => h.text.trim().endsWith("?"));
-  const faqHead = headings.some((h) =>
-    /\bfaqs?\b|frequently asked|domande frequenti|preguntas frecuentes|questions fr[ée]quentes|h[äa]ufig gestellte/i.test(h.text),
-  );
+  const faqHead = headings.some((h) => matchesAnyHeading("faq", h.text));
   push({
     id: "faq-section",
     group: "structure",
@@ -472,7 +513,9 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
     detail:
       faqHead || questionHeads.length >= 3
         ? "Has a FAQ-shaped section: question headings with answers under them, which FAQ structured data is built from."
-        : "No FAQ section. Three or more question headings with a short answer under each is the shape FAQ rich results and answer engines both lift from.",
+        : locale.supported
+          ? "No FAQ section. Three or more question headings with a short answer under each is the shape FAQ rich results and answer engines both lift from."
+          : `Fewer than three question headings. ${notChecked} A FAQ heading is recognised by its wording.`,
   });
 
   if (h2s.length >= 6) {
@@ -512,7 +555,7 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
     if (meta.length > 160) metaIssues.push(`${meta.length} characters will be truncated around 160`);
     // Same reasoning as the placement checks: only meaningful against a
     // keyword somebody actually chose.
-    if (kw && keywordKnown && !meta.toLowerCase().includes(kw)) {
+    if (kw && keywordKnown && !foldCase(meta).includes(kw)) {
       metaIssues.push("it does not contain the keyword, which Google bolds when it matches the query");
     }
   }
@@ -531,7 +574,9 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
   const slug = (input.slug ?? "").trim();
   if (slug) {
     const slugWords = slug.split("-").filter(Boolean);
-    const kwSlug = kw.replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    // The same fold as the slug itself, so a Turkish keyword ("yazılım")
+    // is compared as "yazilim", not "yaz-l-m".
+    const kwSlug = urlSlug(keyword);
     const slugIssues: string[] = [];
     if (slug.length > 75 || slugWords.length > 8) slugIssues.push(`${slugWords.length} words and ${slug.length} characters is long for a URL`);
     if (kwSlug && !slug.includes(kwSlug)) slugIssues.push("it does not contain the keyword");
@@ -563,14 +608,17 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
     const alt = attrs.match(/\balt\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
     return !alt || !(alt[1] ?? alt[2] ?? "").trim();
   });
+  // "Long" is 1,200 English words, in this language's words; a language
+  // without described word counts is never called long.
+  const long = locale.supported && wordCount >= scaleWords(1200, locale);
   push({
     id: "body-images",
     group: "media",
-    status: imgs.length ? "pass" : wordCount >= 1200 ? "warn" : "info",
+    status: imgs.length ? "pass" : long ? "warn" : "info",
     label: "Images in the body",
     detail: imgs.length
       ? `${imgs.length} ${imgs.length === 1 ? "image" : "images"} in the body.`
-      : `${wordCount >= 1200 ? `${wordCount.toLocaleString()} words and no image. ` : "No images in the body. "}A screenshot, chart or diagram breaks up the text and can rank in image results on its own.`,
+      : `${long ? `${wordCount.toLocaleString()} words and no image. ` : "No images in the body. "}A screenshot, chart or diagram breaks up the text and can rank in image results on its own.`,
   });
   if (imgs.length) {
     push({
@@ -589,21 +637,24 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
     // check that it got one.
     const withAlt = imgs.length - noAlt.length;
     if (withAlt > 0) {
-      const weak = findWeakAltText(html, keyword).filter((f) => f.problem !== "missing");
+      const weak = findWeakAltText(html, keyword, locale.code).filter((f) => f.problem !== "missing");
       const keywordOnly = weak.filter((f) => f.problem === "keyword").length;
       const short = weak.filter((f) => f.problem === "short").length;
+      const minWords = locale.supported ? minAltWords(locale) : MIN_ALT_WORDS;
       const reasons = [
         keywordOnly ? `${keywordOnly} ${keywordOnly === 1 ? "repeats" : "repeat"} the keyword and nothing else` : "",
-        short ? `${short} ${short === 1 ? "is" : "are"} under ${MIN_ALT_WORDS} words` : "",
+        short ? `${short} ${short === 1 ? "is" : "are"} under ${minWords} words` : "",
       ].filter(Boolean);
       push({
         id: "image-alt-descriptive",
         group: "media",
-        status: weak.length ? "warn" : "pass",
+        status: weak.length ? "warn" : locale.supported ? "pass" : "info",
         label: "Alt text describes the image",
         detail: weak.length
           ? `${weak.length} of ${withAlt} alt ${withAlt === 1 ? "text" : "texts"} ${weak.length === 1 ? "does" : "do"} not describe the image: ${reasons.join("; ")}. Alt text is a sentence about what the picture shows ("Bar chart comparing the monthly price of five email tools"), not a label and not the keyword.`
-          : `Every alt text is a descriptive sentence of ${MIN_ALT_WORDS} words or more.`,
+          : locale.supported
+            ? `Every alt text is a descriptive sentence of ${minWords} words or more.`
+            : `No alt text is the keyword alone. ${notChecked}`,
         locate: weak.map((f) => f.alt).slice(0, 6),
       });
     }
@@ -611,18 +662,18 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
 
   // ── Trust ────────────────────────────────────────────────────────────────
 
-  const hasByline = /\b(?:about the author|written by|author:|scritto da|escrito por|écrit par|verfasst von)\b/i.test(text);
+  const bylined = hasByline(text);
   push({
     id: "author",
     group: "trust",
-    status: hasByline ? "pass" : "info",
+    status: bylined ? "pass" : "info",
     label: "Author",
-    detail: hasByline
+    detail: bylined
       ? "Names an author in the body."
       : "No author or byline in the body. The generator does not write one. Make sure the CMS attributes the piece to a real person with a bio; anonymous pages are the weakest E-E-A-T position there is.",
   });
 
-  const hasExperience = /\b(?:we tested|we tried|in our (?:tests?|experience|testing)|i tested|i tried|when we (?:ran|used|switched)|our team (?:used|ran|found)|abbiamo (?:testato|provato)|hemos probado|nous avons testé|wir haben (?:getestet|ausprobiert))\b/i.test(text);
+  const hasExperience = locale.supported && locale.prose.firstHand.test(locale.lower(text));
   push({
     id: "first-hand",
     group: "trust",
@@ -630,7 +681,9 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
     label: "First-hand experience",
     detail: hasExperience
       ? "Contains first-hand experience markers (\"we tested\", \"in our experience\")."
-      : "Nothing in the text says the writer used, tested or ran any of this. Experience is the first E in E-E-A-T, and a single honest sentence of it is worth more than another paragraph of overview.",
+      : !locale.supported
+        ? notChecked
+        : "Nothing in the text says the writer used, tested or ran any of this. Experience is the first E in E-E-A-T, and a single honest sentence of it is worth more than another paragraph of overview.",
   });
 
   push({

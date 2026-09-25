@@ -112,6 +112,21 @@ describe("renderDraftBatch", () => {
     expect(risky.html).toContain("Unsourced figure");
   });
 
+  /**
+   * A site in a language the fact checker does not read: nothing was
+   * checked, and the stat said "All sourced" above rows whose pills said
+   * "Not checked".
+   */
+  it("never says All sourced about drafts nobody checked", () => {
+    const r = renderDraftBatch({ ...BATCH, drafts: BATCH.drafts.map((d) => ({ ...d, verdict: "unchecked" as const })) });
+    expect(r.html).not.toContain("All sourced");
+    expect(r.html).toContain("3 not checked");
+    expect(r.html).toContain("Not checked");
+    // Checked and clean is still the one way to earn it.
+    const clean = renderDraftBatch({ ...BATCH, drafts: BATCH.drafts.map((d) => ({ ...d, verdict: "clean" as const })) });
+    expect(clean.html).toContain("All sourced");
+  });
+
   it("adds up the words and the searches, and leaves searches out when nothing measured any", () => {
     expect(renderDraftBatch(BATCH).html).toContain("28,000");
     const r = renderDraftBatch({
@@ -160,6 +175,14 @@ describe("announceDraftBatch", () => {
     expect(sendTransactionalEmail.mock.calls[0]![0]).toBe("owner@example.test");
     expect(sendTransactionalEmail.mock.calls[0]![1]).toBe("3 drafts are ready for example.test");
     expect(line).toContain("3 drafts");
+  });
+
+  it("reads a draft with no verdict on record as not checked, never as sourced", async () => {
+    const d = db({ articles: [draft(1, { fact_check_verdict: null }), draft(2, { fact_check_verdict: null })] });
+    await announceDraftBatch(d.client, "ws1", { now: NOW });
+    const html = String(sendTransactionalEmail.mock.calls[0]![2]);
+    expect(html).toContain("2 not checked");
+    expect(html).not.toContain("All sourced");
   });
 
   /** The whole point of a fan-out: seven concurrent writers, one announcement. */

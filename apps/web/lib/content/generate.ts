@@ -47,7 +47,8 @@ import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research"
 import type { RelatedKeyword } from "@/lib/seo/brief-data";
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
-import { getLocale } from "@/lib/seo/locales";
+import { getLocale, LOCALES } from "@/lib/seo/locales";
+import { urlSlug, resolveLocale } from "@/lib/i18n/locale";
 import type { ArticleBrief, RefreshContext, SiteContext, VoiceRules } from "@/lib/ai/types";
 import { classifyKeyword, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { parseStoredQuestions } from "@/lib/keywords/questions";
@@ -189,7 +190,8 @@ export interface GenerateArticleResult {
   metaDescription: string;
   linkChecks: LinkCheck[] | null;
   seoScore: number;
-  aeoScore: number;
+  /** Null when the site's language is not one the locale contract describes. */
+  aeoScore: number | null;
 }
 
 /** Postgres `unique_violation`. What migration 074's index raises. */
@@ -220,17 +222,12 @@ export class ConcurrentGenerationError extends Error {
  * Accented letters are folded to their base letter before anything is
  * dropped. The old `[^a-z0-9]` pass deleted them outright, so an Italian
  * keyword like "città d'arte" published at `/citt-d-arte` and "perché" at
- * `/perch`: a slug missing letters from the keyword it was meant to carry,
- * on the locales the product is sold into first. Same fold as the heading
- * ids in lib/content/enrich/html.ts, so an anchor and a slug agree.
+ * `/perch`; the dotless ı, which has no accent to fold, still vanished
+ * ("yazılım" -> `/yaz-l-m`) until the fold moved into the locale contract.
+ * Same fold as the heading ids, so an anchor and a slug agree.
  */
 export function slugFor(text: string): string {
-  return text
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
+  return urlSlug(text);
 }
 
 /** The three fields of `workspaces.business_profile` a writer can use, or undefined when there is nothing to say. */
@@ -697,7 +694,10 @@ export async function generateArticle(
       keyword,
       title: approvedTitle,
       voiceRules,
-      language: locale.label,
+      // The name the writer is told to write in. `getLocale` answers English
+      // for a code it does not list, which would switch the article's
+      // language without a word; the contract names any code it is given.
+      language: LOCALES[workspace.language ?? "en"] ? locale.label : resolveLocale(workspace.language).name,
       research,
       internalLinkTargets: linkTargets
         .slice(0, 20)
@@ -850,7 +850,7 @@ export async function generateArticle(
     // Two passes: the first asks whether each figure is attributed, the second
     // opens the pages the attributions point at. The second is what catches a
     // real citation carrying a wrong number, which the first cannot see.
-    const factCheck = await verifyCitedFigures(factCheckArticle(processedHtml, research));
+    const factCheck = await verifyCitedFigures(factCheckArticle(processedHtml, research, workspace.language));
 
     // `scoreArticle` and its seven on-page checks have existed all along, but
     // nothing ran them at generation: only the manual `scoreArticleSeo` action
@@ -871,10 +871,14 @@ export async function generateArticle(
       // transactional piece the research had correctly kept short.
       targetWordCount,
       title: articleResult.title,
+      // Every check that reads text reads it in the site's language; the
+      // first Turkish draft was scored on English rules.
+      language: workspace.language,
     });
     // The half that matches what this product actually claims: not "will it
-    // rank" but "will an answer engine quote it".
-    const aeo = scoreCitationReadiness(processedHtml, keyword, { siteDomain: workspace.domain });
+    // rank" but "will an answer engine quote it". Null in a language the
+    // locale contract does not describe.
+    const aeo = scoreCitationReadiness(processedHtml, keyword, { siteDomain: workspace.domain, language: workspace.language });
     // The domain tells the converter which links are the site's own, so those
     // are stored followed and same-tab rather than nofollow like a citation.
     const tiptapContent = htmlToTiptapJson(processedHtml, { siteDomain: workspace.domain });

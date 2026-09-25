@@ -17,6 +17,7 @@ import type { PublishResult } from "@/lib/cms/types";
 import { submitForIndexing } from "@/lib/seo/indexing";
 import { announceDraftApproved } from "@/lib/email/approval-events";
 import type { CMSConfig } from "@/lib/types";
+import { readWorkspaceLanguage } from "@/lib/i18n/workspace-language";
 
 /**
  * `destinationId` is the workspace_integrations row the person picked in the
@@ -145,13 +146,17 @@ async function refuseUnsourcedFigures(
 ) {
   const { data: article } = await supabase
     .from("articles")
-    .select("content, research")
+    .select("content, research, workspace_id")
     .eq("id", articleId)
     .single();
   if (!article?.content) return;
 
+  // Read in the site's language: the same patterns generation used. An
+  // unreadable language is `unchecked`, which a person may still approve.
+  const language = await readWorkspaceLanguage(supabase, article.workspace_id, "approve");
+
   const html = tiptapToHtml(article.content as Record<string, unknown>);
-  const report = factCheckArticle(html, (article.research as ArticleResearch | null) ?? undefined);
+  const report = factCheckArticle(html, (article.research as ArticleResearch | null) ?? undefined, language);
 
   await supabase
     .from("articles")

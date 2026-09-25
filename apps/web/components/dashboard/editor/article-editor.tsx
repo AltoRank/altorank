@@ -635,6 +635,9 @@ export function ArticleEditor({
         // not in it fails the item rather than counting towards a pass.
         knownPages: knownPages ?? linkTargets,
         linkChecks: article.link_checks,
+        // Prose items read the site's language; one the locale contract does
+        // not describe gets "not checked" rather than English rules.
+        language: workspace.language,
       }),
     [
       docHtml,
@@ -645,6 +648,7 @@ export function ArticleEditor({
       featured,
       article.link_checks,
       workspace.domain,
+      workspace.language,
       linkableArticles,
       linkTargets,
     ],

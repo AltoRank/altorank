@@ -145,7 +145,8 @@ m(file, applied) as (values
   ('082_system_events',                      to_regclass('public.system_events') is not null),
   ('084_analysis_attempts',                  exists (select 1 from col where t='workspaces' and c='analysis_attempts')),
   ('085_agencies_to_accounts',               to_regclass('public.accounts') is not null and to_regclass('public.agencies') is null),
-  ('091_public_tool_usage',                  to_regclass('public.public_tool_usage') is not null and to_regprocedure('public.reserve_public_tool_spend(text,numeric,numeric)') is not null)
+  ('091_public_tool_usage',                  to_regclass('public.public_tool_usage') is not null and to_regprocedure('public.reserve_public_tool_spend(text,numeric,numeric)') is not null),
+  ('098_fact_check_unchecked',               exists (select 1 from pg_constraint where conname = 'articles_fact_check_verdict_check' and pg_get_constraintdef(oid) like '%unchecked%'))
 )
 select file, applied from m order by file;
 ```
@@ -274,6 +275,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 082_system_events.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 084_analysis_attempts.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 085_agencies_to_accounts.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 091_public_tool_usage.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 098_fact_check_unchecked.sql
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -338,6 +340,7 @@ no code in the repo references either).
 | 082_system_events.sql | `round5/observability` #172 | 001 | yes | yes, loses the event log only |
 | 084_analysis_attempts.sql | `fix/reanalyse-and-cms-gate` | 001 | yes | yes, but the backfill's re-queue is not undone |
 | 091_public_tool_usage.sql | `tools/public-api` | none | yes | yes, `drop function public.reserve_public_tool_spend(text,numeric,numeric); drop table public.public_tool_usage;` (paid public tools then refuse to run) |
+| 098_fact_check_unchecked.sql | `fix/locale-contract` | 015 | yes | only once no row holds `unchecked`: re-add the three-value check |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -709,4 +712,24 @@ Smoke after applying (service role, then clean up):
 select public.reserve_public_tool_spend('smoke-test', 0, 0);  -- t
 select * from public.public_tool_usage where tool = 'smoke-test';
 delete from public.public_tool_usage where tool = 'smoke-test';
+```
+
+## 098 — fact-check `unchecked` verdict
+
+Widens `articles_fact_check_verdict_check` to allow `'unchecked'`, the verdict
+the fact checker returns for an article in a language the locale contract
+(`lib/i18n/locale.ts`) does not describe. No dependencies beyond 015;
+idempotent (`drop constraint if exists`, then add). Every existing row stays
+valid.
+
+**Apply before the code that writes it ships.** Until then, generating a draft
+for a site whose language is not English, Italian, Spanish, French, German or
+Turkish fails at the article save (the constraint refuses `unchecked`), where
+before it saved a verdict read with English rules.
+
+Smoke after applying:
+
+```sql
+select pg_get_constraintdef(oid) from pg_constraint
+ where conname = 'articles_fact_check_verdict_check';  -- lists 'unchecked'
 ```

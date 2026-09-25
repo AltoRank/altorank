@@ -11,6 +11,7 @@ import { fetchKnownPages } from "@/lib/linking/targets";
 import type { Workspace, Keyword, Article } from "@/lib/types";
 import { buildRankingRows } from "@/lib/seo/rankings";
 import { canSpend } from "@/lib/billing/spend-gate";
+import { readWorkspaceLanguage } from "@/lib/i18n/workspace-language";
 import type { BillingOutcome } from "@/lib/billing/failure";
 
 // Every export below buys DataForSEO data, and none of them was gated: a free
@@ -240,6 +241,8 @@ export async function scoreArticleSeo(articleId: string) {
     .select("domain")
     .eq("id", article.workspace_id)
     .single();
+  // Not best effort: an unreadable language is "not checked", never English.
+  const language = await readWorkspaceLanguage(supabase, article.workspace_id, "seo.score");
 
   // Convert Tiptap JSON content to HTML string for scoring.
   // If content is stored as Tiptap JSON, we serialise it simply;
@@ -270,6 +273,7 @@ export async function scoreArticleSeo(articleId: string) {
     knownPages,
     targetWordCount: article.research?.recommendedWordCount ?? null,
     title: article.title,
+    language,
   });
 
   // Insert the audit record
