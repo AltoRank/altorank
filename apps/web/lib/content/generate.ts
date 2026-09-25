@@ -47,8 +47,8 @@ import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research"
 import type { RelatedKeyword } from "@/lib/seo/brief-data";
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
-import { getLocale } from "@/lib/seo/locales";
-import { urlSlug } from "@/lib/i18n/locale";
+import { getLocale, LOCALES } from "@/lib/seo/locales";
+import { urlSlug, resolveLocale } from "@/lib/i18n/locale";
 import type { ArticleBrief, RefreshContext, SiteContext, VoiceRules } from "@/lib/ai/types";
 import { classifyKeyword, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { parseStoredQuestions } from "@/lib/keywords/questions";
@@ -694,7 +694,10 @@ export async function generateArticle(
       keyword,
       title: approvedTitle,
       voiceRules,
-      language: locale.label,
+      // The name the writer is told to write in. `getLocale` answers English
+      // for a code it does not list, which would switch the article's
+      // language without a word; the contract names any code it is given.
+      language: LOCALES[workspace.language ?? "en"] ? locale.label : resolveLocale(workspace.language).name,
       research,
       internalLinkTargets: linkTargets
         .slice(0, 20)
