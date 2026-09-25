@@ -190,7 +190,8 @@ export interface GenerateArticleResult {
   metaDescription: string;
   linkChecks: LinkCheck[] | null;
   seoScore: number;
-  aeoScore: number;
+  /** Null when the site's language is not one the locale contract describes. */
+  aeoScore: number | null;
 }
 
 /** Postgres `unique_violation`. What migration 074's index raises. */
@@ -846,7 +847,7 @@ export async function generateArticle(
     // Two passes: the first asks whether each figure is attributed, the second
     // opens the pages the attributions point at. The second is what catches a
     // real citation carrying a wrong number, which the first cannot see.
-    const factCheck = await verifyCitedFigures(factCheckArticle(processedHtml, research));
+    const factCheck = await verifyCitedFigures(factCheckArticle(processedHtml, research, workspace.language));
 
     // `scoreArticle` and its seven on-page checks have existed all along, but
     // nothing ran them at generation: only the manual `scoreArticleSeo` action
@@ -867,10 +868,14 @@ export async function generateArticle(
       // transactional piece the research had correctly kept short.
       targetWordCount,
       title: articleResult.title,
+      // Every check that reads text reads it in the site's language; the
+      // first Turkish draft was scored on English rules.
+      language: workspace.language,
     });
     // The half that matches what this product actually claims: not "will it
-    // rank" but "will an answer engine quote it".
-    const aeo = scoreCitationReadiness(processedHtml, keyword, { siteDomain: workspace.domain });
+    // rank" but "will an answer engine quote it". Null in a language the
+    // locale contract does not describe.
+    const aeo = scoreCitationReadiness(processedHtml, keyword, { siteDomain: workspace.domain, language: workspace.language });
     // The domain tells the converter which links are the site's own, so those
     // are stored followed and same-tab rather than nofollow like a citation.
     const tiptapContent = htmlToTiptapJson(processedHtml, { siteDomain: workspace.domain });

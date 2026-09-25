@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { VoiceRules } from "./types";
 import { anthropicModel } from "./models";
+import { resolveLocale } from "@/lib/i18n/locale";
 
 const ANALYSIS_PROMPT = `You are a writing style analyst. Analyze the following sample text(s) and extract a detailed voice profile. Return a JSON object with these exact fields:
 
@@ -22,11 +23,28 @@ const ANALYSIS_PROMPT = `You are a writing style analyst. Analyze the following 
 Return ONLY valid JSON, no markdown fences or explanation.`;
 
 /**
+ * The language line for the analysis. The model reads any language; what it
+ * needs telling is that the samples are not English, so it quotes vocabulary
+ * and phrases as written and describes pronouns as the language carries them
+ * - a Turkish "we" is usually a suffix ("ekibimiz", "sunuyoruz"), not "biz",
+ * and a profile that looked only for the pronoun missed it on 2026-09-22.
+ */
+export function voiceLanguageNote(language?: string | null): string {
+  const { name } = resolveLocale(language);
+  return (
+    `The samples are written in ${name}. Quote vocabulary, signature phrases and patterns in ${name} exactly as written, ` +
+    `never translated. Describe person and address (first-person plural or singular, formal or informal "you") as ${name} expresses them, ` +
+    `including through verb endings and possessive suffixes, not only through pronouns.`
+  );
+}
+
+/**
  * Analyze writing samples using Claude to extract deep voice rules.
  * Falls back gracefully if the API key isn't configured.
  */
 export async function analyzeVoiceWithAI(
   sampleTexts: string[],
+  language?: string | null,
 ): Promise<VoiceRules> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -44,7 +62,7 @@ export async function analyzeVoiceWithAI(
     // weaker read produces a voice profile that skews every future article.
     model: anthropicModel("content"),
     max_tokens: 1024,
-    system: ANALYSIS_PROMPT,
+    system: `${ANALYSIS_PROMPT}\n\n${voiceLanguageNote(language)}`,
     messages: [{ role: "user", content: combined }],
   });
 

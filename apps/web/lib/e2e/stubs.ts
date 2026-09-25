@@ -376,7 +376,7 @@ export async function stubGenerateArticle(options: GenerateArticleOptions): Prom
   onResearch?.(research);
   onChunk?.(html);
 
-  const factCheck = factCheckArticle(html, research);
+  const factCheck = factCheckArticle(html, research, language);
   const now = new Date().toISOString();
 
   let articleId = options.articleId ?? null;

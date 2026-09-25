@@ -67,7 +67,14 @@ export async function retrainVoice(workspaceId: string): Promise<BillingOutcome>
 
   if (!profile?.sample_text) throw new Error("No sample text to train from");
 
-  const rules = await analyzeVoice(profile.sample_text);
+  // The sample is read in the site's language, not in English.
+  const { data: workspace } = await supabase
+    .from("workspaces")
+    .select("language")
+    .eq("id", workspaceId)
+    .maybeSingle();
+
+  const rules = await analyzeVoice(profile.sample_text, workspace?.language ?? null);
 
   const { error } = await supabase
     .from("voice_profiles")

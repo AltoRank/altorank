@@ -237,7 +237,7 @@ export async function scoreArticleSeo(articleId: string) {
   // way it always did, it does not stop the score.
   const { data: ws } = await supabase
     .from("workspaces")
-    .select("domain")
+    .select("domain, language")
     .eq("id", article.workspace_id)
     .single();
 
@@ -270,6 +270,7 @@ export async function scoreArticleSeo(articleId: string) {
     knownPages,
     targetWordCount: article.research?.recommendedWordCount ?? null,
     title: article.title,
+    language: ws?.language ?? null,
   });
 
   // Insert the audit record

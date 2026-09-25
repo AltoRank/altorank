@@ -145,13 +145,24 @@ async function refuseUnsourcedFigures(
 ) {
   const { data: article } = await supabase
     .from("articles")
-    .select("content, research")
+    .select("content, research, workspace_id")
     .eq("id", articleId)
     .single();
   if (!article?.content) return;
 
+  // Read in the site's language: the same patterns generation used.
+  const { data: workspace } = await supabase
+    .from("workspaces")
+    .select("language")
+    .eq("id", article.workspace_id)
+    .maybeSingle();
+
   const html = tiptapToHtml(article.content as Record<string, unknown>);
-  const report = factCheckArticle(html, (article.research as ArticleResearch | null) ?? undefined);
+  const report = factCheckArticle(
+    html,
+    (article.research as ArticleResearch | null) ?? undefined,
+    workspace?.language ?? null,
+  );
 
   await supabase
     .from("articles")

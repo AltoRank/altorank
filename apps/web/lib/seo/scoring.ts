@@ -1,8 +1,24 @@
 // ---------------------------------------------------------------------------
 // Local SEO content scoring — no external API required
 // ---------------------------------------------------------------------------
+//
+// Three of these checks read language: how often the keyword appears (a
+// Turkish keyword carries suffixes, "web tasarımında"), how long a sentence
+// should be, and how long an article should be (Turkish runs to about a fifth
+// fewer words than English for the same content). They take the article's
+// language from the locale contract (lib/i18n/locale). A Turkish draft on
+// 2026-09-22 was scored with the English rules; in a language the contract
+// does not describe, those three are marked unverified - "not checked for
+// <language>" - and the score is the other five.
 
 import { classifyHref, isKnownPage } from "./links";
+import {
+  resolveLocale,
+  notCheckedFor,
+  countKeyword,
+  scaleWords,
+  type Locale,
+} from "@/lib/i18n/locale";
 
 export type ScoringCheck = {
   name: string;
@@ -54,12 +70,14 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-/** Count occurrences of a term (case-insensitive, whole word). */
-function countOccurrences(text: string, term: string): number {
-  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const regex = new RegExp(`\\b${escaped}\\b`, "gi");
-  const matches = text.match(regex);
-  return matches ? matches.length : 0;
+/** Whether `text` contains `term`, both lowered by the language's own casing. */
+function containsTerm(text: string, term: string, locale: Locale): boolean {
+  return locale.lower(text).includes(locale.lower(term));
+}
+
+/** A check that reads language the contract does not describe for this article. */
+function notChecked(name: string, locale: Locale): ScoringCheck {
+  return { name, passed: false, score: 0, unverified: true, note: notCheckedFor(locale) };
 }
 
 /** Extract text content from headings at a given level. */
@@ -125,12 +143,13 @@ function extractMetaDescription(content: string): string | null {
 
 // ---- Individual check functions ----
 
-function checkKeywordInTitle(content: string, keyword: string): ScoringCheck {
+function checkKeywordInTitle(content: string, keyword: string, locale: Locale): ScoringCheck {
   const titleRegex = /<h1[^>]*>(.*?)<\/h1>/i;
   const titleMatch = content.match(titleRegex);
   const titleText = titleMatch ? stripHtml(titleMatch[1]) : "";
 
-  const passed = titleText.toLowerCase().includes(keyword.toLowerCase());
+  // Casing is the language's: "İSTANBUL" is "istanbul" in Turkish.
+  const passed = containsTerm(titleText, keyword, locale);
 
   return {
     name: "keywordInTitle",
@@ -144,7 +163,8 @@ function checkKeywordInTitle(content: string, keyword: string): ScoringCheck {
   };
 }
 
-function checkKeywordDensity(content: string, keyword: string): ScoringCheck {
+function checkKeywordDensity(content: string, keyword: string, locale: Locale): ScoringCheck {
+  if (!locale.supported) return notChecked("keywordDensity", locale);
   const plainText = stripHtml(content);
   const words = plainText.split(/\s+/).filter(Boolean);
   const totalWords = words.length;
@@ -158,7 +178,10 @@ function checkKeywordDensity(content: string, keyword: string): ScoringCheck {
     };
   }
 
-  const keywordCount = countOccurrences(plainText, keyword);
+  // Whole words in most languages; a stem with suffixes in Turkish, where
+  // "web tasarım" is also "web tasarımı" and "web tasarımında". The old
+  // `\b` boundaries were ASCII-only, so they also missed "città" and "ölçüm".
+  const keywordCount = countKeyword(plainText, keyword, locale);
   const keywordWordCount = keyword.split(/\s+/).length;
   const density = (keywordCount * keywordWordCount) / totalWords * 100;
   // 0.5-2% is the band every current rubric agrees on. The old 1-3% band
@@ -255,6 +278,7 @@ function checkTitleLength(content: string, stored?: string | null): ScoringCheck
 
 function checkMetaDescriptionLength(
   content: string,
+  locale: Locale,
   stored?: string | null,
   keyword?: string,
 ): ScoringCheck {
@@ -279,7 +303,7 @@ function checkMetaDescriptionLength(
   const lengthOk = len >= 120 && len <= 160;
   // Google bolds the query where it appears in the snippet, which is a
   // measurable click lift; a description without the keyword forfeits it.
-  const hasKeyword = !keyword || meta.toLowerCase().includes(keyword.toLowerCase());
+  const hasKeyword = !keyword || containsTerm(meta, keyword, locale);
   const passed = lengthOk && hasKeyword;
 
   let score: number;
@@ -314,10 +338,13 @@ function checkMetaDescriptionLength(
  * 600 words and then scored as if 1,500 were the floor. The target is passed
  * in when known; 1,500 remains the fallback.
  */
-function checkWordCount(content: string, target?: number | null): ScoringCheck {
+function checkWordCount(content: string, locale: Locale, target?: number | null): ScoringCheck {
+  if (!locale.supported) return notChecked("wordCount", locale);
   const plainText = stripHtml(content);
   const words = plainText.split(/\s+/).filter(Boolean).length;
-  const goal = target && target > 0 ? Math.round(target) : DEFAULT_TARGET_WORDS;
+  // A SERP-derived target is already in this language's words; the fallback
+  // is an English number and is scaled.
+  const goal = target && target > 0 ? Math.round(target) : scaleWords(DEFAULT_TARGET_WORDS, locale);
   const passed = words >= goal * 0.8;
 
   const score = words >= goal
@@ -336,9 +363,13 @@ function checkWordCount(content: string, target?: number | null): ScoringCheck {
   };
 }
 
-function checkReadability(content: string): ScoringCheck {
+function checkReadability(content: string, locale: Locale): ScoringCheck {
+  if (!locale.supported) return notChecked("readability", locale);
   const plainText = stripHtml(content);
+  // A dot or comma between digits ends nothing: "1.500 TL" and "3.5x" are
+  // one sentence, not two.
   const sentences = plainText
+    .replace(/(\d)[.,](\d)/g, "$1$2")
     .split(/[.!?]+/)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
@@ -355,24 +386,27 @@ function checkReadability(content: string): ScoringCheck {
   const avgSentenceLength =
     plainText.split(/\s+/).filter(Boolean).length / sentences.length;
 
-  // Ideal average sentence length: 15-20 words
-  const passed = avgSentenceLength >= 10 && avgSentenceLength <= 25;
+  // Ideal average sentence length: 15-20 English words, accepted from 10 to
+  // 25; in this language's words (8-20 in Turkish).
+  const min = scaleWords(10, locale);
+  const max = scaleWords(25, locale);
+  const passed = avgSentenceLength >= min && avgSentenceLength <= max;
 
   let score: number;
-  if (avgSentenceLength >= 10 && avgSentenceLength <= 25) {
+  if (passed) {
     score = 100;
-  } else if (avgSentenceLength < 10) {
-    score = Math.round(avgSentenceLength * 10);
+  } else if (avgSentenceLength < min) {
+    score = Math.round((avgSentenceLength / min) * 100);
   } else {
     // Penalise overly long sentences
-    score = Math.round(Math.max(0, 100 - (avgSentenceLength - 25) * 5));
+    score = Math.round(Math.max(0, 100 - ((avgSentenceLength - max) / locale.wordScale) * 5));
   }
 
   return {
     name: "readability",
     passed,
     score: Math.max(0, Math.min(100, score)),
-    note: `Average sentence length: ${avgSentenceLength.toFixed(1)} words (target: 10-25)`,
+    note: `Average sentence length: ${avgSentenceLength.toFixed(1)} words (target: ${min}-${max})`,
   };
 }
 
@@ -437,6 +471,9 @@ function checkInternalLinks(
  *                 `knownPages`: the pages of the site a link may point at
  *                 (the link pool); an internal link to anything else is
  *                 not counted. Omit when the caller does not know.
+ *                 `language`: `workspaces.language`. The three checks that
+ *                 read language use its rules; a language the locale
+ *                 contract does not describe leaves them unverified.
  * @returns        Overall score (0-100) and individual check results
  */
 export function scoreArticle(
@@ -448,16 +485,18 @@ export function scoreArticle(
     targetWordCount?: number | null;
     title?: string | null;
     knownPages?: readonly { url: string }[] | null;
+    language?: string | null;
   },
 ): ScoringResult {
+  const locale = resolveLocale(opts?.language);
   const checks: ScoringCheck[] = [
-    checkKeywordInTitle(content, keyword),
+    checkKeywordInTitle(content, keyword, locale),
     checkTitleLength(content, opts?.title),
-    checkKeywordDensity(content, keyword),
+    checkKeywordDensity(content, keyword, locale),
     checkHeadingStructure(content),
-    checkMetaDescriptionLength(content, opts?.metaDescription, keyword),
-    checkWordCount(content, opts?.targetWordCount),
-    checkReadability(content),
+    checkMetaDescriptionLength(content, locale, opts?.metaDescription, keyword),
+    checkWordCount(content, locale, opts?.targetWordCount),
+    checkReadability(content, locale),
     checkInternalLinks(content, opts?.siteDomain, opts?.knownPages),
   ];
 

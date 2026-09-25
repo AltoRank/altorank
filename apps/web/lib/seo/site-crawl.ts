@@ -500,6 +500,11 @@ export interface PageContext {
    * asking; `syncSitePages` turns it on for the assessment.
    */
   techChecks?: boolean;
+  /**
+   * `workspaces.language`: the scores and the audit read the page with its
+   * rules. `syncSitePages` looks it up.
+   */
+  language?: string | null;
 }
 
 /** Fetch one page, extract its body, and score it. Never throws. */
@@ -591,11 +596,11 @@ export async function crawlPage(url: string, ctx: PageContext): Promise<SitePage
   // Scoring needs a keyword. With none, store the page as a link target and
   // leave the scores null rather than scoring against an empty string, which
   // would read as a measured zero.
-  const seo = keyword ? scoreArticle(body, keyword, { siteDomain: ctx.domain, metaDescription, title }) : null;
-  const aeo = keyword ? scoreCitationReadiness(body, keyword, { siteDomain: ctx.domain }) : null;
+  const seo = keyword ? scoreArticle(body, keyword, { siteDomain: ctx.domain, metaDescription, title, language: ctx.language }) : null;
+  const aeo = keyword ? scoreCitationReadiness(body, keyword, { siteDomain: ctx.domain, language: ctx.language }) : null;
   const audit = keyword
     ? auditArticle({
-        html: body, keyword, siteDomain: ctx.domain, title, metaDescription,
+        html: body, keyword, siteDomain: ctx.domain, title, metaDescription, language: ctx.language,
         slug: path.split("/").filter(Boolean).pop() ?? "",
         keywordConfidence: keywordSource === "ranked" ? "known" : "guessed",
         // A published page's hero is in the template, not the body, so the
@@ -782,6 +787,7 @@ export async function syncSitePages(
   const workers = crawlDelayMs > 0 ? 1 : concurrency;
 
   const rankedByPath = await loadRankedKeywords(supabase, workspaceId);
+  const language = await loadLanguage(supabase, workspaceId);
 
   const { data: existing } = await supabase
     .from("site_pages")
@@ -804,7 +810,7 @@ export async function syncSitePages(
         // timeout bounds it anyway.
         if (Date.now() >= deadline) return;
         const url = queue.shift()!;
-        const page = await crawlPage(url, { domain, rankedByPath, timeoutMs: opts.timeoutMs, techChecks });
+        const page = await crawlPage(url, { domain, rankedByPath, timeoutMs: opts.timeoutMs, techChecks, language });
         // Unchanged pages still get their timestamp moved, so a later run can
         // tell "checked and identical" from "never looked at".
         if (skipUnchanged && page.content_hash && knownHash.get(url) === page.content_hash) {
@@ -872,6 +878,20 @@ export async function syncSitePages(
     truncated,
     robotsBlocked,
   };
+}
+
+/**
+ * `workspaces.language`, so a customer's own pages are scored with their
+ * language's rules. Null (then English, the column default) only when the
+ * row cannot be read.
+ */
+async function loadLanguage(supabase: SupabaseClient, workspaceId: string): Promise<string | null> {
+  try {
+    const { data } = await supabase.from("workspaces").select("language").eq("id", workspaceId).maybeSingle();
+    return (data?.language as string | null | undefined) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
