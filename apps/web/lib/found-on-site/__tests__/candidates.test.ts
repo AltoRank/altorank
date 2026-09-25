@@ -80,6 +80,25 @@ describe("newness", () => {
     expect(sel.skipped.notNew).toBe(2);
   });
 
+  it("takes a page the crawl knew before the draft once its lastmod moves after it: it changed, possibly into the draft", () => {
+    // A draft pasted over an existing page is found on the site the same way
+    // a new page is. The page that did not change stays old.
+    const sel = selectCandidates(
+      input({
+        entries: [
+          { loc: `${S}/services/changed`, lastmod: "2026-09-22T11:00:00.000Z" },
+          { loc: `${S}/services/unchanged`, lastmod: "2026-08-01T00:00:00.000Z" },
+        ],
+        known: new Map([
+          [urlKey(`${S}/services/changed`), "2026-05-01T00:00:00.000Z"],
+          [urlKey(`${S}/services/unchanged`), "2026-05-01T00:00:00.000Z"],
+        ]),
+      }),
+    );
+    expect(sel.chosen.map((c) => c.url)).toEqual([`${S}/services/changed`]);
+    expect(sel.skipped.notNew).toBe(1);
+  });
+
   it("records per page which drafts it is new for", () => {
     const later = { id: "d2", createdAt: "2026-09-24T10:00:00.000Z", rejected: [] };
     const sel = selectCandidates(

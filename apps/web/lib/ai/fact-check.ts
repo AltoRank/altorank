@@ -26,6 +26,7 @@
 
 import { stripTags } from "@/lib/audit/html-utils";
 import type { ArticleResearch } from "@/lib/seo/research";
+import type { SiteFacts } from "@/lib/ai/types";
 import {
   resolveLocale,
   notCheckedFor,
@@ -344,6 +345,51 @@ function corroborate(text: string, research?: ArticleResearch): string | null {
   return null;
 }
 
+/**
+ * The statements from the business's own pages that can carry a figure, for
+ * `ArticleResearch.siteStatements`: its founding, team and location
+ * statements, the opening of its about page, and its section headings.
+ * Nothing else in the site facts carries figures.
+ */
+export function siteStatementsOf(site: SiteFacts): Array<{ text: string; source: string }> {
+  return [
+    ...site.stated.map((x) => ({ text: x.text, source: x.source })),
+    ...(site.about ? [{ text: site.about.text, source: site.about.source }] : []),
+    ...site.headings.map((h) => ({ text: h.items.join("\n"), source: h.url })),
+  ];
+}
+
+/**
+ * The business's own page that states this figure, or null.
+ *
+ * The writer is told to use the figures the business's pages state (the
+ * site-facts section of the prompt: founding year, team size, the count of
+ * projects its portfolio claims) and is never told to link them - and an
+ * internal link would not count, only an external one is a citation here.
+ * So every such figure came back `unsourced`, `high` for most kinds, and a
+ * draft that did exactly what the brief asked could not be approved (round-3
+ * and round-4 reviews). A figure the business states about itself is
+ * sourced: to the business. It is still not verified - a page can be out of
+ * date - so it goes to the reviewer as a medium item naming the page, and
+ * never blocks approval.
+ *
+ * Matched on the figure as written, bounded so "20" matches neither "2020"
+ * nor "1.200", in the statements saved with the research, so approval reads
+ * the same evidence generation did.
+ */
+function statedBySite(figure: string, research?: ArticleResearch): string | null {
+  const statements = research?.siteStatements;
+  if (!statements?.length) return null;
+  const needle = foldCase(figure.trim());
+  if (!/\p{N}/u.test(needle)) return null;
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const bounded = new RegExp(`(?<![\\p{N}.,])${escaped}(?![\\p{N}]|[.,]\\p{N})`, "u");
+  for (const st of statements) {
+    if (bounded.test(foldCase(st.text))) return st.source;
+  }
+  return null;
+}
+
 // ── Entry point ────────────────────────────────────────────────────────────
 
 /**
@@ -419,6 +465,12 @@ export function factCheckArticle(
             .map((f) => corroborate(f, research))
             .reduce<string | null>((acc, cur, i) => (i === 0 ? cur : acc && cur ? acc : null), null);
 
+          // Stated by the business only when every figure in the sentence is,
+          // on one of its pages.
+          const statedOn = figures
+            .map((f) => statedBySite(f, research))
+            .reduce<string | null>((acc, cur, i) => (i === 0 ? cur : acc && cur ? acc : null), null);
+
           let status: ClaimStatus;
           let severity: ClaimSeverity;
           let note: string;
@@ -435,6 +487,12 @@ export function factCheckArticle(
             note =
               "The paragraph links out, but the claim is not attributed in the " +
               "sentence. Check the link supports this figure, and name the source in the text.";
+          } else if (statedOn) {
+            status = "needs_verification";
+            severity = "medium";
+            note =
+              `The business states this on its own page (${statedOn}). ` +
+              `Confirm it is still current before publishing.`;
           } else if (corroboratedBy) {
             status = "corroborated";
             severity = "medium";
@@ -460,7 +518,7 @@ export function factCheckArticle(
             text,
             sentence: sentence.length > 400 ? `${sentence.slice(0, 397)}...` : sentence,
             attribution,
-            sourceUrl: citationUrl,
+            sourceUrl: citationUrl ?? (attribution ? null : statedOn),
             note,
           });
         }

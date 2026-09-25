@@ -18,9 +18,14 @@
 //               a lastmod says the page is older: a hand-written sitemap
 //               often carries a date copied from another entry, or never
 //               updated, and the crawl's own first sighting is a fact we
-//               observed. A page the crawl saw BEFORE the draft stays old
-//               whatever its lastmod says, which keeps a content-refresh
-//               draft from being compared with the page it refreshes.
+//               observed.
+//   seen before a page the crawl already knew before the draft goes by its
+//               lastmod alone, like any dated page: new only when the
+//               lastmod moved after the draft. That is deliberate. Pasting
+//               a draft over an existing page is one of the ways a draft
+//               ends up on a site, and a page that changed after the draft
+//               existed is exactly the one to read; a page that did not
+//               change stays old.
 //   neither     with no lastmod, a page the crawl has never seen is new; with
 //               a lastmod, it is new only if the lastmod says so.
 //

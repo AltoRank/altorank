@@ -19,7 +19,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveProvider } from "@/lib/ai/provider";
 import { stripAiTypography } from "@/lib/ai/utils";
 import { htmlToTiptapJson } from "@/lib/ai/tiptap";
-import { factCheckArticle, type FactCheckReport } from "@/lib/ai/fact-check";
+import { factCheckArticle, siteStatementsOf, type FactCheckReport } from "@/lib/ai/fact-check";
 import { verifyCitedFigures } from "@/lib/seo/citation-check";
 import { scoreArticle } from "@/lib/seo/scoring";
 import { scoreCitationReadiness } from "@/lib/seo/aeo-scoring";
@@ -717,7 +717,13 @@ export async function generateArticle(
     const siteFacts = siteFactsPending ? await siteFactsPending : null;
     // Saved with the research, so the reviewer sees what the writer was told
     // about the business and whether the conversion page checked out.
-    if (siteFacts) research.layers.push(siteFacts.layer);
+    if (siteFacts) {
+      research.layers.push(siteFacts.layer);
+      // What the writer is told it may state about the business, kept so the
+      // fact check reads a figure from it as the business's own claim - now
+      // and again at approval (lib/ai/fact-check.ts).
+      research.siteStatements = siteStatementsOf(siteFacts.facts);
+    }
     const questionSelection = await selectArticleQuestions(research.peopleAlsoAsk, {
       keyword, title: approvedTitle, language: workspace.language ?? "en",
       business: workspace.business_profile, brief: topicBrief,
