@@ -407,19 +407,22 @@ describe("setup was never finished", () => {
 describe("trial started", () => {
   const base = { planLabel: "Managed", planPrice: "€69/mo", endsAt: "2026-10-02T10:00:00.000Z" };
 
-  it("leads with the writing having started when the trial is what lifted the hold", () => {
-    const e = renderTrialStarted({ ...base, draftingStarted: true });
-    expect(e.preheader).toMatch(/^Drafting has started\./);
-    expect(e.html).toContain("<strong>Drafting has started.</strong>");
-    expect(e.html).toContain("rest of this week are being written now");
+  it("leads with the week going to the writer when the trial is what lifted the hold", () => {
+    const e = renderTrialStarted({ ...base, weekHandedOff: true });
+    expect(e.preheader).toMatch(/^The rest of this week goes to the writer now\./);
+    expect(e.html).toContain("<strong>The rest of this week goes to the writer now.</strong>");
+    // The hand-off, which is true when this is sent - never "being written",
+    // which is not known yet (the email goes out before any draft starts).
+    expect(e.html).not.toMatch(/being written|drafting has started/i);
+    expect(e.html).toContain("We email you when they are there.");
     // The charge date is still the one thing a card trial must say.
     expect(e.html).toContain("October 2");
-    expect(e.html.indexOf("Drafting has started")).toBeLessThan(e.html.indexOf("the first charge"));
+    expect(e.html.indexOf("goes to the writer")).toBeLessThan(e.html.indexOf("the first charge"));
   });
 
-  it("says only what the plan opens when nothing was started", () => {
+  it("says only what the plan opens when nothing was handed to the writer", () => {
     const e = renderTrialStarted(base);
-    expect(e.html).not.toContain("Drafting has started");
+    expect(e.html).not.toContain("goes to the writer");
     expect(e.preheader).toBe("First charge on October 2 unless you cancel before then.");
   });
 });

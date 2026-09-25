@@ -337,6 +337,14 @@ describe("one announcement a day", () => {
     expect(await announceDraftBatch(d.client, "ws1", { now: tomorrow })).toBe("3 drafts, emailed 1");
   });
 
+  it("sends the week a trial start opened the day it lands, whatever went out earlier today", async () => {
+    // The first draft's email went out at signup; the trial started an hour
+    // later and its week just landed. That batch is the one they are waiting on.
+    const d = db({ sent_emails: [sentToday("article_drafted")] });
+    expect(await announceDraftBatch(d.client, "ws1", { now: NOW, evenIfToldToday: true })).toBe("3 drafts, emailed 1");
+    expect(sendTransactionalEmail).toHaveBeenCalledTimes(1);
+  });
+
   it("counts a batch digest as today's mail too", async () => {
     const d = db({ sent_emails: [sentToday("article_batch_drafted")] });
     expect(await announceDraftBatch(d.client, "ws1", { now: NOW })).toMatch(/waits for tomorrow/);

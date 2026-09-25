@@ -6,8 +6,9 @@ import { FakeDb } from "./fake-postgrest";
  * drafted now, one entry per request (lib/plan/resume-week.ts). Pinned here:
  * one delivery sends each of this week's entries exactly once; the same event
  * again sends nothing; a spend refusal is written on the entries and sends
- * nothing; next week is left to the scheduled writer; and the pace and the
- * in-flight ceiling bound how many start.
+ * nothing; next week is left to the scheduled writer; the pace and the
+ * in-flight ceiling bound how many start; and a resume cut off halfway can be
+ * run again once its lease is out, while a finished one never runs twice.
  */
 
 const { budget, topUp, events } = vi.hoisted(() => ({
@@ -22,10 +23,13 @@ vi.mock("@/lib/observability/record", () => ({ recordEvent: async (e: Record<str
 vi.mock("@/lib/billing/spend-gate", () => ({ canSpend: async () => ({ allowed: true, reason: "plan", quota: { remaining: null }, message: null }) }));
 
 import {
+  claimSiteResume,
   continueFrom,
   draftRestOfWeek,
   draftsToStart,
+  oweResume,
   planWeekContaining,
+  RESUME_LEASE_MS,
   RESUME_MAX_IN_FLIGHT,
   resumeAccount,
   type ResumeSite,
@@ -42,6 +46,8 @@ const site: ResumeSite & Record<string, unknown> = {
   refresh_enabled: false,
   refresh_days: null,
   trial_resume_key: null,
+  trial_resume_claimed_at: null,
+  trial_resumed_at: null,
   publishing_cadences: null,
 };
 
@@ -59,6 +65,7 @@ const entry = (date: string, over: Record<string, unknown> = {}) => ({
   draft_claimed_by: null,
   draft_failed_at: null,
   draft_failure: null,
+  draft_owed_at: null,
   ...over,
 });
 
@@ -92,7 +99,8 @@ const deps = { baseUrl: "https://app.example", secret: "cron-secret", fetchImpl:
 
 beforeEach(() => {
   budget.articlesLeft = 6;
-  topUp.mockClear();
+  topUp.mockReset();
+  topUp.mockImplementation(async () => []);
   events.length = 0;
   sent = [];
   answer = () => new Response("{}", { status: 200 });
@@ -136,11 +144,11 @@ describe("draftRestOfWeek", () => {
     const week = thisWeek(db);
     expect(out.week).toEqual({ from: "2026-09-25", until: "2026-09-30" });
     expect(sent.map((b) => b.entryId).sort()).toEqual(week.map((e) => e.id).sort());
-    expect(sent.every((b) => b.claim === "trial:sub_1" && b.until === "2026-09-30" && b.secret === "cron-secret")).toBe(true);
-    expect(week.every((e) => e.draft_claimed_by === "trial:sub_1")).toBe(true);
-    // Next week is the scheduled writer's, on its days.
+    expect(sent.every((b) => b.claim === "trial:sub_1" && b.secret === "cron-secret")).toBe(true);
+    expect(week.every((e) => e.draft_claimed_by === "trial:sub_1" && e.draft_owed_at === NOW.toISOString())).toBe(true);
+    // Next week is the scheduled writer's, on its days: neither owed nor claimed.
     const later = db.rows("calendar_entries").filter((e) => (e.scheduled_date as string) > "2026-09-30");
-    expect(later.every((e) => e.draft_claimed_at === null)).toBe(true);
+    expect(later.every((e) => e.draft_claimed_at === null && e.draft_owed_at === null)).toBe(true);
     expect(fetchImpl.mock.calls.every((c) => c[0] === "https://app.example/api/internal/draft")).toBe(true);
   });
 
@@ -161,6 +169,9 @@ describe("draftRestOfWeek", () => {
     expect(sent).toHaveLength(0);
     const week = thisWeek(db);
     expect(week.every((e) => e.draft_failure === "Billing and article generation are paused until 1 November." && e.draft_claimed_at === null)).toBe(true);
+    // Failed, so due to the scheduled writer's next run; not owed, so nothing
+    // restarts a burst the gate refused.
+    expect(week.every((e) => e.draft_owed_at === null)).toBe(true);
     expect(refuse).toHaveBeenCalledWith(expect.anything(), "acc1", { userEmail: null, workspaceId: "ws1", action: "scheduled-work" });
     expect(events[0]).toMatchObject({ level: "warn", source: "plan.resume", workspaceId: "ws1" });
   });
@@ -188,7 +199,7 @@ describe("draftRestOfWeek", () => {
     // One lands: its entry gets its article, and the draft route asks for the next.
     const landed = db.rows("calendar_entries").find((e) => e.id === first.started[0])!;
     Object.assign(landed, { article_id: "a-new", status: "scheduled" });
-    const next = await continueFrom(db.client, "ws1", { by: "trial:sub_1", until: "2026-09-30", ...deps });
+    const next = await continueFrom(db.client, "ws1", { by: "trial:sub_1", ...deps });
     expect(next.started).toBe(1);
     expect(next.done).toBe(false);
     expect(sent).toHaveLength(RESUME_MAX_IN_FLIGHT + 1);
@@ -199,7 +210,7 @@ describe("draftRestOfWeek", () => {
     const db = new FakeDb({ calendar_entries: [entry("2026-09-24", { status: "scheduled", article_id: "a-first" }), entry("2026-09-26")], workspaces: [site] });
     const first = await draftRestOfWeek(db.client, site, { by: "trial:sub_1", ...deps });
     Object.assign(db.rows("calendar_entries").find((e) => e.id === first.started[0])!, { article_id: "a-new", status: "scheduled" });
-    const next = await continueFrom(db.client, "ws1", { by: "trial:sub_1", until: first.week!.until, ...deps });
+    const next = await continueFrom(db.client, "ws1", { by: "trial:sub_1", ...deps });
     expect(next).toMatchObject({ started: 0, done: true });
   });
 
@@ -232,34 +243,73 @@ describe("draftRestOfWeek", () => {
     expect(sent).toHaveLength(0);
   });
 
-  it("claims nothing on an install that cannot call itself, and says the scheduled writer has it", async () => {
+  it("claims nothing on an install that cannot call itself, and leaves the week owed to the scheduled writer", async () => {
     const db = new FakeDb({ calendar_entries: calendar(), workspaces: [site] });
     const out = await draftRestOfWeek(db.client, site, { by: "trial:sub_1", now: NOW, secret: null, baseUrl: "https://app.example", fetchImpl: fetchImpl as never });
     expect(out.started).toEqual([]);
     expect(out.detail).toContain("left for the scheduled writer");
     expect(db.rows("calendar_entries").every((e) => e.draft_claimed_at === null)).toBe(true);
+    // Owed now, so each is due to the scheduled writer's next run rather than to its own day.
+    expect(thisWeek(db).every((e) => e.draft_owed_at === NOW.toISOString())).toBe(true);
   });
 
-  it("stays in the week it started in when the chain runs past its last day", async () => {
+  it("drafts exactly what the trial opened when the chain runs past the week's last day", async () => {
+    budget.articlesLeft = 2;
     const db = new FakeDb({ calendar_entries: calendar(), workspaces: [site] });
-    const nextDay = new Date("2026-10-01T00:05:00.000Z");
-    const out = await draftRestOfWeek(db.client, site, { by: "trial:sub_1", until: "2026-09-30", ...deps, now: nextDay });
-    expect(out.started).toEqual([]);
-    expect(out.detail).toBe("the week this resume started has ended");
+    const first = await draftRestOfWeek(db.client, site, { by: "trial:sub_1", ...deps });
+    expect(first.started).toHaveLength(2);
+    for (const id of first.started) Object.assign(db.rows("calendar_entries").find((e) => e.id === id)!, { article_id: `a-${id}`, status: "scheduled" });
+
+    // The chain picks up just after midnight on the first day of the next week.
+    budget.articlesLeft = 13;
+    const next = await continueFrom(db.client, "ws1", { by: "trial:sub_1", ...deps, now: new Date("2026-10-01T00:05:00.000Z") });
+    expect(next.started).toBe(4);
+    const sentDates = sent.map((b) => String(b.keyword).replace("topic ", ""));
+    expect(sentDates.every((d) => d <= "2026-09-30")).toBe(true);
+    expect(sent).toHaveLength(6);
+  });
+});
+
+describe("what a checkout owes each site", () => {
+  it("is written for every site of the account, and a second delivery changes nothing", async () => {
+    const db = new FakeDb({ workspaces: [{ ...site }, { ...site, id: "ws2" }, { ...site, id: "other", account_id: "acc2" }] });
+    expect(await oweResume(db.client, "acc1", "sub_1")).toBe(2);
+    expect(db.rows("workspaces").filter((w) => w.trial_resume_key === "sub_1").map((w) => w.id)).toEqual(["ws1", "ws2"]);
+    // Finished on one site: a redelivered event must not reopen it.
+    db.rows("workspaces")[0].trial_resumed_at = NOW.toISOString();
+    expect(await oweResume(db.client, "acc1", "sub_1")).toBe(0);
+    expect(db.rows("workspaces")[0].trial_resumed_at).toBe(NOW.toISOString());
+    // A new checkout is owed afresh.
+    expect(await oweResume(db.client, "acc1", "sub_9")).toBe(2);
+    expect(db.rows("workspaces")[0]).toMatchObject({ trial_resume_key: "sub_9", trial_resumed_at: null, trial_resume_claimed_at: null });
+  });
+
+  it("is claimed by one caller, and by another only once the first one's lease is out", async () => {
+    const db = new FakeDb({ workspaces: [{ ...site, trial_resume_key: "sub_1" }] });
+    const racing = await Promise.all([1, 2, 3].map(() => claimSiteResume(db.client, "ws1", "sub_1", NOW)));
+    expect(racing.filter(Boolean)).toHaveLength(1);
+    expect(await claimSiteResume(db.client, "ws1", "sub_1", new Date(NOW.getTime() + 60_000))).toBe(false);
+    expect(await claimSiteResume(db.client, "ws1", "sub_1", new Date(NOW.getTime() + RESUME_LEASE_MS + 60_000))).toBe(true);
+    // Not for a checkout it is not owed.
+    expect(await claimSiteResume(db.client, "ws1", "sub_2", new Date(NOW.getTime() + 2 * RESUME_LEASE_MS))).toBe(false);
   });
 });
 
 describe("resumeAccount", () => {
-  it("tops up the month and starts the week, once per checkout", async () => {
-    const db = new FakeDb({ calendar_entries: calendar(), workspaces: [{ ...site }] });
+  const owed = () => ({ ...site, trial_resume_key: "sub_1" });
+
+  it("tops up the month and starts the week, once per checkout, and says so where an operator looks", async () => {
+    const db = new FakeDb({ calendar_entries: calendar(), workspaces: [owed()] });
     const first = await resumeAccount(db.client, "acc1", { key: "sub_1", draftWeek: true, ...deps });
     await first.settled;
     expect(topUp).toHaveBeenCalledTimes(1);
     expect(topUp.mock.calls[0][3]).toMatchObject({ mode: "top-up" });
     expect(sent).toHaveLength(6);
-    expect(db.rows("workspaces")[0]).toMatchObject({ trial_resume_key: "sub_1" });
+    expect(db.rows("workspaces")[0]).toMatchObject({ trial_resume_key: "sub_1", trial_resumed_at: expect.any(String) });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ level: "info", source: "plan.resume", accountId: "acc1", workspaceId: "ws1", context: { key: "sub_1", started: 6 } });
 
-    // Stripe delivers the event again, or a second event for the same checkout arrives.
+    // Stripe delivers the event again, or the scheduled writer's sweep sends it.
     const second = await resumeAccount(db.client, "acc1", { key: "sub_1", draftWeek: true, ...deps });
     await second.settled;
     expect(second.sites[0].skipped).toBe("already resumed for this checkout");
@@ -267,21 +317,69 @@ describe("resumeAccount", () => {
     expect(sent).toHaveLength(6);
   });
 
-  it("only tops up the month for a checkout without a trial: drafting keeps the scheduled pace", async () => {
+  it("runs again when the first run was cut off before it finished, and not while it may still be running", async () => {
+    const db = new FakeDb({ calendar_entries: calendar(), workspaces: [owed()] });
+    // A resume claimed the site and was cut off: claimed, never finished.
+    expect(await claimSiteResume(db.client, "ws1", "sub_1", NOW)).toBe(true);
+
+    const tooSoon = await resumeAccount(db.client, "acc1", { key: "sub_1", draftWeek: true, ...deps, now: new Date(NOW.getTime() + 60_000) });
+    expect(tooSoon.sites[0].skipped).toBe("being resumed by another request");
+    expect(topUp).not.toHaveBeenCalled();
+
+    const later = new Date(NOW.getTime() + RESUME_LEASE_MS + 60_000);
+    const again = await resumeAccount(db.client, "acc1", { key: "sub_1", draftWeek: true, ...deps, now: later });
+    await again.settled;
+    expect(topUp).toHaveBeenCalledTimes(1);
+    expect(sent).toHaveLength(6);
+    expect(db.rows("workspaces")[0].trial_resumed_at).toEqual(expect.any(String));
+  });
+
+  it("does nothing for a site that is not owed this checkout", async () => {
     const db = new FakeDb({ calendar_entries: calendar(), workspaces: [{ ...site }] });
+    const out = await resumeAccount(db.client, "acc1", { key: "sub_1", draftWeek: true, ...deps });
+    expect(out.sites[0].skipped).toBe("not owed for this checkout");
+    expect(topUp).not.toHaveBeenCalled();
+    expect(sent).toHaveLength(0);
+  });
+
+  it("runs the sites side by side, so one slow top-up does not hold another site's week", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    topUp.mockImplementation(async (...a: unknown[]) => {
+      if (a[1] === "ws1") await gate;
+      return [];
+    });
+    seq = 0;
+    const second = { ...owed(), id: "ws2" };
+    const db = new FakeDb({
+      calendar_entries: [...calendar(), { ...entry("2026-09-26"), id: "e-ws2", workspace_id: "ws2" }],
+      workspaces: [owed(), second],
+    });
+    const run = resumeAccount(db.client, "acc1", { key: "sub_1", draftWeek: true, ...deps });
+    // ws2's week goes out while ws1's top-up is still running.
+    await vi.waitFor(() => expect(sent.some((b) => b.workspaceId === "ws2")).toBe(true));
+    expect(sent.some((b) => b.workspaceId === "ws1")).toBe(false);
+    release();
+    await (await run).settled;
+    expect(sent.some((b) => b.workspaceId === "ws1")).toBe(true);
+  });
+
+  it("only tops up the month for a checkout without a trial: drafting keeps the scheduled pace", async () => {
+    const db = new FakeDb({ calendar_entries: calendar(), workspaces: [{ ...site, trial_resume_key: "sub_2" }] });
     const out = await resumeAccount(db.client, "acc1", { key: "sub_2", draftWeek: false, ...deps });
     await out.settled;
     expect(topUp).toHaveBeenCalledTimes(1);
     expect(sent).toHaveLength(0);
+    expect(db.rows("calendar_entries").every((e) => e.draft_owed_at === null)).toBe(true);
   });
 
   it("still starts the week when the top-up fails, and records the failure", async () => {
     topUp.mockRejectedValueOnce(new Error("provider timeout"));
-    const db = new FakeDb({ calendar_entries: calendar(), workspaces: [{ ...site }] });
+    const db = new FakeDb({ calendar_entries: calendar(), workspaces: [owed()] });
     const out = await resumeAccount(db.client, "acc1", { key: "sub_1", draftWeek: true, ...deps });
     await out.settled;
     expect(out.sites[0].topUp).toBe("failed: provider timeout");
     expect(sent).toHaveLength(6);
-    expect(events.some((e) => String(e.message).includes("top-up failed"))).toBe(true);
+    expect(events.some((e) => e.level === "warn" && String(e.message).includes("month top-up failed: provider timeout"))).toBe(true);
   });
 });

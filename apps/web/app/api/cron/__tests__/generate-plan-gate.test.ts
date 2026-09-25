@@ -79,6 +79,9 @@ vi.mock("@/lib/email/account-recipients", () => ({
   userEmail: async () => null,
 }));
 vi.mock("@/lib/email/article-emails", () => ({ sendArticleDraftedEmails: async () => ({ sent: 1, skipped: 0, failed: 0 }) }));
+// The sweep that finishes an unfinished trial resume is its own contract
+// (lib/plan/__tests__/resume-sweep.test.ts).
+vi.mock("@/lib/plan/resume-sweep", () => ({ sweepUnfinishedResumes: async () => ({ lines: [], settled: Promise.resolve(), started: 0 }) }));
 // The claim on a due entry is its own contract (lib/plan/__tests__/draft-claim);
 // here every claim is won, so what is pinned is which keyword gets written.
 vi.mock("@/lib/plan/draft-claim", () => ({

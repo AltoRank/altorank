@@ -19,7 +19,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { claimEntry, claimsInFlight, recordEntryFailure } from "../draft-claim";
 import { duePlannedKeyword } from "@/lib/onboarding/plan";
-import { draftRestOfWeek } from "../resume-week";
+import { claimSiteResume, draftRestOfWeek, oweResume, RESUME_LEASE_MS } from "../resume-week";
 
 function localEnv(): { url: string; key: string } | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -36,7 +36,7 @@ function localEnv(): { url: string; key: string } | null {
 
 async function ready(db: SupabaseClient): Promise<boolean> {
   try {
-    const { error } = await db.from("calendar_entries").select("draft_claimed_at").limit(1);
+    const { error } = await db.from("calendar_entries").select("draft_claimed_at, draft_owed_at").limit(1);
     return !error;
   } catch {
     return false;
@@ -144,6 +144,8 @@ describe.skipIf(!LIVE)("draft claims on the local database", () => {
       await first.settled;
       expect(sent.map((b) => b.entryId).sort()).toEqual([...week].sort());
       expect(first.week?.until).toBe(day(5));
+      const { data: owed } = await db.from("calendar_entries").select("id").eq("workspace_id", siteId).not("draft_owed_at", "is", null);
+      expect((owed ?? []).map((r) => r.id).sort()).toEqual([...week].sort());
 
       const again = await draftRestOfWeek(db, site as never, { by: `trial:${RUN}`, ...deps });
       expect(again.started).toEqual([]);
@@ -156,15 +158,46 @@ describe.skipIf(!LIVE)("draft claims on the local database", () => {
     }
   });
 
-  it("claims a site once per checkout", async () => {
-    const claim = () =>
-      db
-        .from("workspaces")
-        .update({ trial_resume_key: `sub_${RUN}`, trial_resumed_at: new Date().toISOString() })
-        .eq("id", workspaceId)
-        .or(`trial_resume_key.is.null,trial_resume_key.neq.sub_${RUN}`)
-        .select("id");
-    const results = await Promise.all([claim(), claim(), claim(), claim()]);
-    expect(results.filter((r) => (r.data ?? []).length > 0)).toHaveLength(1);
+  it("hands the scheduled writer an owed entry whatever its date, through the real filter", async () => {
+    const { data: site, error } = await db
+      .from("workspaces")
+      .insert({ account_id: accountId, name: "third.acme-agency.example", domain: "third.acme-agency.example" })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    const siteId = site.id as string;
+    try {
+      const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+      const { data: row } = await db
+        .from("calendar_entries")
+        .insert({ workspace_id: siteId, keyword: "topic owed", scheduled_date: day(4), status: "queue" })
+        .select("id")
+        .single();
+      expect(await duePlannedKeyword(db, siteId)).toBeNull();
+      await db.from("calendar_entries").update({ draft_owed_at: new Date().toISOString() }).eq("id", row!.id);
+      expect((await duePlannedKeyword(db, siteId))?.entryId).toBe(row!.id);
+    } finally {
+      await db.from("calendar_entries").delete().eq("workspace_id", siteId);
+      await db.from("workspaces").delete().eq("id", siteId);
+    }
+  });
+
+  it("owes a site once per checkout, claims it once, and again only once the claim's lease is out", async () => {
+    const key = `sub_${RUN}`;
+    expect(await oweResume(db, accountId, key)).toBeGreaterThan(0);
+    // A redelivered event changes nothing.
+    expect(await oweResume(db, accountId, key)).toBe(0);
+
+    const now = new Date();
+    const results = await Promise.all([1, 2, 3, 4].map(() => claimSiteResume(db, workspaceId, key, now)));
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(await claimSiteResume(db, workspaceId, key, new Date(now.getTime() + 60_000))).toBe(false);
+    // Cut off: never finished, and the lease has run out.
+    expect(await claimSiteResume(db, workspaceId, key, new Date(now.getTime() + RESUME_LEASE_MS + 60_000))).toBe(true);
+
+    // Finished: never claimed again for this checkout, whatever the clock says.
+    await db.from("workspaces").update({ trial_resumed_at: new Date().toISOString() }).eq("id", workspaceId);
+    expect(await claimSiteResume(db, workspaceId, key, new Date(now.getTime() + 10 * RESUME_LEASE_MS))).toBe(false);
+    expect(await oweResume(db, accountId, key)).toBe(0);
   });
 });

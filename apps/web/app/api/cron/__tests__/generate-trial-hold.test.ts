@@ -10,11 +10,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * draft failed.
  */
 
-const { generateArticle, getQuota, recommendKeywords, duePlannedKeyword, claim } = vi.hoisted(() => ({
+const { generateArticle, getQuota, recommendKeywords, duePlannedKeyword, claim, sweep, order, deferred } = vi.hoisted(() => ({
   generateArticle: vi.fn(),
   getQuota: vi.fn(),
   recommendKeywords: vi.fn(),
   duePlannedKeyword: vi.fn(),
+  sweep: vi.fn(),
+  order: [] as string[],
+  deferred: [] as Array<() => unknown>,
   claim: {
     claimEntry: vi.fn(),
     claimsInFlight: vi.fn(),
@@ -59,6 +62,14 @@ vi.mock("@/lib/plan/draft-claim", () => ({
   recordEntryFailure: (...a: unknown[]) => claim.recordEntryFailure(...a),
   releaseClaim: (...a: unknown[]) => claim.releaseClaim(...a),
 }));
+// The sweep that finishes an unfinished trial resume is its own contract
+// (lib/plan/__tests__/resume-sweep.test.ts); here, only that it runs first
+// and its lines reach the report.
+vi.mock("@/lib/plan/resume-sweep", () => ({ sweepUnfinishedResumes: (...a: unknown[]) => (order.push("sweep"), sweep(...a)) }));
+vi.mock("next/server", async () => {
+  const real = await vi.importActual<typeof import("next/server")>("next/server");
+  return { ...real, after: (fn: () => unknown) => { deferred.push(fn); } };
+});
 vi.mock("@/lib/email/draft-batch", () => ({ announceDraftBatch: async () => "emailed", sweepUnannouncedDrafts: async () => [] }));
 vi.mock("@/lib/email/schedule-events", () => ({
   announceNothingWritten: async () => "",
@@ -86,6 +97,9 @@ beforeEach(() => {
   claim.claimsInFlight.mockReset().mockResolvedValue(0);
   claim.recordEntryFailure.mockReset().mockResolvedValue(undefined);
   claim.releaseClaim.mockReset().mockResolvedValue(undefined);
+  sweep.mockReset().mockResolvedValue({ lines: [], settled: Promise.resolve(), started: 0 });
+  order.length = 0;
+  deferred.length = 0;
 });
 
 describe("cron/generate and a trial-gated account", () => {
@@ -155,5 +169,28 @@ describe("cron/generate and claimed entries", () => {
     const body = await (await GET(req())).json();
     expect(body.generated).toBe(1);
     expect(claim.claimEntry).not.toHaveBeenCalled();
+  });
+});
+
+describe("cron/generate and a trial resume that was cut off", () => {
+  beforeEach(() => {
+    getQuota.mockResolvedValue({ limit: 100, used: 1, remaining: 99, reason: "plan", plan: "starter" });
+  });
+
+  it("sends it again before the loop, reports what it did, and stays up until its drafts have left", async () => {
+    const settled = Promise.resolve();
+    sweep.mockResolvedValue({ lines: ["ws-1: started the rest of the trial's week again, 3 drafts"], settled, started: 3 });
+    claim.claimsInFlight.mockImplementation(async () => (order.push("loop"), 3));
+    const body = await (await GET(req())).json();
+    expect(order[0]).toBe("sweep");
+    expect(body.resumes).toEqual(["ws-1: started the rest of the trial's week again, 3 drafts"]);
+    // The loop then finds the site being written and leaves it alone.
+    expect(body.results[0]).toMatchObject({ status: "skipped" });
+    expect(deferred).toHaveLength(1);
+  });
+
+  it("keeps nothing alive when the sweep started nothing", async () => {
+    await GET(req());
+    expect(deferred).toHaveLength(0);
   });
 });

@@ -105,6 +105,18 @@ describe("duePlannedKeyword and claims", () => {
     expect(await duePlannedKeyword(d.client, "ws1", NOW)).toMatchObject({ entryId: "a" });
   });
 
+  it("hands it an entry the trial start owes now whatever its date, once nobody is writing it", async () => {
+    // The rest of the week the trial opened, whose chain of drafts was cut
+    // off: owed, unclaimed, dated later this week.
+    const owed = new FakeDb({ calendar_entries: [e("a", { scheduled_date: "2026-09-29", draft_owed_at: "2026-09-25T09:00:00.000Z" })] });
+    expect(await duePlannedKeyword(owed.client, "ws1", NOW)).toMatchObject({ entryId: "a" });
+    // Owed and being written right now: nobody else's.
+    const writing = new FakeDb({
+      calendar_entries: [e("a", { scheduled_date: "2026-09-29", draft_owed_at: "2026-09-25T09:00:00.000Z", draft_claimed_at: "2026-09-25T09:58:00.000Z", draft_claimed_by: "trial:sub_1" })],
+    });
+    expect(await duePlannedKeyword(writing.client, "ws1", NOW)).toBeNull();
+  });
+
   it("leaves an unclaimed entry for its own day", async () => {
     const d = new FakeDb({ calendar_entries: [e("a", { scheduled_date: "2026-09-29" }), e("b", { scheduled_date: "2026-09-25" })] });
     expect(await duePlannedKeyword(d.client, "ws1", NOW)).toMatchObject({ entryId: "b" });

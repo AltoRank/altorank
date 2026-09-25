@@ -58,8 +58,6 @@ interface Body {
   /** The planned entry a resumed week claimed, and the claim it holds. */
   entryId?: string;
   claim?: string;
-  /** The last day of the week the resume started, so the chain stays in it. */
-  until?: string;
   selection?: { reasons: string[]; score: number; difficulty: number | null; volume: number | null };
   /**
    * This draft's share of the run's one related-keyword lookup, when the
@@ -140,7 +138,7 @@ export async function POST(request: NextRequest) {
   // What a resumed entry does once it is settled either way: hand the week
   // its next draft, and, when this was the last one, send the batch's email.
   const next = (): void => {
-    if (claimed) after(() => chainNext(supabase, workspaceId, claimed.by, body.until));
+    if (claimed) after(() => chainNext(supabase, workspaceId, claimed.by));
   };
 
   // The same gates the cron and the onboarding pipeline use. The trial hold
@@ -221,12 +219,20 @@ export async function POST(request: NextRequest) {
 /**
  * Start the week's next draft, and when nothing is left in flight, tell the
  * account about the batch. Never throws: this runs after the response, and
- * whatever it cannot do the scheduled writer and the draft sweep pick up.
+ * whatever it cannot do is still owed, so the scheduled writer's next run
+ * starts the chain again (lib/plan/resume-sweep.ts) and the draft sweep
+ * announces what landed.
+ *
+ * The batch's email goes out the day it lands even when the account already
+ * heard from us today. That is the ordinary case, not the exception: a trial
+ * started on signup day follows the first draft's email by minutes, and the
+ * once-a-day rule (lib/email/draft-batch.ts) would hold the week the person
+ * just paid to open until tomorrow's sweep.
  */
-async function chainNext(supabase: SupabaseClient, workspaceId: string, by: string, until: string | undefined): Promise<void> {
+async function chainNext(supabase: SupabaseClient, workspaceId: string, by: string): Promise<void> {
   try {
-    const step = await continueFrom(supabase, workspaceId, { by, until });
-    if (step.done) await announceDraftBatch(supabase, workspaceId);
+    const step = await continueFrom(supabase, workspaceId, { by });
+    if (step.done) await announceDraftBatch(supabase, workspaceId, { evenIfToldToday: true });
     await step.settled;
   } catch (err) {
     console.error(`[internal/draft] could not start the next draft for ${workspaceId}: ${err instanceof Error ? err.message : err}`);

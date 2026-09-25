@@ -15,6 +15,8 @@ import { recordEvent } from "@/lib/observability/record";
 import { describe as describeError } from "@/lib/observability/event";
 import { paceOnActivation } from "@/lib/content/pace";
 import { dispatchResume } from "@/lib/plan/resume-dispatch";
+import { oweResume } from "@/lib/plan/resume-week";
+import { canSelfInvoke } from "@/lib/content/fan-out";
 import { resumePausedWorkspaces } from "@/lib/billing/resume";
 import { graceEndsAt } from "@/lib/billing/dunning";
 import {
@@ -382,7 +384,7 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
          */
         const { data: sites } = await supabase
           .from("workspaces")
-          .select("id, auto_generate_weekly_limit")
+          .select("id, auto_generate_weekly_limit, auto_generate, status")
           .eq("account_id", accountId);
         for (const site of sites ?? []) {
           const next = paceOnActivation(site.auto_generate_weekly_limit as number | null, plan);
@@ -402,34 +404,46 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
          * dashboard that should fill while they look around: the month on the
          * calendar, and the rest of this week being written now.
          *
-         * Neither happens here. The top-up buys results pages and verdicts
+         * Neither is done here. The top-up buys results pages and verdicts
          * and ran for minutes inside this handler, which Stripe times out and
-         * redelivers; the drafts are minutes each. So this answers Stripe and
-         * hands both to /api/internal/resume-drafting in its own invocation
-         * (lib/plan/resume-dispatch.ts), keyed by the subscription so a
-         * redelivered event opens nothing twice. A checkout without a trial
-         * gets the top-up only, as it always did; its drafts come at the
-         * scheduled writer's pace.
+         * redelivers; the drafts are minutes each. What this request does is
+         * write down that every site is owed this checkout's follow-up
+         * (`oweResume`, keyed by the subscription), and a failure to write it
+         * is thrown like any other here, so Stripe delivers the event again.
+         * The work itself is handed to /api/internal/resume-drafting after the
+         * answer (lib/plan/resume-dispatch.ts); if that hand-off or the work
+         * is cut off, the sites are still owed, and the scheduled writer's
+         * next run sends it again (lib/plan/resume-sweep.ts). A checkout
+         * without a trial gets the top-up only, as it always did; its drafts
+         * come at the scheduled writer's pace.
          */
-        const resume = { accountId, key: String(session.subscription), draftWeek: Boolean(trial) };
+        const key = String(session.subscription);
+        await oweResume(supabase, accountId, key);
+        const resume = { accountId, key, draftWeek: Boolean(trial) };
         after(() => dispatchResume(resume));
 
-        // The card was taken: say when it is charged, where to stop that, and
-        // that the writing the trial opens has started.
+        // The card was taken: say when it is charged and where to stop that.
+        // And, when it is true at the moment this is sent, that the rest of
+        // this week has gone to the writer: a trial checkout, an install that
+        // can hand the drafts off, and a site set to write automatically and
+        // not paused. Whether each draft then lands is not known yet, so the
+        // email promises the hand-off, not the drafts; the drafts' own email
+        // says when they are there.
         if (trial) {
           const tier = plan ?? "starter";
+          const weekHandedOff =
+            canSelfInvoke() && (sites ?? []).some((s) => s.auto_generate === true && s.status !== "paused");
           try {
             await notifyTrialStarted(
               supabase,
               accountId,
-              { planLabel: PLAN_LABELS[tier] ?? tier, planPrice: PLAN_PRICES[tier] ?? "", endsAt: trial, draftingStarted: true },
-              String(session.subscription),
+              { planLabel: PLAN_LABELS[tier] ?? tier, planPrice: PLAN_PRICES[tier] ?? "", endsAt: trial, weekHandedOff },
+              key,
             );
           } catch (err) {
             console.error(`[stripe] trial-started email: ${err instanceof Error ? err.message : err}`);
           }
         }
-
       }
       break;
     }

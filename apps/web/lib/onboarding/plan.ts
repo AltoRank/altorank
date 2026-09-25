@@ -550,13 +550,14 @@ export async function ensureQuestionsFor(
  * The planned keyword the cron should write today, if any: the earliest
  * queued entry on or before `today` that has no article yet.
  *
- * Two more kinds of entry are due whatever their date, because a writer
- * already tried them and did not finish (lib/plan/draft-claim.ts): one whose
- * draft failed, and one whose claim ran out its lease without an article.
- * The rest of a trial's first week is drafted the moment the trial starts,
- * so an entry dated Friday that failed on Tuesday is picked up by the next
- * run rather than waiting for Friday. An entry somebody is writing right
- * now is not due to anyone else.
+ * Three more kinds of entry are due whatever their date. One a trial start
+ * owes now (`draft_owed_at`, lib/plan/resume-week.ts) that nobody has
+ * claimed: the rest of the week the trial opened, whose chain of drafts was
+ * cut off. And two a writer already tried and did not finish
+ * (lib/plan/draft-claim.ts): one whose draft failed, and one whose claim ran
+ * out its lease without an article. So an entry dated Friday that failed on
+ * Tuesday is picked up by the next run rather than waiting for Friday. An
+ * entry somebody is writing right now is not due to anyone else.
  */
 export async function duePlannedKeyword(
   supabase: SupabaseClient,
@@ -571,7 +572,7 @@ export async function duePlannedKeyword(
     .eq("status", "queue")
     .is("article_id", null)
     .or(
-      `and(scheduled_date.lte.${isoDate(today)},draft_claimed_at.is.null),draft_failed_at.not.is.null,draft_claimed_at.lt.${leaseCutoff}`,
+      `and(scheduled_date.lte.${isoDate(today)},draft_claimed_at.is.null),and(draft_owed_at.not.is.null,draft_claimed_at.is.null),draft_failed_at.not.is.null,draft_claimed_at.lt.${leaseCutoff}`,
     )
     .order("scheduled_date", { ascending: true })
     .limit(1)

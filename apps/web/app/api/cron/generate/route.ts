@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
@@ -35,6 +35,7 @@ import {
 } from "@/lib/content/generate-queue";
 import { observedCron } from "@/lib/observability/cron";
 import { setupFinishedElsewhere } from "@/lib/onboarding/setup-state";
+import { sweepUnfinishedResumes } from "@/lib/plan/resume-sweep";
 
 /**
  * Scheduled draft generation.
@@ -133,6 +134,15 @@ async function run(request: Request) {
   } catch (err) {
     resumed = { error: err instanceof Error ? err.message : "unknown error" };
   }
+
+  // What a trial start began and a function time limit cut short: a
+  // checkout's follow-up that never finished, or the week's chain of drafts
+  // that stopped (lib/plan/resume-sweep.ts). Sent again before the loop, so
+  // the loop below finds those sites being written and leaves them to it.
+  // Never fatal, and the drafts it starts run in their own invocations; this
+  // one only stays up until the requests have left.
+  const resumes = await sweepUnfinishedResumes(supabase);
+  if (resumes.started > 0) after(() => resumes.settled);
 
   const { data: workspaces, error } = await supabase
     .from("workspaces")
@@ -580,6 +590,7 @@ async function run(request: Request) {
   return NextResponse.json({
     checked: workspaces?.length ?? 0,
     pausesResumed: resumed,
+    resumes: resumes.lines,
     pauseReminders,
     pausedNotices,
     setupNotices,

@@ -75,7 +75,7 @@ const claimedEntry = (over: Record<string, unknown> = {}) => ({
   draft_failure: null,
   ...over,
 });
-const resumed = { workspaceId: "ws1", entryId: "e1", keywordId: "k1", keyword: "crm for agencies", claim: "trial:sub_1", until: "2026-09-30" };
+const resumed = { workspaceId: "ws1", entryId: "e1", keywordId: "k1", keyword: "crm for agencies", claim: "trial:sub_1" };
 
 beforeEach(() => {
   process.env.CRON_SECRET = "cron-secret";
@@ -111,17 +111,19 @@ describe("a resumed week's entry", () => {
     expect(db.rows("calendar_entries")[0]).toMatchObject({ article_id: "art-9" });
 
     await runDeferred();
-    expect(continueFrom).toHaveBeenCalledWith(expect.anything(), "ws1", { by: "trial:sub_1", until: "2026-09-30" });
+    expect(continueFrom).toHaveBeenCalledWith(expect.anything(), "ws1", { by: "trial:sub_1" });
     // Others are still in flight: no email yet.
     expect(announce).not.toHaveBeenCalled();
   });
 
-  it("sends the batch's one email when the last draft lands", async () => {
+  it("sends the batch's one email when the last draft lands, that day even if the first draft's went out today", async () => {
     continueFrom.mockResolvedValue({ started: 0, done: true, settled: Promise.resolve(), detail: "nothing left" });
     await post(resumed);
     await runDeferred();
     expect(announce).toHaveBeenCalledTimes(1);
-    expect(announce).toHaveBeenCalledWith(expect.anything(), "ws1");
+    // A trial started on signup day follows the first draft's email by
+    // minutes; the once-a-day rule would hold the week until tomorrow.
+    expect(announce).toHaveBeenCalledWith(expect.anything(), "ws1", { evenIfToldToday: true });
   });
 
   it("writes nothing for a duplicate: the claim is somebody else's, or the entry is already written", async () => {
