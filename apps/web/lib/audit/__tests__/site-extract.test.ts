@@ -46,6 +46,19 @@ describe("roleOf", () => {
     expect(roleOf("https://example.fi/yhteystiedot", { h1: "Yhteystiedot" })).toBeNull();
   });
 
+  it("takes a contact, pricing or about page nested under a section for what its own name says", () => {
+    // `/kurumsal` ("corporate") is a common Turkish menu that holds the about
+    // AND the contact page; the section is not what the page is.
+    expect(roleOf("https://acme-agency.example/company/contact", { h1: "Contact us" })).toEqual({ role: "contact", roleFrom: "path", detail: false });
+    expect(roleOf("https://ornek-ajans.example/kurumsal/iletisim", { h1: "İletişim" })).toEqual({ role: "contact", roleFrom: "path", detail: false });
+    expect(roleOf("https://ornek-ajans.example/tr/kurumsal/hakkimizda")).toEqual({ role: "about", roleFrom: "path", detail: false });
+    expect(roleOf("https://acme-agency.example/products/pricing")).toEqual({ role: "pricing", roleFrom: "path", detail: false });
+    // A slug that names nothing, headed as the contact page, is the contact page.
+    expect(roleOf("https://ornek-ajans.example/kurumsal/bize-yazin", { h1: "İletişim" })).toEqual({ role: "contact", roleFrom: "heading", detail: false });
+    // And a slug that names nothing under a section, headed as nothing, is still one item of it.
+    expect(roleOf("https://ornek-ajans.example/hizmetler/web-tasarim", { h1: "Web Tasarım" })).toEqual({ role: "offering", roleFrom: "path", detail: true });
+  });
+
   it("trusts the page's structured data over its URL", () => {
     expect(roleOf("https://example.fi/yhteystiedot", { schemaTypes: ["ContactPage"] })).toMatchObject({ role: "contact", roleFrom: "schema" });
   });

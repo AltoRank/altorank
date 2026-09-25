@@ -19,7 +19,7 @@
 //
 // Which page is which is decided by the page itself, in this order: its
 // structured data (AboutPage, ContactPage, Service...), then the words in its
-// URL, then its own heading. The words are a table in the languages listed in
+// URL - its own name before the section it sits in - then its own heading. The words are a table in the languages listed in
 // ROLE_LANGUAGES. A page in any other language is not guessed at: it gets no
 // role, and the writer is told plainly that no such page was recognised.
 //
@@ -332,18 +332,40 @@ export function roleOf(
     if (hit) return { role: hit.role, roleFrom: "schema", detail: hit.detail };
   }
 
-  // The first two meaningful segments: `/hizmetler`, `/tr/hizmetler/web`,
-  // `/company/about-us`. Deeper than that is a page inside a section, and its
-  // section is what names it.
+  // The page's own name first: the last meaningful segment, when it says
+  // what the page is. `/company/contact`, `/kurumsal/iletisim` (a Turkish
+  // site's "Corporate" menu) and `/products/pricing` are the contact and
+  // pricing pages, not pages inside the about or products section - taking
+  // the first segment made them "about" and "offering" detail pages, and a
+  // contact page the crawl had fetched was never offered as one.
+  const leaf = SLUG_ROLE.get(segments[segments.length - 1]);
+  if (leaf) return { role: leaf, roleFrom: "path", detail: false };
+
+  const heading = headingRole(opts);
+  // Otherwise the section names it, from the first two meaningful segments:
+  // `/tr/hizmetler/web` is one of the services. The leaf named nothing, so
+  // this is always a page inside the section - unless its own heading says
+  // it is the contact, pricing or about page (`/kurumsal/bize-yazin` headed
+  // "İletişim"), which outranks the section it sits in.
   for (let i = 0; i < Math.min(2, segments.length); i++) {
     const role = SLUG_ROLE.get(segments[i]);
-    if (role) return { role, roleFrom: "path", detail: segments.length > i + 1 };
+    if (!role) continue;
+    if (heading && heading !== role && PAGE_LEVEL_ROLES.has(heading)) return { role: heading, roleFrom: "heading", detail: false };
+    return { role, roleFrom: "path", detail: true };
   }
 
+  return heading ? { role: heading, roleFrom: "heading", detail: false } : null;
+}
+
+/** Roles a single page holds, as opposed to a section of many (services, work). */
+const PAGE_LEVEL_ROLES: ReadonlySet<PageRole> = new Set(["contact", "pricing", "about"]);
+
+/** The role the page's H1, else the first part of its title, names; null when neither names one. */
+function headingRole(opts: { h1?: string | null; title?: string | null }): PageRole | null {
   for (const candidate of [opts.h1, firstTitlePart(opts.title ?? null)]) {
     if (!candidate) continue;
     const role = LABEL_ROLE.get(labelOf(candidate));
-    if (role) return { role, roleFrom: "heading", detail: false };
+    if (role) return role;
   }
   return null;
 }

@@ -89,6 +89,20 @@ describe("buildSiteFacts", () => {
     expect(conversionCandidates(ROWS, DOMAIN)).toEqual([`${O}/iletisim`]);
   });
 
+  it("offers a contact page nested under the corporate menu as the conversion page", () => {
+    // `/kurumsal/iletisim` used to be read as a page inside the about section,
+    // and a contact page the crawl had fetched was never offered.
+    const nested = [
+      row(`${O}/kurumsal/hakkimizda`, shell("Hakkımızda", "<h1>Hakkımızda</h1><p>Örnek Ajans 2012 yılında kuruldu.</p>")),
+      row(`${O}/kurumsal/iletisim`, shell("İletişim", "<h1>İletişim</h1><p>Adres: Moda Cad. No:1 Kadıköy/İstanbul</p>")),
+    ];
+    expect(conversionCandidates(nested, DOMAIN)).toEqual([`${O}/kurumsal/iletisim`]);
+    expect(buildSiteFacts(nested, DOMAIN).pages.map((p) => [p.role, p.url])).toEqual([
+      ["About", `${O}/kurumsal/hakkimizda`],
+      ["Contact", `${O}/kurumsal/iletisim`],
+    ]);
+  });
+
   it("says so when no page was recognised, and names the languages it can recognise", () => {
     const fi = buildSiteFacts([{ url: "https://example.fi/yhteystiedot", title: "Yhteystiedot", h1: null, status: 200, extract: null }], "example.fi");
     expect(fi.notes[0]).toMatch(/None of the 1 pages read was recognised/);
