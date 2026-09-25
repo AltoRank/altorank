@@ -726,7 +726,12 @@ published a draft on a site with no CMS connected and nothing recorded it.
   default '{}'`, a fast default, no rewrite). A find sets `status = 'live'`
   and `published_url` on the existing publish record; these columns say it
   was found rather than published by us, and hold what "Not my article"
-  restores.
+  restores. `grant select` on the four to `anon, authenticated`: none is the
+  article's text, and the calendar and "Not my article" read them through the
+  person's own client. That keeps them readable whichever of 094 and **097**
+  (article text server-only, `fix/trial-gate-first-article`) is applied
+  first; 097 grants back only the columns that exist when it runs. Both
+  orders were checked on the local stack inside rolled-back transactions.
 - `workspaces.found_on_site_checked_at`: the check's turn order.
 - `workspaces.found_on_site_unreadable`: why the check cannot see the site's
   new pages (`robots-unanswered`, `robots-disallowed`, `no-sitemap`,
@@ -738,8 +743,9 @@ published a draft on a site with no CMS connected and nothing recorded it.
   (service role) reads or writes it. Post-flight §4 step 2 lists it with zero
   policies; that is expected.
 
-Depends only on **001**. Idempotent (`if not exists` throughout; applied twice
-in a row on the local stack, 2026-09-25). Nothing in the file backfills: no
+Depends only on **001**. Idempotent (`if not exists` throughout, and a
+repeated `grant` is a no-op; applied twice in a row on the local stack,
+2026-09-25). Nothing in the file backfills: no
 article is marked found until the cron runs.
 
 **Apply before the merge deploys.** `cron/site-pages` runs the check first; on

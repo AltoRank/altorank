@@ -53,6 +53,19 @@ comment on column public.articles.found_on_site_prior is
 comment on column public.articles.found_on_site_rejected is
   'Pages a person said are not this article. The nightly check never matches them to it again.';
 
+-- Readable through the signed-in person's own client: the calendar card and
+-- "Not my article" read them that way. The trial gate's migration (097,
+-- "article text server-only") takes table-wide SELECT on articles away from
+-- anon and authenticated and grants back each column that is not the
+-- article's text, as the columns stand when it runs; a column added after it
+-- is readable by no client token until granted. None of these four is text
+-- of the article - a time, the comparison's numbers and the URL, the prior
+-- status and URL, rejected URLs - so they are granted here, which makes 094
+-- and 097 correct in either order. Before 097 this is a no-op: table-wide
+-- SELECT already covers them.
+grant select (found_on_site_at, found_on_site_evidence, found_on_site_prior, found_on_site_rejected)
+  on public.articles to anon, authenticated;
+
 -- Fair turns across nights: the check visits workspaces least-recently-checked
 -- first, the same self-healing order cron/site-pages uses for its crawl.
 alter table public.workspaces
