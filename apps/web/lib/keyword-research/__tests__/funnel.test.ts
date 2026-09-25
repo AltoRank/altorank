@@ -46,13 +46,13 @@ describe("planCapacity", () => {
 
 describe("dedupe and existing", () => {
   it("collapses word-order and plural variants, keeping the best-searched phrasing", () => {
-    const out = dedupeCandidates([c("agency seo", 1000), c("seo for agencies", 1200), c("agency for seo", 1200)]);
+    const out = dedupeCandidates([c("agency seo", 1000), c("seo for agencies", 1200), c("agency for seo", 1200)], "en");
     expect(out).toHaveLength(1);
     // Two at 1,200: the shorter phrasing wins the tie.
     expect(out[0].term).toBe("agency for seo");
   });
   it("marks a candidate tracked when the workspace holds any phrasing of it", () => {
-    const [a, b] = markExisting([c("seo for agencies", 10), c("crm software", 10)], [{ id: "k1", term: "agency seo", status: "planned" }]);
+    const [a, b] = markExisting([c("seo for agencies", 10), c("crm software", 10)], [{ id: "k1", term: "agency seo", status: "planned" }], "en");
     expect(a.existingId).toBe("k1");
     expect(a.existingStatus).toBe("planned");
     expect(b.existingId).toBeNull();
@@ -79,16 +79,16 @@ describe("applyFunnel", () => {
   const existing = [{ id: "k1", term: "seo agency", status: "planned" }];
 
   it("accounts for every row and proposes the rest, capped by limit", () => {
-    const { candidates, funnel } = applyFunnel(raw, existing, { limit: 2 });
+    const { candidates, funnel } = applyFunnel(raw, existing, { language: "en", limit: 2 });
     expect(funnel).toEqual({ found: 6, skippedNoData: 1, skippedLowVolume: 0, skippedExisting: 1, skippedOffTopic: 0, proposed: 2 });
     expect(candidates.map((x) => x.term)).toEqual(["easy pick", "crm software"]);
   });
   it("found + drops + kept adds up before the limit", () => {
-    const { funnel } = applyFunnel(raw, existing);
+    const { funnel } = applyFunnel(raw, existing, { language: "en" });
     expect(funnel.found).toBe(funnel.skippedNoData + funnel.skippedLowVolume + funnel.skippedExisting + funnel.skippedOffTopic + funnel.proposed);
   });
   it("keeps no-data and already-tracked rows when asked (Find and Import)", () => {
-    const { candidates, funnel } = applyFunnel(raw, existing, { keepExisting: true, keepNoData: true, minVolume: 0 });
+    const { candidates, funnel } = applyFunnel(raw, existing, { language: "en", keepExisting: true, keepNoData: true, minVolume: 0 });
     expect(funnel.skippedNoData).toBe(0);
     expect(funnel.skippedExisting).toBe(0);
     expect(funnel.skippedLowVolume).toBe(0);

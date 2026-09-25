@@ -85,3 +85,24 @@ describe("with a session", () => {
     expect(to.pathname).toBe("/dashboard");
   });
 });
+
+/**
+ * The path, forwarded for the dashboard layout's trial gate: a layout is not
+ * told its own path, and the gate lets exactly /connect through
+ * (lib/billing/gate-paths.ts). Next forwards a request header the middleware
+ * set as `x-middleware-request-<name>` on the response.
+ */
+describe("the path header for the trial gate", () => {
+  beforeEach(() => getUser.mockResolvedValue({ data: { user: { id: "u1" } } }));
+
+  it("forwards the path being served", async () => {
+    const res = await get("/connect/google?code=abc");
+    expect(res.headers.get("x-middleware-request-x-altorank-path")).toBe("/connect/google");
+  });
+
+  it("overwrites a value the client sent, so nobody can claim to be on /connect", async () => {
+    const req = new NextRequest(new URL("/content/abc", ORIGIN), { headers: { "x-altorank-path": "/connect" } });
+    const res = await updateSession(req);
+    expect(res.headers.get("x-middleware-request-x-altorank-path")).toBe("/content/abc");
+  });
+});

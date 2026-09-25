@@ -23,12 +23,28 @@ export interface DraftSignal {
   /** The editor bumps this on a save; the pipeline's own writes land within minutes of creation. */
   created_at: string;
   updated_at: string | null;
+  /**
+   * Set when the nightly found-on-site check (lib/found-on-site) marked the
+   * article live. Its `status` is then the check's word, not a person's.
+   */
+  found_on_site_at?: string | null;
 }
 
-/** A person did something with this draft: approved, held, or edited it later. */
+/**
+ * A person did something with this draft: approved, held, or edited it later.
+ *
+ * A status past review normally means a person moved it there. Not when the
+ * nightly check put it there: an article found on the customer's own site is
+ * `live` because a machine compared two texts, and no one has decided anything
+ * in the product. Counting that as a review would let the check restart
+ * unattended drafting on the free allowance - paid model calls for an account
+ * that has not started a trial, and the rest of the week written before the
+ * person has come back. The approval, the hold and the later edit still count
+ * on such a row; only the status does not.
+ */
 export function reviewed(a: DraftSignal): boolean {
   if (a.approved_at || a.held_by) return true;
-  if (!["review", "drafting", "error"].includes(a.status)) return true;
+  if (!a.found_on_site_at && !["review", "drafting", "error"].includes(a.status)) return true;
   if (a.updated_at && a.created_at) {
     // The generation pipeline's own updates finish within minutes; an edit an
     // hour later is a person.
@@ -51,11 +67,20 @@ export function firstDraftBlocker(drafts: DraftSignal[]): string | null {
   );
 }
 
-/** The rows `firstDraftBlocker` needs, for one workspace. */
+/**
+ * The rows `firstDraftBlocker` needs, for one workspace.
+ *
+ * A read that fails is a reason not to write, said as one. Read as "no
+ * drafts", it would open the gate for every free account at once - which is
+ * exactly what a missing column (094 not yet applied) or a timeout would do.
+ */
 export async function firstDraftAwaitsReview(supabase: SupabaseClient, workspaceId: string): Promise<string | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("articles")
-    .select("status, generated_autonomously, approved_at, held_by, created_at, updated_at")
+    .select("status, generated_autonomously, approved_at, held_by, created_at, updated_at, found_on_site_at")
     .eq("workspace_id", workspaceId);
+  if (error) {
+    return `The free allowance's drafts could not be read (${error.message}), so nothing more is drafted on it until they can be.`;
+  }
   return firstDraftBlocker((data ?? []) as DraftSignal[]);
 }

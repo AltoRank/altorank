@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { requireAuth } from "@/lib/auth/require-auth";
 import { exchangeCode, encryptTokens } from "@/lib/google/oauth";
 import { backfillAnalytics } from "@/lib/google/sync";
 import { listGSCSites, matchGSCSite } from "@/lib/google/gsc";
@@ -64,16 +65,19 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Verify workspace belongs to user's account
-    const { data: member } = await supabase
-      .from("account_members")
-      .select("account_id")
-      .eq("user_id", user.id)
-      .single();
-
-    if (!member) {
+    // The account the consent is for: the one that owns the site, or for an
+    // account-level connect the one the person is working in
+    // (lib/auth/require-auth.ts) - the same account the property picker then
+    // reads the consent back from. A bare `.single()` on the person's
+    // memberships refused anyone in two accounts, and stored the consent on
+    // whichever membership came back.
+    let member: { account_id: string };
+    try {
+      const { accountId } = await requireAuth(undefined, workspaceId === "account" ? {} : { workspaceId });
+      member = { account_id: accountId };
+    } catch {
       return NextResponse.redirect(
-        new URL("/connect?error=no_account", request.url),
+        new URL(workspaceId === "account" ? "/connect?error=no_account" : "/connect?error=workspace_not_found", request.url),
       );
     }
 

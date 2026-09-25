@@ -33,6 +33,7 @@ import {
   type OpportunityCandidate,
   type OpportunityContext,
 } from "./opportunity";
+import type { IntentLeader } from "./intent-leaders";
 
 /** Never fewer ready topics than this, whatever the pace. */
 export const QUEUE_MIN = 3;
@@ -84,6 +85,15 @@ export function isRequalifiable(row: QueueRow): boolean {
 /** A parked row nothing should touch again without a person. */
 export function isParkedForGood(row: QueueRow): boolean {
   return isParked(row) && !isRequalifiable(row);
+}
+
+/**
+ * A row the refill buys a verdict for when it has no current one: open, or
+ * parked only for want of one. A planned row is not: it was approved to get
+ * on the calendar, and nothing judges it again.
+ */
+export function isJudgeable(row: QueueRow): boolean {
+  return row.status === "new" || isRequalifiable(row);
 }
 
 /** The verdict a pre-qualification row is parked with. */
@@ -175,7 +185,12 @@ export async function refillQualifiedQueue(
   workspaceId: string,
   candidates: ReadonlyArray<QueueRow>,
   context: OpportunityContext,
-  options: { target: number; maxBatches?: number },
+  options: {
+    target: number;
+    maxBatches?: number;
+    /** What already owns a search, as the caller worked it out (see `qualifyOpportunities`). */
+    owners?: readonly IntentLeader[];
+  },
 ): Promise<RefillOutcome> {
   const fingerprint = contextKey(context);
   const verdicts = new Map<string, Opportunity>();
@@ -190,7 +205,7 @@ export async function refillQualifiedQueue(
       if (cached.status === "qualified" && isRequalifiable(row)) { await unpark(supabase, workspaceId, row.id); ready.add(row.id); }
       if (cached.status !== "pending" || cached.cause !== "unjudged") continue;
     }
-    if (row.status === "new" || isRequalifiable(row)) unjudged.push(row);
+    if (isJudgeable(row)) unjudged.push(row);
   }
 
   let judged = 0;
@@ -203,7 +218,7 @@ export async function refillQualifiedQueue(
     const batch = unjudged.splice(0, Math.min(QUALIFICATION_LIMIT, needed * 3));
     batches++;
     const asked: OpportunityCandidate[] = batch.map((row) => ({ id: row.id, term: row.term, source_url: row.source_url, opportunity: null }));
-    const results = await qualifyOpportunities(supabase, workspaceId, asked, context);
+    const results = await qualifyOpportunities(supabase, workspaceId, asked, context, options.owners ? { owners: options.owners } : {});
     const toPark: Array<{ id: string; verdict: Opportunity }> = [];
     for (const row of batch) {
       const result = results.get(row.id);

@@ -16,11 +16,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { canSpend } from "@/lib/billing/spend-gate";
-import {
-  inferBusinessProfileDetailed,
-  type BusinessProfile,
-  type InferenceResult,
-} from "@/lib/onboarding/business-profile";
+import { type BusinessProfile, type InferenceResult } from "@/lib/onboarding/business-profile";
+import { inferVerifiedBusinessProfile } from "@/lib/onboarding/observed-facts";
 import { looksLikeDomain, resolveCompetitorDomains } from "@/lib/onboarding/competitor-domains";
 import { classifyRivalSize, suggestCompetitors as findCompetitorSuggestions, type CompetitorSuggestions, type RivalSize } from "@/lib/onboarding/competitor-suggestions";
 import { fetchBulkAuthority } from "@/lib/seo/domain-metrics";
@@ -62,7 +59,7 @@ export async function proposeProfile(workspaceId: string): Promise<InferenceResu
   // One model call per press, and "Try again" is right there on the screen.
   // A new account is inside its free allowance and never sees this; a lapsed
   // one that comes back to add a site does.
-  const { accountId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
   const gate = await canSpend(supabase, accountId, {
     userEmail: user.email ?? undefined,
     workspaceId,
@@ -71,7 +68,9 @@ export async function proposeProfile(workspaceId: string): Promise<InferenceResu
   if (!gate.allowed) {
     return { profile: null, reason: "needs_plan", source: "none", message: gate.message };
   }
-  const result = await inferBusinessProfileDetailed(workspace.domain);
+  // Checked: a conversion page the site does not have comes back empty with
+  // the reason, never as the guess (lib/onboarding/observed-facts.ts).
+  const result = await inferVerifiedBusinessProfile(workspace.domain);
   // The model names rivals ("trainerize"); keyword research reads domains.
   // Resolved here, not in business-profile.ts, because the client wizard
   // imports that file and the resolver needs node:dns. A name nothing can
@@ -97,7 +96,7 @@ export async function suggestCompetitors(workspaceId: string, profile: BusinessP
   if (!workspace.domain) return { own: null, suggestions: [], searchRivals: [] };
   // E2E_STUBS: a fixture, no provider (lib/e2e/stubs.ts).
   if (e2eStubsEnabled()) return stubSuggestCompetitors(workspace.domain, profile);
-  const { accountId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
   const gate = await canSpend(supabase, accountId, { userEmail: user.email ?? undefined, workspaceId, action: "keyword-research" });
   if (!gate.allowed) return { own: null, suggestions: [], searchRivals: [] };
   const locale = resolveLocale(profile.language, profile.country);
@@ -128,7 +127,7 @@ export async function resolveCompetitor(
   // A results page and a bulk-rank read per press (~$0.024): gated like the
   // suggestion lookup above. A refused account gets the entry as typed when
   // it already is a domain, and nothing invented when it is not.
-  const { accountId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
   const gate = await canSpend(supabase, accountId, { userEmail: user.email ?? undefined, workspaceId, action: "keyword-research" });
   if (!gate.allowed) {
     const typed = entry.trim().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "").toLowerCase();
@@ -148,7 +147,10 @@ export async function saveProfile(workspaceId: string, profile: BusinessProfile)
   const { error } = await supabase
     .from("workspaces")
     .update({
-      business_profile: profile,
+      // A person pressed save on what they read: that is the confirmation the
+      // writer's prompt names (lib/ai/prompts.ts). Stamped here, never taken
+      // from the client.
+      business_profile: { ...profile, confirmedAt: new Date().toISOString() },
       // The wizard is also where a site gets its display name; before this the
       // name was always the bare domain.
       name: profile.name?.trim() || workspace.name,

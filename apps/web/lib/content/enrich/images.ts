@@ -19,9 +19,9 @@ import { openaiImageModel } from "@/lib/ai/models";
 import { imageWriter, uploadImageBuffer } from "@/lib/storage/images";
 import { recordSpend } from "@/lib/billing/spend";
 import { spendClient } from "@/lib/billing/default-spend";
-import { labelsFor, type ImageStyle } from "./labels";
-import { altWordCount, MIN_ALT_WORDS } from "@/lib/ai/alt-text";
-import { DEFAULT_OUTPUT_SETTINGS } from "@/lib/onboarding/output-settings";
+import { altWordCount, minAltWords } from "@/lib/ai/alt-text";
+import { DEFAULT_OUTPUT_SETTINGS, type ImageStyle } from "@/lib/onboarding/output-settings";
+import { resolveLocale, matchesAnyHeading, scaleWords } from "@/lib/i18n/locale";
 import {
   splitSections,
   firstParagraph,
@@ -51,22 +51,21 @@ export interface ImagesOptions {
   max?: number;
   style?: ImageStyle;
   language?: string | null;
-  /** A section shorter than this is not major enough to illustrate. */
+  /**
+   * A section shorter than this is not major enough to illustrate. Defaults
+   * to 80 English words, in the article language's words.
+   */
   minSectionWords?: number;
 }
 
 /**
  * Where images go: before the H2 of each chosen section, chosen so they are
  * spread through the article and never adjacent. Sections already carrying a
- * figure, and short ones, are not candidates.
+ * figure, and short ones, are not candidates; nor are sections that summarise
+ * or list rather than explain - an image drawn from "Key takeaways" or "FAQ"
+ * illustrates nothing in particular. Those headings are recognised in every
+ * language the locale contract describes.
  */
-/**
- * Sections that summarise or list rather than explain. An image drawn from
- * "Key takeaways" or "FAQ" illustrates nothing in particular.
- */
-const NOT_ILLUSTRATED =
-  /key takeaways?|summary|tl;?dr|conclusion|final thoughts|\bfaqs?\b|frequently asked|domande frequenti|preguntas frecuentes|references|sources|further reading/i;
-
 export function chooseInsertionPoints(
   sections: { body: string; headingText?: string }[],
   max: number,
@@ -77,7 +76,7 @@ export function chooseInsertionPoints(
     .filter(
       ({ s }) =>
         !/<(img|iframe|svg)\b/i.test(s.body) &&
-        !NOT_ILLUSTRATED.test(s.headingText ?? "") &&
+        !matchesAnyHeading("notIllustrated", s.headingText ?? "") &&
         wordCount(s.body) >= minSectionWords,
     )
     .map(({ i }) => i);
@@ -112,10 +111,16 @@ function dropAdjacent(indices: number[]): number[] {
  * under the audit's floor, the sentence the image was drawn from is added:
  * it is what the generator was shown, so it is the closest thing to a
  * description of the picture that exists without looking at it.
+ *
+ * The label is the style preset in the article's language, from the locale
+ * contract; the floor is the audit's, in that language's words. A language
+ * the contract does not describe gets no label at all - the alt is the
+ * heading and the sentence, both already in the article's language - rather
+ * than "Sketch illustrating" in front of Turkish, as on 2026-09-22.
  */
-export function descriptiveAlt(label: string, heading: string, excerpt: string): string {
+export function descriptiveAlt(label: string, heading: string, excerpt: string, minWords = minAltWords()): string {
   const base = `${label} ${heading}`.trim();
-  if (altWordCount(base) >= MIN_ALT_WORDS) return base;
+  if (altWordCount(base) >= minWords) return base;
   const sentence = firstSentence(excerpt).replace(/[.!?]+$/, "").trim();
   if (!sentence) return base;
   return truncate(`${base}: ${sentence}`, 160);
@@ -139,10 +144,11 @@ export async function addSectionImages(
   if (existing >= max) return { html, added: 0, warnings: [] };
 
   const { intro, sections } = splitSections(html);
-  const points = chooseInsertionPoints(sections, max - existing, opts.minSectionWords);
+  const locale = resolveLocale(opts.language);
+  const minSectionWords = opts.minSectionWords ?? (locale.supported ? scaleWords(80, locale) : 80);
+  const points = chooseInsertionPoints(sections, max - existing, minSectionWords);
   if (!points.length) return { html, added: 0, warnings: [] };
 
-  const labels = labelsFor(opts.language);
   const style = opts.style ?? DEFAULT_OUTPUT_SETTINGS.imageStyle;
   const warnings: string[] = [];
   const figures = new Map<number, string>();
@@ -159,7 +165,9 @@ export async function addSectionImages(
       // Alt text names the subject the image was drawn for, in the style it
       // was drawn in. The caption is the section heading: a fact about where
       // the image sits, not a claim about what it depicts.
-      const alt = descriptiveAlt(labels.illustration[style], section.headingText, excerpt);
+      const alt = locale.supported
+        ? descriptiveAlt(locale.labels.illustration[style], section.headingText, excerpt, minAltWords(locale))
+        : descriptiveAlt("", section.headingText, excerpt, Infinity);
       // A sentence that introduces a list ("...describe the fuller arc:") is
       // not a caption; the heading is.
       const sentence = firstSentence(excerpt);

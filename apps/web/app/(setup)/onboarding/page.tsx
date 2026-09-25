@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getSimulation } from "@/lib/dev/simulation";
 import { loadFirstLookReport } from "@/lib/onboarding/first-look-report";
 import { createClient } from "@/lib/supabase/server";
-import { getScopedWorkspaceId } from "@/lib/workspace-scope";
+import { getScopedWorkspaceId, openSitesOutside } from "@/lib/workspace-scope";
 import { OnboardingWizard } from "@/components/onboarding/wizard";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
@@ -11,6 +11,11 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { latestRun } from "@/lib/onboarding/run-store";
 import { heldTopics } from "@/lib/onboarding/plan";
+import { trialGateState } from "@/lib/billing/trial";
+import { loadFirstArticle } from "@/lib/onboarding/first-article";
+import { canSpend } from "@/lib/billing/spend-gate";
+import { PRE_TRIAL_DRAFTS } from "@/lib/billing/trial-hold";
+import { OPEN_SETUP, type PreTrialSetup } from "@/lib/onboarding/setup-retry";
 
 export const metadata: Metadata = { title: "Set up your site" };
 
@@ -37,18 +42,27 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   // wizard promises a thirty-day plan; on the free tier only the first week of
   // it can be written, and until now nothing said so (P1-A1). Null when
   // unmetered, and then there is nothing to qualify.
-  const authRead = requireAuth();
-  const quotaRead = authRead.then(({ accountId, user }) => getRequestQuota(accountId, user.email ?? null));
+  //
+  // Asked of the account that owns the site in view, the same one the
+  // dashboard layout asks about, and not of `requireAuth`'s membership: with
+  // no scope cookie that is the person's oldest membership, while the scoped
+  // site falls back to their oldest site, and for someone in two accounts the
+  // two pages answered the gate for different accounts.
+  const authRead = requireAuth(undefined, { workspaceId: scopeId });
+  const workspaceRead = supabase
+    .from("workspaces")
+    // The account's answer rides along on the workspace's own account row,
+    // so the question is asked of the account that owns this site, once, and
+    // not again for its second site.
+    .select("id, account_id, domain, business_profile, sitemap_url, blog_root_url, example_article_urls, auto_generate_weekly_limit, auto_approve, onboarded_at, onboarding_skipped_at, accounts(attribution_source)")
+    .eq("id", scopeId)
+    .single();
+  const quotaRead = Promise.all([workspaceRead, authRead]).then(([{ data: ws }, { user }]) =>
+    ws ? getRequestQuota(ws.account_id as string, user.email ?? null) : null,
+  );
   const simulation = await getSimulation();
-  const [{ data: workspace }, quota, run, auth] = await Promise.all([
-    supabase
-      .from("workspaces")
-      // The account's answer rides along on the workspace's own account row,
-      // so the question is asked of the account that owns this site, once, and
-      // not again for its second site.
-      .select("id, domain, business_profile, sitemap_url, blog_root_url, example_article_urls, auto_generate_weekly_limit, auto_approve, onboarded_at, onboarding_skipped_at, accounts(attribution_source)")
-      .eq("id", scopeId)
-      .single(),
+  const [{ data: workspace }, quotaOrNull, run, auth] = await Promise.all([
+    workspaceRead,
     quotaRead,
     // The run in progress, or the one just finished, so a reload lands on
     // the run screen rather than on step 1. Same read /api/onboard/state
@@ -56,21 +70,52 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
     latestRun(supabase, scopeId),
     authRead,
   ]);
-  if (!workspace) redirect("/workspaces");
+  if (!workspace || !quotaOrNull) redirect("/workspaces");
+  const quota = quotaOrNull;
 
   // A many-to-one embed comes back as one object; the untyped client can only
   // promise an array, so both shapes are read rather than one asserted.
   const account = workspace.accounts as { attribution_source: string | null } | { attribution_source: string | null }[] | null;
   const answered = Boolean((Array.isArray(account) ? account[0] : account)?.attribution_source);
 
+  // Whether this account sees the pre-trial view: the first article with no
+  // preview and the card, instead of the plain finish. The same answer the
+  // dashboard layout redirects on (lib/billing/trial.ts), so the kill switch
+  // turns both off together. A bypassed address still sees it here - that is
+  // what the bypass is for - and is let into the dashboard beside it.
+  const preTrial =
+    trialGateState(quota, auth.user.email ?? null, { simulated: simulation?.gate === true }) !== "open";
+
+  // The workspace's first article, as its shape only. A fact about the site,
+  // not about the latest run: read whenever the card could be on screen,
+  // including at the end of a run in progress, which refreshes the page for it.
+  //
+  // Beside it, what the screen may offer when there is no article: setup
+  // again only if the spend gate would start it (the same question
+  // /api/onboard/start asks), and whether the one pre-trial article was
+  // attempted - a first draft that failed after its research was bought
+  // keeps its claim, and the screen offered a "Run setup again" the server
+  // refused every time (round-5 review).
+  const [firstArticle, otherSites, preTrialSetup] = preTrial
+    ? await Promise.all([
+        loadFirstArticle(supabase, workspace.id, workspace.domain),
+        // A person who also belongs to an account the gate lets them into is
+        // offered its sites here, beside signing out.
+        openSitesOutside(workspace.account_id as string),
+        canSpend(supabase, workspace.account_id as string, {
+          userEmail: auth.user.email ?? undefined,
+          workspaceId: workspace.id as string,
+          action: "setup",
+        }).then((gate): PreTrialSetup => ({ setupAllowed: gate.allowed, firstAttempted: quota.used >= PRE_TRIAL_DRAFTS })),
+      ])
+    : [null, [], OPEN_SETUP];
+
   // What the gate screen shows behind its lock: the month this account
   // already had planned for it, and the analysis already run on its site.
   // Both are read only when the gate is the screen being rendered - there is
   // no point paying for them on the way into the wizard.
-  const gateShown =
-    Boolean(workspace.onboarded_at || workspace.onboarding_skipped_at) &&
-    (simulation?.gate === true || (quota.reason === "no-plan" && Boolean(quota.trialEligible)));
-  const [gatePlan, gateReport, gateWritten] = gateShown
+  const gateShown = Boolean(workspace.onboarded_at || workspace.onboarding_skipped_at) && preTrial;
+  const [gatePlan, gateReport] = gateShown
     ? await Promise.all([
         supabase
           .from("calendar_entries")
@@ -84,30 +129,8 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
               .map((r) => ({ term: r.keyword as string, date: r.scheduled_date as string, brief: ((Array.isArray(r.keywords) ? r.keywords[0] : r.keywords) as {opportunity?: import("@/lib/keyword-research/opportunity").Opportunity} | null)?.opportunity })),
           ),
         loadFirstLookReport(supabase, workspace.id).catch(() => null),
-        // The articles the run already wrote, so the schedule can show the
-        // first one as the finished thing it is rather than as another locked
-        // row. Newest first and bounded: ordered the other way, a workspace
-        // with any history at all returns its OLDEST articles, none of which
-        // are in the month being shown, and every row renders locked.
-        supabase
-          .from("articles")
-          .select("id, keyword, title, word_count, status, created_at")
-          .in("status", ["review", "approved", "scheduled", "live"])
-          .not("content", "is", null)
-          .gt("word_count", 0)
-          .eq("workspace_id", workspace.id)
-          .order("created_at", { ascending: false })
-          .limit(40)
-          .then(({ data }) =>
-            (data ?? []).map((r) => ({
-              id: r.id as string,
-              keyword: (r.keyword as string | null) ?? "",
-              title: (r.title as string | null) ?? "",
-              wordCount: (r.word_count as number | null) ?? 0,
-            })),
-          ),
       ])
-    : [[], null, []];
+    : [[], null];
   // What the trial would open, beside the locked month: read only on the gate.
   const gateHeld = gateShown && gatePlan.length
     ? await heldTopics(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, gatePlan.map((p) => p.date)).catch(() => null)
@@ -115,7 +138,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
 
   return (
     <>
-    {status === "cancelled" && <p role="status" className="p-4 text-center text-sm">Checkout was cancelled. Your draft and plan are saved; you can read them and return to trial options.</p>}
+    {status === "cancelled" && <p role="status" className="p-4 text-center text-sm">Checkout was cancelled. Nothing was charged, and your first article and plan are saved. Start the trial below whenever you are ready.</p>}
     <OnboardingWizard
       canBuy={auth.role === "owner"}
       workspaceId={workspace.id}
@@ -129,13 +152,14 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       // article a week" for a site the planner would schedule seven for.
       weeklyLimit={workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE}
       freeDrafts={quota.reason === "no-plan" ? Math.max(0, quota.remaining ?? 0) : null}
-      // `simulation.gate` is dev-only and forces this on too. Without it the
-      // dashboard's forced redirect lands here and renders the WIZARD: a dev
-      // install has no Stripe key, so the real quota says "self-host" and the
-      // screen the redirect exists to show would never appear. In production
-      // the two cannot disagree - trialGateApplies is only true when the
-      // quota says exactly this.
-      trialEligible={simulation?.gate === true || (quota.reason === "no-plan" && Boolean(quota.trialEligible))}
+      // `simulation.gate` is dev-only and forces this on too, through the
+      // same trialGateState the dashboard redirects on: a dev install has no
+      // Stripe key, so the real quota says "self-host" and the screen the
+      // redirect exists to show would never appear without it.
+      trialEligible={preTrial}
+      firstArticle={firstArticle?.article ?? null}
+      firstArticleWriting={firstArticle?.writing ?? false}
+      preTrialSetup={preTrialSetup}
       initialProfile={(workspace.business_profile as BusinessProfile | null) ?? null}
       initialSite={{
         sitemapUrl: workspace.sitemap_url ?? "",
@@ -152,8 +176,8 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       gatePlan={gatePlan}
       gateHeld={gateHeld}
       gateReport={gateReport}
-      gateWritten={gateWritten}
       initialRun={run}
+      otherSites={otherSites}
     />
     </>
   );

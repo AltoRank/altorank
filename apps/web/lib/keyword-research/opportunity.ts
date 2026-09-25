@@ -7,6 +7,11 @@ import { profileUsable } from "./business-context";
 import { funnelOf, judgeBuyerFit, type FitProfile, type Funnel } from "./buyer-fit";
 import { e2eStubsEnabled, isReservedTestDomain } from "@/lib/e2e/stubs";
 import { getLocale } from "@/lib/seo/locales";
+import { canonicalPage, describeMatch, intentMatcher, type IntentBasis, type IntentMatch } from "./intent";
+import { readIntentLeaders, stageWords, type IntentLeader, type OnCalendar } from "./intent-leaders";
+import { canSpendOnSite, SpendRefusedError } from "@/lib/billing/spend-gate";
+
+export { canonicalPage };
 
 export const OPPORTUNITY_VERSION = 2;
 export const QUALIFICATION_LIMIT = 15;
@@ -53,7 +58,12 @@ export interface Opportunity {
   evidenceUrls?: string[];
   organicUrls?: string[];
   existingUrl?: string;
+  /** Cause "duplicate": the keyword row that owns this search, when the owner is one. */
   duplicateOf?: string;
+  /** Cause "duplicate": the owner's phrase, which is all a page or an article without a row has. */
+  duplicateTerm?: string;
+  /** Cause "duplicate": whether the results pages or only the words were compared. */
+  intentBasis?: IntentBasis;
 }
 export interface OpportunityContext {
   domain: string;
@@ -91,18 +101,32 @@ export function readOpportunity(raw: unknown, context: string): Opportunity | nu
   if (!Number.isFinite(age) || age < 0 || age > (o.status === "pending" ? 15 * 60_000 : 30 * 86_400_000)) return null;
   return o;
 }
-export function canonicalPage(raw: string): string | null {
-  try {
-    const url = new URL(raw);
-    if (!/^https?:$/.test(url.protocol)) return null;
-    return `${url.hostname.replace(/^www\./, "")}${url.pathname.replace(/\/$/, "")}`;
-  } catch { return null; }
+/**
+ * A planned row owns its search while its approval is current: the half of
+ * "will it still be written" that can be read without scoring it. The
+ * recommender, which does score it, asks for more (lib/seo/recommendations.ts)
+ * and hands its owners to the qualification it runs.
+ */
+export function approvedUnder(fingerprint: string): OnCalendar {
+  return (row) => readOpportunity(row.opportunity, fingerprint)?.status === "qualified";
 }
-export function serpOverlap(a: string[], b: string[]): number {
-  const left = new Set(a.map(canonicalPage).filter(Boolean));
-  const right = new Set(b.map(canonicalPage).filter(Boolean));
-  if (Math.min(left.size, right.size) < 3) return 0;
-  return [...left].filter((url) => right.has(url)).length / Math.min(left.size, right.size);
+
+/**
+ * The verdict a topic gets when something further along already owns its
+ * search (lib/keyword-research/intent.ts). Rejected, so the refill parks it
+ * the way it parks every refusal: kept, off the plan, never judged again
+ * without a person.
+ */
+export function duplicateVerdict(
+  base: Opportunity,
+  leader: Pick<IntentLeader, "term" | "keywordId" | "stage">,
+  match: IntentMatch,
+): Opportunity {
+  const out: Opportunity = { ...base, status: "rejected", cause: "duplicate", duplicateTerm: leader.term, intentBasis: match.basis,
+    reason: `Same search as “${leader.term}”, ${stageWords(leader.stage)}: ${describeMatch(match)}. One article per search.` };
+  if (leader.keywordId) out.duplicateOf = leader.keywordId;
+  else delete out.duplicateOf;
+  return out;
 }
 export function validArticleAngle(angle: string, query: string): boolean {
   // A model often adds a year copied from an old SERP title. Keep evergreen
@@ -112,9 +136,21 @@ export function validArticleAngle(angle: string, query: string): boolean {
     (angle.match(/\b(?:19|20)\d{2}\b/g) ?? []).every((year) => requestedYears.has(year));
 }
 function ownPage(raw: string | null | undefined, domain: string): boolean {
-  const page = raw ? canonicalPage(raw) : null;
-  const own = canonicalPage(`https://${domain.replace(/^https?:\/\//, "")}`)?.split("/")[0];
-  return Boolean(page && own && page.split("/")[0] === own);
+  // The host: a canonical page keeps its query ("site.example?lang=tr").
+  const host = (page: string | null | undefined) => page?.split(/[/?]/)[0];
+  const page = host(raw ? canonicalPage(raw) : null);
+  const own = host(canonicalPage(`https://${domain.replace(/^https?:\/\//, "")}`));
+  return Boolean(page && own && page === own);
+}
+
+export interface QualifyOptions {
+  /**
+   * What already owns a search, when the caller has worked it out: the
+   * recommender passes its own, so a planned row it has refused cannot get
+   * the phrasing it let lead refused here as that row's duplicate. Read from
+   * the table otherwise.
+   */
+  owners?: readonly IntentLeader[];
 }
 
 /** Paid work is bounded and cached. A missing response remains pending. */
@@ -123,6 +159,7 @@ export async function qualifyOpportunities(
   workspaceId: string,
   candidates: OpportunityCandidate[],
   context: OpportunityContext,
+  options: QualifyOptions = {},
 ): Promise<Map<string, Opportunity>> {
   const fingerprint = contextKey(context);
   const out = new Map<string, Opportunity>();
@@ -168,6 +205,18 @@ export async function qualifyOpportunities(
 
   const pending = modelAvailable() && hasDataForSEOCredentials()
     ? candidates.filter((c) => !out.has(c.id)).slice(0, QUALIFICATION_LIMIT) : [];
+  // The spend gate, here and not only in the callers. Qualification buys a
+  // model verdict and a results page per term, and the nightly pool refill,
+  // the planner's top-up and a resumed site each reached it before asking -
+  // for accounts waiting for their trial, whose one pre-trial article was
+  // already written, every time a client token changed the business profile
+  // or added keywords (round-4 review). Asked only when something would be
+  // bought; a refusal throws, and every caller already treats a recommender
+  // that cannot run as "nothing planned", never as an empty pool.
+  if (pending.length) {
+    const gate = await canSpendOnSite(supabase, workspaceId, { action: "keyword-research" });
+    if (!gate.allowed) throw new SpendRefusedError(gate);
+  }
   const spend = { supabase, workspaceId };
   const fit = pending.length ? await judgeBuyerFit({ ...context.business, language: context.languageCode }, pending.map((c) => c.term), { spend }) : { verdicts: new Map() };
   for (let offset = 0; offset < pending.length; offset += 3) {
@@ -268,24 +317,25 @@ export async function qualifyOpportunities(
     await save(c, result, verdict ?? null);
     }));
   }
-  // Cover later batches as well as variants in this request. A scheduled or
-  // written topic already owns its search intent; the original approval stays
-  // saved so removing that calendar entry can make the alternative usable.
-  if ([...out.values()].some((o) => o.status === "qualified")) {
-    const { data: covered, error } = await supabase.from("keywords")
-      .select("id, term, opportunity").eq("workspace_id", workspaceId)
-      .in("status", ["planned", "drafting", "scheduled", "shipped"]);
-    if (error) throw new Error(`Could not check existing topic coverage: ${error.message}`);
-    for (const c of candidates) {
-      const result = out.get(c.id);
-      if (result?.status !== "qualified") continue;
-      const duplicate = (covered ?? []).find((row) => {
-        const existing = readOpportunity(row.opportunity, fingerprint);
-        return row.id !== c.id && existing?.status === "qualified" &&
-          serpOverlap(result.organicUrls ?? [], existing.organicUrls ?? []) >= 0.5;
-      });
-      if (duplicate) out.set(c.id, { ...result, status: "rejected", cause: "duplicate", duplicateOf: duplicate.id,
-        reason: `An article already planned or written for “${duplicate.term}” covers this search intent.` });
+  // One article per search. A topic already live or drafted, or planned and
+  // still to be written, owns its search, and a new approval for it - the
+  // same results page, or the same words where no page was bought - is
+  // refused as a duplicate, which the refill parks. A live or drafted owner's
+  // results page counts whatever its age: one bought under last month's
+  // profile still says which search it was. A planned row counts only with a
+  // current approval (lib/keyword-research/intent-leaders.ts). New approvals
+  // are not ranked against each other here; the recommender does that in
+  // memory, and the loser is parked once the winner is on the calendar.
+  const approved = candidates.filter((c) => out.get(c.id)?.status === "qualified");
+  if (approved.length) {
+    const own = new Set(approved.map((c) => c.id));
+    const owners = options.owners ?? await readIntentLeaders(supabase, workspaceId, approvedUnder(fingerprint));
+    const leaders = owners.filter((l) => !l.keywordId || !own.has(l.keywordId));
+    const ownerOf = intentMatcher(leaders, context.languageCode);
+    for (const c of approved) {
+      const result = out.get(c.id)!;
+      const hit = ownerOf({ term: c.term, organicUrls: result.organicUrls ?? null });
+      if (hit) out.set(c.id, duplicateVerdict(result, hit.leader, hit.match));
     }
   }
   return out;
@@ -336,5 +386,5 @@ const CAUSE_LABEL: Record<OpportunityCause, string> = {
   existing_page: "an existing page already targets it",
   not_editorial: "the results are not articles",
   needs_page: "wants a landing page, not an article",
-  duplicate: "same intent as a planned topic",
+  duplicate: "same search as a topic already live, drafted or scheduled",
 };

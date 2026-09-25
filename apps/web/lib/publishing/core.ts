@@ -6,12 +6,15 @@ import { fetchLinkTargets, resolveInternalLinks } from "@/lib/seo/link-resolver"
 import { submitForIndexing, type IndexingResult } from "@/lib/seo/indexing";
 import { getValidAccessToken } from "@/lib/google/oauth";
 import { decryptConfig } from "@/lib/crypto";
-import type { CMSConfig } from "@/lib/types";
+import type { Article, CMSConfig } from "@/lib/types";
 import { getQuota } from "@/lib/billing/quota";
+import { workspaceTrialGate } from "@/lib/billing/body-lock";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import { appendAttribution, isOperatorAccount, shouldAttribute } from "@/lib/publishing/attribution";
 import { chooseDestination, toDestinations, type IntegrationRow } from "@/lib/publishing/destinations";
 import { settleExchangeForArticle } from "@/lib/seo/exchange";
 import { createServiceClient } from "@/lib/supabase/server";
+import { readVisibleArticle } from "@/lib/articles/body-read";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
 import { recordPublish } from "@/lib/publishing/log";
 import { DEFAULT_OUTPUT_SETTINGS } from "@/lib/onboarding/output-settings";
@@ -71,13 +74,13 @@ export async function publishArticleCore(
    */
   opts: { destinationId?: string | null } = {},
 ): Promise<PublishResult & PublishContext> {
-  const { data: article, error: articleErr } = await supabase
-    .from("articles")
-    .select("*")
-    .eq("id", articleId)
-    .single();
+  // Visibility through the caller's client - RLS for the person pressing
+  // Publish, everything for the cron - and the row itself from the server,
+  // because the body columns answer no client token (migration 097,
+  // lib/articles/body-read.ts).
+  const article = await readVisibleArticle<Article>(supabase, articleId);
 
-  if (articleErr || !article) throw new Error("Article not found");
+  if (!article) throw new Error("Article not found");
   if (!article.content) throw new Error("Article has no content to publish");
 
   // Approval-first gate (the single enforced checkpoint): nothing reaches the CMS
@@ -91,6 +94,16 @@ export async function publishArticleCore(
     throw new Error(
       `Article must be approved before publishing (current status: ${article.status}).`,
     );
+  }
+
+  // The trial gate, here and not only at Approve. Approving asks for a plan
+  // (app/actions/publish.ts), but `status` is also written through the
+  // person's own client - the editor saves that way - so an account that had
+  // not started its trial could set its first draft to `approved` over
+  // PostgREST, and cron/publish would push the text to the CMS it connected
+  // during setup. Publishing is handing the text out; the gate decides that.
+  if ((await workspaceTrialGate(supabase, article.workspace_id)) === "gated") {
+    throw new Error(BODY_LOCKED_MESSAGE);
   }
 
   const { data: wsIntegrations } = await supabase
@@ -217,7 +230,7 @@ async function pushToDestination(
         // Crons carry no caller, so the operator check has to ask the account.
         !(await isOperatorAccount(supabase, ws.account_id))
       ) {
-        html = appendAttribution(html);
+        html = appendAttribution(html, language);
       }
     }
   } catch {

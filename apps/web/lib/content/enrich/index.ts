@@ -21,6 +21,12 @@
 // Every step with a switch in `workspace_output_settings` reads it here and
 // does nothing when it is off; the prompt in lib/ai/prompts.ts is told the
 // same so the model does not write what this would then have to remove.
+//
+// Every fixed string a step writes comes from the locale contract
+// (lib/i18n/locale). In a language the contract does not describe, the steps
+// that would have to write one - the table of contents, the charts, the call
+// to action - do nothing, the section images carry no style label, and the
+// report says which, once, in `warnings` and `language`.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { YouTubeVideo } from "@/lib/youtube/search";
@@ -37,7 +43,8 @@ import { addHowToVideo } from "./video";
 import { addInfographics } from "./infographic";
 import { addCallToAction } from "./cta";
 import { buildFaqSchema, type FaqSchema } from "./faq";
-import type { ImageStyle } from "./labels";
+import type { ImageStyle } from "@/lib/onboarding/output-settings";
+import { resolveLocale, SUPPORTED_LANGUAGE_LIST } from "@/lib/i18n/locale";
 
 export type { FormatFindings, FaqSchema, ImageStyle };
 
@@ -80,8 +87,8 @@ export interface EnrichmentReport {
   format: FormatFindings | null;
   /** The style preset the images were generated in, when any were. */
   imageStyle: ImageStyle | null;
-  /** FAQPage JSON-LD for the publishing adapter to inject. Null when the body has no FAQ. */
-  faqSchema: FaqSchema | null;
+  /** The language the steps wrote in, and whether the locale contract describes it. */
+  language: { code: string; name: string; supported: boolean };
 }
 
 export interface EnrichContext {
@@ -204,7 +211,7 @@ export async function enrichArticle(html: string, ctx: EnrichContext): Promise<E
   //    this relies on the ids.
   const format = await step(
     "format",
-    (h) => applyFormat(h, { siteDomain: ctx.domain, fetchTitle: ctx.fetchTitle }),
+    (h) => applyFormat(h, { siteDomain: ctx.domain, fetchTitle: ctx.fetchTitle, language: ctx.language }),
     { findings: null as FormatFindings | null },
   );
 
@@ -286,11 +293,31 @@ export async function enrichArticle(html: string, ctx: EnrichContext): Promise<E
 
   // 7. FAQ schema, read from the final text. Off leaves the FAQ prose alone
   //    and hands the publisher nothing to inject.
+  //
+  //    Only the count is reported. The schema itself is the article's FAQ
+  //    with its answers copied word for word from the text, and the report
+  //    is saved on `research`, which a client token may read before the
+  //    trial (the text itself may not: migration 097). It used to be stored
+  //    here "for the publishing adapter", which builds it again from the
+  //    text it sends and never read this one (lib/publishing/schema.ts).
   let faq: { schema: FaqSchema | null; count: number } = { schema: null, count: 0 };
   try {
     if (settings.faqSchema) faq = buildFaqSchema(current);
   } catch (err) {
     warnings.push(`faq: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  const locale = resolveLocale(ctx.language);
+  if (!locale.supported) {
+    const omitted = [
+      settings.tableOfContents && "table of contents",
+      settings.infographics && "charts",
+      settings.callToAction && "call to action",
+    ].filter(Boolean);
+    warnings.push(
+      `${locale.name}: ${omitted.length ? `${omitted.join(", ")} not added, and ` : ""}` +
+        `section images carry no style label. Their wording exists for ${SUPPORTED_LANGUAGE_LIST} only.`,
+    );
   }
 
   const report: EnrichmentReport = {
@@ -303,7 +330,7 @@ export async function enrichArticle(html: string, ctx: EnrichContext): Promise<E
     warnings,
     format: format.findings,
     imageStyle,
-    faqSchema: faq.schema,
+    language: { code: locale.code, name: locale.name, supported: locale.supported },
   };
 
   if (ctx.research && typeof ctx.research === "object") {

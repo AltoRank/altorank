@@ -6,8 +6,13 @@
 // on purpose: the Tiptap converter treats a nested `<ul>` inside an `<li>` as
 // the end of the outer list, so H3s would either flatten into the H2 list or
 // truncate it. A reader can jump by section; sub-sections are one scroll away.
+//
+// The heading is the one fixed string, and it comes from the locale contract.
+// A language the contract does not describe gets no table of contents rather
+// than one headed "Contents": the Turkish draft of 2026-09-22 opened with an
+// English label above its Turkish section list.
 
-import { labelsFor } from "./labels";
+import { resolveLocale } from "@/lib/i18n/locale";
 import { ensureHeadingIds } from "./format";
 import { splitSections, escapeHtml } from "./html";
 
@@ -33,13 +38,15 @@ export function addTableOfContents(
 ): { html: string; added: boolean } {
   if (opts.enabled === false) return { html, added: false };
   if (hasTableOfContents(html)) return { html, added: false };
+  const locale = resolveLocale(opts.language);
+  if (!locale.supported) return { html, added: false };
 
   const withIds = ensureHeadingIds(html).html;
   const { intro, sections } = splitSections(withIds);
   const minSections = opts.minSections ?? 3;
   if (sections.length < minSections) return { html, added: false };
 
-  const labels = labelsFor(opts.language);
+  const labels = locale.labels;
   const items = sections
     .filter((s) => s.id)
     .map((s) => `<li><a href="#${s.id}">${escapeHtml(s.headingText)}</a></li>`)

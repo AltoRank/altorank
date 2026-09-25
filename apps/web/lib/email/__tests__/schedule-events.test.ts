@@ -3,6 +3,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const { sendTransactionalEmail } = vi.hoisted(() => ({ sendTransactionalEmail: vi.fn() }));
 vi.mock("../resend", () => ({ sendTransactionalEmail }));
 
+// The setup email asks the trial gate whether its draft can be opened. The
+// gate is tested in lib/billing; here each answer is stubbed.
+let gate: "open" | "gated" = "open";
+vi.mock("@/lib/billing/body-lock", () => ({ accountTrialGate: async () => gate }));
+
 import {
   announceNothingWritten,
   announcePausedSites,
@@ -12,7 +17,9 @@ import {
   setupUnfinishedFacts,
   sweepUnfinishedSetups,
   PAUSE_REMINDER_DAYS,
+  SETUP_ALREADY_LIVE_LINE,
   SETUP_UNFINISHED_LINE,
+  SETUP_FINISHED_ELSEWHERE_LINE,
 } from "../schedule-events";
 
 type Row = Record<string, unknown>;
@@ -21,6 +28,10 @@ const claimed = new Set<string>();
 let workspaceRows: Row[] = [];
 /** The oldest draft in review, the keyword count and the latest audit, for the setup email's facts. */
 let reviewArticle: Row | null = null;
+/** An article already live on the site (published, or found there by lib/found-on-site). */
+let liveArticle: Row | null = null;
+/** Set to make the live-article read fail. */
+let liveError: { message: string } | null = null;
 let keywordCount = 0;
 let latestAudit: Row | null = null;
 /** Filters the caller applied to `workspaces`, so a test can assert the window. */
@@ -33,29 +44,46 @@ function client() {
     from(table: string) {
       if (table === "workspaces") {
         const q: Record<string, unknown> = {};
+        // `neq id` and `is ... null` are applied, not only recorded: the
+        // setup email's person-level check reads "every other site" with
+        // the first, and the sweep picks stalled sites with the second.
+        const excluded: unknown[] = [];
+        const nulls: string[] = [];
         const record = (op: string) => (c: string, v?: unknown) => (workspaceFilters.push([`${op} ${c}`, v]), q);
         Object.assign(q, {
           select: () => q,
           eq: record("eq"),
-          neq: record("neq"),
-          is: record("is"),
+          neq: (c: string, v: unknown) => (c === "id" && excluded.push(v), record("neq")(c, v)),
+          in: record("in"),
+          is: (c: string, v: unknown) => (v === null && nulls.push(c), record("is")(c, v)),
           lt: record("lt"),
           not: (c: string, o: string, v: unknown) => (workspaceFilters.push([`not ${c} ${o}`, v]), q),
           gte: record("gte"),
           lte: record("lte"),
           maybeSingle: async () => ({ data: workspaceRows[0] ?? null, error: null }),
-          then: (resolve: (v: unknown) => unknown) => resolve({ data: workspaceRows, error: null }),
+          then: (resolve: (v: unknown) => unknown) =>
+            resolve({
+              data: workspaceRows.filter((w) => !excluded.includes(w.id) && nulls.every((c) => w[c] == null)),
+              error: null,
+            }),
         });
         return q as never;
       }
       if (table === "articles" || table === "domain_audits" || table === "keywords") {
         const q: Record<string, unknown> = {};
+        let status: unknown = null;
         Object.assign(q, {
           select: () => q,
-          eq: () => q,
+          eq: (c: string, v: unknown) => ((status = c === "status" ? v : status), q),
           order: () => q,
           limit: () => q,
-          maybeSingle: async () => ({ data: table === "articles" ? reviewArticle : latestAudit, error: null }),
+          maybeSingle: async () =>
+            table === "articles" && status === "live" && liveError
+              ? { data: null, error: liveError }
+              : {
+                  data: table === "articles" ? (status === "live" ? liveArticle : reviewArticle) : latestAudit,
+                  error: null,
+                },
           then: (resolve: (v: unknown) => unknown) => resolve({ data: null, count: keywordCount, error: null }),
         });
         return q as never;
@@ -70,7 +98,14 @@ function client() {
         return q as never;
       }
       if (table === "account_members") {
-        return { select: () => ({ eq: async () => ({ data: members, error: null }) }) } as never;
+        // `in` is the person-level check asking which accounts these members
+        // are in: this one only, unless a test says otherwise.
+        return {
+          select: () => ({
+            eq: async () => ({ data: members, error: null }),
+            in: async () => ({ data: members.map(() => ({ account_id: "ag-1" })), error: null }),
+          }),
+        } as never;
       }
       if (table === "email_preferences") {
         return { select: () => ({ in: async () => ({ data: [], error: null }) }) } as never;
@@ -111,10 +146,13 @@ function sends() {
 }
 
 beforeEach(() => {
+  gate = "open";
   claimed.clear();
   workspaceRows = [];
   workspaceFilters = [];
   reviewArticle = null;
+  liveArticle = null;
+  liveError = null;
   keywordCount = 0;
   latestAudit = null;
   sendTransactionalEmail.mockReset();
@@ -266,7 +304,7 @@ describe("the setup email", () => {
   it("carries the draft when one is in review, to everyone scoped to the site", async () => {
     reviewArticle = { id: "art-1", title: "How to choose a CRM", keyword: "best crm" };
     keywordCount = 8;
-    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    workspaceRows = [{ id: "ws-1", account_id: "ag-1", topical_profile: usable }];
     const line = await announceSetupUnfinished(client(), scope);
 
     expect(line).toBe("emailed 2");
@@ -280,12 +318,13 @@ describe("the setup email", () => {
 
   it("states only what was measured when there is no draft", async () => {
     keywordCount = 8;
-    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    workspaceRows = [{ id: "ws-1", account_id: "ag-1", topical_profile: usable }];
     expect(await setupUnfinishedFacts(client(), "ws-1", "acme.com")).toEqual({
       domain: "acme.com",
       draft: null,
       keywordCount: 8,
       unreadable: null,
+      beforeTrial: false,
     });
     await announceSetupUnfinished(client(), scope);
     expect(sends()[0].subject).toBe("We read acme.com while you were away");
@@ -294,7 +333,7 @@ describe("the setup email", () => {
 
   it("says what could not be read, from the audit, never from a guess", async () => {
     latestAudit = { pages_crawled: 0 };
-    workspaceRows = [{ id: "ws-1", topical_profile: null }];
+    workspaceRows = [{ id: "ws-1", account_id: "ag-1", topical_profile: null }];
     expect((await setupUnfinishedFacts(client(), "ws-1", "acme.com")).unreadable).toBe("not one page answered");
 
     latestAudit = null;
@@ -307,10 +346,32 @@ describe("the setup email", () => {
     expect((await setupUnfinishedFacts(client(), "ws-1", "acme.com")).unreadable).toBeNull();
   });
 
+  // Before the trial the draft cannot be opened (a real signup copied one,
+  // 2026-09-22): the mail says it is written and links setup, not the draft.
+  it("before the trial, says the article is written and links setup, never the draft", async () => {
+    gate = "gated";
+    reviewArticle = { id: "art-1", title: "How to choose a CRM", keyword: "best crm" };
+    workspaceRows = [{ id: "ws-1", account_id: "ag-1", topical_profile: usable }];
+    expect((await setupUnfinishedFacts(client(), "ws-1", "acme.com")).beforeTrial).toBe(true);
+    await announceSetupUnfinished(client(), scope);
+    const mail = sends()[0];
+    expect(mail.subject).toBe("While you were away: your first article for acme.com is written");
+    expect(mail.html).not.toContain("/content/");
+    expect(mail.html).not.toMatch(/Read the draft|edit it, send it back, or approve it/);
+    expect(mail.html).toContain("https://app.altorank.co/onboarding");
+    expect(mail.html).toContain("The full text opens when your 7-day trial starts");
+  });
+
+  it("does not send when the site's account cannot be read, and says why", async () => {
+    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    expect(await announceSetupUnfinished(client(), scope)).toMatch(/^email failed \(setup email: could not read the site's account\)/);
+    expect(sends()).toHaveLength(0);
+  });
+
   /** Once per site, ever - not per week, not per draft, not per run. */
   it("goes out once per workspace, whatever changes afterwards", async () => {
     const c = client();
-    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    workspaceRows = [{ id: "ws-1", account_id: "ag-1", topical_profile: usable }];
     await announceSetupUnfinished(c, scope);
     reviewArticle = { id: "art-1", title: "Later", keyword: null };
     expect(await announceSetupUnfinished(c, scope)).toBe("2 already told or opted out");
@@ -318,9 +379,52 @@ describe("the setup email", () => {
     expect([...claimed].every((k) => k.startsWith("setup_unfinished|ws-1|"))).toBe(true);
   });
 
+  /**
+   * About the person, not only the site: a double signup (2026-09-22, before
+   * #237) left a finished site with its draft and an empty twin, and the
+   * twin's sweep told the person their setup had never finished.
+   */
+  it("is not sent to somebody who finished setup on another of their sites", async () => {
+    workspaceRows = [
+      { id: "ws-1", topical_profile: usable },
+      { id: "ws-twin", onboarded_at: "2026-09-22T19:40:00Z", onboarding_skipped_at: null },
+    ];
+    expect(await announceSetupUnfinished(client(), scope)).toBe(SETUP_FINISHED_ELSEWHERE_LINE);
+    expect(sends()).toHaveLength(0);
+    expect(claimed.size).toBe(0);
+  });
+
+  it("is not reported by the sweep for such a site either, run after run", async () => {
+    workspaceRows = [
+      { id: "ws-1", domain: "acme-agency.example", account_id: "ag-1", topical_profile: null },
+      { id: "ws-twin", onboarded_at: null, onboarding_skipped_at: "2026-09-22T19:40:00Z" },
+    ];
+    expect(await sweepUnfinishedSetups(client(), new Date("2026-09-24T07:00:00Z"))).toEqual([]);
+    expect(sends()).toHaveLength(0);
+  });
+
+  it("stands down for a site with an article already live, found there or published", async () => {
+    // A draft found on the customer's own site is live, not in review: the
+    // draft version would call it "waiting for review" and the other would
+    // say nothing was written. Neither is sent.
+    liveArticle = { id: "art-1" };
+    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    expect(await announceSetupUnfinished(client(), scope)).toBe(SETUP_ALREADY_LIVE_LINE);
+    expect(sends()).toHaveLength(0);
+    expect(claimed.size).toBe(0);
+  });
+
+  it("does not send when it cannot tell whether an article is live, and says why", async () => {
+    liveError = { message: "timeout" };
+    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    expect(await announceSetupUnfinished(client(), scope)).toBe("not sent: could not check for a live article (timeout)");
+    expect(sends()).toHaveLength(0);
+    expect(claimed.size).toBe(0);
+  });
+
   it("is a site-status email a person can opt out of", async () => {
     process.env.EMAIL_UNSUBSCRIBE_SECRET = "test-signing-secret";
-    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    workspaceRows = [{ id: "ws-1", account_id: "ag-1", topical_profile: usable }];
     await announceSetupUnfinished(client(), scope);
     const options = sendTransactionalEmail.mock.calls[0][5] as { unsubscribeUrl: unknown; headers?: Record<string, string> };
     expect(String(options.unsubscribeUrl)).toContain("/unsubscribe?");
@@ -351,6 +455,13 @@ describe("sweepUnfinishedSetups", () => {
   });
 
   it("says nothing when nothing stalled", async () => {
+    expect(await sweepUnfinishedSetups(client(), now)).toEqual([]);
+    expect(sends()).toHaveLength(0);
+  });
+
+  it("does not report a stalled site with an article live on it, which would repeat every run", async () => {
+    workspaceRows = [{ id: "ws-1", domain: "acme.com", account_id: "ag-1", topical_profile: null }];
+    liveArticle = { id: "art-1" };
     expect(await sweepUnfinishedSetups(client(), now)).toEqual([]);
     expect(sends()).toHaveLength(0);
   });

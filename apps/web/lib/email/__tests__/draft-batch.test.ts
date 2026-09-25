@@ -112,6 +112,21 @@ describe("renderDraftBatch", () => {
     expect(risky.html).toContain("Unsourced figure");
   });
 
+  /**
+   * A site in a language the fact checker does not read: nothing was
+   * checked, and the stat said "All sourced" above rows whose pills said
+   * "Not checked".
+   */
+  it("never says All sourced about drafts nobody checked", () => {
+    const r = renderDraftBatch({ ...BATCH, drafts: BATCH.drafts.map((d) => ({ ...d, verdict: "unchecked" as const })) });
+    expect(r.html).not.toContain("All sourced");
+    expect(r.html).toContain("3 not checked");
+    expect(r.html).toContain("Not checked");
+    // Checked and clean is still the one way to earn it.
+    const clean = renderDraftBatch({ ...BATCH, drafts: BATCH.drafts.map((d) => ({ ...d, verdict: "clean" as const })) });
+    expect(clean.html).toContain("All sourced");
+  });
+
   it("adds up the words and the searches, and leaves searches out when nothing measured any", () => {
     expect(renderDraftBatch(BATCH).html).toContain("28,000");
     const r = renderDraftBatch({
@@ -160,6 +175,14 @@ describe("announceDraftBatch", () => {
     expect(sendTransactionalEmail.mock.calls[0]![0]).toBe("owner@example.test");
     expect(sendTransactionalEmail.mock.calls[0]![1]).toBe("3 drafts are ready for example.test");
     expect(line).toContain("3 drafts");
+  });
+
+  it("reads a draft with no verdict on record as not checked, never as sourced", async () => {
+    const d = db({ articles: [draft(1, { fact_check_verdict: null }), draft(2, { fact_check_verdict: null })] });
+    await announceDraftBatch(d.client, "ws1", { now: NOW });
+    const html = String(sendTransactionalEmail.mock.calls[0]![2]);
+    expect(html).toContain("2 not checked");
+    expect(html).not.toContain("All sourced");
   });
 
   /** The whole point of a fan-out: seven concurrent writers, one announcement. */
@@ -335,6 +358,14 @@ describe("one announcement a day", () => {
     // Nothing was claimed, so tomorrow's first announcement lists all three.
     const tomorrow = new Date(NOW.getTime() + 24 * 60 * 60 * 1000);
     expect(await announceDraftBatch(d.client, "ws1", { now: tomorrow })).toBe("3 drafts, emailed 1");
+  });
+
+  it("sends the week a trial start opened the day it lands, whatever went out earlier today", async () => {
+    // The first draft's email went out at signup; the trial started an hour
+    // later and its week just landed. That batch is the one they are waiting on.
+    const d = db({ sent_emails: [sentToday("article_drafted")] });
+    expect(await announceDraftBatch(d.client, "ws1", { now: NOW, evenIfToldToday: true })).toBe("3 drafts, emailed 1");
+    expect(sendTransactionalEmail).toHaveBeenCalledTimes(1);
   });
 
   it("counts a batch digest as today's mail too", async () => {

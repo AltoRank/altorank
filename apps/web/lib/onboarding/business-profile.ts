@@ -16,52 +16,24 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicModel } from "@/lib/ai/models";
-import { readSiteText, type SiteTextSource, MIN_CHARS } from "./site-text";
+import { readSiteText, type ObservedSite, type SiteTextSource, MIN_CHARS } from "./site-text";
 import { e2eStubsEnabled, stubInferProfile } from "@/lib/e2e/stubs";
 
-export interface BusinessProfile {
-  /** The business's own name for itself, not the domain. */
-  name: string;
-  /** ISO-ish label, e.g. "English". Free text because the UI shows it. */
-  language: string;
-  /** Market, e.g. "Global (English)" or "Italy". */
-  country: string;
-  /** A short positioning paragraph in the site's own terms. */
-  description: string;
-  /** Who it sells to. Verified as chips in the wizard. */
-  audiences: string[];
-  /**
-   * What people buy from it, in a buyer's words: product types, services,
-   * the job it does. The seed list for keyword research is built from these
-   * (lib/keyword-research/buyer-seeds.ts). Optional because profiles saved
-   * before 2026-09-11 have none.
-   */
-  offerings?: string[];
-  /** Domains, not company names, so they can seed competitive research. */
-  competitors: string[];
-  /**
-   * Rivals read off the results pages for this site's buyer searches and
-   * vetted as selling against it (lib/keyword-research/serp-rivals.ts). Found
-   * once and kept: the search that finds them starts from model-worded seeds
-   * and returned a different valid set on every run, which made each night's
-   * keyword pool a different market. Not shown in the wizard.
-   */
-  searchRivals?: string[];
-  buyingJobs?: string[];
-  differentiators?: string[];
-  exclusions?: string[];
-  conversionUrl?: string;
-}
-
-export const EMPTY_PROFILE: BusinessProfile = {
-  name: "",
-  language: "English",
-  country: "Global (English)",
-  description: "",
-  audiences: [],
-  offerings: [],
-  competitors: [],
-};
+// The profile's shape, its empty value and the autocomplete merge are in
+// ./profile-shape, which imports nothing: the wizard and the settings
+// autocomplete button are client components that need them, and this file
+// imports the model SDK and the site reader (node:http). Re-exported so every
+// server caller keeps one import.
+export {
+  EMPTY_PROFILE,
+  fillEmptyProfile,
+  OBSERVED_URL_FIELDS,
+  type BusinessProfile,
+  type ObservedCheck,
+  type ObservedUrlField,
+  type ProfileSection,
+} from "./profile-shape";
+import type { BusinessProfile } from "./profile-shape";
 
 /** Enough of the site to characterise it; more than this is wasted tokens. */
 // 8k chars is plenty to describe a business and keeps the proposal under ~15 s.
@@ -84,7 +56,9 @@ const PROMPT = [
   "- buyingJobs: up to 4 concrete tasks buyers need help completing, supported by the text.",
   "- differentiators: up to 4 supported reasons to choose this business. Do not invent superiority.",
   "- exclusions: audiences or needs explicitly not served; [] when unknown.",
-  "- conversionUrl: an observed product, pricing or contact URL on this site; empty when unknown.",
+  "- conversionUrl: the product, pricing, booking or contact page an interested buyer should go to. Copy it",
+  "  exactly from LINKS ON THE PAGES READ below. Never write a URL that is not in that list, never build one",
+  "  from a word (\"/contact\"); return \"\" when no link in the list is such a page.",
   "- competitors: up to 3 direct competitors serving the same buyer and buying job. Verify from evidence in the text; return [] when unknown.",
   "  Do not substitute famous software tools for a service business, or name this site's own domain.",
   "  Return [] rather than guessing if the category is unclear.",
@@ -98,6 +72,12 @@ export interface InferenceResult {
   reason: InferenceReason;
   /** Which read of the site produced the text the model saw. */
   source: SiteTextSource;
+  /**
+   * The pages the read fetched with a 2xx and the links on them: the only
+   * evidence an observed URL in `profile` may come from. Absent when nothing
+   * was fetched (fixtures, no model).
+   */
+  observed?: ObservedSite;
   /**
    * The exact sentence to show, when the reason alone does not carry it.
    * `needs_plan` is the only producer: the billing gate's refusal names the
@@ -124,7 +104,7 @@ export async function inferBusinessProfileDetailed(domain: string): Promise<Infe
 
   const read = await readSiteText(domain, MAX_CHARS);
   if (read.source === "none" || read.text.length < Math.min(MIN_CHARS, 250)) {
-    return { profile: null, reason: "unreadable", source: read.source };
+    return { profile: null, reason: "unreadable", source: read.source, observed: read.observed };
   }
 
   try {
@@ -132,14 +112,27 @@ export async function inferBusinessProfileDetailed(domain: string): Promise<Infe
     const response = await client.messages.create({
       model: anthropicModel("structured"),
       max_tokens: 1200,
-      messages: [{ role: "user", content: `${PROMPT}\n\nSITE: ${domain}\n\n${read.text}` }],
+      messages: [{ role: "user", content: `${PROMPT}\n\nSITE: ${domain}\n\n${read.text}\n\n${linksForPrompt(read.observed)}` }],
     });
     const raw = response.content[0]?.type === "text" ? response.content[0].text : "";
     const profile = parseProfile(raw, domain);
-    return profile ? { profile, reason: "ok", source: read.source } : { profile: null, reason: "model_failed", source: read.source };
+    return profile
+      ? { profile, reason: "ok", source: read.source, observed: read.observed }
+      : { profile: null, reason: "model_failed", source: read.source, observed: read.observed };
   } catch {
-    return { profile: null, reason: "model_failed", source: read.source };
+    return { profile: null, reason: "model_failed", source: read.source, observed: read.observed };
   }
+}
+
+/**
+ * The links the model may pick a conversion page from. Named as the only
+ * source, and said to be empty when it is, so an absent list is not read as
+ * permission to guess.
+ */
+export function linksForPrompt(observed: ObservedSite | undefined): string {
+  const links = observed?.links ?? [];
+  if (!links.length) return "LINKS ON THE PAGES READ: none were found, so conversionUrl must be \"\".";
+  return ["LINKS ON THE PAGES READ:", ...links.map((l) => `- ${l.text || "(no text)"}: ${l.url}`)].join("\n");
 }
 
 /**
@@ -187,7 +180,9 @@ export function parseProfile(raw: string, domain: string): BusinessProfile | nul
     buyingJobs: strings(parsed.buyingJobs).slice(0, 4),
     differentiators: strings(parsed.differentiators).slice(0, 4),
     exclusions: strings(parsed.exclusions).slice(0, 6),
-    conversionUrl: typeof parsed.conversionUrl === "string" ? parsed.conversionUrl : "",
+    // Unchecked here: parsing cannot know whether the site has the page.
+    // lib/onboarding/observed-facts.ts checks it before anything stores it.
+    conversionUrl: typeof parsed.conversionUrl === "string" && parsed.conversionUrl.trim() ? parsed.conversionUrl.trim() : null,
     // A model asked for competitors will happily return the site itself, which
     // then seeds research against its own domain.
     competitors: strings(parsed.competitors)
@@ -195,56 +190,4 @@ export function parseProfile(raw: string, domain: string): BusinessProfile | nul
       .filter((c) => c !== host)
       .slice(0, 6),
   };
-}
-
-/** Which parts of the profile a screen owns, so autocomplete fills only those. */
-export type ProfileSection = "business" | "audience";
-
-const SECTION_FIELDS: Record<ProfileSection, (keyof BusinessProfile)[]> = {
-  business: ["name", "language", "country", "description"],
-  audience: ["offerings", "audiences", "competitors"],
-};
-
-/**
- * Merge a proposal into what the person already wrote, filling only what is
- * empty.
- *
- * "Autocomplete with AI" on a settings page is not the wizard: the fields
- * already hold answers someone confirmed, and a button that overwrote them
- * with a fresh guess would be a way to lose work. So a non-empty string stays,
- * a non-empty list stays, and only blanks take the proposal. The wizard's
- * defaults ("English", "Global (English)") count as blank for language and
- * market, since they are what an unfilled profile holds.
- *
- * Returns the merged profile and which fields changed, so the button can say
- * "filled description and 3 audiences" rather than a bare "done".
- */
-export function fillEmptyProfile(
-  current: BusinessProfile,
-  proposed: BusinessProfile,
-  section: ProfileSection,
-): { profile: BusinessProfile; filled: (keyof BusinessProfile)[] } {
-  const next: BusinessProfile = { ...current };
-  const filled: (keyof BusinessProfile)[] = [];
-  for (const key of SECTION_FIELDS[section]) {
-    const have = current[key];
-    const want = proposed[key];
-    if (Array.isArray(have)) {
-      if (have.length === 0 && Array.isArray(want) && want.length > 0) {
-        (next[key] as string[]) = want;
-        filled.push(key);
-      }
-      continue;
-    }
-    const blank =
-      typeof have !== "string" ||
-      have.trim() === "" ||
-      (key === "language" && have === EMPTY_PROFILE.language) ||
-      (key === "country" && have === EMPTY_PROFILE.country);
-    if (blank && typeof want === "string" && want.trim() !== "") {
-      (next[key] as string) = want;
-      filled.push(key);
-    }
-  }
-  return { profile: next, filled };
 }

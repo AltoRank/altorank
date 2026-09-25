@@ -98,7 +98,7 @@ export async function hostExchangeRequest(
 
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("id, name, domain")
+    .select("id, name, domain, language")
     .eq("id", workspaceId)
     .eq("account_id", accountId)
     .maybeSingle();
@@ -217,8 +217,12 @@ export async function hostExchangeRequest(
         const withCitation = insertBacklinkIntoContent(
           article.content as Parameters<typeof insertBacklinkIntoContent>[0],
           exchange.target_url as string,
-          placement.anchorText || (exchange.target_keyword as string | null) || "this resource",
+          // The page's own host when nothing better was named: English
+          // words ("this resource") in the host's article were the leak.
+          placement.anchorText || (exchange.target_keyword as string | null) || hostOf(exchange.target_url as string),
           placement.paragraphIndex ?? 1,
+          // The draft generateArticle just wrote is in the host site's language.
+          workspace.language as string,
         );
         await bg.from("articles").update({ content: withCitation }).eq("id", result.articleId);
       }
@@ -252,4 +256,13 @@ export async function getAccountCreditBalance(): Promise<number> {
   const { accountId } = await requireAuth();
   const supabase = await createClient();
   return getCreditBalance(supabase, accountId);
+}
+
+/** "example.com" from "https://www.example.com/page": a citation's anchor that is no language's words. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
 }

@@ -7,6 +7,7 @@ import type { ArticleResearch } from "@/lib/seo/research";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { needsPlanToShip, CHOOSE_PLAN_MESSAGE } from "@/lib/billing/quota";
+import { articleBodyForSession } from "@/lib/billing/body-lock";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";
 import { decryptConfig } from "@/lib/crypto";
 import { publishArticleCore, PublishError, type PublishContext } from "@/lib/publishing/core";
@@ -17,6 +18,33 @@ import type { PublishResult } from "@/lib/cms/types";
 import { submitForIndexing } from "@/lib/seo/indexing";
 import { announceDraftApproved } from "@/lib/email/approval-events";
 import type { CMSConfig } from "@/lib/types";
+import { readWorkspaceLanguage } from "@/lib/i18n/workspace-language";
+
+/**
+ * Whether shipping these articles needs a plan, asked of the account that owns
+ * each article's site. It was asked of `requireAuth`'s account, and for a
+ * person in two accounts that could be a different one from the article's: a
+ * member of a paying account who also owns a never-trialed one was told to
+ * choose a plan to approve the paying account's own drafts (round-4 review).
+ * The rows are read through the caller's client, so RLS decides which exist;
+ * an article they cannot see is refused further on, by the step that reads it.
+ */
+async function shipNeedsPlan(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  articleIds: string[],
+  email: string | null | undefined,
+): Promise<boolean> {
+  const { data: articles, error } = await supabase.from("articles").select("workspace_id").in("id", articleIds);
+  if (error) throw new Error(`Could not read the articles: ${error.message}`);
+  const siteIds = [...new Set((articles ?? []).map((a) => a.workspace_id as string).filter(Boolean))];
+  if (!siteIds.length) return false;
+  const { data: sites, error: siteError } = await supabase.from("workspaces").select("account_id").in("id", siteIds);
+  if (siteError) throw new Error(`Could not read the articles' sites: ${siteError.message}`);
+  for (const accountId of new Set((sites ?? []).map((w) => w.account_id as string))) {
+    if (await needsPlanToShip(supabase, accountId, email)) return true;
+  }
+  return false;
+}
 
 /**
  * `destinationId` is the workspace_integrations row the person picked in the
@@ -24,9 +52,9 @@ import type { CMSConfig } from "@/lib/types";
  * falls back to where the article already went, then to the first connection.
  */
 export async function publishArticle(articleId: string, destinationId?: string | null) {
-  const { user, accountId } = await requireAuth();
+  const { user } = await requireAuth();
   const supabase = await createClient();
-  if (await needsPlanToShip(supabase, accountId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
+  if (await shipNeedsPlan(supabase, [articleId], user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
 
   // Fetch workspace_id up front so we can log to publish_log on BOTH the success
   // and the error path — closing the manual-publish audit gap fully (the cron
@@ -94,12 +122,12 @@ async function runAndLog(
  * checkpoint. Records who approved + when (the sign-off).
  */
 export async function approveArticle(articleId: string) {
-  const { user, accountId } = await requireAuth();
+  const { user } = await requireAuth();
   const supabase = await createClient();
   // The free draft can be read, edited and rewritten; it cannot ship without
   // a plan. This is the one paywall in the product and it sits exactly where
   // the value is, not at signup.
-  if (await needsPlanToShip(supabase, accountId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
+  if (await shipNeedsPlan(supabase, [articleId], user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
 
   await refuseUnsourcedFigures(supabase, articleId);
 
@@ -143,15 +171,19 @@ async function refuseUnsourcedFigures(
   supabase: Awaited<ReturnType<typeof createClient>>,
   articleId: string,
 ) {
-  const { data: article } = await supabase
-    .from("articles")
-    .select("content, research")
-    .eq("id", articleId)
-    .single();
-  if (!article?.content) return;
+  // The text is read on the server (lib/billing/body-lock.ts): a client token
+  // cannot select it since migration 097. The approval door has already asked
+  // for a plan, so the gate is open here; it is asked again anyway, because
+  // this is a read of the body and every such read asks.
+  const article = await articleBodyForSession<{ content: unknown; research: unknown; workspace_id: string }>(articleId, "content, research, workspace_id");
+  if (!article.content) return;
+
+  // Read in the site's language: the same patterns generation used. An
+  // unreadable language is `unchecked`, which a person may still approve.
+  const language = await readWorkspaceLanguage(supabase, article.workspace_id, "approve");
 
   const html = tiptapToHtml(article.content as Record<string, unknown>);
-  const report = factCheckArticle(html, (article.research as ArticleResearch | null) ?? undefined);
+  const report = factCheckArticle(html, (article.research as ArticleResearch | null) ?? undefined, language);
 
   await supabase
     .from("articles")
@@ -172,11 +204,11 @@ async function refuseUnsourcedFigures(
  * say "3 of 4 approved" when one was edited under it.
  */
 export async function approveArticles(articleIds: string[]): Promise<string[]> {
-  const { user, accountId } = await requireAuth();
+  const { user } = await requireAuth();
   const supabase = await createClient();
-  if (await needsPlanToShip(supabase, accountId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
   const requested = [...new Set(articleIds)].filter(Boolean);
   if (!requested.length) return [];
+  if (await shipNeedsPlan(supabase, requested, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
 
   // Same gate as the single approve, per article. A refused draft simply does
   // not move, and the caller's "3 of 4 approved" already covers that outcome.
@@ -286,9 +318,11 @@ export async function unpublishArticle(articleId: string) {
   await requireAuth();
   const supabase = await createClient();
 
+  // The columns this needs and no more: `*` names the body, which a client
+  // token may not read (migration 097), and unpublishing never needed it.
   const { data: article } = await supabase
     .from("articles")
-    .select("*, workspace_id")
+    .select("id, workspace_id, external_id, cms")
     .eq("id", articleId)
     .single();
 
@@ -335,9 +369,9 @@ export async function unpublishArticle(articleId: string) {
  * already has an external id (lib/publishing/core.ts says how).
  */
 export async function retryPublish(articleId: string) {
-  const { user, accountId } = await requireAuth();
+  const { user } = await requireAuth();
   const supabase = await createClient();
-  if (await needsPlanToShip(supabase, accountId, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
+  if (await shipNeedsPlan(supabase, [articleId], user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
 
   const result = await retryPublishCore(supabase, articleId, "manual");
   revalidatePath("/articles");

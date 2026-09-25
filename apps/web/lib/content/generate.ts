@@ -19,17 +19,24 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveProvider } from "@/lib/ai/provider";
 import { stripAiTypography } from "@/lib/ai/utils";
 import { htmlToTiptapJson } from "@/lib/ai/tiptap";
-import { factCheckArticle, type FactCheckReport } from "@/lib/ai/fact-check";
+import { factCheckArticle, siteStatementsOf, type FactCheckReport } from "@/lib/ai/fact-check";
 import { verifyCitedFigures } from "@/lib/seo/citation-check";
 import { scoreArticle } from "@/lib/seo/scoring";
 import { scoreCitationReadiness } from "@/lib/seo/aeo-scoring";
 import { recordSpend, anthropicCost } from "@/lib/billing/spend";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
+import { draftBodyLocked, trialGateApplies } from "@/lib/billing/trial";
+import { accountCountingClient } from "@/lib/billing/account-client";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
+import { claimPreTrialDraft, isFirstPreTrialDraft, releasePreTrialDraft, TrialHoldError, trialHoldReason } from "@/lib/billing/trial-hold";
 import { recordOverageArticle } from "@/lib/billing/overage";
+import { recordFreeDraftWritten } from "@/lib/billing/free-drafts";
 import { accountPausedMessage } from "@/lib/billing/pause";
 import { spendClient } from "@/lib/billing/default-spend";
 import { setSpendReporter } from "@/lib/seo/client";
 import { fetchKnownPages } from "@/lib/linking/targets";
+import { loadSiteFacts } from "@/lib/content/site-facts";
+import { siteFactUrls } from "@/lib/ai/prompts";
 import { anthropicModel, openaiImageModel } from "@/lib/ai/models";
 import { GenerationTruncatedError } from "@/lib/ai/errors";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
@@ -47,7 +54,8 @@ import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research"
 import type { RelatedKeyword } from "@/lib/seo/brief-data";
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
-import { getLocale } from "@/lib/seo/locales";
+import { getLocale, LOCALES } from "@/lib/seo/locales";
+import { urlSlug, resolveLocale } from "@/lib/i18n/locale";
 import type { ArticleBrief, RefreshContext, SiteContext, VoiceRules } from "@/lib/ai/types";
 import { classifyKeyword, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { parseStoredQuestions } from "@/lib/keywords/questions";
@@ -189,7 +197,8 @@ export interface GenerateArticleResult {
   metaDescription: string;
   linkChecks: LinkCheck[] | null;
   seoScore: number;
-  aeoScore: number;
+  /** Null when the site's language is not one the locale contract describes. */
+  aeoScore: number | null;
 }
 
 /** Postgres `unique_violation`. What migration 074's index raises. */
@@ -220,30 +229,34 @@ export class ConcurrentGenerationError extends Error {
  * Accented letters are folded to their base letter before anything is
  * dropped. The old `[^a-z0-9]` pass deleted them outright, so an Italian
  * keyword like "città d'arte" published at `/citt-d-arte` and "perché" at
- * `/perch`: a slug missing letters from the keyword it was meant to carry,
- * on the locales the product is sold into first. Same fold as the heading
- * ids in lib/content/enrich/html.ts, so an anchor and a slug agree.
+ * `/perch`; the dotless ı, which has no accent to fold, still vanished
+ * ("yazılım" -> `/yaz-l-m`) until the fold moved into the locale contract.
+ * Same fold as the heading ids, so an anchor and a slug agree.
  */
 export function slugFor(text: string): string {
-  return text
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
+  return urlSlug(text);
 }
 
-/** The three fields of `workspaces.business_profile` a writer can use, or undefined when there is nothing to say. */
+/** The fields of `workspaces.business_profile` a writer can use, or undefined when there is nothing to say. */
 export function siteContextFrom(profile: unknown): SiteContext | undefined {
   if (!profile || typeof profile !== "object") return undefined;
-  const p = profile as { name?: unknown; description?: unknown; audiences?: unknown };
+  const p = profile as { name?: unknown; description?: unknown; audiences?: unknown; offerings?: unknown; confirmedAt?: unknown };
   const name = typeof p.name === "string" ? p.name.trim() : "";
   const description = typeof p.description === "string" ? p.description.trim() : "";
   if (!name && !description) return undefined;
-  const audiences = Array.isArray(p.audiences)
-    ? p.audiences.filter((a): a is string => typeof a === "string" && a.trim().length > 0).map((a) => a.trim())
-    : [];
-  return { name: name || null, description: description || null, audiences };
+  const strings = (v: unknown) =>
+    Array.isArray(v) ? v.filter((a): a is string => typeof a === "string" && a.trim().length > 0).map((a) => a.trim()) : [];
+  // Offerings are the profile's words for what is sold. The writer was not
+  // given them before 2026-09-25 and wrote about the category instead. Whose
+  // words they are - the owner's, or a model's reading of the site that
+  // nobody confirmed - travels with them.
+  return {
+    name: name || null,
+    description: description || null,
+    audiences: strings(p.audiences),
+    offerings: strings(p.offerings),
+    confirmed: typeof p.confirmedAt === "string" && p.confirmedAt.trim() !== "",
+  };
 }
 
 /** A rewrite of a page the product did not write has no article id. */
@@ -323,11 +336,72 @@ export async function generateArticle(
   // Set on the free tier below; called only once a draft exists.
   let recordFreeDraft: (() => Promise<void>) | null = null;
   const quota = await getQuota(supabase, billedAccountId, callerEmail);
+
+  /**
+   * The trial hold (lib/billing/trial-hold.ts), before anything is spent.
+   *
+   * A trial-gated account gets the onboarding's one article and nothing more
+   * until its trial starts, whichever door asks. Checked here because every
+   * door ends here; the doors check it too, earlier, so the refusal arrives
+   * before their own research rather than after it. Ahead of the quota test
+   * on purpose: for a gated account "waiting for your trial" is the true
+   * reason, and "all 7 free drafts are used" would name an allowance these
+   * accounts no longer have.
+   *
+   * Generating into an article that has TEXT is a regeneration: it adds no
+   * draft, but it is working on that text, which is what the trial opens,
+   * and every regeneration buys the research, the model call and the fact
+   * check again. So a gated account regenerates nothing (the body lock's
+   * refusal, the one the session /api/generate already gave); an address on
+   * the bypass list, whose bodies are open, still may. Text, not status,
+   * decides it: the agent API inserts its own `drafting` row and generates
+   * into it, and reading that row's status as "an article that counts"
+   * refused every gated account's first draft over the API after the 202
+   * had gone. A row with no text - that one, or a first article whose run
+   * died (`error`) - is the first draft, which the hold and the claim below
+   * decide. A rewrite of a page is a draft of its own.
+   */
+  // Set when this run holds the account's one pre-trial draft (the claim
+  // below), and when it is regenerating an article that has text.
+  let claimedPreTrial = false;
+  let regeneratingText = false;
+  const gatedBeforeTrial = trialGateApplies(quota);
+  if (gatedBeforeTrial) {
+    let adding = 1;
+    if (articleId && !refreshOf) {
+      const { data: target, error: targetError } = await supabase
+        .from("articles")
+        .select("status")
+        .eq("id", articleId)
+        .eq("workspace_id", workspaceId)
+        .maybeSingle();
+      if (targetError) throw new Error(`Could not read the article to regenerate: ${targetError.message}`);
+      if (target) {
+        if (await articleHasText(supabase, articleId)) {
+          if (draftBodyLocked(quota, callerEmail ?? null)) throw new TrialHoldError(BODY_LOCKED_MESSAGE);
+          regeneratingText = true;
+          adding = 0;
+        } else {
+          // A textless row that is not `error` is already in the count.
+          adding = target.status === "error" ? 1 : 0;
+        }
+      }
+    }
+    const held = trialHoldReason(quota, { adding });
+    if (held) throw new TrialHoldError(held);
+  }
+
+  // Past the included volume a person's draft is billed the overage - once
+  // the draft EXISTS, beside the free tier's counter below. This created the
+  // Stripe invoice item here, before the row, the research or the model call,
+  // so a Write-now that then failed billed €0.60 for no article, and the
+  // failed row (`error`) was not even in the count (round-5 review).
+  let recordOverage: (() => Promise<void>) | null = null;
   if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
     if (quota.reason === "no-plan" || autonomous) {
       throw new Error(quotaExceededMessage(quota));
     }
-    await recordOverageArticle(supabase, billedAccountId, quota);
+    recordOverage = () => recordOverageArticle(supabase, billedAccountId, quota);
   }
 
   let topicBrief: Opportunity | null = null;
@@ -405,6 +479,15 @@ export async function generateArticle(
   const approvedTitle = title || topicBrief?.angle;
   const slug = slugFor(approvedTitle || keyword);
 
+  // The pre-trial draft is claimed here: after every check that refuses
+  // without spending (the hold, the quota, the topic), before the row is
+  // written and before the research is bought. See claimPreTrialDraft - the
+  // attempt is what counts, so a draft that fails from here on keeps it.
+  if (gatedBeforeTrial && !regeneratingText) {
+    if (!(await claimPreTrialDraft(supabase, billedAccountId))) throw new TrialHoldError();
+    claimedPreTrial = true;
+  }
+
   // Two shapes of run. The "new article" callers - the modal and the cron -
   // have no row yet and get one. The editor is generating into a draft the user
   // already has open and must write to that row.
@@ -415,124 +498,156 @@ export async function generateArticle(
   // turn "restore it" into "delete it".
   let previousStatus: string | null = null;
 
-  if (refreshOf) {
-    // A rewrite touches no article row: the original stays exactly as it is
-    // until a person pushes the reviewed result. The id, when there is one,
-    // is only for attributing the job and the spend.
-    article = { id: refreshOf.articleId ?? null };
-  } else if (articleId) {
-    const { data: existing, error: existingError } = await supabase
-      .from("articles")
-      .select("id, status")
-      .eq("id", articleId)
-      // Scoped to the workspace the caller was authorised for, so an id
-      // belonging to another account cannot be written through.
-      .eq("workspace_id", workspaceId)
-      .single();
+  // From the claim to the job row nothing is bought: only our own rows are
+  // read and written. A failure in that stretch gives the pre-trial draft
+  // back (releasePreTrialDraft); from the job row on, the research is bought
+  // and the claim stands.
+  try {
+    if (refreshOf) {
+      // A rewrite touches no article row: the original stays exactly as it is
+      // until a person pushes the reviewed result. The id, when there is one,
+      // is only for attributing the job and the spend.
+      article = { id: refreshOf.articleId ?? null };
+    } else if (articleId) {
+      const { data: existing, error: existingError } = await supabase
+        .from("articles")
+        .select("id, status")
+        .eq("id", articleId)
+        // Scoped to the workspace the caller was authorised for, so an id
+        // belonging to another account cannot be written through.
+        .eq("workspace_id", workspaceId)
+        .single();
 
-    if (existingError || !existing) {
-      throw new Error("Article not found in this workspace");
-    }
-
-    article = { id: existing.id };
-    previousStatus = existing.status as string;
-
-    // Same signal the insert path sets, so the list shows this article as
-    // being written while the run is open.
-    await supabase
-      .from("articles")
-      .update({ status: "drafting", updated_at: new Date().toISOString() })
-      .eq("id", existing.id);
-  } else {
-    const { data: created, error: articleError } = await supabase
-      .from("articles")
-      .insert({
-        workspace_id: workspaceId,
-        title: approvedTitle || keyword,
-        slug,
-        keyword,
-        keyword_id: keywordRow?.id ?? null,
-        status: "drafting",
-        ai_provider: workspace.ai_provider || "claude",
-        generated_autonomously: autonomous ?? false,
-      })
-      .select("id")
-      .single();
-
-    if (articleError || !created) {
-      // Migration 074's partial unique index: another run is already writing
-      // this keyword for this workspace. Distinguished from a real insert
-      // failure because it is not one - the work is being done, just not by
-      // this caller - and the cron reports it as a skip rather than an error
-      // somebody has to investigate every morning.
-      if (articleError?.code === UNIQUE_VIOLATION) {
-        throw new ConcurrentGenerationError(workspaceId, keyword);
+      if (existingError || !existing) {
+        throw new Error("Article not found in this workspace");
       }
-      throw new Error(`Failed to create article: ${articleError?.message}`);
-    }
 
-    article = created;
+      article = { id: existing.id };
+      previousStatus = existing.status as string;
 
-    // The gate above read the count before this row existed, and nothing
-    // held the account between the read and the insert. Six onboarding
-    // dispatches (lib/content/fan-out.ts) arrive at once, each sees the same
-    // "2 remaining", and all six write - four drafts the plan did not
-    // include, on the one night the account is most likely to be on the
-    // free allowance. The row is inserted first and then the count is read
-    // again *including it*: the k-th of N racing requests to reach this line
-    // sees at least k rows of the burst (its own plus every earlier reader's,
-    // which were inserted before those reads), so at most `remaining` of them
-    // can ever see a count within the limit. The rest delete their own row
-    // and stop, before the model is called or a job row is written. Over-
-    // refusing is possible when they all insert before any of them reads;
-    // that leaves the plan entry for the cron, which is where it would have
-    // been written anyway. Under-refusing is not.
-    //
-    // Only where the gate refuses at zero (an autonomous draft, or an account
-    // with no plan). A person writing past the limit is billed the overage
-    // above and is not a burst.
-    if (quota.limit !== null && (quota.reason === "no-plan" || autonomous)) {
-      const after = await getQuota(supabase, billedAccountId, callerEmail);
-      if (after.limit !== null && after.used > after.limit) {
-        await supabase.from("articles").delete().eq("id", created.id);
-        throw new Error(quotaExceededMessage(after));
+      // A row with no text is a new draft even though the row already exists:
+      // the agent API inserts its own row and generates into it, and a first
+      // article whose run died is tried again here. Recorded like the insert
+      // path's (below), or a draft written this way was counted only while its
+      // row was not `error` - which the account's own client can set.
+      if (quota.reason === "no-plan" && !claimedPreTrial && !(await articleHasText(supabase, existing.id as string))) {
+        recordFreeDraft = () => recordFreeDraftWritten(supabase, billedAccountId);
       }
-    }
 
-    // The free allowance is one-time (migration 083), so it needs a counter a
-    // delete cannot walk backwards: seven drafts, delete them, seven more,
-    // forever. `getQuota` reads the larger of this column and the live
-    // article count, so this is a floor rather than the sole truth and a
-    // missed increment cannot hand out an eighth draft - but recording it is
-    // what makes the allowance actually one-time.
-    //
-    // Only on the free tier: a paid account's limit is its plan's monthly
-    // volume and this column is never read for it. Best effort.
-    //
-    // Recorded once the draft EXISTS - after its content is saved, or after a
-    // rewrite completes - not once its row does. This used to run here, right
-    // after the `articles` insert and before a word was generated, so a run
-    // Vercel killed at the function limit spent a free draft on a row at zero
-    // words. qasimcode.com was told "all 7 free drafts are used" with five on
-    // the account (2026-09-09). The window between the save and this write is
-    // covered by the live count `getQuota` floors with; the window between
-    // this write and the save is what was charging people for our timeouts.
-    if (quota.reason === "no-plan") {
-      recordFreeDraft = async () => {
-        try {
-          await supabase
-            .from("accounts")
-            // `quota.used` is already the larger of the stored counter and
-            // the live count, so this only ever moves the column forward. Two
-            // concurrent drafts can write the same number; the live count is
-            // what catches that, which is exactly the job it is kept for.
-            .update({ free_drafts_used: quota.used + 1 })
-            .eq("id", billedAccountId);
-        } catch {
-          // The live count still floors it; see getQuota.
+      // Same signal the insert path sets, so the list shows this article as
+      // being written while the run is open.
+      await supabase
+        .from("articles")
+        .update({ status: "drafting", updated_at: new Date().toISOString() })
+        .eq("id", existing.id);
+    } else {
+      const { data: created, error: articleError } = await supabase
+        .from("articles")
+        .insert({
+          workspace_id: workspaceId,
+          title: approvedTitle || keyword,
+          slug,
+          keyword,
+          keyword_id: keywordRow?.id ?? null,
+          status: "drafting",
+          ai_provider: workspace.ai_provider || "claude",
+          generated_autonomously: autonomous ?? false,
+        })
+        .select("id")
+        .single();
+
+      if (articleError || !created) {
+        // Migration 074's partial unique index: another run is already writing
+        // this keyword for this workspace. Distinguished from a real insert
+        // failure because it is not one - the work is being done, just not by
+        // this caller - and the cron reports it as a skip rather than an error
+        // somebody has to investigate every morning.
+        if (articleError?.code === UNIQUE_VIOLATION) {
+          throw new ConcurrentGenerationError(workspaceId, keyword);
         }
-      };
+        throw new Error(`Failed to create article: ${articleError?.message}`);
+      }
+
+      article = created;
+
+      // The gate above read the count before this row existed, and nothing
+      // held the account between the read and the insert. Six onboarding
+      // dispatches (lib/content/fan-out.ts) arrive at once, each sees the same
+      // "2 remaining", and all six write - four drafts the plan did not
+      // include, on the one night the account is most likely to be on the
+      // free allowance. The row is inserted first and then the count is read
+      // again *including it*: the k-th of N racing requests to reach this line
+      // sees at least k rows of the burst (its own plus every earlier reader's,
+      // which were inserted before those reads), so at most `remaining` of them
+      // can ever see a count within the limit. The rest delete their own row
+      // and stop, before the model is called or a job row is written. Over-
+      // refusing is possible when they all insert before any of them reads;
+      // that leaves the plan entry for the cron, which is where it would have
+      // been written anyway. Under-refusing is not.
+      //
+      // Only where the gate refuses at zero (an autonomous draft, or an account
+      // with no plan). A person writing past the limit is billed the overage
+      // above and is not a burst.
+      if (quota.limit !== null && (quota.reason === "no-plan" || autonomous)) {
+        const after = await getQuota(supabase, billedAccountId, callerEmail);
+        // The trial hold, by the same argument: two first drafts racing (two
+        // sites onboarding at once, or a retried dispatch beside the one it
+        // retried) each read "0 written" above, and counted with their rows in
+        // each sees two. The count says a race happened; the earliest row wins
+        // it (`isFirstPreTrialDraft`), so exactly one of them is written and the
+        // rest stop - and "your first article is written" is true for them.
+        const heldAfter = trialHoldReason(after, { adding: 0 });
+        if (heldAfter) {
+          let wins = false;
+          try {
+            wins = await isFirstPreTrialDraft(supabase, billedAccountId, created.id);
+          } finally {
+            // Lost the race, or could not tell: this row is not written.
+            if (!wins) await supabase.from("articles").delete().eq("id", created.id);
+          }
+          if (!wins) throw new TrialHoldError(heldAfter);
+        }
+        if (after.limit !== null && after.used > after.limit) {
+          await supabase.from("articles").delete().eq("id", created.id);
+          throw new Error(quotaExceededMessage(after));
+        }
+      }
+
+      // The free allowance is one-time (migration 083), so it needs a counter a
+      // delete cannot walk backwards: seven drafts, delete them, seven more,
+      // forever. `getQuota` reads the larger of this column and the live
+      // article count, so this is a floor rather than the sole truth and a
+      // missed increment cannot hand out an eighth draft - but recording it is
+      // what makes the allowance actually one-time.
+      //
+      // Only on the free tier: a paid account's limit is its plan's monthly
+      // volume and this column is never read for it. Best effort.
+      //
+      // Recorded once the draft EXISTS - after its content is saved, or after a
+      // rewrite completes - not once its row does. This used to run here, right
+      // after the `articles` insert and before a word was generated, so a run
+      // Vercel killed at the function limit spent a free draft on a row at zero
+      // words. qasimcode.com was told "all 7 free drafts are used" with five on
+      // the account (2026-09-09). The window between the save and this write is
+      // covered by the live count `getQuota` floors with; the window between
+      // this write and the save is what was charging people for our timeouts.
+      // The one exception is an account before its trial, whose single draft
+      // is claimed as an attempt (claimPreTrialDraft, above) because a client
+      // can cause the failure a refund would reward.
+      //
+      // Written with the service role, whatever client the caller holds: the
+      // column is server-written only (migration 099), because it is the floor
+      // under the count the trial hold and the spend gate read, and a signed-in
+      // person could set it back to 0 over PostgREST and buy another pre-trial
+      // draft. Without a service key (self-host) the caller's client is used,
+      // and self-host has no allowance to protect.
+      if (quota.reason === "no-plan" && !claimedPreTrial) {
+        recordFreeDraft = () => recordFreeDraftWritten(supabase, billedAccountId);
+      }
     }
+  } catch (err) {
+    if (claimedPreTrial) await releasePreTrialDraft(supabase, billedAccountId);
+    throw err;
   }
 
   const { data: job, error: jobError } = await supabase
@@ -568,6 +683,7 @@ export async function generateArticle(
     } else {
       await supabase.from("articles").delete().eq("id", article.id);
     }
+    if (claimedPreTrial) await releasePreTrialDraft(supabase, billedAccountId);
     throw new Error(`Failed to create generation job: ${jobError?.message}`);
   }
 
@@ -598,6 +714,15 @@ export async function generateArticle(
       });
     });
 
+    // What the business's own pages say, read off the pages the crawls
+    // already fetched, with the conversion page checked again now. Started
+    // beside the research so its database read and its one to three GETs to
+    // the customer's site cost no wall-clock. Not for a rewrite: that brief
+    // is to keep the page, not to add a pitch to it.
+    const siteFactsPending = refreshOf
+      ? null
+      : loadSiteFacts(supabase, workspaceId, workspace.domain, workspace.business_profile);
+
     const research = await gatherArticleResearch({
       keyword,
       locale: workspace.language ?? "en",
@@ -606,6 +731,16 @@ export async function generateArticle(
       workspaceId,
       relatedKeywords: options.relatedKeywords,
     });
+    const siteFacts = siteFactsPending ? await siteFactsPending : null;
+    // Saved with the research, so the reviewer sees what the writer was told
+    // about the business and whether the conversion page checked out.
+    if (siteFacts) {
+      research.layers.push(siteFacts.layer);
+      // What the writer is told it may state about the business, kept so the
+      // fact check reads a figure from it as the business's own claim - now
+      // and again at approval (lib/ai/fact-check.ts).
+      research.siteStatements = siteStatementsOf(siteFacts.facts);
+    }
     const questionSelection = await selectArticleQuestions(research.peopleAlsoAsk, {
       keyword, title: approvedTitle, language: workspace.language ?? "en",
       business: workspace.business_profile, brief: topicBrief,
@@ -697,7 +832,10 @@ export async function generateArticle(
       keyword,
       title: approvedTitle,
       voiceRules,
-      language: locale.label,
+      // The name the writer is told to write in. `getLocale` answers English
+      // for a code it does not list, which would switch the article's
+      // language without a word; the contract names any code it is given.
+      language: LOCALES[workspace.language ?? "en"] ? locale.label : resolveLocale(workspace.language).name,
       research,
       internalLinkTargets: linkTargets
         .slice(0, 20)
@@ -705,6 +843,7 @@ export async function generateArticle(
       output,
       brief,
       site,
+      siteFacts: siteFacts?.facts,
       refreshOf: refreshOf
         ? {
             existingHtml: refreshOf.existingHtml,
@@ -780,6 +919,9 @@ export async function generateArticle(
       ...linkTargets,
       ...(await fetchKnownPages(supabase, workspaceId, article.id ?? undefined)),
       ...existingInternalLinks(refreshOf?.existingHtml, workspace.domain),
+      // The business pages the writer was offered: fetched pages, and a
+      // conversion page that answered just now.
+      ...siteFactUrls(siteFacts?.facts).map((url) => ({ url })),
     ];
     await enhance("internal link check", async (html) => {
       const { html: cleaned, removed } = unwrapUnknownInternalLinks(html, workspace.domain, knownPages);
@@ -850,7 +992,7 @@ export async function generateArticle(
     // Two passes: the first asks whether each figure is attributed, the second
     // opens the pages the attributions point at. The second is what catches a
     // real citation carrying a wrong number, which the first cannot see.
-    const factCheck = await verifyCitedFigures(factCheckArticle(processedHtml, research));
+    const factCheck = await verifyCitedFigures(factCheckArticle(processedHtml, research, workspace.language));
 
     // `scoreArticle` and its seven on-page checks have existed all along, but
     // nothing ran them at generation: only the manual `scoreArticleSeo` action
@@ -871,10 +1013,14 @@ export async function generateArticle(
       // transactional piece the research had correctly kept short.
       targetWordCount,
       title: articleResult.title,
+      // Every check that reads text reads it in the site's language; the
+      // first Turkish draft was scored on English rules.
+      language: workspace.language,
     });
     // The half that matches what this product actually claims: not "will it
-    // rank" but "will an answer engine quote it".
-    const aeo = scoreCitationReadiness(processedHtml, keyword, { siteDomain: workspace.domain });
+    // rank" but "will an answer engine quote it". Null in a language the
+    // locale contract does not describe.
+    const aeo = scoreCitationReadiness(processedHtml, keyword, { siteDomain: workspace.domain, language: workspace.language });
     // The domain tells the converter which links are the site's own, so those
     // are stored followed and same-tab rather than nofollow like a citation.
     const tiptapContent = htmlToTiptapJson(processedHtml, { siteDomain: workspace.domain });
@@ -944,6 +1090,7 @@ export async function generateArticle(
         })
         .eq("id", job.id);
       if (recordFreeDraft) await recordFreeDraft();
+      if (recordOverage) await recordOverage();
 
       return {
         articleId: article.id,
@@ -1025,6 +1172,7 @@ export async function generateArticle(
       throw new Error(`Could not save the generated article: ${saveError.message}`);
     }
     if (recordFreeDraft) await recordFreeDraft();
+    if (recordOverage) await recordOverage();
 
     await supabase
       .from("generation_jobs")
@@ -1101,4 +1249,27 @@ export async function generateArticle(
     // next run's DataForSEO calls were billed here. Always detach.
     setSpendReporter(null);
   }
+}
+
+/**
+ * Whether an article has text. Read with the service role: a client token
+ * may not read `content` (migration 097), and only whether it is there is
+ * asked, never the text. A failed read throws - the caller is deciding
+ * between "regenerate" and "first draft", and guessing either is wrong.
+ */
+async function articleHasText(supabase: SupabaseClient, articleId: string): Promise<boolean> {
+  // Not null is the whole test. The column is jsonb and PostgREST casts a
+  // comparison value to the column's type, so an empty-string comparison is
+  // not JSON: it failed with 22P02 on every call and took every in-place
+  // draft with it (round-5 review, on a real PostgREST). A row the writer has
+  // not written carries SQL null. The unit test's fake asserts this exact
+  // filter, so a no-op fake cannot hide a change to it again.
+  const { data, error } = await accountCountingClient(supabase)
+    .from("articles")
+    .select("id")
+    .eq("id", articleId)
+    .not("content", "is", null)
+    .maybeSingle();
+  if (error) throw new Error(`Could not check the article's text: ${error.message}`);
+  return Boolean(data);
 }

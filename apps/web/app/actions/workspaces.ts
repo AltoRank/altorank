@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { ensureAccount } from "@/lib/queries/account";
+import { workingAccountId } from "@/lib/queries/account";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { canAddWorkspace } from "@/lib/team/access";
+import { ADD_SITE_ROLE_MESSAGE, insertWorkspaceAsServer } from "@/lib/workspaces/insert";
 import { z } from "zod";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
 import { checkDomainReachable } from "@/lib/domain/reachable";
@@ -55,10 +56,7 @@ export async function createWorkspace(formData: FormData): Promise<CreateWorkspa
   // back as a sentence the dialog can print.
   const { role } = await requireAuth();
   if (!canAddWorkspace(role)) {
-    return {
-      ok: false,
-      error: "Adding a workspace changes what the account pays for, so an owner or admin has to do it. Ask one of them and it takes a moment.",
-    };
+    return { ok: false, error: ADD_SITE_ROLE_MESSAGE };
   }
 
   const supabase = await createClient();
@@ -90,7 +88,9 @@ export async function createWorkspace(formData: FormData): Promise<CreateWorkspa
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Your session has expired. Sign in again." };
 
-  const accountId = await ensureAccount(user.id, user.user_metadata ?? {}, user.email);
+  // The account of the site in view, so a person in two accounts adds the
+  // site to the one they are working in, not to their oldest membership.
+  const accountId = await workingAccountId(user);
 
   // Workspaces are limited per plan (one before choosing one). Articles are
   // the meter; this stops a free account from running fifty crawls and
@@ -110,16 +110,17 @@ export async function createWorkspace(formData: FormData): Promise<CreateWorkspa
     return { ok: false, error: `${parsed.data.domain} is already the workspace "${dup.name}". One workspace per site.` };
   }
 
-  const { data, error } = await supabase
-    .from("workspaces")
-    .insert({ ...parsed.data, account_id: accountId, indexnow_key: generateIndexNowKey() })
-    .select("id")
-    .single();
-
-  if (error) return { ok: false, error: error.message };
+  // Written by the server, not the person's client (lib/workspaces/insert.ts,
+  // migration 100): the checks above are the allowance, and an insert a
+  // client token could make straight to PostgREST skipped all of them.
+  const inserted = await insertWorkspaceAsServer(supabase, user.id, accountId, {
+    ...parsed.data,
+    indexnow_key: generateIndexNowKey(),
+  });
+  if (!inserted.ok) return { ok: false, error: inserted.error };
   revalidatePath("/workspaces");
   revalidatePath("/dashboard");
-  return { ok: true, workspaceId: data.id as string, domain: parsed.data.domain };
+  return { ok: true, workspaceId: inserted.id, domain: parsed.data.domain };
 }
 
 /**

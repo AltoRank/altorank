@@ -37,7 +37,16 @@ const recordSpendByDefault = vi.fn();
 vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault: (e: unknown) => recordSpendByDefault(e) }));
 const plan = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
 const held = vi.fn(async () => ({ count: 0, dates: [] as string[] }));
-vi.mock("../plan", () => ({ schedulePlan: (...a: unknown[]) => plan(...a), heldTopics: () => held(), fulfilPlannedEntry: vi.fn(async () => undefined) }));
+const scheduled = vi.fn(async () => 0);
+vi.mock("../plan", () => ({ schedulePlan: (...a: unknown[]) => plan(...a), heldTopics: () => held(), countScheduled: () => scheduled(), fulfilPlannedEntry: vi.fn(async () => undefined) }));
+// Whether the planner holds this account's calendar is the planner's own
+// question (lib/billing/trial-hold.ts); the pipeline only words the screen
+// from it. The draft-side predicate stays real.
+const planHold = vi.fn(async () => false);
+vi.mock("@/lib/billing/trial-hold", async () => {
+  const real = await vi.importActual<typeof import("@/lib/billing/trial-hold")>("@/lib/billing/trial-hold");
+  return { ...real, planHoldApplies: () => planHold() };
+});
 const fanOut = vi.fn(() => ({ dispatched: 0, settled: Promise.resolve() }));
 vi.mock("@/lib/content/fan-out", async () => {
   const real = await vi.importActual<typeof import("@/lib/content/fan-out")>("@/lib/content/fan-out");
@@ -454,13 +463,20 @@ describe("runOnboarding", () => {
 });
 
 describe("the trial gate and the first plan", () => {
-  it("schedules one article and reports what the trial opens, for an account that will be asked for a card", async () => {
+  beforeEach(() => {
+    planHold.mockReset().mockResolvedValue(false);
+    scheduled.mockReset().mockResolvedValue(0);
+  });
+  it("reports what the trial opens, for an account that will be asked for a card", async () => {
+    planHold.mockResolvedValue(true);
     quota.mockResolvedValue({ limit: 7, used: 0, remaining: 7, reason: "no-plan", trialEligible: true });
     plan.mockResolvedValue([{ keywordId: "k1", term: "seo agent", date: "2026-09-21" }]);
     held.mockResolvedValue({ count: 3, dates: ["2026-09-23", "2026-09-25", "2026-09-27"] });
     const events = await collect();
     const planning = events.find((e) => e.phase === "planning" && e.status === "done") as { detail?: string };
-    expect(plan.mock.calls[0][3]).toMatchObject({ maxEntries: 1 });
+    // The cap is the planner's (it plans the one article for a held account
+    // whatever it is asked for); the pipeline no longer passes a hold.
+    expect(plan.mock.calls[0][3]).toMatchObject({ maxEntries: 5 });
     expect(planning.detail).toContain("Scheduled your first article. 3 more topics are ready");
   });
   it("plans the month for everyone else", async () => {
@@ -470,5 +486,34 @@ describe("the trial gate and the first plan", () => {
     await collect();
     expect(plan.mock.calls[0][3]).toMatchObject({ maxEntries: 5 });
     expect(held).not.toHaveBeenCalled();
+  });
+  it("says the first article is already planned when a held account runs again, not that nothing qualifies", async () => {
+    planHold.mockResolvedValue(true);
+    scheduled.mockResolvedValue(1);
+    quota.mockResolvedValue({ limit: 7, used: 1, remaining: 6, reason: "no-plan", trialEligible: true });
+    plan.mockResolvedValue([]);
+    const events = await collect();
+    const planning = events.filter((e) => e.phase === "planning").at(-1) as { status: string; detail?: string };
+    expect(planning.status).toBe("skipped");
+    expect(planning.detail).toContain("Your first article is already on the calendar; the rest of the plan opens with the trial.");
+  });
+  it("writes nothing more for a held account that already has its article, and buys no research for it", async () => {
+    quota.mockResolvedValue({ limit: 7, used: 1, remaining: 6, reason: "no-plan", trialEligible: true });
+    plan.mockResolvedValue([]);
+    const events = await collect();
+    const drafting = events.filter((e) => e.phase === "drafting").at(-1) as { status: string; detail?: string };
+    expect(drafting.status).toBe("skipped");
+    expect(drafting.detail).toMatch(/^Waiting for your trial to start\./);
+    expect(recommend).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+  it("still writes the first article of a held account", async () => {
+    quota.mockResolvedValue({ limit: 7, used: 0, remaining: 7, reason: "no-plan", trialEligible: true });
+    plan.mockResolvedValue([]);
+    recommend.mockResolvedValue([{ term: "seo agent", keywordId: "k1", action: "write", quality: "ok", reasons: ["r"], score: 1, difficulty: 1, volume: 10 }]);
+    pick.mockImplementation((recs: unknown[]) => recs[0]);
+    generate.mockResolvedValue({ articleId: "a1", title: "T", wordCount: 900, factCheck: { verdict: "clean" } });
+    await collect();
+    expect(generate).toHaveBeenCalledTimes(1);
   });
 });

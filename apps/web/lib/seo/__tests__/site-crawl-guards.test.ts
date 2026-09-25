@@ -40,6 +40,8 @@ function serve(routes: Record<string, { body?: string; status?: number; type?: s
 /** Just enough Supabase for the crawl: reads return nothing, upserts succeed. */
 function fakeSupabase() {
   const upserted: Record<string, unknown>[] = [];
+  /** One entry per upsert statement, as PostgREST would receive it. */
+  const batches: Record<string, unknown>[][] = [];
   const chain: Record<string, unknown> = {};
   const self = new Proxy(chain, {
     get(_t, prop) {
@@ -47,13 +49,14 @@ function fakeSupabase() {
       if (prop === "upsert")
         return (rows: Record<string, unknown>[]) => {
           upserted.push(...rows);
+          batches.push(rows);
           return { then: (res: (v: unknown) => void) => res({ error: null }) };
         };
       if (prop === "maybeSingle") return () => Promise.resolve({ data: null });
       return () => self;
     },
   });
-  return { client: { from: () => self } as never, upserted };
+  return { client: { from: () => self } as never, upserted, batches };
 }
 
 const sitemap = (urls: string[]) =>
@@ -321,22 +324,53 @@ describe("what the crawl records", () => {
     } finally { net.restore(); }
   });
 
-  it("gives every row in an upsert chunk the same keys, which PostgREST requires", async () => {
+  it("gives every row in an upsert statement the same keys, which PostgREST requires", async () => {
     const net = serve({
       "https://x.co/sitemap.xml": {
-        body: sitemap(["https://x.co/blog/a", "https://x.co/gone", "https://x.co/feed"]),
+        body: sitemap(["https://x.co/blog/a", "https://x.co/gone", "https://x.co/feed", "https://x.co/busy"]),
         type: "text/xml",
       },
       "https://x.co/blog/a": { body: PAGE },
       "https://x.co/gone": { status: 404, body: "no" },
       "https://x.co/feed": { body: "{}", type: "application/json" },
+      "https://x.co/busy": { status: 503, body: "later" },
     });
     try {
       const db = fakeSupabase();
       await syncSitePages(db.client, "ws1", "x.co", { techChecks: true });
       expect(db.upserted.length).toBeGreaterThan(1);
-      const keys = db.upserted.map((r) => Object.keys(r).sort().join(","));
-      expect(new Set(keys).size).toBe(1);
+      for (const batch of db.batches) {
+        const keys = batch.map((r) => Object.keys(r).sort().join(","));
+        expect(new Set(keys).size).toBe(1);
+      }
+    } finally { net.restore(); }
+  });
+
+  // A business page's extract is what the writer knows about it. One 429 or
+  // timeout in a nightly run used to write it back to null.
+  it("leaves a stored extract alone when the page could not be read, and clears it when the page is gone", async () => {
+    const net = serve({
+      "https://x.co/sitemap.xml": {
+        body: sitemap(["https://x.co/iletisim", "https://x.co/hakkimizda", "https://x.co/hizmetler"]),
+        type: "text/xml",
+      },
+      "https://x.co/iletisim": { status: 429, body: "slow down" },
+      "https://x.co/hakkimizda": { status: 404, body: "no" },
+      "https://x.co/hizmetler": { body: `<html><head><title>Hizmetler</title></head><body><main><h1>Hizmetlerimiz</h1><h2>Web Tasarım</h2><p>${"kelime ".repeat(80)}</p></main></body></html>` },
+    });
+    try {
+      const db = fakeSupabase();
+      await syncSitePages(db.client, "ws1", "x.co", {});
+      const row = (path: string) => db.upserted.find((r) => r.url === `https://x.co${path}`)!;
+      // Not read: the column is not named, so the upsert does not touch it.
+      expect(row("/iletisim")).not.toHaveProperty("extract");
+      expect(row("/iletisim").status).toBe(429);
+      // Gone: cleared.
+      expect(row("/hakkimizda").extract).toBeNull();
+      // Read: written.
+      expect(row("/hizmetler").extract).toMatchObject({ role: "offering" });
+      // The row that leaves it alone travelled in a statement of its own.
+      expect(db.batches.find((b) => b.some((r) => r.url === "https://x.co/iletisim"))).toHaveLength(1);
     } finally { net.restore(); }
   });
 });

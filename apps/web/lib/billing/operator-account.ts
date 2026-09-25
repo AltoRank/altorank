@@ -16,10 +16,20 @@ import { isAdminEmail } from "@/lib/auth/operators";
  * tracking at all. The account that most needs to see the product working was
  * the one the product had quietly stopped running for.
  *
- * auth.users is not reachable through PostgREST, so membership is resolved
- * through the admin API - by id, for the handful of members an account has,
- * rather than by listing every user in the system. Cached for the life of the
- * process, which for a cron is the length of one run.
+ * "Ours" means an operator CREATED it: `accounts.created_by`, which the
+ * database sets from the account's first membership and no client can write
+ * (migration 101). It used to mean "any member is an operator", and
+ * membership is the account owner's to give: an owner could insert an
+ * operator's user id into their own account over PostgREST, and an operator
+ * who accepted an invitation to help a customer made that customer's account
+ * ours too - its crons unmetered, its drafting not held for the trial, its
+ * publisher no longer locking the text (round-4 review). Being invited is not
+ * being the account.
+ *
+ * auth.users is not reachable through PostgREST, so the creator's address is
+ * resolved through the admin API, which needs the service role. Cached for
+ * the life of the process, which for a cron is the length of one run - but
+ * only an answer from a lookup that completed.
  */
 
 const cache = new Map<string, boolean>();
@@ -31,28 +41,40 @@ export async function accountHasOperator(
   const hit = cache.get(accountId);
   if (hit !== undefined) return hit;
 
+  // Only a lookup that completed is remembered. A client that cannot read
+  // auth.users (a cookie-bound one) gets "not an operator" for this call - the
+  // safe direction, metered unless proven ours - but that is a fact about the
+  // client, not the account, and caching it made every later caller in the
+  // process, the service-role crons included, meter our own account.
   let answer = false;
+  let settled = false;
   try {
-    const { data: members } = await supabase
-      .from("account_members")
-      .select("user_id")
-      .eq("account_id", accountId);
-
-    for (const m of members ?? []) {
-      // Needs the service role. On a cookie-bound client this throws, which
-      // the catch turns into "not an operator" - the safe direction: an
-      // account is metered unless we can prove it is ours.
-      const { data } = await supabase.auth.admin.getUserById(m.user_id as string);
-      if (isAdminEmail(data?.user?.email)) {
-        answer = true;
-        break;
+    const { data: account, error } = await supabase
+      .from("accounts")
+      .select("created_by")
+      .eq("id", accountId)
+      .maybeSingle();
+    if (error) {
+      // Before migration 101 the column does not exist, and every account
+      // reads as a customer's until it is applied: said, not guessed.
+      console.error(`[operator-account] could not read the creator of account ${accountId}: ${error.message}`);
+    } else if (!account?.created_by) {
+      // No creator on record (their user was deleted, or the account has no
+      // member yet): not provably ours.
+      settled = true;
+    } else {
+      const { data, error: userError } = await supabase.auth.admin.getUserById(account.created_by as string);
+      if (!userError) {
+        answer = isAdminEmail(data?.user?.email);
+        settled = true;
       }
     }
   } catch {
     answer = false;
+    settled = false;
   }
 
-  cache.set(accountId, answer);
+  if (settled) cache.set(accountId, answer);
   return answer;
 }
 
