@@ -57,6 +57,9 @@ describe("ensureBusinessProfile", () => {
     expect(out.business?.competitors).toEqual(["acuityscheduling.com"]);
     expect(out.business?.audiences).toEqual(["Dental clinics"]);
     expect(updates).toEqual([{ table: "workspaces", id: "ws", patch: { business_profile: expect.objectContaining({ competitors: ["acuityscheduling.com"] }) } }]);
+    // Nobody looked at it: saved as unconfirmed, so the writer is not told
+    // a model's reading is the owner's word.
+    expect(updates[0].patch).toMatchObject({ business_profile: { confirmedAt: null } });
   });
 
   it("says why when the site cannot be read for one", async () => {

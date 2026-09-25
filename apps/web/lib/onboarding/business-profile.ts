@@ -64,6 +64,15 @@ export interface BusinessProfile {
    * when a field is empty because its proposal failed.
    */
   observedChecks?: Partial<Record<ObservedUrlField, ObservedCheck>>;
+  /**
+   * When a person last saved this profile: the wizard's finish or the
+   * settings form (`saveProfile`, which stamps it server-side). Absent on a
+   * profile read off the site and saved by the scheduled repair
+   * (lib/keyword-research/business-context.ts) - nobody confirmed that one,
+   * and the writer is told so rather than handed model-read offerings as the
+   * owner's words.
+   */
+  confirmedAt?: string | null;
 }
 
 /**

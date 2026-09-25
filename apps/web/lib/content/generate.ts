@@ -238,15 +238,23 @@ export function slugFor(text: string): string {
 /** The fields of `workspaces.business_profile` a writer can use, or undefined when there is nothing to say. */
 export function siteContextFrom(profile: unknown): SiteContext | undefined {
   if (!profile || typeof profile !== "object") return undefined;
-  const p = profile as { name?: unknown; description?: unknown; audiences?: unknown; offerings?: unknown };
+  const p = profile as { name?: unknown; description?: unknown; audiences?: unknown; offerings?: unknown; confirmedAt?: unknown };
   const name = typeof p.name === "string" ? p.name.trim() : "";
   const description = typeof p.description === "string" ? p.description.trim() : "";
   if (!name && !description) return undefined;
   const strings = (v: unknown) =>
     Array.isArray(v) ? v.filter((a): a is string => typeof a === "string" && a.trim().length > 0).map((a) => a.trim()) : [];
-  // Offerings are the owner-confirmed words for what is sold. The writer was
-  // not given them before 2026-09-25 and wrote about the category instead.
-  return { name: name || null, description: description || null, audiences: strings(p.audiences), offerings: strings(p.offerings) };
+  // Offerings are the profile's words for what is sold. The writer was not
+  // given them before 2026-09-25 and wrote about the category instead. Whose
+  // words they are - the owner's, or a model's reading of the site that
+  // nobody confirmed - travels with them.
+  return {
+    name: name || null,
+    description: description || null,
+    audiences: strings(p.audiences),
+    offerings: strings(p.offerings),
+    confirmed: typeof p.confirmedAt === "string" && p.confirmedAt.trim() !== "",
+  };
 }
 
 /** A rewrite of a page the product did not write has no article id. */

@@ -205,7 +205,7 @@ describe("the writer prompt", () => {
     const p = buildSystemPrompt({
       keyword: "mobil uygulama ajansı",
       language: "Turkish",
-      site: { name: "Örnek Ajans", description: "İstanbul'da mobil uygulama ajansı.", audiences: [], offerings: ["mobil uygulama geliştirme"] },
+      site: { name: "Örnek Ajans", description: "İstanbul'da mobil uygulama ajansı.", audiences: [], offerings: ["mobil uygulama geliştirme"], confirmed: true },
       siteFacts: facts,
     });
     expect(p).toContain("WHAT THIS BUSINESS'S OWN SITE SAYS (read from 7 of its pages that answered):");
@@ -220,6 +220,15 @@ describe("the writer prompt", () => {
     // No articles in the pool, but its own pages may be linked by exact URL.
     expect(p).toContain("INTERNAL LINKS — only the business's own pages listed above.");
     expect(p).not.toContain("INTERNAL LINKS — do not add any.");
+  });
+
+  it("does not call offerings a model read off the site the owner's confirmed words", () => {
+    // The scheduled repair saves the model's reading of the site unattended.
+    const site = { name: "Örnek Ajans", description: "İstanbul'da mobil uygulama ajansı.", audiences: [], offerings: ["mobil uygulama geliştirme"], confirmed: false };
+    const p = buildSystemPrompt({ keyword: "k", site });
+    expect(p).not.toContain("owner's confirmed words");
+    expect(p).toContain("- What people buy from it, as read from its site (not confirmed by the owner; assert only what its own pages below say): mobil uygulama geliştirme");
+    expect(p).toContain("- This profile was read from the site by a model; the owner has not confirmed it.");
   });
 
   it("tells the writer plainly when no conversion page could be confirmed", () => {

@@ -91,8 +91,14 @@ export interface SiteContext {
   name?: string | null;
   description?: string | null;
   audiences?: string[];
-  /** What people buy from it, in the words the owner confirmed. */
+  /** What people buy from it, as the profile states it. */
   offerings?: string[];
+  /**
+   * A person saved this profile (`business_profile.confirmedAt`). False when
+   * it was read off the site by a model and saved unattended; the prompt
+   * says which, rather than calling a model's reading the owner's words.
+   */
+  confirmed?: boolean;
 }
 
 /**

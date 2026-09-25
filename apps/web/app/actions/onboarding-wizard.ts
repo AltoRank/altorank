@@ -147,7 +147,10 @@ export async function saveProfile(workspaceId: string, profile: BusinessProfile)
   const { error } = await supabase
     .from("workspaces")
     .update({
-      business_profile: profile,
+      // A person pressed save on what they read: that is the confirmation the
+      // writer's prompt names (lib/ai/prompts.ts). Stamped here, never taken
+      // from the client.
+      business_profile: { ...profile, confirmedAt: new Date().toISOString() },
       // The wizard is also where a site gets its display name; before this the
       // name was always the bare domain.
       name: profile.name?.trim() || workspace.name,

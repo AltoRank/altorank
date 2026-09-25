@@ -432,7 +432,17 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     const audiences = (site.audiences ?? []).map((a) => a.trim()).filter(Boolean);
     if (audiences.length) lines.push(`- Who it serves: ${audiences.join("; ")}`);
     const offerings = (site.offerings ?? []).map((o) => o.trim()).filter(Boolean);
-    if (offerings.length) lines.push(`- What people buy from it, in the owner's confirmed words: ${offerings.join("; ")}`);
+    if (offerings.length) {
+      // Only a profile a person saved is the owner's word. One the scheduled
+      // repair read off the site was never confirmed, and saying otherwise
+      // hands the writer a model's reading as a fact it may market with.
+      lines.push(
+        site.confirmed
+          ? `- What people buy from it, in the owner's confirmed words: ${offerings.join("; ")}`
+          : `- What people buy from it, as read from its site (not confirmed by the owner; assert only what its own pages below say): ${offerings.join("; ")}`,
+      );
+    }
+    if (site.confirmed === false) lines.push("- This profile was read from the site by a model; the owner has not confirmed it.");
     lines.push(
       "- Write for these readers, and choose examples that fit them.",
       facts
