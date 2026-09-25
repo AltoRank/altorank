@@ -11,6 +11,7 @@ import { fetchKnownPages } from "@/lib/linking/targets";
 import type { Workspace, Keyword, Article } from "@/lib/types";
 import { buildRankingRows } from "@/lib/seo/rankings";
 import { canSpend } from "@/lib/billing/spend-gate";
+import { articleBodyForSession } from "@/lib/billing/body-lock";
 import type { BillingOutcome } from "@/lib/billing/failure";
 
 // Every export below buys DataForSEO data, and none of them was gated: a free
@@ -219,18 +220,12 @@ export async function scoreArticleSeo(articleId: string) {
   await requireAuth();
   const supabase = await createClient();
 
-  // Fetch the article
-  const { data: articleData, error: artError } = await supabase
-    .from("articles")
-    .select("*")
-    .eq("id", articleId)
-    .single();
-
-  if (artError || !articleData) {
-    throw new Error("Article not found");
-  }
-
-  const article = articleData as Article;
+  // The article with its text, read on the server once the caller's client
+  // has shown it can see the row and the trial gate is open for its account
+  // (lib/billing/body-lock.ts). The score's notes quote the text, so an
+  // account before its trial is refused rather than scored. Throws "Article
+  // not found" for a row the caller cannot see, as this did before.
+  const article = await articleBodyForSession<Article>(articleId);
 
   // The site's domain, so the internal-link check can tell the site's own
   // pages from the ones it cites. Best effort: a missing domain scores the

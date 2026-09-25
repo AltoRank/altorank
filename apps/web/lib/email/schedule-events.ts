@@ -29,6 +29,7 @@ import {
 } from "./lifecycle";
 import { describeSendOutcome } from "./send-once";
 import { setupFinishedElsewhere } from "@/lib/onboarding/setup-state";
+import { accountTrialGate } from "@/lib/billing/body-lock";
 
 /** How long before a pause lifts the reminder goes out. */
 export const PAUSE_REMINDER_DAYS = 3;
@@ -229,7 +230,7 @@ export async function setupUnfinishedFacts(
       .limit(1)
       .maybeSingle(),
     supabase.from("keywords").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId),
-    supabase.from("workspaces").select("topical_profile").eq("id", workspaceId).maybeSingle(),
+    supabase.from("workspaces").select("topical_profile, account_id").eq("id", workspaceId).maybeSingle(),
     supabase
       .from("domain_audits")
       .select("pages_crawled")
@@ -245,6 +246,16 @@ export async function setupUnfinishedFacts(
   if (audit && audit.pages_crawled === 0) unreadable = "not one page answered";
   else if (!readable && keywordCount === 0) unreadable = "too little of its text could be read to find keywords";
 
+  // Whether the draft can be opened at all: before the trial it cannot, and
+  // the mail must not say "Read the draft" (lib/billing/trial.ts). Asked as
+  // nobody, because the mail goes to every member. A site with no account
+  // row, or a gate that cannot be read, throws: announceSetupUnfinished then
+  // reports the failure and the next sweep tries again, rather than sending
+  // a link the account cannot use.
+  const accountId = ws?.account_id as string | undefined;
+  if (!accountId) throw new Error("setup email: could not read the site's account");
+  const beforeTrial = (await accountTrialGate(supabase, accountId, null)) === "gated";
+
   return {
     domain,
     draft: article
@@ -252,6 +263,7 @@ export async function setupUnfinishedFacts(
       : null,
     keywordCount,
     unreadable,
+    beforeTrial,
   };
 }
 

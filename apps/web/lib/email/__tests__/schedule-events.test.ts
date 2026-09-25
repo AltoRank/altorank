@@ -3,6 +3,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const { sendTransactionalEmail } = vi.hoisted(() => ({ sendTransactionalEmail: vi.fn() }));
 vi.mock("../resend", () => ({ sendTransactionalEmail }));
 
+// The setup email asks the trial gate whether its draft can be opened. The
+// gate is tested in lib/billing; here each answer is stubbed.
+let gate: "open" | "gated" = "open";
+vi.mock("@/lib/billing/body-lock", () => ({ accountTrialGate: async () => gate }));
+
 import {
   announceNothingWritten,
   announcePausedSites,
@@ -129,6 +134,7 @@ function sends() {
 }
 
 beforeEach(() => {
+  gate = "open";
   claimed.clear();
   workspaceRows = [];
   workspaceFilters = [];
@@ -284,7 +290,7 @@ describe("the setup email", () => {
   it("carries the draft when one is in review, to everyone scoped to the site", async () => {
     reviewArticle = { id: "art-1", title: "How to choose a CRM", keyword: "best crm" };
     keywordCount = 8;
-    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    workspaceRows = [{ id: "ws-1", account_id: "ag-1", topical_profile: usable }];
     const line = await announceSetupUnfinished(client(), scope);
 
     expect(line).toBe("emailed 2");
@@ -298,12 +304,13 @@ describe("the setup email", () => {
 
   it("states only what was measured when there is no draft", async () => {
     keywordCount = 8;
-    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    workspaceRows = [{ id: "ws-1", account_id: "ag-1", topical_profile: usable }];
     expect(await setupUnfinishedFacts(client(), "ws-1", "acme.com")).toEqual({
       domain: "acme.com",
       draft: null,
       keywordCount: 8,
       unreadable: null,
+      beforeTrial: false,
     });
     await announceSetupUnfinished(client(), scope);
     expect(sends()[0].subject).toBe("We read acme.com while you were away");
@@ -312,7 +319,7 @@ describe("the setup email", () => {
 
   it("says what could not be read, from the audit, never from a guess", async () => {
     latestAudit = { pages_crawled: 0 };
-    workspaceRows = [{ id: "ws-1", topical_profile: null }];
+    workspaceRows = [{ id: "ws-1", account_id: "ag-1", topical_profile: null }];
     expect((await setupUnfinishedFacts(client(), "ws-1", "acme.com")).unreadable).toBe("not one page answered");
 
     latestAudit = null;
@@ -325,10 +332,32 @@ describe("the setup email", () => {
     expect((await setupUnfinishedFacts(client(), "ws-1", "acme.com")).unreadable).toBeNull();
   });
 
+  // Before the trial the draft cannot be opened (a real signup copied one,
+  // 2026-09-22): the mail says it is written and links setup, not the draft.
+  it("before the trial, says the article is written and links setup, never the draft", async () => {
+    gate = "gated";
+    reviewArticle = { id: "art-1", title: "How to choose a CRM", keyword: "best crm" };
+    workspaceRows = [{ id: "ws-1", account_id: "ag-1", topical_profile: usable }];
+    expect((await setupUnfinishedFacts(client(), "ws-1", "acme.com")).beforeTrial).toBe(true);
+    await announceSetupUnfinished(client(), scope);
+    const mail = sends()[0];
+    expect(mail.subject).toBe("While you were away: your first article for acme.com is written");
+    expect(mail.html).not.toContain("/content/");
+    expect(mail.html).not.toMatch(/Read the draft|edit it, send it back, or approve it/);
+    expect(mail.html).toContain("https://app.altorank.co/onboarding");
+    expect(mail.html).toContain("The full text opens when your 7-day trial starts");
+  });
+
+  it("does not send when the site's account cannot be read, and says why", async () => {
+    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    expect(await announceSetupUnfinished(client(), scope)).toMatch(/^email failed \(setup email: could not read the site's account\)/);
+    expect(sends()).toHaveLength(0);
+  });
+
   /** Once per site, ever - not per week, not per draft, not per run. */
   it("goes out once per workspace, whatever changes afterwards", async () => {
     const c = client();
-    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    workspaceRows = [{ id: "ws-1", account_id: "ag-1", topical_profile: usable }];
     await announceSetupUnfinished(c, scope);
     reviewArticle = { id: "art-1", title: "Later", keyword: null };
     expect(await announceSetupUnfinished(c, scope)).toBe("2 already told or opted out");
@@ -362,7 +391,7 @@ describe("the setup email", () => {
 
   it("is a site-status email a person can opt out of", async () => {
     process.env.EMAIL_UNSUBSCRIBE_SECRET = "test-signing-secret";
-    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    workspaceRows = [{ id: "ws-1", account_id: "ag-1", topical_profile: usable }];
     await announceSetupUnfinished(client(), scope);
     const options = sendTransactionalEmail.mock.calls[0][5] as { unsubscribeUrl: unknown; headers?: Record<string, string> };
     expect(String(options.unsubscribeUrl)).toContain("/unsubscribe?");

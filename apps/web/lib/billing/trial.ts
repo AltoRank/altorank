@@ -4,9 +4,11 @@
 //
 // A hosted plan starts with TRIAL_DAYS of trial. The card is taken at
 // checkout and charged when the trial ends unless the customer cancels first.
-// The offer is made after onboarding: the account's first drafts are written
-// against the free allowance and read before any card is entered, so what the
-// trial unlocks is approve, publish and everything after the seventh draft.
+// The offer is made after onboarding: setup writes the account's first
+// article before any card is entered, and the account sees its shape (title,
+// outline, length, sources) on the gate screen. The text opens with the
+// trial, and so do the dashboard, approve, publish and the rest of the
+// week's drafts.
 //
 // One trial per account. Stripe does not enforce that on its own (a customer
 // can open a second trialing subscription), so eligibility is decided here
@@ -70,10 +72,11 @@ export const TRIAL_OFFER = `${TRIAL_DAYS} days free with a card, then the plan p
 /**
  * Whether this account must start its trial before the dashboard opens.
  *
- * The order the product now promises: onboarding writes the first draft
- * against the free allowance, the person reads it and the month planned
- * behind it on the run screen, and the card is asked there - not from a
- * banner found later. The dashboard is what the trial opens.
+ * The order the product now promises: onboarding writes the first article,
+ * the person sees its shape (title, outline, length, sources) and the month
+ * planned behind it on the gate screen, and the card is asked there - not
+ * from a banner found later. The text opens with the trial, and so does the
+ * dashboard.
  *
  * Three accounts are never gated, and each for its own reason:
  *
@@ -130,3 +133,57 @@ export function trialGateBypassed(email: string | null | undefined): boolean {
   const normalized = normalizeEmail(email);
   return Boolean(normalized) && bypassBases().includes(normalized);
 }
+
+/**
+ * Where an account stands against the trial gate. The one answer every
+ * surface asks for, so that no two of them can disagree.
+ *
+ *   open      no gate: self-host, operator, on a plan or trialing, already
+ *             had its trial, or TRIAL_GATE_DISABLED is on.
+ *   gated     has to start the trial. /onboarding shows the first article
+ *             with no preview, the dashboard redirects there, and no surface
+ *             hands out an article body (see draftBodyLocked).
+ *   bypassed  would be gated, but the address is on TRIAL_GATE_BYPASS_EMAILS.
+ *             /onboarding still shows the gate screen, so the thing being
+ *             tested is reachable; the dashboard and the bodies stay open.
+ *
+ * Until this existed the onboarding page computed its own answer from the
+ * quota and ignored the kill switch, while the dashboard layout and the
+ * planner used `trialGateApplies`. With the switch on, the run screen still
+ * ended on the card and had no way into the product.
+ *
+ * `simulated` is the dev toolbar's forced gate (lib/dev/simulation.ts), which
+ * is null in production. It forces the gate on; the bypass still applies.
+ */
+export type TrialGateState = "open" | "gated" | "bypassed";
+
+export function trialGateState(
+  quota: { reason?: string; trialEligible?: boolean } | null | undefined,
+  email: string | null | undefined,
+  opts: { simulated?: boolean } = {},
+): TrialGateState {
+  if (!(opts.simulated === true || trialGateApplies(quota))) return "open";
+  return trialGateBypassed(email) ? "bypassed" : "gated";
+}
+
+/**
+ * Whether article bodies are withheld from this caller: the text, its HTML
+ * and Markdown renderings, and the columns that quote it.
+ *
+ * A real signup (2026-09-22) copied the first draft from the read-only
+ * preview onboarding used to link to and published it on their own site 48
+ * minutes later, without starting a trial. What the trial buys starts with
+ * reading the article, so before it the product shows the article's shape -
+ * title, outline, length, sources - and nothing worth copying.
+ */
+export function draftBodyLocked(
+  quota: { reason?: string; trialEligible?: boolean } | null | undefined,
+  email: string | null | undefined,
+  opts: { simulated?: boolean } = {},
+): boolean {
+  return trialGateState(quota, email, opts) === "gated";
+}
+
+/** The refusal every locked surface gives, so the reason reads the same everywhere. */
+export const BODY_LOCKED_MESSAGE =
+  `The article text opens when the ${TRIAL_DAYS}-day trial starts. Start it from the setup screen to read, approve and publish this draft.`;

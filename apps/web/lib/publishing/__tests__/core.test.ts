@@ -10,6 +10,15 @@ vi.mock("@/lib/cms/html", () => ({
 vi.mock("@/lib/seo/indexing", () => ({
   submitForIndexing: vi.fn().mockResolvedValue({ indexnow: "submitted", google: "not-connected" }),
 }));
+// The core reads the row on the server once the caller's client has shown it
+// can see it (lib/articles/body-read.ts). Here the one fake client plays both
+// parts; that read has its own tests.
+vi.mock("@/lib/articles/body-read", () => ({
+  readVisibleArticle: async (client: { from: (t: string) => { select: () => { eq: () => { single: () => Promise<{ data: unknown; error: unknown }> } } } }) => {
+    const { data, error } = await client.from("articles").select().eq().single();
+    return error ? null : data;
+  },
+}));
 
 import { publishArticleCore, PublishError } from "../core";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";

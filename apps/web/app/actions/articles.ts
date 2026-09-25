@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { z } from "zod";
 import { assertEditorialStatus } from "@/lib/articles/editorial-status";
+import { sessionBodyLockedForWorkspace } from "@/lib/billing/body-lock";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial";
 
 const createArticleSchema = z.object({
   workspace_id: z.string().uuid(),
@@ -68,6 +70,12 @@ export async function updateArticle(
   // gate in lib/publishing/core.ts trusts status = "approved".
   if (data.status !== undefined) assertEditorialStatus(data.status);
   const supabase = await createClient();
+  // The editor is what the trial opens. Before it the reads hand the editor
+  // an article with its body withheld (lib/billing/body-lock.ts), and a Save
+  // from that screen would write the empty document over the real one.
+  const { data: row } = await supabase.from("articles").select("workspace_id").eq("id", id).maybeSingle();
+  if (!row) throw new Error("Article not found");
+  if (await sessionBodyLockedForWorkspace(row.workspace_id as string)) throw new Error(BODY_LOCKED_MESSAGE);
   const { error } = await supabase
     .from("articles")
     .update({ ...data, updated_at: new Date().toISOString() })

@@ -40,6 +40,7 @@ import { TRIAL_DAYS } from "@/lib/stripe";
 import { formatTrialDate } from "@/lib/billing/trial";
 import { wizardStepPath } from "@/lib/onboarding/steps";
 import { sendOnce, type RenderedEmail, type SendOnceOutcome } from "./send-once";
+import { beforeTrialLine, trialGateUrl } from "./article-emails";
 
 /** Every string below is user data: a domain, a title, a keyword, a name. */
 const esc = (s: unknown) =>
@@ -508,6 +509,13 @@ export function renderTrialEnding(a: TrialEndingEmail): RenderedEmail {
 export type WelcomeEmail = {
   name: string | null;
   domain: string | null;
+  /**
+   * The account has not started its trial (lib/billing/trial.ts,
+   * trialGateState), so the dashboard and the article text are not open to
+   * it yet. Required so that no sender can leave it out and fall back to the
+   * copy that promises readable drafts.
+   */
+  beforeTrial: boolean;
 };
 
 /**
@@ -529,6 +537,19 @@ export type WelcomeEmail = {
  */
 export function renderWelcome(a: WelcomeEmail): RenderedEmail {
   const site = a.domain;
+  // Before the trial there is no dashboard to open and no text to read
+  // (a real signup, 2026-09-22, copied a draft before starting one), so the
+  // mail sends the person back to setup, which writes the first article and
+  // shows its shape, and says what the trial opens.
+  const next = a.beforeTrial
+    ? emailButton(trialGateUrl(), "Continue setup") +
+      emailParagraph(
+        `Setup writes your first article and shows you its title, outline and length. ${beforeTrialLine(1)} No card is on file until you start the trial.`,
+      )
+    : emailButton(appLink("/dashboard"), "Open the dashboard") +
+      emailParagraph(
+        `Your first ${FREE_DRAFTS} articles are free to read, and no card is on file until you start the ${TRIAL_DAYS}-day trial that lets you approve and publish them. When the schedule writes a draft for you we will email you about it; you can turn those off from any of them.`,
+      );
   return {
     subject: "Your AltoRank account is live",
     preheader: "What happens next, and the one thing that needs you.",
@@ -543,10 +564,7 @@ export function renderWelcome(a: WelcomeEmail): RenderedEmail {
       emailParagraph(
         `<strong>Nothing reaches your site without a person behind it.</strong> Every article lands in a review queue with its fact check, and the publish path refuses anything with no approval on record. Who gives that approval is yours to choose: you, from the draft, or an automatic rule you set per site, which runs the same sourcing and audit checks and holds anything that fails. Both live under Settings, Publishing decision.`,
       ) +
-      emailButton(appLink("/dashboard"), "Open the dashboard") +
-      emailParagraph(
-        `Your first ${FREE_DRAFTS} articles are free to read, and no card is on file until you start the ${TRIAL_DAYS}-day trial that lets you approve and publish them. When the schedule writes a draft for you we will email you about it; you can turn those off from any of them.`,
-      ),
+      next,
   };
 }
 
@@ -718,6 +736,12 @@ export type SetupUnfinishedEmail = {
    * file does not paraphrase it into a guess.
    */
   unreadable: string | null;
+  /**
+   * The account has not started its trial, so the draft cannot be opened
+   * (lib/billing/trial.ts). Required, like WelcomeEmail's: the facts are read
+   * at send time and this is one of them.
+   */
+  beforeTrial: boolean;
 };
 
 /**
@@ -746,6 +770,30 @@ export function renderSetupUnfinished(a: SetupUnfinishedEmail): RenderedEmail {
   const site = a.domain ?? "your site";
   const resume = appLink(wizardStepPath());
   const footerNote = `Sent because setup for ${site} on AltoRank was started and not finished. This is the only email about it.`;
+
+  if (a.draft && a.beforeTrial) {
+    // Same news, no way in: before the trial the article's text is not open
+    // to the account, so the mail says it is written, what the trial opens,
+    // and links the setup screen, which shows its outline and finishes setup.
+    return {
+      subject: `While you were away: your first article for ${site} is written`,
+      preheader: `"${a.draft.title}" is written. The text opens when your ${TRIAL_DAYS}-day trial starts.`,
+      footerNote,
+      html:
+        eyebrow(site) +
+        heading(a.draft.title) +
+        emailParagraph(
+          `You left setup unfinished. In the meantime we read <strong>${esc(site)}</strong> and wrote a first article` +
+            (a.draft.keyword ? ` for <strong>${esc(a.draft.keyword)}</strong>` : "") +
+            `.`,
+        ) +
+        emailParagraph(beforeTrialLine(1)) +
+        emailButton(trialGateUrl(), "See your first article") +
+        emailParagraph(
+          `Setup stopped one screen from the end, and the same page picks it up. A connected CMS is only needed to publish, so that step can be skipped for now.`,
+        ),
+    };
+  }
 
   if (a.draft) {
     return {

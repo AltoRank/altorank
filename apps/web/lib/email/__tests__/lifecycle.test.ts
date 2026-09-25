@@ -239,7 +239,7 @@ describe("plan changed", () => {
 
 describe("account emails", () => {
   it("welcomes without promising a ranking", () => {
-    const e = renderWelcome({ name: "Dana", domain: "acme.com" });
+    const e = renderWelcome({ name: "Dana", domain: "acme.com", beforeTrial: false });
     expect(e.subject).toBe("Your AltoRank account is live");
     expect(e.html).toContain("You are in, Dana");
     // Was `toContain("<strong>Nothing publishes without you.</strong>")`, the
@@ -255,7 +255,7 @@ describe("account emails", () => {
   });
 
   it("works with no name and no site yet", () => {
-    const e = renderWelcome({ name: null, domain: null });
+    const e = renderWelcome({ name: null, domain: null, beforeTrial: false });
     expect(e.html).toContain("You are in<");
     expect(e.html).toContain("Add a workspace");
   });
@@ -355,7 +355,7 @@ describe("setup fell short", () => {
 });
 
 describe("setup was never finished", () => {
-  const base = { domain: "acme.com", draft: null, keywordCount: 0, unreadable: null };
+  const base = { domain: "acme.com", draft: null, keywordCount: 0, unreadable: null, beforeTrial: false };
   const draft = { articleId: "art-1", title: "How to choose a CRM", keyword: "best crm" };
 
   it("with a draft: leads with the article, links to it and back to the last setup step, and says nothing publishes unapproved", () => {

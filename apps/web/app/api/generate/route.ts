@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateArticle } from "@/lib/content/generate";
+import { sessionTrialGate } from "@/lib/billing/body-lock";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial";
 
 // ---------------------------------------------------------------------------
 // POST /api/generate — stream AI article generation via SSE
@@ -68,6 +70,16 @@ export async function POST(request: NextRequest) {
 
   if (!membership) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // This route streams the article as it is written, so it is a way to read
+  // a body as much as a way to write one. An account that has not started
+  // its trial reads neither (lib/billing/trial.ts, draftBodyLocked).
+  if ((await sessionTrialGate(workspace.account_id as string, user.email ?? null)) === "gated") {
+    return new Response(JSON.stringify({ error: BODY_LOCKED_MESSAGE, reason: "trial_required" }), {
       status: 403,
       headers: { "Content-Type": "application/json" },
     });

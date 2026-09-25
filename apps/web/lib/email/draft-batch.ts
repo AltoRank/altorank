@@ -38,14 +38,17 @@ import {
   ARTICLE_DRAFTED,
   approvalLine,
   articleUrl,
+  beforeTrialLine,
   cmsLine,
   emailHeader,
   esc,
   figure,
   reviewQueueUrl,
   sendArticleDraftedEmails,
+  trialGateUrl,
   VERDICT_PILL,
 } from "./article-emails";
+import { accountTrialGate } from "@/lib/billing/body-lock";
 import {
   emailButton,
   emailCard,
@@ -107,6 +110,8 @@ export interface DraftBatchEmail {
   total: number;
   autoApproveAfter?: string | null;
   cmsConnected?: boolean;
+  /** The account has not started its trial: no text to read, so no links to it (see ArticleDraftedEmail). */
+  beforeTrial?: boolean;
 }
 
 /**
@@ -164,7 +169,10 @@ export function renderDraftBatch(b: DraftBatchEmail): {
       const v = VERDICT_PILL[d.verdict];
       return (
         `<tr><td style="padding:12px 16px;${i === 0 ? "" : `border-top:1px solid ${EMAIL_LINE_SOFT};`}">` +
-        `<a href="${articleUrl(d.articleId)}" style="color:${EMAIL_INK};font-size:14px;font-weight:600;line-height:1.4;text-decoration:none;">${esc(d.title)}</a>` +
+        // Before the trial a title is not a link: there is nothing to open.
+        (b.beforeTrial
+          ? `<span style="color:${EMAIL_INK};font-size:14px;font-weight:600;line-height:1.4;">${esc(d.title)}</span>`
+          : `<a href="${articleUrl(d.articleId)}" style="color:${EMAIL_INK};font-size:14px;font-weight:600;line-height:1.4;text-decoration:none;">${esc(d.title)}</a>`) +
         `<div style="margin-top:5px;font-size:12px;line-height:1.6;color:${EMAIL_INK_3};">` +
         `<span style="font-family:${EMAIL_MONO};">${esc(d.wordCount.toLocaleString())}</span> words` +
         ` &middot; ${emailCode(d.keyword)}` +
@@ -179,6 +187,24 @@ export function renderDraftBatch(b: DraftBatchEmail): {
       ? `<tr><td style="padding:11px 16px;border-top:1px solid ${EMAIL_LINE_SOFT};font-size:12.5px;color:${EMAIL_INK_3};">` +
         `and ${n - Math.min(b.drafts.length, MAX_LISTED)} more in the queue</td></tr>`
       : "";
+
+  if (b.beforeTrial) {
+    return {
+      subject: `${n} articles are written for ${site}`,
+      preheader: `${words.toLocaleString()} words across ${n} keywords. Start your trial to read them.`,
+      footerNote: `Sent because AltoRank wrote these articles for ${esc(site)}.`,
+      html:
+        emailHeader(site, `${n} article${n === 1 ? " is" : "s are"} written`) +
+        emailStatRow(stats) +
+        emailParagraph(beforeTrialLine(n)) +
+        emailCard({
+          title: "Written",
+          flush: true,
+          bodyHtml: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">${rows}${more}</table>`,
+        }) +
+        emailButton(trialGateUrl(), "Start your trial"),
+    };
+  }
 
   return {
     subject: risky
@@ -365,6 +391,11 @@ export async function announceDraftBatch(
     const autoApproveAfter = await stampHoldWindow(supabase, ws, fresh, now);
 
     const cmsConnected = await hasDestination(supabase, workspaceId);
+    // Asked as nobody: a mail goes to every member, so no one address decides.
+    // A read that fails throws to the catch below and the drafts stay
+    // unannounced for the next pass, rather than going out with a "Read the
+    // draft" the account cannot use.
+    const beforeTrial = (await accountTrialGate(supabase, ws.account_id, null)) === "gated";
 
     const scope = { accountId: ws.account_id, workspaceId };
     const out =
@@ -385,6 +416,7 @@ export async function announceDraftBatch(
               cmsConnected,
               autoApproveAfter,
               holdUrlFor: autoApproveAfter ? (to) => holdUrl(fresh[0]!.id, to) : undefined,
+              beforeTrial,
             },
             scope,
           )
@@ -401,6 +433,7 @@ export async function announceDraftBatch(
                 total: fresh.length,
                 autoApproveAfter,
                 cmsConnected,
+                beforeTrial,
                 drafts: fresh.map((a) => ({
                   articleId: a.id,
                   title: a.title ?? "Untitled draft",

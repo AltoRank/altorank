@@ -6,6 +6,8 @@
 // the account's state is exactly the kind of thing that should be asserted in
 // a test rather than read off a screenshot.
 
+import { TRIAL_DAYS } from "@/lib/stripe";
+
 /**
  * The clause that reconciles the thirty-day plan with the free allowance.
  *
@@ -20,7 +22,11 @@
  * (self-host, operator, an active plan), for which the plan and the
  * entitlement do not disagree.
  */
-export function freeAllowanceClause(freeDrafts: number | null): string | null {
+export function freeAllowanceClause(freeDrafts: number | null, opts: { preTrial?: boolean } = {}): string | null {
   if (freeDrafts === null || freeDrafts <= 0) return null;
-  return `The first ${freeDrafts === 1 ? "one is" : `${freeDrafts} are`} free to read; the 7-day trial writes the rest.`;
+  // Before the trial, setup writes one article and nothing reads it: the
+  // trial is what opens the text (lib/billing/trial.ts, draftBodyLocked).
+  // "The first 7 are free to read" was a promise the gate then broke.
+  if (opts.preTrial) return `Setup writes your first article free; the ${TRIAL_DAYS}-day trial opens it and writes the rest.`;
+  return `The first ${freeDrafts === 1 ? "one is" : `${freeDrafts} are`} free to read; the ${TRIAL_DAYS}-day trial writes the rest.`;
 }

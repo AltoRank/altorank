@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage) and **093** (draft claims), each with its section at the end. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims) and **097** (article text server-only), each with its section at the end. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -146,7 +146,8 @@ m(file, applied) as (values
   ('084_analysis_attempts',                  exists (select 1 from col where t='workspaces' and c='analysis_attempts')),
   ('085_agencies_to_accounts',               to_regclass('public.accounts') is not null and to_regclass('public.agencies') is null),
   ('091_public_tool_usage',                  to_regclass('public.public_tool_usage') is not null and to_regprocedure('public.reserve_public_tool_spend(text,numeric,numeric)') is not null),
-  ('093_draft_claims',                       exists (select 1 from col where t='calendar_entries' and c='draft_owed_at') and exists (select 1 from col where t='workspaces' and c='trial_resume_claimed_at'))
+  ('093_draft_claims',                       exists (select 1 from col where t='calendar_entries' and c='draft_owed_at') and exists (select 1 from col where t='workspaces' and c='trial_resume_claimed_at')),
+  ('097_article_body_server_only',           not has_column_privilege('authenticated', 'public.articles', 'content', 'SELECT'))
 )
 select file, applied from m order by file;
 ```
@@ -276,6 +277,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 084_analysis_attempts.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 085_agencies_to_accounts.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 091_public_tool_usage.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 093_draft_claims.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 097_article_body_server_only.sql   # AFTER its code is live; see its section
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -341,6 +343,7 @@ no code in the repo references either).
 | 084_analysis_attempts.sql | `fix/reanalyse-and-cms-gate` | 001 | yes | yes, but the backfill's re-queue is not undone |
 | 091_public_tool_usage.sql | `tools/public-api` | none | yes | yes, `drop function public.reserve_public_tool_spend(text,numeric,numeric); drop table public.public_tool_usage;` (paid public tools then refuse to run) |
 | 093_draft_claims.sql | `fix/trial-hold-and-resume` | 001, 049 | yes | yes, drop the eight columns and the two indexes; the code that reads them must go first |
+| 097_article_body_server_only.sql | `fix/trial-gate-first-article` | 001, 053; **its code deployed first** | yes | yes, `grant select on table public.articles to anon, authenticated;` (the text is then readable through the API again) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -751,3 +754,40 @@ select count(*) from calendar_entries where draft_claimed_at is not null;  -- 0 
 select count(*) from calendar_entries where draft_owed_at is not null;     -- 0 on day one
 select count(*) from workspaces where trial_resume_key is not null;        -- 0 on day one
 ```
+
+## 097 — article text server-only
+
+Revokes table-level `SELECT` on `articles` from `anon` and `authenticated` and
+grants back every column except the six that carry or quote the text:
+`content`, `meta_description`, `fact_checks`, `link_checks`, `seo_checks`,
+`aeo_checks`. `INSERT`/`UPDATE` and the service role are unchanged.
+Idempotent (revoke, then grant whatever non-body columns exist now). Depends
+on 001 and 053.
+
+**Apply AFTER the code that ships with it is live on production, never
+before.** The order is the reverse of 093. Code from before this migration
+reads articles with `select("*")` through the signed-in person's client; with
+097 applied that is `permission denied for table articles`, and the dashboard,
+the editor, approve and publish error for every account. The new code reads
+the text on the service role (`lib/articles/body-read.ts`) and works with or
+without 097, so: merge, confirm the Vercel deploy of that commit is live (a
+merge on a day the deploy cap is hit ships nothing), then apply.
+
+Until it is applied, an account before its trial can still read its draft
+straight from `/rest/v1/articles?select=content`: the app withholds the text,
+the database does not.
+
+Post-flight (expect `f`, `t`, `t`):
+
+```sql
+select has_column_privilege('authenticated', 'public.articles', 'content', 'SELECT'),
+       has_column_privilege('authenticated', 'public.articles', 'title', 'SELECT'),
+       has_column_privilege('service_role', 'public.articles', 'content', 'SELECT');
+```
+
+**A column added to `articles` later is not readable by a client token until
+it is granted.** The migration that adds it must say
+`grant select (<column>) on public.articles to anon, authenticated;` - unless
+the column holds the article's text, in which case add it to the list in 097's
+comment and to `ARTICLE_BODY_COLUMNS` instead. A missing grant fails loudly
+(`permission denied`), never by leaking.
