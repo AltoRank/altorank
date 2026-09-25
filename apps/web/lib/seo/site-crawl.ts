@@ -66,6 +66,9 @@ export class SitePagesWriteError extends Error {
 const UA =
   "Mozilla/5.0 (compatible; AltoRank-Auditor/1.0; +https://altorank.co; site audit)";
 
+/** The User-Agent the crawl sends. The found-on-site check reads the same sites as the same crawler. */
+export const CRAWLER_USER_AGENT = UA;
+
 /**
  * Below this a fetched page has no readable body: almost always a shell whose
  * content arrives from JavaScript. A genuinely thin page exists, but scoring
@@ -109,7 +112,7 @@ const ARTICLE_SCHEMA = /^(Article|BlogPosting|NewsArticle|TechArticle|Report|Sch
 const LOCALE_SEGMENT = /^[a-z]{2}(-[a-z]{2})?$/i;
 
 /** Pages that are never content: feeds, assets, and the index pages themselves. */
-const NOT_CONTENT =
+export const NOT_CONTENT =
   /\.(xml|json|txt|rss|atom|pdf|jpg|jpeg|png|gif|svg|webp|ico|css|js|zip)(\?|$)/i;
 
 export type PageType = "article" | "listing" | "page";
