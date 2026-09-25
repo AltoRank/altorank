@@ -15,8 +15,8 @@ import { FakeDb } from "@/lib/plan/__tests__/fake-postgrest";
 const { generateArticle, getQuota, stampRun, announce, continueFrom, deferred } = vi.hoisted(() => ({
   generateArticle: vi.fn(),
   getQuota: vi.fn(),
-  stampRun: vi.fn(async (..._a: unknown[]) => true),
-  announce: vi.fn(async (..._a: unknown[]) => "1 draft, emailed 1"),
+  stampRun: vi.fn<(...a: unknown[]) => Promise<boolean>>(async () => true),
+  announce: vi.fn<(...a: unknown[]) => Promise<string>>(async () => "1 draft, emailed 1"),
   continueFrom: vi.fn(),
   deferred: [] as Array<() => unknown>,
 }));
