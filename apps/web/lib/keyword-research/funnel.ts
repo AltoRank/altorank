@@ -7,7 +7,7 @@
 // remain - is arithmetic over data already fetched, so the same inputs always
 // give the same table and every count in the summary line can be tested.
 
-import { normalizeTarget } from "@/lib/seo/recommendations";
+import { intentKey } from "./intent";
 import { PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
 import { computeCapacity } from "@/lib/plan/capacity";
 import type { PlanCapacity, ResearchCandidate, ResearchFunnel } from "./types";
@@ -52,22 +52,24 @@ export interface ExistingKeyword {
 /**
  * Decide, per candidate, whether it is already tracked.
  *
- * Matches on `normalizeTarget`, the same collapse the recommendation queue
- * uses, so "seo for agencies" is recognised as the tracked "agency seo" and
- * the drawer does not propose a keyword the calendar already carries under a
- * different word order.
+ * Matches on `intentKey`, the words the recommendation queue compares when no
+ * results page was bought (lib/keyword-research/intent.ts), so "seo for
+ * agencies" is recognised as the tracked "agency seo" and the drawer does not
+ * propose a keyword the calendar already carries under a different word order.
+ * Words only: nothing here has a results page yet.
  */
 export function markExisting(
   candidates: ResearchCandidate[],
   existing: ExistingKeyword[],
+  language: string | null,
 ): ResearchCandidate[] {
   const byTarget = new Map<string, ExistingKeyword>();
   for (const k of existing) {
-    const key = normalizeTarget(k.term);
+    const key = intentKey(k.term, language);
     if (key && !byTarget.has(key)) byTarget.set(key, k);
   }
   return candidates.map((c) => {
-    const hit = byTarget.get(normalizeTarget(c.term));
+    const hit = byTarget.get(intentKey(c.term, language));
     return hit ? { ...c, existingId: hit.id, existingStatus: hit.status } : { ...c, existingId: null, existingStatus: null };
   });
 }
@@ -76,10 +78,10 @@ export function markExisting(
  * One row per query. Two provider rows that collapse to the same target keep
  * the one with the higher volume; on a tie, the shorter phrasing.
  */
-export function dedupeCandidates(candidates: ResearchCandidate[]): ResearchCandidate[] {
+export function dedupeCandidates(candidates: ResearchCandidate[], language: string | null): ResearchCandidate[] {
   const best = new Map<string, ResearchCandidate>();
   for (const c of candidates) {
-    const key = normalizeTarget(c.term);
+    const key = intentKey(c.term, language);
     if (!key) continue;
     const prev = best.get(key);
     if (
@@ -111,6 +113,8 @@ export function rankCandidates(candidates: ResearchCandidate[]): ResearchCandida
 }
 
 export interface FunnelOptions {
+  /** The workspace's language: which phrasings are one query depends on it (lib/keyword-research/intent.ts). */
+  language: string | null;
   /** How many to propose. Everything past it is still counted as found. */
   limit?: number;
   minVolume?: number;
@@ -146,10 +150,10 @@ export interface FunnelOptions {
 export function applyFunnel(
   raw: ResearchCandidate[],
   existing: ExistingKeyword[],
-  opts: FunnelOptions = {},
+  opts: FunnelOptions,
 ): { candidates: ResearchCandidate[]; funnel: ResearchFunnel } {
   const minVolume = opts.minVolume ?? MIN_VOLUME;
-  const deduped = markExisting(dedupeCandidates(raw), existing);
+  const deduped = markExisting(dedupeCandidates(raw, opts.language), existing, opts.language);
   const found = deduped.length;
 
   let skippedExisting = 0;

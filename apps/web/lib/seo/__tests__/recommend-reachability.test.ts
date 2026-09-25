@@ -64,7 +64,9 @@ function client(
       };
     }
     self.single = async () => ({
-      data: { topical_profile: PROFILE, dr, business_profile: null },
+      // `workspaces.language` is NOT NULL DEFAULT 'en'; which phrasings are
+      // one search depends on it (lib/keyword-research/intent.ts).
+      data: { topical_profile: PROFILE, dr, business_profile: null, language: "en" },
     });
     return self;
   };

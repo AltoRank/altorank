@@ -355,7 +355,7 @@ export async function researchGenerate(
 
   // Judged the way the first look judges and dropped at the same bar.
   const existing = await existingKeywords(supabase, ws.id);
-  const { candidates, funnel } = applyFunnel(judgeCandidates(raw, judge), existing, { limit: count, dropOffTopic: true, keepNoData: true });
+  const { candidates, funnel } = applyFunnel(judgeCandidates(raw, judge), existing, { language: ws.languageCode, limit: count, dropOffTopic: true, keepNoData: true });
   trace.push(funnelTrace(funnel));
 
   const runId = await recordRun(supabase, ws.id, kind, { source: input.source, competitors: input.competitors, audiences: input.audiences, count }, { funnel });
@@ -407,7 +407,7 @@ export async function researchPlaybook(
   trace.push(`${meta.title}: built ${seeds.length} phrases → ${looked.filter((c) => c.volume !== null).length} had search data`);
 
   const existing = await existingKeywords(supabase, ws.id);
-  const { candidates, funnel } = applyFunnel(judgeCandidates(looked, judge), existing, { dropOffTopic: true, keepNoData: true });
+  const { candidates, funnel } = applyFunnel(judgeCandidates(looked, judge), existing, { language: ws.languageCode, dropOffTopic: true, keepNoData: true });
   trace.push(funnelTrace(funnel));
 
   const runId = await recordRun(supabase, ws.id, kind, { playbook, seeds }, { funnel });
@@ -458,7 +458,7 @@ export async function researchFind(
   // Judged but never dropped: the person typed it. The verdict rides on the
   // row (the table marks it) and, for the typed term itself, in the note.
   const judge = await relevanceJudge(supabase, ws);
-  const { candidates, funnel } = applyFunnel(judgeCandidates(raw, judge), existing, { keepExisting: true, keepNoData: true, minVolume: 0 });
+  const { candidates, funnel } = applyFunnel(judgeCandidates(raw, judge), existing, { language: ws.languageCode, keepExisting: true, keepNoData: true, minVolume: 0 });
   const ordered = [...candidates].sort((a, b) => (a.term.toLowerCase() === clean.toLowerCase() ? -1 : b.term.toLowerCase() === clean.toLowerCase() ? 1 : 0));
   trace.push(funnelTrace(funnel));
   const typed = ordered.find((c) => c.term.toLowerCase() === clean.toLowerCase());
@@ -484,7 +484,7 @@ export async function researchImport(
 
   const existing = await existingKeywords(supabase, ws.id);
   const judge = await relevanceJudge(supabase, ws);
-  const { candidates, funnel } = applyFunnel(judgeCandidates(looked, judge), existing, { keepExisting: true, keepNoData: true, minVolume: 0 });
+  const { candidates, funnel } = applyFunnel(judgeCandidates(looked, judge), existing, { language: ws.languageCode, keepExisting: true, keepNoData: true, minVolume: 0 });
   trace.push(funnelTrace(funnel));
   const off = candidates.filter((c) => c.relevance && c.relevance.score <= 0).length;
   const offNote = off ? `${off} of these look off-topic for this site (marked in the table). They are kept because you pasted them.` : null;
