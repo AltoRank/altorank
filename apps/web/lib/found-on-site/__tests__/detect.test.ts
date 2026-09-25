@@ -427,6 +427,54 @@ describe("findDraftsLiveOnSites", () => {
     expect(sb.tables.workspaces[0].found_on_site_checked_at).toBeNull();
   });
 
+  it("asks each host of the site its own robots.txt, not the main host's", async () => {
+    const BLOG = "https://blog.acme-agency.example";
+    const SHOP = "https://shop.acme-agency.example";
+    const sb = fakeSupabase(seed());
+    const s = fakeSite(
+      site({
+        [`${S}/post-sitemap.xml`]: {
+          type: "application/xml",
+          body: `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <url><loc>${BLOG}/yazi</loc><lastmod>2026-09-22T12:00:00+00:00</lastmod></url>
+            <url><loc>${SHOP}/sadakat-programi-rehberi</loc><lastmod>2026-09-22T12:00:00+00:00</lastmod></url>
+          </urlset>`,
+        },
+        // The main host allows everything; the blog host does not allow this page.
+        [`${BLOG}/robots.txt`]: { body: "User-agent: *\nDisallow: /yazi\n", type: "text/plain" },
+        [`${BLOG}/yazi`]: { body: F.TR_COPY_PAGE },
+        // The shop host has no robots.txt: a 404 allows everything.
+        [`${SHOP}/sadakat-programi-rehberi`]: { body: F.TR_COPY_PAGE },
+      }),
+    );
+    const run = await findDraftsLiveOnSites(client(sb), { budgetMs: 60_000, fetch: s.fetch, now: () => NIGHT_1 });
+    expect(s.calls).toContain(`${BLOG}/robots.txt`);
+    expect(s.calls).toContain(`${SHOP}/robots.txt`);
+    expect(s.calls).not.toContain(`${BLOG}/yazi`);
+    expect(run.results[0].skipped).toMatchObject({ disallowed: 1 });
+    expect(run.found).toBe(1);
+    expect(article(sb, "tr-draft").published_url).toBe(`${SHOP}/sadakat-programi-rehberi`);
+  });
+
+  it("checks a child sitemap on another host against that host's robots.txt", async () => {
+    const BLOG = "https://blog.acme-agency.example";
+    const sb = fakeSupabase(seed());
+    const s = fakeSite(
+      site({
+        [`${S}/sitemap_index.xml`]: {
+          type: "application/xml",
+          body: `<?xml version="1.0"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><sitemap><loc>${BLOG}/sitemap.xml</loc></sitemap></sitemapindex>`,
+        },
+        [`${BLOG}/robots.txt`]: { body: "User-agent: *\nDisallow: /sitemap.xml\n", type: "text/plain" },
+        [`${BLOG}/sitemap.xml`]: { type: "application/xml", body: urlset([["/blog/sadakat-programi-rehberi", "2026-09-22T10:48:00+00:00"]]) },
+      }),
+    );
+    const run = await findDraftsLiveOnSites(client(sb), { budgetMs: 60_000, fetch: s.fetch, now: () => NIGHT_1 });
+    expect(s.calls).toContain(`${BLOG}/robots.txt`);
+    expect(s.calls).not.toContain(`${BLOG}/sitemap.xml`);
+    expect(run.results[0]).toMatchObject({ status: "unreadable", blind: "robots-disallowed" });
+  });
+
   it("finds every site with a draft past PostgREST's 1,000-row page, and reads the sites in short slices", async () => {
     // 120 sites with ten drafts each: 1,200 rows, and the first 1,000 by id
     // belong to the first 100 sites. A read cut at one page leaves 20 out.

@@ -114,8 +114,13 @@ export function sitemapText(res: SitemapFetchResult): string | null {
 export interface DiscoverOptions {
   /** `Sitemap:` lines from robots.txt. Empty or absent means try the conventional paths. */
   declared?: string[];
-  /** Whether a URL may be fetched (robots.txt). Declared sitemaps are read regardless: the site listed them. */
-  allowed?: (url: string) => boolean;
+  /**
+   * Whether a URL may be fetched (robots.txt). Declared sitemaps are read
+   * regardless: the site listed them. May answer asynchronously, so a caller
+   * can load the robots.txt of the host a child sitemap is on the first time
+   * it meets one - RFC 9309 scopes each file to its own host.
+   */
+  allowed?: (url: string) => boolean | Promise<boolean>;
   /** Sitemap files fetched, in total. */
   maxSitemaps?: number;
   /** Page entries kept, in total. */
@@ -194,7 +199,7 @@ export async function discoverSitemapEntries(
       truncated = true;
       break;
     }
-    if (!next.trusted && !allowed(next.loc)) {
+    if (!next.trusted && !(await allowed(next.loc))) {
       sitemapsDisallowed.push(next.loc);
       continue;
     }

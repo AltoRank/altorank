@@ -23,9 +23,10 @@
 //     (lib/public-tools/safe-fetch.ts): the resolved address is checked, every
 //     redirect is re-checked, bodies are capped
 //   - robots.txt first, matched per RFC 9309 (lib/seo/robots.ts), as the same
-//     crawler the weekly site crawl already is; a robots.txt that does not
-//     answer (5xx, no response) means the site is not read at all, and a
-//     Crawl-delay drops the fetch to one at a time with that pause
+//     crawler the weekly site crawl already is, each host (blog.acme.example
+//     included) by its own file; a robots.txt that does not answer (5xx, no
+//     response) means that host is not read at all, and a Crawl-delay drops
+//     the fetch to one at a time with that pause
 //   - twenty pages per site per night at most; what the cap cut is counted in
 //     the run's log and read the next night
 //
@@ -79,6 +80,12 @@ const CONCURRENCY = 4;
 const WORKSPACE_ID_CHUNK = 100;
 /** The longest Crawl-delay honoured, as in the site crawl. Longer asks run out the night's budget instead. */
 const MAX_CRAWL_DELAY_MS = 5_000;
+/**
+ * Hosts of a site besides its own (a blog.acme.example) whose robots.txt one
+ * night reads. Each is a fetch before any page, and a sitemap that spreads
+ * over a dozen subdomains is not what a copied article looks like.
+ */
+const MAX_OTHER_HOSTS = 3;
 
 export interface FoundArticle {
   articleId: string;
@@ -299,7 +306,7 @@ async function checkWorkspace(
 
   // Permission first. A 4xx robots.txt allows everything; a 5xx or no answer
   // allows nothing, and the site is not read tonight (RFC 9309 §2.3.1).
-  const robots: RobotsRules = await loadRobots(origin, CRAWLER_NAME, async (u) => {
+  const fetchRobots = async (u: string) => {
     const res = await ctx.fetch(u, {
       userAgent: CRAWLER_USER_AGENT,
       maxBytes: ROBOTS_MAX_BYTES,
@@ -307,7 +314,8 @@ async function checkWorkspace(
       headers: { Accept: "text/plain,*/*;q=0.5" },
     });
     return { status: res.status, body: res.status >= 200 && res.status < 300 ? res.body : null };
-  });
+  };
+  const robots: RobotsRules = await loadRobots(origin, CRAWLER_NAME, fetchRobots);
   if (robots.source === "error") {
     return blind(
       "robots-unanswered",
@@ -315,7 +323,38 @@ async function checkWorkspace(
       { drafts: drafts.length },
     );
   }
-  const allowed = (u: string) => isAllowed(robots, u);
+  // A robots.txt speaks for its own host only (RFC 9309 §2.3). The site's
+  // own host - with or without www, which the site's robots.txt usually
+  // redirects between - uses the file above; a blog.acme.example page or a
+  // child sitemap on another host is checked against that host's own file,
+  // read the first time the host comes up. A few other hosts a night at most;
+  // a page on one past that is not read, and the outcome says how many.
+  const robotsByHost = new Map<string, RobotsRules>([[host, robots]]);
+  const hostsNotRead = new Set<string>();
+  const hostKey = (u: string) => {
+    try {
+      return new URL(u).hostname.toLowerCase().replace(/^www\./, "");
+    } catch {
+      return null;
+    }
+  };
+  const robotsFor = async (u: string): Promise<RobotsRules | null> => {
+    const key = hostKey(u);
+    if (!key) return null;
+    const known = robotsByHost.get(key);
+    if (known) return known;
+    if (robotsByHost.size - 1 >= MAX_OTHER_HOSTS) {
+      hostsNotRead.add(key);
+      return null;
+    }
+    const rules = await loadRobots(new URL(u).origin, CRAWLER_NAME, fetchRobots);
+    robotsByHost.set(key, rules);
+    return rules;
+  };
+  const allowedNow = async (u: string) => {
+    const rules = await robotsFor(u);
+    return rules !== null && isAllowed(rules, u);
+  };
 
   const discovery = await discoverSitemapEntries(
     origin,
@@ -328,7 +367,7 @@ async function checkWorkspace(
       });
       return { status: res.status, body: res.body, bytes: res.bodyBuffer };
     },
-    { declared: robots.sitemaps, allowed, deadline: ctx.deadline },
+    { declared: robots.sitemaps, allowed: allowedNow, deadline: ctx.deadline },
   );
   if (!discovery.entries.length) {
     // The night ran out before a sitemap answered: that says nothing about
@@ -376,6 +415,24 @@ async function checkWorkspace(
     ),
   ]);
 
+  // The robots.txt of every other host of the site the sitemap lists pages
+  // on, the hosts with the most pages first, so selection below can ask
+  // synchronously.
+  const otherHosts = new Map<string, { count: number; sample: string }>();
+  for (const e of discovery.entries) {
+    const key = hostKey(e.loc);
+    if (!key || robotsByHost.has(key) || !onSite(e.loc, host)) continue;
+    const seen = otherHosts.get(key);
+    otherHosts.set(key, { count: (seen?.count ?? 0) + 1, sample: seen?.sample ?? e.loc });
+  }
+  for (const [, { sample }] of [...otherHosts].sort((a, b) => b[1].count - a[1].count)) await robotsFor(sample);
+  const allowed = (u: string) => {
+    const key = hostKey(u);
+    const rules = key ? robotsByHost.get(key) : undefined;
+    if (key && !rules) hostsNotRead.add(key);
+    return rules !== undefined && isAllowed(rules, u);
+  };
+
   const selection = selectCandidates({
     entries: discovery.entries,
     drafts: drafts.map((d) => ({ id: d.id, createdAt: d.created_at, rejected: d.found_on_site_rejected ?? [] })),
@@ -406,8 +463,10 @@ async function checkWorkspace(
     });
   }
 
-  // Read the chosen pages. A Crawl-delay is honoured by going one at a time.
-  const delayMs = Math.min((robots.crawlDelaySeconds ?? 0) * 1000, MAX_CRAWL_DELAY_MS);
+  // Read the chosen pages. A Crawl-delay is honoured by going one at a time,
+  // at the longest any of the site's hosts asked for.
+  const crawlDelay = Math.max(0, ...[...robotsByHost.values()].map((r) => r.crawlDelaySeconds ?? 0));
+  const delayMs = Math.min(crawlDelay * 1000, MAX_CRAWL_DELAY_MS);
   const read = await mapLimit(selection.chosen, delayMs > 0 ? 1 : CONCURRENCY, async (c, i): Promise<ReadPage | null> => {
     if (Date.now() >= ctx.deadline) return null;
     if (delayMs > 0 && i > 0) await new Promise((r) => setTimeout(r, delayMs));
@@ -538,8 +597,14 @@ async function checkWorkspace(
     shells,
     found,
     blind: pagesBlind,
-    ...(discovery.truncated ? { detail: "the sitemap walk stopped at its bound; the rest is read on later nights" } : {}),
   };
+  const notes = [
+    discovery.truncated ? "the sitemap walk stopped at its bound; the rest is read on later nights" : null,
+    hostsNotRead.size
+      ? `pages on ${hostsNotRead.size} more ${hostsNotRead.size === 1 ? "host" : "hosts"} of the site were not read: only ${MAX_OTHER_HOSTS} other hosts' robots.txt are read a night`
+      : null,
+  ].filter((n): n is string => n !== null);
+  if (notes.length) outcome.detail = notes.join("; ");
   if (pagesBlind) {
     outcome.status = "unreadable";
     outcome.detail = html.length
