@@ -77,6 +77,11 @@ export interface ArticleLabels {
    * citation it places; `{link}` is where the link goes.
    */
   citeLead: string;
+  /**
+   * The free tier's attribution line under a published article; `{link}` is
+   * where the brand's link goes (lib/publishing/attribution.ts).
+   */
+  poweredBy: string;
   /** Alt-text prefix for a generated section image, per style preset. */
   illustration: Record<ImageStyle, string>;
   /** The summary block's heading the prompt offers the writer. */
@@ -274,6 +279,7 @@ const EN: LocaleRules = {
     publishedBy: (name) => `This article is published by ${name}.`,
     visit: "Visit {link}.",
     citeLead: "Learn more about {link}.",
+    poweredBy: "Powered by {link}",
     illustration: {
       sketch: "Sketch illustrating",
       watercolor: "Watercolour illustration of",
@@ -387,6 +393,7 @@ const IT: LocaleRules = {
     publishedBy: (name) => `Questo articolo è pubblicato da ${name}.`,
     visit: "Visita {link}.",
     citeLead: "Scopri di più su {link}.",
+    poweredBy: "Realizzato con {link}",
     illustration: {
       sketch: "Schizzo che illustra",
       watercolor: "Acquerello che illustra",
@@ -495,6 +502,7 @@ const ES: LocaleRules = {
     publishedBy: (name) => `Este artículo es publicado por ${name}.`,
     visit: "Visita {link}.",
     citeLead: "Más información sobre {link}.",
+    poweredBy: "Creado con {link}",
     illustration: {
       sketch: "Boceto que ilustra",
       watercolor: "Acuarela que ilustra",
@@ -603,6 +611,7 @@ const FR: LocaleRules = {
     publishedBy: (name) => `Cet article est publié par ${name}.`,
     visit: "Visitez {link}.",
     citeLead: "En savoir plus sur {link}.",
+    poweredBy: "Propulsé par {link}",
     illustration: {
       sketch: "Croquis illustrant",
       watercolor: "Aquarelle illustrant",
@@ -716,6 +725,7 @@ const DE: LocaleRules = {
     publishedBy: (name) => `Dieser Artikel wird von ${name} veröffentlicht.`,
     visit: "Besuchen Sie {link}.",
     citeLead: "Mehr über {link}.",
+    poweredBy: "Erstellt mit {link}",
     illustration: {
       sketch: "Skizze zu",
       watercolor: "Aquarell zu",
@@ -849,6 +859,7 @@ const TR: LocaleRules = {
     publishedBy: (name) => `Bu makale ${name} tarafından yayımlanmıştır.`,
     visit: "{link} adresini ziyaret edin.",
     citeLead: "{link} hakkında daha fazla bilgi edinin.",
+    poweredBy: "{link} ile hazırlandı",
     illustration: {
       sketch: "Eskiz çizim:",
       watercolor: "Suluboya resim:",
