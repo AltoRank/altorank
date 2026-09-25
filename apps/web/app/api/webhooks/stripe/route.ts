@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import type Stripe from "stripe";
 import {
   getStripe,
@@ -13,8 +13,8 @@ import {
 import { createServiceClient } from "@/lib/supabase/server";
 import { recordEvent } from "@/lib/observability/record";
 import { describe as describeError } from "@/lib/observability/event";
-import { FREE_TIER_PACE, paceOnActivation } from "@/lib/content/pace";
-import { schedulePlan } from "@/lib/onboarding/plan";
+import { paceOnActivation } from "@/lib/content/pace";
+import { dispatchResume } from "@/lib/plan/resume-dispatch";
 import { resumePausedWorkspaces } from "@/lib/billing/resume";
 import { graceEndsAt } from "@/lib/billing/dunning";
 import {
@@ -51,7 +51,11 @@ function mapStatus(s: Stripe.Subscription.Status): string {
   }
 }
 
-/** The checkout top-up runs the paid keyword pipeline; the same budget cron/analyze and write-now use. */
+/**
+ * The checkout's follow-up is handed off in `after()`, and on an install that
+ * cannot call itself it runs there (lib/plan/resume-dispatch.ts): the month's
+ * top-up, which buys verdicts. The same budget cron/analyze and write-now use.
+ */
 export const maxDuration = 300;
 
 /**
@@ -389,42 +393,40 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
             .eq("id", site.id);
         }
 
-        // The card was taken: say when it is charged and where to stop that.
+        /**
+         * Open what the trial gate held back, off this request.
+         *
+         * A gated account has its one article and nothing else: one entry on
+         * the calendar, nothing more drafted (lib/billing/trial-hold.ts). The
+         * trial lifts that, and the person comes back from checkout to a
+         * dashboard that should fill while they look around: the month on the
+         * calendar, and the rest of this week being written now.
+         *
+         * Neither happens here. The top-up buys results pages and verdicts
+         * and ran for minutes inside this handler, which Stripe times out and
+         * redelivers; the drafts are minutes each. So this answers Stripe and
+         * hands both to /api/internal/resume-drafting in its own invocation
+         * (lib/plan/resume-dispatch.ts), keyed by the subscription so a
+         * redelivered event opens nothing twice. A checkout without a trial
+         * gets the top-up only, as it always did; its drafts come at the
+         * scheduled writer's pace.
+         */
+        const resume = { accountId, key: String(session.subscription), draftWeek: Boolean(trial) };
+        after(() => dispatchResume(resume));
+
+        // The card was taken: say when it is charged, where to stop that, and
+        // that the writing the trial opens has started.
         if (trial) {
           const tier = plan ?? "starter";
           try {
             await notifyTrialStarted(
               supabase,
               accountId,
-              { planLabel: PLAN_LABELS[tier] ?? tier, planPrice: PLAN_PRICES[tier] ?? "", endsAt: trial },
+              { planLabel: PLAN_LABELS[tier] ?? tier, planPrice: PLAN_PRICES[tier] ?? "", endsAt: trial, draftingStarted: true },
               String(session.subscription),
             );
           } catch (err) {
             console.error(`[stripe] trial-started email: ${err instanceof Error ? err.message : err}`);
-          }
-        }
-        /**
-         * Open the month the trial gate held back.
-         *
-         * A gated first look schedules one article and leaves the other
-         * qualified topics unplanned (lib/onboarding/pipeline.ts). The person
-         * returns from checkout to the calendar, and it should hold the
-         * month they were shown locked, not one article and a wait for the
-         * nightly top-up. Best effort per site: the nightly cron runs the same
-         * top-up, so a failure here costs a day, not the plan.
-         *
-         * After the trial email, not before: this buys results pages and
-         * verdicts and can run for minutes, and the email is the one thing in
-         * this handler that must not be lost to a timeout. `maxDuration`
-         * above is the budget the other callers of this pipeline already run
-         * under; before it this route ran at the platform default.
-         */
-        for (const site of sites ?? []) {
-          try {
-            const pace = paceOnActivation(site.auto_generate_weekly_limit as number | null, plan) ?? (site.auto_generate_weekly_limit as number | null) ?? FREE_TIER_PACE;
-            await schedulePlan(supabase, site.id as string, pace, { mode: "top-up" });
-          } catch (err) {
-            console.error(`[stripe] plan top-up for ${site.id}: ${err instanceof Error ? err.message : err}`);
           }
         }
 

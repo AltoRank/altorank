@@ -17,6 +17,8 @@ import { ARTICLE_SHAPES, qualifyOpportunities, serpOverlap, type ArticleShape, t
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { MAX_PACE, monthlyFromPace } from "@/lib/content/pace";
+import { CLAIM_LEASE_MS } from "@/lib/plan/draft-claim";
+import { PRE_TRIAL_DRAFTS, planHoldApplies, TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-hold";
 import { recommendKeywords, type KeywordRecommendation } from "@/lib/seo/recommendations";
 import { classifyKeyword, type KeywordTaxonomy } from "@/lib/keywords/taxonomy";
 import { generateQualityQuestionsBatch, parseStoredQuestions, toQualityQuestions } from "@/lib/keywords/questions";
@@ -301,7 +303,13 @@ async function planFor(
   // In replace mode the unfulfilled queue is about to be dropped, so it does
   // not count against the cap and its keywords are free to be planned again.
   const existing = mode === "replace" ? all.filter((e) => e.status !== "queue" || e.article_id) : all;
-  const room = PLAN_MAX_ENTRIES - existing.length;
+  // A trial-gated account's calendar holds its first article and nothing
+  // else until the trial starts (lib/billing/trial-hold.ts). Decided here,
+  // not by the caller: onboarding used to pass `maxEntries: 1` for a gated
+  // account, and the nightly top-up, the webhook, the Plan-month button and
+  // a resumed site all called this without it and filled the month back in.
+  const cap = (await planHoldApplies(supabase, workspaceId)) ? PRE_TRIAL_DRAFTS : PLAN_MAX_ENTRIES;
+  const room = cap - existing.length;
   if (room <= 0) return { plan: [], recs: [] };
 
   const { data: excludedRows } = await supabase
@@ -541,19 +549,30 @@ export async function ensureQuestionsFor(
 /**
  * The planned keyword the cron should write today, if any: the earliest
  * queued entry on or before `today` that has no article yet.
+ *
+ * Two more kinds of entry are due whatever their date, because a writer
+ * already tried them and did not finish (lib/plan/draft-claim.ts): one whose
+ * draft failed, and one whose claim ran out its lease without an article.
+ * The rest of a trial's first week is drafted the moment the trial starts,
+ * so an entry dated Friday that failed on Tuesday is picked up by the next
+ * run rather than waiting for Friday. An entry somebody is writing right
+ * now is not due to anyone else.
  */
 export async function duePlannedKeyword(
   supabase: SupabaseClient,
   workspaceId: string,
   today: Date = new Date(),
 ): Promise<{ entryId: string; keywordId: string | null; term: string } | null> {
+  const leaseCutoff = new Date(today.getTime() - CLAIM_LEASE_MS).toISOString();
   const { data } = await supabase
     .from("calendar_entries")
     .select("id, keyword_id, keyword")
     .eq("workspace_id", workspaceId)
     .eq("status", "queue")
     .is("article_id", null)
-    .lte("scheduled_date", isoDate(today))
+    .or(
+      `and(scheduled_date.lte.${isoDate(today)},draft_claimed_at.is.null),draft_failed_at.not.is.null,draft_claimed_at.lt.${leaseCutoff}`,
+    )
     .order("scheduled_date", { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -728,14 +747,19 @@ export async function scheduleKeywords(
   const alreadyPlanned = new Set(rows.map((r) => r.keyword_id).filter((id): id is string => Boolean(id)));
   const occupied = rows.map((r) => r.scheduled_date);
   const existingCount = rows.length;
-  const slots = Math.max(0, PLAN_MAX_ENTRIES - existingCount);
+  // The trial hold, the same one `planFor` applies: a gated calendar holds
+  // the first article only, and a keyword picked from the research drawer is
+  // refused with the reason rather than planned for a writer that will not run.
+  const held = await planHoldApplies(supabase, workspaceId);
+  const slots = Math.max(0, (held ? PRE_TRIAL_DRAFTS : PLAN_MAX_ENTRIES) - existingCount);
 
   const fresh = wanted.filter((id) => !alreadyPlanned.has(id));
   const fits = fresh.slice(0, slots);
   const refused = fresh.slice(slots);
+  const heldReasons: Record<string, string> = held ? Object.fromEntries(refused.map((id) => [id, TRIAL_HOLD_MESSAGE])) : {};
 
   if (!fits.length) {
-    return { scheduled: [], refused, capacity: { scheduled: existingCount, cap: PLAN_MAX_ENTRIES, slots } };
+    return { scheduled: [], refused, ...(held ? { reasons: heldReasons } : {}), capacity: { scheduled: existingCount, cap: PLAN_MAX_ENTRIES, slots } };
   }
 
   const { data: keywords, error: kwError } = await supabase
@@ -748,7 +772,7 @@ export async function scheduleKeywords(
 
   const weekly = (ws?.auto_generate_weekly_limit as number | null) ?? 1;
   const qualified = await qualifyOpportunities(supabase, workspaceId, keywords ?? [], { domain: ws?.domain ?? "", business: ws?.business_profile ?? null, languageCode: languageCodeOf(ws?.language), locationCode: ws?.location_code ?? 2840 });
-  const reasons: Record<string, string> = {};
+  const reasons: Record<string, string> = { ...heldReasons };
   const accepted: Opportunity[] = [];
   const ids = fits.filter((id) => {
     const evidence = qualified.get(id);

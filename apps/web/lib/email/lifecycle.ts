@@ -424,21 +424,36 @@ export type TrialStartedEmail = {
   planPrice: string;
   /** ISO end of the trial. */
   endsAt: string;
+  /**
+   * The webhook has handed the rest of this week to the writer
+   * (lib/plan/resume-week.ts). Until the trial nothing past the first article
+   * is drafted (lib/billing/trial-hold.ts), so this is the news the email
+   * leads with; without it the email says only what the plan opens.
+   */
+  draftingStarted?: boolean;
 };
 
 /**
  * The card was taken. Says the one thing that matters about a card trial -
  * the date of the first charge - and where to stop it before then. Sent from
- * the checkout webhook, once per subscription.
+ * the checkout webhook, once per subscription. When the trial is what lifts
+ * the hold, it also says the writing has started, because it has.
  */
 export function renderTrialStarted(a: TrialStartedEmail): RenderedEmail {
   const ends = formatTrialDate(a.endsAt);
   return {
     subject: `Your ${TRIAL_DAYS}-day trial of ${a.planLabel} has started`,
-    preheader: `First charge on ${ends} unless you cancel before then.`,
+    preheader: a.draftingStarted
+      ? `Drafting has started. First charge on ${ends} unless you cancel before then.`
+      : `First charge on ${ends} unless you cancel before then.`,
     footerNote: `Sent because you manage billing for this AltoRank account.`,
     html:
       heading(`You are on ${a.planLabel}, free until ${ends}`) +
+      (a.draftingStarted
+        ? emailParagraph(
+            `<strong>Drafting has started.</strong> The articles planned for the rest of this week are being written now, and each one lands in your review queue as it finishes. The rest of the month follows on its scheduled days.`,
+          )
+        : "") +
       emailParagraph(
         `Approve and publish are open, and the schedule keeps writing at the plan's pace. Your card is on file and <strong>the first charge, ${esc(a.planPrice)}, is on ${esc(ends)}</strong>.`,
       ) +

@@ -8,7 +8,8 @@ import { recordSpend } from "@/lib/billing/spend";
 import { closeCoveredEntries, duePlannedKeyword, fulfilPlannedEntry } from "@/lib/onboarding/plan";
 import { profileIsUsable } from "@/lib/seo/topical-profile";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
-import { firstDraftAwaitsReview } from "@/lib/billing/first-draft-gate";
+import { draftBlocker, TrialHoldError } from "@/lib/billing/trial-hold";
+import { claimEntry, claimsInFlight, recordEntryFailure, releaseClaim } from "@/lib/plan/draft-claim";
 import { canSpend } from "@/lib/billing/spend-gate";
 import { resumeExpiredPauses } from "@/lib/billing/resume";
 import { billingEnabled, getStripe } from "@/lib/stripe";
@@ -33,6 +34,7 @@ import {
   roomForAnother,
 } from "@/lib/content/generate-queue";
 import { observedCron } from "@/lib/observability/cron";
+import { setupFinishedElsewhere } from "@/lib/onboarding/setup-state";
 
 /**
  * Scheduled draft generation.
@@ -201,6 +203,9 @@ async function run(request: Request) {
     // Falls back to the same number the column now defaults to (042), so a
     // row written before that migration is not quietly held at the old 2.
     const limit = (ws.auto_generate_weekly_limit as number) ?? PAID_DEFAULT_PACE;
+    // The planned entry this run claimed, so a draft that fails can say so on
+    // the calendar and hand the entry back rather than hold it for the lease.
+    let claimedEntry: { id: string; by: string } | null = null;
 
     try {
       if (limit <= 0) {
@@ -223,6 +228,24 @@ async function run(request: Request) {
           domain,
           status: "skipped",
           detail: `weekly limit reached: ${describePaceBudget(budget)}`,
+        });
+        continue;
+      }
+
+      // The rest of the week is being written right now, by the resume a
+      // trial start fans out (lib/plan/resume-week.ts). Its drafts count
+      // against this week's pace only once their rows exist, so a run that
+      // arrived mid-burst would read room that is already spoken for - and
+      // could pick today's entry from under a writer that has claimed it.
+      // Leave the site to them; whatever they do not finish is handed back
+      // (lib/plan/draft-claim.ts) and the next run takes it.
+      const inFlight = await claimsInFlight(supabase, workspaceId);
+      if (inFlight > 0) {
+        results.push({
+          workspaceId,
+          domain,
+          status: "skipped",
+          detail: `${inFlight} planned ${inFlight === 1 ? "draft is" : "drafts are"} being written right now; this run leaves the site to them`,
         });
         continue;
       }
@@ -250,15 +273,15 @@ async function run(request: Request) {
         results.push({ workspaceId, domain, status: "skipped", detail: quotaExceededMessage(quota) });
         continue;
       }
-      // On the free allowance, the second draft waits for the first to be
-      // read (lib/billing/first-draft-gate.ts). The allowance is the
+      // Before any research is bought: a trial-gated account writes nothing
+      // past its first article until the trial starts, and any other account
+      // without a plan waits for its first free draft to be read. One
+      // question, both rules (lib/billing/trial-hold.ts). The allowance is the
       // customer's to spend, not this cron's.
-      if (quota.reason === "no-plan") {
-        const waiting = await firstDraftAwaitsReview(supabase, workspaceId);
-        if (waiting) {
-          results.push({ workspaceId, domain, status: "skipped", detail: waiting });
-          continue;
-        }
+      const blocked = await draftBlocker(supabase, quota, workspaceId);
+      if (blocked) {
+        results.push({ workspaceId, domain, status: "skipped", detail: blocked });
+        continue;
       }
 
       // No vocabulary, no unattended article. With nothing to judge relevance
@@ -372,6 +395,23 @@ async function run(request: Request) {
         continue;
       }
 
+      // Claim today's entry before writing it (lib/plan/draft-claim.ts): the
+      // trial resume or an overlapping run may have got there first, and one
+      // conditional update is the only thing that can say which of them
+      // writes. Only the planned path claims; the live queue has no entry.
+      const claimBy = `cron:${runStart}`;
+      if (due && !(await claimEntry(supabase, due.entryId, claimBy))) {
+        results.push({
+          workspaceId,
+          domain,
+          status: "skipped",
+          keyword: due.term,
+          detail: `"${due.term}" is already being written by another run; leaving it to that one`,
+        });
+        continue;
+      }
+      claimedEntry = due ? { id: due.entryId, by: claimBy } : null;
+
       const draftStart = Date.now();
       const result = await generateArticle({
         supabase,
@@ -443,8 +483,15 @@ async function run(request: Request) {
       // you stopped" is half the news. Once per site; the drafts after this
       // one are announced the ordinary way.
       let notified = "";
-      const setupUnfinished = !ws.onboarded_at && !ws.onboarding_skipped_at;
       try {
+        // About the person as well as the site: somebody who finished setup
+        // on another site (a twin made by a double signup, 2026-09-22) gets
+        // the ordinary draft email here, not "setup never finished"
+        // (lib/onboarding/setup-state.ts).
+        const setupUnfinished =
+          !ws.onboarded_at &&
+          !ws.onboarding_skipped_at &&
+          !(await setupFinishedElsewhere(supabase, ws.account_id as string, workspaceId));
         if (setupUnfinished) {
           const line = await announceSetupUnfinished(supabase, {
             accountId: ws.account_id as string,
@@ -489,6 +536,9 @@ async function run(request: Request) {
       // written. Reported as a skip so it does not read as an incident, and
       // not counted against `written`, because this run wrote nothing.
       if (err instanceof ConcurrentGenerationError) {
+        // The keyword is being written by somebody else, so this run's claim
+        // on the entry is handed straight back rather than held for the lease.
+        if (claimedEntry) await releaseClaim(supabase, claimedEntry.id, claimedEntry.by);
         results.push({
           workspaceId,
           domain,
@@ -498,12 +548,15 @@ async function run(request: Request) {
         });
         continue;
       }
-      results.push({
-        workspaceId,
-        domain,
-        status: "error",
-        detail: err instanceof Error ? err.message : "unknown error",
-      });
+      const detail = err instanceof Error ? err.message : "unknown error";
+      if (claimedEntry) await recordEntryFailure(supabase, claimedEntry.id, claimedEntry.by, detail);
+      // The hold, reached by a race rather than read above: a state, not an
+      // incident, and said in the same words.
+      if (err instanceof TrialHoldError) {
+        results.push({ workspaceId, domain, status: "skipped", detail });
+        continue;
+      }
+      results.push({ workspaceId, domain, status: "error", detail });
     }
   }
 
