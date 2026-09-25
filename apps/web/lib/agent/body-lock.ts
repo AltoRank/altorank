@@ -3,13 +3,13 @@
 // ---------------------------------------------------------------------------
 //
 // The agent API is what the CLI, the stdio MCP server and the hosted /api/mcp
-// all call, so a refusal here covers the three of them. A key has no session,
-// so "who is asking" is the person who created it: their address is what the
-// operator check and the bypass list are asked about, exactly as they would be
-// for that person signed in. A key with no creator on record (older rows)
-// asks as nobody, which getQuota reads as a cron.
+// all call, so a refusal here covers the three of them. A key has no session:
+// the account is asked about as nobody, so it is ours only if an operator
+// created it, and the key's creator is asked about only for the bypass list
+// (keyTrialGate). A key with no creator on record (older rows) is never
+// bypassed.
 
-import { accountTrialGate } from "@/lib/billing/body-lock";
+import { keyTrialGate } from "@/lib/billing/body-lock";
 import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import type { AgentContext } from "./auth";
 import { fail, type FailEnvelope } from "./envelope";
@@ -25,7 +25,7 @@ async function keyCreatorEmail(ctx: AgentContext): Promise<string | null> {
 
 /** Whether article bodies are withheld from this key's account. */
 export async function agentBodyLocked(ctx: AgentContext): Promise<boolean> {
-  return (await accountTrialGate(ctx.supabase, ctx.accountId, await keyCreatorEmail(ctx))) === "gated";
+  return (await keyTrialGate(ctx.supabase, ctx.accountId, await keyCreatorEmail(ctx))) === "gated";
 }
 
 /** The refusal an agent reads, and the one thing it should tell the human. */

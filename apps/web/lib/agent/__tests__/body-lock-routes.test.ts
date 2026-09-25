@@ -129,6 +129,21 @@ describe("GET /articles/{id}/content", () => {
     expect(res.status).toBe(200);
   });
 
+  it("asks about the account as nobody, never as the key's creator", async () => {
+    // Round-5 review: asked as the creator, a key an operator made while
+    // invited into a customer's gated account read that account's text for
+    // as long as the key lived. Whether the account is ours is answered by
+    // who created the account (getQuota with no caller).
+    const { getQuota } = await import("@/lib/billing/quota");
+    const spy = vi.mocked(getQuota);
+    spy.mockClear();
+    const { GET } = await import("@/app/api/agent/v1/articles/[id]/content/route");
+    const res = await GET(request(`/articles/${ART}/content?format=markdown`), params({ id: ART }));
+    expect(res.status).toBe(403);
+    expect(spy).toHaveBeenCalled();
+    for (const call of spy.mock.calls) expect(call[2]).toBeNull();
+  });
+
   it("serves it to a key made by a bypassed address, asked as the key's creator", async () => {
     vi.stubEnv("TRIAL_GATE_BYPASS_EMAILS", "owner@acme-agency.example");
     const { GET } = await import("@/app/api/agent/v1/articles/[id]/content/route");

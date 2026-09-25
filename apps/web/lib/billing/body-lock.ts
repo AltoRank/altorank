@@ -87,6 +87,30 @@ export async function accountTrialGate(
 }
 
 /**
+ * The gate for an account, for an API key.
+ *
+ * The account is asked about as nobody (`null`, the way the agent API's
+ * generate route asks), so whether it is ours comes from who CREATED the
+ * account (lib/billing/operator-account.ts) and never from who made the key.
+ * Asking as the key's creator made a key an operator created while invited
+ * into a customer's gated account read that account's article text for as
+ * long as the key lived - after the operator left, and in whoever's hands the
+ * key ended up (round-5 review). Being invited is not being the account.
+ *
+ * The bypass list is still asked about the key's creator: it is our own test
+ * mailbox, and the one thing a bypassed address is for is reading the bodies
+ * the gate would withhold.
+ */
+export async function keyTrialGate(
+  supabase: SupabaseClient,
+  accountId: string,
+  keyCreatorEmail: string | null,
+): Promise<TrialGateState> {
+  const [quota, simulated] = await Promise.all([getQuota(supabase, accountId, null), simulatedGate()]);
+  return trialGateState(quota, keyCreatorEmail, { simulated });
+}
+
+/**
  * The gate for the account a workspace belongs to, for a caller with no
  * session to speak for: the publisher, which the cron and the Publish button
  * both reach. A site whose account cannot be read throws - an unknown is not
