@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Quota } from "../quota";
 import { FREE_DRAFTS, spentUnderOldMonthlyRule } from "../quota";
-import { TRIAL_HOLD_MESSAGE, TRIAL_SPEND_MESSAGE } from "../trial-refusal";
+import { TRIAL_HOLD_MESSAGE, TRIAL_SETUP_MESSAGE, TRIAL_SPEND_MESSAGE } from "../trial-refusal";
 
 // ---------------------------------------------------------------------------
 // The spend gate, branch by branch
@@ -41,12 +41,18 @@ const freeTier = (used: number, over: Partial<Quota> = {}): Quota =>
     ...over,
   });
 
-/** A client whose only job is answering the workspace pause lookup. */
-function client(paused: { status: string; paused_until: string | null } | null = null): SupabaseClient {
+/**
+ * A client whose job is answering the workspace pause lookup, and the count
+ * of the account's setup runs (onboarding_runs) for the pre-trial bound.
+ */
+function client(paused: { status: string; paused_until: string | null } | null = null, setupRuns = 0): SupabaseClient {
   return {
-    from: () => ({
+    from: (table: string) => ({
       select: () => ({
-        eq: () => ({ maybeSingle: async () => ({ data: paused }) }),
+        eq: () =>
+          table === "onboarding_runs"
+            ? Promise.resolve({ count: setupRuns, error: null })
+            : { maybeSingle: async () => ({ data: paused }) },
       }),
     }),
   } as unknown as SupabaseClient;
@@ -270,6 +276,27 @@ describe("a trial-gated account spends on setup and nothing after it", () => {
       expect(await canSpend(client(), "a", { action })).toMatchObject({ allowed: false, reason: "trial-required", message: TRIAL_SPEND_MESSAGE });
     }
     expect(await canSpend(client(), "a", { action: "draft" })).toMatchObject({ allowed: false, reason: "trial-required", message: TRIAL_HOLD_MESSAGE });
+  });
+
+  it("allows a second setup run, for one that failed, and refuses a third", async () => {
+    // Round-4 review: a setup that ended without attempting a draft left
+    // `used` at 0, so the site read and the research (about $0.22) were
+    // bought again each time the last run finished.
+    getQuota.mockResolvedValue(gated(0));
+    expect(await canSpend(client(null, 1), "a", { action: "setup" })).toMatchObject({ allowed: true });
+    expect(await canSpend(client(null, 2), "a", { action: "setup" })).toMatchObject({
+      allowed: false,
+      reason: "trial-required",
+      message: TRIAL_SETUP_MESSAGE,
+    });
+    // The bound is on setup only: the draft inside the second run still asks
+    // the draft counter.
+    expect(await canSpend(client(null, 2), "a", { action: "draft" })).toMatchObject({ allowed: true });
+  });
+
+  it("does not bound setup runs for an account that is not trial-gated", async () => {
+    getQuota.mockResolvedValue(freeTier(0, { trialEligible: false }));
+    expect(await canSpend(client(null, 9), "a", { action: "setup" })).toMatchObject({ allowed: true });
   });
 
   it("leaves a no-plan account that already had its trial on the allowance", async () => {

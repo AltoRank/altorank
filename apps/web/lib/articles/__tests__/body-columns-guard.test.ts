@@ -56,6 +56,10 @@ const SERVICE_READS: Record<string, { count: number; why: string }> = {
     count: 2,
     why: "the agent API's reads run on the service client, scoped to the key's account; the content routes ask the trial gate (lib/agent/body-lock.ts)",
   },
+  "lib/content/generate.ts": {
+    count: 1,
+    why: "articleHasText: whether a draft target has text, a filter on content that returns only the id, on the counting client (the service role); the text itself is never read",
+  },
   "lib/found-on-site/detect.ts": {
     count: 2,
     why: "the found-on-site check runs inside cron/site-pages on the service client: it filters drafts on having text, then compares that text with pages on the customer's site",

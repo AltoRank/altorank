@@ -135,6 +135,81 @@ export async function isFirstPreTrialDraft(supabase: SupabaseClient, accountId: 
 }
 
 /**
+ * Take the account's pre-trial draft, before anything is bought for it.
+ * True when this caller holds it; false when it is already taken.
+ *
+ * The attempt is what is counted, not the success. The hold used to read
+ * only drafts that survived: articles not in `error`, plus
+ * `free_drafts_used`, which the writer recorded once a draft was SAVED and
+ * only on the path that inserted its own row. So a draft that failed after
+ * its research was bought counted for nothing, and a client could make one
+ * fail on purpose - flip the row to `error`, point the site at a model that
+ * does not exist - and buy the next, and the one after (round-4 review).
+ * Every draft the agent API started went through the in-place path, which
+ * recorded nothing at all.
+ *
+ * So the counter moves first, here, on every path that would produce a
+ * pre-trial draft, and a draft that fails afterwards keeps its count. It is
+ * a compare-and-set on the stored value: of any number of callers racing for
+ * the one draft (parallel requests on several `error` rows, two sites
+ * onboarding at once), exactly one moves it and the rest are refused before
+ * they spend. The column is server-written only (migration 099), and written
+ * here with the service role whatever client the caller holds.
+ *
+ * The price is that a first article our own platform fails to write is not
+ * written again before the trial: the trial drafts the week straight away,
+ * and that is the one way past it. Refunding a failed attempt would reopen
+ * the loop, because a client can cause the failure.
+ */
+export async function claimPreTrialDraft(supabase: SupabaseClient, accountId: string): Promise<boolean> {
+  const counting = accountCountingClient(supabase);
+  // A handful of rounds: each lost round means someone else moved the value,
+  // which almost always means they took the draft.
+  for (let round = 0; round < 3; round++) {
+    const { data, error } = await counting.from("accounts").select("free_drafts_used").eq("id", accountId).maybeSingle();
+    if (error) throw new Error(`trial hold: could not read this account's pre-trial draft (${error.message})`);
+    if (!data) throw new Error("trial hold: this account does not exist");
+    const current = (data.free_drafts_used as number | null) ?? 0;
+    if (current >= PRE_TRIAL_DRAFTS) return false;
+    const { data: moved, error: claimError } = await counting
+      .from("accounts")
+      .update({ free_drafts_used: current + 1 })
+      .eq("id", accountId)
+      .eq("free_drafts_used", current)
+      .select("id");
+    if (claimError) throw new Error(`trial hold: could not claim the pre-trial draft (${claimError.message})`);
+    if (moved && moved.length > 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Setup runs an account may start before its trial: the first, and one more
+ * after a run that failed. A run buys the site read and the keyword research
+ * (about $0.22), and a setup that finished without writing an article - no
+ * candidate worth writing, a refused site, an unreadable crawl - left the
+ * draft counter at zero, so the spend gate let the same account run it again
+ * each time the last one ended (round-4 review).
+ */
+export const PRE_TRIAL_SETUP_RUNS = 2;
+
+/**
+ * How many setup runs this account has started, ever. `onboarding_runs` is
+ * written by the server only (076: a client token may read it, nothing else),
+ * and since migration 100 a run outlives the site it was for, so deleting a
+ * site and adding it again does not give the runs back. Read account-wide; a
+ * failed read throws, because the caller is deciding whether to buy a run.
+ */
+export async function setupRunsStarted(supabase: SupabaseClient, accountId: string): Promise<number> {
+  const { count, error } = await accountCountingClient(supabase)
+    .from("onboarding_runs")
+    .select("id", { count: "exact", head: true })
+    .eq("account_id", accountId);
+  if (error) throw new Error(`setup: could not count this account's setup runs (${error.message})`);
+  return count ?? 0;
+}
+
+/**
  * Why an unattended run must not write for this workspace, or null.
  *
  * One question with two rules, so a cron cannot ask one and forget the other:

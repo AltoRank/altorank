@@ -44,11 +44,21 @@ export const TRIAL_SPEND_MESSAGE =
   `Nothing more runs until the ${TRIAL_DAYS}-day trial starts. Setup has written your first article; ` +
   `start the trial from the setup screen to open research, audits and the rest of this week's drafts.`;
 
-/** What the gated account asked for: another article, an existing article's text, or other paid work. */
-export type TrialRefusalAsk = "draft" | "body" | "spend";
+/**
+ * The sentence a gated account gets when it asks for setup again after the
+ * setup runs it has before the trial (PRE_TRIAL_SETUP_RUNS). Says nothing
+ * about an article: these runs may have ended without one.
+ */
+export const TRIAL_SETUP_MESSAGE =
+  `Setup has already run for this account. It runs again when the ${TRIAL_DAYS}-day trial starts, ` +
+  `and the trial drafts the rest of this week's plan straight away. Start it from the setup screen.`;
+
+/** What the gated account asked for: another article, an existing article's text, setup again, or other paid work. */
+export type TrialRefusalAsk = "draft" | "body" | "setup" | "spend";
 
 export function trialRefusal(ask: TrialRefusalAsk): string {
   if (ask === "draft") return TRIAL_HOLD_MESSAGE;
   if (ask === "body") return BODY_LOCKED_MESSAGE;
+  if (ask === "setup") return TRIAL_SETUP_MESSAGE;
   return TRIAL_SPEND_MESSAGE;
 }

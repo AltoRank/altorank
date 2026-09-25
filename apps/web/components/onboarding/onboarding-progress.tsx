@@ -181,7 +181,13 @@ export function OnboardingProgress({
         });
         if (cancelled) return;
         if (!res.ok) {
-          fail(`Onboarding could not start (${res.status}).`);
+          // The route's refusal is a sentence written for this screen - the
+          // spend gate's, when setup has already run before the trial - and a
+          // bare status code in its place told the person nothing about what
+          // to do next.
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          if (cancelled) return;
+          fail(body?.error ?? `Onboarding could not start (${res.status}).`);
           return;
         }
         await poll();

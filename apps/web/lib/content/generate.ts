@@ -28,7 +28,7 @@ import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { draftBodyLocked, trialGateApplies } from "@/lib/billing/trial";
 import { accountCountingClient } from "@/lib/billing/account-client";
 import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
-import { isFirstPreTrialDraft, TrialHoldError, trialHoldReason } from "@/lib/billing/trial-hold";
+import { claimPreTrialDraft, isFirstPreTrialDraft, TrialHoldError, trialHoldReason } from "@/lib/billing/trial-hold";
 import { recordOverageArticle } from "@/lib/billing/overage";
 import { accountPausedMessage } from "@/lib/billing/pause";
 import { spendClient } from "@/lib/billing/default-spend";
@@ -347,17 +347,25 @@ export async function generateArticle(
    * reason, and "all 7 free drafts are used" would name an allowance these
    * accounts no longer have.
    *
-   * Generating into an article that already counts adds no draft, but it is
-   * working on that article's text, which is what the trial opens: every
-   * regeneration buys the research, the model call and the fact check again,
-   * and it used to be allowed here "in place" as often as a key asked. So a
-   * gated account regenerates nothing (the body lock's refusal, the one the
-   * session /api/generate already gave); an address on the bypass list, whose
-   * bodies are open, still may. A first article whose run died (`error`)
-   * has no text and is not counted, so trying it again is the first draft,
-   * which the hold allows. A rewrite of a page is a draft of its own.
+   * Generating into an article that has TEXT is a regeneration: it adds no
+   * draft, but it is working on that text, which is what the trial opens,
+   * and every regeneration buys the research, the model call and the fact
+   * check again. So a gated account regenerates nothing (the body lock's
+   * refusal, the one the session /api/generate already gave); an address on
+   * the bypass list, whose bodies are open, still may. Text, not status,
+   * decides it: the agent API inserts its own `drafting` row and generates
+   * into it, and reading that row's status as "an article that counts"
+   * refused every gated account's first draft over the API after the 202
+   * had gone. A row with no text - that one, or a first article whose run
+   * died (`error`) - is the first draft, which the hold and the claim below
+   * decide. A rewrite of a page is a draft of its own.
    */
-  if (trialGateApplies(quota)) {
+  // Set when this run holds the account's one pre-trial draft (the claim
+  // below), and when it is regenerating an article that has text.
+  let claimedPreTrial = false;
+  let regeneratingText = false;
+  const gatedBeforeTrial = trialGateApplies(quota);
+  if (gatedBeforeTrial) {
     let adding = 1;
     if (articleId && !refreshOf) {
       const { data: target, error: targetError } = await supabase
@@ -367,9 +375,15 @@ export async function generateArticle(
         .eq("workspace_id", workspaceId)
         .maybeSingle();
       if (targetError) throw new Error(`Could not read the article to regenerate: ${targetError.message}`);
-      if (target && target.status !== "error") {
-        if (draftBodyLocked(quota, callerEmail ?? null)) throw new TrialHoldError(BODY_LOCKED_MESSAGE);
-        adding = 0;
+      if (target) {
+        if (await articleHasText(supabase, articleId)) {
+          if (draftBodyLocked(quota, callerEmail ?? null)) throw new TrialHoldError(BODY_LOCKED_MESSAGE);
+          regeneratingText = true;
+          adding = 0;
+        } else {
+          // A textless row that is not `error` is already in the count.
+          adding = target.status === "error" ? 1 : 0;
+        }
       }
     }
     const held = trialHoldReason(quota, { adding });
@@ -458,6 +472,15 @@ export async function generateArticle(
   const approvedTitle = title || topicBrief?.angle;
   const slug = slugFor(approvedTitle || keyword);
 
+  // The pre-trial draft is claimed here: after every check that refuses
+  // without spending (the hold, the quota, the topic), before the row is
+  // written and before the research is bought. See claimPreTrialDraft - the
+  // attempt is what counts, so a draft that fails from here on keeps it.
+  if (gatedBeforeTrial && !regeneratingText) {
+    if (!(await claimPreTrialDraft(supabase, billedAccountId))) throw new TrialHoldError();
+    claimedPreTrial = true;
+  }
+
   // Two shapes of run. The "new article" callers - the modal and the cron -
   // have no row yet and get one. The editor is generating into a draft the user
   // already has open and must write to that row.
@@ -489,6 +512,15 @@ export async function generateArticle(
 
     article = { id: existing.id };
     previousStatus = existing.status as string;
+
+    // A row with no text is a new draft even though the row already exists:
+    // the agent API inserts its own row and generates into it, and a first
+    // article whose run died is tried again here. Recorded like the insert
+    // path's (below), or a draft written this way was counted only while its
+    // row was not `error` - which the account's own client can set.
+    if (quota.reason === "no-plan" && !claimedPreTrial && !(await articleHasText(supabase, existing.id as string))) {
+      recordFreeDraft = freeDraftRecorder(supabase, billedAccountId, quota.used);
+    }
 
     // Same signal the insert path sets, so the list shows this article as
     // being written while the run is open.
@@ -587,6 +619,9 @@ export async function generateArticle(
     // the account (2026-09-09). The window between the save and this write is
     // covered by the live count `getQuota` floors with; the window between
     // this write and the save is what was charging people for our timeouts.
+    // The one exception is an account before its trial, whose single draft
+    // is claimed as an attempt (claimPreTrialDraft, above) because a client
+    // can cause the failure a refund would reward.
     //
     // Written with the service role, whatever client the caller holds: the
     // column is server-written only (migration 099), because it is the floor
@@ -594,21 +629,8 @@ export async function generateArticle(
     // person could set it back to 0 over PostgREST and buy another pre-trial
     // draft. Without a service key (self-host) the caller's client is used,
     // and self-host has no allowance to protect.
-    if (quota.reason === "no-plan") {
-      recordFreeDraft = async () => {
-        try {
-          await accountCountingClient(supabase)
-            .from("accounts")
-            // `quota.used` is already the larger of the stored counter and
-            // the live count, so this only ever moves the column forward. Two
-            // concurrent drafts can write the same number; the live count is
-            // what catches that, which is exactly the job it is kept for.
-            .update({ free_drafts_used: quota.used + 1 })
-            .eq("id", billedAccountId);
-        } catch {
-          // The live count still floors it; see getQuota.
-        }
-      };
+    if (quota.reason === "no-plan" && !claimedPreTrial) {
+      recordFreeDraft = freeDraftRecorder(supabase, billedAccountId, quota.used);
     }
   }
 
@@ -1202,4 +1224,41 @@ export async function generateArticle(
     // next run's DataForSEO calls were billed here. Always detach.
     setSpendReporter(null);
   }
+}
+
+/**
+ * The free tier's counter write, run once the draft exists. `used` is the
+ * quota's count, already the larger of the stored counter and the live one,
+ * so this only ever moves the column forward. Two concurrent drafts can write
+ * the same number; the live count is what catches that, which is exactly the
+ * job it is kept for. Service role, whatever client the caller holds (the
+ * column is server-written only, migration 099). Best effort: the live count
+ * still floors it.
+ */
+function freeDraftRecorder(supabase: SupabaseClient, accountId: string, used: number): () => Promise<void> {
+  return async () => {
+    try {
+      await accountCountingClient(supabase).from("accounts").update({ free_drafts_used: used + 1 }).eq("id", accountId);
+    } catch {
+      // The live count still floors it; see getQuota.
+    }
+  };
+}
+
+/**
+ * Whether an article has text. Read with the service role: a client token
+ * may not read `content` (migration 097), and only whether it is there is
+ * asked, never the text. A failed read throws - the caller is deciding
+ * between "regenerate" and "first draft", and guessing either is wrong.
+ */
+async function articleHasText(supabase: SupabaseClient, articleId: string): Promise<boolean> {
+  const { data, error } = await accountCountingClient(supabase)
+    .from("articles")
+    .select("id")
+    .eq("id", articleId)
+    .not("content", "is", null)
+    .neq("content", "")
+    .maybeSingle();
+  if (error) throw new Error(`Could not check the article's text: ${error.message}`);
+  return Boolean(data);
 }

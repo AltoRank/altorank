@@ -62,7 +62,7 @@ import {
 import { accountPausedMessage } from "@/lib/billing/pause";
 import { formatGraceDate } from "@/lib/billing/dunning";
 import { trialGateApplies } from "@/lib/billing/trial";
-import { PRE_TRIAL_DRAFTS } from "@/lib/billing/trial-hold";
+import { PRE_TRIAL_DRAFTS, PRE_TRIAL_SETUP_RUNS, setupRunsStarted } from "@/lib/billing/trial-hold";
 import { trialRefusal } from "@/lib/billing/trial-refusal";
 
 /**
@@ -202,15 +202,27 @@ export async function canSpend(
   // rewrite, keyword suggestions over the agent API, a re-crawl, setup run
   // again. `used` is the count the hold reads (lib/billing/trial-hold.ts),
   // floored by `free_drafts_used`, which only the server writes (migration
-  // 099), so deleting or failing an article from a client token cannot walk
-  // it back. The same line the hold draws, for every door that asks here.
-  if (trialGateApplies(quota) && quota.used >= PRE_TRIAL_DRAFTS) {
-    return {
-      allowed: false,
-      reason: "trial-required",
-      quota,
-      message: trialRefusal(action === "draft" ? "draft" : "spend"),
-    };
+  // 099) and which moves when the first draft is ATTEMPTED
+  // (claimPreTrialDraft), so neither deleting an article, nor failing one on
+  // purpose, nor flipping it to `error` from a client token walks it back.
+  // The same line the hold draws, for every door that asks here.
+  //
+  // A setup run is also bounded on its own: a setup that ends without
+  // attempting a draft (nothing worth writing, a refused site, an unreadable
+  // crawl) leaves `used` at zero, and the site read and the research were
+  // bought again each time the previous run finished (round-4 review).
+  if (trialGateApplies(quota)) {
+    if (quota.used >= PRE_TRIAL_DRAFTS) {
+      return {
+        allowed: false,
+        reason: "trial-required",
+        quota,
+        message: trialRefusal(action === "draft" ? "draft" : "spend"),
+      };
+    }
+    if (action === "setup" && (await setupRunsStarted(supabase, accountId)) >= PRE_TRIAL_SETUP_RUNS) {
+      return { allowed: false, reason: "trial-required", quota, message: trialRefusal("setup") };
+    }
   }
 
   // The free allowance is checked before the lapsed card, and the order is the

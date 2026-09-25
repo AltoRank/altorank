@@ -28,8 +28,10 @@ const rows = new Set<string>();
 let nextId = 0;
 let jobsOpened = 0;
 let inserted = 0;
-/** What an in-place target article looks like. */
-let target: { id: string; status: string } | null = null;
+/** What an in-place target article looks like; `text` is whether it has any. */
+let target: { id: string; status: string; text?: boolean } | null = null;
+/** accounts.free_drafts_used, which claimPreTrialDraft moves by compare-and-set. */
+let claimed = 0;
 
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 
@@ -53,13 +55,17 @@ function client() {
         // Also the tie-break's read of the account's earliest drafts: the
         // shared rows in insertion order, which is created_at order here.
         let limit = Infinity;
+        // `.not("content", "is", null)` is the text check (articleHasText).
+        let askingForText = false;
         const chain: Record<string, unknown> = {
           eq: () => chain,
           in: () => chain,
           neq: () => chain,
+          not: () => ((askingForText = true), chain),
           order: () => chain,
           limit: (n: number) => ((limit = n), chain),
-          maybeSingle: async () => ({ data: target, error: null }),
+          maybeSingle: async () =>
+            askingForText ? { data: target?.text ? { id: target.id } : null, error: null } : { data: target, error: null },
           single: async () => ({ data: target, error: target ? null : { message: "not found" } }),
           then: (resolve: (v: unknown) => unknown) =>
             tick().then(() => resolve({ data: [...rows].slice(0, limit).map((id) => ({ id })), error: null })),
@@ -84,6 +90,35 @@ function client() {
               return { error: null };
             },
           }),
+        };
+      }
+      if (table === "accounts") {
+        const read: Record<string, unknown> = {
+          eq: () => read,
+          maybeSingle: async () => {
+            await tick();
+            return { data: { free_drafts_used: claimed }, error: null };
+          },
+        };
+        return {
+          select: () => read,
+          update: (patch: { free_drafts_used: number }) => {
+            const expected: Record<string, unknown> = {};
+            const cas: Record<string, unknown> = {
+              eq: (col: string, v: unknown) => ((expected[col] = v), cas),
+              select: async () => {
+                await tick();
+                if ("free_drafts_used" in expected && expected.free_drafts_used !== claimed) return { data: [], error: null };
+                claimed = patch.free_drafts_used;
+                return { data: [{ id: "acc1" }], error: null };
+              },
+              then: (resolve: (v: unknown) => unknown) => {
+                claimed = Math.max(claimed, patch.free_drafts_used);
+                return resolve({ error: null });
+              },
+            };
+            return cas;
+          },
         };
       }
       if (table === "generation_jobs") {
@@ -116,11 +151,14 @@ function client() {
   } as never;
 }
 
-/** A trial-gated account: no plan, never trialed. `used` counts the shared rows. */
+/**
+ * A trial-gated account: no plan, never trialed. `used` is what getQuota
+ * reads: the larger of the stored counter and the rows that count.
+ */
 function gatedQuota() {
   getQuota.mockImplementation(async () => {
     await tick();
-    const used = rows.size;
+    const used = Math.max(rows.size, claimed);
     return { limit: 7, used, remaining: Math.max(0, 7 - used), reason: "no-plan", plan: null, trialEligible: true };
   });
 }
@@ -140,6 +178,7 @@ beforeEach(() => {
   jobsOpened = 0;
   inserted = 0;
   target = null;
+  claimed = 0;
   getQuota.mockReset();
   delete process.env.TRIAL_GATE_DISABLED;
 });
@@ -206,7 +245,7 @@ describe("generateArticle and the trial hold", () => {
     // call and the fact check again, as often as an agent key asked.
     gatedQuota();
     rows.add("first");
-    target = { id: "first", status: "review" };
+    target = { id: "first", status: "review", text: true };
     const out = await draft(0, { articleId: "first" });
     expect(out).toBeInstanceOf(TrialHoldError);
     expect((out as Error).message).toBe(BODY_LOCKED_MESSAGE);
@@ -218,7 +257,7 @@ describe("generateArticle and the trial hold", () => {
     try {
       gatedQuota();
       rows.add("first");
-      target = { id: "first", status: "review" };
+      target = { id: "first", status: "review", text: true };
       expect(await draft(0, { articleId: "first", callerEmail: "tester+x@acme-agency.example" })).toBe("reached the model");
     } finally {
       delete process.env.TRIAL_GATE_BYPASS_EMAILS;
@@ -239,5 +278,39 @@ describe("generateArticle and the trial hold", () => {
     const out = await draft(0, { refreshOf: { url: "https://acme-agency.example/a", existingHtml: "<p>x</p>", brief: null } });
     expect(out).toBeInstanceOf(TrialHoldError);
     expect(jobsOpened).toBe(0);
+  });
+
+  it("writes the first draft into a row the agent API inserted for it", async () => {
+    // The route inserts a `drafting` row and generates into it. Read as "an
+    // article that counts", that row was refused as a regeneration after the
+    // 202 had gone: no gated account's first draft over the API could land.
+    gatedQuota();
+    rows.add("r1");
+    target = { id: "r1", status: "drafting", text: false };
+    expect(await draft(0, { articleId: "r1" })).toBe("reached the model");
+    expect(claimed).toBe(1);
+  });
+
+  it("counts the attempt: a first draft that failed does not buy another", async () => {
+    // Round-4 review: the counter was written only after a save, so a draft
+    // that failed (or was flipped to `error` by the account's own client)
+    // counted for nothing, and the next one was bought, without limit.
+    gatedQuota();
+    expect(await draft()).toBe("reached the model");
+    expect(claimed).toBe(1);
+    expect(rows.size).toBe(0); // the run failed and its row is gone
+    target = { id: "e1", status: "error", text: false };
+    const again = await draft(1, { articleId: "e1" });
+    expect(again).toBeInstanceOf(TrialHoldError);
+    expect(jobsOpened).toBe(1);
+  });
+
+  it("lets exactly one of several failed rows fired at once be drafted", async () => {
+    gatedQuota();
+    target = { id: "e1", status: "error", text: false };
+    const outs = await Promise.all([0, 1, 2].map((i) => draft(i, { articleId: "e1" })));
+    expect(outs.filter((o) => o === "reached the model")).toHaveLength(1);
+    expect(jobsOpened).toBe(1);
+    expect(claimed).toBe(1);
   });
 });

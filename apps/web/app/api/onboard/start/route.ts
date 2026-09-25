@@ -24,8 +24,11 @@ import { canSpend } from "@/lib/billing/spend-gate";
 // was the wizard's: the gate screen stopped offering "Try again" once the
 // first article existed (lib/onboarding/setup-retry.ts), while this route
 // started a run for any member who POSTed. For an account that has not
-// started its trial the gate answers no once setup has written its article
-// (lib/billing/spend-gate.ts), so the server draws the line the screen does.
+// started its trial the gate answers no once setup has attempted its article,
+// or once the account has started PRE_TRIAL_SETUP_RUNS runs - a setup that
+// ended with no article to attempt could otherwise be bought again each time
+// it finished (lib/billing/spend-gate.ts). The refusal's sentence is what the
+// run screen shows.
 
 // The inline fallback runs the pipeline in after() when this install cannot
 // self-invoke; give that path the budget the worker route has.
