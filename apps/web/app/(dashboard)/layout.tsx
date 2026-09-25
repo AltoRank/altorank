@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { getWorkspaces } from "@/lib/queries/workspaces";
@@ -16,6 +16,7 @@ import { getCompletedOnboardingSteps } from "@/lib/queries/onboarding";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { entitledToScheduledWork } from "@/lib/billing/quota";
 import { trialEndsLabel, trialGateState } from "@/lib/billing/trial";
+import { openBeforeTrial, REQUEST_PATH_HEADER } from "@/lib/billing/gate-paths";
 import { usageLine } from "@/lib/billing/usage-line";
 import { siteAllowanceFrom } from "@/lib/workspaces/allowance";
 import { FeedbackWidget } from "@/components/dashboard/feedback-widget";
@@ -82,6 +83,8 @@ export default async function DashboardLayout({
     // The scoped site's last setup run, for the banner below: a run that
     // fell short used to be visible only on the screen that ran it.
     runSnapshot,
+    // The path being served, for the trial gate below.
+    requestHeaders,
   ] = await Promise.all([
     getWorkspaces(),
     scopedArticles,
@@ -95,6 +98,7 @@ export default async function DashboardLayout({
     getOperatorPreview(),
     inCustomerPreview(),
     scopeId ? latestRun(supabase, scopeId) : Promise.resolve(null),
+    headers(),
   ]);
 
   /**
@@ -161,14 +165,15 @@ export default async function DashboardLayout({
       : Promise.resolve({ count: null }),
     accountId ? getRequestQuota(accountId, user?.email ?? null) : Promise.resolve(null),
   ]);
-  // The card, before the dashboard.
+  // The card, before the dashboard. No trial, no dashboard.
   //
-  // Only once the wizard is done: the wizard itself opens dashboard pages in
-  // a new tab (Connect Search Console goes to /connect/google, and Google's
-  // OAuth callback lands there too), and gating those mid-setup would break
-  // the connection for every new signup. An unfinished wizard with a profile
-  // saved still reaches the dashboard, as before; what it cannot reach is an
-  // article body, which the reads under this layout withhold on their own.
+  // Whether or not the wizard is done. It used to wait for that, to keep the
+  // wizard's Search Console tab working, and so an account with a profile
+  // saved and the wizard unfinished got the calendar, the keywords, the
+  // reports and the editor's shell - an account the profile-inference cron
+  // and the setup-unfinished email both make common. Now only the pages the
+  // wizard itself opens are let through (/connect, where Google's OAuth lands:
+  // lib/billing/gate-paths.ts), by the path the middleware forwards.
   //
   // Only with a site in scope. With none, /onboarding sends the person to
   // /workspaces to add one, and gating that too was a redirect loop.
@@ -181,10 +186,11 @@ export default async function DashboardLayout({
   // without live keys on a laptop.
   //
   // This redirect is the door, not the lock. Next skips an unchanged layout
-  // on client navigation, so the article reads under it strip the body on
-  // their own (lib/billing/body-lock.ts).
+  // on client navigation, so the article reads under it withhold the text on
+  // their own, and the database refuses it to every client token
+  // (lib/billing/body-lock.ts, migration 097).
   const gate = trialGateState(quota, user?.email ?? null, { simulated: simulation?.gate === true });
-  if (scopeId && wizardDone && gate === "gated") redirect("/onboarding");
+  if (scopeId && gate === "gated" && !openBeforeTrial(requestHeaders.get(REQUEST_PATH_HEADER))) redirect("/onboarding");
 
   // Sites the plan allows, for the switcher's "+ Add site" row. Derived from
   // the quota above and the list already loaded rather than queried again;
