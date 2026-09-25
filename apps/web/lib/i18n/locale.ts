@@ -840,7 +840,11 @@ const DE: LocaleRules = {
 // Lowercasing uses the Turkish rules (İ -> i, I -> ı), so every lowered
 // pattern below is written in lowercase with ı and i as Turkish spells them.
 
-const TR_NAME = String.raw`\p{Lu}[\p{L}\p{N}&.-]*(?:\s+\p{Lu}[\p{L}\p{N}&.-]*){0,4}`;
+// A name does not start with a demonstrative or a sentence's opening
+// conjunction: "Bu Gartner'a göre" is "according to this Gartner [report]",
+// and its source is Gartner, not "Bu Gartner".
+const TR_NOT_A_NAME = String.raw`(?!(?:Bu|Şu|O|Bunun|Şunun|Onun|Bunlar|Şunlar|Onlar|Ve|Ama|Ancak|Fakat|Ayrıca|Örneğin|Yani)(?![\p{L}]))`;
+const TR_NAME = String.raw`${TR_NOT_A_NAME}\p{Lu}[\p{L}\p{N}&.-]*(?:\s+\p{Lu}[\p{L}\p{N}&.-]*){0,4}`;
 const TR_CASE = String.raw`(?:['’]\p{Ll}{1,5})?`;
 const TR_SOURCE_NOUN = "(?:raporu|araştırması|çalışması|anketi|verileri|analizi|istatistikleri|tahmini|tahminleri|açıklaması)";
 
@@ -973,8 +977,10 @@ const TR: LocaleRules = {
     // Pronouns only: the singular suffix -ım is also the end of ordinary
     // nouns ("tasarım"), and reading it as "my" would be a guess.
     firstPersonSingular: new RegExp(String.raw`${B}(?:ben|benim|bana|beni|benden|bende)${E}`, "iu"),
+    // The -nız suffix also ends words that are no "you": "yalnız" (only),
+    // "boynuz" (horn), "Akdeniz" and every other sea.
     directAddress: new RegExp(
-      String.raw`${B}(?:siz|sizin|size|sizi|sizden|sen|senin|sana|seni)${E}|\p{L}{3,}(?:ınız|iniz|unuz|ünüz|nız|niz|nuz|nüz)${E}`,
+      String.raw`${B}(?:siz|sizin|size|sizi|sizden|sen|senin|sana|seni)${E}|(?<![\p{L}])(?!(?:yalnız|boynuz|\p{L}*deniz)\p{L}*${E})\p{L}{3,}(?:ınız|iniz|unuz|ünüz|nız|niz|nuz|nüz)${E}`,
       "iu",
     ),
     direct: new RegExp(String.raw`${B}(?:asla|sakın|kaçının)${E}|\p{L}{2,}(?:mayın|meyin)${E}`, "iu"),
@@ -1179,9 +1185,28 @@ export function parseNumber(raw: string, locale: SupportedLocale): number | null
   return Number.isFinite(n) ? n : null;
 }
 
-/** A number as this language prints it, at most one decimal. */
+/** A number as this language prints it, grouped its way, at most one decimal: "1.500,5" in Turkish. */
 export function formatNumber(value: number, locale: SupportedLocale): string {
-  return new Intl.NumberFormat(locale.bcp47, { maximumFractionDigits: 1, useGrouping: false }).format(value);
+  return new Intl.NumberFormat(locale.bcp47, { maximumFractionDigits: 1 }).format(value);
+}
+
+const CURRENCY_CODE: Record<string, string> = { "€": "EUR", $: "USD", "£": "GBP", "₺": "TRY" };
+
+/**
+ * An amount in a currency the text wrote as a symbol, printed the way this
+ * language prints money: "₺1.500" in Turkish, "1.500 €" in German, "$1,500"
+ * in English. A chart once labelled Turkish prices "1500 ₺".
+ */
+export function formatMoney(value: number, symbol: string, locale: SupportedLocale): string {
+  const currency = CURRENCY_CODE[symbol];
+  if (!currency) return `${formatNumber(value, locale)} ${symbol}`;
+  return new Intl.NumberFormat(locale.bcp47, {
+    style: "currency",
+    currency,
+    currencyDisplay: "narrowSymbol",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 // ── Slugs and anchors ───────────────────────────────────────────────────────

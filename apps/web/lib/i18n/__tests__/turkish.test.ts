@@ -71,7 +71,7 @@ describe("Turkish: labels written into the article", () => {
       'Bu makale Acme Ajans tarafından yayımlanmıştır. <a href="https://acme-agency.example">acme-agency.example</a> adresini ziyaret edin.',
     );
     expect(html).toContain("<figcaption>Video: Kurulum rehberi (Acme TV, YouTube)</figcaption>");
-    expect(html).toContain('aria-label="Çubuk grafik: Başlangıç paketi 1500 ₺, Kurumsal paket 4500 ₺, E-ticaret paketi 9000 ₺"');
+    expect(html).toContain('aria-label="Çubuk grafik: Başlangıç paketi ₺1.500, Kurumsal paket ₺4.500, E-ticaret paketi ₺9.000"');
     expect(html).toContain("<figcaption>Metindeki rakamlar: “Başlangıç paketi: 1.500 TL;");
     for (const leak of ENGLISH_LEAKS) expect(html, leak).not.toContain(leak);
 
@@ -178,6 +178,9 @@ describe("Turkish: the fact checker reads figures and sources", () => {
     expect(findAttribution("Statista'nın verileri bunu doğruluyor.", "tr")).toBe("Statista");
     // "Buna göre" is "accordingly", not a source.
     expect(read(TR_CLAIMS.accordingly)).toMatchObject([{ status: "unsourced", attribution: null }]);
+    // A demonstrative is not part of the name.
+    expect(read("<p>Bu Gartner'a göre pazar %12 büyüdü.</p>")).toMatchObject([{ attribution: "Gartner" }]);
+    expect(findAttribution("Ayrıca TÜİK tarafından açıklanan oran %4 oldu.", "tr")).toBe("TÜİK");
   });
 
   it("splits sentences at a Turkish capital, so a source stays with its own figure", () => {
@@ -228,6 +231,13 @@ describe("Turkish: the voice analyser hears 'we' in a suffix", () => {
     const en = analyzeVoiceLocally(TR_VOICE_SAMPLE, "en");
     expect(en.tags).not.toContain("first-person plural");
     expect(en.tags).toContain("formal (no contractions)");
+  });
+
+  it("does not hear 'you' in words that only end like the suffix", () => {
+    for (const sample of ["Yalnız birkaç sayfa yeterli.", "Yalnızca birkaç sayfa.", "Akdenize bakan oteller.", "Akdeniz kıyısındaki oteller için tasarım.", "Logo bir boynuz çiziminden doğdu."]) {
+      expect(analyzeVoiceLocally(sample, "tr").tags, sample).not.toContain("direct address");
+    }
+    expect(analyzeVoiceLocally("Siteniz hızlı olmalı.", "tr").tags).toContain("direct address");
   });
 
   it("tells the model the sample's language", () => {

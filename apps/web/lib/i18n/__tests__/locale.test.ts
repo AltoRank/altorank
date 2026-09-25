@@ -11,6 +11,7 @@ import {
   foldCase,
   parseNumber,
   formatNumber,
+  formatMoney,
   scaleWords,
   urlSlug,
   anchorId,
@@ -135,8 +136,15 @@ describe("numbers as each language writes them", () => {
     expect(parseNumber("1,5", tr)).toBe(1.5);
     expect(parseNumber("1.5", tr)).toBeNull();
     expect(parseNumber("1,500.50", en)).toBe(1500.5);
-    expect(formatNumber(1500.5, tr)).toBe("1500,5");
-    expect(formatNumber(1500.5, en)).toBe("1500.5");
+    expect(formatNumber(1500.5, tr)).toBe("1.500,5");
+    expect(formatNumber(1500.5, en)).toBe("1,500.5");
+  });
+
+  it("prints money where each language puts the symbol", () => {
+    expect(formatMoney(1500, "₺", tr)).toBe("₺1.500");
+    expect(formatMoney(1500.5, "€", resolveLocale("de") as SupportedLocale)).toBe("1.500,5\u00a0€");
+    expect(formatMoney(1500, "$", en)).toBe("$1,500");
+    expect(formatMoney(9, "€", en)).toBe("€9");
   });
 
   it("scales English word thresholds to the language's words", () => {

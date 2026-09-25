@@ -30,6 +30,7 @@ import {
   resolveLocale,
   parseNumber as parseLocaleNumber,
   formatNumber,
+  formatMoney,
   phrasePattern,
   type SupportedLocale,
   type TimeUnit,
@@ -219,9 +220,7 @@ export function chartFromBeforeAfter(sentence: string, language?: string | null)
 
 function formatValue(value: number, unit: string, locale: SupportedLocale): string {
   const num = formatNumber(value, locale);
-  if (unit === "€" || unit === "$" || unit === "£" || unit === "₺") {
-    return locale.numbers.symbolAfter ? `${num} ${unit}` : `${unit}${num}`;
-  }
+  if (unit === "€" || unit === "$" || unit === "£" || unit === "₺") return formatMoney(value, unit, locale);
   if (unit === "%") return locale.numbers.formatPercent(num);
   if ((TIME_UNITS as string[]).includes(unit)) return `${num} ${locale.numbers.timeUnitLabels[unit as TimeUnit]}`;
   return unit ? `${num} ${unit}` : num;
