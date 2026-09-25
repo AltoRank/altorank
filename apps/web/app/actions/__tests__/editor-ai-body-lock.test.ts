@@ -16,7 +16,7 @@ let locked = true;
 
 function client() {
   const one = (data: unknown) => {
-    const q = { select: () => q, eq: () => q, single: async () => ({ data, error: null }) };
+    const q = { select: () => q, eq: () => q, single: async () => ({ data, error: null }), maybeSingle: async () => ({ data, error: null }), update: () => q };
     return q;
   };
   return {
@@ -32,6 +32,7 @@ function client() {
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => client(), createServiceClient: () => client() }));
 vi.mock("@/lib/auth/require-auth", () => ({ requireAuth: async () => ({ user: { id: "u1", email: "owner@acme-agency.example" }, accountId: "acc1", role: "owner" }) }));
 vi.mock("@/lib/billing/body-lock", () => ({ sessionBodyLockedForWorkspace: async () => locked }));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 beforeEach(() => {
   locked = true;
@@ -51,5 +52,20 @@ describe("renderMarkdownAction", () => {
     const res = await renderMarkdownAction({ articleId: ARTICLE, html: "<p>x</p>" });
     expect(res.ok).toBe(true);
     expect(JSON.stringify(res)).toContain(META);
+  });
+});
+
+describe("updateArticle (the editor's Save)", () => {
+  // Before the trial the editor is handed the article with its body withheld;
+  // a Save from there would write the empty document over the real one.
+  it("refuses an account before its trial", async () => {
+    const { updateArticle } = await import("../articles");
+    await expect(updateArticle(ARTICLE, { content: { type: "doc", content: [] } })).rejects.toThrow(BODY_LOCKED_MESSAGE);
+  });
+
+  it("saves for a paying account", async () => {
+    locked = false;
+    const { updateArticle } = await import("../articles");
+    await expect(updateArticle(ARTICLE, { title: "Yeni başlık" })).resolves.toBeUndefined();
   });
 });

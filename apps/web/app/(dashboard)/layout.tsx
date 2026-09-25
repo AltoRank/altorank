@@ -163,13 +163,12 @@ export default async function DashboardLayout({
   ]);
   // The card, before the dashboard.
   //
-  // Whether or not the wizard is done. This used to wait for it, on the
-  // grounds that the redirect above already had the person on the run screen
-  // - but that redirect only fires for a site with no business profile, so a
-  // site whose profile was saved (or inferred by a cron) and whose wizard was
-  // never finished opened the whole dashboard to an account that had not
-  // started its trial. /onboarding is right for both: the wizard when setup
-  // is unfinished, the first-article card when it is done.
+  // Only once the wizard is done: the wizard itself opens dashboard pages in
+  // a new tab (Connect Search Console goes to /connect/google, and Google's
+  // OAuth callback lands there too), and gating those mid-setup would break
+  // the connection for every new signup. An unfinished wizard with a profile
+  // saved still reaches the dashboard, as before; what it cannot reach is an
+  // article body, which the reads under this layout withhold on their own.
   //
   // Only with a site in scope. With none, /onboarding sends the person to
   // /workspaces to add one, and gating that too was a redirect loop.
@@ -185,7 +184,7 @@ export default async function DashboardLayout({
   // on client navigation, so the article reads under it strip the body on
   // their own (lib/billing/body-lock.ts).
   const gate = trialGateState(quota, user?.email ?? null, { simulated: simulation?.gate === true });
-  if (scopeId && gate === "gated") redirect("/onboarding");
+  if (scopeId && wizardDone && gate === "gated") redirect("/onboarding");
 
   // Sites the plan allows, for the switcher's "+ Add site" row. Derived from
   // the quota above and the list already loaded rather than queried again;
