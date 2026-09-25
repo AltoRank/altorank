@@ -38,7 +38,6 @@
 // is wrong in every market it was not written for.
 
 import { LOCALES } from "@/lib/seo/locales";
-import { languageCodeOf } from "./locale";
 
 /** Results read per keyword: qualification keeps the top ten organic URLs. */
 export const SERP_TOP = 10;
@@ -82,9 +81,18 @@ export interface IntentMatch {
  * The language to compare a workspace's keywords in, from `workspaces.language`.
  * The column is NOT NULL; a caller that could not read it gets null, which
  * compares words unfolded and says so, rather than English.
+ *
+ * Resolved through LOCALES ("tr", "Turkish", "zh" → "zh-CN") and, for a code
+ * the product has no locale for, the code's own primary subtag: the column
+ * takes any two-letter code, and "sw" compared as "sw" has no rule set and
+ * says "not compared for sw". `languageCodeOf` answers "en" for anything it
+ * does not know, which is right for picking a search market and wrong here.
  */
 export function intentLanguage(workspaceLanguage: string | null | undefined): string | null {
-  return workspaceLanguage?.trim() ? languageCodeOf(workspaceLanguage) : null;
+  const raw = workspaceLanguage?.trim().toLowerCase();
+  if (!raw) return null;
+  const known = LOCALES[raw] ?? Object.values(LOCALES).find((e) => e.label.toLowerCase() === raw || e.languageCode.toLowerCase() === raw);
+  return known?.languageCode ?? primary(raw);
 }
 
 /** "tr" from "tr" or "tr-TR", "zh" from "zh-CN"; null when no language was given. */
@@ -140,41 +148,53 @@ interface WordRules {
   fold(token: string): string;
   /** Whole-phrase clean-up before tokenising. */
   prepare?(text: string): string;
+  /**
+   * Words that give a phrase a direction: what stands before them and what
+   * stands after are not interchangeable. The two sides are compared as two
+   * sets, in order, instead of one.
+   */
+  directional?: ReadonlySet<string>;
 }
 
-// English: the rule set that used to be `normalizeTarget` in
-// lib/seo/recommendations.ts, unchanged, and now applied to English only.
-// Deliberately crude - word order, connecting words and common endings - and
-// each fold is here because a live queue planned both halves of it: the cron
-// wrote "agency seo" and then "agency for seo" on consecutive firings (see
-// lib/seo/__tests__/recommendations.test.ts for the rest).
+// English: connecting words, word order and the plural - the one inflection
+// English marks on a noun - and nothing derivational.
+//
+// Until 2026-09-25 this also folded "-er", "-ing" and a silent final "e"
+// (it was `normalizeTarget` in lib/seo/recommendations.ts). That was harmless
+// while it only collapsed rows in a list; once a words match parks a topic
+// for good, it merged searches that are not one: "search engine jobs" and
+// "search engineer jobs", "poster design" and "post design", "web server"
+// and "web serve", "building management software" and "build management
+// software". "Content writing" and "content writer", the pair that fold was
+// added for, share a results page, and the results page is what now says so
+// once either is qualified. A missed fold keeps two spellings apart until
+// then; a wrong fold parks a real search, which nothing undoes.
+//
+// The plural, after Porter2's step 1a (snowballstem.org/algorithms/english):
+// "-sses" to "-ss", "-ies" to "-y", "-es" after x/ch/sh, and a final "s" off
+// anything that does not end in -ss/-us/-is. Words that end like a plural
+// and are not one keep their "s", as Porter2 keeps "news" and "bias".
+// "Movies"/"movie" and "caches"/"cache" are missed rather than guessed at.
+const EN_NOT_PLURAL = new Set(["news", "series", "species", "bias", "atlas", "canvas", "lens", "chaos", "gas"]);
 const ENGLISH: WordRules = {
   stopwords: new Set([
-    "a", "an", "the", "for", "and", "or", "of", "to", "in", "on", "with", "is", "are", "my", "your",
+    "a", "an", "the", "for", "and", "or", "of", "in", "on", "with", "is", "are", "my", "your",
     // "website about design" and "website design" are one results page, and
     // a site was given both, and both were scheduled.
     "about",
   ]),
   fold(t) {
-    // Plurals.
-    let w = t.endsWith("ies") && t.length > 4
-      ? `${t.slice(0, -3)}y`
-      : t.endsWith("es") && t.length > 4
-        ? t.slice(0, -2)
-        : t.endsWith("s") && !t.endsWith("ss") && t.length > 3
-          ? t.slice(0, -1)
-          : t;
-    // Agent and verbal-noun endings, after the plural fold so "writers" has
-    // already become "writer": "content writing" and "content writer" are one
-    // results page, and the queue planned both (2026-09-04). The stem must
-    // keep at least four letters, or "user" is "us" and "thing" is "th".
-    w = w.endsWith("ing") && w.length > 6 ? w.slice(0, -3) : w.endsWith("er") && w.length > 5 ? w.slice(0, -2) : w;
-    // A silent final "e", after the folds above so they have already run:
-    // "websites" folded to "websit" while "website" stayed whole, and
-    // "creating" to "creat" while "create" stayed whole, so one site kept four
-    // calendar slots for two queries.
-    return w.endsWith("e") && w.length > 4 ? w.slice(0, -1) : w;
+    if (t.length <= 3 || EN_NOT_PLURAL.has(t)) return t;
+    if (t.endsWith("sses")) return t.slice(0, -2);
+    if (t.endsWith("ies") && t.length > 4) return `${t.slice(0, -3)}y`;
+    if (/(?:x|ch|sh)es$/.test(t)) return t.slice(0, -2);
+    if (/(?:ss|us|is)$/.test(t)) return t;
+    return t.endsWith("s") ? t.slice(0, -1) : t;
   },
+  // "java to python" is the opposite search to "python to java", and "pdf to
+  // word" to "word to pdf". "vs" is not here: "x vs y" and "y vs x" are one
+  // comparison.
+  directional: new Set(["to", "into"]),
 };
 
 // Turkish: an explicit rule set for the two noun inflections that produce
@@ -281,11 +301,23 @@ function tokens(term: string, language: string | null): string[] {
 export function intentKey(term: string, language: string | null | undefined): string {
   const code = primary(language);
   const rules = code ? RULES[code] : undefined;
-  const words = tokens(term, language?.trim() || null)
+  const all = tokens(term, language?.trim() || null);
+  const side = (words: string[]) => [...new Set(words
     .filter((t) => !rules?.stopwords.has(t))
     .map((t) => stripMarks(rules ? rules.fold(t) : t))
-    .filter(Boolean);
-  return [...new Set(words)].sort().join(" ");
+    .filter(Boolean))].sort().join(" ");
+  // The last direction word with words on both sides splits the phrase:
+  // "how to convert java to python" is "convert how java" > "python".
+  let at = -1;
+  for (let i = all.length - 2; i > 0 && rules?.directional; i--) {
+    if (rules.directional.has(all[i])) { at = i; break; }
+  }
+  if (at > 0) {
+    const before = side(all.slice(0, at));
+    const after = side(all.slice(at + 1));
+    if (before && after) return `${before} > ${after}`;
+  }
+  return side(all);
 }
 
 /** The phrase as typed, normalised but not reordered or folded: the identity of one query string. */

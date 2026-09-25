@@ -135,14 +135,16 @@ describe("normalizeTarget — cannibalisation", () => {
     expect(normalizeTarget("content marketing")).toBe(normalizeTarget("marketing content"));
   });
 
-  it("folds agent and verbal-noun endings, so the writer and the writing are one target", () => {
-    // Caught by the autonomous queue: it planned "seo content writing" and
-    // "seo content writer" as two articles. Same results page, same reader.
-    const a = normalizeTarget("seo content writing");
-    expect(normalizeTarget("seo content writer")).toBe(a);
-    expect(normalizeTarget("seo content writers")).toBe(a);
-    expect(normalizeTarget("seo content writers' guide")).toBe(normalizeTarget("seo content writing guide"));
-    expect(normalizeTarget("link building")).toBe(normalizeTarget("link builder"));
+  it("does not fold agent and verbal-noun endings: that is the results page's call", () => {
+    // The autonomous queue once planned "seo content writing" and "seo
+    // content writer" as two articles, and this rule set folded "-er" and
+    // "-ing" to stop it. Since a words match parks a topic for good, that
+    // fold also merged "search engine jobs" with "search engineer jobs". The
+    // pair is one search because it is one results page, and the results page
+    // bought at qualification now says so (lib/keyword-research/intent.ts).
+    expect(normalizeTarget("seo content writers")).toBe(normalizeTarget("seo content writer"));
+    expect(normalizeTarget("seo content writer")).not.toBe(normalizeTarget("seo content writing"));
+    expect(normalizeTarget("link building")).not.toBe(normalizeTarget("link builder"));
   });
 
   it("leaves a short word whole rather than stemming it to nothing", () => {
@@ -153,18 +155,19 @@ describe("normalizeTarget — cannibalisation", () => {
     expect(normalizeTarget("string")).toBe("string");
   });
 
-  it("folds a silent final e, so the singular meets its own plural", () => {
-    // The plural fold produced "websit" from "websites" while "website" stayed
-    // whole, so the two halves of the same fold never met. qasimcode.com was
-    // given "website design", "website about design" and "website design
-    // websites" as three targets, and all three were scheduled.
+  it("meets a singular with its own plural", () => {
+    // The plural fold once produced "websit" from "websites" while "website"
+    // stayed whole, so the two halves of the same fold never met.
+    // qasimcode.com was given "website design", "website about design" and
+    // "website design websites" as three targets, and all three were
+    // scheduled. The "-es" ending now comes off only after x/ch/sh.
     const a = normalizeTarget("website design");
     expect(normalizeTarget("website about design")).toBe(a);
     expect(normalizeTarget("website design websites")).toBe(a);
-    expect(normalizeTarget("create business websites")).toBe(
-      normalizeTarget("creating business websites"),
-    );
     expect(normalizeTarget("guide")).toBe(normalizeTarget("guides"));
+    expect(normalizeTarget("create business websites")).toBe(normalizeTarget("create business website"));
+    // "create"/"creating" is a verb form, not a plural: the results page decides.
+    expect(normalizeTarget("create business websites")).not.toBe(normalizeTarget("creating business websites"));
   });
 
   it("counts a repeated word once", () => {

@@ -4,6 +4,7 @@ import {
   clusterByIntent,
   foldsInflections,
   intentKey,
+  intentLanguage,
   sameIntent,
   unfoldedNote,
   type StagedTopic,
@@ -97,6 +98,21 @@ describe("languages without a rule set", () => {
     expect(sameIntent({ term: "seo agencies" }, { term: "seo agency" }, null).same).toBe(false);
   });
 
+  it("resolves a workspace language through the product's locales, and keeps an unknown one as itself", () => {
+    expect(intentLanguage("tr")).toBe("tr");
+    expect(intentLanguage("Turkish")).toBe("tr");
+    expect(intentLanguage("zh")).toBe("zh-CN");
+    expect(intentLanguage("en-gb")).toBe("en");
+    expect(intentLanguage(null)).toBeNull();
+    expect(intentLanguage("  ")).toBeNull();
+    // Not in LOCALES: never English. No rule set, and it says so.
+    expect(intentLanguage("sw")).toBe("sw");
+    expect(intentLanguage("xx")).toBe("xx");
+    expect(intentLanguage("pt-AO")).toBe("pt");
+    expect(unfoldedNote(intentLanguage("sw"))).toBe("inflected spellings not compared for sw");
+    expect(sameIntent({ term: "seo agencies" }, { term: "seo agency" }, intentLanguage("sw")).same).toBe(false);
+  });
+
   it("strips diacritics for any language", () => {
     expect(intentKey("café crème", "fr")).toBe(intentKey("cafe creme", "fr"));
   });
@@ -110,7 +126,42 @@ describe("English regression set", () => {
   it("by words: word order, connectives and plurals fold; a different search does not", () => {
     expect(sameIntent({ term: A }, { term: B }, "en")).toEqual({ same: true, basis: "words" });
     expect(sameIntent({ term: A }, { term: C }, "en").same).toBe(false);
-    expect(sameIntent({ term: "seo content writers" }, { term: "seo content writing" }, "en").same).toBe(true);
+    expect(intentKey("seo tools for small businesses", "en")).toBe(intentKey("small business seo tool", "en"));
+    expect(intentKey("classes", "en")).toBe("class");
+    expect(intentKey("searches", "en")).toBe("search");
+    expect(intentKey("tax boxes", "en")).toBe(intentKey("box tax", "en"));
+    expect(intentKey("websites", "en")).toBe("website");
+    // An ending that is not a plural stays.
+    expect(intentKey("business", "en")).toBe("business");
+    expect(intentKey("status", "en")).toBe("status");
+    expect(intentKey("analysis", "en")).toBe("analysis");
+  });
+
+  it("folds only the plural: a derivational ending is another word, and the results page decides", () => {
+    // Each of these merged under the old English rule set (-er, -ing and a
+    // silent final e), and a words match now parks a topic for good.
+    const apart: Array<[string, string]> = [
+      ["search engine jobs", "search engineer jobs"],
+      ["poster design", "post design"],
+      ["web server", "web serve"],
+      ["building management software", "build management software"],
+      ["crm news", "new crm"],
+      ["seo content writers", "seo content writing"],
+    ];
+    for (const [a, b] of apart) expect(sameIntent({ term: a }, { term: b }, "en"), `${a} / ${b}`).toEqual({ same: false, basis: "words" });
+    // Where they are one search, a bought results page says so.
+    const base = page("writing");
+    expect(sameIntent({ term: "seo content writers", organicUrls: base }, { term: "seo content writing", organicUrls: serp(base, 7, "w") }, "en").same).toBe(true);
+  });
+
+  it("keeps the direction of 'x to y', and treats 'x vs y' as one comparison", () => {
+    expect(sameIntent({ term: "java to python" }, { term: "python to java" }, "en").same).toBe(false);
+    expect(sameIntent({ term: "pdf to word" }, { term: "word to pdf" }, "en").same).toBe(false);
+    expect(sameIntent({ term: "how to convert java to python" }, { term: "python to java" }, "en").same).toBe(false);
+    expect(sameIntent({ term: "java to python" }, { term: "java into python" }, "en").same).toBe(true);
+    expect(sameIntent({ term: "hubspot vs salesforce" }, { term: "salesforce vs hubspot" }, "en").same).toBe(true);
+    // "how to" keeps its shape and still folds the rest.
+    expect(sameIntent({ term: "how to write seo content" }, { term: "how to write content for seo" }, "en").same).toBe(true);
   });
 
   it("by results pages: the overlap decides, and sharing a word is not sharing a search", () => {
