@@ -26,9 +26,17 @@
 
 import { TRIAL_DAYS } from "@/lib/stripe";
 
-/** The sentence every drafting door gives a held account, word for word. */
+/**
+ * The sentence every drafting door gives a held account, word for word.
+ *
+ * It says the one pre-trial article is USED, not that it is written: the
+ * hold counts the attempt (claimPreTrialDraft), and a first draft that failed
+ * after its research was bought holds the account exactly as a written one
+ * does. "Your first article is written" was false for that account, on a
+ * screen offering nothing else (round-5 review).
+ */
 export const TRIAL_HOLD_MESSAGE =
-  `Waiting for your trial to start. Your first article is written; nothing more is drafted until the ${TRIAL_DAYS}-day trial begins, ` +
+  `Waiting for your trial to start. Setup has used the one article an account gets before the trial; nothing more is drafted until the ${TRIAL_DAYS}-day trial begins, ` +
   `and then the rest of this week's plan is written straight away.`;
 
 /** The sentence every surface that holds an article's text gives a gated account. */
@@ -37,11 +45,11 @@ export const BODY_LOCKED_MESSAGE =
 
 /**
  * The sentence every paid door but drafting gives a gated account once setup
- * has written its first article. Setup itself spends before the trial (the
+ * has attempted its first article. Setup itself spends before the trial (the
  * site read, the keyword research, the first draft); after it, nothing does.
  */
 export const TRIAL_SPEND_MESSAGE =
-  `Nothing more runs until the ${TRIAL_DAYS}-day trial starts. Setup has written your first article; ` +
+  `Nothing more runs until the ${TRIAL_DAYS}-day trial starts. Setup has used the one article an account gets before the trial; ` +
   `start the trial from the setup screen to open research, audits and the rest of this week's drafts.`;
 
 /**

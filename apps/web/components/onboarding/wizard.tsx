@@ -70,7 +70,7 @@ import { FirstLookReportView } from "@/components/onboarding/first-look-report";
 import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
 import { FirstArticleCardView, type PendingFirstArticle } from "@/components/onboarding/first-article-card";
 import type { FirstArticleCard } from "@/lib/onboarding/first-article";
-import { offerSetupRetry, runStateOf } from "@/lib/onboarding/setup-retry";
+import { firstArticleFailed, OPEN_SETUP, offerSetupRetry, runStateOf, type PreTrialSetup } from "@/lib/onboarding/setup-retry";
 import { signOut } from "@/app/actions/auth";
 import { TRIAL_DAYS } from "@/lib/stripe";
 import posthog from "posthog-js";
@@ -95,6 +95,7 @@ export function OnboardingWizard({
   gateReport = null,
   firstArticle = null,
   firstArticleWriting = false,
+  preTrialSetup = OPEN_SETUP,
   initialRun = null,
   otherSites = [],
 }: {
@@ -151,6 +152,8 @@ export function OnboardingWizard({
   firstArticle?: FirstArticleCard | null;
   /** An article is being written right now, so a retry must not be offered. */
   firstArticleWriting?: boolean;
+  /** Whether setup may run again before the trial, and whether the first article was attempted. */
+  preTrialSetup?: PreTrialSetup;
   initialRun?: OnboardingRunSnapshot | null;
   /**
    * The person's sites in OTHER accounts that the trial gate lets them into.
@@ -300,6 +303,7 @@ export function OnboardingWizard({
         report={gateReport}
         firstArticle={firstArticle}
         writing={firstArticleWriting}
+        setup={preTrialSetup}
         run={initialRun}
         askAttribution={askAttribution}
         userEmail={userEmail}
@@ -320,6 +324,7 @@ export function OnboardingWizard({
         initialRun={resumed}
         firstArticle={firstArticle}
         firstArticleWriting={firstArticleWriting}
+        preTrialSetup={preTrialSetup}
         userEmail={userEmail}
         otherSites={otherSites}
       />
@@ -656,6 +661,16 @@ function SignOutLine({ email, otherSites = [] }: { email?: string; otherSites?: 
 }
 
 /**
+ * An account whose one pre-trial article was attempted and failed after its
+ * research was bought. The attempt is what the hold counts, so setup cannot
+ * run again and nothing more is drafted before the trial; the honest screen
+ * says the failure was ours and what the trial does about it.
+ */
+const FIRST_ARTICLE_FAILED_HEADING = "Your first article did not finish";
+const FIRST_ARTICLE_FAILED_LEDE =
+  `Setup started writing it and it failed on our side. It is written again once your ${TRIAL_DAYS}-day trial starts, along with the rest of this week's plan.`;
+
+/**
  * The card, for an account that is already set up.
  *
  * What somebody sees on their second visit, or their thirtieth, and what every
@@ -679,6 +694,7 @@ function TrialGateScreen({
   report,
   firstArticle,
   writing,
+  setup,
   run,
   askAttribution = false,
   userEmail,
@@ -692,13 +708,15 @@ function TrialGateScreen({
   report: FirstLookReport | null;
   firstArticle: FirstArticleCard | null;
   writing: boolean;
+  setup: PreTrialSetup;
   run: OnboardingRunSnapshot | null;
   askAttribution?: boolean;
   userEmail?: string;
   otherSites?: OtherSite[];
 }) {
   const runState = runStateOf(run);
-  const retry = offerSetupRetry(runState, { hasArticle: firstArticle !== null, writing });
+  const retry = offerSetupRetry(runState, { hasArticle: firstArticle !== null, writing, setupAllowed: setup.setupAllowed });
+  const failed = firstArticleFailed({ hasArticle: firstArticle !== null, writing, firstAttempted: setup.firstAttempted });
   // The run's own words for why it wrote nothing, when it said.
   const draftingDetail = runState?.steps.find((s) => s.phase === "drafting")?.detail ?? null;
   const fixable = report?.readiness?.findings.filter((f) => !f.passed && !f.inconclusive).length ?? 0;
@@ -710,14 +728,18 @@ function TrialGateScreen({
       ? "Your first article is being written"
       : retry
         ? "Setup did not finish"
-        : "No article was written in setup";
+        : failed
+          ? FIRST_ARTICLE_FAILED_HEADING
+          : "No article was written in setup";
   const lede = firstArticle
     ? `Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the week is written once the trial starts.`
     : writing
       ? "It appears here when it is done, usually within a few minutes. The trial opens it, and the rest of the week."
       : retry
         ? `Nothing was written for ${domain || "your site"}. Running setup again reads the site, plans the month and writes the first article.`
-        : `${draftingDetail ? `Setup said: ${draftingDetail}` : "Setup finished without writing an article."} The trial opens the calendar, where articles can be written from the plan.`;
+        : failed
+          ? FIRST_ARTICLE_FAILED_LEDE
+          : `${draftingDetail ? `Setup said: ${draftingDetail}` : "Setup finished without writing an article."} The trial opens the calendar, where articles can be written from the plan.`;
 
   return (
     <div className="min-h-screen bg-bg">
@@ -925,6 +947,7 @@ function RunScreen({
   initialRun,
   firstArticle,
   firstArticleWriting,
+  preTrialSetup,
   userEmail,
   otherSites = [],
 }: {
@@ -937,6 +960,7 @@ function RunScreen({
   initialRun: OnboardingRunSnapshot | null;
   firstArticle: FirstArticleCard | null;
   firstArticleWriting: boolean;
+  preTrialSetup: PreTrialSetup;
   userEmail?: string;
   otherSites?: OtherSite[];
 }) {
@@ -966,15 +990,20 @@ function RunScreen({
   // one it offers a retry only when the run fell short and nothing exists
   // for the site (lib/onboarding/setup-retry.ts).
   const trialStep = finished && trialEligible;
-  const retry = trialStep && state !== null && offerSetupRetry(state, { hasArticle, writing: firstArticleWriting });
-  // The run wrote the draft after this page was read: read it again, so the
-  // card has its outline and sources. Once per finished run.
+  const retry =
+    trialStep && state !== null && offerSetupRetry(state, { hasArticle, writing: firstArticleWriting, setupAllowed: preTrialSetup.setupAllowed });
+  const failed = trialStep && firstArticleFailed({ hasArticle, writing: firstArticleWriting, firstAttempted: preTrialSetup.firstAttempted });
+  // The run ended after this page was read: read it again. With a draft, so
+  // the card has its outline and sources; without one, so the retry and the
+  // copy answer from the spend gate and the claim as they are NOW - read
+  // before the run, they said setup could run again after the run had used
+  // the account's one article. Once per finished run.
   const refreshed = useRef(false);
   useEffect(() => {
-    if (!trialStep || firstArticle || !runDraft || refreshed.current) return;
+    if (!trialStep || firstArticle || refreshed.current) return;
     refreshed.current = true;
     router.refresh();
-  }, [trialStep, firstArticle, runDraft, router]);
+  }, [trialStep, firstArticle, router]);
   const next = planned.length > 0
     ? { href: "/content", label: "Open my plan" }
     : draft
@@ -988,7 +1017,9 @@ function RunScreen({
             {trialStep
               ? hasArticle
                 ? "Your first article is written"
-                : "Start your trial to keep writing"
+                : failed
+                  ? FIRST_ARTICLE_FAILED_HEADING
+                  : "Start your trial to keep writing"
               : finished
                 ? "Your content plan"
                 : "Creating your content plan"}
@@ -1000,6 +1031,8 @@ function RunScreen({
                   Start your {TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the
                   week is written once the trial starts.
                 </>
+              ) : failed ? (
+                <>{FIRST_ARTICLE_FAILED_LEDE}</>
               ) : (
                 <>Setup did not write an article for {domain}. The trial opens the calendar and the plan behind it.</>
               )

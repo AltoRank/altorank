@@ -41,13 +41,48 @@ export function setupFellShort(state: OnboardingState): boolean {
 }
 
 /**
+ * What the server knows about setup before the trial, for the gate screen.
+ * Read on the page (app/(setup)/onboarding/page.tsx); the screen only renders
+ * it.
+ *
+ *   setupAllowed    the spend gate would let this account start setup again
+ *                   (canSpend with action "setup" - the same question
+ *                   /api/onboard/start asks before it starts one)
+ *   firstAttempted  the one pre-trial article has been claimed: attempted,
+ *                   whether or not it was written (claimPreTrialDraft)
+ */
+export type PreTrialSetup = { setupAllowed: boolean; firstAttempted: boolean };
+
+/** Nothing about the trial stands in the way: self-host, a plan, an operator. */
+export const OPEN_SETUP: PreTrialSetup = { setupAllowed: true, firstAttempted: false };
+
+/**
  * Whether to offer running setup again.
  *
  * `run` null means setup never ran for this site (it was skipped), and then
  * the offer is the first run rather than a second one.
+ *
+ * Never when the spend gate would refuse it. A first draft that failed after
+ * its research was bought keeps its claim, so setup cannot run again before
+ * the trial - and the screen offered "Run setup again" anyway, a button the
+ * server refused every time, with a sentence about a first article that did
+ * not exist (round-5 review). The screen asks the gate's answer, not its own.
  */
-export function offerSetupRetry(run: OnboardingState | null, fact: { hasArticle: boolean; writing: boolean }): boolean {
+export function offerSetupRetry(
+  run: OnboardingState | null,
+  fact: { hasArticle: boolean; writing: boolean; setupAllowed: boolean },
+): boolean {
   if (fact.hasArticle || fact.writing) return false;
+  if (!fact.setupAllowed) return false;
   if (!run) return true;
   return setupFellShort(run);
+}
+
+/**
+ * The first article was attempted and there is none: its run failed after
+ * the research was bought. The trial writes it, with the rest of the week;
+ * until then the screen says so rather than offering a retry the gate refuses.
+ */
+export function firstArticleFailed(fact: { hasArticle: boolean; writing: boolean; firstAttempted: boolean }): boolean {
+  return !fact.hasArticle && !fact.writing && fact.firstAttempted;
 }

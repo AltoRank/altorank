@@ -30,7 +30,7 @@ import {
   sourcesCited,
   toFirstArticleCard,
 } from "../first-article";
-import { offerSetupRetry, runStateOf, setupFellShort } from "../setup-retry";
+import { firstArticleFailed, offerSetupRetry, runStateOf, setupFellShort } from "../setup-retry";
 import { onboardingOutcome, type OnboardingRunRow, type OnboardingRunSnapshot } from "../events";
 
 const INTRO = "Bu giriş paragrafı deneme süresi başlamadan kopyalanamamalı.";
@@ -222,17 +222,17 @@ function snapshot(run: Partial<OnboardingRunRow> | null, stale = false): Onboard
 }
 
 describe("offerSetupRetry", () => {
-  const none = { hasArticle: false, writing: false };
+  const none = { hasArticle: false, writing: false, setupAllowed: true };
 
   // The defect this exists for: a later visit read "no draft" off the run
   // and its retry paid for a whole second setup beside an existing article.
   it("never offers a run again when the site has a first article, whatever the run says", () => {
     const failed = runStateOf(snapshot({ status: "error", error: "boom" }));
-    expect(offerSetupRetry(failed, { hasArticle: true, writing: false })).toBe(false);
+    expect(offerSetupRetry(failed, { hasArticle: true, writing: false, setupAllowed: true })).toBe(false);
   });
 
   it("never offers it while an article is being written", () => {
-    expect(offerSetupRetry(runStateOf(snapshot({ status: "error", error: "boom" })), { hasArticle: false, writing: true })).toBe(false);
+    expect(offerSetupRetry(runStateOf(snapshot({ status: "error", error: "boom" })), { hasArticle: false, writing: true, setupAllowed: true })).toBe(false);
   });
 
   it("offers it when the run failed and nothing exists", () => {
@@ -271,6 +271,21 @@ describe("offerSetupRetry", () => {
 
   it("offers the first run when setup was skipped and never ran", () => {
     expect(offerSetupRetry(runStateOf(snapshot(null)), none)).toBe(true);
+  });
+
+  it("does not offer a run the spend gate would refuse: the first article was attempted and failed", () => {
+    // Round-5 review: the draft failed after its research was bought, the
+    // claim stood, and the screen offered "Run setup again" - a button
+    // /api/onboard/start refused every time.
+    const failed = runStateOf(snapshot({ status: "error", error: "research failed" }));
+    expect(offerSetupRetry(failed, { ...none, setupAllowed: false })).toBe(false);
+    expect(firstArticleFailed({ hasArticle: false, writing: false, firstAttempted: true })).toBe(true);
+  });
+
+  it("says the first article failed only when it was attempted and there is none", () => {
+    expect(firstArticleFailed({ hasArticle: true, writing: false, firstAttempted: true })).toBe(false);
+    expect(firstArticleFailed({ hasArticle: false, writing: true, firstAttempted: true })).toBe(false);
+    expect(firstArticleFailed({ hasArticle: false, writing: false, firstAttempted: false })).toBe(false);
   });
 
   it("setupFellShort is false for a run that produced its article", () => {

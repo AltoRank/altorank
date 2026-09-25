@@ -13,6 +13,9 @@ import { latestRun } from "@/lib/onboarding/run-store";
 import { heldTopics } from "@/lib/onboarding/plan";
 import { trialGateState } from "@/lib/billing/trial";
 import { loadFirstArticle } from "@/lib/onboarding/first-article";
+import { canSpend } from "@/lib/billing/spend-gate";
+import { PRE_TRIAL_DRAFTS } from "@/lib/billing/trial-hold";
+import { OPEN_SETUP, type PreTrialSetup } from "@/lib/onboarding/setup-retry";
 
 export const metadata: Metadata = { title: "Set up your site" };
 
@@ -86,14 +89,26 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   // The workspace's first article, as its shape only. A fact about the site,
   // not about the latest run: read whenever the card could be on screen,
   // including at the end of a run in progress, which refreshes the page for it.
-  const [firstArticle, otherSites] = preTrial
+  //
+  // Beside it, what the screen may offer when there is no article: setup
+  // again only if the spend gate would start it (the same question
+  // /api/onboard/start asks), and whether the one pre-trial article was
+  // attempted - a first draft that failed after its research was bought
+  // keeps its claim, and the screen offered a "Run setup again" the server
+  // refused every time (round-5 review).
+  const [firstArticle, otherSites, preTrialSetup] = preTrial
     ? await Promise.all([
         loadFirstArticle(supabase, workspace.id, workspace.domain),
         // A person who also belongs to an account the gate lets them into is
         // offered its sites here, beside signing out.
         openSitesOutside(workspace.account_id as string),
+        canSpend(supabase, workspace.account_id as string, {
+          userEmail: auth.user.email ?? undefined,
+          workspaceId: workspace.id as string,
+          action: "setup",
+        }).then((gate): PreTrialSetup => ({ setupAllowed: gate.allowed, firstAttempted: quota.used >= PRE_TRIAL_DRAFTS })),
       ])
-    : [null, []];
+    : [null, [], OPEN_SETUP];
 
   // What the gate screen shows behind its lock: the month this account
   // already had planned for it, and the analysis already run on its site.
@@ -144,6 +159,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       trialEligible={preTrial}
       firstArticle={firstArticle?.article ?? null}
       firstArticleWriting={firstArticle?.writing ?? false}
+      preTrialSetup={preTrialSetup}
       initialProfile={(workspace.business_profile as BusinessProfile | null) ?? null}
       initialSite={{
         sitemapUrl: workspace.sitemap_url ?? "",
