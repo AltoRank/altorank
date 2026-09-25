@@ -24,6 +24,7 @@ import { scoreArticle } from "@/lib/seo/scoring";
 import { scoreCitationReadiness } from "@/lib/seo/aeo-scoring";
 import { auditArticle } from "@/lib/seo/article-audit";
 import { buildSystemPrompt } from "@/lib/ai/prompts";
+import { insertBacklinkIntoContent } from "@/lib/seo/exchange";
 import { decideAutoApproval, type AutoApproveCandidate, type AutoApproveRule } from "@/lib/publishing/auto-approve";
 
 const PT_LONG =
@@ -83,6 +84,18 @@ describe("unsupported language: nothing English is written into the article", ()
     expect(html).toContain("<figcaption>Configurar (Acme TV, YouTube)</figcaption>");
     expect(report.format?.directAnswerMissing).toBeNull();
     expect(report.format?.claimsBolded).toBe(0);
+  });
+
+  it("the backlink exchange puts the citation in parentheses, with no words round it", () => {
+    const para = (text: string) => ({ type: "doc" as const, content: [{ type: "paragraph", content: [{ type: "text", text }] }] });
+    const text = (lang: string) =>
+      (insertBacklinkIntoContent(para("Primeiro parágrafo."), "https://acme-agency.example/guia", "guia de aplicações", 0, lang).content[0].content ?? [])
+        .map((n) => n.text)
+        .join("");
+    expect(text("pt")).toBe("Primeiro parágrafo. (guia de aplicações)");
+    for (const s of ENGLISH) expect(text("pt"), s).not.toContain(s);
+    // English is what it always was.
+    expect(text("en")).toBe("Primeiro parágrafo. Learn more about guia de aplicações.");
   });
 
   it("each step, called directly, refuses rather than defaulting to English", async () => {

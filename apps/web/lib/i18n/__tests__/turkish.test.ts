@@ -30,6 +30,7 @@ import { scoreArticle } from "@/lib/seo/scoring";
 import { scoreCitationReadiness, findFigures } from "@/lib/seo/aeo-scoring";
 import { auditArticle } from "@/lib/seo/article-audit";
 import { buildSystemPrompt } from "@/lib/ai/prompts";
+import { insertBacklinkIntoContent } from "@/lib/seo/exchange";
 
 /** English strings the product used to write into a Turkish article. */
 const ENGLISH_LEAKS = [
@@ -93,6 +94,16 @@ describe("Turkish: labels written into the article", () => {
     // Five Turkish words is the floor (six English), and the alt the step
     // writes passes the audit's own check.
     expect(checkAltText(alt, TR_KEYWORD, "tr")).toBeNull();
+  });
+
+  it("the backlink exchange cites in Turkish, the link where Turkish puts it", () => {
+    const doc = { type: "doc" as const, content: [{ type: "paragraph", content: [{ type: "text", text: "Mobil uygulamalar hızlı olmalı." }] }] };
+    const out = insertBacklinkIntoContent(doc, "https://acme-agency.example/rehber", "mobil uygulama rehberi", 0, "tr");
+    const nodes = out.content[0].content ?? [];
+    expect(nodes.map((n) => n.text).join("")).toBe("Mobil uygulamalar hızlı olmalı. mobil uygulama rehberi hakkında daha fazla bilgi edinin.");
+    expect(nodes.find((n) => n.marks)?.text).toBe("mobil uygulama rehberi");
+    for (const n of nodes) expect(n.text, "a Tiptap text node may not be empty").not.toBe("");
+    for (const leak of ENGLISH_LEAKS) expect(nodes.map((n) => n.text).join(""), leak).not.toContain(leak);
   });
 
   it("the call to action, the TOC and the video caption each read the contract directly", () => {

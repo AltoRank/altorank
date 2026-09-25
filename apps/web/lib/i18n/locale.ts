@@ -72,6 +72,11 @@ export interface ArticleLabels {
   publishedBy: (name: string) => string;
   /** The second sentence; `{link}` is where the site's link goes. */
   visit: string;
+  /**
+   * The sentence the backlink exchange appends to a paragraph round the
+   * citation it places; `{link}` is where the link goes.
+   */
+  citeLead: string;
   /** Alt-text prefix for a generated section image, per style preset. */
   illustration: Record<ImageStyle, string>;
   /** The summary block's heading the prompt offers the writer. */
@@ -268,6 +273,7 @@ const EN: LocaleRules = {
     learnMore: (name) => `Learn more about ${name}`,
     publishedBy: (name) => `This article is published by ${name}.`,
     visit: "Visit {link}.",
+    citeLead: "Learn more about {link}.",
     illustration: {
       sketch: "Sketch illustrating",
       watercolor: "Watercolour illustration of",
@@ -380,6 +386,7 @@ const IT: LocaleRules = {
     learnMore: (name) => `Scopri di più su ${name}`,
     publishedBy: (name) => `Questo articolo è pubblicato da ${name}.`,
     visit: "Visita {link}.",
+    citeLead: "Scopri di più su {link}.",
     illustration: {
       sketch: "Schizzo che illustra",
       watercolor: "Acquerello che illustra",
@@ -487,6 +494,7 @@ const ES: LocaleRules = {
     learnMore: (name) => `Más información sobre ${name}`,
     publishedBy: (name) => `Este artículo es publicado por ${name}.`,
     visit: "Visita {link}.",
+    citeLead: "Más información sobre {link}.",
     illustration: {
       sketch: "Boceto que ilustra",
       watercolor: "Acuarela que ilustra",
@@ -594,6 +602,7 @@ const FR: LocaleRules = {
     learnMore: (name) => `En savoir plus sur ${name}`,
     publishedBy: (name) => `Cet article est publié par ${name}.`,
     visit: "Visitez {link}.",
+    citeLead: "En savoir plus sur {link}.",
     illustration: {
       sketch: "Croquis illustrant",
       watercolor: "Aquarelle illustrant",
@@ -706,6 +715,7 @@ const DE: LocaleRules = {
     learnMore: (name) => `Mehr über ${name}`,
     publishedBy: (name) => `Dieser Artikel wird von ${name} veröffentlicht.`,
     visit: "Besuchen Sie {link}.",
+    citeLead: "Mehr über {link}.",
     illustration: {
       sketch: "Skizze zu",
       watercolor: "Aquarell zu",
@@ -838,6 +848,7 @@ const TR: LocaleRules = {
     learnMore: (name) => `${name} hakkında daha fazla bilgi`,
     publishedBy: (name) => `Bu makale ${name} tarafından yayımlanmıştır.`,
     visit: "{link} adresini ziyaret edin.",
+    citeLead: "{link} hakkında daha fazla bilgi edinin.",
     illustration: {
       sketch: "Eskiz çizim:",
       watercolor: "Suluboya resim:",

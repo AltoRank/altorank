@@ -67,10 +67,11 @@ describe("every supported language is described completely", () => {
       expect(l.labels.learnMore("X")).toContain("X");
       expect(l.labels.publishedBy("X")).toContain("X");
       expect(l.labels.visit).toContain("{link}");
+      expect(l.labels.citeLead.split("{link}"), `${l.code}.citeLead has one {link}`).toHaveLength(2);
       if (l.code === "en") continue;
       // "Video" is the same word in Italian, German and Turkish; everything
       // else a reader sees must be the language's own.
-      for (const key of ["contents", "figuresFrom", "keyTakeaways", "faqHeading", "before", "after"] as const) {
+      for (const key of ["contents", "figuresFrom", "keyTakeaways", "faqHeading", "before", "after", "citeLead"] as const) {
         expect(english, `${l.code}.${key}`).not.toContain(l.labels[key]);
       }
       expect(l.labels.barChart("x")).not.toContain("Bar chart");
