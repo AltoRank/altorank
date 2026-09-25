@@ -54,8 +54,9 @@ const MAX_SEEDS = 12;
 /** keyword_suggestions is one paid call per seed, so expansion is bounded. */
 const EXPAND_SEEDS = 4;
 
-export const GENERATE_DEFAULT = 5;
-export const GENERATE_MAX = 30;
+import { GENERATE_DEFAULT, GENERATE_MAX } from "./generate-limits";
+
+export { GENERATE_DEFAULT, GENERATE_MAX };
 
 function metricsToCandidate(m: TermMetrics, origin: string): ResearchCandidate {
   return { term: m.term, volume: m.volume, difficulty: m.difficulty, cpc: m.cpc, intent: m.intent, origin, existingId: null, existingStatus: null };
