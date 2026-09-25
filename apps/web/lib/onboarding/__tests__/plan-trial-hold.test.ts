@@ -8,15 +8,24 @@ import { FakeDb } from "@/lib/plan/__tests__/fake-postgrest";
  * the research drawer. Every other account plans as it did.
  */
 
-const { held, recs } = vi.hoisted(() => ({
-  held: { value: true },
+// The hold's own answer (open / held / spent) is lib/billing/trial-hold.ts's,
+// read from the quota; this file tests what the planner does with it.
+const { held, recs, recommended } = vi.hoisted(() => ({
+  held: { value: "held" as "open" | "held" | "spent" },
   recs: [] as Array<Record<string, unknown>>,
+  recommended: { calls: 0 },
 }));
 vi.mock("@/lib/billing/trial-hold", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/billing/trial-hold")>()),
-  planHoldApplies: async () => held.value,
+  planHold: async () => held.value,
+  planHoldApplies: async () => held.value !== "open",
 }));
-vi.mock("@/lib/seo/recommendations", () => ({ recommendKeywords: async () => recs }));
+vi.mock("@/lib/seo/recommendations", () => ({
+  recommendKeywords: async () => {
+    recommended.calls += 1;
+    return recs;
+  },
+}));
 vi.mock("@/lib/keywords/questions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/keywords/questions")>()),
   generateQualityQuestionsBatch: async () => new Map(),
@@ -43,7 +52,8 @@ function db(entries: Array<Record<string, unknown>> = []) {
 const firstArticle = { id: "c0", workspace_id: "ws1", keyword_id: "k0", keyword: "topic 0", scheduled_date: "2026-09-24", status: "scheduled", article_id: "a0" };
 
 beforeEach(() => {
-  held.value = true;
+  held.value = "held";
+  recommended.calls = 0;
   recs.length = 0;
   recs.push(...Array.from({ length: 8 }, (_, i) => rec(i)));
   qualify.mockReset();
@@ -66,7 +76,7 @@ describe("the planner and the trial hold", () => {
   });
 
   it("plans the month for an account that is not held", async () => {
-    held.value = false;
+    held.value = "open";
     const d = db([firstArticle]);
     const added = await schedulePlan(d.client, "ws1", 7, { mode: "top-up", from: FROM });
     expect(added.length).toBeGreaterThan(1);
@@ -80,6 +90,22 @@ describe("the planner and the trial hold", () => {
     expect(out.reasons).toEqual({ k3: TRIAL_HOLD_MESSAGE, k4: TRIAL_HOLD_MESSAGE });
     expect(qualify).not.toHaveBeenCalled();
     expect(d.rows("calendar_entries")).toHaveLength(1);
+  });
+
+  it("plans nothing, and buys nothing, once the first article is attempted - even with the calendar emptied", async () => {
+    // Round-4 review: the cap was counted from calendar entries, which a
+    // client token can delete or mark done, and the nightly top-up then found
+    // room for "the first article" again and bought qualification to fill it.
+    held.value = "spent";
+    const d = db([]);
+    expect(await schedulePlan(d.client, "ws1", 7, { mode: "top-up", from: FROM })).toEqual([]);
+    expect(await schedulePlan(d.client, "ws1", 7, { from: FROM })).toEqual([]);
+    expect(recommended.calls).toBe(0);
+    const out = await scheduleKeywords(d.client, "ws1", ["k3"], FROM);
+    expect(out.scheduled).toEqual([]);
+    expect(out.reasons).toEqual({ k3: TRIAL_HOLD_MESSAGE });
+    expect(qualify).not.toHaveBeenCalled();
+    expect(d.rows("calendar_entries")).toHaveLength(0);
   });
 });
 

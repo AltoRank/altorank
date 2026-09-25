@@ -27,6 +27,7 @@ import { FakeDb } from "@/lib/plan/__tests__/fake-postgrest";
 import {
   draftBlocker,
   isFirstPreTrialDraft,
+  planHold,
   planHoldApplies,
   PRE_TRIAL_DRAFTS,
   TrialHoldError,
@@ -169,6 +170,18 @@ describe("planHoldApplies: the planner's question, about the account", () => {
   it("throws on a read it could not make, rather than planning a month for an account it could not see", async () => {
     await expect(planHoldApplies(client(null, { message: "timeout" }).c, "ws-1")).rejects.toThrow(/could not read/);
     await expect(planHoldApplies(client(null).c, "ws-1")).rejects.toThrow(/no account/);
+  });
+  it("says the hold is spent once the one pre-trial article is attempted, from the server's count", async () => {
+    // The planner stops there, whatever the calendar holds: a client token
+    // can delete the first article's entry, and the count cannot be walked
+    // back (round-4 review).
+    getQuota.mockResolvedValue(gated(0));
+    expect(await planHold(client({ account_id: "acc-1" }).c, "ws-1")).toBe("held");
+    getQuota.mockResolvedValue(gated(PRE_TRIAL_DRAFTS));
+    expect(await planHold(client({ account_id: "acc-1" }).c, "ws-1")).toBe("spent");
+    expect(await planHoldApplies(client({ account_id: "acc-1" }).c, "ws-1")).toBe(true);
+    getQuota.mockResolvedValue({ reason: "plan", used: 40 });
+    expect(await planHold(client({ account_id: "acc-1" }).c, "ws-1")).toBe("open");
   });
 });
 

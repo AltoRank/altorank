@@ -15,7 +15,7 @@ const approval = { approve: true, reason: "Clinic owners compare the cost of a b
 const writes: unknown[] = [];
 let covered: unknown[] = [];
 let articles: unknown[] = [];
-const db = { from: (table: string) => ({ select: () => { const rows = table === "keywords" ? covered : table === "articles" ? articles : []; const q: Record<string, unknown> = { eq: () => q, in: () => q, not: () => q, order: () => q, range: () => q, then: (resolve: (v: unknown) => unknown) => resolve({ data: rows, error: null }) }; return q; }, update: (row: unknown) => { writes.push(row); const q = { eq: () => q, then: (resolve: (v: unknown) => unknown) => resolve({error:null}) }; return q; } }) } as never;
+const db = { from: (table: string) => ({ select: () => { const rows = table === "keywords" ? covered : table === "articles" ? articles : []; const q: Record<string, unknown> = { eq: () => q, in: () => q, not: () => q, neq: () => q, gte: () => q, order: () => q, range: () => q, maybeSingle: async () => ({ data: table === "workspaces" ? { account_id: "acc", status: "active", paused_until: null } : null, error: null }), then: (resolve: (v: unknown) => unknown) => resolve({ data: rows, error: null }) }; return q; }, update: (row: unknown) => { writes.push(row); const q = { eq: () => q, then: (resolve: (v: unknown) => unknown) => resolve({error:null}) }; return q; } }), auth: { getUser: async () => ({ data: { user: null } }) } } as never;
 beforeEach(() => {
   vi.clearAllMocks(); writes.length = 0; covered = []; articles = []; available.mockReturnValue(true);
   judge.mockResolvedValue({ basis: "model", verdicts: new Map([[term, {keep:true,reason:"specific buyer need"}]]) });

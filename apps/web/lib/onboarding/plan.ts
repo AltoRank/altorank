@@ -21,7 +21,7 @@ import { UNKNOWN_LANGUAGE } from "@/lib/i18n/locale";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { MAX_PACE, monthlyFromPace } from "@/lib/content/pace";
 import { CLAIM_LEASE_MS } from "@/lib/plan/draft-claim";
-import { PRE_TRIAL_DRAFTS, planHoldApplies } from "@/lib/billing/trial-hold";
+import { PRE_TRIAL_DRAFTS, planHold } from "@/lib/billing/trial-hold";
 import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
 import { recommendKeywords, type KeywordRecommendation } from "@/lib/seo/recommendations";
 import { classifyKeyword, type KeywordTaxonomy } from "@/lib/keywords/taxonomy";
@@ -324,7 +324,14 @@ async function planFor(
   // not by the caller: onboarding used to pass `maxEntries: 1` for a gated
   // account, and the nightly top-up, the webhook, the Plan-month button and
   // a resumed site all called this without it and filled the month back in.
-  const cap = (await planHoldApplies(supabase, workspaceId)) ? PRE_TRIAL_DRAFTS : PLAN_MAX_ENTRIES;
+  //
+  // Once that article has been attempted the answer is nothing, whatever the
+  // calendar holds: its entry can be deleted or marked done by a client
+  // token, and counting room from the calendar alone let the nightly top-up
+  // plan - and buy qualification for - a new "first article" every night.
+  const hold = await planHold(supabase, workspaceId);
+  if (hold === "spent") return { plan: [], recs: [] };
+  const cap = hold === "held" ? PRE_TRIAL_DRAFTS : PLAN_MAX_ENTRIES;
   // Checked before the recommender, which can spend on verdicts.
   if (cap - counted(await scheduledEntries(supabase, workspaceId)).length <= 0) return { plan: [], recs: [] };
 
@@ -792,8 +799,11 @@ export async function scheduleKeywords(
   // The trial hold, the same one `planFor` applies: a gated calendar holds
   // the first article only, and a keyword picked from the research drawer is
   // refused with the reason rather than planned for a writer that will not run.
-  const held = await planHoldApplies(supabase, workspaceId);
-  const slots = Math.max(0, (held ? PRE_TRIAL_DRAFTS : PLAN_MAX_ENTRIES) - existingCount);
+  // Nothing once the pre-trial article has been attempted, however many
+  // entries the calendar still shows.
+  const hold = await planHold(supabase, workspaceId);
+  const held = hold !== "open";
+  const slots = hold === "spent" ? 0 : Math.max(0, (held ? PRE_TRIAL_DRAFTS : PLAN_MAX_ENTRIES) - existingCount);
 
   const fresh = wanted.filter((id) => !alreadyPlanned.has(id));
   const fits = fresh.slice(0, slots);

@@ -9,6 +9,7 @@ import { e2eStubsEnabled, isReservedTestDomain } from "@/lib/e2e/stubs";
 import { getLocale } from "@/lib/seo/locales";
 import { canonicalPage, describeMatch, intentMatcher, type IntentBasis, type IntentMatch } from "./intent";
 import { readIntentLeaders, stageWords, type IntentLeader, type OnCalendar } from "./intent-leaders";
+import { canSpendOnSite, SpendRefusedError } from "@/lib/billing/spend-gate";
 
 export { canonicalPage };
 
@@ -204,6 +205,18 @@ export async function qualifyOpportunities(
 
   const pending = modelAvailable() && hasDataForSEOCredentials()
     ? candidates.filter((c) => !out.has(c.id)).slice(0, QUALIFICATION_LIMIT) : [];
+  // The spend gate, here and not only in the callers. Qualification buys a
+  // model verdict and a results page per term, and the nightly pool refill,
+  // the planner's top-up and a resumed site each reached it before asking -
+  // for accounts waiting for their trial, whose one pre-trial article was
+  // already written, every time a client token changed the business profile
+  // or added keywords (round-4 review). Asked only when something would be
+  // bought; a refusal throws, and every caller already treats a recommender
+  // that cannot run as "nothing planned", never as an empty pool.
+  if (pending.length) {
+    const gate = await canSpendOnSite(supabase, workspaceId, { action: "keyword-research" });
+    if (!gate.allowed) throw new SpendRefusedError(gate);
+  }
   const spend = { supabase, workspaceId };
   const fit = pending.length ? await judgeBuyerFit({ ...context.business, language: context.languageCode }, pending.map((c) => c.term), { spend }) : { verdicts: new Map() };
   for (let offset = 0; offset < pending.length; offset += 3) {

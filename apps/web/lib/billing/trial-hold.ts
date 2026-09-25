@@ -246,11 +246,35 @@ export async function draftBlocker(
  * quota refuses everywhere else.
  */
 export async function planHoldApplies(supabase: SupabaseClient, workspaceId: string): Promise<boolean> {
-  if (!billingEnabled || process.env.TRIAL_GATE_DISABLED === "1") return false;
+  return (await planHold(supabase, workspaceId)) !== "open";
+}
+
+/**
+ * The hold, with whether the one pre-trial article has already been
+ * attempted:
+ *
+ *   open    not held (self-host, operator, a plan, a trial, the kill switch)
+ *   held    held, and the first article is still to come: one entry
+ *   spent   held, and the first article has been attempted: nothing at all
+ *
+ * "Spent" is read from the server-written count (`quota.used`, floored by
+ * `accounts.free_drafts_used`, which the claim moves before anything is
+ * bought), never from the calendar. The planner's cap used to be checked
+ * against the site's calendar entries alone, and a client token can delete
+ * an entry or mark it done: the next nightly top-up then found room for
+ * "the first article" again and bought qualification to fill it, every
+ * night (round-4 review).
+ */
+export type PlanHold = "open" | "held" | "spent";
+
+export async function planHold(supabase: SupabaseClient, workspaceId: string): Promise<PlanHold> {
+  if (!billingEnabled || process.env.TRIAL_GATE_DISABLED === "1") return "open";
   const counting = accountCountingClient(supabase);
   const { data, error } = await counting.from("workspaces").select("account_id").eq("id", workspaceId).maybeSingle();
   if (error) throw new Error(`plan: could not read this site's account (${error.message})`);
   const accountId = (data?.account_id as string | undefined) ?? null;
   if (!accountId) throw new Error("plan: this site has no account to plan for");
-  return trialGateApplies(await getQuota(counting, accountId, null));
+  const quota = await getQuota(counting, accountId, null);
+  if (!trialGateApplies(quota)) return "open";
+  return quota.used >= PRE_TRIAL_DRAFTS ? "spent" : "held";
 }
