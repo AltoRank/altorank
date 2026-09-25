@@ -15,6 +15,7 @@ import {
   renderNothingWritten,
   renderSetupUnfinished,
   renderSetupFailed,
+  renderTrialStarted,
   isoWeek,
 } from "../lifecycle";
 import { graceEndsAt } from "@/lib/billing/dunning";
@@ -400,5 +401,25 @@ describe("setup was never finished", () => {
     const e = renderSetupUnfinished({ ...base, draft: { ...draft, title: "<img src=x>" } });
     expect(e.html).not.toContain("<img");
     expect(e.html).toContain("&lt;img");
+  });
+});
+
+describe("trial started", () => {
+  const base = { planLabel: "Managed", planPrice: "€69/mo", endsAt: "2026-10-02T10:00:00.000Z" };
+
+  it("leads with the writing having started when the trial is what lifted the hold", () => {
+    const e = renderTrialStarted({ ...base, draftingStarted: true });
+    expect(e.preheader).toMatch(/^Drafting has started\./);
+    expect(e.html).toContain("<strong>Drafting has started.</strong>");
+    expect(e.html).toContain("rest of this week are being written now");
+    // The charge date is still the one thing a card trial must say.
+    expect(e.html).toContain("October 2");
+    expect(e.html.indexOf("Drafting has started")).toBeLessThan(e.html.indexOf("the first charge"));
+  });
+
+  it("says only what the plan opens when nothing was started", () => {
+    const e = renderTrialStarted(base);
+    expect(e.html).not.toContain("Drafting has started");
+    expect(e.preheader).toBe("First charge on October 2 unless you cancel before then.");
   });
 });

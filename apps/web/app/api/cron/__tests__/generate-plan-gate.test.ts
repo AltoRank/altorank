@@ -66,7 +66,7 @@ vi.mock("@/lib/billing/spend-gate", () => ({
   canSpend: async () => ({ allowed: true, reason: "plan", quota: { limit: null, remaining: null }, message: null }),
 }));
 vi.mock("@/lib/billing/resume", () => ({ resumeExpiredPauses: async () => [], isoDay: (d: Date) => d.toISOString().slice(0, 10) }));
-vi.mock("@/lib/stripe", () => ({ billingEnabled: false, getStripe: () => null }));
+vi.mock("@/lib/stripe", () => ({ billingEnabled: false, getStripe: () => null, TRIAL_DAYS: 7 }));
 vi.mock("@/lib/content/generate", () => ({
   generateArticle: (...a: unknown[]) => generateArticle(...a),
   ConcurrentGenerationError: class extends Error {},
@@ -79,6 +79,14 @@ vi.mock("@/lib/email/account-recipients", () => ({
   userEmail: async () => null,
 }));
 vi.mock("@/lib/email/article-emails", () => ({ sendArticleDraftedEmails: async () => ({ sent: 1, skipped: 0, failed: 0 }) }));
+// The claim on a due entry is its own contract (lib/plan/__tests__/draft-claim);
+// here every claim is won, so what is pinned is which keyword gets written.
+vi.mock("@/lib/plan/draft-claim", () => ({
+  claimEntry: async () => true,
+  claimsInFlight: async () => 0,
+  recordEntryFailure: async () => undefined,
+  releaseClaim: async () => undefined,
+}));
 vi.mock("@/lib/email/schedule-events", () => ({
   announceNothingWritten: async () => "",
   announcePausedSites: async () => [],

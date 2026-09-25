@@ -50,6 +50,22 @@ function query(table: string, op: "select" | "update", row?: Row) {
 const { topUp } = vi.hoisted(() => ({ topUp: vi.fn(async (..._a: unknown[]) => [] as unknown[]) }));
 vi.mock("@/lib/onboarding/plan", () => ({ schedulePlan: (...a: unknown[]) => topUp(...a) }));
 const { trialStarted, order } = vi.hoisted(() => ({ order: [] as string[], trialStarted: vi.fn(async (..._a: unknown[]) => { order.push("email"); return { sent: 1, skipped: 0, failed: 0 }; }) }));
+// What the checkout opens is handed to its own invocation from `after()`
+// (lib/plan/resume-dispatch.ts). `after()` needs a request scope; here it
+// queues the callback, so a test can tell "during the request" from "after
+// Stripe had its answer".
+const { deferred, resume } = vi.hoisted(() => ({
+  deferred: [] as Array<() => unknown>,
+  resume: vi.fn<(...a: unknown[]) => Promise<void>>(async () => { order.push("resume"); }),
+}));
+vi.mock("next/server", async () => {
+  const real = await vi.importActual<typeof import("next/server")>("next/server");
+  return { ...real, after: (fn: () => unknown) => { deferred.push(fn); } };
+});
+vi.mock("@/lib/plan/resume-dispatch", () => ({ dispatchResume: (...a: unknown[]) => resume(...a) }));
+async function runDeferred() {
+  while (deferred.length) await deferred.shift()!();
+}
 vi.mock("@/lib/email/lifecycle", async (importOriginal) => ({ ...await importOriginal<object>(), notifyTrialStarted: (...a: unknown[]) => trialStarted(...a) }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -171,14 +187,20 @@ beforeEach(() => {
 });
 
 describe("checkout.session.completed", () => {
-  it("opens the month the trial gate held: a top-up per site, as soon as the card is taken", async () => {
+  it("hands the month's top-up to its own invocation, keyed by the checkout, and answers Stripe first", async () => {
     topUp.mockClear();
+    resume.mockClear();
+    deferred.length = 0;
     workspaceRows = [{ id: "ws-1", auto_generate_weekly_limit: 7 }];
-    await deliver(checkoutCompleted());
-    // One call per workspace on the account, in top-up mode; a failure here
-    // is logged and the nightly cron does the same, so it never fails the event.
-    expect(topUp).toHaveBeenCalled();
-    expect(topUp.mock.calls[0][3]).toMatchObject({ mode: "top-up" });
+    const res = await deliver(checkoutCompleted());
+    expect(res.status).toBe(200);
+    // Nothing paid runs inside the request Stripe is waiting on.
+    expect(topUp).not.toHaveBeenCalled();
+    expect(resume).not.toHaveBeenCalled();
+    await runDeferred();
+    // No trial on this checkout: the month is topped up, and drafting keeps
+    // the scheduled writer's pace, as it always did.
+    expect(resume).toHaveBeenCalledWith({ accountId: "account-1", key: "sub_1", draftWeek: false });
   });
 
   it("writes the tier the subscription's price sells, not the column default", async () => {
@@ -569,18 +591,22 @@ describe("the seven-day card trial", () => {
     });
   });
 
-  it("sends the trial-started email BEFORE buying the month's plan, and budgets the route for it", async () => {
-    // The top-up buys results pages and verdicts and can run for minutes;
-    // a timeout inside it used to take the one email that says when the
-    // card is charged down with it. Now the email is sent first, and the
-    // route has the same budget the other callers of that pipeline run under.
+  it("starts the rest of the week off the request, and the trial email says drafting has started", async () => {
+    // The top-up buys results pages and verdicts and can run for minutes; it
+    // used to run inside this request, which Stripe times out and redelivers.
+    // Now the email is sent in the request and the month and the week are
+    // handed off after it, with the budget the inline fallback needs.
     order.length = 0;
-    topUp.mockClear();
-    topUp.mockImplementation(async () => { order.push("top-up"); return []; });
+    deferred.length = 0;
+    resume.mockClear();
+    trialStarted.mockClear();
     workspaceRows = [{ id: "ws-1", auto_generate_weekly_limit: 7 }];
     retrieveSubscription.mockResolvedValue({ status: "trialing", trial_end: TRIAL_END, items: { data: [{ price: { id: STARTER } }] } });
     await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "starter" } }));
-    expect(order).toEqual(["email", "top-up"]);
+    await runDeferred();
+    expect(order).toEqual(["email", "resume"]);
+    expect(resume).toHaveBeenCalledWith({ accountId: "account-1", key: "sub_1", draftWeek: true });
+    expect(trialStarted.mock.calls[0][2]).toMatchObject({ draftingStarted: true });
     expect((await import("../route")).maxDuration).toBe(300);
   });
 
