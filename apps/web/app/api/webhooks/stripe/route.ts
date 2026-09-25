@@ -628,7 +628,7 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
       // Pre-085 subscriptions carry `agency_id`; see `accountForInvoice`.
       const accountId = sub.metadata?.account_id ?? sub.metadata?.agency_id;
       const { data: row } = await supabase
-        .from("agencies")
+        .from("accounts")
         .select(AGENCY_BILLING_COLUMNS)
         .eq(accountId ? "id" : "stripe_subscription_id", accountId ?? sub.id)
         .maybeSingle();
