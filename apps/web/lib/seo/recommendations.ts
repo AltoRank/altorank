@@ -452,12 +452,27 @@ export async function recommendKeywords(
   // or a page for, with nothing in the log. So those three throw, naming the
   // table, the rule `readIntentLeaders` already follows.
 
+  // The two signals are paged too (readAll), and read only over the lookback:
+  // capped at the first thousand rows they were an arbitrary thousand (no
+  // unique order), so on a site with more Search Console rows or rank checks
+  // than that the "proven demand" boost and the latest position were read
+  // off whichever page came back first (round-5 review, 1,100 rows seeded:
+  // 1,000 read). Ordered with `id` last, so a page boundary cannot repeat or
+  // drop a row. Rank checks run nightly, so the window keeps the read to a
+  // bounded number of pages rather than every check a keyword ever had; a
+  // position older than the window is not this keyword's latest standing.
+  const lookbackStart = new Date(Date.now() - GSC_LOOKBACK_DAYS * 86_400_000);
   const [rankRes, articleRes, gscRes, pagesRes, entriesRes] = await Promise.allSettled([
-    supabase
-      .from("keyword_rankings")
-      .select("keyword_id, position, checked_at")
-      .in("keyword_id", keywordIds)
-      .order("checked_at", { ascending: false }),
+    readAll((from, to) =>
+      supabase
+        .from("keyword_rankings")
+        .select("keyword_id, position, checked_at")
+        .in("keyword_id", keywordIds)
+        .gte("checked_at", lookbackStart.toISOString())
+        .order("checked_at", { ascending: false })
+        .order("id")
+        .range(from, to),
+    ),
     // The leaders, paged like `readIntentLeaders`: a site past 1,000 of any
     // of them compared its candidates against the first thousand.
     readAll((from, to) =>
@@ -469,23 +484,24 @@ export async function recommendKeywords(
         .order("id")
         .range(from, to),
     ),
-    supabase
-      .from("analytics_metrics")
-      .select("query, impressions")
-      .eq("workspace_id", workspaceId)
-      .eq("source", "gsc")
-      .gte(
-        "metric_date",
-        new Date(Date.now() - GSC_LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10),
-      )
-      .not("query", "is", null)
-      // Query-only rows. Search Console is also stored as query+page rows
-      // (lib/gsc/rows.ts), and reading those here counted every impression
-      // twice and, worse, turned "Google once showed the homepage for this"
-      // into "a page of yours already targets this" - which skipped exactly
-      // the striking-distance rows the scorer multiplies by 2.5 (altorank.co,
-      // 2026-09-22). The seeder guards the same way (lib/gsc/seed.ts).
-      .is("page_url", null),
+    readAll((from, to) =>
+      supabase
+        .from("analytics_metrics")
+        .select("query, impressions")
+        .eq("workspace_id", workspaceId)
+        .eq("source", "gsc")
+        .gte("metric_date", lookbackStart.toISOString().slice(0, 10))
+        .not("query", "is", null)
+        // Query-only rows. Search Console is also stored as query+page rows
+        // (lib/gsc/rows.ts), and reading those here counted every impression
+        // twice and, worse, turned "Google once showed the homepage for this"
+        // into "a page of yours already targets this" - which skipped exactly
+        // the striking-distance rows the scorer multiplies by 2.5 (altorank.co,
+        // 2026-09-22). The seeder guards the same way (lib/gsc/seed.ts).
+        .is("page_url", null)
+        .order("id")
+        .range(from, to),
+    ),
     // The site's own pages and the query each one targets (lib/seo/site-crawl.ts
     // fills `keyword` from the heading or from a ranking). An article written
     // for a query one of these pages already holds is a second page on one
