@@ -50,7 +50,12 @@ function query(table: string, op: "select" | "update", row?: Row) {
 const { topUp } = vi.hoisted(() => ({ topUp: vi.fn(async (..._a: unknown[]) => [] as unknown[]) }));
 vi.mock("@/lib/onboarding/plan", () => ({ schedulePlan: (...a: unknown[]) => topUp(...a) }));
 const { trialStarted, order } = vi.hoisted(() => ({ order: [] as string[], trialStarted: vi.fn(async (..._a: unknown[]) => { order.push("email"); return { sent: 1, skipped: 0, failed: 0 }; }) }));
-vi.mock("@/lib/email/lifecycle", async (importOriginal) => ({ ...await importOriginal<object>(), notifyTrialStarted: (...a: unknown[]) => trialStarted(...a) }));
+const { trialEnding } = vi.hoisted(() => ({ trialEnding: vi.fn(async (..._a: unknown[]) => ({ sent: 1, skipped: 0, failed: 0 })) }));
+vi.mock("@/lib/email/lifecycle", async (importOriginal) => ({
+  ...await importOriginal<object>(),
+  notifyTrialStarted: (...a: unknown[]) => trialStarted(...a),
+  notifyTrialEnding: (...a: unknown[]) => trialEnding(...a),
+}));
 
 vi.mock("@/lib/supabase/server", () => ({
   createServiceClient: () => ({
@@ -606,5 +611,28 @@ describe("the seven-day card trial", () => {
     const { row } = accountWrite();
     expect(row.plan_status).toBe("active");
     expect(row).not.toHaveProperty("trial_ends_at");
+  });
+});
+
+describe("customer.subscription.trial_will_end", () => {
+  // Read `agencies` after migration 085 renamed it: the read failed, the
+  // handler took that for "no account" and the reminder three days before
+  // the first charge never went out.
+  it("finds the account in `accounts` and sends the reminder", async () => {
+    trialEnding.mockClear();
+    accountRow = { id: "account-1", plan_status: "trialing", payment_failed_at: null, plan: "starter", trial_ends_at: null };
+    const res = await deliver({ ...subscriptionEvent("updated", { status: "trialing", trial_end: 1_790_604_800 }), type: "customer.subscription.trial_will_end" });
+    expect(res.status).toBe(200);
+    expect(trialEnding).toHaveBeenCalledTimes(1);
+    expect(trialEnding.mock.calls[0][1]).toBe("account-1");
+    expect(trialEnding.mock.calls[0][2]).toMatchObject({ endsAt: new Date(1_790_604_800 * 1000).toISOString() });
+    expect(trialEnding.mock.calls[0][3]).toBe("sub_1");
+  });
+
+  it("sends nothing once the trial is set to cancel", async () => {
+    trialEnding.mockClear();
+    accountRow = { id: "account-1", plan_status: "trialing", payment_failed_at: null, plan: "starter", trial_ends_at: null };
+    await deliver({ ...subscriptionEvent("updated", { status: "trialing", cancel_at_period_end: true }), type: "customer.subscription.trial_will_end" });
+    expect(trialEnding).not.toHaveBeenCalled();
   });
 });
