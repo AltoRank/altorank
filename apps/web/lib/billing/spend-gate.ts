@@ -61,6 +61,9 @@ import {
 } from "@/lib/billing/quota";
 import { accountPausedMessage } from "@/lib/billing/pause";
 import { formatGraceDate } from "@/lib/billing/dunning";
+import { trialGateApplies } from "@/lib/billing/trial";
+import { PRE_TRIAL_DRAFTS } from "@/lib/billing/trial-hold";
+import { trialRefusal } from "@/lib/billing/trial-refusal";
 
 /**
  * What kind of spending is being asked for.
@@ -81,7 +84,8 @@ export type SpendAction =
   | "refresh"
   | "recommendations"
   | "geo-probe"
-  | "scheduled-work";
+  | "scheduled-work"
+  | "setup";
 
 /** What the refusal calls the thing, so one sentence serves all of them. */
 const ACTION_NOUN: Record<SpendAction, string> = {
@@ -96,6 +100,7 @@ const ACTION_NOUN: Record<SpendAction, string> = {
   recommendations: "Rescoring the keyword queue",
   "geo-probe": "Asking the AI engines about this brand",
   "scheduled-work": "Scheduled work",
+  setup: "Setting up a site",
 };
 
 export type SpendAllowedReason =
@@ -111,6 +116,8 @@ export type SpendAllowedReason =
   | "free-allowance";
 
 export type SpendBlockedReason =
+  /** Trial-gated, and setup has written the first article: the trial opens the rest. */
+  | "trial-required"
   /** No plan, and the one-time seven have been written. */
   | "free-allowance-spent"
   /** Past due and the grace window has run out. */
@@ -186,6 +193,26 @@ export async function canSpend(
 
   // From here the account has no entitled plan.
   //
+  // A trial-gated account (lib/billing/trial.ts) spends on setup and nothing
+  // after it: the site read, the keyword research and the first article are
+  // what the gate screen shows, and the trial opens everything else. The
+  // free allowance below used to answer first, and for these accounts it
+  // still read "seven drafts, one used", so every paid door outside the
+  // drafting ones stayed open before the trial: the editor's whole-article
+  // rewrite, keyword suggestions over the agent API, a re-crawl, setup run
+  // again. `used` is the count the hold reads (lib/billing/trial-hold.ts),
+  // floored by `free_drafts_used`, which only the server writes (migration
+  // 099), so deleting or failing an article from a client token cannot walk
+  // it back. The same line the hold draws, for every door that asks here.
+  if (trialGateApplies(quota) && quota.used >= PRE_TRIAL_DRAFTS) {
+    return {
+      allowed: false,
+      reason: "trial-required",
+      quota,
+      message: trialRefusal(action === "draft" ? "draft" : "spend"),
+    };
+  }
+
   // The free allowance is checked before the lapsed card, and the order is the
   // product's own promise: the dunning banner says "your plan is on hold and
   // the account is on the free tier until the card is updated", so an account

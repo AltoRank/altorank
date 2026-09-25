@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { canSpend } from "@/lib/billing/spend-gate";
+import { sessionBodyLockedForWorkspace } from "@/lib/billing/body-lock";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import { anthropicModel } from "@/lib/ai/models";
 import {
   buildRewriteArticlePrompt,
@@ -58,20 +60,28 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Article not found" }, { status: 404 });
   }
 
+  // The editor is what the trial opens, and this route is the editor's: it
+  // takes the article's text and hands a rewrite of it back. The editor's AI
+  // actions refused a gated account (app/actions/editor-ai.ts) and this one
+  // did not, so the body lock is asked here the same way.
+  if (await sessionBodyLockedForWorkspace(article.workspace_id as string)) {
+    return Response.json({ error: BODY_LOCKED_MESSAGE, reason: "trial_required" }, { status: 403 });
+  }
+
   // A 24,000-token Sonnet call, streamed, once per press. Nothing stopped an
-  // account with no plan from pressing it. The account comes from the
-  // membership rather than the article, because this route never resolved one.
-  const { data: member } = await supabase
-    .from("account_members")
+  // account with no plan from pressing it. Billed to the article's account,
+  // read through the person's client so RLS answers it: this route used to
+  // take the oldest membership, which for someone in two accounts asked the
+  // wrong one's plan.
+  const { data: site } = await supabase
+    .from("workspaces")
     .select("account_id")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: true })
-    .limit(1)
+    .eq("id", article.workspace_id)
     .maybeSingle();
-  if (!member) {
+  if (!site?.account_id) {
     return Response.json({ error: "No account membership" }, { status: 403 });
   }
-  const gate = await canSpend(supabase, member.account_id as string, {
+  const gate = await canSpend(supabase, site.account_id as string, {
     userEmail: user.email ?? undefined,
     workspaceId: article.workspace_id as string,
     action: "draft",

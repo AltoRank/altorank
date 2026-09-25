@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Quota } from "../quota";
 import { FREE_DRAFTS, spentUnderOldMonthlyRule } from "../quota";
+import { TRIAL_HOLD_MESSAGE, TRIAL_SPEND_MESSAGE } from "../trial-refusal";
 
 // ---------------------------------------------------------------------------
 // The spend gate, branch by branch
@@ -248,5 +249,41 @@ describe("the mid-month rule change is explained, not silent", () => {
     expect(spentUnderOldMonthlyRule(quota({ limit: 100, used: 100, monthUsed: 1 }))).toBe(false);
     expect(spentUnderOldMonthlyRule(quota({ reason: "self-host", limit: null, plan: null }))).toBe(false);
     expect(spentUnderOldMonthlyRule(freeTier(2))).toBe(false);
+  });
+});
+
+describe("a trial-gated account spends on setup and nothing after it", () => {
+  // Every paid door outside drafting asked this gate, and for an account
+  // that had not started its trial it answered "free allowance, six left":
+  // the editor's whole-article rewrite, keyword suggestions over the agent
+  // API and a re-crawl all ran before the trial.
+  const gated = (used: number) => freeTier(used, { trialEligible: true });
+
+  it("allows setup: nothing is written yet", async () => {
+    getQuota.mockResolvedValue(gated(0));
+    expect(await canSpend(client(), "a", { action: "keyword-research" })).toMatchObject({ allowed: true, reason: "free-allowance" });
+  });
+
+  it("refuses everything once the first article exists, in the trial's words", async () => {
+    getQuota.mockResolvedValue(gated(1));
+    for (const action of ["keyword-research", "site-audit", "refresh", "setup"] as const) {
+      expect(await canSpend(client(), "a", { action })).toMatchObject({ allowed: false, reason: "trial-required", message: TRIAL_SPEND_MESSAGE });
+    }
+    expect(await canSpend(client(), "a", { action: "draft" })).toMatchObject({ allowed: false, reason: "trial-required", message: TRIAL_HOLD_MESSAGE });
+  });
+
+  it("leaves a no-plan account that already had its trial on the allowance", async () => {
+    getQuota.mockResolvedValue(freeTier(1, { trialEligible: false }));
+    expect(await canSpend(client(), "a", { action: "keyword-research" })).toMatchObject({ allowed: true, reason: "free-allowance" });
+  });
+
+  it("follows the kill switch", async () => {
+    vi.stubEnv("TRIAL_GATE_DISABLED", "1");
+    try {
+      getQuota.mockResolvedValue(gated(1));
+      expect(await canSpend(client(), "a", { action: "keyword-research" })).toMatchObject({ allowed: true, reason: "free-allowance" });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

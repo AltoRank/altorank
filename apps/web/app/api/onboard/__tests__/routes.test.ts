@@ -32,6 +32,11 @@ vi.mock("@/lib/onboarding/run-dispatch", () => ({ dispatchWorker: (id: string) =
 const executeRun = vi.fn();
 vi.mock("@/lib/onboarding/run-worker", () => ({ executeRun: (id: string) => executeRun(id) }));
 
+// The spend gate is tested on its own (lib/billing/__tests__/spend-gate.test.ts);
+// here it is the answer the route acts on.
+const canSpend = vi.fn();
+vi.mock("@/lib/billing/spend-gate", () => ({ canSpend: (...args: unknown[]) => canSpend(...args) }));
+
 import { POST as start } from "../start/route";
 import { POST as run } from "../run/route";
 import { GET as state } from "../state/route";
@@ -44,6 +49,8 @@ beforeEach(() => {
   deferred.length = 0;
   dispatchWorker.mockClear();
   executeRun.mockReset();
+  canSpend.mockReset();
+  canSpend.mockResolvedValue({ allowed: true, reason: "plan", message: null });
   user = { id: "u1" };
   db = fakeDb({
     workspaces: [
@@ -77,6 +84,27 @@ describe("POST /api/onboard/start", () => {
     await Promise.all(deferred);
     expect(dispatchWorker).toHaveBeenCalledTimes(1);
     expect(db.tables.onboarding_runs).toHaveLength(1);
+  });
+
+  it("a new run asks the spend gate, and a refusal starts nothing", async () => {
+    // A gated account whose setup already wrote its article: another run
+    // would buy the site read and the research again before the trial.
+    canSpend.mockResolvedValue({ allowed: false, reason: "trial-required", message: "the gate's sentence" });
+    const res = await start(post("/api/onboard/start", { workspaceId: "ws1" }));
+    expect(res.status).toBe(402);
+    expect(await res.json()).toEqual({ error: "the gate's sentence" });
+    expect(canSpend).toHaveBeenCalledWith(expect.anything(), "ag1", expect.objectContaining({ workspaceId: "ws1", action: "setup" }));
+    expect(db.tables.onboarding_runs ?? []).toHaveLength(0);
+    await Promise.all(deferred);
+    expect(dispatchWorker).not.toHaveBeenCalled();
+  });
+
+  it("hands back the live run without asking the gate: returning it buys nothing", async () => {
+    const first = await (await start(post("/api/onboard/start", { workspaceId: "ws1" }))).json();
+    canSpend.mockResolvedValue({ allowed: false, reason: "trial-required", message: "no" });
+    const again = await start(post("/api/onboard/start", { workspaceId: "ws1" }));
+    expect(await again.json()).toEqual({ runId: first.runId, existing: true });
+    expect(canSpend).toHaveBeenCalledTimes(1);
   });
 
   it("refuses without a session, a body, or a workspace", async () => {

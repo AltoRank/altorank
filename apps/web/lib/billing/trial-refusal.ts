@@ -2,16 +2,19 @@
 // What a trial-gated account is told, in one place
 // ---------------------------------------------------------------------------
 //
-// An account that has not started its trial is refused two different things,
-// and each has one sentence:
+// An account that has not started its trial is refused three different
+// things, and each has one sentence:
 //
 //   draft  asking for another article (session /api/generate for a new
 //          keyword, Write now, the agent API and MCP generate, the crons):
 //          the hold's sentence (lib/billing/trial-hold.ts)
 //   body   asking to read or edit an article's text (the editor, its AI
 //          actions, the agent API's content read, /api/generate into an
-//          open draft): the body lock's sentence (lib/billing/trial.ts,
-//          draftBodyLocked)
+//          open draft, regenerating the first article): the body lock's
+//          sentence (lib/billing/trial.ts, draftBodyLocked)
+//   spend  anything else that costs a provider call once setup has written
+//          the first article (keyword research, an audit, a rewrite, setup
+//          run again): the spend gate's sentence (lib/billing/spend-gate.ts)
 //
 // The two were written by two tracks on the same day and lived in the files
 // that enforce them. On the combined tree the session /api/generate answered
@@ -32,9 +35,20 @@ export const TRIAL_HOLD_MESSAGE =
 export const BODY_LOCKED_MESSAGE =
   `The article text opens when the ${TRIAL_DAYS}-day trial starts. Start it from the setup screen to read, approve and publish this draft.`;
 
-/** What the gated account asked for: another article, or an existing article's text. */
-export type TrialRefusalAsk = "draft" | "body";
+/**
+ * The sentence every paid door but drafting gives a gated account once setup
+ * has written its first article. Setup itself spends before the trial (the
+ * site read, the keyword research, the first draft); after it, nothing does.
+ */
+export const TRIAL_SPEND_MESSAGE =
+  `Nothing more runs until the ${TRIAL_DAYS}-day trial starts. Setup has written your first article; ` +
+  `start the trial from the setup screen to open research, audits and the rest of this week's drafts.`;
+
+/** What the gated account asked for: another article, an existing article's text, or other paid work. */
+export type TrialRefusalAsk = "draft" | "body" | "spend";
 
 export function trialRefusal(ask: TrialRefusalAsk): string {
-  return ask === "draft" ? TRIAL_HOLD_MESSAGE : BODY_LOCKED_MESSAGE;
+  if (ask === "draft") return TRIAL_HOLD_MESSAGE;
+  if (ask === "body") return BODY_LOCKED_MESSAGE;
+  return TRIAL_SPEND_MESSAGE;
 }

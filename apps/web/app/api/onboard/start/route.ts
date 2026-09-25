@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { startRun } from "@/lib/onboarding/run-store";
 import { dispatchWorker } from "@/lib/onboarding/run-dispatch";
+import { canSpend } from "@/lib/billing/spend-gate";
 
 // ---------------------------------------------------------------------------
 // POST /api/onboard/start — begin (or find) the onboarding run for a workspace
@@ -17,6 +18,14 @@ import { dispatchWorker } from "@/lib/onboarding/run-dispatch";
 // Idempotent: a workspace with a run already `running` gets that run's id and
 // no second worker (the partial unique index in 076 is what makes a race
 // safe), so the screen may call this on every mount.
+//
+// A NEW run asks the spend gate first. It buys the site read and the keyword
+// research again (about $0.22), and the only rule against running it twice
+// was the wizard's: the gate screen stopped offering "Try again" once the
+// first article existed (lib/onboarding/setup-retry.ts), while this route
+// started a run for any member who POSTed. For an account that has not
+// started its trial the gate answers no once setup has written its article
+// (lib/billing/spend-gate.ts), so the server draws the line the screen does.
 
 // The inline fallback runs the pipeline in after() when this install cannot
 // self-invoke; give that path the budget the worker route has.
@@ -53,10 +62,26 @@ export async function POST(request: NextRequest) {
     .single();
   if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { runId, created } = await startRun(createServiceClient(), {
-    id: workspace.id as string,
-    account_id: workspace.account_id as string,
-  });
+  const accountId = workspace.account_id as string;
+  const started = await startRun(
+    createServiceClient(),
+    { id: workspace.id as string, account_id: accountId },
+    Date.now(),
+    {
+      mayCreate: async () => {
+        const gate = await canSpend(supabase, accountId, {
+          userEmail: user.email ?? undefined,
+          workspaceId: workspace.id as string,
+          action: "setup",
+        });
+        return gate.allowed ? null : gate.message;
+      },
+    },
+  );
+  if (started.refused !== undefined) {
+    return NextResponse.json({ error: started.refused }, { status: 402 });
+  }
+  const { runId, created } = started;
   if (created) after(() => dispatchWorker(runId));
 
   return NextResponse.json({ runId, existing: !created });
