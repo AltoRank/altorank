@@ -117,12 +117,19 @@ export interface DraftBatchEmail {
  * verdict already gates approval (`approvalBlocker`). "1 to check" read like a
  * job the reader had been given; "1 unsourced figure" is what we actually
  * found.
+ *
+ * "All sourced" only when every draft was checked and came back clean. A
+ * draft in a language the checker does not read is `unchecked`, and a batch
+ * of those used to fall through to "All sourced" above rows whose own pill
+ * said "Not checked": a pass nobody earned.
  */
 function factCheckStat(drafts: readonly BatchDraft[]): EmailStat {
   const risky = drafts.filter((d) => d.verdict === "high_risk").length;
   const review = drafts.filter((d) => d.verdict === "review").length;
+  const unchecked = drafts.filter((d) => d.verdict === "unchecked").length;
   if (risky) return { label: "Fact check", value: `${risky} unsourced ${risky === 1 ? "figure" : "figures"}`, tone: "err" };
   if (review) return { label: "Fact check", value: `${review} to confirm`, tone: "warn" };
+  if (unchecked) return { label: "Fact check", value: `${unchecked} not checked`, tone: "warn" };
   return { label: "Fact check", value: "All sourced", tone: "ok" };
 }
 
@@ -267,8 +274,9 @@ type ArticleRow = {
 };
 
 const VERDICTS = new Set(["clean", "review", "high_risk", "unchecked"]);
+/** No verdict on the row means nobody checked the draft: "Not checked", never "All sourced". */
 const verdictOf = (v: string | null): FactCheckReport["verdict"] =>
-  VERDICTS.has(v ?? "") ? (v as FactCheckReport["verdict"]) : "clean";
+  VERDICTS.has(v ?? "") ? (v as FactCheckReport["verdict"]) : "unchecked";
 
 /**
  * Tell this workspace's team about every draft of theirs nobody has been told
