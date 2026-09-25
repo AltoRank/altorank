@@ -444,21 +444,31 @@ describe.skipIf(!LIVE)("tenant isolation, as two signed-in accounts", () => {
       expect((data ?? []).length).toBe(1);
     });
 
-    it("an owner can still create and revoke keys", async () => {
-      // insert(...).select("id").single() is exactly what createApiKey does:
-      // it needs the INSERT check AND the SELECT policy to hold.
-      const { data: created, error: createErr } = await fx.as.aOwner
+    it("an owner cannot insert a key over PostgREST, and can still revoke one", async () => {
+      // Migration 099: a client token chose its own key (the hash is a plain
+      // sha256) and its own `created_by`. createApiKey writes the row with
+      // the service role after its checks; the owner's client only revokes.
+      const { error: createErr } = await fx.as.aOwner
         .from("api_keys")
         .insert({
           account_id: fx.accountA,
           name: "owner issued",
           key_hash: "tenant-iso-owner-issued",
           prefix: "altorank_live_ownr",
-        })
-        .select("id")
-        .single();
-      expect(createErr).toBeNull();
-      expect(created?.id).toBeTruthy();
+        });
+      expect(createErr).not.toBeNull();
+      const { error: seedErr } = await fx.admin.from("api_keys").insert({
+        account_id: fx.accountA,
+        name: "owner issued",
+        key_hash: "tenant-iso-owner-issued",
+        prefix: "altorank_live_ownr",
+      });
+      expect(seedErr).toBeNull();
+      const { error: rescopeErr } = await fx.as.aOwner
+        .from("api_keys")
+        .update({ key_hash: "tenant-iso-owner-chosen" })
+        .eq("key_hash", "tenant-iso-owner-issued");
+      expect(rescopeErr).not.toBeNull();
       const { data } = await fx.as.aOwner
         .from("api_keys")
         .update({ revoked_at: new Date().toISOString() })

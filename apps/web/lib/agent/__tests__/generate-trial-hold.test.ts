@@ -8,6 +8,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { hashApiKey } from "@/lib/agent/api-keys";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import { fakeSupabase, type FakeSupabase, type Seed } from "./fake-supabase";
 
 let db: FakeSupabase;
@@ -84,8 +85,21 @@ describe("POST /articles/generate and the trial hold", () => {
     expect(db.tables.agent_idempotency_keys).toHaveLength(0);
   });
 
-  it("lets the first article be regenerated in place: that adds no draft", async () => {
+  it("refuses to regenerate the first article before the trial, in the body lock's words", async () => {
+    // It adds no draft, so the hold let it through, and every call bought the
+    // research, the model call and the fact check again. The session door
+    // refused the same request; the text is what the trial opens.
     quota.mockResolvedValue(gated(1));
+    const { POST } = await import("@/app/api/agent/v1/articles/generate/route");
+    const res = await POST(generate({ article_id: FIRST }));
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(body.error.message).toBe(BODY_LOCKED_MESSAGE);
+    expect(afterCalls).toHaveLength(0);
+  });
+
+  it("lets a paying account regenerate in place", async () => {
+    quota.mockResolvedValue({ limit: 100, used: 1, remaining: 99, reason: "plan", plan: "starter" });
     const { POST } = await import("@/app/api/agent/v1/articles/generate/route");
     const res = await POST(generate({ article_id: FIRST }));
     expect(res.status).toBe(202);

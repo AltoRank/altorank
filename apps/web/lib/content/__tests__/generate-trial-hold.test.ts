@@ -21,7 +21,7 @@ vi.mock("@/lib/billing/quota", async (importOriginal) => ({
 
 import { generateArticle } from "../generate";
 import { TrialHoldError } from "@/lib/billing/trial-hold";
-import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
+import { BODY_LOCKED_MESSAGE, TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
 
 /** The account's articles, shared by every client in a test, as ids. */
 const rows = new Set<string>();
@@ -201,11 +201,28 @@ describe("generateArticle and the trial hold", () => {
     expect(await draft()).toBe("reached the model");
   });
 
-  it("lets the first article be regenerated in place, since that adds no draft", async () => {
+  it("refuses to regenerate the first article before the trial: that is working on its text", async () => {
+    // It adds no draft, but each regeneration bought the research, the model
+    // call and the fact check again, as often as an agent key asked.
     gatedQuota();
     rows.add("first");
     target = { id: "first", status: "review" };
-    expect(await draft(0, { articleId: "first" })).toBe("reached the model");
+    const out = await draft(0, { articleId: "first" });
+    expect(out).toBeInstanceOf(TrialHoldError);
+    expect((out as Error).message).toBe(BODY_LOCKED_MESSAGE);
+    expect(jobsOpened).toBe(0);
+  });
+
+  it("lets an address on the bypass list regenerate in place: its bodies are open", async () => {
+    process.env.TRIAL_GATE_BYPASS_EMAILS = "tester@acme-agency.example";
+    try {
+      gatedQuota();
+      rows.add("first");
+      target = { id: "first", status: "review" };
+      expect(await draft(0, { articleId: "first", callerEmail: "tester+x@acme-agency.example" })).toBe("reached the model");
+    } finally {
+      delete process.env.TRIAL_GATE_BYPASS_EMAILS;
+    }
   });
 
   it("holds a regeneration into a failed article, which would add one", async () => {

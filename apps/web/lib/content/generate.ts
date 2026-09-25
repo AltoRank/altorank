@@ -25,7 +25,9 @@ import { scoreArticle } from "@/lib/seo/scoring";
 import { scoreCitationReadiness } from "@/lib/seo/aeo-scoring";
 import { recordSpend, anthropicCost } from "@/lib/billing/spend";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
-import { trialGateApplies } from "@/lib/billing/trial";
+import { draftBodyLocked, trialGateApplies } from "@/lib/billing/trial";
+import { accountCountingClient } from "@/lib/billing/account-client";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import { isFirstPreTrialDraft, TrialHoldError, trialHoldReason } from "@/lib/billing/trial-hold";
 import { recordOverageArticle } from "@/lib/billing/overage";
 import { accountPausedMessage } from "@/lib/billing/pause";
@@ -345,20 +347,30 @@ export async function generateArticle(
    * reason, and "all 7 free drafts are used" would name an allowance these
    * accounts no longer have.
    *
-   * Generating into an article that already counts adds nothing, so the
-   * first article itself can still be regenerated in place; a rewrite of a
-   * page is a draft of its own.
+   * Generating into an article that already counts adds no draft, but it is
+   * working on that article's text, which is what the trial opens: every
+   * regeneration buys the research, the model call and the fact check again,
+   * and it used to be allowed here "in place" as often as a key asked. So a
+   * gated account regenerates nothing (the body lock's refusal, the one the
+   * session /api/generate already gave); an address on the bypass list, whose
+   * bodies are open, still may. A first article whose run died (`error`)
+   * has no text and is not counted, so trying it again is the first draft,
+   * which the hold allows. A rewrite of a page is a draft of its own.
    */
   if (trialGateApplies(quota)) {
     let adding = 1;
     if (articleId && !refreshOf) {
-      const { data: target } = await supabase
+      const { data: target, error: targetError } = await supabase
         .from("articles")
         .select("status")
         .eq("id", articleId)
         .eq("workspace_id", workspaceId)
         .maybeSingle();
-      if (target && target.status !== "error") adding = 0;
+      if (targetError) throw new Error(`Could not read the article to regenerate: ${targetError.message}`);
+      if (target && target.status !== "error") {
+        if (draftBodyLocked(quota, callerEmail ?? null)) throw new TrialHoldError(BODY_LOCKED_MESSAGE);
+        adding = 0;
+      }
     }
     const held = trialHoldReason(quota, { adding });
     if (held) throw new TrialHoldError(held);
@@ -575,10 +587,17 @@ export async function generateArticle(
     // the account (2026-09-09). The window between the save and this write is
     // covered by the live count `getQuota` floors with; the window between
     // this write and the save is what was charging people for our timeouts.
+    //
+    // Written with the service role, whatever client the caller holds: the
+    // column is server-written only (migration 099), because it is the floor
+    // under the count the trial hold and the spend gate read, and a signed-in
+    // person could set it back to 0 over PostgREST and buy another pre-trial
+    // draft. Without a service key (self-host) the caller's client is used,
+    // and self-host has no allowance to protect.
     if (quota.reason === "no-plan") {
       recordFreeDraft = async () => {
         try {
-          await supabase
+          await accountCountingClient(supabase)
             .from("accounts")
             // `quota.used` is already the larger of the stored counter and
             // the live count, so this only ever moves the column forward. Two

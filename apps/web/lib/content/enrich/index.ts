@@ -87,8 +87,6 @@ export interface EnrichmentReport {
   format: FormatFindings | null;
   /** The style preset the images were generated in, when any were. */
   imageStyle: ImageStyle | null;
-  /** FAQPage JSON-LD for the publishing adapter to inject. Null when the body has no FAQ. */
-  faqSchema: FaqSchema | null;
   /** The language the steps wrote in, and whether the locale contract describes it. */
   language: { code: string; name: string; supported: boolean };
 }
@@ -295,6 +293,13 @@ export async function enrichArticle(html: string, ctx: EnrichContext): Promise<E
 
   // 7. FAQ schema, read from the final text. Off leaves the FAQ prose alone
   //    and hands the publisher nothing to inject.
+  //
+  //    Only the count is reported. The schema itself is the article's FAQ
+  //    with its answers copied word for word from the text, and the report
+  //    is saved on `research`, which a client token may read before the
+  //    trial (the text itself may not: migration 097). It used to be stored
+  //    here "for the publishing adapter", which builds it again from the
+  //    text it sends and never read this one (lib/publishing/schema.ts).
   let faq: { schema: FaqSchema | null; count: number } = { schema: null, count: 0 };
   try {
     if (settings.faqSchema) faq = buildFaqSchema(current);
@@ -325,7 +330,6 @@ export async function enrichArticle(html: string, ctx: EnrichContext): Promise<E
     warnings,
     format: format.findings,
     imageStyle,
-    faqSchema: faq.schema,
     language: { code: locale.code, name: locale.name, supported: locale.supported },
   };
 

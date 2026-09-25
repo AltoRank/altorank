@@ -10,6 +10,7 @@ import { generateArticle, slugFor } from "@/lib/content/generate";
 import { freeAllowanceUsedMessage, getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { accountPausedMessage } from "@/lib/billing/pause";
 import { trialHoldReason } from "@/lib/billing/trial-hold";
+import { agentBodyLocked, bodyLockedEnvelope } from "@/lib/agent/body-lock";
 import type { Article } from "@/lib/types";
 
 // The model call is the long pole; same budget the generate cron has.
@@ -124,6 +125,15 @@ export const POST = withAgent(async (request, ctx) => {
       return fail("not_available", regenerate.reason ?? "This article cannot be regenerated.", "Tell the human why; do not retry. allowed_mutations on the record says what is possible.");
     }
     regeneratingStatus = existing.status;
+    // Regenerating is working on the article's text, and the text is what the
+    // trial opens: the session /api/generate refuses it, and so does this.
+    // It adds no draft, so the hold below let it through, and each call
+    // bought the research, the model call and the fact check again. A first
+    // article whose run died (`error`) has no text to lock; trying it again
+    // is the first draft, which the hold decides.
+    if (existing.status !== "error" && (await agentBodyLocked(ctx))) {
+      return bodyLockedEnvelope(appBaseUrl(request));
+    }
   }
 
   // The key is claimed before the spend gate and before any row, so a
