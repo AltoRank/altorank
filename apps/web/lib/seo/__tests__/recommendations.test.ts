@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { assessKeywordQuality, normalizeTarget } from "../recommendations";
+import { assessKeywordQuality } from "../recommendations";
+import { intentKey } from "@/lib/keyword-research/intent";
+
+/** The English word identity these cases were written against (it was `normalizeTarget`). */
+const normalizeTarget = (term: string) => intentKey(term, "en");
 
 const terms = (...t: string[]) => new Set(t.map((x) => x.toLowerCase()));
 

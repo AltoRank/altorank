@@ -4,18 +4,20 @@ vi.mock("../buyer-model", async (original) => ({ ...await original<object>(), mo
 vi.mock("../buyer-fit", async (original) => ({ ...await original<object>(), judgeBuyerFit: judge }));
 vi.mock("@/lib/seo/client", () => ({ hasDataForSEOCredentials: available }));
 vi.mock("@/lib/seo/brief-data", () => ({ fetchAdvancedSerp: fetchSerp }));
-import { qualifyOpportunities, readOpportunity, contextKey, serpOverlap, validArticleAngle, assertAutonomousTopic, summarizeQualification, type Opportunity } from "../opportunity";
+import { qualifyOpportunities, readOpportunity, contextKey, validArticleAngle, assertAutonomousTopic, summarizeQualification, type Opportunity } from "../opportunity";
+import { sameIntent, sharedResults } from "../intent";
 import { balanceSources, diverseSeeds } from "../diversity";
 
 const context = { domain: "example.com", languageCode: "it", locationCode: 2380, business: { name: "Clinic Studio", description: "Clinic Studio builds booking websites for clinics and salons at a fixed price.", offerings: ["clinic booking websites"], audiences: ["clinic owners"] } };
 const term = "clinic booking website costs";
-const urls = ["https://one.test/guide", "https://two.test/guide", "https://three.test/guide"];
+const urls = ["https://one.test/guide", "https://two.test/guide", "https://three.test/guide", "https://four.test/guide"];
 const approval = { approve: true, reason: "Clinic owners compare the cost of a booking website", audience: "clinic owners", buyingJob: "choose a booking website", offering: "clinic booking websites", angle: "What clinics should budget for a booking website", format: "article", conversionPath: "https://example.com/contact", evidenceUrls: urls.slice(0, 2) };
 const writes: unknown[] = [];
 let covered: unknown[] = [];
-const db = { from: () => ({ select: () => { const q = { eq: () => q, in: async () => ({ data: covered, error: null }) }; return q; }, update: (row: unknown) => { writes.push(row); const q = { eq: () => q, then: (resolve: (v: unknown) => unknown) => resolve({error:null}) }; return q; } }) } as never;
+let articles: unknown[] = [];
+const db = { from: (table: string) => ({ select: () => { const q = { eq: () => q, in: async () => ({ data: table === "keywords" ? covered : [], error: null }), not: async () => ({ data: table === "articles" ? articles : [], error: null }) }; return q; }, update: (row: unknown) => { writes.push(row); const q = { eq: () => q, then: (resolve: (v: unknown) => unknown) => resolve({error:null}) }; return q; } }) } as never;
 beforeEach(() => {
-  vi.clearAllMocks(); writes.length = 0; covered = []; available.mockReturnValue(true);
+  vi.clearAllMocks(); writes.length = 0; covered = []; articles = []; available.mockReturnValue(true);
   judge.mockResolvedValue({ basis: "model", verdicts: new Map([[term, {keep:true,reason:"specific buyer need"}]]) });
   fetchSerp.mockResolvedValue({ organic: urls.map((url, i) => ({url,title:"Clinic booking website cost guide",description:"A buyer guide",rank:i+1})), peopleAlsoAsk:[],aiOverview:null });
   ask.mockResolvedValue(JSON.stringify(approval));
@@ -41,9 +43,27 @@ describe("topic qualification", () => {
   });
   it("does not repeat an intent already planned in an earlier batch", async () => {
     const approved = await run();
-    covered = [{ id: "earlier", term: "price of a clinic website", opportunity: approved }];
-    expect(await run({ opportunity: approved })).toMatchObject({ status: "rejected", duplicateOf: "earlier" });
-    covered = [{ id: "k", term, opportunity: approved }];
+    covered = [{ id: "earlier", term: "price of a clinic website", status: "planned", opportunity: approved }];
+    expect(await run({ opportunity: approved })).toMatchObject({ status: "rejected", cause: "duplicate", duplicateOf: "earlier", duplicateTerm: "price of a clinic website", intentBasis: "serp" });
+    covered = [{ id: "k", term, status: "planned", opportunity: approved }];
+    expect((await run({ opportunity: approved })).status).toBe("qualified");
+  });
+  it("compares against a drafted topic whose verdict has expired or was bought under another profile", async () => {
+    // The owner's results page is a measured fact about its search; the
+    // verdict's age and context do not change which search it was.
+    const approved = await run();
+    covered = [{ id: "old", term: "clinic website price guide", status: "drafting", opportunity: { ...approved, context: "another-profile", checkedAt: "2026-01-01T00:00:00.000Z" } }];
+    expect(await run({ opportunity: approved })).toMatchObject({ status: "rejected", cause: "duplicate", duplicateOf: "old" });
+    expect((await run({ opportunity: approved })).reason).toContain("already drafted");
+  });
+  it("is refused by an article with no keyword row when the words are the same, and says it compared words", async () => {
+    const approved = await run();
+    articles = [{ id: "a1", keyword: "Clinic booking website cost", keyword_id: null, status: "live" }];
+    const out = await qualifyOpportunities(db, "ws", [{ id: "k", term, opportunity: approved }], { ...context, languageCode: "en" });
+    expect(out.get("k")).toMatchObject({ status: "rejected", cause: "duplicate", duplicateTerm: "Clinic booking website cost", intentBasis: "words" });
+    expect(out.get("k")?.duplicateOf).toBeUndefined();
+    // Italian has no rule set: the same pair is compared by exact words, and
+    // "cost"/"costs" are not folded - kept apart, never stemmed as English.
     expect((await run({ opportunity: approved })).status).toBe("qualified");
   });
   it("refuses an obsolete year copied into an evergreen headline", async () => {
@@ -153,8 +173,10 @@ describe("candidate diversity", () => {
     expect(diverseSeeds(["seo content software","content seo software","clinic website cost"],2)).toEqual(["seo content software","clinic website cost"]);
   });
   it("recognizes SERP overlap without inventing overlap from sparse responses", () => {
-    expect(serpOverlap(urls,[...urls.slice(0,2),"https://four.test/a"])).toBeCloseTo(2/3);
-    expect(serpOverlap(urls,urls.slice(0,1))).toBe(0);
+    expect(sharedResults(urls,[...urls.slice(0,2),"https://five.test/a"])).toBe(2);
+    expect(sameIntent({ term: "clinic website costs", organicUrls: urls }, { term: "price of a clinic site", organicUrls: urls }, "en")).toMatchObject({ same: true, basis: "serp", shared: 4 });
+    // Three URLs cannot reach the four-shared bar: the words decide, and say so.
+    expect(sameIntent({ term: "clinic website costs", organicUrls: urls.slice(0, 3) }, { term: "price of a clinic site", organicUrls: urls.slice(0, 3) }, "en")).toMatchObject({ same: false, basis: "words" });
   });
 });
 

@@ -1,5 +1,7 @@
 import { languageCodeOf } from "@/lib/keyword-research/locale";
-import { ARTICLE_SHAPES, qualifyOpportunities, serpOverlap, type ArticleShape, type Opportunity } from "@/lib/keyword-research/opportunity";
+import { ARTICLE_SHAPES, qualifyOpportunities, type ArticleShape, type Opportunity } from "@/lib/keyword-research/opportunity";
+import { clusterByIntent, sameIntent, storedSerp, type StagedTopic } from "@/lib/keyword-research/intent";
+import { readIntentLeaders } from "@/lib/keyword-research/intent-leaders";
 // ---------------------------------------------------------------------------
 // The first thirty days, scheduled
 // ---------------------------------------------------------------------------
@@ -96,6 +98,12 @@ export function buildPlan(
      * 3/week does not stack a new entry on the day the first draft occupies.
      */
     occupied?: readonly string[];
+    /**
+     * The workspace's language, for telling two phrasings of one search apart
+     * (lib/keyword-research/intent.ts). Without it words are compared unfolded;
+     * results pages are compared either way.
+     */
+    language?: string | null;
   },
 ): PlannedEntry[] {
   const weekly = Math.max(0, Math.min(MAX_PACE, Math.floor(opts.weeklyLimit)));
@@ -106,7 +114,13 @@ export function buildPlan(
   const cap = Math.max(0, Math.min(PLAN_MAX_ENTRIES, opts.maxEntries ?? PLAN_MAX_ENTRIES));
   const count = Math.min(cap, Math.ceil((weekly * horizon) / 7));
 
-  const usable = recommendations.filter((r) => r.action === "write" && r.quality === "ok" && r.keywordId);
+  // One article per search, whatever the caller handed in: the first of a
+  // search in the ranking is planned, later phrasings of it are not.
+  const writable = recommendations
+    .filter((r) => r.action === "write" && r.quality === "ok" && r.keywordId)
+    .map((r) => ({ rec: r, term: r.term, organicUrls: r.opportunity?.organicUrls ?? null, stage: "candidate" as const }));
+  const repeats = clusterByIntent(writable, opts.language);
+  const usable = writable.filter((t) => !repeats.has(t)).map((t) => t.rec);
   const offsets = planOffsets(weekly, horizon, count, normaliseDays(opts.daysOfWeek), new Date(start).getUTCDay());
   const taken = new Map<string, number>();
   for (const d of opts.occupied ?? []) taken.set(d, (taken.get(d) ?? 0) + 1);
@@ -311,16 +325,30 @@ async function planFor(
     .not("plan_excluded_at", "is", null);
   const excluded = new Set((excludedRows ?? []).map((r) => r.id as string));
   const takenIds = new Set(existing.map((e) => e.keyword_id).filter(Boolean) as string[]);
-  const takenTerms = new Set(existing.map((e) => (e.keyword ?? "").toLowerCase()).filter(Boolean));
+  // An entry that stays on the calendar owns its search: a rec that is the
+  // same search is not planned beside it (it used to take the exact same
+  // string to be noticed). The recommender has already parked the rows it
+  // could see; this covers an entry whose keyword row says otherwise.
+  const { data: ws } = await supabase.from("workspaces").select("language").eq("id", workspaceId).maybeSingle();
+  const language = (ws as { language?: string | null } | null)?.language ? languageCodeOf((ws as { language: string }).language) : null;
+  const kept: Array<StagedTopic & { rec?: KeywordRecommendation }> = existing
+    .filter((e) => e.keyword)
+    .map((e) => ({ term: e.keyword as string, stage: e.article_id ? "drafted" as const : "scheduled" as const }));
 
   // The limit is applied after scoring, across every action. At 80 a site
   // that already ranks for 80+ terms filled the list with "skip: already
   // ranking" rows and the one writable keyword scored below them was never
   // seen (buttondown.com, 2026-09-07: 99 skips, 2 hand-added terms, 1
   // planned). Ask for the whole set; the planner filters to writable itself.
-  const recs = (await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true, qualifyBatches: opts.qualifyBatches })).filter(
-    (r) => !excluded.has(r.keywordId) && !takenIds.has(r.keywordId) && !takenTerms.has(r.term.toLowerCase()),
+  const ranked = (await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true, qualifyBatches: opts.qualifyBatches })).filter(
+    (r) => !excluded.has(r.keywordId) && !takenIds.has(r.keywordId),
   );
+  const onCalendar = clusterByIntent(
+    [...kept, ...ranked.map((rec) => ({ rec, term: rec.term, organicUrls: rec.opportunity?.organicUrls ?? null, stage: "candidate" as const }))],
+    language,
+  );
+  const sameAsCalendar = new Set([...onCalendar].filter(([, f]) => !f.leader.rec).map(([t]) => t.rec));
+  const recs = ranked.filter((rec) => !sameAsCalendar.has(rec));
 
   let start = opts.from ?? new Date();
   let maxEntries = Math.min(room, opts.maxEntries ?? room);
@@ -339,6 +367,7 @@ async function planFor(
     weeklyLimit,
     from: start,
     maxEntries,
+    language,
     daysOfWeek: opts.daysOfWeek,
     occupied: existing.map((e) => e.scheduled_date).filter(Boolean) as string[],
   });
@@ -470,6 +499,12 @@ export interface HeldTopics {
  * calendar entry, so nothing is stored for this; it is read when a screen
  * needs it. The dates are where they would go, on the same grid the planner
  * uses, so the locked rows sit on real days rather than on "soon".
+ *
+ * Counted in searches, not rows (lib/keyword-research/intent.ts). The trial
+ * screen of a real signup (2026-09-22) promised an article for a search that
+ * was already drafted and another queued for the next day, under a third
+ * spelling. A held row that is the same search as something live, drafted or
+ * scheduled, or as another held row, is not another article.
  */
 export async function heldTopics(
   supabase: SupabaseClient,
@@ -478,14 +513,24 @@ export async function heldTopics(
   occupied: string[],
   from: Date = new Date(),
 ): Promise<HeldTopics> {
-  const { count } = await supabase
-    .from("keywords")
-    .select("id", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .eq("status", "new")
-    .eq("opportunity->>status", "qualified")
-    .is("plan_excluded_at", null);
-  const n = Math.min(count ?? 0, PLAN_MAX_ENTRIES);
+  const [{ data: rows, error }, leaders, { data: ws }] = await Promise.all([
+    supabase
+      .from("keywords")
+      .select("id, term, opportunity")
+      .eq("workspace_id", workspaceId)
+      .eq("status", "new")
+      .eq("opportunity->>status", "qualified")
+      .is("plan_excluded_at", null),
+    readIntentLeaders(supabase, workspaceId),
+    supabase.from("workspaces").select("language").eq("id", workspaceId).maybeSingle(),
+  ]);
+  if (error) throw new Error(`Could not read held topics: ${error.message}`);
+  const language = (ws as { language?: string | null } | null)?.language ? languageCodeOf((ws as { language: string }).language) : null;
+  const held = ((rows ?? []) as Array<{ id: string; term: string; opportunity: unknown }>).map((r) => ({
+    term: r.term, organicUrls: storedSerp(r.opportunity), stage: "candidate" as const,
+  }));
+  const repeats = clusterByIntent([...leaders, ...held], language);
+  const n = Math.min(held.filter((h) => !repeats.has(h)).length, PLAN_MAX_ENTRIES);
   return { count: n, dates: n ? nextOpenDates(occupied, Math.max(1, weeklyLimit), n, from) : [] };
 }
 
@@ -749,16 +794,18 @@ export async function scheduleKeywords(
   const weekly = (ws?.auto_generate_weekly_limit as number | null) ?? 1;
   const qualified = await qualifyOpportunities(supabase, workspaceId, keywords ?? [], { domain: ws?.domain ?? "", business: ws?.business_profile ?? null, languageCode: languageCodeOf(ws?.language), locationCode: ws?.location_code ?? 2840 });
   const reasons: Record<string, string> = {};
-  const accepted: Opportunity[] = [];
+  const accepted: Array<{ term: string; organicUrls: string[] | null }> = [];
+  const language = ws?.language ? languageCodeOf(ws.language) : null;
   const ids = fits.filter((id) => {
     const evidence = qualified.get(id);
-    const duplicate = evidence && accepted.some((other) => serpOverlap(evidence.organicUrls ?? [], other.organicUrls ?? []) >= 0.5);
+    const topic = { term: terms.get(id) ?? "", organicUrls: evidence?.organicUrls ?? null };
+    const duplicate = evidence && accepted.some((other) => sameIntent(topic, other, language).same);
     if (!terms.has(id) || evidence?.status !== "qualified" || duplicate) {
       refused.push(id);
       reasons[id] = duplicate ? "Another selected article covers the same search intent." : evidence?.reason ?? "Buyer fit and search evidence are still pending.";
       return false;
     }
-    accepted.push(evidence);
+    accepted.push(topic);
     return true;
   });
   const dates = nextOpenDates(occupied, Math.max(1, weekly), ids.length, fromDate);

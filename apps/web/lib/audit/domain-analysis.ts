@@ -848,18 +848,19 @@ export async function analyseDomain(options: {
         // the same shape: altorank.co came back with "seo for agency", "agency
         // for seo" and "seo agent" as three separate rows at 27,100 each.
         //
-        // Two passes, because `permutationKey` and `normalizeTarget` disagree
+        // Two passes, because `permutationKey` and `intentKey` disagree
         // about what one query is and both are right about part of it.
         // `permutationKey` keeps the words as typed, so it collapses "seo for
         // agency" and "agency for seo" but not "website design" and "website
-        // design websites". `normalizeTarget` folds plurals, gerunds, agent
-        // nouns and a silent final "e", which is what makes those one target -
+        // design websites". `intentKey` folds inflections in the workspace's
+        // language (plurals, gerunds, agent nouns in English), which is what
+        // makes those one target -
         // and it is already what `recommendKeywords` collapses on, so anything
         // it merges downstream was a wasted row here anyway. qasimcode.com
         // stored twenty rows that are thirteen queries; four of them were
         // "website design" and two more were "create"/"creating".
         const candidatesAll = [...byTerm.values()];
-        const deduped = dedupeTargets(dedupePermutations(candidatesAll.map((c) => c.k)));
+        const deduped = dedupeTargets(dedupePermutations(candidatesAll.map((c) => c.k)), languageCodeOf(options.locale));
         const keep = new Set(deduped.map((k) => k.keyword));
         const candidates = candidatesAll.filter((c) => keep.has(c.k.keyword));
         // Overwritten below with what actually passes the quality and relevance

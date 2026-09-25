@@ -7,6 +7,10 @@ import { profileUsable } from "./business-context";
 import { funnelOf, judgeBuyerFit, type FitProfile, type Funnel } from "./buyer-fit";
 import { e2eStubsEnabled, isReservedTestDomain } from "@/lib/e2e/stubs";
 import { getLocale } from "@/lib/seo/locales";
+import { canonicalPage, describeMatch, intentMatcher, type IntentBasis, type IntentMatch } from "./intent";
+import { readIntentLeaders, stageWords, type IntentLeader } from "./intent-leaders";
+
+export { canonicalPage };
 
 export const OPPORTUNITY_VERSION = 2;
 export const QUALIFICATION_LIMIT = 15;
@@ -53,7 +57,12 @@ export interface Opportunity {
   evidenceUrls?: string[];
   organicUrls?: string[];
   existingUrl?: string;
+  /** Cause "duplicate": the keyword row that owns this search, when the owner is one. */
   duplicateOf?: string;
+  /** Cause "duplicate": the owner's phrase, which is all a page or an article without a row has. */
+  duplicateTerm?: string;
+  /** Cause "duplicate": whether the results pages or only the words were compared. */
+  intentBasis?: IntentBasis;
 }
 export interface OpportunityContext {
   domain: string;
@@ -91,18 +100,22 @@ export function readOpportunity(raw: unknown, context: string): Opportunity | nu
   if (!Number.isFinite(age) || age < 0 || age > (o.status === "pending" ? 15 * 60_000 : 30 * 86_400_000)) return null;
   return o;
 }
-export function canonicalPage(raw: string): string | null {
-  try {
-    const url = new URL(raw);
-    if (!/^https?:$/.test(url.protocol)) return null;
-    return `${url.hostname.replace(/^www\./, "")}${url.pathname.replace(/\/$/, "")}`;
-  } catch { return null; }
-}
-export function serpOverlap(a: string[], b: string[]): number {
-  const left = new Set(a.map(canonicalPage).filter(Boolean));
-  const right = new Set(b.map(canonicalPage).filter(Boolean));
-  if (Math.min(left.size, right.size) < 3) return 0;
-  return [...left].filter((url) => right.has(url)).length / Math.min(left.size, right.size);
+/**
+ * The verdict a topic gets when something further along already owns its
+ * search (lib/keyword-research/intent.ts). Rejected, so the refill parks it
+ * the way it parks every refusal: kept, off the plan, never judged again
+ * without a person.
+ */
+export function duplicateVerdict(
+  base: Opportunity,
+  leader: Pick<IntentLeader, "term" | "keywordId" | "stage">,
+  match: IntentMatch,
+): Opportunity {
+  const out: Opportunity = { ...base, status: "rejected", cause: "duplicate", duplicateTerm: leader.term, intentBasis: match.basis,
+    reason: `Same search as “${leader.term}”, ${stageWords(leader.stage)}: ${describeMatch(match)}. One article per search.` };
+  if (leader.keywordId) out.duplicateOf = leader.keywordId;
+  else delete out.duplicateOf;
+  return out;
 }
 export function validArticleAngle(angle: string, query: string): boolean {
   // A model often adds a year copied from an old SERP title. Keep evergreen
@@ -268,24 +281,23 @@ export async function qualifyOpportunities(
     await save(c, result, verdict ?? null);
     }));
   }
-  // Cover later batches as well as variants in this request. A scheduled or
-  // written topic already owns its search intent; the original approval stays
-  // saved so removing that calendar entry can make the alternative usable.
-  if ([...out.values()].some((o) => o.status === "qualified")) {
-    const { data: covered, error } = await supabase.from("keywords")
-      .select("id, term, opportunity").eq("workspace_id", workspaceId)
-      .in("status", ["planned", "drafting", "scheduled", "shipped"]);
-    if (error) throw new Error(`Could not check existing topic coverage: ${error.message}`);
-    for (const c of candidates) {
-      const result = out.get(c.id);
-      if (result?.status !== "qualified") continue;
-      const duplicate = (covered ?? []).find((row) => {
-        const existing = readOpportunity(row.opportunity, fingerprint);
-        return row.id !== c.id && existing?.status === "qualified" &&
-          serpOverlap(result.organicUrls ?? [], existing.organicUrls ?? []) >= 0.5;
-      });
-      if (duplicate) out.set(c.id, { ...result, status: "rejected", cause: "duplicate", duplicateOf: duplicate.id,
-        reason: `An article already planned or written for “${duplicate.term}” covers this search intent.` });
+  // One article per search. A topic already live, drafted or scheduled owns
+  // its search, and a new approval for it - the same results page, or the
+  // same words where no page was bought - is refused as a duplicate, which
+  // the refill parks. Compared against every owner, not only rows with a
+  // current verdict: a results page bought under last month's profile still
+  // says which search it was. New approvals are not ranked against each
+  // other here; the recommender does that in memory, and the loser is parked
+  // once the winner is on the calendar.
+  const approved = candidates.filter((c) => out.get(c.id)?.status === "qualified");
+  if (approved.length) {
+    const own = new Set(approved.map((c) => c.id));
+    const leaders = (await readIntentLeaders(supabase, workspaceId)).filter((l) => !l.keywordId || !own.has(l.keywordId));
+    const ownerOf = intentMatcher(leaders, context.languageCode);
+    for (const c of approved) {
+      const result = out.get(c.id)!;
+      const hit = ownerOf({ term: c.term, organicUrls: result.organicUrls ?? null });
+      if (hit) out.set(c.id, duplicateVerdict(result, hit.leader, hit.match));
     }
   }
   return out;
@@ -336,5 +348,5 @@ const CAUSE_LABEL: Record<OpportunityCause, string> = {
   existing_page: "an existing page already targets it",
   not_editorial: "the results are not articles",
   needs_page: "wants a landing page, not an article",
-  duplicate: "same intent as a planned topic",
+  duplicate: "same search as a topic already live, drafted or scheduled",
 };
