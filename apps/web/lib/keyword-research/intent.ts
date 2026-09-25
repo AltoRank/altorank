@@ -327,12 +327,27 @@ function exactKey(term: string, language: string | null): string {
 
 // --- Results pages -----------------------------------------------------------
 
-/** host + path, "www." and a trailing slash dropped; null for anything that is not an http(s) URL. */
+/**
+ * Query parameters that say who clicked or from where, not which page. Google
+ * adds `srsltid` to organic results itself, per query, so two results pages
+ * holding the same page would otherwise hold two different URLs.
+ */
+const TRACKING_PARAM = /^(?:utm_.*|srsltid|gclid|gbraid|wbraid|dclid|fbclid|msclkid|yclid|mc_cid|mc_eid|_ga|_gl|ref|ref_src)$/i;
+
+/**
+ * host + path + the query parameters that pick the page, "www." and a trailing
+ * slash dropped; null for anything that is not an http(s) URL. The query is
+ * kept because some paths name no page on their own: every YouTube result is
+ * youtube.com/watch, and without `?v=` any two results pages that each hold a
+ * video would share a "page".
+ */
 export function canonicalPage(raw: string): string | null {
   try {
     const url = new URL(raw);
     if (!/^https?:$/.test(url.protocol)) return null;
-    return `${url.hostname.replace(/^www\./, "")}${url.pathname.replace(/\/$/, "")}`;
+    const params = [...url.searchParams].filter(([k]) => !TRACKING_PARAM.test(k)).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    const query = params.length ? `?${new URLSearchParams(params).toString()}` : "";
+    return `${url.hostname.replace(/^www\./, "")}${url.pathname.replace(/\/$/, "")}${query}`;
   } catch { return null; }
 }
 

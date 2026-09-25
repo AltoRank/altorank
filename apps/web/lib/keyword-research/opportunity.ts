@@ -135,9 +135,11 @@ export function validArticleAngle(angle: string, query: string): boolean {
     (angle.match(/\b(?:19|20)\d{2}\b/g) ?? []).every((year) => requestedYears.has(year));
 }
 function ownPage(raw: string | null | undefined, domain: string): boolean {
-  const page = raw ? canonicalPage(raw) : null;
-  const own = canonicalPage(`https://${domain.replace(/^https?:\/\//, "")}`)?.split("/")[0];
-  return Boolean(page && own && page.split("/")[0] === own);
+  // The host: a canonical page keeps its query ("site.example?lang=tr").
+  const host = (page: string | null | undefined) => page?.split(/[/?]/)[0];
+  const page = host(raw ? canonicalPage(raw) : null);
+  const own = host(canonicalPage(`https://${domain.replace(/^https?:\/\//, "")}`));
+  return Boolean(page && own && page === own);
 }
 
 export interface QualifyOptions {

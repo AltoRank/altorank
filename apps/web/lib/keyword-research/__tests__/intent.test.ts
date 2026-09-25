@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   SERP_SAME_INTENT_SHARED,
+  canonicalPage,
   clusterByIntent,
   foldsInflections,
   intentKey,
   intentLanguage,
   sameIntent,
+  sharedResults,
   unfoldedNote,
   type StagedTopic,
 } from "../intent";
@@ -195,6 +197,16 @@ describe("English regression set", () => {
     const left = ["https://www.one.example/a/", "https://two.example/b", "https://three.example/c", "https://four.example/d"];
     const right = ["http://one.example/a", "https://www.two.example/b/", "https://three.example/c", "https://four.example/d/"];
     expect(sameIntent({ term: "x crm", organicUrls: left }, { term: "y tool", organicUrls: right }, "en")).toEqual({ same: true, basis: "serp", shared: 4 });
+  });
+
+  it("keeps the query string that names a page, and drops the one that only tracks a click", () => {
+    expect(canonicalPage("https://www.youtube.com/watch?v=a1")).toBe("youtube.com/watch?v=a1");
+    expect(canonicalPage("https://www.youtube.com/watch?v=a1")).not.toBe(canonicalPage("https://www.youtube.com/watch?v=b2"));
+    expect(canonicalPage("https://shop.example/p/?srsltid=AfmBOx&utm_source=g")).toBe("shop.example/p");
+    expect(canonicalPage("https://site.example/a?b=2&a=1")).toBe(canonicalPage("https://site.example/a/?a=1&b=2"));
+    // Two results pages that each hold some video do not share a page for it.
+    const videos = (tag: string) => [0, 1, 2, 3].map((i) => `https://www.youtube.com/watch?v=${tag}${i}`);
+    expect(sharedResults([...videos("a"), ...page("x", 6)], [...videos("b"), ...page("y", 6)])).toBe(0);
   });
 
   it("a results page too thin to reach the bar is not compared as one", () => {

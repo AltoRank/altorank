@@ -101,6 +101,13 @@ describe("topic qualification", () => {
     expect(result).toMatchObject({status:"rejected",existingUrl:"https://www.example.com/booking"});
     expect(ask).not.toHaveBeenCalled();
   });
+  it("recognises the site's own result when its URL carries a query string", async () => {
+    // A canonical page keeps the query that names it ("?lang=it"); the host
+    // is still the site's own.
+    const own = "https://www.example.com/?lang=it";
+    fetchSerp.mockResolvedValue({ organic: [own, ...urls].map((url, i) => ({ url, title: "Clinic booking website cost guide", description: "A buyer guide", rank: i + 1 })), peopleAlsoAsk: [], aiOverview: null });
+    expect(await run()).toMatchObject({ status: "rejected", cause: "existing_page", existingUrl: own });
+  });
   it("caches valid evidence but invalidates it when the business changes", async () => {
     const result = await run(); vi.clearAllMocks();
     expect((await run({opportunity:result})).status).toBe("qualified");
