@@ -5,6 +5,7 @@ import { entitledToScheduledWork, getQuota } from "@/lib/billing/quota";
 import { syncSitePages, SitePagesWriteError } from "@/lib/seo/site-crawl";
 import { detectLinks } from "@/lib/linking/detect";
 import { observedCron } from "@/lib/observability/cron";
+import { findDraftsLiveOnSites, type FoundOnSiteRun } from "@/lib/found-on-site/detect";
 
 /**
  * Keep each site's published pages in step with its sitemap.
@@ -21,6 +22,16 @@ import { observedCron } from "@/lib/observability/cron";
  * stalest first, and a page cap inside it; whatever is not reached this run is
  * reached on the next, because ordering by `last_pages_crawl_at` is
  * self-healing.
+ *
+ * It also hosts the found-on-site check (lib/found-on-site/detect.ts): did a
+ * draft go live on the customer's own site without going through us? A real
+ * signup (2026-09-22) published a draft on a site we were not connected to,
+ * and nothing recorded it. That check reads the same kind of public
+ * information - robots.txt, sitemaps, some HTML - so it lives here rather
+ * than in a thirteenth daily cron (Vercel Hobby allows only daily schedules,
+ * and this one already runs once a day). It goes first, with its own share
+ * of the time: it is the daily question, while the crawl is weekly per site
+ * and picks up tomorrow whatever it does not reach today.
  */
 
 export const maxDuration = 300;
@@ -31,6 +42,16 @@ const WORKSPACES_PER_RUN = 1;
 const PAGES_PER_RUN = 120;
 /** A page checked in the last week is not worth re-reading. */
 const STALE_AFTER_DAYS = 7;
+/** The found-on-site check's share of the run, every site together. */
+const FOUND_ON_SITE_BUDGET_MS = 90_000;
+/**
+ * What the crawl may use, measured from the start of the run: 300 seconds less
+ * room for the upsert and the link pass that follow it. Before the check
+ * shared this route the crawl had the default 240 seconds to itself.
+ */
+const RUN_BUDGET_MS = 270_000;
+const CRAWL_BUDGET_MS = 240_000;
+const MIN_CRAWL_BUDGET_MS = 30_000;
 
 async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
@@ -38,6 +59,31 @@ async function run(request: Request) {
   }
 
   const supabase = createServiceClient();
+  const startedAt = Date.now();
+
+  // Its own failure is reported, never thrown: the crawl below does not
+  // depend on it and must still run.
+  let foundOnSite: FoundOnSiteRun | null = null;
+  let foundOnSiteError: string | null = null;
+  try {
+    foundOnSite = await findDraftsLiveOnSites(supabase, { budgetMs: FOUND_ON_SITE_BUDGET_MS });
+  } catch (err) {
+    foundOnSiteError = err instanceof Error ? err.message : String(err);
+  }
+  const foundOnSiteReport = {
+    found_on_site: foundOnSite?.found ?? 0,
+    found_on_site_sites: foundOnSite?.checked ?? 0,
+    found_on_site_deferred: foundOnSite?.deferred ?? 0,
+    ...(foundOnSiteError ? { found_on_site_error: foundOnSiteError } : {}),
+  };
+  // One line per site the check looked at, in the same `results` list, so a
+  // site it could not read - or the check failing outright - reaches
+  // system_events as a warning like a crawl failure does. `job` tells the two
+  // apart.
+  const foundOnSiteResults: Array<Record<string, unknown>> = foundOnSiteError
+    ? [{ job: "found-on-site", status: "error", detail: foundOnSiteError }]
+    : (foundOnSite?.results ?? []).map((r) => ({ job: "found-on-site", ...r }));
+
   const staleBefore = new Date(Date.now() - STALE_AFTER_DAYS * 86_400_000).toISOString();
 
   // Never-crawled sites first, then the stalest. `first_analysed_at` gates on
@@ -55,7 +101,7 @@ async function run(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const results: Array<Record<string, unknown>> = [];
+  const results: Array<Record<string, unknown>> = [...foundOnSiteResults];
 
   for (const ws of workspaces ?? []) {
     const workspaceId = ws.id as string;
@@ -87,6 +133,10 @@ async function run(request: Request) {
     try {
       const summary = await syncSitePages(supabase, workspaceId, domain, {
         maxPages: PAGES_PER_RUN,
+        budgetMs: Math.max(
+          MIN_CRAWL_BUDGET_MS,
+          Math.min(CRAWL_BUDGET_MS, RUN_BUDGET_MS - (Date.now() - startedAt)),
+        ),
       });
       await stamp();
       // The crawl just wrote titles and keywords for these pages; the link
@@ -128,7 +178,7 @@ async function run(request: Request) {
     }
   }
 
-  return NextResponse.json({ considered: workspaces?.length ?? 0, results });
+  return NextResponse.json({ considered: workspaces?.length ?? 0, ...foundOnSiteReport, results });
 }
 
 /**
