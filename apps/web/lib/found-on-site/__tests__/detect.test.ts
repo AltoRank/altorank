@@ -427,6 +427,60 @@ describe("findDraftsLiveOnSites", () => {
     expect(sb.tables.workspaces[0].found_on_site_checked_at).toBeNull();
   });
 
+  it("finds every site with a draft past PostgREST's 1,000-row page, and reads the sites in short slices", async () => {
+    // 120 sites with ten drafts each: 1,200 rows, and the first 1,000 by id
+    // belong to the first 100 sites. A read cut at one page leaves 20 out.
+    const workspaces = Array.from({ length: 120 }, (_, w) => ({
+      id: `ws-${String(w).padStart(3, "0")}`,
+      domain: `site-${w}.example`,
+      found_on_site_checked_at: w === 5 ? "2026-09-20T10:00:00.000Z" : null,
+    }));
+    const articles = Array.from({ length: 1200 }, (_, i) => ({
+      id: `art-${String(i).padStart(4, "0")}`,
+      workspace_id: workspaces[Math.floor(i / 10)].id,
+      title: "t",
+      content: {},
+      status: "review",
+      created_at: DRAFTED,
+      found_on_site_at: null,
+    }));
+    const sb = fakeSupabase(seed({ workspaces, articles }));
+    const from = sb.from;
+    const idLists: number[] = [];
+    // PostgREST as configured (supabase/config.toml max_rows = 1000): a read
+    // without a range gets the first thousand rows and no error.
+    const capped = ((t: string) => {
+      const q = from(t) as Record<string, (...a: unknown[]) => unknown>;
+      let ranged = false;
+      const range = q.range;
+      q.range = (...a: unknown[]) => {
+        ranged = true;
+        return range(...a);
+      };
+      if (t === "workspaces") {
+        const inFn = q.in;
+        q.in = (col: unknown, values: unknown) => {
+          idLists.push((values as unknown[]).length);
+          return inFn(col, values);
+        };
+      }
+      const then = q.then;
+      q.then = (res: unknown, rej: unknown) =>
+        then((v: { data?: unknown }) => {
+          const out = !ranged && Array.isArray(v?.data) ? { ...v, data: (v.data as unknown[]).slice(0, 1000) } : v;
+          return (res as (x: unknown) => unknown)(out);
+        }, rej);
+      return q;
+    }) as typeof sb.from;
+
+    const run = await findDraftsLiveOnSites({ ...sb, from: capped } as unknown as SupabaseClient, { budgetMs: 0, now: () => NIGHT_1 });
+    expect(run.considered).toBe(120);
+    expect(run.results).toHaveLength(120);
+    expect(Math.max(...idLists)).toBeLessThanOrEqual(100);
+    // Turn order: never visited first, the one visited on the 20th last.
+    expect(run.results[119].workspaceId).toBe("ws-005");
+  });
+
   it("looks for nothing when every recent draft is already live or older than thirty days", async () => {
     const sb = fakeSupabase(
       seed({

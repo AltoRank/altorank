@@ -75,6 +75,8 @@ const PAGE_MAX_BYTES = 2_000_000;
 const SITEMAP_MAX_BYTES = 5_000_000;
 const ROBOTS_MAX_BYTES = 500 * 1024;
 const CONCURRENCY = 4;
+/** Workspace ids per `in (...)` read: a uuid list in the query string, well under any URL limit. */
+const WORKSPACE_ID_CHUNK = 100;
 /** The longest Crawl-delay honoured, as in the site crawl. Longer asks run out the night's budget instead. */
 const MAX_CRAWL_DELAY_MS = 5_000;
 
@@ -162,30 +164,48 @@ export async function findDraftsLiveOnSites(supabase: SupabaseClient, opts: RunO
   const since = new Date(clock().getTime() - LOOKBACK_DAYS * 86_400_000).toISOString();
 
   // Which sites have a draft to look for. Ids only: the drafts themselves,
-  // with their bodies, are read one site at a time.
-  const { data: pending, error } = await supabase
-    .from("articles")
-    .select("workspace_id")
-    .in("status", [...CANDIDATE_STATUSES])
-    .is("found_on_site_at", null)
-    .not("content", "is", null)
-    .gte("created_at", since);
-  if (error) throw new Error(`found-on-site: could not read drafts: ${error.message}`);
-  const ids = [...new Set((pending ?? []).map((r) => r.workspace_id as string))];
+  // with their bodies, are read one site at a time. Paged in full: one
+  // PostgREST response stops at 1,000 rows, and a list cut there, in no
+  // particular order, would leave the same sites out night after night.
+  let pending: Array<{ workspace_id: string }>;
+  try {
+    pending = await allRows<{ workspace_id: string }>("articles", (from, to) =>
+      supabase
+        .from("articles")
+        .select("workspace_id")
+        .in("status", [...CANDIDATE_STATUSES])
+        .is("found_on_site_at", null)
+        .not("content", "is", null)
+        .gte("created_at", since)
+        .order("id")
+        .range(from, to),
+    );
+  } catch (err) {
+    throw new Error(`found-on-site: could not read drafts: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const ids = [...new Set(pending.map((r) => r.workspace_id))];
   const run: FoundOnSiteRun = { considered: ids.length, checked: 0, unreadable: 0, found: 0, deferred: 0, results: [] };
   if (!ids.length) return run;
 
-  // Least recently visited first, never-visited before all, so a night that
-  // runs out of time leaves the rest at the head of tomorrow's queue.
-  const { data: sites, error: wsErr } = await supabase
-    .from("workspaces")
-    .select("id, domain, found_on_site_checked_at, found_on_site_unreadable")
-    .in("id", ids)
-    .not("domain", "is", null)
-    .order("found_on_site_checked_at", { ascending: true, nullsFirst: true });
-  if (wsErr) throw new Error(`found-on-site: could not read workspaces: ${wsErr.message}`);
+  // Read in slices of ids, so the query string stays short however many
+  // sites there are, then put in turn order: least recently visited first,
+  // never-visited before all, so a night that runs out of time leaves the
+  // rest at the head of tomorrow's queue.
+  const sites: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < ids.length; i += WORKSPACE_ID_CHUNK) {
+    const { data, error: wsErr } = await supabase
+      .from("workspaces")
+      .select("id, domain, found_on_site_checked_at, found_on_site_unreadable")
+      .in("id", ids.slice(i, i + WORKSPACE_ID_CHUNK))
+      .not("domain", "is", null);
+    if (wsErr) throw new Error(`found-on-site: could not read workspaces: ${wsErr.message}`);
+    sites.push(...((data ?? []) as Array<Record<string, unknown>>));
+  }
+  const lastVisit = (w: Record<string, unknown>) =>
+    w.found_on_site_checked_at ? Date.parse(String(w.found_on_site_checked_at)) : -Infinity;
+  sites.sort((a, b) => lastVisit(a) - lastVisit(b) || String(a.id).localeCompare(String(b.id)));
 
-  for (const ws of sites ?? []) {
+  for (const ws of sites) {
     const workspaceId = ws.id as string;
     const domain = String(ws.domain);
     const previously = (ws.found_on_site_unreadable as FoundOnSiteBlindness | null | undefined) ?? null;
