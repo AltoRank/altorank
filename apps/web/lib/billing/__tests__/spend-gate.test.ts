@@ -272,9 +272,11 @@ describe("a trial-gated account spends on setup and nothing after it", () => {
 
   it("refuses everything once the first article exists, in the trial's words", async () => {
     getQuota.mockResolvedValue(gated(1));
-    for (const action of ["keyword-research", "site-audit", "refresh", "setup"] as const) {
+    for (const action of ["keyword-research", "site-audit", "refresh"] as const) {
       expect(await canSpend(client(), "a", { action })).toMatchObject({ allowed: false, reason: "trial-required", message: TRIAL_SPEND_MESSAGE });
     }
+    // Setup's own sentence, true whether the first draft was written or failed.
+    expect(await canSpend(client(), "a", { action: "setup" })).toMatchObject({ allowed: false, reason: "trial-required", message: TRIAL_SETUP_MESSAGE });
     expect(await canSpend(client(), "a", { action: "draft" })).toMatchObject({ allowed: false, reason: "trial-required", message: TRIAL_HOLD_MESSAGE });
   });
 

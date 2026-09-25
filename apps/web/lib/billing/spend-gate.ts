@@ -213,11 +213,14 @@ export async function canSpend(
   // bought again each time the previous run finished (round-4 review).
   if (trialGateApplies(quota)) {
     if (quota.used >= PRE_TRIAL_DRAFTS) {
+      // Setup gets its own sentence: the draft was attempted, which is not
+      // the same as written - a first draft that failed still used the one
+      // the account had - and "setup has already run" is true either way.
       return {
         allowed: false,
         reason: "trial-required",
         quota,
-        message: trialRefusal(action === "draft" ? "draft" : "spend"),
+        message: trialRefusal(action === "draft" ? "draft" : action === "setup" ? "setup" : "spend"),
       };
     }
     if (action === "setup" && (await setupRunsStarted(supabase, accountId)) >= PRE_TRIAL_SETUP_RUNS) {
