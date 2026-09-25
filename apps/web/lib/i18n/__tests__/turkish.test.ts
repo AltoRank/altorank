@@ -23,7 +23,7 @@ import { slugFor } from "@/lib/content/generate";
 import { factCheckArticle, findAttribution } from "@/lib/ai/fact-check";
 import { figureVariants, pageHasFigure, readablePageText, verifyCitedFigures } from "@/lib/seo/citation-check";
 import { findSourcesFooter, checkInlineCitations } from "@/lib/ai/inline-citations";
-import { checkAltText } from "@/lib/ai/alt-text";
+import { altWordCount, checkAltText } from "@/lib/ai/alt-text";
 import { analyzeVoiceLocally } from "@/lib/voice/train";
 import { voiceLanguageNote } from "@/lib/ai/voice-analyzer";
 import { scoreArticle } from "@/lib/seo/scoring";
@@ -145,6 +145,21 @@ describe("Turkish: the fact checker reads figures and sources", () => {
     expect(factCheckArticle(TR_CLAIMS.hollow, undefined, "en").claims).toEqual([]);
   });
 
+  it("sees large money written with a scale word before the currency, and a bare multiplier", () => {
+    // How Turkish writes large sums: the scale sits between the amount and
+    // the currency, and the currency takes a case suffix. None of these
+    // sentences carried a claim, so a draft whose figures all looked like
+    // this was "clean".
+    expect(read("<p>Pazar 2,5 milyar TL büyüklüğe ulaştı.</p>")).toMatchObject([{ figures: ["2,5 milyar TL"], kind: "money", status: "unsourced" }]);
+    expect(read("<p>Şirket 85 milyon dolar yatırım aldı.</p>")).toMatchObject([{ figures: ["85 milyon dolar"], kind: "money" }]);
+    expect(read("<p>E-ticaret hacmi 1,2 trilyon liraya çıktı.</p>")).toMatchObject([{ figures: ["1,2 trilyon liraya"], kind: "money" }]);
+    expect(read("<p>Satışlar 3 kat arttı.</p>")).toMatchObject([{ figures: ["3 kat"], kind: "multiplier" }]);
+    // A three-storey building is not a claim.
+    expect(read("<p>Ofis 3 katlı bir binada.</p>")).toEqual([]);
+    // The AEO scorer reads the same figures.
+    expect(findFigures("Pazar 2,5 milyar TL, hacim 1,2 trilyon liraya çıktı.", "tr")).toEqual(expect.arrayContaining(["2,5 milyar"]));
+  });
+
   it("names the source a postposition attributes the claim to", () => {
     expect(read(TR_CLAIMS.attributedApostrophe)).toMatchObject([{ figures: ["%12"], status: "needs_verification", attribution: "Gartner" }]);
     expect(read(TR_CLAIMS.attributedNoun)).toMatchObject([{ attribution: "Dünya Bankası" }]);
@@ -216,9 +231,10 @@ describe("Turkish: scores and the audit use Turkish rules", () => {
     const html = `<h1>İSTANBUL'DA WEB TASARIM</h1><p>Web tasarımında hız önemlidir. İyi bir web tasarımı dönüştürür.</p>`;
     const tr = scoreArticle(html, "istanbul", { language: "tr" });
     expect(tr.checks.find((c) => c.name === "keywordInTitle")?.passed).toBe(true);
-    expect(scoreArticle(html, "istanbul", { language: "en" }).checks.find((c) => c.name === "keywordInTitle")?.passed).toBe(false);
 
-    const density = (lang: string) => scoreArticle(html, "web tasarım", { language: lang }).checks.find((c) => c.name === "keywordDensity");
+    // Suffixed only: the English whole-word rule finds none of them.
+    const body = `<h1>Rehber</h1><p>Web tasarımında hız önemlidir. İyi bir web tasarımı dönüştürür.</p>`;
+    const density = (lang: string) => scoreArticle(body, "web tasarım", { language: lang }).checks.find((c) => c.name === "keywordDensity");
     expect(density("tr")?.note).not.toBe("Keyword density: 0.0% (target: 0.5-2%)");
     expect(density("en")?.note).toBe("Keyword density: 0.0% (target: 0.5-2%)");
 
@@ -226,6 +242,27 @@ describe("Turkish: scores and the audit use Turkish rules", () => {
     expect(full.checks.find((c) => c.name === "readability")?.note).toContain("(target: 8-20)");
     expect(full.checks.find((c) => c.name === "wordCount")?.note).toContain("(target: 1200+)");
     expect(full.checks.every((c) => !c.unverified)).toBe(true);
+  });
+
+  it("an acronym written the English way is the keyword: API, AI, UI", () => {
+    // Turkish lowercasing makes "API" "apı", and the keyword "api
+    // entegrasyonu" was missing from its own H1, its density read 0% and the
+    // audit asked for it in a subheading that had it. A web agency writes
+    // these acronyms in every heading.
+    const html =
+      "<h1>API Entegrasyonu Rehberi</h1>" +
+      "<p>API entegrasyonu, iki yazılımın veri alışverişi yapmasını sağlar. İyi bir API entegrasyonu işi hızlandırır.</p>" +
+      "<h2>API entegrasyonu nasıl yapılır?</h2><p>Önce uç noktaları listeleyin.</p>";
+    const checks = Object.fromEntries(scoreArticle(html, "api entegrasyonu", { language: "tr" }).checks.map((c) => [c.name, c]));
+    expect(checks.keywordInTitle.passed).toBe(true);
+    expect(checks.keywordDensity.note).not.toContain("0.0%");
+    const items = Object.fromEntries(
+      auditArticle({ html, keyword: "api entegrasyonu", siteDomain: TR_DOMAIN, language: "tr" }).items.map((i) => [i.id, i.status]),
+    );
+    expect(items["keyword-in-subheading"]).toBe("pass");
+    expect(items["keyword-in-intro"]).toBe("pass");
+    expect(scoreArticle("<h1>AI Araçları</h1><p>x</p>", "ai araçları", { language: "tr" }).checks.find((c) => c.name === "keywordInTitle")?.passed).toBe(true);
+    expect(scoreArticle("<h1>UI Tasarımı</h1><p>x</p>", "ui tasarımı", { language: "tr" }).checks.find((c) => c.name === "keywordInTitle")?.passed).toBe(true);
   });
 
   it("AEO: a Turkish definition, Turkish figures and a Turkish summary heading count", () => {
@@ -267,6 +304,13 @@ describe("Turkish: scores and the audit use Turkish rules", () => {
     // Five Turkish words describe what six English ones do.
     expect(checkAltText("Mobil uyumlu ana sayfa taslağı", TR_KEYWORD, "tr")).toBeNull();
     expect(checkAltText("Mobil uyumlu ana sayfa taslağı", TR_KEYWORD, "en")).toBe("short");
+  });
+
+  it("alt text: a capital İ is one letter, so a three-word alt is three words", () => {
+    // Plain lowercasing made "İ" an "i" plus a combining dot, the dot became
+    // a word break, and every word starting with İ counted twice.
+    expect(altWordCount("İş İlanları görseli")).toBe(3);
+    expect(checkAltText("İzmir İş İlanları", "web", "tr")).toBe("short");
   });
 });
 

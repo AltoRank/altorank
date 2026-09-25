@@ -43,6 +43,7 @@ import {
   anyLanguageLabels,
   supportedLocales,
   findLowered,
+  foldCase,
   scaleWords,
   urlSlug,
 } from "@/lib/i18n/locale";
@@ -166,7 +167,9 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
   const locale = resolveLocale(input.language);
   const notChecked = notCheckedFor(locale);
   const keyword = (input.keyword ?? "").trim();
-  const kw = locale.lower(keyword);
+  // Folded, not lowered: "API" lowers to "apı" in Turkish and then matched
+  // no keyword (see `foldCase`).
+  const kw = foldCase(keyword);
   const siteDomain = normaliseDomain(input.siteDomain);
   const items: AuditItem[] = [];
   const push = (item: AuditItem) => items.push(item);
@@ -266,7 +269,7 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
   }
 
   const generic = links.filter(
-    (l) => (l.kind === "internal" || l.kind === "external") && GENERIC_ANCHORS.has(locale.lower(l.anchor).replace(/[.!]$/, "")),
+    (l) => (l.kind === "internal" || l.kind === "external") && GENERIC_ANCHORS.has(foldCase(l.anchor).replace(/[.!]$/, "")),
   );
   if (internal.length + external.length > 0) {
     push({
@@ -480,9 +483,9 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
     push({
       id: "keyword-in-subheading",
       group: "structure",
-      status: subheads.some((h) => locale.lower(h.text).includes(kw)) ? "pass" : "warn",
+      status: subheads.some((h) => foldCase(h.text).includes(kw)) ? "pass" : "warn",
       label: "Keyword in a subheading",
-      detail: subheads.some((h) => locale.lower(h.text).includes(kw))
+      detail: subheads.some((h) => foldCase(h.text).includes(kw))
         ? "The keyword appears in at least one H2 or H3."
         : `"${keyword}" appears in no H2 or H3. One subheading that names the subject the way it is searched is cheap and usually natural.`,
     });
@@ -492,9 +495,9 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
     push({
       id: "keyword-in-intro",
       group: "structure",
-      status: locale.lower(lead).includes(kw) ? "pass" : "warn",
+      status: foldCase(lead).includes(kw) ? "pass" : "warn",
       label: "Keyword in the opening paragraph",
-      detail: locale.lower(lead).includes(kw)
+      detail: foldCase(lead).includes(kw)
         ? "The opening paragraph names the subject."
         : `The opening paragraph does not contain "${keyword}". The first hundred words are what decide whether the page matches the query.`,
     });
@@ -552,7 +555,7 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
     if (meta.length > 160) metaIssues.push(`${meta.length} characters will be truncated around 160`);
     // Same reasoning as the placement checks: only meaningful against a
     // keyword somebody actually chose.
-    if (kw && keywordKnown && !locale.lower(meta).includes(kw)) {
+    if (kw && keywordKnown && !foldCase(meta).includes(kw)) {
       metaIssues.push("it does not contain the keyword, which Google bolds when it matches the query");
     }
   }

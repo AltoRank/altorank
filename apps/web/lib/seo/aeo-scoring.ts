@@ -35,6 +35,8 @@ import {
   matchesAnyHeading,
   scaleWords,
   phrasePattern,
+  inflection,
+  foldCase,
   type Locale,
   type SupportedLocale,
 } from "@/lib/i18n/locale";
@@ -98,9 +100,7 @@ function checkAnswerFirst(html: string, keyword: string, locale: SupportedLocale
   const lead = leadParagraph(html);
   const words = lead.split(/\s+/).filter(Boolean).length;
   const maxWords = scaleWords(90, locale);
-  const opensOnSubject = locale
-    .lower(lead.slice(0, 120))
-    .includes(locale.lower(keyword).split(/\s+/)[0] ?? "");
+  const opensOnSubject = foldCase(lead.slice(0, 120)).includes(foldCase(keyword).split(/\s+/)[0] ?? "");
 
   // A lead that runs long is a preamble, and a preamble is what gets skipped.
   const passed = opensOnSubject && words > 0 && words <= maxWords;
@@ -120,7 +120,7 @@ function checkAnswerFirst(html: string, keyword: string, locale: SupportedLocale
 
 function checkDefinitionBlock(html: string, keyword: string, locale: SupportedLocale): ScoringCheck {
   const paras = blocks(html, "p").map(stripHtml);
-  const term = locale.lower(keyword);
+  const term = foldCase(keyword);
   const [minWords, maxWords] = [scaleWords(20, locale), scaleWords(70, locale)];
   // Where the defining verb sits is grammar: "X is…" puts it in the opening,
   // Turkish puts it on the last word of the sentence ("…bir yöntemdir").
@@ -131,8 +131,7 @@ function checkDefinitionBlock(html: string, keyword: string, locale: SupportedLo
   // The shape an engine lifts: standalone, starts with the term, self-contained.
   const found = paras.find((p) => {
     const w = p.split(/\s+/).length;
-    const t = locale.lower(p);
-    return w >= minWords && w <= maxWords && t.includes(term) && defines(t);
+    return w >= minWords && w <= maxWords && foldCase(p).includes(term) && defines(locale.lower(p));
   });
   return {
     name: "definitionBlock",
@@ -170,7 +169,7 @@ export function findFigures(text: string, language?: string | null): string[] {
       String.raw`(?<![\p{L}\p{N}])[$£€₺¥]\s?${digits}`,
       ...(n.percentSignBefore ? [String.raw`%\s?${digits}`] : []),
       ...(n.percentWordsBefore.length ? [String.raw`(?<![\p{L}])(?:${phrasePattern(n.percentWordsBefore)})\s+${digits}`] : []),
-      ...(n.symbolAfter ? [String.raw`\b\d[\d,.]*\s?(?:[€₺]|${n.currencyAfter.join("|")})(?![\p{L}])`] : []),
+      ...(n.symbolAfter ? [String.raw`\b\d[\d,.]*\s?(?:[€₺]|(?:${n.currencyAfter.join("|")})${inflection(locale)})(?![\p{L}])`] : []),
     ];
     re = new RegExp(parts.join("|"), "giu");
     FIGURES.set(locale.code, re);

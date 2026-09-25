@@ -16,6 +16,7 @@ import {
   resolveLocale,
   notCheckedFor,
   countKeyword,
+  foldCase,
   scaleWords,
   type Locale,
 } from "@/lib/i18n/locale";
@@ -70,9 +71,9 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-/** Whether `text` contains `term`, both lowered by the language's own casing. */
-function containsTerm(text: string, term: string, locale: Locale): boolean {
-  return locale.lower(text).includes(locale.lower(term));
+/** Whether `text` contains `term`, both folded so "API" in a Turkish heading is the keyword "api". */
+function containsTerm(text: string, term: string): boolean {
+  return foldCase(text).includes(foldCase(term));
 }
 
 /** A check that reads language the contract does not describe for this article. */
@@ -143,13 +144,13 @@ function extractMetaDescription(content: string): string | null {
 
 // ---- Individual check functions ----
 
-function checkKeywordInTitle(content: string, keyword: string, locale: Locale): ScoringCheck {
+function checkKeywordInTitle(content: string, keyword: string): ScoringCheck {
   const titleRegex = /<h1[^>]*>(.*?)<\/h1>/i;
   const titleMatch = content.match(titleRegex);
   const titleText = titleMatch ? stripHtml(titleMatch[1]) : "";
 
-  // Casing is the language's: "İSTANBUL" is "istanbul" in Turkish.
-  const passed = containsTerm(titleText, keyword, locale);
+  // Folded, so "İSTANBUL" is "istanbul" and "API" is "api" in any language.
+  const passed = containsTerm(titleText, keyword);
 
   return {
     name: "keywordInTitle",
@@ -278,7 +279,6 @@ function checkTitleLength(content: string, stored?: string | null): ScoringCheck
 
 function checkMetaDescriptionLength(
   content: string,
-  locale: Locale,
   stored?: string | null,
   keyword?: string,
 ): ScoringCheck {
@@ -303,7 +303,7 @@ function checkMetaDescriptionLength(
   const lengthOk = len >= 120 && len <= 160;
   // Google bolds the query where it appears in the snippet, which is a
   // measurable click lift; a description without the keyword forfeits it.
-  const hasKeyword = !keyword || containsTerm(meta, keyword, locale);
+  const hasKeyword = !keyword || containsTerm(meta, keyword);
   const passed = lengthOk && hasKeyword;
 
   let score: number;
@@ -490,11 +490,11 @@ export function scoreArticle(
 ): ScoringResult {
   const locale = resolveLocale(opts?.language);
   const checks: ScoringCheck[] = [
-    checkKeywordInTitle(content, keyword, locale),
+    checkKeywordInTitle(content, keyword),
     checkTitleLength(content, opts?.title),
     checkKeywordDensity(content, keyword, locale),
     checkHeadingStructure(content),
-    checkMetaDescriptionLength(content, locale, opts?.metaDescription, keyword),
+    checkMetaDescriptionLength(content, opts?.metaDescription, keyword),
     checkWordCount(content, locale, opts?.targetWordCount),
     checkReadability(content, locale),
     checkInternalLinks(content, opts?.siteDomain, opts?.knownPages),

@@ -8,6 +8,7 @@ import {
   anyLanguageLabels,
   countKeyword,
   containsKeyword,
+  foldCase,
   parseNumber,
   formatNumber,
   scaleWords,
@@ -90,18 +91,31 @@ describe("every supported language is described completely", () => {
     expect(matchesAnyHeading("summary", "Öne Çıkan Noktalar")).toBe(true);
     expect(matchesAnyHeading("howTo", "WordPress nasıl kurulur?")).toBe(true);
     expect(matchesAnyHeading("faq", "Fiyatlar")).toBe(false);
-    expect(anyLanguageLabels("sourcesFooter").has("kaynakça")).toBe(true);
-    expect(anyLanguageLabels("genericAnchors").has("buraya tıklayın")).toBe(true);
+    // The set is folded, so an anchor is compared folded: "BURAYA TIKLAYIN"
+    // is found whichever language's casing lowered it.
+    expect(anyLanguageLabels("sourcesFooter").has(foldCase("Kaynakça"))).toBe(true);
+    expect(anyLanguageLabels("genericAnchors").has(foldCase("BURAYA TIKLAYIN"))).toBe(true);
   });
 });
 
 describe("keywords in running text", () => {
-  it("finds a Turkish keyword with its suffixes and Turkish casing, where the English rule finds none", () => {
-    // Suffixed twice, and once in capitals: English lowering turns "TASARIM"
-    // into "tasarim", which is not the word.
+  it("finds a Turkish keyword with its suffixes and in capitals, where the English whole-word rule finds only the bare one", () => {
+    // Suffixed twice, and once in capitals. Casing is folded the same way
+    // for every language (see `foldCase`); what differs is the stem rule.
     const text = "Web tasarımında hız önemlidir. İyi bir web tasarımı dönüştürür. WEB TASARIM ilkeleri.";
     expect(countKeyword(text, "web tasarım", tr)).toBe(3);
-    expect(countKeyword(text, "web tasarım", en)).toBe(0);
+    expect(countKeyword(text, "web tasarım", en)).toBe(1);
+  });
+
+  it("matches an acronym written the English way in a Turkish article", () => {
+    // Turkish lowercasing makes "API" "apı": the keyword "api entegrasyonu"
+    // then missed every heading that wrote the acronym in capitals.
+    expect(resolveLocale("tr").lower("API")).toBe("apı");
+    expect(foldCase("API")).toBe(foldCase("api"));
+    expect(foldCase("İSTANBUL")).toBe("istanbul");
+    expect(countKeyword("API Entegrasyonu Rehberi. API entegrasyonunda ilk adım.", "api entegrasyonu", tr)).toBe(2);
+    expect(containsKeyword("AI Araçları ve UI Tasarımı", "ai araçları", tr)).toBe(true);
+    expect(containsKeyword("AI Araçları ve UI Tasarımı", "ui tasarımı", tr)).toBe(true);
   });
 
   it("uses Unicode word boundaries, so an accented last letter still ends a word", () => {

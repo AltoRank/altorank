@@ -859,9 +859,10 @@ const TR: LocaleRules = {
     percentWordsBefore: ["yüzde"],
     currencyAfter: ["TL", "TRY", "lira", "USD", "EUR", "dolar", "avro", "euro"],
     symbolAfter: true,
-    scaleWords: ["bin", "milyon", "milyar"],
+    scaleWords: ["bin", "milyon", "milyar", "trilyon"],
     countNouns: ["kullanıcı", "müşteri", "şirket", "işletme", "web sitesi", "site", "kişi", "insan", "arama", "ziyaretçi", "indirme"],
-    multiplierWords: [String.raw`kat\s+daha`, "katına", "katı", "misli"],
+    // "3 kat daha hızlı", "3 katına çıktı", and the bare "3 kat arttı".
+    multiplierWords: [String.raw`kat\s+daha`, "katına", "katı", "misli", "kat"],
     timeUnits: {
       hours: ["saat", "sa"],
       minutes: ["dakika", "dk"],
@@ -1049,12 +1050,42 @@ export function matchesAnyHeading(field: "faq" | "summary" | "notIllustrated" | 
   return supportedLocales().some((l) => l.headings[field].test(l.lower(text)));
 }
 
-/** The union of a label list across every supported language. */
+/** The union of a label list across every supported language, folded with `foldCase`: compare a folded string. */
 export function anyLanguageLabels(field: "sourcesFooter" | "genericAnchors"): Set<string> {
-  return new Set(supportedLocales().flatMap((l) => l.headings[field]));
+  return new Set(supportedLocales().flatMap((l) => l.headings[field].map(foldCase)));
+}
+
+// ── Matching a keyword or a label ───────────────────────────────────────────
+//
+// Two lowercasings, for two jobs. `Locale.lower` is the language's own, and
+// prose rules are written against it: in Turkish the dotless ı is a
+// different letter ("kır" is countryside, "kir" is dirt), so a pattern must
+// see it. But a keyword is matched, not read, and there the Turkish rule
+// hurts: it lowers "API" to "apı", "AI" to "aı" and "UI" to "uı", so the
+// keyword "api entegrasyonu" was missing from an article whose H1 said "API
+// Entegrasyonu", and its density read 0%. English casing, before this
+// contract, matched it. The acronyms are written the English way in every
+// language, and a web agency writes them in every heading.
+//
+// `foldCase` makes the four I's one letter (I, İ, ı, i), on both sides, and
+// is otherwise plain lowercase. It is the same in every language, so a label
+// written in one language's casing is found by any other's.
+
+/** Lowercase for matching a keyword or a label: case and the Turkish I variants do not count. Not for prose rules. */
+export function foldCase(text: string): string {
+  return text.toLowerCase().replace(/\u0307/g, "").replace(/ı/g, "i");
 }
 
 // ── Words, stems and scales ─────────────────────────────────────────────────
+
+/**
+ * What may follow a word before its boundary: nothing in a language that
+ * writes grammar as separate words, any run of letters in one that writes it
+ * as suffixes ("liraya", "kullanıcıya"). A regex fragment.
+ */
+export function inflection(locale: SupportedLocale): string {
+  return locale.keywordMatch === "stem" ? String.raw`\p{L}*` : "";
+}
 
 /** A word-count threshold set for English, in this language's words. */
 export function scaleWords(englishWords: number, locale: SupportedLocale): number {
@@ -1063,21 +1094,21 @@ export function scaleWords(englishWords: number, locale: SupportedLocale): numbe
 
 /**
  * Every occurrence of `keyword` in `text`, by this language's rule: whole
- * words, or a stem that suffixes may follow. Both sides are lowered by the
- * language's own casing, and the boundaries are Unicode, so "città" and
- * "ölçüm" are found where `\b` found nothing.
+ * words, or a stem that suffixes may follow. Both sides are folded with
+ * `foldCase`, and the boundaries are Unicode, so "città" and "ölçüm" are
+ * found where `\b` found nothing.
  */
 export function countKeyword(text: string, keyword: string, locale: SupportedLocale): number {
-  const kw = locale.lower(keyword.trim());
+  const kw = foldCase(keyword.trim());
   if (!kw) return 0;
   const body = escapeRegex(kw).replace(/\s+/g, String.raw`\s+`);
   const re = new RegExp(`${B}${body}${locale.keywordMatch === "word" ? E : ""}`, "gu");
-  return (locale.lower(text).match(re) ?? []).length;
+  return (foldCase(text).match(re) ?? []).length;
 }
 
 /** Whether `text` contains the keyword, by the same rule as `countKeyword`. */
 export function containsKeyword(text: string, keyword: string, locale: Locale): boolean {
-  if (!locale.supported) return locale.lower(text).includes(locale.lower(keyword.trim()));
+  if (!locale.supported) return foldCase(text).includes(foldCase(keyword.trim()));
   return countKeyword(text, keyword, locale) > 0;
 }
 

@@ -16,7 +16,7 @@
 // nothing here has seen the image, so nothing here can describe it.
 
 import { decodeEntities } from "@/lib/audit/html-utils";
-import { resolveLocale, scaleWords, type Locale, type SupportedLocale } from "@/lib/i18n/locale";
+import { resolveLocale, scaleWords, foldCase, type Locale, type SupportedLocale } from "@/lib/i18n/locale";
 
 /** The floor in English words. Other languages scale it: see `minAltWords`. */
 export const MIN_ALT_WORDS = 6;
@@ -47,11 +47,13 @@ export interface AltTextFinding {
 /**
  * Lowercase, punctuation gone, whitespace collapsed: what two strings look
  * like when only their words matter. Unicode-aware because the product writes
- * Italian and German alt text as often as English, and lowered by the
- * language's own rules so a Turkish "İstanbul" is "istanbul", not "i̇stanbul".
+ * Italian and German alt text as often as English, and folded with
+ * `foldCase` so it needs no language: a Turkish "İstanbul" is "istanbul".
+ * Plain `toLowerCase` made "İ" an "i" plus a combining dot, the dot became a
+ * word break, and "İzmir İş İlanları" counted five words and passed the floor.
  */
-function normaliseWords(text: string, locale: Locale = resolveLocale("en")): string {
-  return locale.lower(text).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+function normaliseWords(text: string): string {
+  return foldCase(text).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
 /**
@@ -89,8 +91,8 @@ export function checkAltText(
   const locale = resolveLocale(language);
   const text = (alt ?? "").trim();
   if (!text) return "missing";
-  const kw = normaliseWords(keyword, locale);
-  if (kw && normaliseWords(withoutPictureOf(text, locale), locale) === kw) return "keyword";
+  const kw = normaliseWords(keyword);
+  if (kw && normaliseWords(withoutPictureOf(text, locale)) === kw) return "keyword";
   if (locale.supported && altWordCount(text) < minAltWords(locale)) return "short";
   return null;
 }
