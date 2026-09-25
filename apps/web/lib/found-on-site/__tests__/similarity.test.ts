@@ -130,6 +130,42 @@ describe("compare", () => {
     expect(score(d, retitled).rule).toBe("none");
   });
 
+  describe("the stated limit: edits spread evenly through the text", () => {
+    // Every n-th word of the prose replaced with a word the draft never uses,
+    // headings and title kept: the shape of a text run through a spinner.
+    // Recorded as a limit next to CONTAINMENT_MATCH, and pinned here so a
+    // change to the scorer that moves it has to say so.
+    function spread(d: F.FixtureDraft, every: number): F.FixtureDraft {
+      let n = 0;
+      const swap = (text: string) =>
+        text
+          .split(" ")
+          .map((w) => (++n % every === 0 ? `xq${n}` : w))
+          .join(" ");
+      return { ...d, intro: swap(d.intro), sections: d.sections.map((s) => ({ ...s, body: swap(s.body) })), cta: swap(d.cta) };
+    }
+    const page = (d: F.FixtureDraft, title: string, every: number) =>
+      F.sitePage({ lang: "tr", title, h1: title, body: F.draftHtml(spread(d, every)) });
+
+    it.each([
+      ["Turkish", F.TR_DRAFT],
+      ["English", F.EN_DRAFT],
+    ])("%s: one word in five changed is not found, even under our headline", (_, d) => {
+      const e = score(d, page(d, d.title, 5));
+      expect(e.containment).toBeLessThan(CONTAINMENT_WITH_TITLE);
+      expect(isMatch(e)).toBe(false);
+    });
+
+    it.each([
+      ["Turkish", F.TR_DRAFT],
+      ["English", F.EN_DRAFT],
+    ])("%s: one word in six is found only under our headline; one in eight on the text alone", (_, d) => {
+      expect(score(d, page(d, d.title, 6)).rule).toBe("text+title");
+      expect(score(d, page(d, "Başka bir başlık", 6)).rule).toBe("none");
+      expect(score(d, page(d, "Başka bir başlık", 8)).rule).toBe("text");
+    });
+  });
+
   it("refuses to judge a draft too short to be evidence", () => {
     const tiny = { title: "Kısa", intro: "Bu çok kısa bir taslak.", sections: [], cta: "" };
     const e = compare(prepareDraft(tiny.title, F.draftHtml(tiny)), preparePage(F.draftHtml(tiny), [tiny.title]));

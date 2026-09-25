@@ -44,6 +44,17 @@ export const SHINGLE = 4;
 /**
  * Containment at or above this is a copy on its own. The same-outline fixtures
  * sit far below it; the lightly edited copies sit far above.
+ *
+ * A known limit, pinned in the test: this holds for edits made the way people
+ * edit - a sentence reworded here, a paragraph cut there, the rest untouched.
+ * Edits spread evenly through the text break every run of four words they
+ * touch, so the same 80% of words kept in order scores far lower when the
+ * changed word is every fifth one (about 0.2, no match) than when the changes
+ * come in clumps (above 0.65). One changed word in six still matches under
+ * our headline (about 0.33, the text+title rule); one in eight matches on the
+ * text alone. An evenly respun copy is not found. Catching it would take
+ * shorter runs, which is where two articles on one topic start to share
+ * stock phrases (the table in the test), so the limit is kept and stated.
  */
 export const CONTAINMENT_MATCH = 0.5;
 
