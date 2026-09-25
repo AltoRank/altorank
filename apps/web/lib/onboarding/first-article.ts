@@ -26,8 +26,12 @@ import { decodeEntities } from "@/lib/audit/html-utils";
 import { canonicalUrl } from "@/lib/ai/inline-citations";
 import { extractLinks, isCitationLink } from "@/lib/seo/links";
 import { readArticlesWhole } from "@/lib/articles/body-read";
+import type { FactCheckReport } from "@/lib/ai/fact-check";
 
-export type FirstArticleVerdict = "clean" | "review" | "high_risk";
+// The fact check's own verdicts, so a verdict it adds reaches the card: a
+// draft in a language the checker does not read is `unchecked` (migration
+// 098), and the card says so rather than showing nothing.
+export type FirstArticleVerdict = FactCheckReport["verdict"];
 
 export interface FirstArticleCard {
   id: string;
@@ -54,7 +58,7 @@ export interface FirstArticleFact {
 
 /** Written and readable: the same test the pipeline uses before it writes a first draft. */
 const WRITTEN = ["review", "approved", "scheduled", "live"];
-const VERDICTS = new Set<string>(["clean", "review", "high_risk"]);
+const VERDICTS = new Set<string>(["clean", "review", "high_risk", "unchecked"] satisfies FirstArticleVerdict[]);
 
 function text(inner: string): string {
   return decodeEntities(inner.replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
