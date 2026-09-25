@@ -353,7 +353,7 @@ describe("the setup email", () => {
 
   it("is not reported by the sweep for such a site either, run after run", async () => {
     workspaceRows = [
-      { id: "ws-1", domain: "acme.com", account_id: "ag-1", topical_profile: null },
+      { id: "ws-1", domain: "acme-agency.example", account_id: "ag-1", topical_profile: null },
       { id: "ws-twin", onboarded_at: null, onboarding_skipped_at: "2026-09-22T19:40:00Z" },
     ];
     expect(await sweepUnfinishedSetups(client(), new Date("2026-09-24T07:00:00Z"))).toEqual([]);
