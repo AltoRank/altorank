@@ -40,7 +40,7 @@ describe("plagiarism-checker", () => {
 
     const k = kvOf(blocks);
     expect(item(k, "Found on other pages")?.value).toBe("1 of 2 sentences");
-    expect(tableOf(blocks, "Pages Google returned for the exact phrase").rows).toEqual([[1, "https://copy.example/a", "Copy", "yes"]]);
+    expect(tableOf(blocks, "Pages whose Google snippet shows the phrase").rows).toEqual([[1, "https://copy.example/a", "Copy"]]);
     expect(textOf(blocks, "What this checked")!.text).toMatch(/exact-phrase Google search/);
     expect(tool.cacheTtlMs).toBe(0);
   });
@@ -89,6 +89,18 @@ describe("plagiarism-checker", () => {
     expect(item(k, "Sentences checked")).toMatchObject({ value: "2 of 2 chosen", status: "info" });
     expect(item(k, "Found on other pages")).toMatchObject({ value: "none of the checked sentences", status: "pass" });
     expect(post.mock.calls.every((c) => (c[2] as { maxAttempts?: number })?.maxAttempts === 1)).toBe(true);
+  });
+
+  it("does not count pages whose snippet lacks the phrase (Google's relaxed results)", async () => {
+    post.mockImplementation(async () =>
+      dfs({ items: [{ type: "organic", url: "https://game.example/zzz", title: "Unrelated", description: "A video game wiki page about something else." }] }),
+    );
+    const blocks = await tool.run(tool.input.parse({ text: `${LONG1} ${LONG2}` }), ctx());
+    const k = kvOf(blocks);
+    expect(item(k, "Found on other pages")).toMatchObject({ value: "none of the checked sentences", status: "pass" });
+    expect(item(k, "Loose results only")?.value).toMatch(/^2 sentences/);
+    expect(tableOf(blocks, "Other pages Google returned (the phrase is not in their snippet)").rows).toHaveLength(2);
+    expect(blocks.some((b) => b.type === "table" && b.title === "Pages whose Google snippet shows the phrase")).toBe(false);
   });
 
   it("refuses text with no sentence long enough to search, without calling out", async () => {
