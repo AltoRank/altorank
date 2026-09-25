@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { crawlPage, recordLinkedPages } from "../site-crawl";
+import { crawlSite } from "@/lib/audit/crawler";
 import { extractSitePage } from "@/lib/audit/site-extract";
 
 // Both crawls now keep what a business page says about the business
@@ -35,6 +36,68 @@ describe("crawlPage keeps the extract", () => {
       expect(p.extract).toBeNull();
     } finally {
       restore();
+    }
+  });
+});
+
+describe("crawlPage judges the extract on where the redirects ended", () => {
+  const home = `<html><head><title>Örnek Ajans</title></head><body><main><h1>Örnek Ajans</h1><h2>Mobil Uygulama</h2><p>${"kelime ".repeat(80)}</p></main></body></html>`;
+
+  /** `/iletisim` answers 301 to the homepage; everything else serves the homepage. */
+  function redirectToHome() {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/iletisim")) return new Response("", { status: 301, headers: { location: "/" } });
+      return new Response(home, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+    }) as typeof fetch;
+    return () => {
+      globalThis.fetch = original;
+    };
+  }
+
+  it("keeps no extract for a page that redirected to the homepage", async () => {
+    const restore = redirectToHome();
+    try {
+      const p = await crawlPage("https://ornek-ajans.example/iletisim", { domain: "ornek-ajans.example" });
+      expect(p.status).toBe(200);
+      expect(p.extract).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+});
+
+describe("the link crawl judges the extract on where the redirects ended", () => {
+  const home = `<html><head><title>Örnek Ajans</title></head><body><nav><a href="/iletisim">İletişim</a><a href="/hakkimizda">Hakkımızda</a></nav><main><h1>Örnek Ajans</h1></main></body></html>`;
+  const about = `<html><head><title>Hakkımızda</title></head><body><main><h1>Hakkımızda</h1><p>Örnek Ajans 2012 yılında kuruldu.</p></main></body></html>`;
+
+  it("stores nothing for a nav link that lands on the homepage, and keys a real page on where it ended", async () => {
+    const original = globalThis.fetch;
+    // `fetch` follows redirects itself; the Response says where it ended.
+    const served = (body: string, url: string) => {
+      const res = new Response(body, { status: 200, headers: { "content-type": "text/html" } });
+      Object.defineProperty(res, "url", { value: url });
+      return res;
+    };
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/iletisim")) return served(home, "https://ornek-ajans.example/");
+      if (url.endsWith("/hakkimizda")) return served(about, "https://ornek-ajans.example/tr/hakkimizda");
+      return served(home, "https://ornek-ajans.example/");
+    }) as typeof fetch;
+    try {
+      const pages = await crawlSite("https://ornek-ajans.example/", 10, 1, 0);
+      const contact = pages.find((p) => p.url.endsWith("/iletisim"));
+      expect(contact).toMatchObject({ status: 200, finalUrl: "https://ornek-ajans.example/", extract: null });
+      const aboutPage = pages.find((p) => p.url.endsWith("/hakkimizda"));
+      expect(aboutPage?.extract).toMatchObject({ role: "about" });
+
+      const { db, upserts } = fakeDb([]);
+      await recordLinkedPages(db, "ws-1", pages);
+      expect(upserts[0].rows.map((r) => r.url)).toEqual(["https://ornek-ajans.example/", "https://ornek-ajans.example/tr/hakkimizda"]);
+    } finally {
+      globalThis.fetch = original;
     }
   });
 });

@@ -79,6 +79,16 @@ export const ROLE_LANGUAGES = ["English", "Turkish", "Italian", "Spanish", "Fren
 export const POST_SEGMENTS = /\/(blog|posts?|articles?|news|insights|stories|guide|guida|guides)\//i;
 
 /**
+ * Schema types that say "this page is a piece of writing". Shared with
+ * lib/seo/site-crawl.ts, which classifies pages by it; here it keeps a post
+ * headed "Contact" from being taken for the contact page.
+ */
+export const ARTICLE_SCHEMA = /^(Article|BlogPosting|NewsArticle|TechArticle|Report|ScholarlyArticle)$/i;
+
+/** The Open Graph tag a post carries and a business page does not. */
+const PUBLISHED_TIME = /<meta\b[^>]*["']article:published_time["'][^>]*>/i;
+
+/**
  * Lower-case, accents folded, Turkish dotless i and German sharp s spelled
  * out. "İletişim", "iletisim" and "ILETISIM" are one word here, which is how
  * a hand-built Turkish site and a WordPress slug of the same page compare.
@@ -313,7 +323,14 @@ function typesOf(node: Record<string, unknown>): string[] {
  */
 export function roleOf(
   url: string,
-  opts: { h1?: string | null; title?: string | null; schemaTypes?: string[] } = {},
+  opts: {
+    h1?: string | null;
+    title?: string | null;
+    /** The page's own JSON-LD types, top level only (see `jsonLdNodes`). */
+    schemaTypes?: string[];
+    /** The page carries `article:published_time`: it says it is a post. */
+    published?: boolean;
+  } = {},
 ): { role: PageRole | "home"; roleFrom: SitePageExtract["roleFrom"]; detail: boolean } | null {
   let pathname = "/";
   try {
@@ -341,7 +358,13 @@ export function roleOf(
   const leaf = SLUG_ROLE.get(segments[segments.length - 1]);
   if (leaf) return { role: leaf, roleFrom: "path", detail: false };
 
-  const heading = headingRole(opts);
+  // A page that says it is a post - its own schema type is an article, or it
+  // carries a publication time - is writing, and a post headed "Contact" is
+  // not the contact page. Only its heading is set aside: a URL that names the
+  // page still does, because some SEO plugins stamp a publication time on
+  // every page, the contact page included.
+  const writing = opts.published || (opts.schemaTypes ?? []).some((t) => ARTICLE_SCHEMA.test(t));
+  const heading = writing ? null : headingRole(opts);
   // Otherwise the section names it, from the first two meaningful segments:
   // `/tr/hizmetler/web` is one of the services. The leaf named nothing, so
   // this is always a page inside the section - unless its own heading says
@@ -531,7 +554,7 @@ export function extractSitePage(
     return m ? stripTags(m[1]) || null : null;
   })();
   const schemaTypes = jsonLdNodes(html, false).flatMap(typesOf);
-  const decided = roleOf(url, { h1, title, schemaTypes });
+  const decided = roleOf(url, { h1, title, schemaTypes, published: PUBLISHED_TIME.test(html) });
   if (!decided) return null;
 
   const { role, roleFrom, detail } = decided;
@@ -560,4 +583,50 @@ export function extractSitePage(
     stated: role === "about" || role === "contact" || role === "home" ? statedFacts(main, html, opts.now) : [],
   };
   return extract;
+}
+
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+function isRootUrl(url: string): boolean {
+  try {
+    return new URL(url).pathname.replace(/\/+$/, "") === "";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The extract for a page as it was fetched: read off the URL its redirects
+ * ended on, because that is the page whose HTML is in hand, or null.
+ *
+ * Both crawls used to read it off the URL they asked for. A nav link to
+ * `/iletisim` that redirects to the homepage was then stored as a 2xx
+ * "contact" page carrying the homepage's content, listed to the writer as a
+ * page that exists and allowed as an internal link. So, the rule the
+ * write-time check already applies (lib/onboarding/observed-facts.ts):
+ *
+ *   - a URL other than the root that ends on the root is how a site answers
+ *     for a page it does not have: no extract;
+ *   - a redirect off the site is not this site's page: no extract;
+ *   - anything else is judged as the page it ended on.
+ *
+ * `finalUrl` may be empty (a body handed in rather than fetched); the
+ * requested URL is then the page.
+ */
+export function extractFetchedPage(
+  html: string,
+  requestedUrl: string,
+  finalUrl: string | null | undefined,
+  opts: { h1?: string | null; title?: string | null; now?: Date } = {},
+): SitePageExtract | null {
+  const final = finalUrl || requestedUrl;
+  if (hostOf(final) === null || hostOf(final) !== hostOf(requestedUrl)) return null;
+  if (isRootUrl(final) && !isRootUrl(requestedUrl)) return null;
+  return extractSitePage(html, final, opts);
 }

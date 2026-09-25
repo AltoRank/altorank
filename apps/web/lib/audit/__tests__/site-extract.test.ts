@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractSitePage, fold, roleOf, statedFacts } from "../site-extract";
+import { extractFetchedPage, extractSitePage, fold, roleOf, statedFacts } from "../site-extract";
 
 // A real signup, 2026-09-22 (Turkish web/mobile agency): the crawl read his
 // services, portfolio, about and contact pages and kept only their titles, so
@@ -190,3 +190,27 @@ describe("extractSitePage — English", () => {
     expect(facts).toEqual([]);
   });
 });
+
+describe("extractFetchedPage", () => {
+  // A nav link to /iletisim that redirects to the homepage used to be stored
+  // as a 2xx "contact" page carrying the homepage's content.
+  const home = `<html><head><title>Örnek Ajans</title></head><body><main><h1>Örnek Ajans</h1><h2>Mobil Uygulama</h2></main></body></html>`;
+  const contact = `<html><head><title>İletişim</title></head><body><main><h1>İletişim</h1><p>Adres: Moda Cad. No:1 Kadıköy/İstanbul</p></main></body></html>`;
+
+  it("keeps nothing for a page that redirected to the homepage", () => {
+    expect(extractFetchedPage(home, "https://ornek-ajans.example/iletisim", "https://ornek-ajans.example/")).toBeNull();
+    // The homepage itself, asked for and served, is the home.
+    expect(extractFetchedPage(home, "https://ornek-ajans.example/", "https://www.ornek-ajans.example/")).toMatchObject({ role: "home" });
+  });
+
+  it("reads the page where the redirects ended, not the URL asked for", () => {
+    const out = extractFetchedPage(contact, "https://ornek-ajans.example/bize-yazin", "https://ornek-ajans.example/tr/iletisim");
+    expect(out).toMatchObject({ role: "contact", roleFrom: "path" });
+  });
+
+  it("keeps nothing for a redirect off the site, and takes the URL asked for when no final URL is known", () => {
+    expect(extractFetchedPage(contact, "https://ornek-ajans.example/iletisim", "https://forms.example/ornek")).toBeNull();
+    expect(extractFetchedPage(contact, "https://ornek-ajans.example/iletisim", "")).toMatchObject({ role: "contact" });
+  });
+});
+

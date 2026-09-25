@@ -109,6 +109,8 @@ export function assertPublicUrl(url: string): void {
 
 export interface LenientResponse {
   status: number;
+  /** The URL the redirects ended on. */
+  url: string;
   headers: Record<string, string>;
   body: string;
   /** Always true here: the chain was not verified. */
@@ -167,7 +169,7 @@ export function fetchLenient(
         res.on("data", (c: Buffer) => {
           if (size < maxBytes) { chunks.push(c); size += c.length; }
         });
-        res.on("end", () => resolve({ status, headers, body: Buffer.concat(chunks).toString("utf8"), tlsUnverified: true }));
+        res.on("end", () => resolve({ status, url: u.href, headers, body: Buffer.concat(chunks).toString("utf8"), tlsUnverified: true }));
         res.on("error", reject);
       },
     );

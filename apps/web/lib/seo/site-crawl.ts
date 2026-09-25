@@ -36,7 +36,7 @@ import { auditArticle } from "./article-audit";
 import { extractLinks } from "./links";
 import { groupByPage, type RankedKeyword } from "./ranked-keywords";
 import { fetchInstantPage, type OnPageFacts } from "@/lib/audit/onpage";
-import { POST_SEGMENTS, extractSitePage, type SitePageExtract } from "@/lib/audit/site-extract";
+import { ARTICLE_SCHEMA, POST_SEGMENTS, extractFetchedPage, type SitePageExtract } from "@/lib/audit/site-extract";
 import type { CrawlResult } from "@/lib/audit/crawler";
 import { hasDataForSEOCredentials } from "./client";
 import { ALLOW_EVERYTHING, isAllowed, loadRobots, type RobotsRules } from "./robots";
@@ -98,15 +98,12 @@ export const DEFAULTS = {
 /** How the crawler names itself, everywhere. Also the name robots.txt matches. */
 export const CRAWLER_NAME = "AltoRank-Auditor";
 
-// Path segments that name a blog (POST_SEGMENTS) live in
-// lib/audit/site-extract.ts, which needs the same list to keep a post from
-// being read as the contact page. Same list `lib/cms/blog-url.ts` reasons over.
-
-/**
- * Schema types that say "this page is a piece of writing". A page that
- * declares one is an article whatever its URL looks like.
- */
-const ARTICLE_SCHEMA = /^(Article|BlogPosting|NewsArticle|TechArticle|Report|ScholarlyArticle)$/i;
+// Path segments that name a blog (POST_SEGMENTS) and the schema types that
+// say "this page is a piece of writing" (ARTICLE_SCHEMA; a page that declares
+// one is an article whatever its URL looks like) live in
+// lib/audit/site-extract.ts, which needs the same lists to keep a post from
+// being read as the contact page. Same blog list `lib/cms/blog-url.ts`
+// reasons over.
 
 /** Two-letter locale segments, so /blog/de reads as a section, not a post. */
 const LOCALE_SEGMENT = /^[a-z]{2}(-[a-z]{2})?$/i;
@@ -665,9 +662,12 @@ export async function crawlPage(url: string, ctx: PageContext): Promise<SitePage
     published_at: publishedAt,
     modified_at: isoOrNull(metaContent(html, ["article:modified_time", "dateModified"])),
     schema_types: schemaTypes,
-    // Read off the response already in hand. A piece of writing is not a
-    // page about the business, whatever its slug says.
-    extract: pageType === "article" ? null : extractSitePage(html, url, { h1, title }),
+    // Read off the response already in hand (lib/audit/site-extract.ts, which
+    // also tells a post from a business page) and judged on where the
+    // redirects ended. This row is the URL asked for, so a page that ended
+    // somewhere else keeps no extract here: the page it ended on is its own
+    // row when the sitemap lists it.
+    extract: samePageKey(fetched.finalUrl) === samePageKey(url) ? extractFetchedPage(html, url, fetched.finalUrl, { h1, title }) : null,
     status, error: null,
     ...(techFindings
       ? {
@@ -1020,9 +1020,14 @@ export interface LinkedPagesOutcome {
 export async function recordLinkedPages(
   supabase: SupabaseClient,
   workspaceId: string,
-  pages: Pick<CrawlResult, "url" | "status" | "title" | "metaDescription" | "h1" | "extract">[],
+  pages: Pick<CrawlResult, "url" | "finalUrl" | "status" | "title" | "metaDescription" | "h1" | "extract">[],
 ): Promise<LinkedPagesOutcome> {
-  const keep = pages.filter((p) => p.status >= 200 && p.status < 300 && p.extract);
+  // Keyed on where the redirects ended: the extract describes that page
+  // (lib/audit/site-extract.ts extractFetchedPage), and a nav link to
+  // `/iletisim` that redirects to `/tr/iletisim` is the page at the latter.
+  const keep = pages
+    .filter((p) => p.status >= 200 && p.status < 300 && p.extract)
+    .map((p) => ({ ...p, url: p.finalUrl || p.url }));
   if (!keep.length) return { inserted: 0, updated: 0, error: null };
   try {
     const { data: existing, error: readError } = await supabase
