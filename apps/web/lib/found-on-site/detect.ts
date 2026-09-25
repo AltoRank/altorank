@@ -666,6 +666,7 @@ async function recordFind(
   const { data: pushes, error: pushErr } = await supabase
     .from("publish_log")
     .select("id")
+    .eq("workspace_id", draft.workspace_id)
     .eq("article_id", draft.id)
     .eq("status", "success")
     .limit(1);
