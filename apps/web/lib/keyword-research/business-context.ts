@@ -17,7 +17,8 @@
 // cannot be read the caller gets the reason, and the verdicts say it.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { inferBusinessProfileDetailed, type BusinessProfile, type InferenceReason } from "@/lib/onboarding/business-profile";
+import type { BusinessProfile, InferenceReason } from "@/lib/onboarding/business-profile";
+import { inferVerifiedBusinessProfile } from "@/lib/onboarding/observed-facts";
 
 /** The profile as every reader holds it: every field optional, because rows predate most of them. */
 export interface BusinessFields {
@@ -67,7 +68,8 @@ export async function ensureBusinessProfile(
   if (profileUsable(business)) return { business: business ?? null, inferred: false, missing: null };
   if (!domain) return { business: null, inferred: false, missing: "no business profile, and no domain to read one from" };
 
-  const result = await inferBusinessProfileDetailed(domain);
+  // Observed URLs checked before they are saved, as in the wizard.
+  const result = await inferVerifiedBusinessProfile(domain);
   if (result.reason !== "ok" || !result.profile) {
     return { business: null, inferred: false, missing: MISSING[result.reason as Exclude<InferenceReason, "ok">] ?? MISSING.model_failed };
   }

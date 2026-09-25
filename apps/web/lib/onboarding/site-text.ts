@@ -17,8 +17,16 @@
 //              title, description and headings, which is thin but true
 //
 // Anything under MIN_CHARS is reported as `none` rather than guessed from.
+//
+// The read also says which pages answered and which links were on them
+// (`observed`). The profile read used to hand the model tags-stripped text
+// and ask it for a contact URL, so the URL it returned was a guess: a real
+// signup, 2026-09-22, got /iletisim stored as observed, and it was a 404.
+// Now the model is shown these links and anything it names is checked
+// against them (lib/onboarding/observed-facts.ts).
 
-import { scrapeWebsiteText } from "@/lib/scraper";
+import { scrapeWebsite, type ScrapedPage } from "@/lib/scraper";
+import { extractLinks, normaliseSiteUrl } from "@/lib/seo/links";
 import { fetchSite } from "@/lib/audit/lenient-fetch";
 import { fetchInstantPage } from "@/lib/audit/onpage";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
@@ -27,58 +35,123 @@ import { e2eStubsEnabled, stubReadSiteText } from "@/lib/e2e/stubs";
 
 export type SiteTextSource = "static" | "sitemap" | "rendered" | "none";
 
+/** A link seen on a page this read fetched, as the page wrote it. */
+export interface ObservedLink {
+  text: string;
+  /** Absolute. */
+  url: string;
+}
+
+/** What the read can vouch for: pages that answered 2xx, and the same-site links on them. */
+export interface ObservedSite {
+  /** URLs that answered 2xx, as they ended after redirects. */
+  pages: string[];
+  /** Same-site links found on those pages, first seen first, deduplicated. */
+  links: ObservedLink[];
+}
+
 export interface SiteText {
   text: string;
   source: SiteTextSource;
   chars: number;
+  /** Absent from fixtures and from callers that never fetched anything. */
+  observed?: ObservedSite;
+}
+
+/** Enough links to include a site's whole navigation and footer. */
+const MAX_OBSERVED_LINKS = 80;
+
+/**
+ * The pages and same-site links a read can vouch for. Exported for tests:
+ * this is the evidence an "observed" URL in the profile must be found in.
+ */
+export function observedFrom(domain: string, pages: ScrapedPage[]): ObservedSite {
+  const seenPages = new Set<string>();
+  const out: ObservedSite = { pages: [], links: [] };
+  const seenLinks = new Set<string>();
+  for (const page of pages) {
+    const pageKey = normaliseSiteUrl(page.url, domain);
+    if (!seenPages.has(pageKey)) {
+      seenPages.add(pageKey);
+      out.pages.push(page.url);
+    }
+    for (const link of extractLinks(page.html, domain)) {
+      if (link.kind !== "internal" || !link.href || out.links.length >= MAX_OBSERVED_LINKS) continue;
+      let abs: string;
+      try {
+        abs = new URL(link.href, page.url).href;
+      } catch {
+        continue;
+      }
+      const key = normaliseSiteUrl(abs, domain);
+      if (seenLinks.has(key)) continue;
+      seenLinks.add(key);
+      out.links.push({ text: link.anchor.slice(0, 80), url: abs });
+    }
+  }
+  return out;
 }
 
 export const MIN_CHARS = 400;
 const PAGE_TIMEOUT_MS = 8_000;
 
-async function pageText(url: string): Promise<string> {
+/** One page's text, and the page itself when it answered 2xx. */
+async function pageText(url: string): Promise<{ text: string; page: ScrapedPage | null }> {
   try {
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), PAGE_TIMEOUT_MS);
     const res = await fetchSite(url, { headers: { "User-Agent": "AltoRankBot/1.0 (content analysis)" }, signal: controller.signal });
     clearTimeout(t);
-    if (!res.ok) return "";
+    if (!res.ok) return { text: "", page: null };
     const html = await res.text();
     const body = html.match(/<body[\s\S]*?<\/body>/i)?.[0] ?? html;
-    return body
+    const text = body
       .replace(/<(script|style|noscript|svg|nav|footer|header)[\s\S]*?<\/\1>/gi, " ")
       .replace(/<[^>]+>/g, " ")
       .replace(/&nbsp;/g, " ")
       .replace(/\s+/g, " ")
       .trim();
+    return { text, page: { url: res.url || url, html } };
   } catch {
-    return "";
+    return { text: "", page: null };
   }
 }
 
 export async function readSiteText(domain: string, maxChars = 12_000): Promise<SiteText> {
   // E2E_STUBS: fixture text, no fetch (lib/e2e/stubs.ts).
   if (e2eStubsEnabled()) return stubReadSiteText(domain, maxChars);
-  const done = (text: string, source: SiteTextSource): SiteText => ({ text: text.slice(0, maxChars), source, chars: text.length });
+  // Every page that answered, whichever branch below returns: the evidence
+  // an observed URL in the profile is checked against.
+  const fetched: ScrapedPage[] = [];
+  const done = (text: string, source: SiteTextSource): SiteText => ({
+    text: text.slice(0, maxChars),
+    source,
+    chars: text.length,
+    observed: observedFrom(domain, fetched),
+  });
 
   // Discovery is needed by the next wizard screen anyway and is cheap, so it
   // runs alongside the static read instead of after it.
-  const [rawStatic, discovery] = await Promise.all([
-    scrapeWebsiteText(domain).catch(() => ""),
+  const [scraped, discovery] = await Promise.all([
+    scrapeWebsite(domain).catch(() => ({ text: "", pages: [] as ScrapedPage[] })),
     discoverSite(domain).catch(() => null),
   ]);
+  fetched.push(...scraped.pages);
+  const rawStatic = scraped.text;
   const base = domain.startsWith("http") ? domain : `https://${domain}`;
   const productPages = await Promise.all(["/pricing", "/features", "/about"].map(async (path) => {
     const url = new URL(path, base).href;
-    const text = await pageText(url);
+    const { text, page } = await pageText(url);
+    if (page) fetched.push(page);
     return text.length >= 150 ? `SOURCE ${url}\n${text.slice(0, 1500)}` : "";
   }));
   const stat = [...productPages.filter(Boolean), `HOMEPAGE/BLOG CONTEXT\n${rawStatic}`].join("\n\n");
   if (stat.length >= MIN_CHARS) return done(stat, "static");
 
   if (discovery?.exampleArticleUrls.length) {
-    const parts = await Promise.all(discovery.exampleArticleUrls.slice(0, 3).map(pageText));
-    const joined = [stat, ...parts].filter(Boolean).join("\n\n");
+    const read = await Promise.all(discovery.exampleArticleUrls.slice(0, 3).map(pageText));
+    for (const r of read) if (r.page) fetched.push(r.page);
+    const joined = [stat, ...read.map((r) => r.text)].filter(Boolean).join("\n\n");
     if (joined.length >= MIN_CHARS) return done(joined, "sitemap");
   }
 

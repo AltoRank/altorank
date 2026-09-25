@@ -16,11 +16,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { canSpend } from "@/lib/billing/spend-gate";
-import {
-  inferBusinessProfileDetailed,
-  type BusinessProfile,
-  type InferenceResult,
-} from "@/lib/onboarding/business-profile";
+import { type BusinessProfile, type InferenceResult } from "@/lib/onboarding/business-profile";
+import { inferVerifiedBusinessProfile } from "@/lib/onboarding/observed-facts";
 import { looksLikeDomain, resolveCompetitorDomains } from "@/lib/onboarding/competitor-domains";
 import { classifyRivalSize, suggestCompetitors as findCompetitorSuggestions, type CompetitorSuggestions, type RivalSize } from "@/lib/onboarding/competitor-suggestions";
 import { fetchBulkAuthority } from "@/lib/seo/domain-metrics";
@@ -71,7 +68,9 @@ export async function proposeProfile(workspaceId: string): Promise<InferenceResu
   if (!gate.allowed) {
     return { profile: null, reason: "needs_plan", source: "none", message: gate.message };
   }
-  const result = await inferBusinessProfileDetailed(workspace.domain);
+  // Checked: a conversion page the site does not have comes back empty with
+  // the reason, never as the guess (lib/onboarding/observed-facts.ts).
+  const result = await inferVerifiedBusinessProfile(workspace.domain);
   // The model names rivals ("trainerize"); keyword research reads domains.
   // Resolved here, not in business-profile.ts, because the client wizard
   // imports that file and the resolver needs node:dns. A name nothing can

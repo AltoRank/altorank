@@ -8,7 +8,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  */
 
 const infer = vi.fn();
-vi.mock("@/lib/onboarding/business-profile", () => ({ inferBusinessProfileDetailed: (...a: unknown[]) => infer(...a) }));
+// Partial: the site read is faked, the observed-URL field list is the real one
+// (lib/onboarding/observed-facts.ts checks every field it names).
+vi.mock("@/lib/onboarding/business-profile", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/onboarding/business-profile")>()),
+  inferBusinessProfileDetailed: (...a: unknown[]) => infer(...a),
+}));
 
 import { ensureBusinessProfile, profileUsable } from "../business-context";
 
