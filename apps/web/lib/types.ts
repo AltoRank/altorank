@@ -247,6 +247,12 @@ export type CalendarEntry = {
    * or removed on the planner.
    */
   planned: boolean;
+  /**
+   * Why the last claimed draft of this planned entry failed, when one did
+   * (migration 093, lib/plan/draft-claim.ts). The next scheduled run takes
+   * the entry back; until then the card says what happened.
+   */
+  draft_failure?: string | null;
 };
 
 // === Integration ===
