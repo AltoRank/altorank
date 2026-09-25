@@ -369,7 +369,7 @@ describe("reapStaleRuns", () => {
   });
 
   it("closes a run whose worker died, wherever it is, and tells the person", async () => {
-    // wesellanything.co: `running` for thirteen days because nobody reopened
+    // A real signup: `running` for thirteen days because nobody reopened
     // the screen that was the only thing that ever reaped one.
     const db = fakeDb({ onboarding_runs: [run()], workspaces: [{ id: "ws1", domain: "wsa.example" }] });
     expect(await reapStaleRuns(db.client, NOW)).toEqual({ reaped: 1, runIds: ["r1"] });

@@ -260,7 +260,7 @@ async function closeRun(
  * Close the runs whose worker died, wherever they are.
  *
  * A `running` row is reaped when the person comes back to the screen
- * (`startRun`), and only then. wesellanything.co's first look stopped at
+ * (`startRun`), and only then. A real signup's first look stopped at
  * 15:46 on 2026-09-08 and was still `running` thirteen days later: the person
  * closed the tab, so nothing ever read the row again. Nothing was emailed,
  * nothing was recorded, and the account sat in setup with a screen that would
