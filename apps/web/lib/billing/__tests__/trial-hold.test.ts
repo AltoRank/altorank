@@ -29,10 +29,10 @@ import {
   isFirstPreTrialDraft,
   planHoldApplies,
   PRE_TRIAL_DRAFTS,
-  TRIAL_HOLD_MESSAGE,
   TrialHoldError,
   trialHoldReason,
 } from "../trial-hold";
+import { TRIAL_HOLD_MESSAGE } from "../trial-refusal";
 
 const gated = (used: number) => ({ reason: "no-plan" as const, trialEligible: true, used });
 

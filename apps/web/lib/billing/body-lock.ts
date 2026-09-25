@@ -33,7 +33,8 @@ import { getQuota } from "@/lib/billing/quota";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { getSimulation } from "@/lib/dev/simulation";
 import { createClient } from "@/lib/supabase/server";
-import { BODY_LOCKED_MESSAGE, trialGateState, type TrialGateState } from "@/lib/billing/trial";
+import { trialGateState, type TrialGateState } from "@/lib/billing/trial";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import { ARTICLE_BODY_COLUMNS, readArticlesWhole } from "@/lib/articles/body-read";
 
 export { ARTICLE_BODY_COLUMNS };

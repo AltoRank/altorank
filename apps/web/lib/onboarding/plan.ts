@@ -20,7 +20,8 @@ import { approvedWhenJudged, readIntentLeaders } from "@/lib/keyword-research/in
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { MAX_PACE, monthlyFromPace } from "@/lib/content/pace";
 import { CLAIM_LEASE_MS } from "@/lib/plan/draft-claim";
-import { PRE_TRIAL_DRAFTS, planHoldApplies, TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-hold";
+import { PRE_TRIAL_DRAFTS, planHoldApplies } from "@/lib/billing/trial-hold";
+import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
 import { recommendKeywords, type KeywordRecommendation } from "@/lib/seo/recommendations";
 import { classifyKeyword, type KeywordTaxonomy } from "@/lib/keywords/taxonomy";
 import { generateQualityQuestionsBatch, parseStoredQuestions, toQualityQuestions } from "@/lib/keywords/questions";

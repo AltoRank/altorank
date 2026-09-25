@@ -6,7 +6,7 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { z } from "zod";
 import { assertEditorialStatus } from "@/lib/articles/editorial-status";
 import { sessionBodyLockedForWorkspace } from "@/lib/billing/body-lock";
-import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import { urlSlug } from "@/lib/i18n/locale";
 
 const createArticleSchema = z.object({

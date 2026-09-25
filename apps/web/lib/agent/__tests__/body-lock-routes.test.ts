@@ -13,7 +13,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { hashApiKey } from "@/lib/agent/api-keys";
-import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import type { Quota } from "@/lib/billing/quota";
 import { fakeSupabase, type FakeSupabase } from "./fake-supabase";
 

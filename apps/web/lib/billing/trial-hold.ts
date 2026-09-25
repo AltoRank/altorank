@@ -50,7 +50,8 @@ import { getQuota, type Quota } from "@/lib/billing/quota";
 import { trialGateApplies } from "@/lib/billing/trial";
 import { firstDraftAwaitsReview } from "@/lib/billing/first-draft-gate";
 import { accountCountingClient } from "@/lib/billing/account-client";
-import { billingEnabled, TRIAL_DAYS } from "@/lib/stripe";
+import { billingEnabled } from "@/lib/stripe";
+import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
 
 /**
  * Drafts a trial-gated account gets before its trial starts: the article the
@@ -58,11 +59,6 @@ import { billingEnabled, TRIAL_DAYS } from "@/lib/stripe";
  * budget for these accounts any more; the trial is.
  */
 export const PRE_TRIAL_DRAFTS = 1;
-
-/** The sentence every held door returns, word for word. */
-export const TRIAL_HOLD_MESSAGE =
-  `Waiting for your trial to start. Your first article is written; nothing more is drafted until the ${TRIAL_DAYS}-day trial begins, ` +
-  `and then the rest of this week's plan is written straight away.`;
 
 /**
  * Thrown by `generateArticle` when the hold refuses a draft. A class of its

@@ -183,7 +183,3 @@ export function draftBodyLocked(
 ): boolean {
   return trialGateState(quota, email, opts) === "gated";
 }
-
-/** The refusal every locked surface gives, so the reason reads the same everywhere. */
-export const BODY_LOCKED_MESSAGE =
-  `The article text opens when the ${TRIAL_DAYS}-day trial starts. Start it from the setup screen to read, approve and publish this draft.`;

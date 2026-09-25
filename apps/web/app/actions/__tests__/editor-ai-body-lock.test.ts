@@ -8,7 +8,7 @@
  * paying one. The gate is stubbed to each answer; it is tested in lib/billing.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 
 const META = "Bu açıklama deneme süresi başlamadan gösterilmemeli.";
 const ARTICLE = "33333333-3333-4333-8333-333333333333";

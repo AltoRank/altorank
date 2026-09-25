@@ -10,7 +10,7 @@
 // asks as nobody, which getQuota reads as a cron.
 
 import { accountTrialGate } from "@/lib/billing/body-lock";
-import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import type { AgentContext } from "./auth";
 import { fail, type FailEnvelope } from "./envelope";
 

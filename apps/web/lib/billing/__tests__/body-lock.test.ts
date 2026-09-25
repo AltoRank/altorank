@@ -12,7 +12,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Quota } from "@/lib/billing/quota";
-import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 
 type Row = Record<string, unknown>;
 

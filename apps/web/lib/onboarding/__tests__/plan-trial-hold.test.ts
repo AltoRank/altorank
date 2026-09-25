@@ -28,7 +28,7 @@ vi.mock("@/lib/keyword-research/opportunity", async (importOriginal) => ({
 }));
 
 import { duePlannedKeyword, previewPlan, schedulePlan, scheduleKeywords } from "../plan";
-import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-hold";
+import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
 
 const FROM = new Date("2026-09-24T09:00:00.000Z");
 const rec = (i: number) => ({ keywordId: `k${i}`, term: `topic ${i}`, action: "write", quality: "ok", intent: "commercial" });

@@ -20,7 +20,8 @@ vi.mock("@/lib/billing/quota", async (importOriginal) => ({
 }));
 
 import { generateArticle } from "../generate";
-import { TrialHoldError, TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-hold";
+import { TrialHoldError } from "@/lib/billing/trial-hold";
+import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
 
 /** The account's articles, shared by every client in a test, as ids. */
 const rows = new Set<string>();

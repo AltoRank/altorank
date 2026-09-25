@@ -81,7 +81,8 @@ vi.mock("@/lib/email/schedule-events", () => ({
 }));
 
 import { GET } from "../generate/route";
-import { TRIAL_HOLD_MESSAGE, TrialHoldError } from "@/lib/billing/trial-hold";
+import { TrialHoldError } from "@/lib/billing/trial-hold";
+import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
 
 const req = () => new Request("http://localhost/api/cron/generate", { headers: { "x-cron-secret": "s" } });
 const GOOD = { term: "crm for agencies", keywordId: "k1", action: "write", quality: "ok", reasons: ["fixture"], score: 1, difficulty: 10, volume: 100 };
