@@ -252,6 +252,34 @@ describe("findDraftsLiveOnSites", () => {
     expect(run.found).toBe(1);
   });
 
+  it("reads the whole ledger, past the 1,000 rows one response carries", async () => {
+    // 1,200 earlier reads sort before the copy's URL, so its row is on the
+    // second page. Truncated at the first, the copy would look unread and be
+    // fetched again every night.
+    const earlier = Array.from({ length: 1200 }, (_, i) => ({
+      workspace_id: "ws-1", url: `${S}/a/p${String(i).padStart(4, "0")}`, checked_at: "2026-09-22T12:00:00Z",
+    }));
+    const sb = fakeSupabase(seed({
+      found_on_site_checks: [...earlier, { workspace_id: "ws-1", url: `${S}/blog/sadakat-programi-rehberi`, checked_at: "2026-09-22T12:00:00Z" }],
+    }));
+    const s = fakeSite(site());
+    await findDraftsLiveOnSites(client(sb), { budgetMs: 60_000, fetch: s.fetch, now: () => NIGHT_1 });
+    expect(s.calls).not.toContain(`${S}/blog/sadakat-programi-rehberi`);
+  });
+
+  it("fails the site, not the night, when what is known about it cannot be read", async () => {
+    const sb = fakeSupabase(seed());
+    const from = sb.from;
+    const broken = ((t: string) => {
+      const q = from(t) as Record<string, unknown>;
+      if (t === "site_pages") q.then = (r: (v: unknown) => unknown) => Promise.resolve({ data: null, error: { message: "timeout" } }).then(r);
+      return q;
+    }) as typeof sb.from;
+    const run = await findDraftsLiveOnSites({ ...sb, from: broken } as unknown as SupabaseClient, { budgetMs: 60_000, fetch: fakeSite(site()).fetch, now: () => NIGHT_1 });
+    expect(run.results[0]).toMatchObject({ status: "error", detail: "site_pages: timeout" });
+    expect(article(sb, "tr-draft").status).toBe("review");
+  });
+
   it("says so when a site has no sitemap to read", async () => {
     const sb = fakeSupabase(seed());
     const s = fakeSite({ [`${S}/robots.txt`]: { body: "User-agent: *\nDisallow:\n", type: "text/plain" } });

@@ -270,10 +270,25 @@ async function checkWorkspace(
   // What is already known about the site's pages: when the weekly crawl first
   // saw each, what this check has read before, and which URLs are already an
   // article's address.
-  const [{ data: known }, { data: ledger }, { data: claimed }] = await Promise.all([
-    supabase.from("site_pages").select("url, first_seen_at").eq("workspace_id", workspaceId),
-    supabase.from("found_on_site_checks").select("url, checked_at").eq("workspace_id", workspaceId),
-    supabase.from("articles").select("published_url").eq("workspace_id", workspaceId).not("published_url", "is", null),
+  // Read in full: a site's pages and its ledger can pass the 1,000 rows one
+  // PostgREST response carries, and a silently truncated list would make old
+  // pages look new. A failed read fails the site rather than guessing.
+  const [known, ledger, claimed] = await Promise.all([
+    allRows<{ url: string; first_seen_at: string }>("site_pages", (from, to) =>
+      supabase.from("site_pages").select("url, first_seen_at").eq("workspace_id", workspaceId).order("url").range(from, to),
+    ),
+    allRows<{ url: string; checked_at: string }>("found_on_site_checks", (from, to) =>
+      supabase.from("found_on_site_checks").select("url, checked_at").eq("workspace_id", workspaceId).order("url").range(from, to),
+    ),
+    allRows<{ published_url: string }>("articles", (from, to) =>
+      supabase
+        .from("articles")
+        .select("published_url")
+        .eq("workspace_id", workspaceId)
+        .not("published_url", "is", null)
+        .order("id")
+        .range(from, to),
+    ),
   ]);
 
   const selection = selectCandidates({
@@ -281,9 +296,9 @@ async function checkWorkspace(
     drafts: drafts.map((d) => ({ id: d.id, createdAt: d.created_at, rejected: d.found_on_site_rejected ?? [] })),
     host,
     allowed,
-    known: new Map((known ?? []).map((r) => [urlKey(r.url as string), r.first_seen_at as string])),
-    ledger: new Map((ledger ?? []).map((r) => [urlKey(r.url as string), { checkedAt: r.checked_at as string }])),
-    claimed: new Set((claimed ?? []).map((r) => urlKey(r.published_url as string))),
+    known: new Map(known.map((r) => [urlKey(r.url), r.first_seen_at])),
+    ledger: new Map(ledger.map((r) => [urlKey(r.url), { checkedAt: r.checked_at }])),
+    claimed: new Set(claimed.map((r) => urlKey(r.published_url))),
     limit: PAGES_PER_WORKSPACE,
   });
 
@@ -397,6 +412,24 @@ async function checkWorkspace(
     found,
     ...(discovery.truncated ? { detail: "the sitemap walk stopped at its bound; the rest is read on later nights" } : {}),
   };
+}
+
+/** One PostgREST response's worth of rows. */
+const PAGE_ROWS = 1000;
+
+/** Every row of a paged read, or a thrown error naming the table. */
+async function allRows<T>(
+  table: string,
+  page: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; ; from += PAGE_ROWS) {
+    const { data, error } = await page(from, from + PAGE_ROWS - 1);
+    if (error) throw new Error(`${table}: ${error.message}`);
+    const rows = (data ?? []) as T[];
+    out.push(...rows);
+    if (rows.length < PAGE_ROWS) return out;
+  }
 }
 
 /** Every headline the page offers: og:title, <title>, and each H1. */
