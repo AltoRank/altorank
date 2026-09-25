@@ -15,8 +15,8 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085.** The one-line-per-file list in §3 and the pre-flight query in §1
-both go to 085. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
+**Head is 085**, plus **091** (public tool usage, see its section at the end). **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
 hand (`accounts.free_drafts_used`) before applying 084. (076
@@ -144,7 +144,8 @@ m(file, applied) as (values
   ('080_oauth_connectors',                   to_regclass('public.oauth_codes') is not null),
   ('082_system_events',                      to_regclass('public.system_events') is not null),
   ('084_analysis_attempts',                  exists (select 1 from col where t='workspaces' and c='analysis_attempts')),
-  ('085_agencies_to_accounts',               to_regclass('public.accounts') is not null and to_regclass('public.agencies') is null)
+  ('085_agencies_to_accounts',               to_regclass('public.accounts') is not null and to_regclass('public.agencies') is null),
+  ('091_public_tool_usage',                  to_regclass('public.public_tool_usage') is not null and to_regprocedure('public.reserve_public_tool_spend(text,numeric,numeric)') is not null)
 )
 select file, applied from m order by file;
 ```
@@ -272,6 +273,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 080_oauth_connectors.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 082_system_events.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 084_analysis_attempts.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 085_agencies_to_accounts.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 091_public_tool_usage.sql
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -335,6 +337,7 @@ no code in the repo references either).
 | 085_agencies_to_accounts.sql | `rename/agencies-to-accounts` | 001, 016, 053, 072 | yes (every step guarded) | by renaming back; nothing is dropped |
 | 082_system_events.sql | `round5/observability` #172 | 001 | yes | yes, loses the event log only |
 | 084_analysis_attempts.sql | `fix/reanalyse-and-cms-gate` | 001 | yes | yes, but the backfill's re-queue is not undone |
+| 091_public_tool_usage.sql | `tools/public-api` | none | yes | yes, `drop function public.reserve_public_tool_spend(text,numeric,numeric); drop table public.public_tool_usage;` (paid public tools then refuse to run) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -686,3 +689,24 @@ Roll back with `drop table if exists system_events;` — the code keeps working.
 `recordEvent` treats a missing table as a failed insert, logs one line and
 returns false, and `/admin/events` says the log is unavailable rather than
 showing an empty table.
+
+## 091 — public tool usage
+
+`public_tool_usage` and `reserve_public_tool_spend(text, numeric, numeric)`,
+for the paid public tools behind `POST /api/public/tools/<slug>`
+(`lib/public-tools/spend.ts`). No dependencies; idempotent (`if not exists`,
+`create or replace`). Post-flight §4 step 2 does not list it (no
+`workspace_id`), but it is the same shape: RLS on, zero policies, service role
+only.
+
+**Until this is applied, every paid public tool answers `daily_cap`** — the
+spend guard fails closed when the RPC errors. The six fetch-only tools do not
+use it and work either way.
+
+Smoke after applying (service role, then clean up):
+
+```sql
+select public.reserve_public_tool_spend('smoke-test', 0, 0);  -- t
+select * from public.public_tool_usage where tool = 'smoke-test';
+delete from public.public_tool_usage where tool = 'smoke-test';
+```
