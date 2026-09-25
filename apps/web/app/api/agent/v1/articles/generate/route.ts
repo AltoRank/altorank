@@ -9,6 +9,7 @@ import { toAgentArticle } from "@/lib/agent/records";
 import { generateArticle, slugFor } from "@/lib/content/generate";
 import { freeAllowanceUsedMessage, getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { accountPausedMessage } from "@/lib/billing/pause";
+import { trialHoldReason } from "@/lib/billing/trial-hold";
 import type { Article } from "@/lib/types";
 
 // The model call is the long pole; same budget the generate cron has.
@@ -110,6 +111,9 @@ export const POST = withAgent(async (request, ctx) => {
 
   // Regenerating: the target must be in this workspace and in a state that
   // allows it. The same rule the record advertises, enforced.
+  // Its status is kept for the trial hold below: writing into an article
+  // that already counts adds no draft.
+  let regeneratingStatus: string | null = null;
   if (article_id) {
     const existing = await articleInAccount(ctx, article_id);
     if (!existing || existing.workspace_id !== workspace.id) {
@@ -119,6 +123,7 @@ export const POST = withAgent(async (request, ctx) => {
     if (!regenerate.allowed) {
       return fail("not_available", regenerate.reason ?? "This article cannot be regenerated.", "Tell the human why; do not retry. allowed_mutations on the record says what is possible.");
     }
+    regeneratingStatus = existing.status;
   }
 
   // The key is claimed before the spend gate and before any row, so a
@@ -163,6 +168,23 @@ export const POST = withAgent(async (request, ctx) => {
   // Spend gate, before any row is written. Null caller: a key is nobody's
   // session, the same contract the cron uses.
   const quota = await getQuota(ctx.supabase, ctx.accountId, null);
+  // The trial hold (lib/billing/trial-hold.ts), before the row and ahead of
+  // the quota's own refusal, whose sentence is about an allowance a gated
+  // account no longer has: an account that must start its trial first has
+  // its one article and gets no more until then, whoever asks.
+  // generateArticle refuses too, but only after the 202 has gone and the row
+  // exists, which would hand the agent a draft id that can only ever turn
+  // into `error`.
+  const held = trialHoldReason(quota, { adding: regeneratingStatus && regeneratingStatus !== "error" ? 0 : 1 });
+  if (held) {
+    await release();
+    return fail(
+      "not_available",
+      held,
+      "The account has not started its trial, and drafting waits for it. Tell the human that starting the trial opens drafting (it is offered where they signed up and on the Billing page); do not retry until they have.",
+    );
+  }
+
   if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
     if (quota.reason === "no-plan") {
       await release();

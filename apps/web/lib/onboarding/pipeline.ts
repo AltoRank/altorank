@@ -34,14 +34,14 @@ import { analyseDomain, isTransientCrawlFailure } from "@/lib/audit/domain-analy
 import { refusing } from "@/lib/audit/host-circuit";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { generateArticle } from "@/lib/content/generate";
-import { trialGateApplies } from "@/lib/billing/trial";
+import { planHoldApplies, trialHoldReason } from "@/lib/billing/trial-hold";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
 import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
-import { heldTopics, schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
+import { countScheduled, heldTopics, schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
 
 /** Pages the onboarding minute reads. The nightly pass reads up to forty. */
 const ONBOARDING_CRAWL_PAGES = 20;
@@ -354,11 +354,13 @@ async function runPhases(
     try {
       // An account that will be asked for a card gets one article on the
       // calendar and the rest held: the trial is what opens the month. The
-      // held topics are qualified rows with no calendar entry, read back by
-      // heldTopics for the locked rows the screen shows. Everyone else -
-      // self-host, operator, paying - gets the month as before.
-      const gated = trialGateApplies(await getQuota(supabase, workspace.account_id).catch(() => null));
-      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, { maxEntries: gated ? 1 : 5, qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES });
+      // planner decides that itself (lib/billing/trial-hold.ts), and this
+      // asks it the same question only to word the screen. The held topics
+      // are qualified rows with no calendar entry, read back by heldTopics
+      // for the locked rows the screen shows. Everyone else - self-host,
+      // operator, paying - gets the month as before.
+      const gated = await planHoldApplies(supabase, workspace.id);
+      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, { maxEntries: 5, qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES });
       const held = gated && plan.length
         ? await heldTopics(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, plan.map((p) => p.date)).catch(() => ({ count: 0, dates: [] }))
         : { count: 0, dates: [] };
@@ -379,6 +381,10 @@ async function runPhases(
       const pageNote = needsPage
         ? ` ${needsPage} search${needsPage === 1 ? "" : "es"} your buyers make want${needsPage === 1 ? "s" : ""} a landing page rather than an article; see Keywords.`
         : "";
+      // A second run for a held account plans nothing because the calendar
+      // already holds its one article, which is not the same news as "no
+      // keyword is clear enough".
+      const firstAlreadyPlanned = gated && plan.length === 0 && (await countScheduled(supabase, workspace.id)) > 0;
       emit({
         phase: "planning",
         status: plan.length > 0 ? "done" : "skipped",
@@ -387,7 +393,9 @@ async function runPhases(
             ? held.count > 0
               ? `Scheduled your first article. ${held.count} more topic${held.count === 1 ? " is" : "s are"} ready, each with a buyer and supporting search evidence; the trial opens them.${pageNote}`
               : `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has a buyer and supporting search evidence.${pageNote}`
-            : `No keyword clear enough to plan yet.${pageNote}`,
+            : firstAlreadyPlanned
+              ? `Your first article is already on the calendar; the rest of the plan opens with the trial.${pageNote}`
+              : `No keyword clear enough to plan yet.${pageNote}`,
         planned: plan.map((p) => ({ term: p.term, date: p.date, brief: p.brief })),
       });
     } catch (err) {
@@ -426,7 +434,15 @@ async function runPhases(
       // and onboarding is where the first of them is spent. The message counts
       // off the limit rather than restating a number that has already moved.
       const quota = await getQuota(supabase, workspace.account_id);
-      if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
+      // The trial hold first (lib/billing/trial-hold.ts): an account that
+      // already has its one pre-trial article - on another site, or from a
+      // run before this one - writes nothing more until the trial starts,
+      // and the keyword research below is not bought for a draft that will
+      // not be written.
+      const held = trialHoldReason(quota);
+      if (held) {
+        settle("skipped", held);
+      } else if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
         // The one sentence the gates share (lib/billing/quota.ts). Written out
         // twice here, the paid half drifted: it said "Upgrade on the Billing
         // page to keep drafting", and a paid account at its limit does not

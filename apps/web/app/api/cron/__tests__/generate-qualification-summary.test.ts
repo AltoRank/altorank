@@ -57,7 +57,7 @@ vi.mock("@/lib/billing/spend-gate", () => ({
   canSpend: async () => ({ allowed: true, reason: "plan", quota: { limit: null, remaining: null }, message: null }),
 }));
 vi.mock("@/lib/billing/resume", () => ({ resumeExpiredPauses: async () => [], isoDay: (d: Date) => d.toISOString().slice(0, 10) }));
-vi.mock("@/lib/stripe", () => ({ billingEnabled: false, getStripe: () => null }));
+vi.mock("@/lib/stripe", () => ({ billingEnabled: false, getStripe: () => null, TRIAL_DAYS: 7 }));
 vi.mock("@/lib/content/generate", () => ({
   generateArticle: (...a: unknown[]) => generateArticle(...a),
   ConcurrentGenerationError: class extends Error {},

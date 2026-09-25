@@ -15,6 +15,7 @@ import {
   renderNothingWritten,
   renderSetupUnfinished,
   renderSetupFailed,
+  renderTrialStarted,
   isoWeek,
 } from "../lifecycle";
 import { graceEndsAt } from "@/lib/billing/dunning";
@@ -400,5 +401,28 @@ describe("setup was never finished", () => {
     const e = renderSetupUnfinished({ ...base, draft: { ...draft, title: "<img src=x>" } });
     expect(e.html).not.toContain("<img");
     expect(e.html).toContain("&lt;img");
+  });
+});
+
+describe("trial started", () => {
+  const base = { planLabel: "Managed", planPrice: "€69/mo", endsAt: "2026-10-02T10:00:00.000Z" };
+
+  it("leads with the week going to the writer when the trial is what lifted the hold", () => {
+    const e = renderTrialStarted({ ...base, weekHandedOff: true });
+    expect(e.preheader).toMatch(/^The rest of this week goes to the writer now\./);
+    expect(e.html).toContain("<strong>The rest of this week goes to the writer now.</strong>");
+    // The hand-off, which is true when this is sent - never "being written",
+    // which is not known yet (the email goes out before any draft starts).
+    expect(e.html).not.toMatch(/being written|drafting has started/i);
+    expect(e.html).toContain("We email you when they are there.");
+    // The charge date is still the one thing a card trial must say.
+    expect(e.html).toContain("October 2");
+    expect(e.html.indexOf("goes to the writer")).toBeLessThan(e.html.indexOf("the first charge"));
+  });
+
+  it("says only what the plan opens when nothing was handed to the writer", () => {
+    const e = renderTrialStarted(base);
+    expect(e.html).not.toContain("goes to the writer");
+    expect(e.preheader).toBe("First charge on October 2 unless you cancel before then.");
   });
 });

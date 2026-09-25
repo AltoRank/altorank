@@ -424,21 +424,42 @@ export type TrialStartedEmail = {
   planPrice: string;
   /** ISO end of the trial. */
   endsAt: string;
+  /**
+   * The webhook has handed the rest of this week to the writer
+   * (lib/plan/resume-week.ts): the checkout started a trial, the install can
+   * hand drafts off, and a site is set to write automatically and is not
+   * paused. Until the trial nothing past the first article is drafted
+   * (lib/billing/trial-hold.ts), so this is the news the email leads with.
+   *
+   * It is the hand-off, not the drafts. The email goes out in the webhook's
+   * request, before any draft has started, so it cannot say one is being
+   * written; whether each lands is the drafts' own email to tell. Without the
+   * flag the email says only what the plan opens.
+   */
+  weekHandedOff?: boolean;
 };
 
 /**
  * The card was taken. Says the one thing that matters about a card trial -
  * the date of the first charge - and where to stop it before then. Sent from
- * the checkout webhook, once per subscription.
+ * the checkout webhook, once per subscription. When the trial is what lifts
+ * the hold and the week goes to the writer, it leads with that.
  */
 export function renderTrialStarted(a: TrialStartedEmail): RenderedEmail {
   const ends = formatTrialDate(a.endsAt);
   return {
     subject: `Your ${TRIAL_DAYS}-day trial of ${a.planLabel} has started`,
-    preheader: `First charge on ${ends} unless you cancel before then.`,
+    preheader: a.weekHandedOff
+      ? `The rest of this week goes to the writer now. First charge on ${ends} unless you cancel before then.`
+      : `First charge on ${ends} unless you cancel before then.`,
     footerNote: `Sent because you manage billing for this AltoRank account.`,
     html:
       heading(`You are on ${a.planLabel}, free until ${ends}`) +
+      (a.weekHandedOff
+        ? emailParagraph(
+            `<strong>The rest of this week goes to the writer now.</strong> The articles planned for it are drafted next, not on their own days, and each lands in your review queue as it finishes. We email you when they are there. The rest of the month follows on its scheduled days.`,
+          )
+        : "") +
       emailParagraph(
         `Approve and publish are open, and the schedule keeps writing at the plan's pace. Your card is on file and <strong>the first charge, ${esc(a.planPrice)}, is on ${esc(ends)}</strong>.`,
       ) +

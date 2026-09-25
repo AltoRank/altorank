@@ -21,7 +21,7 @@
 // happens afterwards, one draft per invocation (lib/content/fan-out.ts).
 
 import { useMemo } from "react";
-import { nextOpenDates, PLAN_HORIZON_DAYS } from "@/lib/onboarding/plan";
+import { nextOpenDates, PLAN_HORIZON_DAYS } from "@/lib/onboarding/plan-limits";
 import { monthlyFromPace } from "@/lib/content/pace";
 
 /** Weekday header, matching planner-grid's. */

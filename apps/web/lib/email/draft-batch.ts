@@ -216,6 +216,13 @@ export interface AnnounceOptions {
   settledOnly?: boolean;
   /** Why the cron picked a draft's keyword, for the single-draft mail's "chosen because" list. */
   reasonsFor?: Record<string, readonly string[]>;
+  /**
+   * Send even when this workspace was already told about a draft today. For
+   * the one batch a person is waiting on: the week a trial start opened,
+   * announced when its last draft lands (app/api/internal/draft). Every
+   * other caller keeps the one-a-day rule.
+   */
+  evenIfToldToday?: boolean;
 }
 
 /** The line a caller gets when today's mail already went and the drafts wait for tomorrow's. */
@@ -326,7 +333,7 @@ export async function announceDraftBatch(
     const announced = new Set((told ?? []).map((r) => r.subject_id as string));
     const fresh = candidates.filter((a) => !announced.has(a.id));
     if (!fresh.length) return "no drafts to announce";
-    if (await announcedToday(supabase, workspaceId, now)) {
+    if (!opts.evenIfToldToday && (await announcedToday(supabase, workspaceId, now))) {
       return `${fresh.length} draft${fresh.length === 1 ? "" : "s"} ${WAITS_FOR_TOMORROW}`;
     }
 

@@ -25,6 +25,8 @@ import { scoreArticle } from "@/lib/seo/scoring";
 import { scoreCitationReadiness } from "@/lib/seo/aeo-scoring";
 import { recordSpend, anthropicCost } from "@/lib/billing/spend";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
+import { trialGateApplies } from "@/lib/billing/trial";
+import { isFirstPreTrialDraft, TrialHoldError, trialHoldReason } from "@/lib/billing/trial-hold";
 import { recordOverageArticle } from "@/lib/billing/overage";
 import { accountPausedMessage } from "@/lib/billing/pause";
 import { spendClient } from "@/lib/billing/default-spend";
@@ -323,6 +325,37 @@ export async function generateArticle(
   // Set on the free tier below; called only once a draft exists.
   let recordFreeDraft: (() => Promise<void>) | null = null;
   const quota = await getQuota(supabase, billedAccountId, callerEmail);
+
+  /**
+   * The trial hold (lib/billing/trial-hold.ts), before anything is spent.
+   *
+   * A trial-gated account gets the onboarding's one article and nothing more
+   * until its trial starts, whichever door asks. Checked here because every
+   * door ends here; the doors check it too, earlier, so the refusal arrives
+   * before their own research rather than after it. Ahead of the quota test
+   * on purpose: for a gated account "waiting for your trial" is the true
+   * reason, and "all 7 free drafts are used" would name an allowance these
+   * accounts no longer have.
+   *
+   * Generating into an article that already counts adds nothing, so the
+   * first article itself can still be regenerated in place; a rewrite of a
+   * page is a draft of its own.
+   */
+  if (trialGateApplies(quota)) {
+    let adding = 1;
+    if (articleId && !refreshOf) {
+      const { data: target } = await supabase
+        .from("articles")
+        .select("status")
+        .eq("id", articleId)
+        .eq("workspace_id", workspaceId)
+        .maybeSingle();
+      if (target && target.status !== "error") adding = 0;
+    }
+    const held = trialHoldReason(quota, { adding });
+    if (held) throw new TrialHoldError(held);
+  }
+
   if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
     if (quota.reason === "no-plan" || autonomous) {
       throw new Error(quotaExceededMessage(quota));
@@ -493,6 +526,23 @@ export async function generateArticle(
     // above and is not a burst.
     if (quota.limit !== null && (quota.reason === "no-plan" || autonomous)) {
       const after = await getQuota(supabase, billedAccountId, callerEmail);
+      // The trial hold, by the same argument: two first drafts racing (two
+      // sites onboarding at once, or a retried dispatch beside the one it
+      // retried) each read "0 written" above, and counted with their rows in
+      // each sees two. The count says a race happened; the earliest row wins
+      // it (`isFirstPreTrialDraft`), so exactly one of them is written and the
+      // rest stop - and "your first article is written" is true for them.
+      const heldAfter = trialHoldReason(after, { adding: 0 });
+      if (heldAfter) {
+        let wins = false;
+        try {
+          wins = await isFirstPreTrialDraft(supabase, billedAccountId, created.id);
+        } finally {
+          // Lost the race, or could not tell: this row is not written.
+          if (!wins) await supabase.from("articles").delete().eq("id", created.id);
+        }
+        if (!wins) throw new TrialHoldError(heldAfter);
+      }
       if (after.limit !== null && after.used > after.limit) {
         await supabase.from("articles").delete().eq("id", created.id);
         throw new Error(quotaExceededMessage(after));
