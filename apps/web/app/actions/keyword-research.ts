@@ -73,7 +73,7 @@ export interface ResearchContext {
 }
 
 async function scoped(workspaceId: string): Promise<{ supabase: SupabaseClient; ws: ResearchWorkspace; accountId: string }> {
-  const { accountId } = await requireAuth();
+  const { accountId } = await requireAuth(undefined, { workspaceId });
   const supabase = await createClient();
   const ws = await loadResearchWorkspace(supabase, workspaceId);
   // RLS already scopes to the account; this turns a foreign id into an error

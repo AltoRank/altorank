@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getSimulation } from "@/lib/dev/simulation";
 import { loadFirstLookReport } from "@/lib/onboarding/first-look-report";
 import { createClient } from "@/lib/supabase/server";
-import { getScopedWorkspaceId } from "@/lib/workspace-scope";
+import { getScopedWorkspaceId, openSitesOutside } from "@/lib/workspace-scope";
 import { OnboardingWizard } from "@/components/onboarding/wizard";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
@@ -45,7 +45,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   // no scope cookie that is the person's oldest membership, while the scoped
   // site falls back to their oldest site, and for someone in two accounts the
   // two pages answered the gate for different accounts.
-  const authRead = requireAuth();
+  const authRead = requireAuth(undefined, { workspaceId: scopeId });
   const workspaceRead = supabase
     .from("workspaces")
     // The account's answer rides along on the workspace's own account row,
@@ -86,7 +86,14 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   // The workspace's first article, as its shape only. A fact about the site,
   // not about the latest run: read whenever the card could be on screen,
   // including at the end of a run in progress, which refreshes the page for it.
-  const firstArticle = preTrial ? await loadFirstArticle(supabase, workspace.id, workspace.domain) : null;
+  const [firstArticle, otherSites] = preTrial
+    ? await Promise.all([
+        loadFirstArticle(supabase, workspace.id, workspace.domain),
+        // A person who also belongs to an account the gate lets them into is
+        // offered its sites here, beside signing out.
+        openSitesOutside(workspace.account_id as string),
+      ])
+    : [null, []];
 
   // What the gate screen shows behind its lock: the month this account
   // already had planned for it, and the analysis already run on its site.
@@ -154,6 +161,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       gateHeld={gateHeld}
       gateReport={gateReport}
       initialRun={run}
+      otherSites={otherSites}
     />
     </>
   );

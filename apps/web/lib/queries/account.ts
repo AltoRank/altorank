@@ -1,26 +1,53 @@
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { getScope } from "@/lib/workspace-scope";
 import type { Account } from "@/lib/types";
 
+/**
+ * The account the signed-in person is working in: the one that owns the site
+ * in scope (lib/workspace-scope.ts), or their oldest membership when they can
+ * see no site. It used to read the membership with `.single()`, which
+ * PostgREST refuses for a person in two accounts, so Settings said "No
+ * account found" to anyone who had accepted a second invitation.
+ */
 export async function getAccount(): Promise<Account | null> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: member } = await supabase
-    .from("account_members")
-    .select("account_id")
-    .eq("user_id", user.id)
-    .single();
-
-  if (!member) return null;
+  let accountId = (await getScope())?.accountId ?? null;
+  if (!accountId) {
+    const { data: member } = await supabase
+      .from("account_members")
+      .select("account_id")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    accountId = (member?.account_id as string | undefined) ?? null;
+  }
+  if (!accountId) return null;
 
   const { data } = await supabase
     .from("accounts")
     .select("*")
-    .eq("id", member.account_id)
+    .eq("id", accountId)
     .single();
 
   return (data as Account) ?? null;
+}
+
+/**
+ * The account a signed-in person is working in, created if they have none:
+ * the account of the site in scope, else their oldest membership, else a new
+ * account. What the dashboard layout gates on and what "Add site" adds to,
+ * so the site a person adds lands in the account they are looking at.
+ */
+export async function workingAccountId(user: {
+  id: string;
+  user_metadata?: Record<string, unknown> | null;
+  email?: string | null;
+}): Promise<string> {
+  return (await getScope())?.accountId ?? ensureAccount(user.id, user.user_metadata ?? {}, user.email);
 }
 
 /**
@@ -44,6 +71,11 @@ export async function ensureAccount(
     .from("account_members")
     .select("account_id")
     .eq("user_id", userId)
+    // The oldest, so the answer is the same on every call. Without an order
+    // it was whichever row PostgREST returned first, and for a person in two
+    // accounts that was not stable. Callers that know which site is being
+    // worked on ask about that site's account instead (lib/workspace-scope.ts).
+    .order("created_at", { ascending: true })
     .limit(1)
     .single();
 

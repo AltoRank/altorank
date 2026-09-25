@@ -66,7 +66,7 @@ vi.mock("@/lib/billing/workspaces", async () => {
   const real = await vi.importActual<typeof import("@/lib/billing/workspaces")>("@/lib/billing/workspaces");
   return { ...real, getWorkspaceAllowance: allowance };
 });
-vi.mock("@/lib/queries/account", () => ({ ensureAccount: async () => "account-1" }));
+vi.mock("@/lib/queries/account", () => ({ workingAccountId: async () => "account-1" }));
 // The role gate in front of everything else: adding a site takes a plan slot,
 // so it is owner/admin like the Search Console door that also creates sites.
 const { requireAuth } = vi.hoisted(() => ({

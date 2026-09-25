@@ -32,7 +32,7 @@ import type { BillingOutcome } from "@/lib/billing/failure";
 export async function runKeywordResearch(
   workspaceId: string,
 ): Promise<BillingOutcome<{ discovered: number }>> {
-  const { accountId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
   const supabase = await createClient();
 
   const gate = await canSpend(supabase, accountId, {
@@ -113,7 +113,7 @@ export async function runKeywordResearch(
 export async function checkSerpPositions(
   workspaceId: string,
 ): Promise<BillingOutcome<{ checked: number }>> {
-  const { accountId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
   const supabase = await createClient();
 
   // One paid SERP call per keyword row in the workspace, uncapped: the single
@@ -190,7 +190,7 @@ export async function checkSerpPositions(
 export async function fetchBacklinks(
   workspaceId: string,
 ): Promise<BillingOutcome<Awaited<ReturnType<typeof syncBacklinks>>>> {
-  const { accountId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
   const supabase = await createClient();
 
   const gate = await canSpend(supabase, accountId, {

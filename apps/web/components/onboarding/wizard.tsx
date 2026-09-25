@@ -96,6 +96,7 @@ export function OnboardingWizard({
   firstArticle = null,
   firstArticleWriting = false,
   initialRun = null,
+  otherSites = [],
 }: {
   workspaceId: string;
   userId: string;
@@ -151,6 +152,13 @@ export function OnboardingWizard({
   /** An article is being written right now, so a retry must not be offered. */
   firstArticleWriting?: boolean;
   initialRun?: OnboardingRunSnapshot | null;
+  /**
+   * The person's sites in OTHER accounts that the trial gate lets them into.
+   * Someone invited to a paying account who also owns a never-trialed one
+   * reaches this card for their own site; these are their way back to the
+   * work they were invited to do, beside signing out (round-4 review).
+   */
+  otherSites?: OtherSite[];
 }) {
   const identifiedUserId = useRef<string | null>(null);
 
@@ -295,6 +303,7 @@ export function OnboardingWizard({
         run={initialRun}
         askAttribution={askAttribution}
         userEmail={userEmail}
+        otherSites={otherSites}
       />
     );
   }
@@ -312,6 +321,7 @@ export function OnboardingWizard({
         firstArticle={firstArticle}
         firstArticleWriting={firstArticleWriting}
         userEmail={userEmail}
+        otherSites={otherSites}
       />
     );
   }
@@ -589,6 +599,9 @@ function calendarDay(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
+/** A site in another account the person can open instead of this card. */
+export type OtherSite = { id: string; label: string };
+
 /** Same term, as the plan and the article spell it. */
 function sameTerm(a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -599,9 +612,33 @@ function sameTerm(a: string, b: string): boolean {
  * no "continue to the dashboard", so it must not be a room with one door:
  * signing out is always here.
  */
-function SignOutLine({ email }: { email?: string }) {
+function SignOutLine({ email, otherSites = [] }: { email?: string; otherSites?: OtherSite[] }) {
   return (
-    <p className="m-0 mt-8 text-center text-[12px] text-ink-3">
+    <>
+    {otherSites.length > 0 && (
+      <p className="m-0 mt-8 text-center text-[12px] text-ink-3">
+        You also work on{" "}
+        {otherSites.map((site, i) => (
+          <span key={site.id}>
+            {i > 0 ? ", " : null}
+            <button
+              type="button"
+              className="text-ink-2 underline decoration-line underline-offset-[3px]"
+              onClick={() => {
+                // The same cookie the dashboard's switcher writes; the
+                // dashboard then scopes to that site and its account.
+                document.cookie = `active_workspace=${site.id};path=/;max-age=${60 * 60 * 24 * 365};samesite=lax`;
+                window.location.assign("/dashboard");
+              }}
+            >
+              {site.label}
+            </button>
+          </span>
+        ))}
+        .
+      </p>
+    )}
+    <p className={`m-0 ${otherSites.length > 0 ? "mt-2" : "mt-8"} text-center text-[12px] text-ink-3`}>
       {email ? <>Signed in as {email}. </> : null}
       <button
         type="button"
@@ -614,6 +651,7 @@ function SignOutLine({ email }: { email?: string }) {
         Sign out
       </button>
     </p>
+    </>
   );
 }
 
@@ -644,6 +682,7 @@ function TrialGateScreen({
   run,
   askAttribution = false,
   userEmail,
+  otherSites = [],
 }: {
   domain: string;
   canBuy: boolean;
@@ -656,6 +695,7 @@ function TrialGateScreen({
   run: OnboardingRunSnapshot | null;
   askAttribution?: boolean;
   userEmail?: string;
+  otherSites?: OtherSite[];
 }) {
   const runState = runStateOf(run);
   const retry = offerSetupRetry(runState, { hasArticle: firstArticle !== null, writing });
@@ -776,7 +816,7 @@ function TrialGateScreen({
           <TopicBriefs planned={planned} />
           {report && <FirstLookReportView report={report} domain={domain} live={false} />}
         </div>
-        <SignOutLine email={userEmail} />
+        <SignOutLine email={userEmail} otherSites={otherSites} />
       </div>
     </div>
   );
@@ -886,6 +926,7 @@ function RunScreen({
   firstArticle,
   firstArticleWriting,
   userEmail,
+  otherSites = [],
 }: {
   workspaceId: string;
   canBuy: boolean;
@@ -897,6 +938,7 @@ function RunScreen({
   firstArticle: FirstArticleCard | null;
   firstArticleWriting: boolean;
   userEmail?: string;
+  otherSites?: OtherSite[];
 }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState | null>(null);
@@ -1092,7 +1134,7 @@ function RunScreen({
           </div>
 
         </div>
-        {trialStep && <SignOutLine email={userEmail} />}
+        {trialStep && <SignOutLine email={userEmail} otherSites={otherSites} />}
       </div>
     </div>
   );

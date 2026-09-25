@@ -1,4 +1,4 @@
-import { cookies, headers } from "next/headers";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { getWorkspaces } from "@/lib/queries/workspaces";
@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { OnboardingProvider } from "@/components/onboarding/onboarding-provider";
 import { WorkspaceProvider } from "@/components/dashboard/workspace-context";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ensureAccount } from "@/lib/queries/account";
+import { workingAccountId } from "@/lib/queries/account";
 import { isAdminEmail } from "@/lib/auth/operators";
 import { inCustomerPreview } from "@/lib/auth/preview";
 import { getImpersonation } from "@/lib/auth/impersonation";
@@ -63,7 +63,6 @@ export default async function DashboardLayout({
     // The sidebar badge is a count. It used to fetch every article row - body
     // included - to read `.length` off the result.
     { count: articleCount },
-    cookieStore,
     // Non-null only while an operator is signed in as a customer. Everything
     // below this line then describes the customer, which is the point; the
     // banner is what says so.
@@ -88,7 +87,6 @@ export default async function DashboardLayout({
   ] = await Promise.all([
     getWorkspaces(),
     scopedArticles,
-    cookies(),
     getImpersonation(),
     supabase.auth.getUser(),
     scopedBacklinks,
@@ -142,8 +140,11 @@ export default async function DashboardLayout({
   // open and sent them back: a loop, and no dashboard. The reverse case opened
   // a gated account's calendar and keywords. With no site in scope (a new
   // person, or none left) the membership stands, and is created if missing.
-  const scopedAccountId = (scopedWorkspace as { account_id?: string | null } | undefined)?.account_id ?? null;
-  const accountId = scopedAccountId ?? (user ? await ensureAccount(user.id, meta, user.email) : null);
+  //
+  // The scope itself is chosen with the gate in mind (lib/workspace-scope.ts):
+  // with no cookie, a person in a paying account and a never-trialed one
+  // lands on the paying account's site, not on their oldest site's gate card.
+  const accountId = user ? await workingAccountId(user) : null;
 
   /**
    * Real identity for the sidebar footer.
@@ -212,7 +213,11 @@ export default async function DashboardLayout({
   const userInitials = (userName.match(/[A-Za-z0-9]/)?.[0] ?? "A").toUpperCase();
   const role = membership?.role ?? null;
 
-  const initialWorkspaceId = cookieStore.get("active_workspace")?.value;
+  // The site the server scoped to, not the raw cookie: with no cookie the
+  // server's choice is gate-aware (lib/workspace-scope.ts), and a switcher
+  // that fell back to the first site on its own would show one site while
+  // every page answered for another.
+  const initialWorkspaceId = scopeId ?? undefined;
 
   /**
    * Nav entries for features that have nothing to show yet.

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { ensureAccount } from "@/lib/queries/account";
+import { workingAccountId } from "@/lib/queries/account";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { canAddWorkspace } from "@/lib/team/access";
 import { ADD_SITE_ROLE_MESSAGE, insertWorkspaceAsServer } from "@/lib/workspaces/insert";
@@ -88,7 +88,9 @@ export async function createWorkspace(formData: FormData): Promise<CreateWorkspa
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Your session has expired. Sign in again." };
 
-  const accountId = await ensureAccount(user.id, user.user_metadata ?? {}, user.email);
+  // The account of the site in view, so a person in two accounts adds the
+  // site to the one they are working in, not to their oldest membership.
+  const accountId = await workingAccountId(user);
 
   // Workspaces are limited per plan (one before choosing one). Articles are
   // the meter; this stops a free account from running fifty crawls and

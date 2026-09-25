@@ -21,7 +21,7 @@ export async function createVoiceProfile(
   workspaceId: string,
   sampleText: string,
 ): Promise<BillingOutcome> {
-  const { accountId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
   const supabase = await createClient();
   const gate = await canSpend(supabase, accountId, {
     userEmail: user.email ?? undefined,
@@ -50,7 +50,7 @@ export async function updateVoiceProfile(id: string, data: { sample_text?: strin
 }
 
 export async function retrainVoice(workspaceId: string): Promise<BillingOutcome> {
-  const { accountId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
   const supabase = await createClient();
 
   const gate = await canSpend(supabase, accountId, {

@@ -45,14 +45,23 @@ const freeTier = (used: number, over: Partial<Quota> = {}): Quota =>
  * A client whose job is answering the workspace pause lookup, and the count
  * of the account's setup runs (onboarding_runs) for the pre-trial bound.
  */
-function client(paused: { status: string; paused_until: string | null } | null = null, setupRuns = 0): SupabaseClient {
+function client(
+  paused: { status: string; paused_until: string | null } | null = null,
+  setupRuns = 0,
+  siteAccount = "a",
+): SupabaseClient {
   return {
     from: (table: string) => ({
       select: () => ({
         eq: () =>
           table === "onboarding_runs"
             ? Promise.resolve({ count: setupRuns, error: null })
-            : { maybeSingle: async () => ({ data: paused }) },
+            : {
+                maybeSingle: async () => ({
+                  data: { account_id: siteAccount, status: "active", paused_until: null, ...(paused ?? {}) },
+                  error: null,
+                }),
+              },
       }),
     }),
   } as unknown as SupabaseClient;
@@ -314,5 +323,27 @@ describe("a trial-gated account spends on setup and nothing after it", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe("canSpend — whose account", () => {
+  // Round-4 review: the editor, scoring, research, voice, refresh and audit
+  // passed `requireAuth`'s account, and for a person in a paying account and
+  // a never-trialed one that was often not the account of the site they were
+  // working on. The site's own account is what the gate answers for.
+  it("answers for the account that owns the site, not the one the caller passed", async () => {
+    getQuota.mockImplementation(async (_c: unknown, accountId: unknown) =>
+      accountId === "paying" ? quota() : freeTier(1, { trialEligible: true }),
+    );
+    const d = await canSpend(client(null, 0, "paying"), "own-gated-account", { workspaceId: "w", action: "keyword-research" });
+    expect(getQuota.mock.calls[0][1]).toBe("paying");
+    expect(d).toMatchObject({ allowed: true, reason: "plan" });
+  });
+
+  it("refuses to answer for a site the caller cannot read", async () => {
+    const hidden = {
+      from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }),
+    } as unknown as SupabaseClient;
+    await expect(canSpend(hidden, "a", { workspaceId: "someone-elses" })).rejects.toThrow(/not found/);
   });
 });

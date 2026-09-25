@@ -294,7 +294,9 @@ export async function setRefreshSettings(
   workspaceId: string,
   settings: { enabled: boolean; days: number[] },
 ): Promise<void> {
-  const { accountId } = await requireAuth();
+  // The site's own account: the plan check and the update below answer for
+  // it, not for whichever account the person happens to be looking at.
+  const { accountId } = await requireAuth(undefined, { workspaceId });
   const parsed = settingsSchema.parse(settings);
   const supabase = await createClient();
   if (parsed.enabled && (await needsPlanToShip(supabase, accountId))) {
