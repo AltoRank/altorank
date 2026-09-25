@@ -17,6 +17,7 @@ const accountTrialGate = vi.fn(async () => gate);
 vi.mock("@/lib/billing/body-lock", () => ({ accountTrialGate: () => accountTrialGate() }));
 
 import { renderArticleDrafted } from "../article-emails";
+import { renderSetupUnfinished, renderWelcome } from "../lifecycle";
 import { announceDraftBatch, renderDraftBatch, SETTLE_MS } from "../draft-batch";
 import { fakeDraftDb } from "./fake-draft-db";
 
@@ -120,5 +121,57 @@ describe("announceDraftBatch asks the gate", () => {
     const line = await announceDraftBatch(d.client, "ws1", { now: NOW });
     expect(line).toMatch(/digest failed/);
     expect(sendTransactionalEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe("renderWelcome, before the trial", () => {
+  // The welcome goes to every new signup, which before the trial is every
+  // gated account: it must not promise a readable draft or a dashboard.
+  it("sends the person back to setup and says what the trial opens", () => {
+    const r = renderWelcome({ name: "Deniz", domain: "acme-agency.example", beforeTrial: true });
+    expect(r.html).not.toMatch(/free to read|Open the dashboard/i);
+    expect(r.html).not.toContain("/dashboard");
+    expect(r.html).toContain("https://app.example/onboarding");
+    expect(r.html).toContain("Continue setup");
+    expect(r.html).toContain("The full text opens when your 7-day trial starts");
+    expect(r.html).toContain("No card is on file until you start the trial");
+  });
+
+  it("is unchanged for an account the gate leaves open", () => {
+    const r = renderWelcome({ name: "Deniz", domain: "acme-agency.example", beforeTrial: false });
+    expect(r.html).toContain("https://app.example/dashboard");
+    expect(r.html).toContain("free to read");
+  });
+});
+
+describe("renderSetupUnfinished, before the trial", () => {
+  const facts = {
+    domain: "acme-agency.example",
+    draft: { articleId: "a1", title: "Ajanslar için rehber", keyword: "ajans rehberi" },
+    keywordCount: 8,
+    unreadable: null,
+  };
+
+  it("says the article is written and links setup, not the draft", () => {
+    const r = renderSetupUnfinished({ ...facts, beforeTrial: true });
+    expect(r.subject).toBe("While you were away: your first article for acme-agency.example is written");
+    expect(r.html).toContain("Ajanslar için rehber");
+    expect(r.html).not.toContain("/content/");
+    expect(r.html).not.toMatch(/Read the draft|edit it, send it back, or approve it/);
+    expect(r.html).toContain("https://app.example/onboarding");
+    expect(r.html).toContain("See your first article");
+    expect(r.preheader).toContain("The text opens when your 7-day trial starts");
+  });
+
+  it("is unchanged for an account the gate leaves open", () => {
+    const r = renderSetupUnfinished({ ...facts, beforeTrial: false });
+    expect(r.html).toContain("https://app.example/content/a1");
+    expect(r.html).toContain("Read the draft");
+  });
+
+  it("without a draft, promises no article either way", () => {
+    const r = renderSetupUnfinished({ ...facts, draft: null, beforeTrial: true });
+    expect(r.html).not.toContain("/content/");
+    expect(r.html).toContain("No article has been written yet");
   });
 });
