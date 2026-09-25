@@ -46,7 +46,7 @@ import {
 import { classifyIntent } from "@/lib/seo/intent";
 import { buildTopicalProfile, type TopicalProfile } from "@/lib/seo/topical-profile";
 import { detectPlatform, type Detection } from "@/lib/cms/detect";
-import { discoverUrls } from "@/lib/seo/site-crawl";
+import { discoverUrls, recordLinkedPages } from "@/lib/seo/site-crawl";
 import { syncBacklinks } from "@/lib/seo/backlinks";
 import { fetchDomainMetrics } from "@/lib/seo/domain-metrics";
 import { e2eStubsEnabled, stubAnalyseDomain } from "@/lib/e2e/stubs";
@@ -494,6 +494,15 @@ export async function analyseDomain(options: {
       profile = buildTopicalProfile(domain, pages);
       issues = runAuditChecks(pages) as unknown[];
       auditScore = calculateAuditScore(issues as never, pages.length);
+      // The services, portfolio, about and contact pages this walk reached,
+      // kept for the writer. On a site with no sitemap nothing else ever
+      // reads them (lib/seo/site-crawl.ts recordLinkedPages). Logged, not a
+      // layer: the crawl's result stands whether or not this write lands.
+      if (supabase && workspaceId && depth === "full") {
+        const kept = await recordLinkedPages(supabase, workspaceId, pages);
+        if (kept.error) console.warn(`[analyse] could not keep the business pages the crawl read: ${kept.error}`);
+        else if (kept.inserted || kept.updated) console.log(`[analyse] kept ${kept.inserted} new and ${kept.updated} existing business page(s) for the writer`);
+      }
       layers.push({
         id: "crawl",
         status: "ok",

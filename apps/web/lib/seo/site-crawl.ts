@@ -36,6 +36,8 @@ import { auditArticle } from "./article-audit";
 import { extractLinks } from "./links";
 import { groupByPage, type RankedKeyword } from "./ranked-keywords";
 import { fetchInstantPage, type OnPageFacts } from "@/lib/audit/onpage";
+import { POST_SEGMENTS, extractSitePage, type SitePageExtract } from "@/lib/audit/site-extract";
+import type { CrawlResult } from "@/lib/audit/crawler";
 import { hasDataForSEOCredentials } from "./client";
 import { ALLOW_EVERYTHING, isAllowed, loadRobots, type RobotsRules } from "./robots";
 import {
@@ -96,8 +98,9 @@ export const DEFAULTS = {
 /** How the crawler names itself, everywhere. Also the name robots.txt matches. */
 export const CRAWLER_NAME = "AltoRank-Auditor";
 
-/** Path segments that name a blog. Same list `lib/cms/blog-url.ts` reasons over. */
-const POST_SEGMENTS = /\/(blog|posts?|articles?|news|insights|stories|guide|guida|guides)\//i;
+// Path segments that name a blog (POST_SEGMENTS) live in
+// lib/audit/site-extract.ts, which needs the same list to keep a post from
+// being read as the contact page. Same list `lib/cms/blog-url.ts` reasons over.
 
 /**
  * Schema types that say "this page is a piece of writing". A page that
@@ -155,6 +158,13 @@ export interface SitePage {
   /** `tech_findings.length`, so the dashboard can sort and count in SQL. */
   tech_issue_count?: number | null;
   tech_checked_at?: string | null;
+  /**
+   * What the page says about the business, when it is the home, services,
+   * portfolio, about, contact or pricing page (migration 095). Null for
+   * writing and for every other page. The writer's site facts are built
+   * from it (lib/content/site-facts.ts).
+   */
+  extract?: SitePageExtract | null;
 }
 
 export interface CrawlSummary {
@@ -655,6 +665,9 @@ export async function crawlPage(url: string, ctx: PageContext): Promise<SitePage
     published_at: publishedAt,
     modified_at: isoOrNull(metaContent(html, ["article:modified_time", "dateModified"])),
     schema_types: schemaTypes,
+    // Read off the response already in hand. A piece of writing is not a
+    // page about the business, whatever its slug says.
+    extract: pageType === "article" ? null : extractSitePage(html, url, { h1, title }),
     status, error: null,
     ...(techFindings
       ? {
@@ -850,6 +863,7 @@ export async function syncSitePages(
       tech_findings: p.tech_findings ?? null,
       tech_issue_count: p.tech_issue_count ?? null,
       tech_checked_at: p.tech_checked_at ?? null,
+      extract: p.extract ?? null,
       workspace_id: workspaceId,
       last_crawled_at: new Date().toISOString(),
     }));
@@ -961,4 +975,119 @@ async function renderPage(
     rendered_by: "dataforseo",
     onpage_score: facts.onPageScore,
   };
+}
+
+// ── Pages reached by following links ────────────────────────────────────────
+
+/** One URL in the form two spellings of the same page share. */
+function samePageKey(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.hostname.replace(/^www\./, "")}${u.pathname.replace(/\/+$/, "")}`.toLowerCase();
+  } catch {
+    return url.replace(/\/+$/, "").toLowerCase();
+  }
+}
+
+export interface LinkedPagesOutcome {
+  inserted: number;
+  /** Existing rows that had no extract and got one. */
+  updated: number;
+  /** Set when the write failed; the crawl itself is unaffected. */
+  error: string | null;
+}
+
+/**
+ * Keep the business pages the homepage-first crawl reached.
+ *
+ * `analyseDomain` walks the site's own links from the homepage, and on a
+ * hand-built site with no sitemap that walk is the only thing that ever reads
+ * the services, portfolio, about and contact pages - which is exactly the
+ * site a real signup had on 2026-09-22. Its results were used for the audit
+ * and dropped, so `site_pages` stayed empty and the writer knew nothing the
+ * crawl had seen.
+ *
+ * Only pages that answered 2xx and carry an extract (a page with a role, or
+ * the home) are kept. A row the sitemap crawl already wrote is never
+ * overwritten - it holds scores and findings this walk did not compute - and
+ * only has its extract filled when it has none. New rows carry no keyword and
+ * no scores, so the link pool, the refresh queue and the technical report,
+ * which all filter on those, do not see them.
+ *
+ * Never throws: this is bookkeeping on the side of a crawl whose own result
+ * stands either way.
+ */
+export async function recordLinkedPages(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  pages: Pick<CrawlResult, "url" | "status" | "title" | "metaDescription" | "h1" | "extract">[],
+): Promise<LinkedPagesOutcome> {
+  const keep = pages.filter((p) => p.status >= 200 && p.status < 300 && p.extract);
+  if (!keep.length) return { inserted: 0, updated: 0, error: null };
+  try {
+    const { data: existing, error: readError } = await supabase
+      .from("site_pages")
+      .select("url, extract")
+      .eq("workspace_id", workspaceId)
+      .limit(5000);
+    if (readError) return { inserted: 0, updated: 0, error: readError.message };
+    const byKey = new Map(
+      ((existing ?? []) as { url: string; extract: unknown }[]).map((r) => [samePageKey(r.url), r]),
+    );
+
+    const now = new Date().toISOString();
+    const inserts: Record<string, unknown>[] = [];
+    const fills: { url: string; extract: SitePageExtract }[] = [];
+    const seen = new Set<string>();
+    for (const p of keep) {
+      const key = samePageKey(p.url);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const row = byKey.get(key);
+      if (row) {
+        if (!row.extract) fills.push({ url: row.url, extract: p.extract! });
+        continue;
+      }
+      const path = (() => {
+        try {
+          return new URL(p.url).pathname.replace(/\/$/, "") || "/";
+        } catch {
+          return p.url;
+        }
+      })();
+      inserts.push({
+        workspace_id: workspaceId,
+        url: p.url,
+        path,
+        page_type: classifyPageType(path),
+        title: decodeEntities(p.title || "").trim() || null,
+        meta_description: decodeEntities(p.metaDescription || "").trim() || null,
+        h1: p.h1[0]?.trim() || p.extract!.name,
+        status: p.status,
+        extract: p.extract,
+        last_crawled_at: now,
+      });
+    }
+
+    if (inserts.length) {
+      // `ignoreDuplicates`: a sitemap crawl racing this one wins the row.
+      const { error } = await supabase
+        .from("site_pages")
+        .upsert(inserts, { onConflict: "workspace_id,url", ignoreDuplicates: true });
+      if (error) return { inserted: 0, updated: 0, error: error.message };
+    }
+    let updated = 0;
+    for (const f of fills) {
+      const { error } = await supabase
+        .from("site_pages")
+        .update({ extract: f.extract })
+        .eq("workspace_id", workspaceId)
+        .eq("url", f.url)
+        .is("extract", null);
+      if (!error) updated++;
+    }
+    return { inserted: inserts.length, updated, error: null };
+  } catch (err) {
+    return { inserted: 0, updated: 0, error: err instanceof Error ? err.message : "could not record linked pages" };
+  }
 }

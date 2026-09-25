@@ -4,7 +4,7 @@
 // site owner can see who visited.
 import { fetchLenient, isTlsChainError } from "./lenient-fetch";
 
-const CRAWLER_UA =
+export const CRAWLER_UA =
   "Mozilla/5.0 (compatible; AltoRank-Auditor/1.0; +https://altorank.co; site audit)";
 
 /**
@@ -24,6 +24,7 @@ const CRAWLER_UA =
 export const FALLBACK_UA = "AltoRankBot/1.0 (content analysis)";
 
 import { noteRefusal, refusing } from "./host-circuit";
+import { extractSitePage, type SitePageExtract } from "./site-extract";
 
 /** Statuses a bot rule returns; anything else is the site's real answer. */
 const REFUSED = new Set([403, 406, 429]);
@@ -81,6 +82,14 @@ export interface CrawlResult {
   images: Array<{ src: string; alt: string }>;
   links: Array<{ href: string; text: string; isInternal: boolean }>;
   loadTimeMs: number;
+  /**
+   * What the page says about the business when it is the home, services,
+   * portfolio, about, contact or pricing page; null for any other page.
+   * Absent when the response was not HTML. Read off the body already in hand
+   * (lib/audit/site-extract.ts) so the first look can keep it in `site_pages`
+   * instead of discarding what it read.
+   */
+  extract?: SitePageExtract | null;
 }
 
 /**
@@ -266,5 +275,5 @@ function parseHtml(
     }
   }
 
-  return { title, metaDescription, h1, h2, images, links };
+  return { title, metaDescription, h1, h2, images, links, extract: extractSitePage(html, pageUrl) };
 }
