@@ -4,13 +4,24 @@
  * The first Turkish draft (a real signup, 2026-09-22) was not failed by one
  * module but by eleven, each of which had its own English label or English
  * regex and fell back to it silently. lib/i18n/locale.ts is now the one place
- * a language is described. This walks lib/content, lib/seo and lib/ai and
- * fails when one of them grows its own again, in three ways:
+ * a language is described. This walks lib/content, lib/seo, lib/ai and
+ * lib/publishing and fails when one of them grows its own again, in three
+ * ways:
  *
- *   1. LABELS: a string that writes an HTML element with literal Latin text
- *      in it (`<h2>Frequently asked questions</h2>`, `aria-label="Bar
- *      chart`, `alt="Sketch`). Text written into an article belongs in
- *      `ArticleLabels`.
+ *   1. LABELS: English text a string writes into an article. Three shapes,
+ *      because the incident's labels were none of the first one:
+ *        - an HTML element with literal Latin text in it
+ *          (`<h2>Frequently asked questions</h2>`, `aria-label="Bar chart`,
+ *          `alt="Sketch`);
+ *        - a literal that IS a known English label, alone or after an opening
+ *          tag: the values of a label map ("Contents", `Learn more about
+ *          ${name}`, "Sketch illustrating"), a chart's `Bar chart: ${d}`,
+ *          `<small>Powered by`. Every one of those passed the element rule,
+ *          because they were interpolated into markup somewhere else;
+ *        - a Tiptap text node with literal Latin text (`{ type: "text", text:
+ *          " Learn more about " }`), which is how the backlink exchange wrote
+ *          English into drafts without any markup at all.
+ *      Text written into an article belongs in `ArticleLabels`.
  *
  *   2. MARKERS: a regex (literal or `new RegExp` argument) that spells an
  *      English word the language-dependent checks key on - "according to",
@@ -35,7 +46,7 @@ import { join, relative } from "node:path";
 import ts from "typescript";
 
 const ROOT = join(__dirname, "..", "..", "..");
-const SCOPE = ["lib/content", "lib/seo", "lib/ai"];
+const SCOPE = ["lib/content", "lib/seo", "lib/ai", "lib/publishing"];
 
 // ── What counts ────────────────────────────────────────────────────────────
 
@@ -68,6 +79,21 @@ const ENGLISH_MARKERS: { name: string; pattern: RegExp }[] = [
 const LABEL_ELEMENT = /<(h[1-6]|figcaption|caption|summary|th|strong|b|a)\b[^>]*>\s*[A-Za-z]{2}[^<$]*<\/\1>/;
 const LABEL_ATTRIBUTE = /\b(?:aria-label|alt|title)="[A-Za-z]/;
 
+/**
+ * A literal that is an English label the product has written into articles,
+ * alone or after an opening tag. Anchored at the start and case-sensitive:
+ * a label is a capitalised phrase standing alone ("Contents"), where a
+ * sentence in a reviewer's UI that mentions "a table of contents", or a
+ * lowercase list of phrases to RECOGNISE ("frequently asked questions" in the
+ * topical profile), is not one. Each alternative is a string the product
+ * wrote into a non-English article before the contract.
+ */
+const ENGLISH_LABEL =
+  /^\s*(?:<[a-z][^>]*>\s*)*(?:Contents$|Table of contents$|Learn more\b|Read more\b|This article is published by\b|Visit\b|Sketch illustrating|Watercolou?r illustration|Photo-style image|Graphic illustrating|Illustration of\b|Bar chart\b|Figures from the text|Key takeaways$|Frequently asked questions$|Powered by\b|this resource$)/;
+
+/** Latin letters in a Tiptap text node's literal: words written into the document. */
+const TIPTAP_WORDS = /[A-Za-z]{2}/;
+
 /** Entry points that read language, and must be told which. */
 const LANGUAGE_ENTRY_POINTS = new Set(["scoreArticle", "scoreCitationReadiness", "auditArticle", "factCheckArticle", "enrichArticle"]);
 
@@ -86,6 +112,8 @@ const ALLOWED_LABELS: Record<string, string> = {
   'lib/ai/prompts.ts:label:<a href="{{internal-link:KEYWORD}}">anchor</a>':
     'shows the model the internal-link placeholder syntax (<a href="{{internal-link:KEYWORD}}">anchor</a>); ' +
     '"anchor" stands for the article\'s own words and never reaches the page',
+  "lib/seo/article-audit.ts:label:Table of contents":
+    "the audit item's own name in the reviewer's panel, which is English UI; it is never written into the article",
 };
 
 const ALLOWED_CALLERS: Record<string, string> = {};
@@ -125,73 +153,99 @@ function isRegExpConstruction(node: ts.Node): node is ts.NewExpression | ts.Call
   );
 }
 
-function scan(): { markers: Finding[]; labels: Finding[]; callers: Finding[] } {
-  const markers: Finding[] = [];
-  const labels: Finding[] = [];
-  const callers: Finding[] = [];
+type Findings = { markers: Finding[]; labels: Finding[]; callers: Finding[] };
 
+/** Rule 1 on one literal: the element, the attribute, or the whole literal as a label. */
+function labelIn(text: string): string | null {
+  const m = text.match(LABEL_ELEMENT) ?? text.match(LABEL_ATTRIBUTE) ?? text.match(ENGLISH_LABEL);
+  return m ? m[0].trim() : null;
+}
+
+/** A property's literal value in an object literal, by name. */
+function literalProperty(node: ts.ObjectLiteralExpression, name: string, source: ts.SourceFile): string | null {
+  for (const p of node.properties) {
+    if (ts.isPropertyAssignment(p) && p.name.getText(source).replace(/["']/g, "") === name) return literalText(p.initializer);
+  }
+  return null;
+}
+
+/** Every finding in one file. `inScope` turns on rules 1 and 2; rule 3 runs everywhere. */
+function scanFile(rel: string, source: ts.SourceFile, inScope: boolean, out: Findings): void {
+  const visit = (node: ts.Node) => {
+    if (inScope) {
+      // Rule 2: regex literals and RegExp arguments.
+      const regexTexts: string[] = [];
+      if (node.kind === ts.SyntaxKind.RegularExpressionLiteral) regexTexts.push((node as ts.RegularExpressionLiteral).text);
+      if (isRegExpConstruction(node)) {
+        for (const arg of node.arguments ?? []) {
+          const t = literalText(arg);
+          if (t) regexTexts.push(t);
+          // String.raw`...`
+          if (ts.isTaggedTemplateExpression(arg)) {
+            const inner = literalText(arg.template);
+            if (inner) regexTexts.push(inner);
+          }
+        }
+      }
+      for (const text of regexTexts) {
+        for (const m of ENGLISH_MARKERS) {
+          if (m.pattern.test(text)) {
+            out.markers.push({ key: `${rel}:${m.name}`, file: rel, line: lineOf(source, node), text: text.slice(0, 80) });
+          }
+        }
+      }
+
+      // Rule 1: labels. Keyed by the label itself, so allowing one label in
+      // a file does not allow the next.
+      const text = literalText(node);
+      const label = text ? labelIn(text) : null;
+      if (text && label) {
+        out.labels.push({ key: `${rel}:label:${label}`, file: rel, line: lineOf(source, node), text: text.slice(0, 80) });
+      }
+      if (ts.isObjectLiteralExpression(node) && literalProperty(node, "type", source) === "text") {
+        const written = literalProperty(node, "text", source);
+        if (written !== null && TIPTAP_WORDS.test(written)) {
+          out.labels.push({ key: `${rel}:tiptap:${written.trim()}`, file: rel, line: lineOf(source, node), text: written.slice(0, 80) });
+        }
+      }
+    }
+
+    // Rule 3: production callers of language-dependent entry points.
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      const name = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : null;
+      if (name && LANGUAGE_ENTRY_POINTS.has(name)) {
+        const args = node.arguments.map((a) => a.getText(source)).join(" ");
+        if (!/\blanguage\b/i.test(args)) {
+          out.callers.push({ key: `${rel}:${name}`, file: rel, line: lineOf(source, node), text: node.getText(source).slice(0, 80) });
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+}
+
+function parse(file: string, src: string): ts.SourceFile {
+  return ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, file.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+}
+
+function scan(): Findings {
+  const out: Findings = { markers: [], labels: [], callers: [] };
   const files = [
     ...SCOPE.flatMap((d) => walk(join(ROOT, d))),
     // Callers live everywhere; the other two rules stay in SCOPE.
     ...["app", "components", "lib"].flatMap((d) => walk(join(ROOT, d))),
   ];
-
   for (const file of [...new Set(files)]) {
     const rel = relative(ROOT, file);
+    // The contract itself is where every language's words are meant to be.
+    if (rel === "lib/i18n/locale.ts") continue;
     const inScope = SCOPE.some((d) => rel.startsWith(`${d}/`));
-    const src = readFileSync(file, "utf8");
-    const source = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, file.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
-
-    const visit = (node: ts.Node) => {
-      if (inScope) {
-        // Rule 2: regex literals and RegExp arguments.
-        const regexTexts: string[] = [];
-        if (node.kind === ts.SyntaxKind.RegularExpressionLiteral) regexTexts.push((node as ts.RegularExpressionLiteral).text);
-        if (isRegExpConstruction(node)) {
-          for (const arg of node.arguments ?? []) {
-            const t = literalText(arg);
-            if (t) regexTexts.push(t);
-            // String.raw`...`
-            if (ts.isTaggedTemplateExpression(arg)) {
-              const inner = literalText(arg.template);
-              if (inner) regexTexts.push(inner);
-            }
-          }
-        }
-        for (const text of regexTexts) {
-          for (const m of ENGLISH_MARKERS) {
-            if (m.pattern.test(text)) {
-              markers.push({ key: `${rel}:${m.name}`, file: rel, line: lineOf(source, node), text: text.slice(0, 80) });
-            }
-          }
-        }
-
-        // Rule 1: literal labels written as HTML. Keyed by the element
-        // itself, so allowing one label in a file does not allow the next.
-        const text = literalText(node);
-        const label = text ? (text.match(LABEL_ELEMENT) ?? text.match(LABEL_ATTRIBUTE)) : null;
-        if (text && label) {
-          labels.push({ key: `${rel}:label:${label[0]}`, file: rel, line: lineOf(source, node), text: text.slice(0, 80) });
-        }
-      }
-
-      // Rule 3: production callers of language-dependent entry points.
-      if (ts.isCallExpression(node)) {
-        const callee = node.expression;
-        const name = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : null;
-        if (name && LANGUAGE_ENTRY_POINTS.has(name)) {
-          const args = node.arguments.map((a) => a.getText(source)).join(" ");
-          if (!/\blanguage\b/i.test(args)) {
-            callers.push({ key: `${rel}:${name}`, file: rel, line: lineOf(source, node), text: node.getText(source).slice(0, 80) });
-          }
-        }
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(source);
+    scanFile(rel, parse(file, readFileSync(file, "utf8")), inScope, out);
   }
   // A function declaration named like an entry point is not a call.
-  return { markers, labels, callers };
+  return out;
 }
 
 const { markers, labels, callers } = scan();
@@ -255,21 +309,66 @@ describe("the locale contract is the only place a language is described", () => 
   it("actually finds what it is looking for", () => {
     // A guard that matches nothing passes forever. These are the shapes the
     // rules exist for; if the walker breaks, this fails.
-    const probe = ts.createSourceFile(
-      "probe.ts",
-      'const a = /according to (\\w+)/; const b = `<h2>Frequently asked questions</h2>`; scoreArticle(html, kw, { siteDomain });',
-      ts.ScriptTarget.Latest,
+    const found: Findings = { markers: [], labels: [], callers: [] };
+    scanFile(
+      "lib/content/probe.ts",
+      parse(
+        "probe.ts",
+        'const a = /according to (\\w+)/; const b = `<h2>Frequently asked questions</h2>`; scoreArticle(html, kw, { siteDomain });',
+      ),
       true,
+      found,
     );
-    const kinds: string[] = [];
-    const visit = (n: ts.Node) => {
-      if (n.kind === ts.SyntaxKind.RegularExpressionLiteral && ENGLISH_MARKERS.some((m) => m.pattern.test((n as ts.RegularExpressionLiteral).text))) kinds.push("marker");
-      const t = literalText(n);
-      if (t && LABEL_ELEMENT.test(t)) kinds.push("label");
-      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && LANGUAGE_ENTRY_POINTS.has(n.expression.text)) kinds.push("caller");
-      ts.forEachChild(n, visit);
-    };
-    visit(probe);
-    expect(kinds.sort()).toEqual(["caller", "label", "marker"]);
+    expect([found.markers.length > 0, found.labels.length > 0, found.callers.length > 0]).toEqual([true, true, true]);
+  });
+
+  it("would have failed on the English the incident's article was given", () => {
+    // The shapes that wrote English into the Turkish draft, as they stood on
+    // main before the contract: the enrichment's label map, the chart's
+    // aria-label, the backlink exchange's Tiptap sentence and the free-tier
+    // attribution line. None of them is an element with text inside it, so
+    // the first version of rule 1 passed every one.
+    const before = [
+      "const EN: Labels = {",
+      '  contents: "Contents",',
+      '  figuresFrom: "Figures from the text:",',
+      "  learnMore: (name) => `Learn more about ${name}`,",
+      "  publishedBy: (name) => `This article is published by ${name}.`,",
+      '  visit: "Visit",',
+      '  illustration: { sketch: "Sketch illustrating", watercolor: "Watercolour illustration of", illustration: "Illustration of" },',
+      "};",
+      "const aria = `aria-label=\"${escapeAttr(`Bar chart: ${description}`)}\"`;",
+      'const linkNodes = [{ type: "text", text: " Learn more about " }, link, { type: "text", text: "." }];',
+      "const line = `<small>Powered by <a href=\"${ATTRIBUTION_URL}\">${ATTRIBUTION_ANCHOR}</a></small>`;",
+    ].join("\n");
+    const found: Findings = { markers: [], labels: [], callers: [] };
+    scanFile("lib/content/enrich/labels.ts", parse("labels.ts", before), true, found);
+    const keys = found.labels.map((f) => f.key.replace("lib/content/enrich/labels.ts:", ""));
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        "label:Contents",
+        "label:Figures from the text",
+        "label:Learn more",
+        "label:This article is published by",
+        "label:Visit",
+        "label:Sketch illustrating",
+        "label:Watercolour illustration",
+        "label:Illustration of",
+        "label:Bar chart",
+        "tiptap:Learn more about",
+        "label:<small>Powered by",
+      ]),
+    );
+    // The same file written the contract's way has nothing to find.
+    const after = [
+      "const labels = locale.labels;",
+      "const aria = `aria-label=\"${escapeAttr(labels.barChart(description))}\"`;",
+      'const nodes = [{ type: "text", text: ` ${before}` }, link, { type: "text", text: " (" }];',
+      "const recognised = new Set([\"frequently asked questions\", \"learn more\"]);",
+      'const ui = "12 sections and no table of contents.";',
+    ].join("\n");
+    const clean: Findings = { markers: [], labels: [], callers: [] };
+    scanFile("lib/content/enrich/labels.ts", parse("labels.ts", after), true, clean);
+    expect(clean.labels).toEqual([]);
   });
 });
