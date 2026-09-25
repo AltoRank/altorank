@@ -659,6 +659,19 @@ async function recordFind(
   const publishedAt =
     Number.isFinite(lastmod) && lastmod >= created && lastmod <= now.getTime() ? page.lastmod! : now.toISOString();
 
+  // Did we push it ourselves before? A git publish whose URL never resolved
+  // goes back to review with the commit already made (cron/publish), and a
+  // find is then our own publish confirmed late - not a copy made past us.
+  // The notice says which; a log that cannot be read is not guessed at.
+  const { data: pushes, error: pushErr } = await supabase
+    .from("publish_log")
+    .select("id")
+    .eq("article_id", draft.id)
+    .eq("status", "success")
+    .limit(1);
+  if (pushErr) throw new Error(`recording ${draft.id}: could not read its publish log: ${pushErr.message}`);
+  const pushedEarlier = (pushes ?? []).length > 0;
+
   const { data, error } = await supabase
     .from("articles")
     .update({
@@ -673,6 +686,7 @@ async function recordFind(
         // Whether the lastmod was used as the publish date or only recorded.
         lastmodTrusted: publishedAt === page.lastmod,
         slackHours: LASTMOD_SLACK_MS / 3_600_000,
+        pushedEarlier,
       },
       found_on_site_prior: {
         status: draft.status,

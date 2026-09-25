@@ -19,7 +19,8 @@ describe("FoundOnSiteNotice", () => {
     const html = text(renderToStaticMarkup(<FoundOnSiteNotice view={view} onUndo={() => {}} />));
     expect(html).toContain("Live on your site");
     expect(html).toContain('href="https://acme-agency.example/blog/kopya"');
-    expect(html).toContain(`published there on ${new Date(view.foundAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`);
+    expect(html).toContain(`found it there on ${new Date(view.foundAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`);
+    expect(html).toContain(view.when);
     expect(html).toContain("66% of the draft's text appears on that page word for word");
     expect(html).toContain("without going through AltoRank, and counts as published");
   });

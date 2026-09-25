@@ -117,6 +117,18 @@ describe("findDraftsLiveOnSites", () => {
     // The same-outline English article is on the same site and is not our draft.
     expect(article(sb, "en-draft").status).toBe("approved");
     expect(article(sb, "en-draft").found_on_site_at).toBeNull();
+    // Nothing in the publish log: a copy made past us, and the date was usable.
+    expect(evidence).toMatchObject({ pushedEarlier: false, lastmodTrusted: true });
+  });
+
+  it("records that we had pushed it before, when the publish log says so", async () => {
+    // A git publish whose URL never resolved goes back to review with the
+    // commit made; finding it later is our own publish, confirmed late.
+    const sb = fakeSupabase(
+      seed({ publish_log: [{ id: "pl-1", article_id: "tr-draft", workspace_id: "ws-1", status: "success", triggered_by: "cron" }] }),
+    );
+    await findDraftsLiveOnSites(client(sb), { budgetMs: 60_000, fetch: fakeSite(site()).fetch, now: () => NIGHT_1 });
+    expect(article(sb, "tr-draft").found_on_site_evidence).toMatchObject({ pushedEarlier: true });
   });
 
   it("reads robots.txt first, obeys it, and reads only pages new since the draft", async () => {

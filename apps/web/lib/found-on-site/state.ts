@@ -18,6 +18,7 @@ export const LIVE_ON_YOUR_SITE = "Live on your site";
 export interface FoundOnSiteFields {
   status: string;
   published_url: string | null;
+  published_at?: string | null;
   found_on_site_at?: string | null;
   found_on_site_evidence?: unknown;
 }
@@ -29,7 +30,24 @@ export interface FoundOnSiteView {
   textPercent: number | null;
   /** How the match was decided, in words a person can check. */
   basis: string;
+  /**
+   * When it went live, and how we know: the sitemap's date when the check
+   * trusted it (then `published_at` is that date), otherwise only the night
+   * it was found, which is the latest it can have gone live.
+   */
+  when: string;
+  /**
+   * How it got there. Usually by hand, past AltoRank. Not when we had pushed
+   * it ourselves and never confirmed the address (a git publish whose URL did
+   * not resolve goes back to review): then the find is our own publish
+   * confirmed late, and "without going through AltoRank" would be false.
+   */
+  origin: string;
 }
+
+/** A date the way the editor writes every other date: "23 Sept 2026". */
+const day = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
 /** Whether this article is live because we found it on the site, as opposed to because we published it. */
 export function isFoundOnSite(a: FoundOnSiteFields): boolean {
@@ -44,7 +62,13 @@ export function liveLabel(a: FoundOnSiteFields): string | undefined {
 /** What the editor shows about a find, or null when the article was not found on the site. */
 export function foundOnSiteView(a: FoundOnSiteFields): FoundOnSiteView | null {
   if (!isFoundOnSite(a)) return null;
-  const e = (a.found_on_site_evidence ?? {}) as { containment?: unknown; title?: unknown; rule?: unknown };
+  const e = (a.found_on_site_evidence ?? {}) as {
+    containment?: unknown;
+    title?: unknown;
+    rule?: unknown;
+    lastmodTrusted?: unknown;
+    pushedEarlier?: unknown;
+  };
   const containment = typeof e.containment === "number" ? e.containment : null;
   const textPercent = containment === null ? null : Math.round(containment * 100);
   // Runs of four words, matched exactly: "word for word" is what was measured.
@@ -53,7 +77,16 @@ export function foundOnSiteView(a: FoundOnSiteFields): FoundOnSiteView | null {
     textPercent === null
       ? "The draft's text was found on that page; how much of it was not recorded"
       : `${textPercent}% of the draft's text appears on that page word for word${e.rule === "text+title" ? ", under the same headline" : ""}`;
-  return { url: a.published_url!, foundAt: a.found_on_site_at!, textPercent, basis };
+  const foundAt = a.found_on_site_at!;
+  const when =
+    e.lastmodTrusted === true && a.published_at
+      ? `Your sitemap dates it ${day(a.published_at)}; our nightly check found it there on ${day(foundAt)}.`
+      : `Our nightly check found it there on ${day(foundAt)}. Your sitemap gave no date we could use, so it may have gone live earlier.`;
+  const origin =
+    e.pushedEarlier === true
+      ? "We sent it to your site earlier but could not confirm its address then; it now counts as published."
+      : "It went live without going through AltoRank, and counts as published.";
+  return { url: a.published_url!, foundAt, textPercent, basis, when, origin };
 }
 
 /**

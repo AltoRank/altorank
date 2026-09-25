@@ -23,7 +23,6 @@ export function FoundOnSiteNotice({
   pending?: boolean;
   error?: string | null;
 }) {
-  const found = new Date(view.foundAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
   return (
     <div className="flex flex-col gap-2 rounded-[7px] border border-line bg-bg p-2.5">
       <div className="flex items-center justify-between gap-2">
@@ -39,8 +38,7 @@ export function FoundOnSiteNotice({
         {view.url}
       </a>
       <p className="text-[12px] leading-relaxed text-ink-3">
-        Our nightly check of your sitemap found this draft published there on {found}. {view.basis}. It went
-        live without going through AltoRank, and counts as published.
+        {view.when} {view.basis}. {view.origin}
       </p>
       <Button size="sm" variant="ghost" className="justify-center" disabled={pending} onClick={onUndo}>
         {pending ? "Putting it back…" : "Not my article"}

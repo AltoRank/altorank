@@ -25,7 +25,9 @@
 --                           from live because AltoRank pushed it.
 --   found_on_site_evidence  what the comparison measured: text containment,
 --                           title similarity, the rule that decided, the
---                           sitemap lastmod. Shown to the person, so the claim
+--                           sitemap lastmod, and whether AltoRank had pushed
+--                           the article before (a git publish whose URL never
+--                           resolved). Shown to the person, so the claim
 --                           carries its working.
 --   found_on_site_prior     status, published_url and published_at as they
 --                           were before, so "that is not my article" restores
@@ -47,7 +49,7 @@ alter table public.articles
 comment on column public.articles.found_on_site_at is
   'When the nightly found-on-site check (lib/found-on-site) found this article live on the customer''s own site. Non-null with status = live means "Live on your site": found there, not published through AltoRank. Cleared when a person undoes it.';
 comment on column public.articles.found_on_site_evidence is
-  'What the found-on-site comparison measured: containment of the draft''s word runs in the page (0-1), title similarity (0-1), the deciding rule, the sitemap lastmod.';
+  'What the found-on-site comparison measured: containment of the draft''s word runs in the page (0-1), title similarity (0-1), the deciding rule, the sitemap lastmod and whether it was used as the publish date, and whether AltoRank had pushed the article before (publish_log).';
 comment on column public.articles.found_on_site_prior is
   'status, published_url and published_at before the find, restored verbatim when a person says the page is not this article.';
 comment on column public.articles.found_on_site_rejected is

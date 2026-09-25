@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BLIND_REASON, blindNote, foundOnSiteView, isFoundOnSite, LIVE_ON_YOUR_SITE, liveLabel, tallyArticles } from "../state";
 
 const url = "https://acme-agency.example/blog/kopya";
+const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 const found = {
   status: "live",
   published_url: url,
@@ -32,10 +33,36 @@ describe("found-on-site state", () => {
       foundAt: "2026-09-23T10:00:00.000Z",
       textPercent: 66,
       basis: "66% of the draft's text appears on that page word for word",
+      when: `Our nightly check found it there on ${day("2026-09-23T10:00:00.000Z")}. Your sitemap gave no date we could use, so it may have gone live earlier.`,
+      origin: "It went live without going through AltoRank, and counts as published.",
     });
     expect(foundOnSiteView({ ...found, found_on_site_evidence: { containment: 0.41, rule: "text+title" } })?.basis).toBe(
       "41% of the draft's text appears on that page word for word, under the same headline",
     );
+  });
+
+  it("dates it by the sitemap only when the check trusted that date, and never calls the night of the find the publish date", () => {
+    const dated = foundOnSiteView({
+      ...found,
+      published_at: "2026-09-22T10:48:00.000Z",
+      found_on_site_evidence: { containment: 0.66, rule: "text", lastmodTrusted: true },
+    })!;
+    expect(dated.when).toBe(
+      `Your sitemap dates it ${day("2026-09-22T10:48:00.000Z")}; our nightly check found it there on ${day("2026-09-23T10:00:00.000Z")}.`,
+    );
+    // published_at is the find time when the lastmod was not usable.
+    const undated = foundOnSiteView({
+      ...found,
+      published_at: "2026-09-23T10:00:00.000Z",
+      found_on_site_evidence: { containment: 0.66, rule: "text", lastmodTrusted: false },
+    })!;
+    expect(undated.when).toMatch(/^Our nightly check found it there on .*may have gone live earlier\.$/);
+  });
+
+  it("does not say it went past AltoRank when we had pushed it ourselves", () => {
+    const ours = foundOnSiteView({ ...found, found_on_site_evidence: { containment: 0.9, rule: "text", pushedEarlier: true } })!;
+    expect(ours.origin).toBe("We sent it to your site earlier but could not confirm its address then; it now counts as published.");
+    expect(ours.origin).not.toMatch(/without going through AltoRank/);
   });
 
   it("does not claim a number it does not have", () => {
