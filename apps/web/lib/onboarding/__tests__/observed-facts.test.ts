@@ -138,3 +138,12 @@ describe("the profile prompt", () => {
     expect(parseProfile('{"name":"A","conversionUrl":" /bize-ulasin "}', DOMAIN)?.conversionUrl).toBe("/bize-ulasin");
   });
 });
+
+describe("a one-page site", () => {
+  it("keeps the section a contact link points at, on a page the read fetched", async () => {
+    const onePage = observedFrom(DOMAIN, [{ url: HOME, html: `<nav><a href="/#iletisim">İletişim</a></nav>` }]);
+    const out = await verifyObservedUrl("/#iletisim", DOMAIN, onePage, { fetch: fakeFetch({}), now: NOW });
+    expect(out.url).toBe(`${HOME}#iletisim`);
+    expect(out.check.verified).toBe(true);
+  });
+});

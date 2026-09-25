@@ -63,13 +63,16 @@ export interface CheckOptions {
 
 const TIMEOUT_MS = 8_000;
 
-/** `https://site/path` for a path, the URL itself for a URL, null for neither. */
+/**
+ * `https://site/path` for a path, the URL itself for a URL, null for neither.
+ * A fragment is kept: on a one-page site `/#contact` is the contact page, and
+ * it exists exactly when the page it is on does.
+ */
 export function absoluteOnSite(value: string, domain: string): string | null {
   const origin = `https://${domain.replace(/^https?:\/\//, "").replace(/\/+$/, "")}`;
   try {
     const u = new URL(value.trim(), origin);
     if (u.protocol !== "http:" && u.protocol !== "https:") return null;
-    u.hash = "";
     return u.href;
   } catch {
     return null;
@@ -178,9 +181,10 @@ export async function verifyObservedUrl(
 
   const key = normaliseSiteUrl(url, domain);
   const readPage = (observed?.pages ?? []).find((p) => normaliseSiteUrl(p, domain) === key);
+  const hash = new URL(url).hash;
   if (readPage) {
     // Fetched with a 2xx by the read itself: that is the check.
-    return record(readPage, true, `Read on the site when the profile was proposed, and it answered.`);
+    return record(`${readPage.replace(/#.*$/, "")}${hash}`, true, `Read on the site when the profile was proposed, and it answered.`);
   }
   const linked = (observed?.links ?? []).some((l) => normaliseSiteUrl(l.url, domain) === key);
   if (!linked) {
@@ -189,7 +193,7 @@ export async function verifyObservedUrl(
 
   const check = await checkSiteUrl(url, domain, opts);
   if (check.state === "verified") {
-    return record(check.url, true, `Linked from a page on the site, and it answered HTTP ${check.status}.`);
+    return record(`${check.url.replace(/#.*$/, "")}${hash}`, true, `Linked from a page on the site, and it answered HTTP ${check.status}.`);
   }
   return record(null, false, refusal(check, proposed));
 }

@@ -58,7 +58,7 @@ export interface SitePageExtract {
   detail: boolean;
   /** What the page calls itself: its H1, else the first part of its title. */
   name: string | null;
-  /** H2/H3 inside the main content, in order. An index page's list of services or plans. */
+  /** H2/H3 inside the main content, in order. An index page's (or the homepage's) list of services or plans. */
   headings: string[];
   /** Links inside the main content that carry words. A portfolio's projects, a services index's services. */
   links: SiteLink[];
@@ -516,7 +516,9 @@ export function extractSitePage(
   // The page's own heading is its name, already kept; the text starts after it.
   const bodyText = stripTags(main);
   const mainText = h1 && bodyText.startsWith(h1) ? bodyText.slice(h1.length).trim() : bodyText;
-  const index = !detail && (role === "offering" || role === "work" || role === "pricing");
+  // The homepage counts as an index: on a one-page site its sections are the
+  // services and the portfolio, and its headings are the only outline of them.
+  const index = !detail && (role === "offering" || role === "work" || role === "pricing" || role === "home");
   const extract: SitePageExtract = {
     v: 1,
     role,

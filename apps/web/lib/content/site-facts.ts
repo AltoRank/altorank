@@ -55,6 +55,7 @@ const MAX_PAGES = 10;
 const MAX_CONVERSION_CHECKS = 3;
 
 const ROLE_NAME: Record<string, string> = {
+  home: "Home",
   offering: "Services",
   work: "Work",
   about: "About",
@@ -161,10 +162,12 @@ export function buildSiteFacts(rows: SitePageRow[], domain: string): SiteFacts {
     }
   }
 
-  for (const role of ["offering", "work", "pricing"] as const) {
-    for (const p of withExtract.filter((x) => x.extract.role === role && !x.extract.detail && x.extract.headings.length)) {
+  // The homepage last: on a one-page site it is where the services and the
+  // work are, and on any other it repeats what the section pages say.
+  for (const role of ["offering", "work", "pricing", "home"] as const) {
+    for (const p of withExtract.filter((x) => x.extract.role === role && !x.extract.detail && x.extract.headings?.length)) {
       if (facts.headings.length >= 4) break;
-      facts.headings.push({ page: p.extract.name ?? p.h1 ?? p.title ?? ROLE_NAME[role], url: p.url, items: p.extract.headings });
+      facts.headings.push({ page: p.extract.name ?? p.h1 ?? p.title ?? ROLE_NAME[role] ?? "Home", url: p.url, items: p.extract.headings });
     }
   }
 

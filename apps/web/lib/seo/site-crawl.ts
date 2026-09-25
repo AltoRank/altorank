@@ -1062,7 +1062,9 @@ export async function recordLinkedPages(
         page_type: classifyPageType(path),
         title: decodeEntities(p.title || "").trim() || null,
         meta_description: decodeEntities(p.metaDescription || "").trim() || null,
-        h1: p.h1[0]?.trim() || p.extract!.name,
+        // The extract's name is entity-decoded and reads nested markup; the
+        // link crawl's own h1 list does neither.
+        h1: p.extract!.name ?? (p.h1[0]?.trim() || null),
         status: p.status,
         extract: p.extract,
         last_crawled_at: now,
