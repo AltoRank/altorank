@@ -15,7 +15,7 @@ import {
   toFirstArticleCard,
 } from "../first-article";
 import { offerSetupRetry, runStateOf, setupFellShort } from "../setup-retry";
-import type { OnboardingRunRow, OnboardingRunSnapshot } from "../events";
+import { onboardingOutcome, type OnboardingRunRow, type OnboardingRunSnapshot } from "../events";
 
 const INTRO = "Bu giriş paragrafı deneme süresi başlamadan kopyalanamamalı.";
 const PARAGRAPH = "Ajanslar bu yöntemi üç haftada uygular ve sonuçları ölçer.";
@@ -223,5 +223,15 @@ describe("offerSetupRetry", () => {
   it("setupFellShort is false for a run that produced its article", () => {
     const run = runStateOf(snapshot({ status: "done", planned: [{ term: "x", date: "2026-10-01" }], article_id: "a1" }));
     expect(run && setupFellShort(run)).toBe(false);
+  });
+});
+
+describe("the run's closing line before the trial", () => {
+  const done = () => runStateOf(snapshot({ status: "done", planned: [{ term: "x", date: "2026-10-01" }], article_id: "a1" }));
+  it("does not send an account before its trial to a review queue it cannot open", () => {
+    const state = done()!;
+    state.article = { id: "a1", title: "t", keyword: "x", wordCount: 10, verdict: "clean" };
+    expect(onboardingOutcome(state, false, { preTrial: true }).line).toBe("Done. 1 article on the calendar and your first article is written.");
+    expect(onboardingOutcome(state).line).toBe("Done. 1 article on the calendar and your first draft is in review.");
   });
 });

@@ -1010,6 +1010,7 @@ function RunScreen({
               onState={setState}
               initialRun={attempt === 0 ? initialRun : null}
               lockHeld={trialEligible}
+              preTrial={trialEligible}
             />
             {planned.length > 0 && (
               <div className="mt-5">
