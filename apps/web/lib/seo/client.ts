@@ -216,11 +216,13 @@ function report(operation: string, costUsd: number | null): void {
 export async function post<T = unknown>(
   endpoint: string,
   body: unknown[],
+  opts: { maxAttempts?: number } = {},
 ): Promise<DataForSEOResponse<T>> {
+  const maxAttempts = Math.max(1, opts.maxAttempts ?? MAX_ATTEMPTS);
   if (e2eStubsEnabled()) throw new DataForSEOError(`E2E_STUBS: refused to call DataForSEO ${endpoint}`, 0);
   let lastError: unknown;
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const res = await fetch(`${BASE_URL}${endpoint}`, {
         method: "POST",
@@ -247,7 +249,7 @@ export async function post<T = unknown>(
           ? isRetryableTaskStatus(err.statusCode)
           : err.statusCode === 429 || err.statusCode >= 500);
 
-      if (!retryable || attempt === MAX_ATTEMPTS) throw err;
+      if (!retryable || attempt === maxAttempts) throw err;
 
       // A transient SE fault clears in well under a second; this is about
       // riding out a blip, not backing off a rate limit we are hitting hard.

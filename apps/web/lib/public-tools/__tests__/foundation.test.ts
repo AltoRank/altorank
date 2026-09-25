@@ -128,7 +128,7 @@ describe("dataforseoLive", () => {
   it("returns the first task's rows", async () => {
     const post = vi.fn(async () => ({ tasks: [{ result: [{ k: 1 }] }] }));
     expect(await dataforseoLive("t", "/x/live", { a: 1 }, { post: post as never })).toEqual([{ k: 1 }]);
-    expect(post).toHaveBeenCalledWith("/x/live", [{ a: 1 }]);
+    expect(post).toHaveBeenCalledWith("/x/live", [{ a: 1 }], { maxAttempts: undefined });
   });
 
   it("maps a provider error to upstream", async () => {

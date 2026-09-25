@@ -118,12 +118,22 @@ export const plagiarismChecker = defineTool({
 
     const results = await Promise.allSettled(
       phrases.map((phrase) =>
-        dataforseoLive<SerpResult>(SLUG, "/serp/google/organic/live/regular", {
-          keyword: `"${phrase}"`,
-          location_code: 2840,
-          language_code: "en",
-          depth: 10,
-        }),
+        dataforseoLive<SerpResult>(
+          SLUG,
+          "/serp/google/organic/live/regular",
+          {
+            keyword: `"${phrase}"`,
+            location_code: 2840,
+            language_code: "en",
+            depth: 10,
+          },
+          // An exact phrase Google has no page for comes back as 40101, the
+          // status DataForSEO also uses for a transient fault. For original
+          // text that is the usual answer, so it reads as "none" here, and it
+          // is not retried: parallel live SERP calls queue for up to ~20s each
+          // on their side, and three attempts overran the route's deadline.
+          { maxAttempts: 1, emptyOnStatus: [40101] },
+        ),
       ),
     );
     if (results.every((r) => r.status === "rejected")) {

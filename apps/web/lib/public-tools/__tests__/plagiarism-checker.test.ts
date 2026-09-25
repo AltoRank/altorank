@@ -4,10 +4,15 @@ const { post } = vi.hoisted(() => ({ post: vi.fn() }));
 vi.mock("@/lib/seo/client", () => ({
   post,
   hasDataForSEOCredentials: () => true,
-  DataForSEOError: class DataForSEOError extends Error {},
+  DataForSEOError: class DataForSEOError extends Error {
+    constructor(message: string, public statusCode = 0) {
+      super(message);
+    }
+  },
 }));
 vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault: vi.fn(), spendClient: () => null }));
 
+import { DataForSEOError } from "@/lib/seo/client";
 import { dfs, ctx, quiet, issue, kvOf, tableOf, textOf, item } from "./paid-helpers";
 import { plagiarismChecker as tool, pickSentences, toPhrase, snippetShows, splitSentences } from "../tools/plagiarism-checker";
 
@@ -73,6 +78,17 @@ describe("plagiarism-checker", () => {
     });
     await expect(tool.run(tool.input.parse({ text: LONG1 }), ctx())).rejects.toMatchObject({ code: "upstream" });
     restore();
+  });
+
+  it("reads 40101 on an exact phrase as no match, asks for one attempt, and is not upstream", async () => {
+    post.mockImplementation(async () => {
+      throw new DataForSEOError("Internal SE Server Error.", 40101);
+    });
+    const blocks = await tool.run(tool.input.parse({ text: `${LONG1} ${LONG2}` }), ctx());
+    const k = kvOf(blocks);
+    expect(item(k, "Sentences checked")).toMatchObject({ value: "2 of 2 chosen", status: "info" });
+    expect(item(k, "Found on other pages")).toMatchObject({ value: "none of the checked sentences", status: "pass" });
+    expect(post.mock.calls.every((c) => (c[2] as { maxAttempts?: number })?.maxAttempts === 1)).toBe(true);
   });
 
   it("refuses text with no sentence long enough to search, without calling out", async () => {

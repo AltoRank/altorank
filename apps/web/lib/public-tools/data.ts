@@ -26,12 +26,15 @@ export function dataAvailable(): boolean {
  * @param tool      slug, for logs
  * @param endpoint  e.g. "/dataforseo_labs/google/keyword_ideas/live" or "/serp/google/organic/live/advanced"
  * @param task      the single task object for that endpoint
+ * @param deps      `maxAttempts` overrides the client's retry count; `emptyOnStatus`
+ *                  lists task statuses that mean "no results" for this call and
+ *                  come back as [] instead of an error
  */
 export async function dataforseoLive<T = unknown>(
   tool: string,
   endpoint: string,
   task: Record<string, unknown>,
-  deps: { post?: typeof post } = {},
+  deps: { post?: typeof post; maxAttempts?: number; emptyOnStatus?: number[] } = {},
 ): Promise<T[]> {
   if (!deps.post && !hasDataForSEOCredentials()) {
     console.error(`[public-tools/${tool}] DataForSEO credentials are not set`);
@@ -44,10 +47,11 @@ export async function dataforseoLive<T = unknown>(
     throw new Error(`public tools call live endpoints only, not ${endpoint}`);
   }
   try {
-    const res = await (deps.post ?? post)<T>(endpoint, [task]);
+    const res = await (deps.post ?? post)<T>(endpoint, [task], { maxAttempts: deps.maxAttempts });
     const first = res.tasks?.[0];
     return (first?.result ?? []) as T[];
   } catch (err) {
+    if (err instanceof DataForSEOError && deps.emptyOnStatus?.includes(err.statusCode)) return [];
     const detail = err instanceof DataForSEOError ? `${err.statusCode} ${err.message}` : err instanceof Error ? err.message : String(err);
     console.error(`[public-tools/${tool}] DataForSEO ${endpoint} failed: ${detail}`);
     throw new ToolError("upstream", UNAVAILABLE);
