@@ -49,10 +49,19 @@ function client() {
   return {
     from: (table: string) => {
       if (table === "articles") {
+        // Also the tie-break's read of the account's earliest drafts: the
+        // shared rows in insertion order, which is created_at order here.
+        let limit = Infinity;
         const chain: Record<string, unknown> = {
           eq: () => chain,
+          in: () => chain,
+          neq: () => chain,
+          order: () => chain,
+          limit: (n: number) => ((limit = n), chain),
           maybeSingle: async () => ({ data: target, error: null }),
           single: async () => ({ data: target, error: target ? null : { message: "not found" } }),
+          then: (resolve: (v: unknown) => unknown) =>
+            tick().then(() => resolve({ data: [...rows].slice(0, limit).map((id) => ({ id })), error: null })),
         };
         return {
           select: () => chain,
@@ -82,6 +91,10 @@ function client() {
             select: () => ({
               single: async () => {
                 jobsOpened += 1;
+                // A real draft holds its row for minutes. Held here long
+                // enough for every racer's re-check to see it, before the
+                // stop below takes the row back.
+                await new Promise((r) => setTimeout(r, 25));
                 return { data: null, error: { message: "stop here" } };
               },
             }),
@@ -94,6 +107,8 @@ function client() {
         limit: () => chain,
         single: async () => ({ data: workspace, error: null }),
         maybeSingle: async () => ({ data: null, error: null }),
+        // The account's sites, for the tie-break.
+        then: (resolve: (v: unknown) => unknown) => resolve({ data: table === "workspaces" ? [{ id: "ws1" }] : [], error: null }),
       };
       return { select: () => chain };
     },
@@ -148,15 +163,17 @@ describe("generateArticle and the trial hold", () => {
     expect(jobsOpened).toBe(0);
   });
 
-  it("lets at most one of several racing first drafts reach the model", async () => {
+  it("lets exactly one of several racing first drafts reach the model: the earliest", async () => {
     gatedQuota();
     const outs = await Promise.all([0, 1, 2, 3].map((i) => draft(i)));
-    // Refusing all of them is possible (each counted the others' rows) and
-    // leaves the first article to a retry; letting two through is not.
-    expect(outs.filter((o) => o === "reached the model").length).toBeLessThanOrEqual(1);
-    expect(jobsOpened).toBeLessThanOrEqual(1);
-    for (const o of outs) if (o !== "reached the model") expect(o).toBeInstanceOf(TrialHoldError);
-    // Every refused run took its own row back.
+    // Each counted the others' rows and saw a race. Refusing on the count
+    // alone refused all four, leaving the account with no article and a
+    // message saying its first one was written. The earliest row wins.
+    expect(outs.filter((o) => o === "reached the model")).toHaveLength(1);
+    expect(outs[0]).toBe("reached the model");
+    expect(jobsOpened).toBe(1);
+    for (const o of outs.slice(1)) expect(o).toBeInstanceOf(TrialHoldError);
+    // Every refused run took its own row back before the winner's stopped.
     expect(rows.size).toBe(0);
   });
 

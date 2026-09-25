@@ -23,8 +23,10 @@ vi.mock("@/lib/billing/first-draft-gate", () => ({ firstDraftAwaitsReview: (...a
 // fake handed in, so the reads below are the ones asserted.
 vi.mock("@/lib/billing/account-client", () => ({ accountCountingClient: (c: unknown) => c }));
 
+import { FakeDb } from "@/lib/plan/__tests__/fake-postgrest";
 import {
   draftBlocker,
+  isFirstPreTrialDraft,
   planHoldApplies,
   PRE_TRIAL_DRAFTS,
   TRIAL_HOLD_MESSAGE,
@@ -167,5 +169,38 @@ describe("planHoldApplies: the planner's question, about the account", () => {
   it("throws on a read it could not make, rather than planning a month for an account it could not see", async () => {
     await expect(planHoldApplies(client(null, { message: "timeout" }).c, "ws-1")).rejects.toThrow(/could not read/);
     await expect(planHoldApplies(client(null).c, "ws-1")).rejects.toThrow(/no account/);
+  });
+});
+
+describe("isFirstPreTrialDraft: who wins first drafts that raced past the hold", () => {
+  const db = () =>
+    new FakeDb({
+      workspaces: [{ id: "ws-1", account_id: "acc-1" }, { id: "ws-2", account_id: "acc-1" }, { id: "ws-x", account_id: "acc-2" }],
+      articles: [
+        // Another account's older draft does not count.
+        { id: "x", workspace_id: "ws-x", status: "review", created_at: "2026-09-25T09:00:00.000Z" },
+        // A run killed before a word was written is not a draft.
+        { id: "dead", workspace_id: "ws-1", status: "error", created_at: "2026-09-25T09:30:00.000Z" },
+        // Two sites onboarding at once: same instant, broken by id.
+        { id: "b", workspace_id: "ws-2", status: "drafting", created_at: "2026-09-25T10:00:00.000Z" },
+        { id: "a", workspace_id: "ws-1", status: "drafting", created_at: "2026-09-25T10:00:00.000Z" },
+        { id: "c", workspace_id: "ws-1", status: "drafting", created_at: "2026-09-25T10:00:01.000Z" },
+      ],
+    });
+
+  it("is the earliest counted draft across the account's sites, the same answer for every racer", async () => {
+    const d = db();
+    expect(PRE_TRIAL_DRAFTS).toBe(1);
+    expect(await isFirstPreTrialDraft(d.client, "acc-1", "a")).toBe(true);
+    expect(await isFirstPreTrialDraft(d.client, "acc-1", "b")).toBe(false);
+    expect(await isFirstPreTrialDraft(d.client, "acc-1", "c")).toBe(false);
+    expect(await isFirstPreTrialDraft(d.client, "acc-1", "dead")).toBe(false);
+  });
+
+  it("throws on a read it could not make: keeping a paid draft is not decided from nothing", async () => {
+    const broken = {
+      from: () => ({ select: () => ({ eq: async () => ({ data: null, error: { message: "timeout" } }) }) }),
+    } as never;
+    await expect(isFirstPreTrialDraft(broken, "acc-1", "a")).rejects.toThrow(/could not read/);
   });
 });

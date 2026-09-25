@@ -103,6 +103,42 @@ export function trialHoldReason(quota: HoldQuota | null | undefined, opts: { add
 }
 
 /**
+ * Whether `articleId` is one of the account's first PRE_TRIAL_DRAFTS drafts:
+ * the tie-break for first drafts that raced past the hold.
+ *
+ * `generateArticle` re-counts after inserting its row, and two first drafts
+ * racing on different keywords (two sites onboarding at once) each count the
+ * other's row and see two. Refusing on the count alone refused both - the
+ * account ended up with no article and a message saying its first one was
+ * written. So the count says a race happened, and this says who won it: the
+ * earliest row by (created_at, id) among the account's drafts that count,
+ * which every racer computes the same way, so exactly one keeps its row.
+ *
+ * Read account-wide, as the quota is (`accountCountingClient`). A failed read
+ * throws: the caller is deciding whether to keep a paid draft, and an unknown
+ * is not a yes.
+ */
+export async function isFirstPreTrialDraft(supabase: SupabaseClient, accountId: string, articleId: string): Promise<boolean> {
+  const counting = accountCountingClient(supabase);
+  const { data: sites, error } = await counting.from("workspaces").select("id").eq("account_id", accountId);
+  if (error) throw new Error(`trial hold: could not read this account's sites (${error.message})`);
+  const ids = (sites ?? []).map((w) => w.id as string);
+  if (!ids.length) return false;
+  const { data: first, error: firstError } = await counting
+    .from("articles")
+    .select("id")
+    .in("workspace_id", ids)
+    // The drafts `getQuota` counts: a run killed before a word was written
+    // (`error`) is not one.
+    .neq("status", "error")
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(PRE_TRIAL_DRAFTS);
+  if (firstError) throw new Error(`trial hold: could not read this account's first drafts (${firstError.message})`);
+  return (first ?? []).some((a) => a.id === articleId);
+}
+
+/**
  * Why an unattended run must not write for this workspace, or null.
  *
  * One question with two rules, so a cron cannot ask one and forget the other:

@@ -26,7 +26,7 @@ import { scoreCitationReadiness } from "@/lib/seo/aeo-scoring";
 import { recordSpend, anthropicCost } from "@/lib/billing/spend";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { trialGateApplies } from "@/lib/billing/trial";
-import { TrialHoldError, trialHoldReason } from "@/lib/billing/trial-hold";
+import { isFirstPreTrialDraft, TrialHoldError, trialHoldReason } from "@/lib/billing/trial-hold";
 import { recordOverageArticle } from "@/lib/billing/overage";
 import { accountPausedMessage } from "@/lib/billing/pause";
 import { spendClient } from "@/lib/billing/default-spend";
@@ -526,13 +526,22 @@ export async function generateArticle(
     // above and is not a burst.
     if (quota.limit !== null && (quota.reason === "no-plan" || autonomous)) {
       const after = await getQuota(supabase, billedAccountId, callerEmail);
-      // The trial hold, by the same argument: two first drafts racing (a
-      // retried dispatch beside the one it retried) each read "0 written"
-      // above. Counted with this row in, the second one sees two and stops.
+      // The trial hold, by the same argument: two first drafts racing (two
+      // sites onboarding at once, or a retried dispatch beside the one it
+      // retried) each read "0 written" above, and counted with their rows in
+      // each sees two. The count says a race happened; the earliest row wins
+      // it (`isFirstPreTrialDraft`), so exactly one of them is written and the
+      // rest stop - and "your first article is written" is true for them.
       const heldAfter = trialHoldReason(after, { adding: 0 });
       if (heldAfter) {
-        await supabase.from("articles").delete().eq("id", created.id);
-        throw new TrialHoldError(heldAfter);
+        let wins = false;
+        try {
+          wins = await isFirstPreTrialDraft(supabase, billedAccountId, created.id);
+        } finally {
+          // Lost the race, or could not tell: this row is not written.
+          if (!wins) await supabase.from("articles").delete().eq("id", created.id);
+        }
+        if (!wins) throw new TrialHoldError(heldAfter);
       }
       if (after.limit !== null && after.used > after.limit) {
         await supabase.from("articles").delete().eq("id", created.id);
