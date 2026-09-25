@@ -9,6 +9,8 @@ import { generateImage } from "@/lib/ai/image-generator";
 import { outputFromRow, resolveFeaturedImage, type OutputSettingsRow } from "@/lib/onboarding/output-settings";
 import { uploadImageBuffer } from "@/lib/storage/images";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
+import { sessionBodyLockedForWorkspace } from "@/lib/billing/body-lock";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial";
 
 // ---------------------------------------------------------------------------
 // The editor's AI actions
@@ -51,6 +53,10 @@ async function loadArticle(articleId: string) {
     .eq("id", article.workspace_id)
     .single();
   if (!workspace) throw new Error("Workspace not found");
+  // Every action here is the editor's, and the editor is what the trial
+  // opens. The Markdown export also hands back the stored meta description,
+  // which the model wrote from the body (lib/billing/trial.ts, draftBodyLocked).
+  if (await sessionBodyLockedForWorkspace(article.workspace_id as string)) throw new Error(BODY_LOCKED_MESSAGE);
   return { article, workspace, supabase };
 }
 

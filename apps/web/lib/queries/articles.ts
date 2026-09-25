@@ -1,6 +1,13 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type { Article } from "@/lib/types";
+import { lockArticleBodies, lockArticleBody } from "@/lib/billing/body-lock";
+
+// Every read here goes through the trial gate's body lock before it is
+// returned. These are what the dashboard pages render, and the dashboard
+// layout's redirect for a gated account is not enough on its own: a layout
+// is not re-rendered on client navigation, so the page's read is the one
+// place the refusal always happens (lib/billing/body-lock.ts).
 
 export async function getArticles(
   workspaceId?: string,
@@ -25,7 +32,7 @@ export async function getArticles(
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return (data ?? []) as Article[];
+  return lockArticleBodies((data ?? []) as Article[]);
 }
 
 /**
@@ -43,7 +50,7 @@ export const getArticle = cache(async function getArticle(
     .single();
 
   if (error) return null;
-  return data as Article;
+  return lockArticleBody(data as Article);
 });
 
 /**
@@ -69,5 +76,5 @@ export async function getRecentArticles(
   const { data, error } = await query;
 
   if (error) throw new Error(error.message);
-  return (data ?? []) as Article[];
+  return lockArticleBodies((data ?? []) as Article[]);
 }

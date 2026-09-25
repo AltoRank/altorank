@@ -3,6 +3,7 @@ import { fail, ok } from "@/lib/agent/envelope";
 import { articleInAccount, workspaceInAccount } from "@/lib/agent/data";
 import { tiptapToHtml } from "@/lib/cms/html";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
+import { agentBodyLocked, bodyLockedEnvelope } from "@/lib/agent/body-lock";
 
 type Format = "markdown" | "html" | "tiptap";
 
@@ -17,6 +18,8 @@ export const GET = withAgent<{ id: string }>(async (request, ctx, { id }) => {
   if (!article) {
     return fail("not_found", "Article not found in this account.", "Call GET /articles?workspace_id= and use an id from that list.");
   }
+  // The body is what the trial opens (lib/billing/trial.ts, draftBodyLocked).
+  if (await agentBodyLocked(ctx)) return bodyLockedEnvelope(appBaseUrl(request));
   if (!article.content) {
     return fail(
       "not_available",

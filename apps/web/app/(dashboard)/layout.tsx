@@ -15,7 +15,7 @@ import { ImpersonationBanner } from "@/components/dashboard/impersonation-banner
 import { getCompletedOnboardingSteps } from "@/lib/queries/onboarding";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { entitledToScheduledWork } from "@/lib/billing/quota";
-import { trialEndsLabel, trialGateApplies, trialGateBypassed } from "@/lib/billing/trial";
+import { trialEndsLabel, trialGateState } from "@/lib/billing/trial";
 import { usageLine } from "@/lib/billing/usage-line";
 import { siteAllowanceFrom } from "@/lib/workspaces/allowance";
 import { FeedbackWidget } from "@/components/dashboard/feedback-widget";
@@ -163,15 +163,29 @@ export default async function DashboardLayout({
   ]);
   // The card, before the dashboard.
   //
-  // Only once the wizard is done: before that the redirect above already has
-  // the person on the run screen, which is where the ask is made. An account
-  // that is self-hosted, an operator's, or already on a plan is not gated -
-  // `trialGateApplies` says why for each.
-  // `simulation.gate` is dev-only (getSimulation returns null in production)
-  // and forces the redirect on an install with no Stripe key, which is the
-  // only way to see this flow without live keys on a laptop.
-  const gated = simulation?.gate === true || trialGateApplies(quota);
-  if (wizardDone && gated && !trialGateBypassed(user?.email)) redirect("/onboarding");
+  // Whether or not the wizard is done. This used to wait for it, on the
+  // grounds that the redirect above already had the person on the run screen
+  // - but that redirect only fires for a site with no business profile, so a
+  // site whose profile was saved (or inferred by a cron) and whose wizard was
+  // never finished opened the whole dashboard to an account that had not
+  // started its trial. /onboarding is right for both: the wizard when setup
+  // is unfinished, the first-article card when it is done.
+  //
+  // Only with a site in scope. With none, /onboarding sends the person to
+  // /workspaces to add one, and gating that too was a redirect loop.
+  //
+  // `trialGateState` is the one answer (lib/billing/trial.ts): self-host,
+  // operator, plan, a finished trial and the kill switch are all "open", and
+  // a bypassed address is let through. `simulation.gate` is dev-only
+  // (getSimulation returns null in production) and forces the gate on an
+  // install with no Stripe key, which is the only way to see this flow
+  // without live keys on a laptop.
+  //
+  // This redirect is the door, not the lock. Next skips an unchanged layout
+  // on client navigation, so the article reads under it strip the body on
+  // their own (lib/billing/body-lock.ts).
+  const gate = trialGateState(quota, user?.email ?? null, { simulated: simulation?.gate === true });
+  if (scopeId && gate === "gated") redirect("/onboarding");
 
   // Sites the plan allows, for the switcher's "+ Add site" row. Derived from
   // the quota above and the list already loaded rather than queried again;

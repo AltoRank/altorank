@@ -7,7 +7,10 @@ import { PLAN_PRICES, PLAN_YEARLY_PRICES, type BillingInterval } from "@/lib/str
 export function TrialOffer({ canBuy = true, returnTo = "/dashboard", secondary, compact = false }: { canBuy?: boolean; returnTo?: string; secondary?: { href: string; label: string }; compact?: boolean }) {
   const [interval, setInterval] = useState<BillingInterval>("month");
   const [error, setError] = useState<string | null>(null);
-  if (!canBuy) return <p className="text-sm text-ink-2">You can read the draft below. Ask your account owner to start the trial to approve, publish and continue the schedule.</p>;
+  // Nothing here is readable before the trial (lib/billing/trial.ts,
+  // draftBodyLocked), so the sentence for a member who cannot buy says who
+  // can, and what it opens.
+  if (!canBuy) return <p className="text-sm text-ink-2">Only the account owner can start the trial. Ask them to: it opens the full article, approving and publishing, and the rest of the schedule.</p>;
   return <div className={`rounded-lg border border-line bg-panel ${compact ? "p-3" : "p-4"}`}>
     <div className="mb-3 grid grid-cols-2 gap-2">
       {([{id:"month",label:"Monthly",price:PLAN_PRICES.starter,unit:"month"},{id:"year",label:"Yearly",price:PLAN_YEARLY_PRICES.starter,unit:"year"}] as const).map((option) =>

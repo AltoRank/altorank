@@ -58,7 +58,6 @@ import { OnboardingProgress } from "@/components/onboarding/onboarding-progress"
 import {
   onboardingOutcome,
   shouldResumeRun,
-  type OnboardingArticle,
   type OnboardingPlanned,
   type OnboardingRunSnapshot,
   type OnboardingState,
@@ -66,9 +65,13 @@ import {
 import { freeAllowanceClause } from "@/lib/onboarding/copy";
 import { TopicBriefs } from "./topic-briefs";
 import { TrialOffer } from "@/components/billing/trial-offer";
-import Link from "next/link";
 import { FirstLookReportView } from "@/components/onboarding/first-look-report";
 import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
+import { FirstArticleCardView, type PendingFirstArticle } from "@/components/onboarding/first-article-card";
+import type { FirstArticleCard } from "@/lib/onboarding/first-article";
+import { offerSetupRetry, runStateOf } from "@/lib/onboarding/setup-retry";
+import { signOut } from "@/app/actions/auth";
+import { TRIAL_DAYS } from "@/lib/stripe";
 import posthog from "posthog-js";
 
 export type Destination = { id: string; name: string; description: string | null };
@@ -89,7 +92,8 @@ export function OnboardingWizard({
   gatePlan = [],
   gateHeld = null,
   gateReport = null,
-  gateWritten = [],
+  firstArticle = null,
+  firstArticleWriting = false,
   initialRun = null,
 }: {
   workspaceId: string;
@@ -137,8 +141,14 @@ export function OnboardingWizard({
   gateHeld?: OnboardingHeld | null;
   /** The analysis already run on this account's site, shown open on the gate. */
   gateReport?: FirstLookReport | null;
-  /** Articles the run already wrote, matched to the plan by keyword. */
-  gateWritten?: { id: string; keyword: string; title: string; wordCount: number }[];
+  /**
+   * The workspace's first written article, as its shape only: title, outline,
+   * length, sources (lib/onboarding/first-article.ts). Null when there is
+   * none, or when this account is not before its trial.
+   */
+  firstArticle?: FirstArticleCard | null;
+  /** An article is being written right now, so a retry must not be offered. */
+  firstArticleWriting?: boolean;
   initialRun?: OnboardingRunSnapshot | null;
 }) {
   const identifiedUserId = useRef<string | null>(null);
@@ -271,11 +281,38 @@ export function OnboardingWizard({
   // There is nothing to show the progress of and nothing to set up again -
   // only the card stands between this account and the product.
   if (!running && alreadyOnboarded && trialEligible) {
-    return <TrialGateScreen canBuy={canBuy} onRetry={() => setRunning(true)} domain={domain} planned={gatePlan} held={gateHeld} report={gateReport} written={gateWritten} askAttribution={askAttribution} />;
+    return (
+      <TrialGateScreen
+        canBuy={canBuy}
+        onRetry={() => setRunning(true)}
+        domain={domain}
+        planned={gatePlan}
+        held={gateHeld}
+        report={gateReport}
+        firstArticle={firstArticle}
+        writing={firstArticleWriting}
+        run={initialRun}
+        askAttribution={askAttribution}
+        userEmail={userEmail}
+      />
+    );
   }
 
   if (running) {
-    return <RunScreen canBuy={canBuy} workspaceId={workspaceId} domain={domain} freeDrafts={freeDrafts} trialEligible={trialEligible} askAttribution={askAttribution} initialRun={resumed} />;
+    return (
+      <RunScreen
+        canBuy={canBuy}
+        workspaceId={workspaceId}
+        domain={domain}
+        freeDrafts={freeDrafts}
+        trialEligible={trialEligible}
+        askAttribution={askAttribution}
+        initialRun={resumed}
+        firstArticle={firstArticle}
+        firstArticleWriting={firstArticleWriting}
+        userEmail={userEmail}
+      />
+    );
   }
 
   if (reading || !profile) return <ReadingSite domain={domain} />;
@@ -405,7 +442,7 @@ export function OnboardingWizard({
         <div className="mx-auto flex max-w-[720px] items-center justify-between gap-4 px-6 py-3">
           <p className="m-0 text-[12.5px] leading-[1.5] text-ink-2">
             Next: keywords, a 30-day plan, and the first article written while you watch.
-            {freeAllowanceClause(freeDrafts) ? ` ${freeAllowanceClause(freeDrafts)}` : ""}
+            {freeAllowanceClause(freeDrafts, { preTrial: trialEligible }) ? ` ${freeAllowanceClause(freeDrafts, { preTrial: trialEligible })}` : ""}
           </p>
           <Button variant="accent" onClick={finish} disabled={pending || reading}>
             {pending ? "Saving…" : "Plan my first articles"}
@@ -551,19 +588,48 @@ function calendarDay(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-const VERDICT_LABEL: Record<OnboardingArticle["verdict"], { text: string; className: string }> = {
-  clean: { text: "Fact check passed", className: "text-ok" },
-  review: { text: "Fact check: review", className: "text-warn" },
-  high_risk: { text: "Fact check: needs work", className: "text-err" },
-};
+/** Same term, as the plan and the article spell it. */
+function sameTerm(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/**
+ * The way out, on a screen that is otherwise only a way forward. The gate has
+ * no "continue to the dashboard", so it must not be a room with one door:
+ * signing out is always here.
+ */
+function SignOutLine({ email }: { email?: string }) {
+  return (
+    <p className="m-0 mt-8 text-center text-[12px] text-ink-3">
+      {email ? <>Signed in as {email}. </> : null}
+      <button
+        type="button"
+        className="text-ink-2 underline decoration-line underline-offset-[3px]"
+        onClick={() => {
+          posthog.reset();
+          void signOut();
+        }}
+      >
+        Sign out
+      </button>
+    </p>
+  );
+}
 
 /**
  * The card, for an account that is already set up.
  *
- * The trial ask at the end of a run has the run to point at: drafts written,
- * a month scheduled. This one has none of that - it is what somebody sees on
- * their second visit, or their thirtieth - so it asks plainly and says what
- * the trial opens rather than pretending there is a setup in progress.
+ * What somebody sees on their second visit, or their thirtieth, and what every
+ * dashboard link sends an account that has not started its trial to. It shows
+ * the article setup wrote as its shape only - title, keyword, day, outline,
+ * length, sources - and asks for the card. There is no link to read it and no
+ * way into the dashboard: the trial is the way forward, and signing out the
+ * way out.
+ *
+ * "Has a first article" is the workspace's fact, not the latest run's. When a
+ * later visit read it off the run, the screen said the draft was not ready
+ * beside an email that said it was, and its retry paid for a whole second
+ * setup to replace an article that existed (lib/onboarding/setup-retry.ts).
  */
 function TrialGateScreen({
   domain,
@@ -572,8 +638,11 @@ function TrialGateScreen({
   planned,
   held = null,
   report,
-  written,
+  firstArticle,
+  writing,
+  run,
   askAttribution = false,
+  userEmail,
 }: {
   domain: string;
   canBuy: boolean;
@@ -581,40 +650,65 @@ function TrialGateScreen({
   planned: OnboardingPlanned[];
   held?: OnboardingHeld | null;
   report: FirstLookReport | null;
-  written: { id: string; keyword: string; title: string; wordCount: number }[];
+  firstArticle: FirstArticleCard | null;
+  writing: boolean;
+  run: OnboardingRunSnapshot | null;
   askAttribution?: boolean;
+  userEmail?: string;
 }) {
-  const words = written.length;
+  const runState = runStateOf(run);
+  const retry = offerSetupRetry(runState, { hasArticle: firstArticle !== null, writing });
+  // The run's own words for why it wrote nothing, when it said.
+  const draftingDetail = runState?.steps.find((s) => s.phase === "drafting")?.detail ?? null;
   const fixable = report?.readiness?.findings.filter((f) => !f.passed && !f.inconclusive).length ?? 0;
   const pagesToFix = report?.existingPages?.withIssues ?? 0;
+
+  const heading = firstArticle
+    ? "Your first article is written"
+    : writing
+      ? "Your first article is being written"
+      : retry
+        ? "Setup did not finish"
+        : "No article was written in setup";
+  const lede = firstArticle
+    ? `Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the week is written once the trial starts.`
+    : writing
+      ? "It appears here when it is done, usually within a few minutes. The trial opens it, and the rest of the week."
+      : retry
+        ? `Nothing was written for ${domain || "your site"}. Running setup again reads the site, plans the month and writes the first article.`
+        : `${draftingDetail ? `Setup said: ${draftingDetail}` : "Setup finished without writing an article."} The trial opens the calendar, where articles can be written from the plan.`;
+
   return (
     <div className="min-h-screen bg-bg">
       <div className="mx-auto max-w-[860px] px-6 py-10">
         <div className="mb-6 text-center">
-          <h1 className="m-0 mb-1.5 text-[22px] font-semibold">{written.length ? "Read your draft, then start your trial" : "Your first draft needs another attempt"}</h1>
-          <p className="mx-auto m-0 max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">
-            {written.length ? "Read your finished draft before deciding. The trial opens approving, publishing and the rest of the schedule." : "Retry preparation to get a draft you can read before entering a card."}
-          </p>
+          <h1 className="m-0 mb-1.5 text-[22px] font-semibold">{heading}</h1>
+          <p className="mx-auto m-0 max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">{lede}</p>
         </div>
 
-        <div className="mx-auto mb-6 max-w-[640px] rounded-[10px] border border-accent/40 bg-panel p-5">
-          {written.length > 0 ? <TrialOffer canBuy={canBuy} /> : <div className="rounded-lg border border-line p-4">
-            <p className="mb-3 text-sm">Your first draft is not ready. You can retry preparation before entering a card.</p>
-            <Button variant="accent" onClick={onRetry}>Retry first draft</Button>
-          </div>}
+        <div className="mx-auto mb-6 flex max-w-[640px] flex-col gap-4 rounded-[10px] border border-accent/40 bg-panel p-5">
+          {retry && (
+            <div className="rounded-lg border border-line p-4">
+              <p className="m-0 mb-3 text-sm">
+                {runState ? "The last setup run stopped before it wrote an article." : "Setup was skipped, so no article has been written yet."}
+              </p>
+              <Button variant="accent" onClick={onRetry}>
+                {runState ? "Run setup again" : "Write my first article"}
+              </Button>
+            </div>
+          )}
+          {/* The ask comes before the evidence: with a report below it, a
+              button placed after the card sat a screen down and went unseen. */}
+          <TrialOffer canBuy={canBuy} returnTo="/dashboard" />
           {askAttribution && <AttributionAsk />}
+          {firstArticle && <FirstArticleCardView article={firstArticle} />}
         </div>
 
         <div className="mx-auto flex max-w-[640px] flex-col gap-5">
-          {(words > 0 || fixable > 0 || pagesToFix > 0) && (
+          {(fixable > 0 || pagesToFix > 0) && (
             <div className="rounded-[8px] border border-line bg-bg p-4">
-              <div className="mb-2.5 text-[12.5px] font-medium text-ink">Prepared for your review</div>
+              <div className="mb-2.5 text-[12.5px] font-medium text-ink">Also found on {domain || "your site"}</div>
               <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[12.5px] text-ink-2">
-                {words > 0 && (
-                  <li>
-                    <strong className="text-ink">{words}</strong> {words === 1 ? "article" : "articles"} ready to read
-                  </li>
-                )}
                 {fixable > 0 && (
                   <li>
                     <strong className="text-ink">{fixable}</strong> {fixable === 1 ? "thing" : "things"} stopping AI
@@ -631,7 +725,6 @@ function TrialGateScreen({
             </div>
           )}
 
-          {written.filter((w) => !planned.some((p) => p.term.toLowerCase() === w.keyword.toLowerCase())).map((w) => <Link className="text-accent underline" key={w.id} href={`/onboarding/draft/${w.id}`}>Read draft: {w.title}</Link>)}
           {planned.length > 0 && (
             <div>
               <div className="mb-2 flex items-baseline justify-between gap-3">
@@ -640,17 +733,14 @@ function TrialGateScreen({
                   {planned.length} {planned.length === 1 ? "article" : "articles"} scheduled{held && held.count > 0 ? `, ${held.count} more ready for the trial` : ""}
                 </div>
               </div>
-              {/* The first row is the article that exists: its real title, its
-                  real length, readable now. Everything under it is locked, and
-                  locked is drawn as a lock and not as a spinner - nothing is
-                  being written down there. The schedule starts when the trial
-                  does, so a progress indicator would be describing work that
-                  is not happening. */}
+              {/* The row for the article that exists is ticked and named; it
+                  is not a link, because there is nothing to open before the
+                  trial. Everything under it is locked, drawn as a lock and not
+                  as a spinner: nothing is being written down there until the
+                  trial starts. */}
               <ul className="m-0 list-none divide-y divide-line overflow-hidden rounded-[8px] border border-line bg-bg p-0">
                 {planned.slice(0, 8).map((p) => {
-                  const done = written.find(
-                    (w) => w.keyword.trim().toLowerCase() === p.term.trim().toLowerCase(),
-                  );
+                  const done = firstArticle && sameTerm(firstArticle.keyword, p.term) ? firstArticle : null;
                   return (
                     <li
                       key={`${p.date}-${p.term}`}
@@ -661,10 +751,10 @@ function TrialGateScreen({
                           {done ? <Icons.check size={13} /> : <Icons.lock size={12} />}
                         </span>
                         <span className="min-w-0">
-                          <span className="block text-ink">{done ? <Link className="text-accent underline" href={`/onboarding/draft/${done.id}`}>{done.title || p.term} · Read draft</Link> : p.term}</span>
+                          <span className="block text-ink">{done ? done.title || p.term : p.term}</span>
                           {done && (
                             <span className="block truncate text-[11.5px] text-ink-3">
-                              Written{done.wordCount > 0 ? ` · ${done.wordCount.toLocaleString("en-US")} words` : ""} · waiting for your approval
+                              Written{done.wordCount > 0 ? ` · ${done.wordCount.toLocaleString("en-US")} words` : ""} · opens with the trial
                             </span>
                           )}
                         </span>
@@ -675,7 +765,7 @@ function TrialGateScreen({
                 })}
               </ul>
               <p className="m-0 mt-2 text-[12px] text-ink-2">
-                {written.length > 0
+                {firstArticle
                   ? "The rest are scheduled. They start writing when your trial does."
                   : "These start writing when your trial does."}
               </p>
@@ -685,6 +775,7 @@ function TrialGateScreen({
           <TopicBriefs planned={planned} />
           {report && <FirstLookReportView report={report} domain={domain} live={false} />}
         </div>
+        <SignOutLine email={userEmail} />
       </div>
     </div>
   );
@@ -693,41 +784,61 @@ function TrialGateScreen({
 /**
  * The last step of onboarding: the card.
  *
- * The order is the point. The setup has just written the account's first
- * drafts against the free allowance and the person is looking at them: title,
- * keyword, length, fact-check verdict, and the thirty days scheduled behind
- * them. What the trial buys is the next thing they would do with what they
- * are looking at (approve, publish, keep writing), so the ask is made here,
- * before the dashboard, and not from a banner they find later. There is no
- * skip: the schedule starts when the trial does, so a person who leaves from
- * here has nothing running to come back to.
+ * The order is the point. Setup has just written the account's first article
+ * and the person is looking at its shape - title, keyword, outline, length,
+ * sources - and at the month scheduled behind it. What the trial buys is the
+ * next thing they would do: read it, approve it, publish it, keep writing. So
+ * the ask is made here, before the dashboard, and not from a banner they find
+ * later. There is no skip and no way into the dashboard: the schedule starts
+ * when the trial does, so a person who leaves from here has nothing running
+ * to come back to.
+ *
+ * The same card as the gate screen (FirstArticleCardView), so the two places
+ * the trial is asked cannot describe the article differently. There is no
+ * "Read draft": a real signup (2026-09-22) read the whole text off that link,
+ * copied it and published it on their own site within the hour.
  */
 function TrialStep({
-  drafts,
   canBuy,
+  firstArticle,
+  pending,
+  retry,
+  onRetry,
   planned,
   held,
-  returnTo,
   askAttribution = false,
 }: {
-  drafts: OnboardingArticle[];
   canBuy: boolean;
+  firstArticle: FirstArticleCard | null;
+  /** The run's own record of the draft, until the page has read the card. */
+  pending: PendingFirstArticle | null;
+  retry: boolean;
+  onRetry: () => void;
   planned: OnboardingPlanned[];
   held: OnboardingHeld | null;
-  returnTo: string;
   askAttribution?: boolean;
 }) {
-  const words = drafts.reduce((n, d) => n + d.wordCount, 0);
+  const hasArticle = firstArticle !== null || pending !== null;
   return (
-    <div className="mx-auto mb-6 max-w-[640px] rounded-[10px] border border-accent/40 bg-panel p-5">
+    <div className="mx-auto mb-6 flex max-w-[640px] flex-col gap-4 rounded-[10px] border border-accent/40 bg-panel p-5">
+      {retry && (
+        <div className="rounded-lg border border-line p-4">
+          <p className="m-0 mb-3 text-sm">Setup stopped before it wrote your first article.</p>
+          <Button variant="accent" onClick={onRetry}>
+            Run setup again
+          </Button>
+        </div>
+      )}
       {/* The ask comes first. Everything below it is the evidence for it, and
           an earlier arrangement put the evidence on top: on a site with a full
           report the button sat a full screen down and was never seen. */}
-      <TrialOffer canBuy={canBuy} returnTo={returnTo} />
+      <TrialOffer canBuy={canBuy} returnTo="/dashboard" />
       {askAttribution && <AttributionAsk />}
 
+      {hasArticle && <FirstArticleCardView article={firstArticle} pending={firstArticle ? null : pending} />}
+
       {held && held.count > 0 && (
-        <p className="m-0 mt-5 text-[13px] leading-[1.6] text-ink-2">
+        <p className="m-0 text-[13px] leading-[1.6] text-ink-2">
           {/* Count and dates, never the terms: a readable list of topics is a
               free keyword report, and the trial is what buys it. */}
           <strong>Ready for your trial:</strong> {held.count} more {held.count === 1 ? "topic" : "topics"}, each with a buyer and search evidence behind it,
@@ -736,52 +847,32 @@ function TrialStep({
       )}
 
       {planned.length > 0 && !(held && held.count > 0) && (
-        <p className="m-0 mt-5 text-[13px] leading-[1.6] text-ink-2">
-          {/* "on the calendar", not "more": the plan counts the drafts above,
-              so a run that planned eight and wrote seven has one still to come,
-              not eight. */}
+        <p className="m-0 text-[13px] leading-[1.6] text-ink-2">
+          {/* "on the calendar", not "more": the plan counts the article
+              above, so a run that planned eight and wrote one has seven still
+              to come, not eight. */}
           <strong>On your calendar:</strong> {planned.length} {planned.length === 1 ? "article" : "articles"}, {planned[0].date === planned[planned.length - 1].date ? "on" : "from"}{" "}
           {calendarDay(planned[0].date)}
           {planned[0].date === planned[planned.length - 1].date ? "" : ` to ${calendarDay(planned[planned.length - 1].date)}`}.
-          {drafts.length < planned.length
-            ? ` ${planned.length - drafts.length} of them still to write; the schedule starts when the trial does.`
-            : " The schedule keeps writing after these once the trial starts."}
+          {hasArticle && planned.length > 1
+            ? ` ${planned.length - 1} of them still to write; the schedule starts when the trial does.`
+            : " The schedule starts when the trial does."}
         </p>
       )}
 
       <TopicBriefs planned={planned} />
-      {drafts.length > 0 && (
-        <div className="mt-5">
-          <div className="mb-2 flex items-baseline justify-between">
-            <div className="text-[11px] uppercase tracking-wide text-ink-3">Written for you</div>
-            {words > 0 && <div className="text-[11px] text-ink-3">{words.toLocaleString("en-US")} words</div>}
-          </div>
-          <ul className="m-0 list-none divide-y divide-line p-0">
-            {drafts.map((d) => (
-              <li key={d.id} className="flex items-baseline justify-between gap-3 py-2">
-                <div className="min-w-0">
-                  <Link className="text-[13.5px] font-medium text-accent underline" href={`/onboarding/draft/${d.id}`}>{d.title || d.keyword} · Read draft</Link>
-                  <div className="truncate text-[12px] text-ink-3">
-                    {d.keyword}
-                    {d.wordCount > 0 ? ` · ${d.wordCount.toLocaleString("en-US")} words` : ""}
-                  </div>
-                </div>
-                <div className={`shrink-0 text-[11.5px] ${VERDICT_LABEL[d.verdict].className}`}>
-                  {VERDICT_LABEL[d.verdict].text}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }
 
 /**
  * The finish: the pipeline, live, with the deferred setup offered as things to
- * do while it runs. Nothing here is a gate. The person is already invested and
- * the value is already being produced; the ask is framed as improving a result.
+ * do while it runs. The person is already invested and the value is already
+ * being produced; the ask is framed as improving a result.
+ *
+ * For an account before its trial the run ends on the card (TrialStep) and
+ * never on a button into the dashboard: the dashboard is what the trial
+ * opens, and a "Finish" that led there only bounced back here.
  */
 function RunScreen({
   workspaceId,
@@ -791,6 +882,9 @@ function RunScreen({
   trialEligible,
   askAttribution = false,
   initialRun,
+  firstArticle,
+  firstArticleWriting,
+  userEmail,
 }: {
   workspaceId: string;
   canBuy: boolean;
@@ -799,6 +893,9 @@ function RunScreen({
   trialEligible: boolean;
   askAttribution?: boolean;
   initialRun: OnboardingRunSnapshot | null;
+  firstArticle: FirstArticleCard | null;
+  firstArticleWriting: boolean;
+  userEmail?: string;
 }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState | null>(null);
@@ -816,12 +913,25 @@ function RunScreen({
   const outcome = state ? onboardingOutcome(state) : null;
   const draft = state?.article ?? null;
   const drafts = state?.drafts ?? [];
-  // The last step of onboarding: the drafts exist, the person can see what
-  // was written for them and what is scheduled, and the card is asked now,
-  // before the dashboard. Only for an account that may still trial, and only
-  // when the run produced something to show; a run that wrote nothing has
-  // no appetizer and falls through to the plain finish.
-  const trialStep = finished && trialEligible && drafts.length > 0;
+  // The run's own record of the first draft, for the moment between the run
+  // writing it and the page reading its card. The card is the page's read of
+  // the workspace (lib/onboarding/first-article.ts); this only fills the gap.
+  const runDraft = draft ?? drafts[0] ?? null;
+  const hasArticle = firstArticle !== null || runDraft !== null;
+  // The last step of onboarding, for an account before its trial: the card,
+  // whatever the run produced. With an article it shows the article; without
+  // one it offers a retry only when the run fell short and nothing exists
+  // for the site (lib/onboarding/setup-retry.ts).
+  const trialStep = finished && trialEligible;
+  const retry = trialStep && state !== null && offerSetupRetry(state, { hasArticle, writing: firstArticleWriting });
+  // The run wrote the draft after this page was read: read it again, so the
+  // card has its outline and sources. Once per finished run.
+  const refreshed = useRef(false);
+  useEffect(() => {
+    if (!trialStep || firstArticle || !runDraft || refreshed.current) return;
+    refreshed.current = true;
+    router.refresh();
+  }, [trialStep, firstArticle, runDraft, router]);
   const next = planned.length > 0
     ? { href: "/content", label: "Open my plan" }
     : draft
@@ -833,22 +943,28 @@ function RunScreen({
         <div className="mb-8 text-center">
           <h1 className="mb-1.5 text-[22px] font-semibold">
             {trialStep
-              ? `${drafts.length === 1 ? "Your first draft is" : `Your first ${drafts.length} drafts are`} written`
+              ? hasArticle
+                ? "Your first article is written"
+                : "Start your trial to keep writing"
               : finished
                 ? "Your content plan"
                 : "Creating your content plan"}
           </h1>
           <p className="mx-auto max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">
             {trialStep ? (
-              <>
-                Each one comes with its fact check and is waiting in your review queue. Start the trial to
-                approve and publish them, and to keep the schedule below writing.
-              </>
+              hasArticle ? (
+                <>
+                  Start your {TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the
+                  week is written once the trial starts.
+                </>
+              ) : (
+                <>Setup did not write an article for {domain}. The trial opens the calendar and the plan behind it.</>
+              )
             ) : (
               <>
                 Reading {domain}, checking buyer needs and live search results, preparing up to five specific article ideas, and writing
                 the first one. Only topics with supporting evidence make the plan, so your site may get fewer.{" "}
-                {freeAllowanceClause(freeDrafts === null ? null : Math.min(1, freeDrafts)) ?? ""}
+                {freeAllowanceClause(freeDrafts === null ? null : Math.min(1, freeDrafts), { preTrial: trialEligible }) ?? ""}
               </>
             )}
             {/* True since the run left the browser's request: it is a row
@@ -868,12 +984,20 @@ function RunScreen({
           </p>
         </div>
 
-        {finished && trialEligible && drafts.length === 0 && <div className="mx-auto mb-6 max-w-[640px] rounded-lg border border-line p-4">
-          <p className="mb-3">Your first draft is not ready yet. Retry preparation before deciding on a trial.</p>
-          <Button onClick={() => { setState(null); setAttempt((a) => a + 1); }}>Retry first draft</Button>
-        </div>}
         {trialStep && (
-          <TrialStep canBuy={canBuy} drafts={drafts} planned={planned} held={trialEligible ? state?.held ?? null : null} returnTo="/articles?status=review" askAttribution={askAttribution} />
+          <TrialStep
+            canBuy={canBuy}
+            firstArticle={firstArticle}
+            pending={runDraft ? { title: runDraft.title, keyword: runDraft.keyword, wordCount: runDraft.wordCount, verdict: runDraft.verdict } : null}
+            retry={retry}
+            onRetry={() => {
+              setState(null);
+              setAttempt((a) => a + 1);
+            }}
+            planned={planned}
+            held={state?.held ?? null}
+            askAttribution={askAttribution}
+          />
         )}
 
         <div className="mx-auto max-w-[640px]">
@@ -917,15 +1041,20 @@ function RunScreen({
                   component aborted the SSE request and the pipeline with it;
                   the run is its own invocations now and nothing on this page
                   can cancel it. Coming back to /onboarding resumes the screen. */}
+              {/* No way into the dashboard for an account before its trial,
+                  finished or not: the calendar is behind the gate too, and a
+                  button to it only bounced back here. */}
               {trialStep ? null : finished ? (
                 <Button variant="accent" onClick={() => router.push(next.href)}>
                   {next.label}
                 </Button>
               ) : (
                 <>
-                  <Button variant="accent" disabled={planned.length === 0} onClick={() => router.push("/content")}>
-                    Open the calendar so far
-                  </Button>
+                  {!trialEligible && (
+                    <Button variant="accent" disabled={planned.length === 0} onClick={() => router.push("/content")}>
+                      Open the calendar so far
+                    </Button>
+                  )}
                   <span className="text-[12px] text-ink-3">Still working…</span>
                 </>
               )}
@@ -934,7 +1063,9 @@ function RunScreen({
                 calendar the header just promised. `OnboardingProgress` prints
                 the same sentence, so this only adds the part the button needs
                 to be honest about. */}
-            {outcome && (outcome.tone === "error" || (outcome.tone === "partial" && !outcome.produced)) && (
+            {/* Before the trial the card above decides whether to offer a run
+                again, from the workspace's articles and not this run alone. */}
+            {!trialEligible && outcome && (outcome.tone === "error" || (outcome.tone === "partial" && !outcome.produced)) && (
               <div className="mt-3 flex flex-wrap items-center gap-3 rounded-[8px] border border-warn bg-warn-soft px-3 py-2.5">
                 <p className="m-0 min-w-0 flex-1 text-[12px] leading-[1.55] text-warn-ink">
                   {/* A run that fell short is a thing to retry, right here,
@@ -959,6 +1090,7 @@ function RunScreen({
           </div>
 
         </div>
+        {trialStep && <SignOutLine email={userEmail} />}
       </div>
     </div>
   );
