@@ -28,6 +28,16 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => makeClient(seed),
 }));
 
+// The article reads ask the caller's client for ids and hand them to the
+// trial gate's body lock, which reads the rows whole on the server and asks
+// who is signed in and what their account pays for. That is its own
+// question, answered in lib/billing/__tests__/body-lock.test.ts; here only the
+// scope is, so the lock hands back what the scoped query returned.
+vi.mock("@/lib/billing/body-lock", () => ({
+  articlesForSession: async <T,>(rows: T[]) => rows,
+  articleForSession: async <T,>(row: T | null) => row,
+}));
+
 /** Three rows per workspace for every table these queries touch. */
 function freshSeed(): Seed {
   const tables = [

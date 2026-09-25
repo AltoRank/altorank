@@ -50,6 +50,7 @@ import {
 import { sendOnce, type SendOnceOutcome } from "./send-once";
 import { appLink } from "@/lib/app-url";
 import type { FactCheckReport } from "@/lib/ai/fact-check";
+import { TRIAL_DAYS } from "@/lib/stripe";
 
 /** Everything here is a keyword, a title or a domain: all of it user data. */
 export const esc = (s: unknown) =>
@@ -97,6 +98,23 @@ export interface ArticleDraftedEmail {
    * recorded against the person whose address was in the link.
    */
   holdUrlFor?: (recipient: string) => string | null;
+  /**
+   * The account has not started its trial, so nothing it is sent to can show
+   * the text (lib/billing/trial.ts, draftBodyLocked). The mail says the
+   * article is written and what the trial opens, and links the setup screen
+   * that shows its outline - not a "Read the draft" that lands on a lock.
+   */
+  beforeTrial?: boolean;
+}
+
+/** Where an account before its trial sees its first article's outline and starts the trial. */
+export function trialGateUrl(): string {
+  return appLink("/onboarding");
+}
+
+/** The sentence a mail to an account before its trial says instead of "read it". */
+export function beforeTrialLine(count: number): string {
+  return `The full text opens when your ${TRIAL_DAYS}-day trial starts, with approving, publishing and the rest of the week's articles. Nothing publishes until you approve ${count === 1 ? "it" : "them"}.`;
 }
 
 /**
@@ -228,6 +246,22 @@ export function renderArticleDrafted(a: ArticleDraftedEmail, recipient?: string)
           `</ul>`,
       })
     : "";
+
+  if (a.beforeTrial) {
+    return {
+      subject: `Your first article for ${site} is written`,
+      preheader: `${a.wordCount.toLocaleString()} words on "${a.keyword}". Start your ${TRIAL_DAYS}-day trial to read it.`,
+      footerNote: `Sent because AltoRank wrote this article for ${esc(site)}.`,
+      html:
+        emailLabel(site) +
+        `<p style="margin:0 0 14px;font-size:13.5px;line-height:1.6;color:${EMAIL_INK_3};">Written for ${emailCode(a.keyword)}</p>` +
+        emailStatRow(stats) +
+        `<h1 style="margin:0 0 12px;font-size:21px;line-height:1.3;letter-spacing:-0.02em;color:${EMAIL_INK};">${esc(a.title)}</h1>` +
+        emailParagraph(beforeTrialLine(1)) +
+        emailButton(trialGateUrl(), "See your first article") +
+        reasons,
+    };
+  }
 
   return {
     subject: warn

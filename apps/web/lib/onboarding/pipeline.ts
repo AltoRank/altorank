@@ -34,7 +34,7 @@ import { analyseDomain, isTransientCrawlFailure } from "@/lib/audit/domain-analy
 import { refusing } from "@/lib/audit/host-circuit";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { generateArticle } from "@/lib/content/generate";
-import { trialGateApplies } from "@/lib/billing/trial";
+import { trialGateState } from "@/lib/billing/trial";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
@@ -357,7 +357,9 @@ async function runPhases(
       // held topics are qualified rows with no calendar entry, read back by
       // heldTopics for the locked rows the screen shows. Everyone else -
       // self-host, operator, paying - gets the month as before.
-      const gated = trialGateApplies(await getQuota(supabase, workspace.account_id).catch(() => null));
+      // The same answer the dashboard and the setup screen use; the planner
+      // runs without a person, so no address is asked about.
+      const gated = trialGateState(await getQuota(supabase, workspace.account_id).catch(() => null), null) !== "open";
       plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, { maxEntries: gated ? 1 : 5, qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES });
       const held = gated && plan.length
         ? await heldTopics(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, plan.map((p) => p.date)).catch(() => ({ count: 0, dates: [] }))

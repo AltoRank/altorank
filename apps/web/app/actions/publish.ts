@@ -7,6 +7,7 @@ import type { ArticleResearch } from "@/lib/seo/research";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { needsPlanToShip, CHOOSE_PLAN_MESSAGE } from "@/lib/billing/quota";
+import { articleBodyForSession } from "@/lib/billing/body-lock";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";
 import { decryptConfig } from "@/lib/crypto";
 import { publishArticleCore, PublishError, type PublishContext } from "@/lib/publishing/core";
@@ -143,12 +144,12 @@ async function refuseUnsourcedFigures(
   supabase: Awaited<ReturnType<typeof createClient>>,
   articleId: string,
 ) {
-  const { data: article } = await supabase
-    .from("articles")
-    .select("content, research")
-    .eq("id", articleId)
-    .single();
-  if (!article?.content) return;
+  // The text is read on the server (lib/billing/body-lock.ts): a client token
+  // cannot select it since migration 097. The approval door has already asked
+  // for a plan, so the gate is open here; it is asked again anyway, because
+  // this is a read of the body and every such read asks.
+  const article = await articleBodyForSession<{ content: unknown; research: unknown }>(articleId, "content, research");
+  if (!article.content) return;
 
   const html = tiptapToHtml(article.content as Record<string, unknown>);
   const report = factCheckArticle(html, (article.research as ArticleResearch | null) ?? undefined);
@@ -286,9 +287,11 @@ export async function unpublishArticle(articleId: string) {
   await requireAuth();
   const supabase = await createClient();
 
+  // The columns this needs and no more: `*` names the body, which a client
+  // token may not read (migration 097), and unpublishing never needed it.
   const { data: article } = await supabase
     .from("articles")
-    .select("*, workspace_id")
+    .select("id, workspace_id, external_id, cms")
     .eq("id", articleId)
     .single();
 

@@ -29,7 +29,8 @@ vi.mock("@/lib/billing/quota", () => ({ getQuota: (...a: unknown[]) => getQuota(
 vi.mock("@/lib/billing/first-draft-gate", () => ({ firstDraftAwaitsReview: (...a: unknown[]) => firstDraftAwaitsReview(...a) }));
 vi.mock("@/lib/billing/spend-gate", () => ({ canSpend: async () => ({ allowed: true, reason: "plan", quota: { limit: null, remaining: null }, message: null }) }));
 vi.mock("@/lib/billing/resume", () => ({ resumeExpiredPauses: async () => [], isoDay: (d: Date) => d.toISOString().slice(0, 10) }));
-vi.mock("@/lib/stripe", () => ({ billingEnabled: false, getStripe: () => null }));
+// TRIAL_DAYS: the draft mail and the trial gate read it at import.
+vi.mock("@/lib/stripe", () => ({ billingEnabled: false, getStripe: () => null, TRIAL_DAYS: 7 }));
 vi.mock("@/lib/content/generate", () => ({ generateArticle: (...a: unknown[]) => generateArticle(...a), ConcurrentGenerationError: class extends Error {} }));
 vi.mock("@/lib/plan/pace-budget", () => ({ readPaceBudget: async () => ({ articlesLeft: 1 }), describePaceBudget: () => "" }));
 vi.mock("@/lib/plan/frozen", () => ({ readFrozenEntries: async () => ({ ids: new Set(), reason: null }) }));

@@ -80,6 +80,7 @@ export function OnboardingProgress({
   onState,
   initialRun = null,
   lockHeld = false,
+  preTrial = false,
 }: {
   workspaceId: string;
   domain: string;
@@ -99,6 +100,11 @@ export function OnboardingProgress({
   initialRun?: OnboardingRunSnapshot | null;
   /** Draw the topics held for the trial as locked squares on the strip. */
   lockHeld?: boolean;
+  /**
+   * The account has not started its trial: its first draft is written but
+   * not readable, so nothing here may point it at a review queue.
+   */
+  preTrial?: boolean;
 }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState>(() =>
@@ -212,7 +218,7 @@ export function OnboardingProgress({
   // The closing sentence is derived, not chosen: `ready` is emitted whatever
   // happened, so "Done. Your first month is on the calendar" used to print
   // over an empty calendar and a refused draft.
-  const outcome = onboardingOutcome(state, autoNavigate);
+  const outcome = onboardingOutcome(state, autoNavigate, { preTrial });
 
   return (
     <div className="flex flex-col gap-5" aria-live="polite">
@@ -234,6 +240,7 @@ export function OnboardingProgress({
         article={state.article}
         skipped={drafting?.status === "skipped" || drafting?.status === "failed"}
         skippedReason={drafting?.status === "skipped" || drafting?.status === "failed" ? drafting.detail : undefined}
+        preTrial={preTrial}
       />
 
       {/* What the first look measured, to read while the draft is written.
@@ -378,6 +385,7 @@ function CalendarStrip({
   article,
   skipped,
   skippedReason,
+  preTrial = false,
 }: {
   planned: OnboardingState["planned"];
   /** Days a held topic would take; drawn as a locked chip, no term. */
@@ -386,6 +394,7 @@ function CalendarStrip({
   article: OnboardingState["article"];
   skipped: boolean;
   skippedReason?: string;
+  preTrial?: boolean;
 }) {
   const { days, beyond, lastDate, draftDate } = calendarStripDays(planned);
   const heldOn = new Map<string, number>();
@@ -460,8 +469,14 @@ function CalendarStrip({
       )}
       {article && (
         <p className="m-0 mt-2 text-[12px] text-ink-2">
-          First draft is in your review queue
-          {article.verdict === "high_risk" ? " with figures to check before publishing" : ""}.
+          {preTrial ? (
+            "First article is written. The full text opens with the trial."
+          ) : (
+            <>
+              First draft is in your review queue
+              {article.verdict === "high_risk" ? " with figures to check before publishing" : ""}.
+            </>
+          )}
         </p>
       )}
       {skipped && skippedReason && (

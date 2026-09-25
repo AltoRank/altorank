@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { notifyWelcome } from "@/lib/email/lifecycle";
+import { accountTrialGate } from "@/lib/billing/body-lock";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
 const SAFE_NEXT = /^\/[a-zA-Z0-9/_-]*$/;
@@ -96,7 +97,17 @@ async function sendWelcome(userId: string): Promise<void> {
     // A name field that holds an address is a name nobody wants read back.
     if (name?.includes("@")) name = null;
 
-    await notifyWelcome(admin, userId, { name, domain });
+    // Before the trial there is no dashboard and no draft text to promise
+    // (lib/billing/trial.ts), and the welcome must not promise either. Asked
+    // with the person's own address, so an operator or a bypassed test
+    // address gets the mail that matches what they will see. With no account
+    // to ask about yet, the account that will be made for them is a fresh
+    // one, which is exactly the one the gate holds: the before-trial mail.
+    const beforeTrial = member?.account_id
+      ? (await accountTrialGate(admin, member.account_id as string, user?.user?.email ?? null)) === "gated"
+      : true;
+
+    await notifyWelcome(admin, userId, { name, domain, beforeTrial });
   } catch (err) {
     console.error(`[callback] welcome email for ${userId}: ${err instanceof Error ? err.message : err}`);
   }

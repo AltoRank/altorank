@@ -449,7 +449,12 @@ export function failedRunNotice(snapshot: OnboardingRunSnapshot | null): FailedR
   return null;
 }
 
-export function onboardingOutcome(state: OnboardingState, handoff = false): OnboardingOutcome {
+/**
+ * `preTrial`: the account has not started its trial, so its first draft is
+ * written but not readable (lib/billing/trial.ts, draftBodyLocked). "In
+ * review" would send it to a queue it cannot open.
+ */
+export function onboardingOutcome(state: OnboardingState, handoff = false, opts: { preTrial?: boolean } = {}): OnboardingOutcome {
   if (state.error) return { tone: "error", line: state.error, produced: false };
   if (!state.ready) {
     return {
@@ -465,7 +470,7 @@ export function onboardingOutcome(state: OnboardingState, handoff = false): Onbo
   const because = reason ? `: ${asClause(reason)}.` : ".";
 
   if (planned > 0 && draft) {
-    const line = `Done. ${planned} article${planned === 1 ? "" : "s"} on the calendar and your first draft is in review.`;
+    const line = `Done. ${planned} article${planned === 1 ? "" : "s"} on the calendar and your first ${opts.preTrial ? "article is written" : "draft is in review"}.`;
     return { tone: "done", line: handoff ? `${line} Taking you there.` : line, produced: true };
   }
   if (planned > 0) {
@@ -478,7 +483,7 @@ export function onboardingOutcome(state: OnboardingState, handoff = false): Onbo
   if (draft) {
     return {
       tone: "partial",
-      line: `Your first draft is in review. Nothing else could be scheduled yet${because}`,
+      line: `Your first ${opts.preTrial ? "article is written" : "draft is in review"}. Nothing else could be scheduled yet${because}`,
       produced: true,
     };
   }
