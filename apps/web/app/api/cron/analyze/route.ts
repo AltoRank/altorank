@@ -282,20 +282,20 @@ async function refillEmptyPools(
     .not("first_analysed_at", "is", null)
     .neq("status", "paused");
 
+  // Refills only: a refusal costs nothing and must not use up the batch.
+  let refills = 0;
   for (const ws of workspaces ?? []) {
-    if (out.length >= POOL_REFILL_BATCH) break;
+    if (refills >= POOL_REFILL_BATCH) break;
     const workspaceId = ws.id as string;
 
-    let exhausted = false;
-    try {
-      const recs = await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true });
-      exhausted = pickNextKeyword(recs) === null;
-    } catch {
-      // A recommender that cannot run is not evidence of an empty pool.
-      continue;
-    }
-    if (!exhausted) continue;
-
+    // The gate first. Asking whether the pool is empty is itself a purchase:
+    // the recommender with `qualify` fetches results pages and buys model
+    // verdicts for the queue, and writes the business profile when it is
+    // missing. It used to run for every workspace before the gate was asked,
+    // so an abandoned account that cannot spend - one waiting for its trial,
+    // one whose free drafts are gone - had its queue re-qualified every time
+    // its verdicts expired, indefinitely (round-4 review). A refused account
+    // is reported without its pool being looked at.
     const spend = await canSpend(supabase, ws.account_id as string, {
       userEmail: null,
       workspaceId,
@@ -309,11 +309,22 @@ async function refillEmptyPools(
         priced: 0,
         inserted: 0,
         bySource: { ideas: 0, playbook: 0 },
-        reason: spend.message ?? "not entitled to keyword research",
+        reason: `${spend.message ?? "not entitled to keyword research"} (pool not checked)`,
       });
       continue;
     }
 
+    let exhausted = false;
+    try {
+      const recs = await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true });
+      exhausted = pickNextKeyword(recs) === null;
+    } catch {
+      // A recommender that cannot run is not evidence of an empty pool.
+      continue;
+    }
+    if (!exhausted) continue;
+
+    refills += 1;
     setSpendReporter(({ operation, costUsd }) => {
       void recordSpend(supabase, { provider: "dataforseo", operation, costUsd, workspaceId });
     });
