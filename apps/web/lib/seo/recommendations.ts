@@ -369,6 +369,22 @@ const SINGLE_WORD_PENALTY = 0.5;
  */
 const AUDIENCE_BOOST = 1.75;
 
+/**
+ * The rows of a read the duplicate-intent rule depends on, or a throw naming
+ * the table. A rejected promise and a PostgREST error are both a read that did
+ * not happen, and an empty list in their place is a leader nobody checks.
+ */
+function leaderRows<T>(
+  res: PromiseSettledResult<{ data: unknown; error: { message: string } | null }>,
+  table: string,
+): T[] {
+  if (res.status === "rejected") {
+    throw new Error(`recommendations: could not read ${table} (${res.reason instanceof Error ? res.reason.message : String(res.reason)})`);
+  }
+  if (res.value.error) throw new Error(`recommendations: could not read ${table} (${res.value.error.message})`);
+  return (res.value.data ?? []) as T[];
+}
+
 export async function recommendKeywords(
   supabase: SupabaseClient,
   workspaceId: string,
@@ -416,8 +432,17 @@ export async function recommendKeywords(
   const language = intentLanguage(workspace?.language as string | null | undefined);
 
   // --- Signals ------------------------------------------------------------
-  // Each of these is optional: a workspace with no rank history and no Search
-  // Console still gets a usable queue from volume, difficulty and intent alone.
+  // Rankings and Search Console are optional: a workspace with no rank
+  // history and no Search Console still gets a usable queue from volume,
+  // difficulty and intent alone, so a failed read of either is a missing
+  // signal. Articles, site pages and calendar entries are not signals. They
+  // are the leaders the duplicate-intent rule checks every candidate against
+  // (lib/keyword-research/intent-leaders.ts), and this function both parks
+  // topics and picks the next draft from the crons, the onboarding pipeline
+  // and the plan top-up. A failed read of one of them used to become an empty
+  // list, and the next draft was a search the site already had an article
+  // or a page for, with nothing in the log. So those three throw, naming the
+  // table, the rule `readIntentLeaders` already follows.
 
   const [rankRes, articleRes, gscRes, pagesRes, entriesRes] = await Promise.allSettled([
     supabase
@@ -483,9 +508,9 @@ export async function recommendKeywords(
   // Keyed by the words a keyword competes on, so an article about "agency
   // seo" is also found when scoring "agency for seo".
   type ArticleRow = { id: string; keyword: string | null; keyword_id: string | null; status: string | null };
-  const articleRows = articleRes.status === "fulfilled" && !articleRes.value.error ? (articleRes.value.data ?? []) as ArticleRow[] : null;
+  const articleRows = leaderRows<ArticleRow>(articleRes, "articles");
   const articleByTerm = new Map<string, ArticleRow>();
-  for (const a of articleRows ?? []) {
+  for (const a of articleRows) {
     if (a.keyword) articleByTerm.set(intentKey(a.keyword, language), a);
   }
 
@@ -494,15 +519,13 @@ export async function recommendKeywords(
   // phrasings meet. Not the page Search Console shows for the query: that is
   // where Google happened to land an impression, and for a term at position
   // 34 it is usually the homepage - a page that targets nothing.
-  const pageRows = pagesRes.status === "fulfilled" && !pagesRes.value.error ? (pagesRes.value.data ?? []) as Array<{ url: string; keyword: string | null }> : null;
+  const pageRows = leaderRows<{ url: string; keyword: string | null }>(pagesRes, "site_pages");
   const pageByTarget = new Map<string, string>();
-  for (const p of pageRows ?? []) {
+  for (const p of pageRows) {
     if (p.keyword && p.url) pageByTarget.set(intentKey(p.keyword, language), p.url);
   }
 
-  const entryRows = entriesRes.status === "fulfilled" && !entriesRes.value.error
-    ? (entriesRes.value.data ?? []) as Array<{ keyword_id: string | null; scheduled_date: string | null }>
-    : [];
+  const entryRows = leaderRows<{ keyword_id: string | null; scheduled_date: string | null }>(entriesRes, "calendar_entries");
 
   const impressionsByTerm = new Map<string, number>();
   if (gscRes.status === "fulfilled") {
@@ -842,11 +865,11 @@ export async function recommendKeywords(
   type Topic = StagedTopic & { rec?: KeywordRecommendation; owner?: IntentLeader };
   const leaders = leadersFrom({
     keywords: keywords as unknown as KeywordRow[],
-    articles: articleRows ?? [],
-    pages: pageRows ?? [],
+    articles: articleRows,
+    pages: pageRows,
     entries: entryRows,
   }, onCalendar);
-  const articleById = new Map((articleRows ?? []).map((a) => [a.id, a]));
+  const articleById = new Map(articleRows.map((a) => [a.id, a]));
   const inFlight = new Map(leaders.filter((l) => l.kind === "keyword" && l.keywordId).map((l) => [l.keywordId as string, l]));
   const STAGES: IntentStage[] = ["candidate", "scheduled", "drafted", "live"];
   const further = (a: IntentStage, b: IntentStage | null): IntentStage => (b && STAGES.indexOf(b) > STAGES.indexOf(a) ? b : a);

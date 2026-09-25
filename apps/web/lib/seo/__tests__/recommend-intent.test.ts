@@ -46,7 +46,7 @@ const row = (id: string, term: string, status: string, opportunity: unknown, ext
 
 const writes: Array<{ table: string; op: string; value: unknown; filters: unknown[][] }> = [];
 
-function client(rows: Row[], articles: unknown[], language = "tr", entries: unknown[] = []): SupabaseClient {
+function client(rows: Row[], articles: unknown[], language = "tr", entries: unknown[] = [], failing: string | null = null): SupabaseClient {
   return {
     from(table: string) {
       const filters: unknown[][] = [];
@@ -62,6 +62,7 @@ function client(rows: Row[], articles: unknown[], language = "tr", entries: unkn
       q.single = async () => ({ data: { topical_profile: null, dr: 20, business_profile: BUSINESS, domain: DOMAIN, language, location_code: 2792, auto_generate_weekly_limit: 3 } });
       q.then = (resolve: (v: unknown) => unknown) => {
         if (op !== "select") writes.push({ table, op, value, filters });
+        if (op === "select" && table === failing) return resolve({ data: null, error: { message: "canceling statement due to statement timeout" } });
         return resolve(op === "select" ? { data: data(), error: null } : { data: null, error: null, count: 1 });
       };
       return q;
@@ -264,5 +265,30 @@ describe("recommendKeywords: only a planned row that will still be written owns 
     const parked = parkedIds();
     expect(parked.map((p) => p.id)).toEqual(["late"]);
     expect(parked[0].value.opportunity).toMatchObject({ cause: "duplicate", duplicateOf: "soon" });
+  });
+});
+
+describe("recommendKeywords: the leaders are read or nothing is picked", () => {
+  // A failed read of the articles used to become an empty list, and the next
+  // draft was the search a live article already held, with nothing logged.
+  const live = [{ id: "art-live", keyword: FIRMASI, keyword_id: null, status: "live" }];
+  const rows = [row("c", FIRMASI, "new", verdict("tr", page("c")))];
+
+  it("does not pick a search a live article holds", async () => {
+    const recs = await recommendKeywords(client(rows, live), "ws", { limit: 50, qualify: true });
+    expect(pickNextKeyword(recs)?.term).not.toBe(FIRMASI);
+  });
+
+  for (const table of ["articles", "site_pages", "calendar_entries"]) {
+    it(`throws, naming ${table}, when that read fails`, async () => {
+      await expect(recommendKeywords(client(rows, live, "tr", [], table), "ws", { limit: 50, qualify: true })).rejects.toThrow(
+        `could not read ${table}`,
+      );
+    });
+  }
+
+  it("keeps going without a Search Console read: that one is a signal", async () => {
+    const recs = await recommendKeywords(client(rows, live, "tr", [], "analytics_metrics"), "ws", { limit: 50, qualify: true });
+    expect(recs.length).toBeGreaterThan(0);
   });
 });
