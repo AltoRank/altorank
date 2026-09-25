@@ -63,6 +63,14 @@ describe("heldTopics", () => {
     ];
     expect((await heldTopics(client(held, owners), "ws", 3, [])).count).toBe(2);
   });
+  it("a planned row owns its search only while its verdict is an approval", async () => {
+    // A refused calendar entry will not be written: it cannot hold the search
+    // against a held phrasing that will (lib/keyword-research/intent-leaders.ts).
+    const held: Row[] = [{ id: "a", term: "mobil uygulama geliştirme firmaları", opportunity: { status: "qualified" } }];
+    const planned = (opportunity: unknown) => ({ keywords: [{ id: "p", term: "mobil uygulama geliştirme firması", status: "planned", opportunity }] });
+    expect((await heldTopics(client(held, planned({ status: "rejected", cause: "buyer_mismatch" })), "ws", 3, [])).count).toBe(1);
+    expect((await heldTopics(client(held, planned({ status: "qualified" })), "ws", 3, [])).count).toBe(0);
+  });
   it("does not count a held topic a site page or a live article already answers", async () => {
     const held: Row[] = [
       { id: "a", term: "web tasarım fiyatları", opportunity: { status: "qualified" } },

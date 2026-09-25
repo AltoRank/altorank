@@ -12,11 +12,15 @@
 // is parked: kept, status `stored`, `plan_excluded_at` set, their unwritten
 // calendar entries removed, verdict cause "duplicate" naming the owner.
 //
-// Only a topic whose owner is already live, drafted or scheduled is parked.
-// Two candidates that are one search are left to the recommender, which
-// writes the better one first and parks the other once it is on the calendar.
-// Two topics that are both already written are listed, never touched: an
-// article cannot be unwritten by a script.
+// Only a topic whose owner is already live, drafted or scheduled is parked,
+// and a planned row counts as scheduled only while its approval is current:
+// one that is refused or has lapsed will not be written, so it owns nothing
+// (lib/keyword-research/intent-leaders.ts). Of two planned rows of one search
+// the one due first leads. Two candidates that are one search are left to the
+// recommender, which writes the better one first and parks the other once it
+// is on the calendar; so is a planned row that will not be written. Two topics
+// that are both already written are listed, never touched: an article cannot
+// be unwritten by a script.
 //
 // Nothing is bought: results pages are the ones qualification already stored.
 // Nothing is deleted except unwritten calendar entries of parked rows.
@@ -26,14 +30,14 @@
 //   npx tsx --env-file=<env> scripts/park-duplicate-intents.ts --all --apply         write it
 
 import { createClient } from "@supabase/supabase-js";
-import { contextKey, duplicateVerdict, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
+import { approvedUnder, contextKey, duplicateVerdict, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
 import { clusterByIntent, describeMatch, intentLanguage, storedSerp, unfoldedNote, type StagedTopic } from "@/lib/keyword-research/intent";
 import { leadersFrom, stageWords, type IntentLeader } from "@/lib/keyword-research/intent-leaders";
 import { parkKeywords } from "@/lib/keyword-research/queue";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 
 type KeywordRow = { id: string; term: string; status: string; opportunity: unknown; plan_excluded_at: string | null };
-type Topic = StagedTopic & { row?: KeywordRow; owner?: IntentLeader; date?: string };
+type Topic = StagedTopic & { row?: KeywordRow; owner?: IntentLeader };
 
 async function main() {
   const args = process.argv.slice(2);
@@ -66,18 +70,24 @@ async function main() {
     ]);
     for (const res of [keywords, articles, pages, entries]) if (res.error) throw res.error;
     const rows = (keywords.data ?? []) as KeywordRow[];
-    const dateOf = new Map<string, string>();
-    for (const e of (entries.data ?? []) as Array<{ keyword_id: string | null; scheduled_date: string }>) {
-      if (e.keyword_id && (!dateOf.has(e.keyword_id) || e.scheduled_date < dateOf.get(e.keyword_id)!)) dateOf.set(e.keyword_id, e.scheduled_date);
-    }
+    const fingerprint = contextKey({
+      domain: ws.domain as string,
+      business: (ws.business_profile as never) ?? null,
+      languageCode: languageCodeOf(ws.language as string | null),
+      locationCode: (ws.location_code as number | null) ?? 2840,
+    });
 
-    // Owners: in-flight keyword rows, articles, pages - the same reader the
-    // app uses. Candidates: open rows not parked.
-    const leaders = leadersFrom(rows, (articles.data ?? []) as never, (pages.data ?? []) as never);
+    // Owners: in-flight keyword rows, articles, pages, dated by the calendar -
+    // the same reader and the same rule the app uses. Candidates: open rows
+    // not parked.
+    const leaders = leadersFrom({
+      keywords: rows,
+      articles: (articles.data ?? []) as never,
+      pages: (pages.data ?? []) as never,
+      entries: (entries.data ?? []) as never,
+    }, approvedUnder(fingerprint));
     const byRow = new Map(rows.map((r) => [r.id, r]));
-    const topics: Topic[] = leaders.map((l) => ({ ...l, owner: l, row: l.keywordId ? byRow.get(l.keywordId) : undefined, date: l.keywordId ? dateOf.get(l.keywordId) : undefined }));
-    // Two rows on the calendar: the one written first leads.
-    topics.sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999"));
+    const topics: Topic[] = leaders.map((l) => ({ ...l, owner: l, row: l.keywordId ? byRow.get(l.keywordId) : undefined }));
     for (const r of rows) {
       if (r.plan_excluded_at || r.status !== "new") continue;
       topics.push({ term: r.term, organicUrls: storedSerp(r.opportunity), stage: "candidate", row: r });
@@ -87,12 +97,6 @@ async function main() {
     const toPark: Array<{ id: string; verdict: Opportunity; line: string }> = [];
     const writtenTwice: string[] = [];
     let wordsOnly = 0;
-    const fingerprint = contextKey({
-      domain: ws.domain as string,
-      business: (ws.business_profile as never) ?? null,
-      languageCode: languageCodeOf(ws.language as string | null),
-      locationCode: (ws.location_code as number | null) ?? 2840,
-    });
     for (const [topic, { leader, match }] of followers) {
       if (leader.stage === "candidate") continue; // the recommender's call, not this script's
       if (match.basis === "words" && match.note) wordsOnly++;

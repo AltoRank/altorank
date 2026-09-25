@@ -1,7 +1,7 @@
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 import { ARTICLE_SHAPES, qualifyOpportunities, type ArticleShape, type Opportunity } from "@/lib/keyword-research/opportunity";
 import { clusterByIntent, intentLanguage, sameIntent, storedSerp, type StagedTopic } from "@/lib/keyword-research/intent";
-import { readIntentLeaders } from "@/lib/keyword-research/intent-leaders";
+import { approvedWhenJudged, readIntentLeaders } from "@/lib/keyword-research/intent-leaders";
 // ---------------------------------------------------------------------------
 // The first thirty days, scheduled
 // ---------------------------------------------------------------------------
@@ -311,10 +311,25 @@ async function planFor(
   opts: PlanOptions,
 ): Promise<{ plan: PlannedEntry[]; recs: KeywordRecommendation[] }> {
   const mode = opts.mode ?? "replace";
-  const all = await scheduledEntries(supabase, workspaceId);
   // In replace mode the unfulfilled queue is about to be dropped, so it does
   // not count against the cap and its keywords are free to be planned again.
-  const existing = mode === "replace" ? all.filter((e) => e.status !== "queue" || e.article_id) : all;
+  const counted = (entries: ExistingEntry[]) => (mode === "replace" ? entries.filter((e) => e.status !== "queue" || e.article_id) : entries);
+  // Checked before the recommender, which can spend on verdicts.
+  if (PLAN_MAX_ENTRIES - counted(await scheduledEntries(supabase, workspaceId)).length <= 0) return { plan: [], recs: [] };
+
+  // The limit is applied after scoring, across every action. At 80 a site
+  // that already ranks for 80+ terms filled the list with "skip: already
+  // ranking" rows and the one writable keyword scored below them was never
+  // seen (buttondown.com, 2026-09-07: 99 skips, 2 hand-added terms, 1
+  // planned). Ask for the whole set; the planner filters to writable itself.
+  const recommended = await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true, qualifyBatches: opts.qualifyBatches });
+
+  // Read after the recommender: it takes a planned phrasing nobody will write
+  // off the calendar when another phrasing of its search leads
+  // (lib/seo/recommendations.ts), and that entry, read before, would still
+  // hold the search here and keep the phrasing that leads it off the plan.
+  const all = await scheduledEntries(supabase, workspaceId);
+  const existing = counted(all);
   const room = PLAN_MAX_ENTRIES - existing.length;
   if (room <= 0) return { plan: [], recs: [] };
 
@@ -328,21 +343,27 @@ async function planFor(
   // An entry that stays on the calendar owns its search: a rec that is the
   // same search is not planned beside it (it used to take the exact same
   // string to be noticed). The recommender has already parked the rows it
-  // could see; this covers an entry whose keyword row says otherwise.
-  const { data: ws } = await supabase.from("workspaces").select("language").eq("id", workspaceId).maybeSingle();
+  // could see; this covers an entry whose keyword row says otherwise. Each
+  // entry is compared by its keyword row's results page when one was bought,
+  // so a synonym of it is caught too, not only a respelling.
+  const [{ data: ws }, { data: keptRows }] = await Promise.all([
+    supabase.from("workspaces").select("language").eq("id", workspaceId).maybeSingle(),
+    takenIds.size
+      ? supabase.from("keywords").select("id, opportunity").eq("workspace_id", workspaceId).in("id", [...takenIds])
+      : Promise.resolve({ data: [] as Array<{ id: string; opportunity: unknown }> }),
+  ]);
   const language = intentLanguage((ws as { language?: string | null } | null)?.language);
+  const serpOf = new Map(((keptRows ?? []) as Array<{ id: string; opportunity: unknown }>).map((r) => [r.id, storedSerp(r.opportunity)]));
   const kept: Array<StagedTopic & { rec?: KeywordRecommendation }> = existing
     .filter((e) => e.keyword)
-    .map((e) => ({ term: e.keyword as string, stage: e.article_id ? "drafted" as const : "scheduled" as const }));
+    .map((e) => ({
+      term: e.keyword as string,
+      organicUrls: e.keyword_id ? serpOf.get(e.keyword_id) ?? null : null,
+      stage: e.article_id ? "drafted" as const : "scheduled" as const,
+      date: e.scheduled_date,
+    }));
 
-  // The limit is applied after scoring, across every action. At 80 a site
-  // that already ranks for 80+ terms filled the list with "skip: already
-  // ranking" rows and the one writable keyword scored below them was never
-  // seen (buttondown.com, 2026-09-07: 99 skips, 2 hand-added terms, 1
-  // planned). Ask for the whole set; the planner filters to writable itself.
-  const ranked = (await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true, qualifyBatches: opts.qualifyBatches })).filter(
-    (r) => !excluded.has(r.keywordId) && !takenIds.has(r.keywordId),
-  );
+  const ranked = recommended.filter((r) => !excluded.has(r.keywordId) && !takenIds.has(r.keywordId));
   const onCalendar = clusterByIntent(
     [...kept, ...ranked.map((rec) => ({ rec, term: rec.term, organicUrls: rec.opportunity?.organicUrls ?? null, stage: "candidate" as const }))],
     language,
@@ -521,7 +542,8 @@ export async function heldTopics(
       .eq("status", "new")
       .eq("opportunity->>status", "qualified")
       .is("plan_excluded_at", null),
-    readIntentLeaders(supabase, workspaceId),
+    // Read the way the held rows are: by the verdict as stored.
+    readIntentLeaders(supabase, workspaceId, approvedWhenJudged),
     supabase.from("workspaces").select("language").eq("id", workspaceId).maybeSingle(),
   ]);
   if (error) throw new Error(`Could not read held topics: ${error.message}`);

@@ -1,10 +1,10 @@
 import { readOpportunity, contextKey, duplicateVerdict, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
 import { clusterByIntent, intentKey, intentLanguage, sameIntent, storedSerp, unfoldedNote, type IntentFollower, type IntentStage, type StagedTopic } from "@/lib/keyword-research/intent";
-import { articleStage, leadersFrom, type IntentLeader } from "@/lib/keyword-research/intent-leaders";
+import { articleStage, leadersFrom, type IntentLeader, type KeywordRow, type OnCalendar } from "@/lib/keyword-research/intent-leaders";
 import { ensureBusinessProfile } from "@/lib/keyword-research/business-context";
 import { causeLabel } from "@/lib/keyword-research/opportunity";
 import { funnelOf, type FitVerdict, type Funnel } from "@/lib/keyword-research/buyer-fit";
-import { isParked, isParkedForGood, isRequalifiable, parkKeywords, queueTarget, refillQualifiedQueue, type QueueRow } from "@/lib/keyword-research/queue";
+import { isJudgeable, isParked, isParkedForGood, isRequalifiable, parkKeywords, queueTarget, refillQualifiedQueue, type QueueRow } from "@/lib/keyword-research/queue";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 // ---------------------------------------------------------------------------
 // What to write next
@@ -419,7 +419,7 @@ export async function recommendKeywords(
   // Each of these is optional: a workspace with no rank history and no Search
   // Console still gets a usable queue from volume, difficulty and intent alone.
 
-  const [rankRes, articleRes, gscRes, pagesRes] = await Promise.allSettled([
+  const [rankRes, articleRes, gscRes, pagesRes, entriesRes] = await Promise.allSettled([
     supabase
       .from("keyword_rankings")
       .select("keyword_id, position, checked_at")
@@ -457,6 +457,13 @@ export async function recommendKeywords(
       .select("url, keyword")
       .eq("workspace_id", workspaceId)
       .not("keyword", "is", null),
+    // When each planned keyword is due: of two planned phrasings of one
+    // search, the one due first is the one kept.
+    supabase
+      .from("calendar_entries")
+      .select("keyword_id, scheduled_date")
+      .eq("workspace_id", workspaceId)
+      .in("status", ["queue", "scheduled"]),
   ]);
 
   // Most recent position per keyword; the query is already newest-first.
@@ -492,6 +499,10 @@ export async function recommendKeywords(
   for (const p of pageRows ?? []) {
     if (p.keyword && p.url) pageByTarget.set(intentKey(p.keyword, language), p.url);
   }
+
+  const entryRows = entriesRes.status === "fulfilled" && !entriesRes.value.error
+    ? (entriesRes.value.data ?? []) as Array<{ keyword_id: string | null; scheduled_date: string | null }>
+    : [];
 
   const impressionsByTerm = new Map<string, number>();
   if (gscRes.status === "fulfilled") {
@@ -771,8 +782,9 @@ export async function recommendKeywords(
   // Every keyword row, and every article and page the site already has, goes
   // through one clustering pass (lib/keyword-research/intent.ts): the same
   // results page where both were bought, the same words otherwise. A cluster
-  // is led by whatever is furthest along - live, drafted, on the calendar -
-  // and then by score.
+  // is led by whatever is furthest along - live, drafted, on the calendar and
+  // still to be written - then by the date it is due, then by what can still
+  // be written, then by score.
   //
   //   led by a candidate   the followers are phrasings of one query. They
   //                        leave the list, and the leader says it covers them:
@@ -788,9 +800,52 @@ export async function recommendKeywords(
   //
   // A row parked for good owns nothing and joins nothing: it is out of the
   // plan, and a refused phrasing must not swallow the one that would pass.
+  //
+  // Nor does a planned row this pass will not write. The calendar is a
+  // promise, and one the recommender has refused, or that has no current
+  // approval (nothing judges a planned row again), is not kept: led by it, a
+  // writable phrasing of its search was parked as "on the calendar" while the
+  // cron overruled the calendar entry itself, and the search was lost until a
+  // person noticed. Such a row is ranked as a candidate that cannot be
+  // written, so any phrasing that can leads its search, and once that one is
+  // approved the planned row is taken off the calendar.
   const rowOf = new Map(keywords.map((k) => [k.id as string, k as unknown as QueueRow]));
+  const recOf = new Map(recommendations.map((r) => [r.keywordId, r]));
+  // A qualifying caller is about to spend on verdicts, and a verdict needs a
+  // profile to judge against. A workspace older than the wizard has none;
+  // read the site for one now, once, rather than stamping every term
+  // "pending" for want of a column (lib/keyword-research/business-context.ts).
+  // Read before the clustering, which needs to know what is approved.
+  const ensured = options?.qualify
+    ? await ensureBusinessProfile(supabase, workspaceId, workspace?.domain, business)
+    : { business, inferred: false, missing: null };
+  const context = { business: ensured.business, domain: workspace?.domain ?? "", languageCode: languageCodeOf(workspace?.language), locationCode: workspace?.location_code ?? 2840 };
+  const fingerprint = contextKey(context);
+  const current = (id: string) => readOpportunity(rowOf.get(id)?.opportunity, fingerprint);
+  const writable = (r: KeywordRecommendation) => r.action === "write" && r.quality === "ok";
+  // A planned row still to be written: writable today and approved under
+  // today's profile. Its stored verdict is the whole answer; the refill does
+  // not buy a planned row a new one (lib/keyword-research/queue.ts).
+  const onCalendar: OnCalendar = (row) => {
+    const rec = recOf.get(row.id);
+    return Boolean(rec && writable(rec) && current(row.id)?.status === "qualified");
+  };
+  // What can still be written, known before anything is bought: approved, or
+  // not refused and a row the refill will judge.
+  const mayBeWritten = (r: KeywordRecommendation) => {
+    if (!writable(r)) return false;
+    const o = current(r.keywordId);
+    const row = rowOf.get(r.keywordId);
+    return o?.status === "qualified" || (o?.status !== "rejected" && Boolean(row && isJudgeable(row)));
+  };
+
   type Topic = StagedTopic & { rec?: KeywordRecommendation; owner?: IntentLeader };
-  const leaders = leadersFrom(keywords as unknown as Parameters<typeof leadersFrom>[0], articleRows ?? [], pageRows ?? []);
+  const leaders = leadersFrom({
+    keywords: keywords as unknown as KeywordRow[],
+    articles: articleRows ?? [],
+    pages: pageRows ?? [],
+    entries: entryRows,
+  }, onCalendar);
   const articleById = new Map((articleRows ?? []).map((a) => [a.id, a]));
   const inFlight = new Map(leaders.filter((l) => l.kind === "keyword" && l.keywordId).map((l) => [l.keywordId as string, l]));
   const STAGES: IntentStage[] = ["candidate", "scheduled", "drafted", "live"];
@@ -798,19 +853,21 @@ export async function recommendKeywords(
   const topics: Topic[] = [];
   // Best score first, but a phrasing that can be written ahead of one that
   // cannot: a search is not given up because its highest-volume spelling is
-  // provider noise or out of reach.
-  const writable = (r: KeywordRecommendation) => (r.action === "write" && r.quality === "ok" ? 0 : 1);
+  // provider noise, out of reach, refused, or a calendar entry nobody will
+  // write.
+  const standing = (r: KeywordRecommendation) => (mayBeWritten(r) ? 0 : 1);
   recommendations.sort((a, b) => b.score - a.score);
-  for (const rec of [...recommendations].sort((a, b) => writable(a) - writable(b))) {
+  for (const rec of [...recommendations].sort((a, b) => standing(a) - standing(b))) {
     const row = rowOf.get(rec.keywordId);
     if (row && isParkedForGood(row)) continue;
     // In flight on its own row, or covered by an article or a page found by
     // its words: either way the search is already taken.
     const covering = rec.existingArticleId ? articleById.get(rec.existingArticleId) : undefined;
-    let stage: IntentStage = inFlight.get(rec.keywordId)?.stage ?? "candidate";
+    const own = inFlight.get(rec.keywordId);
+    let stage: IntentStage = own?.stage ?? "candidate";
     stage = further(stage, covering ? articleStage(covering.status) : null);
     stage = further(stage, rec.existingPageUrl ? "live" : null);
-    topics.push({ term: rec.term, organicUrls: storedSerp(row?.opportunity), stage, rec });
+    topics.push({ term: rec.term, organicUrls: storedSerp(row?.opportunity), stage, date: own?.date ?? null, rec });
   }
   // Articles and pages with no keyword row of their own lead too; in-flight
   // rows are already in the list above, as recommendations.
@@ -818,6 +875,10 @@ export async function recommendKeywords(
   const followers = clusterByIntent(topics, language);
   const dropped = new Set<KeywordRecommendation>();
   const taken: Array<{ rec: KeywordRecommendation; stage: IntentStage; follow: IntentFollower<Topic> }> = [];
+  // Planned rows that will not be written, behind a phrasing of their search
+  // that may be. Settled after the evidence pass, when it is known whether
+  // that phrasing is approved.
+  const displaced: Array<{ rec: KeywordRecommendation; follow: IntentFollower<Topic> }> = [];
   for (const [topic, follow] of followers) {
     const rec = topic.rec;
     if (!rec) continue;
@@ -827,30 +888,26 @@ export async function recommendKeywords(
       if (!leader.rec.reasons.some((r) => r.startsWith("also covers"))) {
         leader.rec.reasons.push(`also covers "${rec.term}" and other phrasings of the same query`);
       }
+      if (rowOf.get(rec.keywordId)?.status === "planned" && mayBeWritten(leader.rec)) displaced.push({ rec, follow });
       continue;
     }
     taken.push({ rec, stage: topic.stage, follow });
   }
   const sorted = recommendations.filter((rec) => !dropped.has(rec));
-  // A qualifying caller is about to spend on verdicts, and a verdict needs a
-  // profile to judge against. A workspace older than the wizard has none;
-  // read the site for one now, once, rather than stamping every term
-  // "pending" for want of a column (lib/keyword-research/business-context.ts).
-  const ensured = options?.qualify
-    ? await ensureBusinessProfile(supabase, workspaceId, workspace?.domain, business)
-    : { business, inferred: false, missing: null };
-  const context = { business: ensured.business, domain: workspace?.domain ?? "", languageCode: languageCodeOf(workspace?.language), locationCode: workspace?.location_code ?? 2840 };
-  const fingerprint = contextKey(context);
+  const baseVerdict = (row: QueueRow | undefined): Opportunity => ({
+    ...(row?.opportunity && typeof row.opportunity === "object" ? row.opportunity as Opportunity : { reason: "" } as Opportunity),
+    version: OPPORTUNITY_VERSION, context: fingerprint, checkedAt: new Date().toISOString(),
+  });
 
-  // The searches already taken. Said on the row either way; parked when this
-  // caller is about to plan or write, exactly as a refused verdict is.
+  // The searches already taken. Said on the row either way; parked, after
+  // the evidence pass below, when this caller is about to plan or write,
+  // exactly as a refused verdict is.
   const toPark: Array<{ id: string; verdict: Opportunity }> = [];
   for (const { rec, stage, follow } of taken) {
     const leader = follow.leader;
     const row = rowOf.get(rec.keywordId);
     const verdict = duplicateVerdict(
-      { ...(row?.opportunity && typeof row.opportunity === "object" ? row.opportunity as Opportunity : { reason: "" } as Opportunity),
-        version: OPPORTUNITY_VERSION, context: fingerprint, checkedAt: new Date().toISOString() },
+      baseVerdict(row),
       { term: leader.term, keywordId: leader.rec?.keywordId ?? leader.owner?.keywordId ?? null, stage: leader.stage },
       follow.match,
     );
@@ -860,13 +917,6 @@ export async function recommendKeywords(
     if (rec.action === "write") rec.action = "skip";
     rec.opportunity = verdict;
     if (row && !isParkedForGood(row)) toPark.push({ id: rec.keywordId, verdict });
-  }
-  if (options?.qualify && toPark.length) {
-    await parkKeywords(supabase, workspaceId, toPark);
-    for (const { id, verdict } of toPark) {
-      const row = rowOf.get(id);
-      if (row) { row.opportunity = verdict; row.plan_excluded_at = new Date().toISOString(); }
-    }
   }
   // Only explicit scheduling/generation requests buy fresh evidence. List pages
   // consume saved briefs without triggering provider work during rendering.
@@ -896,9 +946,12 @@ export async function recommendKeywords(
           status: "pending", cause: "no_profile", reason: `Topic qualification is blocked: ${ensured.missing}.`,
         }]))
       // Buy verdicts for the best candidates only until the queue holds
-      // what the pace will use; a rejection parks the row as it goes.
+      // what the pace will use; a rejection parks the row as it goes. The
+      // owners are this pass's, so qualification does not refuse a phrasing
+      // as the duplicate of a planned row this pass has already set aside.
       : (await refillQualifiedQueue(supabase, workspaceId, candidateRows, context, {
           target: queueTarget(workspace?.auto_generate_weekly_limit as number | null | undefined),
+          owners: leaders,
           ...(options.qualifyBatches ? { maxBatches: options.qualifyBatches } : {}),
         })).verdicts
     : new Map(candidateRows.flatMap((row) => { const o = readOpportunity(row.opportunity, fingerprint); return o ? [[row.id, o] as const] : []; }));
@@ -929,6 +982,33 @@ export async function recommendKeywords(
     } else if (options?.qualify || o) {
       rec.action = o?.existingUrl ? "refresh" : "skip";
       rec.reasons.unshift(o?.reason ?? "Topic qualification pending: buyer fit and live search evidence are required before automatic writing.");
+    }
+  }
+  // A planned row that will not be written, behind a phrasing of its search
+  // that may be, comes off the calendar: refused, with its own refusal, the
+  // way the refill parks every refusal it buys; otherwise as that phrasing's
+  // duplicate, once the phrasing is approved and will be written. While the
+  // phrasing is still unjudged the entry stays, and on its day the cron
+  // writes the best topic in its place (app/api/cron/generate/route.ts).
+  for (const { rec, follow } of displaced) {
+    const row = rowOf.get(rec.keywordId);
+    const leader = follow.leader.rec;
+    if (!row || !leader || isParkedForGood(row)) continue;
+    const own = current(rec.keywordId);
+    if (own?.status === "rejected") {
+      toPark.push({ id: rec.keywordId, verdict: own });
+    } else if (leader.action === "write" && leader.opportunity?.status === "qualified") {
+      toPark.push({
+        id: rec.keywordId,
+        verdict: duplicateVerdict(baseVerdict(row), { term: leader.term, keywordId: leader.keywordId, stage: "candidate" }, follow.match),
+      });
+    }
+  }
+  if (options?.qualify && toPark.length) {
+    await parkKeywords(supabase, workspaceId, toPark);
+    for (const { id, verdict } of toPark) {
+      const row = rowOf.get(id);
+      if (row) { row.opportunity = verdict; row.plan_excluded_at = new Date().toISOString(); }
     }
   }
   return sorted.slice(0, limit);

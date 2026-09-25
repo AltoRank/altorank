@@ -27,8 +27,12 @@ const page = (prefix: string, n = 10) => Array.from({ length: n }, (_, i) => `ht
 const serp = (base: string[], shared: number, prefix: string) => [...base.slice(0, shared), ...page(prefix, 10 - shared)];
 const OWNER = page("owner");
 
+const fingerprintFor = (language: string) => contextKey({ business: BUSINESS, domain: DOMAIN, languageCode: language, locationCode: 2792 });
+function refused(language: string) {
+  return { version: OPPORTUNITY_VERSION, context: fingerprintFor(language), checkedAt: new Date().toISOString(), status: "rejected", cause: "buyer_mismatch", reason: "no buyer" };
+}
 function verdict(language: string, organicUrls: string[] | null) {
-  const fingerprint = contextKey({ business: BUSINESS, domain: DOMAIN, languageCode: language, locationCode: 2792 });
+  const fingerprint = fingerprintFor(language);
   if (!organicUrls) return { version: OPPORTUNITY_VERSION, context: fingerprint, checkedAt: new Date().toISOString(), status: "pending", cause: "no_verdict", reason: "not yet" };
   return {
     version: OPPORTUNITY_VERSION, context: fingerprint, checkedAt: new Date().toISOString(), status: "qualified",
@@ -37,8 +41,8 @@ function verdict(language: string, organicUrls: string[] | null) {
   };
 }
 
-type Row = { id: string; term: string; status: string; opportunity: unknown; plan_excluded_at?: string | null };
-const row = (id: string, term: string, status: string, opportunity: unknown): Row => ({ id, term, status, opportunity, plan_excluded_at: null });
+type Row = { id: string; term: string; status: string; opportunity: unknown; plan_excluded_at?: string | null; volume?: number };
+const row = (id: string, term: string, status: string, opportunity: unknown, extra: Partial<Row> = {}): Row => ({ id, term, status, opportunity, plan_excluded_at: null, ...extra });
 
 const writes: Array<{ table: string; op: string; value: unknown; filters: unknown[][] }> = [];
 
@@ -114,9 +118,11 @@ describe("recommendKeywords: a drafted keyword blocks its near-duplicates", () =
   });
 
   it("without stored results pages, folds the Turkish inflection and leaves the synonym to qualification", async () => {
+    // Three results are too few to compare pages by (the bar is four shared),
+    // so every pair here is decided by its words.
     const bare = [
       row("d", SIRKETLERI, "drafting", null),
-      row("q", FIRMALARI, "planned", verdict("tr", null)),
+      row("q", FIRMALARI, "planned", verdict("tr", page("q", 3))),
       row("h", FIRMASI, "new", verdict("tr", null)),
       row("o", OTHER, "new", verdict("tr", page("o"))),
     ];
@@ -136,6 +142,19 @@ describe("recommendKeywords: a drafted keyword blocks its near-duplicates", () =
     expect(recs.find((r) => r.keywordId === "w")!.action).toBe("write");
   });
 
+  it("compares an article by its keyword row's results page, whatever that row's status now", async () => {
+    // The article's row went back to "new" (an unwritten plan entry removed,
+    // say); the article is still live, and its results page still says which
+    // search it answers. The synonym gets no second article.
+    const recs = await recommendKeywords(client([
+      row("a", SIRKETLERI, "new", verdict("tr", OWNER)),
+      row("s", FIRMALARI, "new", verdict("tr", serp(OWNER, 5, "s"))),
+    ], [{ id: "art-a", keyword: SIRKETLERI, keyword_id: "a", status: "live" }]), "ws", { limit: 100 });
+    const s = recs.find((r) => r.keywordId === "s")!;
+    expect(s.action).toBe("skip");
+    expect(s.reasons[0]).toBe(`Same search as “${SIRKETLERI}”, already live: the same 5 of the top 10 results. One article per search.`);
+  });
+
   it("says when a language has no rule set for comparing with pages that carry no results page", async () => {
     const recs = await recommendKeywords(client(
       [row("o", "agenzia sviluppo app", "new", verdict("it", page("o")))],
@@ -146,5 +165,104 @@ describe("recommendKeywords: a drafted keyword blocks its near-duplicates", () =
     // "agenzie"/"agenzia" are not folded for Italian: not merged, and said.
     expect(o.action).toBe("write");
     expect(o.reasons).toContain("Checked against your existing pages by exact words: inflected spellings not compared for Italian.");
+  });
+});
+
+describe("recommendKeywords: only a planned row that will still be written owns its search", () => {
+  const parkedIds = () => writes
+    .filter((w) => w.table === "keywords" && w.op === "update")
+    .map((w) => ({ id: w.filters.find((f) => f[0] === "eq" && f[1] === "id")?.[2], value: w.value as { status: string; opportunity: Record<string, unknown> } }));
+
+  it("a refused planned row does not park the phrasing that can be written; it comes off the calendar itself", async () => {
+    // The reviewer's case: the calendar holds a phrasing the buyer test has
+    // since refused, and a writable phrasing of the same search is approved.
+    // Led by the refused one, the writable one was parked as "on the
+    // calendar", the refused one was never written, and the search was lost.
+    const recs = await recommendKeywords(client([
+      row("p", "seo agencies", "planned", refused("en")),
+      row("c", "agency seo", "new", verdict("en", page("c"))),
+    ], [], "en", [{ id: "entry-p", keyword_id: "p", scheduled_date: "2026-09-26" }]), "ws", { limit: 100, qualify: true });
+    expect(qualify).not.toHaveBeenCalled();
+    expect(pickNextKeyword(recs)?.keywordId).toBe("c");
+    const parked = parkedIds();
+    expect(parked.map((p) => p.id)).toEqual(["p"]);
+    // Parked with its own refusal, the way the refill parks every refusal.
+    expect(parked[0].value).toMatchObject({ status: "stored", opportunity: { status: "rejected", cause: "buyer_mismatch" } });
+    expect(writes.some((w) => w.table === "calendar_entries" && w.op === "delete")).toBe(true);
+  });
+
+  it("a list page reads the same answer and parks nothing", async () => {
+    const recs = await recommendKeywords(client([
+      row("p", "seo agencies", "planned", refused("en")),
+      row("c", "agency seo", "new", verdict("en", page("c"))),
+    ], [], "en"), "ws", { limit: 100 });
+    expect(pickNextKeyword(recs)?.keywordId).toBe("c");
+    expect(recs.find((r) => r.keywordId === "c")!.reasons.join(" ")).not.toContain("Same search");
+    expect(writes).toEqual([]);
+  });
+
+  it("a planned row whose approval lapsed does not own the search; the sibling is judged, and once approved the planned row comes off", async () => {
+    qualify.mockReset().mockImplementation(async (_s: unknown, _w: unknown, asked: Array<{ id: string }>) =>
+      new Map(asked.map((c) => [c.id, verdict("en", page(c.id))])));
+    const recs = await recommendKeywords(client([
+      row("p", "seo agencies", "planned", null),
+      row("c", "agency seo", "new", null),
+    ], [], "en", [{ id: "entry-p", keyword_id: "p", scheduled_date: "2026-09-26" }]), "ws", { limit: 100, qualify: true });
+    // Judged against this pass's owners, which do not include the lapsed row:
+    // qualification must not refuse the sibling as its duplicate.
+    expect((qualify.mock.calls[0][2] as Array<{ id: string }>).map((c) => c.id)).toEqual(["c"]);
+    const owners = (qualify.mock.calls[0][4] as { owners: Array<{ keywordId: string | null }> }).owners;
+    expect(owners.some((o) => o.keywordId === "p")).toBe(false);
+    expect(pickNextKeyword(recs)?.keywordId).toBe("c");
+    const parked = parkedIds();
+    expect(parked.map((p) => p.id)).toEqual(["p"]);
+    expect(parked[0].value.opportunity).toMatchObject({ status: "rejected", cause: "duplicate", duplicateOf: "c", duplicateTerm: "agency seo" });
+    expect(parked[0].value.opportunity.reason).toBe("Same search as “agency seo”, approved and next in the queue: the same words. One article per search.");
+  });
+
+  it("while the sibling is still unjudged, the lapsed planned row keeps its calendar entry", async () => {
+    qualify.mockReset().mockImplementation(async (_s: unknown, _w: unknown, asked: Array<{ id: string }>) =>
+      new Map(asked.map((c) => [c.id, verdict("en", null)])));
+    await recommendKeywords(client([
+      row("p", "seo agencies", "planned", null),
+      row("c", "agency seo", "new", null),
+    ], [], "en", [{ id: "entry-p", keyword_id: "p", scheduled_date: "2026-09-26" }]), "ws", { limit: 100, qualify: true });
+    expect(parkedIds()).toEqual([]);
+    expect(writes.some((w) => w.table === "calendar_entries" && w.op === "delete")).toBe(false);
+  });
+
+  it("an approved planned row the scorer now refuses does not own the search either", async () => {
+    // No measured demand any more (volume 0): the cron would overrule the
+    // entry on its day, so it cannot hold the search against a phrasing that
+    // will be written.
+    const recs = await recommendKeywords(client([
+      row("p", "seo agencies", "planned", verdict("en", page("p")), { volume: 0 }),
+      row("c", "agency seo", "new", verdict("en", serp(page("p"), 6, "c"))),
+    ], [], "en", [{ id: "entry-p", keyword_id: "p", scheduled_date: "2026-09-26" }]), "ws", { limit: 100, qualify: true });
+    expect(pickNextKeyword(recs)?.keywordId).toBe("c");
+    expect(parkedIds().map((p) => p.id)).toEqual(["p"]);
+    expect(parkedIds()[0].value.opportunity).toMatchObject({ cause: "duplicate", duplicateOf: "c" });
+  });
+
+  it("an approved, writable planned row still owns its search and parks a later phrasing", async () => {
+    const recs = await recommendKeywords(client([
+      row("p", "seo agencies", "planned", verdict("en", page("p"))),
+      row("c", "agency seo", "new", verdict("en", serp(page("p"), 6, "c")), { volume: 9000 }),
+    ], [], "en", [{ id: "entry-p", keyword_id: "p", scheduled_date: "2026-09-26" }]), "ws", { limit: 100, qualify: true });
+    expect(recs.find((r) => r.keywordId === "c")!.reasons[0]).toBe("Same search as “seo agencies”, on the calendar: the same 6 of the top 10 results. One article per search.");
+    expect(parkedIds().map((p) => p.id)).toEqual(["c"]);
+  });
+
+  it("of two planned phrasings of one search, the one due first is kept, whatever the scores", async () => {
+    await recommendKeywords(client([
+      row("late", "seo agencies", "planned", verdict("en", serp(page("soon"), 7, "late")), { volume: 9000 }),
+      row("soon", "agency seo", "planned", verdict("en", page("soon"))),
+    ], [], "en", [
+      { id: "entry-late", keyword_id: "late", scheduled_date: "2026-10-20" },
+      { id: "entry-soon", keyword_id: "soon", scheduled_date: "2026-09-26" },
+    ]), "ws", { limit: 100, qualify: true });
+    const parked = parkedIds();
+    expect(parked.map((p) => p.id)).toEqual(["late"]);
+    expect(parked[0].value.opportunity).toMatchObject({ cause: "duplicate", duplicateOf: "soon" });
   });
 });

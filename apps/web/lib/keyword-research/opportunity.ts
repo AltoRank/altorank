@@ -8,7 +8,7 @@ import { funnelOf, judgeBuyerFit, type FitProfile, type Funnel } from "./buyer-f
 import { e2eStubsEnabled, isReservedTestDomain } from "@/lib/e2e/stubs";
 import { getLocale } from "@/lib/seo/locales";
 import { canonicalPage, describeMatch, intentMatcher, type IntentBasis, type IntentMatch } from "./intent";
-import { readIntentLeaders, stageWords, type IntentLeader } from "./intent-leaders";
+import { readIntentLeaders, stageWords, type IntentLeader, type OnCalendar } from "./intent-leaders";
 
 export { canonicalPage };
 
@@ -101,6 +101,16 @@ export function readOpportunity(raw: unknown, context: string): Opportunity | nu
   return o;
 }
 /**
+ * A planned row owns its search while its approval is current: the half of
+ * "will it still be written" that can be read without scoring it. The
+ * recommender, which does score it, asks for more (lib/seo/recommendations.ts)
+ * and hands its owners to the qualification it runs.
+ */
+export function approvedUnder(fingerprint: string): OnCalendar {
+  return (row) => readOpportunity(row.opportunity, fingerprint)?.status === "qualified";
+}
+
+/**
  * The verdict a topic gets when something further along already owns its
  * search (lib/keyword-research/intent.ts). Rejected, so the refill parks it
  * the way it parks every refusal: kept, off the plan, never judged again
@@ -130,12 +140,23 @@ function ownPage(raw: string | null | undefined, domain: string): boolean {
   return Boolean(page && own && page.split("/")[0] === own);
 }
 
+export interface QualifyOptions {
+  /**
+   * What already owns a search, when the caller has worked it out: the
+   * recommender passes its own, so a planned row it has refused cannot get
+   * the phrasing it let lead refused here as that row's duplicate. Read from
+   * the table otherwise.
+   */
+  owners?: readonly IntentLeader[];
+}
+
 /** Paid work is bounded and cached. A missing response remains pending. */
 export async function qualifyOpportunities(
   supabase: SupabaseClient,
   workspaceId: string,
   candidates: OpportunityCandidate[],
   context: OpportunityContext,
+  options: QualifyOptions = {},
 ): Promise<Map<string, Opportunity>> {
   const fingerprint = contextKey(context);
   const out = new Map<string, Opportunity>();
@@ -281,18 +302,20 @@ export async function qualifyOpportunities(
     await save(c, result, verdict ?? null);
     }));
   }
-  // One article per search. A topic already live, drafted or scheduled owns
-  // its search, and a new approval for it - the same results page, or the
-  // same words where no page was bought - is refused as a duplicate, which
-  // the refill parks. Compared against every owner, not only rows with a
-  // current verdict: a results page bought under last month's profile still
-  // says which search it was. New approvals are not ranked against each
-  // other here; the recommender does that in memory, and the loser is parked
-  // once the winner is on the calendar.
+  // One article per search. A topic already live or drafted, or planned and
+  // still to be written, owns its search, and a new approval for it - the
+  // same results page, or the same words where no page was bought - is
+  // refused as a duplicate, which the refill parks. A live or drafted owner's
+  // results page counts whatever its age: one bought under last month's
+  // profile still says which search it was. A planned row counts only with a
+  // current approval (lib/keyword-research/intent-leaders.ts). New approvals
+  // are not ranked against each other here; the recommender does that in
+  // memory, and the loser is parked once the winner is on the calendar.
   const approved = candidates.filter((c) => out.get(c.id)?.status === "qualified");
   if (approved.length) {
     const own = new Set(approved.map((c) => c.id));
-    const leaders = (await readIntentLeaders(supabase, workspaceId)).filter((l) => !l.keywordId || !own.has(l.keywordId));
+    const owners = options.owners ?? await readIntentLeaders(supabase, workspaceId, approvedUnder(fingerprint));
+    const leaders = owners.filter((l) => !l.keywordId || !own.has(l.keywordId));
     const ownerOf = intentMatcher(leaders, context.languageCode);
     for (const c of approved) {
       const result = out.get(c.id)!;

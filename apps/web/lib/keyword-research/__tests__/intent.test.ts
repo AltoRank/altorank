@@ -182,6 +182,16 @@ describe("clusterByIntent: the leader is whatever is furthest along", () => {
     expect(pair.has(first)).toBe(false);
   });
 
+  it("between two phrasings on the calendar, the one due first leads, whatever the caller's order", () => {
+    const later = { ...t("late", "seo agencies", "scheduled"), date: "2026-10-20" };
+    const sooner = { ...t("soon", "agency seo", "scheduled"), date: "2026-09-26" };
+    const undated = t("none", "seo for agency", "scheduled");
+    const followers = clusterByIntent([later, undated, sooner], "en");
+    expect(followers.get(later)?.leader).toBe(sooner);
+    expect(followers.get(undated)?.leader).toBe(sooner);
+    expect(followers.has(sooner)).toBe(false);
+  });
+
   it("marks a words-only join in a language without rules", () => {
     const followers = clusterByIntent([t("a", "Agenzia SEO", "drafted"), t("b", "agenzia seo", "candidate")], "it");
     expect([...followers.values()][0].match).toEqual({ same: true, basis: "words" });

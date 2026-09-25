@@ -367,6 +367,19 @@ const STAGE_RANK: Record<IntentStage, number> = { live: 3, drafted: 2, scheduled
 
 export interface StagedTopic extends IntentTopic {
   stage: IntentStage;
+  /**
+   * Its calendar date (YYYY-MM-DD), for a topic on the calendar. Between two
+   * of one stage the earlier date leads: two scheduled phrasings of one
+   * search keep the entry due first, not one weeks out.
+   */
+  date?: string | null;
+}
+
+/** Leader order: furthest along, then the earliest calendar date, then the caller's order. */
+function leadOrder(a: { topic: StagedTopic; index: number }, b: { topic: StagedTopic; index: number }): number {
+  const da = a.topic.date || "9999-99-99";
+  const db = b.topic.date || "9999-99-99";
+  return STAGE_RANK[b.topic.stage] - STAGE_RANK[a.topic.stage] || (da < db ? -1 : da > db ? 1 : 0) || a.index - b.index;
 }
 
 export interface IntentFollower<T> {
@@ -388,7 +401,7 @@ export function intentMatcher<T extends StagedTopic>(
   const note = unfoldedNote(lang);
   const prepared = leaders
     .map((topic, index) => ({ topic, index, prepared: prepare(topic, lang) }))
-    .sort((a, b) => STAGE_RANK[b.topic.stage] - STAGE_RANK[a.topic.stage] || a.index - b.index);
+    .sort(leadOrder);
   return (topic) => {
     const mine = prepare(topic, lang);
     for (const leader of prepared) {
@@ -405,9 +418,11 @@ export function intentMatcher<T extends StagedTopic>(
  * joined them; a topic absent from the map leads its own cluster.
  *
  * The leader is the topic furthest along - live, then drafted, then
- * scheduled, then a candidate - and among equals the one given first, so a
- * caller passes candidates in its own ranking. A candidate never displaces
- * something already written or on the calendar.
+ * scheduled, then a candidate - then the one due first on the calendar, and
+ * among equals the one given first, so a caller passes candidates in its own
+ * ranking. A candidate never displaces something already written or on the
+ * calendar, so a caller passes as "scheduled" only what will still be written
+ * (lib/keyword-research/intent-leaders.ts).
  */
 export function clusterByIntent<T extends StagedTopic>(
   topics: readonly T[],
@@ -417,7 +432,7 @@ export function clusterByIntent<T extends StagedTopic>(
   const note = unfoldedNote(lang);
   const ordered = topics
     .map((topic, index) => ({ topic, index, prepared: prepare(topic, lang) }))
-    .sort((a, b) => STAGE_RANK[b.topic.stage] - STAGE_RANK[a.topic.stage] || a.index - b.index);
+    .sort(leadOrder);
   const leaders: typeof ordered = [];
   const followers = new Map<T, IntentFollower<T>>();
   for (const item of ordered) {
