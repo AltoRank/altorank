@@ -8,6 +8,11 @@ export const dynamic = "force-dynamic";
  * Live articles only: `status = 'live'` is the one state past the approval
  * gate and the publish, so a draft, a review copy or an approved-but-unpublished
  * article never appears on a customer's site through this route.
+ *
+ * Except one kind of live: an article the nightly check found on the
+ * customer's site (`found_on_site_at`, migration 094). It is live at the
+ * address they published it at by hand, without an approval here; serving it
+ * again would put a second copy on their site at our slug.
  */
 export async function GET(request: Request) {
   const auth = await authenticateBlogRequest(request);
@@ -23,6 +28,7 @@ export async function GET(request: Request) {
     .select(ARTICLE_LIST_COLUMNS, { count: "exact" })
     .eq("workspace_id", auth.workspaceId)
     .eq("status", "live")
+    .is("found_on_site_at", null)
     .order("published_at", { ascending: false, nullsFirst: false })
     .range(from, from + perPage - 1);
 

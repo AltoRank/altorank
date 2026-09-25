@@ -43,6 +43,9 @@ import { SelectionBar } from "@/components/dashboard/editor/selection-bar";
 import { LinkPopover } from "@/components/dashboard/editor/link-popover";
 import { RewritePanel } from "@/components/dashboard/editor/rewrite-panel";
 import { ExportMenu } from "@/components/dashboard/editor/export-menu";
+import { FoundOnSiteNotice, FoundOnSiteBlindNote } from "@/components/dashboard/editor/found-on-site-notice";
+import { notFoundOnSite } from "@/app/actions/found-on-site";
+import { blindNote, foundOnSiteView } from "@/lib/found-on-site/state";
 import type { Article, Workspace, PublishingCadence, Integration } from "@/lib/types";
 
 // The body's image node, drawn with the per-image toolbar. Defined once at
@@ -125,6 +128,16 @@ export function ArticleEditor({
   const [publishing, setPublishing] = useState(false);
   const [manualUrl, setManualUrl] = useState("");
   const [manualError, setManualError] = useState<string | null>(null);
+  // Live because the nightly check found it on the site, not because we
+  // published it (lib/found-on-site). Null for everything else.
+  const foundOnSite = foundOnSiteView(article);
+  const [undoError, setUndoError] = useState<string | null>(null);
+  // With nothing connected, the nightly check is the only way a copy the
+  // person publishes by hand gets counted. When it cannot see the site, say
+  // so here, where the draft is copied out, rather than leave "not published"
+  // standing as a silent guess.
+  const blind =
+    destinations.length === 0 && !foundOnSite && article.status !== "live" ? blindNote(workspace, article.status) : null;
 
   // What the first analysis observed, so the empty state can name the platform
   // and its credential, or say plainly that the site runs nothing we can post
@@ -939,7 +952,26 @@ export function ArticleEditor({
 
         {/* Publish to */}
         <SidebarSection title="Publish to" last>
-          {destinations.length > 0 ? (
+          {foundOnSite ? (
+            <FoundOnSiteNotice
+              view={foundOnSite}
+              pending={publishing}
+              error={undoError}
+              onUndo={async () => {
+                setPublishing(true);
+                setUndoError(null);
+                try {
+                  await notFoundOnSite(article.id);
+                  toast.success("Put back as it was. That page will not be matched to this article again.");
+                  router.refresh();
+                } catch (err) {
+                  setUndoError(err instanceof Error ? err.message : "Could not undo it");
+                } finally {
+                  setPublishing(false);
+                }
+              }}
+            />
+          ) : destinations.length > 0 ? (
             <>
               {destinations.length === 1 ? (
                 <div className="flex items-center gap-2.5 p-2.5 bg-bg border border-line rounded-[7px]">
@@ -1077,6 +1109,7 @@ export function ArticleEditor({
               cta="Connect a CMS"
             />
           )}
+          {blind && <FoundOnSiteBlindNote text={blind} />}
 
           {article.status === "review" && needsPlan && (
             <div className="mt-3">
@@ -1198,7 +1231,7 @@ export function ArticleEditor({
               )}
             </div>
           )}
-          {article.published_url && (
+          {article.published_url && !foundOnSite && (
             <a
               href={article.published_url}
               target="_blank"

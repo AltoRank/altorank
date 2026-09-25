@@ -251,15 +251,35 @@ export async function setupUnfinishedFacts(
   };
 }
 
+/** What `announceSetupUnfinished` reports when the site already has an article live. */
+export const SETUP_ALREADY_LIVE_LINE = "an article is already live on the site; the setup email would say otherwise";
+
 /**
  * Send the setup email for one site, with whatever is true of it right now.
  * Once per site ever; `sendOnce` holds that.
+ *
+ * Not for a site with an article already live. A real signup (2026-09-22)
+ * published our draft on their own site without finishing setup; the nightly
+ * check now marks such a draft live (lib/found-on-site), and both versions of
+ * this email - "your draft is waiting for review", "no article has been
+ * written yet" - would then be false about the one site that used us most.
  */
 export async function announceSetupUnfinished(
   supabase: SupabaseClient,
   scope: { accountId: string; workspaceId: string; domain: string | null },
 ): Promise<string> {
   try {
+    const { data: live, error: liveError } = await supabase
+      .from("articles")
+      .select("id")
+      .eq("workspace_id", scope.workspaceId)
+      .eq("status", "live")
+      .limit(1)
+      .maybeSingle();
+    // Not knowing is not "nothing is live": sent on a failed read, this is
+    // the false email the check exists to stop. The next sweep asks again.
+    if (liveError) return `not sent: could not check for a live article (${liveError.message})`;
+    if (live) return SETUP_ALREADY_LIVE_LINE;
     const facts = await setupUnfinishedFacts(supabase, scope.workspaceId, scope.domain);
     const out = await notifySetupUnfinished(supabase, { accountId: scope.accountId, workspaceId: scope.workspaceId }, facts);
     return describeSendOutcome(out);
@@ -309,7 +329,9 @@ export async function sweepUnfinishedSetups(supabase: SupabaseClient, now: Date 
         workspaceId: ws.id as string,
         domain: (ws.domain as string | null) ?? null,
       });
-      if (line && line !== "nobody to email") lines.push(`${ws.domain ?? ws.id}: ${line}`);
+      // An already-live site is not reported: nothing is claimed for it, so
+      // the same line would come back on every run for as long as it exists.
+      if (line && line !== "nobody to email" && line !== SETUP_ALREADY_LIVE_LINE) lines.push(`${ws.domain ?? ws.id}: ${line}`);
     }
   } catch (err) {
     console.error(`[setup-unfinished] sweep: ${err instanceof Error ? err.message : err}`);

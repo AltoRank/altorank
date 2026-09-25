@@ -93,6 +93,10 @@ export type Workspace = {
   detected_platform_at: string | null;
   /** When lib/seo/site-crawl.ts last read this site's own pages. */
   last_pages_crawl_at?: string | null;
+  /** When the nightly found-on-site check last visited this site (migration 094). */
+  found_on_site_checked_at?: string | null;
+  /** Why that check cannot see new pages here, as a code (lib/found-on-site/state.ts); null when it can. */
+  found_on_site_unreadable?: string | null;
   /** Organic sessions/mo, preformatted. null when unmeasured: render —, never 0. */
   traffic: string | null;
   ai_provider: AIProviderType | null;
@@ -167,6 +171,16 @@ export type Article = {
   /** What each engine said about the published URL (lib/seo/indexing.ts), plus
    *  `inspection` from the URL Inspection API (lib/google/inspection.ts). */
   indexing_status?: Record<string, unknown> | null;
+  /** Set when the nightly check found this article live on the customer's own
+   *  site rather than published through AltoRank (migration 094). With status
+   *  'live' it reads "Live on your site"; lib/found-on-site/state.ts. */
+  found_on_site_at?: string | null;
+  /** What that comparison measured: containment, title similarity, the rule. */
+  found_on_site_evidence?: Record<string, unknown> | null;
+  /** status, published_url and published_at before the find, for "not my article". */
+  found_on_site_prior?: Record<string, unknown> | null;
+  /** Pages a person said are not this article; never matched to it again. */
+  found_on_site_rejected?: string[] | null;
   created_at: string;
   updated_at: string;
 };
