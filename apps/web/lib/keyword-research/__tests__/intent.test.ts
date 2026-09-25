@@ -11,6 +11,7 @@ import {
   unfoldedNote,
   type StagedTopic,
 } from "../intent";
+import { UNKNOWN_LANGUAGE } from "@/lib/i18n/locale";
 
 /**
  * One query, one article. A real signup (2026-09-22, a Turkish web and mobile
@@ -95,23 +96,27 @@ describe("languages without a rule set", () => {
     expect(sameIntent({ term: "agenzie seo", organicUrls: base }, { term: "agenzia seo", organicUrls: serp(base, 7, "x") }, "it")).toEqual({ same: true, basis: "serp", shared: 7 });
   });
 
-  it("says so when no language was given at all, rather than assuming English", () => {
-    expect(unfoldedNote(null)).toBe("inflected spellings not compared for an unknown language");
-    expect(sameIntent({ term: "seo agencies" }, { term: "seo agency" }, null).same).toBe(false);
+  it("says so when the language could not be read, rather than assuming English", () => {
+    // One sentinel for "unknown", the locale contract's: a workspace row that
+    // could not be read has no language, and that is "und", not English.
+    expect(intentLanguage(null)).toBe(UNKNOWN_LANGUAGE);
+    expect(unfoldedNote(UNKNOWN_LANGUAGE)).toBe("inflected spellings not compared for an unread language");
+    expect(sameIntent({ term: "seo agencies" }, { term: "seo agency" }, intentLanguage(null)).same).toBe(false);
   });
 
-  it("resolves a workspace language through the product's locales, and keeps an unknown one as itself", () => {
+  it("resolves a workspace language through the locale contract, and keeps an unknown one as itself", () => {
     expect(intentLanguage("tr")).toBe("tr");
     expect(intentLanguage("Turkish")).toBe("tr");
-    expect(intentLanguage("zh")).toBe("zh-CN");
+    expect(intentLanguage("tr-TR")).toBe("tr");
+    expect(intentLanguage("zh")).toBe("zh");
     expect(intentLanguage("en-gb")).toBe("en");
-    expect(intentLanguage(null)).toBeNull();
-    expect(intentLanguage("  ")).toBeNull();
-    // Not in LOCALES: never English. No rule set, and it says so.
+    expect(intentLanguage(null)).toBe(UNKNOWN_LANGUAGE);
+    expect(intentLanguage("  ")).toBe(UNKNOWN_LANGUAGE);
+    // No rules in the contract: never English. No rule set, and it says so.
     expect(intentLanguage("sw")).toBe("sw");
     expect(intentLanguage("xx")).toBe("xx");
     expect(intentLanguage("pt-AO")).toBe("pt");
-    expect(unfoldedNote(intentLanguage("sw"))).toBe("inflected spellings not compared for sw");
+    expect(unfoldedNote(intentLanguage("sw"))).toBe("inflected spellings not compared for Swahili");
     expect(sameIntent({ term: "seo agencies" }, { term: "seo agency" }, intentLanguage("sw")).same).toBe(false);
   });
 

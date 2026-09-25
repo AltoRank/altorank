@@ -405,7 +405,7 @@ export function dedupePermutations<T extends { keyword: string; volume: number }
  */
 export function dedupeTargets<T extends { keyword: string; volume: number }>(
   keywords: T[],
-  language: string | null,
+  language: string,
 ): T[] {
   const best = new Map<string, T>();
   for (const k of keywords) {

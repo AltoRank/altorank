@@ -2,6 +2,7 @@ import { languageCodeOf } from "@/lib/keyword-research/locale";
 import { ARTICLE_SHAPES, qualifyOpportunities, type ArticleShape, type Opportunity } from "@/lib/keyword-research/opportunity";
 import { clusterByIntent, intentKey, intentLanguage, sameIntent, storedSerp, type StagedTopic } from "@/lib/keyword-research/intent";
 import { approvedWhenJudged, readIntentLeaders } from "@/lib/keyword-research/intent-leaders";
+import { UNKNOWN_LANGUAGE } from "@/lib/i18n/locale";
 // ---------------------------------------------------------------------------
 // The first thirty days, scheduled
 // ---------------------------------------------------------------------------
@@ -103,10 +104,11 @@ export function buildPlan(
     occupied?: readonly string[];
     /**
      * The workspace's language, for telling two phrasings of one search apart
-     * (lib/keyword-research/intent.ts). Without it words are compared unfolded;
-     * results pages are compared either way.
+     * (lib/keyword-research/intent.ts). Without it the language is the locale
+     * contract's UNKNOWN_LANGUAGE: words are compared unfolded, never as
+     * English; results pages are compared either way.
      */
-    language?: string | null;
+    language?: string;
   },
 ): PlannedEntry[] {
   const weekly = Math.max(0, Math.min(MAX_PACE, Math.floor(opts.weeklyLimit)));
@@ -122,7 +124,7 @@ export function buildPlan(
   const writable = recommendations
     .filter((r) => r.action === "write" && r.quality === "ok" && r.keywordId)
     .map((r) => ({ rec: r, term: r.term, organicUrls: r.opportunity?.organicUrls ?? null, stage: "candidate" as const }));
-  const repeats = clusterByIntent(writable, opts.language);
+  const repeats = clusterByIntent(writable, opts.language ?? UNKNOWN_LANGUAGE);
   const usable = writable.filter((t) => !repeats.has(t)).map((t) => t.rec);
   const offsets = planOffsets(weekly, horizon, count, normaliseDays(opts.daysOfWeek), new Date(start).getUTCDay());
   const taken = new Map<string, number>();

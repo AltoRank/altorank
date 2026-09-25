@@ -61,7 +61,7 @@ export interface ExistingKeyword {
 export function markExisting(
   candidates: ResearchCandidate[],
   existing: ExistingKeyword[],
-  language: string | null,
+  language: string,
 ): ResearchCandidate[] {
   const byTarget = new Map<string, ExistingKeyword>();
   for (const k of existing) {
@@ -78,7 +78,7 @@ export function markExisting(
  * One row per query. Two provider rows that collapse to the same target keep
  * the one with the higher volume; on a tie, the shorter phrasing.
  */
-export function dedupeCandidates(candidates: ResearchCandidate[], language: string | null): ResearchCandidate[] {
+export function dedupeCandidates(candidates: ResearchCandidate[], language: string): ResearchCandidate[] {
   const best = new Map<string, ResearchCandidate>();
   for (const c of candidates) {
     const key = intentKey(c.term, language);
@@ -114,7 +114,7 @@ export function rankCandidates(candidates: ResearchCandidate[]): ResearchCandida
 
 export interface FunnelOptions {
   /** The workspace's language: which phrasings are one query depends on it (lib/keyword-research/intent.ts). */
-  language: string | null;
+  language: string;
   /** How many to propose. Everything past it is still counted as found. */
   limit?: number;
   minVolume?: number;

@@ -190,6 +190,27 @@ export interface VoiceMarkers {
   contractions: RegExp | null;
 }
 
+/**
+ * How two spellings of one search are told apart (lib/keyword-research/intent.ts):
+ * the words that do not change the results page, the inflections that do not,
+ * and the words that give a phrase a direction. Every rule works on text
+ * already lowered by this language's `lower`, before marks are folded.
+ */
+export interface SearchWordRules {
+  /** Words that do not change the results page ("for", "and"), in the lower-cased spelling. */
+  stopwords: ReadonlySet<string>;
+  /** Inflections off one lower-cased token, before diacritics are stripped. */
+  fold(token: string): string;
+  /** Whole-phrase clean-up before tokenising. */
+  prepare?(text: string): string;
+  /**
+   * Words that give a phrase a direction: what stands before them and what
+   * stands after are not interchangeable. The two sides are compared as two
+   * sets, in order, instead of one.
+   */
+  directional?: ReadonlySet<string>;
+}
+
 export interface LocaleRules {
   code: SupportedLanguage;
   /** English name, for prompts and for "not checked for <language>". */
@@ -214,6 +235,13 @@ export interface LocaleRules {
    * suffixes may follow ("web tasarım" in "web tasarımında").
    */
   keywordMatch: "word" | "stem";
+  /**
+   * The rule set for telling two spellings of one search apart, or null when
+   * this language has none: its keywords are then compared with their words
+   * whole, and the comparison says "inflected spellings not compared for
+   * <language>" rather than stemming them as English.
+   */
+  searchWords: SearchWordRules | null;
 }
 
 export interface SupportedLocale extends LocaleRules {
@@ -257,6 +285,127 @@ export function phrasePattern(phrases: string[]): string {
   return phrases.map((p) => escapeRegex(p).replace(/ +/g, String.raw`\s+`)).join("|");
 }
 
+// ── Search words ────────────────────────────────────────────────────────────
+//
+// The per-language half of "are these two keywords one search?"
+// (lib/keyword-research/intent.ts). They lived in that file until the two
+// language registries were joined (2026-09-25): one list of languages, one
+// lowercasing and one fold, so the keyword planner and the article checks
+// cannot disagree about a Turkish İ or about "API".
+
+// English: connecting words, word order and the plural - the one inflection
+// English marks on a noun - and nothing derivational.
+//
+// Until 2026-09-25 this also folded "-er", "-ing" and a silent final "e"
+// (it was `normalizeTarget` in lib/seo/recommendations.ts). That was harmless
+// while it only collapsed rows in a list; once a words match parks a topic
+// for good, it merged searches that are not one: "search engine jobs" and
+// "search engineer jobs", "poster design" and "post design", "web server"
+// and "web serve", "building management software" and "build management
+// software". "Content writing" and "content writer", the pair that fold was
+// added for, share a results page, and the results page is what now says so
+// once either is qualified. A missed fold keeps two spellings apart until
+// then; a wrong fold parks a real search, which nothing undoes.
+//
+// The plural, after Porter2's step 1a (snowballstem.org/algorithms/english):
+// "-sses" to "-ss", "-ies" to "-y", "-es" after x/ch/sh, and a final "s" off
+// anything that does not end in -ss/-us/-is. Words that end like a plural
+// and are not one keep their "s", as Porter2 keeps "news" and "bias".
+// "Movies"/"movie" and "caches"/"cache" are missed rather than guessed at.
+const EN_NOT_PLURAL = new Set(["news", "series", "species", "bias", "atlas", "canvas", "lens", "chaos", "gas"]);
+const EN_SEARCH: SearchWordRules = {
+  stopwords: new Set([
+    "a", "an", "the", "for", "and", "or", "of", "in", "on", "with", "is", "are", "my", "your",
+    // "website about design" and "website design" are one results page, and
+    // a site was given both, and both were scheduled.
+    "about",
+  ]),
+  fold(t) {
+    if (t.length <= 3 || EN_NOT_PLURAL.has(t)) return t;
+    if (t.endsWith("sses")) return t.slice(0, -2);
+    if (t.endsWith("ies") && t.length > 4) return `${t.slice(0, -3)}y`;
+    if (/(?:x|ch|sh)es$/.test(t)) return t.slice(0, -2);
+    if (/(?:ss|us|is)$/.test(t)) return t;
+    return t.endsWith("s") ? t.slice(0, -1) : t;
+  },
+  // "java to python" is the opposite search to "python to java", and "pdf to
+  // word" to "word to pdf". "vs" is not here: "x vs y" and "y vs x" are one
+  // comparison.
+  directional: new Set(["to", "into"]),
+};
+
+// Turkish: an explicit rule set for the two noun inflections that produce
+// most spelling variants of one search, and nothing else.
+//
+//   plural        -lar after a back vowel, -ler after a front one
+//                 "firmalar" → "firma", "şirketler" → "şirket"
+//   possessive    -sı/-si/-su/-sü after a vowel, -ı/-i/-u/-ü after a
+//                 consonant, the vowel following the stem's last vowel
+//                 "firması" → "firma", "şirketi" → "şirket"
+//
+// Applied until nothing more comes off, so "-ları"/"-leri" (plural, then
+// possessive) folds too: "firmaları" → "firmalar" → "firma". Guards keep
+// bare nouns whole: the stem must keep three letters, and the bare-vowel
+// ending only comes off a stem that keeps two syllables, so "kedi", "bilgi"
+// and "yazı" stay whole while "kedisi", "bilgisi" and "yazısı" fold to them.
+// Consonant alternation ("çocuk"/"çocuğu") and case endings are not folded:
+// a missed fold keeps two spellings apart, which the results page then
+// settles; a wrong fold would merge two searches, which nothing undoes.
+const TR_VOWELS = "aeıioöuü";
+const trLastVowel = (s: string): string | null => {
+  for (let i = s.length - 1; i >= 0; i--) if (TR_VOWELS.includes(s[i])) return s[i];
+  return null;
+};
+const trSyllables = (s: string): number => [...s].filter((c) => TR_VOWELS.includes(c)).length;
+/**
+ * Does the ending's vowel follow the stem's last vowel? "i" and "u" also stand
+ * in for "ı" and "ü": text typed without Turkish letters writes "firmasi" for
+ * "firması", and it is the same search.
+ */
+function trHarmonises(stem: string, vowel: string): boolean {
+  const last = trLastVowel(stem);
+  if (!last) return false;
+  switch (vowel) {
+    case "ı": return "aı".includes(last);
+    case "i": return "aıei".includes(last);
+    case "u": return "ouöü".includes(last);
+    case "ü": return "öü".includes(last);
+    default: return false;
+  }
+}
+function trFoldOnce(w: string): string | null {
+  if (/l[ae]r$/.test(w)) {
+    const stem = w.slice(0, -3);
+    const last = trLastVowel(stem);
+    if (stem.length >= 3 && last && (w.endsWith("lar") ? "aıou".includes(last) : "eiöü".includes(last))) return stem;
+  }
+  const vowel = w.at(-1) ?? "";
+  if (!"ıiuü".includes(vowel) || !vowel) return null;
+  if (w.at(-2) === "s") {
+    const stem = w.slice(0, -2);
+    if (stem.length >= 3 && TR_VOWELS.includes(stem.at(-1) ?? "") && trHarmonises(stem, vowel)) return stem;
+  }
+  const stem = w.slice(0, -1);
+  if (stem.length >= 3 && !TR_VOWELS.includes(stem.at(-1) ?? "") && trSyllables(stem) >= 2 && trHarmonises(stem, vowel)) return stem;
+  return null;
+}
+const TR_SEARCH: SearchWordRules = {
+  // Connectives: "ve" and, "veya" or, "ile" with, "için" for (also typed "icin").
+  stopwords: new Set(["ve", "veya", "ile", "için", "icin"]),
+  fold(t) {
+    let w = t;
+    for (let i = 0; i < 4; i++) {
+      const next = trFoldOnce(w);
+      if (next === null) break;
+      w = next;
+    }
+    return w;
+  },
+  // A suffix on a name goes after an apostrophe: "Google'ın", "İstanbul'da".
+  prepare: (text) => text.replace(/['’‘`´][\p{L}\p{M}]*/gu, ""),
+};
+
+
 // ── English ─────────────────────────────────────────────────────────────────
 //
 // The rules the product already had, moved here verbatim where they were
@@ -270,6 +419,7 @@ const EN: LocaleRules = {
   bcp47: "en",
   wordScale: 1,
   keywordMatch: "word",
+  searchWords: EN_SEARCH,
   labels: {
     contents: "Contents",
     video: "Video",
@@ -384,6 +534,7 @@ const IT: LocaleRules = {
   bcp47: "it",
   wordScale: 1,
   keywordMatch: "word",
+  searchWords: null,
   labels: {
     contents: "Indice",
     video: "Video",
@@ -493,6 +644,7 @@ const ES: LocaleRules = {
   bcp47: "es",
   wordScale: 1,
   keywordMatch: "word",
+  searchWords: null,
   labels: {
     contents: "Índice",
     video: "Vídeo",
@@ -602,6 +754,7 @@ const FR: LocaleRules = {
   bcp47: "fr",
   wordScale: 1,
   keywordMatch: "word",
+  searchWords: null,
   labels: {
     contents: "Sommaire",
     video: "Vidéo",
@@ -716,6 +869,7 @@ const DE: LocaleRules = {
   bcp47: "de",
   wordScale: 1,
   keywordMatch: "word",
+  searchWords: null,
   labels: {
     contents: "Inhalt",
     video: "Video",
@@ -854,6 +1008,7 @@ const TR: LocaleRules = {
   bcp47: "tr",
   wordScale: 0.8,
   keywordMatch: "stem",
+  searchWords: TR_SEARCH,
   labels: {
     contents: "İçindekiler",
     video: "Video",
@@ -1224,6 +1379,16 @@ const FOLD: Record<string, string> = {
   ł: "l", Ł: "l", đ: "d", Đ: "d", ð: "d", Ð: "d", þ: "th", Þ: "th", ħ: "h", Ħ: "h",
 };
 const FOLD_RE = new RegExp(`[${Object.keys(FOLD).join("")}]`, "g");
+
+/**
+ * Diacritics off, any script kept: "şirket" -> "sirket", "ı" -> "i", "ß" ->
+ * "ss", "東京" unchanged. What a searcher without the keyboard types, and the
+ * last step of a search key (lib/keyword-research/intent.ts). Case is not
+ * touched: lower first, in the language's own rules.
+ */
+export function foldMarks(text: string): string {
+  return text.replace(FOLD_RE, (c) => FOLD[c]).normalize("NFKD").replace(/\p{M}+/gu, "");
+}
 
 /** Lowercase ASCII letters, digits and single hyphens. */
 export function foldToAscii(text: string): string {

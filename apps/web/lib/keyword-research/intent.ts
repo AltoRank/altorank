@@ -29,15 +29,24 @@
 //                  workspace's language so Turkish İ/I/ı/i fold correctly,
 //                  diacritics stripped), then the same set of words once
 //                  connective words and inflections are removed. Inflections
-//                  only for a language with a rule set below. Any other
-//                  language keeps its words whole and the comparison says
-//                  "inflected spellings not compared for <language>".
+//                  only for a language with a rule set (`searchWords` in the
+//                  locale contract). Any other language keeps its words whole
+//                  and the comparison says "inflected spellings not compared
+//                  for <language>".
+//
+// The language, its lowercasing, its word rules and the diacritic fold all
+// come from the one locale contract (lib/i18n/locale.ts). Until 2026-09-25
+// this file kept its own: its own list of languages, its own Turkish
+// lowercasing and mark stripping, and null for "language unknown" where the
+// contract says "und". Two registries built the same day can drift, and a
+// keyword planner that folds "API" one way while the article checks fold it
+// another counts one search as two. A test holds them together.
 //
 // Synonyms ("şirket"/"firma", "company"/"firm") are only ever caught by the
 // results page. There is no synonym list here, on purpose: a hand-kept list
 // is wrong in every market it was not written for.
 
-import { LOCALES } from "@/lib/seo/locales";
+import { foldMarks, resolveLocale, UNKNOWN_LANGUAGE, type Locale, type SearchWordRules } from "@/lib/i18n/locale";
 
 /** Results read per keyword: qualification keeps the top ten organic URLs. */
 export const SERP_TOP = 10;
@@ -78,212 +87,48 @@ export interface IntentMatch {
 }
 
 /**
- * The language to compare a workspace's keywords in, from `workspaces.language`.
- * The column is NOT NULL; a caller that could not read it gets null, which
- * compares words unfolded and says so, rather than English.
+ * The language to compare a workspace's keywords in, from `workspaces.language`:
+ * the locale contract's code for it ("tr" from "tr", "Turkish" or "tr-TR";
+ * "sw" for a code the product has no rules for, which then says "not compared
+ * for Swahili" instead of being stemmed as English).
  *
- * Resolved through LOCALES ("tr", "Turkish", "zh" → "zh-CN") and, for a code
- * the product has no locale for, the code's own primary subtag: the column
- * takes any two-letter code, and "sw" compared as "sw" has no rule set and
- * says "not compared for sw". `languageCodeOf` answers "en" for anything it
- * does not know, which is right for picking a search market and wrong here.
+ * The column is NOT NULL, so a missing value means the row could not be read,
+ * and that is the contract's one sentinel for it, `UNKNOWN_LANGUAGE` ("und"),
+ * as `readWorkspaceLanguage` answers: words compared whole, and the note says
+ * the language could not be read. Never English by default.
  */
-export function intentLanguage(workspaceLanguage: string | null | undefined): string | null {
-  const raw = workspaceLanguage?.trim().toLowerCase();
-  if (!raw) return null;
-  const known = LOCALES[raw] ?? Object.values(LOCALES).find((e) => e.label.toLowerCase() === raw || e.languageCode.toLowerCase() === raw);
-  return known?.languageCode ?? primary(raw);
+export function intentLanguage(workspaceLanguage: string | null | undefined): string {
+  if (!workspaceLanguage?.trim()) return UNKNOWN_LANGUAGE;
+  return resolveLocale(workspaceLanguage).code;
 }
 
-/** "tr" from "tr" or "tr-TR", "zh" from "zh-CN"; null when no language was given. */
-function primary(language: string | null | undefined): string | null {
-  const code = (language ?? "").trim().toLowerCase().split(/[-_]/)[0];
-  return code || null;
-}
-
-/** "Turkish" for "tr"; the code itself for a language the product has no name for. */
-export function languageLabel(language: string | null | undefined): string {
-  const code = (language ?? "").trim();
-  if (!code) return "an unknown language";
-  const entry = Object.values(LOCALES).find((e) => e.languageCode.toLowerCase() === code.toLowerCase())
-    ?? Object.values(LOCALES).find((e) => primary(e.languageCode) === primary(code));
-  return entry?.label.replace(/\s*\(.*\)$/, "") ?? code;
+/** The word rules for a language, or null when the contract has none for it. */
+function searchWords(locale: Locale): SearchWordRules | null {
+  return locale.supported ? locale.searchWords : null;
 }
 
 // --- Normalisation -----------------------------------------------------------
 
-/**
- * Lower-case in the language's own rules. `"İ".toLowerCase()` is "i̇" (i plus a
- * combining dot) and `"I".toLowerCase()` is "i" where Turkish wants "ı"; the
- * locale-aware call gets both right. Without a language, the locale-free
- * mapping, never the server's default locale.
- */
-function lower(text: string, language: string | null): string {
-  if (!language) return text.toLowerCase();
-  try {
-    return text.toLocaleLowerCase(language);
-  } catch {
-    // Not a valid BCP 47 tag. Every tag here comes from LOCALES, so this is
-    // a caller passing something else; the locale-free mapping is still
-    // correct for every language except Turkish and Azeri casing.
-    return text.toLowerCase();
-  }
-}
-
-/** Letters Unicode does not decompose into a base letter plus a mark. */
-const UNDECOMPOSED: Record<string, string> = { ı: "i", ø: "o", ł: "l", đ: "d", ß: "ss", æ: "ae", œ: "oe", þ: "th" };
-
-/** "şirket" → "sirket", "geliştirme" → "gelistirme", "ı" → "i": what a searcher without the keyboard types. */
-function stripMarks(token: string): string {
-  return token
-    .normalize("NFD")
-    .replace(/\p{M}+/gu, "")
-    .replace(/[ıøłđßæœþ]/g, (c) => UNDECOMPOSED[c] ?? c);
-}
-
-interface WordRules {
-  /** Words that do not change the results page ("for", "and"), in the lower-cased spelling. */
-  stopwords: ReadonlySet<string>;
-  /** Inflections off one lower-cased token, before diacritics are stripped. */
-  fold(token: string): string;
-  /** Whole-phrase clean-up before tokenising. */
-  prepare?(text: string): string;
-  /**
-   * Words that give a phrase a direction: what stands before them and what
-   * stands after are not interchangeable. The two sides are compared as two
-   * sets, in order, instead of one.
-   */
-  directional?: ReadonlySet<string>;
-}
-
-// English: connecting words, word order and the plural - the one inflection
-// English marks on a noun - and nothing derivational.
-//
-// Until 2026-09-25 this also folded "-er", "-ing" and a silent final "e"
-// (it was `normalizeTarget` in lib/seo/recommendations.ts). That was harmless
-// while it only collapsed rows in a list; once a words match parks a topic
-// for good, it merged searches that are not one: "search engine jobs" and
-// "search engineer jobs", "poster design" and "post design", "web server"
-// and "web serve", "building management software" and "build management
-// software". "Content writing" and "content writer", the pair that fold was
-// added for, share a results page, and the results page is what now says so
-// once either is qualified. A missed fold keeps two spellings apart until
-// then; a wrong fold parks a real search, which nothing undoes.
-//
-// The plural, after Porter2's step 1a (snowballstem.org/algorithms/english):
-// "-sses" to "-ss", "-ies" to "-y", "-es" after x/ch/sh, and a final "s" off
-// anything that does not end in -ss/-us/-is. Words that end like a plural
-// and are not one keep their "s", as Porter2 keeps "news" and "bias".
-// "Movies"/"movie" and "caches"/"cache" are missed rather than guessed at.
-const EN_NOT_PLURAL = new Set(["news", "series", "species", "bias", "atlas", "canvas", "lens", "chaos", "gas"]);
-const ENGLISH: WordRules = {
-  stopwords: new Set([
-    "a", "an", "the", "for", "and", "or", "of", "in", "on", "with", "is", "are", "my", "your",
-    // "website about design" and "website design" are one results page, and
-    // a site was given both, and both were scheduled.
-    "about",
-  ]),
-  fold(t) {
-    if (t.length <= 3 || EN_NOT_PLURAL.has(t)) return t;
-    if (t.endsWith("sses")) return t.slice(0, -2);
-    if (t.endsWith("ies") && t.length > 4) return `${t.slice(0, -3)}y`;
-    if (/(?:x|ch|sh)es$/.test(t)) return t.slice(0, -2);
-    if (/(?:ss|us|is)$/.test(t)) return t;
-    return t.endsWith("s") ? t.slice(0, -1) : t;
-  },
-  // "java to python" is the opposite search to "python to java", and "pdf to
-  // word" to "word to pdf". "vs" is not here: "x vs y" and "y vs x" are one
-  // comparison.
-  directional: new Set(["to", "into"]),
-};
-
-// Turkish: an explicit rule set for the two noun inflections that produce
-// most spelling variants of one search, and nothing else.
-//
-//   plural        -lar after a back vowel, -ler after a front one
-//                 "firmalar" → "firma", "şirketler" → "şirket"
-//   possessive    -sı/-si/-su/-sü after a vowel, -ı/-i/-u/-ü after a
-//                 consonant, the vowel following the stem's last vowel
-//                 "firması" → "firma", "şirketi" → "şirket"
-//
-// Applied until nothing more comes off, so "-ları"/"-leri" (plural, then
-// possessive) folds too: "firmaları" → "firmalar" → "firma". Guards keep
-// bare nouns whole: the stem must keep three letters, and the bare-vowel
-// ending only comes off a stem that keeps two syllables, so "kedi", "bilgi"
-// and "yazı" stay whole while "kedisi", "bilgisi" and "yazısı" fold to them.
-// Consonant alternation ("çocuk"/"çocuğu") and case endings are not folded:
-// a missed fold keeps two spellings apart, which the results page then
-// settles; a wrong fold would merge two searches, which nothing undoes.
-const TR_VOWELS = "aeıioöuü";
-const trLastVowel = (s: string): string | null => {
-  for (let i = s.length - 1; i >= 0; i--) if (TR_VOWELS.includes(s[i])) return s[i];
-  return null;
-};
-const trSyllables = (s: string): number => [...s].filter((c) => TR_VOWELS.includes(c)).length;
-/**
- * Does the ending's vowel follow the stem's last vowel? "i" and "u" also stand
- * in for "ı" and "ü": text typed without Turkish letters writes "firmasi" for
- * "firması", and it is the same search.
- */
-function trHarmonises(stem: string, vowel: string): boolean {
-  const last = trLastVowel(stem);
-  if (!last) return false;
-  switch (vowel) {
-    case "ı": return "aı".includes(last);
-    case "i": return "aıei".includes(last);
-    case "u": return "ouöü".includes(last);
-    case "ü": return "öü".includes(last);
-    default: return false;
-  }
-}
-function trFoldOnce(w: string): string | null {
-  if (/l[ae]r$/.test(w)) {
-    const stem = w.slice(0, -3);
-    const last = trLastVowel(stem);
-    if (stem.length >= 3 && last && (w.endsWith("lar") ? "aıou".includes(last) : "eiöü".includes(last))) return stem;
-  }
-  const vowel = w.at(-1) ?? "";
-  if (!"ıiuü".includes(vowel) || !vowel) return null;
-  if (w.at(-2) === "s") {
-    const stem = w.slice(0, -2);
-    if (stem.length >= 3 && TR_VOWELS.includes(stem.at(-1) ?? "") && trHarmonises(stem, vowel)) return stem;
-  }
-  const stem = w.slice(0, -1);
-  if (stem.length >= 3 && !TR_VOWELS.includes(stem.at(-1) ?? "") && trSyllables(stem) >= 2 && trHarmonises(stem, vowel)) return stem;
-  return null;
-}
-const TURKISH: WordRules = {
-  // Connectives: "ve" and, "veya" or, "ile" with, "için" for (also typed "icin").
-  stopwords: new Set(["ve", "veya", "ile", "için", "icin"]),
-  fold(t) {
-    let w = t;
-    for (let i = 0; i < 4; i++) {
-      const next = trFoldOnce(w);
-      if (next === null) break;
-      w = next;
-    }
-    return w;
-  },
-  // A suffix on a name goes after an apostrophe: "Google'ın", "İstanbul'da".
-  prepare: (text) => text.replace(/['’‘`´][\p{L}\p{M}]*/gu, ""),
-};
-
-const RULES: Record<string, WordRules> = { en: ENGLISH, tr: TURKISH };
-
 /** Whether this language's inflected spellings are folded before words are compared. */
-export function foldsInflections(language: string | null | undefined): boolean {
-  const code = primary(language);
-  return Boolean(code && RULES[code]);
+export function foldsInflections(language: string): boolean {
+  return searchWords(resolveLocale(language)) !== null;
 }
 
 /** The sentence a word comparison carries when it could not fold inflections; null when it could. */
-export function unfoldedNote(language: string | null | undefined): string | null {
-  return foldsInflections(language) ? null : `inflected spellings not compared for ${languageLabel(language)}`;
+export function unfoldedNote(language: string): string | null {
+  const locale = resolveLocale(language);
+  return searchWords(locale) ? null : `inflected spellings not compared for ${locale.name}`;
 }
 
-function tokens(term: string, language: string | null): string[] {
-  const rules = language ? RULES[primary(language) ?? ""] : undefined;
-  let text = lower(term.normalize("NFKC"), language);
+/**
+ * The phrase as words, lowered by the language's own rules (`Locale.lower`:
+ * Turkish "İ" is "i" and "I" is "ı", where the locale-free mapping gives
+ * "i̇" and "i"). Inflection rules read the language's own letters, so the
+ * dotless ı is still itself here; `foldMarks` folds it afterwards.
+ */
+function tokens(term: string, locale: Locale): string[] {
+  const rules = searchWords(locale);
+  let text = locale.lower(term.normalize("NFKC"));
   if (rules?.prepare) text = rules.prepare(text);
   return text.split(/[^\p{L}\p{M}\p{N}]+/u).filter(Boolean);
 }
@@ -294,17 +139,20 @@ function tokens(term: string, language: string | null): string[] {
  * stripped, each word once, sorted. "agency for seo" and "seo agencies" are
  * one key in English; "firmaları" and "firması" are one key in Turkish.
  *
- * `language` is the workspace's language code. Null or a language without a
- * rule set keeps the words whole (`unfoldedNote` says so); it is never
- * stemmed as English.
+ * `language` is the workspace's language code (`intentLanguage`). A language
+ * without a rule set, and `UNKNOWN_LANGUAGE`, keep the words whole
+ * (`unfoldedNote` says so); they are never stemmed as English.
  */
-export function intentKey(term: string, language: string | null | undefined): string {
-  const code = primary(language);
-  const rules = code ? RULES[code] : undefined;
-  const all = tokens(term, language?.trim() || null);
+export function intentKey(term: string, language: string): string {
+  return keyIn(term, resolveLocale(language));
+}
+
+function keyIn(term: string, locale: Locale): string {
+  const rules = searchWords(locale);
+  const all = tokens(term, locale);
   const side = (words: string[]) => [...new Set(words
     .filter((t) => !rules?.stopwords.has(t))
-    .map((t) => stripMarks(rules ? rules.fold(t) : t))
+    .map((t) => foldMarks(rules ? rules.fold(t) : t))
     .filter(Boolean))].sort().join(" ");
   // The last direction word with words on both sides splits the phrase:
   // "how to convert java to python" is "convert how java" > "python".
@@ -321,8 +169,8 @@ export function intentKey(term: string, language: string | null | undefined): st
 }
 
 /** The phrase as typed, normalised but not reordered or folded: the identity of one query string. */
-function exactKey(term: string, language: string | null): string {
-  return tokens(term, language).map(stripMarks).join(" ");
+function exactKey(term: string, locale: Locale): string {
+  return tokens(term, locale).map(foldMarks).join(" ");
 }
 
 // --- Results pages -----------------------------------------------------------
@@ -375,8 +223,8 @@ export function sharedResults(a: readonly string[], b: readonly string[]): numbe
 // --- The comparison ----------------------------------------------------------
 
 interface Prepared { key: string; exact: string; serp: Set<string> | null }
-function prepare(topic: IntentTopic, language: string | null): Prepared {
-  return { key: intentKey(topic.term, language), exact: exactKey(topic.term, language), serp: comparableSerp(topic.organicUrls) };
+function prepare(topic: IntentTopic, locale: Locale): Prepared {
+  return { key: keyIn(topic.term, locale), exact: exactKey(topic.term, locale), serp: comparableSerp(topic.organicUrls) };
 }
 function compare(a: Prepared, b: Prepared, note: string | null): IntentMatch {
   // One query typed twice is one search, whatever two results pages bought
@@ -395,9 +243,9 @@ function compare(a: Prepared, b: Prepared, note: string | null): IntentMatch {
  * bought; the words decide otherwise, and a words answer in a language
  * without a rule set carries `note`.
  */
-export function sameIntent(a: IntentTopic, b: IntentTopic, language: string | null | undefined): IntentMatch {
-  const lang = language?.trim() || null;
-  return compare(prepare(a, lang), prepare(b, lang), unfoldedNote(lang));
+export function sameIntent(a: IntentTopic, b: IntentTopic, language: string): IntentMatch {
+  const locale = resolveLocale(language);
+  return compare(prepare(a, locale), prepare(b, locale), unfoldedNote(language));
 }
 
 /** In words, for a reason line: "the same 6 of the top 10 results", "the same words". */
@@ -442,15 +290,15 @@ export interface IntentFollower<T> {
  */
 export function intentMatcher<T extends StagedTopic>(
   leaders: readonly T[],
-  language: string | null | undefined,
+  language: string,
 ): (topic: IntentTopic) => IntentFollower<T> | null {
-  const lang = language?.trim() || null;
-  const note = unfoldedNote(lang);
+  const locale = resolveLocale(language);
+  const note = unfoldedNote(language);
   const prepared = leaders
-    .map((topic, index) => ({ topic, index, prepared: prepare(topic, lang) }))
+    .map((topic, index) => ({ topic, index, prepared: prepare(topic, locale) }))
     .sort(leadOrder);
   return (topic) => {
-    const mine = prepare(topic, lang);
+    const mine = prepare(topic, locale);
     for (const leader of prepared) {
       const match = compare(mine, leader.prepared, note);
       if (match.same) return { leader: leader.topic, match };
@@ -473,12 +321,12 @@ export function intentMatcher<T extends StagedTopic>(
  */
 export function clusterByIntent<T extends StagedTopic>(
   topics: readonly T[],
-  language: string | null | undefined,
+  language: string,
 ): Map<T, IntentFollower<T>> {
-  const lang = language?.trim() || null;
-  const note = unfoldedNote(lang);
+  const locale = resolveLocale(language);
+  const note = unfoldedNote(language);
   const ordered = topics
-    .map((topic, index) => ({ topic, index, prepared: prepare(topic, lang) }))
+    .map((topic, index) => ({ topic, index, prepared: prepare(topic, locale) }))
     .sort(leadOrder);
   const leaders: typeof ordered = [];
   const followers = new Map<T, IntentFollower<T>>();

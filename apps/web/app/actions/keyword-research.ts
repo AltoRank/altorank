@@ -205,7 +205,7 @@ async function ensureKeywordRows(
   workspaceId: string,
   candidates: ResearchCandidate[],
   kind: ResearchKind,
-  language: string | null,
+  language: string,
 ): Promise<Map<string, { id: string; status: string }>> {
   const keyOf = (term: string) => intentKey(term, language);
   const { data: existing } = await supabase.from("keywords").select("id, term, status").eq("workspace_id", workspaceId);

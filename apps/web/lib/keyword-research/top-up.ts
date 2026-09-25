@@ -150,7 +150,7 @@ export function playbookCandidates(
  * the words half only; a synonym that gets past it is refused at qualification,
  * where its results page is compared with the article's.
  */
-export function newCandidates(raw: string[], known: Iterable<string>, language: string | null): string[] {
+export function newCandidates(raw: string[], known: Iterable<string>, language: string): string[] {
   const seen = new Set([...known].map((t) => intentKey(t, language)).filter(Boolean));
   const out: string[] = [];
   for (const term of raw) {
