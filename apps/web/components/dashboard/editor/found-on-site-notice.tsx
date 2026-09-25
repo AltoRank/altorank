@@ -49,3 +49,16 @@ export function FoundOnSiteNotice({
     </div>
   );
 }
+
+/**
+ * The Publish panel's line for a site the nightly check cannot see (no
+ * sitemap, robots.txt, JavaScript pages): a copy published there by hand will
+ * not be noticed, and the person is told how to make it count.
+ */
+export function FoundOnSiteBlindNote({ text }: { text: string }) {
+  return (
+    <p className="mt-3 rounded-[7px] border border-line bg-bg p-2.5 text-[12px] leading-relaxed text-ink-3" role="note">
+      {text}
+    </p>
+  );
+}

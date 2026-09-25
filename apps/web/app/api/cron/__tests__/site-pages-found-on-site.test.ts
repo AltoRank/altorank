@@ -114,6 +114,29 @@ describe("cron/site-pages with the found-on-site check", () => {
     expect(sb.tables.found_on_site_checks).toHaveLength(1);
   });
 
+  it("raises a site it cannot see as a warning once, the night it starts, and never counts it as checked", async () => {
+    delete site[`${S}/sitemap.xml`];
+    site[`${S}/robots.txt`] = ["User-agent: *\nDisallow:\n", "text/plain"];
+    try {
+      const body = await (await GET(req())).json();
+      expect(body).toMatchObject({ found_on_site: 0, found_on_site_sites: 0, found_on_site_unreadable: 1 });
+      const warned = () => sb.tables.system_events.filter((e) => e.source === "found_on_site.check");
+      expect(warned()).toHaveLength(1);
+      expect(warned()[0]).toMatchObject({ level: "warn", context: expect.objectContaining({ reason: "no-sitemap" }) });
+      expect(String(warned()[0].message)).toContain("no sitemap");
+
+      // Still unreadable the next night, and not news any more.
+      await GET(req());
+      expect(warned()).toHaveLength(1);
+    } finally {
+      site[`${S}/robots.txt`] = [`User-agent: *\nDisallow:\nSitemap: ${S}/sitemap.xml\n`, "text/plain"];
+      site[`${S}/sitemap.xml`] = [
+        `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${S}/blog/sadakat</loc><lastmod>2026-09-22T10:48:00Z</lastmod></url></urlset>`,
+        "application/xml",
+      ];
+    }
+  });
+
   it("reports the check failing outright as a failed result, and the crawl still runs", async () => {
     const from = sb.from;
     sb.from = ((t: string) => {

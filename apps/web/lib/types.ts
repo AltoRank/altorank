@@ -93,6 +93,10 @@ export type Workspace = {
   detected_platform_at: string | null;
   /** When lib/seo/site-crawl.ts last read this site's own pages. */
   last_pages_crawl_at?: string | null;
+  /** When the nightly found-on-site check last visited this site (migration 094). */
+  found_on_site_checked_at?: string | null;
+  /** Why that check cannot see new pages here, as a code (lib/found-on-site/state.ts); null when it can. */
+  found_on_site_unreadable?: string | null;
   /** Organic sessions/mo, preformatted. null when unmeasured: render —, never 0. */
   traffic: string | null;
   ai_provider: AIProviderType | null;

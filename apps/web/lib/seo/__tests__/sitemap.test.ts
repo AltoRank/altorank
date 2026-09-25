@@ -155,6 +155,8 @@ describe("discoverSitemapEntries", () => {
     });
     expect(s.calls).toEqual([`${ORIGIN}/declared.xml`, `${ORIGIN}/public/s.xml`]);
     expect(d.entries.map((e) => e.loc)).toEqual([`${ORIGIN}/blog/a`]);
+    // Said, not silently dropped: the caller tells "robots.txt forbids it" from "there is none".
+    expect(d.sitemapsDisallowed).toEqual([`${ORIGIN}/private/s.xml`]);
   });
 
   it("returns what it has when the deadline passes, rather than throwing", async () => {

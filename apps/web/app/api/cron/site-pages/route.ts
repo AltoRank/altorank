@@ -6,6 +6,8 @@ import { syncSitePages, SitePagesWriteError } from "@/lib/seo/site-crawl";
 import { detectLinks } from "@/lib/linking/detect";
 import { observedCron } from "@/lib/observability/cron";
 import { findDraftsLiveOnSites, type FoundOnSiteRun } from "@/lib/found-on-site/detect";
+import { BLIND_REASON } from "@/lib/found-on-site/state";
+import { recordEvent } from "@/lib/observability/record";
 
 /**
  * Keep each site's published pages in step with its sitemap.
@@ -73,6 +75,7 @@ async function run(request: Request) {
   const foundOnSiteReport = {
     found_on_site: foundOnSite?.found ?? 0,
     found_on_site_sites: foundOnSite?.checked ?? 0,
+    found_on_site_unreadable: foundOnSite?.unreadable ?? 0,
     found_on_site_deferred: foundOnSite?.deferred ?? 0,
     ...(foundOnSiteError ? { found_on_site_error: foundOnSiteError } : {}),
   };
@@ -83,6 +86,21 @@ async function run(request: Request) {
   const foundOnSiteResults: Array<Record<string, unknown>> = foundOnSiteError
     ? [{ job: "found-on-site", status: "error", detail: foundOnSiteError }]
     : (foundOnSite?.results ?? []).map((r) => ({ job: "found-on-site", ...r }));
+  // A site the check cannot see is not a failed run, so observedCron does not
+  // raise it; it is raised here, once, the night it starts (or its reason
+  // changes). Every night after, the customer sees it in the Publish panel and
+  // `found_on_site_unreadable` counts it, without a warning a day per site
+  // that nobody would read.
+  for (const r of foundOnSite?.results ?? []) {
+    if (!r.newlyUnreadable || !r.blind) continue;
+    await recordEvent({
+      level: "warn",
+      source: "found_on_site.check",
+      message: `The found-on-site check cannot see new pages on ${r.domain}: ${BLIND_REASON[r.blind]}.`,
+      workspaceId: r.workspaceId,
+      context: { reason: r.blind, detail: r.detail ?? null },
+    });
+  }
 
   const staleBefore = new Date(Date.now() - STALE_AFTER_DAYS * 86_400_000).toISOString();
 

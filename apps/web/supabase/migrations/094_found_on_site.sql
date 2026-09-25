@@ -61,6 +61,20 @@ alter table public.workspaces
 comment on column public.workspaces.found_on_site_checked_at is
   'When the nightly found-on-site check last visited this workspace. Null = never; nulls go first.';
 
+-- Why the check cannot see new pages on this site, when it cannot. A site
+-- with no readable sitemap, a robots.txt that does not answer or forbids
+-- every page, or pages whose text arrives by JavaScript would otherwise count
+-- as "checked, nothing found" - and a copy published there would never be
+-- found while the product said nothing. The Publish panel turns the code into
+-- a sentence (lib/found-on-site/state.ts, BLIND_REASON). Null = the last
+-- visit could see the site, or there has been none.
+alter table public.workspaces
+  add column if not exists found_on_site_unreadable text
+    check (found_on_site_unreadable in ('robots-unanswered', 'robots-disallowed', 'no-sitemap', 'empty-sitemap', 'javascript'));
+
+comment on column public.workspaces.found_on_site_unreadable is
+  'Why the nightly found-on-site check cannot see new pages on this site: robots-unanswered, robots-disallowed, no-sitemap, empty-sitemap, javascript. Null = it can, or it has not looked.';
+
 -- The ledger of pages read. One row per page per workspace, written by the
 -- cron (service role) only. It is what keeps the check to twenty NEW pages a
 -- night instead of the same twenty every night: a page read before is read
@@ -78,6 +92,11 @@ create table if not exists public.found_on_site_checks (
   -- HTTP status of the read. A page that did not answer at all gets no row,
   -- so it is tried again the next night.
   status integer,
+  -- Words of main content in the page as read, for an HTML page; null
+  -- otherwise. Under the crawl's readable line (60) the page was a shell whose
+  -- text arrives by JavaScript. It is not fetched again every night for the
+  -- same shell; the workspace says the site cannot be seen instead.
+  words integer,
   -- The article this page was found to be, when it was one.
   matched_article_id uuid references public.articles(id) on delete set null,
   primary key (workspace_id, url)

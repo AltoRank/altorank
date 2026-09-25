@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foundOnSiteView, isFoundOnSite, LIVE_ON_YOUR_SITE, liveLabel, tallyArticles } from "../state";
+import { BLIND_REASON, blindNote, foundOnSiteView, isFoundOnSite, LIVE_ON_YOUR_SITE, liveLabel, tallyArticles } from "../state";
 
 const url = "https://acme-agency.example/blog/kopya";
 const found = {
@@ -56,5 +56,32 @@ describe("tallyArticles", () => {
     expect(t.get("w1")).toEqual({ total: 3, live: 2, foundOnSite: 1 });
     // Undone finds keep nothing: only a live article counts.
     expect(t.get("w2")).toEqual({ total: 1, live: 0, foundOnSite: 0 });
+  });
+});
+
+describe("blindNote", () => {
+  const ws = { domain: "acme-agency.example", found_on_site_checked_at: "2026-09-23T10:00:00.000Z" };
+
+  it("says nothing for a site the check can see, or has not looked at", () => {
+    expect(blindNote({ ...ws, found_on_site_unreadable: null }, "review")).toBeNull();
+    expect(blindNote({ domain: "acme-agency.example" }, "review")).toBeNull();
+  });
+
+  it("names the site, the reason, and how to make a hand-published copy count", () => {
+    const approved = blindNote({ ...ws, found_on_site_unreadable: "no-sitemap" }, "approved")!;
+    expect(approved).toContain("We can't see new pages on acme-agency.example");
+    expect(approved).toContain(BLIND_REASON["no-sitemap"]);
+    expect(approved).toContain("paste its address below once it is live");
+    const review = blindNote({ ...ws, found_on_site_unreadable: "javascript" }, "review")!;
+    expect(review).toContain("JavaScript");
+    expect(review).toContain("once it is approved, paste its address here");
+  });
+
+  it("has a sentence for every reason the check stores", () => {
+    for (const code of ["robots-unanswered", "robots-disallowed", "no-sitemap", "empty-sitemap", "javascript"] as const) {
+      expect(BLIND_REASON[code]).toBeTruthy();
+    }
+    // A code from a newer build still says the site cannot be seen.
+    expect(blindNote({ ...ws, found_on_site_unreadable: "something-new" }, "review")).toContain("could not read it");
   });
 });

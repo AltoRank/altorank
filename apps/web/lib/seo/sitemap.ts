@@ -132,6 +132,8 @@ export interface Discovery {
   sitemapsRead: string[];
   /** Sitemap files that answered with something other than a sitemap, or not at all. */
   sitemapsFailed: string[];
+  /** Sitemap files not fetched because robots.txt disallows them. */
+  sitemapsDisallowed: string[];
   /** A bound stopped the walk before it finished. */
   truncated: boolean;
 }
@@ -173,6 +175,7 @@ export async function discoverSitemapEntries(
   const byUrl = new Map<string, string | null>();
   const sitemapsRead: string[] = [];
   const sitemapsFailed: string[] = [];
+  const sitemapsDisallowed: string[] = [];
   const seen = new Set<string>();
   let fetched = 0;
   let truncated = false;
@@ -191,7 +194,10 @@ export async function discoverSitemapEntries(
       truncated = true;
       break;
     }
-    if (!next.trusted && !allowed(next.loc)) continue;
+    if (!next.trusted && !allowed(next.loc)) {
+      sitemapsDisallowed.push(next.loc);
+      continue;
+    }
 
     fetched++;
     let parsed: ParsedSitemap;
@@ -237,6 +243,7 @@ export async function discoverSitemapEntries(
     entries: [...byUrl].map(([loc, lastmod]) => ({ loc, lastmod })),
     sitemapsRead,
     sitemapsFailed,
+    sitemapsDisallowed,
     truncated,
   };
 }

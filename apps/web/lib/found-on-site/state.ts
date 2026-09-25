@@ -56,6 +56,56 @@ export function foundOnSiteView(a: FoundOnSiteFields): FoundOnSiteView | null {
   return { url: a.published_url!, foundAt: a.found_on_site_at!, textPercent, basis };
 }
 
+/**
+ * Why the nightly check cannot see new pages on a site, as stored on
+ * `workspaces.found_on_site_unreadable` (migration 094). A code, so the words
+ * live here, once.
+ */
+export type FoundOnSiteBlindness =
+  | "robots-unanswered"
+  | "robots-disallowed"
+  | "no-sitemap"
+  | "empty-sitemap"
+  | "javascript";
+
+/** The end of "We can't see new pages on acme.example: ...". */
+export const BLIND_REASON: Record<FoundOnSiteBlindness, string> = {
+  "robots-unanswered": "its robots.txt did not answer, and a site that cannot say what it allows is not read",
+  "robots-disallowed": "its robots.txt does not allow our crawler to read its pages",
+  "no-sitemap": "it has no sitemap we could read, so there is no list of new pages to check",
+  "empty-sitemap": "its sitemap lists no pages on this site",
+  javascript: "its pages load their text with JavaScript, which our check does not run",
+};
+
+export interface BlindFields {
+  domain: string;
+  found_on_site_unreadable?: string | null;
+  found_on_site_checked_at?: string | null;
+}
+
+/**
+ * The Publish panel's warning for a site the check cannot see, or null when
+ * it can (or has not looked yet). Said where a person without a connected CMS
+ * is about to copy the draft out: an article they publish there by hand will
+ * not be noticed, and the product says so rather than letting "not published"
+ * stand as a silent guess.
+ */
+export function blindNote(ws: BlindFields, articleStatus: string): string | null {
+  const code = ws.found_on_site_unreadable as FoundOnSiteBlindness | null | undefined;
+  if (!code) return null;
+  // A code this build does not know still means the check could not see the
+  // site; say that much rather than nothing.
+  const reason = BLIND_REASON[code] ?? "our nightly check could not read it";
+  const when = ws.found_on_site_checked_at
+    ? ` (checked ${new Date(ws.found_on_site_checked_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })})`
+    : "";
+  const next =
+    articleStatus === "approved"
+      ? "If you publish this article there yourself, paste its address below once it is live, or it will not count as published."
+      : "If you publish this article there yourself, we will not notice on our own: once it is approved, paste its address here.";
+  return `We can't see new pages on ${ws.domain}${when}: ${reason}. ${next}`;
+}
+
 export interface ArticleTally {
   total: number;
   /** Live by any route: published through AltoRank, recorded by hand, or found on the site. */

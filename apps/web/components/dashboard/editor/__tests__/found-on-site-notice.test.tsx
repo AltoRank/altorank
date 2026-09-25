@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { FoundOnSiteNotice } from "../found-on-site-notice";
+import { FoundOnSiteBlindNote, FoundOnSiteNotice } from "../found-on-site-notice";
 import { foundOnSiteView } from "@/lib/found-on-site/state";
 
 // renderToStaticMarkup, as the other editor panels are tested: no jsdom in
@@ -32,5 +32,13 @@ describe("FoundOnSiteNotice", () => {
     expect(renderToStaticMarkup(<FoundOnSiteNotice view={view} onUndo={() => {}} error="changed while it was being undone" />)).toContain(
       "changed while it was being undone",
     );
+  });
+});
+
+describe("FoundOnSiteBlindNote", () => {
+  it("says the site cannot be seen, in the Publish panel", () => {
+    const html = text(renderToStaticMarkup(<FoundOnSiteBlindNote text="We can't see new pages on acme-agency.example: it has no sitemap." />));
+    expect(html).toContain('role="note"');
+    expect(html).toContain("We can't see new pages on acme-agency.example");
   });
 });

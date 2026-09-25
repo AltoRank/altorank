@@ -213,12 +213,19 @@ describe("findDraftsLiveOnSites", () => {
     expect(run.found).toBe(0);
   });
 
-  it("does not read a site whose robots.txt does not answer", async () => {
+  it("does not read a site whose robots.txt does not answer, and says it cannot see it", async () => {
     const sb = fakeSupabase(seed());
     const s = fakeSite(site({ [`${S}/robots.txt`]: { status: 503, body: "", type: "text/plain" } }));
     const run = await findDraftsLiveOnSites(client(sb), { budgetMs: 60_000, fetch: s.fetch, now: () => NIGHT_1 });
     expect(s.calls).toEqual([`${S}/robots.txt`]);
-    expect(run.results[0]).toMatchObject({ status: "skipped", detail: expect.stringContaining("robots.txt did not answer") });
+    expect(run.results[0]).toMatchObject({
+      status: "unreadable",
+      blind: "robots-unanswered",
+      newlyUnreadable: true,
+      detail: expect.stringContaining("robots.txt did not answer"),
+    });
+    expect(run).toMatchObject({ checked: 0, unreadable: 1 });
+    expect(sb.tables.workspaces[0].found_on_site_unreadable).toBe("robots-unanswered");
     expect(article(sb, "tr-draft").status).toBe("review");
   });
 
@@ -280,11 +287,124 @@ describe("findDraftsLiveOnSites", () => {
     expect(article(sb, "tr-draft").status).toBe("review");
   });
 
-  it("says so when a site has no sitemap to read", async () => {
+  it("says so when the visit cannot be stamped on the site, rather than leave the queue stuck without a reason", async () => {
+    const sb = fakeSupabase(seed());
+    const from = sb.from;
+    const broken = ((t: string) => {
+      const q = from(t) as Record<string, unknown>;
+      if (t === "workspaces") q.update = () => ({ eq: async () => ({ data: null, error: { message: "stamp refused" } }) });
+      return q;
+    }) as typeof sb.from;
+    const run = await findDraftsLiveOnSites({ ...sb, from: broken } as unknown as SupabaseClient, { budgetMs: 60_000, fetch: fakeSite(site()).fetch, now: () => NIGHT_1 });
+    expect(run.results[0]).toMatchObject({ status: "error", detail: expect.stringContaining("could not be recorded on the site: stamp refused") });
+    expect(run.checked).toBe(0);
+    // The find itself stands: it was written on the article before the stamp.
+    expect(run.found).toBe(1);
+  });
+
+  it("does not count a site with no sitemap as checked: it cannot see it, and says so", async () => {
     const sb = fakeSupabase(seed());
     const s = fakeSite({ [`${S}/robots.txt`]: { body: "User-agent: *\nDisallow:\n", type: "text/plain" } });
     const run = await findDraftsLiveOnSites(client(sb), { budgetMs: 60_000, fetch: s.fetch, now: () => NIGHT_1 });
-    expect(run.results[0]).toMatchObject({ status: "checked", sitemapUrls: 0, detail: expect.stringContaining("no sitemap could be read") });
+    expect(run.results[0]).toMatchObject({
+      status: "unreadable",
+      blind: "no-sitemap",
+      sitemapUrls: 0,
+      detail: expect.stringContaining("no sitemap could be read"),
+    });
+    expect(run).toMatchObject({ checked: 0, unreadable: 1 });
+    expect(sb.tables.workspaces[0].found_on_site_unreadable).toBe("no-sitemap");
+
+    // The second night it is still unreadable, but it is no longer news.
+    const again = await findDraftsLiveOnSites(client(sb), { budgetMs: 60_000, fetch: s.fetch, now: () => NIGHT_2 });
+    expect(again.results[0]).toMatchObject({ status: "unreadable", blind: "no-sitemap" });
+    expect(again.results[0].newlyUnreadable).toBeUndefined();
+  });
+
+  it("says so when the sitemap lists nothing, or nothing on this site", async () => {
+    const empty = fakeSupabase(seed());
+    const bare = `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>`;
+    const s1 = fakeSite(site({ [`${S}/post-sitemap.xml`]: { type: "application/xml", body: bare } }));
+    const r1 = await findDraftsLiveOnSites(client(empty), { budgetMs: 60_000, fetch: s1.fetch, now: () => NIGHT_1 });
+    expect(r1.results[0]).toMatchObject({ status: "unreadable", blind: "empty-sitemap" });
+
+    const elsewhere = fakeSupabase(seed());
+    const other = `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://old-name.example/blog/a</loc></url></urlset>`;
+    const s2 = fakeSite(site({ [`${S}/post-sitemap.xml`]: { type: "application/xml", body: other } }));
+    const r2 = await findDraftsLiveOnSites(client(elsewhere), { budgetMs: 60_000, fetch: s2.fetch, now: () => NIGHT_1 });
+    expect(r2.results[0]).toMatchObject({ status: "unreadable", blind: "empty-sitemap", detail: expect.stringContaining("no pages on acme-agency.example") });
+  });
+
+  it("says so when robots.txt forbids every page the sitemap lists", async () => {
+    const sb = fakeSupabase(seed());
+    const s = fakeSite(site({ [`${S}/robots.txt`]: { body: `User-agent: *\nDisallow: /\nSitemap: ${S}/sitemap_index.xml\n`, type: "text/plain" } }));
+    const run = await findDraftsLiveOnSites(client(sb), { budgetMs: 60_000, fetch: s.fetch, now: () => NIGHT_1 });
+    expect(run.results[0]).toMatchObject({ status: "unreadable", blind: "robots-disallowed" });
+    expect(s.calls.some((u) => u.includes("/blog/"))).toBe(false);
+
+    // The sitemap readable, and every page in it off limits.
+    const pagesOff = fakeSupabase(seed());
+    const robots = `User-agent: *\nDisallow: /blog/\nDisallow: /hizmetler\nDisallow: /private/\nSitemap: ${S}/sitemap_index.xml\n`;
+    const s2 = fakeSite(site({ [`${S}/robots.txt`]: { body: robots, type: "text/plain" } }));
+    const r2 = await findDraftsLiveOnSites(client(pagesOff), { budgetMs: 60_000, fetch: s2.fetch, now: () => NIGHT_1 });
+    expect(r2.results[0]).toMatchObject({ status: "unreadable", blind: "robots-disallowed", skipped: expect.objectContaining({ disallowed: 5 }) });
+    expect(s2.calls.some((u) => u.includes("/blog/"))).toBe(false);
+  });
+
+  it("says so when the new pages are JavaScript shells, keeps saying it on a quiet night, and clears it when a page reads", async () => {
+    const SHELL = `<!doctype html><html><head><title>Acme Ajans</title><script src="/app.js"></script></head><body><div id="root"></div></body></html>`;
+    const sb = fakeSupabase(seed());
+    const shells = fakeSite(site({
+      [`${S}/blog/sadakat-programi-rehberi`]: { body: SHELL },
+      [`${S}/blog/standing-desk-guide`]: { body: SHELL },
+      [`${S}/hizmetler`]: { body: SHELL },
+    }));
+    const run = await findDraftsLiveOnSites(client(sb), { budgetMs: 60_000, fetch: shells.fetch, now: () => NIGHT_1 });
+    expect(run.results[0]).toMatchObject({ status: "unreadable", blind: "javascript", shells: 3, read: 3, newlyUnreadable: true });
+    expect(run.checked).toBe(0);
+    expect(sb.tables.workspaces[0].found_on_site_unreadable).toBe("javascript");
+    // Read once, recorded with the words it had, and not fetched again every night.
+    expect(sb.tables.found_on_site_checks.every((r) => typeof r.words === "number" && (r.words as number) < 60)).toBe(true);
+
+    // Nothing new the next night: nothing says the pages became readable.
+    const quiet = await findDraftsLiveOnSites(client(sb), { budgetMs: 60_000, fetch: shells.fetch, now: () => NIGHT_2 });
+    expect(quiet.results[0]).toMatchObject({ status: "unreadable", blind: "javascript", read: 0 });
+    expect(quiet.results[0].newlyUnreadable).toBeUndefined();
+
+    // A new page that renders on the server clears it.
+    const later = new Date("2026-09-25T10:00:00.000Z");
+    const readable = fakeSite(site({
+      [`${S}/post-sitemap.xml`]: { type: "application/xml", body: urlset([["/blog/yeni", "2026-09-24T12:00:00+00:00"]]) },
+      [`${S}/blog/yeni`]: { body: F.UNRELATED_PAGE },
+    }));
+    const cleared = await findDraftsLiveOnSites(client(sb), { budgetMs: 60_000, fetch: readable.fetch, now: () => later });
+    expect(cleared.results[0]).toMatchObject({ status: "checked", blind: null, shells: 0 });
+    expect(sb.tables.workspaces[0].found_on_site_unreadable).toBeNull();
+  });
+
+  it("leaves the last answer standing when the night ends before a sitemap is read", async () => {
+    const base = seed();
+    (base.workspaces[0] as Record<string, unknown>).found_on_site_unreadable = "javascript";
+    const sb = fakeSupabase(base);
+    let t = 0;
+    const s = fakeSite(site());
+    // robots.txt answers, then the clock runs out before the first sitemap.
+    const slow: SafeFetch = async (url, o) => {
+      const r = await s.fetch(url, o);
+      if (url.endsWith("/robots.txt")) t = 1;
+      return r;
+    };
+    const realNow = Date.now;
+    const start = realNow();
+    Date.now = () => (t ? start + 120_000 : start);
+    try {
+      const run = await findDraftsLiveOnSites(client(sb), { budgetMs: 60_000, fetch: slow, now: () => NIGHT_1 });
+      expect(run.results[0]).toMatchObject({ status: "skipped", detail: expect.stringContaining("out of time") });
+      expect(run.results[0].blind).toBeUndefined();
+    } finally {
+      Date.now = realNow;
+    }
+    expect(sb.tables.workspaces[0].found_on_site_unreadable).toBe("javascript");
   });
 
   it("reads at most twenty pages a night and says how many it left", async () => {

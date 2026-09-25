@@ -146,7 +146,7 @@ m(file, applied) as (values
   ('084_analysis_attempts',                  exists (select 1 from col where t='workspaces' and c='analysis_attempts')),
   ('085_agencies_to_accounts',               to_regclass('public.accounts') is not null and to_regclass('public.agencies') is null),
   ('091_public_tool_usage',                  to_regclass('public.public_tool_usage') is not null and to_regprocedure('public.reserve_public_tool_spend(text,numeric,numeric)') is not null),
-  ('094_found_on_site',                      to_regclass('public.found_on_site_checks') is not null and exists (select 1 from col where t='articles' and c='found_on_site_rejected'))
+  ('094_found_on_site',                      to_regclass('public.found_on_site_checks') is not null and exists (select 1 from col where t='articles' and c='found_on_site_rejected') and exists (select 1 from col where t='workspaces' and c='found_on_site_unreadable'))
 )
 select file, applied from m order by file;
 ```
@@ -728,8 +728,13 @@ published a draft on a site with no CMS connected and nothing recorded it.
   was found rather than published by us, and hold what "Not my article"
   restores.
 - `workspaces.found_on_site_checked_at`: the check's turn order.
+- `workspaces.found_on_site_unreadable`: why the check cannot see the site's
+  new pages (`robots-unanswered`, `robots-disallowed`, `no-sitemap`,
+  `empty-sitemap`, `javascript`; a check constraint holds the list), shown in
+  the editor's Publish panel. Null = it can.
 - `found_on_site_checks`: one row per page read, `(workspace_id, url)` primary
-  key. RLS on with **no policies**, the posture of 080 and 082: only the cron
+  key, with the page's main-content `words` (under 60 = a JavaScript shell).
+  RLS on with **no policies**, the posture of 080 and 082: only the cron
   (service role) reads or writes it. Post-flight §4 step 2 lists it with zero
   policies; that is expected.
 
@@ -750,7 +755,7 @@ without them, which is why the order matters:
 - the admin Users page shows no article counts.
 
 Roll back with
-`drop table if exists found_on_site_checks; alter table workspaces drop column if exists found_on_site_checked_at; alter table articles drop column if exists found_on_site_at, drop column if exists found_on_site_evidence, drop column if exists found_on_site_prior, drop column if exists found_on_site_rejected;`
+`drop table if exists found_on_site_checks; alter table workspaces drop column if exists found_on_site_checked_at, drop column if exists found_on_site_unreadable; alter table articles drop column if exists found_on_site_at, drop column if exists found_on_site_evidence, drop column if exists found_on_site_prior, drop column if exists found_on_site_rejected;`
 — run it only after putting any found article back first
 (`update articles set status = found_on_site_prior->>'status', published_url = found_on_site_prior->>'published_url', published_at = (found_on_site_prior->>'published_at')::timestamptz where found_on_site_at is not null;`),
 or those articles stay `live` at a URL nobody can then take back.

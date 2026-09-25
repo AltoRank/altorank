@@ -43,9 +43,9 @@ import { SelectionBar } from "@/components/dashboard/editor/selection-bar";
 import { LinkPopover } from "@/components/dashboard/editor/link-popover";
 import { RewritePanel } from "@/components/dashboard/editor/rewrite-panel";
 import { ExportMenu } from "@/components/dashboard/editor/export-menu";
-import { FoundOnSiteNotice } from "@/components/dashboard/editor/found-on-site-notice";
+import { FoundOnSiteNotice, FoundOnSiteBlindNote } from "@/components/dashboard/editor/found-on-site-notice";
 import { notFoundOnSite } from "@/app/actions/found-on-site";
-import { foundOnSiteView } from "@/lib/found-on-site/state";
+import { blindNote, foundOnSiteView } from "@/lib/found-on-site/state";
 import type { Article, Workspace, PublishingCadence, Integration } from "@/lib/types";
 
 // The body's image node, drawn with the per-image toolbar. Defined once at
@@ -132,6 +132,12 @@ export function ArticleEditor({
   // published it (lib/found-on-site). Null for everything else.
   const foundOnSite = foundOnSiteView(article);
   const [undoError, setUndoError] = useState<string | null>(null);
+  // With nothing connected, the nightly check is the only way a copy the
+  // person publishes by hand gets counted. When it cannot see the site, say
+  // so here, where the draft is copied out, rather than leave "not published"
+  // standing as a silent guess.
+  const blind =
+    destinations.length === 0 && !foundOnSite && article.status !== "live" ? blindNote(workspace, article.status) : null;
 
   // What the first analysis observed, so the empty state can name the platform
   // and its credential, or say plainly that the site runs nothing we can post
@@ -1103,6 +1109,7 @@ export function ArticleEditor({
               cta="Connect a CMS"
             />
           )}
+          {blind && <FoundOnSiteBlindNote text={blind} />}
 
           {article.status === "review" && needsPlan && (
             <div className="mt-3">
