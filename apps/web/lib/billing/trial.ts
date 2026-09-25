@@ -4,9 +4,11 @@
 //
 // A hosted plan starts with TRIAL_DAYS of trial. The card is taken at
 // checkout and charged when the trial ends unless the customer cancels first.
-// The offer is made after onboarding: the account's first drafts are written
-// against the free allowance and read before any card is entered, so what the
-// trial unlocks is approve, publish and everything after the seventh draft.
+// The offer is made after onboarding: setup writes the account's first
+// article before any card is entered, and the account sees its shape (title,
+// outline, length, sources) on the gate screen. The text opens with the
+// trial, and so do the dashboard, approve, publish and the rest of the
+// week's drafts.
 //
 // One trial per account. Stripe does not enforce that on its own (a customer
 // can open a second trialing subscription), so eligibility is decided here
@@ -70,10 +72,11 @@ export const TRIAL_OFFER = `${TRIAL_DAYS} days free with a card, then the plan p
 /**
  * Whether this account must start its trial before the dashboard opens.
  *
- * The order the product now promises: onboarding writes the first draft
- * against the free allowance, the person reads it and the month planned
- * behind it on the run screen, and the card is asked there - not from a
- * banner found later. The dashboard is what the trial opens.
+ * The order the product now promises: onboarding writes the first article,
+ * the person sees its shape (title, outline, length, sources) and the month
+ * planned behind it on the gate screen, and the card is asked there - not
+ * from a banner found later. The text opens with the trial, and so does the
+ * dashboard.
  *
  * Three accounts are never gated, and each for its own reason:
  *
