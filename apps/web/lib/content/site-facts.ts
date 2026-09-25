@@ -272,6 +272,9 @@ export async function resolveConversionPage(opts: {
     return null;
   };
 
+  // Why the saved page was passed over, for the note; null when there was
+  // none or it was used.
+  let storedFailure: string | null = null;
   if (stored) {
     // Shown to exist before: the site read checked this very URL (a person
     // may have typed a different one since), or the crawl fetched it.
@@ -284,6 +287,7 @@ export async function resolveConversionPage(opts: {
     // the site read refuses to store one (lib/onboarding/observed-facts.ts).
     const hit = await attempt(stored, storedVerified, "The saved conversion page", classifyHref(stored, domain) !== "internal");
     if (hit) return hit;
+    storedFailure = failures[failures.length - 1] ?? null;
   }
   let checks = 0;
   for (const url of opts.candidates) {
@@ -293,8 +297,8 @@ export async function resolveConversionPage(opts: {
     // Every candidate was fetched with a 2xx by the crawl: shown to exist.
     const hit = await attempt(url, true, "The contact page read on the site");
     if (hit) {
-      return failures.length
-        ? { conversion: hit.conversion, note: `The saved conversion page ${failures[0]}; using ${hit.conversion!.url} instead. ${hit.note}` }
+      return storedFailure
+        ? { conversion: hit.conversion, note: `The saved conversion page ${storedFailure}; using ${hit.conversion!.url} instead. ${hit.note}` }
         : hit;
     }
   }

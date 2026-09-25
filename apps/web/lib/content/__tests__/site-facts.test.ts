@@ -230,3 +230,12 @@ describe("resolveConversionPage — what counts as shown to exist", () => {
     expect(out.conversion?.url).toBe(`${O}/bize-ulasin`);
   });
 });
+
+describe("resolveConversionPage — the note", () => {
+  it("does not call a failed crawl candidate the saved page", async () => {
+    const fetch = fakeFetch({ [`${O}/iletisim`]: { status: 404 }, [`${O}/teklif-al`]: { status: 200 } });
+    const out = await resolveConversionPage({ stored: null, candidates: [`${O}/iletisim`, `${O}/teklif-al`], domain: DOMAIN, fetch });
+    expect(out.conversion?.url).toBe(`${O}/teklif-al`);
+    expect(out.note).not.toMatch(/saved conversion page/);
+  });
+});
