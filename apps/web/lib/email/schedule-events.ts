@@ -251,15 +251,32 @@ export async function setupUnfinishedFacts(
   };
 }
 
+/** What `announceSetupUnfinished` reports when the site already has an article live. */
+export const SETUP_ALREADY_LIVE_LINE = "an article is already live on the site; the setup email would say otherwise";
+
 /**
  * Send the setup email for one site, with whatever is true of it right now.
  * Once per site ever; `sendOnce` holds that.
+ *
+ * Not for a site with an article already live. A real signup (2026-09-22)
+ * published our draft on their own site without finishing setup; the nightly
+ * check now marks such a draft live (lib/found-on-site), and both versions of
+ * this email - "your draft is waiting for review", "no article has been
+ * written yet" - would then be false about the one site that used us most.
  */
 export async function announceSetupUnfinished(
   supabase: SupabaseClient,
   scope: { accountId: string; workspaceId: string; domain: string | null },
 ): Promise<string> {
   try {
+    const { data: live } = await supabase
+      .from("articles")
+      .select("id")
+      .eq("workspace_id", scope.workspaceId)
+      .eq("status", "live")
+      .limit(1)
+      .maybeSingle();
+    if (live) return SETUP_ALREADY_LIVE_LINE;
     const facts = await setupUnfinishedFacts(supabase, scope.workspaceId, scope.domain);
     const out = await notifySetupUnfinished(supabase, { accountId: scope.accountId, workspaceId: scope.workspaceId }, facts);
     return describeSendOutcome(out);

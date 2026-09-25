@@ -12,6 +12,7 @@ import {
   setupUnfinishedFacts,
   sweepUnfinishedSetups,
   PAUSE_REMINDER_DAYS,
+  SETUP_ALREADY_LIVE_LINE,
   SETUP_UNFINISHED_LINE,
 } from "../schedule-events";
 
@@ -21,6 +22,8 @@ const claimed = new Set<string>();
 let workspaceRows: Row[] = [];
 /** The oldest draft in review, the keyword count and the latest audit, for the setup email's facts. */
 let reviewArticle: Row | null = null;
+/** An article already live on the site (published, or found there by lib/found-on-site). */
+let liveArticle: Row | null = null;
 let keywordCount = 0;
 let latestAudit: Row | null = null;
 /** Filters the caller applied to `workspaces`, so a test can assert the window. */
@@ -50,12 +53,16 @@ function client() {
       }
       if (table === "articles" || table === "domain_audits" || table === "keywords") {
         const q: Record<string, unknown> = {};
+        let status: unknown = null;
         Object.assign(q, {
           select: () => q,
-          eq: () => q,
+          eq: (c: string, v: unknown) => ((status = c === "status" ? v : status), q),
           order: () => q,
           limit: () => q,
-          maybeSingle: async () => ({ data: table === "articles" ? reviewArticle : latestAudit, error: null }),
+          maybeSingle: async () => ({
+            data: table === "articles" ? (status === "live" ? liveArticle : reviewArticle) : latestAudit,
+            error: null,
+          }),
           then: (resolve: (v: unknown) => unknown) => resolve({ data: null, count: keywordCount, error: null }),
         });
         return q as never;
@@ -115,6 +122,7 @@ beforeEach(() => {
   workspaceRows = [];
   workspaceFilters = [];
   reviewArticle = null;
+  liveArticle = null;
   keywordCount = 0;
   latestAudit = null;
   sendTransactionalEmail.mockReset();
@@ -316,6 +324,17 @@ describe("the setup email", () => {
     expect(await announceSetupUnfinished(c, scope)).toBe("2 already told or opted out");
     expect(sends()).toHaveLength(2);
     expect([...claimed].every((k) => k.startsWith("setup_unfinished|ws-1|"))).toBe(true);
+  });
+
+  it("stands down for a site with an article already live, found there or published", async () => {
+    // A draft found on the customer's own site is live, not in review: the
+    // draft version would call it "waiting for review" and the other would
+    // say nothing was written. Neither is sent.
+    liveArticle = { id: "art-1" };
+    workspaceRows = [{ id: "ws-1", topical_profile: usable }];
+    expect(await announceSetupUnfinished(client(), scope)).toBe(SETUP_ALREADY_LIVE_LINE);
+    expect(sends()).toHaveLength(0);
+    expect(claimed.size).toBe(0);
   });
 
   it("is a site-status email a person can opt out of", async () => {

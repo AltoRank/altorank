@@ -7,6 +7,7 @@
 // rule can be tested without rendering anything.
 
 import type { Article } from "@/lib/types";
+import { isFoundOnSite } from "@/lib/found-on-site/state";
 import type { CoverageBucket } from "@/lib/gsc/analysis";
 
 export type HistoryFilter = "all" | "review" | "approved" | "scheduled" | "live" | "archived";
@@ -55,6 +56,8 @@ export interface HistoryRow {
   held: boolean;
   /** Why the rule last skipped it, when that is something a person can act on. */
   holdReason: string | null;
+  /** Live because the nightly check found it on the customer's site, not because we published it (094). */
+  foundOnSite: boolean;
 }
 
 /** What the page knows about a row beyond the article itself. */
@@ -95,6 +98,7 @@ export function toHistoryRow(a: Article, extras: HistoryRowExtras): HistoryRow {
       a.status === "review" && a.auto_approve_hold_reason && !a.auto_approve_hold_reason.startsWith("hold window") && a.auto_approve_hold_reason !== "held by a person"
         ? a.auto_approve_hold_reason
         : null,
+    foundOnSite: isFoundOnSite(a),
   };
 }
 

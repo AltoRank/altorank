@@ -11,6 +11,7 @@ import { plural } from "@/lib/utils";
 import { AdminTabs } from "../admin-tabs";
 import { Table } from "../table";
 import { ImpersonateButton } from "./impersonate-button";
+import { tallyArticles } from "@/lib/found-on-site/state";
 
 export const metadata: Metadata = { title: "Users" };
 
@@ -85,7 +86,7 @@ export default async function AdminUsersPage({
       admin.from("account_members").select("user_id, account_id, role"),
       admin.from("accounts").select("id, name, plan, plan_status"),
       admin.from("workspaces").select("id, account_id, domain"),
-      admin.from("articles").select("workspace_id"),
+      admin.from("articles").select("workspace_id, status, found_on_site_at"),
       admin
         .from("admin_impersonations")
         .select("*")
@@ -102,10 +103,12 @@ export default async function AdminUsersPage({
   for (const w of (workspaces ?? []) as WorkspaceRow[]) {
     workspacesByAccount.set(w.account_id, [...(workspacesByAccount.get(w.account_id) ?? []), w]);
   }
-  const articlesByWorkspace = new Map<string, number>();
-  for (const a of articles ?? []) {
-    articlesByWorkspace.set(a.workspace_id, (articlesByWorkspace.get(a.workspace_id) ?? 0) + 1);
-  }
+  // Live counts include articles the nightly check found on the customer's
+  // own site (lib/found-on-site): the first real signup published a draft by
+  // hand and read as "never used it" here.
+  const articlesByWorkspace = tallyArticles(
+    (articles ?? []) as Array<{ workspace_id: string; status: string; found_on_site_at: string | null }>,
+  );
 
   const rows = users
     .map((u) => {
@@ -114,7 +117,10 @@ export default async function AdminUsersPage({
       const account = primary ? accountById.get(primary.account_id) : undefined;
       const ws = account ? workspacesByAccount.get(account.id) ?? [] : [];
       const domains = ws.map((w) => w.domain).filter((d): d is string => Boolean(d));
-      const articleCount = ws.reduce((n, w) => n + (articlesByWorkspace.get(w.id) ?? 0), 0);
+      const tallies = ws.map((w) => articlesByWorkspace.get(w.id));
+      const articleCount = tallies.reduce((n, t) => n + (t?.total ?? 0), 0);
+      const liveCount = tallies.reduce((n, t) => n + (t?.live ?? 0), 0);
+      const foundCount = tallies.reduce((n, t) => n + (t?.foundOnSite ?? 0), 0);
       return {
         user: u,
         name: displayName(u),
@@ -123,6 +129,8 @@ export default async function AdminUsersPage({
         extraAccounts: Math.max(0, memberships.length - 1),
         domains,
         articleCount,
+        liveCount,
+        foundCount,
         operator: isAdminEmail(u.email),
       };
     })
@@ -225,7 +233,14 @@ export default async function AdminUsersPage({
                   </>
                 )}
               </span>,
-              String(r.articleCount),
+              <span key="articles" className="font-sans text-[13px]">
+                {r.articleCount}
+                {r.liveCount > 0 && (
+                  <span className="text-ink-3">
+                    {" "}· {r.liveCount} live{r.foundCount > 0 ? `, ${r.foundCount} found on their site` : ""}
+                  </span>
+                )}
+              </span>,
               day(r.user.created_at),
               when(r.user.last_sign_in_at),
               <span key="act" className="flex justify-end">
