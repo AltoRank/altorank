@@ -20,9 +20,15 @@ vi.mock("@/lib/articles/body-read", () => ({
   },
 }));
 
+// The trial gate is asked about the article's site; its own tests are in
+// lib/billing/__tests__/body-lock.test.ts.
+const gate = vi.hoisted(() => ({ state: "open" as "open" | "gated" | "bypassed" }));
+vi.mock("@/lib/billing/body-lock", () => ({ workspaceTrialGate: async () => gate.state }));
+
 import { publishArticleCore, PublishError } from "../core";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";
 import { submitForIndexing } from "@/lib/seo/indexing";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 
 function mockSupabase(overrides: {
   article?: Record<string, unknown> | null;
@@ -150,6 +156,20 @@ describe("publishArticleCore", () => {
     await expect(publishArticleCore(supabase as never, "a1")).rejects.toThrow(
       "must be approved before publishing",
     );
+  });
+
+  it("refuses an approved article whose account has not started its trial", async () => {
+    // `status` is written through the person's own client, so `approved` is
+    // not proof that Approve (which asks for a plan) ran.
+    gate.state = "gated";
+    vi.mocked(resolveCMSAdapter).mockClear();
+    try {
+      const supabase = mockSupabase({});
+      await expect(publishArticleCore(supabase as never, "a1")).rejects.toThrow(BODY_LOCKED_MESSAGE);
+      expect(resolveCMSAdapter).not.toHaveBeenCalled();
+    } finally {
+      gate.state = "open";
+    }
   });
 
   it("publishes a scheduled article only when it carries a recorded approval", async () => {

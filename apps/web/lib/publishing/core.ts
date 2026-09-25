@@ -8,6 +8,8 @@ import { getValidAccessToken } from "@/lib/google/oauth";
 import { decryptConfig } from "@/lib/crypto";
 import type { Article, CMSConfig } from "@/lib/types";
 import { getQuota } from "@/lib/billing/quota";
+import { workspaceTrialGate } from "@/lib/billing/body-lock";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import { appendAttribution, isOperatorAccount, shouldAttribute } from "@/lib/publishing/attribution";
 import { chooseDestination, toDestinations, type IntegrationRow } from "@/lib/publishing/destinations";
 import { settleExchangeForArticle } from "@/lib/seo/exchange";
@@ -75,8 +77,7 @@ export async function publishArticleCore(
   // Visibility through the caller's client - RLS for the person pressing
   // Publish, everything for the cron - and the row itself from the server,
   // because the body columns answer no client token (migration 097,
-  // lib/articles/body-read.ts). No trial gate here: every door into this
-  // function asks for a plan first.
+  // lib/articles/body-read.ts).
   const article = await readVisibleArticle<Article>(supabase, articleId);
 
   if (!article) throw new Error("Article not found");
@@ -93,6 +94,16 @@ export async function publishArticleCore(
     throw new Error(
       `Article must be approved before publishing (current status: ${article.status}).`,
     );
+  }
+
+  // The trial gate, here and not only at Approve. Approving asks for a plan
+  // (app/actions/publish.ts), but `status` is also written through the
+  // person's own client - the editor saves that way - so an account that had
+  // not started its trial could set its first draft to `approved` over
+  // PostgREST, and cron/publish would push the text to the CMS it connected
+  // during setup. Publishing is handing the text out; the gate decides that.
+  if ((await workspaceTrialGate(supabase, article.workspace_id)) === "gated") {
+    throw new Error(BODY_LOCKED_MESSAGE);
   }
 
   const { data: wsIntegrations } = await supabase

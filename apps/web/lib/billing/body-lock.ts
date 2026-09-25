@@ -86,6 +86,19 @@ export async function accountTrialGate(
   return trialGateState(quota, email, { simulated });
 }
 
+/**
+ * The gate for the account a workspace belongs to, for a caller with no
+ * session to speak for: the publisher, which the cron and the Publish button
+ * both reach. A site whose account cannot be read throws - an unknown is not
+ * an open gate.
+ */
+export async function workspaceTrialGate(supabase: SupabaseClient, workspaceId: string): Promise<TrialGateState> {
+  const { data, error } = await supabase.from("workspaces").select("account_id").eq("id", workspaceId).maybeSingle();
+  if (error) throw new Error(`trial gate: could not read the site's account (${error.message})`);
+  if (!data?.account_id) throw new Error("trial gate: this site has no account");
+  return accountTrialGate(supabase, data.account_id as string, null);
+}
+
 /** The signed-in user, once per request. The layout, the page and the lock all ask. */
 const sessionUser = cache(async function sessionUser() {
   const supabase = await createClient();

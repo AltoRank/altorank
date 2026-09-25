@@ -295,3 +295,12 @@ describe("accountTrialGate", () => {
     expect(await accountTrialGate(client() as never, "acc-paying", null)).toBe("open");
   });
 });
+
+describe("workspaceTrialGate", () => {
+  it("answers for the site's account, and throws when the site cannot be placed", async () => {
+    const { workspaceTrialGate } = await import("@/lib/billing/body-lock");
+    expect(await workspaceTrialGate(client("service") as never, "ws-gated")).toBe("gated");
+    expect(await workspaceTrialGate(client("service") as never, "ws-paying")).toBe("open");
+    await expect(workspaceTrialGate(client("service") as never, "ws-nobody")).rejects.toThrow("no account");
+  });
+});
