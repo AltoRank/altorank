@@ -209,7 +209,14 @@ export async function getQuota(
   // account is metered by every scheduled job: one draft a month from
   // cron/generate, and since scheduled work was gated on a plan, no rank
   // tracking at all. See lib/billing/operator-account.ts.
-  if (noSession && (await accountHasOperator(supabase, accountId))) {
+  //
+  // Asked on the counting client, never the caller's: the answer needs
+  // auth.users, which only the service role can read. The publisher reaches
+  // this with the Publish button's cookie client and no address (a person's
+  // click, but the publisher speaks for no session), and on that client the
+  // lookup failed and read as "not an operator" - so our own account, with
+  // no plan by design, was refused its own Publish (round-4 review).
+  if (noSession && (await accountHasOperator(counting, accountId))) {
     return { limit: null, used, remaining: null, reason: "operator", plan: null };
   }
 

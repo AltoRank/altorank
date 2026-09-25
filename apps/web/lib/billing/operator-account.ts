@@ -31,28 +31,40 @@ export async function accountHasOperator(
   const hit = cache.get(accountId);
   if (hit !== undefined) return hit;
 
+  // Only a lookup that completed is remembered. A client that cannot read
+  // auth.users (a cookie-bound one) gets "not an operator" for this call - the
+  // safe direction, metered unless proven ours - but that is a fact about the
+  // client, not the account, and caching it made every later caller in the
+  // process, the service-role crons included, meter our own account.
   let answer = false;
+  let settled = true;
   try {
-    const { data: members } = await supabase
+    const { data: members, error } = await supabase
       .from("account_members")
       .select("user_id")
       .eq("account_id", accountId);
+    if (error) settled = false;
 
     for (const m of members ?? []) {
-      // Needs the service role. On a cookie-bound client this throws, which
-      // the catch turns into "not an operator" - the safe direction: an
-      // account is metered unless we can prove it is ours.
-      const { data } = await supabase.auth.admin.getUserById(m.user_id as string);
+      // Needs the service role. On a cookie-bound client this errors (or
+      // throws), and the answer is "not an operator", uncached.
+      const { data, error: userError } = await supabase.auth.admin.getUserById(m.user_id as string);
+      if (userError) {
+        settled = false;
+        continue;
+      }
       if (isAdminEmail(data?.user?.email)) {
         answer = true;
+        settled = true;
         break;
       }
     }
   } catch {
     answer = false;
+    settled = false;
   }
 
-  cache.set(accountId, answer);
+  if (settled) cache.set(accountId, answer);
   return answer;
 }
 

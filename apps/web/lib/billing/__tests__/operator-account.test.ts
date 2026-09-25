@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { accountHasOperator, clearOperatorAccountCache } from "../operator-account";
 
 /** A service client stand-in: members by account, emails by user id. */
-function client(members: string[], emails: Record<string, string>, opts: { throwOnAdmin?: boolean } = {}) {
+function client(
+  members: string[],
+  emails: Record<string, string>,
+  opts: { throwOnAdmin?: boolean; errorOnAdmin?: boolean } = {},
+) {
   let getUserByIdCalls = 0;
   const c = {
     from: () => ({ select: () => ({ eq: async () => ({ data: members.map((user_id) => ({ user_id })) }) }) }),
@@ -11,6 +15,8 @@ function client(members: string[], emails: Record<string, string>, opts: { throw
         getUserById: async (id: string) => {
           getUserByIdCalls += 1;
           if (opts.throwOnAdmin) throw new Error("not authorised");
+          // What supabase-js does on a cookie-bound client: no throw, an error.
+          if (opts.errorOnAdmin) return { data: { user: null }, error: { message: "User not allowed" } };
           return { data: { user: { email: emails[id] } } };
         },
       },
@@ -58,5 +64,22 @@ describe("accountHasOperator", () => {
   it("treats an account with no members as not ours", async () => {
     const { c } = client([], {});
     expect(await accountHasOperator(c, "a1")).toBe(false);
+  });
+
+  it("does not remember an answer from a client that could not look", async () => {
+    // Round-4 review: one Publish click on a cookie client cached "not an
+    // operator" for the process, and every service-role cron after it
+    // metered our own account.
+    const cookie = client(["u1"], { u1: "helloaltorank@gmail.com" }, { errorOnAdmin: true });
+    expect(await accountHasOperator(cookie.c, "a1")).toBe(false);
+    const service = client(["u1"], { u1: "helloaltorank@gmail.com" });
+    expect(await accountHasOperator(service.c, "a1")).toBe(true);
+  });
+
+  it("does not remember a throw either", async () => {
+    const cookie = client(["u1"], { u1: "helloaltorank@gmail.com" }, { throwOnAdmin: true });
+    expect(await accountHasOperator(cookie.c, "a1")).toBe(false);
+    const service = client(["u1"], { u1: "helloaltorank@gmail.com" });
+    expect(await accountHasOperator(service.c, "a1")).toBe(true);
   });
 });
