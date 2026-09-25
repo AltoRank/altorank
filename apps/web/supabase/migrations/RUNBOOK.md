@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked) and **099** (trial gate server writes), each with its section at the end. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes) and **100** (pre-trial spend bounds), each with its section at the end. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -151,7 +151,8 @@ m(file, applied) as (values
   ('095_site_pages_extract',                 exists (select 1 from col where t='site_pages' and c='extract')),
   ('094_found_on_site',                      to_regclass('public.found_on_site_checks') is not null and exists (select 1 from col where t='articles' and c='found_on_site_rejected') and exists (select 1 from col where t='workspaces' and c='found_on_site_unreadable')),
   ('098_fact_check_unchecked',               exists (select 1 from pg_constraint where conname = 'articles_fact_check_verdict_check' and pg_get_constraintdef(oid) like '%unchecked%')),
-  ('099_trial_gate_server_writes',           not has_table_privilege('authenticated', 'public.api_keys', 'INSERT') and pg_get_functiondef('public.accounts_guard_privileged_columns'::regproc) like '%free_drafts_used%')
+  ('099_trial_gate_server_writes',           not has_table_privilege('authenticated', 'public.api_keys', 'INSERT') and pg_get_functiondef('public.accounts_guard_privileged_columns'::regproc) like '%free_drafts_used%'),
+  ('100_pre_trial_spend_bounds',             not has_table_privilege('authenticated', 'public.workspaces', 'INSERT') and exists (select 1 from pg_trigger where tgname = 'account_members_guard_own_row'))
 )
 select file, applied from m order by file;
 ```
@@ -286,6 +287,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 095_site_pages_extract.sql   # BEF
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 098_fact_check_unchecked.sql   # BEFORE its code is merged; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 097_article_body_server_only.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 099_trial_gate_server_writes.sql   # AFTER its code is live; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 100_pre_trial_spend_bounds.sql   # AFTER its code is live; see its section
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -356,6 +358,7 @@ no code in the repo references either).
 | 094_found_on_site.sql | `feat/published-elsewhere` | 001 | yes | yes, see its section (the check then fails loudly in the cron body, and the crawl still runs) |
 | 098_fact_check_unchecked.sql | `fix/locale-contract` | 015 | yes | only once no row holds `unchecked`: re-add the three-value check |
 | 099_trial_gate_server_writes.sql | `fix/trial-gate-first-article` | 083, 086, the `api_keys` table; **its code deployed first** | yes | yes, see its section (the three holes it closes reopen) |
+| 100_pre_trial_spend_bounds.sql | `integration/root-causes-2026-09-25` | 076, 085, 053/072, 093; **its code deployed first** | yes | yes, see its section (the four holes it closes reopen) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -843,6 +846,78 @@ select has_table_privilege('authenticated', 'public.api_keys', 'INSERT'),
 Rollback: re-run 086's `create or replace function` (drops the one line),
 `grant insert, update on table public.api_keys to authenticated;`. The
 stripped schemas are not restored; nothing read them.
+
+## 100 — pre-trial spend bounds
+
+The app now counts what an account before its trial ATTEMPTS: the one
+pre-trial draft is claimed on `accounts.free_drafts_used` before anything is
+bought, and setup runs are counted from `onboarding_runs`
+(`lib/billing/trial-hold.ts`). This closes the four client-token writes that
+could reset or multiply those counts:
+
+- `onboarding_runs.workspace_id` becomes nullable and its foreign key
+  `on delete set null` (was `cascade`), plus an index on `account_id`. A run
+  outlives its site, so deleting a site and adding it again no longer hands
+  back the account's setup runs.
+- `workspaces`: `INSERT` revoked from `anon` and `authenticated`. Sites are
+  inserted by the server (`lib/workspaces/insert.ts`, from createWorkspace and
+  the Search Console import; signup already did). A client could insert any
+  number of rows past the one-site allowance.
+- `workspaces`: table `UPDATE` revoked from `anon` and `authenticated`, and
+  granted back on every column except `id`, `account_id`, `ai_provider`,
+  `ai_model` and `trial_resume_key` / `trial_resume_claimed_at` /
+  `trial_resumed_at`. No code writes those through a person's client. A model
+  name that does not exist made every draft fail after its research was
+  bought.
+- `account_members`: trigger `account_members_guard_own_row` refuses a
+  signed-in user deleting their own membership or changing its `user_id` or
+  `account_id`. With it gone, `ensureAccount` made them a fresh never-trialed
+  account on the next page load. The server and cascades (no `auth.uid()`)
+  pass.
+
+**Apply AFTER its code is live**, like 097 and 099. Code from before it
+inserts workspaces through the person's own client; with 100 applied, "Add
+workspace" and the Search Console import fail for every account. The new code
+writes the row with the service role and works with or without 100. Merge,
+confirm the Vercel deploy of that commit is live, then apply.
+
+Until it is applied, the holes stay open, and the app's counts still bound
+most of them: a draft attempt is claimed either way, and setup runs are
+counted either way (but a deleted site takes its runs with it).
+
+**A column added to `workspaces` later is not writable by a client token
+until it is granted.** Its migration must say
+`grant update (<column>) on public.workspaces to authenticated;` unless only
+the server writes it. A missing grant fails loudly (`permission denied`).
+
+Post-flight (expect `t`, `t`, `f`, `f`, `t`, `t`):
+
+```sql
+select (select is_nullable from information_schema.columns
+         where table_schema = 'public' and table_name = 'onboarding_runs' and column_name = 'workspace_id') = 'YES',
+       (select confdeltype from pg_constraint where conname = 'onboarding_runs_workspace_id_fkey') = 'n',
+       has_table_privilege('authenticated', 'public.workspaces', 'INSERT'),
+       has_column_privilege('authenticated', 'public.workspaces', 'ai_model', 'UPDATE'),
+       has_column_privilege('authenticated', 'public.workspaces', 'name', 'UPDATE'),
+       exists (select 1 from pg_trigger where tgname = 'account_members_guard_own_row');
+```
+
+Verified 2026-09-25 on an isolated copy of the local schema, as
+`authenticated` with an owner's JWT claims: before, `insert into workspaces`,
+`update workspaces set ai_model = ...` and `delete from account_members` of
+the caller's own row all succeeded; after, the first two are `permission
+denied` and the third is refused by the trigger, while `update workspaces set
+name = ...`, deleting another member and deleting a site all still work, and
+the deleted site's run is kept with `workspace_id` null. Applied twice: the
+second run is a no-op.
+
+Rollback:
+`drop trigger account_members_guard_own_row on public.account_members; drop function public.account_members_guard_own_row();`
+`grant insert, update on table public.workspaces to authenticated;`
+and, only once no run has a null `workspace_id`
+(`delete from onboarding_runs where workspace_id is null;` loses the count),
+`alter table public.onboarding_runs alter column workspace_id set not null;`
+with the foreign key recreated `on delete cascade`.
 
 ## 095 — site pages extract
 

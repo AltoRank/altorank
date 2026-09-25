@@ -28,13 +28,27 @@ vi.mock("@/lib/domain/reachable", () => ({
   checkDomainReachable: async (d: string) => ({ ok: true, verdict: "live", url: `https://${d}` }),
 }));
 
+/** The caller's own membership, which the server-side insert checks (lib/workspaces/insert.ts). */
+let membership: { role: string; workspace_ids: string[] | null } | null = { role: "owner", workspace_ids: null };
+
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: { getUser: async () => ({ data: { user: { id: "u1", email: "a@b.co", user_metadata: {} } } }) },
+    from: (table: string) =>
+      table === "account_members"
+        ? { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: membership, error: null }) }) }) }) }
+        : {
+            select: () => ({
+              eq: () => ({ ilike: () => ({ maybeSingle: async () => ({ data: dup }) }) }),
+            }),
+            insert: () => {
+              throw new Error("a site is inserted by the server, never through the person's client");
+            },
+          },
+  }),
+  // The site itself is written with the service role (migration 100).
+  createServiceClient: () => ({
     from: () => ({
-      select: () => ({
-        eq: () => ({ ilike: () => ({ maybeSingle: async () => ({ data: dup }) }) }),
-      }),
       insert: (row: unknown) => {
         inserted(row);
         return { select: () => ({ single: async () => insertResult }) };
@@ -75,6 +89,7 @@ async function create(fields: Record<string, string>) {
 
 beforeEach(() => {
   dup = null;
+  membership = { role: "owner", workspace_ids: null };
   insertResult = { data: { id: "ws-new" }, error: null };
   inserted.mockClear();
   allowance.mockClear();
@@ -164,5 +179,20 @@ describe("createWorkspace, who may", () => {
   it("lets an admin add one", async () => {
     requireAuth.mockResolvedValue({ accountId: "account-1", role: "admin", user: { id: "u3", email: "a2@b.co" } });
     await expect(create({ name: "Acme", domain: "acme.com" })).resolves.toMatchObject({ ok: true });
+  });
+
+  it("refuses a member scoped to some of the account's sites, as the insert policy did", async () => {
+    // The row is written with the service role now, so the policy's check -
+    // full access to the account - is made by the server before it writes.
+    membership = { role: "admin", workspace_ids: ["ws-a"] };
+    const out = await create({ name: "Acme", domain: "acme.com" });
+    expect(out).toMatchObject({ ok: false });
+    expect(inserted).not.toHaveBeenCalled();
+  });
+
+  it("refuses a caller who is not a member of the account it would write to", async () => {
+    membership = null;
+    expect(await create({ name: "Acme", domain: "acme.com" })).toMatchObject({ ok: false });
+    expect(inserted).not.toHaveBeenCalled();
   });
 });

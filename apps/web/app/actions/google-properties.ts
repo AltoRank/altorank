@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { insertWorkspaceAsServer } from "@/lib/workspaces/insert";
 import { getValidAccessToken } from "@/lib/google/oauth";
 import { listGSCSites, type GSCSite } from "@/lib/google/gsc";
 import { listGA4Properties, matchGA4Property } from "@/lib/google/ga4";
@@ -143,22 +144,19 @@ export async function createWorkspacesFromProperties(siteUrls: string[]): Promis
 
   const createdIds: string[] = [];
   for (const p of chosen) {
-    const { data: ws, error } = await supabase
-      .from("workspaces")
-      .insert({
-        account_id: accountId,
-        name: p.domain,
-        domain: p.domain,
-        initials: p.domain.slice(0, 2).toUpperCase(),
-        color: "av-c1",
-        indexnow_key: generateIndexNowKey(),
-        auto_generate: true,
-        auto_generate_weekly_limit: PAID_DEFAULT_PACE,
-      })
-      .select("id")
-      .single();
-    if (error || !ws) continue;
-    createdIds.push(ws.id as string);
+    // By the server, after the allowance above (lib/workspaces/insert.ts).
+    const inserted = await insertWorkspaceAsServer(supabase, user.id, accountId, {
+      name: p.domain,
+      domain: p.domain,
+      initials: p.domain.slice(0, 2).toUpperCase(),
+      color: "av-c1",
+      indexnow_key: generateIndexNowKey(),
+      auto_generate: true,
+      auto_generate_weekly_limit: PAID_DEFAULT_PACE,
+    });
+    if (!inserted.ok) continue;
+    const ws = { id: inserted.id };
+    createdIds.push(ws.id);
 
     if (encrypted) {
       const ga4 = matchGA4Property(ga4Properties, p.domain);
