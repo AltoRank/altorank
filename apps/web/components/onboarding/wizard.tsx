@@ -45,7 +45,8 @@ import { saveAttribution } from "@/app/actions/attribution";
 import { AttributionPicker, EMPTY_ATTRIBUTION, attributionComplete, type AttributionDraft } from "@/components/onboarding/attribution-picker";
 import type { SiteDetails } from "@/lib/onboarding/output-settings";
 import type { OnboardingHeld } from "@/lib/onboarding/events";
-import { EMPTY_PROFILE, type BusinessProfile, type InferenceReason } from "@/lib/onboarding/business-profile";
+import { EMPTY_PROFILE, type BusinessProfile } from "@/lib/onboarding/profile-shape";
+import type { InferenceReason } from "@/lib/onboarding/business-profile";
 import type { SiteDiscovery } from "@/lib/onboarding/site-discovery";
 // The forms themselves live in components/settings: every wizard screen is
 // also a permanent Settings tab, and one copy of each form keeps them in step.

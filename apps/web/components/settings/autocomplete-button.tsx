@@ -4,7 +4,7 @@ import { useTransition } from "react";
 import { toast } from "sonner";
 import { Button, Icons } from "@/components/ui";
 import { proposeProfile } from "@/app/actions/onboarding-wizard";
-import { fillEmptyProfile, type BusinessProfile, type ProfileSection } from "@/lib/onboarding/business-profile";
+import { fillEmptyProfile, type BusinessProfile, type ProfileSection } from "@/lib/onboarding/profile-shape";
 
 const FIELD_LABEL: Record<keyof BusinessProfile, string> = {
   name: "name",

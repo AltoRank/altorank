@@ -17,7 +17,7 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { ConnectPrompt } from "@/components/ui/connect-prompt";
 import { ConnectCmsDialog } from "@/components/dashboard/connect-cms-dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { PLATFORM_HINT, PLATFORM_LABEL, PLATFORM_CONNECT_TYPE, platformState } from "@/lib/cms/detect";
+import { PLATFORM_HINT, PLATFORM_LABEL, PLATFORM_CONNECT_TYPE, platformState } from "@/lib/cms/platforms";
 import { updateArticle } from "@/app/actions/articles";
 import { publishArticle, approveArticle, requestChanges, markPublishedManually, retryPublish, holdArticle, releaseHold } from "@/app/actions/publish";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
