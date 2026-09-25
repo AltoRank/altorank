@@ -4,6 +4,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { entitledToScheduledWork, getQuota } from "@/lib/billing/quota";
 import { analyzeWorkspace } from "@/lib/refresh/detect";
 import { runRefreshTask } from "@/lib/refresh/rewrite";
+import { readArticlesWhole } from "@/lib/articles/body-read";
 import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
 import { notifyRefreshReady } from "@/lib/email/lifecycle";
 import { describeSendOutcome } from "@/lib/email/send-once";
@@ -120,7 +121,7 @@ async function run(request: Request) {
     try {
       const last = ws.refresh_last_analyzed_at ? Date.parse(ws.refresh_last_analyzed_at as string) : 0;
       if (Date.now() - last > ANALYSIS_STALE_MS) {
-        const a = await analyzeWorkspace(supabase, workspaceId, { now });
+        const a = await analyzeWorkspace(supabase, workspaceId, { now, readBodies: readArticlesWhole });
         out.analysed =
           a.reason === "gsc_not_connected"
             ? "skipped: Search Console is not connected"

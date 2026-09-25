@@ -1,14 +1,18 @@
 /**
  * The body lock as the dashboard's reads apply it.
  *
- * The dashboard layout redirects an account before its trial to /onboarding,
- * but a layout is not re-rendered on client navigation, so the article reads
- * the pages make (lib/queries/articles.ts) strip the text themselves. These
- * tests hold the reads to that: stripped for a gated account, untouched for a
- * paying one, decided per account when a person belongs to both.
+ * Migration 097 refuses the body columns to every client token, so the reads
+ * ask the person's own client for ids (RLS decides which rows), read the rows
+ * whole on the server, and withhold the text from every row whose account is
+ * gated for this person. The fake below holds the same privileges: its
+ * cookie client refuses a select that names the text, and only the service
+ * client answers one. These tests hold the reads to that: stripped for a
+ * gated account, untouched for a paying one, decided per account when a
+ * person belongs to both, and never asked of the person's client.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Quota } from "@/lib/billing/quota";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial";
 
 type Row = Record<string, unknown>;
 
@@ -18,28 +22,65 @@ let articles: Row[];
 let quotas: Record<string, Quota>;
 let simulation: { gate?: boolean } | null;
 let workspaceError: { message: string } | null;
+/** Every select list the person's own client was asked for, on articles. */
+let cookieSelects: string[];
 
-/** Enough of PostgREST for these reads: eq, in, order, limit, single. */
-function client() {
+const BODY = /\*|\b(content|meta_description|fact_checks|link_checks|seo_checks|aeo_checks)\b/;
+
+/**
+ * Enough of PostgREST for these reads: eq, in, order, limit, single. `role`
+ * is whose token it holds: the person's (`authenticated`), or the service
+ * role. The person sees the workspaces they belong to - all of `workspaces`
+ * here - and the articles in them.
+ */
+function client(role: "authenticated" | "service" = "authenticated") {
   const from = (table: string) => {
     let rows = (table === "workspaces" ? workspaces : articles).slice();
+    if (role === "authenticated" && table === "articles") {
+      const mine = new Set(workspaces.map((w) => w.id));
+      rows = rows.filter((r) => mine.has(r.workspace_id));
+    }
+    let denied = false;
+    const answer = () => ({
+      data: denied ? null : rows,
+      error: denied
+        ? { message: "permission denied for table articles" }
+        : table === "workspaces"
+          ? workspaceError
+          : null,
+    });
     const q = {
-      select: () => q,
+      select: (cols: string = "*") => {
+        if (table === "articles" && role === "authenticated") {
+          cookieSelects.push(cols);
+          if (BODY.test(cols)) denied = true;
+        }
+        return q;
+      },
       eq: (col: string, v: unknown) => ((rows = rows.filter((r) => r[col] === v)), q),
       in: (col: string, vs: unknown[]) => ((rows = rows.filter((r) => vs.includes(r[col]))), q),
       order: () => q,
       limit: () => q,
-      single: async () => (rows[0] ? { data: rows[0], error: null } : { data: null, error: { message: "none" } }),
-      maybeSingle: async () => ({ data: rows[0] ?? null, error: table === "workspaces" ? workspaceError : null }),
-      then: (ok: (v: unknown) => unknown) =>
-        Promise.resolve({ data: rows, error: table === "workspaces" ? workspaceError : null }).then(ok),
+      single: async () => {
+        const a = answer();
+        if (a.error) return { data: null, error: a.error };
+        return rows[0] ? { data: rows[0], error: null } : { data: null, error: { message: "none" } };
+      },
+      maybeSingle: async () => {
+        const a = answer();
+        return { data: a.error ? null : (rows[0] ?? null), error: a.error };
+      },
+      then: (ok: (v: unknown) => unknown) => Promise.resolve(answer()).then(ok),
     };
     return q;
   };
   return { from, auth: { getUser: async () => ({ data: { user } }) } };
 }
 
-vi.mock("@/lib/supabase/server", () => ({ createClient: async () => client() }));
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: async () => client("authenticated"),
+  createServiceClient: () => client("service"),
+}));
 vi.mock("@/lib/queries/quota", () => ({ getRequestQuota: async (accountId: string) => quotas[accountId] }));
 vi.mock("@/lib/billing/quota", () => ({ getQuota: async (_s: unknown, accountId: string) => quotas[accountId] }));
 vi.mock("@/lib/dev/simulation", () => ({ getSimulation: async () => simulation }));
@@ -81,6 +122,7 @@ beforeEach(() => {
   quotas = { "acc-gated": GATED, "acc-paying": PAYING };
   simulation = null;
   workspaceError = null;
+  cookieSelects = [];
 });
 
 describe("withoutBody", () => {
@@ -152,23 +194,84 @@ describe("the dashboard's article reads", () => {
     expect((await getArticle("a2"))?.content).toBeNull();
   });
 
+  it("never asks the person's own client for the text", async () => {
+    const { getArticle, getArticles, getRecentArticles } = await import("@/lib/queries/articles");
+    await getArticle("a2");
+    await getArticles();
+    await getRecentArticles(6);
+    expect(cookieSelects.length).toBeGreaterThan(0);
+    expect(cookieSelects.filter((c) => BODY.test(c))).toEqual([]);
+  });
+
+  it("keeps the order the person's client asked for", async () => {
+    articles = [article("a3", "ws-paying"), article("a1", "ws-gated"), article("a2", "ws-paying")];
+    const { getArticles } = await import("@/lib/queries/articles");
+    expect((await getArticles()).map((r) => r.id)).toEqual(["a3", "a1", "a2"]);
+  });
+
+  it("does not widen what the person's client returned", async () => {
+    // A site the person is not a member of: RLS hides its rows from their
+    // client, and the server read is only ever of ids that client returned.
+    articles.push(article("a9", "ws-other"));
+    const { getArticles } = await import("@/lib/queries/articles");
+    expect((await getArticles()).map((r) => r.id)).not.toContain("a9");
+  });
+
   it("with no session nothing readable leaves", async () => {
     user = null;
-    const { lockArticleBodies } = await import("@/lib/billing/body-lock");
-    const rows = await lockArticleBodies([article("a2", "ws-paying")]);
+    const { articlesForSession } = await import("@/lib/billing/body-lock");
+    const rows = await articlesForSession([{ id: "a2" }]);
+    expect(rows).toHaveLength(1);
     expect(JSON.stringify(rows)).not.toContain(SECRET);
   });
 
   it("a row whose site cannot be placed is treated as locked", async () => {
-    const { lockArticleBodies } = await import("@/lib/billing/body-lock");
-    const rows = await lockArticleBodies([article("a9", "ws-unknown")]);
+    // The site is not one the person's client can read, so its account is unknown.
+    articles.push(article("a9", "ws-unknown"));
+    const { articlesForSession } = await import("@/lib/billing/body-lock");
+    const rows = await articlesForSession<Row>([{ id: "a9" }]);
     expect(rows[0].content).toBeNull();
   });
 
   it("a failed read of the rows' sites refuses rather than shows", async () => {
     workspaceError = { message: "timeout" };
-    const { lockArticleBodies } = await import("@/lib/billing/body-lock");
-    await expect(lockArticleBodies([article("a2", "ws-paying")])).rejects.toThrow(/could not read/);
+    const { articlesForSession } = await import("@/lib/billing/body-lock");
+    await expect(articlesForSession([{ id: "a2" }])).rejects.toThrow(/could not read/);
+  });
+});
+
+describe("articleBodyForSession", () => {
+  it("refuses an account before its trial, with the one sentence", async () => {
+    const { articleBodyForSession } = await import("@/lib/billing/body-lock");
+    await expect(articleBodyForSession("a1")).rejects.toThrow(BODY_LOCKED_MESSAGE);
+  });
+
+  it("hands a paying account the columns asked for", async () => {
+    const { articleBodyForSession } = await import("@/lib/billing/body-lock");
+    const row = await articleBodyForSession<Row>("a2", "content, research");
+    expect(row.content).toEqual(body);
+    expect(cookieSelects.filter((c) => BODY.test(c))).toEqual([]);
+  });
+
+  it("is not found for an article the person's client cannot see", async () => {
+    articles.push(article("a9", "ws-other"));
+    const { articleBodyForSession } = await import("@/lib/billing/body-lock");
+    await expect(articleBodyForSession("a9")).rejects.toThrow("Article not found");
+  });
+});
+
+describe("readVisibleArticle", () => {
+  it("reads the row whole on the server once the caller's client can see it", async () => {
+    const { readVisibleArticle } = await import("@/lib/articles/body-read");
+    const row = await readVisibleArticle<Row>(client("authenticated") as never, "a2");
+    expect(row?.content).toEqual(body);
+    expect(cookieSelects).toEqual(["id"]);
+  });
+
+  it("is null when the caller's client cannot see it, and reads nothing", async () => {
+    articles.push(article("a9", "ws-other"));
+    const { readVisibleArticle } = await import("@/lib/articles/body-read");
+    expect(await readVisibleArticle(client("authenticated") as never, "a9")).toBeNull();
   });
 });
 

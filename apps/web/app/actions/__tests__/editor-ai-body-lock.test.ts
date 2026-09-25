@@ -31,7 +31,15 @@ function client() {
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => client(), createServiceClient: () => client() }));
 vi.mock("@/lib/auth/require-auth", () => ({ requireAuth: async () => ({ user: { id: "u1", email: "owner@acme-agency.example" }, accountId: "acc1", role: "owner" }) }));
-vi.mock("@/lib/billing/body-lock", () => ({ sessionBodyLockedForWorkspace: async () => locked }));
+// The gate itself, and the server read behind it, are tested in
+// lib/billing/__tests__/body-lock.test.ts; here each answer is stubbed.
+vi.mock("@/lib/billing/body-lock", () => ({
+  sessionBodyLockedForWorkspace: async () => locked,
+  articleBodyForSession: async () => {
+    if (locked) throw new Error(BODY_LOCKED_MESSAGE);
+    return { id: ARTICLE, workspace_id: "ws1", title: "Rehber", keyword: "ajans", slug: "rehber", meta_description: META, featured_image_url: null, published_at: null };
+  },
+}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 beforeEach(() => {

@@ -253,7 +253,9 @@ describe.skipIf(!LIVE)("tenant isolation, as two signed-in accounts", () => {
     ] as const;
 
     it.each(perWorkspace)("%s: naming B's workspace returns nothing", async (table) => {
-      const { data, error } = await fx.as.aOwner.from(table).select("*").eq("workspace_id", fx.b1);
+      // `workspace_id`, not `*`: `*` on articles names the body columns, which
+      // no signed-in client may select at all (migration 097, asserted below).
+      const { data, error } = await fx.as.aOwner.from(table).select("workspace_id").eq("workspace_id", fx.b1);
       expect(error).toBeNull();
       expect(data).toEqual([]);
     });
@@ -305,6 +307,65 @@ describe.skipIf(!LIVE)("tenant isolation, as two signed-in accounts", () => {
         .from("account_members")
         .insert({ account_id: fx.accountB, user_id: me.user!.id, role: "owner" });
       expect(error).not.toBeNull();
+    });
+  });
+
+  // --- The article text, even in your own site (migration 097) ---------------
+
+  describe("no signed-in client reads an article's text, even its own", () => {
+    // The trial gate withholds the text from an account that has not started
+    // its trial, and the database is what makes that hold: before 097 any
+    // member could ask /rest/v1/articles?select=content and read the draft
+    // the app refused to show (2026-09-22). The text is read on the server
+    // only (lib/articles/body-read.ts), so here it is refused to everyone
+    // holding a client token - an owner reading their own site included.
+    const BODY = ["content", "meta_description", "fact_checks", "link_checks", "seo_checks", "aeo_checks"] as const;
+    const DENIED = /permission denied/;
+
+    it.each(BODY)("%s: refused to the owner, on the owner's own article", async (column) => {
+      const { data, error } = await fx.as.aOwner.from("articles").select(`id, ${column}`).eq("workspace_id", fx.a1);
+      expect(data).toBeNull();
+      expect(error?.message).toMatch(DENIED);
+    });
+
+    it("`*` is refused, since it names the text", async () => {
+      const { data, error } = await fx.as.aEditor.from("articles").select("*").eq("workspace_id", fx.a1);
+      expect(data).toBeNull();
+      expect(error?.message).toMatch(DENIED);
+    });
+
+    it("a filter on the text is refused, so it cannot be probed a row at a time", async () => {
+      const { error } = await fx.as.aOwner.from("articles").select("id").not("content", "is", null);
+      expect(error?.message).toMatch(DENIED);
+    });
+
+    it("a write cannot hand the text back", async () => {
+      const { error } = await fx.as.aOwner
+        .from("articles")
+        .update({ title: "A1 draft" })
+        .eq("workspace_id", fx.a1)
+        .select("content");
+      expect(error?.message).toMatch(DENIED);
+    });
+
+    it("the rest of the row still reads, and the editor's save still writes", async () => {
+      const { data, error } = await fx.as.aOwner
+        .from("articles")
+        .select("id, title, word_count, status")
+        .eq("workspace_id", fx.a1);
+      expect(error).toBeNull();
+      expect((data ?? []).map((a) => a.title)).toEqual(["A1 draft"]);
+      const { error: saveError } = await fx.as.aOwner
+        .from("articles")
+        .update({ content: { type: "doc", content: [] }, title: "A1 draft" })
+        .eq("workspace_id", fx.a1);
+      expect(saveError).toBeNull();
+    });
+
+    it("the service role still reads it", async () => {
+      const { data, error } = await fx.admin.from("articles").select("content").eq("workspace_id", fx.a1).single();
+      expect(error).toBeNull();
+      expect(data).toHaveProperty("content");
     });
   });
 

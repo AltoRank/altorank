@@ -6,7 +6,23 @@
  * matters is the negative one - nothing in it is the text - so it is asserted
  * on the serialised card, the same bytes that reach the page.
  */
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// The text the outline is pulled from is read on the server, never through
+// the caller's client (migration 097; lib/articles/body-read.ts). This is
+// that server read, answering from the same rows the fake client holds.
+let bodies: Record<string, unknown> = {};
+const serverReads: string[][] = [];
+vi.mock("@/lib/articles/body-read", () => ({
+  readArticlesWhole: async (ids: string[], columns: string) => {
+    serverReads.push([...ids, columns]);
+    return ids.filter((id) => id in bodies).map((id) => ({ id, content: bodies[id] }));
+  },
+}));
+beforeEach(() => {
+  serverReads.length = 0;
+});
+
 import {
   articleOutline,
   contentHtml,
@@ -92,26 +108,46 @@ describe("toFirstArticleCard", () => {
   });
 });
 
-/** A client for the three reads loadFirstArticle makes. */
-function fakeClient(opts: { written?: Record<string, unknown>[]; drafting?: number; entry?: { scheduled_date: string } | null; error?: string }) {
+/**
+ * A client for the three reads loadFirstArticle makes, holding a client
+ * token's privileges since migration 097: a select or a filter that names the
+ * text is refused, as PostgREST refuses it.
+ */
+function fakeClient(opts: {
+  written?: Record<string, unknown>[];
+  drafting?: number;
+  entry?: { scheduled_date: string } | null;
+  error?: string;
+  draftingError?: string;
+}) {
+  bodies = Object.fromEntries((opts.written ?? []).map((r) => [r.id as string, r.content]));
   return {
     from(table: string) {
       const filters: Record<string, unknown> = {};
+      let denied = false;
       const q: Record<string, unknown> = {};
       const chain = () => q;
+      const deny = (col: string) => {
+        if (table === "articles" && /\b(content|meta_description)\b/.test(col)) denied = true;
+      };
       Object.assign(q, {
-        select: (_c: string, o?: { head?: boolean }) => ((filters.head = o?.head ?? false), q),
+        select: (c: string, o?: { head?: boolean }) => (deny(c), (filters.head = o?.head ?? false), q),
         eq: (col: string, v: unknown) => ((filters[col] = v), q),
         in: chain,
-        not: chain,
+        not: (col: string) => (deny(col), q),
         gt: chain,
         order: chain,
         limit: chain,
         maybeSingle: async () => ({ data: table === "calendar_entries" ? opts.entry ?? null : null, error: null }),
         then: (ok: (v: unknown) => unknown) => {
-          if (table === "articles" && filters.status === "drafting") return Promise.resolve({ count: opts.drafting ?? 0, error: null }).then(ok);
+          if (denied) return Promise.resolve({ data: null, count: null, error: { message: "permission denied for table articles" } }).then(ok);
+          if (table === "articles" && filters.status === "drafting") {
+            if (opts.draftingError) return Promise.resolve({ count: null, error: { message: opts.draftingError } }).then(ok);
+            return Promise.resolve({ count: opts.drafting ?? 0, error: null }).then(ok);
+          }
           if (opts.error) return Promise.resolve({ data: null, count: null, error: { message: opts.error } }).then(ok);
-          const rows = opts.written ?? [];
+          // What the client may see: the rows without their text.
+          const rows = (opts.written ?? []).map(({ content: _content, ...rest }) => (void _content, rest));
           return Promise.resolve({ data: rows.slice(0, 1), count: rows.length, error: null }).then(ok);
         },
       });
@@ -143,6 +179,23 @@ describe("loadFirstArticle", () => {
 
   it("a failed read is an error, never 'no article'", async () => {
     await expect(loadFirstArticle(fakeClient({ error: "timeout" }), "ws", null)).rejects.toThrow(/could not read/);
+  });
+
+  // Read as "nothing is being written", a failure here would offer the paid
+  // re-run while the article was being written.
+  it("a failed read of what is being written is an error too, never 'nothing'", async () => {
+    await expect(loadFirstArticle(fakeClient({ written: [], draftingError: "timeout" }), "ws", null)).rejects.toThrow(
+      /could not tell whether an article is being written/,
+    );
+  });
+
+  it("reads the text on the server, for the one article, and never through the caller's client", async () => {
+    const fact = await loadFirstArticle(fakeClient({ written, entry: null }), "ws", "acme-agency.example");
+    expect(fact.article?.outline).toEqual(["Neden önemli", "Nasıl başlanır"]);
+    expect(serverReads).toEqual([["a1", "content"]]);
+    const bytes = JSON.stringify(fact);
+    expect(bytes).not.toContain(INTRO);
+    expect(bytes).not.toContain(PARAGRAPH);
   });
 });
 

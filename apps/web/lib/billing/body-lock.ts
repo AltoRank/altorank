@@ -3,21 +3,29 @@
 // ---------------------------------------------------------------------------
 //
 // lib/billing/trial.ts decides the gate from a quota and an address. This is
-// the half that fetches them, for the three kinds of caller that need the
-// answer:
+// the half that fetches them, for the kinds of caller that need the answer:
 //
 //   a signed-in request   sessionTrialGate: quota cached per request, so the
 //                         dashboard layout and the page under it share one
 //                         computation
 //   anything else         accountTrialGate: the agent API (a key, no session),
 //                         the onboarding worker's mail, a cron
-//   a list of rows        lockArticleBodies: strips the body from every row
-//                         whose account is gated
+//   a page's rows         articlesForSession: reads the rows the caller's
+//                         client returned, whole, and withholds the body from
+//                         every row whose account is gated
+//   an action on a body   articleBodyForSession: the one article's text, or
+//                         the refusal
 //
-// The lock sits here, under the pages and routes, because a redirect in a
-// layout is not a lock. Next renders a layout and its page separately and
-// skips an unchanged layout on client navigation, so the page's own read is
-// the only place a gated account can be refused every time.
+// The database is what makes this a lock. Migration 097 withholds the body
+// columns from every client token, so the only way a body reaches a signed-in
+// person is through a server read here, after the gate has answered
+// (lib/articles/body-read.ts). Before 097 the app stripped the body after
+// reading it through the person's own client, and the same person could ask
+// PostgREST for it directly.
+//
+// The dashboard layout's redirect is the door, not the lock: Next skips an
+// unchanged layout on client navigation, so the page's own read is where a
+// gated account is refused every time.
 
 import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -25,25 +33,10 @@ import { getQuota } from "@/lib/billing/quota";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { getSimulation } from "@/lib/dev/simulation";
 import { createClient } from "@/lib/supabase/server";
-import { trialGateState, type TrialGateState } from "@/lib/billing/trial";
+import { BODY_LOCKED_MESSAGE, trialGateState, type TrialGateState } from "@/lib/billing/trial";
+import { ARTICLE_BODY_COLUMNS, readArticlesWhole } from "@/lib/articles/body-read";
 
-/**
- * Every article column that carries the article's words or quotes them.
- *
- * `content` is the text itself. `meta_description` is written by the model
- * from it. `fact_checks` stores each checked sentence whole, `link_checks`
- * and `seo_checks`/`aeo_checks` carry anchors and notes lifted from it. What
- * stays is what the gate card is allowed to show: title, keyword, length,
- * status, scores.
- */
-export const ARTICLE_BODY_COLUMNS = [
-  "content",
-  "meta_description",
-  "fact_checks",
-  "link_checks",
-  "seo_checks",
-  "aeo_checks",
-] as const;
+export { ARTICLE_BODY_COLUMNS };
 
 /** The row with every body column nulled. Absent columns stay absent. */
 export function withoutBody<T extends object>(row: T): T {
@@ -100,45 +93,96 @@ const sessionUser = cache(async function sessionUser() {
 });
 
 /**
- * Article rows as a signed-in page may render them: bodies stripped from
- * every row whose account is gated for this person.
- *
- * Decided per account, from each row's own workspace, because a person can
- * belong to a paying account and a gated one at once and the rows of one say
- * nothing about the other. The workspace-to-account map is read through the
- * caller's client, so RLS answers it.
+ * A row as the caller's own client returned it. The id is the permission:
+ * only the caller's client may produce it, so that RLS decides which rows.
  */
-export async function lockArticleBodies<T extends { workspace_id?: string | null }>(rows: T[]): Promise<T[]> {
-  if (!rows.length) return rows;
-  const user = await sessionUser();
-  // No session means RLS returned these rows to nobody in particular; there
-  // is no account to ask about, and nothing readable should leave.
-  if (!user) return rows.map((r) => withoutBody(r));
+export type VisibleArticle = { id: string };
 
-  const workspaceIds = [...new Set(rows.map((r) => r.workspace_id).filter((id): id is string => Boolean(id)))];
+/**
+ * Which of these sites' accounts withhold the body from the signed-in person.
+ *
+ * Decided per account, because a person can belong to a paying account and a
+ * gated one at once and the rows of one say nothing about the other. The
+ * site-to-account map is read through the caller's client, so RLS answers it.
+ * A site that cannot be placed, and every site when nobody is signed in,
+ * counts as locked: not knowing whose rows these are is not permission to
+ * show them.
+ */
+async function lockedSites(workspaceIds: string[]): Promise<(workspaceId: string | null | undefined) => boolean> {
+  const user = await sessionUser();
+  if (!user) return () => true;
+
+  const ids = [...new Set(workspaceIds.filter(Boolean))];
+  if (!ids.length) return () => true;
   const supabase = await createClient();
-  const { data: workspaces, error } = await supabase.from("workspaces").select("id, account_id").in("id", workspaceIds);
-  // Not knowing whose rows these are is not permission to show them.
+  const { data: workspaces, error } = await supabase.from("workspaces").select("id, account_id").in("id", ids);
   if (error) throw new Error(`article lock: could not read the rows' sites (${error.message})`);
   const accountOf = new Map((workspaces ?? []).map((w) => [w.id as string, w.account_id as string]));
 
-  const locked = new Map<string, boolean>();
+  const lockedAccount = new Map<string, boolean>();
   for (const accountId of new Set(accountOf.values())) {
-    locked.set(accountId, (await sessionTrialGate(accountId, user.email ?? null)) === "gated");
+    lockedAccount.set(accountId, (await sessionTrialGate(accountId, user.email ?? null)) === "gated");
   }
-  return rows.map((r) => {
-    const accountId = r.workspace_id ? accountOf.get(r.workspace_id) : undefined;
-    // A row whose site could not be placed is treated as locked, for the
-    // same reason as the read error above.
-    return accountId === undefined || locked.get(accountId) ? withoutBody(r) : r;
-  });
+  return (workspaceId) => {
+    const accountId = workspaceId ? accountOf.get(workspaceId) : undefined;
+    return accountId === undefined || lockedAccount.get(accountId) !== false;
+  };
+}
+
+/**
+ * Article rows as a signed-in page may render them.
+ *
+ * `visible` is what the caller's own client returned, in the order the page
+ * wants, so RLS has already decided which rows. The client selects ids and
+ * not `*`: `*` names the body columns, which a client token may no longer
+ * read (migration 097). The rows are read whole here with the service role,
+ * and the body is withheld from every row whose account is gated for this
+ * person.
+ */
+export async function articlesForSession<T extends object = Record<string, unknown>>(
+  visible: VisibleArticle[],
+): Promise<T[]> {
+  if (!visible.length) return [];
+  const rows = await readArticlesWhole<T & { workspace_id?: string | null }>(visible.map((r) => r.id));
+  const locked = await lockedSites(rows.map((r) => r.workspace_id ?? ""));
+  return rows.map((r) => (locked(r.workspace_id) ? withoutBody(r) : r));
 }
 
 /** The same for one row. Null in, null out. */
-export async function lockArticleBody<T extends { workspace_id?: string | null }>(row: T | null): Promise<T | null> {
-  if (!row) return row;
-  const [out] = await lockArticleBodies([row]);
+export async function articleForSession<T extends object = Record<string, unknown>>(
+  visible: VisibleArticle | null,
+): Promise<T | null> {
+  if (!visible) return null;
+  const [out] = await articlesForSession<T>([visible]);
   return out ?? null;
+}
+
+/**
+ * One article's text for the signed-in caller, for an action that works on
+ * it: score it, rewrite a field, fact-check it before approval, read a page
+ * to brief a refresh.
+ *
+ * Throws "Article not found" when the caller's client cannot see it, and
+ * BODY_LOCKED_MESSAGE when its account is gated for them. `columns` is a
+ * PostgREST select list; the row is read with the service role only after
+ * both answers.
+ */
+export async function articleBodyForSession<T = Record<string, unknown>>(
+  articleId: string,
+  columns: string = "*",
+): Promise<T> {
+  const supabase = await createClient();
+  const { data: seen, error } = await supabase
+    .from("articles")
+    .select("id, workspace_id")
+    .eq("id", articleId)
+    .maybeSingle();
+  if (error) throw new Error(`article read: could not check the article (${error.message})`);
+  if (!seen) throw new Error("Article not found");
+  if (await sessionBodyLockedForWorkspace(seen.workspace_id as string)) throw new Error(BODY_LOCKED_MESSAGE);
+  const [row] = await readArticlesWhole<T>([articleId], columns);
+  if (!row) throw new Error("Article not found");
+  return row;
 }
 
 /**

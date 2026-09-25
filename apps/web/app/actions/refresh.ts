@@ -7,6 +7,7 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { analyzeWorkspace, headingsOf, type AnalyzeResult } from "@/lib/refresh/detect";
 import { writeBrief } from "@/lib/refresh/brief";
 import { loadPageBody } from "@/lib/refresh/rewrite";
+import { readArticlesWhole } from "@/lib/articles/body-read";
 import { pushExecution, exportExecution, type PushResult } from "@/lib/refresh/push";
 import { recordSpend, anthropicCost } from "@/lib/billing/spend";
 import { needsPlanToShip, SCHEDULED_REWRITES_NEED_PLAN } from "@/lib/billing/quota";
@@ -29,7 +30,7 @@ const IMPROVEMENTS = "/improvements";
 export async function analyzeNow(workspaceId: string): Promise<AnalyzeResult> {
   await requireAuth();
   const supabase = await createClient();
-  const result = await analyzeWorkspace(supabase, workspaceId);
+  const result = await analyzeWorkspace(supabase, workspaceId, { readBodies: readArticlesWhole });
   revalidatePath(IMPROVEMENTS);
   return result;
 }

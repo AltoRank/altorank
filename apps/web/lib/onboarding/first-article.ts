@@ -25,6 +25,7 @@ import { tiptapToHtml } from "@/lib/cms/html";
 import { decodeEntities } from "@/lib/audit/html-utils";
 import { canonicalUrl } from "@/lib/ai/inline-citations";
 import { extractLinks, isCitationLink } from "@/lib/seo/links";
+import { readArticlesWhole } from "@/lib/articles/body-read";
 
 export type FirstArticleVerdict = "clean" | "review" | "high_risk";
 
@@ -122,8 +123,13 @@ export function toFirstArticleCard(
 
 /**
  * The workspace's first written article, oldest first: for an account that
- * has not started its trial that is the one setup wrote. Reads through the
- * caller's client, so RLS answers whether they may see it.
+ * has not started its trial that is the one setup wrote.
+ *
+ * Which row is asked through the caller's client, so RLS answers whether
+ * they may see it. The text the outline is pulled from is read on the server
+ * (lib/articles/body-read.ts): no client token can select it since migration
+ * 097, and it goes no further than this function - the card it returns has
+ * no field a body could travel in.
  */
 export async function loadFirstArticle(
   supabase: SupabaseClient,
@@ -133,10 +139,11 @@ export async function loadFirstArticle(
   const [written, writing] = await Promise.all([
     supabase
       .from("articles")
-      .select("id, title, keyword, word_count, fact_check_verdict, content", { count: "exact" })
+      .select("id, title, keyword, word_count, fact_check_verdict", { count: "exact" })
       .eq("workspace_id", workspaceId)
       .in("status", WRITTEN)
-      .not("content", "is", null)
+      // A written article has words; the text itself is not a column this
+      // client may filter on.
       .gt("word_count", 0)
       .order("created_at", { ascending: true })
       .limit(1),
@@ -149,8 +156,13 @@ export async function loadFirstArticle(
   // A failed read is not "no article": saying none would offer the retry
   // that re-runs setup for an article that exists.
   if (written.error) throw new Error(`first article: could not read this site's articles (${written.error.message})`);
-  const row = written.data?.[0];
-  if (!row) return { article: null, writing: (writing.count ?? 0) > 0 };
+  // Nor is a failed read "nothing being written": saying so would offer the
+  // same retry while the article is being written.
+  if (writing.error) throw new Error(`first article: could not tell whether an article is being written (${writing.error.message})`);
+  const found = written.data?.[0];
+  if (!found) return { article: null, writing: (writing.count ?? 0) > 0 };
+  const [body] = await readArticlesWhole<{ content: unknown }>([found.id as string], "content");
+  const row = { ...found, content: body?.content ?? null };
 
   const { data: entry } = await supabase
     .from("calendar_entries")
