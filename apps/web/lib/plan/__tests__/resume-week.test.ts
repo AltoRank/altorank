@@ -211,6 +211,20 @@ describe("draftRestOfWeek", () => {
     expect(refused.draft_failure).toBe("The draft could not be started (503).");
   });
 
+  it("keeps the route's own reason when the route recorded one before answering 500", async () => {
+    const db = new FakeDb({ calendar_entries: calendar(), workspaces: [site] });
+    answer = (body) => {
+      if (body.keyword === "topic 2026-09-26") {
+        // What /api/internal/draft does when the writer throws: record, then 500.
+        Object.assign(db.rows("calendar_entries").find((e) => e.id === body.entryId)!, { draft_failed_at: NOW.toISOString(), draft_failure: "The model timed out." });
+        return new Response("{}", { status: 500 });
+      }
+      return new Response("{}", { status: 200 });
+    };
+    await (await draftRestOfWeek(db.client, site, { by: "trial:sub_1", ...deps })).settled;
+    expect(db.rows("calendar_entries").find((e) => e.keyword === "topic 2026-09-26")!.draft_failure).toBe("The model timed out.");
+  });
+
   it("writes nothing for a site that is not set to write, or is paused", async () => {
     const db = new FakeDb({ calendar_entries: calendar(), workspaces: [site] });
     expect((await draftRestOfWeek(db.client, { ...site, auto_generate: false }, { by: "trial:sub_1", ...deps })).started).toEqual([]);

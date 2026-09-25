@@ -97,6 +97,12 @@ export async function claimEntry(
  * Only the claim's own writer may record against it: a late failure from a
  * request that lost its lease must not overwrite the entry's current writer.
  * Never throws; the failure being recorded is already the bad news.
+ *
+ * `ifUnrecorded` is for a dispatcher reading its request's status: the draft
+ * route records its own failure, in the writer's words, and then answers 500,
+ * and "the draft could not be started (500)" must not replace "the model
+ * timed out". It only records when nothing has been recorded yet - which is
+ * the case when the platform killed the route before it could say anything.
  */
 export async function recordEntryFailure(
   supabase: SupabaseClient,
@@ -104,13 +110,16 @@ export async function recordEntryFailure(
   by: string,
   failure: string,
   now: Date = new Date(),
+  opts: { ifUnrecorded?: boolean } = {},
 ): Promise<void> {
-  const { error } = await supabase
+  let q = supabase
     .from("calendar_entries")
     .update({ draft_failed_at: now.toISOString(), draft_failure: failure.slice(0, MAX_FAILURE_CHARS) })
     .eq("id", entryId)
     .eq("draft_claimed_by", by)
     .is("article_id", null);
+  if (opts.ifUnrecorded) q = q.is("draft_failed_at", null);
+  const { error } = await q;
   if (error) console.error(`[draft-claim] could not record the failure on ${entryId}: ${error.message}`);
 }
 

@@ -297,10 +297,13 @@ export async function draftRestOfWeek(
       how,
     ).then(
       async (res) => {
-        // The route records its own failures once it is running. A refusal
-        // before that - it never saw the claim - is recorded here, so the
-        // entry is handed back now rather than when its lease runs out.
-        if (!res.ok) await recordEntryFailure(supabase, entry.id, opts.by, `The draft could not be started (${res.status}).`);
+        // The route records its own failures once it is running, in the
+        // writer's words, and those stand. A request it never ran - refused,
+        // or cut off by the platform - is recorded here, so the entry is
+        // handed back now rather than when its lease runs out.
+        if (!res.ok) {
+          await recordEntryFailure(supabase, entry.id, opts.by, `The draft could not be started (${res.status}).`, new Date(), { ifUnrecorded: true });
+        }
       },
       async (err: unknown) => {
         await recordEntryFailure(
@@ -308,6 +311,8 @@ export async function draftRestOfWeek(
           entry.id,
           opts.by,
           `The draft could not be started: ${err instanceof Error ? err.message : String(err)}`,
+          new Date(),
+          { ifUnrecorded: true },
         );
       },
     ),
