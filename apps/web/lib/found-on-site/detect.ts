@@ -303,6 +303,9 @@ async function checkWorkspace(
     } catch {
       return null; // no answer: not recorded, so tried again tomorrow
     }
+    // A server error or a rate limit is the site not answering yet, not an
+    // answer about the page: same as no answer.
+    if (res.status >= 500 || res.status === 429) return null;
     // A redirect off the site (a login wall, a parked domain) is not a page of it.
     const landed = onSite(res.url, host) ? res.url : null;
     const isHtml = /html/i.test(res.headers["content-type"] ?? "");
@@ -324,7 +327,14 @@ async function checkWorkspace(
   const preparedFor = (d: DraftRow) => {
     let p = prepared.get(d.id);
     if (!p) {
-      p = prepareDraft(d.title, d.content ? tiptapToHtml(d.content) : "");
+      let html = "";
+      try {
+        html = d.content ? tiptapToHtml(d.content) : "";
+      } catch {
+        // A body the renderer cannot read has no text to find: it compares as
+        // too short and matches nothing, and the site's other drafts go on.
+      }
+      p = prepareDraft(d.title, html);
       prepared.set(d.id, p);
     }
     return p;

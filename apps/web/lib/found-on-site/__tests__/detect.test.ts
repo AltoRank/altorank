@@ -234,6 +234,24 @@ describe("findDraftsLiveOnSites", () => {
     expect(sb.tables.found_on_site_checks.map((r) => r.url)).not.toContain(`${S}/hizmetler`);
   });
 
+  it("treats a server error on a page as no answer, not as a page that was read", async () => {
+    const sb = fakeSupabase(seed());
+    const s = fakeSite(site({ [`${S}/hizmetler`]: { status: 503, body: "busy" } }));
+    const run = await findDraftsLiveOnSites(client(sb), { budgetMs: 60_000, fetch: s.fetch, now: () => NIGHT_1 });
+    expect(run.results[0]).toMatchObject({ read: 2, unread: 1 });
+    expect(sb.tables.found_on_site_checks.map((r) => r.url)).not.toContain(`${S}/hizmetler`);
+  });
+
+  it("goes on with the site's other drafts when one draft's body cannot be rendered", async () => {
+    const base = seed();
+    // A node the renderer does not expect, where text should be.
+    (base.articles[1] as Record<string, unknown>).content = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text" }] }, null] };
+    const sb = fakeSupabase(base);
+    const run = await findDraftsLiveOnSites(client(sb), { budgetMs: 60_000, fetch: fakeSite(site()).fetch, now: () => NIGHT_1 });
+    expect(run.results[0].status).toBe("checked");
+    expect(run.found).toBe(1);
+  });
+
   it("says so when a site has no sitemap to read", async () => {
     const sb = fakeSupabase(seed());
     const s = fakeSite({ [`${S}/robots.txt`]: { body: "User-agent: *\nDisallow:\n", type: "text/plain" } });

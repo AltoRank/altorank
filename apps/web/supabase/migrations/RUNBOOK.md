@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage, see its section at the end). **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage) and **094** (found on site), each with its section at the end. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -145,7 +145,8 @@ m(file, applied) as (values
   ('082_system_events',                      to_regclass('public.system_events') is not null),
   ('084_analysis_attempts',                  exists (select 1 from col where t='workspaces' and c='analysis_attempts')),
   ('085_agencies_to_accounts',               to_regclass('public.accounts') is not null and to_regclass('public.agencies') is null),
-  ('091_public_tool_usage',                  to_regclass('public.public_tool_usage') is not null and to_regprocedure('public.reserve_public_tool_spend(text,numeric,numeric)') is not null)
+  ('091_public_tool_usage',                  to_regclass('public.public_tool_usage') is not null and to_regprocedure('public.reserve_public_tool_spend(text,numeric,numeric)') is not null),
+  ('094_found_on_site',                      to_regclass('public.found_on_site_checks') is not null and exists (select 1 from col where t='articles' and c='found_on_site_rejected'))
 )
 select file, applied from m order by file;
 ```
@@ -274,6 +275,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 082_system_events.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 084_analysis_attempts.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 085_agencies_to_accounts.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 091_public_tool_usage.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 094_found_on_site.sql
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -338,6 +340,7 @@ no code in the repo references either).
 | 082_system_events.sql | `round5/observability` #172 | 001 | yes | yes, loses the event log only |
 | 084_analysis_attempts.sql | `fix/reanalyse-and-cms-gate` | 001 | yes | yes, but the backfill's re-queue is not undone |
 | 091_public_tool_usage.sql | `tools/public-api` | none | yes | yes, `drop function public.reserve_public_tool_spend(text,numeric,numeric); drop table public.public_tool_usage;` (paid public tools then refuse to run) |
+| 094_found_on_site.sql | `feat/published-elsewhere` | 001 | yes | yes, see its section (the check then fails loudly in the cron body, and the crawl still runs) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -710,3 +713,40 @@ select public.reserve_public_tool_spend('smoke-test', 0, 0);  -- t
 select * from public.public_tool_usage where tool = 'smoke-test';
 delete from public.public_tool_usage where tool = 'smoke-test';
 ```
+
+## 094 — found on site
+
+`094_found_on_site.sql`, for the nightly check that notices a draft published
+on the customer's own site without going through AltoRank
+(`lib/found-on-site/`, run from `cron/site-pages`). A real signup (2026-09-22)
+published a draft on a site with no CMS connected and nothing recorded it.
+
+- `articles`: `found_on_site_at`, `found_on_site_evidence` (jsonb),
+  `found_on_site_prior` (jsonb), `found_on_site_rejected` (`text[] not null
+  default '{}'`, a fast default, no rewrite). A find sets `status = 'live'`
+  and `published_url` on the existing publish record; these columns say it
+  was found rather than published by us, and hold what "Not my article"
+  restores.
+- `workspaces.found_on_site_checked_at`: the check's turn order.
+- `found_on_site_checks`: one row per page read, `(workspace_id, url)` primary
+  key. RLS on with **no policies**, the posture of 080 and 082: only the cron
+  (service role) reads or writes it. Post-flight §4 step 2 lists it with zero
+  policies; that is expected.
+
+Depends only on **001**. Idempotent (`if not exists` throughout; applied twice
+in a row on the local stack, 2026-09-25). Nothing in the file backfills: no
+article is marked found until the cron runs.
+
+**Apply before the merge deploys.** `cron/site-pages` runs the check first; on
+a database without these columns the check's first query fails, the body says
+so (`found_on_site_error`, and a `job: "found-on-site"` result with status
+`error`, which `system_events` records as a warning), and the crawl still runs.
+The editor and the Articles list read the columns with `select *`, so they
+degrade to "no find" rather than failing; the admin Users page names
+`found_on_site_at` in its select and shows no article counts until then.
+
+Roll back with
+`drop table if exists found_on_site_checks; alter table workspaces drop column if exists found_on_site_checked_at; alter table articles drop column if exists found_on_site_at, drop column if exists found_on_site_evidence, drop column if exists found_on_site_prior, drop column if exists found_on_site_rejected;`
+— run it only after putting any found article back first
+(`update articles set status = found_on_site_prior->>'status', published_url = found_on_site_prior->>'published_url', published_at = (found_on_site_prior->>'published_at')::timestamptz where found_on_site_at is not null;`),
+or those articles stay `live` at a URL nobody can then take back.
