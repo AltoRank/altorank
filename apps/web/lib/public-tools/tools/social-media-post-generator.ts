@@ -13,7 +13,7 @@ import { defineTool } from "../types";
 import { askHaikuJson } from "../ai";
 import { code, kv, text, type Block, type KvItem } from "../blocks";
 import { choice, requiredText } from "../fields";
-import { INPUT_RULES, JSON_ONLY, charLength, tagged } from "../prompt";
+import { INPUT_RULES, JSON_ONLY, charLength, newFigures, tagged } from "../prompt";
 
 const SLUG = "social-media-post-generator";
 
@@ -57,7 +57,7 @@ const GUIDE: Record<Platform, string> = {
 function system(platform: Platform): string {
   return [
     "You write social media posts.",
-    "The visitor gives either a topic or a passage from something they published. Write 3 distinct posts for the platform below: different hooks, the same substance. If they gave a passage, stay faithful to it and do not add facts.",
+    "The visitor gives either a topic or a passage from something they published. Write 3 distinct posts for the platform below: different hooks, the same substance. If they gave a passage, stay faithful to it: keep figures exactly as written (do not turn '7 in 10' into a percentage), do not widen a claim beyond what it says, and do not add facts.",
     GUIDE[platform],
     "No engagement bait ('comment YES'), no invented statistics, no emoji walls (at most 2 emoji per post).",
     'Shape: {"posts":[{"text":"..."}]}',
@@ -93,16 +93,18 @@ export const socialMediaPostGenerator = defineTool({
     data.posts.forEach((p, i) => {
       const len = postLength(p.text, platform);
       const tags = (p.text.match(/(^|\s)#[\p{L}\p{N}_]+/gu) ?? []).length;
-      const problems: string[] = [];
-      if (len > spec.max) problems.push(`${len - spec.max} over the ${spec.max} limit`);
-      if (platform === "instagram" && tags > spec.hashtags) problems.push(`${tags} hashtags; Instagram allows ${spec.hashtags}`);
-      const folded = len > spec.fold && len <= spec.max && platform !== "x";
+      const notes: string[] = [`${len} of ${spec.max} characters`];
+      const over = len > spec.max;
+      const tooManyTags = platform === "instagram" && tags > spec.hashtags;
+      if (over) notes.push(`${len - spec.max} over the limit: shorten it before posting`);
+      else if (len > spec.fold && platform !== "x") notes.push(`about the first ${spec.fold} show before "see more"`);
+      if (tooManyTags) notes.push(`${tags} hashtags; Instagram allows ${spec.hashtags}`);
+      const added = newFigures(topic_or_text, p.text);
+      if (added.length) notes.push(`check ${added.join(", ")}: not in what you gave`);
       items.push({
         label: `Post ${i + 1}`,
-        value: problems.length
-          ? problems.join("; ")
-          : `${len} of ${spec.max} characters${folded ? `; about the first ${spec.fold} show before "see more"` : ""}`,
-        status: problems.length ? "fail" : "pass",
+        value: notes.join("; "),
+        status: over || tooManyTags ? "fail" : added.length ? "warn" : "pass",
       });
       blocks.push(code(p.text, "text", `Post ${i + 1} · ${len} / ${spec.max}`));
     });

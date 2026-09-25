@@ -25,6 +25,18 @@ const SLUG = "blog-post-ideas";
 const QUESTION_WORDS = ["how", "what", "why", "when", "where", "which", "who", "can", "does", "do", "is", "are", "should", "will"];
 const QUESTION_RE = new RegExp(`^(${QUESTION_WORDS.join("|")})\\s`, "i");
 export const MAX_IDEAS = 40;
+/** Questions are the stronger post ideas, but leave room for the rest. */
+const MAX_QUESTION_IDEAS = 28;
+
+/**
+ * A provider artefact: the same search with a stray number stuck on the end
+ * ("... composting system 3", "... system 3d"). Dropped unless the topic
+ * itself has that number.
+ */
+export function strayNumberSuffix(keyword: string, topic: string): boolean {
+  const last = keyword.trim().split(/\s+/).pop() ?? "";
+  return /^\d+[a-z]?$/i.test(last) && !topic.toLowerCase().split(/\s+/).includes(last.toLowerCase());
+}
 
 const STOP = new Set(["a", "an", "the", "to", "for", "of", "in", "on", "at", "and", "or", "i", "you", "my", "your", "do", "does", "is", "are", "it", "with", "can", "be"]);
 
@@ -99,7 +111,7 @@ export const blogPostIdeas = defineTool({
     }
     const rows = dedupeRows(
       [questions, longTail].flatMap((r) => (r.status === "fulfilled" ? (r.value[0]?.items ?? []).map(toRow) : [])),
-    ).filter((r) => r.keyword.toLowerCase() !== topic.toLowerCase());
+    ).filter((r) => r.keyword.toLowerCase() !== topic.toLowerCase() && !strayNumberSuffix(r.keyword, topic));
 
     if (!rows.length) {
       return [
@@ -110,7 +122,10 @@ export const blogPostIdeas = defineTool({
       ];
     }
 
-    const ideas = groupIdeas(rows).slice(0, MAX_IDEAS);
+    const grouped = groupIdeas(rows);
+    const questionIdeas = grouped.filter((i) => i.group !== "Other searches").slice(0, MAX_QUESTION_IDEAS);
+    const otherIdeas = grouped.filter((i) => i.group === "Other searches");
+    const ideas = [...questionIdeas, ...otherIdeas].slice(0, MAX_IDEAS);
     const questionCount = ideas.filter((i) => i.group !== "Other searches").length;
     const blocks: Block[] = [
       kv(

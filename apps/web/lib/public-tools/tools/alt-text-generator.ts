@@ -45,7 +45,7 @@ const Answer = z.object({
 
 const SYSTEM = [
   "You write alt text for images on web pages.",
-  `"alt": one sentence, at most ${ALT_SOFT_MAX} characters, describing what the image shows that a reader would need if they could not see it. Do not start with 'Image of' or 'Picture of'. Name visible text only if it matters.`,
+  `"alt": one sentence, at most 110 characters, describing what the image shows that a reader would need if they could not see it. Do not start with 'Image of' or 'Picture of'. Name visible text only if it matters.`,
   '"description": a longer description in 1 to 3 sentences, for a caption or a long description.',
   '"text_in_image": any legible text in the image, verbatim, or "" if none.',
   '"decorative": true only if the image looks purely decorative (a pattern, a divider, a stock background).',

@@ -75,12 +75,15 @@ const norm = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-/** Whether a snippet shows the phrase: any run of 6 consecutive words of it (or all of it, if shorter). */
+/**
+ * Whether a snippet shows the phrase: at least 10 consecutive words of it
+ * (all of it, if shorter). Snippets are cut, so a shorter run proves little.
+ */
 export function snippetShows(snippet: string | null | undefined, phrase: string): boolean {
   if (!snippet) return false;
   const hay = norm(snippet);
   const words = norm(phrase).split(" ");
-  const n = Math.min(6, words.length);
+  const n = Math.min(10, words.length);
   for (let i = 0; i + n <= words.length; i++) {
     if (hay.includes(words.slice(i, i + n).join(" "))) return true;
   }
@@ -158,11 +161,11 @@ export const plagiarismChecker = defineTool({
       table(["#", "Searched as (exact phrase)", "Google results"], summaryRows, "Sentences checked"),
     ];
     if (matchRows.length) {
-      blocks.push(table(["Sentence #", "Page", "Title", "Phrase in Google's snippet"], matchRows, "Pages Google returned for the exact phrase"));
+      blocks.push(table(["Sentence #", "Page", "Title", "Snippet shows the phrase"], matchRows, "Pages Google returned for the exact phrase"));
     }
     blocks.push(
       text(
-        `The tool picked up to ${MAX_SENTENCES} of your longest, most distinctive sentences and ran each as an exact-phrase Google search (United States, first page of results) through DataForSEO. It lists the pages Google returned and whether Google's snippet shows the phrase; open a page to confirm. A match is not proof of copying: it may be a credited quote, a common phrase, or a copy of your text. No match means these sentences were not found word for word; the rest of the text, reworded copying and pages Google has not indexed were not checked.`,
+        `The tool picked up to ${MAX_SENTENCES} of your longest, most distinctive sentences and ran each as an exact-phrase Google search (United States, first page of results) through DataForSEO. It lists the pages Google returned, and whether Google's snippet for each shows at least 10 words of the phrase in a row; open a page to confirm. A match is not proof of copying: it may be a credited quote, a common phrase, or a copy of your text. No match means these sentences were not found word for word; the rest of the text, reworded copying and pages Google has not indexed were not checked.`,
         "What this checked",
       ),
     );

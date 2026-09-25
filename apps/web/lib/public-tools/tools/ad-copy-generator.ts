@@ -12,9 +12,9 @@
 import { z } from "zod";
 import { defineTool } from "../types";
 import { askHaikuJson } from "../ai";
-import { kv, table, text, type Block, type KvItem } from "../blocks";
+import { kv, list, table, text, type Block, type KvItem } from "../blocks";
 import { choice, optionalText, requiredText } from "../fields";
-import { INPUT_RULES, JSON_ONLY, charLength, tagged } from "../prompt";
+import { INPUT_RULES, JSON_ONLY, charLength, tagged, unsupportedTerms } from "../prompt";
 
 const SLUG = "ad-copy-generator";
 
@@ -28,8 +28,8 @@ export const SOCIAL_LIMITS = {
 } as const;
 
 const GoogleAnswer = z.object({
-  headlines: z.array(z.string().min(1)).min(3).max(20),
-  descriptions: z.array(z.string().min(1)).min(2).max(6),
+  headlines: z.array(z.string().min(1)).min(3).max(24),
+  descriptions: z.array(z.string().min(1)).min(2).max(8),
 });
 const SocialAnswer = z.object({
   variations: z
@@ -47,7 +47,7 @@ const COMMON = [
 const SYSTEM = {
   google: [
     "You write Google Ads responsive search ads.",
-    "Write 15 headlines of at most 30 characters each (count every character, including spaces) and 4 descriptions of at most 90 characters each.",
+    "Write 18 headlines of 15 to 28 characters each and 6 descriptions of 60 to 80 characters each. Count every character, including spaces; Google refuses a headline over 30 or a description over 90, so stay well under.",
     "Any headline can appear next to any other, so each must make sense on its own. Vary them: product, benefit, audience, proof from the description, call to action.",
     'Shape: {"headlines":["..."],"descriptions":["..."]}',
     ...COMMON,
@@ -65,6 +65,14 @@ const SYSTEM = {
     ...COMMON,
   ].join("\n"),
 };
+
+/** Up to `take` lines, those within `max` first (in the model's order), then any over it. */
+export function pickFitting(lines: string[], max: number, take: number): string[] {
+  const unique = [...new Set(lines.map((l) => l.trim()).filter(Boolean))];
+  const fit = unique.filter((l) => charLength(l) <= max);
+  const over = unique.filter((l) => charLength(l) > max);
+  return [...fit, ...over].slice(0, take);
+}
 
 function hardFit(s: string, max: number): string {
   const n = charLength(s);
@@ -90,6 +98,7 @@ export const adCopyGenerator = defineTool({
   async run({ product, audience, platform }, ctx) {
     const user = [tagged("product", product), audience ? tagged("audience", audience) : ""].filter(Boolean).join("\n");
     const blocks: Block[] = [];
+    const written: string[] = [];
 
     if (platform === "google") {
       const { data } = await askHaikuJson({
@@ -101,8 +110,10 @@ export const adCopyGenerator = defineTool({
         schema: GoogleAnswer,
         signal: ctx.signal,
       });
-      const headlines = data.headlines.slice(0, 15);
-      const descriptions = data.descriptions.slice(0, 4);
+      // More lines are asked for than Google takes; the ones that fit go first.
+      const headlines = pickFitting(data.headlines, GOOGLE_HEADLINE_MAX, 15);
+      const descriptions = pickFitting(data.descriptions, GOOGLE_DESCRIPTION_MAX, 4);
+      written.push(...headlines, ...descriptions);
       const okH = headlines.filter((h) => charLength(h) <= GOOGLE_HEADLINE_MAX).length;
       const okD = descriptions.filter((d) => charLength(d) <= GOOGLE_DESCRIPTION_MAX).length;
       const summary: KvItem[] = [
@@ -128,6 +139,7 @@ export const adCopyGenerator = defineTool({
         schema: SocialAnswer,
         signal: ctx.signal,
       });
+      written.push(...data.variations.flatMap((v) => [v.primary, v.headline, v.description]));
       const rows = data.variations.map((v, i) => [
         i + 1,
         v.primary,
@@ -152,6 +164,15 @@ export const adCopyGenerator = defineTool({
       );
     }
 
+    const flagged = unsupportedTerms(written, `${product} ${audience ?? ""}`);
+    if (flagged.length) {
+      blocks.push(
+        list(
+          flagged.map(([line, term]) => `"${line}" promises ${term}, but your description does not. Check it against your real terms.`),
+          "Check these",
+        ),
+      );
+    }
     blocks.push(
       text(
         "Drafts from your description only. The model has not seen your landing page and does not check ad policies, so check every claim and the platform's rules before anything goes live.",

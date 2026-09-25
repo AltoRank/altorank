@@ -2,16 +2,16 @@
 // CTA generator: button text plus a supporting line, for one offer
 // ---------------------------------------------------------------------------
 //
-// One honesty check in code: an option that says "free" when the visitor's
-// own description of the offer never did is flagged, because the page warns
-// about exactly that.
+// One honesty check in code: an option that promises "free", "no card",
+// "cancel anytime" and the like when the visitor's own description of the
+// offer never did is flagged, because the page warns about exactly that.
 
 import { z } from "zod";
 import { defineTool } from "../types";
 import { askHaikuJson } from "../ai";
 import { list, table, text, type Block } from "../blocks";
 import { optionalText, requiredText } from "../fields";
-import { INPUT_RULES, JSON_ONLY, charLength, tagged } from "../prompt";
+import { INPUT_RULES, JSON_ONLY, charLength, tagged, unsupportedTerms } from "../prompt";
 
 const SLUG = "cta-generator";
 const BUTTON_MAX = 30;
@@ -53,19 +53,20 @@ export const ctaGenerator = defineTool({
       signal: ctx.signal,
     });
 
-    const offerSaysFree = /\bfree\b/i.test(`${offer} ${audience ?? ""}`);
-    const saysFree: string[] = [];
     const rows = data.ctas.map(({ button, supporting }) => {
       const len = charLength(button);
-      if (!offerSaysFree && /\bfree\b/i.test(`${button} ${supporting}`)) saysFree.push(button);
       return [button, supporting, len > BUTTON_MAX ? `${len} (long for a button)` : len];
     });
+    const flagged = unsupportedTerms(
+      data.ctas.map((c) => `${c.button}: ${c.supporting}`),
+      `${offer} ${audience ?? ""}`,
+    );
 
     const blocks: Block[] = [table(["Button", "Supporting line", "Button characters"], rows, "CTA options")];
-    if (saysFree.length) {
+    if (flagged.length) {
       blocks.push(
         list(
-          saysFree.map((b) => `"${b}" says free, but your description of the offer does not. Check it against your real terms.`),
+          flagged.map(([line, term]) => `"${line}" promises ${term}, but your description of the offer does not. Check it against your real terms.`),
           "Check these",
         ),
       );

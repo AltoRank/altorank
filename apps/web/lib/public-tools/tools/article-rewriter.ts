@@ -14,7 +14,7 @@ import { askHaiku } from "../ai";
 import { ToolError } from "../errors";
 import { kv, list, text, type Block, type KvItem } from "../blocks";
 import { countWords, optionalText, pastedText } from "../fields";
-import { INPUT_RULES, stripFence, tagged } from "../prompt";
+import { INPUT_RULES, lostFigures, stripFence, tagged } from "../prompt";
 
 const SLUG = "article-rewriter";
 
@@ -26,13 +26,6 @@ const SYSTEM = [
   "Output only the rewritten text, with no preface, notes or code fence.",
   INPUT_RULES,
 ].join("\n");
-
-/** Numbers as written, normalised: "1,500" and "1500" are one figure. */
-export function figures(s: string): Set<string> {
-  const out = new Set<string>();
-  for (const m of s.matchAll(/\d[\d,.]*\d%?|\d%?/g)) out.add(m[0].replace(/,/g, "").replace(/\.$/, ""));
-  return out;
-}
 
 export const articleRewriter = defineTool({
   slug: SLUG,
@@ -56,7 +49,7 @@ export const articleRewriter = defineTool({
     const rewritten = stripFence(res.text);
     if (!rewritten) throw new ToolError("upstream", "The AI step returned nothing. Try again.");
 
-    const lost = [...figures(original)].filter((f) => !figures(rewritten).has(f));
+    const lost = lostFigures(original, rewritten);
     const items: KvItem[] = [
       { label: "Words", value: `${countWords(original)} before, ${countWords(rewritten)} after`, status: "info" },
       {
@@ -71,7 +64,9 @@ export const articleRewriter = defineTool({
 
     const blocks: Block[] = [kv(items, tone ? `Rewritten: ${tone}` : "Rewritten")];
     blocks.push(text(rewritten, "Rewritten text"));
-    if (lost.length) blocks.push(list(lost.map((f) => `${f} is in your original but not in the rewrite`), "Figures to check"));
+    if (lost.length) {
+      blocks.push(list(lost.map((f) => `${f} appears in your original more often than in the rewrite (it may be spelled out, or gone)`), "Figures to check"));
+    }
     blocks.push(
       text(
         "A rewrite can soften a claim or drop a qualifier without changing any number. Compare it with your original, fact by fact, before you use it.",
