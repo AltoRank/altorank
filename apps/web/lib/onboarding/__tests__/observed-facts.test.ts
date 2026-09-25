@@ -45,6 +45,29 @@ describe("observedFrom", () => {
   });
 });
 
+describe("observedFrom — pages at paths we guessed", () => {
+  // The read asks for /pricing, /features and /about on every site. A site
+  // that answers 200 for any path (a soft 404, an app shell) must not turn
+  // that guess into an observed page.
+  const shell = "<html><body><div id=app></div></body></html>";
+  const home = { url: HOME, html: `<html><body><a href="/iletisim">İletişim</a></body></html>` };
+
+  it("does not vouch for a probed page's own URL, but keeps the links on it", async () => {
+    const seen = observedFrom(DOMAIN, [home], [
+      { url: `https://${DOMAIN}/pricing`, html: shell },
+      { url: `https://${DOMAIN}/about`, html: `<html><body><a href="/ekibimiz">Ekibimiz</a></body></html>` },
+    ]);
+    expect(seen.pages).toEqual([HOME]);
+    expect(seen.links.map((l) => l.url)).toEqual([`https://${DOMAIN}/iletisim`, `https://${DOMAIN}/ekibimiz`]);
+
+    fetch.mockClear();
+    const out = await verifyObservedUrl("/pricing", DOMAIN, seen, { fetch, now: NOW });
+    expect(out.url).toBeNull();
+    expect(out.check.reason).toMatch(/not a page we read or a link on one, so it was a guess/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
 describe("verifyObservedUrl", () => {
   const verify = (proposed: string | null) => verifyObservedUrl(proposed, DOMAIN, observed, { fetch, now: NOW });
 

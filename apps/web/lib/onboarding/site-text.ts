@@ -64,14 +64,22 @@ const MAX_OBSERVED_LINKS = 80;
 /**
  * The pages and same-site links a read can vouch for. Exported for tests:
  * this is the evidence an "observed" URL in the profile must be found in.
+ *
+ * `probed` are pages fetched at a path WE guessed (`/pricing`, `/about`).
+ * Their links count - the site wrote them - but their own URLs do not: a
+ * site that answers 200 for every path (a soft 404, a single-page app's
+ * shell) would otherwise turn our guess into an "observed" page, which is
+ * the guessed path the observed check exists to refuse. A probed page the
+ * site really has is linked from one of its pages, and is checked as a link.
  */
-export function observedFrom(domain: string, pages: ScrapedPage[]): ObservedSite {
+export function observedFrom(domain: string, pages: ScrapedPage[], probed: ScrapedPage[] = []): ObservedSite {
   const seenPages = new Set<string>();
   const out: ObservedSite = { pages: [], links: [] };
   const seenLinks = new Set<string>();
-  for (const page of pages) {
+  const vouched = new Set(pages);
+  for (const page of [...pages, ...probed]) {
     const pageKey = normaliseSiteUrl(page.url, domain);
-    if (!seenPages.has(pageKey)) {
+    if (vouched.has(page) && !seenPages.has(pageKey)) {
       seenPages.add(pageKey);
       out.pages.push(page.url);
     }
@@ -121,13 +129,15 @@ export async function readSiteText(domain: string, maxChars = 12_000): Promise<S
   // E2E_STUBS: fixture text, no fetch (lib/e2e/stubs.ts).
   if (e2eStubsEnabled()) return stubReadSiteText(domain, maxChars);
   // Every page that answered, whichever branch below returns: the evidence
-  // an observed URL in the profile is checked against.
+  // an observed URL in the profile is checked against. Pages at paths we
+  // guessed are kept apart: their links are evidence, their URLs are not.
   const fetched: ScrapedPage[] = [];
+  const probed: ScrapedPage[] = [];
   const done = (text: string, source: SiteTextSource): SiteText => ({
     text: text.slice(0, maxChars),
     source,
     chars: text.length,
-    observed: observedFrom(domain, fetched),
+    observed: observedFrom(domain, fetched, probed),
   });
 
   // Discovery is needed by the next wizard screen anyway and is cheap, so it
@@ -142,7 +152,7 @@ export async function readSiteText(domain: string, maxChars = 12_000): Promise<S
   const productPages = await Promise.all(["/pricing", "/features", "/about"].map(async (path) => {
     const url = new URL(path, base).href;
     const { text, page } = await pageText(url);
-    if (page) fetched.push(page);
+    if (page) probed.push(page);
     return text.length >= 150 ? `SOURCE ${url}\n${text.slice(0, 1500)}` : "";
   }));
   const stat = [...productPages.filter(Boolean), `HOMEPAGE/BLOG CONTEXT\n${rawStatic}`].join("\n\n");
