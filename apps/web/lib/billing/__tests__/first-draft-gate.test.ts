@@ -35,4 +35,18 @@ describe("firstDraftBlocker — the free allowance's second draft waits for the 
   it("one reviewed draft unlocks the rest even with unread ones beside it", () => {
     expect(firstDraftBlocker([draft(), draft({ approved_at: "2026-09-10T20:00:00.000Z" })])).toBeNull();
   });
+
+  it("does not take a draft found on the customer's site for a person's review", () => {
+    // The nightly check marks a find `live` (lib/found-on-site). That is not a
+    // decision anyone made here, and must not restart unattended drafting on
+    // the free allowance before the trial.
+    const found = draft({ status: "live", found_on_site_at: "2026-09-11T10:00:00.000Z" });
+    expect(reviewed(found)).toBe(false);
+    expect(firstDraftBlocker([found])).toMatch(/waiting for your review/);
+    // A person's own signals on the same row still count.
+    expect(reviewed({ ...found, approved_at: "2026-09-10T20:00:00.000Z" })).toBe(true);
+    expect(reviewed({ ...found, updated_at: "2026-09-10T21:00:00.000Z" })).toBe(true);
+    // Live without a find is a publish, which a person asked for.
+    expect(reviewed(draft({ status: "live" }))).toBe(true);
+  });
 });

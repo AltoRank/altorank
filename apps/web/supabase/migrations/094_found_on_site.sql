@@ -11,10 +11,14 @@
 -- article becomes status = 'live' with published_url set to the page it was
 -- found on - the same shape `markPublishedManually` writes when a person
 -- pastes the URL themselves. That is what makes it count everywhere
--- "published" is already counted (reports, dashboard, calendar, the free
--- allowance's first-draft gate) and stop every "your draft is waiting" nudge,
--- all of which read `status`. The columns below only say HOW it went live and
--- how to take it back:
+-- "published" is already counted (reports, dashboard, calendar) and stop
+-- every "your draft is waiting" nudge, all of which read `status`. One reader
+-- of `status` deliberately does not take a find: the free allowance's
+-- first-draft gate (lib/billing/first-draft-gate.ts), which waits for a
+-- PERSON to review the first draft before unattended drafting goes on. A find
+-- is a machine's comparison, and must not restart paid drafting for an account
+-- that has not started its trial. The columns below only say HOW it went live
+-- and how to take it back:
 --
 --   found_on_site_at        when the nightly check found it. Set means
 --                           "Live on your site" (we found it), as distinct
