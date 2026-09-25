@@ -163,11 +163,13 @@ export function findFigures(text: string, language?: string | null): string[] {
     const n = locale.numbers;
     const scale = n.scaleWords.filter((w) => w.replace(/\\\.\??/g, "").length > 2);
     const after = ["%", ...(n.percentWordsAfter.length ? [phrasePattern(n.percentWordsAfter)] : []), String.raw`x\b`, ...scale, String.raw`k\b`];
+    // A figure written after its sign ends on a digit, so "%20," is "%20".
+    const digits = String.raw`\d(?:[\d,.]*\d)?`;
     const parts = [
       String.raw`\b\d[\d,.]*\s?(?:${after.join("|")})`,
-      String.raw`(?<![\p{L}\p{N}])[$£€₺¥]\s?\d[\d,.]*`,
-      ...(n.percentSignBefore ? [String.raw`%\s?\d[\d,.]*`] : []),
-      ...(n.percentWordsBefore.length ? [String.raw`(?<![\p{L}])(?:${phrasePattern(n.percentWordsBefore)})\s+\d[\d,.]*`] : []),
+      String.raw`(?<![\p{L}\p{N}])[$£€₺¥]\s?${digits}`,
+      ...(n.percentSignBefore ? [String.raw`%\s?${digits}`] : []),
+      ...(n.percentWordsBefore.length ? [String.raw`(?<![\p{L}])(?:${phrasePattern(n.percentWordsBefore)})\s+${digits}`] : []),
       ...(n.symbolAfter ? [String.raw`\b\d[\d,.]*\s?(?:[€₺]|${n.currencyAfter.join("|")})(?![\p{L}])`] : []),
     ];
     re = new RegExp(parts.join("|"), "giu");

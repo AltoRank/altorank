@@ -175,8 +175,9 @@ export function figureVariants(figure: string, language?: string | null): string
     const [symbolRaw, digits] = /^\d/.test(money[1]) ? [money[2], money[1]] : [money[1], money[2]];
     const names = CURRENCY_ALIASES[CURRENCY_OF[symbolRaw] ?? symbolRaw] ?? [symbolRaw];
     const parsed = valueOf(digits, locale);
-    const bare = digits.replace(/,/g, "");
-    const spellings = new Set([digits, bare, ...(parsed ? renderings(parsed.value, parsed.decimals) : [])]);
+    // Read with the article's separators when they can be; otherwise the old
+    // rule, commas out, which is right for the English grouping it assumed.
+    const spellings = new Set([digits, ...(parsed ? renderings(parsed.value, parsed.decimals) : [digits.replace(/,/g, "")])]);
     for (const d of spellings) {
       out.add(d);
       for (const name of names) {

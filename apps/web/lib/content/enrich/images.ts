@@ -21,7 +21,7 @@ import { recordSpend } from "@/lib/billing/spend";
 import { spendClient } from "@/lib/billing/default-spend";
 import { altWordCount, minAltWords } from "@/lib/ai/alt-text";
 import { DEFAULT_OUTPUT_SETTINGS, type ImageStyle } from "@/lib/onboarding/output-settings";
-import { resolveLocale, matchesAnyHeading } from "@/lib/i18n/locale";
+import { resolveLocale, matchesAnyHeading, scaleWords } from "@/lib/i18n/locale";
 import {
   splitSections,
   firstParagraph,
@@ -51,7 +51,10 @@ export interface ImagesOptions {
   max?: number;
   style?: ImageStyle;
   language?: string | null;
-  /** A section shorter than this is not major enough to illustrate. */
+  /**
+   * A section shorter than this is not major enough to illustrate. Defaults
+   * to 80 English words, in the article language's words.
+   */
   minSectionWords?: number;
 }
 
@@ -141,10 +144,11 @@ export async function addSectionImages(
   if (existing >= max) return { html, added: 0, warnings: [] };
 
   const { intro, sections } = splitSections(html);
-  const points = chooseInsertionPoints(sections, max - existing, opts.minSectionWords);
+  const locale = resolveLocale(opts.language);
+  const minSectionWords = opts.minSectionWords ?? (locale.supported ? scaleWords(80, locale) : 80);
+  const points = chooseInsertionPoints(sections, max - existing, minSectionWords);
   if (!points.length) return { html, added: 0, warnings: [] };
 
-  const locale = resolveLocale(opts.language);
   const style = opts.style ?? DEFAULT_OUTPUT_SETTINGS.imageStyle;
   const warnings: string[] = [];
   const figures = new Map<number, string>();
