@@ -139,6 +139,16 @@ describe("a week whose chain of drafts stopped", () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
+  it("is not burst weeks later: an entry owed that long is the scheduled writer's, at the site's pace", async () => {
+    const db = new FakeDb({
+      workspaces: [site({ trial_resume_key: "sub_1", trial_resumed_at: minutesAgo(20 * 24 * 60) })],
+      calendar_entries: [entry("a", { draft_owed_at: minutesAgo(20 * 24 * 60), scheduled_date: "2026-09-08" })],
+    });
+    const out = await sweepUnfinishedResumes(db.client, deps);
+    expect(out.started).toBe(0);
+    expect(sent).toHaveLength(0);
+  });
+
   it("is left to its chain while any of its drafts is still being written", async () => {
     const db = new FakeDb({
       workspaces: [site({ trial_resume_key: "sub_1", trial_resumed_at: minutesAgo(5) })],

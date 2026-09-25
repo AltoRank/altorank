@@ -27,6 +27,15 @@ import { claimsInFlight } from "@/lib/plan/draft-claim";
 import { RESUME_LEASE_MS, RESUME_SITE_COLUMNS, drainOwed, type ResumeSite, type WeekDeps } from "@/lib/plan/resume-week";
 import { dispatchResume, type ResumeDispatchDeps } from "@/lib/plan/resume-dispatch";
 
+/**
+ * How long a stopped week is started again as a batch. The week a trial
+ * opens is seven days at most; an entry still owed after that is an ordinary
+ * past-dated entry, which the scheduled writer takes at the site's pace
+ * (`duePlannedKeyword`) rather than as a burst weeks later - say, the day
+ * somebody turns automatic drafting back on.
+ */
+export const OWED_RESTART_DAYS = 7;
+
 export interface SweepDeps extends WeekDeps {
   dispatch?: (req: Parameters<typeof dispatchResume>[0], deps?: ResumeDispatchDeps) => Promise<void>;
 }
@@ -86,13 +95,14 @@ export async function sweepUnfinishedResumes(supabase: SupabaseClient, deps: Swe
   // The chains. Owed entries nobody has claimed, on a site with nothing in
   // flight. A site whose resume was just sent again is left to it.
   try {
+    const since = new Date(now.getTime() - OWED_RESTART_DAYS * 86_400_000).toISOString();
     const { data, error } = await supabase
       .from("calendar_entries")
       .select("workspace_id")
       .eq("status", "queue")
       .is("article_id", null)
       .is("draft_claimed_at", null)
-      .not("draft_owed_at", "is", null);
+      .gte("draft_owed_at", since);
     if (error) throw new Error(error.message);
     const sites = [...new Set(((data ?? []) as Array<{ workspace_id: string }>).map((r) => r.workspace_id))].filter((id) => !resent.has(id));
     for (const workspaceId of sites) {
