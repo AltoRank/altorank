@@ -146,7 +146,7 @@ m(file, applied) as (values
   ('084_analysis_attempts',                  exists (select 1 from col where t='workspaces' and c='analysis_attempts')),
   ('085_agencies_to_accounts',               to_regclass('public.accounts') is not null and to_regclass('public.agencies') is null),
   ('091_public_tool_usage',                  to_regclass('public.public_tool_usage') is not null and to_regprocedure('public.reserve_public_tool_spend(text,numeric,numeric)') is not null),
-  ('093_draft_claims',                       exists (select 1 from col where t='calendar_entries' and c='draft_claimed_at') and exists (select 1 from col where t='workspaces' and c='trial_resume_key'))
+  ('093_draft_claims',                       exists (select 1 from col where t='calendar_entries' and c='draft_owed_at') and exists (select 1 from col where t='workspaces' and c='trial_resume_claimed_at'))
 )
 select file, applied from m order by file;
 ```
@@ -340,7 +340,7 @@ no code in the repo references either).
 | 082_system_events.sql | `round5/observability` #172 | 001 | yes | yes, loses the event log only |
 | 084_analysis_attempts.sql | `fix/reanalyse-and-cms-gate` | 001 | yes | yes, but the backfill's re-queue is not undone |
 | 091_public_tool_usage.sql | `tools/public-api` | none | yes | yes, `drop function public.reserve_public_tool_spend(text,numeric,numeric); drop table public.public_tool_usage;` (paid public tools then refuse to run) |
-| 093_draft_claims.sql | `fix/trial-hold-and-resume` | 001, 049 | yes | yes, drop the six columns and the index; the code that reads them must go first |
+| 093_draft_claims.sql | `fix/trial-hold-and-resume` | 001, 049 | yes | yes, drop the eight columns and the two indexes; the code that reads them must go first |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -716,20 +716,38 @@ delete from public.public_tool_usage where tool = 'smoke-test';
 
 ## 093 — draft claims
 
-Four nullable columns on `calendar_entries` (`draft_claimed_at`,
-`draft_claimed_by`, `draft_failed_at`, `draft_failure`), two on `workspaces`
-(`trial_resume_key`, `trial_resumed_at`) and one partial index. Depends on 001
-and 049 (`calendar_entries.keyword_id`); idempotent throughout (`if not
-exists`), verified by applying it twice to the local stack.
+Five nullable columns on `calendar_entries` (`draft_claimed_at`,
+`draft_claimed_by`, `draft_failed_at`, `draft_failure`, `draft_owed_at`),
+three on `workspaces` (`trial_resume_key`, `trial_resume_claimed_at`,
+`trial_resumed_at`) and two partial indexes. Depends on 001 and 049
+(`calendar_entries.keyword_id`); idempotent throughout (`if not exists`),
+verified by applying it twice to the local stack.
 
-**Apply before the code merges.** cron/generate's due-entry query, the draft
-route and the trial resume all name these columns; without them the due query
-errors, the scheduled writer finds nothing planned and falls back to the live
-queue, and the resume after a trial start claims nothing.
+**Apply before the code merges. This is a hard precondition, not a
+nicety.** `main` auto-deploys on merge and migrations are applied by hand, so
+the order is on whoever merges. If the code runs without these columns:
+
+- **cron/generate drafts nothing for anybody, paying accounts included.** For
+  every auto-generate site it counts the drafts in flight
+  (`claimsInFlight`, lib/plan/draft-claim.ts) before its quota or due-entry
+  reads, that count errors on the missing column and throws (an unknown is
+  never a zero), and the per-site catch reports `error` for every site. Its
+  first step, the unfinished-resume sweep, reports that it could not read
+  them.
+- **The calendar shows no planned entries at all**: lib/queries/calendar.ts
+  selects `draft_failure`, the planned-entries read errors, and that read's
+  error is not checked, so the calendar renders the written articles only.
+- **Every checkout's Stripe webhook answers 500**: it writes
+  `workspaces.trial_resume_key` inside the request and throws when it cannot,
+  so Stripe retries the event (plan, status and pace are written before that
+  point and are not lost) until the column exists.
+- The trial resume claims nothing, and the draft route skips every resumed
+  entry as not claimed.
 
 Smoke after applying (read only):
 
 ```sql
 select count(*) from calendar_entries where draft_claimed_at is not null;  -- 0 on day one
+select count(*) from calendar_entries where draft_owed_at is not null;     -- 0 on day one
 select count(*) from workspaces where trial_resume_key is not null;        -- 0 on day one
 ```
