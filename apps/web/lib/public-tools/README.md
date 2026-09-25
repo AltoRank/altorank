@@ -47,6 +47,18 @@ Inside `run`:
 The handler (`handler.ts`) does the rest in this order: validate → cache → per-IP limit →
 spend reservation (paid kinds only; fails closed) → run with a 45s deadline.
 
+## Paid tools: shared pieces
+
+- `fields.ts`: zod fields matching the altorank.co forms (`requiredText`, `optionalText` where "" means
+  absent, `pastedText` with a word cap, `choice`, `countryInput`, `publicDomain`). Field names and limits
+  must match the marketing repo's `src/data/server-tools.ts`; `__tests__/paid-registry.test.ts` holds a
+  body per form.
+- `locations.ts`: form country code (`us`, `gb`, …) to DataForSEO location + language.
+- `prompt.ts`: visitor input goes in a named tag (`tagged`) under `INPUT_RULES`; helpers for checks done
+  in code rather than trusted to the prompt (`charLength`, `unsupportedTerms`, `lostFigures`).
+- `labs.ts`: the DataForSEO Labs keyword fields the data tools read. Missing numbers stay null.
+- Tools that take pasted text set `cacheTtlMs: 0`.
+
 ## Spend guard
 
 Paid kinds reserve `estimateCents` against one daily cap shared by all tools

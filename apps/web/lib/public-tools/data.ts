@@ -24,7 +24,7 @@ export function dataAvailable(): boolean {
  * POST one task to a DataForSEO live endpoint and return its `result` rows.
  *
  * @param tool      slug, for logs
- * @param endpoint  e.g. "/dataforseo_labs/google/keyword_ideas/live"
+ * @param endpoint  e.g. "/dataforseo_labs/google/keyword_ideas/live" or "/serp/google/organic/live/advanced"
  * @param task      the single task object for that endpoint
  */
 export async function dataforseoLive<T = unknown>(
@@ -37,7 +37,9 @@ export async function dataforseoLive<T = unknown>(
     console.error(`[public-tools/${tool}] DataForSEO credentials are not set`);
     throw new ToolError("upstream", UNAVAILABLE);
   }
-  if (!endpoint.endsWith("/live")) {
+  // "/live" last, or followed by one variant segment: the SERP API's live
+  // endpoints are /serp/google/organic/live/advanced and .../live/regular.
+  if (!/\/live(\/[a-z_]+)?$/.test(endpoint)) {
     // A programming error, caught in development: see the header.
     throw new Error(`public tools call live endpoints only, not ${endpoint}`);
   }

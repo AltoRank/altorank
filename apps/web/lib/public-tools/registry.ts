@@ -13,6 +13,26 @@ import { robotsTxtTester } from "./tools/robots-txt-tester";
 import { canonicalChecker } from "./tools/canonical-checker";
 import { sitemapChecker } from "./tools/sitemap-checker";
 import { linkExtractor } from "./tools/link-extractor";
+import { seoTitleGenerator } from "./tools/seo-title-generator";
+import { headlineGenerator } from "./tools/headline-generator";
+import { blogOutlineGenerator } from "./tools/blog-outline-generator";
+import { ctaGenerator } from "./tools/cta-generator";
+import { adCopyGenerator } from "./tools/ad-copy-generator";
+import { articleRewriter } from "./tools/article-rewriter";
+import { articleSummarizer } from "./tools/article-summarizer";
+import { grammarChecker } from "./tools/grammar-checker";
+import { contentIdeaGenerator } from "./tools/content-idea-generator";
+import { emailSubjectLineGenerator } from "./tools/email-subject-line-generator";
+import { socialMediaPostGenerator } from "./tools/social-media-post-generator";
+import { aiArticleGenerator } from "./tools/ai-article-generator";
+import { altTextGenerator } from "./tools/alt-text-generator";
+import { lsiKeywordGenerator } from "./tools/lsi-keyword-generator";
+import { keywordResearch } from "./tools/keyword-research";
+import { blogPostIdeas } from "./tools/blog-post-ideas";
+import { googleRankChecker } from "./tools/google-rank-checker";
+import { backlinkChecker } from "./tools/backlink-checker";
+import { websiteWorthCalculator } from "./tools/website-worth-calculator";
+import { plagiarismChecker } from "./tools/plagiarism-checker";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- each tool has its own input type; the handler validates before calling run()
 export type AnyPublicTool = PublicTool<any>;
@@ -25,6 +45,28 @@ const TOOLS: AnyPublicTool[] = [
   canonicalChecker,
   sitemapChecker,
   linkExtractor,
+  // ai tools (paid, spend-guarded)
+  seoTitleGenerator,
+  headlineGenerator,
+  blogOutlineGenerator,
+  ctaGenerator,
+  adCopyGenerator,
+  articleRewriter,
+  articleSummarizer,
+  grammarChecker,
+  contentIdeaGenerator,
+  emailSubjectLineGenerator,
+  socialMediaPostGenerator,
+  aiArticleGenerator,
+  altTextGenerator,
+  lsiKeywordGenerator,
+  // data tools (paid, spend-guarded)
+  keywordResearch,
+  blogPostIdeas,
+  googleRankChecker,
+  backlinkChecker,
+  websiteWorthCalculator,
+  plagiarismChecker,
 ];
 
 const BY_SLUG = new Map<string, AnyPublicTool>();
