@@ -73,8 +73,8 @@ const LANGUAGE_ENTRY_POINTS = new Set(["scoreArticle", "scoreCitationReadiness",
 
 // ── Allowlists ─────────────────────────────────────────────────────────────
 //
-// Key: `path:rule`, where rule is a marker name, `label`, or the entry point
-// called. Value: why that English is not an article-language rule. Legitimate
+// Key: `path:rule`, where rule is a marker name, `label:<the element>`, or the
+// entry point called. Value: why that English is not an article-language rule. Legitimate
 // entries are English that is about something other than the article's text:
 // a classifier for search keywords, a UI string, an instruction to the model
 // that shows syntax. Empty is the goal; at the time of writing every
@@ -83,7 +83,7 @@ const LANGUAGE_ENTRY_POINTS = new Set(["scoreArticle", "scoreCitationReadiness",
 const ALLOWED_MARKERS: Record<string, string> = {};
 
 const ALLOWED_LABELS: Record<string, string> = {
-  "lib/ai/prompts.ts:label":
+  'lib/ai/prompts.ts:label:<a href="{{internal-link:KEYWORD}}">anchor</a>':
     'shows the model the internal-link placeholder syntax (<a href="{{internal-link:KEYWORD}}">anchor</a>); ' +
     '"anchor" stands for the article\'s own words and never reaches the page',
 };
@@ -166,10 +166,12 @@ function scan(): { markers: Finding[]; labels: Finding[]; callers: Finding[] } {
           }
         }
 
-        // Rule 1: literal labels written as HTML.
+        // Rule 1: literal labels written as HTML. Keyed by the element
+        // itself, so allowing one label in a file does not allow the next.
         const text = literalText(node);
-        if (text && (LABEL_ELEMENT.test(text) || LABEL_ATTRIBUTE.test(text))) {
-          labels.push({ key: `${rel}:label`, file: rel, line: lineOf(source, node), text: text.slice(0, 80) });
+        const label = text ? (text.match(LABEL_ELEMENT) ?? text.match(LABEL_ATTRIBUTE)) : null;
+        if (text && label) {
+          labels.push({ key: `${rel}:label:${label[0]}`, file: rel, line: lineOf(source, node), text: text.slice(0, 80) });
         }
       }
 
@@ -196,7 +198,7 @@ const { markers, labels, callers } = scan();
 
 function report(found: Finding[], allowed: Record<string, string>, why: string): void {
   const unexplained = found.filter((f) => !(f.key in allowed));
-  const detail = unexplained.map((f) => `  ${f.file}:${f.line}  ${f.key.split(":").pop()}  ${JSON.stringify(f.text)}`).join("\n");
+  const detail = unexplained.map((f) => `  ${f.file}:${f.line}  ${f.key.slice(f.file.length + 1)}  ${JSON.stringify(f.text)}`).join("\n");
   expect(unexplained.length, unexplained.length ? `\n${detail}\n\n${why}\n` : "").toBe(0);
 }
 
