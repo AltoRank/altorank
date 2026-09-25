@@ -49,6 +49,7 @@ import { profileUsable } from "./business-context";
 import { languageCodeOf } from "./locale";
 import { contextKey, OPPORTUNITY_VERSION, type Opportunity } from "./opportunity";
 import { countReady, queueTarget } from "./queue";
+import { intentKey } from "./intent";
 
 /** Never store more than this from one top-up: a queue, not a dump. */
 export const TOP_UP_MAX = 40;
@@ -137,12 +138,23 @@ export function playbookCandidates(
   return TOP_UP_PLAYBOOKS.flatMap((id) => buildPlaybookSeeds(id, ctx));
 }
 
-/** Lower-cased, de-duplicated, minus everything the workspace already has. */
-export function newCandidates(raw: string[], known: Iterable<string>): string[] {
-  const seen = new Set([...known].map((t) => t.trim().toLowerCase()));
+/**
+ * De-duplicated, minus everything the workspace already has, by the words a
+ * keyword competes on (lib/keyword-research/intent.ts), not the raw string.
+ *
+ * Harvested research is mostly phrasings of the article it came from: an
+ * article for "mobil uygulama geliştirme şirketleri" carries "mobil uygulama
+ * geliştirme firması" and "... firmaları" among its related keywords, and a
+ * top-up that compared lower-cased strings stored each one as a new topic
+ * (a real signup, 2026-09-22). Nothing here has a results page yet, so this is
+ * the words half only; a synonym that gets past it is refused at qualification,
+ * where its results page is compared with the article's.
+ */
+export function newCandidates(raw: string[], known: Iterable<string>, language: string | null): string[] {
+  const seen = new Set([...known].map((t) => intentKey(t, language)).filter(Boolean));
   const out: string[] = [];
   for (const term of raw) {
-    const key = term.trim().toLowerCase();
+    const key = intentKey(term, language);
     if (!key || seen.has(key)) continue;
     seen.add(key);
     out.push(term.trim());
@@ -242,9 +254,11 @@ export async function topUpKeywords(
 
   const { data: articles } = await supabase
     .from("articles")
-    .select("research")
+    .select("keyword, research")
     .eq("workspace_id", workspaceId)
     .not("research", "is", null);
+  // An article's own keyword is a search the workspace already has, row or not.
+  for (const a of (articles ?? []) as Array<{ keyword?: unknown }>) if (typeof a.keyword === "string" && a.keyword.trim()) known.push(a.keyword);
 
   const harvested = harvestFromResearch((articles ?? []) as ResearchRow[]);
   const businessForCategory = (ws.business_profile as BusinessProfile | null) ?? null;
@@ -259,7 +273,7 @@ export async function topUpKeywords(
   for (const t of playbook) origin.set(t.trim().toLowerCase(), "playbook");
   for (const t of harvested) origin.set(t.trim().toLowerCase(), "ideas");
 
-  const candidates = newCandidates([...harvested, ...playbook], known).slice(0, TOP_UP_CANDIDATE_CAP);
+  const candidates = newCandidates([...harvested, ...playbook], known, context.languageCode).slice(0, TOP_UP_CANDIDATE_CAP);
   if (candidates.length === 0) {
     return { ...empty, reason: "nothing new to price: no stored research and no profile playbooks" };
   }
