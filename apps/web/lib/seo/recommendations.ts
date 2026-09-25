@@ -798,7 +798,12 @@ export async function recommendKeywords(
   const STAGES: IntentStage[] = ["candidate", "scheduled", "drafted", "live"];
   const further = (a: IntentStage, b: IntentStage | null): IntentStage => (b && STAGES.indexOf(b) > STAGES.indexOf(a) ? b : a);
   const topics: Topic[] = [];
-  for (const rec of recommendations.sort((a, b) => b.score - a.score)) {
+  // Best score first, but a phrasing that can be written ahead of one that
+  // cannot: a search is not given up because its highest-volume spelling is
+  // provider noise or out of reach.
+  const writable = (r: KeywordRecommendation) => (r.action === "write" && r.quality === "ok" ? 0 : 1);
+  recommendations.sort((a, b) => b.score - a.score);
+  for (const rec of [...recommendations].sort((a, b) => writable(a) - writable(b))) {
     const row = rowOf.get(rec.keywordId);
     if (row && isParkedForGood(row)) continue;
     // In flight on its own row, or covered by an article or a page found by
