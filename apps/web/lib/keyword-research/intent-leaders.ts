@@ -120,7 +120,7 @@ export async function readIntentLeaders(supabase: SupabaseClient, workspaceId: s
   );
 }
 
-/** "drafted", "live", "on the calendar": how far the leader got, for a reason line. */
+/** "already drafted", "already live", "on the calendar": how far the leader got, for a reason line. */
 export function stageWords(stage: IntentStage): string {
-  return stage === "live" ? "live" : stage === "drafted" ? "already drafted" : stage === "scheduled" ? "on the calendar" : "planned";
+  return stage === "live" ? "already live" : stage === "drafted" ? "already drafted" : stage === "scheduled" ? "on the calendar" : "planned";
 }
