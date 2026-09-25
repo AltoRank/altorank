@@ -133,7 +133,17 @@ export default async function DashboardLayout({
   const scopedWorkspace = scopeId ? workspaces.find((w) => w.id === scopeId) : undefined;
   const runNotice = wizardDone ? failedRunNotice(runSnapshot) : null;
 
-  const accountId = user ? await ensureAccount(user.id, meta, user.email) : null;
+  // The account of the site in view, when there is one: the trial gate below,
+  // the usage bar and the role all describe it. This used to be
+  // `ensureAccount`, which returns any one of the person's memberships, while
+  // /onboarding and the article reads answer for the scoped site's account.
+  // Someone invited to a paying account who also owns an older, never-trialed
+  // one was sent from the paying site to /onboarding, which found that site
+  // open and sent them back: a loop, and no dashboard. The reverse case opened
+  // a gated account's calendar and keywords. With no site in scope (a new
+  // person, or none left) the membership stands, and is created if missing.
+  const scopedAccountId = (scopedWorkspace as { account_id?: string | null } | undefined)?.account_id ?? null;
+  const accountId = scopedAccountId ?? (user ? await ensureAccount(user.id, meta, user.email) : null);
 
   /**
    * Real identity for the sidebar footer.

@@ -39,18 +39,27 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   // wizard promises a thirty-day plan; on the free tier only the first week of
   // it can be written, and until now nothing said so (P1-A1). Null when
   // unmetered, and then there is nothing to qualify.
+  //
+  // Asked of the account that owns the site in view, the same one the
+  // dashboard layout asks about, and not of `requireAuth`'s membership: with
+  // no scope cookie that is the person's oldest membership, while the scoped
+  // site falls back to their oldest site, and for someone in two accounts the
+  // two pages answered the gate for different accounts.
   const authRead = requireAuth();
-  const quotaRead = authRead.then(({ accountId, user }) => getRequestQuota(accountId, user.email ?? null));
+  const workspaceRead = supabase
+    .from("workspaces")
+    // The account's answer rides along on the workspace's own account row,
+    // so the question is asked of the account that owns this site, once, and
+    // not again for its second site.
+    .select("id, account_id, domain, business_profile, sitemap_url, blog_root_url, example_article_urls, auto_generate_weekly_limit, auto_approve, onboarded_at, onboarding_skipped_at, accounts(attribution_source)")
+    .eq("id", scopeId)
+    .single();
+  const quotaRead = Promise.all([workspaceRead, authRead]).then(([{ data: ws }, { user }]) =>
+    ws ? getRequestQuota(ws.account_id as string, user.email ?? null) : null,
+  );
   const simulation = await getSimulation();
-  const [{ data: workspace }, quota, run, auth] = await Promise.all([
-    supabase
-      .from("workspaces")
-      // The account's answer rides along on the workspace's own account row,
-      // so the question is asked of the account that owns this site, once, and
-      // not again for its second site.
-      .select("id, domain, business_profile, sitemap_url, blog_root_url, example_article_urls, auto_generate_weekly_limit, auto_approve, onboarded_at, onboarding_skipped_at, accounts(attribution_source)")
-      .eq("id", scopeId)
-      .single(),
+  const [{ data: workspace }, quotaOrNull, run, auth] = await Promise.all([
+    workspaceRead,
     quotaRead,
     // The run in progress, or the one just finished, so a reload lands on
     // the run screen rather than on step 1. Same read /api/onboard/state
@@ -58,7 +67,8 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
     latestRun(supabase, scopeId),
     authRead,
   ]);
-  if (!workspace) redirect("/workspaces");
+  if (!workspace || !quotaOrNull) redirect("/workspaces");
+  const quota = quotaOrNull;
 
   // A many-to-one embed comes back as one object; the untyped client can only
   // promise an array, so both shapes are read rather than one asserted.
