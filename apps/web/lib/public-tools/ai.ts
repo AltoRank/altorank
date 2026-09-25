@@ -24,8 +24,11 @@ import { anthropicCost } from "@/lib/billing/spend";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import { ToolError } from "./errors";
 
-/** Hard ceiling on output tokens for any public tool call. */
-export const MAX_OUTPUT_TOKENS = 2048;
+/**
+ * Hard ceiling on output tokens for any public tool call. Sized for the
+ * longest honest answer a tool gives: a rewrite of 1,500 pasted words.
+ */
+export const MAX_OUTPUT_TOKENS = 3072;
 const DEFAULT_OUTPUT_TOKENS = 1024;
 const UNAVAILABLE = "The AI step of this tool is unavailable right now. Try again later.";
 
@@ -33,11 +36,16 @@ export function publicToolModel(): string {
   return process.env.PUBLIC_TOOLS_MODEL?.trim() || MODEL_DEFAULTS.anthropicStructured;
 }
 
+/** The image types the model accepts as input. */
+export type ImageMediaType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+
 export interface AskOptions {
   /** The tool slug, for logs. */
   tool: string;
   system: string;
   user: string;
+  /** One image, sent before the text. The caller fetched and checked it. */
+  image?: { mediaType: ImageMediaType; base64: string };
   /** Capped at MAX_OUTPUT_TOKENS. Default 1024. */
   maxTokens?: number;
   temperature?: number;
@@ -74,7 +82,17 @@ export async function askHaiku(opts: AskOptions): Promise<AskResult> {
         model,
         max_tokens: maxTokens,
         system: opts.system,
-        messages: [{ role: "user", content: opts.user }],
+        messages: [
+          {
+            role: "user",
+            content: opts.image
+              ? [
+                  { type: "image", source: { type: "base64", media_type: opts.image.mediaType, data: opts.image.base64 } },
+                  { type: "text", text: opts.user },
+                ]
+              : opts.user,
+          },
+        ],
         ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
       },
       opts.signal ? { signal: opts.signal } : undefined,

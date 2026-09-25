@@ -13,6 +13,7 @@ import { robotsTxtTester } from "./tools/robots-txt-tester";
 import { canonicalChecker } from "./tools/canonical-checker";
 import { sitemapChecker } from "./tools/sitemap-checker";
 import { linkExtractor } from "./tools/link-extractor";
+import { seoTitleGenerator } from "./tools/seo-title-generator";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- each tool has its own input type; the handler validates before calling run()
 export type AnyPublicTool = PublicTool<any>;
@@ -25,6 +26,8 @@ const TOOLS: AnyPublicTool[] = [
   canonicalChecker,
   sitemapChecker,
   linkExtractor,
+  // ai tools (paid, spend-guarded)
+  seoTitleGenerator,
 ];
 
 const BY_SLUG = new Map<string, AnyPublicTool>();
