@@ -8,7 +8,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  */
 
 const infer = vi.fn();
-vi.mock("@/lib/onboarding/business-profile", () => ({ inferBusinessProfileDetailed: (...a: unknown[]) => infer(...a) }));
+// Partial: the site read is faked, the observed-URL field list is the real one
+// (lib/onboarding/observed-facts.ts checks every field it names).
+vi.mock("@/lib/onboarding/business-profile", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/onboarding/business-profile")>()),
+  inferBusinessProfileDetailed: (...a: unknown[]) => infer(...a),
+}));
 
 import { ensureBusinessProfile, profileUsable } from "../business-context";
 
@@ -52,6 +57,9 @@ describe("ensureBusinessProfile", () => {
     expect(out.business?.competitors).toEqual(["acuityscheduling.com"]);
     expect(out.business?.audiences).toEqual(["Dental clinics"]);
     expect(updates).toEqual([{ table: "workspaces", id: "ws", patch: { business_profile: expect.objectContaining({ competitors: ["acuityscheduling.com"] }) } }]);
+    // Nobody looked at it: saved as unconfirmed, so the writer is not told
+    // a model's reading is the owner's word.
+    expect(updates[0].patch).toMatchObject({ business_profile: { confirmedAt: null } });
   });
 
   it("says why when the site cannot be read for one", async () => {

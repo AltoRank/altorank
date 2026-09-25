@@ -62,7 +62,17 @@ export function BusinessFields({
             <Field key={key} label={label} hint="One item per line. Only include claims you can support.">
               <textarea rows={3} className={inputClass} value={(profile[key] ?? []).join("\n")} onChange={(e) => patch({[key]:e.target.value.split("\n")})} />
             </Field>)}
-          <Field label="Where an interested buyer should go" hint="Your product, pricing, booking or contact page.">
+          <Field
+            label="Where an interested buyer should go"
+            hint={
+              // Empty because the page read off the site did not check out:
+              // say which page and why (lib/onboarding/observed-facts.ts),
+              // rather than an empty box that looks like nothing was found.
+              !profile.conversionUrl && profile.observedChecks?.conversionUrl && !profile.observedChecks.conversionUrl.verified
+                ? profile.observedChecks.conversionUrl.reason
+                : "Your product, pricing, booking or contact page."
+            }
+          >
             <input className={inputClass} value={profile.conversionUrl ?? ""} onChange={(e) => patch({conversionUrl:e.target.value})} placeholder="https://example.com/contact" />
           </Field>
         </div>

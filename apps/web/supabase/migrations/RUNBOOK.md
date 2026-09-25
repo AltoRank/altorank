@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims) and **097** (article text server-only), each with its section at the end. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **095** (site pages extract) and **097** (article text server-only), each with its section at the end. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -147,7 +147,8 @@ m(file, applied) as (values
   ('085_agencies_to_accounts',               to_regclass('public.accounts') is not null and to_regclass('public.agencies') is null),
   ('091_public_tool_usage',                  to_regclass('public.public_tool_usage') is not null and to_regprocedure('public.reserve_public_tool_spend(text,numeric,numeric)') is not null),
   ('093_draft_claims',                       exists (select 1 from col where t='calendar_entries' and c='draft_owed_at') and exists (select 1 from col where t='workspaces' and c='trial_resume_claimed_at')),
-  ('097_article_body_server_only',           not has_column_privilege('authenticated', 'public.articles', 'content', 'SELECT'))
+  ('097_article_body_server_only',           not has_column_privilege('authenticated', 'public.articles', 'content', 'SELECT')),
+  ('095_site_pages_extract',                 exists (select 1 from col where t='site_pages' and c='extract'))
 )
 select file, applied from m order by file;
 ```
@@ -278,6 +279,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 085_agencies_to_accounts.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 091_public_tool_usage.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 093_draft_claims.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 097_article_body_server_only.sql   # AFTER its code is live; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 095_site_pages_extract.sql   # BEFORE its code is merged; see its section
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -344,6 +346,7 @@ no code in the repo references either).
 | 091_public_tool_usage.sql | `tools/public-api` | none | yes | yes, `drop function public.reserve_public_tool_spend(text,numeric,numeric); drop table public.public_tool_usage;` (paid public tools then refuse to run) |
 | 093_draft_claims.sql | `fix/trial-hold-and-resume` | 001, 049 | yes | yes, drop the eight columns and the two indexes; the code that reads them must go first |
 | 097_article_body_server_only.sql | `fix/trial-gate-first-article` | 001, 053; **its code deployed first** | yes | yes, `grant select on table public.articles to anon, authenticated;` (the text is then readable through the API again) |
+| 095_site_pages_extract.sql | `fix/writer-site-facts` | **044**; **applied before its code merges** | yes | yes, after its code is reverted: `alter table site_pages drop column if exists extract;` (loses the stored extracts only) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -791,3 +794,50 @@ it is granted.** The migration that adds it must say
 the column holds the article's text, in which case add it to the list in 097's
 comment and to `ARTICLE_BODY_COLUMNS` instead. A missing grant fails loudly
 (`permission denied`), never by leaking.
+
+## 095 — site pages extract
+
+`095_site_pages_extract.sql`: one nullable `jsonb` column, `site_pages.extract`,
+and new comments on the column and the table. It keeps what a business page
+says about the business (its role - home, offering, work, about, contact,
+pricing - its name, an index page's headings and named links, an about page's
+opening text, and the founding, team and location statements the page makes),
+read off the HTML the crawls already fetch (`lib/audit/site-extract.ts`). The
+writer's site facts are built from it (`lib/content/site-facts.ts`), and a row
+with an extract counts as a page the site has for the internal-link check
+(`lib/linking/targets.ts`).
+
+No RLS change: 053's `"Site pages by access"` policy is `for all` over the
+whole row. Depends on **044** (the table). Idempotent
+(`add column if not exists`, `comment on` replaces). Post-flight §4 step 2 does
+not list it: it adds no table. Pre-flight: a `site_pages.extract` column
+exists.
+
+**Apply BEFORE the code that ships with it is merged.** The column is additive
+and code from before it never names it, so applying first changes nothing. The
+reverse breaks things the moment the deploy is live: the sitemap crawl's upsert
+names `extract`, so every `site_pages` write fails (the onboarding pages phase
+and the nightly `/api/cron/site-pages`); the writer's site-facts read errors,
+and the writer is told the business's pages could not be read; and the
+internal-link check's query errors, which it does not surface, so links to
+crawled pages are stripped from drafts. So: apply, run the post-flight below,
+then merge.
+
+Existing rows stay NULL until a crawl reads the page again. The nightly
+site-pages cron refills sitemap sites, one stale workspace per run; a site with
+no sitemap is only reached by the first-look link crawl, which runs once per
+workspace, so an existing workspace of that kind has no extract until it is
+analysed again.
+
+Post-flight (expect `jsonb`, then a count that is `0` right after applying and
+grows as crawls run):
+
+```sql
+select data_type from information_schema.columns
+ where table_schema = 'public' and table_name = 'site_pages' and column_name = 'extract';
+select count(*) from site_pages where extract is not null;
+```
+
+Roll back only after the code is reverted:
+`alter table site_pages drop column if exists extract;` — the writer then
+knows only the profile again, which is how it was before.
