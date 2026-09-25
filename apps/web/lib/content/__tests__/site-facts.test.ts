@@ -101,7 +101,7 @@ describe("resolveConversionPage", () => {
   it("uses the saved page when it answers", async () => {
     const fetch = fakeFetch({ [`${O}/iletisim`]: { status: 200 } });
     const out = await resolveConversionPage({ stored: "/iletisim", candidates: [], domain: DOMAIN, fetch });
-    expect(out.conversion).toEqual({ url: `${O}/iletisim`, check: "The saved conversion page answered HTTP 200 when this draft was written" });
+    expect(out.conversion).toEqual({ url: `${O}/iletisim`, check: "the saved conversion page answered HTTP 200 when this draft was written" });
   });
 
   it("replaces a saved page that answers 404 with the contact page the crawl read", async () => {
@@ -202,5 +202,31 @@ describe("the writer prompt", () => {
     const p = buildSystemPrompt({ keyword: "k", siteFacts: facts, internalLinkTargets: [{ keyword: "maliyet", title: "Uygulama maliyeti" }] });
     expect(p).toContain("apart from the business's own pages listed above by their URL");
     expect(p).toContain("A link to a page on neither list is removed before publishing.");
+  });
+});
+
+describe("resolveConversionPage — what counts as shown to exist", () => {
+  it("does not lend an old page's check to a page a person typed since", async () => {
+    const fetch = fakeFetch({ [`${O}/randevu`]: { status: 429 } });
+    const out = await resolveConversionPage({
+      stored: "/randevu",
+      storedCheck: { proposed: "/bize-ulasin", verified: true, reason: "", checkedAt: "2026-09-22T00:00:00Z" },
+      candidates: [],
+      domain: DOMAIN,
+      fetch,
+    });
+    expect(out.conversion).toBeNull();
+  });
+
+  it("honours the site read's check for the URL it checked", async () => {
+    const fetch = fakeFetch({ [`${O}/bize-ulasin`]: { status: 429 } });
+    const out = await resolveConversionPage({
+      stored: `${O}/bize-ulasin`,
+      storedCheck: { proposed: "/bize-ulasin", verified: true, reason: "", checkedAt: "2026-09-22T00:00:00Z" },
+      candidates: [],
+      domain: DOMAIN,
+      fetch,
+    });
+    expect(out.conversion?.url).toBe(`${O}/bize-ulasin`);
   });
 });

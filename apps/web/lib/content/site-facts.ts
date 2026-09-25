@@ -251,15 +251,17 @@ export async function resolveConversionPage(opts: {
   const attempt = async (url: string, shownBefore: boolean, label: string, anyHost = false): Promise<ConversionOutcome | null> => {
     tried.add(normaliseSiteUrl(url, domain));
     const check = await checkSiteUrl(url, domain, { fetch: opts.fetch, anyHost });
+    // `check` completes a sentence the prompt starts; `note` is a sentence of its own.
+    const inline = label.charAt(0).toLowerCase() + label.slice(1);
     if (check.state === "verified") {
       return {
-        conversion: { url: check.url, check: `${label} answered HTTP ${check.status} when this draft was written` },
+        conversion: { url: check.url, check: `${inline} answered HTTP ${check.status} when this draft was written` },
         note: `${label} ${check.url} answered HTTP ${check.status}.`,
       };
     }
     if (check.state === "unverified" && shownBefore) {
       return {
-        conversion: { url, check: `${label} was shown to exist before; not re-checked now (${check.reason})` },
+        conversion: { url, check: `${inline} was shown to exist before; not re-checked now (${check.reason})` },
         note: `${label} ${url} could not be re-checked now (${check.reason}); used because it answered before.`,
       };
     }
@@ -268,7 +270,13 @@ export async function resolveConversionPage(opts: {
   };
 
   if (stored) {
-    const storedVerified = Boolean(opts.storedCheck?.verified) || opts.candidates.some((c) => normaliseSiteUrl(c, domain) === normaliseSiteUrl(stored, domain));
+    // Shown to exist before: the site read checked this very URL (a person
+    // may have typed a different one since), or the crawl fetched it.
+    const same = (u: string | null | undefined) => {
+      const abs = u ? absoluteOnSite(u, domain) : null;
+      return abs !== null && normaliseSiteUrl(abs, domain) === normaliseSiteUrl(stored, domain);
+    };
+    const storedVerified = Boolean(opts.storedCheck?.verified && same(opts.storedCheck.proposed)) || opts.candidates.some(same);
     // A stored page on another host can only have been typed by a person:
     // the site read refuses to store one (lib/onboarding/observed-facts.ts).
     const hit = await attempt(stored, storedVerified, "The saved conversion page", classifyHref(stored, domain) !== "internal");

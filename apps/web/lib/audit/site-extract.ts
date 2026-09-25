@@ -513,7 +513,9 @@ export function extractSitePage(
   if (!decided) return null;
 
   const { role, roleFrom, detail } = decided;
-  const mainText = stripTags(main);
+  // The page's own heading is its name, already kept; the text starts after it.
+  const bodyText = stripTags(main);
+  const mainText = h1 && bodyText.startsWith(h1) ? bodyText.slice(h1.length).trim() : bodyText;
   const index = !detail && (role === "offering" || role === "work" || role === "pricing");
   const extract: SitePageExtract = {
     v: 1,

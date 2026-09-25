@@ -27,6 +27,7 @@ import { safeFetch, type SafeFetch } from "@/lib/public-tools/safe-fetch";
 import { classifyLinkError, classifyLinkResponse } from "@/lib/seo/link-check";
 import { classifyHref, normaliseSiteUrl } from "@/lib/seo/links";
 import { CRAWLER_UA } from "@/lib/audit/crawler";
+import { refusing } from "@/lib/audit/host-circuit";
 import { e2eStubsEnabled } from "@/lib/e2e/stubs";
 import type { ObservedSite } from "./site-text";
 import {
@@ -97,6 +98,9 @@ export async function checkSiteUrl(url: string, domain: string, opts: CheckOptio
   if (!/^https?:\/\//i.test(url) || (!opts.anyHost && classifyHref(url, domain) !== "internal")) {
     return { state: "rejected", url, reason: `${url} is not on ${domain}` };
   }
+  // A host that refused this run is not asked again until the window passes
+  // (lib/audit/host-circuit.ts): one more knock only extends a ban.
+  if (refusing(url)) return { state: "unverified", url, status: null, reason: "the site is rate-limiting us right now" };
   const fetchImpl = opts.fetch ?? safeFetch;
   let res;
   try {
