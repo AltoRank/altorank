@@ -269,13 +269,16 @@ export async function announceSetupUnfinished(
   scope: { accountId: string; workspaceId: string; domain: string | null },
 ): Promise<string> {
   try {
-    const { data: live } = await supabase
+    const { data: live, error: liveError } = await supabase
       .from("articles")
       .select("id")
       .eq("workspace_id", scope.workspaceId)
       .eq("status", "live")
       .limit(1)
       .maybeSingle();
+    // Not knowing is not "nothing is live": sent on a failed read, this is
+    // the false email the check exists to stop. The next sweep asks again.
+    if (liveError) return `not sent: could not check for a live article (${liveError.message})`;
     if (live) return SETUP_ALREADY_LIVE_LINE;
     const facts = await setupUnfinishedFacts(supabase, scope.workspaceId, scope.domain);
     const out = await notifySetupUnfinished(supabase, { accountId: scope.accountId, workspaceId: scope.workspaceId }, facts);
@@ -326,7 +329,9 @@ export async function sweepUnfinishedSetups(supabase: SupabaseClient, now: Date 
         workspaceId: ws.id as string,
         domain: (ws.domain as string | null) ?? null,
       });
-      if (line && line !== "nobody to email") lines.push(`${ws.domain ?? ws.id}: ${line}`);
+      // An already-live site is not reported: nothing is claimed for it, so
+      // the same line would come back on every run for as long as it exists.
+      if (line && line !== "nobody to email" && line !== SETUP_ALREADY_LIVE_LINE) lines.push(`${ws.domain ?? ws.id}: ${line}`);
     }
   } catch (err) {
     console.error(`[setup-unfinished] sweep: ${err instanceof Error ? err.message : err}`);
