@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildSiteFacts, conversionCandidates, loadSiteFacts, resolveConversionPage, type SitePageRow } from "../site-facts";
+import { buildSiteFacts, conversionCandidates, loadSiteFacts, READ_PAGE_FILTER, resolveConversionPage, type SitePageRow } from "../site-facts";
 import { extractSitePage } from "@/lib/audit/site-extract";
 import { buildSystemPrompt, buildSiteFactsSection } from "@/lib/ai/prompts";
 import { fakeFetch } from "@/lib/public-tools/__tests__/fake-fetch";
@@ -16,8 +16,10 @@ const NOW = new Date("2026-09-25T00:00:00Z");
 const shell = (title: string, main: string) =>
   `<!doctype html><html><head><title>${title}</title></head><body><nav><a href="/iletisim">İletişim</a></nav><main>${main}</main></body></html>`;
 
+/** A row as the crawl stores it: an extract only from a 2xx body; a 404 clears it. */
 function row(url: string, html: string, status = 200): SitePageRow {
-  return { url, title: null, h1: null, page_type: "page", status, extract: extractSitePage(html, url, { now: NOW }) };
+  const answered = status >= 200 && status < 300;
+  return { url, title: null, h1: null, page_type: "page", status, extract: answered ? extractSitePage(html, url, { now: NOW }) : null };
 }
 
 const ROWS: SitePageRow[] = [
@@ -103,6 +105,18 @@ describe("buildSiteFacts", () => {
     ]);
   });
 
+  it("keeps a business page whose latest crawl was rate-limited, and says it was not re-read", () => {
+    // The nightly crawl got a 429 for the about page: its extract stood (it
+    // is only cleared by a 404/410), and what it says is still true.
+    const rows = ROWS.map((r) => (r.url === `${O}/hakkimizda` ? { ...r, status: 429 } : r));
+    const facts = buildSiteFacts(rows, DOMAIN);
+    expect(facts.pagesRead).toBe(7);
+    expect(facts.stated[0]).toEqual({ kind: "founded", text: "Örnek Ajans 2012 yılında kuruldu.", source: `${O}/hakkimizda` });
+    expect(facts.notes).toContain("1 of these pages did not answer the latest crawl (HTTP 429); what they say is from the last time they answered.");
+    // A page that answered 404 was cleared by that crawl and stays out.
+    expect(facts.pages.some((p) => p.url === `${O}/fiyatlar`)).toBe(false);
+  });
+
   it("says so when no page was recognised, and names the languages it can recognise", () => {
     const fi = buildSiteFacts([{ url: "https://example.fi/yhteystiedot", title: "Yhteystiedot", h1: null, status: 200, extract: null }], "example.fi");
     expect(fi.notes[0]).toMatch(/None of the 1 pages read was recognised/);
@@ -153,11 +167,18 @@ describe("resolveConversionPage", () => {
 
 describe("loadSiteFacts", () => {
   function db(rows: SitePageRow[], error: { message: string } | null = null) {
+    const filters: string[] = [];
     const chain = {
       eq: () => chain,
-      gte: () => chain,
-      lt: () => chain,
-      limit: async () => ({ data: error ? null : rows.filter((r) => (r.status ?? 0) >= 200 && (r.status ?? 0) < 300), error }),
+      or: (f: string) => {
+        filters.push(f);
+        return chain;
+      },
+      // What READ_PAGE_FILTER asks PostgREST for: answered 2xx, or carries an extract.
+      limit: async () => {
+        expect(filters).toEqual([READ_PAGE_FILTER]);
+        return { data: error ? null : rows.filter((r) => ((r.status ?? 0) >= 200 && (r.status ?? 0) < 300) || r.extract !== null), error };
+      },
     };
     return { from: () => ({ select: () => chain }) } as never;
   }

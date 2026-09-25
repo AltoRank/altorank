@@ -157,9 +157,20 @@ export interface SitePage {
   tech_checked_at?: string | null;
   /**
    * What the page says about the business, when it is the home, services,
-   * portfolio, about, contact or pricing page (migration 095). Null for
-   * writing and for every other page. The writer's site facts are built
-   * from it (lib/content/site-facts.ts).
+   * portfolio, about, contact or pricing page (migration 095). The writer's
+   * site facts are built from it (lib/content/site-facts.ts).
+   *
+   *   an extract  read from a 2xx HTML body just now
+   *   null        read just now and not such a page, or definitively gone
+   *               (404/410)
+   *   undefined   this crawl did not read the page's HTML - it timed out,
+   *               was refused or rate-limited, answered 5xx, or was read
+   *               through the render service - so the stored extract is
+   *               left as it is
+   *
+   * So a non-null extract always means: the last definitive answer for this
+   * page was a 2xx, and this is what it said. One 429 in a nightly run no
+   * longer erases a business page from what the writer knows.
    */
   extract?: SitePageExtract | null;
 }
@@ -530,17 +541,25 @@ export async function crawlPage(url: string, ctx: PageContext): Promise<SitePage
   // A page nothing could be established about still carries the one finding
   // that can be: it did not load. The checks refuse to say more (see
   // `checkPage`), so a 404 reports as a 404 rather than as five missing tags.
-  const failure = (status: number, error: string): SitePage =>
-    ctx.techChecks
+  //
+  // Its extract: gone (404/410) is gone, and clears it. Anything else - no
+  // answer, a refusal, a rate limit, a 5xx - says nothing about what the page
+  // says, so the key is left out and the stored extract stands (see
+  // `SitePage.extract`).
+  const failure = (status: number, error: string): SitePage => {
+    const gone = status === 404 || status === 410 ? { extract: null } : {};
+    return ctx.techChecks
       ? {
           ...base,
+          ...gone,
           status,
           error,
           tech_findings: checkPage(emptyFacts(url, path, status)),
           tech_issue_count: 1,
           tech_checked_at: new Date().toISOString(),
         }
-      : { ...base, status, error };
+      : { ...base, ...gone, status, error };
+  };
 
   let fetched: FetchedPage;
   try {
@@ -557,7 +576,8 @@ export async function crawlPage(url: string, ctx: PageContext): Promise<SitePage
   const status = fetched.status;
   if (status < 200 || status >= 400) return failure(status, `HTTP ${status}`);
   if (!(fetched.headers["content-type"] ?? "").includes("text/html")) {
-    return { ...base, status, error: "not HTML" };
+    // Answered, and not a page about the business.
+    return { ...base, status, error: "not HTML", extract: null };
   }
   const html = fetched.body;
 
@@ -858,19 +878,30 @@ export async function syncSitePages(
     // whose objects differ ("All object keys must match"), and the tech
     // columns are set on some rows and not others - a page that was rendered
     // by the provider has no findings, and a non-HTML response has none either.
-    const chunk = pages.slice(i, i + SITE_PAGES_UPSERT_CHUNK).map((p) => ({
-      ...p,
-      tech_findings: p.tech_findings ?? null,
-      tech_issue_count: p.tech_issue_count ?? null,
-      tech_checked_at: p.tech_checked_at ?? null,
-      extract: p.extract ?? null,
-      workspace_id: workspaceId,
-      last_crawled_at: new Date().toISOString(),
-    }));
-    const { error } = await supabase
-      .from("site_pages")
-      .upsert(chunk, { onConflict: "workspace_id,url" });
-    if (error) throw new SitePagesWriteError(`site_pages upsert: ${error.message}`, i);
+    const chunk = pages.slice(i, i + SITE_PAGES_UPSERT_CHUNK).map((p) => {
+      const row: Record<string, unknown> = {
+        ...p,
+        tech_findings: p.tech_findings ?? null,
+        tech_issue_count: p.tech_issue_count ?? null,
+        tech_checked_at: p.tech_checked_at ?? null,
+        workspace_id: workspaceId,
+        last_crawled_at: new Date().toISOString(),
+      };
+      // Not read this run: the key goes, so the upsert leaves the stored
+      // extract alone. An undefined value would still name the column, and
+      // supabase-js writes a named-but-missing column as null.
+      if (p.extract === undefined) delete row.extract;
+      return row;
+    });
+    // The same-keys rule again: rows that leave the extract alone go in a
+    // statement of their own.
+    for (const group of [chunk.filter((r) => "extract" in r), chunk.filter((r) => !("extract" in r))]) {
+      if (!group.length) continue;
+      const { error } = await supabase
+        .from("site_pages")
+        .upsert(group, { onConflict: "workspace_id,url" });
+      if (error) throw new SitePagesWriteError(`site_pages upsert: ${error.message}`, i);
+    }
   }
 
   return {
@@ -972,6 +1003,8 @@ async function renderPage(
     schema_types: null,
     status: facts.statusCode,
     error: null,
+    // No `extract`: the render service returns counts and headings, not the
+    // markup an extract is read from, so the stored one stands.
     rendered_by: "dataforseo",
     onpage_score: facts.onPageScore,
   };

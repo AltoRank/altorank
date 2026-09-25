@@ -67,6 +67,21 @@ function isOk(status: number | null): boolean {
   return typeof status === "number" && status >= 200 && status < 300;
 }
 
+/**
+ * A page the site has: it answered 2xx on the last crawl, or it carries an
+ * extract. An extract is only ever written from a 2xx body and is cleared
+ * when the page answers 404/410, and a crawl that could not read the page (a
+ * timeout, a 429, a 5xx) leaves it alone (lib/seo/site-crawl.ts). So a
+ * business page does not drop out of what the writer knows because one
+ * nightly run was rate-limited; the notes say it was not re-read.
+ */
+export function isReadPage(row: Pick<SitePageRow, "status" | "extract">): boolean {
+  return isOk(row.status) || row.extract?.v === 1;
+}
+
+/** The PostgREST filter for `isReadPage`, so the query and the check cannot drift. */
+export const READ_PAGE_FILTER = "and(status.gte.200,status.lt.300),extract.not.is.null";
+
 function pathDepth(url: string): number {
   try {
     return new URL(url).pathname.split("/").filter(Boolean).length;
@@ -81,7 +96,7 @@ function pathDepth(url: string): number {
  * told can be tested against fixture rows.
  */
 export function buildSiteFacts(rows: SitePageRow[], domain: string): SiteFacts {
-  const read = rows.filter((r) => isOk(r.status));
+  const read = rows.filter(isReadPage);
   const byKey = new Map<string, SitePageRow>();
   for (const r of read) {
     const key = normaliseSiteUrl(r.url, domain);
@@ -193,6 +208,14 @@ export function buildSiteFacts(rows: SitePageRow[], domain: string): SiteFacts {
     }
   }
 
+  const stale = pages.filter((p) => !isOk(p.status));
+  if (stale.length) {
+    facts.notes.push(
+      `${stale.length} of these pages did not answer the latest crawl (${[...new Set(stale.map((p) => (p.status ? `HTTP ${p.status}` : "no answer")))].join(", ")}); ` +
+        "what they say is from the last time they answered.",
+    );
+  }
+
   if (facts.pagesRead === 0) {
     facts.notes.push("No page of this site has been read yet, so nothing is known about it beyond the profile.");
   } else if (!withExtract.some((x) => x.extract.role !== "home")) {
@@ -207,7 +230,7 @@ export function buildSiteFacts(rows: SitePageRow[], domain: string): SiteFacts {
 
 /** The pages worth offering as the conversion page, best first. */
 export function conversionCandidates(rows: SitePageRow[], domain: string): string[] {
-  const facts = rows.filter((r) => isOk(r.status) && r.extract?.v === 1 && !r.extract.detail);
+  const facts = rows.filter((r) => isReadPage(r) && r.extract?.v === 1 && !r.extract.detail);
   const seen = new Set<string>();
   const out: string[] = [];
   for (const role of ["contact", "pricing"] as const) {
@@ -343,8 +366,7 @@ export async function loadSiteFacts(
       .from("site_pages")
       .select("url, title, h1, page_type, status, extract")
       .eq("workspace_id", workspaceId)
-      .gte("status", 200)
-      .lt("status", 300)
+      .or(READ_PAGE_FILTER)
       .limit(1000);
     if (error) {
       const facts = empty(`The business's pages could not be read from the database (${error.message}).`);

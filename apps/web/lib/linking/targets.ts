@@ -226,7 +226,11 @@ export async function fetchPoolTargets(
  * "Crawled" means crawled and answered. This read every `site_pages` row, and
  * a row is also written for a page that answered 404 or never answered at
  * all, so a link to a page the crawl had found dead counted as a page the site
- * has (2026-09-25).
+ * has (2026-09-25). A row with an extract counts too, whatever the last
+ * crawl got: an extract is only written from a 2xx body, is cleared by a
+ * 404/410, and outlives a timeout or a 429 (lib/seo/site-crawl.ts) - so a
+ * business page the writer was offered (lib/content/site-facts.ts) is never
+ * one this check strips.
  */
 export async function fetchKnownPages(
   supabase: SupabaseClient,
@@ -235,7 +239,12 @@ export async function fetchKnownPages(
 ): Promise<{ url: string }[]> {
   const [pool, crawled, published] = await Promise.all([
     fetchPoolTargets(supabase, workspaceId),
-    supabase.from("site_pages").select("url").eq("workspace_id", workspaceId).gte("status", 200).lt("status", 400).limit(5000),
+    supabase
+      .from("site_pages")
+      .select("url")
+      .eq("workspace_id", workspaceId)
+      .or("and(status.gte.200,status.lt.400),extract.not.is.null")
+      .limit(5000),
     fetchPublishedTargets(supabase, workspaceId, excludeArticleId),
   ]);
   const seen = new Set<string>();
