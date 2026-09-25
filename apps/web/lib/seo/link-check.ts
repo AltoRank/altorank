@@ -8,24 +8,55 @@
 // fetched, the answer is recorded against the article, and a link that is
 // definitively dead is unwrapped to its text.
 //
-// "Definitively" is deliberate. A 404 or 410, or a host that does not resolve,
-// is a dead citation and removing it is a service. A 403, a 429, a 5xx or a
-// timeout is a server that did not want to talk to a bot from a data centre
-// right now, and a real source behind a WAF looks exactly like that. Those are
-// kept and reported as unverified, for a person to open. Stripping them would
-// remove exactly the authoritative sources that are most likely to be behind
-// one.
+// "Definitively" is deliberate. A 404 or 410 to a GET, a host that does not
+// resolve, or a server that refuses the connection is a dead citation and
+// removing it is a service. A 401, 403, 405, 429, 451 or 999, a 5xx, a
+// Cloudflare or Akamai challenge page or a timeout is a server that did not
+// want to talk to a bot from a data centre right now, and a real source behind
+// a WAF looks exactly like that. Those are kept and recorded as unverified,
+// for a person to open. Stripping them would remove exactly the authoritative
+// sources that are most likely to be behind one.
+//
+// A real signup, 2026-09-22 (Turkish web/mobile agency): the checker deleted a
+// valid Google Play source from his draft. It removed only 404, 410 and
+// unresolvable hosts, so Play answered one of those. Which one was not
+// confirmed: the check's record for that draft is in production and was not
+// read. Two ways it happens, and both are closed: a HEAD-only 404 was taken
+// as final (anything but a 2xx/3xx to HEAD is now asked again with GET), and
+// Play answers 404 for a listing that is not distributed in the country the
+// request comes from, which a check run from one data centre cannot tell from
+// a missing app. A 404 from such a catalogue is kept as unverified - and
+// because an app id the model invented answers exactly the same, the review
+// (lib/seo/article-audit.ts) lists every kept "not found" apart from the
+// guarded ones, as a link that may not exist.
+//
+// Every request goes through the SSRF-safe fetcher the public tools use
+// (lib/public-tools/safe-fetch.ts): a URL a model wrote is not one our server
+// should open without checking where its name resolves.
 //
 // No API cost. HTTP only, bounded by concurrency and a per-request timeout.
 
 import { extractLinks, hostOf, type LinkRef } from "./links";
+import { safeFetch, UnsafeUrlError, type SafeFetch } from "@/lib/public-tools/safe-fetch";
+
+/**
+ * live: the page answered. dead: definitively gone, and unwrapped.
+ * unverified: kept - something stood between us and the page - for a person
+ * to open.
+ */
+export type LinkVerdict = "live" | "dead" | "unverified";
 
 export interface LinkCheck {
   url: string;
   /** HTTP status, or null when no response came back. */
   status: number | null;
-  /** The page answered 2xx or 3xx. */
+  /** The page answered 2xx or 3xx, and not with a bot challenge. */
   ok: boolean;
+  /**
+   * What the answer means. Optional only because rows stored before
+   * 2026-09-25 lack it; `ok` and `removed` still say the same thing for those.
+   */
+  verdict?: LinkVerdict;
   /** Why it is not ok, in words a reviewer can act on. */
   reason?: string;
   /** Unwrapped from the article because it was definitively dead. */
@@ -33,7 +64,22 @@ export interface LinkCheck {
   checkedAt: string;
 }
 
-export type LinkFetcher = (url: string) => Promise<{ status: number }>;
+/** One answer from a server, as much of it as the classification reads. */
+export interface LinkResponse {
+  status: number;
+  /** Lower-cased names. */
+  headers?: Record<string, string>;
+  /** The start of the body, when one was read: a challenge page is recognised by it. */
+  body?: string;
+  /**
+   * The method that produced the answer. A fetcher that confirms a failing
+   * HEAD with a GET (the default does) returns the GET's answer; only a
+   * fetcher that never does says "HEAD", and its 404 is not taken as final.
+   */
+  method?: "HEAD" | "GET";
+}
+
+export type LinkFetcher = (url: string) => Promise<LinkResponse>;
 
 export interface VerifyOptions {
   fetcher?: LinkFetcher;
@@ -47,8 +93,114 @@ const UA =
 
 /** Statuses that mean the resource is gone, not merely guarded. */
 const DEAD_STATUSES = new Set([404, 410]);
-/** Servers that refuse HEAD but answer GET. */
-const RETRY_WITH_GET = new Set([405, 403, 501]);
+/**
+ * Catalogues that show a listing only to the countries it is distributed in
+ * and answer 404 everywhere else. The check runs from one data centre, so a
+ * 404 here says "not sold where we asked from", not "gone". Google Play is
+ * the one the 2026-09-22 draft cited; add a host only with the same evidence.
+ */
+export const COUNTRY_SCOPED_HOSTS: ReadonlySet<string> = new Set(["play.google.com"]);
+
+/** The statuses a bot manager serves its challenge or block page with. */
+const CHALLENGE_STATUSES = new Set([403, 429, 503]);
+
+/**
+ * The challenge page a bot manager serves instead of the page, by vendor, or
+ * null.
+ *
+ * Only a definitive sign counts. The same vendors put their sensor script,
+ * cookie or header on every ordinary page they protect: Cloudflare's
+ * JavaScript detections inject /cdn-cgi/challenge-platform/scripts/jsd/,
+ * DataDome sends `x-datadome` on every response, PerimeterX pages carry
+ * `_pxAppId`, Imperva injects `_Incapsula_Resource`. Counting those made a
+ * real 404 on such a site "unverified" (so a dead citation was kept) and a
+ * live 200 "unverified" too. So:
+ *
+ *   - at any status: Cloudflare's `cf-mitigated: challenge` header, and a
+ *     page whose title (or block text) is the challenge's own - "Just a
+ *     moment...", "Attention Required! | Cloudflare", Akamai's "Access
+ *     Denied" with its reference number, "Pardon Our Interruption",
+ *     Incapsula's "Request unsuccessful" block text, an exact "Robot Check";
+ *   - only on a 403, 429 or 503: a marker that appears in the challenge page
+ *     itself and not in the sensor on ordinary pages (`cf-chl-`, Cloudflare's
+ *     challenge orchestration path, DataDome's captcha-delivery.com,
+ *     PerimeterX's px-captcha box). Those statuses are kept as unverified
+ *     anyway; the marker only names who stood in the way.
+ *
+ * A 200 or a 404 carrying a vendor's sensor is the page, live or gone.
+ */
+export function botChallengeOf(headers: Record<string, string> = {}, body = "", status?: number): string | null {
+  const h = (name: string) => (headers[name] ?? "").toLowerCase();
+  const head = body.slice(0, 20_000);
+  const title = (head.match(/<title[^>]*>([\s\S]{0,200}?)<\/title>/i)?.[1] ?? "")
+    .replace(/&#32;|&nbsp;/gi, " ")
+    .replace(/&#46;|&period;/gi, ".")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+  // Definitive at any status.
+  if (h("cf-mitigated") === "challenge") return "Cloudflare";
+  if (/^just a moment(?:\.\.\.|\u2026)?$/.test(title) || /^attention required! \| cloudflare$/.test(title)) return "Cloudflare";
+  if (title === "access denied" && /reference(?:&#32;|\s)+(?:#|&#35;)|errors(?:\.|&#46;)edgesuite(?:\.|&#46;)net/i.test(head)) return "Akamai";
+  if (title === "pardon our interruption" || /request unsuccessful\.\s*incapsula incident id/i.test(head)) return "Imperva";
+  if (/^(?:robot check|are you a robot\??|verify you are human\.?)$/.test(title)) return "a bot check";
+
+  // Challenge-only markers, and only where the status already says "blocked".
+  if (status !== undefined && CHALLENGE_STATUSES.has(status)) {
+    if (/cf-chl-|_cf_chl_opt|\/cdn-cgi\/challenge-platform\/h\/|cf-browser-verification/i.test(head)) return "Cloudflare";
+    if (/captcha-delivery\.com/i.test(head)) return "DataDome";
+    if (/id=["']px-captcha["']/i.test(head)) return "PerimeterX";
+  }
+  return null;
+}
+
+/**
+ * What one answer means for a citation. Pure, so the policy is testable
+ * without a network: the whole difference between "remove" and "keep and
+ * ask a person" is decided here.
+ */
+export function classifyLinkResponse(url: string, res: LinkResponse): { verdict: LinkVerdict; reason?: string } {
+  const { status } = res;
+  const challenge = botChallengeOf(res.headers, res.body, status);
+  if (challenge) return { verdict: "unverified", reason: `HTTP ${status}, a ${challenge} challenge page; could not verify` };
+  if (status >= 200 && status < 400) return { verdict: "live" };
+  if (DEAD_STATUSES.has(status)) {
+    if (res.method === "HEAD") return { verdict: "unverified", reason: `HTTP ${status} to HEAD, not confirmed with GET` };
+    const host = hostOf(url);
+    if (host && COUNTRY_SCOPED_HOSTS.has(host)) {
+      // Kept, and said to be what it is: either not sold where we asked from,
+      // or an app id that does not exist. The review lists it as a link that
+      // may not exist, apart from the guarded ones.
+      return {
+        verdict: "unverified",
+        reason: `HTTP ${status}; this store answers "not found" for a listing not sold in the country the check ran from, and for an app id that does not exist, so it could not verify which`,
+      };
+    }
+    return { verdict: "dead", reason: `HTTP ${status}, page gone` };
+  }
+  // Everything else is kept. 401, 403, 405, 429, 451 and 999 (LinkedIn's
+  // answer to anything that is not a browser) are a bot rule, a login wall or
+  // a rate limit in front of a page that may be perfectly real; a 5xx is the
+  // server having a bad minute; any other 4xx is not the page saying "gone".
+  return { verdict: "unverified", reason: `HTTP ${status}, could not verify` };
+}
+
+/**
+ * What a fetch that never got an answer means. Only a name that does not
+ * exist and a server that refuses the connection are definitive; a timeout,
+ * a reset or a temporary DNS failure is the network, not the page.
+ */
+export function classifyLinkError(err: unknown): { verdict: LinkVerdict; reason: string } {
+  if (err instanceof UnsafeUrlError) {
+    return /private or local address/i.test(err.message)
+      ? { verdict: "dead", reason: "not a public host" }
+      : { verdict: "unverified", reason: `not checked: ${err.message}` };
+  }
+  const reason = describe(err);
+  return { verdict: reason === "host not found" || reason === "connection refused" ? "dead" : "unverified", reason };
+}
 
 /**
  * Hosts a server-side fetch must never be pointed at on the strength of a
@@ -73,31 +225,33 @@ export function isUnsafeHost(url: string): boolean {
   return false;
 }
 
-export const defaultFetcher = (timeoutMs: number): LinkFetcher => async (url) => {
-  const attempt = async (method: "HEAD" | "GET") => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(url, {
-        method,
-        redirect: "follow",
-        signal: controller.signal,
-        headers: { "User-Agent": UA, Accept: "text/html,*/*;q=0.8" },
-      });
-      // Drain nothing: a GET body is not needed, and closing early is fine.
-      if (method === "GET") void res.body?.cancel().catch(() => undefined);
-      return { status: res.status };
-    } finally {
-      clearTimeout(timer);
+/** Enough of a body to recognise a challenge page; the page itself is not needed. */
+const BODY_BYTES = 64_000;
+
+/**
+ * HEAD first, because it is cheap for both sides; GET whenever HEAD says
+ * anything but "here". Servers that mishandle HEAD answer it 404, 405 or 403
+ * while serving the page to a GET, and a reader follows a link with a GET.
+ * A name that does not resolve is not asked twice: DNS does not care about
+ * the method.
+ */
+export const defaultFetcher = (timeoutMs: number, fetchImpl: SafeFetch = safeFetch): LinkFetcher => async (url) => {
+  const opts = { timeoutMs, userAgent: UA, maxBytes: BODY_BYTES };
+  try {
+    const head = await fetchImpl(url, { ...opts, method: "HEAD" });
+    if (head.status >= 200 && head.status < 400 && !botChallengeOf(head.headers)) {
+      return { status: head.status, headers: head.headers, method: "HEAD" };
     }
-  };
-  const head = await attempt("HEAD");
-  return RETRY_WITH_GET.has(head.status) ? attempt("GET") : head;
+  } catch (err) {
+    if (err instanceof UnsafeUrlError || classifyLinkError(err).reason === "host not found") throw err;
+  }
+  const get = await fetchImpl(url, { ...opts, method: "GET" });
+  return { status: get.status, headers: get.headers, body: get.body, method: "GET" };
 };
 
 function describe(err: unknown): string {
   const e = err as { name?: string; message?: string; cause?: { code?: string } };
-  if (e?.name === "AbortError") return "timed out";
+  if (e?.name === "AbortError" || e?.name === "TimeoutError" || /timed out/i.test(e?.message ?? "")) return "timed out";
   const code = e?.cause?.code;
   if (code === "ENOTFOUND") return "host not found";
   if (code === "ECONNREFUSED") return "connection refused";
@@ -127,31 +281,26 @@ export async function verifyOutboundLinks(
   const check = async (url: string): Promise<void> => {
     const checkedAt = now().toISOString();
     if (isUnsafeHost(url)) {
-      checks.push({ url, status: null, ok: false, reason: "not a public host", removed: true, checkedAt });
+      checks.push({ url, status: null, ok: false, verdict: "dead", reason: "not a public host", removed: true, checkedAt });
       return;
     }
     try {
-      const { status } = await fetcher(url);
-      const ok = status >= 200 && status < 400;
+      const res = await fetcher(url);
+      const { verdict, reason } = classifyLinkResponse(url, res);
       checks.push({
         url,
-        status,
-        ok,
-        reason: ok ? undefined : DEAD_STATUSES.has(status) ? `HTTP ${status}, page gone` : `HTTP ${status}, could not verify`,
-        removed: DEAD_STATUSES.has(status),
+        status: res.status,
+        ok: verdict === "live",
+        verdict,
+        reason,
+        removed: verdict === "dead",
         checkedAt,
       });
     } catch (err) {
-      const reason = describe(err);
-      checks.push({
-        url,
-        status: null,
-        ok: false,
-        reason,
-        // A host that does not exist is dead. Everything else is unknown.
-        removed: reason === "host not found",
-        checkedAt,
-      });
+      // A host that does not exist, or refuses the connection, is dead.
+      // Everything else is unknown.
+      const { verdict, reason } = classifyLinkError(err);
+      checks.push({ url, status: null, ok: false, verdict, reason, removed: verdict === "dead", checkedAt });
     }
   };
 

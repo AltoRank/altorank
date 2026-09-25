@@ -16,7 +16,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicModel } from "@/lib/ai/models";
-import { readSiteText, type SiteTextSource, MIN_CHARS } from "./site-text";
+import { readSiteText, type ObservedSite, type SiteTextSource, MIN_CHARS } from "./site-text";
 import { e2eStubsEnabled, stubInferProfile } from "@/lib/e2e/stubs";
 
 export interface BusinessProfile {
@@ -50,7 +50,48 @@ export interface BusinessProfile {
   buyingJobs?: string[];
   differentiators?: string[];
   exclusions?: string[];
-  conversionUrl?: string;
+  /**
+   * Where an interested buyer goes: a product, pricing, booking or contact
+   * page on this site. When the profile was read off the site this is only
+   * ever a page the read fetched with a 2xx, or a link on one that answered
+   * 2xx; otherwise it is null and `observedChecks.conversionUrl` says why.
+   * A person may type one in settings.
+   */
+  conversionUrl?: string | null;
+  /**
+   * How each URL the site read proposed was checked, by field. Written by
+   * lib/onboarding/observed-facts.ts; the settings screen shows the reason
+   * when a field is empty because its proposal failed.
+   */
+  observedChecks?: Partial<Record<ObservedUrlField, ObservedCheck>>;
+  /**
+   * When a person last saved this profile: the wizard's finish or the
+   * settings form (`saveProfile`, which stamps it server-side). Absent on a
+   * profile read off the site and saved by the scheduled repair
+   * (lib/keyword-research/business-context.ts) - nobody confirmed that one,
+   * and the writer is told so rather than handed model-read offerings as the
+   * owner's words.
+   */
+  confirmedAt?: string | null;
+}
+
+/**
+ * Profile fields that hold a URL read off the site. Each one is checked
+ * before it is stored (lib/onboarding/observed-facts.ts); adding a URL field
+ * to the profile means adding it here.
+ */
+export const OBSERVED_URL_FIELDS = ["conversionUrl"] as const;
+export type ObservedUrlField = (typeof OBSERVED_URL_FIELDS)[number];
+
+/** How one observed URL was checked. */
+export interface ObservedCheck {
+  /** What the model named, before any check; null when it named nothing. */
+  proposed: string | null;
+  /** True only when the URL was read on the site and answered 2xx. */
+  verified: boolean;
+  /** Why the field holds what it holds, in words a person can act on. */
+  reason: string;
+  checkedAt: string;
 }
 
 export const EMPTY_PROFILE: BusinessProfile = {
@@ -84,7 +125,9 @@ const PROMPT = [
   "- buyingJobs: up to 4 concrete tasks buyers need help completing, supported by the text.",
   "- differentiators: up to 4 supported reasons to choose this business. Do not invent superiority.",
   "- exclusions: audiences or needs explicitly not served; [] when unknown.",
-  "- conversionUrl: an observed product, pricing or contact URL on this site; empty when unknown.",
+  "- conversionUrl: the product, pricing, booking or contact page an interested buyer should go to. Copy it",
+  "  exactly from LINKS ON THE PAGES READ below. Never write a URL that is not in that list, never build one",
+  "  from a word (\"/contact\"); return \"\" when no link in the list is such a page.",
   "- competitors: up to 3 direct competitors serving the same buyer and buying job. Verify from evidence in the text; return [] when unknown.",
   "  Do not substitute famous software tools for a service business, or name this site's own domain.",
   "  Return [] rather than guessing if the category is unclear.",
@@ -98,6 +141,12 @@ export interface InferenceResult {
   reason: InferenceReason;
   /** Which read of the site produced the text the model saw. */
   source: SiteTextSource;
+  /**
+   * The pages the read fetched with a 2xx and the links on them: the only
+   * evidence an observed URL in `profile` may come from. Absent when nothing
+   * was fetched (fixtures, no model).
+   */
+  observed?: ObservedSite;
   /**
    * The exact sentence to show, when the reason alone does not carry it.
    * `needs_plan` is the only producer: the billing gate's refusal names the
@@ -124,7 +173,7 @@ export async function inferBusinessProfileDetailed(domain: string): Promise<Infe
 
   const read = await readSiteText(domain, MAX_CHARS);
   if (read.source === "none" || read.text.length < Math.min(MIN_CHARS, 250)) {
-    return { profile: null, reason: "unreadable", source: read.source };
+    return { profile: null, reason: "unreadable", source: read.source, observed: read.observed };
   }
 
   try {
@@ -132,14 +181,27 @@ export async function inferBusinessProfileDetailed(domain: string): Promise<Infe
     const response = await client.messages.create({
       model: anthropicModel("structured"),
       max_tokens: 1200,
-      messages: [{ role: "user", content: `${PROMPT}\n\nSITE: ${domain}\n\n${read.text}` }],
+      messages: [{ role: "user", content: `${PROMPT}\n\nSITE: ${domain}\n\n${read.text}\n\n${linksForPrompt(read.observed)}` }],
     });
     const raw = response.content[0]?.type === "text" ? response.content[0].text : "";
     const profile = parseProfile(raw, domain);
-    return profile ? { profile, reason: "ok", source: read.source } : { profile: null, reason: "model_failed", source: read.source };
+    return profile
+      ? { profile, reason: "ok", source: read.source, observed: read.observed }
+      : { profile: null, reason: "model_failed", source: read.source, observed: read.observed };
   } catch {
-    return { profile: null, reason: "model_failed", source: read.source };
+    return { profile: null, reason: "model_failed", source: read.source, observed: read.observed };
   }
+}
+
+/**
+ * The links the model may pick a conversion page from. Named as the only
+ * source, and said to be empty when it is, so an absent list is not read as
+ * permission to guess.
+ */
+export function linksForPrompt(observed: ObservedSite | undefined): string {
+  const links = observed?.links ?? [];
+  if (!links.length) return "LINKS ON THE PAGES READ: none were found, so conversionUrl must be \"\".";
+  return ["LINKS ON THE PAGES READ:", ...links.map((l) => `- ${l.text || "(no text)"}: ${l.url}`)].join("\n");
 }
 
 /**
@@ -187,7 +249,9 @@ export function parseProfile(raw: string, domain: string): BusinessProfile | nul
     buyingJobs: strings(parsed.buyingJobs).slice(0, 4),
     differentiators: strings(parsed.differentiators).slice(0, 4),
     exclusions: strings(parsed.exclusions).slice(0, 6),
-    conversionUrl: typeof parsed.conversionUrl === "string" ? parsed.conversionUrl : "",
+    // Unchecked here: parsing cannot know whether the site has the page.
+    // lib/onboarding/observed-facts.ts checks it before anything stores it.
+    conversionUrl: typeof parsed.conversionUrl === "string" && parsed.conversionUrl.trim() ? parsed.conversionUrl.trim() : null,
     // A model asked for competitors will happily return the site itself, which
     // then seeds research against its own domain.
     competitors: strings(parsed.competitors)

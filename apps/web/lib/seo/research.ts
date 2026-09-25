@@ -28,7 +28,8 @@ import { htmlToMarkdown } from "@/lib/audit/markdown";
 import { fetchSite } from "@/lib/audit/lenient-fetch";
 
 export interface ResearchLayer {
-  id: "serp" | "related_keywords" | "gsc" | "competitor_length";
+  /** `site_facts` is added by lib/content/site-facts.ts, not by `gatherArticleResearch`. */
+  id: "serp" | "related_keywords" | "gsc" | "competitor_length" | "site_facts";
   /** `ok` loaded, `unavailable` not configured, `failed` configured but errored. */
   status: "ok" | "unavailable" | "failed";
   detail: string;

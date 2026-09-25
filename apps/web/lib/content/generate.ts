@@ -30,6 +30,8 @@ import { accountPausedMessage } from "@/lib/billing/pause";
 import { spendClient } from "@/lib/billing/default-spend";
 import { setSpendReporter } from "@/lib/seo/client";
 import { fetchKnownPages } from "@/lib/linking/targets";
+import { loadSiteFacts } from "@/lib/content/site-facts";
+import { siteFactUrls } from "@/lib/ai/prompts";
 import { anthropicModel, openaiImageModel } from "@/lib/ai/models";
 import { GenerationTruncatedError } from "@/lib/ai/errors";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
@@ -233,17 +235,26 @@ export function slugFor(text: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
-/** The three fields of `workspaces.business_profile` a writer can use, or undefined when there is nothing to say. */
+/** The fields of `workspaces.business_profile` a writer can use, or undefined when there is nothing to say. */
 export function siteContextFrom(profile: unknown): SiteContext | undefined {
   if (!profile || typeof profile !== "object") return undefined;
-  const p = profile as { name?: unknown; description?: unknown; audiences?: unknown };
+  const p = profile as { name?: unknown; description?: unknown; audiences?: unknown; offerings?: unknown; confirmedAt?: unknown };
   const name = typeof p.name === "string" ? p.name.trim() : "";
   const description = typeof p.description === "string" ? p.description.trim() : "";
   if (!name && !description) return undefined;
-  const audiences = Array.isArray(p.audiences)
-    ? p.audiences.filter((a): a is string => typeof a === "string" && a.trim().length > 0).map((a) => a.trim())
-    : [];
-  return { name: name || null, description: description || null, audiences };
+  const strings = (v: unknown) =>
+    Array.isArray(v) ? v.filter((a): a is string => typeof a === "string" && a.trim().length > 0).map((a) => a.trim()) : [];
+  // Offerings are the profile's words for what is sold. The writer was not
+  // given them before 2026-09-25 and wrote about the category instead. Whose
+  // words they are - the owner's, or a model's reading of the site that
+  // nobody confirmed - travels with them.
+  return {
+    name: name || null,
+    description: description || null,
+    audiences: strings(p.audiences),
+    offerings: strings(p.offerings),
+    confirmed: typeof p.confirmedAt === "string" && p.confirmedAt.trim() !== "",
+  };
 }
 
 /** A rewrite of a page the product did not write has no article id. */
@@ -598,6 +609,15 @@ export async function generateArticle(
       });
     });
 
+    // What the business's own pages say, read off the pages the crawls
+    // already fetched, with the conversion page checked again now. Started
+    // beside the research so its database read and its one to three GETs to
+    // the customer's site cost no wall-clock. Not for a rewrite: that brief
+    // is to keep the page, not to add a pitch to it.
+    const siteFactsPending = refreshOf
+      ? null
+      : loadSiteFacts(supabase, workspaceId, workspace.domain, workspace.business_profile);
+
     const research = await gatherArticleResearch({
       keyword,
       locale: workspace.language ?? "en",
@@ -606,6 +626,10 @@ export async function generateArticle(
       workspaceId,
       relatedKeywords: options.relatedKeywords,
     });
+    const siteFacts = siteFactsPending ? await siteFactsPending : null;
+    // Saved with the research, so the reviewer sees what the writer was told
+    // about the business and whether the conversion page checked out.
+    if (siteFacts) research.layers.push(siteFacts.layer);
     const questionSelection = await selectArticleQuestions(research.peopleAlsoAsk, {
       keyword, title: approvedTitle, language: workspace.language ?? "en",
       business: workspace.business_profile, brief: topicBrief,
@@ -705,6 +729,7 @@ export async function generateArticle(
       output,
       brief,
       site,
+      siteFacts: siteFacts?.facts,
       refreshOf: refreshOf
         ? {
             existingHtml: refreshOf.existingHtml,
@@ -780,6 +805,9 @@ export async function generateArticle(
       ...linkTargets,
       ...(await fetchKnownPages(supabase, workspaceId, article.id ?? undefined)),
       ...existingInternalLinks(refreshOf?.existingHtml, workspace.domain),
+      // The business pages the writer was offered: fetched pages, and a
+      // conversion page that answered just now.
+      ...siteFactUrls(siteFacts?.facts).map((url) => ({ url })),
     ];
     await enhance("internal link check", async (html) => {
       const { html: cleaned, removed } = unwrapUnknownInternalLinks(html, workspace.domain, knownPages);
