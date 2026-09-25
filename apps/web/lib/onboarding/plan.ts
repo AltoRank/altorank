@@ -1,6 +1,6 @@
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 import { ARTICLE_SHAPES, qualifyOpportunities, type ArticleShape, type Opportunity } from "@/lib/keyword-research/opportunity";
-import { clusterByIntent, intentLanguage, sameIntent, storedSerp, type StagedTopic } from "@/lib/keyword-research/intent";
+import { clusterByIntent, intentKey, intentLanguage, sameIntent, storedSerp, type StagedTopic } from "@/lib/keyword-research/intent";
 import { approvedWhenJudged, readIntentLeaders } from "@/lib/keyword-research/intent-leaders";
 // ---------------------------------------------------------------------------
 // The first thirty days, scheduled
@@ -685,26 +685,34 @@ export async function closeCoveredEntries(
   const entries = (open ?? []) as { id: string; keyword_id: string | null; keyword: string | null }[];
   if (entries.length === 0) return 0;
 
-  const { data: written } = await supabase
-    .from("articles")
-    .select("id, keyword_id, keyword")
-    .eq("workspace_id", workspaceId);
+  const [{ data: written }, { data: ws }] = await Promise.all([
+    supabase
+      .from("articles")
+      .select("id, keyword_id, keyword")
+      .eq("workspace_id", workspaceId),
+    supabase.from("workspaces").select("language").eq("id", workspaceId).maybeSingle(),
+  ]);
   const articles = (written ?? []) as { id: string; keyword_id: string | null; keyword: string | null }[];
   if (articles.length === 0) return 0;
 
+  // By row, or by the words the term competes on (lib/keyword-research/
+  // intent.ts), so "seo agencies" on the calendar is closed by an article
+  // written for "agency seo", not written a second time.
+  const language = intentLanguage((ws as { language?: string | null } | null)?.language);
   const byKeywordId = new Map<string, string>();
   const byTerm = new Map<string, string>();
   for (const a of articles) {
     if (a.keyword_id && !byKeywordId.has(a.keyword_id)) byKeywordId.set(a.keyword_id, a.id);
-    const term = a.keyword?.trim().toLowerCase();
+    const term = a.keyword ? intentKey(a.keyword, language) : "";
     if (term && !byTerm.has(term)) byTerm.set(term, a.id);
   }
 
   let closed = 0;
   for (const e of entries) {
+    const term = e.keyword ? intentKey(e.keyword, language) : "";
     const articleId =
       (e.keyword_id ? byKeywordId.get(e.keyword_id) : undefined) ??
-      byTerm.get(e.keyword?.trim().toLowerCase() ?? "");
+      (term ? byTerm.get(term) : undefined);
     if (!articleId) continue;
     await fulfilPlannedEntry(supabase, e.id, articleId);
     closed += 1;

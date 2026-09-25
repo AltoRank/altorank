@@ -16,11 +16,18 @@ type Entry = { id: string; keyword_id: string | null; keyword: string | null };
 type Article = { id: string; keyword_id: string | null; keyword: string | null };
 
 /** Records the updates so a test can assert what was closed, and to what. */
-function client(entries: Entry[], articles: Article[]) {
+function client(entries: Entry[], articles: Article[], language = "en") {
   const updates: { id: string; patch: Record<string, unknown> }[] = [];
   const keywordUpdates: string[] = [];
 
   const from = (table: string): Record<string, unknown> => {
+    if (table === "workspaces") {
+      const self: Record<string, unknown> = {};
+      self.select = () => self;
+      self.eq = () => self;
+      self.maybeSingle = async () => ({ data: { language }, error: null });
+      return self;
+    }
     if (table === "keywords") {
       const self: Record<string, unknown> = {};
       self.update = () => self;
@@ -76,6 +83,31 @@ describe("closeCoveredEntries", () => {
     );
     expect(await closeCoveredEntries(c.db, "ws-1")).toBe(1);
     expect(c.updates[0].patch.article_id).toBe("art-9");
+  });
+
+  it("matches a phrasing of the written term, in the workspace's language", async () => {
+    // One search, two spellings: the calendar would otherwise write it again.
+    const c = client(
+      [{ id: "ce-1", keyword_id: "kw-1", keyword: "seo agencies" }],
+      [{ id: "art-2", keyword_id: "kw-2", keyword: "agency for seo" }],
+    );
+    expect(await closeCoveredEntries(c.db, "ws-1")).toBe(1);
+    expect(c.updates[0].patch.article_id).toBe("art-2");
+
+    const tr = client(
+      [{ id: "ce-1", keyword_id: "kw-1", keyword: "mobil uygulama geliştirme firmaları" }],
+      [{ id: "art-3", keyword_id: "kw-3", keyword: "Mobil Uygulama Geliştirme Firması" }],
+      "tr",
+    );
+    expect(await closeCoveredEntries(tr.db, "ws-1")).toBe(1);
+  });
+
+  it("does not close an entry for the opposite search", async () => {
+    const c = client(
+      [{ id: "ce-1", keyword_id: "kw-1", keyword: "python to java" }],
+      [{ id: "art-2", keyword_id: "kw-2", keyword: "java to python" }],
+    );
+    expect(await closeCoveredEntries(c.db, "ws-1")).toBe(0);
   });
 
   it("leaves an entry nobody has written", async () => {
