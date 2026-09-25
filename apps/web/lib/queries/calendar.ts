@@ -69,7 +69,7 @@ export async function getCalendarEntries(
   // the articles read, so both go out together rather than one after the other.
   let planned = supabase
     .from("calendar_entries")
-    .select("id, workspace_id, keyword, keyword_id, scheduled_date, status, created_at, article_id")
+    .select("id, workspace_id, keyword, keyword_id, scheduled_date, status, created_at, article_id, draft_failure")
     .in("status", ["queue", "scheduled"]);
   if (workspaceId) planned = planned.eq("workspace_id", workspaceId);
 
@@ -119,7 +119,7 @@ export async function getCalendarEntries(
   // approved, live): a draft sitting in review is otherwise invisible on the
   // very day the plan promised it.
   const placedArticles = new Set(entries.map((e) => e.article_id));
-  type PlannedRow = { id: string; workspace_id: string; keyword: string | null; keyword_id: string | null; scheduled_date: string; created_at: string; article_id: string | null };
+  type PlannedRow = { id: string; workspace_id: string; keyword: string | null; keyword_id: string | null; scheduled_date: string; created_at: string; article_id: string | null; draft_failure: string | null };
   for (const p of (plannedRows ?? []) as PlannedRow[]) {
     if (p.article_id && placedArticles.has(p.article_id)) continue;
     if (start !== null && end !== null) {
@@ -136,6 +136,7 @@ export async function getCalendarEntries(
       status: p.article_id ? "scheduled" : "queue",
       created_at: p.created_at,
       planned: true,
+      draft_failure: p.article_id ? null : (p.draft_failure ?? null),
     });
   }
 

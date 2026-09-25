@@ -13,6 +13,7 @@ import {
   sweepUnfinishedSetups,
   PAUSE_REMINDER_DAYS,
   SETUP_UNFINISHED_LINE,
+  SETUP_FINISHED_ELSEWHERE_LINE,
 } from "../schedule-events";
 
 type Row = Record<string, unknown>;
@@ -33,18 +34,28 @@ function client() {
     from(table: string) {
       if (table === "workspaces") {
         const q: Record<string, unknown> = {};
+        // `neq id` and `is ... null` are applied, not only recorded: the
+        // setup email's person-level check reads "every other site" with
+        // the first, and the sweep picks stalled sites with the second.
+        const excluded: unknown[] = [];
+        const nulls: string[] = [];
         const record = (op: string) => (c: string, v?: unknown) => (workspaceFilters.push([`${op} ${c}`, v]), q);
         Object.assign(q, {
           select: () => q,
           eq: record("eq"),
-          neq: record("neq"),
-          is: record("is"),
+          neq: (c: string, v: unknown) => (c === "id" && excluded.push(v), record("neq")(c, v)),
+          in: record("in"),
+          is: (c: string, v: unknown) => (v === null && nulls.push(c), record("is")(c, v)),
           lt: record("lt"),
           not: (c: string, o: string, v: unknown) => (workspaceFilters.push([`not ${c} ${o}`, v]), q),
           gte: record("gte"),
           lte: record("lte"),
           maybeSingle: async () => ({ data: workspaceRows[0] ?? null, error: null }),
-          then: (resolve: (v: unknown) => unknown) => resolve({ data: workspaceRows, error: null }),
+          then: (resolve: (v: unknown) => unknown) =>
+            resolve({
+              data: workspaceRows.filter((w) => !excluded.includes(w.id) && nulls.every((c) => w[c] == null)),
+              error: null,
+            }),
         });
         return q as never;
       }
@@ -70,7 +81,14 @@ function client() {
         return q as never;
       }
       if (table === "account_members") {
-        return { select: () => ({ eq: async () => ({ data: members, error: null }) }) } as never;
+        // `in` is the person-level check asking which accounts these members
+        // are in: this one only, unless a test says otherwise.
+        return {
+          select: () => ({
+            eq: async () => ({ data: members, error: null }),
+            in: async () => ({ data: members.map(() => ({ account_id: "ag-1" })), error: null }),
+          }),
+        } as never;
       }
       if (table === "email_preferences") {
         return { select: () => ({ in: async () => ({ data: [], error: null }) }) } as never;
@@ -316,6 +334,30 @@ describe("the setup email", () => {
     expect(await announceSetupUnfinished(c, scope)).toBe("2 already told or opted out");
     expect(sends()).toHaveLength(2);
     expect([...claimed].every((k) => k.startsWith("setup_unfinished|ws-1|"))).toBe(true);
+  });
+
+  /**
+   * About the person, not only the site: a double signup (2026-09-22, before
+   * #237) left a finished site with its draft and an empty twin, and the
+   * twin's sweep told the person their setup had never finished.
+   */
+  it("is not sent to somebody who finished setup on another of their sites", async () => {
+    workspaceRows = [
+      { id: "ws-1", topical_profile: usable },
+      { id: "ws-twin", onboarded_at: "2026-09-22T19:40:00Z", onboarding_skipped_at: null },
+    ];
+    expect(await announceSetupUnfinished(client(), scope)).toBe(SETUP_FINISHED_ELSEWHERE_LINE);
+    expect(sends()).toHaveLength(0);
+    expect(claimed.size).toBe(0);
+  });
+
+  it("is not reported by the sweep for such a site either, run after run", async () => {
+    workspaceRows = [
+      { id: "ws-1", domain: "acme-agency.example", account_id: "ag-1", topical_profile: null },
+      { id: "ws-twin", onboarded_at: null, onboarding_skipped_at: "2026-09-22T19:40:00Z" },
+    ];
+    expect(await sweepUnfinishedSetups(client(), new Date("2026-09-24T07:00:00Z"))).toEqual([]);
+    expect(sends()).toHaveLength(0);
   });
 
   it("is a site-status email a person can opt out of", async () => {

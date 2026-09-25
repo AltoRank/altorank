@@ -403,6 +403,16 @@ export function PlannerCard({
           {frozen}
         </p>
       )}
+      {/* A draft of this entry was started and did not finish (lib/plan/
+          draft-claim.ts). Said on the card, in the writer's own words, with
+          what happens next, rather than the square reading "Planned" as if
+          nothing had been tried. */}
+      {state === "planned" && entry.draft_failure && (
+        <p className="m-0 mt-1 text-[10.5px] leading-snug text-err-ink" title={entry.draft_failure}>
+          Last draft failed: {/[.!?]$/.test(entry.draft_failure.trim()) ? entry.draft_failure.trim() : `${entry.draft_failure.trim()}.`} The
+          next scheduled run tries again.
+        </p>
+      )}
       {error && !dlg && <div className="mt-1 text-[11px] leading-snug text-err-ink">{error}</div>}
 
       {(keyword || drag || improvement) && state !== "writing" && (

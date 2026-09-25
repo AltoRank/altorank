@@ -8,7 +8,7 @@
 // give the same table and every count in the summary line can be tested.
 
 import { normalizeTarget } from "@/lib/seo/recommendations";
-import { PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
+import { PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan-limits";
 import { computeCapacity } from "@/lib/plan/capacity";
 import type { PlanCapacity, ResearchCandidate, ResearchFunnel } from "./types";
 

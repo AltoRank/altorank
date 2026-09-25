@@ -28,6 +28,7 @@ import {
   type SetupUnfinishedEmail,
 } from "./lifecycle";
 import { describeSendOutcome } from "./send-once";
+import { setupFinishedElsewhere } from "@/lib/onboarding/setup-state";
 
 /** How long before a pause lifts the reminder goes out. */
 export const PAUSE_REMINDER_DAYS = 3;
@@ -190,6 +191,9 @@ export async function announcePausedSites(supabase: SupabaseClient, now: Date = 
 /** What `announceNothingWritten` reports when it stood down for the setup email. */
 export const SETUP_UNFINISHED_LINE = "setup never finished; the setup email covers it";
 
+/** What `announceSetupUnfinished` reports when the person finished setup on another site. */
+export const SETUP_FINISHED_ELSEWHERE_LINE = "not sent: setup is finished on another of this person's sites";
+
 /** How long a stalled wizard is left alone before the no-draft email goes out. */
 export const SETUP_FOLLOWUP_HOURS = 24;
 
@@ -260,6 +264,9 @@ export async function announceSetupUnfinished(
   scope: { accountId: string; workspaceId: string; domain: string | null },
 ): Promise<string> {
   try {
+    // About the person, not only the site (lib/onboarding/setup-state.ts):
+    // somebody who finished setup on another site knows where setup is.
+    if (await setupFinishedElsewhere(supabase, scope.accountId, scope.workspaceId)) return SETUP_FINISHED_ELSEWHERE_LINE;
     const facts = await setupUnfinishedFacts(supabase, scope.workspaceId, scope.domain);
     const out = await notifySetupUnfinished(supabase, { accountId: scope.accountId, workspaceId: scope.workspaceId }, facts);
     return describeSendOutcome(out);
@@ -309,7 +316,9 @@ export async function sweepUnfinishedSetups(supabase: SupabaseClient, now: Date 
         workspaceId: ws.id as string,
         domain: (ws.domain as string | null) ?? null,
       });
-      if (line && line !== "nobody to email") lines.push(`${ws.domain ?? ws.id}: ${line}`);
+      // Not reported: nothing is claimed for it, so it would repeat on every
+      // run for as long as the twin site exists.
+      if (line && line !== "nobody to email" && line !== SETUP_FINISHED_ELSEWHERE_LINE) lines.push(`${ws.domain ?? ws.id}: ${line}`);
     }
   } catch (err) {
     console.error(`[setup-unfinished] sweep: ${err instanceof Error ? err.message : err}`);

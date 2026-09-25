@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { entitledToScheduledWork, getQuota } from "@/lib/billing/quota";
+import { trialHoldReason } from "@/lib/billing/trial-hold";
 import { analyzeWorkspace } from "@/lib/refresh/detect";
 import { runRefreshTask } from "@/lib/refresh/rewrite";
 import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
@@ -110,6 +111,17 @@ async function run(request: Request) {
     // The same gate serp, geo and reports apply, for the same reason. See
     // entitledToScheduledWork.
     const quota = await getQuota(supabase, ws.account_id as string, null);
+    // A trial-gated account is also a no-plan one, so the gate below would
+    // stop it anyway; this names the real reason (lib/billing/trial-hold.ts).
+    // A rewrite is a draft, and nothing drafts before the trial but the
+    // first article.
+    const held = trialHoldReason(quota);
+    if (held) {
+      out.status = "skipped";
+      out.rewrite = held;
+      results.push(out);
+      continue;
+    }
     if (!entitledToScheduledWork(quota)) {
       out.status = "skipped";
       out.rewrite = "no plan";
