@@ -1,5 +1,5 @@
 import { readOpportunity, contextKey, duplicateVerdict, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
-import { clusterByIntent, intentKey, sameIntent, storedSerp, unfoldedNote, type IntentFollower, type IntentStage, type StagedTopic } from "@/lib/keyword-research/intent";
+import { clusterByIntent, intentKey, intentLanguage, sameIntent, storedSerp, unfoldedNote, type IntentFollower, type IntentStage, type StagedTopic } from "@/lib/keyword-research/intent";
 import { articleStage, leadersFrom, type IntentLeader } from "@/lib/keyword-research/intent-leaders";
 import { ensureBusinessProfile } from "@/lib/keyword-research/business-context";
 import { causeLabel } from "@/lib/keyword-research/opportunity";
@@ -412,10 +412,8 @@ export async function recommendKeywords(
   const keywordIds = keywords.map((k) => k.id as string);
   const allTerms = new Set(keywords.map((k) => (k.term as string).trim().toLowerCase()));
   // The language the keywords are searched in, for telling two phrasings of
-  // one search apart (lib/keyword-research/intent.ts). The column is NOT NULL;
-  // a workspace this could not read compares words unfolded and says so,
-  // rather than being stemmed as English.
-  const language = workspace?.language ? languageCodeOf(workspace.language as string) : null;
+  // one search apart (lib/keyword-research/intent.ts).
+  const language = intentLanguage(workspace?.language as string | null | undefined);
 
   // --- Signals ------------------------------------------------------------
   // Each of these is optional: a workspace with no rank history and no Search

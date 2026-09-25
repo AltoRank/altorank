@@ -38,6 +38,7 @@
 // is wrong in every market it was not written for.
 
 import { LOCALES } from "@/lib/seo/locales";
+import { languageCodeOf } from "./locale";
 
 /** Results read per keyword: qualification keeps the top ten organic URLs. */
 export const SERP_TOP = 10;
@@ -75,6 +76,15 @@ export interface IntentMatch {
   shared?: number;
   /** What the word comparison could not do; set when it could not fold inflections. */
   note?: string;
+}
+
+/**
+ * The language to compare a workspace's keywords in, from `workspaces.language`.
+ * The column is NOT NULL; a caller that could not read it gets null, which
+ * compares words unfolded and says so, rather than English.
+ */
+export function intentLanguage(workspaceLanguage: string | null | undefined): string | null {
+  return workspaceLanguage?.trim() ? languageCodeOf(workspaceLanguage) : null;
 }
 
 /** "tr" from "tr" or "tr-TR", "zh" from "zh-CN"; null when no language was given. */

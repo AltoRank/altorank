@@ -1,6 +1,6 @@
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 import { ARTICLE_SHAPES, qualifyOpportunities, type ArticleShape, type Opportunity } from "@/lib/keyword-research/opportunity";
-import { clusterByIntent, sameIntent, storedSerp, type StagedTopic } from "@/lib/keyword-research/intent";
+import { clusterByIntent, intentLanguage, sameIntent, storedSerp, type StagedTopic } from "@/lib/keyword-research/intent";
 import { readIntentLeaders } from "@/lib/keyword-research/intent-leaders";
 // ---------------------------------------------------------------------------
 // The first thirty days, scheduled
@@ -330,7 +330,7 @@ async function planFor(
   // string to be noticed). The recommender has already parked the rows it
   // could see; this covers an entry whose keyword row says otherwise.
   const { data: ws } = await supabase.from("workspaces").select("language").eq("id", workspaceId).maybeSingle();
-  const language = (ws as { language?: string | null } | null)?.language ? languageCodeOf((ws as { language: string }).language) : null;
+  const language = intentLanguage((ws as { language?: string | null } | null)?.language);
   const kept: Array<StagedTopic & { rec?: KeywordRecommendation }> = existing
     .filter((e) => e.keyword)
     .map((e) => ({ term: e.keyword as string, stage: e.article_id ? "drafted" as const : "scheduled" as const }));
@@ -525,7 +525,7 @@ export async function heldTopics(
     supabase.from("workspaces").select("language").eq("id", workspaceId).maybeSingle(),
   ]);
   if (error) throw new Error(`Could not read held topics: ${error.message}`);
-  const language = (ws as { language?: string | null } | null)?.language ? languageCodeOf((ws as { language: string }).language) : null;
+  const language = intentLanguage((ws as { language?: string | null } | null)?.language);
   const held = ((rows ?? []) as Array<{ id: string; term: string; opportunity: unknown }>).map((r) => ({
     term: r.term, organicUrls: storedSerp(r.opportunity), stage: "candidate" as const,
   }));
@@ -795,7 +795,7 @@ export async function scheduleKeywords(
   const qualified = await qualifyOpportunities(supabase, workspaceId, keywords ?? [], { domain: ws?.domain ?? "", business: ws?.business_profile ?? null, languageCode: languageCodeOf(ws?.language), locationCode: ws?.location_code ?? 2840 });
   const reasons: Record<string, string> = {};
   const accepted: Array<{ term: string; organicUrls: string[] | null }> = [];
-  const language = ws?.language ? languageCodeOf(ws.language) : null;
+  const language = intentLanguage(ws?.language);
   const ids = fits.filter((id) => {
     const evidence = qualified.get(id);
     const topic = { term: terms.get(id) ?? "", organicUrls: evidence?.organicUrls ?? null };

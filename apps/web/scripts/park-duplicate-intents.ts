@@ -27,7 +27,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { contextKey, duplicateVerdict, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
-import { clusterByIntent, describeMatch, storedSerp, unfoldedNote, type StagedTopic } from "@/lib/keyword-research/intent";
+import { clusterByIntent, describeMatch, intentLanguage, storedSerp, unfoldedNote, type StagedTopic } from "@/lib/keyword-research/intent";
 import { leadersFrom, stageWords, type IntentLeader } from "@/lib/keyword-research/intent-leaders";
 import { parkKeywords } from "@/lib/keyword-research/queue";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
@@ -57,7 +57,7 @@ async function main() {
   let totalParked = 0;
   let totalEntries = 0;
   for (const ws of workspaces ?? []) {
-    const language = ws.language ? languageCodeOf(ws.language as string) : null;
+    const language = intentLanguage(ws.language as string | null);
     const [keywords, articles, pages, entries] = await Promise.all([
       db.from("keywords").select("id, term, status, opportunity, plan_excluded_at").eq("workspace_id", ws.id),
       db.from("articles").select("id, keyword, keyword_id, status").eq("workspace_id", ws.id).not("keyword", "is", null),
