@@ -56,6 +56,10 @@ const SERVICE_READS: Record<string, { count: number; why: string }> = {
     count: 2,
     why: "the agent API's reads run on the service client, scoped to the key's account; the content routes ask the trial gate (lib/agent/body-lock.ts)",
   },
+  "lib/found-on-site/detect.ts": {
+    count: 2,
+    why: "the found-on-site check runs inside cron/site-pages on the service client: it filters drafts on having text, then compares that text with pages on the customer's site",
+  },
   "lib/publishing/auto-approve.ts": {
     count: 1,
     why: "the auto-approve pass runs inside cron/publish on the service client and reads the text to run the same checks a person would",
