@@ -399,8 +399,9 @@ export function dedupePermutations<T extends { keyword: string; volume: number }
  * the winner is the way people most often type it.
  *
  * Not merged into `dedupePermutations`: the brief path uses that one to
- * de-duplicate related keywords for a single article, where "content writing"
- * and "content writer" are two headings worth having.
+ * de-duplicate related keywords for a single article, where "seo tool" and
+ * "seo tools" can be two headings worth having, and where no workspace
+ * language is at hand to fold them in. That list picks headings, not topics.
  */
 export function dedupeTargets<T extends { keyword: string; volume: number }>(
   keywords: T[],

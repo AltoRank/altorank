@@ -853,12 +853,13 @@ export async function analyseDomain(options: {
         // `permutationKey` keeps the words as typed, so it collapses "seo for
         // agency" and "agency for seo" but not "website design" and "website
         // design websites". `intentKey` folds inflections in the workspace's
-        // language (plurals, gerunds, agent nouns in English), which is what
-        // makes those one target -
-        // and it is already what `recommendKeywords` collapses on, so anything
-        // it merges downstream was a wasted row here anyway. qasimcode.com
-        // stored twenty rows that are thirteen queries; four of them were
-        // "website design" and two more were "create"/"creating".
+        // language (the plural in English), which is what makes those one
+        // target - and it is already what `recommendKeywords` collapses on,
+        // so anything it merges downstream was a wasted row here anyway.
+        // qasimcode.com stored twenty rows that are thirteen queries; four of
+        // them were "website design". Two more were "create"/"creating",
+        // which is a verb form, not a plural: those two are left to the
+        // results page bought at qualification (lib/keyword-research/intent.ts).
         const candidatesAll = [...byTerm.values()];
         const deduped = dedupeTargets(dedupePermutations(candidatesAll.map((c) => c.k)), languageCodeOf(options.locale));
         const keep = new Set(deduped.map((k) => k.keyword));
