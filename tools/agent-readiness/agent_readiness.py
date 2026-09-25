@@ -57,7 +57,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-import urllib.robotparser
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -237,6 +237,76 @@ def collect_types(blocks: list[str]) -> list[str]:
 # ── checks ────────────────────────────────────────────────────────────────────
 
 
+# ── robots.txt, RFC 9309 ──────────────────────────────────────────────────────
+# Mirrors apps/web/lib/robots/rfc9309.ts and blockedCrawlers() in
+# apps/web/lib/audit/agent-readiness.ts: change them together or the lead-list
+# scores and /check disagree. urllib.robotparser is not used because it picks
+# groups by substring ("Applebot" applies to Applebot-Extended), takes the
+# first group and first matching rule in file order, and has no wildcards.
+
+def parse_robots(body: str) -> list[dict]:
+    """Groups as {agents, rules}; consecutive User-agent lines share rules."""
+    groups: list[dict] = []
+    current: dict | None = None
+    last_was_agent = False
+    for raw in re.split(r"\r\n|\r|\n", body.lstrip("\ufeff")):
+        content = re.sub(r"#.*$", "", raw).strip()
+        m = re.match(r"^([A-Za-z][A-Za-z_-]*)\s*:\s*(.*)$", content)
+        if not m:
+            continue
+        name, value = m.group(1).lower().replace("_", "-"), m.group(2).strip()
+        if name == "user-agent":
+            if not last_was_agent or current is None:
+                current = {"agents": [], "rules": []}
+                groups.append(current)
+            agent = re.split(r"[\s/]", value)[0].lower()
+            if agent:
+                current["agents"].append(agent)
+            last_was_agent = True
+            continue
+        last_was_agent = False
+        if name in ("allow", "disallow") and current is not None and value:
+            current["rules"].append((name == "allow", value))
+    return groups
+
+
+def _normalise_path(s: str) -> str:
+    s = re.sub(r"%[0-9a-fA-F]{2}", lambda m: m.group(0).upper(), s)
+    return "".join(c if ord(c) < 0x80 else urllib.parse.quote(c) for c in s)
+
+
+def _pattern_matches(pattern: str, path: str) -> bool:
+    p = _normalise_path(pattern)
+    anchored = p.endswith("$")
+    body = p[:-1] if anchored else p
+    rx = "^" + ".*".join(re.escape(part) for part in body.split("*")) + ("$" if anchored else "")
+    return re.match(rx, _normalise_path(path)) is not None
+
+
+def robots_allows(groups: list[dict], token: str, path: str) -> bool:
+    """Exact-token groups merged, else the * groups; longest match, Allow on a tie."""
+    t = token.lower()
+    applicable = [g for g in groups if t in g["agents"]] or [g for g in groups if "*" in g["agents"]]
+    if path == "/robots.txt":
+        return True
+    best: tuple[bool, str] | None = None
+    best_len = -1
+    for g in applicable:
+        for allow, pattern in g["rules"]:
+            if not _pattern_matches(pattern, path):
+                continue
+            n = len(_normalise_path(pattern))
+            if n > best_len or (n == best_len and allow and not best[0]):
+                best, best_len = (allow, pattern), n
+    return best[0] if best else True
+
+
+def blocked_crawlers(body: str, bots: list[str]) -> list[str]:
+    """Which bots may not fetch the homepage."""
+    groups = parse_robots(body)
+    return [bot for bot in bots if not robots_allows(groups, bot, "/")]
+
+
 def check_domain(domain: str) -> Run:
     domain = domain.strip().lower().removeprefix("http://").removeprefix("https://").strip("/")
     run = Run(domain=domain)
@@ -266,17 +336,7 @@ def check_domain(domain: str) -> Run:
     add(Finding("robots_reachable", robots_ok, MEDIUM, robots_detail))
 
     # 2. AI crawlers allowed. This is the finding that opens conversations.
-    rp = urllib.robotparser.RobotFileParser()
-    if robots_ok:
-        rp.parse(robots_body.splitlines())
-    blocked = []
-    if robots_ok:
-        for bot, _label in AI_CRAWLERS:
-            try:
-                if not rp.can_fetch(bot, base + "/"):
-                    blocked.append(bot)
-            except Exception:
-                pass
+    blocked = blocked_crawlers(robots_body, [bot for bot, _ in AI_CRAWLERS]) if robots_ok else []
     add(Finding(
         "ai_crawlers_allowed", not blocked, HIGH,
         "all major AI crawlers allowed" if not blocked

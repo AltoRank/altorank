@@ -2,9 +2,8 @@ import { describe, it, expect } from "vitest";
 import { parseRobots, isAllowed, loadRobots, ALLOW_EVERYTHING } from "../robots";
 
 // The crawler visits sites that never asked for it, so the one instruction
-// they can leave has to be read correctly. `agent-readiness` has a parser too,
-// and it answers a different question ("may GPTBot fetch /"), which is why it
-// only models root-level rules and this one does not.
+// they can leave has to be read correctly. Matching itself is tested in
+// lib/robots/__tests__/rfc9309.test.ts; these pin what the crawler sees.
 
 const rules = (body: string, ua = "AltoRank-Auditor") => parseRobots(body, ua);
 
@@ -57,6 +56,27 @@ describe("parseRobots + isAllowed", () => {
   it("treats an empty Disallow as no rule at all", () => {
     const r = rules("User-agent: *\nDisallow:\n");
     expect(isAllowed(r, "https://x.co/whatever")).toBe(true);
+  });
+
+  // Regression: groups used to be selected by substring in both directions.
+  it("does not apply a Googlebot-Image group to Googlebot", () => {
+    const r = rules("User-agent: *\nAllow: /\n\nUser-agent: Googlebot-Image\nDisallow: /\n", "Googlebot");
+    expect(isAllowed(r, "https://x.co/page")).toBe(true);
+  });
+
+  it("does not apply a Googlebot group to Googlebot-Image", () => {
+    const r = rules("User-agent: *\nAllow: /\n\nUser-agent: Googlebot\nDisallow: /\n", "Googlebot-Image");
+    expect(isAllowed(r, "https://x.co/page")).toBe(true);
+  });
+
+  it("does not apply a group for a fragment of our name", () => {
+    const r = rules("User-agent: AltoRank\nDisallow: /\n\nUser-agent: Auditor\nDisallow: /\n");
+    expect(isAllowed(r, "https://x.co/page")).toBe(true);
+  });
+
+  it("takes the crawl-delay of the group that applies, not another's", () => {
+    const r = rules("User-agent: Googlebot-Image\nCrawl-delay: 30\n\nUser-agent: *\nCrawl-delay: 1\n", "Googlebot");
+    expect(r.crawlDelaySeconds).toBe(1);
   });
 
   it("ignores comments and reads Sitemap and Crawl-delay", () => {
