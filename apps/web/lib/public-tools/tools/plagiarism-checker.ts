@@ -140,10 +140,16 @@ export const plagiarismChecker = defineTool({
       throw new ToolError("upstream", "The web searches behind this check failed. Try again in a minute.");
     }
 
+    // Google relaxes a quoted query it has no exact match for and returns
+    // loosely related pages instead, so a result is only evidence when its
+    // snippet shows the phrase. The rest are listed apart, never counted.
+    const LOOSE_PER_SENTENCE = 3;
     const summaryRows: (string | number)[][] = [];
     const matchRows: (string | number)[][] = [];
+    const looseRows: (string | number)[][] = [];
     let found = 0;
     let failed = 0;
+    let looseOnly = 0;
     results.forEach((r, i) => {
       const n = i + 1;
       if (r.status === "rejected") {
@@ -152,9 +158,22 @@ export const plagiarismChecker = defineTool({
         return;
       }
       const pages = (r.value[0]?.items ?? []).filter((it) => it.type === "organic" && it.url);
-      if (pages.length) found++;
-      summaryRows.push([n, phrases[i], pages.length ? `${pages.length} page${pages.length === 1 ? "" : "s"}` : "none"]);
-      for (const p of pages) matchRows.push([n, p.url!, p.title ?? "", snippetShows(p.description, phrases[i]) ? "yes" : "not shown"]);
+      const shown = pages.filter((p) => snippetShows(p.description, phrases[i]));
+      const loose = pages.filter((p) => !snippetShows(p.description, phrases[i]));
+      if (shown.length) found++;
+      else if (loose.length) looseOnly++;
+      const plural = (k: number) => `${k} page${k === 1 ? "" : "s"}`;
+      summaryRows.push([
+        n,
+        phrases[i],
+        shown.length
+          ? `${plural(shown.length)} showing it${loose.length ? `, ${loose.length} other` : ""}`
+          : loose.length
+            ? `no page showing it (${loose.length} loose result${loose.length === 1 ? "" : "s"})`
+            : "none",
+      ]);
+      for (const p of shown) matchRows.push([n, p.url!, p.title ?? ""]);
+      for (const p of loose.slice(0, LOOSE_PER_SENTENCE)) looseRows.push([n, p.url!, p.title ?? ""]);
     });
 
     const checked = sentences.length - failed;
@@ -166,16 +185,26 @@ export const plagiarismChecker = defineTool({
         status: found ? "warn" : "pass",
       },
     ];
+    if (looseOnly) {
+      items.push({
+        label: "Loose results only",
+        value: `${looseOnly} sentence${looseOnly === 1 ? "" : "s"}: Google returned pages, but none shows the words`,
+        status: "info",
+      });
+    }
     const blocks: Block[] = [
       kv(items, "Exact-phrase spot check"),
       table(["#", "Searched as (exact phrase)", "Google results"], summaryRows, "Sentences checked"),
     ];
     if (matchRows.length) {
-      blocks.push(table(["Sentence #", "Page", "Title", "Snippet shows the phrase"], matchRows, "Pages Google returned for the exact phrase"));
+      blocks.push(table(["Sentence #", "Page", "Title"], matchRows, "Pages whose Google snippet shows the phrase"));
+    }
+    if (looseRows.length) {
+      blocks.push(table(["Sentence #", "Page", "Title"], looseRows, "Other pages Google returned (the phrase is not in their snippet)"));
     }
     blocks.push(
       text(
-        `The tool picked up to ${MAX_SENTENCES} of your longest, most distinctive sentences and ran each as an exact-phrase Google search (United States, first page of results) through DataForSEO. It lists the pages Google returned, and whether Google's snippet for each shows at least 10 words of the phrase in a row; open a page to confirm. A match is not proof of copying: it may be a credited quote, a common phrase, or a copy of your text. No match means these sentences were not found word for word; the rest of the text, reworded copying and pages Google has not indexed were not checked.`,
+        `The tool picked up to ${MAX_SENTENCES} of your longest, most distinctive sentences and ran each as an exact-phrase Google search (United States, first page of results) through DataForSEO. A sentence counts as found only when Google's snippet for a page shows at least 10 of its words in a row; open the page to confirm. When Google has no exact match it often returns loosely related pages instead, so those are listed apart and not counted. A match is not proof of copying: it may be a credited quote, a common phrase, or a copy of your text. The rest of the text, reworded copying, pages Google has not indexed and copies the snippet does not show were not checked.`,
         "What this checked",
       ),
     );
