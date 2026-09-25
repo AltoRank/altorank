@@ -51,6 +51,27 @@ export async function workingAccountId(user: {
 }
 
 /**
+ * The free drafts this person has already used in accounts they created, for
+ * an account made for them again.
+ *
+ * This path runs when somebody has no membership left, and a person can
+ * arrive here after being removed from an account they made: a co-owner
+ * deletes their membership, and their next page load lands here. The new
+ * account started at zero, so a pre-trial article and the free drafts behind
+ * it were handed out again - as often as two addresses took turns removing
+ * each other (round-5 review; migration 102 keeps anyone but an owner from
+ * removing an owner, which leaves this pair). The allowance belongs to the
+ * person who created the account (`accounts.created_by`, migration 101), so
+ * the count comes with them. Read with the service role; a failed read throws
+ * rather than starting them at zero.
+ */
+async function draftsAlreadyUsed(admin: ReturnType<typeof createServiceClient>, userId: string): Promise<number> {
+  const { data, error } = await admin.from("accounts").select("free_drafts_used").eq("created_by", userId);
+  if (error) throw new Error(`Could not read the accounts this person created: ${error.message}`);
+  return Math.max(0, ...(data ?? []).map((a) => (a.free_drafts_used as number | null) ?? 0));
+}
+
+/**
  * Ensures the user has an account. Returns their account_id.
  * Fast path: single SELECT (user already has one).
  * Slow path: creates account + membership via service role (runs once).
@@ -126,7 +147,7 @@ export async function ensureAccount(
 
   const { data: account } = await admin
     .from("accounts")
-    .insert({ name, slug: `${slug}-${Date.now()}` })
+    .insert({ name, slug: `${slug}-${Date.now()}`, free_drafts_used: await draftsAlreadyUsed(admin, userId) })
     .select("id")
     .single();
 

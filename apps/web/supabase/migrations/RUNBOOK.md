@@ -1011,6 +1011,69 @@ reads `created_by` must be reverted before the column is dropped):
 `grant insert, update on table public.account_members to authenticated;`
 and, once no deployed code reads it, `alter table public.accounts drop column created_by;`
 
+## 102 — rows stay put
+
+Two triggers, each refusing a signed-in user (`auth.uid()` set) something the
+app never does with a person's client:
+
+- `rows_stay_put`, `before update` on every public table with a
+  `workspace_id` or `account_id` column (attached by a loop, 39 tables on
+  the local schema): changing either column. Somebody who owned an account
+  before its trial and was also an editor of one site of a paying account
+  could PATCH the pre-trial article's `workspace_id` into the paying site and
+  read the text there; the same move took calendar entries, keywords and
+  research between accounts.
+- `account_members_guard_roles`, `before update or delete` on
+  `account_members`: a member changing their own `role` or `workspace_ids`,
+  and a non-owner changing, removing or appointing an owner. The database now
+  says what `canEditMember` (`lib/team/access.ts`) says, so an admin cannot
+  take the account over, widen their own sites, or delete the owner (which,
+  through `ensureAccount`, handed the owner a fresh account with its own
+  pre-trial article). An account always keeps an owner.
+
+Both pass the service role and changes the database makes itself (a foreign
+key's `set null` / `cascade`, `pg_trigger_depth() > 1`), so deleting a site
+or an account still works.
+
+**Apply any time, before or after the deploy.** No code, old or new, moves a
+row between sites or accounts through a person's client, or edits
+memberships past what the Team page allows; the code that ships with it
+(`ensureAccount` carrying a person's pre-trial count into an account made
+for them again) does not depend on it. Independent of 097-101: it replaces no
+function of theirs.
+
+**A table added later with `workspace_id` or `account_id` is not covered
+until its migration attaches the trigger:**
+`create trigger rows_stay_put before update on public.<table> for each row execute function public.rows_stay_put();`
+
+Test: `supabase/tests/102_rows_stay_put.rls.sql` (self-contained, rolls
+back; run it on an isolated copy). Green 2026-09-25 on an isolated database
+built from 001-102: the article and calendar moves, the admin's four
+takeover writes and an owner's self-demotion are 42501; renaming an article,
+an owner managing a member, and deleting a site (its run kept with
+`workspace_id` null) still work. With the two triggers dropped, the first
+case fails. Applied twice: the second run is a no-op.
+
+Post-flight (expect `t`, `t`, `0`):
+
+```sql
+select exists (select 1 from pg_trigger where tgname = 'account_members_guard_roles'),
+       exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid
+                where t.tgname = 'rows_stay_put' and c.relname = 'articles'),
+       (select count(distinct c.table_name) from information_schema.columns c
+          join information_schema.tables tb using (table_schema, table_name)
+         where c.table_schema = 'public' and tb.table_type = 'BASE TABLE'
+           and c.column_name in ('workspace_id', 'account_id')
+           and not exists (select 1 from pg_trigger t
+                            where t.tgname = 'rows_stay_put'
+                              and t.tgrelid = format('public.%I', c.table_name)::regclass));
+```
+
+Rollback:
+`drop trigger account_members_guard_roles on public.account_members; drop function public.account_members_guard_roles();`
+and, per table, `drop trigger rows_stay_put on public.<table>;` then
+`drop function public.rows_stay_put();` (or `drop function public.rows_stay_put() cascade;`, which drops every attachment).
+
 ## 095 — site pages extract
 
 `095_site_pages_extract.sql`: one nullable `jsonb` column, `site_pages.extract`,
