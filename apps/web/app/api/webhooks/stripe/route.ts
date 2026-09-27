@@ -89,8 +89,11 @@ export async function planForCheckoutSession(
       const fromPrice = planForPriceId(sub.items?.data?.[0]?.price?.id);
       if (fromPrice) return fromPrice;
     } catch {
-      // Fall through to the metadata hint. A Stripe read that fails must not
-      // cost us the plan write; leaving the row on the default is the bug.
+      // Fall through to the metadata hint. The checkout handler reads the
+      // subscription again for the trial (trialForCheckoutSession), and that
+      // read throws, so a Stripe that stays down fails the event for a retry
+      // rather than recording a guess; this fallback covers a read that
+      // failed once and a price we do not sell.
     }
   }
 
@@ -117,13 +120,24 @@ export async function trialForCheckoutSession(session: Stripe.Checkout.Session):
   const subscriptionId =
     typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
   if (!subscriptionId) return null;
+  // A failed read is not "no trial". Answering null here wrote a trial
+  // checkout as a paid `active` plan with no trial end, and the rest of the
+  // week was never drafted (round-6 real-stack run, Stripe unreachable).
+  // Thrown instead, before the account write, so the event answers 500 and
+  // Stripe delivers it again. The timeout keeps one slow read inside
+  // Stripe's own wait for the webhook, rather than the SDK's 80 s default
+  // retried until the delivery had long been given up on.
+  let sub: Stripe.Subscription;
   try {
-    const sub = await getStripe().subscriptions.retrieve(subscriptionId);
-    return trialEndOf(sub);
-  } catch {
-    return null;
+    sub = await getStripe().subscriptions.retrieve(subscriptionId, {}, { timeout: STRIPE_READ_TIMEOUT_MS, maxNetworkRetries: 1 });
+  } catch (err) {
+    throw new Error(`checkout.session.completed: could not read subscription ${subscriptionId} to tell a trial from a paid plan (${err instanceof Error ? err.message : String(err)})`);
   }
+  return trialEndOf(sub);
 }
+
+/** One Stripe read inside the webhook: long enough for a slow answer, short enough for a retry. */
+const STRIPE_READ_TIMEOUT_MS = 8_000;
 
 /** `trial_end` as ISO when the subscription is trialing, else null. */
 export function trialEndOf(sub: Stripe.Subscription): string | null {

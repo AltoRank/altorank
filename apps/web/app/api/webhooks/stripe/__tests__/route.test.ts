@@ -233,6 +233,20 @@ describe("checkout.session.completed", () => {
     expect(deferred).toHaveLength(0);
   });
 
+  it("answers 500 when it cannot read the subscription, instead of recording a trial as a paid plan", async () => {
+    // A null from a failed read used to mean "no trial": the checkout was
+    // written as `active` with no trial end and the week was never drafted.
+    resume.mockClear();
+    deferred.length = 0;
+    workspaceRows = [{ id: "ws-1", auto_generate_weekly_limit: 7 }];
+    retrieveSubscription.mockRejectedValue(new Error("connect ETIMEDOUT"));
+    await expect(deliver(checkoutCompleted())).rejects.toThrow(/could not read subscription sub_1/);
+    expect(writes.filter((w) => w.table === "accounts")).toHaveLength(0);
+    expect(deferred).toHaveLength(0);
+    // Bounded, so one slow read cannot outlast Stripe's wait for the webhook.
+    expect(retrieveSubscription.mock.calls.at(-1)?.[2]).toMatchObject({ timeout: expect.any(Number) });
+  });
+
   it("answers 500 when it cannot record the subscription, and owes and dispatches nothing", async () => {
     // Everything after this write assumes it happened: a resume dispatched
     // against a still-gated account records "waiting for your trial" on every
@@ -285,12 +299,6 @@ describe("checkout.session.completed", () => {
     expect(accountWrite().row.plan).toBe("growth");
   });
 
-  it("falls back to the metadata hint when the subscription read fails", async () => {
-    retrieveSubscription.mockRejectedValue(new Error("stripe down"));
-    await deliver(checkoutCompleted());
-    expect(accountWrite().row.plan).toBe("growth");
-  });
-
   it("falls back to the metadata hint when the price id is not one we sell", async () => {
     retrieveSubscription.mockResolvedValue({ items: { data: [{ price: { id: "price_legacy" } }] } });
     await deliver(checkoutCompleted());
@@ -307,7 +315,9 @@ describe("checkout.session.completed", () => {
   });
 
   it("ignores a metadata plan that is not a tier we sell", async () => {
-    retrieveSubscription.mockRejectedValue(new Error("stripe down"));
+    // A failed read no longer falls back (it answers 500 for a retry, above);
+    // a price we do not sell is where the metadata hint is still read.
+    retrieveSubscription.mockResolvedValue({ items: { data: [{ price: { id: "price_legacy" } }] } });
     await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "enterprise" } }));
     expect(accountWrite().row).not.toHaveProperty("plan");
   });
