@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { createApiKey, revokeApiKey, type CreatedApiKey } from "@/app/actions/api-keys";
-import { apiKeyState, EXPIRY_OPTIONS, type ApiKeyState } from "@/lib/agent/api-keys";
+import { apiKeyState, EXPIRY_OPTIONS, type ApiKeyState } from "@/lib/agent/api-key-state";
 import type { ApiKeyRow } from "@/lib/types";
 import { Button, Card, Dialog, Icons } from "@/components/ui";
 

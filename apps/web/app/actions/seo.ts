@@ -11,6 +11,8 @@ import { fetchKnownPages } from "@/lib/linking/targets";
 import type { Workspace, Keyword, Article } from "@/lib/types";
 import { buildRankingRows } from "@/lib/seo/rankings";
 import { canSpend } from "@/lib/billing/spend-gate";
+import { articleBodyForSession } from "@/lib/billing/body-lock";
+import { readWorkspaceLanguage } from "@/lib/i18n/workspace-language";
 import type { BillingOutcome } from "@/lib/billing/failure";
 
 // Every export below buys DataForSEO data, and none of them was gated: a free
@@ -30,7 +32,7 @@ import type { BillingOutcome } from "@/lib/billing/failure";
 export async function runKeywordResearch(
   workspaceId: string,
 ): Promise<BillingOutcome<{ discovered: number }>> {
-  const { accountId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
   const supabase = await createClient();
 
   const gate = await canSpend(supabase, accountId, {
@@ -111,7 +113,7 @@ export async function runKeywordResearch(
 export async function checkSerpPositions(
   workspaceId: string,
 ): Promise<BillingOutcome<{ checked: number }>> {
-  const { accountId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
   const supabase = await createClient();
 
   // One paid SERP call per keyword row in the workspace, uncapped: the single
@@ -188,7 +190,7 @@ export async function checkSerpPositions(
 export async function fetchBacklinks(
   workspaceId: string,
 ): Promise<BillingOutcome<Awaited<ReturnType<typeof syncBacklinks>>>> {
-  const { accountId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
   const supabase = await createClient();
 
   const gate = await canSpend(supabase, accountId, {
@@ -219,18 +221,12 @@ export async function scoreArticleSeo(articleId: string) {
   await requireAuth();
   const supabase = await createClient();
 
-  // Fetch the article
-  const { data: articleData, error: artError } = await supabase
-    .from("articles")
-    .select("*")
-    .eq("id", articleId)
-    .single();
-
-  if (artError || !articleData) {
-    throw new Error("Article not found");
-  }
-
-  const article = articleData as Article;
+  // The article with its text, read on the server once the caller's client
+  // has shown it can see the row and the trial gate is open for its account
+  // (lib/billing/body-lock.ts). The score's notes quote the text, so an
+  // account before its trial is refused rather than scored. Throws "Article
+  // not found" for a row the caller cannot see, as this did before.
+  const article = await articleBodyForSession<Article>(articleId);
 
   // The site's domain, so the internal-link check can tell the site's own
   // pages from the ones it cites. Best effort: a missing domain scores the
@@ -240,6 +236,8 @@ export async function scoreArticleSeo(articleId: string) {
     .select("domain")
     .eq("id", article.workspace_id)
     .single();
+  // Not best effort: an unreadable language is "not checked", never English.
+  const language = await readWorkspaceLanguage(supabase, article.workspace_id, "seo.score");
 
   // Convert Tiptap JSON content to HTML string for scoring.
   // If content is stored as Tiptap JSON, we serialise it simply;
@@ -270,6 +268,7 @@ export async function scoreArticleSeo(articleId: string) {
     knownPages,
     targetWordCount: article.research?.recommendedWordCount ?? null,
     title: article.title,
+    language,
   });
 
   // Insert the audit record

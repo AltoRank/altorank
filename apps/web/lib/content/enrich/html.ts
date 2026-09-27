@@ -9,6 +9,7 @@
 // change to how a section is delimited happens once.
 
 import { stripTags, decode } from "@/lib/audit/html-utils";
+import { anchorId } from "@/lib/i18n/locale";
 
 export { stripTags, decode };
 
@@ -28,22 +29,16 @@ export function escapeAttr(text: string): string {
  * A heading turned into a portable anchor id.
  *
  * Portable means it survives every CMS this product publishes to: lowercase
- * ASCII, hyphens, nothing a WordPress or Ghost sanitiser would rewrite. Accents
- * are folded rather than dropped so "Perché" becomes "perche", not "perch".
- * Ids must start with a letter to be valid CSS selectors, hence the prefix on
- * a heading that opens with a digit ("5 ways to..." -> "s-5-ways-to").
+ * ASCII, hyphens, nothing a WordPress or Ghost sanitiser would rewrite. The
+ * fold itself lives in the locale contract (`anchorId` in lib/i18n/locale),
+ * shared with the URL slug so an anchor and a slug agree: accents are folded
+ * rather than dropped ("Perché" -> "perche"), and the letters NFKD leaves
+ * alone are mapped too - the dotless ı that turned "Yazılım" into
+ * "yaz-l-m" on a Turkish draft of 2026-09-22 is now "yazilim". Ids start with
+ * a letter to be valid CSS selectors ("5 ways to..." -> "s-5-ways-to").
  */
 export function slugify(text: string, maxLength = 64): string {
-  const base = stripTags(text)
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .slice(0, maxLength)
-    .replace(/-$/, "");
-  if (!base) return "section";
-  return /^[a-z]/.test(base) ? base : `s-${base}`;
+  return anchorId(stripTags(text), maxLength);
 }
 
 /** `slug`, `slug-2`, `slug-3`... against a set the caller keeps. */
@@ -154,8 +149,8 @@ export function wordCount(html: string): number {
  *
  * Works on inner HTML so a caller can wrap one sentence in `<strong>` and put
  * the paragraph back together byte-for-byte. A boundary is a terminal mark
- * followed by whitespace and something that starts a sentence: a capital, a
- * digit, an opening quote or a tag. Abbreviations are not handled; a false
+ * followed by whitespace and something that starts a sentence: a capital in
+ * any script, a digit, an opening quote or a tag. Abbreviations are not handled; a false
  * split here costs at most a misplaced bold, never lost text.
  */
 export function splitSentencesHtml(inner: string): string[] {
@@ -169,7 +164,9 @@ export function splitSentencesHtml(inner: string): string[] {
     else if (ch === ">") inTag = false;
     else if (!inTag && /[.!?]/.test(ch)) {
       const rest = inner.slice(i + 1);
-      const m = rest.match(/^(["'”’)]*)(\s+)(?=[A-Z0-9"“‘'<])/);
+      // Any uppercase letter, not just A-Z: a Turkish sentence opens with
+      // "Şirketler" or "İlk", an Italian one with "È".
+      const m = rest.match(/^(["'”’)]*)(\s+)(?=[\p{Lu}0-9"“‘'<])/u);
       if (m) {
         buf += m[1] + m[2];
         i += m[0].length;

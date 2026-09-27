@@ -10,6 +10,16 @@ describe("freeAllowanceClause", () => {
     expect(freeAllowanceClause(1)).toBe("The first one is free to read; the 7-day trial writes the rest.");
   });
 
+  // Before the trial nothing is readable (lib/billing/trial.ts,
+  // draftBodyLocked): setup writes one article and the trial opens it.
+  it("does not promise a readable draft to an account before its trial", () => {
+    const clause = freeAllowanceClause(7, { preTrial: true });
+    expect(clause).toBe("Setup writes your first article free; the 7-day trial opens it and writes the rest.");
+    expect(clause).not.toMatch(/free to read/);
+    expect(freeAllowanceClause(1, { preTrial: true })).toBe(clause);
+    expect(freeAllowanceClause(null, { preTrial: true })).toBeNull();
+  });
+
   it("says nothing for an account with nothing to qualify", () => {
     // Unmetered: self-host, operator, or an active plan.
     expect(freeAllowanceClause(null)).toBeNull();

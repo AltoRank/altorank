@@ -49,7 +49,10 @@ function matchesQuery(fields: (string | null | undefined)[], q: string): boolean
 
 /** Why a parked keyword is parked, from its verdict; "by you" when a person did it. */
 function parkedReason(k: { opportunity?: unknown }): string {
-  const o = k.opportunity as { status?: string; cause?: string } | null | undefined;
+  const o = k.opportunity as { status?: string; cause?: string; duplicateTerm?: string } | null | undefined;
+  // A duplicate names the topic that owns the search, so the person can see
+  // which one was kept (lib/keyword-research/intent.ts).
+  if (o && typeof o === "object" && o.cause === "duplicate" && o.duplicateTerm) return `same search as “${o.duplicateTerm}”`;
   if (o && typeof o === "object" && o.cause) return causeLabel(o.cause);
   return "taken off the plan";
 }

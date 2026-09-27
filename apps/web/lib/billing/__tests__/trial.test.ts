@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { trialEligible, trialEndsLabel, trialGateApplies, trialGateBypassed, trialInfo } from "@/lib/billing/trial";
+import { draftBodyLocked, trialEligible, trialEndsLabel, trialGateApplies, trialGateBypassed, trialGateState, trialInfo } from "@/lib/billing/trial";
 import { planEntitled } from "@/lib/billing/dunning";
 
 describe("trialEligible", () => {
@@ -133,5 +133,73 @@ describe("trialGateBypassed", () => {
       expect(trialGateBypassed("b@y.com")).toBe(true);
       expect(trialGateBypassed("c@z.com")).toBe(false);
     });
+  });
+});
+
+// The one answer every surface asks: the dashboard layout, the setup page,
+// the planner, the article reads and the agent API. Before it existed the
+// setup page computed its own and ignored the kill switch.
+describe("trialGateState", () => {
+  const gated = { reason: "no-plan", trialEligible: true };
+  const env = (name: string, value: string | undefined, run: () => void) => {
+    const before = process.env[name];
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+    try {
+      run();
+    } finally {
+      if (before === undefined) delete process.env[name];
+      else process.env[name] = before;
+    }
+  };
+
+  it("is gated for a fresh account with no plan", () => {
+    env("TRIAL_GATE_BYPASS_EMAILS", undefined, () => {
+      expect(trialGateState(gated, "owner@acme-agency.example")).toBe("gated");
+      expect(trialGateState(gated, null)).toBe("gated");
+    });
+  });
+
+  it("is open for everyone trialGateApplies exempts", () => {
+    expect(trialGateState({ reason: "self-host", trialEligible: true }, null)).toBe("open");
+    expect(trialGateState({ reason: "operator" }, null)).toBe("open");
+    expect(trialGateState({ reason: "plan" }, null)).toBe("open");
+    expect(trialGateState({ reason: "no-plan", trialEligible: false }, null)).toBe("open");
+    expect(trialGateState(null, null)).toBe("open");
+  });
+
+  it("the kill switch opens it for the setup page too, not only the dashboard", () => {
+    env("TRIAL_GATE_DISABLED", "1", () => expect(trialGateState(gated, "owner@acme-agency.example")).toBe("open"));
+  });
+
+  it("a bypassed address is told apart from an open account", () => {
+    env("TRIAL_GATE_BYPASS_EMAILS", "owner@acme-agency.example", () => {
+      expect(trialGateState(gated, "owner+qa@acme-agency.example")).toBe("bypassed");
+      // Bypass only matters where the gate would have applied.
+      expect(trialGateState({ reason: "plan" }, "owner@acme-agency.example")).toBe("open");
+    });
+  });
+
+  it("the dev simulation forces the gate on, and the bypass still applies", () => {
+    expect(trialGateState({ reason: "self-host" }, null, { simulated: true })).toBe("gated");
+    env("TRIAL_GATE_BYPASS_EMAILS", "owner@acme-agency.example", () =>
+      expect(trialGateState({ reason: "self-host" }, "owner@acme-agency.example", { simulated: true })).toBe("bypassed"),
+    );
+  });
+});
+
+describe("draftBodyLocked", () => {
+  it("locks exactly when the account is gated", () => {
+    const before = process.env.TRIAL_GATE_BYPASS_EMAILS;
+    process.env.TRIAL_GATE_BYPASS_EMAILS = "qa@acme-agency.example";
+    try {
+      expect(draftBodyLocked({ reason: "no-plan", trialEligible: true }, "owner@acme-agency.example")).toBe(true);
+      expect(draftBodyLocked({ reason: "no-plan", trialEligible: true }, "qa@acme-agency.example")).toBe(false);
+      expect(draftBodyLocked({ reason: "plan" }, "owner@acme-agency.example")).toBe(false);
+      expect(draftBodyLocked({ reason: "self-host" }, null)).toBe(false);
+    } finally {
+      if (before === undefined) delete process.env.TRIAL_GATE_BYPASS_EMAILS;
+      else process.env.TRIAL_GATE_BYPASS_EMAILS = before;
+    }
   });
 });

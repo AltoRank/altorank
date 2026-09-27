@@ -235,6 +235,19 @@ describe("startRun", () => {
     expect(db.tables.onboarding_runs.filter((x) => x.status === "running")).toHaveLength(1);
   });
 
+  it("asks mayCreate only for a new run, and a sentence from it refuses one", async () => {
+    const db = fakeDb();
+    const mayCreate = vi.fn(async () => "refused for a reason");
+    expect(await startRun(db.client, WS, Date.now(), { mayCreate })).toEqual({ refused: "refused for a reason" });
+    expect(db.tables.onboarding_runs ?? []).toHaveLength(0);
+
+    // The live run is handed back without asking: returning it buys nothing.
+    const live = fakeDb({ onboarding_runs: [{ id: "live", workspace_id: "ws1", account_id: "ag1", status: "running", phases: [], planned: [], updated_at: new Date().toISOString() }] });
+    const ask = vi.fn(async () => "refused");
+    expect(await startRun(live.client, WS, Date.now(), { mayCreate: ask })).toEqual({ runId: "live", created: false });
+    expect(ask).not.toHaveBeenCalled();
+  });
+
   it("a finished run does not block a new one", async () => {
     const db = fakeDb({ onboarding_runs: [{ id: "done", workspace_id: "ws1", account_id: "ag1", status: "done", phases: [], planned: [] }] });
     const r = await startRun(db.client, WS);

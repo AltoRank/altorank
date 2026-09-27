@@ -95,6 +95,11 @@ export async function latestRun(
   return { run, article, drafts, stale: isRunStale(run, now), report, ...(held ? { held } : {}) };
 }
 
+/** The live run, a new one, or the sentence that refused a new one. */
+export type StartRunResult =
+  | { runId: string; created: boolean; refused?: never }
+  | { refused: string; runId?: never; created?: never };
+
 /**
  * The run to show for a workspace: the live one if there is one, else a new
  * row. Idempotent by the partial unique index in 076 - a second start while
@@ -105,12 +110,18 @@ export async function latestRun(
  * died (the function was cut off, the dispatch never landed). It is closed as
  * an error, with the reason, and a fresh run begins: the phases it finished
  * persisted on their own tables, so the new run's early phases are cheap.
+ *
+ * `mayCreate` is asked only when a new run would begin - never to hand back
+ * the live one, which costs nothing - and a sentence from it refuses the new
+ * run: `{ refused }`, nothing inserted. A new run buys the site read and the
+ * keyword research again, so whether it may is the spend gate's question.
  */
 export async function startRun(
   supabase: SupabaseClient,
   workspace: { id: string; account_id: string },
   now = Date.now(),
-): Promise<{ runId: string; created: boolean }> {
+  opts: { mayCreate?: () => Promise<string | null> } = {},
+): Promise<StartRunResult> {
   const live = async () => {
     const { data } = await supabase
       .from("onboarding_runs")
@@ -130,6 +141,9 @@ export async function startRun(
     // said a first look had died.
     await reapStaleRuns(supabase, now, { runId: existing.id });
   }
+
+  const refused = opts.mayCreate ? await opts.mayCreate() : null;
+  if (refused) return { refused };
 
   const { data, error } = await supabase
     .from("onboarding_runs")

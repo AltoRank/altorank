@@ -28,7 +28,8 @@ import { htmlToMarkdown } from "@/lib/audit/markdown";
 import { fetchSite } from "@/lib/audit/lenient-fetch";
 
 export interface ResearchLayer {
-  id: "serp" | "related_keywords" | "gsc" | "competitor_length";
+  /** `site_facts` is added by lib/content/site-facts.ts, not by `gatherArticleResearch`. */
+  id: "serp" | "related_keywords" | "gsc" | "competitor_length" | "site_facts";
   /** `ok` loaded, `unavailable` not configured, `failed` configured but errored. */
   status: "ok" | "unavailable" | "failed";
   detail: string;
@@ -70,6 +71,16 @@ export interface ArticleResearch {
   recommendedWordCount: number;
   wordCountBasis: string;
   layers: ResearchLayer[];
+  /**
+   * What the business's own pages state that can carry a figure, as the
+   * writer was given it (lib/content/site-facts.ts): its statements, the
+   * opening of its about page, its section headings. Kept with the research
+   * so the fact check - at generation and again at approval - can tell a
+   * figure the business states about itself from one nobody sourced
+   * (lib/ai/fact-check.ts `statedBySite`). Absent on drafts written before
+   * it, and on rewrites, which get no site facts.
+   */
+  siteStatements?: Array<{ text: string; source: string }>;
 }
 
 const DEFAULT_WORD_COUNT = 1500;

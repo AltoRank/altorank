@@ -6,6 +6,8 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { loadClient, redirectAllowed } from "@/lib/oauth/clients";
 import { issueCode, parseScopes } from "@/lib/oauth/codes";
 import type { ApiKeyScope } from "@/lib/agent/api-keys";
+import { sessionTrialGate } from "@/lib/billing/body-lock";
+import { trialRefusal } from "@/lib/billing/trial-refusal";
 
 // ---------------------------------------------------------------------------
 // The consent decision
@@ -46,6 +48,14 @@ export async function decideAuthorization(formData: FormData): Promise<void> {
   // Owner or admin, same rule as making a key by hand. A member who got this
   // far sees the explanation on the page; the action just refuses.
   const { user, accountId } = await requireAuth(["owner", "admin"]);
+
+  // The code this issues is a key (lib/oauth/codes.ts), and an account that
+  // has not started its trial gets none, the same rule as Settings: the agent
+  // API is the dashboard by another door. Said to the client in words, so an
+  // agent can relay it.
+  if ((await sessionTrialGate(accountId, user.email ?? null)) === "gated") {
+    redirect(withParams(redirectUri, { error: "access_denied", error_description: trialRefusal("spend"), state }));
+  }
 
   const { scopes: requested } = parseScopes(String(formData.get("scope") ?? ""));
   const scopes: ApiKeyScope[] = requested.filter((s) => s !== "write" || allowWrite);

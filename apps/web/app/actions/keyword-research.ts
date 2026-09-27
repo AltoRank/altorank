@@ -17,7 +17,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decoratePlannedKeywords, scheduleKeywords, PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
-import { normalizeTarget } from "@/lib/seo/recommendations";
+import { intentKey } from "@/lib/keyword-research/intent";
 import {
   emptyFunnel,
   loadResearchWorkspace,
@@ -73,7 +73,7 @@ export interface ResearchContext {
 }
 
 async function scoped(workspaceId: string): Promise<{ supabase: SupabaseClient; ws: ResearchWorkspace; accountId: string }> {
-  const { accountId } = await requireAuth();
+  const { accountId } = await requireAuth(undefined, { workspaceId });
   const supabase = await createClient();
   const ws = await loadResearchWorkspace(supabase, workspaceId);
   // RLS already scopes to the account; this turns a foreign id into an error
@@ -205,17 +205,19 @@ async function ensureKeywordRows(
   workspaceId: string,
   candidates: ResearchCandidate[],
   kind: ResearchKind,
+  language: string,
 ): Promise<Map<string, { id: string; status: string }>> {
+  const keyOf = (term: string) => intentKey(term, language);
   const { data: existing } = await supabase.from("keywords").select("id, term, status").eq("workspace_id", workspaceId);
   const byTarget = new Map<string, { id: string; status: string }>();
   for (const k of (existing ?? []) as Array<{ id: string; term: string; status: string }>) {
-    const key = normalizeTarget(k.term);
+    const key = keyOf(k.term);
     if (key && !byTarget.has(key)) byTarget.set(key, { id: k.id, status: k.status });
   }
 
   const fresh = new Map<string, ResearchCandidate>();
   for (const c of candidates) {
-    const key = normalizeTarget(c.term);
+    const key = keyOf(c.term);
     if (!key || byTarget.has(key) || fresh.has(key)) continue;
     fresh.set(key, c);
   }
@@ -238,7 +240,7 @@ async function ensureKeywordRows(
       .select("id, term, status");
     if (error) throw new Error(error.message);
     for (const k of (inserted ?? []) as Array<{ id: string; term: string; status: string }>) {
-      byTarget.set(normalizeTarget(k.term), { id: k.id, status: k.status });
+      byTarget.set(keyOf(k.term), { id: k.id, status: k.status });
     }
     // A row that already existed under a differently-cased term is skipped by
     // ignoreDuplicates and not returned; read it back so nothing is lost.
@@ -246,7 +248,7 @@ async function ensureKeywordRows(
     if (missing.length) {
       const { data: again } = await supabase.from("keywords").select("id, term, status").eq("workspace_id", workspaceId);
       for (const k of (again ?? []) as Array<{ id: string; term: string; status: string }>) {
-        const key = normalizeTarget(k.term);
+        const key = keyOf(k.term);
         if (key && !byTarget.has(key)) byTarget.set(key, { id: k.id, status: k.status });
       }
     }
@@ -254,7 +256,7 @@ async function ensureKeywordRows(
 
   const out = new Map<string, { id: string; status: string }>();
   for (const c of candidates) {
-    const hit = byTarget.get(normalizeTarget(c.term));
+    const hit = byTarget.get(keyOf(c.term));
     if (hit) out.set(c.term, hit);
   }
   return out;
@@ -291,13 +293,13 @@ export async function scheduleCandidates(
   runId: string | null,
   kind: ResearchKind = "manual",
 ): Promise<ScheduleReport> {
-  const { supabase, accountId } = await scoped(workspaceId);
+  const { supabase, ws, accountId } = await scoped(workspaceId);
   const gate = await spendCheck(supabase, accountId, workspaceId);
   if (!gate.allowed) throw new Error(gate.message);
   if (!candidates.length) {
     return { scheduled: 0, refused: 0, alreadyPlanned: 0, capacity: await readCapacity(supabase, workspaceId) };
   }
-  const rows = await ensureKeywordRows(supabase, workspaceId, candidates, kind);
+  const rows = await ensureKeywordRows(supabase, workspaceId, candidates, kind, ws.languageCode);
   const ids = [...new Set([...rows.values()].map((r) => r.id))];
   const outcome = await scheduleKeywords(supabase, workspaceId, ids);
   const alreadyPlanned = ids.length - outcome.scheduled.length - outcome.refused.length;
@@ -321,9 +323,9 @@ export async function storeCandidates(
   candidates: ResearchCandidate[],
   kind: ResearchKind = "manual",
 ): Promise<{ stored: number; alreadyTracked: number }> {
-  const { supabase } = await scoped(workspaceId);
+  const { supabase, ws } = await scoped(workspaceId);
   if (!candidates.length) return { stored: 0, alreadyTracked: 0 };
-  const rows = await ensureKeywordRows(supabase, workspaceId, candidates, kind);
+  const rows = await ensureKeywordRows(supabase, workspaceId, candidates, kind, ws.languageCode);
   // A row nobody has looked at yet ('new') becomes stored; anything further
   // along - planned, drafting, shipped - is left exactly where it is.
   const promote = [...rows.values()].filter((r) => r.status === "new").map((r) => r.id);

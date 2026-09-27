@@ -107,6 +107,10 @@ describe("cardStatusPill", () => {
     expect(cardStatusPill("writing").label).toBe("Writing…");
     expect(cardStatusPill("in_review").label).toBe("In review");
     expect(cardStatusPill("live")).toEqual({ status: "live", label: "Live" });
+    // Found on the customer's site: the same words as the editor and the list.
+    const found = { status: "live", published_url: "https://acme-agency.example/blog/kopya", found_on_site_at: "2026-09-23T10:00:00Z" };
+    expect(cardStatusPill("live", found)).toEqual({ status: "live", label: "Live on your site" });
+    expect(cardStatusPill("live", { ...found, found_on_site_at: null })).toEqual({ status: "live", label: "Live" });
     expect(cardStatusPill("frozen").label).toBe("Inactive");
     expect(cardStatusPill("improvement").label).toBe("Improvement");
     expect(cardStatusPill("improved").label).toBe("Rewrite ready");

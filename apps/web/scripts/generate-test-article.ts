@@ -145,6 +145,7 @@ async function main(): Promise<void> {
     featuredImageUrl: article.featured_image_url as string | null,
     linkableArticles: liveCount ?? 0,
     linkChecks: article.link_checks as LinkCheck[] | null,
+    language: (existingWs?.language as string | undefined) ?? LANG,
   });
 
   heading("The article");

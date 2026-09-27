@@ -4,7 +4,7 @@
 
 import { post } from "./client";
 import { classifyIntent } from "./intent";
-import { normalizeTarget } from "./recommendations";
+import { intentKey } from "@/lib/keyword-research/intent";
 import type { KeywordIntent } from "@/lib/types";
 
 /** Shape returned by the keywords-for-site DataForSEO endpoint (trimmed). */
@@ -387,26 +387,29 @@ export function dedupePermutations<T extends { keyword: string; volume: number }
  * The second pass: one keyword per TARGET, not per phrasing.
  *
  * `dedupePermutations` above compares the words as typed, so it collapses
- * "seo for agency" and "agency for seo" and nothing else. `normalizeTarget`
- * folds plurals, gerunds, agent nouns and a silent final "e" as well, which is
- * what makes "website design", "website about design" and "website design
- * websites" one query - and it is already the key `recommendKeywords` collapses
- * the queue on, so a row this drops was going to be merged into another one
- * the moment anybody looked at it.
+ * "seo for agency" and "agency for seo" and nothing else. `intentKey` folds
+ * connective words and inflections as well, in the workspace's language
+ * (lib/keyword-research/intent.ts), which is what makes "website design",
+ * "website about design" and "website design websites" one query in English -
+ * and it is already what `recommendKeywords` collapses the queue on, so a row
+ * this drops was going to be merged into another one the moment anybody
+ * looked at it.
  *
  * Ordered by volume, then by the shorter phrasing, matching the rule above:
  * the winner is the way people most often type it.
  *
  * Not merged into `dedupePermutations`: the brief path uses that one to
- * de-duplicate related keywords for a single article, where "content writing"
- * and "content writer" are two headings worth having.
+ * de-duplicate related keywords for a single article, where "seo tool" and
+ * "seo tools" can be two headings worth having, and where no workspace
+ * language is at hand to fold them in. That list picks headings, not topics.
  */
 export function dedupeTargets<T extends { keyword: string; volume: number }>(
   keywords: T[],
+  language: string,
 ): T[] {
   const best = new Map<string, T>();
   for (const k of keywords) {
-    const key = normalizeTarget(k.keyword);
+    const key = intentKey(k.keyword, language);
     if (!key) continue;
     const prev = best.get(key);
     if (

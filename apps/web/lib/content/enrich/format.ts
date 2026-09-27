@@ -12,6 +12,7 @@
 
 import { fetchSite } from "@/lib/audit/lenient-fetch";
 import { classifyHref } from "@/lib/seo/links";
+import { resolveLocale, scaleWords } from "@/lib/i18n/locale";
 import {
   attrOf,
   setAttr,
@@ -29,8 +30,13 @@ import {
 export interface FormatFindings {
   /** Headings that received an id in this pass (existing ids are kept). */
   headingIds: number;
-  /** H2s whose first sentence does not read as a direct answer. Reported, not rewritten. */
-  directAnswerMissing: string[];
+  /**
+   * H2s whose first sentence does not read as a direct answer. Reported, not
+   * rewritten. Null when the article's language is not one the locale
+   * contract describes: what counts as throat-clearing is language, and an
+   * empty list would claim every section passed.
+   */
+  directAnswerMissing: string[] | null;
   /** Sentences bolded because they state a number and name its source. */
   claimsBolded: number;
   /** External links that received `rel="noopener"`. */
@@ -50,6 +56,8 @@ export interface FormatOptions {
   fetchTitle?: (url: string) => Promise<string | null>;
   /** Upper bound on title fetches per article. */
   maxTitleFetches?: number;
+  /** The article's language, for the direct-answer and bolded-claim rules. */
+  language?: string | null;
 }
 
 const TITLE_FETCH_TIMEOUT_MS = 4_000;
@@ -77,29 +85,26 @@ export function ensureHeadingIds(html: string): { html: string; added: number } 
 }
 
 /**
- * Openers that announce a section instead of answering it. A first sentence
- * that starts this way is the classic "in this section we will look at"
- * throat-clearing an answer engine skips past.
- */
-const ANNOUNCEMENT_OPENERS =
-  /^(in this (section|part|article|guide|post)|let'?s|before (we|you|diving)|now that|when it comes to|in today'?s|there are (many|several|a number of)|it'?s (important|worth|no secret)|as (we|you) (mentioned|saw|know)|first,? let|welcome)/i;
-
-/**
  * Whether a section's first sentence reads as a direct answer to its heading.
  *
  * Direct means: present, short enough to be quoted whole, and not an
- * announcement of what the section is about to do. It does not check that
- * the sentence is *correct*; nothing here can.
+ * announcement of what the section is about to do ("in this section we will
+ * look at", "bu bölümde…") - the throat-clearing an answer engine skips past.
+ * The openers and the word band are the article language's, from the locale
+ * contract. It does not check that the sentence is *correct*; nothing here
+ * can. Null for a language the contract does not describe.
  */
-export function opensWithDirectAnswer(body: string): boolean {
+export function opensWithDirectAnswer(body: string, language?: string | null): boolean | null {
+  const locale = resolveLocale(language);
+  if (!locale.supported) return null;
   const first = firstParagraph(body);
   if (!first) return false;
   const text = stripTags(first.inner);
   if (!text) return false;
   const sentence = firstSentence(text);
   const words = sentence.split(/\s+/).filter(Boolean).length;
-  if (words < 4 || words > 45) return false;
-  if (ANNOUNCEMENT_OPENERS.test(sentence)) return false;
+  if (words < scaleWords(4, locale) || words > scaleWords(45, locale)) return false;
+  if (locale.prose.announcementOpener.test(locale.lower(sentence))) return false;
   // A question is not an answer.
   if (sentence.endsWith("?")) return false;
   return true;
@@ -108,14 +113,17 @@ export function opensWithDirectAnswer(body: string): boolean {
 /**
  * A sentence that states a figure and names where it came from. This is the
  * one sentence per section worth bolding: it is what a reader scanning for
- * evidence stops on, and what an answer engine lifts with attribution.
+ * evidence stops on, and what an answer engine lifts with attribution. What
+ * "names where it came from" looks like is the language's ("according to",
+ * "…'a göre"), from the locale contract; nothing is bolded in a language it
+ * does not describe.
  */
-const CITABLE_CLAIM =
-  /\d[\d.,]*\s?(%|percent|per cent|million|billion|k\b|x\b|€|\$|£|hours?|days?|weeks?|months?|years?)?[^.!?]*?\b(according to|per|reports?|reported|found that|survey(?:ed)? by|data from|study by|research by|estimates?)\b|\b(according to|per|reports?|reported|found that|survey(?:ed)? by|data from|study by|research by)\b[^.!?]*?\d/i;
-
-export function boldCitableClaims(html: string): { html: string; bolded: number } {
+export function boldCitableClaims(html: string, language?: string | null): { html: string; bolded: number } {
+  const locale = resolveLocale(language);
+  if (!locale.supported) return { html, bolded: 0 };
   const split = splitSections(html);
   if (!split.sections.length) return { html, bolded: 0 };
+  const maxWords = scaleWords(60, locale);
   let bolded = 0;
 
   const sections = split.sections.map((s) => {
@@ -127,7 +135,7 @@ export function boldCitableClaims(html: string): { html: string; bolded: number 
       const sentences = splitSentencesHtml(inner);
       const idx = sentences.findIndex((sentence) => {
         const text = stripTags(sentence);
-        return CITABLE_CLAIM.test(text) && text.split(/\s+/).length <= 60;
+        return locale.prose.citableClaim.test(text) && text.split(/\s+/).length <= maxWords;
       });
       if (idx === -1) return whole;
       const target = sentences[idx];
@@ -268,14 +276,16 @@ export async function applyFormat(
   opts: FormatOptions = {},
 ): Promise<{ html: string; findings: FormatFindings }> {
   const ids = ensureHeadingIds(html);
-  const claims = boldCitableClaims(ids.html);
+  const claims = boldCitableClaims(ids.html, opts.language);
   const links = await formatExternalLinks(claims.html, opts);
   const alts = ensureAltText(links.html);
   const video = upgradeVideoPrivacy(alts.html);
 
-  const directAnswerMissing = splitSections(video.html)
-    .sections.filter((s) => !opensWithDirectAnswer(s.body))
-    .map((s) => s.headingText);
+  const directAnswerMissing = resolveLocale(opts.language).supported
+    ? splitSections(video.html)
+        .sections.filter((s) => opensWithDirectAnswer(s.body, opts.language) === false)
+        .map((s) => s.headingText)
+    : null;
 
   return {
     html: video.html,

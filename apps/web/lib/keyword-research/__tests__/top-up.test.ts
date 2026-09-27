@@ -94,11 +94,25 @@ describe("playbookCandidates — what the customer told us", () => {
 
 describe("newCandidates", () => {
   it("drops what the workspace already has, whatever the casing", () => {
-    expect(newCandidates(["Web Design", "salon website"], ["web design"])).toEqual(["salon website"]);
+    expect(newCandidates(["Web Design", "salon website"], ["web design"], "en")).toEqual(["salon website"]);
   });
 
   it("de-duplicates within the harvest itself", () => {
-    expect(newCandidates(["a", "A", " a "], [])).toEqual(["a"]);
+    expect(newCandidates(["crm", "CRM", " crm "], [], "en")).toEqual(["crm"]);
+  });
+
+  it("drops another phrasing of a search the workspace already has, in its own language", () => {
+    // A real signup (2026-09-22): the drafted article's research carried its
+    // own keyword back as "firması" and "firmaları".
+    const known = ["mobil uygulama geliştirme firmaları"];
+    expect(newCandidates(["Mobil uygulama geliştirme firması", "web tasarım ajansı"], known, "tr")).toEqual(["web tasarım ajansı"]);
+    expect(newCandidates(["agencies for seo", "seo audit"], ["agency seo"], "en")).toEqual(["seo audit"]);
+  });
+
+  it("does not stem a language it has no rules for as English", () => {
+    // "agencias" and "agencia" are one search in Spanish, but this file has
+    // no Spanish rule set: both stay, and qualification's results page settles it.
+    expect(newCandidates(["agencias seo"], ["agencia seo"], "es")).toEqual(["agencias seo"]);
   });
 });
 

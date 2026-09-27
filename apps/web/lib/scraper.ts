@@ -10,27 +10,45 @@ const MAX_WORDS = 3000;
 const FETCH_TIMEOUT = 8000;
 
 export async function scrapeWebsiteText(domain: string): Promise<string> {
-  const url = domain.startsWith("http") ? domain : `https://${domain}`;
-  const html = await fetchPage(url);
-  if (!html) return "";
+  return (await scrapeWebsite(domain)).text;
+}
 
-  let text = extractContentText(html);
+/** A page this read fetched and got a 2xx for, with the URL it ended on. */
+export interface ScrapedPage {
+  url: string;
+  html: string;
+}
+
+/**
+ * The text, plus the pages it came from. The pages are what lets a caller
+ * say "this URL was on the site" rather than "the model thought it might
+ * be": the wizard's profile read keeps them for exactly that
+ * (lib/onboarding/observed-facts.ts).
+ */
+export async function scrapeWebsite(domain: string): Promise<{ text: string; pages: ScrapedPage[] }> {
+  const url = domain.startsWith("http") ? domain : `https://${domain}`;
+  const home = await fetchPage(url);
+  if (!home) return { text: "", pages: [] };
+  const pages: ScrapedPage[] = [home];
+
+  let text = extractContentText(home.html);
 
   // Try to find and fetch a blog post for richer sample
-  const blogLinks = findBlogLinks(html, url);
+  const blogLinks = findBlogLinks(home.html, home.url);
   if (blogLinks.length > 0) {
-    const blogHtml = await fetchPage(blogLinks[0]);
-    if (blogHtml) {
-      text += "\n\n" + extractContentText(blogHtml);
+    const blog = await fetchPage(blogLinks[0]);
+    if (blog) {
+      pages.push(blog);
+      text += "\n\n" + extractContentText(blog.html);
     }
   }
 
   // Cap at MAX_WORDS
   const words = text.split(/\s+/).filter(Boolean);
-  return words.slice(0, MAX_WORDS).join(" ");
+  return { text: words.slice(0, MAX_WORDS).join(" "), pages };
 }
 
-async function fetchPage(url: string): Promise<string | null> {
+async function fetchPage(url: string): Promise<ScrapedPage | null> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
@@ -40,7 +58,8 @@ async function fetchPage(url: string): Promise<string | null> {
     });
     clearTimeout(timeout);
     if (!res.ok) return null;
-    return await res.text();
+    // `res.url` is where redirects ended; a synthesised response has none.
+    return { url: res.url || url, html: await res.text() };
   } catch {
     return null;
   }

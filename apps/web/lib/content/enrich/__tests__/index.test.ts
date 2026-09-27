@@ -24,7 +24,10 @@ describe("enrichArticle", () => {
     expect(report.images).toBeGreaterThanOrEqual(1);
     expect(report.warnings).toEqual([]);
     expect(report.format?.headingIds).toBeGreaterThanOrEqual(4);
-    expect(report.faqSchema?.mainEntity).toHaveLength(3);
+    // The count, never the schema: its answers are the article's own words,
+    // and the report is saved on `research`, which a client token can read.
+    expect(report).not.toHaveProperty("faqSchema");
+    expect(JSON.stringify(research)).not.toContain("acceptedAnswer");
     expect(report.imageStyle).toBe("sketch");
 
     // Order in the document: TOC, then sections with images/video/chart, CTA last.
@@ -107,7 +110,6 @@ describe("enrichArticle: every switch", () => {
     expect(report.video).toBe(false);
     expect(videoSearch).not.toHaveBeenCalled();
     expect(report.faq).toBe(0);
-    expect(report.faqSchema).toBeNull();
     // The FAQ prose is still there; only the structured data is withheld.
     expect(html).toContain("Frequently asked questions");
     expect(report.warnings).toEqual([]);

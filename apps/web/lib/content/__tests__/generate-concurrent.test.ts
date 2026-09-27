@@ -23,6 +23,9 @@ const getQuota = vi.fn();
 vi.mock("@/lib/billing/quota", () => ({
   getQuota: (...args: unknown[]) => getQuota(...args),
   quotaExceededMessage: () => "out of quota",
+  // No article id is written into here, so the plain "at the limit" rule applies.
+  pastIncludedVolume: (q: { limit: number | null; remaining: number | null }) => q.limit !== null && (q.remaining ?? 0) <= 0,
+  createdThisQuotaMonth: () => false,
 }));
 
 // See generate-quota-caller.test.ts: generate.ts pulls in the AI, SEO and

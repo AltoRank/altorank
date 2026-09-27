@@ -4,13 +4,16 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { insertWorkspaceAsServer } from "@/lib/workspaces/insert";
 import { getValidAccessToken } from "@/lib/google/oauth";
 import { listGSCSites, type GSCSite } from "@/lib/google/gsc";
 import { listGA4Properties, matchGA4Property } from "@/lib/google/ga4";
 import { getWorkspaceAllowance, workspaceLimitMessage } from "@/lib/billing/workspaces";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
-import { onboardWorkspace } from "@/app/actions/onboard-workspace";
+import { canSpend } from "@/lib/billing/spend-gate";
+import { startRun } from "@/lib/onboarding/run-store";
+import { dispatchWorker } from "@/lib/onboarding/run-dispatch";
 
 /** What a Search Console property looks like to the person choosing. */
 export type DetectedProperty = {
@@ -93,7 +96,8 @@ export async function listDetectedProperties(): Promise<
 }
 
 export type CreateResult =
-  | { ok: true; created: number; skipped: number }
+  /** `setupRefused`: the spend gate's sentence for sites created without a setup run. */
+  | { ok: true; created: number; skipped: number; setupRefused?: string }
   | { ok: false; reason: "limit"; message: string; needed: number };
 
 /**
@@ -143,22 +147,19 @@ export async function createWorkspacesFromProperties(siteUrls: string[]): Promis
 
   const createdIds: string[] = [];
   for (const p of chosen) {
-    const { data: ws, error } = await supabase
-      .from("workspaces")
-      .insert({
-        account_id: accountId,
-        name: p.domain,
-        domain: p.domain,
-        initials: p.domain.slice(0, 2).toUpperCase(),
-        color: "av-c1",
-        indexnow_key: generateIndexNowKey(),
-        auto_generate: true,
-        auto_generate_weekly_limit: PAID_DEFAULT_PACE,
-      })
-      .select("id")
-      .single();
-    if (error || !ws) continue;
-    createdIds.push(ws.id as string);
+    // By the server, after the allowance above (lib/workspaces/insert.ts).
+    const inserted = await insertWorkspaceAsServer(supabase, user.id, accountId, {
+      name: p.domain,
+      domain: p.domain,
+      initials: p.domain.slice(0, 2).toUpperCase(),
+      color: "av-c1",
+      indexnow_key: generateIndexNowKey(),
+      auto_generate: true,
+      auto_generate_weekly_limit: PAID_DEFAULT_PACE,
+    });
+    if (!inserted.ok) continue;
+    const ws = { id: inserted.id };
+    createdIds.push(ws.id);
 
     if (encrypted) {
       const ga4 = matchGA4Property(ga4Properties, p.domain);
@@ -175,17 +176,45 @@ export async function createWorkspacesFromProperties(siteUrls: string[]): Promis
     }
   }
 
-  // The first look for each, after the response: crawl, profile, keywords,
-  // backlinks, authority, and the first draft where the quota allows.
-  after(async () => {
-    for (const id of createdIds) {
-      await onboardWorkspace(id).catch((err) =>
-        console.error("[connect/google] onboarding", id, err instanceof Error ? err.message : err),
-      );
-    }
-  });
+  // Each site's setup - crawl, profile, keywords, backlinks, authority and the
+  // first draft where the account allows it - through the same door the
+  // wizard uses: a run row, the spend gate asked before it is created, the
+  // onboarding worker with the service role. This used to run the whole
+  // pipeline in after() on the person's own client with no gate and no run
+  // row, so the one setup door that did not ask was also the one the
+  // account's setup-run count could not see: an account before its trial
+  // could remove a site and import it again for another paid setup, as often
+  // as it liked (round-4 review). The rows are written now and the workers
+  // dispatched after the response, as /api/onboard/start does.
+  const service = createServiceClient();
+  const runIds: string[] = [];
+  let setupRefused: string | undefined;
+  for (const id of createdIds) {
+    const started = await startRun(service, { id, account_id: accountId }, Date.now(), {
+      mayCreate: async () => {
+        const gate = await canSpend(supabase, accountId, {
+          userEmail: user.email ?? undefined,
+          workspaceId: id,
+          action: "setup",
+        });
+        return gate.allowed ? null : gate.message;
+      },
+    });
+    if (started.refused !== undefined) setupRefused = started.refused;
+    else if (started.created) runIds.push(started.runId);
+  }
+  if (runIds.length) {
+    after(async () => {
+      for (const runId of runIds) await dispatchWorker(runId);
+    });
+  }
 
   revalidatePath("/workspaces");
   revalidatePath("/connect");
-  return { ok: true, created: createdIds.length, skipped: siteUrls.length - createdIds.length };
+  return {
+    ok: true,
+    created: createdIds.length,
+    skipped: siteUrls.length - createdIds.length,
+    ...(setupRefused ? { setupRefused } : {}),
+  };
 }

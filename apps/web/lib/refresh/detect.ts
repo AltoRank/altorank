@@ -319,10 +319,18 @@ const normUrl = (u: string) => {
  * page with no impressions data is not "getting no impressions", it is
  * unmeasured.
  */
+/**
+ * How analyzeWorkspace reads the text of the site's own articles:
+ * `readArticlesWhole` from lib/articles/body-read.ts, passed in by the server
+ * callers. Passed rather than imported because this file's pure helpers are
+ * also used by client components, and the reader holds the service role.
+ */
+export type ArticleBodyReader = (ids: string[], columns: string) => Promise<{ id: string; content?: unknown }[]>;
+
 export async function analyzeWorkspace(
   supabase: SupabaseClient,
   workspaceId: string,
-  opts: { now?: Date } = {},
+  opts: { now?: Date; readBodies: ArticleBodyReader },
 ): Promise<AnalyzeResult> {
   const now = opts.now ?? new Date();
 
@@ -362,10 +370,10 @@ export async function analyzeWorkspace(
 
   const serp = await loadSerpHistory(supabase, workspaceId, now);
 
-  const [{ data: articles }, { data: sitePages }] = await Promise.all([
+  const [{ data: articles, error: articlesError }, { data: sitePages }] = await Promise.all([
     supabase
       .from("articles")
-      .select("id, keyword, word_count, content, published_url")
+      .select("id, keyword, word_count, published_url")
       .eq("workspace_id", workspaceId)
       .eq("status", "live")
       .not("published_url", "is", null),
@@ -376,13 +384,24 @@ export async function analyzeWorkspace(
       .eq("page_type", "article")
       .not("keyword", "is", null),
   ]);
+  // No articles because the read failed is not "no articles": the pass would
+  // report a site with nothing to improve.
+  if (articlesError) throw new Error(`refresh: could not read this site's articles (${articlesError.message})`);
+
+  // The headings come from the text, which is read on the server: a client
+  // token cannot select it since migration 097 (lib/articles/body-read.ts).
+  // The rows are the ones the caller's client returned; only headings leave.
+  const bodies = new Map(
+    (await opts.readBodies((articles ?? []).map((a) => a.id as string), "content")).map((b) => [b.id, b.content]),
+  );
 
   const pages: PageInput[] = [];
   const seen = new Set<string>();
   for (const a of articles ?? []) {
     const url = a.published_url as string;
     seen.add(normUrl(url));
-    const html = a.content ? tiptapToHtml(a.content as Record<string, unknown>) : "";
+    const content = bodies.get(a.id as string);
+    const html = content ? tiptapToHtml(content as Record<string, unknown>) : "";
     const keyword = (a.keyword as string | null) ?? null;
     pages.push({
       url,

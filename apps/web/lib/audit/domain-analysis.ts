@@ -46,7 +46,7 @@ import {
 import { classifyIntent } from "@/lib/seo/intent";
 import { buildTopicalProfile, type TopicalProfile } from "@/lib/seo/topical-profile";
 import { detectPlatform, type Detection } from "@/lib/cms/detect";
-import { discoverUrls } from "@/lib/seo/site-crawl";
+import { discoverUrls, recordLinkedPages } from "@/lib/seo/site-crawl";
 import { syncBacklinks } from "@/lib/seo/backlinks";
 import { fetchDomainMetrics } from "@/lib/seo/domain-metrics";
 import { e2eStubsEnabled, stubAnalyseDomain } from "@/lib/e2e/stubs";
@@ -494,6 +494,15 @@ export async function analyseDomain(options: {
       profile = buildTopicalProfile(domain, pages);
       issues = runAuditChecks(pages) as unknown[];
       auditScore = calculateAuditScore(issues as never, pages.length);
+      // The services, portfolio, about and contact pages this walk reached,
+      // kept for the writer. On a site with no sitemap nothing else ever
+      // reads them (lib/seo/site-crawl.ts recordLinkedPages). Logged, not a
+      // layer: the crawl's result stands whether or not this write lands.
+      if (supabase && workspaceId && depth === "full") {
+        const kept = await recordLinkedPages(supabase, workspaceId, pages);
+        if (kept.error) console.warn(`[analyse] could not keep the business pages the crawl read: ${kept.error}`);
+        else if (kept.inserted || kept.updated) console.log(`[analyse] kept ${kept.inserted} new and ${kept.updated} existing business page(s) for the writer`);
+      }
       layers.push({
         id: "crawl",
         status: "ok",
@@ -848,18 +857,20 @@ export async function analyseDomain(options: {
         // the same shape: altorank.co came back with "seo for agency", "agency
         // for seo" and "seo agent" as three separate rows at 27,100 each.
         //
-        // Two passes, because `permutationKey` and `normalizeTarget` disagree
+        // Two passes, because `permutationKey` and `intentKey` disagree
         // about what one query is and both are right about part of it.
         // `permutationKey` keeps the words as typed, so it collapses "seo for
         // agency" and "agency for seo" but not "website design" and "website
-        // design websites". `normalizeTarget` folds plurals, gerunds, agent
-        // nouns and a silent final "e", which is what makes those one target -
-        // and it is already what `recommendKeywords` collapses on, so anything
-        // it merges downstream was a wasted row here anyway. qasimcode.com
-        // stored twenty rows that are thirteen queries; four of them were
-        // "website design" and two more were "create"/"creating".
+        // design websites". `intentKey` folds inflections in the workspace's
+        // language (the plural in English), which is what makes those one
+        // target - and it is already what `recommendKeywords` collapses on,
+        // so anything it merges downstream was a wasted row here anyway.
+        // qasimcode.com stored twenty rows that are thirteen queries; four of
+        // them were "website design". Two more were "create"/"creating",
+        // which is a verb form, not a plural: those two are left to the
+        // results page bought at qualification (lib/keyword-research/intent.ts).
         const candidatesAll = [...byTerm.values()];
-        const deduped = dedupeTargets(dedupePermutations(candidatesAll.map((c) => c.k)));
+        const deduped = dedupeTargets(dedupePermutations(candidatesAll.map((c) => c.k)), languageCodeOf(options.locale));
         const keep = new Set(deduped.map((k) => k.keyword));
         const candidates = candidatesAll.filter((c) => keep.has(c.k.keyword));
         // Overwritten below with what actually passes the quality and relevance

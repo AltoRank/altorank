@@ -13,6 +13,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateArticle } from "@/lib/content/generate";
 import { tiptapToHtml } from "@/lib/cms/html";
+import { readArticlesWhole } from "@/lib/articles/body-read";
 import { fetchSite } from "@/lib/audit/lenient-fetch";
 import { extractMainContent } from "@/lib/audit/markdown";
 import { decodeEntities } from "@/lib/audit/html-utils";
@@ -54,12 +55,23 @@ export async function loadPageBody(
   candidate: Pick<RefreshCandidate, "article_id" | "url" | "workspace_id">,
 ): Promise<PageBody> {
   if (candidate.article_id) {
-    const { data: article } = await supabase
+    // Which row through the caller's client (RLS), and its text from the
+    // server: a client token cannot select the body since migration 097
+    // (lib/articles/body-read.ts). A failed read throws rather than falling
+    // through to fetching the live page as if we had never written it.
+    const { data: seen, error } = await supabase
       .from("articles")
-      .select("id, title, meta_description, content")
+      .select("id")
       .eq("id", candidate.article_id)
       .eq("workspace_id", candidate.workspace_id)
       .maybeSingle();
+    if (error) throw new Error(`Could not read the article behind ${candidate.url}: ${error.message}`);
+    const [article] = seen
+      ? await readArticlesWhole<{ title: unknown; meta_description: unknown; content: unknown }>(
+          [seen.id as string],
+          "title, meta_description, content",
+        )
+      : [];
     if (article?.content) {
       return {
         html: tiptapToHtml(article.content as Record<string, unknown>),

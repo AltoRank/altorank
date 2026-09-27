@@ -61,6 +61,9 @@ import {
 } from "@/lib/billing/quota";
 import { accountPausedMessage } from "@/lib/billing/pause";
 import { formatGraceDate } from "@/lib/billing/dunning";
+import { trialGateApplies } from "@/lib/billing/trial";
+import { PRE_TRIAL_DRAFTS, PRE_TRIAL_SETUP_RUNS, setupRunsStarted } from "@/lib/billing/trial-hold";
+import { trialRefusal } from "@/lib/billing/trial-refusal";
 
 /**
  * What kind of spending is being asked for.
@@ -81,7 +84,8 @@ export type SpendAction =
   | "refresh"
   | "recommendations"
   | "geo-probe"
-  | "scheduled-work";
+  | "scheduled-work"
+  | "setup";
 
 /** What the refusal calls the thing, so one sentence serves all of them. */
 const ACTION_NOUN: Record<SpendAction, string> = {
@@ -96,6 +100,7 @@ const ACTION_NOUN: Record<SpendAction, string> = {
   recommendations: "Rescoring the keyword queue",
   "geo-probe": "Asking the AI engines about this brand",
   "scheduled-work": "Scheduled work",
+  setup: "Setting up a site",
 };
 
 export type SpendAllowedReason =
@@ -111,6 +116,8 @@ export type SpendAllowedReason =
   | "free-allowance";
 
 export type SpendBlockedReason =
+  /** Trial-gated, and setup has written the first article: the trial opens the rest. */
+  | "trial-required"
   /** No plan, and the one-time seven have been written. */
   | "free-allowance-spent"
   /** Past due and the grace window has run out. */
@@ -132,9 +139,10 @@ export interface SpendGateOptions {
    */
   userEmail?: string | null;
   /**
-   * The site the action is for. Only used for the account pause, which is
-   * stored per workspace (`workspaces.paused_until`). Omit for an
-   * account-level action.
+   * The site the action is for. When given, the gate answers for the account
+   * that OWNS this site, whatever `accountId` the caller passed, and reads the
+   * account pause, which is stored per workspace (`workspaces.paused_until`).
+   * Omit only for an account-level action.
    */
   workspaceId?: string;
   /** What is being asked for; picks the noun the refusal uses. */
@@ -149,11 +157,21 @@ export interface SpendGateOptions {
  */
 export async function canSpend(
   supabase: SupabaseClient,
-  accountId: string,
+  accountId: string | null,
   options: SpendGateOptions = {},
 ): Promise<SpendDecision> {
   const action = options.action ?? "draft";
-  const quota = await getQuota(supabase, accountId, options.userEmail);
+  // The site's own account, read through the caller's client, so RLS decides
+  // whether they may act on it at all. Callers used to pass whichever account
+  // `requireAuth` settled on, and for a person in a paying account and a
+  // never-trialed one that was often not the account whose site they were
+  // working on: the editor, scoring, keyword research, voice, refresh and
+  // audit refused the paying account's own work with "start your trial"
+  // (round-4 review). One read gives both answers this gate needs.
+  const site = options.workspaceId ? await siteFor(supabase, options.workspaceId) : null;
+  const account = site?.accountId ?? accountId;
+  if (!account) throw new Error("spend gate: no account or site to answer for");
+  const quota = await getQuota(supabase, account, options.userEmail);
 
   // Self-host and operator first, and before the pause: an install with no
   // Stripe key has no billing to pause, and the operator bypass exists so our
@@ -164,8 +182,8 @@ export async function canSpend(
   // The pause is a promise in both directions - "Billing and article
   // generation pause" - so it outranks an active plan. A paused account is
   // paying nothing and must therefore cost nothing.
-  if (options.workspaceId) {
-    const paused = await pausedUntilFor(supabase, options.workspaceId);
+  if (site) {
+    const paused = site.pausedUntil;
     if (paused) {
       return { allowed: false, reason: "paused", quota, message: accountPausedMessage(paused) };
     }
@@ -186,6 +204,41 @@ export async function canSpend(
 
   // From here the account has no entitled plan.
   //
+  // A trial-gated account (lib/billing/trial.ts) spends on setup and nothing
+  // after it: the site read, the keyword research and the first article are
+  // what the gate screen shows, and the trial opens everything else. The
+  // free allowance below used to answer first, and for these accounts it
+  // still read "seven drafts, one used", so every paid door outside the
+  // drafting ones stayed open before the trial: the editor's whole-article
+  // rewrite, keyword suggestions over the agent API, a re-crawl, setup run
+  // again. `used` is the count the hold reads (lib/billing/trial-hold.ts),
+  // floored by `free_drafts_used`, which only the server writes (migration
+  // 099) and which moves when the first draft is ATTEMPTED
+  // (claimPreTrialDraft), so neither deleting an article, nor failing one on
+  // purpose, nor flipping it to `error` from a client token walks it back.
+  // The same line the hold draws, for every door that asks here.
+  //
+  // A setup run is also bounded on its own: a setup that ends without
+  // attempting a draft (nothing worth writing, a refused site, an unreadable
+  // crawl) leaves `used` at zero, and the site read and the research were
+  // bought again each time the previous run finished (round-4 review).
+  if (trialGateApplies(quota)) {
+    if (quota.used >= PRE_TRIAL_DRAFTS) {
+      // Setup gets its own sentence: the draft was attempted, which is not
+      // the same as written - a first draft that failed still used the one
+      // the account had - and "setup has already run" is true either way.
+      return {
+        allowed: false,
+        reason: "trial-required",
+        quota,
+        message: trialRefusal(action === "draft" ? "draft" : action === "setup" ? "setup" : "spend"),
+      };
+    }
+    if (action === "setup" && (await setupRunsStarted(supabase, account)) >= PRE_TRIAL_SETUP_RUNS) {
+      return { allowed: false, reason: "trial-required", quota, message: trialRefusal("setup") };
+    }
+  }
+
   // The free allowance is checked before the lapsed card, and the order is the
   // product's own promise: the dunning banner says "your plan is on hold and
   // the account is on the free tier until the card is updated", so an account
@@ -223,6 +276,27 @@ export async function canSpend(
 }
 
 /**
+ * `canSpend` for a site, answered for the account that owns it. For code that
+ * holds a site and no account: the paid work itself (topic qualification),
+ * which must refuse on its own so that no caller can forget to ask.
+ */
+export function canSpendOnSite(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  options: Omit<SpendGateOptions, "workspaceId"> = {},
+): Promise<SpendDecision> {
+  return canSpend(supabase, null, { ...options, workspaceId });
+}
+
+/** Thrown by paid work the spend gate refused; `message` is the gate's sentence. */
+export class SpendRefusedError extends Error {
+  constructor(readonly decision: Extract<SpendDecision, { allowed: false }>) {
+    super(decision.message);
+    this.name = "SpendRefusedError";
+  }
+}
+
+/**
  * A card that failed and a grace window that has run out. Named as the card it
  * is, not as "choose a plan": the account has a plan, and offering Checkout
  * here is how someone ends up paying for two subscriptions (2026-09-06).
@@ -232,16 +306,26 @@ function pastDueMessage(action: SpendAction, quota: Quota): string {
   return `${ACTION_NOUN[action]} is paused: the last renewal payment did not go through.${ended} Update the card on the Billing page and everything starts again — nothing has been cancelled and nothing has been deleted.`;
 }
 
-/** The account pause date for a workspace, or null when it is not paused. */
-async function pausedUntilFor(supabase: SupabaseClient, workspaceId: string): Promise<string | null> {
-  const { data } = await supabase
+/**
+ * The account that owns a site, and its account pause date (null when it is
+ * not paused). A site the caller cannot read throws: an unknown owner is not
+ * an account to answer for, and the old fallback - the caller's own account -
+ * is exactly the mismatch this read exists to remove.
+ */
+async function siteFor(
+  supabase: SupabaseClient,
+  workspaceId: string,
+): Promise<{ accountId: string; pausedUntil: string | null }> {
+  const { data, error } = await supabase
     .from("workspaces")
-    .select("status, paused_until")
+    .select("account_id, status, paused_until")
     .eq("id", workspaceId)
     .maybeSingle();
+  if (error) throw new Error(`spend gate: could not read the site (${error.message})`);
+  if (!data?.account_id) throw new Error("spend gate: that site was not found");
   // Both, the same pairing `generate.ts` uses: `paused_until` alone is a site
   // paused by hand, which keeps its own settings and is not this gate's
   // business.
-  if (data?.paused_until && data.status === "paused") return data.paused_until as string;
-  return null;
+  const pausedUntil = data.paused_until && data.status === "paused" ? (data.paused_until as string) : null;
+  return { accountId: data.account_id as string, pausedUntil };
 }

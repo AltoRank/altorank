@@ -75,13 +75,61 @@ export interface ArticlePrompt {
    * different product" had no subject to hold it to.
    */
   site?: SiteContext;
+  /**
+   * What the business's own pages say: its services and the pages that name
+   * them, the work its portfolio shows, what its about page states, and the
+   * checked page a ready reader should go to. Read off pages the crawl
+   * already fetched (lib/content/site-facts.ts). A real signup's first
+   * article (2026-09-22) marketed the category rather than him because none
+   * of this reached the writer.
+   */
+  siteFacts?: SiteFacts;
 }
 
-/** `workspaces.business_profile`, the three fields a writer can use. */
+/** `workspaces.business_profile`, the fields a writer can use. */
 export interface SiteContext {
   name?: string | null;
   description?: string | null;
   audiences?: string[];
+  /** What people buy from it, as the profile states it. */
+  offerings?: string[];
+  /**
+   * A person saved this profile (`business_profile.confirmedAt`). False when
+   * it was read off the site by a model and saved unattended; the prompt
+   * says which, rather than calling a model's reading the owner's words.
+   */
+  confirmed?: boolean;
+}
+
+/**
+ * The business as its own site describes it, for the writer. Every entry
+ * came off a page that answered 2xx; every URL here is one the article may
+ * link to. `notes` are the things the writer must be told plainly: what was
+ * not found, and what could not be checked.
+ */
+export interface SiteFacts {
+  /** Pages of this site that were fetched and answered 2xx. */
+  pagesRead: number;
+  /** Services or products, by the names its pages use. `url` only when that page was itself fetched. */
+  offerings: Array<{ name: string; url: string | null }>;
+  /** Projects, case studies and clients its portfolio shows, by the names it uses. */
+  work: Array<{ name: string; url: string | null }>;
+  /**
+   * The headings on its services, portfolio and pricing pages, as they are.
+   * Kept apart from `offerings` and `work` because a heading can as easily
+   * be "Why us?" as a service; the writer reads them as the page's outline.
+   */
+  headings: Array<{ page: string; url: string; items: string[] }>;
+  /** Founding, team and location statements, as the page makes them, with the page. */
+  /** `from: "structured-data"`: a value from the page's JSON-LD, not the site's words (lib/audit/site-extract.ts). */
+  stated: Array<{ kind: "founded" | "team" | "location"; text: string; source: string; from?: "structured-data" }>;
+  /** The opening of its about page, in its own words. */
+  about: { text: string; source: string } | null;
+  /** Its section pages (services, portfolio, about, contact, pricing), which exist. */
+  pages: Array<{ role: string; name: string; url: string }>;
+  /** Where a ready reader should go, and how that was checked. Null when nothing could be. */
+  conversion: { url: string; check: string } | null;
+  notes: string[];
 }
 
 export interface ArticleBrief {

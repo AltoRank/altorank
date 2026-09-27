@@ -1,6 +1,5 @@
-import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { SCOPE_COOKIE } from "@/lib/workspace-scope";
+import { getScope } from "@/lib/workspace-scope";
 import type { User } from "@supabase/supabase-js";
 
 export interface AuthContext {
@@ -15,9 +14,18 @@ export interface AuthContext {
  *
  * Optionally pass `requiredRoles` to restrict to specific roles
  * (e.g. ["owner", "admin"]).
+ *
+ * Pass `workspaceId` when the call acts on one site: the account is then the
+ * one that owns that site, and the role is the person's role there. Without
+ * it, the account is the one that owns the site in scope. Either way it is
+ * never an arbitrary membership, so the trial gate, the spend gate and the
+ * plan checks behind an action are asked about the account the work belongs
+ * to - for a person in a paying account and a gated one, that is the
+ * difference between doing their job and being told to start a trial.
  */
 export async function requireAuth(
   requiredRoles?: string[],
+  opts: { workspaceId?: string } = {},
 ): Promise<AuthContext> {
   const supabase = await createClient();
 
@@ -51,20 +59,30 @@ export async function requireAuth(
   }
 
   let member = members[0];
-  if (members.length > 1) {
-    // The account of the workspace they are looking at, when the scope cookie
-    // names one they can see. RLS scopes the lookup to their accounts, so a
-    // foreign or stale id simply misses and the oldest membership stands.
-    const scoped = (await cookies()).get(SCOPE_COOKIE)?.value;
-    if (scoped && scoped !== "all") {
-      const { data: ws } = await supabase
-        .from("workspaces")
-        .select("account_id")
-        .eq("id", scoped)
-        .maybeSingle();
-      const match = ws && members.find((m) => m.account_id === ws.account_id);
-      if (match) member = match;
-    }
+  if (opts.workspaceId) {
+    // RLS answers this: a site in none of the person's accounts is not found.
+    const { data: site, error: siteError } = await supabase
+      .from("workspaces")
+      .select("account_id")
+      .eq("id", opts.workspaceId)
+      .maybeSingle();
+    if (siteError) throw new Error(`Could not read that site: ${siteError.message}`);
+    const match = site && members.find((m) => m.account_id === site.account_id);
+    if (!match) throw new Error("Workspace not found");
+    member = match;
+  } else if (members.length > 1) {
+    // The account of the site they are working on - the same scope the
+    // dashboard layout and every page answer for (lib/workspace-scope.ts). It
+    // used to be the scope cookie's site or else the OLDEST MEMBERSHIP, while
+    // the dashboard fell back to the oldest SITE, and for a person in two
+    // accounts those were different accounts: the dashboard opened on the
+    // paying site while every action, key creation and OAuth consent asked
+    // the trial gate about their own never-trialed account and refused
+    // (round-4 review). The oldest membership stands only when they can see
+    // no site at all.
+    const scope = await getScope();
+    const match = scope && members.find((m) => m.account_id === scope.accountId);
+    if (match) member = match;
   }
 
   if (requiredRoles && !requiredRoles.includes(member.role)) {

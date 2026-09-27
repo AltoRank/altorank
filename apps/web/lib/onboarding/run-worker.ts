@@ -50,19 +50,21 @@ export interface ExecuteDeps {
 }
 
 /**
- * Tell the account about everything this run wrote, once all of it has landed.
+ * Tell the account about what this run wrote itself.
  *
- * This is the join point and there is not a better one. Each draft is written
- * by its own invocation of /api/internal/draft, which knows about one draft and
- * cannot see the other six; `keepAlive` is the only place that settles when the
- * whole batch has answered, which is what makes "7 drafts are ready" a true
- * sentence rather than a race. One digest, not seven mails
- * (lib/email/draft-batch.ts).
+ * Only a run that wrote its draft inline (or wrote none) announces from here.
+ * A dispatched draft is announced by /api/internal/draft, the moment it stamps
+ * the row ready: this used to wait for that request inside `keepAlive`, in a
+ * worker whose 300s the pipeline had mostly spent already, so the platform cut
+ * it off before the draft landed and the email waited for cron/generate's
+ * sweep - 42 minutes after the draft existed, for a real signup on
+ * 2026-09-22. The page and the email now hear about the draft from the same
+ * place at the same time.
  *
  * Chained onto `keepAlive` rather than awaited, so the route's response still
- * goes out immediately and the platform holds the instance open for both. If it
- * is cut short anyway - `after()` has no guarantee - `sweepUnannouncedDrafts`
- * in cron/generate catches the workspace on its next pass.
+ * goes out immediately. If it is cut short anyway - `after()` has no
+ * guarantee - `sweepUnannouncedDrafts` in cron/generate catches the workspace
+ * on its next pass.
  */
 function announceWhenSettled(
   supabase: SupabaseClient,
@@ -167,9 +169,10 @@ export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise
   }
 
   // The draft route stamps the row itself, on success and on its own
-  // failures. What it cannot report is a request that never reached it, or
-  // that it refused before running: those close the run here, guarded so a
-  // row the route already settled is left alone.
+  // failures, and sends the email when it stamps success. What it cannot
+  // report is a request that never reached it, or that it refused before
+  // running: those close the run here, guarded so a row the route already
+  // settled is left alone. Nothing is announced from here for this draft.
   const draft = sent.request.then(
     async (res) => {
       if (res.ok) return;
@@ -192,11 +195,6 @@ export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise
 
   return {
     outcome: "awaiting-draft",
-    keepAlive: announceWhenSettled(
-      supabase,
-      workspace.id,
-      Promise.all([draft, result.fanOutSettled]).then(() => undefined),
-      announce,
-    ),
+    keepAlive: Promise.all([draft, result.fanOutSettled]).then(() => undefined, () => undefined),
   };
 }

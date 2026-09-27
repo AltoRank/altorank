@@ -28,6 +28,7 @@ import type { CMSAdapter, PublishPayload, PublishResult } from "./types";
 import { htmlToMarkdown } from "@/lib/audit/markdown";
 import { buildFrontmatter } from "./frontmatter";
 import { urlIsLive } from "./blog-url";
+import { foldToAscii } from "@/lib/i18n/locale";
 
 export interface GitConfig {
   type: "git";
@@ -59,14 +60,13 @@ export interface GitConfig {
 
 const GITHUB_API = "https://api.github.com";
 
-/** One path segment, lowercase, no traversal, no separators. */
+/**
+ * One path segment, lowercase, no traversal, no separators. The fold is the
+ * locale contract's, so a hand-edited slug with "ı" or "ş" in it becomes the
+ * same file name the URL slug would have been, not "tasar-m".
+ */
 function safeSlug(slug: string): string {
-  const cleaned = slug
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .slice(0, 120);
+  const cleaned = foldToAscii(slug).slice(0, 120).replace(/-$/, "");
 
   if (!cleaned) throw new Error("Article slug is empty after sanitising");
   return cleaned;

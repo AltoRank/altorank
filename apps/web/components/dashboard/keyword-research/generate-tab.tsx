@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Button, Chip } from "@/components/ui";
 import { runGenerate, saveKeywordInstructions, type ResearchContext } from "@/app/actions/keyword-research";
 import { capacityLine } from "@/lib/keyword-research/funnel";
-import { GENERATE_DEFAULT, GENERATE_MAX } from "@/lib/keyword-research/pipeline";
+import { GENERATE_DEFAULT, GENERATE_MAX } from "@/lib/keyword-research/generate-limits";
 import { KEYWORD_INSTRUCTIONS_MAX } from "@/lib/keyword-research/instructions";
 import type { PlanCapacity, ResearchResult, ResearchSource } from "@/lib/keyword-research/types";
 import { ProposalTable } from "./proposal-table";

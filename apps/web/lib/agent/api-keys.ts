@@ -58,29 +58,10 @@ export function looksLikeApiKey(value: string | null | undefined): value is stri
   return rest.length === API_KEY_RANDOM_LENGTH && /^[0-9A-Za-z]+$/.test(rest);
 }
 
-export type ApiKeyState = "active" | "expired" | "revoked";
-
-/**
- * Where a key stands right now. Revocation wins over expiry: a revoked key
- * that has also expired was revoked, and that is the fact the human acted on.
- */
-export function apiKeyState(
-  row: { revoked_at: string | null; expires_at: string | null },
-  now: Date = new Date(),
-): ApiKeyState {
-  if (row.revoked_at) return "revoked";
-  if (row.expires_at && new Date(row.expires_at).getTime() <= now.getTime()) return "expired";
-  return "active";
-}
-
-/** Expiration choices offered at creation, in days. Null is "never". */
-export const EXPIRY_OPTIONS: readonly { label: string; days: number | null }[] = [
-  { label: "Never", days: null },
-  { label: "30 days", days: 30 },
-  { label: "90 days", days: 90 },
-  { label: "180 days", days: 180 },
-  { label: "365 days", days: 365 },
-];
+// The key's state and the expiry choices are in ./api-key-state, which imports
+// nothing: the API keys panel is a client component and needs them, and this
+// file imports node:crypto. Re-exported so server callers keep one import.
+export { apiKeyState, EXPIRY_OPTIONS, type ApiKeyState } from "./api-key-state";
 
 export function expiryFromDays(days: number | null, now: Date = new Date()): string | null {
   if (days === null) return null;

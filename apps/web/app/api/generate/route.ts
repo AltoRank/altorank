@@ -1,6 +1,10 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateArticle } from "@/lib/content/generate";
+import { sessionTrialGate } from "@/lib/billing/body-lock";
+import { trialRefusal } from "@/lib/billing/trial-refusal";
+import { trialHoldReason } from "@/lib/billing/trial-hold";
+import { getRequestQuota } from "@/lib/queries/quota";
 
 // ---------------------------------------------------------------------------
 // POST /api/generate — stream AI article generation via SSE
@@ -68,6 +72,25 @@ export async function POST(request: NextRequest) {
 
   if (!membership) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // This route streams the article as it is written, so it is a way to read
+  // a body as much as a way to write one. An account that has not started
+  // its trial does neither (lib/billing/trial.ts, draftBodyLocked), and is
+  // told which of the two it asked for in the words every other door uses
+  // (lib/billing/trial-refusal.ts): a new keyword is another draft, which
+  // the hold refuses as the agent API, Write now and the crons do; writing
+  // into an open draft is its text, which the lock refuses as the editor
+  // does. A new keyword the hold would still allow (the first article is not
+  // written yet) is refused for the text the stream would show.
+  const accountId = workspace.account_id as string;
+  const email = user.email ?? null;
+  if ((await sessionTrialGate(accountId, email)) === "gated") {
+    const held = !articleId && trialHoldReason(await getRequestQuota(accountId, email)) !== null;
+    return new Response(JSON.stringify({ error: trialRefusal(held ? "draft" : "body"), reason: "trial_required" }), {
       status: 403,
       headers: { "Content-Type": "application/json" },
     });

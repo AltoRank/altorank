@@ -50,6 +50,31 @@ describe("buildPlan", () => {
   });
 });
 
+describe("buildPlan plans one article per search", () => {
+  // A real signup (2026-09-22): one Turkish search reached the calendar under
+  // three spellings. buildPlan is the last step before the calendar write, so
+  // it holds the rule itself rather than trusting every caller to have.
+  const page = (prefix: string) => Array.from({ length: 10 }, (_, i) => `https://${prefix}-${i}.example/p`);
+  const base = page("base");
+  const brief = (organicUrls: string[]) => ({ organicUrls } as never);
+  const r = (id: string, term: string, organicUrls?: string[]) => ({
+    keywordId: id, term, action: "write" as const, quality: "ok" as const, ...(organicUrls ? { opportunity: brief(organicUrls) } : {}),
+  });
+  it("keeps the first of a search in the ranking and drops its other spellings", () => {
+    const plan = buildPlan([
+      r("a", "mobil uygulama geliştirme şirketleri", base),
+      r("b", "mobil uygulama geliştirme firmaları", [...base.slice(0, 6), ...page("b").slice(0, 4)]),
+      r("c", "kurumsal web tasarım fiyatları", page("c")),
+      r("d", "kurumsal web tasarımı fiyatı"),
+    ], { weeklyLimit: 7, from, language: "tr" });
+    expect(plan.map((p) => p.keywordId)).toEqual(["a", "c"]);
+  });
+  it("keeps keywords that only share a word", () => {
+    const plan = buildPlan([r("a", "crm pricing"), r("b", "crm software"), r("c", "best crm for agencies"), r("d", "best agency crm")], { weeklyLimit: 7, from, language: "en" });
+    expect(plan.map((p) => p.keywordId)).toEqual(["a", "b", "c"]);
+  });
+});
+
 describe("buildPlan with occupied days", () => {
   const recs = Array.from({ length: 6 }, (_, i) => ({ keywordId: `k${i}`, term: `term ${i}`, action: "write" as const, quality: "ok" as const }));
   it("does not stack a new entry on a day that already holds one", () => {

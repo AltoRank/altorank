@@ -1,6 +1,19 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type { Article } from "@/lib/types";
+import { articleForSession, articlesForSession } from "@/lib/billing/body-lock";
+
+// Every read here asks the caller's own client for ids only - RLS decides
+// which rows, as it always did - and hands them to the trial gate's body lock,
+// which reads the rows whole on the server and withholds the text from an
+// account that has not started its trial (lib/billing/body-lock.ts). A client
+// token cannot select the body columns at all since migration 097, so `*`
+// through the caller's client would be refused by the database.
+//
+// These are what the dashboard pages render, and the dashboard layout's
+// redirect for a gated account is not enough on its own: a layout is not
+// re-rendered on client navigation, so the page's read is the one place the
+// refusal always happens.
 
 export async function getArticles(
   workspaceId?: string,
@@ -8,7 +21,7 @@ export async function getArticles(
   sort?: string,
 ): Promise<Article[]> {
   const supabase = await createClient();
-  let query = supabase.from("articles").select("*");
+  let query = supabase.from("articles").select("id");
 
   if (workspaceId) query = query.eq("workspace_id", workspaceId);
   if (status) query = query.eq("status", status);
@@ -25,7 +38,7 @@ export async function getArticles(
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return (data ?? []) as Article[];
+  return articlesForSession<Article>((data ?? []) as { id: string }[]);
 }
 
 /**
@@ -38,12 +51,12 @@ export const getArticle = cache(async function getArticle(
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("articles")
-    .select("*")
+    .select("id")
     .eq("id", id)
     .single();
 
   if (error) return null;
-  return data as Article;
+  return articleForSession<Article>(data as { id: string });
 });
 
 /**
@@ -60,7 +73,7 @@ export async function getRecentArticles(
   const supabase = await createClient();
   let query = supabase
     .from("articles")
-    .select("*")
+    .select("id")
     .order("updated_at", { ascending: false })
     .limit(limit);
 
@@ -69,5 +82,5 @@ export async function getRecentArticles(
   const { data, error } = await query;
 
   if (error) throw new Error(error.message);
-  return (data ?? []) as Article[];
+  return articlesForSession<Article>((data ?? []) as { id: string }[]);
 }

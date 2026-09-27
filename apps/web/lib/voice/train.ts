@@ -13,10 +13,20 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { analyzeVoiceWithAI } from "@/lib/ai/voice-analyzer";
+import { resolveLocale, notCheckedFor, scaleWords } from "@/lib/i18n/locale";
+import { readWorkspaceLanguage } from "@/lib/i18n/workspace-language";
 
-/** Analyse a sample and upsert the workspace's voice profile from it. */
-export async function trainVoiceProfile(supabase: SupabaseClient, workspaceId: string, sampleText: string): Promise<void> {
-  const rules = await analyzeVoice(sampleText);
+/**
+ * Analyse a sample and upsert the workspace's voice profile from it. The
+ * sample is read in the site's language, looked up when not given.
+ */
+export async function trainVoiceProfile(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  sampleText: string,
+  language?: string | null,
+): Promise<void> {
+  const rules = await analyzeVoice(sampleText, language ?? (await readWorkspaceLanguage(supabase, workspaceId, "voice.train")));
 
   const { error } = await supabase
     .from("voice_profiles")
@@ -37,59 +47,79 @@ export async function trainVoiceProfile(supabase: SupabaseClient, workspaceId: s
 /**
  * Analyze voice — tries AI-powered analysis first, falls back to local heuristics.
  */
-export async function analyzeVoice(sample: string): Promise<Record<string, unknown>> {
+export async function analyzeVoice(sample: string, language?: string | null): Promise<Record<string, unknown>> {
   try {
-    return (await analyzeVoiceWithAI([sample])) as Record<string, unknown>;
+    return (await analyzeVoiceWithAI([sample], language)) as Record<string, unknown>;
   } catch {
     // Fallback to local analysis when API key is missing or AI fails
-    return analyzeVoiceLocally(sample);
+    return analyzeVoiceLocally(sample, language);
   }
 }
 
 /**
  * Local voice analysis — extracts tone, vocabulary patterns, and style rules from sample text.
  * Runs without AI as a fallback.
+ *
+ * Pronouns, address and imperatives are language, and the markers come from
+ * the locale contract (lib/i18n/locale). The English regexes this used to run
+ * on every sample never saw that a Turkish agency (a real signup, 2026-09-22)
+ * writes as "we" - in Turkish that is mostly a suffix ("ekibimiz", our team;
+ * "sunuyoruz", we offer), not the word "biz". In a language the contract does
+ * not describe, only what needs no language is reported (em dashes), and
+ * `unchecked` says what was not read rather than tagging the sample
+ * "formal (no contractions)" by an English rule.
  */
-export function analyzeVoiceLocally(sample: string): Record<string, unknown> {
+export function analyzeVoiceLocally(sample: string, language?: string | null): Record<string, unknown> {
+  const locale = resolveLocale(language);
   const sentences = sample.split(/[.!?]+/).filter((s) => s.trim().length > 0);
-  const words = sample.toLowerCase().split(/\s+/);
+  const words = locale.lower(sample).split(/\s+/);
   const avgSentenceLength = Math.round(words.length / Math.max(sentences.length, 1));
 
   const tags: string[] = [];
+  const dashes = sample.includes("—") ? "uses em-dashes" : "no em-dashes";
 
-  if (/\b(don't|won't|can't|isn't|aren't|we're|they're|it's|that's|we've)\b/i.test(sample)) {
-    tags.push("contractions OK");
-  } else {
-    tags.push("formal (no contractions)");
+  if (!locale.supported) {
+    return {
+      tags: [dashes],
+      wordCount: words.length,
+      sentenceCount: sentences.length,
+      unchecked: `Sentence length, pronouns, address and contractions: ${notCheckedFor(locale)}`,
+    };
   }
 
-  if (avgSentenceLength <= 15) {
+  const { voice } = locale;
+  // Only where contractions mark register (English); an Italian elision is
+  // grammar, and "formal (no contractions)" on a Turkish sample was an
+  // English rule reporting the absence of English.
+  if (voice.contractions) {
+    tags.push(voice.contractions.test(sample) ? "contractions OK" : "formal (no contractions)");
+  }
+
+  // Sentence length in this language's words: 15 and 25 English words are
+  // 12 and 20 Turkish ones.
+  if (avgSentenceLength <= scaleWords(15, locale)) {
     tags.push("short sentences");
-  } else if (avgSentenceLength > 25) {
+  } else if (avgSentenceLength > scaleWords(25, locale)) {
     tags.push("long-form");
   }
 
-  if (sample.includes("—")) {
-    tags.push("uses em-dashes");
-  } else {
-    tags.push("no em-dashes");
-  }
+  tags.push(dashes);
 
-  if (/\b(we|our|us)\b/i.test(sample)) {
+  if (voice.firstPersonPlural.test(sample)) {
     tags.push("first-person plural");
   }
-  if (/\b(I|my|me)\b/.test(sample)) {
+  if (voice.firstPersonSingular.test(sample)) {
     tags.push("first-person singular");
   }
 
-  if (/\b(you|your)\b/i.test(sample)) {
+  if (voice.directAddress.test(sample)) {
     tags.push("direct address");
   }
 
-  if (/\b(don't|won't|stop|never|avoid)\b/i.test(sample)) {
+  if (voice.direct.test(sample)) {
     tags.push("direct");
   }
-  if (avgSentenceLength <= 12) {
+  if (avgSentenceLength <= scaleWords(12, locale)) {
     tags.push("punchy");
   }
 
@@ -98,5 +128,6 @@ export function analyzeVoiceLocally(sample: string): Record<string, unknown> {
     avgSentenceLength,
     wordCount: words.length,
     sentenceCount: sentences.length,
+    language: locale.code,
   };
 }

@@ -28,7 +28,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { monthlyFromPace, PAID_DEFAULT_PACE } from "@/lib/content/pace";
-import { PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan";
+import { PLAN_MAX_ENTRIES } from "@/lib/onboarding/plan-limits";
 
 export interface PlanCapacity {
   cap: number;

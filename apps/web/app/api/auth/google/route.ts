@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { requireAuth } from "@/lib/auth/require-auth";
 import { getAuthUrl } from "@/lib/google/oauth";
 import { encodeOauthState, newOauthNonce, setOauthNonce } from "@/lib/google/oauth-state";
 
@@ -58,18 +59,22 @@ export async function GET(request: NextRequest) {
   } = await supabase.auth.getUser();
   if (authError || !user) return back(request, { error: "unauthorized" });
 
-  const { data: member } = await supabase
-    .from("account_members")
-    .select("account_id")
-    .eq("user_id", user.id)
-    .single();
-  if (!member) return back(request, { error: "no_account" });
+  // The account that owns the site (lib/auth/require-auth.ts). A bare
+  // `.single()` on the person's memberships refused anyone in two accounts
+  // ("no_account"), and checked the site against whichever membership came
+  // back rather than the one that owns it.
+  let accountId: string;
+  try {
+    ({ accountId } = await requireAuth(undefined, { workspaceId: workspaceId ?? undefined }));
+  } catch {
+    return back(request, { error: "workspace_not_found" });
+  }
 
   const { data: workspace } = await supabase
     .from("workspaces")
     .select("id")
     .eq("id", workspaceId)
-    .eq("account_id", member.account_id)
+    .eq("account_id", accountId)
     .single();
   if (!workspace) return back(request, { error: "workspace_not_found" });
 

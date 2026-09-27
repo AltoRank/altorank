@@ -11,7 +11,10 @@ import type { ArticleFacts } from "@/lib/plan/card-state";
 
 export type ArticleStates = Map<string, NonNullable<ArticleFacts>>;
 
-/** Status and live URL for the articles a set of entries point at. */
+/**
+ * Status and live URL for the articles a set of entries point at, and whether
+ * a live one was found on the customer's own site rather than published by us.
+ */
 export async function getPlannerArticleStates(workspaceId: string, articleIds: string[]): Promise<ArticleStates> {
   const ids = [...new Set(articleIds.filter(Boolean))];
   const out: ArticleStates = new Map();
@@ -19,12 +22,12 @@ export async function getPlannerArticleStates(workspaceId: string, articleIds: s
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("articles")
-    .select("id, status, published_url")
+    .select("id, status, published_url, found_on_site_at")
     .eq("workspace_id", workspaceId)
     .in("id", ids);
   if (error) throw new Error(error.message);
-  for (const row of (data ?? []) as Array<{ id: string; status: string; published_url: string | null }>) {
-    out.set(row.id, { status: row.status, published_url: row.published_url });
+  for (const row of (data ?? []) as Array<{ id: string; status: string; published_url: string | null; found_on_site_at: string | null }>) {
+    out.set(row.id, { status: row.status, published_url: row.published_url, found_on_site_at: row.found_on_site_at });
   }
   return out;
 }

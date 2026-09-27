@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage, see its section at the end). **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds) and **101** (account creator), each with its section at the end. **101 goes in BEFORE its code is deployed; 097, 099 and 100 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -145,7 +145,15 @@ m(file, applied) as (values
   ('082_system_events',                      to_regclass('public.system_events') is not null),
   ('084_analysis_attempts',                  exists (select 1 from col where t='workspaces' and c='analysis_attempts')),
   ('085_agencies_to_accounts',               to_regclass('public.accounts') is not null and to_regclass('public.agencies') is null),
-  ('091_public_tool_usage',                  to_regclass('public.public_tool_usage') is not null and to_regprocedure('public.reserve_public_tool_spend(text,numeric,numeric)') is not null)
+  ('091_public_tool_usage',                  to_regclass('public.public_tool_usage') is not null and to_regprocedure('public.reserve_public_tool_spend(text,numeric,numeric)') is not null),
+  ('093_draft_claims',                       exists (select 1 from col where t='calendar_entries' and c='draft_owed_at') and exists (select 1 from col where t='workspaces' and c='trial_resume_claimed_at')),
+  ('097_article_body_server_only',           not has_column_privilege('authenticated', 'public.articles', 'content', 'SELECT')),
+  ('095_site_pages_extract',                 exists (select 1 from col where t='site_pages' and c='extract')),
+  ('094_found_on_site',                      to_regclass('public.found_on_site_checks') is not null and exists (select 1 from col where t='articles' and c='found_on_site_rejected') and exists (select 1 from col where t='workspaces' and c='found_on_site_unreadable')),
+  ('098_fact_check_unchecked',               exists (select 1 from pg_constraint where conname = 'articles_fact_check_verdict_check' and pg_get_constraintdef(oid) like '%unchecked%')),
+  ('099_trial_gate_server_writes',           not has_table_privilege('authenticated', 'public.api_keys', 'INSERT') and pg_get_functiondef('public.accounts_guard_privileged_columns'::regproc) like '%free_drafts_used%'),
+  ('100_pre_trial_spend_bounds',             not has_table_privilege('authenticated', 'public.workspaces', 'INSERT') and exists (select 1 from pg_trigger where tgname = 'account_members_guard_own_row') and not has_column_privilege('authenticated', 'public.workspaces', 'first_analysed_at', 'UPDATE')),
+  ('101_account_creator',                    exists (select 1 from col where t='accounts' and c='created_by') and not has_table_privilege('authenticated', 'public.account_members', 'INSERT'))
 )
 select file, applied from m order by file;
 ```
@@ -274,6 +282,14 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 082_system_events.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 084_analysis_attempts.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 085_agencies_to_accounts.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 091_public_tool_usage.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 093_draft_claims.sql   # BEFORE its code is merged; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 094_found_on_site.sql   # BEFORE its code is merged; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 095_site_pages_extract.sql   # BEFORE its code is merged; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 098_fact_check_unchecked.sql   # BEFORE its code is merged; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 101_account_creator.sql   # BEFORE its code is deployed; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 097_article_body_server_only.sql   # AFTER its code is live; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 099_trial_gate_server_writes.sql   # AFTER its code is live; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 100_pre_trial_spend_bounds.sql   # AFTER its code is live; see its section
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -338,6 +354,14 @@ no code in the repo references either).
 | 082_system_events.sql | `round5/observability` #172 | 001 | yes | yes, loses the event log only |
 | 084_analysis_attempts.sql | `fix/reanalyse-and-cms-gate` | 001 | yes | yes, but the backfill's re-queue is not undone |
 | 091_public_tool_usage.sql | `tools/public-api` | none | yes | yes, `drop function public.reserve_public_tool_spend(text,numeric,numeric); drop table public.public_tool_usage;` (paid public tools then refuse to run) |
+| 093_draft_claims.sql | `fix/trial-hold-and-resume` | 001, 049 | yes | yes, drop the eight columns and the two indexes; the code that reads them must go first |
+| 097_article_body_server_only.sql | `fix/trial-gate-first-article` | 001, 053; **its code deployed first** | yes | yes, `grant select on table public.articles to anon, authenticated;` (the text is then readable through the API again) |
+| 095_site_pages_extract.sql | `fix/writer-site-facts` | **044**; **applied before its code merges** | yes | yes, after its code is reverted: `alter table site_pages drop column if exists extract;` (loses the stored extracts only) |
+| 094_found_on_site.sql | `feat/published-elsewhere` | 001 | yes | yes, see its section (the check then fails loudly in the cron body, and the crawl still runs) |
+| 098_fact_check_unchecked.sql | `fix/locale-contract` | 015 | yes | only once no row holds `unchecked`: re-add the three-value check |
+| 099_trial_gate_server_writes.sql | `fix/trial-gate-first-article` | 083, 086, the `api_keys` table; **its code deployed first** | yes | yes, see its section (the three holes it closes reopen) |
+| 100_pre_trial_spend_bounds.sql | `integration/root-causes-2026-09-25` | 076, 085, 053/072, 093; **its code deployed first** | yes | yes, see its section (the four holes it closes reopen) |
+| 101_account_creator.sql | `integration/root-causes-2026-09-25` | 085; **applied before its code is deployed** | yes | yes, see its section (an owner can again add any user as a member) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -709,4 +733,464 @@ Smoke after applying (service role, then clean up):
 select public.reserve_public_tool_spend('smoke-test', 0, 0);  -- t
 select * from public.public_tool_usage where tool = 'smoke-test';
 delete from public.public_tool_usage where tool = 'smoke-test';
+```
+
+## 093 — draft claims
+
+Five nullable columns on `calendar_entries` (`draft_claimed_at`,
+`draft_claimed_by`, `draft_failed_at`, `draft_failure`, `draft_owed_at`),
+three on `workspaces` (`trial_resume_key`, `trial_resume_claimed_at`,
+`trial_resumed_at`) and two partial indexes. Depends on 001 and 049
+(`calendar_entries.keyword_id`); idempotent throughout (`if not exists`),
+verified by applying it twice to the local stack.
+
+**Apply before the code merges. This is a hard precondition, not a
+nicety.** `main` auto-deploys on merge and migrations are applied by hand, so
+the order is on whoever merges. If the code runs without these columns:
+
+- **cron/generate drafts nothing for anybody, paying accounts included.** For
+  every auto-generate site it counts the drafts in flight
+  (`claimsInFlight`, lib/plan/draft-claim.ts) before its quota or due-entry
+  reads, that count errors on the missing column and throws (an unknown is
+  never a zero), and the per-site catch reports `error` for every site. Its
+  first step, the unfinished-resume sweep, reports that it could not read
+  them.
+- **The calendar shows no planned entries at all**: lib/queries/calendar.ts
+  selects `draft_failure`, the planned-entries read errors, and that read's
+  error is not checked, so the calendar renders the written articles only.
+- **Every checkout's Stripe webhook answers 500**: it writes
+  `workspaces.trial_resume_key` inside the request and throws when it cannot,
+  so Stripe retries the event (plan, status and pace are written before that
+  point and are not lost) until the column exists.
+- The trial resume claims nothing, and the draft route skips every resumed
+  entry as not claimed.
+
+Smoke after applying (read only):
+
+```sql
+select count(*) from calendar_entries where draft_claimed_at is not null;  -- 0 on day one
+select count(*) from calendar_entries where draft_owed_at is not null;     -- 0 on day one
+select count(*) from workspaces where trial_resume_key is not null;        -- 0 on day one
+```
+
+## 097 — article text server-only
+
+Revokes table-level `SELECT` on `articles` from `anon` and `authenticated` and
+grants back every column except the six that carry or quote the text:
+`content`, `meta_description`, `fact_checks`, `link_checks`, `seo_checks`,
+`aeo_checks`. `INSERT`/`UPDATE` and the service role are unchanged.
+Idempotent (revoke, then grant whatever non-body columns exist now). Depends
+on 001 and 053.
+
+**Apply AFTER the code that ships with it is live on production, never
+before.** The order is the reverse of 093. Code from before this migration
+reads articles with `select("*")` through the signed-in person's client; with
+097 applied that is `permission denied for table articles`, and the dashboard,
+the editor, approve and publish error for every account. The new code reads
+the text on the service role (`lib/articles/body-read.ts`) and works with or
+without 097, so: merge, confirm the Vercel deploy of that commit is live (a
+merge on a day the deploy cap is hit ships nothing), then apply.
+
+Until it is applied, an account before its trial can still read its draft
+straight from `/rest/v1/articles?select=content`: the app withholds the text,
+the database does not.
+
+Post-flight (expect `f`, `t`, `t`):
+
+```sql
+select has_column_privilege('authenticated', 'public.articles', 'content', 'SELECT'),
+       has_column_privilege('authenticated', 'public.articles', 'title', 'SELECT'),
+       has_column_privilege('service_role', 'public.articles', 'content', 'SELECT');
+```
+
+**A column added to `articles` later is not readable by a client token until
+it is granted.** The migration that adds it must say
+`grant select (<column>) on public.articles to anon, authenticated;` - unless
+the column holds the article's text, in which case add it to the list in 097's
+comment and to `ARTICLE_BODY_COLUMNS` instead. A missing grant fails loudly
+(`permission denied`), never by leaking.
+
+## 099 — trial gate server writes
+
+Three writes and one read a signed-in person could make over PostgREST, each of
+which undid the trial gate (`lib/billing/trial.ts`):
+
+- `accounts.free_drafts_used` joins the columns `accounts_guard_privileged_columns`
+  refuses to a signed-in user (the function from 086, one line added). It is
+  the floor under the count the trial hold and the spend gate read; set to 0
+  with the first article set to `error`, it read as "nothing written" and
+  bought another paid draft.
+- `api_keys`: `INSERT` and `UPDATE` revoked from `anon` and `authenticated`,
+  `UPDATE (revoked_at)` granted back to `authenticated` (what Settings'
+  Revoke writes). Keys are created by the server only (`createApiKey`, the
+  OAuth code exchange). A client could insert a key it chose (the hash is a
+  plain sha256) and name any user as `created_by`.
+- `articles.research #- '{enrichment,faqSchema}'` on the rows that carry it:
+  the stored FAQPage schema held the FAQ answers word for word, and `research`
+  is readable by a client token. The writer no longer stores it; the
+  publisher builds it from the text.
+
+**Apply AFTER its code is live**, like 097. Code from before it writes
+`free_drafts_used` and inserts API keys through the person's own client; with
+099 applied, the counter write is refused (the live article count still
+floors the allowance) and creating a key in Settings fails. The new code
+writes both with the service role and works with or without 099.
+
+Post-flight (expect `f`, `t`, `f`, `t`, `0`):
+
+```sql
+select has_table_privilege('authenticated', 'public.api_keys', 'INSERT'),
+       has_column_privilege('authenticated', 'public.api_keys', 'revoked_at', 'UPDATE'),
+       has_column_privilege('authenticated', 'public.api_keys', 'key_hash', 'UPDATE'),
+       pg_get_functiondef('public.accounts_guard_privileged_columns'::regproc) like '%free_drafts_used%',
+       (select count(*) from articles where research -> 'enrichment' ? 'faqSchema');
+```
+
+Rollback: re-run 086's `create or replace function` (drops the one line),
+`grant insert, update on table public.api_keys to authenticated;`. The
+stripped schemas are not restored; nothing read them.
+
+## 100 — pre-trial spend bounds
+
+The app now counts what an account before its trial ATTEMPTS: the one
+pre-trial draft is claimed on `accounts.free_drafts_used` before anything is
+bought, and setup runs are counted from `onboarding_runs`
+(`lib/billing/trial-hold.ts`). This closes the four client-token writes that
+could reset or multiply those counts:
+
+- `onboarding_runs.workspace_id` becomes nullable and its foreign key
+  `on delete set null` (was `cascade`), plus an index on `account_id`. A run
+  outlives its site, so deleting a site and adding it again no longer hands
+  back the account's setup runs.
+- `workspaces`: `INSERT` revoked from `anon` and `authenticated`. Sites are
+  inserted by the server (`lib/workspaces/insert.ts`, from createWorkspace and
+  the Search Console import; signup already did). A client could insert any
+  number of rows past the one-site allowance.
+- `workspaces`: table `UPDATE` revoked from `anon` and `authenticated`, and
+  granted back on every column except `id`, `account_id`, `ai_provider`,
+  `ai_model`, `trial_resume_key` / `trial_resume_claimed_at` /
+  `trial_resumed_at`, and the nightly first look's queue columns
+  `first_analysed_at` / `analysis_attempts` / `last_analysis_attempt_at` /
+  `created_at`. No code writes those through a person's client (the Search
+  Console import runs its setup through the onboarding worker since this
+  change). A model name that does not exist made every draft fail after its
+  research was bought; clearing the queue columns re-bought a ~$0.20 first
+  look, and backdating `created_at` pinned a row at the head of the queue.
+- `account_members`: trigger `account_members_guard_own_row` refuses a
+  signed-in user deleting their own membership or changing its `user_id` or
+  `account_id`. With it gone, `ensureAccount` made them a fresh never-trialed
+  account on the next page load. The server and cascades (no `auth.uid()`)
+  pass.
+
+**Apply AFTER its code is live**, like 097 and 099. Code from before it
+inserts workspaces through the person's own client; with 100 applied, "Add
+workspace" and the Search Console import fail for every account. The new code
+writes the row with the service role and works with or without 100. Merge,
+confirm the Vercel deploy of that commit is live, then apply.
+
+Until it is applied, the holes stay open, and the app's counts still bound
+most of them: a draft attempt is claimed either way, and setup runs are
+counted either way (but a deleted site takes its runs with it).
+
+**A column added to `workspaces` later is not writable by a client token
+until it is granted.** Its migration must say
+`grant update (<column>) on public.workspaces to authenticated;` unless only
+the server writes it. A missing grant fails loudly (`permission denied`).
+
+Post-flight (expect `t`, `t`, `f`, `f`, `f`, `t`, `t`):
+
+```sql
+select (select is_nullable from information_schema.columns
+         where table_schema = 'public' and table_name = 'onboarding_runs' and column_name = 'workspace_id') = 'YES',
+       (select confdeltype from pg_constraint where conname = 'onboarding_runs_workspace_id_fkey') = 'n',
+       has_table_privilege('authenticated', 'public.workspaces', 'INSERT'),
+       has_column_privilege('authenticated', 'public.workspaces', 'ai_model', 'UPDATE'),
+       has_column_privilege('authenticated', 'public.workspaces', 'first_analysed_at', 'UPDATE'),
+       has_column_privilege('authenticated', 'public.workspaces', 'name', 'UPDATE'),
+       exists (select 1 from pg_trigger where tgname = 'account_members_guard_own_row');
+```
+
+Verified 2026-09-25 on an isolated copy of the local schema, as
+`authenticated` with an owner's JWT claims: before, `insert into workspaces`,
+`update workspaces set ai_model = ...` and `delete from account_members` of
+the caller's own row all succeeded; after, the first two are `permission
+denied` and the third is refused by the trigger, while `update workspaces set
+name = ...`, deleting another member and deleting a site all still work, and
+the deleted site's run is kept with `workspace_id` null. Applied twice: the
+second run is a no-op.
+
+Rollback:
+`drop trigger account_members_guard_own_row on public.account_members; drop function public.account_members_guard_own_row();`
+`grant insert, update on table public.workspaces to authenticated;`
+and, only once no run has a null `workspace_id`
+(`delete from onboarding_runs where workspace_id is null;` loses the count),
+`alter table public.onboarding_runs alter column workspace_id set not null;`
+with the foreign key recreated `on delete cascade`.
+
+## 101 — account creator
+
+Whether an account is ours - unmetered in the crons, open at the trial gate,
+no "Powered by" line on what it publishes - was "is any member an
+operator?", and membership is the account owner's to give. An owner could
+POST any user id into `account_members` over PostgREST, and an operator who
+accepted an invitation to help a customer made that customer's account
+"ours". Now:
+
+- `accounts.created_by` (uuid, `auth.users` on delete set null): the user of
+  the account's FIRST membership, set by the trigger
+  `account_members_set_account_creator` (every path that makes an account -
+  signup, ensureAccount, the e2e fixtures - writes its owner's membership
+  right after the row), backfilled from each account's oldest membership, and
+  guarded by `accounts_guard_created_by` against any signed-in user.
+  `apps/web/lib/billing/operator-account.ts` asks only about the creator.
+- `account_members`: `INSERT` revoked from `anon` and `authenticated` (every
+  membership is written with the service role: signup, invite acceptance,
+  ensureAccount), and table `UPDATE` revoked and granted back on `role` and
+  `workspace_ids` only (what the Team page writes). `DELETE` stays with the
+  policy and 100's trigger.
+
+**Apply BEFORE its code is deployed** - the opposite of 097/099/100. The code
+that ships with it reads `accounts.created_by`; without the column the
+operator question fails (said in the log, never cached) and our own accounts
+are metered like customers' until it is applied. The code from before it
+never reads the column and only inserts memberships with the service role,
+so applying it first changes nothing for the running app. Independent of
+097-100 in either order.
+
+Pre-flight - the accounts the backfill will call ours. Run it before
+applying, with the operator addresses from `ADMIN_EMAILS` pasted in by hand
+(never commit them): every account you expect to be ours should be listed,
+and nothing else.
+
+```sql
+select a.id, a.name, u.email
+  from public.accounts a
+  join lateral (select m.user_id from public.account_members m
+                 where m.account_id = a.id
+                 order by m.created_at asc nulls last, m.id limit 1) first on true
+  join auth.users u on u.id = first.user_id
+ where lower(u.email) = any (array['<operator address>']);
+```
+
+Post-flight (expect `t`, `f`, `t`, `f`, `t`, `t`, `0`):
+
+```sql
+select exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'accounts' and column_name = 'created_by'),
+       has_table_privilege('authenticated', 'public.account_members', 'INSERT'),
+       has_column_privilege('authenticated', 'public.account_members', 'role', 'UPDATE'),
+       has_column_privilege('authenticated', 'public.account_members', 'created_at', 'UPDATE'),
+       exists (select 1 from pg_trigger where tgname = 'account_members_set_account_creator'),
+       exists (select 1 from pg_trigger where tgname = 'accounts_guard_created_by'),
+       (select count(*) from public.accounts a
+         where a.created_by is null
+           and exists (select 1 from public.account_members m where m.account_id = a.id));
+```
+
+Then deploy, and after the deploy is live re-run the pre-flight list: the
+same accounts, now read through `created_by`
+(`join auth.users u on u.id = a.created_by`).
+
+Verified 2026-09-25 on an isolated schema-only copy of the local stack
+(created and dropped for the check; the shared stack was not touched), as
+`authenticated` with an owner's JWT claims: before, inserting a stranger as
+a member and backdating a membership both succeeded; after, both are
+`permission denied`, rewriting `accounts.created_by` is refused by the
+trigger, and changing a teammate's role and renaming the account still
+work. The backfill named each account's oldest member; a new account's
+first membership written as `service_role` set `created_by`, and a second
+(an accepted invitation) did not change it. Applied twice: the second run is
+a no-op. With 100 applied after it, clearing `first_analysed_at` /
+`analysis_attempts` / `last_analysis_attempt_at` and backdating a site's
+`created_at` are `permission denied`, and renaming the site still works.
+
+Rollback (then the operator question falls back to nothing: the code that
+reads `created_by` must be reverted before the column is dropped):
+`drop trigger account_members_set_account_creator on public.account_members; drop function public.account_members_set_account_creator();`
+`drop trigger accounts_guard_created_by on public.accounts; drop function public.accounts_guard_created_by();`
+`grant insert, update on table public.account_members to authenticated;`
+and, once no deployed code reads it, `alter table public.accounts drop column created_by;`
+
+## 102 — rows stay put
+
+Two triggers, each refusing a signed-in user (`auth.uid()` set) something the
+app never does with a person's client:
+
+- `rows_stay_put`, `before update` on every public table with a
+  `workspace_id` or `account_id` column (attached by a loop, 39 tables on
+  the local schema): changing either column. Somebody who owned an account
+  before its trial and was also an editor of one site of a paying account
+  could PATCH the pre-trial article's `workspace_id` into the paying site and
+  read the text there; the same move took calendar entries, keywords and
+  research between accounts.
+- `account_members_guard_roles`, `before update or delete` on
+  `account_members`: a member changing their own `role` or `workspace_ids`,
+  and a non-owner changing, removing or appointing an owner. The database now
+  says what `canEditMember` (`lib/team/access.ts`) says, so an admin cannot
+  take the account over, widen their own sites, or delete the owner (which,
+  through `ensureAccount`, handed the owner a fresh account with its own
+  pre-trial article). An account always keeps an owner.
+
+Both pass the service role and changes the database makes itself (a foreign
+key's `set null` / `cascade`, `pg_trigger_depth() > 1`), so deleting a site
+or an account still works.
+
+**Apply any time, before or after the deploy.** No code, old or new, moves a
+row between sites or accounts through a person's client, or edits
+memberships past what the Team page allows; the code that ships with it
+(`ensureAccount` carrying a person's pre-trial count into an account made
+for them again) does not depend on it. Independent of 097-101: it replaces no
+function of theirs.
+
+**A table added later with `workspace_id` or `account_id` is not covered
+until its migration attaches the trigger:**
+`create trigger rows_stay_put before update on public.<table> for each row execute function public.rows_stay_put();`
+
+Test: `supabase/tests/102_rows_stay_put.rls.sql` (self-contained, rolls
+back; run it on an isolated copy). Green 2026-09-25 on an isolated database
+built from 001-102: the article and calendar moves, the admin's four
+takeover writes and an owner's self-demotion are 42501; renaming an article,
+an owner managing a member, and deleting a site (its run kept with
+`workspace_id` null) still work. With the two triggers dropped, the first
+case fails. Applied twice: the second run is a no-op.
+
+Post-flight (expect `t`, `t`, `0`):
+
+```sql
+select exists (select 1 from pg_trigger where tgname = 'account_members_guard_roles'),
+       exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid
+                where t.tgname = 'rows_stay_put' and c.relname = 'articles'),
+       (select count(distinct c.table_name) from information_schema.columns c
+          join information_schema.tables tb using (table_schema, table_name)
+         where c.table_schema = 'public' and tb.table_type = 'BASE TABLE'
+           and c.column_name in ('workspace_id', 'account_id')
+           and not exists (select 1 from pg_trigger t
+                            where t.tgname = 'rows_stay_put'
+                              and t.tgrelid = format('public.%I', c.table_name)::regclass));
+```
+
+Rollback:
+`drop trigger account_members_guard_roles on public.account_members; drop function public.account_members_guard_roles();`
+and, per table, `drop trigger rows_stay_put on public.<table>;` then
+`drop function public.rows_stay_put();` (or `drop function public.rows_stay_put() cascade;`, which drops every attachment).
+
+## 095 — site pages extract
+
+`095_site_pages_extract.sql`: one nullable `jsonb` column, `site_pages.extract`,
+and new comments on the column and the table. It keeps what a business page
+says about the business (its role - home, offering, work, about, contact,
+pricing - its name, an index page's headings and named links, an about page's
+opening text, and the founding, team and location statements the page makes),
+read off the HTML the crawls already fetch (`lib/audit/site-extract.ts`). The
+writer's site facts are built from it (`lib/content/site-facts.ts`), and a row
+with an extract counts as a page the site has for the internal-link check
+(`lib/linking/targets.ts`).
+
+No RLS change: 053's `"Site pages by access"` policy is `for all` over the
+whole row. Depends on **044** (the table). Idempotent
+(`add column if not exists`, `comment on` replaces). Post-flight §4 step 2 does
+not list it: it adds no table. Pre-flight: a `site_pages.extract` column
+exists.
+
+**Apply BEFORE the code that ships with it is merged.** The column is additive
+and code from before it never names it, so applying first changes nothing. The
+reverse breaks things the moment the deploy is live: the sitemap crawl's upsert
+names `extract`, so every `site_pages` write fails (the onboarding pages phase
+and the nightly `/api/cron/site-pages`); the writer's site-facts read errors,
+and the writer is told the business's pages could not be read; and the
+internal-link check's query errors, which it does not surface, so links to
+crawled pages are stripped from drafts. So: apply, run the post-flight below,
+then merge.
+
+Existing rows stay NULL until a crawl reads the page again. The nightly
+site-pages cron refills sitemap sites, one stale workspace per run; a site with
+no sitemap is only reached by the first-look link crawl, which runs once per
+workspace, so an existing workspace of that kind has no extract until it is
+analysed again.
+
+Post-flight (expect `jsonb`, then a count that is `0` right after applying and
+grows as crawls run):
+
+```sql
+select data_type from information_schema.columns
+ where table_schema = 'public' and table_name = 'site_pages' and column_name = 'extract';
+select count(*) from site_pages where extract is not null;
+```
+
+Roll back only after the code is reverted:
+`alter table site_pages drop column if exists extract;` — the writer then
+knows only the profile again, which is how it was before.
+
+## 094 — found on site
+
+`094_found_on_site.sql`, for the nightly check that notices a draft published
+on the customer's own site without going through AltoRank
+(`lib/found-on-site/`, run from `cron/site-pages`). A real signup (2026-09-22)
+published a draft on a site with no CMS connected and nothing recorded it.
+
+- `articles`: `found_on_site_at`, `found_on_site_evidence` (jsonb),
+  `found_on_site_prior` (jsonb), `found_on_site_rejected` (`text[] not null
+  default '{}'`, a fast default, no rewrite). A find sets `status = 'live'`
+  and `published_url` on the existing publish record; these columns say it
+  was found rather than published by us, and hold what "Not my article"
+  restores. `grant select` on the four to `anon, authenticated`: none is the
+  article's text, and the calendar and "Not my article" read them through the
+  person's own client. That keeps them readable whichever of 094 and **097**
+  (article text server-only, `fix/trial-gate-first-article`) is applied
+  first; 097 grants back only the columns that exist when it runs. Both
+  orders were checked on the local stack inside rolled-back transactions.
+- `workspaces.found_on_site_checked_at`: the check's turn order.
+- `workspaces.found_on_site_unreadable`: why the check cannot see the site's
+  new pages (`robots-unanswered`, `robots-disallowed`, `no-sitemap`,
+  `empty-sitemap`, `javascript`; a check constraint holds the list), shown in
+  the editor's Publish panel. Null = it can.
+- `found_on_site_checks`: one row per page read, `(workspace_id, url)` primary
+  key, with the page's main-content `words` (under 60 = a JavaScript shell).
+  RLS on with **no policies**, the posture of 080 and 082: only the cron
+  (service role) reads or writes it. Post-flight §4 step 2 lists it with zero
+  policies; that is expected.
+
+Depends only on **001**. Idempotent (`if not exists` throughout, and a
+repeated `grant` is a no-op; applied twice in a row on the local stack,
+2026-09-25). Nothing in the file backfills: no
+article is marked found until the cron runs.
+
+**Apply before the merge deploys.** `cron/site-pages` runs the check first; on
+a database without these columns the check's first query fails, the body says
+so (`found_on_site_error`, and a `job: "found-on-site"` result with status
+`error`, which `system_events` records as a warning), and the crawl still runs.
+The editor and the Articles list read the columns with `select *`, so they
+degrade to "no find" rather than failing. These name the columns and fail
+without them, which is why the order matters:
+
+- the calendar (`lib/queries/planner-state.ts`) throws, so `/content` errors;
+- the blog API (`/api/blog/v1/articles`, `altorank-next-blog`) answers 500;
+- the free allowance's first-draft gate cannot read the drafts, and fails
+  closed: cron/generate writes nothing on the free allowance and says why;
+- the admin Users page shows no article counts.
+
+Roll back with
+`drop table if exists found_on_site_checks; alter table workspaces drop column if exists found_on_site_checked_at, drop column if exists found_on_site_unreadable; alter table articles drop column if exists found_on_site_at, drop column if exists found_on_site_evidence, drop column if exists found_on_site_prior, drop column if exists found_on_site_rejected;`
+— run it only after putting any found article back first
+(`update articles set status = found_on_site_prior->>'status', published_url = found_on_site_prior->>'published_url', published_at = (found_on_site_prior->>'published_at')::timestamptz where found_on_site_at is not null;`),
+or those articles stay `live` at a URL nobody can then take back.
+
+## 098 — fact-check `unchecked` verdict
+
+Widens `articles_fact_check_verdict_check` to allow `'unchecked'`, the verdict
+the fact checker returns for an article in a language the locale contract
+(`lib/i18n/locale.ts`) does not describe. No dependencies beyond 015;
+idempotent (`drop constraint if exists`, then add). Every existing row stays
+valid.
+
+**Apply before the code that writes it ships.** Until then, generating a draft
+for a site whose language is not English, Italian, Spanish, French, German or
+Turkish fails at the article save (the constraint refuses `unchecked`), where
+before it saved a verdict read with English rules.
+
+Smoke after applying:
+
+```sql
+select pg_get_constraintdef(oid) from pg_constraint
+ where conname = 'articles_fact_check_verdict_check';  -- lists 'unchecked'
 ```

@@ -13,6 +13,7 @@ import { fetchKnownPages } from "@/lib/linking/targets";
 import { getLastPublish } from "@/lib/publishing/log";
 import { getArticleValue } from "@/lib/queries/value";
 import { createClient } from "@/lib/supabase/server";
+import { liveLabel } from "@/lib/found-on-site/state";
 import { notFound } from "next/navigation";
 
 type Props = {
@@ -83,7 +84,7 @@ export default async function ArticleEditorPage({ params }: Props) {
         backLabel="Back to articles"
         subtitle={
           <>
-            <StatusPill status={article.status} />
+            <StatusPill status={article.status} label={liveLabel(article)} />
             <span>{article.word_count ? `${article.word_count.toLocaleString()} words` : "Draft"}</span>
             <DotSep />
             <span className="font-mono truncate">/blog/{article.slug}</span>

@@ -18,7 +18,7 @@ export function CheckoutActivation({ sessionId, destination }: { sessionId: stri
         if (stopped) return;
         if (!response.ok) throw new Error(result.error ?? "Activation could not be checked.");
         if (result.active) { window.location.replace(checkoutDestination(destination)); return; }
-        if (result.status === "expired" || result.status === "open") { setMessage("Checkout has not completed. Return to your saved draft and trial options."); setWaiting(false); return; }
+        if (result.status === "expired" || result.status === "open") { setMessage("Checkout has not completed, and nothing was charged. Go back to start the trial again."); setWaiting(false); return; }
         setMessage("Checkout is complete. We’re waiting for payment confirmation to activate your account. You do not need to pay again.");
       } catch (error) {
         if (stopped) return;
@@ -34,6 +34,6 @@ export function CheckoutActivation({ sessionId, destination }: { sessionId: stri
     <h1 className="mb-4 text-2xl font-semibold">Activating your account</h1>
     <p role="status" className="mb-6">{message}</p>
     {!waiting && <button className="mr-5 text-accent underline" onClick={() => { setWaiting(true); setAttempt((a) => a + 1); }}>Check activation again</button>}
-    <Link className="text-accent underline" href="/onboarding">View saved draft</Link>
+    <Link className="text-accent underline" href="/onboarding">Back to trial options</Link>
   </main>;
 }

@@ -154,13 +154,21 @@ describe("executeRun", () => {
 });
 
 /**
- * The drafts a signup produces land in seven separate invocations, so the only
- * place that knows the whole batch is here, after `keepAlive` settles. Before
- * this, nothing on that path sent anything at all - a real signup finished the
- * wizard, got seven drafts inside the hour, and was never told any of it.
+ * Who tells the account about what a run wrote. Before any of this, nothing on
+ * the signup path sent anything at all - a real signup finished the wizard,
+ * got seven drafts inside the hour, and was never told any of it. A draft the
+ * worker writes itself is announced from here; a dispatched one by the draft
+ * route, when it lands.
  */
 describe("executeRun: announcing the batch", () => {
-  it("tells the account once, after every draft has landed", async () => {
+  /**
+   * A dispatched draft is announced by the draft route, the moment it stamps
+   * the row ready (app/api/internal/draft). The worker used to announce it
+   * from `keepAlive`, waiting on the draft request inside its own mostly
+   * spent budget; when the platform cut it off, the email waited for the
+   * cron's sweep, 42 minutes after the draft existed (2026-09-22).
+   */
+  it("leaves a dispatched draft's email to the route that marks it ready", async () => {
     const d = db();
     let firstDraftLanded = false;
     dispatch.mockReturnValue({
@@ -170,13 +178,9 @@ describe("executeRun: announcing the batch", () => {
       }),
     });
     const r = await executeRun("r1", { supabase: d.client, run: pipeline({ pendingDraft: PENDING }), dispatch: dispatch as never, canDispatch: () => true, announce: announce as never });
-
-    // Not before: the whole point is that "7 drafts are ready" is true when it is said.
-    expect(announce).not.toHaveBeenCalled();
     await r.keepAlive;
     expect(firstDraftLanded).toBe(true);
-    expect(announce).toHaveBeenCalledTimes(1);
-    expect(announce).toHaveBeenCalledWith(d.client, "ws1");
+    expect(announce).not.toHaveBeenCalled();
   });
 
   it("announces the run that wrote its draft inline too", async () => {

@@ -36,9 +36,17 @@ export function PropertyPicker({ properties }: { properties: DetectedProperty[] 
         setLimit({ message: result.message, needed: result.needed });
         return;
       }
-      toast.success(
-        `${result.created} workspace${result.created === 1 ? "" : "s"} created. The first look is running now.`,
-      );
+      // A site created without its setup run says why, in the gate's words,
+      // rather than promising a first look that is not coming.
+      if (result.setupRefused) {
+        toast.warning(
+          `${result.created} workspace${result.created === 1 ? "" : "s"} created. ${result.setupRefused}`,
+        );
+      } else {
+        toast.success(
+          `${result.created} workspace${result.created === 1 ? "" : "s"} created. The first look is running now.`,
+        );
+      }
       router.push("/workspaces");
     });
   }

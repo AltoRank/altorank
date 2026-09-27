@@ -54,7 +54,8 @@ interface Row {
   seoStored: number | null;
   seoNow: number;
   geoStored: number | null;
-  geoNow: number;
+  /** Null when the site's language is not one the locale contract describes. */
+  geoNow: number | null;
   words: number;
   internal: number;
   external: number;
@@ -71,7 +72,8 @@ function pad(s: string, n: number): string {
 }
 
 /** `72 → 61 (-11)`, or `— → 61` when nothing was stored. */
-function delta(stored: number | null, now: number): string {
+function delta(stored: number | null, now: number | null): string {
+  if (now === null) return `${stored === null ? "  —" : String(stored).padStart(3)} →   — (not scored)`;
   if (stored === null) return `  — →${String(now).padStart(4)}`;
   const d = now - stored;
   const sign = d > 0 ? `+${d}` : String(d);
@@ -92,11 +94,15 @@ async function main(): Promise<void> {
 
   const { data: workspaces, error: wsError } = await db
     .from("workspaces")
-    .select("id, domain, name");
+    .select("id, domain, name, language");
   if (wsError) throw new Error(`workspaces: ${wsError.message}`);
 
   const byId = new Map(
     (workspaces ?? []).map((w) => [w.id as string, (w.domain as string) ?? ""]),
+  );
+  // Each site's language, so its articles are scored with that language's rules.
+  const languageOf = new Map(
+    (workspaces ?? []).map((w) => [w.id as string, (w.language as string | null) ?? null]),
   );
 
   let query = db
@@ -130,6 +136,7 @@ async function main(): Promise<void> {
 
   for (const a of articles) {
     const domain = byId.get(a.workspace_id as string) ?? "";
+    const language = languageOf.get(a.workspace_id as string) ?? null;
     const html = tiptapToHtml(a.content as Record<string, unknown>);
     const keyword = (a.keyword as string) ?? "";
     const research = (a.research as ArticleResearch | null) ?? null;
@@ -139,8 +146,9 @@ async function main(): Promise<void> {
       siteDomain: domain,
       targetWordCount: research?.recommendedWordCount ?? null,
       title: a.title as string,
+      language,
     });
-    const geo = scoreCitationReadiness(html, keyword, { siteDomain: domain });
+    const geo = scoreCitationReadiness(html, keyword, { siteDomain: domain, language });
     const audit = auditArticle({
       html,
       keyword,
@@ -150,8 +158,9 @@ async function main(): Promise<void> {
       slug: a.slug as string,
       featuredImageUrl: a.featured_image_url as string | null,
       linkChecks: a.link_checks as LinkCheck[] | null,
+      language,
     });
-    const fact = factCheckArticle(html, research ?? undefined);
+    const fact = factCheckArticle(html, research ?? undefined, language);
 
     rows.push({
       id: a.id as string,
@@ -227,7 +236,7 @@ async function main(): Promise<void> {
   console.log("\nSUMMARY\n");
   console.log(`  SEO  now ${avg(rows.map((r) => r.seoNow))} avg` +
     (drift.length ? `, was ${avg(drift.map((r) => r.seoStored!))} stored (${rows.length - drift.length} never scored)` : ""));
-  console.log(`  GEO  now ${avg(rows.map((r) => r.geoNow))} avg`);
+  console.log(`  GEO  now ${avg(rows.flatMap((r) => (r.geoNow === null ? [] : [r.geoNow])))} avg`);
   console.log(`  Links: ${rows.filter((r) => r.internal === 0).length} with no internal link, ` +
     `${rows.filter((r) => r.external === 0).length} with no source, ` +
     `${rows.filter((r) => r.dead > 0).length} with a dead or unresolved link`);
@@ -235,11 +244,11 @@ async function main(): Promise<void> {
   console.log(`  Verdicts: ${["needs-work", "review", "ready"].map((v) => `${rows.filter((r) => r.verdict === v).length} ${v}`).join(", ")}`);
 
   // --- The worst offenders, in detail --------------------------------------
-  const worst = [...rows].sort((a, b) => a.seoNow + a.geoNow - (b.seoNow + b.geoNow)).slice(0, 5);
+  const worst = [...rows].sort((a, b) => a.seoNow + (a.geoNow ?? 0) - (b.seoNow + (b.geoNow ?? 0))).slice(0, 5);
   console.log("\nWORST FIVE, IN DETAIL\n");
   for (const r of worst) {
     console.log(`  ${r.title}`);
-    console.log(`    /${r.slug}  keyword "${r.keyword}"  SEO ${r.seoNow}  GEO ${r.geoNow}  ${r.domain}`);
+    console.log(`    /${r.slug}  keyword "${r.keyword}"  SEO ${r.seoNow}  GEO ${r.geoNow ?? "not scored"}  ${r.domain}`);
     if (r.blocker) console.log(`    BLOCKED: ${r.blocker}`);
     for (const f of r.fails) console.log(`    ! ${f.label}: ${f.detail}`);
     console.log();

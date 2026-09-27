@@ -111,6 +111,32 @@ function monthStart(): string {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
 }
 
+/** Whether a row created at `createdAt` is inside the month `used` counts. */
+export function createdThisQuotaMonth(createdAt: string | null | undefined): boolean {
+  if (!createdAt) return false;
+  const t = new Date(createdAt).getTime();
+  return Number.isFinite(t) && t >= new Date(monthStart()).getTime();
+}
+
+/**
+ * Whether the draft being written is past the included volume.
+ *
+ * `used` counts every non-error article created this month. A draft written
+ * into a row that is already in that count - the agent API inserts its own
+ * `drafting` row and then generates into it - is not one more on top: it is
+ * the row. So it is past the volume only when `used` is already over the
+ * limit, not at it. Testing `remaining <= 0` for that row billed a paying
+ * account's last included article as overage, after the route had told the
+ * agent it cost nothing (round-6 review).
+ */
+export function pastIncludedVolume(
+  q: Pick<Quota, "limit" | "used" | "remaining">,
+  { targetCounted }: { targetCounted: boolean },
+): boolean {
+  if (q.limit === null) return false;
+  return targetCounted ? q.used > q.limit : (q.remaining ?? 0) <= 0;
+}
+
 /**
  * The 1st of next month, UTC: the moment a *plan's* included volume starts
  * again.
@@ -197,19 +223,31 @@ export async function getQuota(
   // The operator bypass is the single biggest difference between what we see
   // and what a customer sees - unmetered against a real ceiling - so the
   // customer preview has to lift it, or the preview would show the one screen
-  // it exists to check in the one state no customer is ever in.
+  // it exists to check in the one state no customer is ever in. Only a
+  // session can be previewing; a cron (`noSession`) never is.
   //
   // Only the bypass is dropped. Everything below runs against the real account
   // row, so quota is the account's actual usage, not a fixture.
-  if (isAdminEmail(userEmail) && !(await inCustomerPreview())) {
+  const previewing = !noSession && (await inCustomerPreview());
+  if (isAdminEmail(userEmail) && !previewing) {
     return { limit: null, used, remaining: null, reason: "operator", plan: null };
   }
 
-  // Same bypass, reached the only way a cron can reach it. Without this our own
-  // account is metered by every scheduled job: one draft a month from
-  // cron/generate, and since scheduled work was gated on a plan, no rank
-  // tracking at all. See lib/billing/operator-account.ts.
-  if (noSession && (await accountHasOperator(supabase, accountId))) {
+  // The same bypass for the account itself: one an operator created is ours,
+  // whoever asks - a cron with no session, a key made by a colleague, a
+  // teammate signed in (lib/billing/operator-account.ts). It used to be asked
+  // only when there was no session, so the agent API's content lock (which
+  // asks as the key's creator) and its generate route (which asks as nobody)
+  // gave the same key two different answers about the same account
+  // (round-4 review).
+  //
+  // Asked on the counting client, never the caller's: the answer needs
+  // auth.users, which only the service role can read. The publisher reaches
+  // this with the Publish button's cookie client and no address (a person's
+  // click, but the publisher speaks for no session), and on that client the
+  // lookup failed and read as "not an operator" - so our own account, with
+  // no plan by design, was refused its own Publish (round-4 review).
+  if (!previewing && (await accountHasOperator(counting, accountId))) {
     return { limit: null, used, remaining: null, reason: "operator", plan: null };
   }
 

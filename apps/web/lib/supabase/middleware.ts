@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { afterSignIn } from "@/lib/auth/next-path";
+import { REQUEST_PATH_HEADER } from "@/lib/billing/gate-paths";
 
 // Everything is private unless it is on this list.
 //
@@ -70,6 +71,10 @@ export function isPublicPath(path: string): boolean {
 }
 
 export async function updateSession(request: NextRequest) {
+  // The path, for the dashboard layout's trial gate (lib/billing/gate-paths.ts).
+  // Set before the response below is built, which is what forwards it, and
+  // set rather than appended, so a client-sent value never survives.
+  request.headers.set(REQUEST_PATH_HEADER, request.nextUrl.pathname);
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
