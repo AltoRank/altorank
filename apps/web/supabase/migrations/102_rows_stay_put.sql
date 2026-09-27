@@ -170,3 +170,57 @@ drop trigger if exists account_members_guard_roles on public.account_members;
 create trigger account_members_guard_roles
   before update or delete on public.account_members
   for each row execute function public.account_members_guard_roles();
+
+-- --- The invite door holds the same rule (round-6 review) ------------------
+--
+-- An invite becomes a membership through the service role (the acceptance
+-- page copies its role and sites), so account_members_guard_roles never sees
+-- it. Any admin - one scoped to a single site included - could insert an
+-- invite with role 'owner' and every site, accept it from a second address,
+-- and remove the paying owner. Ownership is never handed out by email (the
+-- Team page invites editors and admins only, INVITABLE_ROLES), and an admin
+-- invites no wider than the sites they have.
+
+create or replace function public.invites_guard_scope()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  actor_role text;
+  actor_sites uuid[];
+begin
+  -- The server writes invites it has checked; a cascade is not a person.
+  if auth.uid() is null or pg_trigger_depth() > 1 then
+    return new;
+  end if;
+
+  if new.role = 'owner' then
+    raise exception 'An invite cannot make an owner; invite an admin, then make them owner on the Team page'
+      using errcode = '42501';
+  end if;
+
+  select m.role, m.workspace_ids into actor_role, actor_sites
+    from account_members m
+   where m.account_id = new.account_id and m.user_id = auth.uid();
+
+  -- An owner invites to any sites. Anyone else only within their own: NULL
+  -- (every site) is wider than any list, and each listed site must be theirs.
+  if actor_role is distinct from 'owner' and actor_sites is not null
+     and (new.workspace_ids is null or not (new.workspace_ids <@ actor_sites))
+  then
+    raise exception 'An invite cannot reach sites the inviter does not have'
+      using errcode = '42501';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke execute on function public.invites_guard_scope() from public, anon, authenticated;
+
+drop trigger if exists invites_guard_scope on public.invites;
+create trigger invites_guard_scope
+  before insert or update on public.invites
+  for each row execute function public.invites_guard_scope();

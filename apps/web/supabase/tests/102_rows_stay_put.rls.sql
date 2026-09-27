@@ -93,9 +93,22 @@ select pg_temp.expect_refused('admin makes themselves owner',
 select pg_temp.expect_refused('admin widens their own sites to all',
   $q$update account_members set workspace_ids = null where user_id = auth.uid()$q$);
 
+select pg_temp.expect_refused('admin invites an owner',
+  $q$insert into invites (account_id, email, role, token, invited_by, expires_at, workspace_ids) values ('00000000-0000-4000-8000-00000000102a', 'friend@acme-agency.example', 'owner', 'rls-102-inv-1', auth.uid(), now() + interval '7 days', array['00000000-0000-4000-8000-0000000102c1']::uuid[])$q$);
+select pg_temp.expect_refused('single-site admin invites to every site',
+  $q$insert into invites (account_id, email, role, token, invited_by, expires_at, workspace_ids) values ('00000000-0000-4000-8000-00000000102a', 'friend@acme-agency.example', 'admin', 'rls-102-inv-2', auth.uid(), now() + interval '7 days', null)$q$);
+select pg_temp.expect_refused('single-site admin invites to a site they do not have',
+  $q$insert into invites (account_id, email, role, token, invited_by, expires_at, workspace_ids) values ('00000000-0000-4000-8000-00000000102a', 'friend@acme-agency.example', 'editor', 'rls-102-inv-3', auth.uid(), now() + interval '7 days', array['00000000-0000-4000-8000-0000000102c3']::uuid[])$q$);
+select pg_temp.expect_rows('single-site admin invites an editor to their own site',
+  $q$insert into invites (account_id, email, role, token, invited_by, expires_at, workspace_ids) values ('00000000-0000-4000-8000-00000000102a', 'friend@acme-agency.example', 'editor', 'rls-102-inv-4', auth.uid(), now() + interval '7 days', array['00000000-0000-4000-8000-0000000102c1']::uuid[])$q$, 1);
+select pg_temp.expect_refused('admin turns a pending invite into an owner invite',
+  $q$update invites set role = 'owner' where token = 'rls-102-inv-4'$q$);
+
 -- --- The gated owner manages the admin, as the Team page does ---------------
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000102a1","role":"authenticated"}', true);
 
+select pg_temp.expect_rows('owner invites an admin to every site',
+  $q$insert into invites (account_id, email, role, token, invited_by, expires_at, workspace_ids) values ('00000000-0000-4000-8000-00000000102a', 'second@acme-agency.example', 'admin', 'rls-102-inv-5', auth.uid(), now() + interval '7 days', null)$q$, 1);
 select pg_temp.expect_rows('owner changes the admin''s sites',
   $q$update account_members set workspace_ids = null where user_id = '00000000-0000-4000-8000-0000000102a2'$q$, 1);
 select pg_temp.expect_rows('owner makes the admin an owner',
