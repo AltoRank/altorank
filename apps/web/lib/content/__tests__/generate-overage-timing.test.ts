@@ -27,8 +27,11 @@ vi.mock("@/lib/content/site-facts", async (importOriginal) => ({
 }));
 
 import { generateArticle } from "../generate";
+import { pastIncludedVolume } from "@/lib/billing/quota";
 
 let jobs = 0;
+/** The article row the fake returns to a select on `articles`; null = none. */
+let target: { status: string; created_at: string; content: unknown } | null = null;
 
 function client() {
   const workspace = {
@@ -42,6 +45,21 @@ function client() {
           insert: () => ({ select: () => ({ single: async () => ({ data: { id: "a1" }, error: null }) }) }),
           update: () => ({ eq: async () => ({ error: null }) }),
           delete: () => ({ eq: async () => ({ error: null }) }),
+          select: () => {
+            const filters: string[] = [];
+            const q: Record<string, unknown> = {
+              eq: () => q,
+              not: (col: string) => (filters.push(`not ${col}`), q),
+              maybeSingle: async () => {
+                if (!target) return { data: null, error: null };
+                // articleHasText asks for rows whose content is not null.
+                if (filters.includes("not content") && target.content === null) return { data: null, error: null };
+                return { data: { id: "a1", ...target }, error: null };
+              },
+              single: async () => (target ? { data: { id: "a1", ...target }, error: null } : { data: null, error: { message: "none" } }),
+            };
+            return q;
+          },
         };
       }
       if (table === "generation_jobs") {
@@ -64,6 +82,7 @@ function client() {
 
 beforeEach(() => {
   jobs = 0;
+  target = null;
   recordOverageArticle.mockClear();
   getQuota.mockReset().mockResolvedValue({ limit: 100, used: 100, remaining: 0, reason: "plan", plan: "starter" });
 });
@@ -83,5 +102,38 @@ describe("the overage on a draft past the included volume", () => {
     ).rejects.toThrow();
     expect(jobs).toBe(0);
     expect(recordOverageArticle).not.toHaveBeenCalled();
+  });
+});
+
+describe("a draft written into a row the quota already counts", () => {
+  // The agent API inserts its own `drafting` row, then generates into it; getQuota
+  // counts that row, so at the last included article `used` equals the limit.
+  it("is the last included article at used = limit, not an overage", () => {
+    expect(pastIncludedVolume({ limit: 100, used: 100, remaining: 0 }, { targetCounted: true })).toBe(false);
+    expect(pastIncludedVolume({ limit: 100, used: 101, remaining: -1 }, { targetCounted: true })).toBe(true);
+    expect(pastIncludedVolume({ limit: 100, used: 100, remaining: 0 }, { targetCounted: false })).toBe(true);
+    expect(pastIncludedVolume({ limit: null, used: 999, remaining: null }, { targetCounted: false })).toBe(false);
+  });
+
+  it("lets an autonomous draft into its own counted row past the quota test at used = limit", async () => {
+    target = { status: "drafting", created_at: new Date().toISOString(), content: null };
+    // Past the quota test it meets the next one, the tracked-topic check the
+    // fake cannot satisfy; the quota's own refusal would have come first.
+    await expect(
+      generateArticle({ supabase: client(), workspaceId: "ws1", keyword: "salon booking website", articleId: "a1", autonomous: true, callerEmail: null }),
+    ).rejects.toThrow(/Automatic writing requires/);
+    expect(recordOverageArticle).not.toHaveBeenCalled();
+  });
+
+  it("still counts a row from last month, or one with text, as one more", async () => {
+    target = { status: "drafting", created_at: "2000-01-01T00:00:00Z", content: null };
+    await expect(
+      generateArticle({ supabase: client(), workspaceId: "ws1", keyword: "salon booking website", articleId: "a1", autonomous: true, callerEmail: null }),
+    ).rejects.toThrow(/Limit|limit|included|used/);
+    target = { status: "review", created_at: new Date().toISOString(), content: { type: "doc" } };
+    await expect(
+      generateArticle({ supabase: client(), workspaceId: "ws1", keyword: "salon booking website", articleId: "a1", autonomous: true, callerEmail: null }),
+    ).rejects.toThrow(/Limit|limit|included|used/);
+    expect(jobs).toBe(0);
   });
 });

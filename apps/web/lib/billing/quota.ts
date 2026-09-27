@@ -111,6 +111,32 @@ function monthStart(): string {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
 }
 
+/** Whether a row created at `createdAt` is inside the month `used` counts. */
+export function createdThisQuotaMonth(createdAt: string | null | undefined): boolean {
+  if (!createdAt) return false;
+  const t = new Date(createdAt).getTime();
+  return Number.isFinite(t) && t >= new Date(monthStart()).getTime();
+}
+
+/**
+ * Whether the draft being written is past the included volume.
+ *
+ * `used` counts every non-error article created this month. A draft written
+ * into a row that is already in that count - the agent API inserts its own
+ * `drafting` row and then generates into it - is not one more on top: it is
+ * the row. So it is past the volume only when `used` is already over the
+ * limit, not at it. Testing `remaining <= 0` for that row billed a paying
+ * account's last included article as overage, after the route had told the
+ * agent it cost nothing (round-6 review).
+ */
+export function pastIncludedVolume(
+  q: Pick<Quota, "limit" | "used" | "remaining">,
+  { targetCounted }: { targetCounted: boolean },
+): boolean {
+  if (q.limit === null) return false;
+  return targetCounted ? q.used > q.limit : (q.remaining ?? 0) <= 0;
+}
+
 /**
  * The 1st of next month, UTC: the moment a *plan's* included volume starts
  * again.

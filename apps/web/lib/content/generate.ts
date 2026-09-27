@@ -24,7 +24,7 @@ import { verifyCitedFigures } from "@/lib/seo/citation-check";
 import { scoreArticle } from "@/lib/seo/scoring";
 import { scoreCitationReadiness } from "@/lib/seo/aeo-scoring";
 import { recordSpend, anthropicCost } from "@/lib/billing/spend";
-import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
+import { createdThisQuotaMonth, getQuota, pastIncludedVolume, quotaExceededMessage } from "@/lib/billing/quota";
 import { draftBodyLocked, trialGateApplies } from "@/lib/billing/trial";
 import { accountCountingClient } from "@/lib/billing/account-client";
 import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
@@ -397,7 +397,8 @@ export async function generateArticle(
   // so a Write-now that then failed billed €0.60 for no article, and the
   // failed row (`error`) was not even in the count (round-5 review).
   let recordOverage: (() => Promise<void>) | null = null;
-  if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
+  const targetCounted = await writesIntoCountedRow(supabase, workspaceId, articleId, Boolean(refreshOf));
+  if (pastIncludedVolume(quota, { targetCounted })) {
     if (quota.reason === "no-plan" || autonomous) {
       throw new Error(quotaExceededMessage(quota));
     }
@@ -1257,6 +1258,32 @@ export async function generateArticle(
  * asked, never the text. A failed read throws - the caller is deciding
  * between "regenerate" and "first draft", and guessing either is wrong.
  */
+/**
+ * Whether this run writes into a row `getQuota` already counted: a textless,
+ * non-error article created this month, like the `drafting` row the agent API
+ * inserts before it calls here. That row is this draft, so the overage test
+ * must not count it twice (see pastIncludedVolume). A regeneration of text,
+ * a refresh and a new row are not this case. A failed read throws: billing
+ * on a guess is the thing being fixed.
+ */
+async function writesIntoCountedRow(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  articleId: string | null | undefined,
+  refreshing: boolean,
+): Promise<boolean> {
+  if (!articleId || refreshing) return false;
+  const { data, error } = await supabase
+    .from("articles")
+    .select("status, created_at")
+    .eq("id", articleId)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read the article to write into: ${error.message}`);
+  if (!data || data.status === "error" || !createdThisQuotaMonth(data.created_at as string | null)) return false;
+  return !(await articleHasText(supabase, articleId));
+}
+
 async function articleHasText(supabase: SupabaseClient, articleId: string): Promise<boolean> {
   // Not null is the whole test. The column is jsonb and PostgREST casts a
   // comparison value to the column's type, so an empty-string comparison is
