@@ -144,10 +144,12 @@ function extractMetaDescription(content: string): string | null {
 
 // ---- Individual check functions ----
 
-function checkKeywordInTitle(content: string, keyword: string): ScoringCheck {
+function checkKeywordInTitle(content: string, keyword: string, pageTitle?: string | null): ScoringCheck {
   const titleRegex = /<h1[^>]*>(.*?)<\/h1>/i;
   const titleMatch = content.match(titleRegex);
-  const titleText = titleMatch ? stripHtml(titleMatch[1]) : "";
+  // An article body carries no H1: its title is the page's H1 (see
+  // `titleIsPageH1` on scoreArticle).
+  const titleText = pageTitle?.trim() || (titleMatch ? stripHtml(titleMatch[1]) : "");
 
   // Folded, so "İSTANBUL" is "istanbul" and "API" is "api" in any language.
   const passed = containsTerm(titleText, keyword);
@@ -212,8 +214,11 @@ function checkKeywordDensity(content: string, keyword: string, locale: Locale): 
   };
 }
 
-function checkHeadingStructure(content: string): ScoringCheck {
-  const h1s = extractHeadings(content, 1);
+function checkHeadingStructure(content: string, titleIsPageH1 = false): ScoringCheck {
+  const bodyH1s = extractHeadings(content, 1);
+  // For an article body the title is the page's H1, so it counts as one and
+  // any <h1> in the body is a second (lib/content/on-page.ts).
+  const h1s = titleIsPageH1 ? ["(title)", ...bodyH1s] : bodyH1s;
   const h2s = extractHeadings(content, 2);
 
   const hasOneH1 = h1s.length === 1;
@@ -227,7 +232,11 @@ function checkHeadingStructure(content: string): ScoringCheck {
   } else if (h1s.length === 0) {
     notes.push("Missing H1 tag");
   } else {
-    notes.push(`Multiple H1 tags found (${h1s.length})`);
+    notes.push(
+      titleIsPageH1
+        ? `The body has ${bodyH1s.length} H1 tag${bodyH1s.length === 1 ? "" : "s"}; the title is already the page's H1`
+        : `Multiple H1 tags found (${h1s.length})`,
+    );
   }
 
   if (hasH2s) {
@@ -486,14 +495,22 @@ export function scoreArticle(
     title?: string | null;
     knownPages?: readonly { url: string }[] | null;
     language?: string | null;
+    /**
+     * `content` is an article body whose `title` the destination renders as
+     * the page's H1: the keyword check reads the title, and an <h1> in the
+     * body is a second H1. For a crawled page (lib/seo/site-crawl.ts) leave
+     * it off: that body is the whole page.
+     */
+    titleIsPageH1?: boolean;
   },
 ): ScoringResult {
   const locale = resolveLocale(opts?.language);
+  const titleIsPageH1 = Boolean(opts?.titleIsPageH1 && opts?.title?.trim());
   const checks: ScoringCheck[] = [
-    checkKeywordInTitle(content, keyword),
+    checkKeywordInTitle(content, keyword, titleIsPageH1 ? opts?.title : null),
     checkTitleLength(content, opts?.title),
     checkKeywordDensity(content, keyword, locale),
-    checkHeadingStructure(content),
+    checkHeadingStructure(content, titleIsPageH1),
     checkMetaDescriptionLength(content, opts?.metaDescription, keyword),
     checkWordCount(content, locale, opts?.targetWordCount),
     checkReadability(content, locale),

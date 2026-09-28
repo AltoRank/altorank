@@ -37,6 +37,10 @@ import { setSpendReporter } from "@/lib/seo/client";
 import { fetchKnownPages } from "@/lib/linking/targets";
 import { loadSiteFacts } from "@/lib/content/site-facts";
 import { siteFactUrls } from "@/lib/ai/prompts";
+import { figureReviewNote } from "@/lib/seo/source-figures";
+import { matchingOfferings, topicLinkNote } from "@/lib/content/topic-pages";
+import { faqPlan, faqReviewNote, fitTitle, givenTitleKept, removeTitleHeading, titleReviewNote } from "@/lib/content/on-page";
+import { buildTrust } from "@/lib/content/trust";
 import { anthropicModel, openaiImageModel } from "@/lib/ai/models";
 import { GenerationTruncatedError } from "@/lib/ai/errors";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
@@ -742,6 +746,22 @@ export async function generateArticle(
       // and again at approval (lib/ai/fact-check.ts).
       research.siteStatements = siteStatementsOf(siteFacts.facts);
     }
+    // Health, legal, financial or safety, decided once from the keyword, the
+    // title the writer is given and the profile; the reviewer only from the
+    // people the site's own pages name (lib/content/trust.ts). Saved with the
+    // research: the review panel shows its notes and the publisher reads it
+    // for the dateline. Not on a rewrite, which keeps the page it is given.
+    const trust = refreshOf
+      ? null
+      : buildTrust({
+          keyword,
+          title: approvedTitle,
+          profile: workspace.business_profile,
+          language: workspace.language,
+          people: siteFacts?.facts.people ?? [],
+        });
+    if (trust) research.trust = trust;
+
     const questionSelection = await selectArticleQuestions(research.peopleAlsoAsk, {
       keyword, title: approvedTitle, language: workspace.language ?? "en",
       business: workspace.business_profile, brief: topicBrief,
@@ -845,6 +865,7 @@ export async function generateArticle(
       brief,
       site,
       siteFacts: siteFacts?.facts,
+      sensitive: trust?.sensitive ?? null,
       refreshOf: refreshOf
         ? {
             existingHtml: refreshOf.existingHtml,
@@ -867,9 +888,22 @@ export async function generateArticle(
     }
     if (!articleResult) throw new Error("Generator ended without returning a result");
 
+    // The title fits a results line, and the body does not repeat it as an
+    // <h1>: every destination renders the title as the page's H1. Both were
+    // asked for in the prompt and both shipped wrong on a real first article
+    // (lib/content/on-page.ts). Not on a rewrite, which keeps its page's
+    // title and body structure.
+    // A title the caller gave - a person in the editor, or an agent through
+    // the API - and the writer used is theirs: it is kept as given, and the
+    // review note says when it is long. Only the writer's own title is cut.
+    const keptGiven = givenTitleKept(title, articleResult.title);
+    const fittedTitle = keptGiven ?? fitTitle(articleResult.title, keyword, workspace.language);
+    if (!refreshOf) articleResult = { ...articleResult, title: fittedTitle.title };
+
     // Deterministic first: the prompt bans em dashes and the model uses them
     // anyway, so the ban is enforced here where it cannot be ignored.
     let processedHtml = stripAiTypography(articleResult.html);
+    if (!refreshOf) processedHtml = removeTitleHeading(processedHtml).html;
 
     /**
      * Apply an optional enhancement, and keep the original unless the result is
@@ -954,6 +988,10 @@ export async function generateArticle(
     // Imported here rather than at the top: the pipeline pulls in the image,
     // video and audit modules, and the quota-gate tests import this file
     // under a five-second budget they were already close to.
+    // The business's own pages for this article's topic, for the call to
+    // action and the review note (lib/content/topic-pages.ts).
+    const topicPages = matchingOfferings(siteFacts?.facts, { keyword, title: articleResult.title });
+
     await enhance("body enrichment", async (html) => {
       const { enrichArticle } = await import("@/lib/content/enrich");
       const enriched = await enrichArticle(html, {
@@ -968,6 +1006,9 @@ export async function generateArticle(
         brandStyle: workspace.brand_style as Record<string, unknown> | null,
         settings: outputSettings,
         research: research as unknown as Record<string, unknown>,
+        conversion: siteFacts?.facts.conversion?.url ?? null,
+        service: topicPages[0] ?? null,
+        trust,
       });
       return enriched.html;
     });
@@ -995,6 +1036,22 @@ export async function generateArticle(
     // real citation carrying a wrong number, which the first cannot see.
     const factCheck = await verifyCitedFigures(factCheckArticle(processedHtml, research, workspace.language));
 
+    // What the reviewer has to know or do before publishing, said once at the
+    // top of the research panel rather than left for them to infer from a
+    // failing check. Saved with the research below.
+    const reviewNotes: string[] = [...(trust?.notes ?? [])];
+    const figureNote = figureReviewNote(research.sourceFigures, processedHtml, workspace.language);
+    if (figureNote) reviewNotes.push(figureNote);
+    const linkNote = topicLinkNote(topicPages, processedHtml);
+    if (linkNote) reviewNotes.push(linkNote);
+    if (!refreshOf) {
+      const titleNote = titleReviewNote(fittedTitle);
+      if (titleNote) reviewNotes.push(titleNote);
+      const faqNote = faqReviewNote(faqPlan({ articleType: brief.articleType, questions: research.peopleAlsoAsk }), processedHtml);
+      if (faqNote) reviewNotes.push(faqNote);
+    }
+    research.reviewNotes = reviewNotes;
+
     // `scoreArticle` and its seven on-page checks have existed all along, but
     // nothing ran them at generation: only the manual `scoreArticleSeo` action
     // did. So every fresh draft opened with a hard 0 in the ring and "Not
@@ -1017,6 +1074,7 @@ export async function generateArticle(
       // Every check that reads text reads it in the site's language; the
       // first Turkish draft was scored on English rules.
       language: workspace.language,
+      titleIsPageH1: !refreshOf,
     });
     // The half that matches what this product actually claims: not "will it
     // rank" but "will an answer engine quote it". Null in a language the

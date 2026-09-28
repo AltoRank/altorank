@@ -82,6 +82,12 @@ export interface ArticleLabels {
    * where the brand's link goes (lib/publishing/attribution.ts).
    */
   poweredBy: string;
+  /**
+   * The call to action's line for the business's verified conversion page, a
+   * phone number or an email address; `{link}` is where the link goes. Words
+   * that fit all three: "Contact" rather than "Book" or "Call".
+   */
+  contact: string;
   /** Alt-text prefix for a generated section image, per style preset. */
   illustration: Record<ImageStyle, string>;
   /** The summary block's heading the prompt offers the writer. */
@@ -91,6 +97,16 @@ export interface ArticleLabels {
   /** Bar labels for a before/after chart whose sentence has no words for them. */
   before: string;
   after: string;
+  /**
+   * The reviewer line on a health, legal, financial or safety article, with
+   * `{name}` and `{role}` as the site states them (lib/content/trust.ts).
+   */
+  reviewedBy: string;
+  /** The disclaimer closing a sensitive article, per kind of topic. */
+  disclaimer: Record<SensitiveKind, string>;
+  /** The dateline a sensitive article is published with; `{date}` is the date in this language. */
+  published: string;
+  updated: string;
 }
 
 /** How figures are written. Read by the fact checker, the citation check, the AEO scorer and the infographic step. */
@@ -162,6 +178,18 @@ export interface ProseRules {
   pictureOf: RegExp;
   /** Abbreviations whose dot does not end a sentence. Regex fragments, without the dot. */
   abbreviations: string[];
+  /**
+   * "X is regulated by Y", "Y regulates X", "licensed by", "accredited by":
+   * who regulates, licenses or accredits something. Applied to RAW text
+   * (case matters: a body's name is capitalised). The named group `entity`
+   * is the body the sentence names, when it names one.
+   */
+  authorityClaim: RegExp[];
+  /**
+   * "covered by Y", "Y covers X", "reimbursed by": what an insurer or a
+   * public plan pays for. Same shape as `authorityClaim`.
+   */
+  coverageClaim: RegExp[];
 }
 
 /** Headings and labels the product recognises. Matched in every supported language. */
@@ -211,8 +239,24 @@ export interface SearchWordRules {
   directional?: ReadonlySet<string>;
 }
 
+/**
+ * Topics where a wrong article can hurt the reader's health, money, legal
+ * position or safety: Google's "Your Money or Your Life". Decided in one
+ * place, lib/content/trust.ts.
+ */
+export type SensitiveKind = "health" | "legal" | "financial" | "safety";
+export const SENSITIVE_KINDS: readonly SensitiveKind[] = ["health", "legal", "financial", "safety"];
+
 export interface LocaleRules {
   code: SupportedLanguage;
+  /**
+   * Words that make a topic sensitive, per kind, as regex fragments matched
+   * whole on text lowered with `foldCase` and stripped of marks with
+   * `foldMarks` (so written without accents: "medec" for "médec"). A
+   * fragment ending in `\p{L}*` is a stem. Recognised in every supported
+   * language: a business profile is often in English on a Turkish site.
+   */
+  sensitiveTerms: Record<SensitiveKind, string[]>;
   /** English name, for prompts and for "not checked for <language>". */
   name: string;
   /** Tag for case mapping and number formatting. */
@@ -413,8 +457,32 @@ const TR_SEARCH: SearchWordRules = {
 
 const EN_NAME = String.raw`\p{Lu}[\p{L}\p{N}&.'’-]*`;
 
+/**
+ * The name of a body - a regulator, an insurer, a public plan - as a run of
+ * capitalised words that may be joined by the language's small words ("College
+ * of Physiotherapists of Ontario"), with an optional acronym in brackets.
+ * `join` is the language's connectors, as regex alternatives.
+ */
+const ORG_WORD = String.raw`\p{Lu}[\p{L}\p{N}&.'’-]*`;
+function ORG_RUN(join: string): string {
+  return String.raw`${ORG_WORD}(?:\s+(?:(?:${join})\s+)*${ORG_WORD}){0,7}(?:\s+\(\p{Lu}[\p{L}\p{N}]{1,9}\))?`;
+}
+const EN_ORG = ORG_RUN("of|for|and|&|the");
+const IT_ORG_JOIN = "di|del|della|dei|degli|delle|e|per";
+const ES_ORG_JOIN = "de|del|la|los|las|y|para";
+const FR_ORG_JOIN = "de|du|des|la|le|et|pour";
+const DE_ORG_JOIN = "für|und|der|des|von";
+/** A capitalised word that starts a sentence and names nobody. */
+const EN_NOT_A_NAME = String.raw`(?!(?:The|This|That|It|They|These|Those|He|She|We|Which|Who|Your|Our|Their|Its|Most|Many|Some|Each|Every|A|An)\s)`;
+
 const EN: LocaleRules = {
   code: "en",
+  sensitiveTerms: {
+    health: [String.raw`physio\p{L}*`, String.raw`physical therap\p{L}*`, String.raw`therap(?:y|ies|ist|ists|eutic)`, String.raw`chiropract\p{L}*`, String.raw`osteopath\p{L}*`, String.raw`rehab\p{L}*`, String.raw`injur(?:y|ies|ed)`, String.raw`back pain`, String.raw`neck pain`, String.raw`chronic pain`, String.raw`pain relief`, String.raw`sprain\p{L}*`, String.raw`concussion\p{L}*`, String.raw`tendon\p{L}*`, String.raw`tendinitis`, String.raw`arthritis`, String.raw`surger(?:y|ies)`, String.raw`surgeon\p{L}*`, String.raw`doctors?`, String.raw`physicians?`, String.raw`clinics?`, String.raw`clinical`, String.raw`medic(?:al|ine|ines|ation|ations)`, String.raw`symptoms?`, String.raw`diagnos\p{L}*`, String.raw`diseases?`, String.raw`dental`, String.raw`dentists?`, String.raw`nurs(?:e|es|ing)`, String.raw`pregnan\p{L}*`, String.raw`mental health`, String.raw`psycholog\p{L}*`, String.raw`psychiatr\p{L}*`, String.raw`nutrition\p{L}*`, String.raw`dietitians?`, String.raw`vaccin\p{L}*`, String.raw`pharmac\p{L}*`, String.raw`health ?care`, String.raw`patients`, String.raw`kinesiolog\p{L}*`],
+    legal: [String.raw`lawyers?`, String.raw`attorneys?`, String.raw`solicitors?`, String.raw`barristers?`, String.raw`law firms?`, String.raw`legal(?:ly)?`, String.raw`lawsuits?`, String.raw`litigation`, String.raw`divorce\p{L}*`, String.raw`child custody`, String.raw`immigration`, String.raw`probate`, String.raw`estate planning`, String.raw`employment law`, String.raw`tenant rights`, String.raw`personal injury`, String.raw`court cases?`, String.raw`notar\p{L}*`, String.raw`power of attorney`],
+    financial: [String.raw`tax(?:es|ation)?`, String.raw`accountants?`, String.raw`accounting`, String.raw`bookkeep\p{L}*`, String.raw`mortgage\p{L}*`, String.raw`loans?`, String.raw`credit (?:cards?|scores?|reports?)`, String.raw`debts?`, String.raw`invest(?:ing|ment|ments|or|ors)?`, String.raw`pensions?`, String.raw`retirement`, String.raw`insurance`, String.raw`bankrupt\p{L}*`, String.raw`financial (?:advice|advisors?|advisers?|planning|planners?)`, String.raw`wealth management`, String.raw`stock market`, String.raw`crypto\p{L}*`, String.raw`savings`, String.raw`interest rates?`, String.raw`payroll`],
+    safety: [String.raw`electrical safety`, String.raw`electricians?`, String.raw`gas safety`, String.raw`gas leaks?`, String.raw`carbon monoxide`, String.raw`fire safety`, String.raw`fire alarms?`, String.raw`smoke alarms?`, String.raw`asbestos`, String.raw`child safety`, String.raw`car seats?`, String.raw`first aid`, String.raw`hazard\p{L}*`, String.raw`poison\p{L}*`, String.raw`radon`, String.raw`mou?ld removal`, String.raw`lead paint`, String.raw`pest control`, String.raw`food safety`, String.raw`workplace safety`],
+  },
   name: "English",
   bcp47: "en",
   wordScale: 1,
@@ -430,6 +498,7 @@ const EN: LocaleRules = {
     visit: "Visit {link}.",
     citeLead: "Learn more about {link}.",
     poweredBy: "Powered by {link}",
+    contact: "Get in touch: {link}.",
     illustration: {
       sketch: "Sketch illustrating",
       watercolor: "Watercolour illustration of",
@@ -441,6 +510,15 @@ const EN: LocaleRules = {
     faqHeading: "Frequently asked questions",
     before: "Before",
     after: "After",
+    reviewedBy: "Reviewed by {name}, {role}.",
+    disclaimer: {
+      health: "This article is general information, not medical advice. For advice about your own condition, speak to a qualified health professional.",
+      legal: "This article is general information, not legal advice. For advice about your own situation, speak to a qualified lawyer.",
+      financial: "This article is general information, not financial advice. For advice about your own situation, speak to a qualified financial adviser.",
+      safety: "This article is general information. For work that affects your safety, use a qualified, licensed professional.",
+    },
+    published: "Published {date}",
+    updated: "Updated {date}",
   },
   numbers: {
     decimal: ".",
@@ -493,10 +571,22 @@ const EN: LocaleRules = {
     definitionAt: "opening",
     firstHand:
       /\b(?:we tested|we tried|in our (?:tests?|experience|testing)|i tested|i tried|when we (?:ran|used|switched)|our team (?:used|ran|found))\b/i,
-    byline: /\b(?:about the author|written by|author:)/i,
+    byline: /\b(?:about the author|written by|author:|reviewed by)/i,
     pictureOf:
       /^(?:an?\s+|the\s+)?(?:image|picture|photo|photograph|illustration|graphic|screenshot|diagram|chart|infographic|icon|logo)\s+(?:of|showing|about|for)\s+(?:an?\s+|the\s+)?/i,
     abbreviations: ["e\\.g", "i\\.e", "etc", "vs", "Dr", "Mr", "Mrs", "Ms", "Prof", "Inc", "Ltd", "Co", "St", "approx", "no"],
+    authorityClaim: [
+      // "Licensed under" is software ("licensed under the GPL"), not a regulator.
+      new RegExp(String.raw`(?<![\p{L}])(?:(?:regulated|governed|overseen)\s+(?:by|through|under)|(?:licensed|licenced|accredited)\s+(?:by|through))\s+(?:(?:the|a|an|its|their|your|each)\s+)?(?:(?<entity>${EN_ORG})|(?:\p{Ll}[\p{L}-]*\s+){0,3}(?:colleges?|boards?|bod(?:y|ies)|regulators?|authorit(?:y|ies)|associations?|councils?))`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])(?:registered|certified)\s+with\s+(?:the\s+)?(?<entity>${EN_ORG})`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])${EN_NOT_A_NAME}(?<entity>${EN_ORG})\s+(?:(?:also|still)\s+)?(?:regulates|licenses|licences|governs|oversees|accredits|is\s+the\s+(?:(?:provincial|national|state|federal|official|professional)\s+)?(?:regulator|regulatory\s+(?:body|authority|college)|governing\s+body|licensing\s+(?:body|authority)))(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])(?:regulator|regulatory\s+body|governing\s+body|licensing\s+body)\s+(?:for|of)\s+[^.;]{1,80}?\s+(?:is|are)\s+(?:the\s+)?(?<entity>${EN_ORG})`, "u"),
+    ],
+    coverageClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:covered|reimbursed|funded|paid\s+for)\s+(?:by|under|through)\s+(?:(?:the|a|an|your|most|many|some|their|provincial|public|private)\s+)?(?:(?<entity>${EN_ORG})|(?:\p{Ll}[\p{L}-]*\s+){0,3}(?:insurance|insurers?|plans?|benefits|coverage|polic(?:y|ies)))`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])${EN_NOT_A_NAME}(?<entity>${EN_ORG})\s+(?:(?:usually|often|typically|generally|also|fully|partially|may|will|does\s+not|doesn['’]t)\s+)?(?:covers?|reimburses?|pays\s+for|funds)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])(?:[Ii]nsurance|[Ii]nsurers?|(?:[Hh]ealth|[Bb]enefits?|[Ii]nsurance)\s+plans?|[Ee]xtended\s+health(?:\s+(?:benefits|plans?|coverage))?)\s+(?:(?:usually|often|typically|generally|also|may|will|does\s+not|doesn['’]t|do\s+not|don['’]t)\s+)?(?:covers?|reimburses?|pays\s+for)(?![\p{L}])`, "u"),
+    ],
   },
   headings: {
     faq: /\bfaqs?\b|frequently asked/i,
@@ -530,6 +620,12 @@ const NAME_RUN = (n: number) => String.raw`${LATIN_NAME}(?:\s+${LATIN_NAME}){0,$
 
 const IT: LocaleRules = {
   code: "it",
+  sensitiveTerms: {
+    health: [String.raw`fisioterap\p{L}*`, String.raw`terap\p{L}*`, String.raw`osteopat\p{L}*`, String.raw`chiroprat\p{L}*`, String.raw`riabilitazion\p{L}*`, String.raw`infortun\p{L}*`, String.raw`mal di schiena`, String.raw`dolor\p{L}*`, String.raw`medic\p{L}*`, String.raw`clinic\p{L}*`, String.raw`sintom\p{L}*`, String.raw`diagnos\p{L}*`, String.raw`malatti\p{L}*`, String.raw`chirurg\p{L}*`, String.raw`dentist\p{L}*`, String.raw`odontoiatr\p{L}*`, String.raw`gravidanz\p{L}*`, String.raw`salute mentale`, String.raw`psicolog\p{L}*`, String.raw`psichiatr\p{L}*`, String.raw`nutrizion\p{L}*`, String.raw`dietist\p{L}*`, String.raw`vaccin\p{L}*`, String.raw`farmac\p{L}*`, String.raw`pazient\p{L}*`, String.raw`sanitari\p{L}*`],
+    legal: [String.raw`avvocat\p{L}*`, String.raw`legal\p{L}*`, String.raw`notai\p{L}*`, String.raw`notar\p{L}*`, String.raw`divorzi\p{L}*`, String.raw`contenzios\p{L}*`, String.raw`tribunal\p{L}*`, String.raw`diritto`, String.raw`immigrazion\p{L}*`, String.raw`permesso di soggiorno`, String.raw`successione`, String.raw`eredit\p{L}*`, String.raw`testament\p{L}*`],
+    financial: [String.raw`tasse`, String.raw`impost[ae]`, String.raw`fiscal\p{L}*`, String.raw`commercialist\p{L}*`, String.raw`contabil\p{L}*`, String.raw`mutu[oi]`, String.raw`prestit\p{L}*`, String.raw`credit\p{L}*`, String.raw`debit[oi]`, String.raw`investiment\p{L}*`, String.raw`investire`, String.raw`pension\p{L}*`, String.raw`assicurazion\p{L}*`, String.raw`fallimento`, String.raw`risparmi\p{L}*`, String.raw`criptovalut\p{L}*`, String.raw`consulenza finanziaria`],
+    safety: [String.raw`sicurezza elettrica`, String.raw`elettricist\p{L}*`, String.raw`fuga di gas`, String.raw`monossido di carbonio`, String.raw`antincendio`, String.raw`amianto`, String.raw`sicurezza sul lavoro`, String.raw`primo soccorso`, String.raw`seggiolin\p{L}*`, String.raw`muffa`, String.raw`radon`, String.raw`disinfestazion\p{L}*`],
+  },
   name: "Italian",
   bcp47: "it",
   wordScale: 1,
@@ -545,6 +641,7 @@ const IT: LocaleRules = {
     visit: "Visita {link}.",
     citeLead: "Scopri di più su {link}.",
     poweredBy: "Realizzato con {link}",
+    contact: "Per contatti: {link}.",
     illustration: {
       sketch: "Schizzo che illustra",
       watercolor: "Acquerello che illustra",
@@ -556,6 +653,15 @@ const IT: LocaleRules = {
     faqHeading: "Domande frequenti",
     before: "Prima",
     after: "Dopo",
+    reviewedBy: "Revisione a cura di {name}, {role}.",
+    disclaimer: {
+      health: "Questo articolo ha scopo informativo e non sostituisce il parere medico. Per la tua situazione rivolgiti a un professionista sanitario qualificato.",
+      legal: "Questo articolo ha scopo informativo e non costituisce consulenza legale. Per il tuo caso rivolgiti a un avvocato.",
+      financial: "Questo articolo ha scopo informativo e non costituisce consulenza finanziaria. Per la tua situazione rivolgiti a un consulente qualificato.",
+      safety: "Questo articolo ha scopo informativo. Per interventi che riguardano la sicurezza rivolgiti a un professionista qualificato e abilitato.",
+    },
+    published: "Pubblicato il {date}",
+    updated: "Aggiornato il {date}",
   },
   numbers: {
     decimal: ",",
@@ -614,10 +720,20 @@ const IT: LocaleRules = {
     definition: wordsRegex(["è", "sono", "si riferisce a", "significa", "indica", "si intende", "consiste in"]),
     definitionAt: "opening",
     firstHand: wordsRegex([String.raw`abbiamo (?:testato|provato|usato|verificato)`, "nella nostra esperienza", "nei nostri test"]),
-    byline: wordsRegex(["scritto da", "autore:", "l['’]autore"]),
+    byline: wordsRegex(["scritto da", "autore:", "l['’]autore", "revisione a cura di"]),
     pictureOf:
       /^(?:un['’]?\s*|una\s+|l['’]\s*|la\s+|il\s+)?(?:immagine|foto|fotografia|illustrazione|grafica|schermata|screenshot|diagramma|grafico|infografica|icona|logo)\s+(?:di|che mostra|su|per|del|della|dello|dei|delle)\s+(?:(?:un|una|il|la|lo|i|gli|le)\s+|l['’]\s*)?/iu,
     abbreviations: ["ecc", "es", "pag", "pagg", "sig", "sigg", "dott", "prof", "ca", "n", "nr"],
+    authorityClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:regolamentat|disciplinat|vigilat|autorizzat|accreditat|abilitat)[oaie]\s+(?:da|dal|dalla|dallo|dai|dagli|dalle|dall['’])\s*(?<entity>${ORG_RUN(IT_ORG_JOIN)})`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])iscritt[oaie]\s+(?:all['’]|al|alla|allo|agli|alle|ai|presso\s+(?:il\s+|la\s+|l['’])?)\s*(?<entity>${ORG_RUN(IT_ORG_JOIN)})`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?!(?:Il|Lo|La|I|Gli|Le|Un|Uno|Una|Questo|Questa)\s)(?<entity>${ORG_RUN(IT_ORG_JOIN)})\s+(?:regolamenta|disciplina|vigila\s+su|autorizza|accredita|è\s+l['’](?:ente|autorità|organo)\s+(?:che\s+regola|di\s+vigilanza|competente))(?![\p{L}])`, "u"),
+    ],
+    coverageClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:copert[oaie]|rimborsat[oaie]|pagat[oaie]|a\s+carico)\s+(?:da|dal|dalla|dallo|dai|dagli|dalle|dall['’]|del|della|dello|dell['’])\s*(?:(?<entity>${ORG_RUN(IT_ORG_JOIN)})|assicurazion\p{L}*|mutu[ae]|polizz\p{L}*|servizio\s+sanitario)`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?!(?:Il|Lo|La|I|Gli|Le|Un|Uno|Una)\s)(?<entity>${ORG_RUN(IT_ORG_JOIN)})\s+(?:non\s+)?(?:copre|rimborsa|paga)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])(?:[Ll]['’]assicurazione|[Ll]e\s+assicurazioni|[Ll]a\s+polizza|[Ll]a\s+mutua)\s+(?:non\s+)?(?:copre|coprono|rimborsa|rimborsano)(?![\p{L}])`, "u"),
+    ],
   },
   headings: {
     faq: /\bfaqs?\b|domande frequenti/iu,
@@ -640,6 +756,12 @@ const IT: LocaleRules = {
 
 const ES: LocaleRules = {
   code: "es",
+  sensitiveTerms: {
+    health: [String.raw`fisioterap\p{L}*`, String.raw`terap\p{L}*`, String.raw`osteopat\p{L}*`, String.raw`quiropr\p{L}*`, String.raw`rehabilitacion\p{L}*`, String.raw`lesion(?:es)?`, String.raw`dolor de espalda`, String.raw`dolor\p{L}*`, String.raw`medic(?:o|os|a|as|ina|inas|inal|inales|amento|amentos)`, String.raw`clinic\p{L}*`, String.raw`sintoma\p{L}*`, String.raw`diagnostic\p{L}*`, String.raw`enfermedad\p{L}*`, String.raw`cirug\p{L}*`, String.raw`cirujan\p{L}*`, String.raw`dentist\p{L}*`, String.raw`odontolog\p{L}*`, String.raw`embaraz\p{L}*`, String.raw`salud mental`, String.raw`psicolog\p{L}*`, String.raw`psiquiatr\p{L}*`, String.raw`nutricion\p{L}*`, String.raw`dietist\p{L}*`, String.raw`vacun\p{L}*`, String.raw`farmac\p{L}*`, String.raw`pacientes`, String.raw`sanitari\p{L}*`],
+    legal: [String.raw`abogad\p{L}*`, String.raw`legal\p{L}*`, String.raw`notari\p{L}*`, String.raw`divorci\p{L}*`, String.raw`litigio\p{L}*`, String.raw`tribunal\p{L}*`, String.raw`juicio\p{L}*`, String.raw`inmigracion`, String.raw`extranjeria`, String.raw`herencia\p{L}*`, String.raw`testament\p{L}*`, String.raw`derecho laboral`, String.raw`despido\p{L}*`],
+    financial: [String.raw`impuesto\p{L}*`, String.raw`fiscal\p{L}*`, String.raw`hacienda`, String.raw`contador\p{L}*`, String.raw`contable\p{L}*`, String.raw`contabilidad`, String.raw`hipoteca\p{L}*`, String.raw`prestamo\p{L}*`, String.raw`credito\p{L}*`, String.raw`deuda\p{L}*`, String.raw`inversion\p{L}*`, String.raw`invertir`, String.raw`pension\p{L}*`, String.raw`jubilacion`, String.raw`aseguradora\p{L}*`, String.raw`quiebra`, String.raw`ahorro\p{L}*`, String.raw`criptomoneda\p{L}*`, String.raw`asesor financiero`],
+    safety: [String.raw`seguridad electrica`, String.raw`electricista\p{L}*`, String.raw`fuga de gas`, String.raw`monoxido de carbono`, String.raw`incendio\p{L}*`, String.raw`amianto`, String.raw`primeros auxilios`, String.raw`silla de coche`, String.raw`moho`, String.raw`radon`, String.raw`seguridad laboral`, String.raw`prevencion de riesgos`, String.raw`control de plagas`],
+  },
   name: "Spanish",
   bcp47: "es",
   wordScale: 1,
@@ -655,6 +777,7 @@ const ES: LocaleRules = {
     visit: "Visita {link}.",
     citeLead: "Más información sobre {link}.",
     poweredBy: "Creado con {link}",
+    contact: "Contacto: {link}.",
     illustration: {
       sketch: "Boceto que ilustra",
       watercolor: "Acuarela que ilustra",
@@ -666,6 +789,15 @@ const ES: LocaleRules = {
     faqHeading: "Preguntas frecuentes",
     before: "Antes",
     after: "Después",
+    reviewedBy: "Revisado por {name}, {role}.",
+    disclaimer: {
+      health: "Este artículo es información general y no sustituye el consejo médico. Para tu caso concreto, consulta a un profesional sanitario cualificado.",
+      legal: "Este artículo es información general y no constituye asesoramiento legal. Para tu caso concreto, consulta a un abogado.",
+      financial: "Este artículo es información general y no constituye asesoramiento financiero. Para tu caso concreto, consulta a un asesor cualificado.",
+      safety: "Este artículo es información general. Para trabajos que afectan a tu seguridad, recurre a un profesional cualificado y autorizado.",
+    },
+    published: "Publicado el {date}",
+    updated: "Actualizado el {date}",
   },
   numbers: {
     decimal: ",",
@@ -724,10 +856,19 @@ const ES: LocaleRules = {
     definition: wordsRegex(["es", "son", "se refiere a", "significa", "consiste en", "se define como"]),
     definitionAt: "opening",
     firstHand: wordsRegex(["hemos probado", "en nuestra experiencia", "en nuestras pruebas"]),
-    byline: wordsRegex(["escrito por", "autor:"]),
+    byline: wordsRegex(["escrito por", "autor:", "revisado por"]),
     pictureOf:
       /^(?:una?\s+|el\s+|la\s+)?(?:imagen|foto|fotografía|ilustración|gráfico|captura de pantalla|diagrama|infografía|icono|logo)\s+(?:de|que muestra|sobre|para|del)\s+(?:(?:un|una|el|la|los|las)\s+)?/iu,
     abbreviations: ["etc", "Sr", "Sra", "Dr", "Dra", "pág", "aprox", "núm", "n"],
+    authorityClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:regulad|supervisad|autorizad|acreditad|colegiad|habilitad)[oa]s?\s+(?:por|en)\s+(?:(?:el|la|los|las)\s+)?(?<entity>${ORG_RUN(ES_ORG_JOIN)})`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?!(?:El|La|Los|Las|Un|Una|Este|Esta)\s)(?<entity>${ORG_RUN(ES_ORG_JOIN)})\s+(?:regula|supervisa|autoriza|acredita|es\s+el\s+(?:organismo|órgano|colegio|ente)\s+(?:regulador|que\s+regula|competente))(?![\p{L}])`, "u"),
+    ],
+    coverageClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:cubiert|reembolsad|financiad|pagad)[oa]s?\s+por\s+(?:(?:el|la|los|las|tu|su)\s+)?(?:(?<entity>${ORG_RUN(ES_ORG_JOIN)})|segur\p{L}*|mutua\p{L}*|aseguradora\p{L}*|p[oó]liza\p{L}*|sistema\s+p[uú]blico)`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?!(?:El|La|Los|Las|Un|Una)\s)(?<entity>${ORG_RUN(ES_ORG_JOIN)})\s+(?:no\s+)?(?:cubre|reembolsa|financia)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])(?:[Ee]l\s+seguro|[Ll]os\s+seguros|[Ll]as\s+aseguradoras|[Ll]a\s+mutua|[Ll]a\s+p[oó]liza)\s+(?:no\s+)?(?:cubre|cubren|reembolsa|reembolsan)(?![\p{L}])`, "u"),
+    ],
   },
   headings: {
     faq: /\bfaqs?\b|preguntas frecuentes/iu,
@@ -750,6 +891,12 @@ const ES: LocaleRules = {
 
 const FR: LocaleRules = {
   code: "fr",
+  sensitiveTerms: {
+    health: [String.raw`kine\p{L}*`, String.raw`physiotherap\p{L}*`, String.raw`therap\p{L}*`, String.raw`osteopat\p{L}*`, String.raw`chiropract\p{L}*`, String.raw`reeducation`, String.raw`blessure\p{L}*`, String.raw`mal de dos`, String.raw`douleur\p{L}*`, String.raw`medec\p{L}*`, String.raw`medical\p{L}*`, String.raw`medicament\p{L}*`, String.raw`clinique\p{L}*`, String.raw`symptome\p{L}*`, String.raw`diagnostic\p{L}*`, String.raw`maladie\p{L}*`, String.raw`chirurg\p{L}*`, String.raw`dentist\p{L}*`, String.raw`dentaire\p{L}*`, String.raw`grossesse`, String.raw`sante mentale`, String.raw`psycholog\p{L}*`, String.raw`psychiatr\p{L}*`, String.raw`nutrition\p{L}*`, String.raw`dieteticien\p{L}*`, String.raw`vaccin\p{L}*`, String.raw`pharmac\p{L}*`, String.raw`patients`, String.raw`soins`],
+    legal: [String.raw`avocat\p{L}*`, String.raw`juridique\p{L}*`, String.raw`notaire\p{L}*`, String.raw`divorce\p{L}*`, String.raw`litige\p{L}*`, String.raw`tribunal`, String.raw`tribunaux`, String.raw`proces`, String.raw`immigration`, String.raw`titre de sejour`, String.raw`succession\p{L}*`, String.raw`heritage`, String.raw`testament\p{L}*`, String.raw`droit du travail`, String.raw`licenciement\p{L}*`],
+    financial: [String.raw`impot\p{L}*`, String.raw`fiscal\p{L}*`, String.raw`comptab\p{L}*`, String.raw`expert-comptable`, String.raw`credit\p{L}*`, String.raw`pret immobilier`, String.raw`pret personnel`, String.raw`dette\p{L}*`, String.raw`investiss\p{L}*`, String.raw`placement\p{L}*`, String.raw`retraite\p{L}*`, String.raw`assurance\p{L}*`, String.raw`faillite`, String.raw`epargne`, String.raw`crypto\p{L}*`, String.raw`conseiller financier`],
+    safety: [String.raw`securite electrique`, String.raw`electricien\p{L}*`, String.raw`fuite de gaz`, String.raw`monoxyde de carbone`, String.raw`incendie\p{L}*`, String.raw`amiante`, String.raw`premiers secours`, String.raw`siege auto`, String.raw`moisissure\p{L}*`, String.raw`radon`, String.raw`securite au travail`, String.raw`nuisibles`],
+  },
   name: "French",
   bcp47: "fr",
   wordScale: 1,
@@ -765,6 +912,7 @@ const FR: LocaleRules = {
     visit: "Visitez {link}.",
     citeLead: "En savoir plus sur {link}.",
     poweredBy: "Propulsé par {link}",
+    contact: "Contact : {link}.",
     illustration: {
       sketch: "Croquis illustrant",
       watercolor: "Aquarelle illustrant",
@@ -776,6 +924,15 @@ const FR: LocaleRules = {
     faqHeading: "Questions fréquentes",
     before: "Avant",
     after: "Après",
+    reviewedBy: "Relu par {name}, {role}.",
+    disclaimer: {
+      health: "Cet article est une information générale et ne remplace pas un avis médical. Pour votre situation, consultez un professionnel de santé qualifié.",
+      legal: "Cet article est une information générale et ne constitue pas un conseil juridique. Pour votre situation, consultez un avocat.",
+      financial: "Cet article est une information générale et ne constitue pas un conseil financier. Pour votre situation, consultez un conseiller qualifié.",
+      safety: "Cet article est une information générale. Pour tout travail touchant à votre sécurité, faites appel à un professionnel qualifié et agréé.",
+    },
+    published: "Publié le {date}",
+    updated: "Mis à jour le {date}",
   },
   numbers: {
     decimal: ",",
@@ -834,10 +991,20 @@ const FR: LocaleRules = {
     definition: wordsRegex(["est", "sont", "désigne", "signifie", "correspond à", "se définit comme", "consiste à"]),
     definitionAt: "opening",
     firstHand: wordsRegex([String.raw`nous avons (?:testé|essayé)`, "d['’]après notre expérience", "lors de nos tests"]),
-    byline: wordsRegex(["écrit par", "auteur :", "auteur:"]),
+    byline: wordsRegex(["écrit par", "auteur :", "auteur:", "relu par"]),
     pictureOf:
       /^(?:une?\s+|l['’]\s*|la\s+|le\s+)?(?:image|photo|photographie|illustration|graphique|capture d['’]écran|diagramme|infographie|icône|logo)\s+(?:de|montrant|sur|pour|du|des|d['’])\s*(?:(?:un|une|le|la|les)\s+|l['’]\s*)?/iu,
     abbreviations: ["etc", "M", "Mme", "Mlle", "p", "cf", "env", "n°", "no"],
+    authorityClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:réglementé|encadré|régi|agréé|accrédité|autorisé|contrôlé)e?s?\s+par\s+(?:(?:le|la|les)\s+|l['’])?(?<entity>${ORG_RUN(FR_ORG_JOIN)})`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])inscrit(?:e|s|es)?\s+(?:au|à\s+la|à\s+l['’]|auprès\s+(?:du|de\s+la|de\s+l['’]))\s*(?<entity>${ORG_RUN(FR_ORG_JOIN)})`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?!(?:Le|La|Les|Un|Une|Ce|Cette)\s)(?<entity>${ORG_RUN(FR_ORG_JOIN)})\s+(?:réglemente|encadre|régit|agrée|accrédite|contrôle|est\s+l['’](?:autorité|organisme|ordre)\s+(?:compétent|de\s+tutelle|qui\s+réglemente))(?![\p{L}])`, "u"),
+    ],
+    coverageClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:pris(?:e|es)?\s+en\s+charge|rembours[ée]e?s?|couvert(?:e|s|es)?)\s+par\s+(?:(?:le|la|les|votre|sa|son)\s+|l['’])?(?:(?<entity>${ORG_RUN(FR_ORG_JOIN)})|mutuelle\p{L}*|assurance\p{L}*|sécurité\s+sociale)`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?!(?:Le|La|Les|Un|Une|Ce|Cette)\s)(?<entity>${ORG_RUN(FR_ORG_JOIN)})\s+(?:ne\s+)?(?:rembourse|prend\s+en\s+charge|couvre)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])(?:[Ll]a\s+mutuelle|[Ll]es\s+mutuelles|[Ll]['’]assurance(?:\s+maladie)?|[Ll]es\s+assurances)\s+(?:ne\s+)?(?:rembourse|remboursent|prend\s+en\s+charge|prennent\s+en\s+charge|couvre|couvrent)(?![\p{L}])`, "u"),
+    ],
   },
   headings: {
     faq: /\bfaqs?\b|questions fr[ée]quentes/iu,
@@ -865,6 +1032,12 @@ const DE_NOT_A_NAME = String.raw`(?!(?:Der|Die|Das|Den|Dem|Des|Ein|Eine|Einer|Ei
 
 const DE: LocaleRules = {
   code: "de",
+  sensitiveTerms: {
+    health: [String.raw`physiotherap\p{L}*`, String.raw`krankengymnast\p{L}*`, String.raw`therap\p{L}*`, String.raw`osteopath\p{L}*`, String.raw`chiropraktik\p{L}*`, String.raw`reha\p{L}*`, String.raw`verletzung\p{L}*`, String.raw`ruckenschmerz\p{L}*`, String.raw`schmerz\p{L}*`, String.raw`arzt`, String.raw`arzte\p{L}*`, String.raw`arztin\p{L}*`, String.raw`medizin\p{L}*`, String.raw`medikament\p{L}*`, String.raw`klinik\p{L}*`, String.raw`symptom\p{L}*`, String.raw`diagnos\p{L}*`, String.raw`krankheit\p{L}*`, String.raw`erkrankung\p{L}*`, String.raw`chirurg\p{L}*`, String.raw`zahnarzt\p{L}*`, String.raw`schwangerschaft\p{L}*`, String.raw`psychisch\p{L}*`, String.raw`psycholog\p{L}*`, String.raw`psychiatr\p{L}*`, String.raw`ernahrung\p{L}*`, String.raw`impf\p{L}*`, String.raw`apothek\p{L}*`, String.raw`patienten`, String.raw`gesundheit\p{L}*`],
+    legal: [String.raw`anwalt\p{L}*`, String.raw`rechtsanwalt\p{L}*`, String.raw`anwaltin\p{L}*`, String.raw`rechtsberatung`, String.raw`notar\p{L}*`, String.raw`scheidung\p{L}*`, String.raw`klage\p{L}*`, String.raw`gericht\p{L}*`, String.raw`einwanderung`, String.raw`aufenthalt\p{L}*`, String.raw`erbrecht`, String.raw`erbschaft\p{L}*`, String.raw`testament\p{L}*`, String.raw`arbeitsrecht`, String.raw`kundigung\p{L}*`, String.raw`mietrecht`],
+    financial: [String.raw`steuer`, String.raw`steuer(?:erklarung|recht|pflicht|satz|lich|abzug|bescheid|klasse|last|spar|nummer|vorteil)\p{L}*`, String.raw`steuerberat\p{L}*`, String.raw`buchhalt\p{L}*`, String.raw`hypothek\p{L}*`, String.raw`baufinanzierung`, String.raw`kredit\p{L}*`, String.raw`darlehen`, String.raw`schulden`, String.raw`invest\p{L}*`, String.raw`geldanlage`, String.raw`rente\p{L}*`, String.raw`altersvorsorge`, String.raw`versicherung\p{L}*`, String.raw`insolvenz\p{L}*`, String.raw`sparen`, String.raw`krypto\p{L}*`, String.raw`finanzberatung`, String.raw`aktien`],
+    safety: [String.raw`elektrosicherheit`, String.raw`elektriker\p{L}*`, String.raw`gasleck\p{L}*`, String.raw`kohlenmonoxid`, String.raw`brandschutz`, String.raw`rauchmelder\p{L}*`, String.raw`asbest`, String.raw`erste hilfe`, String.raw`kindersitz\p{L}*`, String.raw`schimmel\p{L}*`, String.raw`radon`, String.raw`arbeitssicherheit`, String.raw`schadlingsbekampfung`],
+  },
   name: "German",
   bcp47: "de",
   wordScale: 1,
@@ -880,6 +1053,7 @@ const DE: LocaleRules = {
     visit: "Besuchen Sie {link}.",
     citeLead: "Mehr über {link}.",
     poweredBy: "Erstellt mit {link}",
+    contact: "Kontakt: {link}.",
     illustration: {
       sketch: "Skizze zu",
       watercolor: "Aquarell zu",
@@ -891,6 +1065,15 @@ const DE: LocaleRules = {
     faqHeading: "Häufig gestellte Fragen",
     before: "Vorher",
     after: "Nachher",
+    reviewedBy: "Fachlich geprüft von {name}, {role}.",
+    disclaimer: {
+      health: "Dieser Artikel dient der allgemeinen Information und ersetzt keine ärztliche Beratung. Wenden Sie sich für Ihre persönliche Situation an eine qualifizierte Fachkraft.",
+      legal: "Dieser Artikel dient der allgemeinen Information und ist keine Rechtsberatung. Wenden Sie sich für Ihren Fall an eine Rechtsanwältin oder einen Rechtsanwalt.",
+      financial: "Dieser Artikel dient der allgemeinen Information und ist keine Finanzberatung. Wenden Sie sich für Ihre Situation an eine qualifizierte Beratung.",
+      safety: "Dieser Artikel dient der allgemeinen Information. Beauftragen Sie für sicherheitsrelevante Arbeiten eine qualifizierte, zugelassene Fachkraft.",
+    },
+    published: "Veröffentlicht am {date}",
+    updated: "Aktualisiert am {date}",
   },
   numbers: {
     decimal: ",",
@@ -949,10 +1132,19 @@ const DE: LocaleRules = {
     definition: wordsRegex(["ist", "sind", "bezeichnet", "bedeutet", "versteht man", "beschreibt"]),
     definitionAt: "opening",
     firstHand: wordsRegex([String.raw`wir haben (?:getestet|ausprobiert)`, String.raw`wir haben \p{L}+ (?:getestet|ausprobiert)`, "nach unserer erfahrung", "in unseren tests"]),
-    byline: wordsRegex(["verfasst von", "geschrieben von", "autor:", "autorin:"]),
+    byline: wordsRegex(["verfasst von", "geschrieben von", "autor:", "autorin:", "fachlich geprüft von"]),
     pictureOf:
       /^(?:ein(?:e)?\s+|das\s+|die\s+|der\s+)?(?:bild|foto|fotografie|illustration|grafik|screenshot|bildschirmfoto|diagramm|infografik|icon|logo)\s+(?:von|zu|über|für|mit)\s+(?:(?:einem|einer|einen|dem|der|den|das|die)\s+)?/iu,
     abbreviations: ["bzw", "usw", "ca", "Nr", "Dr", "Prof", "ggf", "inkl", "vgl", "evtl", "Abb", "Tab"],
+    authorityClaim: [
+      // German puts the participle last: "wird von der Kammer reguliert".
+      new RegExp(String.raw`(?<![\p{L}])(?:durch|von|vom)\s+(?:(?:der|die|das|den|dem)\s+)?${DE_NOT_A_NAME}(?<entity>${ORG_RUN(DE_ORG_JOIN)})\s+(?:\p{Ll}+\s+){0,2}(?:reguliert|beaufsichtigt|zugelassen|akkreditiert|lizenziert|überwacht)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])${DE_NOT_A_NAME}(?<entity>${ORG_RUN(DE_ORG_JOIN)})\s+(?:reguliert|beaufsichtigt|überwacht|lizenziert|akkreditiert|ist\s+die\s+(?:zuständige\s+)?(?:Aufsichtsbehörde|Kammer|Behörde))(?![\p{L}])`, "u"),
+    ],
+    coverageClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:durch|von|vom)\s+(?:(?:der|die|das|den|dem|Ihrer|ihrer|Ihre|ihre)\s+)?${DE_NOT_A_NAME}(?<entity>${ORG_RUN(DE_ORG_JOIN)})\s+(?:\p{Ll}+\s+){0,2}(?:übernommen|erstattet|bezahlt|gedeckt)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])${DE_NOT_A_NAME}(?<entity>${ORG_RUN(DE_ORG_JOIN)})\s+(?:übernimmt|erstattet|bezahlt|zahlt|deckt)(?![\p{L}])`, "u"),
+    ],
   },
   headings: {
     faq: /\bfaqs?\b|h[äa]ufig gestellte/iu,
@@ -1004,6 +1196,12 @@ const TR_SOURCE_NOUN = "(?:raporu|araştırması|çalışması|anketi|verileri|a
 
 const TR: LocaleRules = {
   code: "tr",
+  sensitiveTerms: {
+    health: [String.raw`fizyoterap\p{L}*`, String.raw`fizik tedavi\p{L}*`, String.raw`terap\p{L}*`, String.raw`osteopat\p{L}*`, String.raw`kayropraktik\p{L}*`, String.raw`rehabilitasyon\p{L}*`, String.raw`sakatl\p{L}*`, String.raw`yaralanma\p{L}*`, String.raw`bel agri\p{L}*`, String.raw`agrisi`, String.raw`doktor\p{L}*`, String.raw`hekim\p{L}*`, String.raw`tibbi`, String.raw`saglik\p{L}*`, String.raw`klinik\p{L}*`, String.raw`hastane\p{L}*`, String.raw`belirti\p{L}*`, String.raw`teshis\p{L}*`, String.raw`tedavi\p{L}*`, String.raw`hastalik\p{L}*`, String.raw`ameliyat\p{L}*`, String.raw`cerrah\p{L}*`, String.raw`dis hekim\p{L}*`, String.raw`hamile\p{L}*`, String.raw`gebelik\p{L}*`, String.raw`psikolog\p{L}*`, String.raw`psikiyatr\p{L}*`, String.raw`beslenme`, String.raw`diyetisyen\p{L}*`, String.raw`ilac\p{L}*`, String.raw`eczane\p{L}*`, String.raw`hastalar\p{L}*`],
+    legal: [String.raw`avukat\p{L}*`, String.raw`hukuk\p{L}*`, String.raw`noter\p{L}*`, String.raw`bosanma\p{L}*`, String.raw`dava\p{L}*`, String.raw`mahkeme\p{L}*`, String.raw`oturma izni`, String.raw`miras\p{L}*`, String.raw`vasiyet\p{L}*`, String.raw`is hukuku`, String.raw`kidem tazminat\p{L}*`],
+    financial: [String.raw`vergi\p{L}*`, String.raw`muhasebe\p{L}*`, String.raw`mali musavir\p{L}*`, String.raw`konut kredi\p{L}*`, String.raw`kredi\p{L}*`, String.raw`borc\p{L}*`, String.raw`yatirim\p{L}*`, String.raw`emeklilik`, String.raw`sigorta\p{L}*`, String.raw`iflas\p{L}*`, String.raw`birikim\p{L}*`, String.raw`kripto\p{L}*`, String.raw`borsa\p{L}*`, String.raw`finansal danisman\p{L}*`],
+    safety: [String.raw`elektrik guvenlig\p{L}*`, String.raw`elektrikci\p{L}*`, String.raw`gaz kacag\p{L}*`, String.raw`karbonmonoksit`, String.raw`yangin\p{L}*`, String.raw`asbest`, String.raw`ilk yardim`, String.raw`oto koltug\p{L}*`, String.raw`kuf\p{L}*`, String.raw`radon`, String.raw`is guvenlig\p{L}*`, String.raw`ilaclama`],
+  },
   name: "Turkish",
   bcp47: "tr",
   wordScale: 0.8,
@@ -1019,6 +1217,7 @@ const TR: LocaleRules = {
     visit: "{link} adresini ziyaret edin.",
     citeLead: "{link} hakkında daha fazla bilgi edinin.",
     poweredBy: "{link} ile hazırlandı",
+    contact: "İletişim: {link}.",
     illustration: {
       sketch: "Eskiz çizim:",
       watercolor: "Suluboya resim:",
@@ -1030,6 +1229,15 @@ const TR: LocaleRules = {
     faqHeading: "Sıkça sorulan sorular",
     before: "Önce",
     after: "Sonra",
+    reviewedBy: "İnceleyen: {name}, {role}.",
+    disclaimer: {
+      health: "Bu makale genel bilgi amaçlıdır ve tıbbi tavsiye yerine geçmez. Kendi durumunuz için yetkin bir sağlık uzmanına danışın.",
+      legal: "Bu makale genel bilgi amaçlıdır ve hukuki tavsiye niteliği taşımaz. Kendi durumunuz için bir avukata danışın.",
+      financial: "Bu makale genel bilgi amaçlıdır ve yatırım veya finansal tavsiye niteliği taşımaz. Kendi durumunuz için yetkin bir danışmana başvurun.",
+      safety: "Bu makale genel bilgi amaçlıdır. Güvenliğinizi etkileyen işler için yetkili ve uzman bir profesyonele başvurun.",
+    },
+    published: "Yayınlanma: {date}",
+    updated: "Güncellenme: {date}",
   },
   numbers: {
     decimal: ",",
@@ -1107,12 +1315,22 @@ const TR: LocaleRules = {
       String.raw`${B}(?:test ettik|denedik|deneyimlerimize göre|deneyimimize göre|kendi testlerimizde|testlerimizde|kullandığımızda|ekibimiz (?:test etti|denedi|kullandı))${E}`,
       "u",
     ),
-    byline: new RegExp(String.raw`${B}(?:yazar:|yazan:|tarafından yazıldı|yazarı:)`, "u"),
+    byline: new RegExp(String.raw`${B}(?:yazar:|yazan:|tarafından yazıldı|yazarı:|inceleyen:)`, "u"),
     // Turkish puts the head noun last: "web tasarımı görseli" is "an image of
     // web design". So the wrapper is stripped from the end as well as the start.
     pictureOf:
       /^(?:bir\s+)?(?:görsel|resim|fotoğraf|illüstrasyon|grafik|ekran görüntüsü|diyagram|şema|infografik|ikon|logo)\s*:?\s+|\s+(?:görseli|resmi|fotoğrafı|illüstrasyonu|grafiği|ekran görüntüsü|diyagramı|şeması|infografiği|ikonu|logosu)$/u,
     abbreviations: ["vb", "vs", "Dr", "Prof", "Doç", "örn", "yak", "Av", "Sn", "Ltd", "Şti", "No"],
+    authorityClaim: [
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?<entity>${TR_NAME})${TR_CASE}\s+tarafından\s+(?:düzenlenir|düzenlenmektedir|denetlenir|denetlenmektedir|lisanslanır|yetkilendirilir|akredite\s+edilir|onaylanır)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?<entity>${TR_NAME})${TR_CASE}\s+(?:düzenler|denetler|yetkilendirir|lisanslar)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?<entity>${TR_NAME})['’]\p{Ll}{1,4}\s+kayıtlı(?![\p{L}])`, "u"),
+    ],
+    coverageClaim: [
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?<entity>${TR_NAME})${TR_CASE}\s+tarafından\s+(?:karşılanır|karşılanmaktadır|ödenir|ödenmektedir|kapsanır)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?<entity>${TR_NAME})${TR_CASE}\s+(?:karşılar|öder|kapsar)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])(?:[Ss]igorta|[Öö]zel\s+sigorta|[Ss]ağlık\s+sigortası)\p{L}*\s+(?:kapsamında|tarafından\s+karşılanır)(?![\p{L}])`, "u"),
+    ],
   },
   headings: {
     faq: /\bfaqs?\b|(?<![\p{L}])sss(?![\p{L}])|sık(?:ça)? sorulan sorular/u,

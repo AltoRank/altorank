@@ -12,9 +12,18 @@
 // contract does not describe there is no call to action at all: an English
 // "Learn more about… / This article is published by…" closed the Turkish
 // draft of 2026-09-22, and an omitted section is better than a foreign one.
+//
+// Where it points is what the site facts verified (lib/content/site-facts.ts):
+// the business's own page for the article's topic, and its conversion page -
+// a page that answered, or a phone number or email the owner saved. A
+// physiotherapy clinic's first article (2026-09-27) closed on its homepage
+// while its profile held the clinic's phone number and the crawl had read its
+// pages for both services the article compared. The homepage is the link
+// only when nothing better was verified.
 
 import { resolveLocale } from "@/lib/i18n/locale";
 import { normaliseDomain } from "@/lib/seo/links";
+import { conversionLinkText } from "@/lib/content/topic-pages";
 import { escapeHtml, escapeAttr, slugify } from "./html";
 
 export interface CtaOptions {
@@ -25,6 +34,10 @@ export interface CtaOptions {
   /** `business_profile.name` when onboarding captured it. */
   businessName?: string | null;
   language?: string | null;
+  /** The verified conversion URL: a page that answered, or a `tel:` / `mailto:` the owner saved. */
+  conversion?: string | null;
+  /** The business's own page for this article's topic, fetched by the crawl. */
+  service?: { name: string; url: string } | null;
 }
 
 export function hasCallToAction(html: string): boolean {
@@ -41,17 +54,26 @@ export function addCallToAction(html: string, opts: CtaOptions = {}): { html: st
 
   const labels = locale.labels;
   const name = opts.businessName?.trim() || host;
-  const url = `https://${host}`;
-  // `visit` is a sentence with a hole for the link, because where the link
-  // goes is grammar: "Visit example.com." but "example.com adresini ziyaret
-  // edin." The text around the hole is escaped; the link is built here.
-  const link = `<a href="${escapeAttr(url)}">${escapeHtml(host)}</a>`;
-  const [beforeLink, afterLink = ""] = labels.visit.split("{link}");
+  // Each label is a sentence with a hole for the link, because where the
+  // link goes is grammar: "Visit example.com." but "example.com adresini
+  // ziyaret edin." The text around the hole is escaped; the link is built here.
+  const sentence = (label: string, href: string, text: string) => {
+    const [before, after = ""] = label.split("{link}");
+    return `${escapeHtml(before)}<a href="${escapeAttr(href)}">${escapeHtml(text)}</a>${escapeHtml(after)}`;
+  };
+  const conversion = opts.conversion?.trim() || null;
+  const parts = [
+    escapeHtml(labels.publishedBy(name)),
+    opts.service ? sentence(labels.citeLead, opts.service.url, opts.service.name) : null,
+    conversion
+      ? sentence(labels.contact, conversion, conversionLinkText(conversion))
+      : sentence(labels.visit, `https://${host}`, host),
+  ].filter(Boolean);
 
   const section =
     `<section class="cta">` +
     `<h2 id="${slugify(labels.learnMore(name))}">${escapeHtml(labels.learnMore(name))}</h2>` +
-    `<p>${escapeHtml(labels.publishedBy(name))} ${escapeHtml(beforeLink)}${link}${escapeHtml(afterLink)}</p>` +
+    `<p>${parts.join(" ")}</p>` +
     `</section>`;
 
   return { html: `${html.replace(/\s+$/, "")}\n${section}\n`, added: true };

@@ -34,6 +34,7 @@ import { IndexingStatus } from "@/components/dashboard/check-indexing-button";
 import { inspectionFrom } from "@/lib/google/inspection";
 import { TabRow } from "@/components/ui/tab-row";
 import { auditArticle } from "@/lib/seo/article-audit";
+import { removeTitleHeading } from "@/lib/content/on-page";
 import { ArticleImage } from "@/lib/editor/image-node";
 import { NO_CHANGES, pendingCount, pendingLabel, outlineOf, type PendingChanges } from "@/lib/editor/proposals";
 import { EditorAiContext, type EditorMode } from "@/components/dashboard/editor/editor-ai-context";
@@ -636,7 +637,10 @@ export function ArticleEditor({
       // The staged title, description and image, not the saved ones: the
       // audit should answer for what the person is about to save.
       auditArticle({
-        html: docHtml,
+        // As it will publish: the publisher takes the title's <h1> out of the
+        // body, and the title is the page's H1 (lib/content/on-page.ts).
+        html: removeTitleHeading(docHtml, title).html,
+        titleIsPageH1: true,
         keyword: article.keyword,
         siteDomain: workspace.domain,
         title,

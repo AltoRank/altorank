@@ -3,6 +3,8 @@ import type { ArticleResearch } from "@/lib/seo/research";
 import { INTENT_GUIDANCE } from "@/lib/seo/intent";
 import { LENGTH_BANDS, TAXONOMY_LABELS, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { resolveLocale } from "@/lib/i18n/locale";
+import { matchingOfferings } from "@/lib/content/topic-pages";
+import { faqPlan } from "@/lib/content/on-page";
 
 // ---------------------------------------------------------------------------
 // Build the system prompt sent to the AI model for article generation.
@@ -105,6 +107,20 @@ export function buildResearchSection(research: ArticleResearch): string[] {
       );
     }
     sections.push(lines.join("\n"));
+  }
+
+  // --- Figures the ranking pages state ---------------------------------------
+  //
+  // The only figures the writer may cite besides the business's own pages.
+  // A real first article (2026-09-27) had none: the writer was told never to
+  // invent one and given nothing to cite. See lib/seo/source-figures.ts.
+  if (research.sourceFigures?.length) {
+    sections.push(
+      [
+        "FIGURES FROM THE PAGES RESEARCHED (each as its page states it, with the page):",
+        ...research.sourceFigures.map((f) => `- "${f.sentence}" (${f.url})`),
+      ].join("\n"),
+    );
   }
 
   // --- Terms to cover --------------------------------------------------------
@@ -218,7 +234,7 @@ const STRUCTURED_FACT_NAME: Record<SiteFacts["stated"][number]["kind"], string> 
   location: "address",
 };
 
-export function buildSiteFactsSection(facts: SiteFacts): string {
+export function buildSiteFactsSection(facts: SiteFacts, topic?: { keyword: string; title?: string | null }): string {
   const lines: string[] = [
     facts.pagesRead
       ? `WHAT THIS BUSINESS'S OWN SITE SAYS (read from ${facts.pagesRead} of its pages that answered):`
@@ -228,6 +244,17 @@ export function buildSiteFactsSection(facts: SiteFacts): string {
     items.map((i) => (i.url ? `- ${i.name}: ${i.url}` : `- ${i.name}`));
 
   if (facts.offerings.length) lines.push("What it sells, as its own pages name it:", ...named(facts.offerings));
+  // The service pages this article is about, found by shared words
+  // (lib/content/topic-pages.ts). The clinic article of 2026-09-27 linked two
+  // blog posts and the homepage and none of the two service pages it was
+  // comparing, both of which were in the list above.
+  const matching = topic ? matchingOfferings(facts, topic) : [];
+  if (matching.length) {
+    lines.push(
+      "Its own pages for what this article is about (link at least one, where the article discusses it, before any blog article):",
+      ...matching.map((m) => `- ${m.name}: ${m.url}`),
+    );
+  }
   if (facts.work.length) lines.push("Work its site shows, by the names the site uses:", ...named(facts.work));
   for (const h of facts.headings) lines.push(`Headings on its page "${h.page}" (${h.url}), as written: ${h.items.join(" | ")}`);
   // Sentences the pages wrote are quoted; values from their structured data
@@ -279,6 +306,15 @@ export function buildSiteFactsSection(facts: SiteFacts): string {
     "- Links to this site go only to the URLs written above or in the INTERNAL LINKS list; each is a page",
     "  that was fetched and answered. Write them exactly as listed. Any other link on this site is removed",
     "  before publishing.",
+    ...(matching.length
+      ? [
+          "- Internal links go to the business's own pages for this topic first, then to articles. Do not link",
+          "  the homepage from the body: the closing section already points the reader to the business.",
+        ]
+      : []),
+    ...(facts.conversion
+      ? [`- Where the article tells a ready reader what to do next, link ${facts.conversion.url} exactly as written.`]
+      : []),
   );
   return lines.join("\n");
 }
@@ -349,6 +385,68 @@ export function buildRefreshSection(refresh: NonNullable<ArticlePrompt["refreshO
 export function refreshLengthBudget(existingHtml: string): { current: number; max: number } {
   const current = existingHtml.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
   return { current, max: Math.max(900, Math.round(current * 1.3)) };
+}
+
+/**
+ * The figure rules of WRITTEN TO BE QUOTED, which depend on what research
+ * found. With figures: two or three of them, cited in the sentence - the
+ * AEO check (`quotableStatistics`) rewards three, and the fact check opens
+ * each cited page to confirm the number. Without: none, said plainly, so an
+ * honest draft is not pushed into inventing one. Exported for tests.
+ */
+export function figureRules(research: ArticleResearch | undefined, opts: { refresh?: boolean } = {}): string[] {
+  // A rewrite keeps the figures its page already cites; the brief says to
+  // refresh an aged one or cut one it cannot source, never to drop them all.
+  if (opts.refresh) {
+    return [
+      "- Use specific figures only when sourced and useful to the reader's task.",
+      "- Attribute every figure to a named, linked source. If you cannot source a",
+      "  number, do not write the number - say plainly that no reliable figure",
+      "  exists, which is itself a quotable answer.",
+    ];
+  }
+  if (research?.sourceFigures?.length) {
+    return [
+      "- Use two or three specific figures from FIGURES FROM THE PAGES RESEARCHED:",
+      "  the ones that change the reader's decision. Quote each figure exactly as",
+      "  its page states it, name the source in the sentence and link that page",
+      "  inside the same sentence. These, and figures the business's own pages",
+      "  state, are the only figures you may use: never a number from memory.",
+    ];
+  }
+  return [
+    "- No page researched for this article states a figure you could cite, so",
+    "  write no statistic, price or percentage beyond what the business's own",
+    "  pages state: not from memory, not rounded, not \"about\". Make each point in",
+    "  words; saying plainly that no reliable figure exists is itself a quotable",
+    "  answer.",
+  ];
+}
+
+/**
+ * The FAQ line of FORMAT & STRUCTURE, from `faqPlan` (lib/content/on-page.ts).
+ * Always said, either way, and outside SITE PREFERENCES: that section is only
+ * written for a workspace with an output-settings row, and the clinic article
+ * of 2026-09-27 had no FAQ because nothing asked for one. Not on a rewrite:
+ * the brief there says which questions to add.
+ */
+function faqRule(prompt: ArticlePrompt, language: string, locale: ReturnType<typeof resolveLocale>): string[] {
+  if (prompt.refreshOf) return [];
+  const plan = faqPlan({ articleType: prompt.brief?.articleType, questions: prompt.research?.peopleAlsoAsk ?? [] });
+  if (!plan.include) return [`- Do not add a FAQ section: ${plan.reason}.`];
+  const heading = locale.supported
+    ? `<h2>${locale.labels.faqHeading}</h2>`
+    : `an <h2> headed with the usual ${language} phrase for "frequently asked questions"`;
+  return [
+    `- End the article with ${heading}: ${plan.reason}. Three to five <h3> questions from QUESTIONS`,
+    "  SEARCHERS ASK that the body has not already answered, each answered in 40-80 words that stand",
+    "  alone. Keep it short; do not repeat a section or invent questions to fill it.",
+    // The owner's own words outrank a default: a site that said "no FAQs" in
+    // its standing instructions keeps that, and the review note says so.
+    ...(prompt.output?.customInstructions?.trim()
+      ? ["  If the site owner's standing instructions below say not to add a FAQ, follow them instead."]
+      : []),
+  ];
 }
 
 export function buildSystemPrompt(prompt: ArticlePrompt): string {
@@ -484,7 +582,29 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
   }
   // Whenever the writer was given facts - including "none could be read",
   // which it must be told rather than left to fill.
-  if (facts) sections.push(buildSiteFactsSection(facts));
+  if (facts) sections.push(buildSiteFactsSection(facts, { keyword, title }));
+
+  // --- A health, legal, financial or safety topic ----------------------------
+  //
+  // The clinic article of 2026-09-27 read as advice with no one behind it.
+  // The reviewer line and the disclaimer are written in afterwards from the
+  // site's own pages (lib/content/trust.ts), so the writer is told not to
+  // make up either, and what the topic asks of the text itself.
+  if (prompt.sensitive) {
+    const k = prompt.sensitive.kind;
+    const who = { health: "a qualified health professional", legal: "a lawyer", financial: "a qualified adviser", safety: "a qualified, licensed professional" }[k];
+    sections.push(
+      [
+        `THIS IS A ${k.toUpperCase()} TOPIC (${prompt.sensitive.evidence}):`,
+        "- A reader may act on this for their own health, money, legal position or safety. Explain what",
+        "  the options are, what each is for and how to decide; do not diagnose, prescribe or promise an",
+        `  outcome. Say plainly when the reader should see ${who}, and what for.`,
+        "- Do not write a byline, an author or reviewer line, an author bio or a disclaimer, and never name a",
+        "  person as having written or checked this. Those are added after you write, from the business's",
+        "  own pages, and one you invent is a false credential.",
+      ].join("\n"),
+    );
+  }
 
   // --- The owner's brief -----------------------------------------------------
   // Before the research, because it outranks it: the SERP says what readers
@@ -547,13 +667,16 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     [
       "FORMAT & STRUCTURE REQUIREMENTS:",
       "- Output valid HTML only. Do NOT wrap it in markdown fences or add any preamble.",
-      "- Start with a single <h1> tag containing the article title.",
+      "- Start with a single <h1> tag containing the article title. It is taken out of the body and",
+      "  published as the page's title, which the site shows as the page's only H1: never use <h1>",
+      "  anywhere else.",
       "- Use <h2> tags for major sections (aim for 4-8 sections).",
       "- Use <h3> tags for subsections where appropriate.",
       "- Use <p> tags for paragraphs. Keep paragraphs concise (2-4 sentences).",
       "- Use <ul>/<ol> and <li> for lists when they improve readability.",
       "- Use <strong> and <em> for emphasis where natural.",
       "- Do NOT include <html>, <head>, <body>, or <style> tags.",
+      ...faqRule(prompt, language, locale),
       // The alt rule sits with the format rules rather than with SEO because
       // the SEO framing is what produced the problem: told to "include the
       // keyword", a model writes alt="the keyword". It passes a has-alt check
@@ -600,6 +723,9 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     sections.push(
       [
         "INTERNAL LINKS — link to these, and only these:",
+        ...(facts && matchingOfferings(facts, { keyword, title }).length
+          ? ["First link the business's own page for this topic, listed above. Then:"]
+          : []),
         "Each line is an article already published on this site. Where the",
         "draft naturally mentions one of these subjects, link to it once using",
         'the placeholder form <a href="{{internal-link:KEYWORD}}">anchor</a>,',
@@ -727,6 +853,14 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
         '"73% of sites get this wrong" is not, unless you can name the source.',
       "- If the topic genuinely needs a figure you do not have, write the " +
         "sentence without it rather than filling the gap.",
+      // The prevention half of the authority check in lib/ai/fact-check.ts.
+      // The article that prompted it named a professional association as the
+      // regulator of a profession; the regulator was a provincial college.
+      "- Name a regulator, licensing body, insurer or public plan only when a page " +
+        "you link in that same sentence says so. A professional association is " +
+        "usually a membership body, not the regulator; when you do not know who " +
+        "regulates something, say that the reader should check with their local " +
+        "regulator rather than naming one.",
     ].join("\n"),
   );
 
@@ -750,11 +884,7 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       "  No figures in the bullets unless the same figure is sourced in the body.",
       "- Include one standalone definition of 20-70 words that starts with the",
       "  term and makes sense with nothing around it.",
-      "- Use specific figures only when sourced and useful to the reader's task.",
-      "  There is no minimum number of statistics, prices or percentages to include.",
-      "- Attribute every figure to a named, linked source. If you cannot source a",
-      "  number, do not write the number - say plainly that no reliable figure",
-      "  exists, which is itself a quotable answer.",
+      ...figureRules(research, { refresh: Boolean(prompt.refreshOf) }),
       "- Cite external sources with real, working links: two at minimum, and about",
       "  one for every 500 words. Every link is fetched after you write; one that",
       '  does not resolve is removed. Never emit href="#" or a placeholder URL.',
@@ -799,20 +929,8 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     if (o.mentionSimilarProducts === true) prefs.push("- Where relevant, name and fairly compare similar products or tools.");
     if (o.emojis === false) prefs.push("- No emojis anywhere in the article.");
     if (o.emojis === true) prefs.push("- Emojis are welcome in headings and list items where they add warmth: at most one per heading, none in body sentences.");
-    // Asked for here, extracted in lib/content/enrich/faq.ts: the schema step
-    // reads a FAQ section and never wrote one, so with the switch on and no
-    // request in the prompt the FAQPage data existed only when the model
-    // happened to end on questions.
-    if (o.faq === true) {
-      const faqHeading = locale.supported
-        ? `an <h2>${locale.labels.faqHeading}</h2> section`
-        : `an <h2> section headed with the usual ${language} phrase for "frequently asked questions"`;
-      prefs.push(
-        `- When useful unanswered questions remain, end with ${faqHeading}: up to five <h3> questions ` +
-          "that serve the approved audience and article task, each answered in 40-80 words that stand alone. " +
-          "Do not repeat a question already covered or invent adjacent topics to fill this section; omit it when nothing useful remains.",
-      );
-    }
+    // The FAQ section is decided in FORMAT & STRUCTURE (faqRule), from the
+    // results page, whatever this switch says: it governs the FAQ's schema.
     if (o.customInstructions?.trim()) prefs.push(`- Site owner's standing instructions: ${o.customInstructions.trim()}`);
     if (prefs.length) sections.push("", "SITE PREFERENCES:", ...prefs);
   }

@@ -113,7 +113,7 @@ export interface OnboardingArticle {
   title: string;
   keyword: string;
   wordCount: number;
-  /** `unchecked`: the site's language is one the fact checker does not read. */
+  /** `unchecked`: the fact checker does not read the site's language, or the draft had nothing it could check. */
   verdict: "clean" | "review" | "high_risk" | "unchecked";
 }
 

@@ -143,7 +143,9 @@ const VERDICT_LINE: Record<FactCheckReport["verdict"], string> = {
   high_risk:
     "The fact check found at least one figure with no source given anywhere in its sentence. Check those before publishing; they are listed against the draft.",
   unchecked:
-    "The fact check does not read this site's language, so no figure in this draft was checked. Check each one against its source before publishing.",
+    // Two causes, one verdict: the checker does not read the language, or the
+    // draft states nothing it could check. Neither is a pass.
+    "Nothing in this draft was fact-checked: either the checker does not read this site's language, or the draft states no figure and names no regulator or insurer. Read it against its sources before publishing.",
 };
 
 /** The verdict as the dashboard shows a status: a short word and a colour. */

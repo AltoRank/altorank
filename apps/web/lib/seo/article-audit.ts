@@ -116,6 +116,13 @@ export interface ArticleAuditInput {
    * language the locale contract does not describe they report "not checked".
    */
   language?: string | null;
+  /**
+   * `html` is an article body whose `title` the destination renders as the
+   * page's H1 (lib/content/on-page.ts): the title is the one H1, and an <h1>
+   * in the body is a second. Off for a crawled page, whose body is the whole
+   * page (lib/seo/site-crawl.ts).
+   */
+  titleIsPageH1?: boolean;
 }
 
 export interface ArticleAudit {
@@ -445,19 +452,35 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
   const h2s = headings.filter((h) => h.level === 2);
   const subheads = headings.filter((h) => h.level === 2 || h.level === 3);
 
-  push({
-    id: "single-h1",
-    group: "structure",
-    status: h1s.length === 1 ? "pass" : "fail",
-    label: "One H1",
-    detail:
-      h1s.length === 1
-        ? "Exactly one H1."
+  if (input.titleIsPageH1) {
+    const titled = Boolean(input.title?.trim());
+    push({
+      id: "single-h1",
+      group: "structure",
+      status: titled && h1s.length === 0 ? "pass" : "fail",
+      label: "One H1",
+      detail: !titled
+        ? "No title. The title is the page's H1, the first thing a crawler reads."
         : h1s.length === 0
-          ? "No H1. The title of the page is the first thing a crawler reads."
-          : `${h1s.length} H1s. A page has one title; demote the rest to H2.`,
-    locate: h1s.length > 1 ? h1s.slice(1).map((h) => h.text) : undefined,
-  });
+          ? "The title is the page's one H1; the body has none of its own."
+          : `The body has ${h1s.length} H1${h1s.length === 1 ? "" : "s"} besides the title, which the site already shows as the page's H1. Demote ${h1s.length === 1 ? "it" : "them"} to H2.`,
+      locate: h1s.length ? h1s.map((h) => h.text) : undefined,
+    });
+  } else {
+    push({
+      id: "single-h1",
+      group: "structure",
+      status: h1s.length === 1 ? "pass" : "fail",
+      label: "One H1",
+      detail:
+        h1s.length === 1
+          ? "Exactly one H1."
+          : h1s.length === 0
+            ? "No H1. The title of the page is the first thing a crawler reads."
+            : `${h1s.length} H1s. A page has one title; demote the rest to H2.`,
+      locate: h1s.length > 1 ? h1s.slice(1).map((h) => h.text) : undefined,
+    });
+  }
 
   const skips: string[] = [];
   let prev = 0;
@@ -679,8 +702,8 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
     status: bylined ? "pass" : "info",
     label: "Author",
     detail: bylined
-      ? "Names an author in the body."
-      : "No author or byline in the body. The generator does not write one. Make sure the CMS attributes the piece to a real person with a bio; anonymous pages are the weakest E-E-A-T position there is.",
+      ? "Names an author or reviewer in the body."
+      : "No author or reviewer line in the body. The generator writes a reviewer line only on a health, legal, financial or safety topic, and only for a person the site's own pages name with a fitting role. Make sure the CMS attributes the piece to a real person with a bio; anonymous pages are the weakest E-E-A-T position there is.",
   });
 
   const hasExperience = locale.supported && locale.prose.firstHand.test(locale.lower(text));

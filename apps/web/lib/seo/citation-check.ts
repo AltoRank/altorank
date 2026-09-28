@@ -27,7 +27,7 @@
 import { stripTags } from "@/lib/audit/html-utils";
 import { isUnsafeHost } from "@/lib/seo/link-check";
 import type { ExtractedClaim, FactCheckReport } from "@/lib/ai/fact-check";
-import { summarise } from "@/lib/ai/fact-check";
+import { ENTITY_KINDS, summarise } from "@/lib/ai/fact-check";
 import {
   resolveLocale,
   supportedLocales,
@@ -206,6 +206,27 @@ export function figureVariants(figure: string, language?: string | null): string
   return [...out].filter(Boolean);
 }
 
+/**
+ * Does the page name this body? Its full name, its name without a bracketed
+ * acronym, or the acronym alone ("College of Physiotherapists of Ontario
+ * (CPO)" is named by either). `pageText` is `readablePageText`'s: one
+ * lower-case line.
+ */
+export function pageNamesEntity(pageText: string, entity: string): boolean {
+  const clean = entity.replace(/\s+/g, " ").trim().replace(/[\s.,;:!?]+$/u, "");
+  const acronym = clean.match(/\(([^)]+)\)\s*$/)?.[1] ?? null;
+  const bare = clean.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  return [clean, bare, acronym]
+    .filter((v): v is string => Boolean(v && v.length >= 2))
+    .some((v) => pageText.includes(v.toLowerCase()));
+}
+
+/**
+ * The most cited pages one draft opens. Each is one GET with an 8-second
+ * ceiling; a draft that cites more than this leaves the rest for a person.
+ */
+const MAX_CITED_PAGES = 12;
+
 /** Does the page carry this figure, written any of the usual ways? */
 export function pageHasFigure(pageText: string, figure: string, language?: string | null): boolean {
   return figureVariants(figure, language).some((v) => pageText.includes(v));
@@ -235,7 +256,7 @@ export async function verifyCitedFigures(
   );
   if (checkable.length === 0) return report;
 
-  const urls = [...new Set(checkable.map((c) => c.sourceUrl!))];
+  const urls = [...new Set(checkable.map((c) => c.sourceUrl!))].slice(0, MAX_CITED_PAGES);
   const pages = new Map<string, string | null>();
 
   const read = async (url: string): Promise<void> => {
@@ -260,6 +281,30 @@ export async function verifyCitedFigures(
     const text = pages.get(c.sourceUrl!);
     // Unreadable: leave the claim exactly as it was, for a person to open.
     if (!text) return c;
+
+    // A claim about a named body: does the page it cites name that body?
+    // Named is not proof it is the regulator, so found is `verified` at low
+    // and not found is `unsupported` at medium - for review, never a block,
+    // because the page may name it in a form this search cannot see.
+    if (ENTITY_KINDS.has(c.kind)) {
+      const entity = c.figures[0];
+      if (!entity) return c;
+      return pageNamesEntity(text, entity)
+        ? {
+            ...c,
+            status: "verified" as const,
+            severity: "low" as const,
+            note: `The page it cites (${c.sourceUrl}) names ${entity}. That the page names it is not proof of the claim, but the citation is on topic.`,
+          }
+        : {
+            ...c,
+            status: "unsupported" as const,
+            severity: "medium" as const,
+            note:
+              `The cited page loaded and does not name ${entity}. Open ${c.sourceUrl} and check who it says ` +
+              `regulates or pays for this, then correct the sentence or cut it.`,
+          };
+    }
 
     const missing = c.figures.filter((f) => !pageHasFigure(text, f, language));
     if (missing.length === 0) {

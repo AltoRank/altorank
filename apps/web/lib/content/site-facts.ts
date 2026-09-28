@@ -51,6 +51,7 @@ const MAX_OFFERINGS = 12;
 const MAX_WORK = 12;
 const MAX_STATED = 8;
 const MAX_PAGES = 10;
+const MAX_PEOPLE = 8;
 /** Conversion candidates re-checked per draft. Each is one GET to the customer's site. */
 const MAX_CONVERSION_CHECKS = 3;
 
@@ -130,6 +131,7 @@ export function buildSiteFacts(rows: SitePageRow[], domain: string): SiteFacts {
     work: [],
     stated: [],
     about: null,
+    people: [],
     headings: [],
     pages: [],
     conversion: null,
@@ -201,6 +203,20 @@ export function buildSiteFacts(rows: SitePageRow[], domain: string): SiteFacts {
   const about = withExtract.find((x) => x.extract.role === "about" && x.extract.text);
   if (about) facts.about = { text: about.extract.text, source: about.url };
 
+  // The team, as the about pages name it, then anyone the homepage declares
+  // in structured data. One entry per name.
+  const seenPeople = new Set<string>();
+  for (const role of ["about", "home"] as const) {
+    for (const p of withExtract.filter((x) => x.extract.role === role)) {
+      for (const person of p.extract.people ?? []) {
+        const key = fold(person.name);
+        if (seenPeople.has(key) || facts.people.length >= MAX_PEOPLE) continue;
+        seenPeople.add(key);
+        facts.people.push({ name: person.name, role: person.role, source: p.url, ...(person.from ? { from: person.from } : {}) });
+      }
+    }
+  }
+
   for (const role of ["offering", "work", "about", "contact", "pricing"] as const) {
     for (const p of withExtract.filter((x) => x.extract.role === role && !x.extract.detail)) {
       if (facts.pages.length >= MAX_PAGES || facts.pages.some((x) => x.url === p.url)) continue;
@@ -244,6 +260,26 @@ export function conversionCandidates(rows: SitePageRow[], domain: string): strin
   return out;
 }
 
+/**
+ * A phone number or an email address saved as the conversion page, as a
+ * `tel:` / `mailto:` URL, or null for anything else.
+ *
+ * A real clinic's profile held `tel:` and a number as its conversion page
+ * (2026-09-27). `absoluteOnSite` answers null for any scheme but http(s), so
+ * the number was dropped without a word and the article closed on the
+ * homepage. Only a person can have put one there: the site read stores only
+ * a page it fetched (lib/onboarding/observed-facts.ts). A number cannot be
+ * opened to check, so it is used as the owner gave it, and the check says so.
+ */
+export function directContact(value: string | null | undefined): string | null {
+  const v = value?.trim() ?? "";
+  const tel = v.match(/^tel:\s*(\+?[\d\s().\-/]+)$/i);
+  if (tel && (tel[1].match(/\d/g)?.length ?? 0) >= 6) return `tel:${tel[1].replace(/[^\d+]/g, "")}`;
+  const mail = v.match(/^mailto:\s*([^\s@?]+@[^\s@?]+\.[^\s@?]+)$/i);
+  if (mail) return `mailto:${mail[1]}`;
+  return null;
+}
+
 export interface ConversionOutcome {
   conversion: SiteFacts["conversion"];
   /** For the reviewer: what was checked, and why the page is what it is. */
@@ -270,6 +306,14 @@ export async function resolveConversionPage(opts: {
   fetch?: SafeFetch;
 }): Promise<ConversionOutcome> {
   const { domain } = opts;
+  const direct = directContact(opts.stored);
+  if (direct) {
+    const what = direct.startsWith("tel:") ? "phone number" : "email address";
+    return {
+      conversion: { url: direct, check: `the ${what} saved in the business profile; a ${what} cannot be opened to check, so it is used as given` },
+      note: `The saved conversion ${what} ${direct.replace(/^(?:tel|mailto):/, "")} is used as given.`,
+    };
+  }
   const failures: string[] = [];
   const stored = opts.stored?.trim() ? absoluteOnSite(opts.stored, domain) : null;
   const tried = new Set<string>();
@@ -355,7 +399,7 @@ export async function loadSiteFacts(
   opts: { fetch?: SafeFetch } = {},
 ): Promise<{ facts: SiteFacts; layer: ResearchLayer }> {
   const empty = (note: string): SiteFacts => ({
-    pagesRead: 0, offerings: [], work: [], headings: [], stated: [], about: null, pages: [], conversion: null, notes: [note],
+    pagesRead: 0, offerings: [], work: [], headings: [], stated: [], about: null, people: [], pages: [], conversion: null, notes: [note],
   });
   if (!domain) {
     const facts = empty("This workspace has no domain, so none of the business's pages could be read.");

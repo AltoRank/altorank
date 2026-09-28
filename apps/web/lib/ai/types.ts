@@ -84,6 +84,12 @@ export interface ArticlePrompt {
    * of this reached the writer.
    */
   siteFacts?: SiteFacts;
+  /**
+   * The article is on a health, legal, financial or safety topic, and why
+   * (lib/content/trust.ts). The writer is told what that asks of the text,
+   * and that the reviewer line and disclaimer are added for it.
+   */
+  sensitive?: { kind: "health" | "legal" | "financial" | "safety"; evidence: string } | null;
 }
 
 /** `workspaces.business_profile`, the fields a writer can use. */
@@ -125,6 +131,12 @@ export interface SiteFacts {
   stated: Array<{ kind: "founded" | "team" | "location"; text: string; source: string; from?: "structured-data" }>;
   /** The opening of its about page, in its own words. */
   about: { text: string; source: string } | null;
+  /**
+   * People its about or team page names, with the role the page gives them,
+   * and any `Person` in its structured data (lib/audit/site-extract.ts). The
+   * only people a reviewer line may name (lib/content/trust.ts).
+   */
+  people: Array<{ name: string; role: string | null; source: string; from?: "structured-data" }>;
   /** Its section pages (services, portfolio, about, contact, pricing), which exist. */
   pages: Array<{ role: string; name: string; url: string }>;
   /** Where a ready reader should go, and how that was checked. Null when nothing could be. */

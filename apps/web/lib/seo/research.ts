@@ -27,6 +27,7 @@ import { getLocale } from "./locales";
 import { htmlToMarkdown } from "@/lib/audit/markdown";
 import { fetchSite } from "@/lib/audit/lenient-fetch";
 import { readGsc, type ReadRow } from "@/lib/gsc/read";
+import { figureSentences, mergeSourceFigures, type SourceFigure } from "./source-figures";
 
 export interface ResearchLayer {
   /** `site_facts` is added by lib/content/site-facts.ts, not by `gatherArticleResearch`. */
@@ -82,6 +83,26 @@ export interface ArticleResearch {
    * it, and on rewrites, which get no site facts.
    */
   siteStatements?: Array<{ text: string; source: string }>;
+  /**
+   * Sentences from the ranking pages research fetched that state a figure,
+   * with their URLs: what the writer may cite (lib/seo/source-figures.ts).
+   * Empty when the pages were read and stated none; absent when no page
+   * could be read, and on drafts written before 2026-09-28.
+   */
+  sourceFigures?: SourceFigure[];
+  /**
+   * What a person has to do or know before publishing this draft, in
+   * sentences: no reviewer found for a health article, no figure to cite, a
+   * title shortened. Written by lib/content/generate.ts; shown at the top of
+   * the editor's research panel.
+   */
+  reviewNotes?: string[];
+  /**
+   * Whether this is a health, legal, financial or safety article, who on the
+   * site reviews it and what disclaimer it carries (lib/content/trust.ts).
+   * Read again at publish for the dateline. Absent before 2026-09-28.
+   */
+  trust?: import("@/lib/content/trust").ArticleTrust;
 }
 
 const DEFAULT_WORD_COUNT = 1500;
@@ -177,7 +198,8 @@ const UA =
  */
 async function measureCompetitorLengths(
   competitors: CompetitorPage[],
-): Promise<{ competitors: CompetitorPage[]; layer: ResearchLayer }> {
+  languageCode?: string,
+): Promise<{ competitors: CompetitorPage[]; layer: ResearchLayer; figures?: SourceFigure[] }> {
   const targets = competitors
     .map((c, i) => ({ c, i }))
     .filter(({ c }) => c.wordCount === null && /^https?:\/\//i.test(c.url))
@@ -197,6 +219,9 @@ async function measureCompetitorLengths(
   }
 
   const measured = [...competitors];
+  // The figure-bearing sentences of each page read, in rank order. Taken
+  // from the HTML fetched to count words, so citing costs no request.
+  const perPage: SourceFigure[][] = targets.map(() => []);
 
   const results = await Promise.allSettled(
     targets.map(async ({ c, i }) => {
@@ -210,8 +235,10 @@ async function measureCompetitorLengths(
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const html = await res.text();
-        const { words } = htmlToMarkdown(html, c.url);
+        const { words, markdown } = htmlToMarkdown(html, c.url);
         if (words > 0) measured[i] = { ...c, wordCount: words };
+        const slot = targets.findIndex((t) => t.i === i);
+        if (slot >= 0 && words > 0) perPage[slot] = figureSentences(markdown, { url: c.url, domain: c.domain }, languageCode);
         return words > 0;
       } finally {
         clearTimeout(timer);
@@ -220,15 +247,18 @@ async function measureCompetitorLengths(
   );
 
   const ok = results.filter((r) => r.status === "fulfilled" && r.value).length;
+  const figures = ok > 0 ? mergeSourceFigures(perPage) : undefined;
 
   return {
     competitors: measured,
+    figures,
     layer: {
       id: "competitor_length",
       status: ok > 0 ? "ok" : "failed",
       detail:
         ok > 0
-          ? `measured ${ok} of ${targets.length} ranking pages by fetching them`
+          ? `measured ${ok} of ${targets.length} ranking pages by fetching them; ` +
+            `${figures!.length} sentence${figures!.length === 1 ? "" : "s"} with a figure kept for the writer to cite`
           : `could not read any of the ${targets.length} pages attempted ` +
             `(blocked, slow or JavaScript-rendered)`,
     },
@@ -480,8 +510,8 @@ export async function gatherArticleResearch(options: {
 
   // Fill in the word counts the SERP provider does not supply. Only worth the
   // round trips when there are competitors to measure at all.
-  const { competitors, layer: lengthLayer } = rawCompetitors.length
-    ? await measureCompetitorLengths(rawCompetitors)
+  const { competitors, layer: lengthLayer, figures: sourceFigures } = rawCompetitors.length
+    ? await measureCompetitorLengths(rawCompetitors, localeParam.languageCode)
     : {
         competitors: rawCompetitors,
         layer: {
@@ -507,5 +537,6 @@ export async function gatherArticleResearch(options: {
     recommendedWordCount: target,
     wordCountBasis: basis,
     layers,
+    ...(sourceFigures ? { sourceFigures } : {}),
   };
 }

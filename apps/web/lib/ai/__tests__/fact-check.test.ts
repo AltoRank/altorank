@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { factCheckArticle } from "../fact-check";
+import { approvalBlocker, autoApprovalBlocker, factCheckArticle } from "../fact-check";
 import type { ArticleResearch } from "@/lib/seo/research";
 
 const research = (competitors: Array<{ title: string; description: string; domain: string }>): ArticleResearch => ({
@@ -41,7 +41,7 @@ describe("factCheckArticle — flagging unsourced figures", () => {
     // not an appeal to an unnamed study, and flagging it trains people to
     // ignore the checker.
     const r = factCheckArticle("<p>Fix the cause your data shows first, then layer in emails.</p>");
-    expect(r.verdict).toBe("clean");
+    expect(r.counts.total).toBe(0);
   });
 
   it("still flags the same phrasing without a possessive", () => {
@@ -130,13 +130,22 @@ describe("factCheckArticle — flagging unsourced figures", () => {
     expect(r.claims[0].severity).toBe("high");
   });
 
-  it("returns a clean verdict for prose with no checkable claims", () => {
+  // Nothing found is not the same as nothing wrong. A real first article
+  // (2026-09-27) had no figures, called an association the regulator, and
+  // was reported `clean`.
+  it("returns `unchecked`, not `clean`, for prose with no checkable claims", () => {
     const r = factCheckArticle(
       "<h2>Getting started</h2><p>Most teams find the first step is the hardest. " +
         "Start small and expand once it works.</p>",
     );
-    expect(r.verdict).toBe("clean");
+    expect(r.verdict).toBe("unchecked");
+    expect(r.unchecked).toBe("nothing_to_check");
     expect(r.counts.total).toBe(0);
+    expect(r.summary).toMatch(/not the same as a clean check/);
+    // Nothing to publish unread, so auto-approve is not refused for it...
+    expect(autoApprovalBlocker(r)).toBeNull();
+    // ...and a person is never refused either.
+    expect(approvalBlocker(r)).toBeNull();
   });
 });
 

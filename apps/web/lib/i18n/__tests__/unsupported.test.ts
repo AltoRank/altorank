@@ -203,10 +203,27 @@ describe("unsupported language: checks say they did not run", () => {
   });
 });
 
+
+/** Research whose results page shows questions people ask: what makes the prompt ask for a FAQ (lib/content/on-page.ts faqPlan). */
+const ASKED = {
+  keyword: "k",
+  language: "English",
+  intent: { intent: "info" as const, confidence: "high" as const, signals: [], lexicon: true },
+  competitors: [],
+  peopleAlsoAsk: ["What is it?", "How long does it take?"],
+  aiOverview: null,
+  relatedKeywords: [],
+  existingPerformance: null,
+  adjacentQueries: [],
+  recommendedWordCount: 1500,
+  wordCountBasis: "test",
+  layers: [],
+};
+
 describe("unsupported language: the prompt gives the writer no English label to copy", () => {
   it("asks for the FAQ heading and summary label in the article's language", () => {
-    const prompt = buildSystemPrompt({ keyword: "design", language: "Portuguese", output: { faq: true } });
-    expect(prompt).toContain('an <h2> section headed with the usual Portuguese phrase for "frequently asked questions"');
+    const prompt = buildSystemPrompt({ keyword: "design", language: "Portuguese", research: ASKED });
+    expect(prompt).toContain('an <h2> headed with the usual Portuguese phrase for "frequently asked questions"');
     expect(prompt).not.toContain("<h2>Frequently asked questions</h2>");
     expect(prompt).not.toContain('(such as "Key takeaways")');
     expect(prompt).toContain("add a short summary block with an <h2> label written in Portuguese,");
