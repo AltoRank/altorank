@@ -3,6 +3,7 @@ import type { ArticleResearch } from "@/lib/seo/research";
 import { INTENT_GUIDANCE } from "@/lib/seo/intent";
 import { LENGTH_BANDS, TAXONOMY_LABELS, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { resolveLocale } from "@/lib/i18n/locale";
+import { matchingOfferings } from "@/lib/content/topic-pages";
 
 // ---------------------------------------------------------------------------
 // Build the system prompt sent to the AI model for article generation.
@@ -232,7 +233,7 @@ const STRUCTURED_FACT_NAME: Record<SiteFacts["stated"][number]["kind"], string> 
   location: "address",
 };
 
-export function buildSiteFactsSection(facts: SiteFacts): string {
+export function buildSiteFactsSection(facts: SiteFacts, topic?: { keyword: string; title?: string | null }): string {
   const lines: string[] = [
     facts.pagesRead
       ? `WHAT THIS BUSINESS'S OWN SITE SAYS (read from ${facts.pagesRead} of its pages that answered):`
@@ -242,6 +243,17 @@ export function buildSiteFactsSection(facts: SiteFacts): string {
     items.map((i) => (i.url ? `- ${i.name}: ${i.url}` : `- ${i.name}`));
 
   if (facts.offerings.length) lines.push("What it sells, as its own pages name it:", ...named(facts.offerings));
+  // The service pages this article is about, found by shared words
+  // (lib/content/topic-pages.ts). The clinic article of 2026-09-27 linked two
+  // blog posts and the homepage and none of the two service pages it was
+  // comparing, both of which were in the list above.
+  const matching = topic ? matchingOfferings(facts, topic) : [];
+  if (matching.length) {
+    lines.push(
+      "Its own pages for what this article is about (link at least one, where the article discusses it, before any blog article):",
+      ...matching.map((m) => `- ${m.name}: ${m.url}`),
+    );
+  }
   if (facts.work.length) lines.push("Work its site shows, by the names the site uses:", ...named(facts.work));
   for (const h of facts.headings) lines.push(`Headings on its page "${h.page}" (${h.url}), as written: ${h.items.join(" | ")}`);
   // Sentences the pages wrote are quoted; values from their structured data
@@ -293,6 +305,15 @@ export function buildSiteFactsSection(facts: SiteFacts): string {
     "- Links to this site go only to the URLs written above or in the INTERNAL LINKS list; each is a page",
     "  that was fetched and answered. Write them exactly as listed. Any other link on this site is removed",
     "  before publishing.",
+    ...(matching.length
+      ? [
+          "- Internal links go to the business's own pages for this topic first, then to articles. Do not link",
+          "  the homepage from the body: the closing section already points the reader to the business.",
+        ]
+      : []),
+    ...(facts.conversion
+      ? [`- Where the article tells a ready reader what to do next, link ${facts.conversion.url} exactly as written.`]
+      : []),
   );
   return lines.join("\n");
 }
@@ -524,7 +545,7 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
   }
   // Whenever the writer was given facts - including "none could be read",
   // which it must be told rather than left to fill.
-  if (facts) sections.push(buildSiteFactsSection(facts));
+  if (facts) sections.push(buildSiteFactsSection(facts, { keyword, title }));
 
   // --- The owner's brief -----------------------------------------------------
   // Before the research, because it outranks it: the SERP says what readers
@@ -640,6 +661,9 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     sections.push(
       [
         "INTERNAL LINKS — link to these, and only these:",
+        ...(facts && matchingOfferings(facts, { keyword, title }).length
+          ? ["First link the business's own page for this topic, listed above. Then:"]
+          : []),
         "Each line is an article already published on this site. Where the",
         "draft naturally mentions one of these subjects, link to it once using",
         'the placeholder form <a href="{{internal-link:KEYWORD}}">anchor</a>,',

@@ -244,6 +244,26 @@ export function conversionCandidates(rows: SitePageRow[], domain: string): strin
   return out;
 }
 
+/**
+ * A phone number or an email address saved as the conversion page, as a
+ * `tel:` / `mailto:` URL, or null for anything else.
+ *
+ * A real clinic's profile held `tel:` and a number as its conversion page
+ * (2026-09-27). `absoluteOnSite` answers null for any scheme but http(s), so
+ * the number was dropped without a word and the article closed on the
+ * homepage. Only a person can have put one there: the site read stores only
+ * a page it fetched (lib/onboarding/observed-facts.ts). A number cannot be
+ * opened to check, so it is used as the owner gave it, and the check says so.
+ */
+export function directContact(value: string | null | undefined): string | null {
+  const v = value?.trim() ?? "";
+  const tel = v.match(/^tel:\s*(\+?[\d\s().\-/]+)$/i);
+  if (tel && (tel[1].match(/\d/g)?.length ?? 0) >= 6) return `tel:${tel[1].replace(/[^\d+]/g, "")}`;
+  const mail = v.match(/^mailto:\s*([^\s@?]+@[^\s@?]+\.[^\s@?]+)$/i);
+  if (mail) return `mailto:${mail[1]}`;
+  return null;
+}
+
 export interface ConversionOutcome {
   conversion: SiteFacts["conversion"];
   /** For the reviewer: what was checked, and why the page is what it is. */
@@ -270,6 +290,14 @@ export async function resolveConversionPage(opts: {
   fetch?: SafeFetch;
 }): Promise<ConversionOutcome> {
   const { domain } = opts;
+  const direct = directContact(opts.stored);
+  if (direct) {
+    const what = direct.startsWith("tel:") ? "phone number" : "email address";
+    return {
+      conversion: { url: direct, check: `the ${what} saved in the business profile; a ${what} cannot be opened to check, so it is used as given` },
+      note: `The saved conversion ${what} ${direct.replace(/^(?:tel|mailto):/, "")} is used as given.`,
+    };
+  }
   const failures: string[] = [];
   const stored = opts.stored?.trim() ? absoluteOnSite(opts.stored, domain) : null;
   const tried = new Set<string>();

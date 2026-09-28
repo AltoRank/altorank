@@ -82,6 +82,12 @@ export interface ArticleLabels {
    * where the brand's link goes (lib/publishing/attribution.ts).
    */
   poweredBy: string;
+  /**
+   * The call to action's line for the business's verified conversion page, a
+   * phone number or an email address; `{link}` is where the link goes. Words
+   * that fit all three: "Contact" rather than "Book" or "Call".
+   */
+  contact: string;
   /** Alt-text prefix for a generated section image, per style preset. */
   illustration: Record<ImageStyle, string>;
   /** The summary block's heading the prompt offers the writer. */
@@ -460,6 +466,7 @@ const EN: LocaleRules = {
     visit: "Visit {link}.",
     citeLead: "Learn more about {link}.",
     poweredBy: "Powered by {link}",
+    contact: "Get in touch: {link}.",
     illustration: {
       sketch: "Sketch illustrating",
       watercolor: "Watercolour illustration of",
@@ -586,6 +593,7 @@ const IT: LocaleRules = {
     visit: "Visita {link}.",
     citeLead: "Scopri di più su {link}.",
     poweredBy: "Realizzato con {link}",
+    contact: "Per contatti: {link}.",
     illustration: {
       sketch: "Schizzo che illustra",
       watercolor: "Acquerello che illustra",
@@ -706,6 +714,7 @@ const ES: LocaleRules = {
     visit: "Visita {link}.",
     citeLead: "Más información sobre {link}.",
     poweredBy: "Creado con {link}",
+    contact: "Contacto: {link}.",
     illustration: {
       sketch: "Boceto que ilustra",
       watercolor: "Acuarela que ilustra",
@@ -825,6 +834,7 @@ const FR: LocaleRules = {
     visit: "Visitez {link}.",
     citeLead: "En savoir plus sur {link}.",
     poweredBy: "Propulsé par {link}",
+    contact: "Contact : {link}.",
     illustration: {
       sketch: "Croquis illustrant",
       watercolor: "Aquarelle illustrant",
@@ -950,6 +960,7 @@ const DE: LocaleRules = {
     visit: "Besuchen Sie {link}.",
     citeLead: "Mehr über {link}.",
     poweredBy: "Erstellt mit {link}",
+    contact: "Kontakt: {link}.",
     illustration: {
       sketch: "Skizze zu",
       watercolor: "Aquarell zu",
@@ -1098,6 +1109,7 @@ const TR: LocaleRules = {
     visit: "{link} adresini ziyaret edin.",
     citeLead: "{link} hakkında daha fazla bilgi edinin.",
     poweredBy: "{link} ile hazırlandı",
+    contact: "İletişim: {link}.",
     illustration: {
       sketch: "Eskiz çizim:",
       watercolor: "Suluboya resim:",

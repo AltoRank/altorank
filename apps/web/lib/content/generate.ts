@@ -38,6 +38,7 @@ import { fetchKnownPages } from "@/lib/linking/targets";
 import { loadSiteFacts } from "@/lib/content/site-facts";
 import { siteFactUrls } from "@/lib/ai/prompts";
 import { figureReviewNote } from "@/lib/seo/source-figures";
+import { matchingOfferings, topicLinkNote } from "@/lib/content/topic-pages";
 import { anthropicModel, openaiImageModel } from "@/lib/ai/models";
 import { GenerationTruncatedError } from "@/lib/ai/errors";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
@@ -955,6 +956,10 @@ export async function generateArticle(
     // Imported here rather than at the top: the pipeline pulls in the image,
     // video and audit modules, and the quota-gate tests import this file
     // under a five-second budget they were already close to.
+    // The business's own pages for this article's topic, for the call to
+    // action and the review note (lib/content/topic-pages.ts).
+    const topicPages = matchingOfferings(siteFacts?.facts, { keyword, title: articleResult.title });
+
     await enhance("body enrichment", async (html) => {
       const { enrichArticle } = await import("@/lib/content/enrich");
       const enriched = await enrichArticle(html, {
@@ -969,6 +974,8 @@ export async function generateArticle(
         brandStyle: workspace.brand_style as Record<string, unknown> | null,
         settings: outputSettings,
         research: research as unknown as Record<string, unknown>,
+        conversion: siteFacts?.facts.conversion?.url ?? null,
+        service: topicPages[0] ?? null,
       });
       return enriched.html;
     });
@@ -1002,6 +1009,8 @@ export async function generateArticle(
     const reviewNotes: string[] = [];
     const figureNote = figureReviewNote(research.sourceFigures, processedHtml, workspace.language);
     if (figureNote) reviewNotes.push(figureNote);
+    const linkNote = topicLinkNote(topicPages, processedHtml);
+    if (linkNote) reviewNotes.push(linkNote);
     research.reviewNotes = reviewNotes;
 
     // `scoreArticle` and its seven on-page checks have existed all along, but
