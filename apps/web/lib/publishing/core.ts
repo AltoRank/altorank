@@ -19,7 +19,7 @@ import { renderArticleMarkdown } from "@/lib/publishing/export";
 import { recordPublish } from "@/lib/publishing/log";
 import { DEFAULT_OUTPUT_SETTINGS } from "@/lib/onboarding/output-settings";
 import { removeTitleHeading } from "@/lib/content/on-page";
-import { datelineHtml, storedTrust } from "@/lib/content/trust";
+import { datelineHtml } from "@/lib/content/trust";
 
 /** Which connection an attempt went through, and how. Written to publish_log. */
 export type PublishContext = {
@@ -147,8 +147,10 @@ type ArticleRow = {
   keyword: string | null;
   created_at: string | null;
   published_at: string | null;
-  /** The research saved at generation; its `trust` decides the dateline. */
-  research?: unknown;
+  /** `held-in-cms` when the last push was kept as a draft on the far side. */
+  indexing_status?: { indexnow?: unknown } | null;
+  /** Set when the article was found live on the site after a held push. */
+  found_on_site_at?: string | null;
 };
 
 /** Everything after the destination is known; failures here are retryable. */
@@ -217,6 +219,9 @@ async function pushToDestination(
   // adapters that can host the key file, and the submission after the publish
   // uses the same value. Null when the workspace has none.
   let indexNowKey: string | null = null;
+  // Whether the workspace row was read: a dateline is only written in a
+  // language known to be the site's, never in a default guessed after a failure.
+  let workspaceRead = false;
   try {
     const { data: ws } = await supabase
       .from("workspaces")
@@ -228,6 +233,7 @@ async function pushToDestination(
     const profileName = (ws?.business_profile as { name?: unknown } | null)?.name;
     publisherName = (typeof profileName === "string" && profileName.trim()) || String(ws?.domain ?? "").replace(/^https?:\/\//, "");
     language = typeof ws?.language === "string" ? ws.language : null;
+    workspaceRead = Boolean(ws);
     if (ws?.account_id) {
       const quota = await getQuota(supabase, ws.account_id);
       const removeBranding =
@@ -243,6 +249,17 @@ async function pushToDestination(
   } catch {
     // Branding is never worth failing a publish over.
   }
+
+  // When it first went live, kept across republishes, and now. A republish
+  // is an update: the page's "published" date (the dateline, BlogPosting,
+  // git's publishDate, Shopify's published_at) is the day it first went out,
+  // where it used to be overwritten on every push. A push the CMS held as a
+  // draft is not a publish, so its date is not kept: the push that takes the
+  // article live is the first publish - unless the article was since found
+  // live on the site, whose date that check recorded.
+  const lastPushHeld = article.indexing_status?.indexnow === "held-in-cms" && !article.found_on_site_at;
+  const publishedAt = (!lastPushHeld && article.published_at) || new Date().toISOString();
+  const modifiedAt = new Date().toISOString();
 
   // Structured data, rebuilt from the body that is about to go out (see
   // lib/publishing/schema.ts). The FAQ follows the Article settings switch,
@@ -262,15 +279,14 @@ async function pushToDestination(
       .maybeSingle();
     const faqEnabled =
       typeof settings?.faq_schema === "boolean" ? settings.faq_schema : DEFAULT_OUTPUT_SETTINGS.faqSchema;
-    const now = new Date().toISOString();
     structuredData = structuredDataFor(
       html,
       {
         title: article.title,
         description: article.meta_description,
         imageUrl: article.featured_image_url,
-        datePublished: article.published_at ?? now,
-        dateModified: now,
+        datePublished: publishedAt,
+        dateModified: modifiedAt,
         keyword: article.keyword,
         publisherName: publisherName || siteUrl.replace(/^https?:\/\//, ""),
         language,
@@ -282,13 +298,10 @@ async function pushToDestination(
     // Schema is never worth failing a publish over.
   }
 
-  // When it first went out, kept across republishes, and now. Carried to
-  // every adapter, and written into a health, legal, financial or safety
-  // article as a visible dateline: a reader of advice should see how old it
-  // is (lib/content/trust.ts). Only here are both dates known.
-  const publishedAt = article.published_at ?? new Date().toISOString();
-  const modifiedAt = new Date().toISOString();
-  const dateline = datelineHtml(storedTrust(article.research), language, { publishedAt, modifiedAt });
+  // Both dates go to every adapter, and into every article as a visible
+  // dateline, in the site's language (lib/content/trust.ts). Only here are
+  // both known.
+  const dateline = workspaceRead ? datelineHtml(language, { publishedAt, modifiedAt }) : null;
   if (dateline) html = `${dateline}\n${html}`;
 
   const payload: PublishPayload = {
@@ -308,7 +321,7 @@ async function pushToDestination(
               metaDescription: article.meta_description,
               keyword: article.keyword,
               featuredImageUrl: article.featured_image_url,
-              publishedAt: article.published_at,
+              publishedAt,
             },
             siteUrl,
           )

@@ -213,7 +213,7 @@ export function figureVariants(figure: string, language?: string | null): string
  * lower-case line.
  */
 export function pageNamesEntity(pageText: string, entity: string): boolean {
-  const clean = entity.replace(/\s+/g, " ").trim();
+  const clean = entity.replace(/\s+/g, " ").trim().replace(/[\s.,;:!?]+$/u, "");
   const acronym = clean.match(/\(([^)]+)\)\s*$/)?.[1] ?? null;
   const bare = clean.replace(/\s*\([^)]*\)\s*$/, "").trim();
   return [clean, bare, acronym]

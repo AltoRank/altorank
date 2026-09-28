@@ -102,7 +102,16 @@ export function topicLinkNote(matches: TopicPage[], html: string): string | null
 
 /** How a conversion URL reads as link text: a phone number, an address, or the page without its scheme. */
 export function conversionLinkText(url: string): string {
-  if (/^tel:/i.test(url)) return decodeURIComponent(url.slice(4)).trim();
-  if (/^mailto:/i.test(url)) return decodeURIComponent(url.slice(7)).replace(/\?.*$/, "").trim();
+  // A stray "%" is a URIError, and one bad address must not cost the
+  // article its whole call to action: the text is then the address as saved.
+  const decoded = (s: string) => {
+    try {
+      return decodeURIComponent(s);
+    } catch {
+      return s;
+    }
+  };
+  if (/^tel:/i.test(url)) return decoded(url.slice(4)).trim();
+  if (/^mailto:/i.test(url)) return decoded(url.slice(7)).replace(/\?.*$/, "").trim();
   return url.replace(/^https?:\/\/(?:www\.)?/i, "").replace(/\/+$/, "");
 }

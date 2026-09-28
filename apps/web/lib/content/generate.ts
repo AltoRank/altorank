@@ -39,7 +39,7 @@ import { loadSiteFacts } from "@/lib/content/site-facts";
 import { siteFactUrls } from "@/lib/ai/prompts";
 import { figureReviewNote } from "@/lib/seo/source-figures";
 import { matchingOfferings, topicLinkNote } from "@/lib/content/topic-pages";
-import { faqPlan, faqReviewNote, fitTitle, removeTitleHeading, titleReviewNote } from "@/lib/content/on-page";
+import { faqPlan, faqReviewNote, fitTitle, givenTitleKept, removeTitleHeading, titleReviewNote } from "@/lib/content/on-page";
 import { buildTrust } from "@/lib/content/trust";
 import { anthropicModel, openaiImageModel } from "@/lib/ai/models";
 import { GenerationTruncatedError } from "@/lib/ai/errors";
@@ -893,7 +893,11 @@ export async function generateArticle(
     // asked for in the prompt and both shipped wrong on a real first article
     // (lib/content/on-page.ts). Not on a rewrite, which keeps its page's
     // title and body structure.
-    const fittedTitle = fitTitle(articleResult.title, keyword, workspace.language);
+    // A title the caller gave - a person in the editor, or an agent through
+    // the API - and the writer used is theirs: it is kept as given, and the
+    // review note says when it is long. Only the writer's own title is cut.
+    const keptGiven = givenTitleKept(title, articleResult.title);
+    const fittedTitle = keptGiven ?? fitTitle(articleResult.title, keyword, workspace.language);
     if (!refreshOf) articleResult = { ...articleResult, title: fittedTitle.title };
 
     // Deterministic first: the prompt bans em dashes and the model uses them

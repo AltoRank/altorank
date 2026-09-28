@@ -371,7 +371,7 @@ export function namesAnAssociation(entity: string): boolean {
  * is only read in a sentence that is about paying for something.
  */
 const COVERAGE_CONTEXT =
-  /insur|assur|assicur|segur[oa]|aseguradora|versicher|sigort|reimburs|rimbors|reembols|rembours|erstatt|mutual|mutuel|mutua|polizz|poliza|police d|krankenkass|medicare|medicaid|copay|co-pay|deductible|out-of-pocket|health plan|benefit|sgk|servizio sanitario|sistema (?:nacional|publico) de salud|securite sociale|seguridad social|public plan|provincial plan|state plan/u;
+  /(?<![\p{L}])(?:insur|assur|assicur|segur[oa]|aseguradora|versicher|sigort|reimburs|rimbors|reembols|rembours|erstatt|mutual(?![\p{L}])|mutuelle|mutua(?![\p{L}])|polizz|poliza|krankenkass|medicare|medicaid|copay|co-pay|deductible|out-of-pocket|health plan|(?:health|employee|extended health) benefits|benefits? plan|sgk|servizio sanitario|sistema (?:nacional|publico) de salud|securite sociale|seguridad social|public plan|provincial plan|state plan)/u;
 
 /**
  * The authority and coverage claims one sentence makes: at most one of each,
@@ -391,7 +391,11 @@ export function entityClaimsIn(
     for (const re of patterns) {
       const m = sentence.match(new RegExp(re.source, re.flags.replace("g", "")));
       if (!m) continue;
-      const entity = m.groups?.entity?.replace(/^(?:the|The)\s+/, "").trim() || null;
+      // The name without "the" or the sentence's own full stop: the name
+      // pattern takes dots for "St." and "U.S.", so a body that ends the
+      // sentence came back as "... of Ontario." and was then looked for, dot
+      // included, on its cited page (found in review 2026-09-28).
+      const entity = m.groups?.entity?.replace(/^(?:the|The)\s+/, "").replace(/[\s.,;:!?]+$/u, "").trim() || null;
       // A match that names the body beats one that does not.
       if (!best || (!best.entity && entity)) best = { entity, phrase: m[0].trim() };
       if (best.entity) break;
@@ -473,8 +477,9 @@ function statedBySite(figure: string, research?: ArticleResearch): string | null
 /**
  * Extract and grade the checkable claims in a generated article.
  *
- * `research` is optional and only used for corroboration; the check itself does
- * not depend on it. `language` is the workspace's (`workspaces.language`): the
+ * `research` is optional: it is used for corroboration, and its `trust`
+ * decides whether claims about a regulator or an insurer are read at all
+ * (only on a sensitive topic). `language` is the workspace's (`workspaces.language`): the
  * patterns are that language's, and a language the locale contract does not
  * describe gets an `unchecked` report rather than an English reading.
  */
@@ -486,6 +491,7 @@ export function factCheckArticle(
   const locale = resolveLocale(language);
   if (!locale.supported) return uncheckedReport(locale);
   const patterns = claimPatterns(locale);
+  const entityChecks = Boolean(research?.trust?.sensitive);
   const claims: ExtractedClaim[] = [];
   const seen = new Set<string>();
   let index = 0;
@@ -604,8 +610,13 @@ export function factCheckArticle(
 
       // Who regulates, licenses or pays for something. Never high: whether a
       // body is the right one is a reviewer's judgement, which the cited page
-      // can inform (verifyCitedFigures) and this cannot make.
-      for (const e of entityClaimsIn(sentence, locale)) {
+      // can inform (verifyCitedFigures) and this cannot make. Only on a
+      // health, legal, financial or safety article (research.trust, from
+      // lib/content/trust.ts): there, who licenses the reader's clinician or
+      // what their plan pays for is advice; elsewhere "governed by Google",
+      // "licensed under the GPL" and "Ahrefs covers" are ordinary prose, and
+      // reading them as claims sent every SEO article to review.
+      for (const e of entityChecks ? entityClaimsIn(sentence, locale) : []) {
         const text = e.entity ?? e.phrase;
         const dedupeKey = `${e.kind}:${text}:${sentence}`;
         if (seen.has(dedupeKey)) continue;

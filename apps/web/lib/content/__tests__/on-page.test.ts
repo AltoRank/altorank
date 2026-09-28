@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fitTitle, titleReviewNote, removeTitleHeading, faqPlan, faqReviewNote, hasFaqSection, TITLE_MAX } from "../on-page";
+import { fitTitle, givenTitleKept, titleReviewNote, removeTitleHeading, faqPlan, faqReviewNote, hasFaqSection, TITLE_MAX } from "../on-page";
 import { buildSystemPrompt } from "@/lib/ai/prompts";
 import { scoreArticle } from "@/lib/seo/scoring";
 import { auditArticle } from "@/lib/seo/article-audit";
@@ -138,5 +138,33 @@ describe("faqPlan: a FAQ section where the results page shows people ask", () =>
     expect(faqReviewNote(plan, "<h2>Costs</h2><p>x</p>")).toMatch(/No FAQ section, although the search results show 3 questions/);
     expect(faqReviewNote(plan, "<h2>Frequently asked questions</h2><h3>Q?</h3><p>A.</p>")).toBeNull();
     expect(hasFaqSection("<h2>Sıkça sorulan sorular</h2>")).toBe(true);
+  });
+});
+
+describe("review round 2026-09-28: fitTitle keeps the subject", () => {
+  it("prefers the first clause, where the subject is, over a later follow-up", () => {
+    expect(fitTitle("Physiotherapy vs Athletic Therapy: Which One Fits Your Injury and Budget?", "sports injury rehab", "en").title).toBe(
+      "Physiotherapy vs Athletic Therapy",
+    );
+    expect(fitTitle("Physiotherapie oder Osteopathie – was hilft bei Rückenschmerzen wirklich am besten?", "physiotherapie rückenschmerzen", "de").title).toBe(
+      "Physiotherapie oder Osteopathie",
+    );
+    expect(fitTitle("Kinésithérapie ou ostéopathie : laquelle choisir pour soulager votre mal de dos ?", "kinésithérapie mal de dos", "fr").title).toBe(
+      "Kinésithérapie ou ostéopathie",
+    );
+  });
+
+  it("never returns more than 60 characters, even from a keyword with no space to cut at", () => {
+    const long = "a".repeat(80);
+    expect(fitTitle(long, long, "en").title.length).toBeLessThanOrEqual(60);
+  });
+
+  it("keeps a title the caller gave as given, and says when it is long", () => {
+    const given = "Physiotherapy vs Athletic Therapy: Which One Fits Your Injury and Budget?";
+    const kept = givenTitleKept(given, given);
+    expect(kept).toMatchObject({ title: given, rule: "given" });
+    expect(titleReviewNote(kept!)).toMatch(/kept as given/);
+    expect(givenTitleKept(given, "A different title the writer chose")).toBeNull();
+    expect(givenTitleKept(null, given)).toBeNull();
   });
 });

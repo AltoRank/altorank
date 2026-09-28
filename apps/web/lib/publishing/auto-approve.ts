@@ -25,6 +25,8 @@ import { factCheckArticle, autoApprovalBlocker } from "@/lib/ai/fact-check";
 import { tiptapToHtml } from "@/lib/cms/html";
 import { auditArticle } from "@/lib/seo/article-audit";
 import { removeTitleHeading } from "@/lib/content/on-page";
+import { storedTrust } from "@/lib/content/trust";
+import { stripTags, decode } from "@/lib/content/enrich/html";
 import type { ArticleResearch } from "@/lib/seo/research";
 import { getQuota } from "@/lib/billing/quota";
 import { getDestinations } from "./destinations";
@@ -66,11 +68,27 @@ export type AutoApproveCandidate = {
   hasDestination: boolean;
   /** True when `auto_approve_set_by` is still a member of the account. */
   ruleOwnerIsMember: boolean;
+  /**
+   * The person the body names as its reviewer (lib/content/trust.ts), when
+   * it names one. The line is a proposal: that person has to have read it.
+   */
+  reviewerToConfirm?: string | null;
 };
 
 export type AutoApproveDecision =
   | { approve: true }
   | { approve: false; reason: string };
+
+/**
+ * The reviewer the draft names, when its body still carries the name the
+ * generator wrote in (lib/content/trust.ts). Null when the trust decision
+ * named nobody, or a person has since taken the line out.
+ */
+export function reviewerNamedIn(html: string, research: unknown): string | null {
+  const name = storedTrust(research)?.reviewer?.name;
+  if (!name || !html) return null;
+  return decode(stripTags(html)).replace(/\s+/g, " ").includes(name.replace(/\s+/g, " ")) ? name : null;
+}
 
 /**
  * Should this draft be approved now?
@@ -117,6 +135,16 @@ export function decideAutoApproval(
     };
   }
   if (a.factCheckBlocker) return { approve: false, reason: a.factCheckBlocker };
+  // "Reviewed by" on a page nobody opened is a credential the named person
+  // never gave. The generator writes the line from the site's own team page
+  // and asks for that person's sign-off; auto-approve cannot get it. No
+  // reviewer found is a review note, not a hold (decided 2026-09-28).
+  if (a.reviewerToConfirm) {
+    return {
+      approve: false,
+      reason: `names ${a.reviewerToConfirm} as its reviewer; approve it yourself once they have reviewed it, or remove the line`,
+    };
+  }
   if (a.auditFailures.length) return { approve: false, reason: `audit: ${a.auditFailures.join("; ")}` };
 
   const seo = a.seo_score ?? 0;
@@ -268,6 +296,7 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
             needsPlan,
             hasDestination,
             ruleOwnerIsMember,
+            reviewerToConfirm: reviewerNamedIn(html, article.research),
           },
           now,
         );

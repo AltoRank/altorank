@@ -578,8 +578,9 @@ function looksLikeRole(text: string): boolean {
 /**
  * The people a page names with their role: a `Person` in its structured data,
  * and on an about or team page, a name-shaped line followed by (or joined by
- * a comma to) a line that states a profession. Nothing is inferred: a name
- * with no stated role is kept with `role: null` only from structured data.
+ * a comma to) a line that states a profession. Nothing is inferred, and a
+ * name the page gives no role is not kept. The author of a review or a
+ * comment is never kept: that is a customer.
  */
 export function peopleOn(mainHtml: string, html: string, opts: { text: boolean }): StatedPerson[] {
   const out: StatedPerson[] = [];
@@ -592,12 +593,22 @@ export function peopleOn(mainHtml: string, html: string, opts: { text: boolean }
     const r = role?.replace(/\s+/g, " ").trim() || null;
     out.push(from ? { name: n, role: r, from } : { name: n, role: r });
   };
-  for (const node of jsonLdNodes(html, true)) {
-    if (!typesOf(node).includes("person") || typeof node.name !== "string") continue;
+  const nodes = jsonLdNodes(html, true);
+  // A review's or a comment's author is a customer, not the team: their name
+  // is on the page, but it is not ours to list or to put on an article.
+  const reviewers = new Set<unknown>();
+  for (const node of nodes) {
+    if (!typesOf(node).some((t) => t === "review" || t === "comment" || t === "rating" || t === "aggregaterating")) continue;
+    for (const a of Array.isArray(node.author) ? node.author : [node.author]) if (a && typeof a === "object") reviewers.add(a);
+  }
+  for (const node of nodes) {
+    if (!typesOf(node).includes("person") || typeof node.name !== "string" || reviewers.has(node)) continue;
     const job = Array.isArray(node.jobTitle) ? node.jobTitle.filter((x) => typeof x === "string").join(", ") : node.jobTitle;
     const suffix = typeof node.honorificSuffix === "string" ? node.honorificSuffix : "";
     const role = [typeof job === "string" ? job : "", suffix].filter(Boolean).join(", ");
-    add(node.name, role || null, "structured-data");
+    // Only a person the page gives a role: a bare name is nobody a reviewer
+    // line could name, and listing it only spreads a name further.
+    if (role) add(node.name, role, "structured-data");
   }
   if (!opts.text) return out;
   const lines = textLines(mainHtml);

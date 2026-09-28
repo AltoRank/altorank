@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sensitiveTopicOf, chooseReviewer, buildTrust, applyTrustBlock, datelineHtml, storedTrust } from "../trust";
+import { sensitiveTopicOf, chooseReviewer, buildTrust, applyTrustBlock, datelineHtml } from "../trust";
 import { buildSiteFacts, type SitePageRow } from "../site-facts";
 import { extractSitePage, peopleOn } from "@/lib/audit/site-extract";
 import { buildSystemPrompt } from "@/lib/ai/prompts";
@@ -175,21 +175,79 @@ describe("the trust block written into the article", () => {
   });
 });
 
-describe("the dateline, written at publish", () => {
-  const trust = storedTrust({ trust: buildTrust({ keyword: "physiotherapy", language: "en", people: [] }) });
-
+describe("the dateline, written at publish on every article", () => {
   it("shows the first publish, and the update only on a later day", () => {
-    expect(datelineHtml(trust, "en", { publishedAt: "2026-09-28T08:00:00Z", modifiedAt: "2026-09-28T18:00:00Z" })).toBe(
+    expect(datelineHtml("en", { publishedAt: "2026-09-28T08:00:00Z", modifiedAt: "2026-09-28T18:00:00Z" })).toBe(
       '<p class="article-dates"><em>Published September 28, 2026</em></p>',
     );
-    expect(datelineHtml(trust, "en", { publishedAt: "2026-09-01T08:00:00Z", modifiedAt: "2026-09-28T08:00:00Z" })).toBe(
+    expect(datelineHtml("en", { publishedAt: "2026-09-01T08:00:00Z", modifiedAt: "2026-09-28T08:00:00Z" })).toBe(
       '<p class="article-dates"><em>Published September 1, 2026 · Updated September 28, 2026</em></p>',
     );
   });
 
-  it("is in the article's language, and absent without a sensitive topic or a described language", () => {
-    expect(datelineHtml(trust, "de", { publishedAt: "2026-09-01T08:00:00Z", modifiedAt: "2026-09-01T08:00:00Z" })).toContain("Veröffentlicht am 1. September 2026");
-    expect(datelineHtml(trust, "ja", { publishedAt: "2026-09-01T08:00:00Z", modifiedAt: "2026-09-01T08:00:00Z" })).toBeNull();
-    expect(datelineHtml(storedTrust({}), "en", { publishedAt: "2026-09-01T08:00:00Z", modifiedAt: "2026-09-01T08:00:00Z" })).toBeNull();
+  it("is in the article's language, and absent in a language the contract does not describe", () => {
+    expect(datelineHtml("de", { publishedAt: "2026-09-01T08:00:00Z", modifiedAt: "2026-09-01T08:00:00Z" })).toContain("Veröffentlicht am 1. September 2026");
+    expect(datelineHtml("ja", { publishedAt: "2026-09-01T08:00:00Z", modifiedAt: "2026-09-01T08:00:00Z" })).toBeNull();
+  });
+});
+
+describe("review round 2026-09-28: sensitive-topic false positives", () => {
+  it("does not read a word ordinary writing also uses in another sense as a sensitive topic on its own", () => {
+    const cases: Array<[string, string]> = [
+      ["en", "how to diagnose a drop in organic traffic"],
+      ["en", "symptoms of a google penalty"],
+      ["en", "technical debt in seo"],
+      ["en", "legal pages every saas needs"],
+      ["en", "investing in content marketing"],
+      ["en", "seo poisoning attacks"],
+      ["it", "impostazioni seo di wordpress"],
+      ["it", "sintomi di una penalizzazione google"],
+      ["es", "medición de resultados en marketing"],
+      ["es", "ahorro de tiempo en marketing"],
+      ["fr", "diagnostic seo gratuit"],
+      ["de", "Kampagnensteuerung und Steuerung von Budgets"],
+      ["tr", "web sitesi sağlık kontrolü"],
+      ["tr", "dijital pazarlama yatırım getirisi"],
+    ];
+    for (const [language, keyword] of cases) {
+      expect(sensitiveTopicOf({ keyword, language }).topic, `${language}: ${keyword}`).toBeNull();
+    }
+  });
+
+  it("does not read another language's stem into an English word", () => {
+    for (const keyword of ["kinetic typography trends", "ad placement strategies", "rehash old content", "investigate a traffic drop", "heritage brand storytelling"]) {
+      expect(sensitiveTopicOf({ keyword, language: "en" }).topic, keyword).toBeNull();
+    }
+  });
+
+  it("does not make every article of an SEO agency a health article", () => {
+    const agency = {
+      name: "Acme SEO",
+      description: "We diagnose technical SEO problems, fix the symptoms and help you invest in content that pays back.",
+      offerings: ["SEO audits"],
+    };
+    expect(sensitiveTopicOf({ keyword: "content calendar template", profile: agency, language: "en" }).topic).toBeNull();
+  });
+
+  it("still reads a weak word when the business is in the field", () => {
+    const { topic } = sensitiveTopicOf({ keyword: "symptoms of a sprained ankle", profile: CLINIC, language: "en" });
+    expect(topic?.kind).toBe("health");
+    const backed = sensitiveTopicOf({ keyword: "what does a clinical assessment involve", profile: CLINIC, language: "en" }).topic;
+    expect(backed?.kind).toBe("health");
+    expect(backed?.evidence).toMatch(/in the business profile/);
+  });
+});
+
+describe("review round 2026-09-28: people read from structured data", () => {
+  it("keeps no review author and no name without a role", () => {
+    const html = `<html><head><script type="application/ld+json">${JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "MedicalClinic",
+      name: "Acme Physio",
+      employee: [{ "@type": "Person", name: "Sam Lee", jobTitle: "Registered Physiotherapist" }, { "@type": "Person", name: "Alex Moreno" }],
+      review: [{ "@type": "Review", author: { "@type": "Person", name: "Casey Customer", jobTitle: "Nurse" }, reviewBody: "Great" }],
+    })}</script></head><body><main><p>Hello</p></main></body></html>`;
+    const people = peopleOn(html, html, { text: false });
+    expect(people.map((p) => p.name)).toEqual(["Sam Lee"]);
   });
 });
