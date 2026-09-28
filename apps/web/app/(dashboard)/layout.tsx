@@ -16,7 +16,7 @@ import { getCompletedOnboardingSteps } from "@/lib/queries/onboarding";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { entitledToScheduledWork } from "@/lib/billing/quota";
 import { trialEndsLabel, trialGateState } from "@/lib/billing/trial";
-import { openBeforeTrial, REQUEST_PATH_HEADER } from "@/lib/billing/gate-paths";
+import { openBeforeTrial, openWithoutSite, REQUEST_PATH_HEADER } from "@/lib/billing/gate-paths";
 import { usageLine } from "@/lib/billing/usage-line";
 import { siteAllowanceFrom } from "@/lib/workspaces/allowance";
 import { FeedbackWidget } from "@/components/dashboard/feedback-widget";
@@ -109,6 +109,13 @@ export default async function DashboardLayout({
    * so asking the database for this one row again was a second round trip for
    * data already in hand.
    */
+  // No site at all - an account made from a free tool on altorank.co, which
+  // asks for no domain, or an owner who deleted the last one - goes to add
+  // one, and adding one opens the wizard (lib/billing/gate-paths.ts).
+  if (!scopeId && workspaces.length === 0 && !openWithoutSite(requestHeaders.get(REQUEST_PATH_HEADER))) {
+    redirect("/workspaces");
+  }
+
   let wizardDone = true;
   if (scopeId) {
     const ws = workspaces.find((w) => w.id === scopeId) as

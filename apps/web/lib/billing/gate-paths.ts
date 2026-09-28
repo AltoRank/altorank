@@ -36,3 +36,22 @@ export function openBeforeTrial(path: string | null | undefined): boolean {
   if (!path) return false;
   return OPEN_BEFORE_TRIAL.some((p) => path === p || path.startsWith(`${p}/`));
 }
+
+/**
+ * The dashboard paths a person with no site at all may open. Everything else
+ * sends them to /workspaces to add one, and adding one opens the wizard, where
+ * the trial gate above takes over.
+ *
+ * Who has no site: somebody who made an account from a free tool on
+ * altorank.co (the account-only signup asks for no domain), or an owner who
+ * deleted their last one. Before, both landed on a dashboard of zeros with
+ * nothing to say what to do next, and with no site in scope the trial gate
+ * has nothing to hold. An unknown path is let through: a redirect decided on
+ * a missing header is how loops start.
+ */
+const OPEN_WITHOUT_SITE = ["/workspaces", "/settings", "/connect", "/admin"];
+
+export function openWithoutSite(path: string | null | undefined): boolean {
+  if (!path) return true;
+  return OPEN_WITHOUT_SITE.some((p) => path === p || path.startsWith(`${p}/`));
+}

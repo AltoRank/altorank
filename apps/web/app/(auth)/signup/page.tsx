@@ -12,13 +12,47 @@ import { checkDomainReachable } from "@/lib/domain/reachable";
 import { SubmitButton } from "@/components/auth/submit-button";
 import { recordEvent } from "@/lib/observability/record";
 import { existingSignup } from "@/lib/auth/signup-reuse";
+import { toolReturnPath, toolSlugFromReturnUrl } from "@/lib/public-tools/return-url";
+import { userDailyRuns } from "@/lib/public-tools/user-runs";
 
 export const metadata: Metadata = {
   title: "Sign Up",
 };
 
+/**
+ * The account-only signup, from a free tool on altorank.co
+ * (`/signup?from=tools&return_to=https://altorank.co/tools/<slug>/`).
+ *
+ * The person wants to run one tool, so this asks only what an account needs:
+ * email and password. It creates the auth user and sends the tools variant of
+ * the confirmation email, whose link comes back through the callback to
+ * /tool-return/<slug> and on to the tool page. It creates no account row, no
+ * membership and no workspace. Nothing half-made is left behind: the app
+ * already treats "a user with no membership" as a normal state and creates
+ * the account the first time they open the dashboard (lib/queries/account.ts,
+ * `ensureAccount`), and a person with no site is sent to add one, which is
+ * where the wizard and the trial gate take over, exactly as for any signup.
+ */
+async function signUpForTools(formData: FormData, slug: string, returnTo: string) {
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
+  const back = (key: "error" | "success", message: string) =>
+    `/signup?${new URLSearchParams({ from: "tools", return_to: returnTo, [key]: message })}`;
+  try {
+    await sendSignupConfirmation({ email, password, next: toolReturnPath(slug), variant: "tools" });
+  } catch (e) {
+    redirect(back("error", authErrorMessage(e instanceof Error ? e.message : "Could not create the account")));
+  }
+  redirect(back("success", "Check your email and click the link to confirm. It brings you straight back to the tool."));
+}
+
 async function signUp(formData: FormData) {
   "use server";
+  // From a tool page: the account-only variant, no domain asked for.
+  const returnTo = formData.get("return_to");
+  const toolSlug = formData.get("from") === "tools" ? toolSlugFromReturnUrl(returnTo) : null;
+  if (toolSlug) return signUpForTools(formData, toolSlug, String(returnTo).trim());
+
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
   // Set when signup was reached from the homepage growth plan: the visitor has
@@ -195,9 +229,13 @@ async function signUp(formData: FormData) {
 }
 
 export default async function SignUpPage(props: {
-  searchParams: Promise<{ error?: string; success?: string; domain?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; domain?: string; from?: string; return_to?: string }>;
 }) {
   const searchParams = await props.searchParams;
+  const toolSlug = searchParams?.from === "tools" ? toolSlugFromReturnUrl(searchParams?.return_to) : null;
+  if (toolSlug) {
+    return <ToolsSignUp returnTo={String(searchParams.return_to).trim()} error={searchParams.error} success={searchParams.success} />;
+  }
   const domain = normalizeDomain(searchParams?.domain ?? "");
   const prefilled = DOMAIN_PATTERN.test(domain) ? domain : null;
 
@@ -273,6 +311,61 @@ export default async function SignUpPage(props: {
       <p className="text-center text-sm text-ink-3">
         Already have an account?{" "}
         <Link href="/signin" className="font-medium text-accent-ink hover:underline">
+          Sign in
+        </Link>
+      </p>
+    </div>
+  );
+}
+
+const FIELD =
+  "w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft";
+const LABEL = "font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1.5 block";
+
+/** The signup a tool page links to: email and password, and back to the tool. */
+function ToolsSignUp({ returnTo, error, success }: { returnTo: string; error?: string; success?: string }) {
+  const runs = userDailyRuns();
+  const signinHref = `/signin?${new URLSearchParams({ return_to: returnTo })}`;
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <h1 className="text-2xl font-semibold tracking-tight">Create a free account</h1>
+        <p className="mt-2 text-sm text-ink-3">
+          {`It gives you ${runs} run${runs === 1 ? "" : "s"} a day of the AI and search-data tools. No card, no website needed. After you confirm your email you go straight back to the tool.`}
+        </p>
+      </div>
+
+      {success ? (
+        <div className="space-y-2">
+          <div className="text-sm text-accent-ink bg-accent-soft px-3 py-2 rounded-lg">{success}</div>
+          <p className="text-[12.5px] text-ink-3">
+            Nothing after a few minutes? Check spam, or{" "}
+            <Link href={`/signup?${new URLSearchParams({ from: "tools", return_to: returnTo })}`} className="font-medium text-accent-ink hover:underline">
+              sign up again with the same email and password
+            </Link>{" "}
+            to get a new link.
+          </p>
+        </div>
+      ) : (
+        <form action={signUp} className="space-y-4">
+          <input type="hidden" name="from" value="tools" />
+          <input type="hidden" name="return_to" value={returnTo} />
+          {error && <div className="text-sm text-err-ink bg-err-soft px-3 py-2 rounded-lg">{error}</div>}
+          <div>
+            <label className={LABEL}>Email</label>
+            <input name="email" type="email" required autoComplete="email" className={FIELD} placeholder="you@example.com" />
+          </div>
+          <div>
+            <label className={LABEL}>Password</label>
+            <input name="password" type="password" required minLength={8} autoComplete="new-password" className={FIELD} />
+          </div>
+          <SubmitButton pendingLabel="Creating your account…">Create account</SubmitButton>
+        </form>
+      )}
+
+      <p className="text-center text-sm text-ink-3">
+        Already have an account?{" "}
+        <Link href={signinHref} className="font-medium text-accent-ink hover:underline">
           Sign in
         </Link>
       </p>
