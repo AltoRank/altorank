@@ -1,4 +1,4 @@
-import { readAll } from "@/lib/supabase/read-all";
+import { readAllPages } from "@/lib/supabase/read-all";
 import { readOpportunity, contextKey, duplicateVerdict, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
 import { clusterByIntent, intentKey, intentLanguage, sameIntent, storedSerp, unfoldedNote, type IntentFollower, type IntentStage, type StagedTopic } from "@/lib/keyword-research/intent";
 import { articleStage, leadersFrom, type IntentLeader, type KeywordRow, type OnCalendar } from "@/lib/keyword-research/intent-leaders";
@@ -34,6 +34,7 @@ import { languageCodeOf } from "@/lib/keyword-research/locale";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { KeywordIntent } from "@/lib/types";
+import { readGsc } from "@/lib/gsc/read";
 import { scoreRelevance, subjectVocabulary, type TopicalProfile } from "./topical-profile";
 import { commercialFit } from "./commercial-fit";
 import { relativeDifficulty, isOutOfReach } from "./difficulty";
@@ -375,15 +376,11 @@ const AUDIENCE_BOOST = 1.75;
  * the table. A rejected promise and a PostgREST error are both a read that did
  * not happen, and an empty list in their place is a leader nobody checks.
  */
-function leaderRows<T>(
-  res: PromiseSettledResult<{ data: unknown; error: { message: string } | null }>,
-  table: string,
-): T[] {
+function leaderRows<T>(res: PromiseSettledResult<unknown[]>, table: string): T[] {
   if (res.status === "rejected") {
     throw new Error(`recommendations: could not read ${table} (${res.reason instanceof Error ? res.reason.message : String(res.reason)})`);
   }
-  if (res.value.error) throw new Error(`recommendations: could not read ${table} (${res.value.error.message})`);
-  return (res.value.data ?? []) as T[];
+  return res.value as T[];
 }
 
 export async function recommendKeywords(
@@ -396,17 +393,18 @@ export async function recommendKeywords(
   // Every keyword, paged (lib/supabase/read-all.ts): the server stops at
   // 1,000 rows without saying so, and the rest were neither scored nor
   // compared as leaders.
-  const { data: keywords, error } = await readAll<Record<string, unknown>>((from, to) =>
+  const keywords = await readAllPages<Record<string, unknown>>("recommendations: reading keywords", (from, to, count) =>
     supabase
       .from("keywords")
-      .select("id, term, volume, difficulty, intent, status, source, source_type, source_ref, source_url, opportunity, buyer_fit, plan_excluded_at")
+      .select(
+        "id, term, volume, difficulty, intent, status, source, source_type, source_ref, source_url, opportunity, buyer_fit, plan_excluded_at",
+        { count },
+      )
       .eq("workspace_id", workspaceId)
       .order("id")
       .range(from, to),
   );
-
-  if (error) throw new Error(`Could not read keywords: ${error.message}`);
-  if (!keywords?.length) return [];
+  if (!keywords.length) return [];
 
   // What this business is actually about. Without it, scoring optimises volume
   // and difficulty alone and will happily recommend a keyword from a completely
@@ -452,7 +450,8 @@ export async function recommendKeywords(
   // or a page for, with nothing in the log. So those three throw, naming the
   // table, the rule `readIntentLeaders` already follows.
 
-  // The two signals are paged too (readAll), and read only over the lookback:
+  // The two signals are paged too (rankings by readAllPages, Search Console by
+  // readGsc), and read only over the lookback:
   // capped at the first thousand rows they were an arbitrary thousand (no
   // unique order), so on a site with more Search Console rows or rank checks
   // than that the "proven demand" boost and the latest position were read
@@ -463,10 +462,10 @@ export async function recommendKeywords(
   // position older than the window is not this keyword's latest standing.
   const lookbackStart = new Date(Date.now() - GSC_LOOKBACK_DAYS * 86_400_000);
   const [rankRes, articleRes, gscRes, pagesRes, entriesRes] = await Promise.allSettled([
-    readAll((from, to) =>
+    readAllPages("rank history", (from, to, count) =>
       supabase
         .from("keyword_rankings")
-        .select("keyword_id, position, checked_at")
+        .select("keyword_id, position, checked_at", { count })
         .in("keyword_id", keywordIds)
         .gte("checked_at", lookbackStart.toISOString())
         .order("checked_at", { ascending: false })
@@ -475,42 +474,38 @@ export async function recommendKeywords(
     ),
     // The leaders, paged like `readIntentLeaders`: a site past 1,000 of any
     // of them compared its candidates against the first thousand.
-    readAll((from, to) =>
+    readAllPages("articles", (from, to, count) =>
       supabase
         .from("articles")
-        .select("id, keyword, keyword_id, status")
+        .select("id, keyword, keyword_id, status", { count })
         .eq("workspace_id", workspaceId)
         .not("keyword", "is", null)
         .order("id")
         .range(from, to),
     ),
-    readAll((from, to) =>
-      supabase
-        .from("analytics_metrics")
-        .select("query, impressions")
-        .eq("workspace_id", workspaceId)
-        .eq("source", "gsc")
-        .gte("metric_date", lookbackStart.toISOString().slice(0, 10))
-        .not("query", "is", null)
-        // Query-only rows. Search Console is also stored as query+page rows
-        // (lib/gsc/rows.ts), and reading those here counted every impression
-        // twice and, worse, turned "Google once showed the homepage for this"
-        // into "a page of yours already targets this" - which skipped exactly
-        // the striking-distance rows the scorer multiplies by 2.5 (altorank.co,
-        // 2026-09-22). The seeder guards the same way (lib/gsc/seed.ts).
-        .is("page_url", null)
-        .order("id")
-        .range(from, to),
-    ),
+    // Query rows only, all of them over the lookback (lib/gsc/read.ts pages
+    // past the 1,000-row cap by the count Postgres reports). Search Console is
+    // also stored as query+page rows (lib/gsc/rows.ts), and reading those here
+    // counted every impression twice and, worse, turned "Google once showed
+    // the homepage for this" into "a page of yours already targets this" -
+    // which skipped exactly the striking-distance rows the scorer multiplies
+    // by 2.5 (a real workspace, 2026-09-22). The seeder reads the same
+    // partition (lib/gsc/seed.ts).
+    readGsc(supabase, {
+      workspaceId,
+      shapes: ["query"],
+      since: lookbackStart.toISOString().slice(0, 10),
+      columns: ["impressions"],
+    }),
     // The site's own pages and the query each one targets (lib/seo/site-crawl.ts
     // fills `keyword` from the heading or from a ranking). An article written
     // for a query one of these pages already holds is a second page on one
     // query: altorank.co drafted "rankingcoach alternative" while
     // /alternatives/rankingcoach/ sat at position 28 for it (2026-09-18).
-    readAll((from, to) =>
+    readAllPages("site pages", (from, to, count) =>
       supabase
         .from("site_pages")
-        .select("url, keyword")
+        .select("url, keyword", { count })
         .eq("workspace_id", workspaceId)
         .not("keyword", "is", null)
         .order("id")
@@ -518,10 +513,10 @@ export async function recommendKeywords(
     ),
     // When each planned keyword is due: of two planned phrasings of one
     // search, the one due first is the one kept.
-    readAll((from, to) =>
+    readAllPages("calendar entries", (from, to, count) =>
       supabase
         .from("calendar_entries")
-        .select("keyword_id, scheduled_date")
+        .select("keyword_id, scheduled_date", { count })
         .eq("workspace_id", workspaceId)
         .in("status", ["queue", "scheduled"])
         .order("id")
@@ -532,7 +527,7 @@ export async function recommendKeywords(
   // Most recent position per keyword; the query is already newest-first.
   const latestPosition = new Map<string, number>();
   if (rankRes.status === "fulfilled") {
-    for (const row of (rankRes.value.data ?? []) as Array<{
+    for (const row of rankRes.value as Array<{
       keyword_id: string;
       position: number | null;
     }>) {
@@ -567,10 +562,7 @@ export async function recommendKeywords(
 
   const impressionsByTerm = new Map<string, number>();
   if (gscRes.status === "fulfilled") {
-    for (const row of (gscRes.value.data ?? []) as Array<{
-      query: string | null;
-      impressions: number | null;
-    }>) {
+    for (const row of gscRes.value.query) {
       if (!row.query) continue;
       const key = row.query.toLowerCase().trim();
       impressionsByTerm.set(key, (impressionsByTerm.get(key) ?? 0) + (row.impressions ?? 0));

@@ -60,6 +60,11 @@ function client(
     for (const m of ["eq", "in", "order", "range", "gte", "not", "select", "is"]) {
       self[m] = (...args: unknown[]) => {
         seenFilters.push([m, ...args]);
+        // A select asked for its count (every paged read is, lib/supabase/read-all.ts)
+        // reports it the way PostgREST does: the rows the query matched.
+        if (m === "select" && (args[1] as { count?: string } | undefined)?.count) {
+          value = { ...(value as object), count: ((value as { data?: unknown[] }).data ?? []).length };
+        }
         return Object.assign(Promise.resolve(value), self);
       };
     }

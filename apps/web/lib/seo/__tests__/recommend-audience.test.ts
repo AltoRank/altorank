@@ -43,7 +43,14 @@ function client(rows: Row[]): SupabaseClient {
   const chain = (value: unknown): Record<string, unknown> => {
     const self: Record<string, unknown> = {};
     for (const m of ["eq", "in", "order", "range", "gte", "not", "select", "is"]) {
-      self[m] = () => Object.assign(Promise.resolve(value), self);
+      self[m] = (...args: unknown[]) => {
+        // A select asked for its count (every paged read is, lib/supabase/read-all.ts)
+        // reports it the way PostgREST does: the rows the query matched.
+        if (m === "select" && (args[1] as { count?: string } | undefined)?.count) {
+          value = { ...(value as object), count: ((value as { data?: unknown[] }).data ?? []).length };
+        }
+        return Object.assign(Promise.resolve(value), self);
+      };
     }
     self.single = async () => ({ data: { topical_profile: PROFILE, dr: 0, business_profile: null } });
     return self;

@@ -23,7 +23,7 @@ export const GET = withAgent(async (request, ctx) => {
   const { scope } = resolved;
 
   const key = normalizeUrl(url);
-  const [rows, { data: articles }] = await Promise.all([
+  const [gsc, { data: articles }] = await Promise.all([
     gscRows(ctx, scope),
     ctx.supabase
       .from("articles")
@@ -35,7 +35,7 @@ export const GET = withAgent(async (request, ctx) => {
     (a) => normalizeUrl(a.published_url) === key,
   );
   const inspection = article ? inspectionFrom(article.indexing_status) : null;
-  const inSearch = servedUrls(rows, scope.today, scope.days).has(key);
+  const inSearch = servedUrls(gsc, scope.today, scope.days).has(key);
   const bucket = coverageBucket(inspection, inSearch);
   const base = appBaseUrl(request);
 

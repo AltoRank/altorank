@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { generateReport } from "@/lib/reports/generate";
+import { assertReportPeriod } from "@/lib/reports/period";
 import { DASHBOARD_LINK_TTL_SECONDS, REPORTS_BUCKET, storagePathFromReportUrl } from "@/lib/reports/storage";
 
 /**
@@ -15,6 +16,10 @@ export async function generateReportAction(
   endDate: string,
 ) {
   await requireAuth();
+  // The two dates are whatever the form's date inputs sent, which is anything
+  // a browser can send. aggregateReportData checks them too; checking here
+  // says so before a client or a render is made.
+  assertReportPeriod(startDate, endDate);
   const supabase = await createClient();
 
   const result = await generateReport(supabase, workspaceId, startDate, endDate);

@@ -6,6 +6,10 @@ import {
   formatOrganicValue,
   type OrganicValue,
 } from "@/lib/analytics/value";
+import { periodTotals } from "@/lib/gsc/analysis";
+import { readGsc } from "@/lib/gsc/read";
+import { readAllPages } from "@/lib/supabase/read-all";
+import { assertReportPeriod } from "./period";
 
 export interface ReportData {
   period: string;
@@ -79,6 +83,10 @@ export async function aggregateReportData(
   startDate: string,
   endDate: string,
 ): Promise<ReportData> {
+  // Before anything reads with them: the dates window two reads, drive a
+  // day-by-day walk and end up in the PDF's storage path (lib/reports/period.ts).
+  assertReportPeriod(startDate, endDate);
+
   // Fetch workspace + account
   const { data: workspace } = await supabase
     .from("workspaces")
@@ -174,63 +182,67 @@ export async function aggregateReportData(
     .order("seo_score", { ascending: false })
     .limit(5);
 
-  // Analytics
-  const { data: ga4Data } = await supabase
-    .from("analytics_metrics")
-    .select("pageviews, sessions")
-    .eq("workspace_id", workspaceId)
-    .eq("source", "ga4")
-    .gte("metric_date", startDate)
-    .lte("metric_date", endDate);
+  // Analytics. GA4 rows are one per page per day (lib/google/sync.ts), so a
+  // month of a site with a few dozen pages is more than PostgREST's 1,000-row
+  // cap; this read stopped there without a word and the report printed the
+  // first thousand rows' pageviews as the month's. Paged now, like the Search
+  // Console block below.
+  const ga4Data = await readAllPages<{ pageviews: number | null; sessions: number | null }>("GA4 read", (from, to, count) =>
+    supabase
+      .from("analytics_metrics")
+      .select("pageviews, sessions", { count })
+      .eq("workspace_id", workspaceId)
+      .eq("source", "ga4")
+      .gte("metric_date", startDate)
+      .lte("metric_date", endDate)
+      .order("metric_date", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
 
-  const ga4Summary = ga4Data?.length
+  const ga4Summary = ga4Data.length
     ? {
         pageviews: ga4Data.reduce((s, m) => s + (m.pageviews ?? 0), 0),
         sessions: ga4Data.reduce((s, m) => s + (m.sessions ?? 0), 0),
       }
     : null;
 
-  const { data: gscData } = await supabase
-    .from("analytics_metrics")
-    .select("clicks, impressions, ctr")
-    .eq("workspace_id", workspaceId)
-    .eq("source", "gsc")
-    .gte("metric_date", startDate)
-    .lte("metric_date", endDate);
-
-  const gscSummary = gscData?.length
-    ? {
-        clicks: gscData.reduce((s, m) => s + (m.clicks ?? 0), 0),
-        impressions: gscData.reduce((s, m) => s + (m.impressions ?? 0), 0),
-        ctr: gscData.reduce((s, m) => s + (m.ctr ?? 0), 0) / gscData.length,
-      }
+  // Search Console, through the one reader (lib/gsc/read.ts). Totals and
+  // query rows in one read: the summary is the property's daily totals, and
+  // the organic value below prices the query rows.
+  //
+  // Until 2026-09-24 this summed every row the sync writes for a day - the
+  // total, each query, each page and each (query, page) pair - so every click
+  // was in the client's report four times, and CTR was the mean of those rows'
+  // own CTRs, which is not a CTR of anything. The summary is now the period's
+  // total rows (a query-row sum for a day synced before totals existed, the
+  // same rule as the dashboard's chart), and CTR is clicks over impressions.
+  const gsc = await readGsc(supabase, {
+    workspaceId,
+    shapes: ["total", "query"],
+    since: startDate,
+    until: endDate,
+    columns: ["clicks", "impressions"],
+  });
+  const period = periodTotals(gsc, { start: startDate, end: endDate });
+  const gscSummary = period.measured
+    ? { clicks: period.clicks, impressions: period.impressions, ctr: period.ctr }
     : null;
 
   // --- Organic value ---------------------------------------------------------
-  // Query-level rows only: the page-level rows carry article_id and would
-  // double every click. Priced with this workspace's own research.
+  // Query rows, and only query rows: the (query, page) rows carry the same
+  // clicks again once per page, and the filter here used to be
+  // `.not("query", "is", null)`, which let them in and doubled the figure.
+  // Priced with this workspace's own research.
   let organicValue: ReportData["organicValue"] = null;
   if (gscSummary) {
-    const [{ data: valueRows }, { data: pricedKeywords }] = await Promise.all([
-      supabase
-        .from("analytics_metrics")
-        .select("query, clicks")
-        .eq("workspace_id", workspaceId)
-        .eq("source", "gsc")
-        .not("query", "is", null)
-        .gte("metric_date", startDate)
-        .lte("metric_date", endDate),
-      supabase
-        .from("keywords")
-        .select("term, cpc")
-        .eq("workspace_id", workspaceId)
-        .not("cpc", "is", null),
-    ]);
+    const { data: pricedKeywords } = await supabase
+      .from("keywords")
+      .select("term, cpc")
+      .eq("workspace_id", workspaceId)
+      .not("cpc", "is", null);
     const estimate = estimateOrganicValue(
-      ((valueRows ?? []) as Array<{ query: string | null; clicks: number | null }>).map((r) => ({
-        term: r.query,
-        clicks: r.clicks,
-      })),
+      gsc.query.map((r) => ({ term: r.query, clicks: r.clicks })),
       cpcIndex((pricedKeywords ?? []) as Array<{ term: string; cpc: number | string | null }>),
     );
     organicValue = {

@@ -13,9 +13,24 @@
 //
 // Each shape answers one question and must never be summed with another: the
 // same click appears once in every shape, so adding two of them together
-// doubles it. `dailySeries` reads totals (falling back to query rows for days
-// synced before totals existed), `topPages` reads page rows, `cannibalization`
-// reads query_page rows and `queryOpportunities` reads query rows.
+// doubles it. The series and `periodTotals` read totals (falling back to query
+// rows for days synced before totals existed), `topPages` reads page rows,
+// `cannibalization` reads query_page rows and `queryOpportunities` reads query
+// rows.
+//
+// So nothing here takes a flat list of rows. Every function takes the rows
+// already partitioned by shape (`GscShapes`), and names in its signature the
+// partitions it reads: a function that wants query rows is handed
+// `{ query: [...] }`, and the rows of each partition are typed with their
+// shape (`Shaped`), so query_page rows handed over as `query` do not compile.
+// The partition is made once, by the only Search Console reader there is
+// (lib/gsc/read.ts), from the one table below that says what each shape is.
+//
+// The types stop a shape arriving under the wrong name. They cannot stop a
+// caller that holds two partitions from spreading them into one array and
+// summing it; nothing in TypeScript can. That is left to review, and the read
+// guard (lib/gsc/__tests__/read-guard.test.ts) makes sure a reviewer sees it:
+// a read of more than one shape needs an entry, with a reason, in its list.
 //
 // Every number is measured or null. A page with no rows in the previous window
 // has `prevClicks: null` when nothing at all was synced for that window, and 0
@@ -37,11 +52,61 @@ export const WINDOW_DAYS = 28;
 
 export type RowShape = "total" | "query" | "page" | "query_page";
 
+/**
+ * What each shape is, as the two columns that tell them apart: `true` is "set",
+ * `false` is SQL NULL. This is the only statement of it. lib/gsc/read.ts turns
+ * each entry into the SQL filter for that shape, and `rowShape` reads it back
+ * to check every row the database returned, so the filter in the query and the
+ * test in memory cannot disagree about which row belongs where.
+ *
+ * Null, not falsy: Postgres's `query IS NULL` is false for an empty string, and
+ * a classifier that called "" "no query" would file the row under a shape the
+ * SQL never returned it for, and the row would be in no partition at all.
+ */
+export const SHAPE_COLUMNS: Readonly<Record<RowShape, { readonly query: boolean; readonly page_url: boolean }>> = {
+  total: { query: false, page_url: false },
+  query: { query: true, page_url: false },
+  page: { query: false, page_url: true },
+  query_page: { query: true, page_url: true },
+};
+
+export const ROW_SHAPES = Object.keys(SHAPE_COLUMNS) as RowShape[];
+
 export function rowShape(r: Pick<GscRow, "query" | "page_url">): RowShape {
-  if (r.query && r.page_url) return "query_page";
-  if (r.query) return "query";
-  if (r.page_url) return "page";
-  return "total";
+  const query = r.query !== null && r.query !== undefined;
+  const page = r.page_url !== null && r.page_url !== undefined;
+  return ROW_SHAPES.find((s) => SHAPE_COLUMNS[s].query === query && SHAPE_COLUMNS[s].page_url === page)!;
+}
+
+declare const SHAPE: unique symbol;
+
+/**
+ * A row that sits in the `S` partition. The mark is in the type only (no row
+ * carries it at run time), and it is optional, so a fixture written by hand
+ * still fits. What it stops is a partition passed under another shape's
+ * name: `periodTotals({ total: gsc.query_page, ... })` does not compile,
+ * because query_page rows are not total rows, even though every column says
+ * they could be.
+ */
+export type Shaped<R, S extends RowShape> = R & { readonly [SHAPE]?: S };
+
+/**
+ * Rows held apart by shape. `S` narrows it to the partitions a reader asked
+ * for, so reading one it did not ask for is a type error rather than an empty
+ * list that looks like "Google reported nothing"; each partition's rows are
+ * `Shaped` with their own shape, so one cannot stand in for another.
+ */
+export type GscShapes<R = GscRow, S extends RowShape = RowShape> = { [K in S]: Shaped<R, K>[] };
+
+/**
+ * A flat list, split by shape. For tests and fixtures that build mixed rows
+ * the way the sync writes them; product code gets its partitions from
+ * lib/gsc/read.ts, which never builds a flat list in the first place.
+ */
+export function partitionByShape<R extends Pick<GscRow, "query" | "page_url">>(rows: readonly R[]): GscShapes<R> {
+  const out: GscShapes<R> = { total: [], query: [], page: [], query_page: [] };
+  for (const r of rows) out[rowShape(r)].push(r);
+  return out;
 }
 
 /** ISO date, `n` days before `today` (UTC). */
@@ -70,27 +135,60 @@ export type DayPoint = { date: string; clicks: number; impressions: number };
 
 const n = (v: number | null | undefined) => v ?? 0;
 
+/** The columns a daily count needs; narrower than GscRow so a reader can ask for just these. */
+export type CountedRow = Pick<GscRow, "metric_date" | "clicks" | "impressions">;
+
+const DAY_MS = 86_400_000;
+
+/**
+ * The longest window a series will lay out day by day. Search Console keeps
+ * 16 months; the dashboard asks for 28 days, the agent API for at most 90, a
+ * client report for at most MAX_REPORT_DAYS (lib/reports/period.ts). Past
+ * this, the window came from somewhere that did not check it, and the answer
+ * is an error, not a few million empty days.
+ */
+export const MAX_SERIES_DAYS = 1000;
+
+/**
+ * A YYYY-MM-DD date as a whole number of days since 1970-01-01, or an error.
+ * The series counts days as integers: stepping ISO strings and comparing them
+ * never ends past 9999-12-31, where toISOString() turns into "+010000-01-01",
+ * which sorts before "9999-12-31" as text.
+ */
+function dayNumber(date: string): number {
+  const t = /^\d{4}-\d{2}-\d{2}$/.test(date) ? Date.parse(`${date}T00:00:00Z`) : NaN;
+  if (Number.isNaN(t)) throw new Error(`Not a YYYY-MM-DD date: ${JSON.stringify(date)}`);
+  return t / DAY_MS;
+}
+
 /**
  * One point per day for one window. Totals when the day has a total row;
  * otherwise the sum of that day's query rows, which is what the sync stored
  * before it fetched totals. Query rows undercount slightly (Google withholds
  * anonymised queries from that dimension) so a total row wins when both exist.
  */
-function seriesFor(rows: GscRow[], w: DateWindow): DayPoint[] {
-  const totals = new Map<string, DayPoint>();
-  const fromQueries = new Map<string, DayPoint>();
-  for (const r of rows) {
-    if (!inWindow(r.metric_date, w)) continue;
-    const shape = rowShape(r);
-    const target = shape === "total" ? totals : shape === "query" ? fromQueries : null;
-    if (!target) continue;
-    const p = target.get(r.metric_date) ?? { date: r.metric_date, clicks: 0, impressions: 0 };
-    p.clicks += n(r.clicks);
-    p.impressions += n(r.impressions);
-    target.set(r.metric_date, p);
+function seriesFor(gsc: GscShapes<CountedRow, "total" | "query">, w: DateWindow): DayPoint[] {
+  const first = dayNumber(w.start);
+  const last = dayNumber(w.end);
+  if (last - first + 1 > MAX_SERIES_DAYS) {
+    throw new Error(`A ${last - first + 1}-day window (${w.start} to ${w.end}) is longer than ${MAX_SERIES_DAYS} days.`);
   }
+  const byDay = (rows: CountedRow[]) => {
+    const out = new Map<string, DayPoint>();
+    for (const r of rows) {
+      if (!inWindow(r.metric_date, w)) continue;
+      const p = out.get(r.metric_date) ?? { date: r.metric_date, clicks: 0, impressions: 0 };
+      p.clicks += n(r.clicks);
+      p.impressions += n(r.impressions);
+      out.set(r.metric_date, p);
+    }
+    return out;
+  };
+  const totals = byDay(gsc.total);
+  const fromQueries = byDay(gsc.query);
   const out: DayPoint[] = [];
-  for (let d = w.start; d <= w.end; d = isoDaysAgo(new Date(`${d}T00:00:00Z`), -1)) {
+  for (let day = first; day <= last; day++) {
+    const d = new Date(day * DAY_MS).toISOString().slice(0, 10);
     out.push(totals.get(d) ?? fromQueries.get(d) ?? { date: d, clicks: 0, impressions: 0 });
   }
   return out;
@@ -128,26 +226,58 @@ export type SearchPerformance = {
   hasClicks: boolean;
 };
 
-/** Any row of any shape dated inside the window: the window was synced. */
-export function windowMeasured(rows: GscRow[], w: DateWindow): boolean {
-  return rows.some((r) => inWindow(r.metric_date, w));
+/**
+ * Any row of any shape the caller holds, dated inside the window: the window
+ * was synced. It is the one question every shape may answer together, because
+ * it counts days, not clicks.
+ */
+export function windowMeasured(gsc: Partial<GscShapes<Pick<GscRow, "metric_date">>>, w: DateWindow): boolean {
+  return ROW_SHAPES.some((shape) => (gsc[shape] ?? []).some((r) => inWindow(r.metric_date, w)));
 }
 
-export function searchPerformance(rows: GscRow[], today: Date, days = WINDOW_DAYS): SearchPerformance {
+const sumPoints = (pts: DayPoint[], k: "clicks" | "impressions") => pts.reduce((s, p) => s + p[k], 0);
+
+export type PeriodTotals = {
+  clicks: number;
+  impressions: number;
+  /** Clicks over impressions for the whole period; 0 when nothing was shown. */
+  ctr: number;
+  /** A total or query row exists in the period. False is "not synced", not zero. */
+  measured: boolean;
+};
+
+/**
+ * Clicks, impressions and CTR over a date range, by the series' rule: a day's
+ * total row, or that day's query rows for a day synced before totals existed.
+ * CTR is the period's clicks over its impressions. Never a mean of the rows'
+ * own CTRs: a day at 50% on two impressions and a day at 1% on ten thousand
+ * do not average to 25%.
+ */
+export function periodTotals(gsc: GscShapes<CountedRow, "total" | "query">, w: DateWindow): PeriodTotals {
+  const points = seriesFor(gsc, w);
+  const clicks = sumPoints(points, "clicks");
+  const impressions = sumPoints(points, "impressions");
+  return { clicks, impressions, ctr: impressions > 0 ? clicks / impressions : 0, measured: windowMeasured(gsc, w) };
+}
+
+/**
+ * Reads totals and query rows for the series; `windowMeasured` looks at every
+ * shape, so it takes them all.
+ */
+export function searchPerformance(gsc: GscShapes<CountedRow>, today: Date, days = WINDOW_DAYS): SearchPerformance {
   const w = windows(today, days);
-  const current = seriesFor(rows, w.current);
-  const previous = seriesFor(rows, w.previous);
-  const sum = (pts: DayPoint[], k: "clicks" | "impressions") => pts.reduce((s, p) => s + p[k], 0);
-  const previousMeasured = windowMeasured(rows, w.previous);
-  const clicks = compare(sum(current, "clicks"), previousMeasured ? sum(previous, "clicks") : null);
-  const impressions = compare(sum(current, "impressions"), previousMeasured ? sum(previous, "impressions") : null);
+  const current = seriesFor(gsc, w.current);
+  const previous = seriesFor(gsc, w.previous);
+  const previousMeasured = windowMeasured(gsc, w.previous);
+  const clicks = compare(sumPoints(current, "clicks"), previousMeasured ? sumPoints(previous, "clicks") : null);
+  const impressions = compare(sumPoints(current, "impressions"), previousMeasured ? sumPoints(previous, "impressions") : null);
   return {
     days,
     current,
     previous,
     clicks,
     impressions,
-    hasData: windowMeasured(rows, w.current) || previousMeasured,
+    hasData: windowMeasured(gsc, w.current) || previousMeasured,
     previousMeasured,
     hasClicks: clicks.current > 0 || (clicks.previous ?? 0) > 0,
   };
@@ -198,14 +328,17 @@ export type PageStat = {
   clicksDelta: number | null;
 };
 
-/** Pages by clicks over the current window, with the previous window beside each. */
-export function topPages(rows: GscRow[], today: Date, days = WINDOW_DAYS, limit = 8): PageStat[] {
+/**
+ * Pages by clicks over the current window, with the previous window beside
+ * each. Reads page rows; takes every shape only because "was the previous
+ * window synced" is asked of all of them.
+ */
+export function topPages(gsc: GscShapes, today: Date, days = WINDOW_DAYS, limit = 8): PageStat[] {
   const w = windows(today, days);
-  const previousMeasured = windowMeasured(rows, w.previous);
+  const previousMeasured = windowMeasured(gsc, w.previous);
   const cur = new Map<string, Agg & { url: string; articleId: string | null }>();
   const prev = new Map<string, number>();
-  for (const r of rows) {
-    if (rowShape(r) !== "page") continue;
+  for (const r of gsc.page) {
     const key = normalizeUrl(r.page_url as string);
     if (inWindow(r.metric_date, w.current)) {
       const a = cur.get(key) ?? { ...newAgg(), url: r.page_url as string, articleId: null };
@@ -243,11 +376,11 @@ export type QueryStat = {
 };
 
 /** Per-query totals over the current window, keyed by the lower-cased query. */
-export function queryStats(rows: GscRow[], today: Date, days = WINDOW_DAYS): Map<string, QueryStat> {
+export function queryStats(gsc: GscShapes<GscRow, "query">, today: Date, days = WINDOW_DAYS): Map<string, QueryStat> {
   const w = windows(today, days);
   const aggs = new Map<string, Agg & { query: string }>();
-  for (const r of rows) {
-    if (rowShape(r) !== "query" || !inWindow(r.metric_date, w.current)) continue;
+  for (const r of gsc.query) {
+    if (!inWindow(r.metric_date, w.current)) continue;
     const key = (r.query as string).trim().toLowerCase();
     const a = aggs.get(key) ?? { ...newAgg(), query: r.query as string };
     addTo(a, r);
@@ -269,8 +402,8 @@ export const OPPORTUNITY_MAX_POSITION = 15;
  * positions 4-15. Same signal `lib/seo/recommendations.ts` weights as
  * striking distance; this is the per-query view of it.
  */
-export function queryOpportunities(rows: GscRow[], today: Date, days = WINDOW_DAYS, limit = 10): QueryStat[] {
-  return [...queryStats(rows, today, days).values()]
+export function queryOpportunities(gsc: GscShapes<GscRow, "query">, today: Date, days = WINDOW_DAYS, limit = 10): QueryStat[] {
+  return [...queryStats(gsc, today, days).values()]
     .filter((q) => q.position !== null && q.position >= OPPORTUNITY_MIN_POSITION && q.position <= OPPORTUNITY_MAX_POSITION && q.impressions > 0)
     .sort((x, y) => y.impressions - x.impressions || (x.position ?? 99) - (y.position ?? 99))
     .slice(0, limit);
@@ -315,7 +448,7 @@ const MERGE_SHARE = 0.2;
  * merging or rewriting is a person's decision.
  */
 export function cannibalization(
-  rows: GscRow[],
+  gsc: GscShapes<GscRow, "query_page">,
   today: Date,
   days = WINDOW_DAYS,
   opts: { minImpressions?: number; limit?: number } = {},
@@ -324,8 +457,8 @@ export function cannibalization(
   const limit = opts.limit ?? 10;
   const w = windows(today, days);
   const byQuery = new Map<string, { query: string; pages: Map<string, Agg & { url: string; articleId: string | null }> }>();
-  for (const r of rows) {
-    if (rowShape(r) !== "query_page" || !inWindow(r.metric_date, w.current)) continue;
+  for (const r of gsc.query_page) {
+    if (!inWindow(r.metric_date, w.current)) continue;
     const qKey = (r.query as string).trim().toLowerCase();
     const q = byQuery.get(qKey) ?? { query: r.query as string, pages: new Map() };
     const pKey = normalizeUrl(r.page_url as string);
@@ -415,11 +548,11 @@ export type IndexCoverage = {
 };
 
 /** URLs Google served in the current window, normalised, from page rows. */
-export function servedUrls(rows: GscRow[], today: Date, days = WINDOW_DAYS): Set<string> {
+export function servedUrls(gsc: GscShapes<GscRow, "page">, today: Date, days = WINDOW_DAYS): Set<string> {
   const w = windows(today, days);
   const out = new Set<string>();
-  for (const r of rows) {
-    if (rowShape(r) !== "page" || !inWindow(r.metric_date, w.current) || n(r.impressions) <= 0) continue;
+  for (const r of gsc.page) {
+    if (!inWindow(r.metric_date, w.current) || n(r.impressions) <= 0) continue;
     out.add(normalizeUrl(r.page_url as string));
   }
   return out;
