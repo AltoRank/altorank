@@ -251,3 +251,15 @@ describe("review round 2026-09-28: people read from structured data", () => {
     expect(people.map((p) => p.name)).toEqual(["Sam Lee"]);
   });
 });
+
+describe("review round 2026-09-28: the reviewer's role must mean the field", () => {
+  it("does not name a legal assistant or an accounting clerk as the reviewer", () => {
+    const people = [
+      { name: "Pat Doe", role: "Legal Assistant", source: `${O}/team` },
+      { name: "Lee Roe", role: "Accounting Clerk", source: `${O}/team` },
+    ];
+    expect(chooseReviewer(people, "legal")).toBeNull();
+    expect(chooseReviewer(people, "financial")).toBeNull();
+    expect(chooseReviewer([...people, { name: "Kim Poe", role: "Family Lawyer", source: `${O}/team` }], "legal")?.name).toBe("Kim Poe");
+  });
+});

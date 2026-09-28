@@ -441,6 +441,11 @@ function faqRule(prompt: ArticlePrompt, language: string, locale: ReturnType<typ
     `- End the article with ${heading}: ${plan.reason}. Three to five <h3> questions from QUESTIONS`,
     "  SEARCHERS ASK that the body has not already answered, each answered in 40-80 words that stand",
     "  alone. Keep it short; do not repeat a section or invent questions to fill it.",
+    // The owner's own words outrank a default: a site that said "no FAQs" in
+    // its standing instructions keeps that, and the review note says so.
+    ...(prompt.output?.customInstructions?.trim()
+      ? ["  If the site owner's standing instructions below say not to add a FAQ, follow them instead."]
+      : []),
   ];
 }
 

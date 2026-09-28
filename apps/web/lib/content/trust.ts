@@ -238,8 +238,9 @@ const WORKPLACE = /(?<![\p{L}])(?:clinics?|clinique|clinica|klinik\p{L}*|practic
 
 /**
  * The person on the site whose stated role fits the topic: a health role for
- * a health article, and so on, by the same word lists. Only people the
- * crawl found with a role; the first one the about page names wins.
+ * a health article, and so on, by the same word lists, with a word that is
+ * not WEAK. Only people the crawl found with a role; the first one the about
+ * page names wins.
  */
 export function chooseReviewer(
   people: SiteFacts["people"],
@@ -247,7 +248,11 @@ export function chooseReviewer(
 ): { name: string; role: string; source: string } | null {
   for (const p of people) {
     if (!p.role) continue;
-    if (termsFor(kind).test(fold(p.role).replace(WORKPLACE, " "))) return { name: p.name, role: p.role, source: p.source };
+    // A word of the kind that means the field and nothing else: "Legal
+    // Assistant" or "Accounting Clerk" does not review a legal or a tax
+    // article (WEAK). Every language's list: a role is written in the site's.
+    const words = matchKinds(fold(p.role).replace(WORKPLACE, " ")).get(kind);
+    if (words?.strong.length) return { name: p.name, role: p.role, source: p.source };
   }
   return null;
 }
