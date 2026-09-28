@@ -26,7 +26,10 @@ export interface PublishPayload {
   /** The keyword the article targets; written to the SEO plugin's focus field. */
   focusKeyword?: string;
   tags?: string[];
+  /** When the article first went out, as ISO 8601; kept across republishes. */
   publishedAt?: string;
+  /** This push, as ISO 8601: the date the content was last updated on the site. */
+  modifiedAt?: string;
   /** When the draft was written, as ISO 8601. */
   createdAt?: string;
   featuredImageUrl?: string;

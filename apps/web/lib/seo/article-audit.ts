@@ -702,8 +702,8 @@ export function auditArticle(input: ArticleAuditInput): ArticleAudit {
     status: bylined ? "pass" : "info",
     label: "Author",
     detail: bylined
-      ? "Names an author in the body."
-      : "No author or byline in the body. The generator does not write one. Make sure the CMS attributes the piece to a real person with a bio; anonymous pages are the weakest E-E-A-T position there is.",
+      ? "Names an author or reviewer in the body."
+      : "No author or reviewer line in the body. The generator writes a reviewer line only on a health, legal, financial or safety topic, and only for a person the site's own pages name with a fitting role. Make sure the CMS attributes the piece to a real person with a bio; anonymous pages are the weakest E-E-A-T position there is.",
   });
 
   const hasExperience = locale.supported && locale.prose.firstHand.test(locale.lower(text));

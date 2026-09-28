@@ -43,6 +43,7 @@ import { addHowToVideo } from "./video";
 import { addInfographics } from "./infographic";
 import { addCallToAction } from "./cta";
 import { buildFaqSchema, type FaqSchema } from "./faq";
+import { applyTrustBlock, type ArticleTrust } from "@/lib/content/trust";
 import type { ImageStyle } from "@/lib/onboarding/output-settings";
 import { resolveLocale, SUPPORTED_LANGUAGE_LIST } from "@/lib/i18n/locale";
 
@@ -81,6 +82,8 @@ export interface EnrichmentReport {
   video: boolean;
   infographics: number;
   cta: boolean;
+  /** The reviewer line and the disclaimer a sensitive article carries, when written in. */
+  trust?: { reviewer: boolean; disclaimer: boolean };
   /** Question/answer pairs in the FAQ schema; 0 when there is none. */
   faq: number;
   warnings: string[];
@@ -111,6 +114,8 @@ export interface EnrichContext {
   conversion?: string | null;
   /** The business's own page for this article's topic, for the call to action. */
   service?: { name: string; url: string } | null;
+  /** The trust decision (lib/content/trust.ts): a reviewer line and a disclaimer for a sensitive topic. */
+  trust?: ArticleTrust | null;
   /** Storage, settings and spend. Omit in tests: every network step then skips. */
   supabase?: SupabaseClient | null;
   /**
@@ -297,6 +302,14 @@ export async function enrichArticle(html: string, ctx: EnrichContext): Promise<E
     { added: false },
   );
 
+  // 6b. Trust: the reviewer line at the top and the disclaimer before the
+  //     call to action, on a health, legal, financial or safety article.
+  const trust = await step(
+    "trust",
+    (h) => applyTrustBlock(h, ctx.trust, ctx.language),
+    { reviewer: false, disclaimer: false },
+  );
+
   // 7. FAQ schema, read from the final text. Off leaves the FAQ prose alone
   //    and hands the publisher nothing to inject.
   //
@@ -332,6 +345,7 @@ export async function enrichArticle(html: string, ctx: EnrichContext): Promise<E
     video: video.added,
     infographics: infographics.added,
     cta: cta.added,
+    trust: { reviewer: trust.reviewer, disclaimer: trust.disclaimer },
     faq: faq.count,
     warnings,
     format: format.findings,

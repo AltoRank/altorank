@@ -55,6 +55,16 @@ export interface StatedFact {
   from?: "structured-data";
 }
 
+/** A person a page names, with the role it gives them. */
+export interface StatedPerson {
+  /** The name as the page writes it, credentials after it included ("Jane Doe, PT"). */
+  name: string;
+  /** The role or credential as the page states it, or null when it states none. */
+  role: string | null;
+  /** Set when read from the page's JSON-LD (a `Person`), not its text. */
+  from?: "structured-data";
+}
+
 export interface SitePageExtract {
   /** Shape version, so a reader can tell an extract written by older code. */
   v: 1;
@@ -77,6 +87,14 @@ export interface SitePageExtract {
   text: string;
   /** Founding year, team size and location, only where the page states them. */
   stated: StatedFact[];
+  /**
+   * The people an about or team page names with a professional role, and
+   * any `Person` in the page's structured data. The only source the writer's
+   * reviewer line may name (lib/content/trust.ts): a health article that
+   * names a reviewer nobody found on the site is a fabricated credential.
+   * Absent on extracts written before 2026-09-28; the next crawl adds it.
+   */
+  people?: StatedPerson[];
 }
 
 /** The languages whose page names the role table knows. Said out loud wherever it matters. */
@@ -492,6 +510,113 @@ export function statedFacts(mainHtml: string, html: string, now = new Date()): S
   return out;
 }
 
+const MAX_PEOPLE = 8;
+
+/**
+ * Words that make a line a professional role or a credential, folded, in the
+ * ROLE_LANGUAGES. A line next to a name counts as that person's role only
+ * when it carries one: "Meet the team" under a heading is not a job title.
+ */
+const PROFESSION = new RegExp(
+  String.raw`(?<![\p{L}])(?:` +
+    [
+      // en
+      "physiotherapist", "physical therapist", "physio", "therapist", "kinesiologist", "chiropractor", "osteopath", "rmt",
+      "doctor", "dr", "md", "physician", "surgeon", "nurse", "dentist", "hygienist", "pharmacist", "psychologist",
+      "psychotherapist", "counsell?or", "dietitian", "nutritionist", "optometrist", "midwife", "lawyer", "attorney",
+      "solicitor", "barrister", "paralegal", "notary", "accountant", "cpa", "cfa", "cfp", "bookkeeper",
+      "financial (?:advisor|adviser|planner)", "broker", "electrician", "engineer", "inspector", "founder", "co-founder",
+      "owner", "director", "partner", "principal", "ceo", "registered", "licensed", "certified", "pt", "dpt", "msc", "bsc", "phd",
+      // tr
+      "fizyoterapist", "fizik tedavi uzmani", "doktor", "uzman", "hekim", "dis hekimi", "hemsire", "psikolog", "diyetisyen",
+      "avukat", "muhasebeci", "mali musavir", "smmm", "kurucu", "kurucu ortak", "sahibi", "mudur", "direktor", "muhendis",
+      // it
+      "fisioterapista", "medico", "dott", "dottore", "dottoressa", "chirurgo", "infermiere", "infermiera", "dentista",
+      "psicologo", "psicologa", "nutrizionista", "avvocato", "avvocata", "commercialista", "notaio", "fondatore",
+      "fondatrice", "titolare", "direttore", "direttrice", "ingegnere", "osteopata",
+      // es / pt
+      "fisioterapeuta", "doctora", "cirujano", "enfermero", "enfermera", "odontologo", "nutricionista", "abogado",
+      "abogada", "contador", "contadora", "asesor", "fundador", "fundadora", "director", "directora", "ingeniero",
+      "advogado", "advogada",
+      // fr
+      "kinesitherapeute", "kine", "physiotherapeute", "medecin", "docteur", "chirurgien", "infirmier", "infirmiere",
+      "dentiste", "psychologue", "dieteticien", "dieteticienne", "osteopathe", "avocat", "avocate", "notaire",
+      "expert-comptable", "comptable", "fondateur", "fondatrice", "directeur", "directrice", "gerant", "gerante", "ingenieur",
+      // de
+      "physiotherapeut", "physiotherapeutin", "arzt", "arztin", "facharzt", "facharztin", "chirurgin", "zahnarzt",
+      "zahnarztin", "psychologe", "psychologin", "heilpraktiker", "rechtsanwalt", "rechtsanwaltin", "anwalt", "anwaltin",
+      "notar", "steuerberater", "steuerberaterin", "grunder", "grunderin", "inhaber", "inhaberin", "geschaftsfuhrer",
+      "geschaftsfuhrerin", "leiter", "leiterin",
+      // nl
+      "fysiotherapeut", "arts", "advocaat", "oprichter", "eigenaar",
+    ].join("|") +
+    String.raw`)(?![\p{L}])`,
+  "u",
+);
+
+/** Words a heading of two to four capitalised words carries when it is not somebody's name. */
+const NOT_A_NAME = /(?<![\p{L}])(?:our|the|meet|team|services?|clinic|about|contact|why|how|what|who|welcome|ekibimiz|ekip|hakkimizda|unser|unsere|nuestro|nuestra|equipo|equipe|squadra|staff|praxis|clinique|clinica|klinik|klinigi)(?![\p{L}])/u;
+const NAME_TOKEN = /^(?:\p{Lu}[\p{L}'’.-]*|van|von|de|da|di|del|der|den|du|la|le|bin|al)$/u;
+
+/** A line that reads as a person's name: two to four words, capitalised, no digits, no role words. */
+function looksLikeName(text: string): boolean {
+  const t = text.replace(/^(?:Dr|Prof|Dott|Doç|Av|Uzm)\.?\s+/u, "").trim();
+  if (t.length < 4 || t.length > 50 || /\d/.test(t)) return false;
+  const tokens = t.split(/\s+/);
+  if (tokens.length < 2 || tokens.length > 4 || !/^\p{Lu}/u.test(tokens[0]) || !/^\p{Lu}/u.test(tokens[tokens.length - 1])) return false;
+  if (!tokens.every((w) => NAME_TOKEN.test(w))) return false;
+  const f = fold(t);
+  return !NOT_A_NAME.test(f) && !PROFESSION.test(f) && !LABEL_ROLE.has(labelOf(t));
+}
+
+/** A short line that states a role: under eight words, not a sentence, carrying a profession. */
+function looksLikeRole(text: string): boolean {
+  const t = text.trim();
+  return t.length >= 2 && t.length <= 80 && t.split(/\s+/).length <= 8 && !/[.!?]$/.test(t) && PROFESSION.test(fold(t));
+}
+
+/**
+ * The people a page names with their role: a `Person` in its structured data,
+ * and on an about or team page, a name-shaped line followed by (or joined by
+ * a comma to) a line that states a profession. Nothing is inferred: a name
+ * with no stated role is kept with `role: null` only from structured data.
+ */
+export function peopleOn(mainHtml: string, html: string, opts: { text: boolean }): StatedPerson[] {
+  const out: StatedPerson[] = [];
+  const seen = new Set<string>();
+  const add = (name: string, role: string | null, from?: StatedPerson["from"]) => {
+    const n = name.replace(/\s+/g, " ").trim();
+    const key = fold(n);
+    if (!n || seen.has(key) || out.length >= MAX_PEOPLE) return;
+    seen.add(key);
+    const r = role?.replace(/\s+/g, " ").trim() || null;
+    out.push(from ? { name: n, role: r, from } : { name: n, role: r });
+  };
+  for (const node of jsonLdNodes(html, true)) {
+    if (!typesOf(node).includes("person") || typeof node.name !== "string") continue;
+    const job = Array.isArray(node.jobTitle) ? node.jobTitle.filter((x) => typeof x === "string").join(", ") : node.jobTitle;
+    const suffix = typeof node.honorificSuffix === "string" ? node.honorificSuffix : "";
+    const role = [typeof job === "string" ? job : "", suffix].filter(Boolean).join(", ");
+    add(node.name, role || null, "structured-data");
+  }
+  if (!opts.text) return out;
+  const lines = textLines(mainHtml);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // "Jane Doe, Registered Physiotherapist" / "Jane Doe - Physiotherapist".
+    const joined = line.match(/^(.{4,50}?)\s*(?:,|\s[-–|]\s)\s*(.{2,80})$/u);
+    if (joined && looksLikeName(joined[1]) && looksLikeRole(joined[2])) {
+      add(joined[1], joined[2]);
+      continue;
+    }
+    if (looksLikeName(line) && i + 1 < lines.length && looksLikeRole(lines[i + 1])) {
+      add(line, lines[i + 1]);
+      i++;
+    }
+  }
+  return out;
+}
+
 function headingsIn(mainHtml: string): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -593,6 +718,12 @@ export function extractSitePage(
     text: role === "about" ? mainText.slice(0, MAX_TEXT) : "",
     stated: role === "about" || role === "contact" || role === "home" ? statedFacts(main, html, opts.now) : [],
   };
+  // The team is on the about page (or its /team variant, which is the same
+  // role); the homepage may declare its practitioners in structured data.
+  if (role === "about" || role === "home") {
+    const people = peopleOn(main, html, { text: role === "about" });
+    if (people.length) extract.people = people;
+  }
   return extract;
 }
 

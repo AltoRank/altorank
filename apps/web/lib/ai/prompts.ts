@@ -569,6 +569,28 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
   // which it must be told rather than left to fill.
   if (facts) sections.push(buildSiteFactsSection(facts, { keyword, title }));
 
+  // --- A health, legal, financial or safety topic ----------------------------
+  //
+  // The clinic article of 2026-09-27 read as advice with no one behind it.
+  // The reviewer line and the disclaimer are written in afterwards from the
+  // site's own pages (lib/content/trust.ts), so the writer is told not to
+  // make up either, and what the topic asks of the text itself.
+  if (prompt.sensitive) {
+    const k = prompt.sensitive.kind;
+    const who = { health: "a qualified health professional", legal: "a lawyer", financial: "a qualified adviser", safety: "a qualified, licensed professional" }[k];
+    sections.push(
+      [
+        `THIS IS A ${k.toUpperCase()} TOPIC (${prompt.sensitive.evidence}):`,
+        "- A reader may act on this for their own health, money, legal position or safety. Explain what",
+        "  the options are, what each is for and how to decide; do not diagnose, prescribe or promise an",
+        `  outcome. Say plainly when the reader should see ${who}, and what for.`,
+        "- Do not write a byline, an author or reviewer line, an author bio or a disclaimer, and never name a",
+        "  person as having written or checked this. Those are added after you write, from the business's",
+        "  own pages, and one you invent is a false credential.",
+      ].join("\n"),
+    );
+  }
+
   // --- The owner's brief -----------------------------------------------------
   // Before the research, because it outranks it: the SERP says what readers
   // expect, the owner says what this business has actually done. Answers are

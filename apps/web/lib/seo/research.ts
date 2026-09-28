@@ -97,6 +97,12 @@ export interface ArticleResearch {
    * the editor's research panel.
    */
   reviewNotes?: string[];
+  /**
+   * Whether this is a health, legal, financial or safety article, who on the
+   * site reviews it and what disclaimer it carries (lib/content/trust.ts).
+   * Read again at publish for the dateline. Absent before 2026-09-28.
+   */
+  trust?: import("@/lib/content/trust").ArticleTrust;
 }
 
 const DEFAULT_WORD_COUNT = 1500;

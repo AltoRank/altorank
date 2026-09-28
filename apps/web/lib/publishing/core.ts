@@ -19,6 +19,7 @@ import { renderArticleMarkdown } from "@/lib/publishing/export";
 import { recordPublish } from "@/lib/publishing/log";
 import { DEFAULT_OUTPUT_SETTINGS } from "@/lib/onboarding/output-settings";
 import { removeTitleHeading } from "@/lib/content/on-page";
+import { datelineHtml, storedTrust } from "@/lib/content/trust";
 
 /** Which connection an attempt went through, and how. Written to publish_log. */
 export type PublishContext = {
@@ -146,6 +147,8 @@ type ArticleRow = {
   keyword: string | null;
   created_at: string | null;
   published_at: string | null;
+  /** The research saved at generation; its `trust` decides the dateline. */
+  research?: unknown;
 };
 
 /** Everything after the destination is known; failures here are retryable. */
@@ -279,6 +282,15 @@ async function pushToDestination(
     // Schema is never worth failing a publish over.
   }
 
+  // When it first went out, kept across republishes, and now. Carried to
+  // every adapter, and written into a health, legal, financial or safety
+  // article as a visible dateline: a reader of advice should see how old it
+  // is (lib/content/trust.ts). Only here are both dates known.
+  const publishedAt = article.published_at ?? new Date().toISOString();
+  const modifiedAt = new Date().toISOString();
+  const dateline = datelineHtml(storedTrust(article.research), language, { publishedAt, modifiedAt });
+  if (dateline) html = `${dateline}\n${html}`;
+
   const payload: PublishPayload = {
     id: articleId,
     indexNowKey,
@@ -305,6 +317,8 @@ async function pushToDestination(
     metaDescription: article.meta_description ?? undefined,
     focusKeyword: article.keyword ?? undefined,
     createdAt: article.created_at ?? undefined,
+    publishedAt,
+    modifiedAt,
     featuredImageUrl: article.featured_image_url ?? undefined,
     publishMode,
     structuredData,
@@ -353,7 +367,10 @@ async function pushToDestination(
       // A draft may have no public address yet (Wix returns none); null says
       // so, where "" would render as a link to nowhere.
       published_url: result.url || null,
-      published_at: new Date().toISOString(),
+      // The first publish, kept: a republish is an update, and the page's
+      // "published" date (the dateline, BlogPosting, git's publishDate) is
+      // the day it first went out. Was overwritten on every push.
+      published_at: publishedAt,
       updated_at: new Date().toISOString(),
     })
     .eq("id", articleId);

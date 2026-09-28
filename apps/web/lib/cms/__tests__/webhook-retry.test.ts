@@ -122,6 +122,8 @@ describe("WebhookAdapter contract", () => {
           content_html: "<p>body</p>",
           meta_description: "d",
           created_at: "2026-09-04T10:00:00.000Z",
+          published_at: null,
+          updated_at: null,
           image_url: "https://img/x.png",
           slug: "title",
           tags: ["t1"],

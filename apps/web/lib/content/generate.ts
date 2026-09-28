@@ -40,6 +40,7 @@ import { siteFactUrls } from "@/lib/ai/prompts";
 import { figureReviewNote } from "@/lib/seo/source-figures";
 import { matchingOfferings, topicLinkNote } from "@/lib/content/topic-pages";
 import { faqPlan, faqReviewNote, fitTitle, removeTitleHeading, titleReviewNote } from "@/lib/content/on-page";
+import { buildTrust } from "@/lib/content/trust";
 import { anthropicModel, openaiImageModel } from "@/lib/ai/models";
 import { GenerationTruncatedError } from "@/lib/ai/errors";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
@@ -745,6 +746,22 @@ export async function generateArticle(
       // and again at approval (lib/ai/fact-check.ts).
       research.siteStatements = siteStatementsOf(siteFacts.facts);
     }
+    // Health, legal, financial or safety, decided once from the keyword, the
+    // title the writer is given and the profile; the reviewer only from the
+    // people the site's own pages name (lib/content/trust.ts). Saved with the
+    // research: the review panel shows its notes and the publisher reads it
+    // for the dateline. Not on a rewrite, which keeps the page it is given.
+    const trust = refreshOf
+      ? null
+      : buildTrust({
+          keyword,
+          title: approvedTitle,
+          profile: workspace.business_profile,
+          language: workspace.language,
+          people: siteFacts?.facts.people ?? [],
+        });
+    if (trust) research.trust = trust;
+
     const questionSelection = await selectArticleQuestions(research.peopleAlsoAsk, {
       keyword, title: approvedTitle, language: workspace.language ?? "en",
       business: workspace.business_profile, brief: topicBrief,
@@ -848,6 +865,7 @@ export async function generateArticle(
       brief,
       site,
       siteFacts: siteFacts?.facts,
+      sensitive: trust?.sensitive ?? null,
       refreshOf: refreshOf
         ? {
             existingHtml: refreshOf.existingHtml,
@@ -986,6 +1004,7 @@ export async function generateArticle(
         research: research as unknown as Record<string, unknown>,
         conversion: siteFacts?.facts.conversion?.url ?? null,
         service: topicPages[0] ?? null,
+        trust,
       });
       return enriched.html;
     });
@@ -1016,7 +1035,7 @@ export async function generateArticle(
     // What the reviewer has to know or do before publishing, said once at the
     // top of the research panel rather than left for them to infer from a
     // failing check. Saved with the research below.
-    const reviewNotes: string[] = [];
+    const reviewNotes: string[] = [...(trust?.notes ?? [])];
     const figureNote = figureReviewNote(research.sourceFigures, processedHtml, workspace.language);
     if (figureNote) reviewNotes.push(figureNote);
     const linkNote = topicLinkNote(topicPages, processedHtml);

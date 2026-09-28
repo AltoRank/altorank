@@ -51,6 +51,7 @@ const MAX_OFFERINGS = 12;
 const MAX_WORK = 12;
 const MAX_STATED = 8;
 const MAX_PAGES = 10;
+const MAX_PEOPLE = 8;
 /** Conversion candidates re-checked per draft. Each is one GET to the customer's site. */
 const MAX_CONVERSION_CHECKS = 3;
 
@@ -130,6 +131,7 @@ export function buildSiteFacts(rows: SitePageRow[], domain: string): SiteFacts {
     work: [],
     stated: [],
     about: null,
+    people: [],
     headings: [],
     pages: [],
     conversion: null,
@@ -200,6 +202,20 @@ export function buildSiteFacts(rows: SitePageRow[], domain: string): SiteFacts {
 
   const about = withExtract.find((x) => x.extract.role === "about" && x.extract.text);
   if (about) facts.about = { text: about.extract.text, source: about.url };
+
+  // The team, as the about pages name it, then anyone the homepage declares
+  // in structured data. One entry per name.
+  const seenPeople = new Set<string>();
+  for (const role of ["about", "home"] as const) {
+    for (const p of withExtract.filter((x) => x.extract.role === role)) {
+      for (const person of p.extract.people ?? []) {
+        const key = fold(person.name);
+        if (seenPeople.has(key) || facts.people.length >= MAX_PEOPLE) continue;
+        seenPeople.add(key);
+        facts.people.push({ name: person.name, role: person.role, source: p.url, ...(person.from ? { from: person.from } : {}) });
+      }
+    }
+  }
 
   for (const role of ["offering", "work", "about", "contact", "pricing"] as const) {
     for (const p of withExtract.filter((x) => x.extract.role === role && !x.extract.detail)) {
@@ -383,7 +399,7 @@ export async function loadSiteFacts(
   opts: { fetch?: SafeFetch } = {},
 ): Promise<{ facts: SiteFacts; layer: ResearchLayer }> {
   const empty = (note: string): SiteFacts => ({
-    pagesRead: 0, offerings: [], work: [], headings: [], stated: [], about: null, pages: [], conversion: null, notes: [note],
+    pagesRead: 0, offerings: [], work: [], headings: [], stated: [], about: null, people: [], pages: [], conversion: null, notes: [note],
   });
   if (!domain) {
     const facts = empty("This workspace has no domain, so none of the business's pages could be read.");
