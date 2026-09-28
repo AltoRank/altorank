@@ -37,6 +37,7 @@ import { setSpendReporter } from "@/lib/seo/client";
 import { fetchKnownPages } from "@/lib/linking/targets";
 import { loadSiteFacts } from "@/lib/content/site-facts";
 import { siteFactUrls } from "@/lib/ai/prompts";
+import { figureReviewNote } from "@/lib/seo/source-figures";
 import { anthropicModel, openaiImageModel } from "@/lib/ai/models";
 import { GenerationTruncatedError } from "@/lib/ai/errors";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
@@ -994,6 +995,14 @@ export async function generateArticle(
     // opens the pages the attributions point at. The second is what catches a
     // real citation carrying a wrong number, which the first cannot see.
     const factCheck = await verifyCitedFigures(factCheckArticle(processedHtml, research, workspace.language));
+
+    // What the reviewer has to know or do before publishing, said once at the
+    // top of the research panel rather than left for them to infer from a
+    // failing check. Saved with the research below.
+    const reviewNotes: string[] = [];
+    const figureNote = figureReviewNote(research.sourceFigures, processedHtml, workspace.language);
+    if (figureNote) reviewNotes.push(figureNote);
+    research.reviewNotes = reviewNotes;
 
     // `scoreArticle` and its seven on-page checks have existed all along, but
     // nothing ran them at generation: only the manual `scoreArticleSeo` action

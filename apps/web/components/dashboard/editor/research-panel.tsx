@@ -64,6 +64,21 @@ export function ResearchPanel({ research }: { research: ArticleResearch }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* What the reviewer owes before publishing: no reviewer found for a
+          health article, no figure to cite, a title that was shortened. */}
+      {research.reviewNotes && research.reviewNotes.length > 0 && (
+        <div className="rounded-[6px] border border-amber-200 bg-amber-50 px-2.5 py-2">
+          <div className="text-[12px] font-medium text-ink mb-1">Before publishing</div>
+          <ul className="flex flex-col gap-1 list-disc pl-4">
+            {research.reviewNotes.map((n) => (
+              <li key={n} className="text-[11.5px] text-ink-2 leading-[1.5]">
+                {n}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Intent */}
       <div>
         <div className="flex items-center gap-2">

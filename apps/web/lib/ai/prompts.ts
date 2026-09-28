@@ -107,6 +107,20 @@ export function buildResearchSection(research: ArticleResearch): string[] {
     sections.push(lines.join("\n"));
   }
 
+  // --- Figures the ranking pages state ---------------------------------------
+  //
+  // The only figures the writer may cite besides the business's own pages.
+  // A real first article (2026-09-27) had none: the writer was told never to
+  // invent one and given nothing to cite. See lib/seo/source-figures.ts.
+  if (research.sourceFigures?.length) {
+    sections.push(
+      [
+        "FIGURES FROM THE PAGES RESEARCHED (each as its page states it, with the page):",
+        ...research.sourceFigures.map((f) => `- "${f.sentence}" (${f.url})`),
+      ].join("\n"),
+    );
+  }
+
   // --- Terms to cover --------------------------------------------------------
   const worthCovering = research.relatedKeywords
     .filter((k) => (k.searchVolume ?? 0) > 0)
@@ -349,6 +363,32 @@ export function buildRefreshSection(refresh: NonNullable<ArticlePrompt["refreshO
 export function refreshLengthBudget(existingHtml: string): { current: number; max: number } {
   const current = existingHtml.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
   return { current, max: Math.max(900, Math.round(current * 1.3)) };
+}
+
+/**
+ * The figure rules of WRITTEN TO BE QUOTED, which depend on what research
+ * found. With figures: two or three of them, cited in the sentence - the
+ * AEO check (`quotableStatistics`) rewards three, and the fact check opens
+ * each cited page to confirm the number. Without: none, said plainly, so an
+ * honest draft is not pushed into inventing one. Exported for tests.
+ */
+export function figureRules(research: ArticleResearch | undefined): string[] {
+  if (research?.sourceFigures?.length) {
+    return [
+      "- Use two or three specific figures from FIGURES FROM THE PAGES RESEARCHED:",
+      "  the ones that change the reader's decision. Quote each figure exactly as",
+      "  its page states it, name the source in the sentence and link that page",
+      "  inside the same sentence. These, and figures the business's own pages",
+      "  state, are the only figures you may use: never a number from memory.",
+    ];
+  }
+  return [
+    "- No page researched for this article states a figure you could cite, so",
+    "  write no statistic, price or percentage beyond what the business's own",
+    "  pages state: not from memory, not rounded, not \"about\". Make each point in",
+    "  words; saying plainly that no reliable figure exists is itself a quotable",
+    "  answer.",
+  ];
 }
 
 export function buildSystemPrompt(prompt: ArticlePrompt): string {
@@ -727,6 +767,14 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
         '"73% of sites get this wrong" is not, unless you can name the source.',
       "- If the topic genuinely needs a figure you do not have, write the " +
         "sentence without it rather than filling the gap.",
+      // The prevention half of the authority check in lib/ai/fact-check.ts.
+      // The article that prompted it named a professional association as the
+      // regulator of a profession; the regulator was a provincial college.
+      "- Name a regulator, licensing body, insurer or public plan only when a page " +
+        "you link in that same sentence says so. A professional association is " +
+        "usually a membership body, not the regulator; when you do not know who " +
+        "regulates something, say that the reader should check with their local " +
+        "regulator rather than naming one.",
     ].join("\n"),
   );
 
@@ -750,11 +798,7 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       "  No figures in the bullets unless the same figure is sourced in the body.",
       "- Include one standalone definition of 20-70 words that starts with the",
       "  term and makes sense with nothing around it.",
-      "- Use specific figures only when sourced and useful to the reader's task.",
-      "  There is no minimum number of statistics, prices or percentages to include.",
-      "- Attribute every figure to a named, linked source. If you cannot source a",
-      "  number, do not write the number - say plainly that no reliable figure",
-      "  exists, which is itself a quotable answer.",
+      ...figureRules(research),
       "- Cite external sources with real, working links: two at minimum, and about",
       "  one for every 500 words. Every link is fetched after you write; one that",
       '  does not resolve is removed. Never emit href="#" or a placeholder URL.',
