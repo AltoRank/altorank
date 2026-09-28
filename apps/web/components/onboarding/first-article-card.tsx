@@ -18,7 +18,8 @@ const VERDICT: Record<FirstArticleVerdict, { text: string; className: string }> 
   clean: { text: "Fact check passed", className: "text-ok" },
   review: { text: "Fact check: review", className: "text-warn" },
   high_risk: { text: "Fact check: needs work", className: "text-err" },
-  unchecked: { text: "Fact check: not run for this language", className: "text-warn" },
+  // A language the checker does not read, or nothing checkable in the draft.
+  unchecked: { text: "Fact check: nothing checked", className: "text-warn" },
 };
 
 /** "Sep 7" from a YYYY-MM-DD, in UTC so the day the planner wrote is the day shown. */

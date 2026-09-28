@@ -483,7 +483,7 @@ function CalendarStrip({
               {article.verdict === "high_risk"
                 ? " with figures to check before publishing"
                 : article.verdict === "unchecked"
-                  ? "; the fact check does not read this language, so check its figures by hand"
+                  ? "; nothing in it was fact-checked, so read it against its sources before publishing"
                   : ""}
               .
             </>

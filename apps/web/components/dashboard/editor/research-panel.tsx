@@ -184,6 +184,7 @@ const STATUS_LABEL: Record<ExtractedClaim["status"], string> = {
   corroborated: "Seen elsewhere",
   verified: "Source checked",
   contradicted: "Not on cited page",
+  unsupported: "Not named on cited page",
 };
 
 function ClaimRow({
@@ -272,8 +273,9 @@ export function FactCheckPanel({
         <ClaimRow key={c.id} claim={c} onLocate={onLocate} />
       ))}
       <div className="text-[11px] text-ink-4 leading-[1.5] mt-1">
-        These are claims a reader would expect a source for. The check finds
-        unattributed figures; it cannot tell you whether a figure is true.
+        These are claims a reader would expect a source for: figures, and who
+        regulates or pays for something. The check finds what is unattributed
+        or missing from its cited page; it cannot tell you whether a claim is true.
       </div>
     </div>
   );

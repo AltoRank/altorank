@@ -162,6 +162,18 @@ export interface ProseRules {
   pictureOf: RegExp;
   /** Abbreviations whose dot does not end a sentence. Regex fragments, without the dot. */
   abbreviations: string[];
+  /**
+   * "X is regulated by Y", "Y regulates X", "licensed by", "accredited by":
+   * who regulates, licenses or accredits something. Applied to RAW text
+   * (case matters: a body's name is capitalised). The named group `entity`
+   * is the body the sentence names, when it names one.
+   */
+  authorityClaim: RegExp[];
+  /**
+   * "covered by Y", "Y covers X", "reimbursed by": what an insurer or a
+   * public plan pays for. Same shape as `authorityClaim`.
+   */
+  coverageClaim: RegExp[];
 }
 
 /** Headings and labels the product recognises. Matched in every supported language. */
@@ -413,6 +425,24 @@ const TR_SEARCH: SearchWordRules = {
 
 const EN_NAME = String.raw`\p{Lu}[\p{L}\p{N}&.'’-]*`;
 
+/**
+ * The name of a body - a regulator, an insurer, a public plan - as a run of
+ * capitalised words that may be joined by the language's small words ("College
+ * of Physiotherapists of Ontario"), with an optional acronym in brackets.
+ * `join` is the language's connectors, as regex alternatives.
+ */
+const ORG_WORD = String.raw`\p{Lu}[\p{L}\p{N}&.'’-]*`;
+function ORG_RUN(join: string): string {
+  return String.raw`${ORG_WORD}(?:\s+(?:(?:${join})\s+)*${ORG_WORD}){0,7}(?:\s+\(\p{Lu}[\p{L}\p{N}]{1,9}\))?`;
+}
+const EN_ORG = ORG_RUN("of|for|and|&|the");
+const IT_ORG_JOIN = "di|del|della|dei|degli|delle|e|per";
+const ES_ORG_JOIN = "de|del|la|los|las|y|para";
+const FR_ORG_JOIN = "de|du|des|la|le|et|pour";
+const DE_ORG_JOIN = "für|und|der|des|von";
+/** A capitalised word that starts a sentence and names nobody. */
+const EN_NOT_A_NAME = String.raw`(?!(?:The|This|That|It|They|These|Those|He|She|We|Which|Who|Your|Our|Their|Its|Most|Many|Some|Each|Every|A|An)\s)`;
+
 const EN: LocaleRules = {
   code: "en",
   name: "English",
@@ -497,6 +527,17 @@ const EN: LocaleRules = {
     pictureOf:
       /^(?:an?\s+|the\s+)?(?:image|picture|photo|photograph|illustration|graphic|screenshot|diagram|chart|infographic|icon|logo)\s+(?:of|showing|about|for)\s+(?:an?\s+|the\s+)?/i,
     abbreviations: ["e\\.g", "i\\.e", "etc", "vs", "Dr", "Mr", "Mrs", "Ms", "Prof", "Inc", "Ltd", "Co", "St", "approx", "no"],
+    authorityClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:regulated|licensed|licenced|governed|overseen|accredited)\s+(?:by|through|under)\s+(?:(?:the|a|an|its|their|your|each)\s+)?(?:(?<entity>${EN_ORG})|(?:\p{Ll}[\p{L}-]*\s+){0,3}(?:colleges?|boards?|bod(?:y|ies)|regulators?|authorit(?:y|ies)|associations?|councils?))`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])(?:registered|certified)\s+with\s+(?:the\s+)?(?<entity>${EN_ORG})`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])${EN_NOT_A_NAME}(?<entity>${EN_ORG})\s+(?:(?:also|still)\s+)?(?:regulates|licenses|licences|governs|oversees|accredits|is\s+the\s+(?:(?:provincial|national|state|federal|official|professional)\s+)?(?:regulator|regulatory\s+(?:body|authority|college)|governing\s+body|licensing\s+(?:body|authority)))(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])(?:regulator|regulatory\s+body|governing\s+body|licensing\s+body)\s+(?:for|of)\s+[^.;]{1,80}?\s+(?:is|are)\s+(?:the\s+)?(?<entity>${EN_ORG})`, "u"),
+    ],
+    coverageClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:covered|reimbursed|funded|paid\s+for)\s+(?:by|under|through)\s+(?:(?:the|a|an|your|most|many|some|their|provincial|public|private)\s+)?(?:(?<entity>${EN_ORG})|(?:\p{Ll}[\p{L}-]*\s+){0,3}(?:insurance|insurers?|plans?|benefits|coverage|polic(?:y|ies)))`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])${EN_NOT_A_NAME}(?<entity>${EN_ORG})\s+(?:(?:usually|often|typically|generally|also|fully|partially|may|will|does\s+not|doesn['’]t)\s+)?(?:covers?|reimburses?|pays\s+for|funds)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])(?:[Ii]nsurance|[Ii]nsurers?|(?:[Hh]ealth|[Bb]enefits?|[Ii]nsurance)\s+plans?|[Ee]xtended\s+health(?:\s+(?:benefits|plans?|coverage))?)\s+(?:(?:usually|often|typically|generally|also|may|will|does\s+not|doesn['’]t|do\s+not|don['’]t)\s+)?(?:covers?|reimburses?|pays\s+for)(?![\p{L}])`, "u"),
+    ],
   },
   headings: {
     faq: /\bfaqs?\b|frequently asked/i,
@@ -618,6 +659,16 @@ const IT: LocaleRules = {
     pictureOf:
       /^(?:un['’]?\s*|una\s+|l['’]\s*|la\s+|il\s+)?(?:immagine|foto|fotografia|illustrazione|grafica|schermata|screenshot|diagramma|grafico|infografica|icona|logo)\s+(?:di|che mostra|su|per|del|della|dello|dei|delle)\s+(?:(?:un|una|il|la|lo|i|gli|le)\s+|l['’]\s*)?/iu,
     abbreviations: ["ecc", "es", "pag", "pagg", "sig", "sigg", "dott", "prof", "ca", "n", "nr"],
+    authorityClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:regolamentat|disciplinat|vigilat|autorizzat|accreditat|abilitat)[oaie]\s+(?:da|dal|dalla|dallo|dai|dagli|dalle|dall['’])\s*(?<entity>${ORG_RUN(IT_ORG_JOIN)})`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])iscritt[oaie]\s+(?:all['’]|al|alla|allo|agli|alle|ai|presso\s+(?:il\s+|la\s+|l['’])?)\s*(?<entity>${ORG_RUN(IT_ORG_JOIN)})`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?!(?:Il|Lo|La|I|Gli|Le|Un|Uno|Una|Questo|Questa)\s)(?<entity>${ORG_RUN(IT_ORG_JOIN)})\s+(?:regolamenta|disciplina|vigila\s+su|autorizza|accredita|è\s+l['’](?:ente|autorità|organo)\s+(?:che\s+regola|di\s+vigilanza|competente))(?![\p{L}])`, "u"),
+    ],
+    coverageClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:copert[oaie]|rimborsat[oaie]|pagat[oaie]|a\s+carico)\s+(?:da|dal|dalla|dallo|dai|dagli|dalle|dall['’]|del|della|dello|dell['’])\s*(?:(?<entity>${ORG_RUN(IT_ORG_JOIN)})|assicurazion\p{L}*|mutu[ae]|polizz\p{L}*|servizio\s+sanitario)`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?!(?:Il|Lo|La|I|Gli|Le|Un|Uno|Una)\s)(?<entity>${ORG_RUN(IT_ORG_JOIN)})\s+(?:non\s+)?(?:copre|rimborsa|paga)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])(?:[Ll]['’]assicurazione|[Ll]e\s+assicurazioni|[Ll]a\s+polizza|[Ll]a\s+mutua)\s+(?:non\s+)?(?:copre|coprono|rimborsa|rimborsano)(?![\p{L}])`, "u"),
+    ],
   },
   headings: {
     faq: /\bfaqs?\b|domande frequenti/iu,
@@ -728,6 +779,15 @@ const ES: LocaleRules = {
     pictureOf:
       /^(?:una?\s+|el\s+|la\s+)?(?:imagen|foto|fotografía|ilustración|gráfico|captura de pantalla|diagrama|infografía|icono|logo)\s+(?:de|que muestra|sobre|para|del)\s+(?:(?:un|una|el|la|los|las)\s+)?/iu,
     abbreviations: ["etc", "Sr", "Sra", "Dr", "Dra", "pág", "aprox", "núm", "n"],
+    authorityClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:regulad|supervisad|autorizad|acreditad|colegiad|habilitad)[oa]s?\s+(?:por|en)\s+(?:(?:el|la|los|las)\s+)?(?<entity>${ORG_RUN(ES_ORG_JOIN)})`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?!(?:El|La|Los|Las|Un|Una|Este|Esta)\s)(?<entity>${ORG_RUN(ES_ORG_JOIN)})\s+(?:regula|supervisa|autoriza|acredita|es\s+el\s+(?:organismo|órgano|colegio|ente)\s+(?:regulador|que\s+regula|competente))(?![\p{L}])`, "u"),
+    ],
+    coverageClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:cubiert|reembolsad|financiad|pagad)[oa]s?\s+por\s+(?:(?:el|la|los|las|tu|su)\s+)?(?:(?<entity>${ORG_RUN(ES_ORG_JOIN)})|segur\p{L}*|mutua\p{L}*|aseguradora\p{L}*|p[oó]liza\p{L}*|sistema\s+p[uú]blico)`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?!(?:El|La|Los|Las|Un|Una)\s)(?<entity>${ORG_RUN(ES_ORG_JOIN)})\s+(?:no\s+)?(?:cubre|reembolsa|financia)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])(?:[Ee]l\s+seguro|[Ll]os\s+seguros|[Ll]as\s+aseguradoras|[Ll]a\s+mutua|[Ll]a\s+p[oó]liza)\s+(?:no\s+)?(?:cubre|cubren|reembolsa|reembolsan)(?![\p{L}])`, "u"),
+    ],
   },
   headings: {
     faq: /\bfaqs?\b|preguntas frecuentes/iu,
@@ -838,6 +898,16 @@ const FR: LocaleRules = {
     pictureOf:
       /^(?:une?\s+|l['’]\s*|la\s+|le\s+)?(?:image|photo|photographie|illustration|graphique|capture d['’]écran|diagramme|infographie|icône|logo)\s+(?:de|montrant|sur|pour|du|des|d['’])\s*(?:(?:un|une|le|la|les)\s+|l['’]\s*)?/iu,
     abbreviations: ["etc", "M", "Mme", "Mlle", "p", "cf", "env", "n°", "no"],
+    authorityClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:réglementé|encadré|régi|agréé|accrédité|autorisé|contrôlé)e?s?\s+par\s+(?:(?:le|la|les)\s+|l['’])?(?<entity>${ORG_RUN(FR_ORG_JOIN)})`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])inscrit(?:e|s|es)?\s+(?:au|à\s+la|à\s+l['’]|auprès\s+(?:du|de\s+la|de\s+l['’]))\s*(?<entity>${ORG_RUN(FR_ORG_JOIN)})`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?!(?:Le|La|Les|Un|Une|Ce|Cette)\s)(?<entity>${ORG_RUN(FR_ORG_JOIN)})\s+(?:réglemente|encadre|régit|agrée|accrédite|contrôle|est\s+l['’](?:autorité|organisme|ordre)\s+(?:compétent|de\s+tutelle|qui\s+réglemente))(?![\p{L}])`, "u"),
+    ],
+    coverageClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:pris(?:e|es)?\s+en\s+charge|rembours[ée]e?s?|couvert(?:e|s|es)?)\s+par\s+(?:(?:le|la|les|votre|sa|son)\s+|l['’])?(?:(?<entity>${ORG_RUN(FR_ORG_JOIN)})|mutuelle\p{L}*|assurance\p{L}*|sécurité\s+sociale)`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?!(?:Le|La|Les|Un|Une|Ce|Cette)\s)(?<entity>${ORG_RUN(FR_ORG_JOIN)})\s+(?:ne\s+)?(?:rembourse|prend\s+en\s+charge|couvre)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])(?:[Ll]a\s+mutuelle|[Ll]es\s+mutuelles|[Ll]['’]assurance(?:\s+maladie)?|[Ll]es\s+assurances)\s+(?:ne\s+)?(?:rembourse|remboursent|prend\s+en\s+charge|prennent\s+en\s+charge|couvre|couvrent)(?![\p{L}])`, "u"),
+    ],
   },
   headings: {
     faq: /\bfaqs?\b|questions fr[ée]quentes/iu,
@@ -953,6 +1023,15 @@ const DE: LocaleRules = {
     pictureOf:
       /^(?:ein(?:e)?\s+|das\s+|die\s+|der\s+)?(?:bild|foto|fotografie|illustration|grafik|screenshot|bildschirmfoto|diagramm|infografik|icon|logo)\s+(?:von|zu|über|für|mit)\s+(?:(?:einem|einer|einen|dem|der|den|das|die)\s+)?/iu,
     abbreviations: ["bzw", "usw", "ca", "Nr", "Dr", "Prof", "ggf", "inkl", "vgl", "evtl", "Abb", "Tab"],
+    authorityClaim: [
+      // German puts the participle last: "wird von der Kammer reguliert".
+      new RegExp(String.raw`(?<![\p{L}])(?:durch|von|vom)\s+(?:(?:der|die|das|den|dem)\s+)?${DE_NOT_A_NAME}(?<entity>${ORG_RUN(DE_ORG_JOIN)})\s+(?:\p{Ll}+\s+){0,2}(?:reguliert|beaufsichtigt|zugelassen|akkreditiert|lizenziert|überwacht)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])${DE_NOT_A_NAME}(?<entity>${ORG_RUN(DE_ORG_JOIN)})\s+(?:reguliert|beaufsichtigt|überwacht|lizenziert|akkreditiert|ist\s+die\s+(?:zuständige\s+)?(?:Aufsichtsbehörde|Kammer|Behörde))(?![\p{L}])`, "u"),
+    ],
+    coverageClaim: [
+      new RegExp(String.raw`(?<![\p{L}])(?:durch|von|vom)\s+(?:(?:der|die|das|den|dem|Ihrer|ihrer|Ihre|ihre)\s+)?${DE_NOT_A_NAME}(?<entity>${ORG_RUN(DE_ORG_JOIN)})\s+(?:\p{Ll}+\s+){0,2}(?:übernommen|erstattet|bezahlt|gedeckt)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])${DE_NOT_A_NAME}(?<entity>${ORG_RUN(DE_ORG_JOIN)})\s+(?:übernimmt|erstattet|bezahlt|zahlt|deckt)(?![\p{L}])`, "u"),
+    ],
   },
   headings: {
     faq: /\bfaqs?\b|h[äa]ufig gestellte/iu,
@@ -1113,6 +1192,16 @@ const TR: LocaleRules = {
     pictureOf:
       /^(?:bir\s+)?(?:görsel|resim|fotoğraf|illüstrasyon|grafik|ekran görüntüsü|diyagram|şema|infografik|ikon|logo)\s*:?\s+|\s+(?:görseli|resmi|fotoğrafı|illüstrasyonu|grafiği|ekran görüntüsü|diyagramı|şeması|infografiği|ikonu|logosu)$/u,
     abbreviations: ["vb", "vs", "Dr", "Prof", "Doç", "örn", "yak", "Av", "Sn", "Ltd", "Şti", "No"],
+    authorityClaim: [
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?<entity>${TR_NAME})${TR_CASE}\s+tarafından\s+(?:düzenlenir|düzenlenmektedir|denetlenir|denetlenmektedir|lisanslanır|yetkilendirilir|akredite\s+edilir|onaylanır)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?<entity>${TR_NAME})${TR_CASE}\s+(?:düzenler|denetler|yetkilendirir|lisanslar)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?<entity>${TR_NAME})['’]\p{Ll}{1,4}\s+kayıtlı(?![\p{L}])`, "u"),
+    ],
+    coverageClaim: [
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?<entity>${TR_NAME})${TR_CASE}\s+tarafından\s+(?:karşılanır|karşılanmaktadır|ödenir|ödenmektedir|kapsanır)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}\p{N}])(?<entity>${TR_NAME})${TR_CASE}\s+(?:karşılar|öder|kapsar)(?![\p{L}])`, "u"),
+      new RegExp(String.raw`(?<![\p{L}])(?:[Ss]igorta|[Öö]zel\s+sigorta|[Ss]ağlık\s+sigortası)\p{L}*\s+(?:kapsamında|tarafından\s+karşılanır)(?![\p{L}])`, "u"),
+    ],
   },
   headings: {
     faq: /\bfaqs?\b|(?<![\p{L}])sss(?![\p{L}])|sık(?:ça)? sorulan sorular/u,

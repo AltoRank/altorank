@@ -23,6 +23,20 @@
 // the first Turkish draft's figures went unseen. A language the contract does
 // not describe is not checked with English rules: the verdict is `unchecked`,
 // which a reviewer sees and auto-approve refuses.
+//
+// Numbers are not the only claims a reader trusts. A real signup's first
+// article (2026-09-27, a physiotherapy clinic) named a national professional
+// association as the body that regulates physiotherapists; the regulator is
+// the provincial college. It had no figures at all, so this check found
+// nothing and reported `clean` - a green tick over a false statement about
+// who licenses the reader's clinician. So a sentence that says who regulates,
+// licenses or accredits something, or what an insurer or a public plan pays
+// for, is a claim here too (`authority`, `coverage`), read with the locale
+// contract's patterns and checked against its cited page the same way a
+// figure is (lib/seo/citation-check.ts). They go to the reviewer, never
+// block: "is this the regulator" is a judgement a page search can inform
+// and cannot make. And a draft in which nothing at all was checkable is
+// `unchecked`, not `clean`: nothing found is not the same as nothing wrong.
 
 import { stripTags } from "@/lib/audit/html-utils";
 import type { ArticleResearch } from "@/lib/seo/research";
@@ -44,14 +58,22 @@ export type ClaimKind =
   | "multiplier"
   | "large_count"
   | "research_reference"
-  | "superlative";
+  | "superlative"
+  /** "regulated by", "licensed by", "X regulates": who has authority over something. */
+  | "authority"
+  /** "covered by", "X covers": what an insurer or a public plan pays for. */
+  | "coverage";
+
+/** Claims about a named body rather than a figure. Their `figures` hold the body's name. */
+export const ENTITY_KINDS: ReadonlySet<ClaimKind> = new Set<ClaimKind>(["authority", "coverage"]);
 
 export type ClaimStatus =
   | "unsourced"          // a figure with no attribution anywhere in the sentence
   | "needs_verification" // a source is named, but nobody has checked it exists
   | "corroborated"       // the figure also appears in a page ranking for this keyword
   | "verified"           // the cited page was opened and carries this figure
-  | "contradicted";      // the cited page was opened and does not
+  | "contradicted"       // the cited page was opened and does not
+  | "unsupported";       // the cited page was opened and does not name the body this claim names
 
 export type ClaimSeverity = "high" | "medium" | "low";
 
@@ -85,6 +107,14 @@ export interface FactCheckReport {
    * (so nothing was checked, which is not the same as nothing found).
    */
   verdict: "clean" | "review" | "high_risk" | "unchecked";
+  /**
+   * Why a report is `unchecked`: the language is one the checker does not
+   * read, or the draft states nothing it could check (no figure, no named
+   * regulator or insurer). Only the first stops auto-approve: with nothing
+   * checkable there is nothing to publish unread. Absent on reports stored
+   * before 2026-09-28, which were all `language`.
+   */
+  unchecked?: "language" | "nothing_to_check";
   summary: string;
   /**
    * The language the claims were read in. Absent on reports stored before
@@ -323,6 +353,44 @@ function claimId(index: number, kind: string, text: string): string {
   return `${index}-${kind}-${slug}`.slice(0, 64);
 }
 
+// ── Claims about a named body ──────────────────────────────────────────────
+
+/** Words that make a body a membership organisation rather than a regulator, in the supported languages. Folded. */
+const ASSOCIATION =
+  /(?<![\p{L}])(?:association|society|federation|alliance|associazione|societa|federazione|asociacion|sociedad|federacion|societe|verband|gesellschaft|bund|dernegi|dernek|federasyonu?)(?![\p{L}])/u;
+
+/** Whether a body's name reads as an association or society, which is usually not the regulator. */
+export function namesAnAssociation(entity: string): boolean {
+  return ASSOCIATION.test(foldCase(entity).normalize("NFKD").replace(/\p{M}+/gu, ""));
+}
+
+/**
+ * The authority and coverage claims one sentence makes: at most one of each,
+ * with the body it names when it names one. "The X" is the body X.
+ */
+export function entityClaimsIn(
+  sentence: string,
+  locale: SupportedLocale,
+): Array<{ kind: "authority" | "coverage"; entity: string | null; phrase: string }> {
+  const out: Array<{ kind: "authority" | "coverage"; entity: string | null; phrase: string }> = [];
+  for (const [kind, patterns] of [
+    ["authority", locale.prose.authorityClaim],
+    ["coverage", locale.prose.coverageClaim],
+  ] as const) {
+    let best: { entity: string | null; phrase: string } | null = null;
+    for (const re of patterns) {
+      const m = sentence.match(new RegExp(re.source, re.flags.replace("g", "")));
+      if (!m) continue;
+      const entity = m.groups?.entity?.replace(/^(?:the|The)\s+/, "").trim() || null;
+      // A match that names the body beats one that does not.
+      if (!best || (!best.entity && entity)) best = { entity, phrase: m[0].trim() };
+      if (best.entity) break;
+    }
+    if (best) out.push({ kind, ...best });
+  }
+  return out;
+}
+
 // ── Corroboration ──────────────────────────────────────────────────────────
 
 /**
@@ -523,6 +591,52 @@ export function factCheckArticle(
           });
         }
       }
+
+      // Who regulates, licenses or pays for something. Never high: whether a
+      // body is the right one is a reviewer's judgement, which the cited page
+      // can inform (verifyCitedFigures) and this cannot make.
+      for (const e of entityClaimsIn(sentence, locale)) {
+        const text = e.entity ?? e.phrase;
+        const dedupeKey = `${e.kind}:${text}:${sentence}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        const what = e.kind === "authority" ? "who regulates or licenses this" : "what insurance or a public plan pays for";
+        const association =
+          e.kind === "authority" && e.entity && namesAnAssociation(e.entity)
+            ? ` ${e.entity} reads as an association, and a professional association is usually a membership body, not the regulator.`
+            : "";
+        const corroboratedBy = e.entity ? corroborate(e.entity, research) : null;
+        let status: ClaimStatus;
+        let note: string;
+        if (attribution || hasCitationLink) {
+          status = "needs_verification";
+          note =
+            `States ${what}${e.entity ? ` (${e.entity})` : ""}. Confirm the linked source says so, ` +
+            `and that it is the body's own page.${association}`;
+        } else if (corroboratedBy) {
+          status = "corroborated";
+          note =
+            `States ${what}; ${e.entity} is also named on ${corroboratedBy}, which ranks for this keyword. ` +
+            `That is not the same as being right. Link the body's own page or cut the claim.${association}`;
+        } else {
+          status = "unsourced";
+          note =
+            `States ${what}${e.entity ? ` (${e.entity})` : ""} with no source. ` +
+            `Link the regulator's or insurer's own page, or remove the claim.${association}`;
+        }
+        claims.push({
+          id: claimId(index++, e.kind, text),
+          kind: e.kind,
+          figures: e.entity ? [e.entity] : [],
+          status,
+          severity: "medium",
+          text,
+          sentence: sentence.length > 400 ? `${sentence.slice(0, 397)}...` : sentence,
+          attribution,
+          sourceUrl: citationUrl,
+          note,
+        });
+      }
     }
   }
 
@@ -539,6 +653,7 @@ export function uncheckedReport(locale: Locale): FactCheckReport {
     claims: [],
     counts: { high: 0, medium: 0, low: 0, total: 0 },
     verdict: "unchecked",
+    unchecked: "language",
     summary: `${notCheckedFor(locale)} Check every figure in this draft against its source by hand.`,
     language: { code: locale.code, name: locale.name, supported: false },
   };
@@ -562,8 +677,19 @@ export function summarise(
     total: claims.length,
   };
 
+  // Nothing to check is `unchecked`, never `clean`. A draft with no figure
+  // and no named regulator or insurer came back `clean` - "fact check
+  // passed" on the onboarding card - on the article that called an
+  // association the regulator (2026-09-27). `clean` is kept for what it
+  // says: claims were found and none needs anything.
   const verdict: FactCheckReport["verdict"] =
-    counts.high > 0 ? "high_risk" : counts.total > 0 ? "review" : "clean";
+    counts.high > 0
+      ? "high_risk"
+      : counts.total === 0
+        ? "unchecked"
+        : claims.some((c) => c.status !== "verified")
+          ? "review"
+          : "clean";
 
   const wrong = claims.filter((c) => c.status === "contradicted").length;
   const bare = claims.filter((c) => c.status === "unsourced" && c.severity === "high").length;
@@ -575,8 +701,10 @@ export function summarise(
     .join(" and ");
 
   const summary =
-    verdict === "clean"
-      ? "No unsourced figures or evidence claims found."
+    verdict === "unchecked"
+      ? "Nothing to check: this draft states no figure and names no regulator or insurer. That is not the same as a clean check; read it before publishing."
+      : verdict === "clean"
+      ? `Every claim was checked against the page it cites (${counts.total}).`
       : verdict === "high_risk"
         ? `${highRiskSummary || `${counts.high} claim${counts.high === 1 ? "" : "s"}`} to correct or remove` +
           (counts.medium ? `, plus ${counts.medium} to verify.` : ".")
@@ -586,6 +714,7 @@ export function summarise(
     claims,
     counts,
     verdict,
+    ...(verdict === "unchecked" ? { unchecked: "nothing_to_check" as const } : {}),
     summary,
     language: { code: locale.code, name: locale.name, supported: locale.supported },
   };
@@ -646,7 +775,9 @@ export function approvalBlocker(report: FactCheckReport): string | null {
 export function autoApprovalBlocker(report: FactCheckReport): string | null {
   const blocker = approvalBlocker(report);
   if (blocker) return blocker;
-  if (report.verdict === "unchecked") {
+  // Only the language case: a draft with nothing checkable in it has no
+  // figure or named body to publish unread.
+  if (report.verdict === "unchecked" && report.unchecked !== "nothing_to_check") {
     const name = report.language?.name ?? "this language";
     return `not fact-checked: the checker does not read ${name}, so a person has to approve it`;
   }
