@@ -8,53 +8,34 @@
 // UPDATE letting exactly one of many concurrent callers win, and that the
 // `or(...)` filters parse the way the code means them.
 //
-// It needs migration 093 on a local Supabase stack, named by
-// NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the environment -
-// never read from an .env file, and never anything but a loopback host, so a
-// checkout whose environment points at a hosted project cannot write to it.
-// Without them (or without the migration) it skips itself. It seeds one
+// It runs in the db tier, against the local stack connectLocalStack finds, with
+// the tier's loopback-only network guard around it. It first shipped as a
+// unit-tier file with its own client and a skipIf: the unit setup strips the
+// Supabase variables, so it skipped green on every machine and in CI and never
+// ran at all. A stack without migration 093 is not a reason to skip either:
+// the first query names the missing column and the file fails. It seeds one
 // account with invented names and deletes it at the end.
 
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createServiceClient } from "@/lib/supabase/server";
+import { connectLocalStack } from "@/lib/__tests__/support/local-db";
 import { claimEntry, claimsInFlight, recordEntryFailure } from "../draft-claim";
 import { duePlannedKeyword } from "@/lib/onboarding/plan";
 import { claimSiteResume, draftRestOfWeek, oweResume, RESUME_LEASE_MS } from "../resume-week";
 
-function localEnv(): { url: string; key: string } | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  try {
-    const host = new URL(url).hostname;
-    if (host !== "127.0.0.1" && host !== "localhost") return null;
-  } catch {
-    return null;
-  }
-  return { url, key };
-}
-
-async function ready(db: SupabaseClient): Promise<boolean> {
-  try {
-    const { error } = await db.from("calendar_entries").select("draft_claimed_at, draft_owed_at").limit(1);
-    return !error;
-  } catch {
-    return false;
-  }
-}
-
-const ENV = localEnv();
-const DB = ENV ? createClient(ENV.url, ENV.key, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
-const LIVE = DB ? await ready(DB) : false;
+const STACK = await connectLocalStack();
 
 const RUN = `claim-test-${Date.now().toString(36)}`;
 let accountId = "";
 let workspaceId = "";
 
-describe.skipIf(!LIVE)("draft claims on the local database", () => {
-  const db = DB!;
+describe.skipIf(!STACK)("draft claims on the local database", () => {
+  let db: ReturnType<typeof createServiceClient>;
 
   beforeAll(async () => {
+    // Built here, not at collection time: a skipped suite still collects, and
+    // without a stack there is no URL to build a client from.
+    db = createServiceClient();
     const { data: account, error: accountError } = await db
       .from("accounts")
       .insert({ name: "Acme Agency (claim test)", slug: RUN })
@@ -72,6 +53,7 @@ describe.skipIf(!LIVE)("draft claims on the local database", () => {
   });
 
   afterAll(async () => {
+    if (!db) return;
     if (workspaceId) await db.from("calendar_entries").delete().eq("workspace_id", workspaceId);
     if (workspaceId) await db.from("workspaces").delete().eq("id", workspaceId);
     if (accountId) await db.from("accounts").delete().eq("id", accountId);

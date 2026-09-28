@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
 import { gzipSync } from "node:zlib";
-import type { AddressInfo } from "node:net";
+import net, { type AddressInfo } from "node:net";
 
 vi.mock("node:dns", async (orig) => {
   const real = await orig<typeof import("node:dns")>();
@@ -220,11 +220,43 @@ describe("the node hop against a real (loopback) server", () => {
     await expect(req("/slow", { deadline: Date.now() + 200 })).rejects.toThrow(FetchFailedError);
   });
 
+  // The test tier's own network guard (lib/__tests__/support/network-guard.ts)
+  // sits on net.Socket#connect and refuses loop.example.org by name, before
+  // node runs the socket's lookup, so going through the real connect would
+  // prove the test guard and not this one. The socket's connect is stubbed for
+  // this one request instead: it records what the hop handed the socket and
+  // does what node does with a `lookup` option, calling it for the host and
+  // failing the socket with its error. What that shows is ours: the hop hands
+  // every socket guardedLookup, and a refusal from it reaches the caller as
+  // UnsafeUrlError. That guardedLookup refuses the name is proven above.
   it("with the guard ON, a name that resolves to loopback never connects", async () => {
     const guarded = makeNodeHop(true);
     const port = (server.address() as AddressInfo).port;
-    await expect(
-      guarded({ url: `http://loop.example.org:${port}/`, method: "GET", headers: {}, maxBytes: 1000, deadline: Date.now() + 2000 }),
-    ).rejects.toThrow(UnsafeUrlError);
+    const handed: Array<{ host?: string; lookup?: unknown }> = [];
+    const connect = vi.spyOn(net.Socket.prototype, "connect").mockImplementation(function (
+      this: net.Socket,
+      ...args: unknown[]
+    ) {
+      const options = (Array.isArray(args[0]) ? args[0][0] : args[0]) as { host?: string; lookup?: unknown };
+      handed.push(options);
+      const lookup = options.lookup as typeof guardedLookup | undefined;
+      if (!lookup) {
+        process.nextTick(() => this.destroy(new Error("the hop handed the socket no lookup")));
+        return this;
+      }
+      // After the caller has its listeners on, as node's own connect reports.
+      lookup(options.host ?? "", {}, (err) =>
+        process.nextTick(() => this.destroy(err ?? new Error("the lookup let a loopback name through"))),
+      );
+      return this;
+    });
+    try {
+      await expect(
+        guarded({ url: `http://loop.example.org:${port}/`, method: "GET", headers: {}, maxBytes: 1000, deadline: Date.now() + 2000 }),
+      ).rejects.toThrow(UnsafeUrlError);
+    } finally {
+      connect.mockRestore();
+    }
+    expect(handed).toEqual([expect.objectContaining({ host: "loop.example.org", lookup: guardedLookup })]);
   });
 });
