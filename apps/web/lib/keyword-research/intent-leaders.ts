@@ -34,7 +34,7 @@
 // position 30 is usually the homepage, a page that targets nothing
 // (lib/seo/recommendations.ts reads them the same way).
 
-import { readAll } from "@/lib/supabase/read-all";
+import { readAllPages } from "@/lib/supabase/read-all";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { storedSerp, type IntentStage, type StagedTopic } from "./intent";
 
@@ -148,54 +148,52 @@ export function leadersFrom(sources: LeaderSources, onCalendar: OnCalendar): Int
 export async function readIntentLeaders(supabase: SupabaseClient, workspaceId: string, onCalendar: OnCalendar): Promise<IntentLeader[]> {
   // Paged (lib/supabase/read-all.ts): the server hands back 1,000 rows at
   // most and says nothing, and a site with more pages than that compared its
-  // candidates against the first thousand.
+  // candidates against the first thousand. Each read throws on a failed page,
+  // naming what it was reading.
   const [keywords, articles, pages, entries] = await Promise.all([
-    readAll<KeywordRow>((from, to) =>
+    readAllPages<KeywordRow>("Reading keywords to check for duplicate topics", (from, to, count) =>
       supabase
         .from("keywords")
-        .select("id, term, status, opportunity")
+        .select("id, term, status, opportunity", { count })
         .eq("workspace_id", workspaceId)
         .in("status", ["planned", "drafting", "scheduled", "shipped"])
         .order("id")
         .range(from, to),
     ),
-    readAll<ArticleRow>((from, to) =>
+    readAllPages<ArticleRow>("Reading articles to check for duplicate topics", (from, to, count) =>
       supabase
         .from("articles")
-        .select("id, keyword, keyword_id, status")
+        .select("id, keyword, keyword_id, status", { count })
         .eq("workspace_id", workspaceId)
         .not("keyword", "is", null)
         .order("id")
         .range(from, to),
     ),
-    readAll<PageRow>((from, to) =>
+    readAllPages<PageRow>("Reading site pages to check for duplicate topics", (from, to, count) =>
       supabase
         .from("site_pages")
-        .select("url, keyword")
+        .select("url, keyword", { count })
         .eq("workspace_id", workspaceId)
         .not("keyword", "is", null)
         .order("id")
         .range(from, to),
     ),
-    readAll<EntryRow>((from, to) =>
+    readAllPages<EntryRow>("Reading calendar entries to check for duplicate topics", (from, to, count) =>
       supabase
         .from("calendar_entries")
-        .select("keyword_id, scheduled_date")
+        .select("keyword_id, scheduled_date", { count })
         .eq("workspace_id", workspaceId)
         .in("status", ["queue", "scheduled"])
         .order("id")
         .range(from, to),
     ),
   ]);
-  for (const [what, res] of [["keywords", keywords], ["articles", articles], ["site pages", pages], ["calendar entries", entries]] as const) {
-    if (res.error) throw new Error(`Could not read ${what} to check for duplicate topics: ${res.error.message}`);
-  }
-  const rows = (keywords.data ?? []) as KeywordRow[];
+  const rows = [...keywords];
   // The row an article was written for carries the results page bought for
   // it; read it whatever its status, or the article compares by words alone
   // and a synonym of it gets past.
   const have = new Set(rows.map((r) => r.id));
-  const missing = [...new Set(((articles.data ?? []) as ArticleRow[]).map((a) => a.keyword_id).filter((id): id is string => Boolean(id && !have.has(id))))];
+  const missing = [...new Set(articles.map((a) => a.keyword_id).filter((id): id is string => Boolean(id && !have.has(id))))];
   if (missing.length) {
     const more = await supabase.from("keywords").select("id, term, status, opportunity").eq("workspace_id", workspaceId).in("id", missing);
     if (more.error) throw new Error(`Could not read keywords to check for duplicate topics: ${more.error.message}`);
@@ -203,9 +201,9 @@ export async function readIntentLeaders(supabase: SupabaseClient, workspaceId: s
   }
   return leadersFrom({
     keywords: rows,
-    articles: (articles.data ?? []) as ArticleRow[],
-    pages: (pages.data ?? []) as PageRow[],
-    entries: (entries.data ?? []) as EntryRow[],
+    articles,
+    pages,
+    entries,
   }, onCalendar);
 }
 

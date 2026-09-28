@@ -28,8 +28,15 @@ function client(): SupabaseClient {
   return {
     from(table: string) {
       let range: [number, number] | null = null;
+      let counted = false;
       const q: Record<string, unknown> = {};
-      for (const m of ["select", "eq", "in", "order", "gte", "not", "is", "limit"]) q[m] = () => q;
+      for (const m of ["eq", "in", "order", "gte", "not", "is", "limit"]) q[m] = () => q;
+      // PostgREST reports the count only when the select asks for it (the
+      // first page of every paged read, lib/supabase/read-all.ts).
+      q.select = (_columns?: string, options?: { count?: string }) => {
+        counted = Boolean(options?.count);
+        return q;
+      };
       q.range = (from: number, to: number) => {
         range = [from, to];
         (ranges[table] ??= []).push([from, to]);
@@ -42,7 +49,7 @@ function client(): SupabaseClient {
         // PostgREST's cap: never more than MAX_ROWS in one response.
         const page = range ? all.slice(range[0], Math.min(range[1] + 1, range[0] + MAX_ROWS)) : all.slice(0, MAX_ROWS);
         served[table] = (served[table] ?? 0) + page.length;
-        return resolve({ data: page, error: null });
+        return resolve({ data: page, error: null, count: counted ? all.length : null });
       };
       return q;
     },

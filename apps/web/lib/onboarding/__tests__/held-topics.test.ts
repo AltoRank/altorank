@@ -14,10 +14,14 @@ function client(held: Row[] | number, owners: { keywords?: Row[]; articles?: unk
         table === "keywords" ? (filters.includes("in") ? owners.keywords ?? [] : heldRows)
           : table === "articles" ? owners.articles ?? []
             : table === "site_pages" ? owners.pages ?? [] : [];
+      // A select asked for its count (every paged read is, lib/supabase/read-all.ts)
+      // reports it the way PostgREST does: the rows the query matched.
+      let counted = false;
       const q: Record<string, unknown> = {};
-      for (const m of ["select", "eq", "is", "in", "not", "order", "range"]) q[m] = () => { filters.push(m); return q; };
+      for (const m of ["eq", "is", "in", "not", "order", "range"]) q[m] = () => { filters.push(m); return q; };
+      q.select = (_columns?: string, options?: { count?: string }) => { filters.push("select"); counted = Boolean(options?.count); return q; };
       q.maybeSingle = async () => ({ data: table === "workspaces" ? { language } : null, error: null });
-      q.then = (resolve: (v: unknown) => unknown) => resolve({ data: data(), error: null });
+      q.then = (resolve: (v: unknown) => unknown) => resolve({ data: data(), error: null, count: counted ? data().length : null });
       return q;
     },
   } as unknown as SupabaseClient;

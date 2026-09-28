@@ -52,18 +52,21 @@ function client(rows: Row[], articles: unknown[], language = "tr", entries: unkn
       const filters: unknown[][] = [];
       let op = "select";
       let value: unknown = null;
+      // A select asked for its count (every paged read is, lib/supabase/read-all.ts)
+      // reports it the way PostgREST does: the rows the query matched.
+      let counted = false;
       const data = () =>
         table === "keywords" ? rows.map((r) => ({ volume: 480, difficulty: 8, intent: "commercial", source: null, source_type: "seed", source_ref: null, source_url: null, buyer_fit: { keep: true, reason: null, funnel: "buyer" }, ...r }))
           : table === "articles" ? articles
             : table === "calendar_entries" ? entries : [];
       const q: Record<string, unknown> = {};
-      for (const m of ["select", "eq", "in", "order", "range", "gte", "not", "is"]) q[m] = (...args: unknown[]) => { filters.push([m, ...args]); return q; };
+      for (const m of ["select", "eq", "in", "order", "range", "gte", "not", "is"]) q[m] = (...args: unknown[]) => { filters.push([m, ...args]); if (m === "select" && (args[1] as { count?: string } | undefined)?.count) counted = true; return q; };
       for (const m of ["update", "delete"]) q[m] = (v?: unknown) => { op = m; value = v ?? null; return q; };
       q.single = async () => ({ data: { topical_profile: null, dr: 20, business_profile: BUSINESS, domain: DOMAIN, language, location_code: 2792, auto_generate_weekly_limit: 3 } });
       q.then = (resolve: (v: unknown) => unknown) => {
         if (op !== "select") writes.push({ table, op, value, filters });
         if (op === "select" && table === failing) return resolve({ data: null, error: { message: "canceling statement due to statement timeout" } });
-        return resolve(op === "select" ? { data: data(), error: null } : { data: null, error: null, count: 1 });
+        return resolve(op === "select" ? { data: data(), error: null, count: counted ? data().length : null } : { data: null, error: null, count: 1 });
       };
       return q;
     },
