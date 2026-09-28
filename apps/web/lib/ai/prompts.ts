@@ -394,7 +394,17 @@ export function refreshLengthBudget(existingHtml: string): { current: number; ma
  * each cited page to confirm the number. Without: none, said plainly, so an
  * honest draft is not pushed into inventing one. Exported for tests.
  */
-export function figureRules(research: ArticleResearch | undefined): string[] {
+export function figureRules(research: ArticleResearch | undefined, opts: { refresh?: boolean } = {}): string[] {
+  // A rewrite keeps the figures its page already cites; the brief says to
+  // refresh an aged one or cut one it cannot source, never to drop them all.
+  if (opts.refresh) {
+    return [
+      "- Use specific figures only when sourced and useful to the reader's task.",
+      "- Attribute every figure to a named, linked source. If you cannot source a",
+      "  number, do not write the number - say plainly that no reliable figure",
+      "  exists, which is itself a quotable answer.",
+    ];
+  }
   if (research?.sourceFigures?.length) {
     return [
       "- Use two or three specific figures from FIGURES FROM THE PAGES RESEARCHED:",
@@ -869,7 +879,7 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       "  No figures in the bullets unless the same figure is sourced in the body.",
       "- Include one standalone definition of 20-70 words that starts with the",
       "  term and makes sense with nothing around it.",
-      ...figureRules(research),
+      ...figureRules(research, { refresh: Boolean(prompt.refreshOf) }),
       "- Cite external sources with real, working links: two at minimum, and about",
       "  one for every 500 words. Every link is fetched after you write; one that",
       '  does not resolve is removed. Never emit href="#" or a placeholder URL.',

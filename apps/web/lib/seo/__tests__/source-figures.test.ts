@@ -111,6 +111,12 @@ describe("the writer is asked for two or three sourced figures, or told there ar
     expect(buildSystemPrompt({ keyword: "k", research: research([]) })).not.toContain("FIGURES FROM THE PAGES RESEARCHED");
   });
 
+  it("keeps a rewrite's own sourced figures instead of asking it to drop them", () => {
+    const rules = figureRules(research([]), { refresh: true }).join("\n");
+    expect(rules).toContain("Use specific figures only when sourced");
+    expect(rules).not.toContain("write no statistic");
+  });
+
   it("tells the writer not to name a regulator no linked page names", () => {
     const p = buildSystemPrompt({ keyword: "physiotherapy vs athletic therapy" });
     expect(p).toContain("Name a regulator, licensing body, insurer or public plan only when a page");

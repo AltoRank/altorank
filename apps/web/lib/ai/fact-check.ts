@@ -365,6 +365,15 @@ export function namesAnAssociation(entity: string): boolean {
 }
 
 /**
+ * Words that put a "covers" sentence about insurance or a public plan, folded,
+ * in the supported languages. "Covers" alone is too common a verb: "the guide
+ * covers the basics", "the tool covers 25 billion keywords". A coverage claim
+ * is only read in a sentence that is about paying for something.
+ */
+const COVERAGE_CONTEXT =
+  /insur|assur|assicur|segur[oa]|aseguradora|versicher|sigort|reimburs|rimbors|reembols|rembours|erstatt|mutual|mutuel|mutua|polizz|poliza|police d|krankenkass|medicare|medicaid|copay|co-pay|deductible|out-of-pocket|health plan|benefit|sgk|servizio sanitario|sistema (?:nacional|publico) de salud|securite sociale|seguridad social|public plan|provincial plan|state plan/u;
+
+/**
  * The authority and coverage claims one sentence makes: at most one of each,
  * with the body it names when it names one. "The X" is the body X.
  */
@@ -377,6 +386,7 @@ export function entityClaimsIn(
     ["authority", locale.prose.authorityClaim],
     ["coverage", locale.prose.coverageClaim],
   ] as const) {
+    if (kind === "coverage" && !COVERAGE_CONTEXT.test(foldCase(sentence).normalize("NFKD").replace(/\p{M}+/gu, ""))) continue;
     let best: { entity: string | null; phrase: string } | null = null;
     for (const re of patterns) {
       const m = sentence.match(new RegExp(re.source, re.flags.replace("g", "")));

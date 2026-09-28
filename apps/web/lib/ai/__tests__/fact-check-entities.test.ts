@@ -122,3 +122,15 @@ describe("authority and coverage claims in each supported language", () => {
     });
   }
 });
+
+describe("a coverage claim is only read in a sentence about paying for something", () => {
+  it("leaves the everyday verb alone", () => {
+    for (const s of [
+      "Acme Keyword Tool covers 25 billion keywords across 140 markets.",
+      "The Northland Guide covers every stretch you need after a run.",
+    ]) {
+      expect(entityClaimsIn(s, en).filter((c) => c.kind === "coverage"), s).toEqual([]);
+    }
+    expect(entityClaimsIn("Acme Mutual covers athletic therapy visits under its extended health benefits.", en)[0]).toMatchObject({ kind: "coverage", entity: "Acme Mutual" });
+  });
+});
