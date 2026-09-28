@@ -2,9 +2,9 @@
 -- Depends on: nothing (auth.users only). Independent of 091, which it sits
 -- beside: 091 is the one shared budget for every caller, this is each
 -- signed-in person's share of it.
--- Apply BEFORE its code is deployed: see RUNBOOK.md. Until it is applied,
--- every paid public tool answers `user_cap` for everyone (the reservation
--- fails closed when the RPC is missing).
+-- Apply BEFORE its code is deployed: see RUNBOOK.md. Once the code is live
+-- without it, every paid public tool answers `daily_cap` for everyone (the
+-- reservation fails closed when the RPC is missing).
 --
 -- The paid tools behind POST /api/public/tools/<slug> (kinds `ai` and `data`)
 -- need a signed-in account with a confirmed email, and each account gets a

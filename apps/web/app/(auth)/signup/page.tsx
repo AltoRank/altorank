@@ -12,39 +12,13 @@ import { checkDomainReachable } from "@/lib/domain/reachable";
 import { SubmitButton } from "@/components/auth/submit-button";
 import { recordEvent } from "@/lib/observability/record";
 import { existingSignup } from "@/lib/auth/signup-reuse";
-import { toolReturnPath, toolSlugFromReturnUrl } from "@/lib/public-tools/return-url";
+import { toolSlugFromReturnUrl } from "@/lib/public-tools/return-url";
+import { signUpForTools } from "@/lib/auth/tools-signup";
 import { userDailyRuns } from "@/lib/public-tools/user-runs";
 
 export const metadata: Metadata = {
   title: "Sign Up",
 };
-
-/**
- * The account-only signup, from a free tool on altorank.co
- * (`/signup?from=tools&return_to=https://altorank.co/tools/<slug>/`).
- *
- * The person wants to run one tool, so this asks only what an account needs:
- * email and password. It creates the auth user and sends the tools variant of
- * the confirmation email, whose link comes back through the callback to
- * /tool-return/<slug> and on to the tool page. It creates no account row, no
- * membership and no workspace. Nothing half-made is left behind: the app
- * already treats "a user with no membership" as a normal state and creates
- * the account the first time they open the dashboard (lib/queries/account.ts,
- * `ensureAccount`), and a person with no site is sent to add one, which is
- * where the wizard and the trial gate take over, exactly as for any signup.
- */
-async function signUpForTools(formData: FormData, slug: string, returnTo: string) {
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
-  const back = (key: "error" | "success", message: string) =>
-    `/signup?${new URLSearchParams({ from: "tools", return_to: returnTo, [key]: message })}`;
-  try {
-    await sendSignupConfirmation({ email, password, next: toolReturnPath(slug), variant: "tools" });
-  } catch (e) {
-    redirect(back("error", authErrorMessage(e instanceof Error ? e.message : "Could not create the account")));
-  }
-  redirect(back("success", "Check your email and click the link to confirm. It brings you straight back to the tool."));
-}
 
 async function signUp(formData: FormData) {
   "use server";

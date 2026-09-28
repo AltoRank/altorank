@@ -167,3 +167,28 @@ describe("sendSignupConfirmation", () => {
     expect(deleteUser).not.toHaveBeenCalled();
   });
 });
+
+describe("the tools signup's confirmation", () => {
+  beforeEach(() => {
+    generateLink.mockReset();
+    sendTransactionalEmail.mockReset();
+    sendTransactionalEmail.mockResolvedValue(undefined);
+  });
+
+  it("promises no workspace, no site and no drafts, and says where the link goes", () => {
+    const { subject, html } = renderConfirmSignup("https://app.altorank.co/callback?x=1", "a@x.co", "tools");
+    expect(subject).toMatch(/tools/i);
+    expect(html).toMatch(/back to the tool/);
+    expect(html).not.toMatch(/workspace|ranks for|drafts/i);
+  });
+
+  it("marks the user as a tools signup, sets no name, and links back through /tool-return", async () => {
+    generateLink.mockResolvedValue({ data: { properties: { hashed_token: "h" }, user: { id: "u1" } }, error: null });
+    await sendSignupConfirmation({ email: "a@x.co", password: "pw", next: "/tool-return/grammar-checker", variant: "tools" });
+    expect(generateLink).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "signup", options: { data: { signup_source: "tools" } } }),
+    );
+    const html = sendTransactionalEmail.mock.calls[0][2] as string;
+    expect(html).toContain(encodeURIComponent("/tool-return/grammar-checker"));
+  });
+});

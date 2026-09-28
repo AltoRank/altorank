@@ -106,3 +106,30 @@ describe("the path header for the trial gate", () => {
     expect(res.headers.get("x-middleware-request-x-altorank-path")).toBe("/content/abc");
   });
 });
+
+describe("a tool page's sign-in link, already signed in", () => {
+  beforeEach(() => getUser.mockResolvedValue({ data: { user: { id: "u1" } } }));
+
+  it.each(["/signin", "/signup"])("%s with a tool return_to goes straight back through /tool-return", async (page) => {
+    const res = await get(`${page}?from=tools&return_to=${encodeURIComponent("https://altorank.co/tools/grammar-checker/")}`);
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/tool-return/grammar-checker");
+  });
+
+  it("ignores a return_to that is not a tool page", async () => {
+    const res = await get(`/signin?return_to=${encodeURIComponent("https://evil.com/tools/x/")}`);
+    const to = new URL(res.headers.get("location")!);
+    expect(to.origin).toBe(ORIGIN);
+    expect(to.pathname).toBe("/dashboard");
+  });
+});
+
+describe("a tool return, signed out", () => {
+  beforeEach(() => getUser.mockResolvedValue({ data: { user: null } }));
+
+  it("is behind a session like any other page, and comes back after sign-in", async () => {
+    const res = await get("/tool-return/grammar-checker");
+    const to = new URL(res.headers.get("location")!);
+    expect(to.pathname).toBe("/signin");
+    expect(to.searchParams.get("next")).toBe("/tool-return/grammar-checker");
+  });
+});

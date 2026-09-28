@@ -29,6 +29,13 @@ const deps = (tool: AnyPublicTool, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
+/** A verified account with runs left, for tests about something else. */
+const signedIn = () => ({
+  getViewer: async () => ({ id: "user-1", verified: true }),
+  reserveUserRun: async () => ({ ok: true as const, day: "2026-09-28", remaining: 2 }),
+  releaseUserRun: async () => {},
+});
+
 beforeEach(() => clearCache());
 
 describe("handleToolRequest", () => {
@@ -90,7 +97,7 @@ describe("handleToolRequest", () => {
     const run = vi.fn(async () => [text("x")]);
     const t = makeTool({ kind: "ai", estimateCents: 2, run });
     const reserveSpend = vi.fn(async () => false);
-    const r = await handleToolRequest(t.slug, body({ url: "a.com" }), "5.5.5.5", deps(t, { reserveSpend }));
+    const r = await handleToolRequest(t.slug, body({ url: "a.com" }), "5.5.5.5", deps(t, { reserveSpend, ...signedIn() }));
     expect(reserveSpend).toHaveBeenCalledWith(t.slug, 2);
     expect(r.status).toBe(429);
     expect(r.body).toMatchObject({ code: "daily_cap" });
