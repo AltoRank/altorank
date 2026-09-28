@@ -371,16 +371,33 @@ describe("Turkish: the rest of the enrichment reads Turkish prose", () => {
   });
 });
 
+
+/** Research whose results page shows questions people ask: what makes the prompt ask for a FAQ (lib/content/on-page.ts faqPlan). */
+const ASKED = {
+  keyword: "k",
+  language: "English",
+  intent: { intent: "info" as const, confidence: "high" as const, signals: [], lexicon: true },
+  competitors: [],
+  peopleAlsoAsk: ["What is it?", "How long does it take?"],
+  aiOverview: null,
+  relatedKeywords: [],
+  existingPerformance: null,
+  adjacentQueries: [],
+  recommendedWordCount: 1500,
+  wordCountBasis: "test",
+  layers: [],
+};
+
 describe("Turkish: the prompt asks for Turkish labels", () => {
   it("takes the FAQ heading and the summary label from the contract", () => {
-    const prompt = buildSystemPrompt({ keyword: TR_KEYWORD, language: "Turkish", output: { faq: true } });
+    const prompt = buildSystemPrompt({ keyword: TR_KEYWORD, language: "Turkish", research: ASKED });
     expect(prompt).toContain("<h2>Sıkça sorulan sorular</h2>");
     expect(prompt).toContain('(such as "Öne çıkan noktalar")');
     expect(prompt).not.toContain("<h2>Frequently asked questions</h2>");
   });
 
   it("is unchanged for English", () => {
-    const prompt = buildSystemPrompt({ keyword: "crm", output: { faq: true } });
+    const prompt = buildSystemPrompt({ keyword: "crm", research: ASKED });
     expect(prompt).toContain("<h2>Frequently asked questions</h2>");
     expect(prompt).toContain('(such as "Key takeaways")');
   });

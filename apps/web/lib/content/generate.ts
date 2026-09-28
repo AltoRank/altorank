@@ -39,6 +39,7 @@ import { loadSiteFacts } from "@/lib/content/site-facts";
 import { siteFactUrls } from "@/lib/ai/prompts";
 import { figureReviewNote } from "@/lib/seo/source-figures";
 import { matchingOfferings, topicLinkNote } from "@/lib/content/topic-pages";
+import { faqPlan, faqReviewNote, fitTitle, removeTitleHeading, titleReviewNote } from "@/lib/content/on-page";
 import { anthropicModel, openaiImageModel } from "@/lib/ai/models";
 import { GenerationTruncatedError } from "@/lib/ai/errors";
 import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
@@ -869,9 +870,18 @@ export async function generateArticle(
     }
     if (!articleResult) throw new Error("Generator ended without returning a result");
 
+    // The title fits a results line, and the body does not repeat it as an
+    // <h1>: every destination renders the title as the page's H1. Both were
+    // asked for in the prompt and both shipped wrong on a real first article
+    // (lib/content/on-page.ts). Not on a rewrite, which keeps its page's
+    // title and body structure.
+    const fittedTitle = fitTitle(articleResult.title, keyword, workspace.language);
+    if (!refreshOf) articleResult = { ...articleResult, title: fittedTitle.title };
+
     // Deterministic first: the prompt bans em dashes and the model uses them
     // anyway, so the ban is enforced here where it cannot be ignored.
     let processedHtml = stripAiTypography(articleResult.html);
+    if (!refreshOf) processedHtml = removeTitleHeading(processedHtml).html;
 
     /**
      * Apply an optional enhancement, and keep the original unless the result is
@@ -1011,6 +1021,12 @@ export async function generateArticle(
     if (figureNote) reviewNotes.push(figureNote);
     const linkNote = topicLinkNote(topicPages, processedHtml);
     if (linkNote) reviewNotes.push(linkNote);
+    if (!refreshOf) {
+      const titleNote = titleReviewNote(fittedTitle);
+      if (titleNote) reviewNotes.push(titleNote);
+      const faqNote = faqReviewNote(faqPlan({ articleType: brief.articleType, questions: research.peopleAlsoAsk }), processedHtml);
+      if (faqNote) reviewNotes.push(faqNote);
+    }
     research.reviewNotes = reviewNotes;
 
     // `scoreArticle` and its seven on-page checks have existed all along, but
@@ -1035,6 +1051,7 @@ export async function generateArticle(
       // Every check that reads text reads it in the site's language; the
       // first Turkish draft was scored on English rules.
       language: workspace.language,
+      titleIsPageH1: !refreshOf,
     });
     // The half that matches what this product actually claims: not "will it
     // rank" but "will an answer engine quote it". Null in a language the

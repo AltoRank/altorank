@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { removeTitleHeading } from "@/lib/content/on-page";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { discoverKeywords, storedCpc } from "@/lib/seo/keywords";
@@ -261,14 +262,16 @@ export async function scoreArticleSeo(articleId: string) {
   // and the editor read.
   const knownPages = await fetchKnownPages(supabase, article.workspace_id, articleId);
 
-  // Run the scoring
-  const result = scoreArticle(htmlContent, article.keyword, {
+  // Run the scoring, on the body as it will publish: the publisher takes the
+  // title's <h1> out, and the title is the page's H1 (lib/content/on-page.ts).
+  const result = scoreArticle(removeTitleHeading(htmlContent, article.title).html, article.keyword, {
     metaDescription: article.meta_description,
     siteDomain: ws?.domain ?? null,
     knownPages,
     targetWordCount: article.research?.recommendedWordCount ?? null,
     title: article.title,
     language,
+    titleIsPageH1: true,
   });
 
   // Insert the audit record

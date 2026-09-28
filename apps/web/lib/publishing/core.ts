@@ -18,6 +18,7 @@ import { readVisibleArticle } from "@/lib/articles/body-read";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
 import { recordPublish } from "@/lib/publishing/log";
 import { DEFAULT_OUTPUT_SETTINGS } from "@/lib/onboarding/output-settings";
+import { removeTitleHeading } from "@/lib/content/on-page";
 
 /** Which connection an attempt went through, and how. Written to publish_log. */
 export type PublishContext = {
@@ -181,7 +182,10 @@ async function pushToDestination(
     },
   });
 
-  let html = tiptapToHtml(article.content as Record<string, unknown>);
+  // The title goes as its own field and every destination shows it as the
+  // page's H1, so a body <h1> repeating it is a second H1 - which drafts
+  // written before 2026-09-28 carry (lib/content/on-page.ts).
+  let html = removeTitleHeading(tiptapToHtml(article.content as Record<string, unknown>), article.title).html;
 
   // Resolve any internal link placeholder still in the document. Generation
   // resolves or unwraps them, so this only matters for a draft written by hand

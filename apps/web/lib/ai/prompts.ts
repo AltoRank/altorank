@@ -4,6 +4,7 @@ import { INTENT_GUIDANCE } from "@/lib/seo/intent";
 import { LENGTH_BANDS, TAXONOMY_LABELS, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { resolveLocale } from "@/lib/i18n/locale";
 import { matchingOfferings } from "@/lib/content/topic-pages";
+import { faqPlan } from "@/lib/content/on-page";
 
 // ---------------------------------------------------------------------------
 // Build the system prompt sent to the AI model for article generation.
@@ -412,6 +413,27 @@ export function figureRules(research: ArticleResearch | undefined): string[] {
   ];
 }
 
+/**
+ * The FAQ line of FORMAT & STRUCTURE, from `faqPlan` (lib/content/on-page.ts).
+ * Always said, either way, and outside SITE PREFERENCES: that section is only
+ * written for a workspace with an output-settings row, and the clinic article
+ * of 2026-09-27 had no FAQ because nothing asked for one. Not on a rewrite:
+ * the brief there says which questions to add.
+ */
+function faqRule(prompt: ArticlePrompt, language: string, locale: ReturnType<typeof resolveLocale>): string[] {
+  if (prompt.refreshOf) return [];
+  const plan = faqPlan({ articleType: prompt.brief?.articleType, questions: prompt.research?.peopleAlsoAsk ?? [] });
+  if (!plan.include) return [`- Do not add a FAQ section: ${plan.reason}.`];
+  const heading = locale.supported
+    ? `<h2>${locale.labels.faqHeading}</h2>`
+    : `an <h2> headed with the usual ${language} phrase for "frequently asked questions"`;
+  return [
+    `- End the article with ${heading}: ${plan.reason}. Three to five <h3> questions from QUESTIONS`,
+    "  SEARCHERS ASK that the body has not already answered, each answered in 40-80 words that stand",
+    "  alone. Keep it short; do not repeat a section or invent questions to fill it.",
+  ];
+}
+
 export function buildSystemPrompt(prompt: ArticlePrompt): string {
   const {
     keyword,
@@ -608,13 +630,16 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     [
       "FORMAT & STRUCTURE REQUIREMENTS:",
       "- Output valid HTML only. Do NOT wrap it in markdown fences or add any preamble.",
-      "- Start with a single <h1> tag containing the article title.",
+      "- Start with a single <h1> tag containing the article title. It is taken out of the body and",
+      "  published as the page's title, which the site shows as the page's only H1: never use <h1>",
+      "  anywhere else.",
       "- Use <h2> tags for major sections (aim for 4-8 sections).",
       "- Use <h3> tags for subsections where appropriate.",
       "- Use <p> tags for paragraphs. Keep paragraphs concise (2-4 sentences).",
       "- Use <ul>/<ol> and <li> for lists when they improve readability.",
       "- Use <strong> and <em> for emphasis where natural.",
       "- Do NOT include <html>, <head>, <body>, or <style> tags.",
+      ...faqRule(prompt, language, locale),
       // The alt rule sits with the format rules rather than with SEO because
       // the SEO framing is what produced the problem: told to "include the
       // keyword", a model writes alt="the keyword". It passes a has-alt check
@@ -867,20 +892,8 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
     if (o.mentionSimilarProducts === true) prefs.push("- Where relevant, name and fairly compare similar products or tools.");
     if (o.emojis === false) prefs.push("- No emojis anywhere in the article.");
     if (o.emojis === true) prefs.push("- Emojis are welcome in headings and list items where they add warmth: at most one per heading, none in body sentences.");
-    // Asked for here, extracted in lib/content/enrich/faq.ts: the schema step
-    // reads a FAQ section and never wrote one, so with the switch on and no
-    // request in the prompt the FAQPage data existed only when the model
-    // happened to end on questions.
-    if (o.faq === true) {
-      const faqHeading = locale.supported
-        ? `an <h2>${locale.labels.faqHeading}</h2> section`
-        : `an <h2> section headed with the usual ${language} phrase for "frequently asked questions"`;
-      prefs.push(
-        `- When useful unanswered questions remain, end with ${faqHeading}: up to five <h3> questions ` +
-          "that serve the approved audience and article task, each answered in 40-80 words that stand alone. " +
-          "Do not repeat a question already covered or invent adjacent topics to fill this section; omit it when nothing useful remains.",
-      );
-    }
+    // The FAQ section is decided in FORMAT & STRUCTURE (faqRule), from the
+    // results page, whatever this switch says: it governs the FAQ's schema.
     if (o.customInstructions?.trim()) prefs.push(`- Site owner's standing instructions: ${o.customInstructions.trim()}`);
     if (prefs.length) sections.push("", "SITE PREFERENCES:", ...prefs);
   }

@@ -24,6 +24,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { factCheckArticle, autoApprovalBlocker } from "@/lib/ai/fact-check";
 import { tiptapToHtml } from "@/lib/cms/html";
 import { auditArticle } from "@/lib/seo/article-audit";
+import { removeTitleHeading } from "@/lib/content/on-page";
 import type { ArticleResearch } from "@/lib/seo/research";
 import { getQuota } from "@/lib/billing/quota";
 import { getDestinations } from "./destinations";
@@ -242,9 +243,11 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
             .update({ fact_checks: report, fact_check_verdict: report.verdict })
             .eq("id", article.id);
         }
+        // Audited as it will publish: the publisher takes the title's <h1>
+        // out of the body (lib/content/on-page.ts), and the title is the H1.
         const audit = html
           ? auditArticle({
-              html,
+              html: removeTitleHeading(html, article.title).html,
               keyword: article.keyword ?? "",
               siteDomain: ws.domain,
               title: article.title,
@@ -252,6 +255,7 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
               slug: article.slug,
               featuredImageUrl: article.featured_image_url,
               language: ws.language,
+              titleIsPageH1: true,
             })
           : null;
 
