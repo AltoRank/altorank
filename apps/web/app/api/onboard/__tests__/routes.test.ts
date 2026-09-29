@@ -35,7 +35,10 @@ vi.mock("@/lib/onboarding/run-worker", () => ({ executeRun: (id: string) => exec
 // The spend gate is tested on its own (lib/billing/__tests__/spend-gate.test.ts);
 // here it is the answer the route acts on.
 const canSpend = vi.fn();
-vi.mock("@/lib/billing/spend-gate", () => ({ canSpend: (...args: unknown[]) => canSpend(...args) }));
+vi.mock("@/lib/billing/spend-gate", async () => ({
+  ...(await vi.importActual<typeof import("@/lib/billing/spend-gate")>("@/lib/billing/spend-gate")),
+  canSpend: (...args: unknown[]) => canSpend(...args),
+}));
 
 import { POST as start } from "../start/route";
 import { POST as run } from "../run/route";
