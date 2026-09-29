@@ -923,7 +923,22 @@ export type NothingPlannedOpsEmail = {
   /** The account's own addresses, so the operator can write back. */
   contacts: string[];
   pool: EmptyPool | null;
+  /**
+   * Whether the account was before its trial, which is what decides what the
+   * customer saw: only that setup screen promises a reply within 24 hours.
+   * Null when the hold could not be read.
+   */
+  preTrial: boolean | null;
 };
+
+/** What the customer was told, in the operator's words. */
+function nothingPlannedPromise(preTrial: boolean | null): string {
+  if (preTrial === true)
+    return "The account is before its trial. The customer was not asked for a card and was told the team would write to them within 24 hours.";
+  if (preTrial === false)
+    return "The account is not waiting on a trial (it has a plan, is an operator's, or the gate is off). It was never asked for a card and was not promised a reply; its setup screen says only that nothing cleared the bar yet.";
+  return "Whether the account is before its trial could not be read, so it is not known whether the customer was promised a reply within 24 hours.";
+}
 
 /**
  * To the operators, not the customer: a first look finished and nothing on
@@ -946,14 +961,14 @@ export function renderNothingPlannedOps(a: NothingPlannedOpsEmail): RenderedEmai
       ]
     : ["The run did not record which stage emptied the pool."];
   return {
-    subject: `Follow up: nothing planned for ${site}`,
+    subject: a.preTrial === true ? `Follow up within 24 hours: nothing planned for ${site}` : `Nothing planned for ${site}`,
     preheader: pool?.summary ?? "A first look finished with nothing to plan.",
-    footerNote: `Sent because this address is in ADMIN_EMAILS. The customer was told they will hear back by email within 24 hours.`,
+    footerNote: `Sent because this address is in ADMIN_EMAILS.`,
     html:
       eyebrow(site) +
       heading("A first look planned nothing") +
       emailParagraph(
-        `Setup finished for ${esc(site)} without failing, and nothing cleared the bar for a first article. The customer was not asked for a card and was told the team would write to them within 24 hours.`,
+        `Setup finished for ${esc(site)} without failing, and nothing cleared the bar for a first article. ${esc(nothingPlannedPromise(a.preTrial))}`,
       ) +
       (pool ? quoted(pool.summary) : "") +
       counts.map((c) => emailParagraph(esc(c))).join("") +

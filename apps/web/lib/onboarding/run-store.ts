@@ -14,10 +14,13 @@ import { notifyOperatorsNothingPlanned, notifySetupFailed } from "@/lib/email/li
 import { loadFirstLookReport } from "./first-look-report";
 import { heldTopics } from "./plan";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
+import { planHoldApplies } from "@/lib/billing/trial-hold";
+import { followUpPromised } from "@/lib/auth/operators";
 import type { EmptyPool, OnboardingHeld } from "./events";
 import {
   initialOnboardingState,
   onboardingOutcome,
+  plannedNothingCleanly,
   isRunStale,
   RUN_STALE_MS,
   reduceOnboarding,
@@ -28,6 +31,7 @@ import {
   type OnboardingRunArticle,
   type OnboardingRunRow,
   type OnboardingRunSnapshot,
+  type OnboardingRunStatus,
   type OnboardingState,
 } from "./events";
 
@@ -222,12 +226,19 @@ export class RunRecorder {
       .eq("id", this.runId)
       .eq("status", "running")
       .select("workspace_id, account_id");
-    if (error) console.error(`[onboarding] run ${this.runId}: could not finish: ${error.message}`);
-    else
-      await announceOutcome(this.supabase, this.runId, status, scopeOf(data), this.state.steps, {
-        produced: this.state.planned.length > 0 || this.state.article !== null,
-        emptyPool: this.state.emptyPool,
-      });
+    if (error) {
+      console.error(`[onboarding] run ${this.runId}: could not finish: ${error.message}`);
+      return;
+    }
+    // Somebody else closed it first - the reaper, most likely, for a worker
+    // that went quiet. Their announcement stands; a second one from here
+    // would contradict the stored status ("planned nothing" on a row that
+    // says error). closeRun has always checked this; finish did not.
+    if (!(data ?? []).length) return;
+    await announceOutcome(this.supabase, this.runId, status, scopeOf(data), this.state.steps, {
+      produced: this.state.planned.length > 0 || this.state.article !== null,
+      emptyPool: this.state.emptyPool,
+    });
   }
 
   /** The worker itself threw. Everything recorded so far stays on the row. */
@@ -240,10 +251,11 @@ export class RunRecorder {
 /**
  * Close a run that stopped short, if it is still running.
  *
- * `error` only when the run wrote nothing. Whether it did is read from the
- * rows it wrote - its plan, its draft, and any article saved on the site since
- * it started (the draft route and the fan-out write those, never the row) -
- * not from whoever is calling. A run that wrote a draft or a plan and was then
+ * `error` only when the run wrote nothing and had not already planned
+ * nothing cleanly (`closeRun`). Whether it wrote anything is read from the
+ * rows - its plan, its draft, and a readable article saved on the site since
+ * it started (the draft route writes those, never the row) - not from
+ * whoever is calling. A run that wrote a draft or a plan and was then
  * cut off, or whose dispatcher lost track of it, is settled on what it made:
  * `partial` or `done`, the reason recorded for the operator and nothing
  * emailed to the person. On 2026-09-28 a local first look finished at 5:00
@@ -271,24 +283,55 @@ type ClosingRow = Pick<OnboardingRunRow, "id" | "workspace_id" | "status" | "pha
 };
 
 /**
- * What a run has written, read from the rows: its plan, its own draft, and
- * any article saved on its site since it started. A draft that failed
- * (`status = 'error'`) is nothing the person can open.
+ * A draft the person can open: the test the first look uses before it writes
+ * one (pipeline.ts), with `word_count > 0` standing for "has content" so the
+ * body is not read to check it.
  */
-async function writtenByRun(supabase: SupabaseClient, row: ClosingRow): Promise<{ planned: number; articles: number }> {
+const READABLE_STATUSES = new Set(["review", "approved", "scheduled", "live"]);
+type ArticleFacts = { id: string; status: string | null; word_count: number | null };
+const readable = (a: ArticleFacts) => READABLE_STATUSES.has(a.status ?? "") && (a.word_count ?? 0) > 0;
+
+/**
+ * What a run has written, read from the rows: its plan, and the one draft it
+ * can stand on - its own (`article_id`) when that is readable, else the first
+ * readable article saved on its site since it started (a dispatched draft
+ * that landed but never stamped the row). A draft still being written, or
+ * one that failed, is nothing the person can open: an earlier cut counted
+ * any non-error article, so a draft mid-write that later failed settled the
+ * run as `partial`, with no email, over nothing (review, 2026-09-29).
+ * `writing` says whether one is still being written.
+ */
+async function writtenByRun(
+  supabase: SupabaseClient,
+  row: ClosingRow,
+): Promise<{ planned: number; articleId: string | null; writing: boolean }> {
   const planned = (row.planned ?? []).length;
-  if (row.article_id) return { planned, articles: 1 };
-  if (!row.workspace_id) return { planned, articles: 0 };
-  const { count, error } = await supabase
+  if (!row.workspace_id) return { planned, articleId: null, writing: false };
+  const { data, error } = await supabase
     .from("articles")
-    .select("id", { count: "exact", head: true })
+    .select("id, status, word_count")
     .eq("workspace_id", row.workspace_id)
     .gte("created_at", row.started_at)
-    .neq("status", "error");
+    .order("created_at", { ascending: true })
+    .limit(50);
   // Unknown is not "nothing": a read that failed must not turn a run that
   // wrote a draft into a failure to email about.
-  if (error) throw new Error(`could not count the run's articles: ${error.message}`);
-  return { planned, articles: count ?? 0 };
+  if (error) throw new Error(`could not read the run's articles: ${error.message}`);
+  const since = (data ?? []) as ArticleFacts[];
+  let own = since.find((a) => a.id === row.article_id) ?? null;
+  if (!own && row.article_id) {
+    // The run's own draft, written before it started (a re-run on a site
+    // that kept its first article), is still the run's own.
+    const { data: found, error: ownError } = await supabase
+      .from("articles")
+      .select("id, status, word_count")
+      .eq("id", row.article_id)
+      .maybeSingle();
+    if (ownError) throw new Error(`could not read the run's draft: ${ownError.message}`);
+    own = (found as ArticleFacts | null) ?? null;
+  }
+  const articleId = own && readable(own) ? own.id : (since.find(readable)?.id ?? null);
+  return { planned, articleId, writing: since.some((a) => a.status === "drafting") };
 }
 
 /**
@@ -297,12 +340,29 @@ async function writtenByRun(supabase: SupabaseClient, row: ClosingRow): Promise<
  * `.eq("status", "running")` is the lock: two callers racing to close one row
  * (the reaper and a person reopening the screen) leave one update matching no
  * rows, and only the winner announces.
+ *
+ * How it settles, from the rows:
+ *
+ *   wrote a plan or a readable draft   `partial` or `done`, and the draft
+ *                                      becomes the row's `article_id`
+ *   planned nothing, cleanly           `nothing_planned` (`plannedNothingCleanly`):
+ *                                      the pool it recorded was judged and no
+ *                                      phase failed. Cut off or thrown after
+ *                                      that, it is still the run the customer
+ *                                      is told a person follows up on, and it
+ *                                      used to be closed as `error` - the
+ *                                      setup-failed email, the retry and the
+ *                                      card ask (review, 2026-09-29)
+ *   a draft still being written        left alone, unless this is the reaper:
+ *                                      the draft route stamps the row when it
+ *                                      lands, and the reaper if it never does
+ *   anything else                      `error`, with the reason
  */
 async function closeRun(
   supabase: SupabaseClient,
   runId: string,
   reason: string,
-  opts: { unclaimedOnly?: boolean },
+  opts: { unclaimedOnly?: boolean; reaping?: boolean },
 ): Promise<boolean> {
   const { data: found, error: readError } = await supabase
     .from("onboarding_runs")
@@ -317,22 +377,35 @@ async function closeRun(
   if (!row || row.status !== "running") return false;
   if (opts.unclaimedOnly && (row.phases ?? []).length > 0) return false;
 
-  let wrote: { planned: number; articles: number };
+  let wrote: { planned: number; articleId: string | null; writing: boolean };
   try {
     wrote = await writtenByRun(supabase, row);
   } catch (err) {
     console.error(`[onboarding] run ${runId}: ${err instanceof Error ? err.message : err}; left for the reaper`);
     return false;
   }
-  const produced = wrote.planned > 0 || wrote.articles > 0;
-  const status = produced
-    ? runStatusFrom({ planned: row.planned ?? [], article: wrote.articles > 0 ? ({ id: row.article_id ?? "" } as OnboardingArticle) : null, error: null })
-    : "error";
+  const produced = wrote.planned > 0 || wrote.articleId !== null;
+  if (!produced && wrote.writing && !opts.reaping && !opts.unclaimedOnly) {
+    console.warn(`[onboarding] run ${runId}: ${reason}; a draft is still being written, so the draft route or the reaper settles it`);
+    return false;
+  }
+  const emptyPool = row.empty_pool ?? null;
+  const status: Exclude<OnboardingRunStatus, "running"> = produced
+    ? runStatusFrom({ planned: row.planned ?? [], article: wrote.articleId ? ({ id: wrote.articleId } as OnboardingArticle) : null, error: null })
+    : plannedNothingCleanly({ steps: row.phases ?? [], emptyPool })
+      ? "nothing_planned"
+      : "error";
 
   const now = new Date().toISOString();
   let update = supabase
     .from("onboarding_runs")
-    .update({ status, ...(produced ? {} : { error: reason }), finished_at: now, updated_at: now })
+    .update({
+      status,
+      ...(status === "error" ? { error: reason } : {}),
+      ...(wrote.articleId && wrote.articleId !== row.article_id ? { article_id: wrote.articleId } : {}),
+      finished_at: now,
+      updated_at: now,
+    })
     .eq("id", runId)
     .eq("status", "running");
   if (opts.unclaimedOnly) update = update.eq("phases", "[]");
@@ -342,7 +415,7 @@ async function closeRun(
     return false;
   }
   if (!(data ?? []).length) return false;
-  await announceOutcome(supabase, runId, status, scopeOf(data), row.phases ?? null, { reason, produced });
+  await announceOutcome(supabase, runId, status, scopeOf(data), row.phases ?? null, { reason, produced, emptyPool });
   return true;
 }
 
@@ -385,7 +458,7 @@ export async function reapStaleRuns(
   }
   const runIds: string[] = [];
   for (const row of (data ?? []) as Array<Pick<OnboardingRunRow, "id">>) {
-    if (await closeRun(supabase, row.id, STALE_RUN_ERROR, {})) runIds.push(row.id);
+    if (await closeRun(supabase, row.id, STALE_RUN_ERROR, { reaping: true })) runIds.push(row.id);
   }
   return { reaped: runIds.length, runIds };
 }
@@ -416,7 +489,7 @@ async function announceOutcome(
   // A `done` run is announced only when it was closed from outside the worker
   // (a reason is given): it wrote everything, and was still cut off.
   if (status === "done" && !opts.reason) return;
-  if (status === "nothing_planned") return announceNothingPlanned(supabase, runId, scope, opts.emptyPool ?? null);
+  if (status === "nothing_planned") return announceNothingPlanned(supabase, runId, scope, opts.emptyPool ?? null, opts.reason);
   const reason = opts.reason;
   // Which phase fell short, which is the whole question an operator has.
   const failed = (steps ?? []).filter((s) => s.status === "failed" || s.status === "skipped");
@@ -460,22 +533,35 @@ async function announceOutcome(
  *
  * Not the setup-failed email: nothing was broken, and "Setup didn't finish,
  * try again" sent the person back to buy the same empty answer (both real
- * signups, 2026-09-28). Their screen says nothing cleared the bar yet and that
- * the team will write within 24 hours, so this is what tells the team: a
- * `system_events` warning with the stage that emptied the pool, which the
- * daily digest reads, and an email to the operators now, per run.
+ * signups, 2026-09-28). This is what tells the team: a `system_events`
+ * warning with the stage that emptied the pool, and an email to the
+ * operators now, per run.
+ *
+ * Whether the customer was promised a reply is said, not assumed. Only an
+ * account before its trial sees the setup screen that promises one, and only
+ * when there is somebody to be told (`followUpPromised`); a paying, self-host
+ * or operator account is never asked for a card and never promised anything.
+ * `reason` is set when the run was closed from outside its worker - cut off
+ * or thrown after it had planned nothing.
  */
 async function announceNothingPlanned(
   supabase: SupabaseClient,
   runId: string,
   scope: { workspaceId: string | null; accountId: string | null },
   pool: EmptyPool | null,
+  reason?: string,
 ): Promise<void> {
+  // Unknown when the hold cannot be read; the event and the email say so.
+  const preTrial = scope.workspaceId ? await planHoldApplies(supabase, scope.workspaceId).catch(() => null) : null;
+  const promised = preTrial === true && followUpPromised();
   await recordEvent(
     {
       level: "warn",
       source: "onboarding.nothing_planned",
-      message: `A first look planned nothing; a person follows up within 24 hours. ${pool?.summary ?? "The run did not record which stage emptied the pool."}`,
+      message:
+        `A first look planned nothing${promised ? "; the customer was told a person follows up within 24 hours" : ""}. ` +
+        `${pool?.summary ?? "The run did not record which stage emptied the pool."}` +
+        (reason ? ` Closed from outside the worker: ${reason}` : ""),
       accountId: scope.accountId,
       workspaceId: scope.workspaceId,
       // Flattened, and the count renamed: the event log redacts any context
@@ -483,6 +569,9 @@ async function announceNothingPlanned(
       context: {
         runId,
         status: "nothing_planned",
+        preTrial,
+        promised,
+        ...(reason ? { closedBecause: reason } : {}),
         ...(pool
           ? { stage: pool.stage, cause: pool.cause, rows: pool.keywords, qualified: pool.qualified, rejected: pool.rejected, pending: pool.pending }
           : {}),
@@ -496,10 +585,10 @@ async function announceNothingPlanned(
     await notifyOperatorsNothingPlanned(
       supabase,
       { accountId: scope.accountId, workspaceId: scope.workspaceId },
-      { runId, domain: (ws?.domain as string | null) ?? null, pool },
+      { runId, domain: (ws?.domain as string | null) ?? null, pool, preTrial },
     );
   } catch (err) {
-    // The warning above is already recorded, and the digest carries it.
+    // The warning above is already recorded.
     console.error(`[onboarding] run ${runId}: nothing-planned operator email: ${err instanceof Error ? err.message : err}`);
   }
 }

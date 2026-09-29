@@ -14,38 +14,58 @@
 
 import { TrialOffer } from "@/components/billing/trial-offer";
 import { asksForCard, type SetupEnding } from "@/lib/onboarding/setup-retry";
-import type { EmptyPool } from "@/lib/onboarding/events";
+import { judgedRows, type EmptyPool } from "@/lib/onboarding/events";
 
 export const NOTHING_PLANNED_HEADING = "Nothing cleared the bar for a first article yet";
 
 /**
- * The lede under that heading. The count is the pool the run judged, when it
- * recorded one; the stage and the causes are for the operator, not for a
- * person deciding whether to trust us.
+ * The lede under that heading. The count is the searches a judge actually
+ * decided (`judgedRows`), not every row in the pool: rows never reached were
+ * not "checked", and a pool nobody could judge is never shown this at all
+ * (`poolWasJudged`). The stage and the causes are for the operator, not for
+ * a person deciding whether to trust us.
+ *
+ * `followUp`: the promise of a reply is made only when somebody will be told
+ * (lib/auth/operators.ts `followUpPromised`). Without an operator address
+ * there is no email and no digest, and the promise would be to nobody.
  */
-export function nothingPlannedLede(domain: string, pool: EmptyPool | null): string {
+export function nothingPlannedLede(domain: string, pool: EmptyPool | null, followUp: boolean): string {
   const site = domain || "your site";
+  const judged = pool ? judgedRows(pool) : 0;
   const checked =
-    pool && pool.keywords > 0
-      ? `We read ${site} and checked ${pool.keywords.toLocaleString("en-US")} ${pool.keywords === 1 ? "search" : "searches"} your buyers make, and none was clear enough to build a first article on yet.`
+    judged > 0
+      ? `We read ${site} and checked ${judged.toLocaleString("en-US")} ${judged === 1 ? "search" : "searches"} your buyers make, and none was clear enough to build a first article on yet.`
       : `We read ${site} and did not find a search clear enough to build a first article on yet.`;
-  return `${checked} Our team has been told, and you will hear back from us by email within 24 hours.`;
+  return followUp
+    ? `${checked} Our team has been told, and you will hear back from us by email within 24 hours.`
+    : `${checked} Nothing has been charged.`;
 }
 
-export function NothingPlannedNote() {
+export function NothingPlannedNote({ followUp }: { followUp: boolean }) {
   return (
     <div className="rounded-lg border border-line bg-bg p-4" data-testid="nothing-planned-note">
       <p className="m-0 text-sm font-medium text-ink">What happens next</p>
       <p className="m-0 mt-1.5 text-[13px] leading-[1.6] text-ink-2">
-        A person on our team looks at what we found and writes to you within 24 hours. There is nothing to pay
-        and nothing you need to do until then.
+        {followUp
+          ? "A person on our team looks at what we found and writes to you within 24 hours. There is nothing to pay and nothing you need to do until then."
+          : "There is nothing to pay and nothing you need to do."}
       </p>
     </div>
   );
 }
 
 /** The card ask, or, when setup planned nothing, the note that replaces it. */
-export function SetupAsk({ ending, canBuy, returnTo = "/dashboard" }: { ending: SetupEnding; canBuy: boolean; returnTo?: string }) {
-  if (!asksForCard(ending)) return <NothingPlannedNote />;
+export function SetupAsk({
+  ending,
+  canBuy,
+  followUp,
+  returnTo = "/dashboard",
+}: {
+  ending: SetupEnding;
+  canBuy: boolean;
+  followUp: boolean;
+  returnTo?: string;
+}) {
+  if (!asksForCard(ending)) return <NothingPlannedNote followUp={followUp} />;
   return <TrialOffer canBuy={canBuy} returnTo={returnTo} />;
 }

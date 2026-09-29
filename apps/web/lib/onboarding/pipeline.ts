@@ -34,7 +34,7 @@ import { analyseDomain, isTransientCrawlFailure } from "@/lib/audit/domain-analy
 import { refusing } from "@/lib/audit/host-circuit";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { generateArticle } from "@/lib/content/generate";
-import { draftHoldReason, planHoldApplies } from "@/lib/billing/trial-hold";
+import { draftHoldReason, planHold } from "@/lib/billing/trial-hold";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
@@ -42,6 +42,7 @@ import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import type { EmptyPool, OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
 import { readEmptyPool } from "./empty-pool";
+import { modelAvailable } from "@/lib/keyword-research/buyer-model";
 import { countScheduled, heldTopics, schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
 import { recordPlanFunnel } from "./funnel-event";
 import type { TopicFunnel } from "@/lib/keyword-research/topic-funnel";
@@ -383,7 +384,8 @@ async function runPhases(
       // are qualified rows with no calendar entry, read back by heldTopics
       // for the locked rows the screen shows. Everyone else - self-host,
       // operator, paying - gets the month as before.
-      const gated = await planHoldApplies(supabase, workspace.id);
+      const hold = await planHold(supabase, workspace.id);
+      const gated = hold !== "open";
       plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, {
         maxEntries: 5,
         qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES,
@@ -424,8 +426,11 @@ async function runPhases(
       // Nothing cleared the bar: which stage emptied the pool, for the row
       // and the operator (lib/onboarding/empty-pool.ts). Not for a held
       // account whose one article is already on the calendar - that site has
-      // a plan.
-      const emptyPool = plan.length === 0 && !firstAlreadyPlanned ? await emptyPoolOrNull(supabase, workspace.id) : null;
+      // a plan - and not for one whose pre-trial article was already spent
+      // (a second site): the planner returned nothing before it judged
+      // anything, and the hold, not the pool, is why (review, 2026-09-29).
+      const emptyPool =
+        plan.length === 0 && !firstAlreadyPlanned && hold !== "spent" ? await emptyPoolOrNull(supabase, workspace.id) : null;
       emit({
         phase: "planning",
         status: plan.length > 0 ? "done" : "skipped",
@@ -610,6 +615,10 @@ async function runPhases(
  * reason nobody could read; the failure is logged.
  */
 async function emptyPoolOrNull(supabase: SupabaseClient, workspaceId: string): Promise<EmptyPool | null> {
+  // No judge this run: whatever verdicts the rows carry are some earlier
+  // run's, and "nothing cleared the bar" would be a claim this run did not
+  // test. The same precondition qualification itself has (opportunity.ts).
+  if (!modelAvailable() || !hasDataForSEOCredentials()) return null;
   try {
     return await readEmptyPool(supabase, workspaceId);
   } catch (err) {

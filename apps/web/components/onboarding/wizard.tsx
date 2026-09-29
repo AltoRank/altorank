@@ -742,7 +742,7 @@ function TrialGateScreen({
     writing: "It appears here when it is done, usually within a few minutes. The trial opens it, and the rest of the week.",
     retry: `Nothing was written for ${domain || "your site"}. Running setup again reads the site, plans the month and writes the first article.`,
     "first-failed": FIRST_ARTICLE_FAILED_LEDE,
-    "nothing-planned": nothingPlannedLede(domain, runState?.emptyPool ?? null),
+    "nothing-planned": nothingPlannedLede(domain, runState?.emptyPool ?? null, setup.followUp),
     "no-article": `${draftingDetail ? `Setup said: ${draftingDetail}` : "Setup finished without writing an article."} The trial opens the calendar, where articles can be written from the plan.`,
   };
 
@@ -769,7 +769,7 @@ function TrialGateScreen({
               button placed after the card sat a screen down and went unseen.
               Not over a run that planned nothing: there is nothing behind
               the card, and the note that replaces it says who writes next. */}
-          <SetupAsk ending={ending} canBuy={canBuy} returnTo="/dashboard" />
+          <SetupAsk ending={ending} canBuy={canBuy} followUp={setup.followUp} returnTo="/dashboard" />
           {askAttribution && <AttributionAsk />}
           {firstArticle && <FirstArticleCardView article={firstArticle} />}
         </div>
@@ -871,6 +871,7 @@ function TrialGateScreen({
 function TrialStep({
   canBuy,
   ending,
+  followUp,
   firstArticle,
   pending,
   retry,
@@ -881,6 +882,8 @@ function TrialStep({
 }: {
   canBuy: boolean;
   ending: SetupEnding;
+  /** Whether the note may promise a reply (PreTrialSetup `followUp`). */
+  followUp: boolean;
   firstArticle: FirstArticleCard | null;
   /** The run's own record of the draft, until the page has read the card. */
   pending: PendingFirstArticle | null;
@@ -905,7 +908,7 @@ function TrialStep({
           an earlier arrangement put the evidence on top: on a site with a full
           report the button sat a full screen down and was never seen. A run
           that planned nothing gets the note instead of the ask. */}
-      <SetupAsk ending={ending} canBuy={canBuy} returnTo="/dashboard" />
+      <SetupAsk ending={ending} canBuy={canBuy} followUp={followUp} returnTo="/dashboard" />
       {askAttribution && <AttributionAsk />}
 
       {hasArticle && <FirstArticleCardView article={firstArticle} pending={firstArticle ? null : pending} />}
@@ -1058,7 +1061,7 @@ function RunScreen({
               ) : failed ? (
                 <>{FIRST_ARTICLE_FAILED_LEDE}</>
               ) : nothingPlanned ? (
-                <>{nothingPlannedLede(domain, state?.emptyPool ?? null)}</>
+                <>{nothingPlannedLede(domain, state?.emptyPool ?? null, preTrialSetup.followUp)}</>
               ) : (
                 <>Setup did not write an article for {domain}. The trial opens the calendar and the plan behind it.</>
               )
@@ -1090,6 +1093,7 @@ function RunScreen({
           <TrialStep
             canBuy={canBuy}
             ending={ending}
+            followUp={preTrialSetup.followUp}
             firstArticle={firstArticle}
             pending={runDraft ? { title: runDraft.title, keyword: runDraft.keyword, wordCount: runDraft.wordCount, verdict: runDraft.verdict } : null}
             retry={retry}

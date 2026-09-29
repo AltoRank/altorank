@@ -376,6 +376,15 @@ export function stateFromRun(
   // run whose caller did not fetch the list still shows the one it knows.
   const listed = (opts.drafts ?? []).map(toOnboardingArticle);
   const drafts = draft && !listed.some((d) => d.id === draft.id) ? [draft, ...listed] : listed;
+  // A stale row that had already planned nothing, cleanly, reads the way the
+  // reaper will settle it (run-store.ts `closeRun`): nothing planned, not a
+  // run that stopped responding. Read as an error, the screen offered the
+  // retry and asked for a card over it (review, 2026-09-29).
+  const quietlyEmpty =
+    Boolean(opts.stale) &&
+    (run.planned ?? []).length === 0 &&
+    !run.article_id &&
+    plannedNothingCleanly({ steps, emptyPool: run.empty_pool ?? null });
   return {
     steps,
     keywordsFound: run.keywords_found,
@@ -383,8 +392,8 @@ export function stateFromRun(
     held: opts.held ?? null,
     article: draft,
     drafts,
-    ready: run.status !== "running",
-    error: run.error ?? (opts.stale ? STALE_RUN_ERROR : null),
+    ready: run.status !== "running" || quietlyEmpty,
+    error: run.error ?? (opts.stale && !quietlyEmpty ? STALE_RUN_ERROR : null),
     emptyPool: run.empty_pool ?? null,
   };
 }
@@ -410,8 +419,64 @@ export function runStatusFrom(
   if (state.error) return "error";
   if (state.planned.length > 0 && state.article !== null) return "done";
   if (state.planned.length > 0 || state.article !== null) return "partial";
+  return plannedNothingCleanly(state) ? "nothing_planned" : "partial";
+}
+
+/**
+ * The run wrote nothing, no phase the plan depends on failed, and the pool it
+ * left was actually judged (`poolWasJudged`). The one rule behind
+ * `runStatusFrom`, and behind a run closed from outside its worker
+ * (run-store.ts `closeRun`) and a stale row on the screen (`stateFromRun`):
+ * a first look cut off after it planned nothing is still a first look that
+ * planned nothing, not a setup to email about and retry.
+ */
+export function plannedNothingCleanly(state: Partial<Pick<OnboardingState, "steps" | "emptyPool">>): boolean {
   const fellShort = (state.steps ?? []).some((s) => OUTCOME_PHASES.includes(s.phase) && s.status === "failed");
-  return state.emptyPool && !fellShort ? "nothing_planned" : "partial";
+  return !fellShort && poolWasJudged(state.emptyPool);
+}
+
+/**
+ * Pending causes that mean nobody could answer, not that the answer was no:
+ * the SERP or model call failed, the buyer test returned nothing, the model's
+ * answer was unusable, there was no business profile to judge against. A
+ * pool emptied by these is a setup that fell short - the failure email and
+ * the retry - not "nothing cleared the bar". `unspecified` is a pending row
+ * with no cause at all, which says nothing either way and is not counted as
+ * an answer.
+ */
+const UNANSWERED_CAUSES = ["provider_error", "no_verdict", "judge_incomplete", "no_profile", "unspecified"] as const;
+
+/**
+ * Rows a judge actually decided: qualified, rejected for any cause, or held
+ * because the results page was too thin to judge against (`thin_serp`, a
+ * reading of the SERP, not a failed call). Rows never reached (`unjudged`)
+ * are not counted: the first look qualifies at most four batches, and on
+ * both real signups on 2026-09-28 hundreds of rows were never reached while
+ * every row that was reached was a rejection.
+ */
+export function judgedRows(pool: EmptyPool): number {
+  const rejected = Object.values(pool.rejected).reduce((sum, n) => sum + n, 0);
+  return pool.qualified + rejected + (pool.pending.thin_serp ?? 0);
+}
+
+/**
+ * Whether an empty pool is an answer: research looked and found nothing, or
+ * every row a judge was asked about was answered and none qualified.
+ *
+ * Not when any row is pending for a reason in UNANSWERED_CAUSES, not when no
+ * row was judged at all (no model key leaves every row `unjudged`), and not
+ * at the `planning` stage - something qualified and the planner placed none
+ * of it, which is the planner falling short, not the site. An earlier cut
+ * took any recorded pool as nothing-planned, and a SERP outage or a missing
+ * key would have been told "nothing on your site cleared the bar" with no
+ * failure email and no retry (review, 2026-09-29).
+ */
+export function poolWasJudged(pool: EmptyPool | null | undefined): boolean {
+  if (!pool) return false;
+  if (pool.stage === "keywords") return true;
+  if (pool.stage !== "qualification") return false;
+  if (UNANSWERED_CAUSES.some((cause) => (pool.pending[cause] ?? 0) > 0)) return false;
+  return judgedRows(pool) > 0;
 }
 
 /**

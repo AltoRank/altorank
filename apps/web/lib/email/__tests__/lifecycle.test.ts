@@ -450,8 +450,8 @@ describe("a first look planned nothing: the operators' email", () => {
   };
 
   it("says whose site, whom to write to, and which stage emptied the pool", () => {
-    const e = renderNothingPlannedOps({ runId: "run-1", domain: "acme-clinic.example", contacts: ["owner@acme-clinic.example"], pool });
-    expect(e.subject).toBe("Follow up: nothing planned for acme-clinic.example");
+    const e = renderNothingPlannedOps({ runId: "run-1", domain: "acme-clinic.example", contacts: ["owner@acme-clinic.example"], pool, preTrial: true });
+    expect(e.subject).toBe("Follow up within 24 hours: nothing planned for acme-clinic.example");
     expect(e.html).toContain("owner@acme-clinic.example");
     expect(e.html).toContain("Stage that emptied the pool: qualification (largest group: buyer_mismatch)");
     expect(e.html).toContain("144 keyword rows, 0 qualified");
@@ -461,8 +461,17 @@ describe("a first look planned nothing: the operators' email", () => {
     expect(e.footerNote).toContain("ADMIN_EMAILS");
   });
 
+  it("says no reply was promised to an account that never saw the trial step", () => {
+    const e = renderNothingPlannedOps({ runId: "run-1", domain: "acme-clinic.example", contacts: [], pool, preTrial: false });
+    expect(e.subject).toBe("Nothing planned for acme-clinic.example");
+    expect(e.html).toContain("was not promised a reply");
+    expect(e.html).not.toContain("was told the team would write");
+    const unknown = renderNothingPlannedOps({ runId: "run-1", domain: "acme-clinic.example", contacts: [], pool, preTrial: null });
+    expect(unknown.html).toContain("could not be read");
+  });
+
   it("still sends, and says so, when the run recorded no reason", () => {
-    const e = renderNothingPlannedOps({ runId: "run-1", domain: null, contacts: [], pool: null });
+    const e = renderNothingPlannedOps({ runId: "run-1", domain: null, contacts: [], pool: null, preTrial: true });
     expect(e.html).toContain("did not record which stage emptied the pool");
     expect(e.html).toContain("No member address was found");
   });
@@ -472,7 +481,7 @@ describe("a first look planned nothing: the operators' email", () => {
     delete process.env.ADMIN_EMAILS;
     try {
       const unreachable = { from: () => { throw new Error("must not read"); } } as never;
-      expect(await notifyOperatorsNothingPlanned(unreachable, { accountId: "a", workspaceId: "w" }, { runId: "r", domain: null, pool })).toEqual({ sent: 0, skipped: 0, failed: 0 });
+      expect(await notifyOperatorsNothingPlanned(unreachable, { accountId: "a", workspaceId: "w" }, { runId: "r", domain: null, pool, preTrial: true })).toEqual({ sent: 0, skipped: 0, failed: 0 });
     } finally {
       if (saved !== undefined) process.env.ADMIN_EMAILS = saved;
     }

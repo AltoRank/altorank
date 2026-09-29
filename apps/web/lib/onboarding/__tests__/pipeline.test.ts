@@ -42,10 +42,21 @@ vi.mock("../plan", () => ({ schedulePlan: (...a: unknown[]) => plan(...a), heldT
 // Whether the planner holds this account's calendar is the planner's own
 // question (lib/billing/trial-hold.ts); the pipeline only words the screen
 // from it. The draft-side predicate stays real.
-const planHold = vi.fn(async () => false);
+// true/false are "held"/"open"; "spent" is passed as itself.
+const planHold = vi.fn(async (): Promise<boolean | "open" | "held" | "spent"> => false);
 vi.mock("@/lib/billing/trial-hold", async () => {
   const real = await vi.importActual<typeof import("@/lib/billing/trial-hold")>("@/lib/billing/trial-hold");
-  return { ...real, planHoldApplies: () => planHold() };
+  const hold = async () => {
+    const v = await planHold();
+    return v === true ? "held" : v === false ? "open" : v;
+  };
+  return { ...real, planHold: hold, planHoldApplies: async () => (await hold()) !== "open" };
+});
+// Whether a judge could run this time; the empty pool is only read when one could.
+const model = vi.fn(() => true);
+vi.mock("@/lib/keyword-research/buyer-model", async () => {
+  const real = await vi.importActual<typeof import("@/lib/keyword-research/buyer-model")>("@/lib/keyword-research/buyer-model");
+  return { ...real, modelAvailable: () => model() };
 });
 const fanOut = vi.fn(() => ({ dispatched: 0, settled: Promise.resolve() }));
 vi.mock("@/lib/content/fan-out", async () => {
@@ -618,6 +629,23 @@ describe("the empty pool", () => {
     creds.mockReturnValue(false);
     const events = await collect();
     expect(planningEvent(events)).not.toHaveProperty("emptyPool");
+  });
+
+  it("is not read when no model could judge this run: old verdicts are not this run's answer", async () => {
+    plan.mockResolvedValue([]);
+    model.mockReturnValueOnce(false);
+    const events = await collect();
+    expect(planningEvent(events)).toMatchObject({ status: "skipped" });
+    expect(planningEvent(events)).not.toHaveProperty("emptyPool");
+    expect(emptyPool).not.toHaveBeenCalled();
+  });
+
+  it("is not read when the trial hold, not the pool, emptied the plan (the pre-trial article is spent)", async () => {
+    plan.mockResolvedValue([]);
+    planHold.mockResolvedValue("spent");
+    const events = await collect();
+    expect(planningEvent(events)).not.toHaveProperty("emptyPool");
+    expect(emptyPool).not.toHaveBeenCalled();
   });
 
   it("leaves the run as it was when the tally cannot be read", async () => {

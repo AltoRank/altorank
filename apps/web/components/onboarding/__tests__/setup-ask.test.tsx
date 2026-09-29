@@ -75,25 +75,39 @@ describe("setupEnding: the one decision both setup screens read", () => {
 describe("SetupAsk", () => {
   it("renders the honest note, and no card ask, for a run that planned nothing", () => {
     const ending = setupEnding(stateFromRun(nothingPlannedRow, null), GATED);
-    const html = text(renderToStaticMarkup(<SetupAsk ending={ending} canBuy />));
+    const html = text(renderToStaticMarkup(<SetupAsk ending={ending} canBuy followUp />));
     expect(html).not.toContain("trial-offer");
     expect(html).not.toMatch(/trial/i);
     expect(html).toContain("writes to you within 24 hours");
     expect(html).toContain("nothing to pay");
   });
 
+  it("promises no reply when nobody would be told (no operator address)", () => {
+    const html = text(renderToStaticMarkup(<SetupAsk ending="nothing-planned" canBuy followUp={false} />));
+    expect(html).not.toContain("trial-offer");
+    expect(html).not.toMatch(/24 hours|writes to you|our team/i);
+    expect(html).toContain("nothing to pay");
+  });
+
   it("renders the card ask otherwise", () => {
-    expect(renderToStaticMarkup(<SetupAsk ending="article" canBuy />)).toContain("trial-offer");
-    expect(renderToStaticMarkup(<SetupAsk ending="no-article" canBuy />)).toContain("trial-offer");
+    expect(renderToStaticMarkup(<SetupAsk ending="article" canBuy followUp />)).toContain("trial-offer");
+    expect(renderToStaticMarkup(<SetupAsk ending="no-article" canBuy followUp />)).toContain("trial-offer");
   });
 
   it("the heading and lede say nothing cleared the bar, that the team knows, and when they will hear back", () => {
     expect(NOTHING_PLANNED_HEADING).toBe("Nothing cleared the bar for a first article yet");
-    const lede = nothingPlannedLede("acme-clinic.example", POOL);
-    expect(lede).toContain("checked 144 searches");
+    const lede = nothingPlannedLede("acme-clinic.example", POOL, true);
+    // The 117 a judge decided, not the 27 it never reached.
+    expect(lede).toContain("checked 117 searches");
     expect(lede).toContain("Our team has been told");
     expect(lede).toContain("by email within 24 hours");
     expect(lede).not.toMatch(/trial|card/i);
-    expect(nothingPlannedLede("", null)).toContain("We read your site and did not find a search");
+    expect(nothingPlannedLede("", null, true)).toContain("We read your site and did not find a search");
+  });
+
+  it("the lede makes no promise when nobody would be told", () => {
+    const lede = nothingPlannedLede("acme-clinic.example", POOL, false);
+    expect(lede).toContain("checked 117 searches");
+    expect(lede).not.toMatch(/24 hours|our team|hear back/i);
   });
 });

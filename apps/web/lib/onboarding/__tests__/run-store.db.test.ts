@@ -11,8 +11,10 @@
 //   conditional UPDATE each on `phases = '[]'`, so of the two racing exactly
 //   one wins (2026-09-28: a dispatcher whose fetch had died stored a run as
 //   failed while its worker was still going);
-// - failRun reads what the run wrote - an article saved on the site since it
-//   started - and settles on it instead of calling it a failure;
+// - failRun reads what the run wrote - a readable article saved on the site
+//   since it started - and settles on it instead of calling it a failure,
+//   leaves a run whose draft is still being written, and the reaper settles
+//   a first look cut off after it planned nothing as nothing_planned;
 // - the empty-pool tally reads the verdicts out of `keywords.opportunity`
 //   through the aliased jsonb select, paged.
 //
@@ -23,10 +25,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { createServiceClient } from "@/lib/supabase/server";
 import { connectLocalStack } from "@/lib/__tests__/support/local-db";
-import { RunRecorder, failRun, latestRun, startRun } from "../run-store";
+import { RunRecorder, failRun, latestRun, reapStaleRuns, startRun } from "../run-store";
 import { claimRun } from "../run-worker";
 import { readEmptyPool } from "../empty-pool";
-import { stateFromRun, onboardingOutcome, type EmptyPool, type OnboardingEvent } from "../events";
+import { stateFromRun, onboardingOutcome, STALE_RUN_ERROR, type EmptyPool, type OnboardingEvent } from "../events";
 
 const STACK = await connectLocalStack();
 const TAG = randomUUID().slice(0, 8);
@@ -160,11 +162,69 @@ describe.skipIf(!STACK)("onboarding run transitions on the local database", () =
     const runId = await newRun(ws);
     expect((await claimRun(db, runId)).outcome).toBe("claimed");
     // The draft route saved this; the row never pointed at it.
-    const { error: artError } = await db.from("articles").insert({ workspace_id: ws, title: "Acme widgets explained", slug: `acme-widgets-${TAG}`, status: "review" });
+    const { data: art, error: artError } = await db
+      .from("articles")
+      .insert({ workspace_id: ws, title: "Acme widgets explained", slug: `acme-widgets-${TAG}`, status: "review", content: "Acme widgets, explained.", word_count: 900 })
+      .select("id")
+      .single();
     expect(artError).toBeNull();
 
     expect(await failRun(db, runId, "cut off at the ceiling")).toBe(true);
     expect(await row(runId)).toMatchObject({ status: "partial", error: null });
+    // And the row points at it, so the screen reads the same run the row says.
+    const { data: settled } = await db.from("onboarding_runs").select("article_id").eq("id", runId).single();
+    expect(settled?.article_id).toBe(art?.id);
+  });
+
+  it("failRun leaves a run whose draft is still being written; the reaper settles it once it is stale", async () => {
+    const ws = await site();
+    const runId = await newRun(ws);
+    expect((await claimRun(db, runId)).outcome).toBe("claimed");
+    const { error: artError } = await db
+      .from("articles")
+      .insert({ workspace_id: ws, title: "Acme in flight", slug: `acme-flight-${TAG}`, status: "drafting" });
+    expect(artError).toBeNull();
+
+    expect(await failRun(db, runId, "boom")).toBe(false);
+    expect(await row(runId)).toMatchObject({ status: "running" });
+
+    await db.from("onboarding_runs").update({ updated_at: "2026-01-01T00:00:00Z" }).eq("id", runId);
+    expect((await reapStaleRuns(db, Date.now(), { runId })).runIds).toEqual([runId]);
+    expect(await row(runId)).toMatchObject({ status: "error", error: STALE_RUN_ERROR });
+  });
+
+  it("the reaper settles a first look cut off after it planned nothing as nothing_planned, not as a failure", async () => {
+    const ws = await site();
+    const runId = await newRun(ws);
+    expect((await claimRun(db, runId)).outcome).toBe("claimed");
+    const pool: EmptyPool = {
+      stage: "qualification",
+      cause: "buyer_mismatch",
+      keywords: 40,
+      qualified: 0,
+      rejected: { buyer_mismatch: 30 },
+      pending: { unjudged: 10 },
+      summary: "None of 40 searches qualified.",
+    };
+    const rec = new RunRecorder(db, runId);
+    rec.record({ phase: "scanning", status: "done" });
+    rec.record({ phase: "keywords", status: "done", keywordsFound: 40 });
+    rec.record({ phase: "planning", status: "skipped", detail: "No keyword clear enough to plan yet.", planned: [], emptyPool: pool });
+    rec.record({ phase: "drafting", status: "active" });
+    await rec.flush();
+    // The worker dies here: the row goes quiet.
+    await db.from("onboarding_runs").update({ updated_at: "2026-01-01T00:00:00Z" }).eq("id", runId);
+
+    expect((await reapStaleRuns(db, Date.now(), { runId })).runIds).toEqual([runId]);
+    expect(await row(runId)).toMatchObject({ status: "nothing_planned", error: null, empty_pool: pool });
+    const { data: logged } = await db.from("system_events").select("source, context").eq("workspace_id", ws);
+    expect(logged).toEqual([expect.objectContaining({ source: "onboarding.nothing_planned" })]);
+    expect((logged?.[0].context as { closedBecause?: string }).closedBecause).toBe(STALE_RUN_ERROR);
+
+    // A late finish from the worker that was only slow announces nothing more.
+    await rec.finish();
+    const { data: after } = await db.from("system_events").select("id").eq("workspace_id", ws);
+    expect(after).toHaveLength(1);
   });
 
   it("failRun still fails a run that wrote nothing - an older article on the site is not this run's", async () => {

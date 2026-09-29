@@ -16,6 +16,7 @@ import { loadFirstArticle } from "@/lib/onboarding/first-article";
 import { canSpend } from "@/lib/billing/spend-gate";
 import { PRE_TRIAL_DRAFTS } from "@/lib/billing/trial-hold";
 import { OPEN_SETUP, type PreTrialSetup } from "@/lib/onboarding/setup-retry";
+import { followUpPromised } from "@/lib/auth/operators";
 
 export const metadata: Metadata = { title: "Set up your site" };
 
@@ -106,7 +107,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
           userEmail: auth.user.email ?? undefined,
           workspaceId: workspace.id as string,
           action: "setup",
-        }).then((gate): PreTrialSetup => ({ setupAllowed: gate.allowed, firstAttempted: quota.used >= PRE_TRIAL_DRAFTS })),
+        }).then((gate): PreTrialSetup => ({ setupAllowed: gate.allowed, firstAttempted: quota.used >= PRE_TRIAL_DRAFTS, followUp: followUpPromised() })),
       ])
     : [null, [], OPEN_SETUP];
 
