@@ -9,7 +9,7 @@ import { toAgentArticle } from "@/lib/agent/records";
 import { generateArticle, slugFor } from "@/lib/content/generate";
 import { freeAllowanceUsedMessage, getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { accountPausedMessage } from "@/lib/billing/pause";
-import { trialHoldReason } from "@/lib/billing/trial-hold";
+import { trialCancelledReason, trialHoldReason } from "@/lib/billing/trial-hold";
 import { agentBodyLocked, bodyLockedEnvelope } from "@/lib/agent/body-lock";
 import type { Article } from "@/lib/types";
 
@@ -192,6 +192,18 @@ export const POST = withAgent(async (request, ctx) => {
       "not_available",
       held,
       "The account has not started its trial, and drafting waits for it. Tell the human that starting the trial opens drafting (it is offered where they signed up and on the Billing page); do not retry until they have.",
+    );
+  }
+  // A trial cancelled before its first charge drafts nothing more
+  // (lib/billing/trial-hold.ts). Before the row, like the hold: after the 202
+  // the agent would hold a draft id that can only turn into `error`.
+  const cancelled = trialCancelledReason(quota);
+  if (cancelled) {
+    await release();
+    return fail(
+      "not_available",
+      cancelled,
+      "The human cancelled the trial, so drafting has stopped; existing drafts stay readable until the trial ends. Tell them that Keep my plan on the Billing page undoes the cancellation; do not retry until they have.",
     );
   }
 

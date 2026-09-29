@@ -34,7 +34,7 @@ import { analyseDomain, isTransientCrawlFailure } from "@/lib/audit/domain-analy
 import { refusing } from "@/lib/audit/host-circuit";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { generateArticle } from "@/lib/content/generate";
-import { planHoldApplies, trialHoldReason } from "@/lib/billing/trial-hold";
+import { draftHoldReason, planHoldApplies } from "@/lib/billing/trial-hold";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
@@ -438,8 +438,9 @@ async function runPhases(
       // already has its one pre-trial article - on another site, or from a
       // run before this one - writes nothing more until the trial starts,
       // and the keyword research below is not bought for a draft that will
-      // not be written.
-      const held = trialHoldReason(quota);
+      // not be written. A trial cancelled before its first charge (a new site
+      // added after the cancel) writes nothing either.
+      const held = draftHoldReason(quota);
       if (held) {
         settle("skipped", held);
       } else if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {

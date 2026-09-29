@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { entitledToScheduledWork, getQuota } from "@/lib/billing/quota";
-import { trialHoldReason } from "@/lib/billing/trial-hold";
+import { draftHoldReason } from "@/lib/billing/trial-hold";
 import { analyzeWorkspace } from "@/lib/refresh/detect";
 import { runRefreshTask } from "@/lib/refresh/rewrite";
 import { readArticlesWhole } from "@/lib/articles/body-read";
@@ -115,8 +115,8 @@ async function run(request: Request) {
     // A trial-gated account is also a no-plan one, so the gate below would
     // stop it anyway; this names the real reason (lib/billing/trial-hold.ts).
     // A rewrite is a draft, and nothing drafts before the trial but the
-    // first article.
-    const held = trialHoldReason(quota);
+    // first article, nor after a trial is cancelled.
+    const held = draftHoldReason(quota);
     if (held) {
       out.status = "skipped";
       out.rewrite = held;

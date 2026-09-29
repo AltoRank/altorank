@@ -218,6 +218,7 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
               pausedUntil={pausedUntil}
               cancelsAt={account?.cancels_at ?? null}
               periodEnd={account?.current_period_end ?? null}
+              trialing={Boolean(quota.trial)}
             />
           )}
 

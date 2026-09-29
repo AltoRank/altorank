@@ -127,6 +127,11 @@ export async function announceNothingWritten(
     // keywords" to somebody who has not seen the plan screen yet sends them to
     // the wrong page for the wrong reason; what they left undone is setup.
     if (await setupUnfinished(supabase, scope.workspaceId)) return SETUP_UNFINISHED_LINE;
+    // Every reason this email gives is fixed on a settings or keywords page,
+    // and an account that has not started its trial cannot open either: the
+    // dashboard redirects it to the setup screen, which already says what
+    // the trial opens. Same rule as the held-drafts digest.
+    if ((await accountTrialGate(supabase, scope.accountId, null)) === "gated") return GATED_NOTHING_WRITTEN_LINE;
     const out = await notifyNothingWritten(
       supabase,
       { accountId: scope.accountId, workspaceId: scope.workspaceId },
@@ -188,6 +193,9 @@ export async function announcePausedSites(supabase: SupabaseClient, now: Date = 
 // one, so from step 2 onwards nothing brings the person back - and the crons
 // keep working on the site regardless: analyze reads it and finds keywords,
 // generate writes a draft. The setup email is how they learn that.
+
+/** What `announceNothingWritten` reports for an account that has not started its trial. */
+export const GATED_NOTHING_WRITTEN_LINE = "not sent: the account has not started its trial, so it cannot open the page that fixes this";
 
 /** What `announceNothingWritten` reports when it stood down for the setup email. */
 export const SETUP_UNFINISHED_LINE = "setup never finished; the setup email covers it";

@@ -297,6 +297,12 @@ export type SubscriptionCancelledEmail = {
   planLabel: string;
   /** When the plan actually stops, from Stripe. Null when Stripe gave no date. */
   endsAt: string | null;
+  /**
+   * A trial cancelled before its first charge. Drafting stops at the cancel,
+   * not at `endsAt` (lib/billing/trial-hold.ts), so "until then everything
+   * works as it does now" would be false for it.
+   */
+  trial?: boolean;
 };
 
 /**
@@ -309,6 +315,23 @@ export type SubscriptionCancelledEmail = {
  * this category are about.
  */
 export function renderSubscriptionCancelled(a: SubscriptionCancelledEmail): RenderedEmail {
+  if (a.trial && a.endsAt) {
+    return {
+      subject: `Your trial is cancelled; nothing will be charged`,
+      preheader: "No new drafts from now. What was written stays readable until the trial ends.",
+      footerNote: `Sent because you manage billing for this AltoRank account.`,
+      html:
+        heading("Your trial is cancelled") +
+        emailParagraph(`The card on file will not be charged. The ${esc(a.planLabel)} trial ends on ${esc(dateLabel(a.endsAt))}.`) +
+        emailParagraph(
+          `Nothing new is drafted from now on. The drafts already written stay readable until ${esc(dateLabel(a.endsAt))}.`,
+        ) +
+        emailButton(appLink("/settings/billing"), "Keep the plan instead") +
+        emailParagraph(
+          `That button undoes the cancellation: drafting starts again, and the first charge is on ${esc(dateLabel(a.endsAt))}. If you meant to cancel, there is nothing else to do.`,
+        ),
+    };
+  }
   const until = a.endsAt
     ? `You keep the ${a.planLabel} plan until ${dateLabel(a.endsAt)}.`
     : `You keep the ${a.planLabel} plan until the end of the period you have paid for.`;

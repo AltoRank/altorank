@@ -274,11 +274,15 @@ async function accountForInvoice(
   if (customerId) lookups.push(["stripe_customer_id", customerId]);
 
   for (const [col, val] of lookups) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("accounts")
       .select(AGENCY_BILLING_COLUMNS)
       .eq(col, val)
       .maybeSingle();
+    // A failed read is not "no account owns this invoice": answering that
+    // returned 200 and Stripe never delivered the failure or the payment
+    // again. Thrown, so the event answers 500 and is retried.
+    if (error) throw new Error(`invoice: could not read the account by ${col} (${error.message})`);
     if (data) return data as AccountBillingRow;
   }
   return null;
@@ -301,7 +305,11 @@ async function markPaymentFailed(
   // one because its very first charge bounced.
   if (account.plan_status === "active" || account.plan_status === "trialing") updates.plan_status = "past_due";
   if (Object.keys(updates).length === 0) return;
-  await supabase.from("accounts").update(updates).eq("id", account.id);
+  const { error } = await supabase.from("accounts").update(updates).eq("id", account.id);
+  // Checked before the email that follows it: the grace window the email
+  // quotes is counted from this timestamp, and a write that did not land
+  // answered 200, so Stripe never retried it.
+  if (error) throw new Error(`invoice.payment_failed: could not record the failed payment (${error.message})`);
 }
 
 /**
@@ -405,17 +413,24 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
          * site deliberately paused at 0, or set to anything that is not the
          * free-tier pace, is left alone.
          */
-        const { data: sites } = await supabase
+        // Both checked, like the account write: a failed read left the
+        // sites at the free pace and the trial email saying the week was not
+        // handed off, and a failed write left one site at the free pace, each
+        // under a 200. Stripe retries the event; `paceOnActivation` only
+        // raises from the free pace, so a redelivery repeats nothing.
+        const { data: sites, error: sitesError } = await supabase
           .from("workspaces")
           .select("id, auto_generate_weekly_limit, auto_generate, status")
           .eq("account_id", accountId);
+        if (sitesError) throw new Error(`checkout.session.completed: could not read the account's sites (${sitesError.message})`);
         for (const site of sites ?? []) {
           const next = paceOnActivation(site.auto_generate_weekly_limit as number | null, plan);
           if (next === null) continue;
-          await supabase
+          const { error: paceError } = await supabase
             .from("workspaces")
             .update({ auto_generate_weekly_limit: next })
             .eq("id", site.id);
+          if (paceError) throw new Error(`checkout.session.completed: could not raise a site to the plan's pace (${paceError.message})`);
         }
 
         /**
@@ -533,19 +548,27 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
       // Read the row before writing it. Every notice below is about a
       // *change* - the tier moved, a cancellation was scheduled - and a change
       // cannot be seen once the new value is already in the column.
-      const { data: beforeRow } = await supabase
+      const { data: beforeRow, error: beforeError } = await supabase
         .from("accounts")
         .select(AGENCY_BILLING_COLUMNS)
         .eq(accountId ? "id" : "stripe_subscription_id", accountId ?? sub.id)
         .maybeSingle();
+      if (beforeError) throw new Error(`${event.type}: could not read the account (${beforeError.message})`);
       const before = (beforeRow as AccountBillingRow | null) ?? null;
 
-      if (accountId) {
-        await supabase.from("accounts").update(updates).eq("id", accountId);
-      } else {
-        // Fall back to matching by the stored subscription id.
-        await supabase.from("accounts").update(updates).eq("stripe_subscription_id", sub.id);
-      }
+      // Checked, and thrown before anything below, as checkout's own write
+      // is. This write carries the status, the tier, the trial end and
+      // `cancels_at`, which the drafting doors read to stop a cancelled
+      // trial (lib/billing/trial-hold.ts); a write that failed answered 200,
+      // Stripe never delivered the event again, and the account kept the
+      // state it had before - drafting on after a cancel, or a paid tier
+      // after a downgrade - with the emails below already sent as if it
+      // had changed.
+      const { error: writeError } = accountId
+        ? await supabase.from("accounts").update(updates).eq("id", accountId)
+        : // Fall back to matching by the stored subscription id.
+          await supabase.from("accounts").update(updates).eq("stripe_subscription_id", sub.id);
+      if (writeError) throw new Error(`${event.type}: could not record the subscription on the account (${writeError.message})`);
 
       /**
        * The plan actually moved. Both doors reach here: our own in-place
@@ -603,6 +626,9 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
               accountName: before.name ?? null,
               planLabel: PLAN_LABELS[(before.plan ?? "starter") as PlanTier] ?? "your",
               endsAt: cancelsAt,
+              // A trial ending before its first charge: drafting stops now,
+              // not at the date, and the email must not say otherwise.
+              trial: trialEnd !== null && Date.parse(cancelsAt) <= Date.parse(trialEnd),
             },
             sub.id,
           );
@@ -617,10 +643,11 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
         if (status === "past_due") {
           const failedAt = new Date(event.created * 1000);
           if (before && !before.payment_failed_at) {
-            await supabase
+            const { error: failedError } = await supabase
               .from("accounts")
               .update({ payment_failed_at: failedAt.toISOString() })
               .eq("id", before.id);
+            if (failedError) throw new Error(`${event.type}: could not start the grace window (${failedError.message})`);
           }
           // Whether the window started here or on an earlier invoice event,
           // the people who can fix it are told once (keyed by the window's
@@ -641,11 +668,12 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
         if (pauseLifted) {
           let target: string | null = accountId ?? null;
           if (!target) {
-            const { data: row } = await supabase
+            const { data: row, error: targetError } = await supabase
               .from("accounts")
               .select("id")
               .eq("stripe_subscription_id", sub.id)
               .maybeSingle();
+            if (targetError) throw new Error(`${event.type}: could not find the account whose pause ended (${targetError.message})`);
             target = (row?.id as string | undefined) ?? null;
           }
           if (target) await resumePausedWorkspaces(supabase, target);
@@ -666,11 +694,12 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
       const sub = event.data.object as Stripe.Subscription;
       // Pre-085 subscriptions carry `agency_id`; see `accountForInvoice`.
       const accountId = sub.metadata?.account_id ?? sub.metadata?.agency_id;
-      const { data: row } = await supabase
+      const { data: row, error: rowError } = await supabase
         .from("accounts")
         .select(AGENCY_BILLING_COLUMNS)
         .eq(accountId ? "id" : "stripe_subscription_id", accountId ?? sub.id)
         .maybeSingle();
+      if (rowError) throw new Error(`${event.type}: could not read the account (${rowError.message})`);
       const account = (row as AccountBillingRow | null) ?? null;
       if (!account || sub.status !== "trialing" || sub.cancel_at_period_end) break;
       const plan = planForSubscription(sub) ?? (account.plan as PlanTier | null) ?? "starter";
@@ -709,7 +738,10 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
       // The retry that went through reinstates the plan. An `inactive` row
       // is a first purchase and `checkout.session.completed` owns that.
       if (account.plan_status === "past_due" || account.plan_status === "unpaid") updates.plan_status = "active";
-      await supabase.from("accounts").update(updates).eq("id", account.id);
+      const { error } = await supabase.from("accounts").update(updates).eq("id", account.id);
+      // A reinstatement that did not land left a paid account past due, and
+      // lapsing, under a 200. Thrown so Stripe delivers the payment again.
+      if (error) throw new Error(`invoice.paid: could not reinstate the plan (${error.message})`);
       break;
     }
   }

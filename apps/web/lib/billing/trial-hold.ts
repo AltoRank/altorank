@@ -44,6 +44,33 @@
 // or hold a lapsed subscription, and every no-plan account while
 // TRIAL_GATE_DISABLED=1 is set. `draftBlocker` below is the one place that
 // decides which of the two rules applies.
+//
+// ---------------------------------------------------------------------------
+// And nothing drafts after a trial is cancelled
+// ---------------------------------------------------------------------------
+//
+// The other end of the trial. Cancelling during the trial sets
+// `cancel_at_period_end`, and Stripe keeps the subscription `trialing` until
+// its last day, so `getQuota` answered `reason: "plan"` and every door above
+// wrote on: the week's burst, the scheduled writer at the paid pace, Write
+// now, the agent API. A person who cancelled on day two was drafted the rest
+// of the week for a charge that will never happen (assessment 2026-09-29).
+//
+// The rule, from the billing code as it stands:
+//
+//   trial cancelled before its first charge   new drafting stops at once;
+//     (trialing, and `cancels_at` at or        the drafts already written stay
+//     before `trial_ends_at`)                  readable until the trial ends
+//   paid subscription set to cancel           keeps its paid volume to the
+//     at period end                            end of the period it paid for
+//
+// `trialCancelledReason` is that rule, and it is asked wherever the hold is:
+// `generateArticle` (the choke point), `draftBlocker` (the crons), the spend
+// gate's drafting actions (the week's burst, the scheduled writer, the
+// editor's rewrites) and, through `draftHoldReason`, every door that asked
+// `trialHoldReason` before its own research. "Keep my plan" clears
+// `cancels_at` (app/actions/retention.ts, and the webhook for the portal),
+// and drafting resumes with it.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getQuota, type Quota } from "@/lib/billing/quota";
@@ -51,7 +78,7 @@ import { trialGateApplies } from "@/lib/billing/trial";
 import { firstDraftAwaitsReview } from "@/lib/billing/first-draft-gate";
 import { accountCountingClient } from "@/lib/billing/account-client";
 import { billingEnabled } from "@/lib/stripe";
-import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
+import { TRIAL_HOLD_MESSAGE, trialCancelledMessage } from "@/lib/billing/trial-refusal";
 
 /**
  * Drafts a trial-gated account gets before its trial starts: the article the
@@ -73,7 +100,48 @@ export class TrialHoldError extends Error {
 }
 
 /** The slice of a quota the hold reads. */
-export type HoldQuota = Pick<Quota, "reason" | "used"> & { trialEligible?: boolean };
+export type HoldQuota = Pick<Quota, "reason" | "used"> & { trialEligible?: boolean; trial?: Quota["trial"] };
+
+/**
+ * Whether this account's trial was cancelled before its first charge. Pure.
+ *
+ * Trialing (`quota.trial`, which `getQuota` sets only for a `trialing`
+ * account on a plan) with a cancellation dated at or before the trial's end:
+ * Stripe cancels at the period end, which during a trial IS the trial end, so
+ * the card is never charged. A cancellation dated after the trial end is one
+ * that will be charged first, and keeps drafting like any paid plan set to
+ * end. A paid (`active`) subscription set to cancel has no `trial` and is
+ * never this.
+ */
+export function trialCancelledBeforeCharge(quota: Pick<HoldQuota, "reason" | "trial"> | null | undefined): boolean {
+  if (quota?.reason !== "plan") return false;
+  const trial = quota.trial;
+  if (!trial?.cancelsAt) return false;
+  const cancels = Date.parse(trial.cancelsAt);
+  const ends = Date.parse(trial.endsAt);
+  if (Number.isNaN(cancels) || Number.isNaN(ends)) return false;
+  return cancels <= ends;
+}
+
+/**
+ * The cancelled-trial rule, as a sentence, or null when drafting may go on.
+ * Refuses whatever the draft would add: a regeneration or a rewrite is as
+ * paid as a new article, and none of them is what a cancelled trial keeps.
+ */
+export function trialCancelledReason(quota: Pick<HoldQuota, "reason" | "trial"> | null | undefined): string | null {
+  if (!trialCancelledBeforeCharge(quota)) return null;
+  return trialCancelledMessage(quota!.trial!.endsAt);
+}
+
+/**
+ * The question every drafting door asks before its own research: the hold
+ * before the trial, then the cancelled trial. Null when the draft may be
+ * written as far as the trial is concerned; the quota's own volume is the
+ * door's next question.
+ */
+export function draftHoldReason(quota: HoldQuota | null | undefined, opts: { adding?: number } = {}): string | null {
+  return trialHoldReason(quota, opts) ?? trialCancelledReason(quota);
+}
 
 /**
  * The hold, as a sentence, or null when this draft may be written. Pure.
@@ -243,9 +311,10 @@ export async function setupRunsStarted(supabase: SupabaseClient, accountId: stri
 /**
  * Why an unattended run must not write for this workspace, or null.
  *
- * One question with two rules, so a cron cannot ask one and forget the other:
+ * One question with three rules, so a cron cannot ask one and forget another:
  *
  *   trial-gated        the hold above
+ *   trial cancelled    nothing more before the trial ends (trialCancelledReason)
  *   other no-plan      the first free draft waits to be read (first-draft-gate)
  *   everyone else      nothing here; the plan limit is a volume, not a gate
  */
@@ -254,7 +323,7 @@ export async function draftBlocker(
   quota: HoldQuota,
   workspaceId: string,
 ): Promise<string | null> {
-  const held = trialHoldReason(quota);
+  const held = draftHoldReason(quota);
   if (held) return held;
   if (trialGateApplies(quota)) return null;
   if (quota.reason === "no-plan") return firstDraftAwaitsReview(supabase, workspaceId);

@@ -21,6 +21,8 @@ export type TrialRow = {
   plan_status?: string | null;
   stripe_subscription_id?: string | null;
   trial_ends_at?: string | null;
+  /** When the subscription is set to end; null when it renews. */
+  cancels_at?: string | null;
 };
 
 /**
@@ -40,6 +42,12 @@ export type TrialInfo = {
   endsAt: string;
   /** Whole days left, never negative. 0 on the last day. */
   daysLeft: number;
+  /**
+   * When the subscription is set to end, or null when it converts. A trial
+   * that ends at or before `endsAt` was cancelled before its first charge
+   * (lib/billing/trial-hold.ts, trialCancelledReason).
+   */
+  cancelsAt?: string | null;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -52,6 +60,7 @@ export function trialInfo(account: TrialRow | null | undefined, now: Date = new 
   return {
     endsAt: account.trial_ends_at,
     daysLeft: Math.max(0, Math.ceil((ends - now.getTime()) / DAY_MS)),
+    cancelsAt: account.cancels_at ?? null,
   };
 }
 

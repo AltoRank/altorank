@@ -62,7 +62,7 @@ import {
 import { accountPausedMessage } from "@/lib/billing/pause";
 import { formatGraceDate } from "@/lib/billing/dunning";
 import { trialGateApplies } from "@/lib/billing/trial";
-import { PRE_TRIAL_DRAFTS, PRE_TRIAL_SETUP_RUNS, setupRunsStarted } from "@/lib/billing/trial-hold";
+import { PRE_TRIAL_DRAFTS, PRE_TRIAL_SETUP_RUNS, setupRunsStarted, trialCancelledReason } from "@/lib/billing/trial-hold";
 import { trialRefusal } from "@/lib/billing/trial-refusal";
 
 /**
@@ -86,6 +86,9 @@ export type SpendAction =
   | "geo-probe"
   | "scheduled-work"
   | "setup";
+
+/** The actions that write or rewrite an article: what a cancelled trial stops. */
+const DRAFTING_ACTIONS: ReadonlySet<SpendAction> = new Set<SpendAction>(["draft", "scheduled-work", "refresh"]);
 
 /** What the refusal calls the thing, so one sentence serves all of them. */
 const ACTION_NOUN: Record<SpendAction, string> = {
@@ -118,6 +121,8 @@ export type SpendAllowedReason =
 export type SpendBlockedReason =
   /** Trial-gated, and setup has written the first article: the trial opens the rest. */
   | "trial-required"
+  /** The trial was cancelled before its first charge: nothing new is drafted. */
+  | "trial-cancelled"
   /** No plan, and the one-time seven have been written. */
   | "free-allowance-spent"
   /** Past due and the grace window has run out. */
@@ -190,6 +195,17 @@ export async function canSpend(
   }
 
   if (quota.reason === "plan") {
+    // A trial cancelled before its first charge is still `trialing`, so still
+    // a plan here, until its last day. Its drafting stops at the cancel
+    // (lib/billing/trial-hold.ts, trialCancelledReason): the week's burst and
+    // the scheduled writer ask here as `scheduled-work`, the editor's
+    // rewrites as `draft`, the scheduled rewrites as `refresh`. Reading and
+    // the rest of the paid tools stay open to the trial's end, as the
+    // cancellation promised.
+    if (DRAFTING_ACTIONS.has(action)) {
+      const cancelled = trialCancelledReason(quota);
+      if (cancelled) return { allowed: false, reason: "trial-cancelled", quota, message: cancelled };
+    }
     // `getQuota` has already folded the grace window into `plan` (dunning.ts),
     // so a card failing at renewal keeps working here. The distinction is kept
     // in the result because the UI says so out loud, and because "why did this
