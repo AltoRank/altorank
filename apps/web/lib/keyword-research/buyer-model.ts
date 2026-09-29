@@ -18,6 +18,14 @@ export interface SpendSink {
   workspaceId: string | null;
 }
 
+/**
+ * How one structured call is made: `askStructured`'s signature. Production
+ * passes nothing and gets `askStructured`; the decision evals (lib/evals)
+ * pass a recorder that replays stored answers, so they run the same prompt
+ * builders and parsers against real cases for free.
+ */
+export type AskModel = (operation: string, prompt: string, options: { maxTokens: number; spend?: SpendSink | null }) => Promise<string | null>;
+
 export function modelAvailable(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
