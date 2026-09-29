@@ -10,11 +10,11 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordEvent } from "@/lib/observability/record";
-import { notifySetupFailed } from "@/lib/email/lifecycle";
+import { notifyOperatorsNothingPlanned, notifySetupFailed } from "@/lib/email/lifecycle";
 import { loadFirstLookReport } from "./first-look-report";
 import { heldTopics } from "./plan";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
-import type { OnboardingHeld } from "./events";
+import type { EmptyPool, OnboardingHeld } from "./events";
 import {
   initialOnboardingState,
   onboardingOutcome,
@@ -32,7 +32,7 @@ import {
 } from "./events";
 
 export const RUN_COLUMNS =
-  "id, workspace_id, status, phases, planned, keywords_found, article_id, error, started_at, updated_at, finished_at";
+  "id, workspace_id, status, phases, planned, keywords_found, article_id, error, empty_pool, started_at, updated_at, finished_at";
 
 /**
  * The same row plus the account it belongs to. Only the operational log wants
@@ -198,6 +198,7 @@ export class RunRecorder {
         planned: state.planned,
         keywords_found: state.keywordsFound,
         ...(state.article ? { article_id: state.article.id } : {}),
+        ...(state.emptyPool ? { empty_pool: state.emptyPool } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("id", this.runId);
@@ -225,6 +226,7 @@ export class RunRecorder {
     else
       await announceOutcome(this.supabase, this.runId, status, scopeOf(data), this.state.steps, {
         produced: this.state.planned.length > 0 || this.state.article !== null,
+        emptyPool: this.state.emptyPool,
       });
   }
 
@@ -235,13 +237,62 @@ export class RunRecorder {
   }
 }
 
-/** Close a run as `error`, if it is still running. */
-export async function failRun(supabase: SupabaseClient, runId: string, reason: string): Promise<void> {
-  await closeRun(supabase, runId, reason, null, false);
+/**
+ * Close a run that stopped short, if it is still running.
+ *
+ * `error` only when the run wrote nothing. Whether it did is read from the
+ * rows it wrote - its plan, its draft, and any article saved on the site since
+ * it started (the draft route and the fan-out write those, never the row) -
+ * not from whoever is calling. A run that wrote a draft or a plan and was then
+ * cut off, or whose dispatcher lost track of it, is settled on what it made:
+ * `partial` or `done`, the reason recorded for the operator and nothing
+ * emailed to the person. On 2026-09-28 a local first look finished at 5:00
+ * and was stored as "The run could not be started: fetch failed" by a
+ * dispatcher whose request had timed out while the worker was still going.
+ *
+ * `unclaimedOnly`: close it only if no worker has claimed it (`phases` still
+ * empty). The dispatcher's case: when the hand-off failed, a run nobody
+ * claimed never started and is closed; a claimed one belongs to its worker,
+ * whose own record decides how it ends, and the reaper catches it if the
+ * worker dies.
+ */
+export async function failRun(
+  supabase: SupabaseClient,
+  runId: string,
+  reason: string,
+  opts: { unclaimedOnly?: boolean } = {},
+): Promise<boolean> {
+  return closeRun(supabase, runId, reason, opts);
+}
+
+type ClosingRow = Pick<OnboardingRunRow, "id" | "workspace_id" | "status" | "phases" | "planned" | "article_id" | "started_at"> & {
+  account_id: string | null;
+  empty_pool?: EmptyPool | null;
+};
+
+/**
+ * What a run has written, read from the rows: its plan, its own draft, and
+ * any article saved on its site since it started. A draft that failed
+ * (`status = 'error'`) is nothing the person can open.
+ */
+async function writtenByRun(supabase: SupabaseClient, row: ClosingRow): Promise<{ planned: number; articles: number }> {
+  const planned = (row.planned ?? []).length;
+  if (row.article_id) return { planned, articles: 1 };
+  if (!row.workspace_id) return { planned, articles: 0 };
+  const { count, error } = await supabase
+    .from("articles")
+    .select("id", { count: "exact", head: true })
+    .eq("workspace_id", row.workspace_id)
+    .gte("created_at", row.started_at)
+    .neq("status", "error");
+  // Unknown is not "nothing": a read that failed must not turn a run that
+  // wrote a draft into a failure to email about.
+  if (error) throw new Error(`could not count the run's articles: ${error.message}`);
+  return { planned, articles: count ?? 0 };
 }
 
 /**
- * Close a `running` row as an error, and say so where somebody will see it.
+ * Close a `running` row, and say so where somebody will see it.
  *
  * `.eq("status", "running")` is the lock: two callers racing to close one row
  * (the reaper and a person reopening the screen) leave one update matching no
@@ -251,22 +302,47 @@ async function closeRun(
   supabase: SupabaseClient,
   runId: string,
   reason: string,
-  steps: readonly { phase: string; status: string; detail?: string | null }[] | null,
-  produced: boolean,
+  opts: { unclaimedOnly?: boolean },
 ): Promise<boolean> {
-  const now = new Date().toISOString();
-  const { data, error } = await supabase
+  const { data: found, error: readError } = await supabase
     .from("onboarding_runs")
-    .update({ status: "error", error: reason, finished_at: now, updated_at: now })
+    .select("id, workspace_id, account_id, status, phases, planned, article_id, empty_pool, started_at")
     .eq("id", runId)
-    .eq("status", "running")
-    .select("workspace_id, account_id");
+    .maybeSingle();
+  if (readError) {
+    console.error(`[onboarding] run ${runId}: could not read it to close it: ${readError.message}`);
+    return false;
+  }
+  const row = found as ClosingRow | null;
+  if (!row || row.status !== "running") return false;
+  if (opts.unclaimedOnly && (row.phases ?? []).length > 0) return false;
+
+  let wrote: { planned: number; articles: number };
+  try {
+    wrote = await writtenByRun(supabase, row);
+  } catch (err) {
+    console.error(`[onboarding] run ${runId}: ${err instanceof Error ? err.message : err}; left for the reaper`);
+    return false;
+  }
+  const produced = wrote.planned > 0 || wrote.articles > 0;
+  const status = produced
+    ? runStatusFrom({ planned: row.planned ?? [], article: wrote.articles > 0 ? ({ id: row.article_id ?? "" } as OnboardingArticle) : null, error: null })
+    : "error";
+
+  const now = new Date().toISOString();
+  let update = supabase
+    .from("onboarding_runs")
+    .update({ status, ...(produced ? {} : { error: reason }), finished_at: now, updated_at: now })
+    .eq("id", runId)
+    .eq("status", "running");
+  if (opts.unclaimedOnly) update = update.eq("phases", "[]");
+  const { data, error } = await update.select("workspace_id, account_id");
   if (error) {
-    console.error(`[onboarding] run ${runId}: could not mark error: ${error.message}`);
+    console.error(`[onboarding] run ${runId}: could not close it: ${error.message}`);
     return false;
   }
   if (!(data ?? []).length) return false;
-  await announceOutcome(supabase, runId, "error", scopeOf(data), steps, { reason, produced });
+  await announceOutcome(supabase, runId, status, scopeOf(data), row.phases ?? null, { reason, produced });
   return true;
 }
 
@@ -284,9 +360,10 @@ async function closeRun(
  * deployment's schedule is its cron budget, and a job that closes a handful of
  * rows does not need one.
  *
- * A run that produced a draft or a plan is closed just as quietly - the work
- * is on its own tables and the screen shows it - but the person is not
- * emailed about a setup that in fact delivered something (`announceOutcome`).
+ * A run that produced a draft or a plan is settled on what it made rather
+ * than closed as an error (`closeRun`) - the work is on its own tables and the
+ * screen shows it - and the person is not emailed about a setup that in fact
+ * delivered something (`announceOutcome`).
  */
 export async function reapStaleRuns(
   supabase: SupabaseClient,
@@ -295,7 +372,7 @@ export async function reapStaleRuns(
 ): Promise<{ reaped: number; runIds: string[] }> {
   let query = supabase
     .from("onboarding_runs")
-    .select("id, phases, planned, article_id, updated_at")
+    .select("id, updated_at")
     .eq("status", "running")
     .lt("updated_at", new Date(now - RUN_STALE_MS).toISOString());
   // One row when the caller has one in hand; otherwise every stale row there
@@ -307,9 +384,8 @@ export async function reapStaleRuns(
     return { reaped: 0, runIds: [] };
   }
   const runIds: string[] = [];
-  for (const row of (data ?? []) as Array<Pick<OnboardingRunRow, "id" | "phases" | "planned" | "article_id">>) {
-    const produced = Boolean(row.article_id) || (row.planned ?? []).length > 0;
-    if (await closeRun(supabase, row.id, STALE_RUN_ERROR, row.phases ?? null, produced)) runIds.push(row.id);
+  for (const row of (data ?? []) as Array<Pick<OnboardingRunRow, "id">>) {
+    if (await closeRun(supabase, row.id, STALE_RUN_ERROR, {})) runIds.push(row.id);
   }
   return { reaped: runIds.length, runIds };
 }
@@ -334,9 +410,13 @@ async function announceOutcome(
   status: string,
   scope: { workspaceId: string | null; accountId: string | null },
   steps: readonly { phase: string; status: string; detail?: string | null }[] | null,
-  opts: { reason?: string; produced: boolean },
+  opts: { reason?: string; produced: boolean; emptyPool?: EmptyPool | null },
 ): Promise<void> {
-  if (status === "done" || status === "running") return;
+  if (status === "running") return;
+  // A `done` run is announced only when it was closed from outside the worker
+  // (a reason is given): it wrote everything, and was still cut off.
+  if (status === "done" && !opts.reason) return;
+  if (status === "nothing_planned") return announceNothingPlanned(supabase, runId, scope, opts.emptyPool ?? null);
   const reason = opts.reason;
   // Which phase fell short, which is the whole question an operator has.
   const failed = (steps ?? []).filter((s) => s.status === "failed" || s.status === "skipped");
@@ -348,7 +428,9 @@ async function announceOutcome(
       message:
         status === "error"
           ? `Onboarding failed: ${reason ?? where[0] ?? "no reason recorded"}`
-          : `Onboarding finished ${status}: ${where[0] ?? "the phases do not say which step fell short"}`,
+          : reason
+            ? `Onboarding stopped (${reason}) after it had written a plan or a draft; settled as ${status} on what it wrote`
+            : `Onboarding finished ${status}: ${where[0] ?? "the phases do not say which step fell short"}`,
       accountId: scope.accountId,
       workspaceId: scope.workspaceId,
       context: { runId, status, phases: where },
@@ -370,6 +452,55 @@ async function announceOutcome(
     // Never let the email take the run down with it: the row is already
     // final and the event above is already recorded.
     console.error(`[onboarding] run ${runId}: setup-failed email: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+/**
+ * A first look that finished without failing and planned nothing.
+ *
+ * Not the setup-failed email: nothing was broken, and "Setup didn't finish,
+ * try again" sent the person back to buy the same empty answer (both real
+ * signups, 2026-09-28). Their screen says nothing cleared the bar yet and that
+ * the team will write within 24 hours, so this is what tells the team: a
+ * `system_events` warning with the stage that emptied the pool, which the
+ * daily digest reads, and an email to the operators now, per run.
+ */
+async function announceNothingPlanned(
+  supabase: SupabaseClient,
+  runId: string,
+  scope: { workspaceId: string | null; accountId: string | null },
+  pool: EmptyPool | null,
+): Promise<void> {
+  await recordEvent(
+    {
+      level: "warn",
+      source: "onboarding.nothing_planned",
+      message: `A first look planned nothing; a person follows up within 24 hours. ${pool?.summary ?? "The run did not record which stage emptied the pool."}`,
+      accountId: scope.accountId,
+      workspaceId: scope.workspaceId,
+      // Flattened, and the count renamed: the event log redacts any context
+      // key with "key" in it, which "keywords" is.
+      context: {
+        runId,
+        status: "nothing_planned",
+        ...(pool
+          ? { stage: pool.stage, cause: pool.cause, rows: pool.keywords, qualified: pool.qualified, rejected: pool.rejected, pending: pool.pending }
+          : {}),
+      },
+    },
+    supabase,
+  );
+  if (!scope.workspaceId || !scope.accountId) return;
+  try {
+    const { data: ws } = await supabase.from("workspaces").select("domain").eq("id", scope.workspaceId).maybeSingle();
+    await notifyOperatorsNothingPlanned(
+      supabase,
+      { accountId: scope.accountId, workspaceId: scope.workspaceId },
+      { runId, domain: (ws?.domain as string | null) ?? null, pool },
+    );
+  } catch (err) {
+    // The warning above is already recorded, and the digest carries it.
+    console.error(`[onboarding] run ${runId}: nothing-planned operator email: ${err instanceof Error ? err.message : err}`);
   }
 }
 
@@ -434,6 +565,7 @@ export async function stampRun(
     keywordsFound: run.keywords_found,
     article: opts.article ?? null,
     error: run.error,
+    emptyPool: run.empty_pool ?? null,
   };
   const state = reduceOnboarding(before, event);
   const now = new Date().toISOString();
@@ -449,6 +581,8 @@ export async function stampRun(
       planned: state.planned,
       article: opts.article ?? (run.article_id ? ({ id: run.article_id } as OnboardingArticle) : null),
       error: state.error,
+      steps: state.steps,
+      emptyPool: state.emptyPool,
     });
     patch.finished_at = now;
   }
@@ -466,7 +600,7 @@ export async function stampRun(
       String(patch.status),
       { workspaceId: run.workspace_id, accountId: (run as { account_id?: string }).account_id ?? null },
       state.steps,
-      { produced: state.planned.length > 0 || Boolean(opts.article ?? run.article_id) },
+      { produced: state.planned.length > 0 || Boolean(opts.article ?? run.article_id), emptyPool: state.emptyPool },
     );
   }
   return true;

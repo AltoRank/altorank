@@ -40,7 +40,8 @@ import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
 import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
-import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
+import type { EmptyPool, OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
+import { readEmptyPool } from "./empty-pool";
 import { countScheduled, heldTopics, schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
 import { recordPlanFunnel } from "./funnel-event";
 import type { TopicFunnel } from "@/lib/keyword-research/topic-funnel";
@@ -204,6 +205,10 @@ async function runPhases(
   // --- Phase 2: find what to write about ----------------------------------
   emit({ phase: "keywords", status: "active" });
   let keywordsFound = 0;
+  // Research ran, read the site, and found nothing: an empty pool, not a
+  // failure. False for every reason the research could not look (no domain,
+  // no provider, a crawl that failed, a keyword layer that was unavailable).
+  let researchFoundNothing = false;
   if (!domain) {
     emit({ phase: "keywords", status: "skipped", detail: "No domain to analyse." });
   } else if (!hasDataForSEOCredentials()) {
@@ -266,6 +271,7 @@ async function runPhases(
       const crawl = analysis.layers.find((l) => l.id === "crawl");
       const crawlFailed = crawl?.status === "failed" ? crawl.detail : null;
       const willRetry = crawlFailed !== null && isTransientCrawlFailure(crawlFailed);
+      researchFoundNothing = keywordsFound === 0 && crawlFailed === null && !why;
       emit({
         phase: "keywords",
         status: keywordsFound > 0 ? "done" : "skipped",
@@ -359,7 +365,15 @@ async function runPhases(
   let planningDetail: string | null = null;
   if (keywordsFound === 0) {
     planningDetail = "Nothing to schedule until there are keywords.";
-    emit({ phase: "planning", status: "skipped", detail: planningDetail });
+    // Only when the research looked and found nothing: a site that could not
+    // be read is a setup that fell short, and says so.
+    const emptyPool = researchFoundNothing ? await emptyPoolOrNull(supabase, workspace.id) : null;
+    emit({
+      phase: "planning",
+      status: "skipped",
+      detail: planningDetail,
+      ...(emptyPool ? { emptyPool } : {}),
+    });
   } else {
     try {
       // An account that will be asked for a card gets one article on the
@@ -407,11 +421,17 @@ async function runPhases(
           : firstAlreadyPlanned
             ? `Your first article is already on the calendar; the rest of the plan opens with the trial.${pageNote}`
             : `No keyword clear enough to plan yet.${pageNote}`;
+      // Nothing cleared the bar: which stage emptied the pool, for the row
+      // and the operator (lib/onboarding/empty-pool.ts). Not for a held
+      // account whose one article is already on the calendar - that site has
+      // a plan.
+      const emptyPool = plan.length === 0 && !firstAlreadyPlanned ? await emptyPoolOrNull(supabase, workspace.id) : null;
       emit({
         phase: "planning",
         status: plan.length > 0 ? "done" : "skipped",
         detail: planningDetail,
         planned: plan.map((p) => ({ term: p.term, date: p.date, brief: p.brief })),
+        ...(emptyPool ? { emptyPool } : {}),
       });
     } catch (err) {
       planningDetail = message(err);
@@ -582,6 +602,20 @@ async function runPhases(
   // emits the equivalent of `ready` by settling the row when it lands.
   if (!pendingDraft) emit({ phase: "ready" });
   return { pendingDraft, fanOutSettled };
+}
+
+/**
+ * The empty pool, or null when it cannot be read. Null leaves the run
+ * `partial`, the status it had before this existed, rather than claiming a
+ * reason nobody could read; the failure is logged.
+ */
+async function emptyPoolOrNull(supabase: SupabaseClient, workspaceId: string): Promise<EmptyPool | null> {
+  try {
+    return await readEmptyPool(supabase, workspaceId);
+  } catch (err) {
+    console.error(`[onboarding] empty-pool report for ${workspaceId}: ${message(err)}`);
+    return null;
+  }
 }
 
 function message(err: unknown): string {

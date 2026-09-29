@@ -29,8 +29,12 @@ vi.mock("next/server", async () => {
 const dispatchWorker = vi.fn(async (_id: string) => undefined);
 vi.mock("@/lib/onboarding/run-dispatch", () => ({ dispatchWorker: (id: string) => dispatchWorker(id) }));
 
-const executeRun = vi.fn();
-vi.mock("@/lib/onboarding/run-worker", () => ({ executeRun: (id: string) => executeRun(id) }));
+const claimRun = vi.fn();
+const runClaimed = vi.fn();
+vi.mock("@/lib/onboarding/run-worker", () => ({
+  claimRun: (...a: unknown[]) => claimRun(...a),
+  runClaimed: (...a: unknown[]) => runClaimed(...a),
+}));
 
 // The spend gate is tested on its own (lib/billing/__tests__/spend-gate.test.ts);
 // here it is the answer the route acts on.
@@ -51,7 +55,8 @@ const get = (path: string) => new NextRequest(`http://localhost${path}`);
 beforeEach(() => {
   deferred.length = 0;
   dispatchWorker.mockClear();
-  executeRun.mockReset();
+  claimRun.mockReset();
+  runClaimed.mockReset();
   canSpend.mockReset();
   canSpend.mockResolvedValue({ allowed: true, reason: "plan", message: null });
   user = { id: "u1" };
@@ -132,24 +137,52 @@ describe("POST /api/onboard/run", () => {
   it("needs the cron secret", async () => {
     expect((await run(post("/api/onboard/run", { runId: "r1" }))).status).toBe(401);
     expect((await run(post("/api/onboard/run", { runId: "r1" }, { "x-cron-secret": "wrong" }))).status).toBe(401);
-    expect(executeRun).not.toHaveBeenCalled();
+    expect(claimRun).not.toHaveBeenCalled();
   });
 
-  it("executes the run and keeps its fired requests alive after the response", async () => {
+  it("claims the run, answers 202 before any of the work, and runs it after the response", async () => {
+    // The dispatcher waits for this answer. It used to be the answer to the
+    // whole pipeline, and past 300 s the dispatcher's fetch gave up and the
+    // run was stored as failed while it was still going (2026-09-28).
+    const row = { id: "r1", workspace_id: "ws1", status: "running" };
+    claimRun.mockResolvedValue({ outcome: "claimed", run: row });
     let kept = false;
-    executeRun.mockResolvedValue({ outcome: "awaiting-draft", keepAlive: Promise.resolve().then(() => { kept = true; }) });
+    // The work does not finish until the test lets it: the answer must not
+    // wait for it.
+    let finishWork!: () => void;
+    const work = new Promise<void>((resolve) => { finishWork = resolve; });
+    runClaimed.mockImplementation(async () => {
+      await work;
+      return { outcome: "awaiting-draft", keepAlive: Promise.resolve().then(() => { kept = true; }) };
+    });
     const res = await run(post("/api/onboard/run", { runId: "r1" }, { "x-cron-secret": "s3cret" }));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ outcome: "awaiting-draft" });
+    expect(res.status).toBe(202);
+    expect(await res.json()).toEqual({ outcome: "accepted" });
+    expect(kept).toBe(false);
+    finishWork();
     await Promise.all(deferred);
+    expect(runClaimed).toHaveBeenCalledWith(row, { supabase: db.client });
     expect(kept).toBe(true);
   });
 
-  it("maps the worker's outcomes to statuses", async () => {
-    for (const [outcome, status] of [["not-found", 404], ["already-running", 409], ["already-finished", 409], ["ran", 200], ["failed", 200]] as const) {
-      executeRun.mockResolvedValue({ outcome, keepAlive: Promise.resolve() });
-      expect((await run(post("/api/onboard/run", { runId: "r1" }, { "x-cron-secret": "s3cret" }))).status).toBe(status);
+  it("maps a claim it did not get to a status and runs nothing", async () => {
+    for (const [outcome, status] of [["not-found", 404], ["already-running", 409], ["already-finished", 409]] as const) {
+      claimRun.mockResolvedValue({ outcome });
+      const res = await run(post("/api/onboard/run", { runId: "r1" }, { "x-cron-secret": "s3cret" }));
+      expect(res.status).toBe(status);
+      expect(await res.json()).toEqual({ outcome });
     }
+    await Promise.all(deferred);
+    expect(runClaimed).not.toHaveBeenCalled();
+  });
+
+  it("closes the run on what it wrote when the work throws around the pipeline", async () => {
+    db.tables.onboarding_runs.push({ id: "r1", workspace_id: "ws1", account_id: "ag1", status: "running", phases: [{ phase: "scanning", status: "pending" }], planned: [], started_at: "2026-09-28T10:00:00Z" });
+    claimRun.mockResolvedValue({ outcome: "claimed", run: db.tables.onboarding_runs[0] });
+    runClaimed.mockRejectedValue(new Error("the workspace read failed"));
+    expect((await run(post("/api/onboard/run", { runId: "r1" }, { "x-cron-secret": "s3cret" }))).status).toBe(202);
+    await Promise.all(deferred);
+    expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "error", error: "the workspace read failed" });
   });
 });
 

@@ -88,18 +88,27 @@ interface WorkerWorkspace {
   business_profile?: unknown;
 }
 
-export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise<ExecuteResult> {
-  const supabase = deps.supabase ?? createServiceClient();
-  const settled = { outcome: "failed" as ExecuteOutcome, keepAlive: Promise.resolve() };
+/** A run this worker now owns, or why it does not own one. */
+export type ClaimResult =
+  | { outcome: "claimed"; run: OnboardingRunRow }
+  | { outcome: Extract<ExecuteOutcome, "not-found" | "already-running" | "already-finished"> };
 
+/**
+ * Claim the run for this worker. A run is dispatched once, but a retried
+ * dispatch or a start that raced could send two workers; the second finds
+ * `phases` no longer empty and leaves. Atomic in the update's WHERE, so both
+ * cannot pass - and so can the dispatcher's own close of a run nobody claimed
+ * (`failRun` with `unclaimedOnly`): whichever writes first wins.
+ *
+ * Quick on purpose: /api/onboard/run answers once this returns, and runs the
+ * rest (`runClaimed`) after its response.
+ */
+export async function claimRun(supabase: SupabaseClient, runId: string): Promise<ClaimResult> {
   const { data: found } = await supabase.from("onboarding_runs").select(RUN_COLUMNS).eq("id", runId).maybeSingle();
   const run = found as OnboardingRunRow | null;
-  if (!run) return { ...settled, outcome: "not-found" };
-  if (run.status !== "running") return { ...settled, outcome: "already-finished" };
+  if (!run) return { outcome: "not-found" };
+  if (run.status !== "running") return { outcome: "already-finished" };
 
-  // Claim it. A run is dispatched once, but a retried dispatch or a start
-  // that raced could send two workers; the second finds `phases` no longer
-  // empty and leaves. Atomic in the update's WHERE, so both cannot pass.
   const { data: claimed } = await supabase
     .from("onboarding_runs")
     .update({ phases: [{ phase: "scanning", status: "pending" }], updated_at: new Date().toISOString() })
@@ -107,8 +116,27 @@ export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise
     .eq("status", "running")
     .eq("phases", "[]")
     .select("id");
-  if (!claimed || (claimed as unknown[]).length === 0) return { ...settled, outcome: "already-running" };
+  if (!claimed || (claimed as unknown[]).length === 0) return { outcome: "already-running" };
+  return { outcome: "claimed", run };
+}
 
+/** Claim the run and do it, start to finish, in this call: the inline path. */
+export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise<ExecuteResult> {
+  const supabase = deps.supabase ?? createServiceClient();
+  const claim = await claimRun(supabase, runId);
+  if (claim.outcome !== "claimed") return { outcome: claim.outcome, keepAlive: Promise.resolve() };
+  return runClaimed(claim.run, { ...deps, supabase });
+}
+
+/**
+ * Do a run this worker has claimed. Everything it decides - done, partial,
+ * nothing planned, failed - is written to the row from here or by the draft
+ * route it hands the draft to; nobody waiting on a request decides it.
+ */
+export async function runClaimed(run: OnboardingRunRow, deps: ExecuteDeps = {}): Promise<ExecuteResult> {
+  const supabase = deps.supabase ?? createServiceClient();
+  const runId = run.id;
+  const settled = { outcome: "failed" as ExecuteOutcome, keepAlive: Promise.resolve() };
   const recorder = new RunRecorder(supabase, runId);
 
   const { data: ws } = await supabase

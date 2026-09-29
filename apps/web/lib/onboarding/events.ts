@@ -118,6 +118,35 @@ export interface OnboardingArticle {
 }
 
 /**
+ * Which stage of a first look left nothing to plan, and what the pool held.
+ *
+ * Written by the pipeline on the planning event when nothing was planned and
+ * nothing failed (lib/onboarding/empty-pool.ts), from data the run already
+ * had: the keyword count and the verdicts on the site's keyword rows. On
+ * 2026-09-28 both real signups ended here - 144 and 236 searches judged, none
+ * qualified - and the row said `partial`, so they were emailed that setup
+ * failed and asked for a card over an empty calendar. The operator reads this
+ * to follow up; the person is told only that nothing cleared the bar yet.
+ *
+ *   keywords        research found nothing to judge
+ *   qualification   every candidate was judged and none qualified; `cause`
+ *                   is the verdict that removed the most
+ *   planning        some qualified, and the planner still placed none
+ */
+export interface EmptyPool {
+  stage: "keywords" | "qualification" | "planning";
+  cause: string | null;
+  /** Keyword rows the site had to plan from. */
+  keywords: number;
+  qualified: number;
+  /** Verdict counts by cause. */
+  rejected: Record<string, number>;
+  pending: Record<string, number>;
+  /** One line for the operator's log and email. */
+  summary: string;
+}
+
+/**
  * One line off the wire.
  *
  * `phase` names which step it is about; the special `ready` and `error` phases
@@ -126,7 +155,7 @@ export interface OnboardingArticle {
  * one - keywords its count, drafting its article.
  */
 export type OnboardingEvent =
-  | { phase: OnboardingPhase; status: Exclude<PhaseStatus, "pending">; detail?: string; keywordsFound?: number; planned?: OnboardingPlanned[]; article?: OnboardingArticle }
+  | { phase: OnboardingPhase; status: Exclude<PhaseStatus, "pending">; detail?: string; keywordsFound?: number; planned?: OnboardingPlanned[]; article?: OnboardingArticle; emptyPool?: EmptyPool }
   | { phase: "ready" }
   | { phase: "error"; detail: string };
 
@@ -159,6 +188,8 @@ export interface OnboardingState {
   /** True once the run has emitted `ready`: the screen may hand off. */
   ready: boolean;
   error: string | null;
+  /** Set when the planning phase found nothing to plan without failing; see `EmptyPool`. */
+  emptyPool: EmptyPool | null;
 }
 
 export function initialOnboardingState(): OnboardingState {
@@ -171,6 +202,7 @@ export function initialOnboardingState(): OnboardingState {
     drafts: [],
     ready: false,
     error: null,
+    emptyPool: null,
   };
 }
 
@@ -193,6 +225,7 @@ export function reduceOnboarding(state: OnboardingState, event: OnboardingEvent)
     keywordsFound: event.keywordsFound ?? state.keywordsFound,
     planned: event.planned ?? state.planned,
     article: event.article ?? state.article,
+    emptyPool: event.emptyPool ?? state.emptyPool,
     // A draft on the wire joins the list once; a replayed event is a no-op.
     drafts:
       event.article && !state.drafts.some((d) => d.id === event.article!.id)
@@ -215,7 +248,7 @@ export function isTerminal(state: OnboardingState): boolean {
 // article is a foreign key rather than a copy, so the row cannot claim a draft
 // that has since been deleted; /state joins the article row back in.
 
-export type OnboardingRunStatus = "running" | "done" | "partial" | "error";
+export type OnboardingRunStatus = "running" | "done" | "partial" | "nothing_planned" | "error";
 
 export interface OnboardingRunRow {
   id: string;
@@ -226,6 +259,8 @@ export interface OnboardingRunRow {
   keywords_found: number | null;
   article_id: string | null;
   error: string | null;
+  /** Migration 104. Absent on rows read before it; null on every run that planned something. */
+  empty_pool?: EmptyPool | null;
   started_at: string;
   updated_at: string;
   finished_at: string | null;
@@ -289,6 +324,14 @@ export function shouldResumeRun(snapshot: OnboardingRunSnapshot | null, now: num
   return run.finished_at !== null && now - new Date(run.finished_at).getTime() < RUN_RECENT_MS;
 }
 
+/**
+ * The run's sentence when nothing cleared the bar. Deliberately not the
+ * planning phase's own detail ("No keyword clear enough to plan yet. 10
+ * searches ... want a landing page; see Keywords"), which points at a page a
+ * person before their trial cannot open.
+ */
+export const NOTHING_PLANNED_LINE = "Nothing on your site cleared the bar for a first article yet.";
+
 export const STALE_RUN_ERROR =
   "This run stopped responding. Everything it finished is kept, and tonight's run picks up the rest.";
 
@@ -342,23 +385,41 @@ export function stateFromRun(
     drafts,
     ready: run.status !== "running",
     error: run.error ?? (opts.stale ? STALE_RUN_ERROR : null),
+    emptyPool: run.empty_pool ?? null,
   };
 }
 
 /**
  * The status a run settles on, from what it produced. The same rule
  * `onboardingOutcome` reads the "Done." line from, so the row and the sentence
- * cannot disagree: a plan and a draft is `done`; anything less is `partial`,
- * and the phases say which part. `error` is reserved for the worker itself
- * throwing - a phase that failed is `partial`, because the others still ran.
+ * cannot disagree: a plan and a draft is `done`; a plan or a draft is
+ * `partial`, and the phases say which part. `error` is reserved for the worker
+ * itself throwing - a phase that failed is `partial`, because the others
+ * still ran.
+ *
+ * `nothing_planned` is a run that produced nothing and fell short nowhere:
+ * the pipeline said the pool was empty (`emptyPool`) and no phase the plan
+ * depends on failed. It used to be `partial`, which everything downstream
+ * reads as "setup fell short" - the setup-failed email, the retry, the card
+ * ask over an empty calendar - for a site where nothing was broken and
+ * nothing cleared the bar (both real signups, 2026-09-28).
  */
-export function runStatusFrom(state: Pick<OnboardingState, "planned" | "article" | "error">): Exclude<OnboardingRunStatus, "running"> {
+export function runStatusFrom(
+  state: Pick<OnboardingState, "planned" | "article" | "error"> & Partial<Pick<OnboardingState, "steps" | "emptyPool">>,
+): Exclude<OnboardingRunStatus, "running"> {
   if (state.error) return "error";
-  return state.planned.length > 0 && state.article !== null ? "done" : "partial";
+  if (state.planned.length > 0 && state.article !== null) return "done";
+  if (state.planned.length > 0 || state.article !== null) return "partial";
+  const fellShort = (state.steps ?? []).some((s) => OUTCOME_PHASES.includes(s.phase) && s.status === "failed");
+  return state.emptyPool && !fellShort ? "nothing_planned" : "partial";
 }
 
-/** What a run is worth saying about itself, once it has stopped. */
-export type OnboardingTone = "working" | "done" | "partial" | "error";
+/**
+ * What a run is worth saying about itself, once it has stopped.
+ * `nothing_planned` is not a kind of `partial`: nothing fell short, so there
+ * is nothing to retry and nothing to email the person about.
+ */
+export type OnboardingTone = "working" | "done" | "partial" | "nothing_planned" | "error";
 
 export interface OnboardingOutcome {
   tone: OnboardingTone;
@@ -431,7 +492,9 @@ function asClause(reason: string): string {
  *
  * A partial run that produced something - a calendar, a draft - is not a
  * failure to announce: the person can open what it made, and the run screen
- * already says what is missing.
+ * already says what is missing. Nor is a `nothing_planned` one: the bar reads
+ * "Setup didn't finish" and offers Try again, which buys the same empty
+ * answer, for a run that finished and found nothing to plan.
  */
 export interface FailedRunNotice {
   runId: string;
@@ -487,6 +550,9 @@ export function onboardingOutcome(state: OnboardingState, handoff = false, opts:
       line: `Your first ${opts.preTrial ? "article is written" : "draft is in review"}. Nothing else could be scheduled yet${because}`,
       produced: true,
     };
+  }
+  if (runStatusFrom(state) === "nothing_planned") {
+    return { tone: "nothing_planned", line: NOTHING_PLANNED_LINE, produced: false };
   }
   return {
     tone: "partial",

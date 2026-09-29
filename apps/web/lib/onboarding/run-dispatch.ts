@@ -9,6 +9,16 @@
 // runs the worker right here instead, still inside after(), so the person
 // still gets a run; it is just bounded by this function's budget rather than
 // its own.
+//
+// This does not own the run's lifetime. The worker claims the row and answers
+// 202 before it starts the pipeline, so what this waits for is the claim, not
+// the minutes of work. It used to await the whole run: past 300 s Node's fetch
+// gave up waiting for headers, and this stored "The run could not be started:
+// fetch failed" and sent the setup-failed email while the worker was still
+// going (a local run on 2026-09-28 finished at 5:00 and was recorded as
+// failed). When the hand-off fails it closes the run only if no worker claimed
+// it; a claimed run is the worker's to finish, and the reaper's if the worker
+// dies.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -32,13 +42,16 @@ export async function dispatchWorker(runId: string, deps: DispatchDeps = {}): Pr
   const supabase = () => deps.supabase ?? createServiceClient();
   try {
     const res = await selfInvoke("/api/onboard/run", { runId }, how);
-    // 409 is the worker saying the run is already claimed or finished, which
-    // is not a failure of this dispatch. Anything else non-2xx never ran the
-    // pipeline (a 5xx that did has already closed the row itself).
-    if (!res.ok && res.status !== 409) {
-      await failRun(supabase(), runId, `The run could not be started (${res.status}).`);
-    }
+    // 202 is the worker holding the claim; 409 is another worker holding it,
+    // or the run already over. Neither is this dispatch's to judge.
+    if (res.ok || res.status === 409) return;
+    await failRun(supabase(), runId, `The run could not be started (${res.status}).`, { unclaimedOnly: true });
   } catch (err) {
-    await failRun(supabase(), runId, `The run could not be started: ${err instanceof Error ? err.message : String(err)}`);
+    await failRun(
+      supabase(),
+      runId,
+      `The run could not be started: ${err instanceof Error ? err.message : String(err)}`,
+      { unclaimedOnly: true },
+    );
   }
 }
