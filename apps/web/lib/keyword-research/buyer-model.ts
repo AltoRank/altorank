@@ -9,7 +9,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { anthropicModel } from "@/lib/ai/models";
+import { anthropicModel, replyText } from "@/lib/ai/models";
 import { anthropicCost, recordSpend } from "@/lib/billing/spend";
 
 /** Where to write the spend row. Optional: scripts and tests have none. */
@@ -62,7 +62,7 @@ export async function askStructured(
         workspaceId: options.spend.workspaceId,
       });
     }
-    return response.content[0]?.type === "text" ? response.content[0].text : null;
+    return replyText(response.content);
   } catch {
     return null;
   }

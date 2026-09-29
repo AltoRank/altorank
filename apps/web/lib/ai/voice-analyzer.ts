@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { VoiceRules } from "./types";
-import { anthropicModel } from "./models";
+import { anthropicModel, replyText } from "./models";
 import { resolveLocale, UNKNOWN_LANGUAGE } from "@/lib/i18n/locale";
 
 const ANALYSIS_PROMPT = `You are a writing style analyst. Analyze the following sample text(s) and extract a detailed voice profile. Return a JSON object with these exact fields:
@@ -68,8 +68,7 @@ export async function analyzeVoiceWithAI(
     messages: [{ role: "user", content: combined }],
   });
 
-  const text =
-    response.content[0].type === "text" ? response.content[0].text : "";
+  const text = replyText(response.content) ?? "";
 
   // Strip potential markdown fences
   const cleaned = text.replace(/^```(?:json)?\n?/m, "").replace(/\n?```$/m, "");

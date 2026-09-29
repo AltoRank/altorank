@@ -90,13 +90,13 @@ async function main() {
     "spent this run": `$${result.recorder.budget.spentUsd.toFixed(4)}`,
   };
   if (result.stoppedAt) meta["stopped"] = result.stoppedAt;
-  const markdown = renderMarkdown({ title: "Decision evals", scores: result.scores, items: result.items, meta, worst: Number(arg("worst") ?? 25) });
+  const markdown = renderMarkdown({ title: "Decision evals", scores: result.scores, items: result.items, meta, worst: Number(arg("worst") ?? 25), funnels: result.funnels });
   const out = arg("out");
   if (out) {
     const target = path.resolve(out);
     mkdirSync(target, { recursive: true });
     writeFileSync(path.join(target, "report.md"), markdown);
-    writeFileSync(path.join(target, "report.json"), `${JSON.stringify({ meta, scores: result.scores, items: result.items }, null, 2)}\n`);
+    writeFileSync(path.join(target, "report.json"), `${JSON.stringify({ meta, scores: result.scores, funnels: result.funnels, items: result.items }, null, 2)}\n`);
     log(`Wrote ${path.join(target, "report.md")}`);
   }
   console.log(markdown);

@@ -3,6 +3,7 @@ import { ARTICLE_SHAPES, qualifyOpportunities, type ArticleShape, type Opportuni
 import { clusterByIntent, intentKey, intentLanguage, sameIntent, storedSerp, type StagedTopic } from "@/lib/keyword-research/intent";
 import { approvedWhenJudged, readIntentLeaders } from "@/lib/keyword-research/intent-leaders";
 import { UNKNOWN_LANGUAGE } from "@/lib/i18n/locale";
+import { withPlanned, type PlannerStage, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
 // ---------------------------------------------------------------------------
 // The first thirty days, scheduled
 // ---------------------------------------------------------------------------
@@ -90,7 +91,12 @@ export function monthlyTarget(weeklyLimit: number): number {
  */
 export function buildPlan(
   recommendations: Pick<KeywordRecommendation, "keywordId" | "term" | "action" | "quality" | "opportunity">[],
-  opts: {
+  opts: PlanGridOptions,
+): PlannedEntry[] {
+  return arrangePlan(recommendations, opts).entries;
+}
+
+interface PlanGridOptions {
     weeklyLimit: number;
     from?: Date;
     horizonDays?: number;
@@ -109,10 +115,19 @@ export function buildPlan(
      * English; results pages are compared either way.
      */
     language?: string;
-  },
-): PlannedEntry[] {
+}
+
+/**
+ * `buildPlan`, with the keyword ids it left out as a later phrasing of a
+ * search it planned ahead of them - for the run's funnel, which counts every
+ * qualified topic the planner did not take (./funnel-event.ts).
+ */
+function arrangePlan(
+  recommendations: Pick<KeywordRecommendation, "keywordId" | "term" | "action" | "quality" | "opportunity">[],
+  opts: PlanGridOptions,
+): { entries: PlannedEntry[]; repeats: Set<string> } {
   const weekly = Math.max(0, Math.min(MAX_PACE, Math.floor(opts.weeklyLimit)));
-  if (weekly === 0) return [];
+  if (weekly === 0) return { entries: [], repeats: new Set() };
   const horizon = opts.horizonDays ?? PLAN_HORIZON_DAYS;
   const from = opts.from ?? new Date();
   const start = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
@@ -142,7 +157,7 @@ export function buildPlan(
     out.push({ keywordId: usable[k].keywordId, term: usable[k].term, date, ...(usable[k].opportunity ? { brief: usable[k].opportunity } : {}) });
     k++;
   }
-  return out;
+  return { entries: out, repeats: new Set([...repeats.keys()].map((t) => t.rec.keywordId)) };
 }
 
 /** Distinct, in range, sorted; undefined when nothing usable was given. */
@@ -302,6 +317,15 @@ export interface PlanOptions {
    */
   mode?: "replace" | "top-up";
   maxEntries?: number;
+  /**
+   * Handed where every candidate went, with how many were planned and why
+   * each qualified topic left off was left off, once the plan is known
+   * (lib/keyword-research/topic-funnel.ts). Not called when the recommender
+   * never ran: a spent trial hold or a full calendar reads no candidates.
+   * Called with every qualified topic `refused` when the recommender throws
+   * a spend refusal after counting.
+   */
+  onFunnel?: (funnel: TopicFunnel) => void;
 }
 
 /**
@@ -340,7 +364,34 @@ async function planFor(
   // ranking" rows and the one writable keyword scored below them was never
   // seen (buttondown.com, 2026-09-07: 99 skips, 2 hand-added terms, 1
   // planned). Ask for the whole set; the planner filters to writable itself.
-  const recommended = await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true, qualifyBatches: opts.qualifyBatches });
+  //
+  // The funnel: every qualified topic is planned or counted at the first
+  // planner stage that left it off, so "5 qualified -> 3 planned" says where
+  // the other two went.
+  const seen: { funnel?: TopicFunnel; qualified?: ReadonlySet<string> } = {};
+  const report = (planned: readonly PlannedEntry[], whyNot: (keywordId: string) => PlannerStage) => {
+    if (!seen.funnel || !opts.onFunnel) return;
+    const plannedIds = new Set(planned.map((p) => p.keywordId));
+    const notPlanned: Partial<Record<PlannerStage, number>> = {};
+    for (const id of seen.qualified ?? []) {
+      if (plannedIds.has(id)) continue;
+      const stage = whyNot(id);
+      notPlanned[stage] = (notPlanned[stage] ?? 0) + 1;
+    }
+    opts.onFunnel(withPlanned(seen.funnel, planned.length, notPlanned));
+  };
+  let recommended: KeywordRecommendation[];
+  try {
+    recommended = await recommendKeywords(supabase, workspaceId, {
+      limit: 1000,
+      qualify: true,
+      qualifyBatches: opts.qualifyBatches,
+      ...(opts.onFunnel ? { onFunnel: (f: TopicFunnel, qualified: ReadonlySet<string>) => { seen.funnel = f; seen.qualified = qualified; } } : {}),
+    });
+  } catch (err) {
+    report([], () => "refused");
+    throw err;
+  }
 
   // Read after the recommender: it takes a planned phrasing nobody will write
   // off the calendar when another phrasing of its search leads
@@ -349,7 +400,7 @@ async function planFor(
   const all = await scheduledEntries(supabase, workspaceId);
   const existing = counted(all);
   const room = cap - existing.length;
-  if (room <= 0) return { plan: [], recs: [] };
+  if (room <= 0) { report([], () => "no_room"); return { plan: [], recs: [] }; }
 
   const { data: excludedRows } = await supabase
     .from("keywords")
@@ -388,13 +439,25 @@ async function planFor(
   );
   const sameAsCalendar = new Set([...onCalendar].filter(([, f]) => !f.leader.rec).map(([t]) => t.rec));
   const recs = ranked.filter((rec) => !sameAsCalendar.has(rec));
+  const recById = new Map(recommended.map((rec) => [rec.keywordId, rec]));
+  // In the order the planner applies them; `buildPlan` takes only writable,
+  // non-suspect rows, and what it leaves after that is a repeat or no room.
+  const whyNot = (repeats: ReadonlySet<string>) => (id: string): PlannerStage => {
+    if (excluded.has(id)) return "excluded";
+    if (takenIds.has(id)) return "on_calendar";
+    const rec = recById.get(id);
+    if (!rec || rec.action !== "write" || rec.quality !== "ok") return "not_writable";
+    if (sameAsCalendar.has(rec)) return "same_as_calendar";
+    if (repeats.has(id)) return "same_search";
+    return "no_room";
+  };
 
   let start = opts.from ?? new Date();
   let maxEntries = Math.min(room, opts.maxEntries ?? room);
   if (mode === "top-up") {
     const unwritten = existing.filter((e) => !e.article_id).length;
     maxEntries = Math.min(room, Math.max(0, monthlyTarget(weeklyLimit) - unwritten));
-    if (maxEntries === 0) return { plan: [], recs };
+    if (maxEntries === 0) { report([], whyNot(new Set())); return { plan: [], recs }; }
     const last = existing.map((e) => e.scheduled_date).sort().at(-1);
     if (last) {
       const next = new Date(new Date(`${last}T00:00:00Z`).getTime() + DAY_MS);
@@ -402,7 +465,7 @@ async function planFor(
     }
   }
 
-  const plan = buildPlan(recs, {
+  const { entries: plan, repeats } = arrangePlan(recs, {
     weeklyLimit,
     from: start,
     maxEntries,
@@ -410,6 +473,7 @@ async function planFor(
     daysOfWeek: opts.daysOfWeek,
     occupied: existing.map((e) => e.scheduled_date).filter(Boolean) as string[],
   });
+  report(plan, whyNot(repeats));
   return { plan, recs };
 }
 

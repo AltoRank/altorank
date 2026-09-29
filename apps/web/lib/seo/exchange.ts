@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BacklinkCreditReason } from "@/lib/types";
 import Anthropic from "@anthropic-ai/sdk";
-import { anthropicModel } from "@/lib/ai/models";
+import { anthropicModel, replyText } from "@/lib/ai/models";
 import { fetchSite } from "@/lib/audit/lenient-fetch";
 import { resolveLocale } from "@/lib/i18n/locale";
 
@@ -102,8 +102,7 @@ export async function scoreRelevance(
     ],
   });
 
-  const text =
-    response.content[0].type === "text" ? response.content[0].text : "0.5";
+  const text = replyText(response.content) ?? "0.5";
   const score = parseFloat(text.trim());
   return isNaN(score) ? 0.5 : Math.max(0, Math.min(1, score));
 }
@@ -144,8 +143,7 @@ export async function suggestPlacement(
     ],
   });
 
-  const text =
-    response.content[0].type === "text" ? response.content[0].text : "";
+  const text = replyText(response.content) ?? "";
 
   try {
     return JSON.parse(text.replace(/^```json?\n?/, "").replace(/\n?```$/, ""));

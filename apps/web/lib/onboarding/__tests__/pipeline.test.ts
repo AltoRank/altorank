@@ -67,6 +67,11 @@ vi.mock("@/lib/linking/detect", () => ({ detectLinks: (...a: unknown[]) => detec
 const assess = vi.fn(async () => ({ status: "done" as const, detail: "Read 12 pages. Found 30 technical issues on 9 of them.", summary: null }));
 vi.mock("../site-assessment", () => ({ assessExistingPages: (...a: unknown[]) => assess(...(a as [])) }));
 
+// The funnel event's shape is tested on its own (funnel-event.test.ts); here
+// only that every run hands it over, and with what.
+const recordFunnel = vi.fn(async (_e: unknown) => undefined);
+vi.mock("../funnel-event", () => ({ recordPlanFunnel: (e: unknown) => recordFunnel(e) }));
+
 import { runOnboarding } from "../pipeline";
 import type { OnboardingEvent } from "../events";
 
@@ -515,5 +520,39 @@ describe("the trial gate and the first plan", () => {
     generate.mockResolvedValue({ articleId: "a1", title: "T", wordCount: 900, factCheck: { verdict: "clean" } });
     await collect();
     expect(generate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("runOnboarding: the topic funnel", () => {
+  const FUNNEL = { found: 12, removed: { buyer_fit: 8, not_editorial: 2 }, qualified: 2, planned: 1, judged: 4 };
+  beforeEach(() => recordFunnel.mockReset());
+
+  it("writes down the funnel the planner reported, with the run and the account", async () => {
+    plan.mockImplementation(async (...a: unknown[]) => {
+      (a[3] as { onFunnel?: (f: unknown) => void }).onFunnel?.(FUNNEL);
+      return [];
+    });
+    await runOnboarding(richClient(0), WS, () => undefined, { firstDraft: "dispatch", runId: "run-9" });
+    expect(recordFunnel).toHaveBeenCalledOnce();
+    expect(recordFunnel).toHaveBeenCalledWith({
+      runId: "run-9", workspaceId: "ws1", accountId: "ag1", funnel: FUNNEL,
+      planningDetail: "No keyword clear enough to plan yet.",
+    });
+  });
+
+  it("still writes it when the planner throws after counting, with the failure as the reason", async () => {
+    plan.mockImplementation(async (...a: unknown[]) => {
+      (a[3] as { onFunnel?: (f: unknown) => void }).onFunnel?.({ ...FUNNEL, planned: 0 });
+      throw new Error("Start your trial to keep going.");
+    });
+    await runOnboarding(richClient(0), WS, () => undefined, { firstDraft: "dispatch" });
+    expect(recordFunnel).toHaveBeenCalledWith(expect.objectContaining({ runId: null, funnel: { ...FUNNEL, planned: 0 }, planningDetail: "Start your trial to keep going." }));
+  });
+
+  it("writes a run with no keywords as one the planner never read", async () => {
+    analyse.mockResolvedValue({ keywordsFound: 0, layers: [] });
+    await runOnboarding(richClient(0), WS, () => undefined, { firstDraft: "dispatch" });
+    expect(plan).not.toHaveBeenCalled();
+    expect(recordFunnel).toHaveBeenCalledWith(expect.objectContaining({ funnel: null, planningDetail: "Nothing to schedule until there are keywords." }));
   });
 });

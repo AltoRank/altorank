@@ -15,7 +15,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { anthropicModel } from "@/lib/ai/models";
+import { anthropicModel, replyText } from "@/lib/ai/models";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { fetchRankedKeywords } from "@/lib/seo/ranked-keywords";
 import { discoverKeywordsFromSeeds } from "@/lib/seo/keywords";
@@ -192,7 +192,7 @@ export async function generateAudienceSeeds(
       max_tokens: 800,
       messages: [{ role: "user", content: user }],
     });
-    const raw = response.content[0]?.type === "text" ? response.content[0].text : "";
+    const raw = replyText(response.content) ?? "";
     const seeds = parseSeedList(raw);
     return { seeds, note: seeds.length ? null : "The model proposed no usable seed phrases for these audiences." };
   } catch (err) {

@@ -127,6 +127,7 @@ export async function executeRun(runId: string, deps: ExecuteDeps = {}): Promise
   try {
     result = await (deps.run ?? runOnboarding)(supabase, workspace, recorder.record, {
       firstDraft: canDispatch ? "dispatch" : "inline",
+      runId,
     });
   } catch (err) {
     await recorder.fail(err instanceof Error ? err.message : "Onboarding failed.");

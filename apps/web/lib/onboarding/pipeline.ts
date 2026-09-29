@@ -42,6 +42,8 @@ import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
 import { countScheduled, heldTopics, schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
+import { recordPlanFunnel } from "./funnel-event";
+import type { TopicFunnel } from "@/lib/keyword-research/topic-funnel";
 
 /** Pages the onboarding minute reads. The nightly pass reads up to forty. */
 const ONBOARDING_CRAWL_PAGES = 20;
@@ -56,6 +58,8 @@ export type Emit = (event: OnboardingEvent) => void;
 export interface RunOnboardingOptions {
   /** See the header: `inline` awaits the draft here, `dispatch` returns it. */
   firstDraft?: "inline" | "dispatch";
+  /** The `onboarding_runs` row, named on the run's funnel event (./funnel-event.ts). */
+  runId?: string;
 }
 
 /** The first draft, chosen and gated but not yet written, for the caller to dispatch. */
@@ -117,7 +121,7 @@ export async function runOnboarding(
     recordSpendByDefault({ provider: "dataforseo", operation, costUsd, workspaceId: workspace.id });
   });
   try {
-    return await runPhases(supabase, workspace, emit, options.firstDraft ?? "inline");
+    return await runPhases(supabase, workspace, emit, options.firstDraft ?? "inline", options.runId ?? null);
   } finally {
     setSpendReporter(null);
   }
@@ -128,6 +132,7 @@ async function runPhases(
   workspace: Workspace,
   emit: Emit,
   firstDraft: "inline" | "dispatch",
+  runId: string | null = null,
 ): Promise<RunOnboardingResult> {
   const domain = workspace.domain;
 
@@ -348,8 +353,13 @@ async function runPhases(
   // Four batches of up to fifteen results pages: about $0.25 at most, once.
   const FIRST_LOOK_QUALIFY_BATCHES = 4;
   let plan: PlannedEntry[] = [];
+  // Where every candidate went (./funnel-event.ts): written down for every
+  // run, planned or not, so an empty plan can be explained from one row.
+  let planFunnel: TopicFunnel | null = null;
+  let planningDetail: string | null = null;
   if (keywordsFound === 0) {
-    emit({ phase: "planning", status: "skipped", detail: "Nothing to schedule until there are keywords." });
+    planningDetail = "Nothing to schedule until there are keywords.";
+    emit({ phase: "planning", status: "skipped", detail: planningDetail });
   } else {
     try {
       // An account that will be asked for a card gets one article on the
@@ -360,7 +370,11 @@ async function runPhases(
       // for the locked rows the screen shows. Everyone else - self-host,
       // operator, paying - gets the month as before.
       const gated = await planHoldApplies(supabase, workspace.id);
-      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, { maxEntries: 5, qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES });
+      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, {
+        maxEntries: 5,
+        qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES,
+        onFunnel: (f) => { planFunnel = f; },
+      });
       const held = gated && plan.length
         ? await heldTopics(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, plan.map((p) => p.date)).catch(() => ({ count: 0, dates: [] }))
         : { count: 0, dates: [] };
@@ -385,23 +399,26 @@ async function runPhases(
       // already holds its one article, which is not the same news as "no
       // keyword is clear enough".
       const firstAlreadyPlanned = gated && plan.length === 0 && (await countScheduled(supabase, workspace.id)) > 0;
+      planningDetail =
+        plan.length > 0
+          ? held.count > 0
+            ? `Scheduled your first article. ${held.count} more topic${held.count === 1 ? " is" : "s are"} ready, each with a buyer and supporting search evidence; the trial opens them.${pageNote}`
+            : `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has a buyer and supporting search evidence.${pageNote}`
+          : firstAlreadyPlanned
+            ? `Your first article is already on the calendar; the rest of the plan opens with the trial.${pageNote}`
+            : `No keyword clear enough to plan yet.${pageNote}`;
       emit({
         phase: "planning",
         status: plan.length > 0 ? "done" : "skipped",
-        detail:
-          plan.length > 0
-            ? held.count > 0
-              ? `Scheduled your first article. ${held.count} more topic${held.count === 1 ? " is" : "s are"} ready, each with a buyer and supporting search evidence; the trial opens them.${pageNote}`
-              : `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has a buyer and supporting search evidence.${pageNote}`
-            : firstAlreadyPlanned
-              ? `Your first article is already on the calendar; the rest of the plan opens with the trial.${pageNote}`
-              : `No keyword clear enough to plan yet.${pageNote}`,
+        detail: planningDetail,
         planned: plan.map((p) => ({ term: p.term, date: p.date, brief: p.brief })),
       });
     } catch (err) {
-      emit({ phase: "planning", status: "failed", detail: message(err) });
+      planningDetail = message(err);
+      emit({ phase: "planning", status: "failed", detail: planningDetail });
     }
   }
+  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: planFunnel, planningDetail });
 
   emit({ phase: "drafting", status: "active" });
   // The status and detail the drafting phase settled on. The fan-out note

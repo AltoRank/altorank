@@ -15,7 +15,7 @@
 // research so the audiences it finds can steer what we look for.
 
 import Anthropic from "@anthropic-ai/sdk";
-import { anthropicModel } from "@/lib/ai/models";
+import { anthropicModel, replyText } from "@/lib/ai/models";
 import { readSiteText, type ObservedSite, type SiteTextSource, MIN_CHARS } from "./site-text";
 import { e2eStubsEnabled, stubInferProfile } from "@/lib/e2e/stubs";
 
@@ -114,7 +114,7 @@ export async function inferBusinessProfileDetailed(domain: string): Promise<Infe
       max_tokens: 1200,
       messages: [{ role: "user", content: `${PROMPT}\n\nSITE: ${domain}\n\n${read.text}\n\n${linksForPrompt(read.observed)}` }],
     });
-    const raw = response.content[0]?.type === "text" ? response.content[0].text : "";
+    const raw = replyText(response.content) ?? "";
     const profile = parseProfile(raw, domain);
     return profile
       ? { profile, reason: "ok", source: read.source, observed: read.observed }

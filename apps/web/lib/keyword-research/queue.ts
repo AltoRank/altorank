@@ -34,6 +34,7 @@ import {
   type OpportunityContext,
 } from "./opportunity";
 import type { IntentLeader } from "./intent-leaders";
+import { SpendRefusedError } from "@/lib/billing/spend-gate";
 
 /** Never fewer ready topics than this, whatever the pace. */
 export const QUEUE_MIN = 3;
@@ -169,6 +170,27 @@ export interface RefillOutcome {
 }
 
 /**
+ * The spend gate refused a batch part-way through a refill. Still a
+ * SpendRefusedError, so every caller that stops on a refusal stops here too;
+ * it also carries what the refill held when the refusal came - the cached
+ * verdicts and every batch bought and saved before it - so a count taken
+ * after the refusal reads those, not the rows as they stood before the pass
+ * (the onboarding funnel counted an approval bought in batch one as "spend
+ * refused" when batch two was refused, 2026-09-29).
+ */
+export class RefillRefusedError extends SpendRefusedError {
+  constructor(
+    refusal: SpendRefusedError,
+    /** Every current verdict when the refusal came, cached or bought, by keyword id. */
+    readonly verdicts: ReadonlyMap<string, Opportunity>,
+    /** Verdicts bought by this refill before the refusal. */
+    readonly judged: number,
+  ) {
+    super(refusal.decision);
+  }
+}
+
+/**
  * Bring the queue up to `target` ready topics, buying verdicts for the
  * best unjudged candidates only until it gets there.
  *
@@ -178,7 +200,8 @@ export interface RefillOutcome {
  * REFILL_MAX_BATCHES batches, so a cron pass on a big pool is bounded. A
  * rejection parks the row with its verdict; a pending verdict is left for
  * the next run; a qualified verdict on a parked-unjudged row returns it to
- * the queue.
+ * the queue. A spend refusal part-way through throws a RefillRefusedError
+ * holding the verdicts gathered until then.
  */
 export async function refillQualifiedQueue(
   supabase: SupabaseClient,
@@ -218,7 +241,13 @@ export async function refillQualifiedQueue(
     const batch = unjudged.splice(0, Math.min(QUALIFICATION_LIMIT, needed * 3));
     batches++;
     const asked: OpportunityCandidate[] = batch.map((row) => ({ id: row.id, term: row.term, source_url: row.source_url, opportunity: null }));
-    const results = await qualifyOpportunities(supabase, workspaceId, asked, context, options.owners ? { owners: options.owners } : {});
+    let results: Map<string, Opportunity>;
+    try {
+      results = await qualifyOpportunities(supabase, workspaceId, asked, context, options.owners ? { owners: options.owners } : {});
+    } catch (err) {
+      if (err instanceof SpendRefusedError) throw new RefillRefusedError(err, verdicts, judged);
+      throw err;
+    }
     const toPark: Array<{ id: string; verdict: Opportunity }> = [];
     for (const row of batch) {
       const result = results.get(row.id);

@@ -7,6 +7,8 @@ import { captureSerps, planEvals, runEvals } from "../run";
 import { renderMarkdown, scoreDecision, worstDisagreements } from "../score";
 import { claimOutcome, topicAgrees } from "../decisions";
 import type { Scored } from "../types";
+import { funnelDiscrepancy } from "@/lib/keyword-research/topic-funnel";
+import { outcomeOf } from "../funnel";
 
 const SAMPLE = path.join(__dirname, "..", "fixtures", "sample");
 const rate = { input: 1, output: 5 };
@@ -119,6 +121,25 @@ describe("a run over the public sample", () => {
     expect(replay.items.find((i) => i.decision === "pipeline" && i.item === "altorank login")!.predicted).toBe("buyer_mismatch");
   });
 
+  it("counts the end-to-end items as the planner's funnel, labels beside product, and both add up", async () => {
+    await runEvals({ dir, mode: "live", model, rate, maxUsd: 1, client: scripted });
+    const result = await runEvals({ dir, mode: "replay", model, rate, maxUsd: 0 });
+    const pipeline = result.items.filter((i) => i.decision === "pipeline");
+    expect(result.funnels.length).toBeGreaterThan(0);
+    for (const f of result.funnels) {
+      const n = pipeline.filter((i) => i.caseId === f.caseId).length;
+      for (const side of [f.labels, f.product]) {
+        expect(side.found).toBe(n);
+        expect(funnelDiscrepancy(side)).toBeNull();
+      }
+      expect(f.labels.qualified).toBe(pipeline.filter((i) => i.caseId === f.caseId && i.expected === "qualified").length);
+      expect(f.product.qualified).toBe(pipeline.filter((i) => i.caseId === f.caseId && i.predicted === "qualified").length);
+    }
+    const md = renderMarkdown({ title: "t", scores: result.scores, items: result.items, meta: {}, funnels: result.funnels });
+    expect(md).toContain("## funnel");
+    expect(md).toContain("| **qualified** |");
+  });
+
   it("reads the existing page from the results without asking the model", async () => {
     scripted.mockClear();
     await runEvals({ dir, mode: "live", model, rate, maxUsd: 1, client: scripted, only: ["qualification"] });
@@ -199,5 +220,15 @@ describe("scoring", () => {
     expect(md).toContain("**0/1 (0%)**");
     expect(md).toContain("Not a \\| buying decision");
     expect(md).toContain("Guides are editorial");
+  });
+});
+
+describe("funnel outcomes", () => {
+  it("reads every pipeline label and answer as a funnel bucket", () => {
+    expect(outcomeOf("qualified")).toBe("qualified");
+    expect(outcomeOf("buyer_mismatch")).toBe("buyer_fit");
+    expect(outcomeOf("not_editorial")).toBe("not_editorial");
+    expect(outcomeOf("no_verdict")).toBe("no_verdict");
+    expect(outcomeOf("judge_incomplete")).toBe("judge_incomplete");
   });
 });

@@ -1,12 +1,13 @@
 import { readAllPages } from "@/lib/supabase/read-all";
-import { readOpportunity, contextKey, duplicateVerdict, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
+import { readOpportunity, contextKey, duplicateVerdict, OPPORTUNITY_VERSION, type Opportunity, type OpportunityCause } from "@/lib/keyword-research/opportunity";
 import { clusterByIntent, intentKey, intentLanguage, sameIntent, storedSerp, unfoldedNote, type IntentFollower, type IntentStage, type StagedTopic } from "@/lib/keyword-research/intent";
 import { articleStage, leadersFrom, type IntentLeader, type KeywordRow, type OnCalendar } from "@/lib/keyword-research/intent-leaders";
 import { ensureBusinessProfile } from "@/lib/keyword-research/business-context";
 import { causeLabel } from "@/lib/keyword-research/opportunity";
 import { funnelOf, type FitVerdict, type Funnel } from "@/lib/keyword-research/buyer-fit";
-import { isJudgeable, isParked, isParkedForGood, isRequalifiable, parkKeywords, queueTarget, refillQualifiedQueue, type QueueRow } from "@/lib/keyword-research/queue";
+import { isJudgeable, isParked, isParkedForGood, isRequalifiable, parkKeywords, queueTarget, refillQualifiedQueue, RefillRefusedError, type QueueRow } from "@/lib/keyword-research/queue";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
+import { stageOfVerdict, tallyFunnel, type FunnelOutcome, type FunnelStage, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
 // ---------------------------------------------------------------------------
 // What to write next
 // ---------------------------------------------------------------------------
@@ -83,6 +84,12 @@ export interface KeywordRecommendation {
   opportunity?: Opportunity;
   /** "audience" for a top-of-funnel topic; null when no buyer verdict is saved. */
   funnel: Funnel | null;
+  /**
+   * The free gate that first took this row off "write", for the run's funnel
+   * (lib/keyword-research/topic-funnel.ts). Descriptive only: the action and
+   * the reasons are what every caller acts on.
+   */
+  skippedBy?: FunnelStage;
 }
 
 /**
@@ -386,7 +393,20 @@ function leaderRows<T>(res: PromiseSettledResult<unknown[]>, table: string): T[]
 export async function recommendKeywords(
   supabase: SupabaseClient,
   workspaceId: string,
-  options?: { limit?: number; qualify?: boolean; qualifyBatches?: number },
+  options?: {
+    limit?: number;
+    qualify?: boolean;
+    qualifyBatches?: number;
+    /**
+     * Handed where every keyword read went, once this pass has decided
+     * (lib/keyword-research/topic-funnel.ts), with the ids of the rows it
+     * counted as qualified so a planner can say where each one went. Also
+     * called just before a spend refusal is thrown: the verdicts gathered
+     * until the refusal are counted as they are, the rows still waiting for
+     * one as `spend_refused`.
+     */
+    onFunnel?: (funnel: TopicFunnel, qualifiedIds: ReadonlySet<string>) => void;
+  },
 ): Promise<KeywordRecommendation[]> {
   const limit = options?.limit ?? 25;
 
@@ -629,14 +649,18 @@ export async function recommendKeywords(
     }
 
     let action: RecommendedAction = "write";
+    // The first gate that takes the row off "write", for the funnel.
+    let skippedBy: FunnelStage | undefined;
 
     const band = positionBand(position, impressions);
     if (band === "won") {
       action = "skip";
+      skippedBy = "covered";
       score *= 0.15;
       reasons.push(`already ranking at position ${position}, leave it alone`);
     } else if (band === "striking") {
       action = existingArticleId ? "refresh" : "write";
+      if (existingArticleId) skippedBy = "covered";
       score *= 2.5;
       reasons.push(
         position! <= STRIKING_MAX
@@ -652,12 +676,14 @@ export async function recommendKeywords(
       // Writing a second article for a term we already cover splits the ranking
       // between two pages instead of concentrating it on one.
       action = "refresh";
+      skippedBy ??= "covered";
       score *= 0.8;
       reasons.push("an article already targets this, refresh rather than duplicate");
     } else if (existingPageUrl && !existingArticleId && (action === "write" || action === "refresh")) {
       // A page this product did not write and cannot revise. The honest
       // answer is the page, not a competing post: say which one.
       action = "skip";
+      skippedBy ??= "covered";
       reasons.push(`your page ${pathOf(existingPageUrl)} already targets this; update that page rather than add a second one`);
     }
 
@@ -764,7 +790,7 @@ export async function recommendKeywords(
     // still be one it should not be writing more about.
     const fit = commercialFit(k.term as string, subject, business?.description ?? null);
     if (fit.fit === "absence") {
-      if (action === "write") action = "skip";
+      if (action === "write") { action = "skip"; skippedBy = "off_topic"; }
       score *= 0.1;
       reasons.push(fit.reason);
     } else if (fit.fit === "substitute") {
@@ -783,11 +809,13 @@ export async function recommendKeywords(
     const measuredDemand = (volume ?? 0) > 0 || (impressions ?? 0) > 0 || position !== null;
     if (action === "write" && !measuredDemand) {
       action = "skip";
+      skippedBy = "no_demand";
       reasons.push("no measured demand: no search volume, no impressions, no ranking");
     }
 
     if (action === "write" && !proven && isOutOfReach(difficulty, authority)) {
       action = "skip";
+      skippedBy = "out_of_reach";
       reasons.push(
         authority === null
           ? `difficulty ${difficulty} is out of reach for any site without existing authority`
@@ -828,6 +856,7 @@ export async function recommendKeywords(
       funnel,
       quality,
       qualityNote: note,
+      ...(skippedBy ? { skippedBy } : {}),
     };
   });
 
@@ -967,7 +996,7 @@ export async function recommendKeywords(
     rec.reasons.unshift(verdict.reason);
     // Something already written stays written; the reason is all it gets.
     if (stage === "drafted" || stage === "live") continue;
-    if (rec.action === "write") rec.action = "skip";
+    if (rec.action === "write") { rec.action = "skip"; rec.skippedBy = "duplicate"; }
     rec.opportunity = verdict;
     if (row && !isParkedForGood(row)) toPark.push({ id: rec.keywordId, verdict });
   }
@@ -990,24 +1019,65 @@ export async function recommendKeywords(
   const candidateRows = eligible
     .filter((rec) => rec.action === "write")
     .map((rec) => ({ ...rowOf.get(rec.keywordId)!, id: rec.keywordId, term: rec.term }));
-  const evidence: Map<string, Opportunity> = options?.qualify
-    ? ensured.missing
-      // Nothing to judge against and nothing bought: every eligible term
-      // carries the same verdict in memory, and the log can say why.
-      ? new Map<string, Opportunity>(candidateRows.map((row) => [row.id, {
-          version: OPPORTUNITY_VERSION, context: fingerprint, checkedAt: new Date().toISOString(),
-          status: "pending", cause: "no_profile", reason: `Topic qualification is blocked: ${ensured.missing}.`,
-        }]))
-      // Buy verdicts for the best candidates only until the queue holds
-      // what the pace will use; a rejection parks the row as it goes. The
-      // owners are this pass's, so qualification does not refuse a phrasing
-      // as the duplicate of a planned row this pass has already set aside.
-      : (await refillQualifiedQueue(supabase, workspaceId, candidateRows, context, {
-          target: queueTarget(workspace?.auto_generate_weekly_limit as number | null | undefined),
-          owners: leaders,
-          ...(options.qualifyBatches ? { maxBatches: options.qualifyBatches } : {}),
-        })).verdicts
-    : new Map(candidateRows.flatMap((row) => { const o = readOpportunity(row.opportunity, fingerprint); return o ? [[row.id, o] as const] : []; }));
+  // Where every row went, for the caller's funnel: the first stage, in the
+  // order this pass applies them, that set it aside (see
+  // lib/keyword-research/topic-funnel.ts). Read from this pass's own
+  // decisions; changes none of them.
+  const funnelOutcome = (rec: KeywordRecommendation, verdicts: ReadonlyMap<string, Opportunity>, refused: boolean): FunnelOutcome => {
+    const row = rowOf.get(rec.keywordId);
+    if (row && isParkedForGood(row)) {
+      const cause = (row.opportunity as { cause?: OpportunityCause } | null)?.cause;
+      return cause ? stageOfVerdict({ status: "rejected", cause }) : "removed_by_person";
+    }
+    if (dropped.has(rec)) return "duplicate";
+    if (rec.skippedBy) return rec.skippedBy;
+    if (rec.quality !== "ok") return "quality";
+    const o = verdicts.get(rec.keywordId);
+    if (o) return stageOfVerdict(o);
+    return refused ? "spend_refused" : "not_judged";
+  };
+  const reportFunnel = (verdicts: ReadonlyMap<string, Opportunity>, refused: boolean, judged?: number) => {
+    if (!options?.onFunnel) return;
+    const outcomes = recommendations.map((rec) => ({ id: rec.keywordId, outcome: funnelOutcome(rec, verdicts, refused) }));
+    const qualifiedIds = new Set(outcomes.filter((o) => o.outcome === "qualified").map((o) => o.id));
+    options.onFunnel(tallyFunnel(outcomes.map((o) => o.outcome), judged === undefined ? {} : { judged }), qualifiedIds);
+  };
+
+  let evidence: Map<string, Opportunity>;
+  let judged: number | undefined;
+  if (!options?.qualify) {
+    evidence = new Map(candidateRows.flatMap((row) => { const o = readOpportunity(row.opportunity, fingerprint); return o ? [[row.id, o] as const] : []; }));
+  } else if (ensured.missing) {
+    // Nothing to judge against and nothing bought: every eligible term
+    // carries the same verdict in memory, and the log can say why.
+    evidence = new Map<string, Opportunity>(candidateRows.map((row) => [row.id, {
+      version: OPPORTUNITY_VERSION, context: fingerprint, checkedAt: new Date().toISOString(),
+      status: "pending", cause: "no_profile", reason: `Topic qualification is blocked: ${ensured.missing}.`,
+    }]));
+    judged = 0;
+  } else {
+    // Buy verdicts for the best candidates only until the queue holds
+    // what the pace will use; a rejection parks the row as it goes. The
+    // owners are this pass's, so qualification does not refuse a phrasing
+    // as the duplicate of a planned row this pass has already set aside.
+    try {
+      const refill = await refillQualifiedQueue(supabase, workspaceId, candidateRows, context, {
+        target: queueTarget(workspace?.auto_generate_weekly_limit as number | null | undefined),
+        owners: leaders,
+        ...(options.qualifyBatches ? { maxBatches: options.qualifyBatches } : {}),
+      });
+      evidence = refill.verdicts;
+      judged = refill.judged;
+    } catch (err) {
+      // The refusal still ends the pass, as it always has; the funnel says
+      // where the rows stood when it came, so an empty plan is not read as
+      // "nothing qualified" (#256's spend gate, 2026-09-27). Counted from the
+      // refill's own verdicts: batches bought before the refusal are saved,
+      // and the rows as read at the start of this pass do not have them.
+      if (err instanceof RefillRefusedError) reportFunnel(err.verdicts, true, err.judged);
+      throw err;
+    }
+  }
   // Fresh approvals, ranked against each other: the first of a search is
   // the one written, the rest wait behind it in memory and are parked once it
   // is on the calendar (the pass above, next time round).
@@ -1026,6 +1096,7 @@ export async function recommendKeywords(
       const duplicate = clusters.find((other) => sameIntent(topic, { term: other.term, organicUrls: other.opportunity?.organicUrls ?? null }, language).same);
       if (duplicate) {
         rec.action = "skip";
+        rec.skippedBy = "duplicate";
         rec.reasons.push(`Same search as “${duplicate.term}”, which is ahead of it in the queue; one article per search.`);
       } else {
         clusters.push(rec);
@@ -1057,6 +1128,7 @@ export async function recommendKeywords(
       });
     }
   }
+  reportFunnel(evidence, false, judged);
   if (options?.qualify && toPark.length) {
     await parkKeywords(supabase, workspaceId, toPark);
     for (const { id, verdict } of toPark) {
