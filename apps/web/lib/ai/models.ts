@@ -75,6 +75,20 @@ export function anthropicModel(tier: ModelTier = "content"): string {
     : fromEnv("ANTHROPIC_MODEL", DEFAULTS.anthropicContent);
 }
 
+/**
+ * The text of a reply: its first text block, or null when it has none.
+ *
+ * Not `content[0]`: a model that thinks first (claude-sonnet-5, seen
+ * 2026-09-29) puts a thinking block there, and eight readers that took the
+ * first block as the answer read "no answer" - replaying the results judge on
+ * it, 29 of 37 verdicts came back unusable. Structural, so this module needs
+ * no SDK import.
+ */
+export function replyText(content: ReadonlyArray<{ type: string }>): string | null {
+  const block = content.find((b): b is { type: "text"; text: string } => b.type === "text" && typeof (b as { text?: unknown }).text === "string");
+  return block ? block.text : null;
+}
+
 /** OpenAI chat model, used when a workspace picks OpenAI as its provider. */
 export function openaiModel(): string {
   return fromEnv("OPENAI_MODEL", DEFAULTS.openaiContent);

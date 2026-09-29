@@ -18,7 +18,7 @@
 // nothing for that keyword, and the card offers to try again when opened.
 
 import Anthropic from "@anthropic-ai/sdk";
-import { anthropicModel } from "@/lib/ai/models";
+import { anthropicModel, replyText } from "@/lib/ai/models";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 
 export interface QualityQuestion {
@@ -155,7 +155,7 @@ export async function generateQualityQuestionsBatch(
           },
         ],
       });
-      const raw = response.content[0]?.type === "text" ? response.content[0].text : "";
+      const raw = replyText(response.content) ?? "";
       for (const [term, qs] of parseQuestionBatch(raw, batch)) out.set(term, qs);
     } catch (err) {
       console.warn("[questions] generation failed for a batch:", err instanceof Error ? err.message : err);

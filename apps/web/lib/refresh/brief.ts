@@ -16,7 +16,7 @@
 // missing key is felt.
 
 import Anthropic from "@anthropic-ai/sdk";
-import { anthropicModel } from "@/lib/ai/models";
+import { anthropicModel, replyText } from "@/lib/ai/models";
 import { OPPORTUNITY_LABELS, type Evidence, type Opportunity } from "./types";
 import { headingMatchesQuery, THRESHOLDS } from "./detect";
 
@@ -247,7 +247,7 @@ export async function writeBrief(input: BriefInput): Promise<WriteBriefResult> {
     system,
     messages: [{ role: "user", content: user }],
   });
-  const text = res.content[0]?.type === "text" ? res.content[0].text : "";
+  const text = replyText(res.content) ?? "";
   const parsed = parseBrief(text);
   const brief = parsed
     ? { ...parsed, keep: parsed.keep.length ? parsed.keep : fallback.keep }
