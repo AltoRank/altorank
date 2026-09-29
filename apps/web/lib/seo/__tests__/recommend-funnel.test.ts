@@ -28,53 +28,53 @@ import type { CrawlResult } from "@/lib/audit/crawler";
 import type { Opportunity } from "@/lib/keyword-research/opportunity";
 
 const page = (over: Partial<CrawlResult>): CrawlResult => ({
-  url: "https://acme-physio.example/", status: 200, title: "", metaDescription: "", h1: [], h2: [], images: [], links: [], loadTimeMs: 0, ...over,
+  url: "https://acme-cycles.example/", status: 200, title: "", metaDescription: "", h1: [], h2: [], images: [], links: [], loadTimeMs: 0, ...over,
 });
-const PROFILE = buildTopicalProfile("acme-physio.example", [
-  page({ title: "Physiotherapy clinic | Acme", h1: ["Physiotherapy for back pain and knee pain"], h2: ["Sports injury rehab", "Knee replacement rehab"] }),
+const PROFILE = buildTopicalProfile("acme-cycles.example", [
+  page({ title: "Bike repair workshop | Acme", h1: ["Bike repair and wheel building"], h2: ["Gravel bike servicing", "Brake bleeding service"] }),
 ], "2026-09-29T00:00:00.000Z");
-const BUSINESS = { description: "Acme is a physiotherapy clinic treating back pain, knee pain and sports injuries.", audiences: ["patients with back pain"], offerings: ["physiotherapy"], competitors: [] };
+const BUSINESS = { description: "Acme is a bike repair workshop: servicing, wheel building and brake work.", audiences: ["commuter cyclists"], offerings: ["bike repair"], competitors: [] };
 
 type Row = Record<string, unknown>;
 const row = (id: string, term: string, over: Row = {}): Row => ({
   id, term, volume: 500, difficulty: 10, intent: "info", status: "new", source: "gap", source_type: "competitor",
-  source_ref: null, source_url: null, opportunity: null, buyer_fit: { keep: true, reason: "a patient", funnel: "buyer" }, plan_excluded_at: null, ...over,
+  source_ref: null, source_url: null, opportunity: null, buyer_fit: { keep: true, reason: "a cyclist", funnel: "buyer" }, plan_excluded_at: null, ...over,
 });
 
 const PARKED_AT = "2026-09-28T00:00:00.000Z";
 const ROWS: Row[] = [
   // Refused by the buyer test at intake, parked.
-  row("fit1", "physiotherapy jobs", { buyer_fit: { keep: false, reason: "a job seeker" }, plan_excluded_at: PARKED_AT, status: "stored",
+  row("fit1", "bike mechanic jobs", { buyer_fit: { keep: false, reason: "a job seeker" }, plan_excluded_at: PARKED_AT, status: "stored",
     opportunity: { version: 2, context: "old", checkedAt: PARKED_AT, status: "rejected", cause: "buyer_mismatch", reason: "a job seeker" } }),
-  row("fit2", "physiotherapy school", { buyer_fit: { keep: false, reason: "a student" }, plan_excluded_at: PARKED_AT, status: "stored",
+  row("fit2", "bike mechanic course", { buyer_fit: { keep: false, reason: "a student" }, plan_excluded_at: PARKED_AT, status: "stored",
     opportunity: { version: 2, context: "old", checkedAt: PARKED_AT, status: "rejected", cause: "buyer_mismatch", reason: "a student" } }),
   // Taken off the plan by a person: parked, no verdict.
-  row("person", "knee physiotherapy clinic", { plan_excluded_at: PARKED_AT, status: "stored" }),
+  row("person", "wheel building workshop", { plan_excluded_at: PARKED_AT, status: "stored" }),
   // A page of the site already targets it.
-  row("covered", "back pain physiotherapy"),
+  row("covered", "brake bleeding service"),
   // No volume, no impressions, no position.
-  row("nodemand", "knee pain physiotherapy near me", { volume: null }),
+  row("nodemand", "bike repair open sundays", { volume: null }),
   // Far beyond an authority-10 site.
-  row("reach", "physiotherapy", { difficulty: 95, volume: 40000 }),
+  row("reach", "bike repair", { difficulty: 95, volume: 40000 }),
   // Provider fragment: ends in a two-letter token.
-  row("quality", "sports injury rehab co"),
+  row("quality", "gravel bike servicing co"),
   // A phrasing of the leader below: one search, one article.
-  row("dup", "rehab knee replacement", { volume: 90 }),
+  row("dup", "tubeless setup gravel", { volume: 90 }),
   // Through to the results judge.
-  row("q1", "knee replacement rehab", { volume: 210 }),
-  row("q2", "physio vs athletic therapy", { volume: 70 }),
-  row("ne", "sciatica pain treatment", { volume: 300 }),
-  row("np", "physiotherapy clinic open weekends", { volume: 260 }),
-  row("ep", "back pain treatment options", { volume: 480 }),
-  row("thin", "shoulder rehab exercises for swimmers", { volume: 40 }),
-  row("bm", "sports physiotherapist salary", { volume: 150 }),
-  row("unjudged", "hip pain physiotherapy", { volume: 120 }),
+  row("q1", "gravel tubeless setup", { volume: 210 }),
+  row("q2", "disc vs rim brakes", { volume: 70 }),
+  row("ne", "chain wear checker", { volume: 300 }),
+  row("np", "bike repair shop open weekends", { volume: 260 }),
+  row("ep", "bike service cost", { volume: 480 }),
+  row("thin", "derailleur hanger alignment tool", { volume: 40 }),
+  row("bm", "bike mechanic salary", { volume: 150 }),
+  row("unjudged", "wheel truing stand", { volume: 120 }),
 ];
 
 function client(): SupabaseClient {
   const tables: Record<string, unknown[]> = {
     keywords: ROWS,
-    site_pages: [{ url: "https://acme-physio.example/back-pain", keyword: "back pain physiotherapy" }],
+    site_pages: [{ url: "https://acme-cycles.example/brakes", keyword: "brake bleeding service" }],
   };
   const chain = (value: { data: unknown[]; error: null; count?: number }): Record<string, unknown> => {
     const self: Record<string, unknown> = {};
@@ -85,7 +85,7 @@ function client(): SupabaseClient {
         return Object.assign(Promise.resolve(value), self);
       };
     }
-    self.single = async () => ({ data: { topical_profile: PROFILE, dr: 10, business_profile: BUSINESS, domain: "acme-physio.example", language: "en", location_code: 2124, auto_generate_weekly_limit: 7 } });
+    self.single = async () => ({ data: { topical_profile: PROFILE, dr: 10, business_profile: BUSINESS, domain: "acme-cycles.example", language: "en", location_code: 2124, auto_generate_weekly_limit: 7 } });
     return self;
   };
   return { from: (table: string) => chain({ data: tables[table] ?? [], error: null }) } as unknown as SupabaseClient;
