@@ -67,3 +67,29 @@ export async function setupFinishedElsewhere(
   if (articlesError) throw new Error(`could not count the members' articles: ${articlesError.message}`);
   return (count ?? 0) > 0;
 }
+
+/**
+ * Whether this site's latest first look planned nothing (`nothing_planned`,
+ * lib/onboarding/events.ts).
+ *
+ * The generate cron asks it before it buys qualification or emails "has run
+ * out of keywords ... Find more keywords" to an account before its trial: the
+ * setup screen has just told that person a member of the team will write to
+ * them, and the Keywords page the email links to is behind the trial they
+ * have not started (review, 2026-09-29). A failed read answers false: the
+ * cron then does what it did before this existed.
+ */
+export async function firstLookPlannedNothing(supabase: SupabaseClient, workspaceId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("onboarding_runs")
+    .select("status")
+    .eq("workspace_id", workspaceId)
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error(`[onboarding] latest run for ${workspaceId}: ${error.message}`);
+    return false;
+  }
+  return (data as { status?: string } | null)?.status === "nothing_planned";
+}

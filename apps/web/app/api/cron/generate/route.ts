@@ -13,6 +13,7 @@ import { claimEntry, claimsInFlight, recordEntryFailure, releaseClaim } from "@/
 import { canSpend } from "@/lib/billing/spend-gate";
 import { resumeExpiredPauses } from "@/lib/billing/resume";
 import { billingEnabled, getStripe } from "@/lib/stripe";
+import { trialGateApplies } from "@/lib/billing/trial";
 import { generateArticle, ConcurrentGenerationError } from "@/lib/content/generate";
 import { sweepStaleDrafts } from "@/lib/content/stale-drafts";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
@@ -34,7 +35,7 @@ import {
   roomForAnother,
 } from "@/lib/content/generate-queue";
 import { observedCron } from "@/lib/observability/cron";
-import { setupFinishedElsewhere } from "@/lib/onboarding/setup-state";
+import { firstLookPlannedNothing, setupFinishedElsewhere } from "@/lib/onboarding/setup-state";
 import { sweepUnfinishedResumes } from "@/lib/plan/resume-sweep";
 
 /**
@@ -291,6 +292,23 @@ async function run(request: Request) {
       const blocked = await draftBlocker(supabase, quota, workspaceId);
       if (blocked) {
         results.push({ workspaceId, domain, status: "skipped", detail: blocked });
+        continue;
+      }
+      // An account before its trial whose first look planned nothing is
+      // waiting on a person, not on this job. Its setup screen said the team
+      // would write to it; the wizard had already switched auto_generate on,
+      // so this job used to re-judge the same pool every morning and, when
+      // every verdict was a rejection, email it "has run out of keywords ...
+      // Find more keywords" with a link to a page it cannot open before the
+      // trial (review, 2026-09-29). Nothing is bought and nothing is emailed;
+      // the trial, or a first look that plans something, lifts it.
+      if (trialGateApplies(quota) && (await firstLookPlannedNothing(supabase, workspaceId))) {
+        results.push({
+          workspaceId,
+          domain,
+          status: "skipped",
+          detail: "the first look planned nothing and the account is before its trial; a person follows up",
+        });
         continue;
       }
 
